@@ -416,10 +416,10 @@ func pluginTool(ctx *core.Context, name string) (func(context.Context, map[strin
 // human-authored, omega may only ever propose jobs) - the proof pins
 // the absence too.
 //
-// The core types stay (core/seams.go: CronProvider, CronDeps,
-// CronJobInfo, CronLister) - the seam signature references them and
-// layers never import modules. Intentional residue, documented:
-// this test compiles them to prove it.
+// Core carries no cron vocabulary (part 3, the seam constitution):
+// CronDeps and JobInfo live in the capsule, the service resolves by
+// the "cron" key from the universal registry, and the consumers keep
+// only their own local need interfaces. No seam type left to compile.
 func TestCronRemovalProof(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	cfg := DefaultConfig()
@@ -525,7 +525,7 @@ func TestCronRemovalProof(t *testing.T) {
 	// capsule-owned types moved with the capsule (part 3): CronDeps and
 	// JobInfo live in harness/cron now, nothing left to compile here.
 	_ = struct{}{}
-	t.Log("PROOF removed: seam nil (GET /cron/jobs falls through to its seam-nil guard, the settled empty-set answer), canvas carries no cron panel, the action pipe answers ErrUnknownModule, /cron unregistered, no cron-shaped tools; core/seams.go cron types remain - documented as intentional")
+	t.Log("PROOF removed: seam nil (GET /cron/jobs falls through to its seam-nil guard, the settled empty-set answer), canvas carries no cron panel, the action pipe answers ErrUnknownModule, /cron unregistered, no cron-shaped tools; core carries no cron vocabulary - the capsule took its nouns whole (part 3)")
 }
 
 // cronPanel finds the cron module's jobs panel in a snapshot.
@@ -545,7 +545,7 @@ func cronPanel(panels []core.Panel) (core.Panel, bool) {
 
 // TestMemoryRemovalProof is the arc 6 memory-capsule proof (card
 // t_da1fcc76), the fourth worked proof in this file. Memory is the
-// capsule that was born one: the seam (ctx.Memory), the memory tool and
+// capsule that was born one: the memory offer (the "memory" key), the memory tool and
 // the prompt section all ship from the plugin's single Mount, and the
 // module ships nothing else - no command, no REST route, and no canvas
 // panel (nothing rendered memory before the arc; adding one is a
@@ -559,16 +559,17 @@ func cronPanel(panels []core.Panel) (core.Panel, bool) {
 //  2. WITHOUT memory: the seam is nil, no memory-shaped tool is left,
 //     no sectioner renders the memory block, the pipe still answers
 //     ErrUnknownModule, and cron (the one module that reads
-//     ctx.Memory, for deliver=memory jobs) still mounts - its
+//     the "memory" offer, for deliver=memory jobs) still mounts - its
 //     "no memory extension loaded" guard is the documented degrade,
 //     so no Requires edge exists and none is needed. The two store
 //     files stay on disk: data is not code.
 //
-// The core.MemoryProvider type compiles in the proof on purpose - the
-// seam vocabulary lives in core/ and layers never import modules (the
-// recipe's intentional residue). The tool-name references the host
-// carries for the ephemeral deny lists (http_channel,
-// tui) are name-based guards, not module surfaces: they see a
+// Core carries no memory vocabulary (part 3, the seam constitution):
+// the memory files live with the capsule, the service resolves by the
+// "memory" key, and the consumer's local interface is its own need
+// statement. The tool-name references the host
+// carries for the ephemeral deny lists (agent/api's
+// ephemeral sessions) are name-based guards, not module surfaces: they see a
 // registry without the tool and do nothing.
 func TestMemoryRemovalProof(t *testing.T) {
 	home := t.TempDir()
@@ -1191,10 +1192,11 @@ for line in sys.stdin:
 // The audit rows stay: Answer persists the verdict record into the
 // session store (roles "verdict_card" / "verdict") - the store is a
 // different module and keeps rows from mounts gone by; data is not
-// code. The core types stay too (core/seams.go: VerdictsProvider,
-// QuestionPrompt, Verdict) - the seam signature references them and
-// layers never import modules. Intentional residue, documented: this
-// test compiles them to prove it.
+// code. The card + answer wire shapes stay in core (QuestionPrompt,
+// QuestionAnswer - wire vocabulary, marshalled identically by every
+// consumer and the serving surface); the seam interface was consumed by
+// each consumer's own local one (wave 1), so no core seam type remains.
+// The proof asserts the wire shapes compile.
 func TestVerdictRemovalProof(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	cfg := DefaultConfig()
@@ -1404,12 +1406,12 @@ func TestVerdictRemovalProof(t *testing.T) {
 	// seam interface is consumer-owned. Compile-time proof:
 	_ = core.QuestionPrompt{}
 	_ = core.QuestionAnswer{}
-	t.Log("PROOF removed: seam nil (the /verdicts routes fall through to their 501 guard), no verdict tool, no /verdict command, no Verdict Cards prompt block, no canvas panel or verdict-qualified actions, the action pipe answers ErrUnknownModule; the card + verdict audit rows stay on disk in the session store (data is not code) and the shell keeps its guarded surfaces inert (busy-Enter sees a nil seam, the denied tool name denies nothing); core/seams.go verdict types remain - documented as intentional")
+	t.Log("PROOF removed: seam nil (the /verdicts routes fall through to their 501 guard), no verdict tool, no /verdict command, no Verdict Cards prompt block, no canvas panel or verdict-qualified actions, the action pipe answers ErrUnknownModule; the card + verdict audit rows stay on disk in the session store (data is not code) and the shell keeps its guarded surfaces inert (busy-Enter sees a nil seam, the denied tool name denies nothing); core carries no verdict seam type - the wire shapes stay, the hub nouns live in the capsule (part 3)")
 }
 
 // TestTrustRemovalProof is the arc 6 trust-capsule proof (card
 // t_e1efb979), the eighth worked proof in this file. Trust is the
-// gating capsule: the trust seam (ctx.Trust - ResolveContext gates the
+// gating capsule: the trust offer (the "trust" key; ResolveContext gates the
 // AGENTS.md project context behind trust.yaml, State feeds the webui
 // status bar) is the whole surface, shipped from the one Mount. No
 // tool, no slash command, no REST route, no skills, no canvas panel
@@ -1434,10 +1436,10 @@ func TestVerdictRemovalProof(t *testing.T) {
 //     unchanged (trust Requires nothing and nothing Requires trust).
 //
 // Data is not code: trust.yaml and its trusted entries stay on disk
-// after a removal. The core type stays too (core/seams.go:
-// TrustProvider) - the seam signature references it and layers never
-// import modules. Intentional residue, documented: this test compiles
-// it to prove it.
+// after a removal. Core carries no trust vocabulary (part 3, the seam
+// constitution): the capsule owns its types, the service resolves by
+// the "trust" key, and the host keeps its own nil-guarded need faces
+// - the deletion takes nothing with it.
 func TestTrustRemovalProof(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	cfg := DefaultConfig()
@@ -1608,12 +1610,10 @@ func TestTrustRemovalProof(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(os.Getenv("OMEGA_HOME"), "config", "trust.yaml")); err != nil {
 		t.Fatalf("REMOVED MOUNT: the trust store vanished from disk (data is not code): %v", err)
 	}
-	// core types remain - intentional (the seam signature references
-	// them; layers never import modules). Compile-time proof:
-	// capsule-owned types moved with the capsule (part 3): nothing left
-	// to compile here.
-	_ = struct{}{}
-	t.Log("PROOF removed: seam nil, the host entry paths answer empty through their nil-guard (serve + run stay alive), no trust tool, no /trust command, no canvas panel or trust-qualified action, the action pipe answers ErrUnknownModule; trust.yaml and its entries stay on disk (data is not code); core/seams.go TrustProvider remains - documented as intentional")
+	// capsule-owned types moved with the capsule (part 3): nothing
+	// left to compile here - the host's own need faces (trust.go)
+	// carry the consult.
+	t.Log("PROOF removed: seam nil, the host entry paths answer empty through their nil-guard (serve + run stay alive), no trust tool, no /trust command, no canvas panel or trust-qualified action, the action pipe answers ErrUnknownModule; trust.yaml and its entries stay on disk (data is not code); core carries no trust vocabulary (part 3)")
 }
 
 // terminalMuxOf builds the module mux from a mount's ledger (the
