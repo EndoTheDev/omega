@@ -13,7 +13,7 @@ import (
 // served over the kanban core seam serve from the capsule itself now -
 // the module noun left core with the seam types (kanbantypes.go), and
 // the routes register through RegisterRoute. The wire shapes are the
-// ones the webui consumes, byte-stable from the engine-side move:
+// ones the webui consumes, byte-stable from the source move:
 // GET /tasks list/filter, POST /tasks create, GET /tasks/{id} detail
 // (task + comments + events), PATCH /tasks/{id}, POST
 // /tasks/{id}/comments, GET /boards, and - since the boards folded
@@ -31,7 +31,7 @@ import (
 // and answers 400 with the refusal text.
 
 // writeJSON encodes v and answers status, the envelope the
-// engine-side handlers wrote.
+// handlers before the move wrote.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

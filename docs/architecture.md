@@ -16,7 +16,7 @@ No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
 consumes them and runs the tool loop. The HTTP channel exposes
 everything over HTTP and serves the embedded webui SPA (built by
-engine/webui/scripts/build.sh, committed in api/static/,
+webui/scripts/build.sh, committed in api/static/,
 baked in at compile time). Mutating routes ride the Host/Origin guard
 (t_b52d09f3): a write from a foreign origin answers 403. Config and
 capsule writes are atomic - a temp file plus rename, so a killed
@@ -109,7 +109,7 @@ live in the header of `agent/extensionapi.go`; the vocabulary types
 (Refusal, RefusalSink, ModulePanicError) live in
 `core/api.go`. Hosts call `agent.MountAllAPI` (it returns the
 registry: claims, module routes, the refusal ledger) - every host
-does, including the binary and the engines. Module REST rides
+does, including the binary and the shell. Module REST rides
 `core.ModuleRoute` declarations (`core/routes.go`) registered through
 `RegisterRoute`; `api/module_routes.go` serves exactly what
 the live registry carries, so a disabled capsule's routes answer 404

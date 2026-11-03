@@ -408,7 +408,7 @@ type ModuleStatus struct {
 // not expose toggles is nil and endpoints answer 501.
 type ModuleToggles interface {
 	// Modules returns every module in the build's registry catalog
-	// with its live state (engine ring modules never appear - the
+	// with its live state (shell modules never appear - the
 	// serving surface filters them, tier law).
 	Modules() []ModuleStatus
 	// Toggle enables or disables one module at runtime. A rejection

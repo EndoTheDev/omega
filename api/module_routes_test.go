@@ -12,7 +12,7 @@ import (
 // mounted module's routes through the capsule mux - a pattern miss on
 // a module-rooted path answers 404 (the capsule mux has no fallback),
 // a non-module path serves the SPA shell, a method mismatch is the
-// mux's 405. The engine never imports the module: the route rides the
+// mux's 405. The shell never imports the module: the route rides the
 // live Context.
 func TestModuleRouterServesAndFallsThrough(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)

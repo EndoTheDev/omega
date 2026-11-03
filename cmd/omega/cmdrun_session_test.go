@@ -2,7 +2,7 @@ package main
 
 // cmdrun_session_test.go: the wake persistence flag (card t_72ecca67,
 // M5). The spawn contract is `omega run --session <id>` - the parser
-// is the whole engine-visible surface; the provider-bound persistence
+// is the whole host-visible surface; the provider-bound persistence
 // path rides the cron-proven TurnSink machinery.
 
 import "testing"

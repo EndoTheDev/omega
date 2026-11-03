@@ -12,7 +12,7 @@ set -euo pipefail
 #
 # A red run means one of two things: the module grew a wire the scrubber
 # does not model (the removal recipe doc in docs/removing-a-module.md is
-# now lying), or the module's nouns leaked into an engine layer. Both
+# now lying), or the module's nouns leaked into a lower layer. Both
 # are loud failures (Q4: the law is a machine check, not a promise).
 #
 # Usage:

@@ -11,7 +11,7 @@ import "net/http"
 // ModuleRoute is one module-registered REST route. The capsule
 // registers it through the ExtensionAPI (RegisterRoute); nothing
 // module-shaped rides on it - the pattern is an http.ServeMux pattern
-// and the handler an opaque http func, so the engine ring can serve
+// and the handler an opaque http func, so the shell can serve
 // the surface while never importing the module that declared it.
 type ModuleRoute struct {
 	// Module names the registering capsule (the registry tenant on

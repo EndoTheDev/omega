@@ -76,12 +76,12 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
    dies. Dependencies still read at mount time keep their edge.
 
 5. **Register your REST surface through `RegisterRoute`.** Since the
-   phase-F core-purity move the engine holds no module shape:
+   phase-F core-purity move the shell holds no module shape:
    `api/module_routes.go` serves exactly the patterns the
    capsules registered (missing pattern answers 404, no seam-nil
    guard). Kanban moved `/tasks*` and `/boards` onto
    `api.RegisterRoute` in `harness/kanban/rest.go` - the reference.
-   A capsule whose engine handler already exists and degrades to an
+   A capsule whose shell handler already exists and degrades to an
    empty list registers nothing.
 
 6. **Home the CLI subcommand (v0.12 phase D).** `RegisterSubcommand`

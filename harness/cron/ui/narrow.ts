@@ -7,8 +7,8 @@
 // import-safe for the node suite).
 //
 // The threshold must agree with the shell's NARROW_MAX_PX = 360
-// (engine/webui/app/composables/narrow.ts) - pinned by
-// engine/webui/test/modulenarrow.test.ts. A component whose real minimum
+// (webui/app/composables/narrow.ts) - pinned by
+// webui/test/modulenarrow.test.ts. A component whose real minimum
 // readable width differs derives its own value HERE, and documents why
 // beside it.
 

@@ -4,7 +4,7 @@ import (
 	"context"
 )
 
-// Captioner moved to core with the Agent engine (arc 1b); the agent's
+// Captioner moved to core with the agent (arc 1b); the agent's
 // RunWithProvider caption path references it. Consumers import it from
 // core.Captioner (no re-exports at intermediate layers).
 

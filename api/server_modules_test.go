@@ -1,7 +1,7 @@
 package api
 
 // The E2 /modules handler tests bind at the wire shape the settings
-// pane consumes: the engine ring never appears (tier law), the pane's
+// pane consumes: the shell never appears (tier law), the pane's
 // toggle applies through the seam, and a rejection comes back 400
 // carrying the ledger text (Q11/Q12). A host without the seam answers
 // 501 (the Settings precedent).
@@ -54,7 +54,7 @@ func contains(body, substr string) bool { return strings.Contains(body, substr) 
 func stringBody(s string) io.Reader { return strings.NewReader(s) }
 
 func TestModulesListHidesEngineRing(t *testing.T) {
-	// http_channel is engine ring: never in the list. A dead module
+	// http_channel is shell: never in the list. A dead module
 	// name the host still filters is proven by the never-list scan.
 	fm := &fakeModules{mods: []core.ModuleStatus{
 		fakeModule("kanban", "mounted", true),
@@ -74,7 +74,7 @@ func TestModulesListHidesEngineRing(t *testing.T) {
 	}
 	for _, never := range []string{"http_channel"} {
 		if contains(body, `"name":"`+never+`"`) {
-			t.Fatalf("engine ring module %q leaked into the list", never)
+			t.Fatalf("shell module %q leaked into the list", never)
 		}
 	}
 }
@@ -137,12 +137,12 @@ func TestModulesEngineToggleRejected(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("toggling the engine must reject, got %d", rec.Code)
+		t.Fatalf("toggling the shell must reject, got %d", rec.Code)
 	}
 	if len(fm.toggled) != 0 {
-		t.Fatal("the engine rejection must not reach the seam")
+		t.Fatal("the shell rejection must not reach the seam")
 	}
-	if !contains(rec.Body.String(), "engine ring") {
+	if !contains(rec.Body.String(), "is shell") {
 		t.Fatalf("the tier-law rejection must name itself: %s", rec.Body.String())
 	}
 }
@@ -201,7 +201,7 @@ func TestRewireSeamsFollowsTheContext(t *testing.T) {
 		t.Fatalf("GET /tasks after wire = %d", rec.Code)
 	}
 
-	// the disable cascade removed the route: one rewire, the engine
+	// the disable cascade removed the route: one rewire, the shell
 	// holds nothing module-shaped - the path falls through to the SPA
 	// shell like any unknown browser route (the phase-F law: the route
 	// surface lives exactly while its module mounts; the modules

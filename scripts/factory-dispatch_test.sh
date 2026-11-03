@@ -97,13 +97,13 @@ printf "%s" "$tok" | grep -q "cmd;bad" && bad "T5: metachar line was eval-expand
 tok=$(bash -c '
 source <(sed -n "/^move_paths()/,/^}/p; /^tokens_of()/,/^}/p" "'"$GUARD"'")
 printf "%s\n" \
-  "engine ring move: webui/ -> engine/webui/, http_channel/ -> engine/http_channel/" \
+  "shell ring move: webui/ -> webui/, http_channel/ -> api/" \
   "moves agent/ ai/ tui/ webui/ + docs + CI paths" \
   "harness/{cron,memory}/ dissolves into core/" \
   "an arrow (\`->\`, \`=>\`) in prose with no paths" \
   | tokens_of
 ' 2>/dev/null)
-for want in "webui/" "engine/webui/" "http_channel/" "engine/http_channel/" \
+for want in "webui/" "http_channel/" "api/" \
             "agent/" "ai/" "tui/" "harness/cron/" "harness/memory/" "core/"; do
   printf "%s" "$tok" | grep -qx "$want" && ok || bad "T6: move token '$want' missing (got: $tok)"
 done

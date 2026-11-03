@@ -7,10 +7,10 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// handleModuleOrSPA is the catch-all the fixed engine handlers fall
+// handleModuleOrSPA is the catch-all the fixed shell handlers fall
 // through to (v0.12 phase F): a module-rest request rides the capsule
 // mux (404 when the pattern is not registered - the capsule mux has
-// no fallback); anything else serves the SPA shell. The engine holds
+// no fallback); anything else serves the SPA shell. The shell holds
 // no module shape: the routes ride the live Context.
 func (s *Server) handleModuleOrSPA(w http.ResponseWriter, r *http.Request) {
 	modmux, roots := s.ModuleMux()

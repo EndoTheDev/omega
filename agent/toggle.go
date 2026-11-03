@@ -20,7 +20,7 @@ import (
 
 // isToggleable reads the tier law off a plugin: a module is
 // toggleable only when it opts in (the Default is NOT - machine-
-// critical and engine-ring modules never toggle).
+// critical and shell modules never toggle).
 func isToggleable(p Plugin) bool {
 	t, ok := p.(Toggleable)
 	return ok && t.Toggleable()
@@ -175,7 +175,7 @@ func (r *Registry) toggleOff(ctx *core.Context, name string, deps core.StartDeps
 		return err
 	}
 	if !isToggleable(p) {
-		err := fmt.Errorf("module %q is not toggleable - the disable list only names the opinionated capsules, %q is machine-critical or engine ring", name, name)
+		err := fmt.Errorf("module %q is not toggleable - the disable list only names the opinionated capsules, %q is machine-critical or shell", name, name)
 		r.logRefusal(name, "toggle.disable", err)
 		return err
 	}

@@ -21,8 +21,8 @@ import (
 // only by declaring what kind of record it writes.
 
 var turnCopyAppendAllowlist = map[string]string{
-	"engine/http_channel/server_branch.go":   "tree operation - branch summary System marker on the child session",
-	"engine/http_channel/server_variants.go": "tree operation - core.NewVariantSelect marker",
+	"agent/api/server_branch.go":   "tree operation - branch summary System marker on the child session",
+	"agent/api/server_variants.go": "tree operation - core.NewVariantSelect marker",
 	"harness/verdict/hub.go":                 "verdict audit records (VerdictCard/Verdict) - extension-owned Q&A records, not model turns",
 }
 

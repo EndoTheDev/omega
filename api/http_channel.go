@@ -151,7 +151,7 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 }
 
 // RewireSeams implements core.LiveSeams (v0.12 E2): the host calls it
-// after every successful live module toggle. The engine ring stays
+// after every successful live module toggle. The shell stays
 // mounted, but the modules it serves do not - the routes, panels, and
 // tool inventory re-read the Context instead of the boot copies.
 func (c *HTTPChannel) RewireSeams(ctx *core.Context) error {

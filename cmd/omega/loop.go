@@ -1,7 +1,7 @@
 package main
 
 // The CLI agent loop (card t_0744eb8e): bare `omega` is a plain
-// readline-in, ANSI-out conversation against the mounted engine - the
+// readline-in, ANSI-out conversation against the mounted agent - the
 // ollama run mental model. No alt screen, no panes, no mouse, no
 // layout: the loop never owns the screen, and anything that needs one
 // belongs in the webui (the regression guard is the law). Streaming is
@@ -48,7 +48,7 @@ func loopPersona() string {
 	return "You are omega's terminal companion and you act as tech support. " +
 		"Many people reach you while setting omega up: walk them through " +
 		"providers, the config.yaml keys, and what `omega setup` and " +
-		"`omega serve` do, like a patient support engineer. " +
+		"`omega serve` do, like a patient support rep. " +
 		"Reply in short plain-text lines that survive a dumb terminal: " +
 		"no markdown tables, no banners, no layout - the terminal scrolls like paper. " +
 		"Point at `omega setup`, config.yaml.example, and `omega serve`'s webui when they help."
@@ -434,7 +434,7 @@ func (lo *cliLoop) ensureSession() error {
 	return nil
 }
 
-// send runs one user message through the engine, streaming the reply.
+// send runs one user message through the loop, streaming the reply.
 // While the run streams, lines typed mid-run queue for replay (or
 // answer a pending verdict card) - the session reader is the feed.
 func (lo *cliLoop) send(text string, lines <-chan string) error {

@@ -3,7 +3,7 @@
 # REST/SSE-level on purpose: the whole module is a route capsule (no
 # tools, no commands) and its face - claim, stream, input, resize,
 # kill - is observable without a browser. The xterm pane itself is
-# node-law+pinned in engine/webui/test (terminal.test.ts). Pins:
+# node-law+pinned in webui/test (terminal.test.ts). Pins:
 #
 #   claim   - POST /terminal/sessions answers an id (the pane's open;
 #             reattach-else-spawn is Go-gated in the store tests).

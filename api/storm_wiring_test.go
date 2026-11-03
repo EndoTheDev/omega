@@ -11,7 +11,7 @@ package api
 // while the capsule's closure kept pushing into the void. The journal
 // undo is removeOne since d73fecd; this test walks the REAL surfaces -
 // MountAllAPI, Dismount, remount, the channel's RewireSeams - to pin
-// the storm: the engine-ring namespace routes and pushes before, after
+// the storm: the shell namespace routes and pushes before, after
 // the disable and after the re-enable.
 
 import (
@@ -146,7 +146,7 @@ func TestToggleStormLeavesEngineRingPushing(t *testing.T) {
 	}
 }
 
-// assertChatRoutes pins the engine-ring namespace in the handler map:
+// assertChatRoutes pins the shell namespace in the handler map:
 // the panel seeds the snapshot, an action routes to the capsule, and a
 // push lands - the live row needs no snapshot refresh.
 func assertChatRoutes(t *testing.T, canvas *agent.Canvas, at string) {

@@ -97,8 +97,8 @@ feature whole; the removal proofs under each capsule pin the claim.
 ## Available modules
 
 The table below lists the toggleable capsules in `harness/`. Note the
-web search/fetch tool pair: it dissolved into the engine's
-`http_channel` package in v0.13 (shell law 1) and is engine vocabulary
+web search/fetch tool pair: it dissolved into the serving
+`http_channel` package in v0.13 (shell law 1) and is built-in vocabulary
 now - natural names `web.search`/`web.fetch`, always mounted, never in
 the disable list. No web module exists.
 
@@ -120,7 +120,7 @@ the disable list. No web module exists.
 | `kanban/`       | channel, tools, ui | Task board (SQLite store, /tasks endpoints, kanban seam + tools, Board.vue webui tab) |
 | `notifications/` | notifications, panels | Finished-things store (SQLite, the bell) + the first module capsule: list panel with row mark-read actions through the action pipe, the toast as a canvas event, emitter wiring via the same registration (arc 4b) |
 | `api/` | channel, panels | HTTP/SSE delivery channel (omega serve transport) + the chat canvas panel (chat-last 1/3, Start-gated registration per 2b): the conversation rides the snapshot + deltas + action pipe contract; the /chat REST + SSE wire stays untouched |
-| `terminal/`     | -              | The webui terminal pane (t_55a3fc4b): a PTY in the bottom host over the ws channel; the dockable rides the engine registry, journey 95 |
+| `terminal/`     | -              | The webui terminal pane (t_55a3fc4b): a PTY in the bottom host over the ws channel; the dockable rides the shell registry, journey 95 |
 | `browser/`      | -              | The webui browser pane (t_95c91f9c): any-origin iframe tab, GET/PUT /browser/last resume URL + GET /browser/frameable embed probe, journey 96 |
 | `trust/`        | trust          | Project trust gate (trust.yaml, AGENTS.md loading). The gating born-capsule: the trust seam is the whole surface - ResolveContext gates the project context, State feeds the status bar; the host reads both through nil-guarded wrappers (cmd/omega/trust.go) before serve/loop launch. No tool, command, REST route, skills or canvas panel exists. Removal proof `TestTrustRemovalProof` - arc 6 capsule |
 | `cron/`         | cron, panels   | Scheduled prompts (crons.yaml, cron:<name> sessions, CronJobs.vue + /cron module command, the jobs canvas panel - arc 6 capsule; POST /cron/toggle /cron/save /cron/delete) |
@@ -160,10 +160,10 @@ the root map's module laws and in `docs/architecture.md`.
 ### Module-owned UI
 
 UI for module X lives in `harness/X/ui/`; shell components live in
-`engine/webui/app/components/<area>/`; components only move to a module
+`webui/app/components/<area>/`; components only move to a module
 when the module owns the domain. The registration is a directory: put
 top-level `.vue` components there (e.g. the tools module's
-`ui/ToolsList.vue`) and the webui build (engine/webui/nuxt.config.ts)
+`ui/ToolsList.vue`) and the webui build (webui/nuxt.config.ts)
 discovers them - no manifest, no registry. Each file becomes one panel
 in the shell's inspector, and the module name is the namespace prefix,
 so module and shell component names never collide. A module's UI is

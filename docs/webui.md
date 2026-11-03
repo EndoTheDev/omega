@@ -8,7 +8,7 @@ omega binary via `go:embed` and served by the HTTP channel at `/`. An
 installed instance owns port 8099; the dev tree's omega serves 8098.
 The two never touch each other.
 
-Source of truth: `engine/webui/` (contracts below), `api/static/`
+Source of truth: `webui/` (contracts below), `api/static/`
 (the committed built bundle), and the wire contract in [api.md](api.md).
 
 ## Design tokens
@@ -298,7 +298,7 @@ resolution mirror the one command law every surface follows:
 - **Shell commands act LOCALLY and never hit the agent.** `/fork`,
   `/retry`, `/variant`, `/theme` and friends run through the app's own
   handler; extension commands and `/<skill-name>` go to
-  `POST /commands/dispatch` (engine-local execution — a module command
+  `POST /commands/dispatch` (host-local execution — a module command
   returns its result text; a skill returns content the NEXT send arms
   as a system preamble). api.md's "Commands" section documents the
   wire.

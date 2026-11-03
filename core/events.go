@@ -1,4 +1,4 @@
-// Package core holds the engine's shared contracts: the agent event
+// Package core holds the host's shared contracts: the agent event
 // stream, the wire/session message shapes, the message vocabulary, the
 // provider stream events, and the provider contract. Zero behavior, no
 // dependencies outside stdlib (factory-flow ADR, v0.11 arc 1b2).

@@ -71,7 +71,7 @@ import (
 // vocabulary (machine-critical, not toggleable - provider, store,
 // skills, tools, the loop) or module vocabulary (the opinionated
 // capsules). Module registrations must carry the capsule's own
-// namespace (Q10); built-in registrations are the engine's vocabulary
+// namespace (Q10); built-in registrations are the machine's vocabulary
 // and keep their natural names - both land on the same one-tenant
 // ledger, so the collision law holds across the boundary.
 func isBuiltin(p Plugin) bool {
@@ -427,7 +427,7 @@ func (api *ExtensionAPI) claim(name string) error {
 // domain name ("kanban", "memory", the one tool whose Actions carry
 // the verbs) or module.verb pairs ("delegate.task"); a built-in
 // capsule (provider, store, tools, the loop - machine-critical, in
-// the engine's vocabulary) registers its natural name ("shell.run",
+// the machine's vocabulary) registers its natural name ("shell.run",
 // "sessions.search"). Both land on the same one-tenant ledger; a
 // second tenant on a held tool name is a fail-loud error (Q5), and a
 // same-tenant re-registration replaces (Q7, the clean-idempotent

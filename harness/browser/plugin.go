@@ -13,7 +13,7 @@ import (
 
 // Plugin adapts the browser capsule into omega's plugin system. It
 // claims no seam: the browser pane is webui vocabulary (the dock tab,
-// the shell registry in engine/webui), and the module's whole surface
+// the shell registry in webui), and the module's whole surface
 // is the persistence route pair the tab drives. Toggleable like every
 // capsule - disabling it dies the routes (the live Context re-read),
 // the tab keeps working with an empty resume point.
