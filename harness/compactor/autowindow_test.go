@@ -82,10 +82,11 @@ func TestAutoWindowZeroFallsBack(t *testing.T) {
 	if w := c.window(); w != 0 {
 		t.Fatalf("window() = %d, want 0", w)
 	}
-	// BudgetWith falls back to DefaultContextWindow 8192; reserve
-	// 16384 > half, so effective = 4096; 4096 * 0.6 = 2457.
-	if got := c.config.BudgetWith(c.window()); got != 2457 {
-		t.Fatalf("budget = %d, want 2457", got)
+	// BudgetWith falls back to DefaultContextWindow 32768; reserve
+	// 16384 eats exactly half (not more), so effective = 16384;
+	// 16384 * 0.6 = 9830.
+	if got := c.config.BudgetWith(c.window()); got != 9830 {
+		t.Fatalf("budget = %d, want 9830", got)
 	}
 }
 
