@@ -6,8 +6,8 @@
        skills/tools tabs - the shared RegistryList (v0.14.1) renders
        every block but the period summary as read-only rows (no fold:
        showState=false), with the honest CSS bars riding the row's
-       #side slot. The same numbers the TUI prints, the browser
-       pattern's look. No chart dependency. -->
+       #side slot. The same numbers the /insights report prints, the
+       browser pattern's look. No chart dependency. -->
   <section class="pane insights">
     <!-- card t_308e6d9b: the UNIVERSAL band (the shared TabBand) - the
          window selector + recompute ride the band; card t_f1a034dc: the
@@ -65,7 +65,7 @@
     <div
       v-else-if="data"
       class="insights-body">
-      <!-- overview: the TUI report's Overview block - the period
+      <!-- overview: the /insights report's Overview block - the period
            summary keeps its stat rows; the rest of the body is the
            registry browser's list/row/interaction pattern (v0.14.3,
            the skills/tools tabs' shared RegistryList). -->
@@ -83,7 +83,8 @@
 
       <!-- activity by day: one registry row per weekday, the honest CSS
            bar rides the row's #side slot; the expanded detail names the
-           row's raw count (TUI parity: the same numbers the TUI prints) -->
+           row's raw count (parity: the same numbers the /insights
+           report prints) -->
       <h3 class="insights-group">activity by day</h3>
       <RegistryList
         kind="insights"
@@ -99,7 +100,8 @@
         </template>
       </RegistryList>
 
-      <!-- top tools (hidden when zero, like the TUI): registry rows with
+      <!-- top tools (hidden when zero, like the /insights report):
+           registry rows with
            call bars; the expanded detail carries the share of all calls -->
       <template v-if="data.tools.length">
         <h3 class="insights-group">top tools</h3>
@@ -118,7 +120,8 @@
         </RegistryList>
       </template>
 
-      <!-- notable sessions (hidden when zero, like the TUI): the label
+      <!-- notable sessions (hidden when zero, like the /insights
+           report): the label
            row expands into the row's own detail line -->
       <template v-if="notables.length">
         <h3 class="insights-group">notable sessions</h3>
@@ -154,7 +157,7 @@
   // load() fold; a user pick (30/90/all) wins for the tab's lifetime.
   const days = ref<number | null>(INSIGHTS_DEFAULT_DAYS);
 
-  // the fixed window literals (the TUI's /insights [days] arg): the band
+  // the fixed window literals (the /insights [days] arg): the band
   // select's options. days=0 is "all time" - the server's bare /insights
   // default (30) is deliberately NOT an option (card t_d7fd3ad3).
   const WINDOW_OPTIONS = [
@@ -173,7 +176,7 @@
   );
 
   // --- the registry-browser row models (v0.14.3, the skills/tools
-  // pattern on the TUI report's blocks): every block renders through
+  // pattern on the /insights report's blocks): every block renders through
   // the shared RegistryList - read-only rows (no fold), the #side slot
   // carries the honest CSS bar + count the plain name line can't. ---
   const dailyRows = computed<RegistryRow[]>(() =>
@@ -202,7 +205,8 @@
   );
 
   // notable sessions: a triple of [label, stat]; rows with value 0 are
-  // omitted - the TUI prints nothing for them, so neither does this.
+  // omitted - the /insights report prints nothing for them, so neither
+  // does this.
   const notables = computed(() => {
     if (!data.value) return [];
     return [
@@ -225,7 +229,7 @@
   const dailyMax = () => Math.max(...daily.value.map((d) => d.count), 1);
   const barPct = (c: number | undefined) => ((c ?? 0) / dailyMax()) * 100;
 
-  // thousands separators, matching the TUI's FormatNumber output
+  // thousands separators, matching the /insights report's format
   const count = (n: number | undefined): string =>
     (n ?? 0).toLocaleString("en-US");
 
@@ -348,7 +352,8 @@
   }
 
   /* the row's honest bar + count, riding the row's #side slot: the
-     same CSS-width bars the TUI prints, no chart dependency */
+     same CSS-width bars the /insights report prints, no chart
+     dependency */
   .insights-bar {
     flex: none;
     height: 8px;

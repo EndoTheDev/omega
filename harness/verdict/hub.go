@@ -1,7 +1,7 @@
 // Package verdict implements verdict cards v1 (card t_2ecf9c51): the
 // agent issues a question mid-turn, the turn HARD-PAUSES inside the
 // verdict tool, and the user answers by click (webui) or type
-// (TUI). Whichever surface answers first wins - the second answerer is
+// (the CLI loop). Whichever surface answers first wins - the second answerer is
 // rejected with a reason, never double-applied. Advisory in v1: the
 // verdict is recorded as session messages; the agent then acts through
 // its normal tools. Nothing on the card executes automatically.
@@ -222,7 +222,7 @@ func (h *Hub) Answer(sessionID, cardID string, v core.QuestionAnswer) (core.Ques
 		}
 		// session boundary: a known card from another session cannot be
 		// answered through this session's surface (the URL is the
-		// boundary, v1). Empty sessionID trusts the card id (the TUI's
+		// boundary, v1). Empty sessionID trusts the card id (the /verdict
 		// /verdict command answers without a session context).
 		if sessionID != "" && c.prompt.SessionID != sessionID {
 			h.mu.Unlock()

@@ -207,8 +207,8 @@
             :open="isMobile ? inspectorOpen : false" />
         </template>
         <!-- card t_14f73742: the extensions inventory joins the inspector -
-             the webui parity of the TUI /extensions command. A SHELL tab
-             over GET /extensions (composition ruling in extensionsRows.ts):
+             a module-command surface (/extensions on the seam). A SHELL
+             tab over GET /extensions (composition ruling in extensionsRows.ts):
              has-ui rows emit open-module and openModuleTab routes to the
              module's inspector tab. /help parity: the webui has no
              slash-command bar - this tab IS the /extensions surface. -->
@@ -910,8 +910,8 @@
   // --- the webui shell commands (t_07aed3f9) ---
   //
   // runCommand is the palette's local executor: "/" never reaches the
-  // agent. Every verb is a webui-native equivalent of the TUI's local
-  // handler set (minus /exit - nothing to quit). The command output
+  // agent. Every verb is a webui-native local handler
+  // (minus /exit - nothing to quit). The command output
   // rides the tab's statusLine like every other notice. The function
   // is hoisted above createChatHost only because it closes over `host`
   // (retry); invocations happen after both exist, so the TDZ never

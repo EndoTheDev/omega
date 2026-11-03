@@ -208,7 +208,7 @@ func (p *Plugin) handleCommand(name, args string) (core.CommandResult, error) {
 	return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
 }
 
-// --- session-scoped active board (small, mutexed; the TUI command
+// --- session-scoped active board (small, mutexed; the command
 // handler and agent tool calls run on different goroutines)
 
 func (p *Plugin) sessionBoard() string {
