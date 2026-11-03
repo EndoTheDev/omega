@@ -3,7 +3,7 @@ package cron
 // Module-owned command surface (card t_0744eb8e): /cron belongs to the
 // cron module - the same law that owns harness/cron/ui/CronJobs.vue on
 // the webui. The command reads the same seam the webui Cron tab reads
-// (core.CronLister over the runner mounted into Context.Cron); no
+// ( over the runner mounted into Context.Cron); no
 // storage is reimplemented and nothing writes.
 
 import (
@@ -18,14 +18,14 @@ import (
 // cronHandler lists the cron jobs. A missing scheduler or a provider
 // without the listing reads as an empty job set - an unconfigured
 // scheduler is a normal state, not a missing feature.
+// The /cron command reads the runner's own job list (the capsule is
+// its only consumer; the webui tab reads the same rows over the wire).
 func cronHandler(p *Plugin) func(context.Context, string, string) (core.CommandResult, error) {
 	return func(_ context.Context, _ string, _ string) (core.CommandResult, error) {
-		jobs := []core.CronJobInfo{}
+		jobs := []JobInfo{}
 		if p.runner != nil {
-			if lister, ok := p.runner.(core.CronLister); ok {
-				if got := lister.Jobs(); got != nil {
-					jobs = got
-				}
+			if got := p.runner.Jobs(); got != nil {
+				jobs = got
 			}
 		}
 		if len(jobs) == 0 {
@@ -40,8 +40,8 @@ func cronHandler(p *Plugin) func(context.Context, string, string) (core.CommandR
 // Next shown as "-", kind carried next to the schedule (interval rows
 // speak minutes, cron rows the 5-field expression). Pure on jobs (the
 // renderer's copy is sorted).
-func renderCronTable(jobs []core.CronJobInfo) string {
-	out := append([]core.CronJobInfo(nil), jobs...)
+func renderCronTable(jobs []JobInfo) string {
+	out := append([]JobInfo(nil), jobs...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	nameW, schedW, agentW := len("NAME"), len("SCHEDULE"), len("AGENT")
 	for _, j := range out {
@@ -78,7 +78,7 @@ func renderCronTable(jobs []core.CronJobInfo) string {
 
 // cadenceText renders the row's firing cadence: the 5-field expression
 // for kind cron, the minute interval for kind interval.
-func cadenceText(j core.CronJobInfo) string {
+func cadenceText(j JobInfo) string {
 	if j.Kind == "interval" {
 		return fmt.Sprintf("%dm", j.Minutes)
 	}

@@ -15,10 +15,10 @@ import (
 func TestEphemeralSessionNeverPersisted(t *testing.T) {
 	st := newFakeStore()
 	h := NewHub(st, nil)
-	card := core.VerdictPrompt{ID: "c1", SessionID: "eph-abc123", Title: "ok?", Options: vo("yes")}
+	card := core.QuestionPrompt{ID: "c1", SessionID: "eph-abc123", Title: "ok?", Options: vo("yes")}
 	ch := askAsync(t, h, card)
 	waitForPending(t, h, "eph-abc123", 1)
-	if _, err := h.Answer("eph-abc123", "c1", core.Verdict{OptionIndex: 1}); err != nil {
+	if _, err := h.Answer("eph-abc123", "c1", core.QuestionAnswer{OptionIndex: 1}); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 	r := drain(t, ch)

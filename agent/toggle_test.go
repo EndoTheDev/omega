@@ -287,7 +287,7 @@ func TestToggleRemountPanicRollsBackAndRejects(t *testing.T) {
 type emitterProbeCapsule struct {
 	name   string
 	counts *int
-	seen   *core.NotificationsProvider
+	seen   *any
 }
 
 func (c *emitterProbeCapsule) Name() string       { return c.name }
@@ -299,13 +299,13 @@ func (c *emitterProbeCapsule) Mount(*core.Context) error {
 }
 
 func (c *emitterProbeCapsule) MountWithAPI(_ *core.Context, api *ExtensionAPI) error {
-	if err := api.RegisterNotifications(plugNotifier{}); err != nil {
+	if err := api.Offer("notifications", plugNotifier{}); err != nil {
 		return err
 	}
 	counts, seen := c.counts, c.seen
-	return api.RegisterEmitter(func(n core.NotificationsProvider) {
+	return api.RegisterEmitter(func(svc any) {
 		*counts++
-		*seen = n
+		*seen = svc
 	})
 }
 
@@ -315,7 +315,7 @@ func TestRemountReplaysEmitter(t *testing.T) {
 	// toggle cycle must replay them - or the module's finished-things
 	// handoff stays nil until the next restart.
 	counts := 0
-	var seen core.NotificationsProvider
+	var seen any
 	ctx := &core.Context{}
 	reg, err := MountAllAPI([]Plugin{&emitterProbeCapsule{name: "mod", counts: &counts, seen: &seen}}, ctx, nil, nil)
 	if err != nil {

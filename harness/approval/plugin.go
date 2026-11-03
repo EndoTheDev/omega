@@ -50,8 +50,14 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// One hub per Context is the single-answer race; the gate reads it
 	// live so a seam rewire is visible at ask time (verdicts mount
 	// before approvals by the Requires edge).
-	verdicts := func() core.VerdictsProvider { return ctx.Verdicts }
-	notes := func() core.NotificationsProvider { return ctx.Notifications }
+	verdicts := func() verdictHub {
+		h, _ := ctx.Services().Resolve("verdicts").(verdictHub)
+		return h
+	}
+	notes := func() finishedThings {
+		n, _ := ctx.Services().Resolve("notifications").(finishedThings)
+		return n
+	}
 	p.gate = NewGate(cfg, verdicts, notes, ctx.Logger)
 	if err := api.RegisterApprovals(p.gate); err != nil {
 		return err

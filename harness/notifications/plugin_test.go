@@ -28,8 +28,26 @@ func mountCtx(t *testing.T, ctx *core.Context) (*Plugin, *core.Context) {
 	return p, ctx
 }
 
+// seamBoard is the test's own consumer face (part 3): the methods the
+// tests drive on the offered store, resolved by key.
+type seamBoard interface {
+	Emit(n core.Notice) (core.Notice, error)
+	List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notice, int, error)
+	MarkRead(ctx context.Context, id int64) error
+	MarkAllRead(ctx context.Context) error
+}
+
+func offeredSeam(t *testing.T, ctx *core.Context) seamBoard {
+	t.Helper()
+	svc, _ := ctx.Services().Resolve("notifications").(seamBoard)
+	if svc == nil {
+		t.Fatal("seam mismatch: the notifications offer is nil after the api mount")
+	}
+	return svc
+}
+
 // TestMountWiresSeamAndCommand: a home-backed mount opens the store,
-// fills ctx.Notifications, and answers the read-only /notifications
+// offers the notifications seam, and answers the read-only /notifications
 // TUI command (card t_5d9032d3).
 func TestMountWiresSeamAndCommand(t *testing.T) {
 	home := t.TempDir()
@@ -37,10 +55,8 @@ func TestMountWiresSeamAndCommand(t *testing.T) {
 	ctx := &core.Context{Configs: map[string]any{}}
 	bg := context.Background()
 	_, ctx = mountCtx(t, ctx)
-	if ctx.Notifications == nil {
-		t.Fatalf("mount did not fill the seam")
-	}
-	if _, err := ctx.Notifications.Emit(core.Notification{Kind: "cron", SourceID: "nightly", Title: "cron nightly finished", Verdict: "failed"}); err != nil {
+	seam := offeredSeam(t, ctx)
+	if _, err := seam.Emit(core.Notice{Kind: "cron", SourceID: "nightly", Title: "cron nightly finished", Verdict: "failed"}); err != nil {
 		t.Fatalf("emit: %v", err)
 	}
 
@@ -56,7 +72,7 @@ func TestMountWiresSeamAndCommand(t *testing.T) {
 	}
 
 	// unread-only arg filters
-	ctx.Notifications.MarkAllRead(bg)
+	seam.MarkAllRead(bg)
 	res, err = ctx.CommandHandler(bg, "/notifications", "unread")
 	if err != nil {
 		t.Fatalf("command unread: %v", err)
@@ -77,9 +93,7 @@ func TestMountWithAPIShape(t *testing.T) {
 	ctx := &core.Context{Configs: map[string]any{}}
 	_, ctx = mountCtx(t, ctx)
 
-	if ctx.Notifications == nil {
-		t.Fatal("seam mismatch: ctx.Notifications is nil after the api mount")
-	}
+	offeredSeam(t, ctx) // the loud mismatch naming the face
 	// the panels: one live provider, two module-qualified panels with
 	// namespaced action ids
 	if len(ctx.PanelProviders) != 1 {
@@ -136,11 +150,8 @@ func TestMountWithConfigPathOverride(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	ctx := &core.Context{Configs: map[string]any{"notifications": Config{DBPath: dbPath}}}
 	_, ctx = mountCtx(t, ctx)
-	if ctx.Notifications == nil {
-		t.Fatalf("seam not mounted on a config path")
-	}
-	e, ok := ctx.Notifications.(*emittingStore)
+	e, ok := ctx.Services().Resolve("notifications").(*emittingStore)
 	if !ok || e.store.db == nil {
-		t.Fatalf("unexpected seam implementation: %T", ctx.Notifications)
+		t.Fatalf("unexpected seam implementation")
 	}
 }

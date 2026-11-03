@@ -60,8 +60,8 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// end, nil when the module is absent (nil is legal - the emitter
 	// is nil-safe by the classic law).
 	d := p.delegate
-	if err := api.RegisterEmitter(func(n core.NotificationsProvider) {
-		d.notifier = n
+	if err := api.RegisterEmitter(func(svc any) {
+		d.notifier, _ = svc.(finishedThings)
 	}); err != nil {
 		return err
 	}

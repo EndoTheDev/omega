@@ -18,9 +18,10 @@ type AtMentionEnv struct {
 	// Store backs @session:<id> history injection. Nil leaves those
 	// tokens untouched.
 	Store StoreProvider
-	// Skills backs @skill:<name> content injection. Nil/empty leaves
-	// those tokens untouched.
-	Skills []Skill
+	// Docs backs @skill:<name> content injection - name/content pairs
+	// the caller resolved from the mounted skill capsule. Nil/empty
+	// leaves those tokens untouched.
+	Docs []AtDoc
 	// DetectImage decides file-vs-image (the ai package owns the magic
 	// byte sniffing). Nil skips detection; files then inline as text.
 	DetectImage func(path string) (*ImageContent, error)
@@ -37,6 +38,14 @@ type AtMentionEnv struct {
 	// webui submit path sets this (its composer attaches PATHS), the
 	// CLI loop keeps the inline law.
 	ReferenceOnly bool
+}
+
+// AtDoc is one resolved document entry the @-mention expansion
+// injects by name: the caller resolved it from whatever capsule owns
+// the inventory (consumer-side data, no shared seam type).
+type AtDoc struct {
+	Name    string
+	Content string
 }
 
 // AtFilePattern matches @<non-space> tokens in a text string.
@@ -116,9 +125,9 @@ func atMentionToken(token string, env AtMentionEnv) (string, *ImageContent, int,
 	// card t_7f09bd0c turns only the FILE branches literal.)
 	if strings.HasPrefix(path, "skill:") {
 		skillName := path[6:]
-		for _, s := range env.Skills {
-			if s.Name == skillName {
-				return s.Content, nil, atResolved, nil
+		for _, d := range env.Docs {
+			if d.Name == skillName {
+				return d.Content, nil, atResolved, nil
 			}
 		}
 		return token, nil, atLiteral, nil // skill not found, sent as-is

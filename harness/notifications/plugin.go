@@ -85,7 +85,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// ships no store, no panels, no toasts, no wiring - removal kills
 	// all of it together.
 	p.capsule = newCapsule(s)
-	if err := api.RegisterNotifications(&emittingStore{store: s, capsule: p.capsule}); err != nil {
+	if err := api.Offer("notifications", &emittingStore{store: s, capsule: p.capsule}); err != nil {
 		return err
 	}
 	if err := api.RegisterPanelProvider(p.capsule); err != nil {

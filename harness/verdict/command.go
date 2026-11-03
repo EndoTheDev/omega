@@ -62,38 +62,38 @@ func verdictHandler(p *Plugin) func(context.Context, string, string) (core.Comma
 	}
 }
 
-// ParseCardAnswer maps one free-typed line to a core.Verdict for the
+// ParseCardAnswer maps one free-typed line to a core.QuestionAnswer for the
 // answering surface's busy-time path: option number / comma-multi /
 // y-n / skip / free text, exactly the /verdict N <answer> contract.
-func ParseCardAnswer(card core.VerdictPrompt, input string) (core.Verdict, error) {
+func ParseCardAnswer(card core.QuestionPrompt, input string) (core.QuestionAnswer, error) {
 	return parseVerdictAnswer(card, strings.Fields(input))
 }
 
 // parseVerdictAnswer implements the typed-token contract above.
-func parseVerdictAnswer(card core.VerdictPrompt, rest []string) (core.Verdict, error) {
+func parseVerdictAnswer(card core.QuestionPrompt, rest []string) (core.QuestionAnswer, error) {
 	tok := strings.TrimSpace(strings.Join(rest, " "))
 	if tok == "" {
-		return core.Verdict{}, fmt.Errorf("empty answer")
+		return core.QuestionAnswer{}, fmt.Errorf("empty answer")
 	}
 	switch strings.ToLower(tok) {
 	case "skip", "dismiss", "s":
-		return core.Verdict{Skipped: true}, nil
+		return core.QuestionAnswer{Skipped: true}, nil
 	case "y", "yes":
 		if err := ensureNotMulti(card); err != nil {
-			return core.Verdict{}, err
+			return core.QuestionAnswer{}, err
 		}
 		if len(card.Options) == 0 {
-			return core.Verdict{}, fmt.Errorf("this card has no y/n options")
+			return core.QuestionAnswer{}, fmt.Errorf("this card has no y/n options")
 		}
-		return core.Verdict{OptionIndex: 1, Option: card.Options[0].Label}, nil
+		return core.QuestionAnswer{OptionIndex: 1, Option: card.Options[0].Label}, nil
 	case "n", "no":
 		if err := ensureNotMulti(card); err != nil {
-			return core.Verdict{}, err
+			return core.QuestionAnswer{}, err
 		}
 		if len(card.Options) < 2 {
-			return core.Verdict{}, fmt.Errorf("this card has no 'no' option")
+			return core.QuestionAnswer{}, fmt.Errorf("this card has no 'no' option")
 		}
-		return core.Verdict{OptionIndex: 2, Option: card.Options[1].Label}, nil
+		return core.QuestionAnswer{OptionIndex: 2, Option: card.Options[1].Label}, nil
 	}
 	// a multi card takes a comma-separated pick list ("1,3"); a lone
 	// number ("2") is the one-row multi-select.
@@ -102,22 +102,22 @@ func parseVerdictAnswer(card core.VerdictPrompt, rest []string) (core.Verdict, e
 			labels := make([]string, 0, len(ixs))
 			for _, ix := range ixs {
 				if ix < 1 || ix > len(card.Options) {
-					return core.Verdict{}, fmt.Errorf("option %d is out of range (1..%d)", ix, len(card.Options))
+					return core.QuestionAnswer{}, fmt.Errorf("option %d is out of range (1..%d)", ix, len(card.Options))
 				}
 				labels = append(labels, card.Options[ix-1].Label)
 			}
-			return core.Verdict{OptionIndexes: ixs, Options: labels}, nil
+			return core.QuestionAnswer{OptionIndexes: ixs, Options: labels}, nil
 		}
 	} else if n, err := strconv.Atoi(tok); err == nil {
 		if n < 1 || n > len(card.Options) {
-			return core.Verdict{}, fmt.Errorf("option %d is out of range (1..%d)", n, len(card.Options))
+			return core.QuestionAnswer{}, fmt.Errorf("option %d is out of range (1..%d)", n, len(card.Options))
 		}
-		return core.Verdict{OptionIndex: n, Option: card.Options[n-1].Label}, nil
+		return core.QuestionAnswer{OptionIndex: n, Option: card.Options[n-1].Label}, nil
 	}
 	if len(card.Options) > 0 && !card.AllowText {
-		return core.Verdict{}, fmt.Errorf("this card takes an option number, not free text")
+		return core.QuestionAnswer{}, fmt.Errorf("this card takes an option number, not free text")
 	}
-	return core.Verdict{Text: tok}, nil
+	return core.QuestionAnswer{Text: tok}, nil
 }
 
 // parseOptionIndexes parses a comma-separated pick list ("1,3"). It
@@ -139,14 +139,14 @@ func parseOptionIndexes(tok string) ([]int, error) {
 
 // ensureNotMulti rejects single-pick tokens (y/n/one number) on a
 // multi card, so a single tap can never silently under-answer.
-func ensureNotMulti(card core.VerdictPrompt) error {
+func ensureNotMulti(card core.QuestionPrompt) error {
 	if card.Multi {
 		return fmt.Errorf("this card is multi-select: pick numbers, e.g. /verdict N 1,3")
 	}
 	return nil
 }
 
-func formatCardList(cards []core.VerdictPrompt) string {
+func formatCardList(cards []core.QuestionPrompt) string {
 	var sb strings.Builder
 	for i, c := range cards {
 		fmt.Fprintf(&sb, "%d. [%s] %s\n", i+1, shortID(c.ID), c.Title)
@@ -163,7 +163,7 @@ func formatCardList(cards []core.VerdictPrompt) string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-func formatCard(c core.VerdictPrompt) string {
+func formatCard(c core.QuestionPrompt) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%s", c.Title)
 	if c.Multi {
@@ -185,7 +185,7 @@ func formatCard(c core.VerdictPrompt) string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-func formatVerdict(card core.VerdictPrompt, v core.Verdict) string {
+func formatVerdict(card core.QuestionPrompt, v core.QuestionAnswer) string {
 	switch {
 	case v.Skipped:
 		return "skipped: " + card.Title

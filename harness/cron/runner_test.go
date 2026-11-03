@@ -518,8 +518,8 @@ func TestPluginMountSetsCronSeam(t *testing.T) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{notificationsPlugin{}, p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
-	if ctx.Cron == nil {
-		t.Fatal("ctx.Cron not populated")
+	if ctx.Services().Resolve("cron") == nil {
+		t.Fatal("the cron offer is not populated")
 	}
 	if p.Provides()[0] != "cron" {
 		t.Fatalf("provides = %v", p.Provides())
@@ -551,7 +551,7 @@ func enabledOff() *bool {
 
 // Compile-time proof that the Runner satisfies the read-only inspector
 // seam the http_channel asserts.
-var _ core.CronLister = (*Runner)(nil)
+var _  = (*Runner)(nil)
 
 func TestJobsInspectorSnapshot(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(),

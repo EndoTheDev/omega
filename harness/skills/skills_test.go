@@ -14,11 +14,12 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// Compile-time interface checks.
+// Compile-time interface checks. The seam interfaces are consumer-owned
+// now (part 3): the provider proves the std-typed faces the serving
+// surface and the host registry assert structurally.
 var (
-	_ core.SkillsProvider = (*SkillsProvider)(nil)
-	_ core.ToolProvider   = (*SkillsProvider)(nil)
-	_ agent.Plugin        = (*Plugin)(nil)
+	_ core.ToolProvider = (*SkillsProvider)(nil)
+	_ agent.Plugin      = (*Plugin)(nil)
 )
 
 // makeSkillDir creates a temp skills directory with one skill in the
@@ -244,8 +245,8 @@ func TestPluginMount(t *testing.T) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logging"}, stubProviderPlugin{}, p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
-	if ctx.Skills == nil {
-		t.Fatal("Skills slot not populated")
+	if ctx.Services().Resolve("skills") == nil {
+		t.Fatal("the skills offer is not populated")
 	}
 	if len(ctx.ToolProviders) != 1 {
 		t.Fatalf("expected 1 tool provider, got %d", len(ctx.ToolProviders))
@@ -478,11 +479,11 @@ func TestPluginMountWithDirConfig(t *testing.T) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logging"}, stubProviderPlugin{}, p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount with config: %v", err)
 	}
-	if ctx.Skills == nil {
-		t.Fatal("Skills slot not populated")
+	if ctx.Services().Resolve("skills") == nil {
+		t.Fatal("the skills offer is not populated")
 	}
 	// Verify the provider uses the configured dir by loading skills.
-	sp, ok := ctx.Skills.(*SkillsProvider)
+	sp, ok := ctx.Services().Resolve("skills").(*SkillsProvider)
 	if !ok {
 		t.Fatal("expected *SkillsProvider")
 	}
@@ -561,10 +562,13 @@ func TestListSkillsMissingDirIsEmpty(t *testing.T) {
 	}
 }
 
-// Compile-time proof that the provider satisfies the read-only
-// inspector seam the http_channel asserts.
+// Compile-time proof that the provider satisfies the std-typed faces
+// the consumers assert (part 3: the inspector inventory view; the seam
+// interfaces themselves are consumer-owned).
 func TestSkillsProviderImplementsSkillsLister(t *testing.T) {
-	var _ core.SkillsLister = (*SkillsProvider)(nil)
+	var _ interface {
+		SkillsEntries() (index map[string]string, contents map[string]string, err error)
+	} = (*SkillsProvider)(nil)
 }
 
 // --- the write + update actions (t_e06b38bc part 3) ---

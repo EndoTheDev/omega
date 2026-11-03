@@ -11,10 +11,10 @@ import (
 // fakeNotifier records Emit calls (core.NotificationsProvider).
 type fakeNotifier struct {
 	mu  sync.Mutex
-	got []core.Notification
+	got []core.Notice
 }
 
-func (f *fakeNotifier) Emit(n core.Notification) (core.Notification, error) {
+func (f *fakeNotifier) Emit(n core.Notice) (core.Notice, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n.ID = int64(len(f.got) + 1)
@@ -22,13 +22,13 @@ func (f *fakeNotifier) Emit(n core.Notification) (core.Notification, error) {
 	f.got = append(f.got, n)
 	return n, nil
 }
-func (f *fakeNotifier) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notification, int, error) {
+func (f *fakeNotifier) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notice, int, error) {
 	return nil, 0, nil
 }
 func (f *fakeNotifier) MarkRead(ctx context.Context, id int64) error { return nil }
 func (f *fakeNotifier) MarkAllRead(ctx context.Context) error        { return nil }
-func (f *fakeNotifier) Subscribe() (<-chan core.Notification, func()) {
-	ch := make(chan core.Notification, 4)
+func (f *fakeNotifier) Subscribe() (<-chan core.Notice, func()) {
+	ch := make(chan core.Notice, 4)
 	return ch, func() {}
 }
 

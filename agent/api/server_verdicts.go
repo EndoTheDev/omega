@@ -26,7 +26,7 @@ type verdictCardWire struct {
 	SessionID string               `json:"session_id"`
 	Title     string               `json:"title"`
 	Body      string               `json:"body,omitempty"`
-	Options   []core.VerdictOption `json:"options,omitempty"`
+	Options   []core.QuestionOption `json:"options,omitempty"`
 	Multi     bool                 `json:"multi,omitempty"`
 	AllowText bool                 `json:"allow_text,omitempty"`
 	TimeoutS  int                  `json:"timeout_s,omitempty"`
@@ -64,7 +64,7 @@ func (s *Server) handleVerdicts(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if s.Verdicts() == nil {
+	if s.cards() == nil {
 		http.Error(w, "verdicts seam not mounted", http.StatusNotImplemented)
 		return
 	}
@@ -86,7 +86,7 @@ func (s *Server) handleVerdicts(w http.ResponseWriter, r *http.Request) {
 // /sessions/{id}/verdicts (one session): the pending cards, oldest
 // first, that the bell counts and the webui re-renders after a reload.
 func (s *Server) serveVerdictsList(w http.ResponseWriter, r *http.Request, sessionID string) {
-	cards := s.Verdicts().Pending(sessionID)
+	cards := s.cards().Pending(sessionID)
 	out := make([]verdictCardWire, 0, len(cards))
 	for _, c := range cards {
 		out = append(out, toVerdictWire(c))
@@ -116,14 +116,14 @@ func (s *Server) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, sess
 		http.Error(w, fmt.Sprintf("message over the %d character cap", maxVerdictMessage), http.StatusBadRequest)
 		return
 	}
-	v := core.Verdict{
+	v := core.QuestionAnswer{
 		OptionIndexes: req.OptionIndexes,
 		OptionIndex:   req.OptionIndex,
 		Option:        req.Option,
 		Text:          text,
 		Skipped:       req.Skip,
 	}
-	answered, err := s.Verdicts().Answer(sessionID, req.CardID, v)
+	answered, err := s.cards().Answer(sessionID, req.CardID, v)
 	if err != nil {
 		// settled cards (answered/skipped/expired) race to 409 with the
 		// reason; unknown / no-pending-card is 404. The message names the
@@ -163,7 +163,7 @@ func (s *Server) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, sess
 }
 
 // toVerdictWire maps one runtime card to its wire shape.
-func toVerdictWire(c core.VerdictPrompt) verdictCardWire {
+func toVerdictWire(c core.QuestionPrompt) verdictCardWire {
 	exp := int64(0)
 	if !c.ExpiresAt.IsZero() {
 		exp = c.ExpiresAt.UnixMilli()

@@ -573,7 +573,7 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent
 		MaxToolOutput: cfg.Compaction.MaxToolOutput,
 		PromptCustom:  cfg.SystemPrompt,
 		PromptAppend:  appendPrompts,
-		PromptContext: trustGate(ctx.Trust, cwd(), trust, false),
+		PromptContext: trustGate(ctx, cwd(), trust, false),
 		CWD:           cwd(),
 	})
 
@@ -734,8 +734,8 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 			fmt.Fprintf(os.Stderr, "omega: channel stop error: %v\n", err)
 		}
 	}
-	if pctx.Cron != nil {
-		if err := pctx.Cron.Stop(); err != nil {
+	if cron, ok := pctx.Services().Resolve("cron").(interface{ Stop() error }); ok {
+		if err := cron.Stop(); err != nil {
 			fmt.Fprintf(os.Stderr, "omega: cron stop error: %v\n", err)
 		}
 	}
@@ -830,9 +830,9 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 	// non-interactive origin - a subagent must not hard-pause
 	// waiting for a click its parent surface would have to surface.
 	if os.Getenv("OMEGA_SUBAGENT") != "" {
-		ctx = core.WithRunOrigin(ctx, core.RunOriginDelegate)
+		ctx = core.WithRunOrigin(ctx, "delegate")
 	} else {
-		ctx = core.WithRunOrigin(ctx, core.RunOriginInteractive)
+		ctx = core.WithRunOrigin(ctx, "interactive")
 	}
 
 	var userMsg core.Message

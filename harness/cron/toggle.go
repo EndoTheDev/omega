@@ -23,7 +23,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/EndoTheDev/omega/core"
 )
 
 // cronToggler is the write face the panel's toggle rides: the runner's
@@ -31,7 +30,7 @@ import (
 // return the fresh job set). Separate interface - reading the jobs and
 // writing their flags stay different concerns, the CronLister law.
 type cronToggler interface {
-	ToggleJob(key string, enabled bool) ([]core.CronJobInfo, error)
+	ToggleJob(key string, enabled bool) ([]JobInfo, error)
 }
 
 // jobToggleRequest is the POST /cron/toggle body: one job key (the
@@ -62,7 +61,7 @@ func (e UnknownJobError) Unknown() bool { return true }
 // job set (the wire contract: one response carries the state it
 // landed - no second GET). An unknown key errors without writing a
 // byte.
-func (r *Runner) ToggleJob(key string, enabled bool) ([]core.CronJobInfo, error) {
+func (r *Runner) ToggleJob(key string, enabled bool) ([]JobInfo, error) {
 	job, ok := r.jobByKey(key)
 	if !ok {
 		return nil, UnknownJobError{Key: key}
@@ -191,8 +190,8 @@ func (p *Plugin) handleToggle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	toggler, ok := p.runner.(cronToggler)
-	if !ok || toggler == nil {
+	toggler := cronToggler(p.runner)
+	if toggler == nil {
 		http.Error(w, "cron toggle: no cron runner mounted", http.StatusNotImplemented)
 		return
 	}

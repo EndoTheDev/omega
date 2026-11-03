@@ -41,7 +41,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		cfg = c
 	}
 	fm := NewFileMemory(cfg)
-	if err := api.RegisterMemory(fm); err != nil {
+	if err := api.Offer("memory", fm); err != nil {
 		return err
 	}
 	for name, tool := range (&memoryToolProvider{mem: fm}).Tools() {

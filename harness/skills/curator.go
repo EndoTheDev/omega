@@ -521,15 +521,15 @@ func splitFrontmatter(content string) (front, body string) {
 
 // loadSkillFromContent parses a composed SKILL.md the way loadSkill
 // parses a file (the shape gate for curator-composed content).
-func loadSkillFromContent(name, content string) (core.Skill, error) {
+func loadSkillFromContent(name, content string) (Skill, error) {
 	tmp, err := os.CreateTemp("", name+"-*.md")
 	if err != nil {
-		return core.Skill{}, err
+		return Skill{}, err
 	}
 	defer os.Remove(tmp.Name())
 	if _, err := tmp.WriteString(content); err != nil {
 		tmp.Close()
-		return core.Skill{}, err
+		return Skill{}, err
 	}
 	tmp.Close()
 	s, err := loadSkill(tmp.Name())

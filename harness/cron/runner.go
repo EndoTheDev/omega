@@ -29,22 +29,32 @@ const cronStateFileName = "cronstate.json"
 // stateFileName is the job source watched for hot reload.
 const stateFileName = "crons.yaml"
 
+// runOriginScheduled tags fires as background runs (the launch value
+// the verdict tool and the approval gate compare - the word stays
+// "cron" on the wire, the identifier stays free of the capsule noun).
+const runOriginScheduled = "cron"
+
 // cronState is the on-disk shape of cronstate.json.
 type cronState struct {
 	Jobs map[string]int64 `json:"jobs"` // name -> last covered scheduled time (unix)
 }
 
-// Runner implements core.CronProvider. Safe for concurrent use.
+// Runner is the scheduler. Safe for concurrent use.
 type Runner struct {
 	home   string
 	cfg    *Config // initial jobs, from Mount
 	logger core.LoggerProvider
-	memory core.MemoryProvider
+	// memory is the consumer-side face of the memory capsule's store
+	// (part 3): only the methods the deliver target calls, resolved
+	// from the universal registry at Start. Nil-safe: no capsule, no
+	// delivery (the loop logs and continues).
+	memory memoryStore
 	ag     *core.Agent
 	store  core.StoreProvider
-	// notifier is the finished-things seam, read from deps.Ctx at
-	// Start (card t_5d9032d3). Nil-safe: no seam, no emission.
-	notifier core.NotificationsProvider
+	// notifier is the finished-things emitter face, resolved from the
+	// universal registry at Start (card t_5d9032d3). Nil-safe: no
+	// capsule, no emission.
+	notifier finishedThings
 	// tickEmit is the event-spine wake-tick emitter, wired from
 	// deps.Ctx at Start (card t_72ecca67). Nil = the spine has no
 	// emitter (never started, or no Context): agent wakes go inert.
@@ -92,12 +102,34 @@ func NewRunner(cfg *Config, home string) *Runner {
 	return r
 }
 
+// runnerDeps carries what the Start arms the runner with: the host's
+// StartDeps values reshaped by the plugin (the capsule owns the shape;
+// the host knows StartDeps).
+type runnerDeps struct {
+	Ctx   *core.Context
+	Agent *core.Agent
+	Store core.StoreProvider
+}
+
+// memoryStore is the consumer-side face of the memory capsule (part 3
+// seam constitution): just the method the deliver target calls. The
+// memory capsule satisfies it structurally; no shared type exists.
+type memoryStore interface {
+	Add(target, content string) (usage string, err error)
+}
+
+// finishedThings is the consumer-side face of the finished-things
+// store: just the emit method.
+type finishedThings interface {
+	Emit(n core.Notice) (core.Notice, error)
+}
+
 // Start runs the scheduler until the context is cancelled or Stop is
-// called. Implements core.CronProvider. deps carries the agent,
-// store, memory seam, and logger captured at host wiring time.
-func (r *Runner) Start(ctx context.Context, deps core.CronDeps) error {
+// called. deps carries the agent, store, memory, and finished-things
+// faces resolved at host wiring time.
+func (r *Runner) Start(ctx context.Context, deps runnerDeps) error {
 	if deps.Ctx != nil {
-		r.memory = deps.Ctx.Memory
+		r.memory, _ = deps.Ctx.Services().Resolve("memory").(memoryStore)
 		if r.logger == nil {
 			r.logger = deps.Ctx.Logger
 		}
@@ -112,7 +144,7 @@ func (r *Runner) Start(ctx context.Context, deps core.CronDeps) error {
 	r.ag = deps.Agent
 	r.store = deps.Store
 	if deps.Ctx != nil {
-		r.notifier = deps.Ctx.Notifications
+		r.notifier, _ = deps.Ctx.Services().Resolve("notifications").(finishedThings)
 	}
 
 	r.loadCronState()
@@ -141,7 +173,7 @@ func (r *Runner) Start(ctx context.Context, deps core.CronDeps) error {
 	return nil
 }
 
-// Stop shuts the scheduler down (core.CronProvider). Safe to call
+// Stop shuts the scheduler down (the scheduler). Safe to call
 // multiple times.
 func (r *Runner) Stop() error {
 	select {
@@ -280,7 +312,7 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	defer cancel()
 	// Verdict cards v1 (card t_2ecf9c51): a cron fire is a background
 	// turn - the verdict tool refuses to hard-pause from this origin.
-	turnCtx = core.WithRunOrigin(turnCtx, core.RunOriginCron)
+	turnCtx = core.WithRunOrigin(turnCtx, runOriginScheduled)
 
 	final, runErr := r.runTurn(turnCtx, sessionID, job)
 	if runErr != nil {
@@ -309,7 +341,7 @@ func (r *Runner) emitFinished(jobName string, ok bool) {
 	if !ok {
 		verdict = "failed"
 	}
-	_, _ = r.notifier.Emit(core.Notification{
+	_, _ = r.notifier.Emit(core.Notice{
 		Kind:     "cron",
 		SourceID: jobName,
 		Title:    "cron " + jobName + " finished",
@@ -624,19 +656,19 @@ func (r *Runner) jobsSnapshot() []Job {
 	return append([]Job(nil), r.jobs...)
 }
 
-// Jobs is the read-only inspector snapshot (core.CronLister, card
+// Jobs is the read-only inspector snapshot (, card
 // t_db430fea): every job in the current config with its enablement and
 // next fire time in RFC3339 local time, sorted by name. A disabled job
 // and a job whose schedule does not parse (validated at load, so
 // unexpected) report an empty Next. Works before Start - the job set
 // exists the moment the plugin mounts, whether or not the scheduler
 // has been started by the host.
-func (r *Runner) Jobs() []core.CronJobInfo {
+func (r *Runner) Jobs() []JobInfo {
 	jobs := r.jobsSnapshot()
 	now := r.now()
-	out := make([]core.CronJobInfo, 0, len(jobs))
+	out := make([]JobInfo, 0, len(jobs))
 	for _, j := range jobs {
-		row := core.CronJobInfo{
+		row := JobInfo{
 			Name:     j.Name,
 			Kind:     j.KindResolved(),
 			Schedule: j.Schedule,

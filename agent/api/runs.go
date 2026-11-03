@@ -345,7 +345,7 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov llm.Prov
 		ctx = agent.WithSessionID(ctx, req.SessionID)
 		// Verdict cards v1 (card t_2ecf9c51): a webui /chat is an
 		// interactive turn - the verdict tool may issue from here.
-		ctx = core.WithRunOrigin(ctx, core.RunOriginInteractive)
+		ctx = core.WithRunOrigin(ctx, "interactive")
 		// Turn copy persistence belongs to the loop (card t_471f6d4a),
 		// same wiring as the inline path.
 		ctx = agent.WithTurnSink(ctx, s.turnSinkFor(req))

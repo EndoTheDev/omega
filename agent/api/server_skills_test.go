@@ -5,60 +5,60 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	"github.com/EndoTheDev/omega/core"
 )
 
 // The skills content-view surface (card t_36ceb99b): GET /skills/content
-// rides the SkillsReader seam like /skills rides SkillsLister. The tests
-// pin the wire contract: one skill's name+description+body with the
+// rides the std-typed SkillRead face the same way /skills rides
+// SkillsEntries (part 3: the consumer asserts its own interface). The
+// tests pin the wire contract: one skill's name+description+body with the
 // truncation flag, loud refusals for illegal names, a 404 for an unknown
 // name, a 501 when the host carries no reader, and a read-only posture
 // (405 on POST).
 
-// fakeSkillReader satisfies core.SkillsProvider + core.SkillsReader.
+// fakeSkillReader serves the serving surface's own need face: the
+// inventory view plus one read by name. The capsule's load law (merge
+// winner, dir) is the capsule's business - the fake carries only what
+// the route reads.
 type fakeSkillReader struct {
-	skills map[string]core.Skill
-	err    error
+	index map[string]string
+	desc  map[string]string
+	body  map[string]string
 }
 
-func (*fakeSkillReader) LoadSkills(string) ([]core.Skill, error) { return nil, nil }
+func (f *fakeSkillReader) SkillsEntries() (map[string]string, map[string]string, error) {
+	return f.index, f.body, nil
+}
 
-func (f *fakeSkillReader) ReadSkill(name string) (core.Skill, error) {
-	if f.err != nil {
-		return core.Skill{}, f.err
-	}
-	sk, ok := f.skills[name]
+func (f *fakeSkillReader) SkillRead(name string) (description, content string, err error) {
+	d, ok := f.desc[name]
 	if !ok {
-		return core.Skill{}, &errNotFound{}
+		return "", "", &errNotFound{}
 	}
-	return sk, nil
+	return d, f.body[name], nil
 }
 
-// skillsProviderNoReader satisfies core.SkillsProvider ONLY - the handler
+// skillsEntriesOnly offers "skills" WITHOUT the read face - the handler
 // must answer 501, never panic.
-type skillsProviderNoReader struct{}
+type skillsEntriesOnly struct{}
 
-func (*skillsProviderNoReader) LoadSkills(string) ([]core.Skill, error) {
-	return nil, nil
+func (*skillsEntriesOnly) SkillsEntries() (map[string]string, map[string]string, error) {
+	return map[string]string{}, map[string]string{}, nil
 }
 
-// errNotFound is the seam's plain not-found phrasing (the real provider's
-// resolveSkillFile error text names the skill and its availability - the
-// handler routes it by the "not found" phrase)
+// errNotFound is the capsule's plain not-found phrasing (the real
+// provider's resolveSkillFile error text names the skill and its
+// availability - the handler routes it by the "not found" phrase)
 type errNotFound struct{}
 
-func (*errNotFound) Error() string { return "skill %q not found. Available: none" }
+func (*errNotFound) Error() string { return `skill %q not found. Available: none` }
 
 func TestSkillsContentHappyPath(t *testing.T) {
 	s := inspectorServer(t)
-	s.seams.skills = &fakeSkillReader{skills: map[string]core.Skill{
-		"worker-onboarding": {
-			Name:        "worker-onboarding",
-			Description: "Use when running an omega card beside other workers.",
-			Content:     "# Worker Onboarding\n\nOwn your worktree.\n",
-		},
-	}}
+	offerServices(t, s, map[string]any{"skills": &fakeSkillReader{
+		index: map[string]string{"worker-onboarding": "Use when running an omega card beside other workers."},
+		desc:  map[string]string{"worker-onboarding": "Use when running an omega card beside other workers."},
+		body:  map[string]string{"worker-onboarding": "# Worker Onboarding\n\nOwn your worktree.\n"},
+	}})
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/skills/content?name=worker-onboarding")
 	if err != nil {
@@ -81,9 +81,10 @@ func TestSkillsContentHappyPath(t *testing.T) {
 func TestSkillsContentCapMarksTruncated(t *testing.T) {
 	body := strings.Repeat("a", fileReadCap) + "tail-marker"
 	s := inspectorServer(t)
-	s.seams.skills = &fakeSkillReader{skills: map[string]core.Skill{
-		"big": {Name: "big", Content: body},
-	}}
+	offerServices(t, s, map[string]any{"skills": &fakeSkillReader{
+		desc: map[string]string{"big": ""},
+		body: map[string]string{"big": body},
+	}})
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/skills/content?name=big")
 	if err != nil {
@@ -104,7 +105,9 @@ func TestSkillsContentRefusesIllegalNames(t *testing.T) {
 	cases := []string{"", "a/b", "../escape", "..", ".", ".hidden", " spaced ", `back\slash`}
 	for _, name := range cases {
 		s := inspectorServer(t)
-		s.seams.skills = &fakeSkillReader{skills: map[string]core.Skill{}}
+		offerServices(t, s, map[string]any{"skills": &fakeSkillReader{
+			desc: map[string]string{}, body: map[string]string{},
+		}})
 		ts := serveInspector(t, s)
 		res, err := http.Get(ts.URL + "/skills/content?name=" + strings.ReplaceAll(name, " ", "%20"))
 		if err != nil {
@@ -119,7 +122,9 @@ func TestSkillsContentRefusesIllegalNames(t *testing.T) {
 
 func TestSkillsContentUnknownIs404(t *testing.T) {
 	s := inspectorServer(t)
-	s.seams.skills = &fakeSkillReader{skills: map[string]core.Skill{}}
+	offerServices(t, s, map[string]any{"skills": &fakeSkillReader{
+		desc: map[string]string{}, body: map[string]string{},
+	}})
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/skills/content?name=nosuch")
 	if err != nil {
@@ -133,7 +138,7 @@ func TestSkillsContentUnknownIs404(t *testing.T) {
 
 func TestSkillsContentNoReaderIs501(t *testing.T) {
 	s := inspectorServer(t)
-	s.seams.skills = &skillsProviderNoReader{}
+	offerServices(t, s, map[string]any{"skills": &skillsEntriesOnly{}})
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/skills/content?name=any")
 	if err != nil {

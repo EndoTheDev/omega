@@ -64,11 +64,11 @@ func (s *fakeStore) roles() []string {
 }
 
 // vo builds pick rows from labels: the test shorthand for
-// []core.VerdictOption (label only, no description).
-func vo(labels ...string) []core.VerdictOption {
-	out := make([]core.VerdictOption, len(labels))
+// []core.QuestionOption (label only, no description).
+func vo(labels ...string) []core.QuestionOption {
+	out := make([]core.QuestionOption, len(labels))
 	for i, l := range labels {
-		out[i] = core.VerdictOption{Label: l}
+		out[i] = core.QuestionOption{Label: l}
 	}
 	return out
 }
@@ -78,7 +78,7 @@ func vo(labels ...string) []core.VerdictOption {
 // The caller synchronizes registration with waitForPending before
 // asserting on Pending or answering - registration happens inside the
 // goroutine, not before it.
-func askAsync(t *testing.T, h *Hub, card core.VerdictPrompt) <-chan askResult {
+func askAsync(t *testing.T, h *Hub, card core.QuestionPrompt) <-chan askResult {
 	t.Helper()
 	ch := make(chan askResult, 1)
 	go func() {
@@ -89,13 +89,13 @@ func askAsync(t *testing.T, h *Hub, card core.VerdictPrompt) <-chan askResult {
 }
 
 type askResult struct {
-	v   core.Verdict
+	v   core.QuestionAnswer
 	err error
 }
 
 // waitForPending polls until at least `n` cards are pending for the
 // session ("" counts every session) and returns the pending list.
-func waitForPending(t *testing.T, h *Hub, session string, n int) []core.VerdictPrompt {
+func waitForPending(t *testing.T, h *Hub, session string, n int) []core.QuestionPrompt {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
@@ -136,14 +136,14 @@ func drainWithTimeout(t *testing.T, ch <-chan askResult, d time.Duration) askRes
 
 func TestAskBlocksUntilAnswered(t *testing.T) {
 	h := NewHub(nil, nil)
-	card := core.VerdictPrompt{SessionID: "s1", Title: "ok?", Options: vo("yes", "no")}
+	card := core.QuestionPrompt{SessionID: "s1", Title: "ok?", Options: vo("yes", "no")}
 	ch := askAsync(t, h, card)
 
 	cards := waitForPending(t, h, "s1", 1)
 	if cards[0].Title != "ok?" {
 		t.Fatalf("Pending = %+v, want one 'ok?' card", cards)
 	}
-	if _, err := h.Answer("s1", "", core.Verdict{OptionIndex: 1}); err != nil {
+	if _, err := h.Answer("s1", "", core.QuestionAnswer{OptionIndex: 1}); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 	r := drain(t, ch)
@@ -160,9 +160,9 @@ func TestAskBlocksUntilAnswered(t *testing.T) {
 
 func TestAnswerResolvesOldestPendingWhenCardIDEmpty(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch := askAsync(t, h, core.VerdictPrompt{ID: "cX", SessionID: "s1", Title: "q", Options: vo("a", "b")})
+	ch := askAsync(t, h, core.QuestionPrompt{ID: "cX", SessionID: "s1", Title: "q", Options: vo("a", "b")})
 	waitForPending(t, h, "s1", 1)
-	if _, err := h.Answer("s1", "", core.Verdict{OptionIndex: 2}); err != nil {
+	if _, err := h.Answer("s1", "", core.QuestionAnswer{OptionIndex: 2}); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 	r := drain(t, ch)
@@ -173,33 +173,33 @@ func TestAnswerResolvesOldestPendingWhenCardIDEmpty(t *testing.T) {
 
 func TestAnswerWrongSessionRejected(t *testing.T) {
 	h := NewHub(nil, nil)
-	_ = askAsync(t, h, core.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
+	_ = askAsync(t, h, core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
 	waitForPending(t, h, "s1", 1)
-	if _, err := h.Answer("s2", "c1", core.Verdict{OptionIndex: 1}); err == nil {
+	if _, err := h.Answer("s2", "c1", core.QuestionAnswer{OptionIndex: 1}); err == nil {
 		t.Fatal("Answer from a different session must error")
 	}
 	// resolve the ask so the goroutine does not outlive the test
-	_, _ = h.Answer("s1", "c1", core.Verdict{OptionIndex: 1})
+	_, _ = h.Answer("s1", "c1", core.QuestionAnswer{OptionIndex: 1})
 }
 
 func TestAnswerValidations(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch := askAsync(t, h, core.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "pick", Options: vo("a", "b")})
+	ch := askAsync(t, h, core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "pick", Options: vo("a", "b")})
 	waitForPending(t, h, "s1", 1)
 	t.Cleanup(func() {
 		// a failed assertion leaves the card pending; skipping resolves it
-		_, _ = h.Answer("s1", "c1", core.Verdict{Skipped: true})
+		_, _ = h.Answer("s1", "c1", core.QuestionAnswer{Skipped: true})
 		<-ch
 	})
 
 	cases := []struct {
 		name string
-		v    core.Verdict
+		v    core.QuestionAnswer
 		want string
 	}{
-		{"out of range", core.Verdict{OptionIndex: 3}, "out of range"},
-		{"free text not allowed", core.Verdict{Text: "hi"}, "not free text"},
-		{"empty answer", core.Verdict{}, "needs an option pick"},
+		{"out of range", core.QuestionAnswer{OptionIndex: 3}, "out of range"},
+		{"free text not allowed", core.QuestionAnswer{Text: "hi"}, "not free text"},
+		{"empty answer", core.QuestionAnswer{}, "needs an option pick"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -217,13 +217,13 @@ func TestAnswerValidations(t *testing.T) {
 
 func TestFreeTextOnlyCard(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch := askAsync(t, h, core.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "name?", AllowText: true})
+	ch := askAsync(t, h, core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "name?", AllowText: true})
 	waitForPending(t, h, "s1", 1)
 	// a pick on a free-text-only card is rejected: no options to index.
-	if _, err := h.Answer("s1", "c1", core.Verdict{OptionIndex: 1}); err == nil {
+	if _, err := h.Answer("s1", "c1", core.QuestionAnswer{OptionIndex: 1}); err == nil {
 		t.Fatal("option pick on a no-options card must error")
 	}
-	if _, err := h.Answer("s1", "c1", core.Verdict{Text: "omega"}); err != nil {
+	if _, err := h.Answer("s1", "c1", core.QuestionAnswer{Text: "omega"}); err != nil {
 		t.Fatalf("Answer text: %v", err)
 	}
 	r := drain(t, ch)
@@ -235,14 +235,14 @@ func TestFreeTextOnlyCard(t *testing.T) {
 func TestMultiAnswerStoresEveryIndex(t *testing.T) {
 	st := newFakeStore()
 	h := NewHub(st, nil)
-	card := core.VerdictPrompt{
+	card := core.QuestionPrompt{
 		ID: "cm1", SessionID: "s1", Title: "which modules?",
-		Options: []core.VerdictOption{{Label: "a", Description: "first"}, {Label: "b"}, {Label: "c"}},
+		Options: []core.QuestionOption{{Label: "a", Description: "first"}, {Label: "b"}, {Label: "c"}},
 		Multi:   true,
 	}
 	ch := askAsync(t, h, card)
 	waitForPending(t, h, "s1", 1)
-	ans, err := h.Answer("s1", "cm1", core.Verdict{OptionIndexes: []int{1, 3}})
+	ans, err := h.Answer("s1", "cm1", core.QuestionAnswer{OptionIndexes: []int{1, 3}})
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestMultiAnswerStoresEveryIndex(t *testing.T) {
 	if len(roles) != 2 || roles[1] != "verdict" {
 		t.Fatalf("roles = %v, want [verdict_card verdict]", roles)
 	}
-	var rec core.VerdictRecord
+	var rec core.QuestionRecord
 	if err := json.Unmarshal(st.snapshot()[1].payload, &rec); err != nil {
 		t.Fatalf("decode verdict row: %v", err)
 	}
@@ -278,9 +278,9 @@ func TestMultiAnswerStoresEveryIndex(t *testing.T) {
 
 func TestMultiAnswerSingleIndex(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch := askAsync(t, h, core.VerdictPrompt{ID: "cm2", SessionID: "s1", Title: "q", Options: vo("a", "b"), Multi: true})
+	ch := askAsync(t, h, core.QuestionPrompt{ID: "cm2", SessionID: "s1", Title: "q", Options: vo("a", "b"), Multi: true})
 	waitForPending(t, h, "s1", 1)
-	ans, err := h.Answer("s1", "cm2", core.Verdict{OptionIndexes: []int{2}})
+	ans, err := h.Answer("s1", "cm2", core.QuestionAnswer{OptionIndexes: []int{2}})
 	if err != nil {
 		t.Fatalf("Answer single-index multi: %v", err)
 	}
@@ -292,33 +292,33 @@ func TestMultiAnswerSingleIndex(t *testing.T) {
 
 func TestMultiShapeMismatchesRejected(t *testing.T) {
 	h := NewHub(nil, nil)
-	mcard := core.VerdictPrompt{ID: "cm3", SessionID: "s1", Title: "multi", Options: vo("a", "b"), Multi: true}
+	mcard := core.QuestionPrompt{ID: "cm3", SessionID: "s1", Title: "multi", Options: vo("a", "b"), Multi: true}
 	ch := askAsync(t, h, mcard)
 	waitForPending(t, h, "s1", 1)
-	t.Cleanup(func() { _, _ = h.Answer("s1", "cm3", core.Verdict{Skipped: true}); <-ch })
-	if _, err := h.Answer("s1", "cm3", core.Verdict{OptionIndex: 1}); err == nil || !strings.Contains(err.Error(), "multi-select") {
+	t.Cleanup(func() { _, _ = h.Answer("s1", "cm3", core.QuestionAnswer{Skipped: true}); <-ch })
+	if _, err := h.Answer("s1", "cm3", core.QuestionAnswer{OptionIndex: 1}); err == nil || !strings.Contains(err.Error(), "multi-select") {
 		t.Fatalf("single pick on multi card err = %v, want the multi-select complaint", err)
 	}
-	if _, err := h.Answer("s1", "cm3", core.Verdict{OptionIndexes: []int{4}}); err == nil || !strings.Contains(err.Error(), "out of range") {
+	if _, err := h.Answer("s1", "cm3", core.QuestionAnswer{OptionIndexes: []int{4}}); err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Fatalf("out-of-range multi pick err = %v, want out of range", err)
 	}
 }
 
 func TestMultiAnswerOnSingleCardRejected(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch := askAsync(t, h, core.VerdictPrompt{ID: "cs1", SessionID: "s1", Title: "single", Options: vo("a", "b")})
+	ch := askAsync(t, h, core.QuestionPrompt{ID: "cs1", SessionID: "s1", Title: "single", Options: vo("a", "b")})
 	waitForPending(t, h, "s1", 1)
-	t.Cleanup(func() { _, _ = h.Answer("s1", "cs1", core.Verdict{Skipped: true}); <-ch })
-	if _, err := h.Answer("s1", "cs1", core.Verdict{OptionIndexes: []int{1, 2}}); err == nil || !strings.Contains(err.Error(), "single pick") {
+	t.Cleanup(func() { _, _ = h.Answer("s1", "cs1", core.QuestionAnswer{Skipped: true}); <-ch })
+	if _, err := h.Answer("s1", "cs1", core.QuestionAnswer{OptionIndexes: []int{1, 2}}); err == nil || !strings.Contains(err.Error(), "single pick") {
 		t.Fatalf("multi answer on single card err = %v, want the single-pick complaint", err)
 	}
 }
 
 func TestAllowTextOnOptionsCard(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch := askAsync(t, h, core.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "add?", Options: vo("yes", "no"), AllowText: true})
+	ch := askAsync(t, h, core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "add?", Options: vo("yes", "no"), AllowText: true})
 	waitForPending(t, h, "s1", 1)
-	if _, err := h.Answer("s1", "c1", core.Verdict{Text: "yes, but later"}); err != nil {
+	if _, err := h.Answer("s1", "c1", core.QuestionAnswer{Text: "yes, but later"}); err != nil {
 		t.Fatalf("typed answer on allow_text card: %v", err)
 	}
 	r := drain(t, ch)
@@ -329,9 +329,9 @@ func TestAllowTextOnOptionsCard(t *testing.T) {
 
 func TestSkipRecorded(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch := askAsync(t, h, core.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
+	ch := askAsync(t, h, core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
 	waitForPending(t, h, "s1", 1)
-	r2, err := h.Answer("s1", "c1", core.Verdict{Skipped: true})
+	r2, err := h.Answer("s1", "c1", core.QuestionAnswer{Skipped: true})
 	if err != nil {
 		t.Fatalf("Answer skip: %v", err)
 	}
@@ -346,11 +346,11 @@ func TestSkipRecorded(t *testing.T) {
 
 func TestSecondAnswerRejected(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch := askAsync(t, h, core.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
+	ch := askAsync(t, h, core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
 	waitForPending(t, h, "s1", 1)
-	_, _ = h.Answer("s1", "c1", core.Verdict{OptionIndex: 1})
+	_, _ = h.Answer("s1", "c1", core.QuestionAnswer{OptionIndex: 1})
 	_ = drain(t, ch)
-	_, err := h.Answer("s1", "c1", core.Verdict{OptionIndex: 1})
+	_, err := h.Answer("s1", "c1", core.QuestionAnswer{OptionIndex: 1})
 	if err == nil || !strings.Contains(err.Error(), "already answered") {
 		t.Fatalf("second Answer err = %v, want 'already answered'", err)
 	}
@@ -358,7 +358,7 @@ func TestSecondAnswerRejected(t *testing.T) {
 
 func TestExpiryFiresSafeAnswer(t *testing.T) {
 	h := NewHub(nil, nil)
-	card := core.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("yes", "no"), TimeoutS: 1}
+	card := core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("yes", "no"), TimeoutS: 1}
 	ch := askAsync(t, h, card)
 	waitForPending(t, h, "s1", 1)
 	// wait past the 1s deadline; the timer fires the expired verdict.
@@ -370,7 +370,7 @@ func TestExpiryFiresSafeAnswer(t *testing.T) {
 		t.Fatalf("verdict = %+v, want expired", r.v)
 	}
 	// a late answer is rejected as already expired, never double-applied.
-	_, err := h.Answer("s1", "c1", core.Verdict{OptionIndex: 1})
+	_, err := h.Answer("s1", "c1", core.QuestionAnswer{OptionIndex: 1})
 	if err == nil || !strings.Contains(err.Error(), "already expired") {
 		t.Fatalf("late Answer err = %v, want 'already expired'", err)
 	}
@@ -381,7 +381,7 @@ func TestCtxCancellationSettlesCard(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := h.Ask(ctx, core.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
+		_, err := h.Ask(ctx, core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
 		done <- err
 	}()
 	waitForPending(t, h, "s1", 1)
@@ -390,7 +390,7 @@ func TestCtxCancellationSettlesCard(t *testing.T) {
 		t.Fatal("Ask with cancelled ctx must error")
 	}
 	// the card is settled; a later answer is rejected (not delivered).
-	_, err := h.Answer("s1", "c1", core.Verdict{OptionIndex: 1})
+	_, err := h.Answer("s1", "c1", core.QuestionAnswer{OptionIndex: 1})
 	if err == nil || !strings.Contains(err.Error(), "already answered") {
 		t.Fatalf("Answer after cancel err = %v, want a settled rejection", err)
 	}
@@ -398,7 +398,7 @@ func TestCtxCancellationSettlesCard(t *testing.T) {
 
 func TestCloseUnblocksPendingAsk(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch := askAsync(t, h, core.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
+	ch := askAsync(t, h, core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
 	waitForPending(t, h, "s1", 1)
 	h.Close()
 	r := drain(t, ch)
@@ -410,10 +410,10 @@ func TestCloseUnblocksPendingAsk(t *testing.T) {
 func TestPersistenceRecordsCardAndVerdict(t *testing.T) {
 	st := newFakeStore()
 	h := NewHub(st, nil)
-	card := core.VerdictPrompt{ID: "c1", SessionID: "s9", Title: "ok?", Options: vo("yes", "no")}
+	card := core.QuestionPrompt{ID: "c1", SessionID: "s9", Title: "ok?", Options: vo("yes", "no")}
 	ch := askAsync(t, h, card)
 	waitForPending(t, h, "s9", 1)
-	_, _ = h.Answer("s9", "c1", core.Verdict{OptionIndex: 1})
+	_, _ = h.Answer("s9", "c1", core.QuestionAnswer{OptionIndex: 1})
 	_ = drain(t, ch)
 
 	roles := st.roles()
@@ -425,7 +425,7 @@ func TestPersistenceRecordsCardAndVerdict(t *testing.T) {
 	if recs[0].session != "s9" || recs[1].session != "s9" {
 		t.Fatalf("transcript sessions = %v, want both s9", []string{recs[0].session, recs[1].session})
 	}
-	var v core.VerdictRecord
+	var v core.QuestionRecord
 	if err := json.Unmarshal(recs[1].payload, &v); err != nil {
 		t.Fatalf("decode verdict row: %v", err)
 	}
@@ -437,7 +437,7 @@ func TestPersistenceRecordsCardAndVerdict(t *testing.T) {
 func TestExpiryPersisted(t *testing.T) {
 	st := newFakeStore()
 	h := NewHub(st, nil)
-	ch := askAsync(t, h, core.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y"), TimeoutS: 1})
+	ch := askAsync(t, h, core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y"), TimeoutS: 1})
 	waitForPending(t, h, "s1", 1)
 	_ = drainWithTimeout(t, ch, 3*time.Second)
 	roles := st.roles()
@@ -445,7 +445,7 @@ func TestExpiryPersisted(t *testing.T) {
 		t.Fatalf("transcript roles = %v, want [verdict_card verdict]", roles)
 	}
 	recs := st.snapshot()
-	var v core.VerdictRecord
+	var v core.QuestionRecord
 	_ = json.Unmarshal(recs[1].payload, &v)
 	if !v.Expired {
 		t.Fatalf("persisted verdict row not expired: %+v", v)
@@ -456,10 +456,10 @@ func TestPersistenceFailureDoesNotBlockQuestion(t *testing.T) {
 	st := newFakeStore()
 	st.appendOK = false
 	h := NewHub(st, nil) // nil logger keeps the failure quiet
-	ch := askAsync(t, h, core.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
+	ch := askAsync(t, h, core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
 	// the card registers despite the store failing to persist it.
 	waitForPending(t, h, "s1", 1)
-	if _, err := h.Answer("s1", "c1", core.Verdict{OptionIndex: 1}); err != nil {
+	if _, err := h.Answer("s1", "c1", core.QuestionAnswer{OptionIndex: 1}); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 	r := drain(t, ch)
@@ -471,16 +471,16 @@ func TestPersistenceFailureDoesNotBlockQuestion(t *testing.T) {
 func TestResultMapShapes(t *testing.T) {
 	cases := []struct {
 		name string
-		v    core.Verdict
+		v    core.QuestionAnswer
 		want map[string]any
 	}{
-		{"pick", core.Verdict{CardID: "c1", OptionIndex: 2, Option: "no"},
+		{"pick", core.QuestionAnswer{CardID: "c1", OptionIndex: 2, Option: "no"},
 			map[string]any{"card_id": "c1", "verdict": "answer", "option_index": float64(2), "option": "no"}},
-		{"text", core.Verdict{CardID: "c2", Text: "hi"},
+		{"text", core.QuestionAnswer{CardID: "c2", Text: "hi"},
 			map[string]any{"card_id": "c2", "verdict": "answer", "text": "hi"}},
-		{"skip", core.Verdict{CardID: "c1", Skipped: true},
+		{"skip", core.QuestionAnswer{CardID: "c1", Skipped: true},
 			map[string]any{"card_id": "c1", "verdict": "skip", "skipped": true}},
-		{"expired", core.Verdict{CardID: "c1", Expired: true},
+		{"expired", core.QuestionAnswer{CardID: "c1", Expired: true},
 			map[string]any{"card_id": "c1", "verdict": "expired", "expired": true}},
 	}
 	for _, tc := range cases {
@@ -500,8 +500,8 @@ func TestResultMapShapes(t *testing.T) {
 
 func TestPendingFiltersBySessionAndExcludesSettled(t *testing.T) {
 	h := NewHub(nil, nil)
-	ch1 := askAsync(t, h, core.VerdictPrompt{ID: "c1", SessionID: "s1", Title: "q1", Options: vo("y")})
-	ch2 := askAsync(t, h, core.VerdictPrompt{ID: "c2", SessionID: "s2", Title: "q2", Options: vo("y")})
+	ch1 := askAsync(t, h, core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "q1", Options: vo("y")})
+	ch2 := askAsync(t, h, core.QuestionPrompt{ID: "c2", SessionID: "s2", Title: "q2", Options: vo("y")})
 	waitForPending(t, h, "", 2)
 	if got := h.Pending("s1"); len(got) != 1 || got[0].ID != "c1" {
 		t.Fatalf("Pending(s1) = %+v, want only c1", got)
@@ -509,12 +509,12 @@ func TestPendingFiltersBySessionAndExcludesSettled(t *testing.T) {
 	if got := h.Pending(""); len(got) != 2 {
 		t.Fatalf("Pending('') = %d, want 2", len(got))
 	}
-	_, _ = h.Answer("s1", "c1", core.Verdict{OptionIndex: 1})
+	_, _ = h.Answer("s1", "c1", core.QuestionAnswer{OptionIndex: 1})
 	_ = drain(t, ch1)
 	if got := h.Pending(""); len(got) != 1 || got[0].ID != "c2" {
 		t.Fatalf("Pending after settle = %+v, want only c2", got)
 	}
-	_, _ = h.Answer("s2", "c2", core.Verdict{OptionIndex: 1})
+	_, _ = h.Answer("s2", "c2", core.QuestionAnswer{OptionIndex: 1})
 	_ = drain(t, ch2)
 }
 

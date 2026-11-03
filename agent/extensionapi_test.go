@@ -60,26 +60,31 @@ func (plugCompactor) Compact(ctx context.Context, messages []core.Message) ([]co
 
 type plugNotifier struct{}
 
-func (plugNotifier) Emit(n core.Notification) (core.Notification, error) { return n, nil }
-func (plugNotifier) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notification, int, error) {
+func (plugNotifier) Emit(n core.Notice) (core.Notice, error) { return n, nil }
+func (plugNotifier) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notice, int, error) {
 	return nil, 0, nil
 }
 func (plugNotifier) MarkRead(ctx context.Context, id int64) error { return nil }
 func (plugNotifier) MarkAllRead(ctx context.Context) error        { return nil }
-func (plugNotifier) Subscribe() (<-chan core.Notification, func()) {
-	ch := make(chan core.Notification)
+func (plugNotifier) Subscribe() (<-chan core.Notice, func()) {
+	ch := make(chan core.Notice)
 	return ch, func() { close(ch) }
 }
 
+// noticeEmit is the test's own consumer face (part 3): structural
+// satisfaction, local declaration, no core noun.
+type noticeEmit interface {
+	Emit(n core.Notice) (core.Notice, error)
+}
+
 // notifierPlugin mounts the notifications seam (the notifications edge).
-type notifierPlugin struct{ n core.NotificationsProvider }
+type notifierPlugin struct{ n noticeEmit }
 
 func (p *notifierPlugin) Name() string       { return "notifier" }
 func (p *notifierPlugin) Provides() []string { return []string{"notifications"} }
 func (p *notifierPlugin) Requires() []string { return nil }
 func (p *notifierPlugin) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
-	ctx.Notifications = p.n
-	return nil
+	return api.Offer("notifications", p.n)
 }
 
 // fakeStore satisfies the full StoreProvider seam with no-ops - parity
@@ -146,7 +151,7 @@ func (fakeStore) SetSessionTitle(ctx context.Context, sessionID, title string, f
 }
 func (fakeStore) SessionModels(ctx context.Context) (map[string]string, error) { return nil, nil }
 
-var emitterSeen core.NotificationsProvider
+var emitterSeen noticeEmit
 
 // TestNamespaceEnforcement pins Q10: a machine-facing registration
 // must carry its own module prefix; anything else fails loud at
@@ -306,8 +311,8 @@ func TestEmitterHandoffNilSafe(t *testing.T) {
 	if _, err := MountAllAPI([]Plugin{nilEmitterCapsule{}}, &ctx, nil, nil); err != nil {
 		t.Fatalf("mount: %v", err)
 	}
-	if ctx.Notifications != nil {
-		t.Fatalf("no notifications plugin mounted, got %T", ctx.Notifications)
+	if svc := ctx.Services().Resolve("notifications"); svc != nil {
+		t.Fatalf("no notifications plugin mounted, got %T", svc)
 	}
 	if emitterSeen != nil {
 		t.Errorf("the hook must receive nil when the seam is absent, got %T", emitterSeen)
@@ -321,7 +326,7 @@ func (nilEmitterCapsule) Provides() []string       { return nil }
 func (nilEmitterCapsule) Requires() []string       { return nil }
 func (nilEmitterCapsule) Mount(ctx *Context) error { return nil }
 func (nilEmitterCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
-	return api.RegisterEmitter(func(n core.NotificationsProvider) { emitterSeen = n })
+	return api.RegisterEmitter(func(svc any) { emitterSeen, _ = svc.(noticeEmit) })
 }
 
 // TestCensusEnforcement walks the registration surface and demands the
@@ -342,15 +347,12 @@ func TestCensusEnforcement(t *testing.T) {
 		"RegisterProvider":        true,
 		"RegisterCompactor":       true,
 		"RegisterStore":           true,
-		"RegisterSkills":          true,
 		"RegisterLoop":            true,
 		"RegisterLogger":          true,
-		"RegisterMemory":          true,
 		"RegisterPromptBuilder":   true,
-		"RegisterTrust":           true,
-		"RegisterCron":            true,
-		"RegisterNotifications":   true,
-		"RegisterVerdicts":        true,
+		"RegisterApprovals":       true,
+		"RegisterTurnNudger":      true,
+		"Offer":                   true,
 	}
 	got := map[string]bool{}
 	typ := reflect.TypeOf(&ExtensionAPI{})

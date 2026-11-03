@@ -19,16 +19,25 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// listingSkills is a SkillsProvider + SkillsLister double for the
-// skill dispatch path (content IS loadable here - the double keeps it
-// in memory rather than reading a directory).
+// listingSkills serves the serving surface's own face (part 3): the
+// std-typed inventory view for the /<skill-name> dispatch path.
 type listingSkills struct{}
 
-func (listingSkills) LoadSkills(dir string) ([]core.Skill, error) { return nil, errors.New("not used") }
-func (listingSkills) ListSkills() ([]core.Skill, error) {
-	return []core.Skill{
-		{Name: "greet-writer", Content: "skill body for greet-writer"},
-		{Name: "other", Content: "skill body other"},
+func (listingSkills) SkillRead(name string) (description, content string, err error) {
+	index, contents, _ := listingSkills{}.SkillsEntries()
+	if _, ok := index[name]; !ok {
+		return "", "", &errNotFound{}
+	}
+	return index[name], contents[name], nil
+}
+
+func (listingSkills) SkillsEntries() (index map[string]string, contents map[string]string, err error) {
+	return map[string]string{
+		"greet-writer": "greets",
+		"other":        "other",
+	}, map[string]string{
+		"greet-writer": "skill body for greet-writer",
+		"other":        "skill body other",
 	}, nil
 }
 
@@ -138,9 +147,7 @@ func TestHandleCommandDispatchErrors(t *testing.T) {
 
 func TestHandleCommandDispatchSkillResolves(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
-	s.seams.mu.Lock()
-	s.seams.skills = listingSkills{}
-	s.seams.mu.Unlock()
+	offerServices(t, s, map[string]any{"skills": listingSkills{}})
 
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/commands/dispatch",

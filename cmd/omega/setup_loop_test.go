@@ -455,7 +455,7 @@ func (s *stubTrust) State(cwd string, approve, noApprove bool) string { return "
 func TestLoopWorkspaceSwitch(t *testing.T) {
 	lo, buf := newTestLoop(t)
 	tr := &stubTrust{}
-	lo.pctx.Trust = tr
+	lo.pctx.ApplyOffer("trust", "trust", tr)
 	dir := t.TempDir()
 
 	if lo.dispatch("/workspace " + dir) {

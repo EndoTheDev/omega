@@ -28,15 +28,14 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/EndoTheDev/omega/core"
 )
 
 // cronSaver is the write face the job editor rides, separate from the
 // reader (the CronLister law) and the toggle (the flag law): a full
 // job upsert and a delete are bulkier scalars than `enabled:`.
 type cronSaver interface {
-	SaveJob(job Job) ([]core.CronJobInfo, error)
-	DeleteJob(name string) ([]core.CronJobInfo, error)
+	SaveJob(job Job) ([]JobInfo, error)
+	DeleteJob(name string) ([]JobInfo, error)
 }
 
 // jobWire is the POST /cron/save body: the full job definition, the
@@ -76,7 +75,7 @@ func (w jobWire) toJob() Job {
 // the editor's output obeys the exact schema law a hand-written
 // crons.yaml obeys. An unknown or reload-failing write leaves the file
 // untouched - server truth never fakes a swap.
-func (r *Runner) SaveJob(job Job) ([]core.CronJobInfo, error) {
+func (r *Runner) SaveJob(job Job) ([]JobInfo, error) {
 	data, err := yaml.Marshal(Config{Jobs: []Job{job}})
 	if err != nil {
 		return nil, fmt.Errorf("marshal job: %w", err)
@@ -107,7 +106,7 @@ func (r *Runner) SaveJob(job Job) ([]core.CronJobInfo, error) {
 // DeleteJob removes one job from the MAIN crons.yaml and hot-reloads.
 // Wake jobs are refused like SaveJob; an unknown name is an
 // UnknownJobError (the 404 lane).
-func (r *Runner) DeleteJob(name string) ([]core.CronJobInfo, error) {
+func (r *Runner) DeleteJob(name string) ([]JobInfo, error) {
 	for _, e := range r.jobsSnapshot() {
 		if e.Name == name && e.IsAgent() {
 			return nil, fmt.Errorf("job %q belongs to agent home %s; edit its config/crons.yaml", name, e.Agent)
@@ -127,7 +126,7 @@ func (r *Runner) DeleteJob(name string) ([]core.CronJobInfo, error) {
 // file up anyway, the immediate reload makes the response carry the
 // landed truth (the toggle route's reasoning, harness/cron/toggle.go).
 // A parse failure after the write keeps the previous job set serving.
-func (r *Runner) reloadAfterWrite() ([]core.CronJobInfo, error) {
+func (r *Runner) reloadAfterWrite() ([]JobInfo, error) {
 	cfg, err := LoadAllConfigs(r.home)
 	if err != nil {
 		return nil, fmt.Errorf("reload after write: %w", err)
@@ -290,11 +289,13 @@ func (p *Plugin) handleSaveJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	saver, ok := p.runner.(cronSaver)
-	if !ok || saver == nil {
+	// A nil *Runner converts to a non-nil interface value (the classic
+	// Go nil trap) - the guard must test the pointer, not the wrapper.
+	if p.runner == nil {
 		http.Error(w, "cron save: no cron runner mounted", http.StatusNotImplemented)
 		return
 	}
+	saver := cronSaver(p.runner)
 	var req jobWire
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "cron save: bad body: "+err.Error(), http.StatusBadRequest)
@@ -330,11 +331,13 @@ func (p *Plugin) handleDeleteJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	saver, ok := p.runner.(cronSaver)
-	if !ok || saver == nil {
+	// Same nil-pointer guard the save handler carries (a nil *Runner
+	// converts to a non-nil interface).
+	if p.runner == nil {
 		http.Error(w, "cron delete: no cron runner mounted", http.StatusNotImplemented)
 		return
 	}
+	saver := cronSaver(p.runner)
 	var req jobDeleteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" {
 		http.Error(w, "cron delete: name is required", http.StatusBadRequest)

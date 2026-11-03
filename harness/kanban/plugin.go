@@ -122,7 +122,10 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		// legal - the emitter is nil-safe by the classic law).
 		func() error {
 			store := s
-			return api.RegisterEmitter(func(n core.NotificationsProvider) { store.SetNotifier(n) })
+			return api.RegisterEmitter(func(svc any) {
+				n, _ := svc.(finishedThings)
+				store.SetNotifier(n)
+			})
 		},
 	} {
 		if err := step(); err != nil {

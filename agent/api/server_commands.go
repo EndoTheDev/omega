@@ -112,9 +112,15 @@ func (s *Server) handleCommandDispatch(w http.ResponseWriter, r *http.Request) {
 
 	// Not a registered command: a skill command injects content.
 	if strings.TrimPrefix(req.Name, "/") != "" {
-		for _, sk := range s.contextSkills() {
-			if "/"+sk.Name == req.Name {
-				writeJSON(w, http.StatusOK, commandDispatchResponse{Kind: "skill", Name: sk.Name, Content: sk.Content})
+		name := strings.TrimPrefix(req.Name, "/")
+		if sk := s.skills(); sk != nil {
+			_, contents, listErr := sk.SkillsEntries()
+			if listErr != nil {
+				http.Error(w, "list skills: "+listErr.Error(), http.StatusInternalServerError)
+				return
+			}
+			if content, ok := contents[name]; ok {
+				writeJSON(w, http.StatusOK, commandDispatchResponse{Kind: "skill", Name: name, Content: content})
 				return
 			}
 		}

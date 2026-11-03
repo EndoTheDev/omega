@@ -27,10 +27,10 @@ func newTestCapsule(t *testing.T) (*Store, *capsule, *emittingStore) {
 // bindings on unread rows only.
 func TestCapsulePanelsShape(t *testing.T) {
 	_, _, e := newTestCapsule(t)
-	if _, err := e.Emit(core.Notification{Kind: "cron", SourceID: "n1", Title: "cron n1 finished", Verdict: "failed"}); err != nil {
+	if _, err := e.Emit(core.Notice{Kind: "cron", SourceID: "n1", Title: "cron n1 finished", Verdict: "failed"}); err != nil {
 		t.Fatalf("emit: %v", err)
 	}
-	if _, err := e.Emit(core.Notification{Kind: "task", SourceID: "t1", Title: "task t1 done", Verdict: "ok"}); err != nil {
+	if _, err := e.Emit(core.Notice{Kind: "task", SourceID: "t1", Title: "task t1 done", Verdict: "ok"}); err != nil {
 		t.Fatalf("emit 2: %v", err)
 	}
 
@@ -100,7 +100,7 @@ func TestEmitPushesToastAndList(t *testing.T) {
 	var updates []core.Panel
 
 	// no sink installed yet: emit must not panic and must record
-	if _, err := e.Emit(core.Notification{Kind: "chat", SourceID: "s1", Title: "chat s1 finished"}); err != nil {
+	if _, err := e.Emit(core.Notice{Kind: "chat", SourceID: "s1", Title: "chat s1 finished"}); err != nil {
 		t.Fatalf("emit without sink: %v", err)
 	}
 
@@ -108,7 +108,7 @@ func TestEmitPushesToastAndList(t *testing.T) {
 		updates = append(updates, p)
 		return nil
 	})
-	if _, err := e.Emit(core.Notification{Kind: "cron", SourceID: "n2", Title: "cron n2 finished", Verdict: "failed"}); err != nil {
+	if _, err := e.Emit(core.Notice{Kind: "cron", SourceID: "n2", Title: "cron n2 finished", Verdict: "failed"}); err != nil {
 		t.Fatalf("emit: %v", err)
 	}
 	if len(updates) != 2 {
@@ -130,7 +130,7 @@ func TestEmitPushesToastAndList(t *testing.T) {
 // same call the renderers make.
 func TestHandleActionMarksRead(t *testing.T) {
 	_, c, e := newTestCapsule(t)
-	got, err := e.Emit(core.Notification{Kind: "task", SourceID: "t9", Title: "task t9 done"})
+	got, err := e.Emit(core.Notice{Kind: "task", SourceID: "t9", Title: "task t9 done"})
 	if err != nil {
 		t.Fatalf("emit: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestHandleActionMarksRead(t *testing.T) {
 	}
 
 	// mark_all clears the rest through the same pipe
-	if _, err := e.Emit(core.Notification{Kind: "cron", SourceID: "n3", Title: "cron n3 finished"}); err != nil {
+	if _, err := e.Emit(core.Notice{Kind: "cron", SourceID: "n3", Title: "cron n3 finished"}); err != nil {
 		t.Fatalf("emit: %v", err)
 	}
 	if _, err := e.capsule.HandleAction(core.ActionCall{Module: "notifications", Action: actionAll}); err != nil {
@@ -189,8 +189,8 @@ func TestEmitAfterMarkCarriesNewestRecord(t *testing.T) {
 		}
 		return nil
 	})
-	e.Emit(core.Notification{Kind: "task", SourceID: "a", Title: "task a done"})
-	e.Emit(core.Notification{Kind: "cron", SourceID: "b", Title: "cron b finished"})
+	e.Emit(core.Notice{Kind: "task", SourceID: "a", Title: "task a done"})
+	e.Emit(core.Notice{Kind: "cron", SourceID: "b", Title: "cron b finished"})
 	if len(toasts) != 2 || toasts[0].SourceID != "a" || toasts[1].SourceID != "b" {
 		t.Fatalf("toasts must ride their own records: %+v", toasts)
 	}

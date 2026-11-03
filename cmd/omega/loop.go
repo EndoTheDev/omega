@@ -388,7 +388,7 @@ func (lo *cliLoop) commandWorkspace(args string) error {
 	}
 	lo.cwd = abs
 	lo.ag.SetCWD(abs)
-	lo.ag.SetPromptContext(trustGate(lo.pctx.Trust, abs, lo.trust, false))
+	lo.ag.SetPromptContext(trustGate(lo.pctx, abs, lo.trust, false))
 	lo.printf("workspace: %s\n", lo.cwd)
 	return nil
 }
@@ -450,7 +450,7 @@ func (lo *cliLoop) send(text string, lines <-chan string) error {
 	// interactive origin: the verdict tool may pause here, and the
 	// busy reader answers it while the run blocks - the loop's one
 	// mid-run interaction, matching the old busy-Enter path.
-	runCtx = core.WithRunOrigin(runCtx, core.RunOriginInteractive)
+	runCtx = core.WithRunOrigin(runCtx, "interactive")
 	runCtx = agent.WithTurnSink(runCtx, agent.NewStoreTurnSink(lo.store, lo.sessionID, ""))
 	runCtx = agent.WithPersistInput(runCtx, []core.Message{userMsg})
 
@@ -539,6 +539,16 @@ func (lo *cliLoop) startStdinReader(ctx context.Context) chan string {
 	return lines
 }
 
+// verdictSink is the CLI loop's own need face of the verdicts capsule
+// (part 3, the seam constitution): the capsule's answerSink type is the
+// capsule's business - the loop names what IT calls and resolves the
+// service by key from the universal registry. The key is data; the
+// owner capsule never knows a loop exists.
+type verdictSink interface {
+	Pending(sessionID string) []core.QuestionPrompt
+	Answer(sessionID, cardID string, v core.QuestionAnswer) (core.QuestionAnswer, error)
+}
+
 // answerPendingVerdict hands one busy-time line to the verdict module's
 // inline answering. The named return is load-bearing for the purity
 // law (scripts/nm-purity.sh): the scrubber deletes the module wire as
@@ -546,10 +556,14 @@ func (lo *cliLoop) startStdinReader(ctx context.Context) chan string {
 // compile and answer false with the module gone - the plain `return
 // verdict.AnswerInline(...)` shape strands a missing return.
 func (lo *cliLoop) answerPendingVerdict(line string) (handled bool) {
-	if lo.pctx.Verdicts == nil {
+	if lo.pctx == nil {
 		return false
 	}
-	handled = verdict.AnswerInline(lo.pctx.Verdicts, lo.sessionID, line, lo.printf)
+	vp, ok := lo.pctx.Services().Resolve("verdicts").(verdictSink)
+	if !ok {
+		return false
+	}
+	handled = verdict.AnswerInline(vp, lo.sessionID, line, lo.printf)
 	return handled
 }
 
