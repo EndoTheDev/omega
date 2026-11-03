@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/llm"
 )
 
 // mockLogger records all Printf/Errorf calls so tests can assert on

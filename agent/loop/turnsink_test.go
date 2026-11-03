@@ -7,7 +7,6 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/llm"
 )
 
 // recordingSink captures the loop's turn-copy writes in order - the

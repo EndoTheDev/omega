@@ -1837,7 +1837,7 @@ func TestApprovalRemovalProof(t *testing.T) {
 	if _, err := agent.MountAllAPI(plugins, ctxOff, nil, nil); err != nil {
 		t.Fatalf("mount off-mode: %v", err)
 	}
-	if ctxOff.Approvals != nil {
+	if ctxOff.Services().Resolve("approvals") != nil {
 		t.Fatal("OFF MOUNT: the seam must be nil - mode off mounts nothing")
 	}
 	for _, ps := range ctxOff.PromptSectioners {
@@ -1873,7 +1873,7 @@ func TestApprovalRemovalProof(t *testing.T) {
 	if _, err := agent.MountAllAPI(removed, ctxRm, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
-	if ctxRm.Approvals != nil {
+	if ctxRm.Services().Resolve("approvals") != nil {
 		t.Fatal("REMOVED MOUNT: approvals seam non-nil without the capsule")
 	}
 	t.Log("PROOF removed: the seam is the whole feature - taking the module out takes detection, ladder, cache and audit file with it")

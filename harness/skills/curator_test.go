@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/llm"
 )
 
 // writeAgentSkill creates an agent-authored skill folder by hand (so

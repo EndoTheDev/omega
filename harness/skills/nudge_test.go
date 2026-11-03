@@ -4,7 +4,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 )
 
 // nudgeObs feeds n observations of one ordinary (non-skills) tool call.

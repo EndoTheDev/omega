@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/llm"
 )
 
 // stubPromptBuilder satisfies PromptBuilder for testing.
@@ -99,6 +98,10 @@ func TestNewFromContextFull(t *testing.T) {
 	ctx.ApplyOffer("loop", "test", loop)
 	ctx.ApplyOffer("prompt", "test", pb)
 	ctx.ApplyOffer("logger", "test", logger)
+	ctx.ToolProviders = []core.ToolProvider{tp}
+	ctx.Infos = infos
+	ctx.InjectedMessages = injected
+	ctx.PendingDelegations = pending
 
 	opts := AgentOptions{
 		MaxTurns:      5,
@@ -146,10 +149,12 @@ func TestNewFromContextFull(t *testing.T) {
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
-	// Swap the provider for this agent without mutating the shared context.
-	ctxSwap := *ctx
-	ctxSwap.Provider = prov2
-	ag2 := NewFromContext(&ctxSwap, opts)
+	// Swap the provider for this agent without mutating the shared context: a fresh Context with the same offers under a second provider.
+	ctxSwap := &Context{}
+	ctxSwap.ApplyOffer("provider", "test2", prov2)
+	ctxSwap.ApplyOffer("loop", "test2", loop)
+	ctxSwap.ToolProviders = ctx.ToolProviders
+	ag2 := NewFromContext(ctxSwap, opts)
 	ev2 := collect(t, ag2.Run(context.Background(), []core.Message{core.NewUser("go")}, nil))
 	end2 := lastAgentEnd(ev2)
 	if end2.Turns != 2 || end2.FinishReason != "stop" {
@@ -209,7 +214,6 @@ func TestNewFromContextNilOptional(t *testing.T) {
 	ctx := &Context{} // InjectedMessages and PendingDelegations left nil.
 	ctx.ApplyOffer("provider", "test", prov)
 	ctx.ApplyOffer("loop", "test", testLoop{})
-	ag := NewFromContext(ctx, AgentOptions{})
 	ag := NewFromContext(ctx, AgentOptions{})
 	if ag == nil {
 		t.Fatal("NewFromContext returned nil with nil optionals")

@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/llm"
 )
 
 func TestEstimateTokens(t *testing.T) {

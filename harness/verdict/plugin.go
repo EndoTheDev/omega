@@ -29,19 +29,19 @@ func (p *Plugin) Description() string {
 
 // Provides: verdicts (exclusive - one hub on the Context), tools and
 // prompt_sections (additive). Requires store (the hub captures it at
-// Mount to persist card + verdict audit rows) and logging (the hub
-// captures ctx.Logger at Mount) - any host mounting this plugin must
-// provide both seams; buildPlugins always does. Card t_13a2af8a:
+// Mount to persist card + verdict audit rows) and logger (the hub
+// captures the logger offer at Mount) - any host mounting this plugin
+// must provide both seams; buildPlugins always does. Card t_13a2af8a:
 // mount order is declared data, not list position.
 // ConfigKey names the config section this plugin reads from
 // ctx.Configs (see agent.Describer). Empty = reads no section.
 func (p *Plugin) ConfigKey() string { return "" }
 
 func (p *Plugin) Provides() []string { return []string{"verdicts", "tools", "prompt_sections"} }
-func (p *Plugin) Requires() []string { return []string{"store", "logging"} }
+func (p *Plugin) Requires() []string { return []string{"store", "logger"} }
 
 // MountWithAPI builds the hub from the seams the mount reads in place
-// (store, logging - the Requires edges stay, recipe law 4) and
+// (store, logger - the Requires edges stay, recipe law 4) and
 // registers every face: the verdicts seam, the verdict tool,
 // the TUI renderer, and the Verdict Cards prompt section.
 //

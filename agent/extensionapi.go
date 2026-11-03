@@ -1,30 +1,21 @@
 // The universal mount surface (v0.12 phase F - the universal API is
 // the ONLY mount path; the classic seam-assignment ceremony and the
-// dual mount of phase B are retired). A capsule calls
-// api.Register*(...) at MountWithAPI - one typed registration
-// vocabulary in the pi style, every seam claim, additive append and
-// payload boundary a journaled registration the dismount replays
-// backward.
+// dual mount of phase B are retired). A capsule calls api.Offer(key,
+// svc) at MountWithAPI - one stringly-keyed registration vocabulary,
+// every seam claim, additive append and payload boundary a journaled
+// registration the dismount replays backward.
 //
-// THE SEAM CENSUS (23 surfaces on the post-B0 tree; the registrations
-// cover every one of them):
+// THE SEAM CENSUS (the post-flip tree, part 3 wave 2; every exclusive
+// seam is an Offer under the closed need-key namespace):
 //
-//	Exclusive slots (15)           Registration
-//	 Provider                      RegisterProvider
-//	 Compactor                     RegisterCompactor
-//	 Store                         RegisterStore
-//	 Skills                        RegisterSkills
-//	 Loop                          RegisterLoop
-//	 Logger                        RegisterLogger
-//	 Memory                        RegisterMemory
-//	 PromptBuilder                 RegisterPromptBuilder
-//	 Trust                         RegisterTrust
-//	 Cron                          RegisterCron
-//	RegisterApprovals              RegisterApprovals
-//	RegisterTurnNudger             RegisterTurnNudger (t_9972dfd0)
-//	RegisterNotifications          RegisterNotifications
-//	 Verdicts                      RegisterVerdicts
-//	 core.Captioner                     host-built after the mount today
+//	Exclusive slots                  Surface
+//	 provider, store, logger         api.Offer("<key>", svc) - the
+//	 compactor, prompt, nudger       loop's needs resolve at bind
+//	 approvals, loop                 (agent/seams.go bindNeed).
+//	 skills, memory, trust           api.Offer("<key>", svc) -
+//	 cron, notifications, verdicts   capsule-to-capsule through
+//	                                 consumer-owned interfaces.
+//	 core.Captioner                  host-built after the mount today
 //
 //	 Additive surfaces (7)          Registration
 //	 ToolProviders                 RegisterTool / RegisterRuntimeTools
@@ -859,12 +850,19 @@ func (api *ExtensionAPI) Offer(key string, svc any) error {
 	if svc == nil {
 		return fmt.Errorf("service %q: a registration carries its service", key)
 	}
-	// Claim-check on the mounting context's live registry - the loud
-	// boot failure happens here, at mount, not at a lazy resolve.
-	if _, err := api.ctx.Services().With(key, api.module, svc); err != nil {
+	module := api.module
+	// The ledger claims the key first (the same one-tenant slot the
+	// provides sweep records), so an api offer behind a classic
+	// capsule's swept claim - and the reverse - fails the mount loud
+	// with the seam named (Q5). A same-tenant re-offer replaces (Q7).
+	if err := api.claimRecorded(key); err != nil {
 		return err
 	}
-	module := api.module
+	// Then the offer itself: a foreign offer on a held key errors
+	// loud - never a lazy resolve, never a silent overwrite.
+	if _, err := api.ctx.Services().With(key, module, svc); err != nil {
+		return err
+	}
 	api.writeSlot(
 		func(c *core.Context) { c.ApplyOffer(key, module, svc) },
 		func(c *core.Context) { c.DropOffer(key, module) },

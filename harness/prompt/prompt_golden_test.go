@@ -139,7 +139,7 @@ func TestPromptGoldenFull(t *testing.T) {
 	seedMemory(t, memCfg)
 
 	ctx := wireContext(t, skillDir, memCfg)
-	prompt, ok := ctx.PromptBuilder.BuildPrompt(context.Background(), fullOpts(ctx))
+	prompt, ok := ctx.Services().Resolve("prompt").(agent.PromptBuilder).BuildPrompt(context.Background(), fullOpts(ctx))
 	if !ok {
 		t.Fatal("BuildPrompt returned ok=false")
 	}
@@ -163,7 +163,7 @@ func TestPromptGoldenMinimal(t *testing.T) {
 	seedMemory(t, memCfg)
 
 	ctx := wireContext(t, skillDir, memCfg)
-	prompt, ok := ctx.PromptBuilder.BuildPrompt(context.Background(), minimalOpts(ctx))
+	prompt, ok := ctx.Services().Resolve("prompt").(agent.PromptBuilder).BuildPrompt(context.Background(), minimalOpts(ctx))
 	if !ok {
 		t.Fatal("BuildPrompt returned ok=false")
 	}
@@ -188,7 +188,7 @@ func TestPromptGoldenEmptyStores(t *testing.T) {
 	}
 
 	ctx := wireContext(t, skillDir, memCfg)
-	prompt, ok := ctx.PromptBuilder.BuildPrompt(context.Background(), fullOpts(ctx))
+	prompt, ok := ctx.Services().Resolve("prompt").(agent.PromptBuilder).BuildPrompt(context.Background(), fullOpts(ctx))
 	if !ok {
 		t.Fatal("BuildPrompt returned ok=false")
 	}

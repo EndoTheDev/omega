@@ -131,3 +131,9 @@ type foreignOfferError struct {
 func (e *foreignOfferError) Error() string {
 	return "seam key " + e.Key + " offered by " + e.Module + " is already held by " + e.Owner
 }
+
+// Unwrap carries the one-tenant sentinel (Q5): consumers of a boot
+// failure check errors.Is(err, core.ErrSeamForeignTenant) across both
+// claim paths - the registry's claim slot and this offer conflict -
+// and get the same error class.
+func (e *foreignOfferError) Unwrap() error { return ErrSeamForeignTenant }

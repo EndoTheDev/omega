@@ -11,7 +11,6 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/llm"
 )
 
 // Compile-time interface checks. The seam interfaces are consumer-owned
@@ -146,14 +145,11 @@ func TestPluginMountWarnsLegacyShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	log := &captureLogger{}
-	p := NewPlugin()
-	ctx := &core.Context{}
-		Configs: map[string]any{
-			"skills": Config{Dir: dir},
-		},
-	}
+	ctx := &core.Context{Configs: map[string]any{
+		"skills": Config{Dir: dir},
+	}}
 	ctx.ApplyOffer("logger", "logging", log)
-	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logger"}, stubProviderPlugin{}, p}, ctx, nil, nil); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logger"}, stubProviderPlugin{}, NewPlugin()}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
 	if len(log.msgs) != 1 {
@@ -241,6 +237,7 @@ func TestHandleCommandUnknown(t *testing.T) {
 func TestPluginMount(t *testing.T) {
 	dir := makeSkillDir(t)
 	p := NewPlugin()
+	log := &captureLogger{}
 	ctx := &core.Context{CWD: dir}
 	ctx.ApplyOffer("logger", "logging", log)
 	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logger"}, stubProviderPlugin{}, p}, ctx, nil, nil); err != nil {
@@ -266,6 +263,7 @@ func TestPluginMountWithConfig(t *testing.T) {
 	// This test just verifies Mount doesn't
 	// panic with a nil Config.
 	p := NewPlugin()
+	log := &captureLogger{}
 	ctx := &core.Context{}
 	ctx.ApplyOffer("logger", "logging", log)
 	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{seam: "logger"}, stubProviderPlugin{}, p}, ctx, nil, nil); err != nil {
@@ -473,6 +471,7 @@ func TestHandleCommandEmptySkills(t *testing.T) {
 func TestPluginMountWithDirConfig(t *testing.T) {
 	dir := makeSkillDir(t)
 	p := NewPlugin()
+	log := &captureLogger{}
 	ctx := &core.Context{
 		Configs: map[string]any{
 			"skills": Config{Dir: dir},
@@ -796,7 +795,7 @@ func (s stubProviderPlugin) MountWithAPI(ctx *core.Context, api *agent.Extension
 	if s.prov == nil {
 		s.prov = agent.NewFakeProvider("test-model")
 	}
-	return api.RegisterProvider(s.prov)
+	return api.Offer("provider", s.prov)
 }
 
 // Mount satisfies the interface until phase F retires it; the stub

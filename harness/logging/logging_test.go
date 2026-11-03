@@ -147,8 +147,8 @@ func TestPluginMetadata(t *testing.T) {
 		t.Errorf("Name() = %q, want %q", p.Name(), "logging")
 	}
 	provides := p.Provides()
-	if len(provides) != 1 || provides[0] != "logging" {
-		t.Errorf("Provides() = %v, want [logging]", provides)
+	if len(provides) != 1 || provides[0] != "logger" {
+		t.Errorf("Provides() = %v, want [logger]", provides)
 	}
 	if len(p.Requires()) != 0 {
 		t.Errorf("Requires() = %v, want empty", p.Requires())
@@ -185,8 +185,8 @@ func TestPluginMountDisabled(t *testing.T) {
 	if ctx.Services().Resolve("logger") == nil {
 		t.Fatal("ctx.Logger is nil after Mount")
 	}
-	if _, ok := ctx.Logger.(NopLogger); !ok {
-		t.Errorf("expected NopLogger when disabled, got %T", ctx.Logger)
+	if _, ok := ctx.Services().Resolve("logger").(NopLogger); !ok {
+		t.Errorf("expected NopLogger when disabled, got %T", ctx.Services().Resolve("logger"))
 	}
 }
 
@@ -236,7 +236,7 @@ func TestPluginMountDefaultNoCwdFile(t *testing.T) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
-	defer ctx.Logger.Close()
+	defer ctx.Services().Resolve("logger").(agent.LoggerProvider).Close()
 	if entries, err := os.ReadDir(cwd); err != nil || len(entries) != 0 {
 		t.Errorf("log file leaked into CWD: entries=%v err=%v", entries, err)
 	}

@@ -19,7 +19,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/agent/loop"
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/llm"
 	"github.com/EndoTheDev/omega/harness/store"
 )
 

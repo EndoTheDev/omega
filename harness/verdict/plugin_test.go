@@ -41,7 +41,8 @@ func (stubStorePlugin) Name() string       { return "store" }
 func (stubStorePlugin) Provides() []string { return []string{"store"} }
 func (stubStorePlugin) Requires() []string { return nil }
 func (stubStorePlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
-	ctx.ApplyOffer("store", "test", nil // compile-safe: a nil store is the unconfigured host posture)
+	// compile-safe: a nil store is the unconfigured host posture - offer
+	// nothing, the resolve reads nil the same way.
 	return nil
 }
 
