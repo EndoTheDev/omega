@@ -674,7 +674,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	// never clobber each other's namespaces.
 	fold := &DisabledNamespaces{
 		Modules: cfg.Disabled.Modules,
-		Skills:  cfg.Disabled.Skills,
+		SkillNames: cfg.Disabled.SkillNames,
 		Tools:   cfg.Disabled.Tools,
 		Agents:  cfg.Disabled.Agents,
 	}
