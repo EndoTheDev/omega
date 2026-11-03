@@ -298,13 +298,13 @@ test("postVerdict: a plain non-OK status still throws something truthful", async
 // --- source pins (components are not importable in node) ---
 
 test("ChatItem routes verdict items to the VerdictCard component", () => {
-  const chatItem = read("webui/app/components/ChatItem.vue");
+  const chatItem = read("app/components/ChatItem.vue");
   assert.match(chatItem, /<VerdictCard(?:\s|>)/, "a verdict item renders as the interactive card");
   assert.match(chatItem, /item\.kind === 'verdict'/, "the verdict kind is the route in");
 });
 
 test("VerdictCard renders the list layout and sends every answer shape", () => {
-  const vue = read("webui/app/components/chat/VerdictCard.vue");
+  const vue = read("app/components/chat/VerdictCard.vue");
   assert.match(vue, /verdict-option-row/, "options render as stacked rows (list layout, not pills)");
   assert.match(vue, /flex-direction: column/, "the rows stack top to bottom, one per row");
   assert.match(vue, /verdict-desc/, "each row shows its option description");
@@ -318,15 +318,15 @@ test("VerdictCard renders the list layout and sends every answer shape", () => {
 });
 
 test("the notifications badge counts pending verdict cards (card t_180db2cb)", () => {
-  const store = read("webui/app/components/notifications/store.ts");
+  const store = read("app/components/notifications/store.ts");
   assert.match(store, /fetchVerdicts/, "the feed store consumes the pending-cards listing");
   assert.match(store, /unread\.value \+ pendingVerdicts\.value\.length/, "the badge sums finished-things and pending questions");
-  const panel = read("webui/app/components/notifications/NotificationsPanel.vue");
+  const panel = read("app/components/notifications/NotificationsPanel.vue");
   assert.match(panel, /openVerdict/, "a pending card row routes to its chat session");
 });
 
 test("chat.ts maps the card rows live and settles them from the result row", () => {
-  const chat = read("webui/app/composables/chat.ts");
+  const chat = read("app/composables/chat.ts");
   // chat-last 2a: the canvas transcript tool_call row with the verdict
   // name renders as the card (no plain tool line); the matching
   // tool_result row settles it; a streaming-final row is stale

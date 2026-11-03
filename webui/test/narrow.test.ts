@@ -61,8 +61,8 @@ test("the shell narrow composable exists and is mounted-safe", () => {
 });
 
 test("Board.vue mounts its narrow observer on its root", () => {
-  const board = join(root, "..", "..", "harness", "kanban", "ui", "Board.vue");
-  const boardEl = join(root, "..", "..", "harness", "kanban", "ui", "board", "boardLogic.ts");
+  const board = join(root, "..", "harness", "kanban", "ui", "Board.vue");
+  const boardEl = join(root, "..", "harness", "kanban", "ui", "board", "boardLogic.ts");
   assert.ok(existsSync(board));
   assert.ok(existsSync(boardEl));
   const src = readFileSync(board, "utf8");

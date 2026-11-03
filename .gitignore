@@ -33,20 +33,20 @@ coverage.out
 # Kanban worktrees
 .worktrees/
 
-# WebUI (Nuxt)
-engine/webui/node_modules
-engine/webui/.nuxt/
-engine/webui/.output/
-engine/webui/dist/
-engine/webui/.data/
+# WebUI (Nuxt, at the repo root since restructure part 2 - t_905fa502)
+webui/node_modules
+webui/.nuxt/
+webui/.output/
+webui/dist/
+webui/.data/
 # generated at config-eval time by nuxt.config.ts (module-panels)
-engine/webui/app/composables/module-panels.generated.ts
+webui/app/composables/module-panels.generated.ts
 *.log
 npm-debug.log*
 
 # NOTE: engine/http_channel/static/ IS tracked - the built SPA is
 # committed so go install / go build produce the complete product
-# (placeholder-era ignore rules removed; see engine/webui/scripts/build.sh)
+# (placeholder-era ignore rules removed; see webui/scripts/build.sh)
 
 # dev-instance first-run bootstrap writes its own copies into bin/
 bin/*.example

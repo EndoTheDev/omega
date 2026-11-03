@@ -24,7 +24,7 @@ import {
 // module UI source lives at the repo root (webui/test is three
 // levels under it)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const read = (...p: string[]) => readFileSync(join(root, "webui", "webui", ...p), "utf8");
+const read = (...p: string[]) => readFileSync(join(root, "webui", ...p), "utf8");
 
 // --- normalizeDisabledPayload: a junk fold never kills the tab ---
 
@@ -251,7 +251,7 @@ test("the skills tab refresh button renders in the tab band", () => {
     "utf8",
   );
   const band = readFileSync(
-    join(root, "webui", "webui", "app", "components", "ui", "TabBand.vue"),
+    join(root, "webui", "app", "components", "ui", "TabBand.vue"),
     "utf8",
   );
   assert.ok(
@@ -273,7 +273,7 @@ test("the skills tab refresh button renders in the tab band", () => {
 // card t_d93864e7: the registry rows' toggle is the shared TogglePill -
 // the MCP tab's pill (the design reference), adopted, not re-styled.
 test("RegistryList's toggle is the shared TogglePill; the checkbox shape is dead", () => {
-  const src = readFileSync(join(root, "webui", "webui", "app", "components", "RegistryList.vue"), "utf8");
+  const src = readFileSync(join(root, "webui", "app", "components", "RegistryList.vue"), "utf8");
   assert.match(src, /<TogglePill/, "the row toggle is the shared pill, not a bespoke control");
   assert.ok(!src.includes('type="checkbox"'), "the checkbox trap (t_87303e8f) is dead - a button carries no :checked prop");
   assert.ok(!/\.registry-toggle\s*\{/.test(src), "no local toggle CSS - the look lives in ui/TogglePill once");
@@ -281,7 +281,7 @@ test("RegistryList's toggle is the shared TogglePill; the checkbox shape is dead
   // the two-step mechanic + the confirm note stay (behavior, not pixels)
   assert.ok(src.includes("confirm apply to ${r.name}?"), "the armed aria rides the shared pill's confirm label");
   assert.ok(src.includes('class="registry-confirm reg-row-note"'), "the confirm note under the row stays (in the row law's note line seat)");
-  const css = readFileSync(join(root, "webui", "webui", "app", "components", "ui", "TogglePill.vue"), "utf8");
+  const css = readFileSync(join(root, "webui", "app", "components", "ui", "TogglePill.vue"), "utf8");
   assert.match(css, /width:\s*26px/, "the MCP reference's pill dimensions live once, in ui/");
   assert.match(css, /border-color:\s*var\(--ok\)/, "the on border rides the ok token");
 });

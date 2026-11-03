@@ -28,7 +28,7 @@ import { normalizeSettingsPayload } from "../app/composables/omega.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webui = join(here, "..", "..");
-const webuiApp = join(webui, "app");
+const webuiApp = join(webui, "webui", "app");
 
 const read = (...parts: string[]): string =>
   readFileSync(join(...parts), "utf8");

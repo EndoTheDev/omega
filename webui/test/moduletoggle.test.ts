@@ -67,6 +67,6 @@ test("enable needs no confirm", () => {
 });
 
 test("not-toggleable states the always-on law instead", () => {
-  assert.equal(toggleNote(row({ toggleable: false }), false), "kanban is machine-critical or webui ring - always on");
-  assert.equal(toggleNote(row({ toggleable: false }), true), "kanban is machine-critical or webui ring - always on");
+  assert.equal(toggleNote(row({ toggleable: false }), false), "kanban is machine-critical or shell - always on");
+  assert.equal(toggleNote(row({ toggleable: false }), true), "kanban is machine-critical or shell - always on");
 });

@@ -63,10 +63,10 @@ test("the registry's every entry keeps its floor law (terminal = tool family)", 
 
 // --- the source wiring (the composition-test convention) ----------------
 
-const appVue = read(root, "webui/webui/app/app.vue");
+const appVue = read(root, "webui/app/app.vue");
 const tabVue = read(
   root,
-  "webui/webui/app/components/terminal/TerminalTab.vue",
+  "webui/app/components/terminal/TerminalTab.vue",
 );
 
 test("app.vue hosts the terminal outlet - any pane slot by union membership", () => {
