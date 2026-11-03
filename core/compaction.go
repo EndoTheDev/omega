@@ -5,7 +5,7 @@ package core
 // fallback; the status bar and compaction budget prefer the auto-
 // discovered value from the provider (ModelInfo.ContextWindow) or the
 // config value (CompactionConfig.ContextWindow) when available.
-const DefaultContextWindow = 8192
+const DefaultContextWindow = 32768
 
 const defaultReserveTokens = 16384
 
