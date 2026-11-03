@@ -104,7 +104,6 @@ type ptyProcess struct {
 	cmd    *exec.Cmd
 	done   chan struct{}
 	code   int
-	killed bool
 }
 
 func (p *ptyProcess) Read(b []byte) (int, error)  { return p.master.Read(b) }
@@ -140,7 +139,6 @@ func (p *ptyProcess) Kill() error {
 	if p.cmd.Process == nil {
 		return nil
 	}
-	p.killed = true
 	if err := unix.Kill(-p.cmd.Process.Pid, unix.SIGKILL); err != nil {
 		_ = p.cmd.Process.Kill()
 	}

@@ -198,24 +198,88 @@ func TestClaimReattachOneShellPerPane(t *testing.T) {
 	if err != nil || claimed {
 		t.Fatalf("first claim: claimed=%v err=%v", claimed, err)
 	}
-	s2, claimed, err := st.Claim()
-	if err != nil || !claimed || s2 != s1 {
-		t.Fatalf("second claim: want reattach of %s, got reattach=%v err=%v", s1.id, claimed, err)
-	}
-	// an ATTACHED session is no longer claimable - the next pane gets
-	// a fresh shell (one terminal per pane). The sub stays attached
-	// for the rest of the test.
+	// the pane's stream subscribes - the claim mark clears at the attach
 	sub, replay, _ := s1.subscribe()
 	if len(replay) != 0 {
 		t.Fatalf("empty session replay: %d bytes", len(replay))
 	}
-	defer s1.unsubscribe(sub)
+	// an ATTACHED session is no longer claimable - the next pane gets
+	// a fresh shell (one terminal per pane)
+	s2, claimed, err := st.Claim()
+	if err != nil || claimed || s2 == s1 {
+		t.Fatalf("second claim while s1 attached: claimed=%v err=%v", claimed, err)
+	}
+	// detach (the SSE drop): the shell idles server-side
+	s1.unsubscribe(sub)
 	s3, claimed, err := st.Claim()
-	if err != nil || claimed || s3 == s1 {
-		t.Fatalf("third claim while s1 attached: claimed=%v err=%v", claimed, err)
+	if err != nil || !claimed || s3 != s1 {
+		t.Fatalf("third claim after detach: want reattach of %s, got reattach=%v err=%v", s1.id, claimed, err)
 	}
 	if got := len(procs()); got != 2 {
 		t.Fatalf("spawn count: %d, want 2", got)
+	}
+}
+
+// The claim mark (card t_d12c83bc): a claim whose stream never
+// subscribed is taken - a second racing pane must never adopt the
+// shell. The adopt (subscribe) hands the ownership to the sub, so the
+// later detach/reattach takes the same shell back.
+func TestUnadoptedClaimBlocksReattach(t *testing.T) {
+	st, _ := newTestStore(t, nil)
+	s1, claimed, err := st.Claim()
+	if err != nil || claimed {
+		t.Fatalf("first claim: claimed=%v err=%v", claimed, err)
+	}
+	// a second claim while the first pane has claimed but not streamed:
+	// a FRESH shell, never the taken one
+	s2, claimed, err := st.Claim()
+	if err != nil || claimed || s2 == s1 {
+		t.Fatalf("second unadopted claim: claimed=%v err=%v (want a fresh spawn)", claimed, err)
+	}
+	// the adopt unblocks the reattach: subscribe clears the mark
+	sub, _, _ := s1.subscribe()
+	s1.unsubscribe(sub)
+	s3, claimed, err := st.Claim()
+	if err != nil || !claimed || s3 != s1 {
+		t.Fatalf("post-adopt claim: want reattach of %s, got reattach=%v err=%v", s1.id, claimed, err)
+	}
+}
+
+// The race finding 2 pins: panes racing Open (a page reload with
+// several terminal tabs) all claim concurrently - each gets its own
+// shell, no two share one.
+func TestRacingClaimsSpawnDistinctShells(t *testing.T) {
+	st, procs := newTestStore(t, nil)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	ids := []string{}
+	for range maxSessions {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s, claimed, err := st.Claim()
+			if err != nil || claimed {
+				t.Errorf("racing claim: claimed=%v err=%v", claimed, err)
+				return
+			}
+			mu.Lock()
+			ids = append(ids, s.id)
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	if len(ids) != maxSessions {
+		t.Fatalf("racing claims: %d claimed, want %d", len(ids), maxSessions)
+	}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if seen[id] {
+			t.Fatalf("racing claims: two panes got %s", id)
+		}
+		seen[id] = true
+	}
+	if got := len(procs()); got != maxSessions {
+		t.Fatalf("racing claims spawned %d shells, want %d", got, maxSessions)
 	}
 }
 
@@ -401,7 +465,12 @@ func TestStreamReplaysTailAfterDetach(t *testing.T) {
 	st, _ := newTestStore(t, nil)
 	mux := mountTerminal(t, st)
 	id, _ := claimSession(t, mux)
-	st.Get(id).record([]byte("written while detached"))
+	// the pane's stream: subscribe then the SSE drop - the claim mark
+	// clears at the attach, nobody is attached at the next claim
+	sess := st.Get(id)
+	sub, _, _ := sess.subscribe()
+	sess.unsubscribe(sub)
+	sess.record([]byte("written while detached"))
 	// a claim with the session attached by nobody: the SAME shell comes
 	// back (the detaching is the lazy unmount's SSE drop)
 	id2, claimed := claimSession(t, mux)
