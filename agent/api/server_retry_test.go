@@ -7,6 +7,7 @@ package api
 // slot's 409 gate still applies, and cancel mid-retry keeps the partial.
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"bytes"
 	"context"
 	"fmt"
@@ -36,11 +37,11 @@ func (p *multiProvider) arm() { p.next = make(chan []core.ProviderStreamEvent) }
 
 func (p *multiProvider) ModelName() string             { return p.modelName }
 func (p *multiProvider) SetThinkingLevel(level string) {}
-func (p *multiProvider) WithThinkingLevel(level string) llm.Provider {
+func (p *multiProvider) WithThinkingLevel(level string) agent.Provider {
 	cp := *p
 	return &cp
 }
-func (p *multiProvider) WithModel(model string) llm.Provider {
+func (p *multiProvider) WithModel(model string) agent.Provider {
 	cp := *p
 	cp.modelName = model
 	return &cp
@@ -80,7 +81,7 @@ func (p *multiProvider) done() {
 func newMultiServer(t *testing.T) (*Server, *multiProvider, *store.Store, *httptest.Server) {
 	t.Helper()
 	prov := newMultiProvider("step")
-	a := core.NewAgent(prov, nil, 0)
+	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	st, err := store.Open(":memory:")
 	if err != nil {

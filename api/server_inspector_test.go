@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"encoding/json"
 	"net/http"
 	httptest "net/http/httptest"
@@ -51,7 +52,7 @@ func (f *fakeSkillEntries) SkillsEntries() (map[string]string, map[string]string
 	return f.index, map[string]string{}, f.err
 }
 
-// fakePathLogger satisfies core.LoggerProvider with a readable path.
+// fakePathLogger satisfies agent.LoggerProvider with a readable path.
 type fakePathLogger struct{ path string }
 
 func (l *fakePathLogger) Printf(string, ...any) {}
@@ -76,13 +77,13 @@ func serveInspector(t *testing.T, s *Server) *httptest.Server {
 // wireInspector offers the fake supplies into a fresh Context and
 // rewires the server against it - the same rewire the live toggle runs
 // (one code path, no test-only seam plumbing).
-func wireInspector(t *testing.T, s *Server, offers map[string]any, logger core.LoggerProvider) {
+func wireInspector(t *testing.T, s *Server, offers map[string]any, logger agent.LoggerProvider) {
 	t.Helper()
 	ctx := &core.Context{}
 	for k, v := range offers {
 		ctx.ApplyOffer(k, "fake", v)
 	}
-	ctx.Logger = logger
+	ctx.ApplyOffer("logger", "test", logger)
 	if err := s.RewireSeams(ctx, nil, nil); err != nil {
 		t.Fatalf("rewire: %v", err)
 	}

@@ -6,6 +6,7 @@ package store
 // WAL on disk; a legacy two-column index rebuilds at open.
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"context"
 	"database/sql"
 	"fmt"
@@ -18,8 +19,8 @@ import (
 )
 
 // fakeSummary answers every consult with one fixed paragraph.
-func fakeSummary(text string) *llm.FakeProvider {
-	return llm.NewFakeProvider("test-model",
+func fakeSummary(text string) *agent.FakeProvider {
+	return agent.NewFakeProvider("test-model",
 		core.ResponseChunk{Type: "response.chunk", Content: text},
 		core.StreamEnd{Type: "stream.end", FinishReason: "stop"})
 }
@@ -319,7 +320,7 @@ func TestHygieneToolActions(t *testing.T) {
 	}
 	ageSession(t, s, "a", 2)
 	cfg := DefaultHygiene()
-	tool := (&hygieneToolProvider{store: s, cfg: cfg, providerFn: func() core.Provider {
+	tool := (&hygieneToolProvider{store: s, cfg: cfg, providerFn: func() agent.Provider {
 		return fakeSummary("The user greeted the assistant; a greeting was returned.")
 	}}).Tools()["sessions.hygiene"]
 

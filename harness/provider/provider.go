@@ -1,9 +1,10 @@
 // Package provider implements the provider seam for omega.
 // It contains the Ollama, OpenAI, and Anthropic provider
-// implementations. The Provider struct implements llm.Provider directly.
+// implementations. The Provider struct implements agent.Provider directly.
 package provider
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -17,7 +18,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// Provider implements llm.Provider for Ollama, OpenAI, and Anthropic.
+// Provider implements agent.Provider for Ollama, OpenAI, and Anthropic.
 type Provider struct {
 	typ           string // "ollama", "openai", "anthropic"
 	modelName     string
@@ -121,7 +122,7 @@ func (p *Provider) SetThinkingLevel(level string) { p.thinkingLevel = level }
 // WithModel returns a copy of the provider serving the given model.
 // The receiver is left unchanged, so per-run providers are derived
 // without mutating the mounted base provider.
-func (p *Provider) WithModel(model string) llm.Provider {
+func (p *Provider) WithModel(model string) agent.Provider {
 	cp := *p
 	cp.modelName = model
 	return &cp
@@ -132,7 +133,7 @@ func (p *Provider) WithModel(model string) llm.Provider {
 // sends no thinking parameter). Copy discipline matches WithModel:
 // the receiver is left unchanged, so per-run providers derived from
 // the mounted base never mutate it.
-func (p *Provider) WithThinkingLevel(level string) llm.Provider {
+func (p *Provider) WithThinkingLevel(level string) agent.Provider {
 	cp := *p
 	cp.thinkingLevel = level
 	return &cp
@@ -148,7 +149,7 @@ func (p *Provider) ListModelEntries() ([]core.ModelEntry, error) {
 }
 
 // ListModels fetches available model names from the provider API - the
-// plain projection of listModelEntries, the core.Provider contract.
+// plain projection of listModelEntries, the agent.Provider contract.
 func (p *Provider) ListModels() ([]string, error) {
 	entries, err := p.listModelEntries()
 	if err != nil {

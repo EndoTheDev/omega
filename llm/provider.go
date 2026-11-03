@@ -61,21 +61,17 @@ func SSEData(reader *bufio.Reader) (string, bool, error) {
 	}
 }
 
-// Compatibility aliases: the provider contract (core.ToolSchema, core.Provider,
-// ModelInfo) now lives in core (arc 1b2, t_d16468fd). Phase 2 (2cafbce)
-// rewired the module callers and kept the aliases: llm.Provider /
-// llm.ToolSchema / llm.ModelInfo ARE the module-boundary address, frozen
-// by extraction-recipe.md section 3 (live usages as of 2e9ae66:
-// 46 Provider, 21 ToolSchema, 24 ModelInfo). They are Go aliases of the
-// core types (`type Provider = core.Provider`), not a second contract.
+// Compatibility aliases: the tool + model wire shapes live in core
+// (arc 1b2). They are Go aliases of the core wire types, not a second
+// contract. The Provider face itself left core in part 3 (wave 2, the
+// seam constitution): consumers declare it (agent.Provider); llm keeps
+// no provider contract at all.
 //
-// DO NOT add new contract types here - new provider contracts belong
-// in core.
+// DO NOT add new contract types here - provider contracts belong to
+// their consumers.
 type (
 	// ToolSchema describes a tool the model may call.
 	ToolSchema = core.ToolSchema
-	// Provider is the interface for LLM provider implementations.
-	Provider = core.Provider
 	// ModelInfo holds metadata about the current model.
 	ModelInfo = core.ModelInfo
 )

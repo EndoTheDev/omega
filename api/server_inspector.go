@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -8,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/EndoTheDev/omega/core"
 )
 
 // The inspector HTTP surface (card t_db430fea, read-only v1):
@@ -202,7 +202,7 @@ func parseLogLines(raw string) int {
 // FileLogger carries its own path (harness/logging); any other logger
 // implementation, including NopLogger for logging-disabled installs,
 // has none and the /logs endpoint 404s.
-func logPathOf(logger core.LoggerProvider) string {
+func logPathOf(logger agent.LoggerProvider) string {
 	if p, ok := logger.(interface{ Path() string }); ok {
 		return p.Path()
 	}

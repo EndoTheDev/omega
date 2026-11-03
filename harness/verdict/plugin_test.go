@@ -13,7 +13,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// stubLogger is the minimal core.LoggerProvider (the mount reads the
+// stubLogger is the minimal agent.LoggerProvider (the mount reads the
 // logging seam to build the hub).
 type stubLogger struct{}
 
@@ -25,10 +25,10 @@ func (stubLogger) Close() error                      { return nil }
 type stubLoggerPlugin struct{}
 
 func (stubLoggerPlugin) Name() string       { return "logging" }
-func (stubLoggerPlugin) Provides() []string { return []string{"logging"} }
+func (stubLoggerPlugin) Provides() []string { return []string{"logger"} }
 func (stubLoggerPlugin) Requires() []string { return nil }
 func (stubLoggerPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
-	ctx.Logger = stubLogger{}
+	ctx.ApplyOffer("logger", "logging", stubLogger{})
 	return nil
 }
 
@@ -41,7 +41,7 @@ func (stubStorePlugin) Name() string       { return "store" }
 func (stubStorePlugin) Provides() []string { return []string{"store"} }
 func (stubStorePlugin) Requires() []string { return nil }
 func (stubStorePlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
-	ctx.Store = nil // compile-safe: a nil store is the unconfigured host posture
+	ctx.ApplyOffer("store", "test", nil // compile-safe: a nil store is the unconfigured host posture)
 	return nil
 }
 

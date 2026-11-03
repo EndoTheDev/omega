@@ -9,7 +9,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// countingCaptioner implements Captioner by returning a fixed caption
+// countingCaptioner implements core.Captioner by returning a fixed caption
 // per call and counting them, so tests can assert the once-per-image
 // discipline.
 type countingCaptioner struct {
@@ -31,7 +31,7 @@ type recordingLoop struct {
 	streamCall bool
 }
 
-func (l *recordingLoop) Run(ctx context.Context, opts core.LoopOptions) error {
+func (l *recordingLoop) Run(ctx context.Context, opts LoopOptions) error {
 	l.messages = opts.Messages
 	streamErr := ""
 	for event := range opts.Provider.Stream(ctx, opts.Messages, nil) {
@@ -57,7 +57,7 @@ func imageUserMessage(content string) core.User {
 
 // runOnce drives one RunWithProvider to completion and returns the
 // terminal event.
-func runOnce(t *testing.T, ag *core.Agent, messages []core.Message) (core.AgentEnd, *recordingLoop) {
+func runOnce(t *testing.T, ag *Agent, messages []core.Message) (core.AgentEnd, *recordingLoop) {
 	t.Helper()
 	loop := &recordingLoop{}
 	ag.SetLoopProvider(loop)
@@ -75,7 +75,7 @@ func runOnce(t *testing.T, ag *core.Agent, messages []core.Message) (core.AgentE
 // while the caller's original message keeps its images untouched
 // (channels persist and re-render the originals).
 func TestRunCaptionsImagesBeforeLoop(t *testing.T) {
-	ag := core.NewAgent(llm.NewFakeProvider("main", []core.ProviderStreamEvent{
+	ag := NewAgent(NewFakeProvider("main", []core.ProviderStreamEvent{
 		core.ResponseChunk{Type: "response_chunk", Content: "ok"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}...), nil, 0)
@@ -114,7 +114,7 @@ func TestRunCaptionsImagesBeforeLoop(t *testing.T) {
 
 // A text-only turn never consults the captioner, even when set.
 func TestRunTextOnlySkipsCaptioner(t *testing.T) {
-	ag := core.NewAgent(llm.NewFakeProvider("main", []core.ProviderStreamEvent{
+	ag := NewAgent(NewFakeProvider("main", []core.ProviderStreamEvent{
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}...), nil, 0)
 	captioner := &countingCaptioner{caption: "unused"}
@@ -133,7 +133,7 @@ func TestRunTextOnlySkipsCaptioner(t *testing.T) {
 // the run ends with a LOUD, captioner-attributed error before any
 // streaming - not a provider 400 about unseen pixels.
 func TestRunCaptionFailureEndsRun(t *testing.T) {
-	ag := core.NewAgent(llm.NewFakeProvider("main", []core.ProviderStreamEvent{
+	ag := NewAgent(NewFakeProvider("main", []core.ProviderStreamEvent{
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}...), nil, 0)
 	ag.SetCaptioner(&countingCaptioner{err: context.DeadlineExceeded})
@@ -153,7 +153,7 @@ func TestRunCaptionFailureEndsRun(t *testing.T) {
 // behavior, byte for byte - images ride to the main provider, which
 // surfaces its own refusal.
 func TestRunNoCaptionerKeepsImages(t *testing.T) {
-	ag := core.NewAgent(llm.NewFakeProvider("main", []core.ProviderStreamEvent{
+	ag := NewAgent(NewFakeProvider("main", []core.ProviderStreamEvent{
 		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "model does not support images (400)"},
 	}...), nil, 0)
 	end, loop := runOnce(t, ag, []core.Message{imageUserMessage("look")})

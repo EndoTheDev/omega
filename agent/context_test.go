@@ -77,8 +77,8 @@ func (s *stubLogger) Errorf(format string, args ...any) {
 
 func (s *stubLogger) Close() error { return nil }
 
-// TestNewFromContextFull verifies that core.NewFromContext wires every field
-// from a fully-populated Context and core.AgentOptions into the resulting core.Agent.
+// TestNewFromContextFull verifies that NewFromContext wires every field
+// from a fully-populated Context and AgentOptions into the resulting Agent.
 func TestNewFromContextFull(t *testing.T) {
 	prov := &stubProvider{name: "full-model"}
 	comp := stubCompactor{}
@@ -93,19 +93,14 @@ func TestNewFromContextFull(t *testing.T) {
 	injected := newStubStream(core.InjectedMessage{Text: "queued", Source: "test"})
 	pending := func(affinity string) int { return 3 }
 
-	ctx := &Context{
-		Provider:           prov,
-		Compactor:          comp,
-		Loop:               loop,
-		PromptBuilder:      pb,
-		Logger:             logger,
-		ToolProviders:      []core.ToolProvider{tp},
-		Infos:              infos,
-		InjectedMessages:   injected,
-		PendingDelegations: pending,
-	}
+	ctx := &Context{}
+	ctx.ApplyOffer("provider", "test", prov)
+	ctx.ApplyOffer("compactor", "test", comp)
+	ctx.ApplyOffer("loop", "test", loop)
+	ctx.ApplyOffer("prompt", "test", pb)
+	ctx.ApplyOffer("logger", "test", logger)
 
-	opts := core.AgentOptions{
+	opts := AgentOptions{
 		MaxTurns:      5,
 		MaxToolOutput: 4096,
 		PromptCustom:  "custom-prompt",
@@ -114,7 +109,7 @@ func TestNewFromContextFull(t *testing.T) {
 		CWD:           "/work/dir",
 	}
 
-	ag := core.NewFromContext(ctx, opts)
+	ag := NewFromContext(ctx, opts)
 	if ag == nil {
 		t.Fatal("NewFromContext returned nil")
 	}
@@ -141,7 +136,7 @@ func TestNewFromContextFull(t *testing.T) {
 
 	// ToolProviders wired — run with a provider that streams a tool call
 	// for "alpha" and confirm the extension tool is available.
-	prov2 := llm.NewFakeProviderScripts("full-model",
+	prov2 := NewFakeProviderScripts("full-model",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "alpha", Arguments: map[string]any{}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -154,7 +149,7 @@ func TestNewFromContextFull(t *testing.T) {
 	// Swap the provider for this agent without mutating the shared context.
 	ctxSwap := *ctx
 	ctxSwap.Provider = prov2
-	ag2 := core.NewFromContext(&ctxSwap, opts)
+	ag2 := NewFromContext(&ctxSwap, opts)
 	ev2 := collect(t, ag2.Run(context.Background(), []core.Message{core.NewUser("go")}, nil))
 	end2 := lastAgentEnd(ev2)
 	if end2.Turns != 2 || end2.FinishReason != "stop" {
@@ -179,24 +174,22 @@ func TestNewFromContextFull(t *testing.T) {
 	// PendingDelegations wired — verify via a fresh context where the
 	// pending func is distinguishable; the agent stores it for the loop.
 	pendingCalled := false
-	ctx2 := &Context{
-		Provider:           prov,
-		Loop:               testLoop{},
-		PendingDelegations: func(affinity string) int { pendingCalled = true; return 7 },
-	}
-	ag3 := core.NewFromContext(ctx2, opts)
+	ctx2 := &Context{PendingDelegations: func(affinity string) int { pendingCalled = true; return 7 }}
+	ctx2.ApplyOffer("provider", "test", prov)
+	ctx2.ApplyOffer("loop", "test", testLoop{})
+	ag3 := NewFromContext(ctx2, opts)
 	_ = ag3 // pendingDeleg is internal; the nil-safety test covers the path.
 	_ = pendingCalled
 }
 
-// TestNewFromContextMinimal verifies that core.NewFromContext with an empty
-// Context and zero-value core.AgentOptions creates an core.Agent without panicking,
+// TestNewFromContextMinimal verifies that NewFromContext with an empty
+// Context and zero-value AgentOptions creates an Agent without panicking,
 // and that Run returns a "no loop configured" error (Loop is nil).
 func TestNewFromContextMinimal(t *testing.T) {
 	ctx := &Context{}
-	opts := core.AgentOptions{}
+	opts := AgentOptions{}
 
-	ag := core.NewFromContext(ctx, opts)
+	ag := NewFromContext(ctx, opts)
 	if ag == nil {
 		t.Fatal("NewFromContext returned nil for empty Context")
 	}
@@ -208,19 +201,16 @@ func TestNewFromContextMinimal(t *testing.T) {
 	}
 }
 
-// TestNewFromContextNilOptional verifies that core.NewFromContext does not
+// TestNewFromContextNilOptional verifies that NewFromContext does not
 // panic when Compactor, InjectedMessages, and PendingDelegations are nil
 // — the function has nil checks for these three before calling Set*.
 func TestNewFromContextNilOptional(t *testing.T) {
 	prov := &stubProvider{name: "nil-optional"}
-	ctx := &Context{
-		Provider:  prov,
-		Loop:      testLoop{},
-		Compactor: nil,
-		// InjectedMessages and PendingDelegations left nil.
-	}
-
-	ag := core.NewFromContext(ctx, core.AgentOptions{})
+	ctx := &Context{} // InjectedMessages and PendingDelegations left nil.
+	ctx.ApplyOffer("provider", "test", prov)
+	ctx.ApplyOffer("loop", "test", testLoop{})
+	ag := NewFromContext(ctx, AgentOptions{})
+	ag := NewFromContext(ctx, AgentOptions{})
 	if ag == nil {
 		t.Fatal("NewFromContext returned nil with nil optionals")
 	}

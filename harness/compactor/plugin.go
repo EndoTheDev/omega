@@ -32,9 +32,10 @@ func (p *Plugin) Requires() []string { return []string{"provider"} }
 // seam and the /compact command.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	var compactor *Compactor
-	if cfg, ok := ctx.Configs["compactor"].(core.CompactionConfig); ok {
+	prov := seam[agent.Provider](ctx, "provider")
+	if cfg, ok := ctx.Configs["compactor"].(agent.CompactionConfig); ok {
 		compactor = &Compactor{
-			provider: ctx.Provider,
+			provider: prov,
 			config:   cfg,
 		}
 		// context_window 0 = auto: probe the provider for the model's
@@ -45,21 +46,21 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		// 0, so the DefaultContextWindow fallback in Budget engages
 		// and the server still boots. Manual values > 0 never probe
 		// and keep overriding exactly as today.
-		if cfg.ContextWindow <= 0 && ctx.Provider != nil {
-			if info, err := ctx.Provider.ModelInfo(); err == nil {
+		if cfg.ContextWindow <= 0 && prov != nil {
+			if info, err := prov.ModelInfo(); err == nil {
 				compactor.autoWindow = info.ContextWindow
 			}
 		}
 	} else {
 		compactor = &Compactor{
-			provider: ctx.Provider,
+			provider: prov,
 		}
 	}
 	// /compact stays an extension command (it returns CommandResult
 	// with a display-mode action the shell interprets). Registration
 	// order mirrors the classic body: seam first, command second - the
 	// api chain-on-miss wrapper produces the same fall-through.
-	if err := api.RegisterCompactor(compactor); err != nil {
+	if err := api.Offer("compactor", compactor); err != nil {
 		return err
 	}
 	return api.RegisterCommand("/compact", "summarize conversation history", nil, p.handleCompact)

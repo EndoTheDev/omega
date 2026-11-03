@@ -165,10 +165,12 @@ func TestPluginMount(t *testing.T) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
-	if ctx.Logger == nil {
-		t.Fatal("ctx.Logger is nil after Mount")
+	svc := ctx.Services().Resolve("logger")
+	lg, ok := svc.(agent.LoggerProvider)
+	if !ok || lg == nil {
+		t.Fatalf("logger offer missing after Mount: %v", svc)
 	}
-	defer ctx.Logger.Close()
+	defer lg.Close()
 }
 
 func TestPluginMountDisabled(t *testing.T) {
@@ -180,7 +182,7 @@ func TestPluginMountDisabled(t *testing.T) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
-	if ctx.Logger == nil {
+	if ctx.Services().Resolve("logger") == nil {
 		t.Fatal("ctx.Logger is nil after Mount")
 	}
 	if _, ok := ctx.Logger.(NopLogger); !ok {

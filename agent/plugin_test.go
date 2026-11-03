@@ -10,20 +10,20 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// stubProvider satisfies llm.Provider for testing.
+// stubProvider satisfies Provider for testing.
 type stubProvider struct{ name string }
 
 func (s *stubProvider) Stream(_ context.Context, _ []core.Message, _ []llm.ToolSchema) <-chan core.ProviderStreamEvent {
 	return nil
 }
 func (s *stubProvider) ModelName() string { return s.name }
-func (s *stubProvider) WithModel(model string) llm.Provider {
+func (s *stubProvider) WithModel(model string) Provider {
 	cp := *s
 	cp.name = model
 	return &cp
 }
 func (s *stubProvider) SetThinkingLevel(level string) {}
-func (s *stubProvider) WithThinkingLevel(string) llm.Provider {
+func (s *stubProvider) WithThinkingLevel(string) Provider {
 	return s
 }
 func (s *stubProvider) ListModels() ([]string, error)    { return nil, nil }
@@ -36,7 +36,7 @@ func (stubCompactor) Compact(_ context.Context, msgs []core.Message) ([]core.Mes
 	return msgs, nil
 }
 
-// stubToolProvider satisfies ToolProvider for testing.
+// stubToolProvider satisfies core.ToolProvider for testing.
 type stubToolProvider struct{ tools map[string]core.Tool }
 
 func (s stubToolProvider) Tools() map[string]core.Tool { return s.tools }
@@ -248,7 +248,7 @@ func TestMountAllPopulatesSlots(t *testing.T) {
 		name:     "provider",
 		provides: []string{"provider"},
 		mount: func(ctx *Context) error {
-			ctx.Provider = prov
+			ctx.ApplyOffer("provider", "test", prov)
 			return nil
 		},
 	}
@@ -257,7 +257,7 @@ func TestMountAllPopulatesSlots(t *testing.T) {
 	if _, err := MountAllAPI([]Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
-	if ctx.Provider == nil {
+	if ctx.Services().Resolve("provider") == nil {
 		t.Fatal("Provider slot not populated")
 	}
 	if ctx.Provider.ModelName() != "test-model" {
@@ -282,7 +282,7 @@ func TestMountAllCircularDep(t *testing.T) {
 }
 
 // TestMountAllPopulatesInfos verifies that MountAll fills in
-// ExtensionInfo.Tools, Commands, and ToolList after each mount.
+// core.ExtensionInfo.Tools, Commands, and ToolList after each mount.
 // This is a regression test for the bug where /extensions showed
 // zero tools and zero commands for all extensions.
 func TestMountAllPopulatesInfos(t *testing.T) {

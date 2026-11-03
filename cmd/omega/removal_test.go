@@ -1814,7 +1814,7 @@ func TestApprovalRemovalProof(t *testing.T) {
 	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
-	if ctx.Approvals == nil {
+	if ctx.Services().Resolve("approvals") == nil {
 		t.Fatal("FULL MOUNT: approvals seam nil - capsule did not mount")
 	}
 	foundGate := false

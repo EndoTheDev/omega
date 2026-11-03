@@ -59,7 +59,7 @@ func (p *Plugin) Requires() []string { return []string{"store", "logging"} }
 // every face above vanishes; the proof is TestVerdictRemovalProof
 // (cmd/omega/removal_test.go, seventh).
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
-	p.hub = NewHub(ctx.Store, ctx.Logger)
+	p.hub = NewHub(seam[agent.StoreProvider](ctx, "store"), seam[agent.LoggerProvider](ctx, "logger"))
 	if err := api.Offer("verdicts", p.hub); err != nil {
 		return err
 	}

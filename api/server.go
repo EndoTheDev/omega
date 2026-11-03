@@ -19,6 +19,7 @@ import (
 	"time"
 
 	agentapi "github.com/EndoTheDev/omega/agent/api"
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -49,7 +50,7 @@ type Server struct {
 // NewServer creates the shell server: base surface first, then the
 // shell routes on the same mux, then the host guard wrap - one mux, one
 // guard law over fixed routes AND module capsule routes alike.
-func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvider, settings core.Settings, modules core.ModuleToggles, registries core.RegistryToggles) *Server {
+func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProvider, settings core.Settings, modules core.ModuleToggles, registries core.RegistryToggles) *Server {
 	s := &Server{Server: agentapi.NewServer(a, tools, store, settings, modules, registries), startedAt: time.Now(), themes: newThemeRegistry(resolveThemesDir())}
 	mux := s.Server.Mux()
 	mux.HandleFunc("/health", s.handleHealth)

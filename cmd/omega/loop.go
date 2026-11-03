@@ -56,9 +56,9 @@ func loopPersona() string {
 
 // cliLoop is the interactive loop state.
 type cliLoop struct {
-	ag    *core.Agent
+	ag    *agent.Agent
 	pctx  *agent.Context
-	store core.StoreProvider
+	store agent.StoreProvider
 	out   *bufio.Writer
 	in    *bufio.Reader
 	cfg   Config

@@ -37,7 +37,7 @@ type omegaModules struct {
 	// the atomic config.yaml rename (release gate v0.14.0, must-fix 1).
 	mu *sync.Mutex
 	// logger records every applied toggle; nil logs nothing.
-	logger core.LoggerProvider
+	logger agent.LoggerProvider
 }
 
 // Compile-time assertion that omegaModules implements the seam.

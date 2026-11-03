@@ -31,12 +31,12 @@ func (p *Plugin) Description() string {
 // ctx.Configs (see agent.Describer). Empty = reads no section.
 func (p *Plugin) ConfigKey() string { return "skills" }
 
-func (p *Plugin) Provides() []string { return []string{"skills", "tools", "prompt_sections", "nudge"} }
+func (p *Plugin) Provides() []string { return []string{"skills", "tools", "prompt_sections", "nudger"} }
 
-// Requires names the logging seam: Mount runs WarnLegacyShape, which
-// reads ctx.Logger to mirror the legacy-format boot warning into the
-// log file. Logging must mount first or the edge is meaningless.
-func (p *Plugin) Requires() []string { return []string{"logging"} }
+// Requires names the logger seam: Mount runs WarnLegacyShape, which
+// resolves the logging offer to mirror the legacy-format boot warning
+// into the log file. Logging must mount first or the edge is meaningless.
+func (p *Plugin) Requires() []string { return []string{"logger"} }
 
 // MountWithAPI implements agent.APIPlugin. Populates the skills seam,
 // the skills domain tool (read/write/update), the prompt section, and
@@ -56,14 +56,14 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	sp.SharedDir = cfg.SharedDir
 	sp.SetDisabled(cfg.Disabled)
 	// The curator reads the provider seam LIVE at consult time - the
-	// api accessor, not a mount-time pin (toggles swap the seam).
-	sp.SetProviderFn(func() core.Provider { return api.Provider() })
+	// registry resolve, not a mount-time pin (toggles swap the offer).
+	sp.SetProviderFn(func() agent.Provider { return seam[agent.Provider](ctx, "provider") })
 	sp.CuratorModel = cfg.CuratorModel
 	// Legacy-format visibility (card t_5baad951): a folder holding
 	// <name>.md without SKILL.md is invisible to discovery - one boot
 	// warning per hit, never a silent skip. Reading the logging seam
 	// here is why Requires names it.
-	sp.WarnLegacyShape(ctx.Logger)
+	sp.WarnLegacyShape(seam[agent.LoggerProvider](ctx, "logger"))
 
 	interval := cfg.NudgeInterval
 	if interval < 0 {
@@ -78,7 +78,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		func() error { return p.registerCLI(api, sp) },
 		// The learning-loop reminder seam (t_9972dfd0): the loop
 		// injects one line per elapsed interval; 0 = off.
-		func() error { return api.RegisterTurnNudger(NewTurnNudger(interval)) },
+		func() error { return api.Offer("nudger", NewTurnNudger(interval)) },
 		func() error {
 			for name, t := range sp.Tools() {
 				if err := api.RegisterTool(name, t); err != nil {

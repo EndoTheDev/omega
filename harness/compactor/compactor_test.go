@@ -10,13 +10,13 @@ import (
 )
 
 // Compile-time interface checks.
-var _ core.CompactionProvider = (*Compactor)(nil)
+var _ agent.CompactionProvider = (*Compactor)(nil)
 var _ agent.Plugin = (*Plugin)(nil)
 
 func TestCompactDisabled(t *testing.T) {
 	c := &Compactor{
-		provider: llm.NewFakeProvider("test"),
-		config:   core.CompactionConfig{Enabled: false},
+		provider: agent.NewFakeProvider("test"),
+		config:   agent.CompactionConfig{Enabled: false},
 	}
 	msgs := []core.Message{core.NewUser("hello")}
 	out, err := c.Compact(context.Background(), msgs)
@@ -30,8 +30,8 @@ func TestCompactDisabled(t *testing.T) {
 
 func TestCompactUnderBudget(t *testing.T) {
 	c := &Compactor{
-		provider: llm.NewFakeProvider("test"),
-		config: core.CompactionConfig{
+		provider: agent.NewFakeProvider("test"),
+		config: agent.CompactionConfig{
 			Enabled:       true,
 			Threshold:     0.6,
 			ContextWindow: 32768,
@@ -51,13 +51,13 @@ func TestCompactUnderBudget(t *testing.T) {
 
 func TestCompactSummarizes(t *testing.T) {
 	summary := "This is a summary."
-	provider := llm.NewFakeProvider("test",
+	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: summary},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	c := &Compactor{
 		provider: provider,
-		config: core.CompactionConfig{
+		config: agent.CompactionConfig{
 			Enabled:       true,
 			Threshold:     0.6,
 			ContextWindow: 10,
@@ -109,7 +109,7 @@ func TestCompactCommand(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}
 	// Compactor requires provider seam — mount a fake provider.
-	ctx.Provider = llm.NewFakeProvider("test")
+	ctx.ApplyOffer("provider", "test", agent.NewFakeProvider("test"))
 	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{plugin: p, seam: "provider"}, p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}

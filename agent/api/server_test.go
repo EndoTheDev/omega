@@ -71,13 +71,13 @@ func (m *mockProvider) SetThinkingLevel(level string) { m.thinkingLevel = level 
 // the same lock-free value-copy discipline as WithModel: the receiver
 // is untouched, so concurrent derivations stay isolated. thinkingLevel
 // is read by tests; Stream itself never touches it.
-func (m *mockProvider) WithThinkingLevel(level string) llm.Provider {
+func (m *mockProvider) WithThinkingLevel(level string) agent.Provider {
 	cp := *m
 	cp.thinkingLevel = level
 	return &cp
 }
 
-func (m *mockProvider) WithModel(model string) llm.Provider {
+func (m *mockProvider) WithModel(model string) agent.Provider {
 	cp := *m
 	cp.modelName = model
 	return &cp
@@ -147,7 +147,7 @@ func newTestServer() *Server {
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		),
 	)
-	a := core.NewAgent(provider, nil, 0)
+	a := agent.NewAgent(provider, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	return NewServer(a, nil, nil, nil, nil, nil)
 }
@@ -165,7 +165,7 @@ type testToolProvider struct{ tools map[string]core.Tool }
 
 func (p testToolProvider) Tools() map[string]core.Tool { return p.tools }
 
-func (testLoop) Run(ctx context.Context, opts core.LoopOptions) error {
+func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	sink := agent.RunTurnSink(ctx)
 	// Persistence outlives the run ctx - same WithoutCancel law the
 	// real loop applies, so a cancelled run still lands its copy.
@@ -285,7 +285,7 @@ func TestModelsCapabilities(t *testing.T) {
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		),
 	)}
-	a := core.NewAgent(provider, nil, 0)
+	a := agent.NewAgent(provider, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	s := NewServer(a, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/models", nil)
@@ -666,7 +666,7 @@ func TestSessionTokensPersistAndAccumulate(t *testing.T) {
 				PromptEvalCount: ptrInt(40), EvalCount: ptrInt(5)},
 		),
 	)
-	a := core.NewAgent(provider, nil, 0)
+	a := agent.NewAgent(provider, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	s := NewServer(a, nil, nil, nil, nil, nil)
 	st, err := store.Open(":memory:")
@@ -1539,7 +1539,7 @@ func newTitleTestServerWithStore(t *testing.T) (*Server, *store.Store, *captureP
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		),
 	)
-	a := core.NewAgent(prov, nil, 0)
+	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	s := NewServer(a, nil, nil, nil, nil, nil)
 	st, err := store.Open(":memory:")
@@ -1698,7 +1698,7 @@ func TestChatFiresProvisionalThenFinalOnce(t *testing.T) {
 // by name; a bare server (nil registry) answers []; any other method is
 // 405. The webui's module-owned tools panel renders this inventory.
 func TestTools(t *testing.T) {
-	a := core.NewAgent(newMockProvider("mock"), nil, 0)
+	a := agent.NewAgent(newMockProvider("mock"), nil, 0)
 	a.SetLoopProvider(testLoop{})
 	s := NewServer(a, map[string]core.Tool{
 		"shell.run":   {Description: "run a shell command"},

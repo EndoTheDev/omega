@@ -277,7 +277,7 @@ func TestFirePersistsSessionAndState(t *testing.T) {
 	}
 	// WithDelay spaces the scripted events so the phase meters measure
 	// real wall-clock - the zero-delay fake floors every span to 0.
-	r.ag = core.NewAgent(llm.NewFakeProviderScripts("test", script, final).WithDelay(5*time.Millisecond), map[string]core.Tool{
+	r.ag = agent.NewAgent(agent.NewFakeProviderScripts("test", script, final).WithDelay(5*time.Millisecond), map[string]core.Tool{
 		"nop": {
 			Description: "test no-op",
 			Run:         func(_ context.Context, _ map[string]any) (string, error) { return "ok", nil },

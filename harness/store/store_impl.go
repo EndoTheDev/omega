@@ -21,8 +21,8 @@ import (
 // ErrNotFound is returned when a session does not exist.
 var ErrNotFound = errors.New("session not found")
 
-// Compile-time assertion that Store implements core.StoreProvider.
-var _ core.StoreProvider = (*Store)(nil)
+// Compile-time assertion that Store implements agent.StoreProvider.
+var _ agent.StoreProvider = (*Store)(nil)
 
 // Store persists sessions and its message history in SQLite.
 // It is safe for concurrent use via *sql.DB.
