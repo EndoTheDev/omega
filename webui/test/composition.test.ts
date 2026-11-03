@@ -148,7 +148,7 @@ test("scanModuleUIs yields null dockable for absent, malformed or wrong-shaped d
 // module dir and the shell mounts whatever the generated list carries ---
 
 test("the canary component lives in the tools module, not the shell", () => {
-  const src = readFileSync(`${root}/../../harness/tools/ui/ToolsList.vue`, "utf8");
+  const src = readFileSync(`${root}/../harness/tools/ui/ToolsList.vue`, "utf8");
   assert.ok(src.includes('fetch("/tools")'), "self-contained GET /tools fetch");
   // card t_73994e55 -> t_372b9e9a: a domain tool's actions[] renders as
   // the row's EXPANDABLE detail lines (memory.add - description), the
