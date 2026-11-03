@@ -5,11 +5,18 @@ every capsule one registration surface: `agent.APIPlugin`'s
 `MountWithAPI(ctx, api)`. Instead of assigning `Context` slots by hand,
 the capsule calls `api.Register*(...)` - exclusivity moves from "which
 slot" to one-name-one-tenant, and the registry ledger (claims, module
-routes, refusals) records it. Phase B shipped the adapters; this phase
-migrates the capsules one card at a time.
+routes, refusals) records it. Phase B shipped the adapters; the
+migration itself is COMPLETE (phase F retired the adapter layer) -
+this recipe stays for the day a capsule is added outside the register.
+
+Since part 3 (the seam constitution, 2026-11-03), a service is not a
+slot fill but an offer: `api.Offer(key, svc)` on the `Services`
+registry, closed at 14 keys (8 need keys + 6 capsule-service keys -
+docs/architecture.md's seam-constitution section); needs live with
+their consumers and no core-named seam type exists.
 
 Kanban (t_a62ffa95, phase C1) is the proven migration: the biggest
-capsule - an exclusive seam, a folded tool, two commands, a live
+capsule - a service offer, a folded tool, two commands, a live
 canvas capsule, and the notifications capture. Every remaining
 capsule follows this pattern in its own card. The removal-side recipe
 stays in `docs/removing-a-module.md`; the two recipes compose.
@@ -44,7 +51,7 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
 
    | Classic assignment                    | Registration                |
    | ------------------------------------- | --------------------------- |
-   | Exclusive seam (one per slot)         | the slot's `Register*`      |
+   | Exclusive seam (one per slot)         | `api.Offer(key, svc)` - one owner per key (part 3: the closed need/capsule-service keys; the consumer asserts its own face) |
    | `ctx.ToolProviders` append            | `RegisterTool` per tool     |
    | `ctx.Commands` + handler wrapper      | `RegisterCommand` per name  |
    | `ctx.PanelProviders` append            | `RegisterPanelProvider`     |
