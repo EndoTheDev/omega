@@ -73,7 +73,7 @@ func (s *Store) ListAgentSessions(ctx context.Context, agentName string) ([]core
 
 // aiNowISO removed: core.NowISO is the store-wide timestamp helper.
 
-// HandleAgentsCommand renders the TUI's /agents table: the profile
+// HandleAgentsCommand renders the /agents table: the profile
 // inventory with session counts filled from the store. Needs OMEGA_HOME
 // - the same env main sets for every process - and an AgentSessionStore
 // (a store without the optional interface renders zero counts, which is
@@ -100,7 +100,7 @@ func HandleAgentsCommand(ctx context.Context, st agent.StoreProvider) (core.Comm
 	return core.CommandResult{Text: sb.String()}, nil
 }
 
-// HandleAgentDetailCommand renders the TUI's /agent <name>: config
+// HandleAgentDetailCommand renders the /agent <name>: config
 // summary, skills, memory size, and this agent's own sessions.
 func HandleAgentDetailCommand(ctx context.Context, st agent.StoreProvider, arg string) (core.CommandResult, error) {
 	home := os.Getenv("OMEGA_HOME")

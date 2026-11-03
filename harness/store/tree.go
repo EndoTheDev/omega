@@ -45,7 +45,7 @@ func (s *Store) loadRows(ctx context.Context, sessionID string) ([]core.StoredMe
 
 // loadViewRows reads the rows a PARENTED session's tree reads: every
 // ancestor's rows (root first) precede the session's own rows - a branch
-// inherits its parent's history as a prefix, the same view the TUI's
+// inherits its parent's history as a prefix, the same view the
 // /branch load renders (GetAncestorMessages). Sessions without a parent
 // load just their own rows, unchanged. A missing ancestor (orphan chain
 // after a hard delete) ends the walk - the visible part reads, matching

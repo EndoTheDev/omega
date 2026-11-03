@@ -2,7 +2,7 @@
 // t_5d9032d3): one small SQLite record per finished thing - a kanban
 // task completed, a cron fire finished, a dispatched chat run ended -
 // served to the webui bell (badge, dropdown panel, live toasts) and
-// the TUI /notifications command.
+// the /notifications command on the extension seam.
 //
 // Records are metadata only: source kind (task | cron | chat), source
 // id, a fixed title line, the verdict (ok | failed) and the read flag.

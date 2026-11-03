@@ -552,7 +552,7 @@
     const text = draft.value.trim();
     if (!text) return;
     const fork = forkAnchor.value;
-    // slash commands run locally and never hit the agent (the TUI's
+    // slash commands run locally and never hit the agent (the loop
     // law, card t_07aed3f9): the host routes shell verbs to the app's
     // local handler and module/skill commands to the dispatch surface.
     // A /<skill-name> is a reference pill now (t_7f09bd0c): the send

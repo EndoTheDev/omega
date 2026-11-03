@@ -163,8 +163,8 @@
 </template>
 
 <script setup lang="ts">
-  // the inspector's EXTENSIONS tab (card t_14f73742): the webui parity of
-  // the TUI /extensions command. A SHELL tab over GET /extensions (the
+  // the inspector's EXTENSIONS tab (card t_14f73742): the /extensions
+  // module-command surface. A SHELL tab over GET /extensions (the
   // composition-contract ruling lives in extensionsRows.ts): the shell
   // owns the listing because it aggregates every module.
   // Card t_210a0d19 makes it the module lifecycle cockpit: the row model
