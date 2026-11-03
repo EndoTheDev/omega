@@ -6,12 +6,25 @@ from `agent/plugin.go` and mounts into a shared `Context`.
 
 ## Reading rule
 
-A seam's INTERFACE lives in agent/ (mechanism); its IMPLEMENTATIONS
-live in harness/ (opinions). The deletability test: `rm -r
-harness/cron` removes cron from source AND binary - agent/ and
-agent/loop are constitutional (no loop, no product); every harness
-capsule is removable by design (the three-tier restructure,
-card t_768c6cc1).
+A NEED lives with its consumer; an IMPLEMENTATION lives in harness/
+(that is the part-3 seam constitution - the design record is
+docs/architecture.md's seam-constitution section). The loop machinery
+declares its need faces in `agent/seams.go`; the substrate `core/`
+carries no seam types at all; every other consumer (a capsule, the
+serving surface, the host) declares its own private local interface
+for what it calls and resolves the service by its key from the
+universal registry. The deletability test strengthened accordingly:
+`rm -r harness/cron` removes cron from source AND binary - zero
+cron-shaped vocabulary survives outside the folder, because the only
+things naming it are the owner and the consumers' resolve-by-key
+strings. `agent/` and `agent/loop` are constitutional (no loop, no
+product); every harness capsule is removable by design (the
+three-tier restructure, card t_768c6cc1). Note the one legal edge the
+older grammar had: harness -> harness imports stay CORRECT opinions
+reading other opinions (prompt -> tools, continuous -> store), and
+sharing a service without the import goes through
+`api.Offer(key, svc)` + the consumer's own face - never through a
+substrate-named type.
 
 Two load-bearing facts, settled and not open for re-litigation:
 
@@ -22,9 +35,12 @@ Two load-bearing facts, settled and not open for re-litigation:
   `omega/harness/...` import).
 - **store is a load-bearing harness capsule.** Harness capsules read
   it (continuous, tools; more in tests and cmd), every session table
-  lives under it; the seam interface is core's, the sqlite
+  lives under it; the need face is the consumer's (agent.StoreProvider
+  and its local sub-faces), the sqlite
   implementation here is a choice. Removing store removes every
-  capsule that stores something - it exits the binary only with them.
+  capsule that stores something - it exits the binary only with them;
+  the host falls back to an in-memory store it offers under the same
+  "store" key (cmd/omega/main.go).
 
 ## How it works
 
@@ -35,8 +51,9 @@ Two load-bearing facts, settled and not open for re-litigation:
    only mount path (v0.12 phase F retired the classic seam-assignment
    `Mount` and its adapters). Every registration is journaled; the
    dismount replays it backward.
-3. The agent loop reads from `Context` slots directly — zero IPC,
-   full type safety.
+3. The loop resolves its needs from the registry at bind and asserts
+   shape there (wrong shape = loud boot failure naming the need) -
+   zero IPC, no substrate-named types, the consumers own their faces.
 
 ## Plugin interface
 
@@ -57,38 +74,62 @@ type Plugin interface {
     for what each registration builds.
 ```
 
-## Seams
+## Seams (the part-3 grammar: Offer/Resolve, not slots)
 
-| Seam             | Type      | Description                                    |
-| ---------------- | --------- | ---------------------------------------------- |
-| `provider`       | exclusive | LLM provider (Ollama, OpenAI, Anthropic)       |
-| `compactor`      | exclusive | Context compaction                             |
-| `store`          | exclusive | Session persistence                            |
-| `skills`         | exclusive | Skill loading                                  |
-| `loop`           | exclusive | Agent loop                                     |
-| `logging`        | exclusive | Operational logging (file logger)              |
-| `memory`         | exclusive | Persistent memory (two-file store)             |
-| `prompt_builder` | exclusive | System prompt builder                          |
-| `trust`          | exclusive | Project trust gate (AGENTS.md context loading) |
-| `cron`           | exclusive | Scheduled agent turns (crons.yaml)             |
-| `notifications`  | exclusive | Finished-things store (SQLite)                 |
-| `verdicts`       | exclusive | Verdict cards (the blocking `verdict` tool)    |
-| `approvals`      | exclusive | Smart approval gate ([approvals.md](../docs/approvals.md)) |
-| `kanban`         | exclusive | Task board (the kanban SQLite store)           |
-| `tools`          | additive  | Tool provider (multiple plugins contribute)    |
-| `channel`        | additive  | Delivery transport (HTTP, Discord, etc.)       |
-| `prompt_sections` | additive | Prompt sections (modules render their own block) |
+One universal seam mechanism. A capsule does not fill a named
+slot - it OFFERS services under a key (`api.Offer(key, svc)` at
+`MountWithAPI`, journaled like every registration; one owner per
+key, a different tenant on a held key is a boot error,
+`core.ErrSeamForeignTenant`). The consumer declares its OWN private
+interface for what it calls and resolves the key. Two closed
+namespaces (proposing a new key is a design event, argued in a
+card):
 
-Exclusive seams conflict if two plugins provide the same one. The
-`tools` seam is additive: multiple plugins contribute to
-`Context.ToolProviders`. The `prompt_sections` seam is additive:
-modules that own prompt content append a `PromptSectioner` to
-`Context.PromptSectioners`; the prompt builder renders their
-sections between Project Context and Environment.
+### Need keys (8; the loop's shopping list, `agent/seams.go` faces)
+
+Resolved + shape-asserted at bind; missing supply = the documented
+floor (nil-safe degradation), wrong shape = loud boot failure naming
+the need:
+
+| Key         | Need                       | Supplying capsule |
+| ----------- | -------------------------- | ------------------- |
+| `provider`  | the model client           | `provider/`     |
+| `store`     | session persistence        | `store/` (the host offers an in-memory fallback when the capsule is absent) |
+| `loop`      | the multi-turn loop        | `agent/loop` is the default supply, offered under the key like any capsule's |
+| `logger`    | operational logging        | `logging/`      |
+| `compactor` | context compaction         | `compactor/`    |
+| `prompt`    | system prompt + guidelines | `prompt/`       |
+| `nudger`    | the learning-loop reminder | `skills/`       |
+| `approvals` | the smart approval gate    | `approval/`     |
+
+### Capsule-service keys (6; owner-offered sharing)
+
+| Key              | Service                                    | Example consumers |
+| ---------------- | ------------------------------------------ | ------------------ |
+| `skills`         | Skill loading                              | the serving surface (registry browser), the prompt sections |
+| `memory`         | Persistent memory (two-file store)         | `cron/` for deliver=memory jobs (`memoryStore` face) |
+| `trust`          | Project trust gate (AGENTS.md context)     | `approval/`'s gate, the host (`cmd/omega/trust.go` need faces), the prompt context path |
+| `cron`           | Scheduled prompts (crons.yaml)             | the jobs surface |
+| `notifications`  | Finished-things store (SQLite)             | `cron/`, `delegate/`, `kanban/` (the finished-notifier faces) |
+| `verdicts`       | Verdict cards (the blocking `verdict` tool)| `approval/` (the manual-mode card), the verdict routes |
+
+### The additive rails (multiple tenants, appended)
+
+`tools` (RegisterTool / RegisterRuntimeTools), `channel`
+(RegisterChannel), `prompt_sections` (RegisterPromptSectioner),
+panels (RegisterPanelProvider), module REST routes (RegisterRoute),
+commands (RegisterCommand / the `ctx.CommandHandler` chain),
+subcommands (RegisterSubcommand), delegation (RegisterDelegation),
+emitters (RegisterEmitter), lifecycle handles (RunGroup). The
+machine-facing names are namespaced strings ("module.verb"); the
+registry records the owner and refuses a cross-tenant claim.
+`kanban`'s Provides() `"kanban"` string is a mount-order claim only -
+nothing is offered under it.
 
 ## Module-owned surfaces
 
-A module's surface is whatever it registers at Mount: seams, tools,
+A module's surface is whatever it registers or offers at Mount:
+service offers (the closed keys above), tools,
 slash commands (`ctx.Commands` via the extension command seam), REST
 routes (`api.RegisterRoute`, served by the live registry), webui UI
 (`harness/<name>/ui/`), canvas panels. Removing the module removes the
@@ -102,24 +143,23 @@ web search/fetch tool pair: it dissolved into the serving
 now - natural names `web.search`/`web.fetch`, always mounted, never in
 the disable list. No web module exists.
 
-| Package         | Seam(s)        | Description                                          |
-| --------------- | -------------- | ---------------------------------------------------- |
+| Package         | Offers          | Description                                          |
+| --------------- | --------------- | ---------------------------------------------------- |
 | `provider/`     | provider       | Ollama, OpenAI, Anthropic streaming                  |
 | `store/`        | store, tools   | SQLite session store + sessions.search tool          |
-| `skills/`       | skills, tools, prompt_sections | Skill loading + skills domain tool (read/write/update) + /skills command + Available Skills section |
+| `skills/`       | skills, nudger, tools, prompt_sections | Skill loading + skills domain tool (read/write/update) + /skills command + Available Skills section (the capsule offers the `nudger` need supply too) |
 | `compactor/`    | compactor      | Context compaction (keep-first/last + LLM summarize) |
-| `logging/`      | logging        | Operational logging (file logger, LoggerProvider) + the /logs module command (the old follow mode died with the TUI shell) |
+| `logging/`      | logger         | Operational logging (file logger) + the /logs module command (the old follow mode died with the TUI shell) |
 | `memory/`       | memory, tools, prompt_sections | Persistent memory (memory tool, two-file store) + snapshot block. The born-capsule: seam + tool + prompt section all ship from the same Mount; no command, REST route or canvas panel exists. Removal proof `TestMemoryRemovalProof` - arc 6 capsule |
-| `prompt/`       | prompt_builder | Generic prompt assembler (sections from owning modules) |
+| `prompt/`       | prompt         | Generic prompt assembler (sections from owning modules) |
 | `tools/`        | tools, prompt_sections | Shell command + file tools + Tools section (firstLine descriptions); ships `ui/ToolsList.vue` (webui inspector panel from GET /tools) |
 | `mcp/`          | tools          | MCP bridge (stdio + Streamable HTTP servers, MCP_SERVERS env or mcp.yaml). The additive born-capsule: the bridge tool provider is the whole surface - every discovered server tool ships server-qualified from the single Mount; no command, REST route, skills or canvas panel exists. Removal proof `TestMCPRemovalProof` - arc 6 capsule |
 | `delegate/`     | tools          | Subagent delegation (`delegate.task` + `delegate.status`, the ctx.InjectedMessages/PendingDelegations seam, notifications emitter). The wired born-capsule: seam + tool + emitter capture all ship from the same Mount; no command, REST route, skills or canvas panel exists. Removal proof `TestDelegateRemovalProof` - arc 6 capsule. t_77e27ef8 gap-close: the recursion guard has a mount face (a child with OMEGA_SUBAGENT set registers NO delegate tools - depth stays at one level), children ride stored sessions (host pre-creates `delegate:<task>`, parented to the caller session, child inherits via `run --session`; `delegate.status` shows the handle), the inject is a capped summary-shaped turn (stdout only, named cut marker, short failure line on error), and `delegate.task` takes optional `agent`/`model` fields under the defaulting law (empty = default agent / session provider model, explicit model = OMEGA_MODEL, re-asserted over persona layers in cmdRun) |
-| `verdict/`      | verdicts, tools, prompt_sections | Verdict cards (the single-answer hub, the blocking `verdict` tool, /verdict command + Verdict Cards prompt section). The interactive born-capsule: seam + tool + command + prompt section all ship from the same Mount; no canvas panel or actions exist (the card renders off the tool call; the /verdicts routes live in http_channel behind the seam-nil guard). Removal proof `TestVerdictRemovalProof` - arc 6 capsule |
-| `approval/`     | approvals, prompt_sections | Smart approval gate: risky shell commands reach a reviewer before they run (decision model + deterministic ladder in smart mode, a verdict card in manual mode). Loop-side born-capsule: detector, parser, reviewer client, ladder, cache and audit log all ship from the one Mount and the whole feature is the `ctx.Approvals` seam the agent loop consults; no tool, command, route or webui surface exists (see [docs/approvals.md](../docs/approvals.md)). Removal proof `TestApprovalRemovalProof` |
+| `verdict/`      | verdicts, tools, prompt_sections | Verdict cards (the single-answer hub, the blocking `verdict` tool, /verdict command + Verdict Cards prompt section). The interactive born-capsule: seam + tool + command + prompt section all ship from the same Mount; no canvas panel or actions exist (the card renders off the tool call; the /verdicts routes live in agent/api behind the seam-nil guard). Removal proof `TestVerdictRemovalProof` - arc 6 capsule |
+| `approval/`     | approvals, prompt_sections | Smart approval gate: risky shell commands reach a reviewer before they run (decision model + deterministic ladder in smart mode, a verdict card in manual mode). Loop-side born-capsule: detector, parser, reviewer client, ladder, cache and audit log all ship from the one Mount and the whole feature is the approvals offer (the "approvals" key; the agent loop binds and consults it at boot); no tool, command, route or webui surface exists (see [docs/approvals.md](../docs/approvals.md)). Removal proof `TestApprovalRemovalProof` |
 | `datadir/`      | -              | Database directory layout (data/ folder + boot-time migration of legacy home-root dbs) |
-| `kanban/`       | channel, tools, ui | Task board (SQLite store, /tasks endpoints, kanban seam + tools, Board.vue webui tab) |
+| `kanban/`       | kanban, tools  | Task board (SQLite store, /tasks endpoints, the Provides "kanban" mount-order claim + domain tool, Board.vue webui tab) |
 | `notifications/` | notifications, panels | Finished-things store (SQLite, the bell) + the first module capsule: list panel with row mark-read actions through the action pipe, the toast as a canvas event, emitter wiring via the same registration (arc 4b) |
-| `api/` | channel, panels | HTTP/SSE delivery channel (omega serve transport) + the chat canvas panel (chat-last 1/3, Start-gated registration per 2b): the conversation rides the snapshot + deltas + action pipe contract; the /chat REST + SSE wire stays untouched |
 | `terminal/`     | -              | The webui terminal pane (t_55a3fc4b): a PTY in the bottom host over the ws channel; the dockable rides the shell registry, journey 95 |
 | `browser/`      | -              | The webui browser pane (t_95c91f9c): any-origin iframe tab, GET/PUT /browser/last resume URL + GET /browser/frameable embed probe, journey 96 |
 | `trust/`        | trust          | Project trust gate (trust.yaml, AGENTS.md loading). The gating born-capsule: the trust seam is the whole surface - ResolveContext gates the project context, State feeds the status bar; the host reads both through nil-guarded wrappers (cmd/omega/trust.go) before serve/loop launch. No tool, command, REST route, skills or canvas panel exists. Removal proof `TestTrustRemovalProof` - arc 6 capsule |
@@ -137,20 +177,31 @@ dev home's `bin/skills/`). A directory holding `<name>.md` without
 naming the skill + "rename the file to SKILL.md" - no
 auto-migration, the rename is the fix (card t_5baad951).
 
-## Writing an module
+## Writing a module
 
 1. Create a directory under `harness/<name>/`.
 2. Implement the module logic as a struct.
 3. Create a `plugin.go` with a `NewPlugin(...)` function returning
    a `Plugin` implementation.
-4. `MountWithAPI` populates `Context` slots and registers every
-   claim/tool/command/route through `api.Register*`.
-5. Register the plugin in `buildPlugins()` in `cmd/omega/main.go` -
+4. `MountWithAPI` declares the surface and offers the supply:
+   - additive surfaces via `api.Register*` (tools, commands, routes,
+     panels, prompt sections, channels, emitters, lifecycle handles);
+   - a service other consumers resolve by key via
+     `api.Offer("<key>", svc)` - one owner per key;
+   - a need the loop fills? offer under a need key (`provider`,
+     `store`, `logger`, ...) - the bind asserts your shape at boot
+     and dies loud naming the need on a mismatch.
+5. Consume other capsules through your OWN local interface: declare
+   the few methods you call, resolve their key and type-assert
+   (`ctx.Services().Resolve("memory").(memoryStore)`, the cron
+   capsule's shape), nil-handle absence. Deleting the owner capsule
+   leaves your need statement plus nil handling - nothing else. Never
+   rely on a substrate-named type; never import a consumer of yours.
+6. Subscribe to events (core/events.go) the loop raises per turn -
+   the notifications and continuous capsules are the reference.
+7. Register the plugin in `buildPlugins()` in `cmd/omega/main.go` -
    an unregistered plugin never mounts.
-6. Tools append to `ctx.ToolProviders` in `MountWithAPI`; commands
-   append to `ctx.Commands` and chain `ctx.CommandHandler` (call the
-   previous handler on miss).
-7. Leave `<name>_test.go` behind - each non-trivial package carries
+8. Leave `<name>_test.go` behind - each non-trivial package carries
    a self-check.
 
 Never create an `AGENTS.md` for a module - the root `AGENTS.md` is
@@ -176,6 +227,7 @@ package myext
 
 import (
     "agent"
+    "core"
 )
 
 type Plugin struct{}
@@ -183,10 +235,28 @@ type Plugin struct{}
 func (p *Plugin) Name() string       { return "my-module" }
 func (p *Plugin) Provides() []string { return []string{"tools"} }
 func (p *Plugin) Requires() []string { return nil }
-func (p *Plugin) MountWithAPI(ctx *agent.Context, api *agent.ExtensionAPI) error {
-    ctx.ToolProviders = append(ctx.ToolProviders, myToolProvider{})
-    return nil
+func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
+    // declare: additive rails
+    if err := api.RegisterTool("my-module.ping", myTool{}); err != nil {
+        return err
+    }
+    // offer: a service consumers resolve by key
+    return api.Offer("my-service", p.service{})
 }
 
 func NewPlugin() *Plugin { return &Plugin{} }
+```
+
+A consumer elsewhere reads it back through its OWN face - no import,
+no shared type:
+
+```go
+// somewhere else: myservice consumer (its own private interface)
+type service interface {
+    Do(string) string
+}
+svc, _ := ctx.Services().Resolve("my-service")
+if s, ok := svc.(service); ok {
+    _ = s
+}
 ```
