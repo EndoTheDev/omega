@@ -143,7 +143,7 @@ func TestMountProbesAutoWindowOnlyWhenConfigZero(t *testing.T) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{plugin: plugin, seam: "provider"}, plugin}, ctx, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	c, ok := ctx.Compactor.(*Compactor)
+	c, ok := ctx.Services().Resolve("compactor").(*Compactor)
 	if !ok {
 		t.Fatal("Mount did not install the compactor")
 	}
@@ -174,7 +174,7 @@ func TestMountProbeFailureStillBoots(t *testing.T) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{plugin: &Plugin{}, seam: "provider"}, &Plugin{}}, ctx, nil, nil); err != nil {
 		t.Fatalf("Mount must not fail on probe error: %v", err)
 	}
-	c := ctx.Compactor.(*Compactor)
+	c := ctx.Services().Resolve("compactor").(*Compactor)
 	if c.AutoWindow() != 0 {
 		t.Fatalf("AutoWindow = %d, want 0", c.AutoWindow())
 	}

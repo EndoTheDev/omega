@@ -264,7 +264,8 @@ func TestApplySettingValuesErrors(t *testing.T) {
 
 func TestSaveSettingsPersistsAndReturnsRefreshedSchema(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML)
-	pctx := &agent.Context{Compactor: &compactor.Compactor{}}
+	pctx := &agent.Context{}
+	pctx.ApplyOffer("compactor", "test", &compactor.Compactor{})
 
 	payload, err := saveSettings(path, pctx, map[string]any{
 		"compaction.enabled":  false,
@@ -395,7 +396,8 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	// implementing the SetDefaultWorkspace seam must receive the save.
 	pushed := ""
 	ch := echoChannel{got: &pushed}
-	pctx := &agent.Context{Compactor: comp, Channels: []core.Channel{ch}}
+	pctx := &agent.Context{Channels: []core.Channel{ch}}
+	pctx.ApplyOffer("compactor", "test", comp)
 	cfg := DefaultConfig()
 	cfg.HTTPTimeout = 42
 	cfg.Compaction.Enabled = false

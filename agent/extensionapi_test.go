@@ -242,7 +242,7 @@ func (apiStoreClaimer) Name() string       { return "claimant" }
 func (apiStoreClaimer) Provides() []string { return nil }
 func (apiStoreClaimer) Requires() []string { return nil }
 func (apiStoreClaimer) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
-	return api.RegisterStore(fakeStore{})
+	return api.Offer("store", fakeStore{})
 }
 
 // secondStore mounts the store seam through the api - a cross-tenant
@@ -253,7 +253,7 @@ func (secondStore) Name() string       { return "second" }
 func (secondStore) Provides() []string { return []string{"store"} }
 func (secondStore) Requires() []string { return nil }
 func (secondStore) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
-	return api.RegisterStore(fakeStore{})
+	return api.Offer("store", fakeStore{})
 }
 
 // TestSameTenantReplace pins Q7: the same capsule re-registering its
@@ -330,10 +330,13 @@ func (nilEmitterCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 }
 
 // TestCensusEnforcement walks the registration surface and demands the
-// census: the 23 seam surfaces ride a registration (15 exclusive
-// slots, 8 additive surfaces - the delegation pipe carries both its
-// fields) plus the two no-classic-seam families (routes, emitters).
-// A name going missing breaks the census.
+// census (post-flip, part 3 wave 2): the exclusive slots ride Offers
+// under the closed need-key namespace - there is no per-slot Register*
+// method anymore - and the additive surfaces keep their registrations
+// (15 exclusive slots as need keys, 7 additive surfaces - the
+// delegation pipe carries both its fields) plus the two
+// no-classic-seam families (routes, emitters). A name going missing
+// breaks the census.
 func TestCensusEnforcement(t *testing.T) {
 	want := map[string]bool{
 		"RegisterTool":            true,
@@ -344,14 +347,6 @@ func TestCensusEnforcement(t *testing.T) {
 		"RegisterPromptSectioner": true,
 		"RegisterChannel":         true,
 		"RegisterDelegation":      true,
-		"RegisterProvider":        true,
-		"RegisterCompactor":       true,
-		"RegisterStore":           true,
-		"RegisterLoop":            true,
-		"RegisterLogger":          true,
-		"RegisterPromptBuilder":   true,
-		"RegisterApprovals":       true,
-		"RegisterTurnNudger":      true,
 		"Offer":                   true,
 	}
 	got := map[string]bool{}

@@ -13,6 +13,7 @@ package api
 // one, so every phase boundary is measurable wall-clock time.
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"bufio"
 	"bytes"
 	"context"
@@ -26,7 +27,6 @@ import (
 	"github.com/EndoTheDev/omega/agent/loop"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/store"
-	"github.com/EndoTheDev/omega/llm"
 )
 
 // eventDelay spaces consecutive streamed events so chunk-to-chunk and

@@ -260,8 +260,12 @@ func TestMountAllPopulatesSlots(t *testing.T) {
 	if ctx.Services().Resolve("provider") == nil {
 		t.Fatal("Provider slot not populated")
 	}
-	if ctx.Provider.ModelName() != "test-model" {
-		t.Fatalf("expected model name %q, got %q", "test-model", ctx.Provider.ModelName())
+	offered, ok := ctx.Services().Resolve("provider").(Provider)
+	if !ok {
+		t.Fatal("offered provider does not satisfy the loop's Provider need")
+	}
+	if offered.ModelName() != "test-model" {
+		t.Fatalf("expected model name %q, got %q", "test-model", offered.ModelName())
 	}
 	if len(ctx.Infos) != 1 || ctx.Infos[0].Name != "provider" {
 		t.Fatalf("expected 1 info entry for provider, got %v", ctx.Infos)

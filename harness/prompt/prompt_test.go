@@ -34,8 +34,8 @@ func TestPluginMetadata(t *testing.T) {
 		t.Errorf("Name() = %q, want %q", p.Name(), "prompt")
 	}
 	provides := p.Provides()
-	if len(provides) != 1 || provides[0] != "prompt_builder" {
-		t.Errorf("Provides() = %v, want [prompt_builder]", provides)
+	if len(provides) != 1 || provides[0] != "prompt" {
+		t.Errorf("Provides() = %v, want [prompt]", provides)
 	}
 	if req := p.Requires(); len(req) != 0 {
 		t.Errorf("Requires() = %v, want none (sections are read at build time)", req)

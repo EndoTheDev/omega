@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/llm"
 )
 
 // countingCaptioner implements core.Captioner by returning a fixed caption

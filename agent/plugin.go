@@ -162,20 +162,21 @@ func RouteConfigs(plugins []Plugin, raw ConfigSource) map[string]any {
 // Exclusive seams: two plugins providing the same one is a conflict.
 // "tools" is additive: multiple plugins contribute to ToolProviders.
 var exclusiveSeams = map[string]bool{
-	"provider":       true,
-	"compactor":      true,
-	"store":          true,
-	"skills":         true,
-	"loop":           true,
-	"logging":        true,
-	"memory":         true,
-	"prompt_builder": true,
-	"frontend":       true,
-	"trust":          true,
-	"cron":           true,
-	"kanban":         true,
-	"notifications":  true,
-	"verdicts":       true,
+	"provider":      true,
+	"compactor":     true,
+	"store":         true,
+	"skills":        true,
+	"loop":          true,
+	"logger":        true,
+	"memory":        true,
+	"prompt":        true,
+	"nudger":        true,
+	"approvals":     true,
+	"trust":         true,
+	"cron":          true,
+	"kanban":        true,
+	"notifications": true,
+	"verdicts":      true,
 }
 
 // MountAllAPI lives in extensionapi.go: it owns the plugin-set wiring

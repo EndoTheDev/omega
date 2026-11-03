@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/llm"
 )
 
 // fakeSummary answers every consult with one fixed paragraph.
