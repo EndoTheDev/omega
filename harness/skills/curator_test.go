@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"context"
 	"encoding/json"
 	"os"
@@ -155,7 +156,7 @@ func TestCuratorMergeByteExactRollback(t *testing.T) {
 	srcBefore, _ := os.ReadFile(filepath.Join(dir, "narrow", "SKILL.md"))
 	tgtBefore, _ := os.ReadFile(filepath.Join(dir, "umbrella", "SKILL.md"))
 
-	prov := llm.NewFakeProviderScripts("glm-test",
+	prov := agent.NewFakeProviderScripts("glm-test",
 		chat(`{"merges":[{"source":"narrow","into":"umbrella","reason":"same job, one umbrella"}],"distills":[]}`),
 		chat(`{"title":"Narrow rules","body":"- rule one\n- rule two"}`),
 	)
@@ -251,7 +252,7 @@ func TestCuratorRefusesHandAuthoredMerge(t *testing.T) {
 	sp := NewSkillsProvider(dir)
 	writeHandSkill(t, dir, "handone", "hand body")
 	writeAgentSkill(t, dir, "umbrella2", "body")
-	prov := llm.NewFakeProvider("glm-test", chat(`{"merges":[{"source":"handone","into":"umbrella2","reason":"x"}]}`)...)
+	prov := agent.NewFakeProvider("glm-test", chat(`{"merges":[{"source":"handone","into":"umbrella2","reason":"x"}]}`)...)
 	rep, err := sp.RunCurator(context.Background(), prov, "")
 	if err != nil {
 		t.Fatal(err)
@@ -280,7 +281,7 @@ func TestCuratorDistillOnlyOverThreshold(t *testing.T) {
 	writeAgentSkill(t, dir, "smallskill", "tiny body")
 	bigBefore, _ := os.ReadFile(filepath.Join(dir, "bigskill", "SKILL.md"))
 
-	prov := llm.NewFakeProviderScripts("glm-test",
+	prov := agent.NewFakeProviderScripts("glm-test",
 		chat(`{"merges":[],"distills":[{"name":"bigskill","reason":"oversize"},{"name":"smallskill","reason":"oversize?"}]}`),
 		chat("Concise procedures rewritten tighter with no narration."),
 	)
@@ -324,7 +325,7 @@ func TestCuratorModelOverride(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
 	writeAgentSkill(t, dir, "solo", "body")
-	prov := llm.NewFakeProvider("glm-test", chat(`{}`)...)
+	prov := agent.NewFakeProvider("glm-test", chat(`{}`)...)
 	if _, err := sp.RunCurator(context.Background(), prov, "curator-special"); err != nil {
 		t.Fatal(err)
 	}

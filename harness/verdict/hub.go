@@ -63,8 +63,8 @@ const (
 // hundred bytes and issuance is human-paced; the upgrade path is a
 // prune pass when the slice exceeds a few hundred entries.
 type Hub struct {
-	store  core.StoreProvider
-	logger core.LoggerProvider
+	store  agent.StoreProvider
+	logger agent.LoggerProvider
 	// deadline is the default per-card timeout when a call passes none.
 	deadline time.Duration
 
@@ -90,7 +90,7 @@ type cardState struct {
 
 // NewHub builds a hub. store is optional (ephemeral sessions and
 // store-less hosts skip persistence); logger optional.
-func NewHub(store core.StoreProvider, logger core.LoggerProvider) *Hub {
+func NewHub(store agent.StoreProvider, logger agent.LoggerProvider) *Hub {
 	return &Hub{store: store, logger: logger, deadline: DefaultTimeout}
 }
 

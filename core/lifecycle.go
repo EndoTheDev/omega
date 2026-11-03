@@ -27,9 +27,14 @@ import (
 // store). Handles receive them at StartAll, never at registration:
 // capturing host state at Mount is the capture the fence outlaws.
 type StartDeps struct {
-	Ctx   *Context
-	Agent *Agent
-	Store StoreProvider
+	Ctx *Context
+	// Agent is the wired agent — the neutral `any` is the mount
+	// machinery's carrier (core cannot name the consumer of its own
+	// needs); the receiving capsule type-asserts it to its own face.
+	// Store is the offered store service (the "store" key), the same
+	// carrier law.
+	Agent any
+	Store any
 	// Run is the cancellation context the armed work runs under -
 	// the shutdown signal the host owns (serve passes its signal
 	// context). Nil means the caller asked for a mount with nothing

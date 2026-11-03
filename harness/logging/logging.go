@@ -1,4 +1,4 @@
-// Package logging provides the logging seam (core.LoggerProvider)
+// Package logging provides the logging seam (agent.LoggerProvider)
 // backed by a file logger that writes to OMEGA_HOME/omega.log.
 //
 // Seam: logging (exclusive).
@@ -7,15 +7,15 @@
 package logging
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"fmt"
 	"log"
 	"os"
 	"sync"
 
-	"github.com/EndoTheDev/omega/core"
 )
 
-// FileLogger implements core.LoggerProvider with a file backend.
+// FileLogger implements agent.LoggerProvider with a file backend.
 type FileLogger struct {
 	mu   sync.Mutex
 	path string
@@ -68,7 +68,7 @@ func (l *FileLogger) Close() error {
 	return l.file.Close()
 }
 
-// NopLogger implements core.LoggerProvider with no-ops.
+// NopLogger implements agent.LoggerProvider with no-ops.
 // Used when logging is disabled.
 type NopLogger struct{}
 
@@ -86,7 +86,7 @@ func (NopLogger) Close() error { return nil }
 // construction default (no cwd-relative fallback; resolution is
 // cmd/omega's job), so it must never open a file in the process CWD.
 // A FileLogger writing to the configured file otherwise.
-func NewLogger(cfg Config) (core.LoggerProvider, error) {
+func NewLogger(cfg Config) (agent.LoggerProvider, error) {
 	if !cfg.Enabled || cfg.File == "" {
 		return NopLogger{}, nil
 	}

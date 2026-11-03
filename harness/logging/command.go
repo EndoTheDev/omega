@@ -31,8 +31,8 @@ const logTailWindow = 512 << 10
 func logsHandler(ctx *core.Context) func(context.Context, string, string) (core.CommandResult, error) {
 	return func(_ context.Context, _ string, args string) (core.CommandResult, error) {
 		path := ""
-		if ctx != nil && ctx.Logger != nil {
-			if p, ok := ctx.Logger.(interface{ Path() string }); ok {
+		if ctx != nil {
+			if p, ok := ctx.Services().Resolve("logger").(interface{ Path() string }); ok {
 				path = p.Path()
 			}
 		}

@@ -33,7 +33,7 @@ func TestBootWiringKeepsEngineRingInHandlers(t *testing.T) {
 	}
 	// the host-built seam (wireCaptioner analog): mount builds no
 	// Provider, the host attaches one before the channels start.
-	ctx.Provider = prov
+	ctx.ApplyOffer("provider", "test", prov)
 
 	st, err := store.Open(":memory:")
 	if err != nil {

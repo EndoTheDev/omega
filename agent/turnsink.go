@@ -67,7 +67,7 @@ type persistInputKey struct{}
 // just-persisted user message off the derived path. An all-empty
 // assistant (blank stream before an error end) writes nothing - the
 // message the provider never produced has no transcript row.
-func NewStoreTurnSink(store core.StoreProvider, sessionID, headParentID string) TurnSink {
+func NewStoreTurnSink(store StoreProvider, sessionID, headParentID string) TurnSink {
 	if store == nil || sessionID == "" {
 		return nil
 	}
@@ -75,7 +75,7 @@ func NewStoreTurnSink(store core.StoreProvider, sessionID, headParentID string) 
 }
 
 type storeTurnSink struct {
-	store        core.StoreProvider
+	store        StoreProvider
 	sessionID    string
 	headParentID string
 	headPinned   bool

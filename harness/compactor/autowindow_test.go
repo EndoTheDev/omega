@@ -13,7 +13,7 @@ import (
 // result, so the auto-probe path can be asserted against a known
 // window (and a known failure).
 type contextWindowProvider struct {
-	llm.Provider
+	agent.Provider
 	info  llm.ModelInfo
 	err   error
 	calls int
@@ -27,7 +27,7 @@ func (p *contextWindowProvider) ModelInfo() (llm.ModelInfo, error) {
 func autoTestCompactor(p *contextWindowProvider, threshold float64) *Compactor {
 	return &Compactor{
 		provider:   p,
-		config:     core.CompactionConfig{Enabled: true, Threshold: threshold, KeepFirst: 1, KeepLast: 1},
+		config:     agent.CompactionConfig{Enabled: true, Threshold: threshold, KeepFirst: 1, KeepLast: 1},
 		autoWindow: 100000,
 	}
 }
@@ -92,7 +92,7 @@ func TestAutoWindowZeroFallsBack(t *testing.T) {
 
 func TestSetConfigKeepsAutoWindow(t *testing.T) {
 	c := autoTestCompactor(&contextWindowProvider{}, 0.6)
-	c.SetConfig(core.CompactionConfig{Enabled: true, Threshold: 1})
+	c.SetConfig(agent.CompactionConfig{Enabled: true, Threshold: 1})
 	if c.AutoWindow() != 100000 {
 		t.Fatalf("AutoWindow changed by SetConfig: %d", c.AutoWindow())
 	}
@@ -108,14 +108,14 @@ func TestCompactUsesProbedWindow(t *testing.T) {
 	// threshold 1.0 -> budget 1500 -> compaction triggers.
 	summary := "summary text"
 	provider := &contextWindowProvider{
-		Provider: llm.NewFakeProvider("test",
+		Provider: agent.NewFakeProvider("test",
 			core.ResponseChunk{Type: "response_chunk", Content: summary},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		),
 	}
 	c := &Compactor{
 		provider:   provider,
-		config:     core.CompactionConfig{Enabled: true, Threshold: 1.0, KeepFirst: 1, KeepLast: 1},
+		config:     agent.CompactionConfig{Enabled: true, Threshold: 1.0, KeepFirst: 1, KeepLast: 1},
 		autoWindow: 3000,
 	}
 	msgs := []core.Message{
@@ -135,7 +135,8 @@ func TestCompactUsesProbedWindow(t *testing.T) {
 
 func TestMountProbesAutoWindowOnlyWhenConfigZero(t *testing.T) {
 	p := &contextWindowProvider{info: llm.ModelInfo{ContextWindow: 123456}}
-	ctx := &core.Context{Provider: p, Configs: map[string]any{"compactor": core.CompactionConfig{ContextWindow: 0}}}
+	ctx := &core.Context{Configs: map[string]any{"compactor": agent.CompactionConfig{ContextWindow: 0}}}
+	ctx.ApplyOffer("provider", "provider", p)
 
 	plugin := &Plugin{}
 	// Auto: config 0 -> probe runs, window cached.
@@ -152,11 +153,15 @@ func TestMountProbesAutoWindowOnlyWhenConfigZero(t *testing.T) {
 
 	// Manual: config > 0 -> no probe at all.
 	p2 := &contextWindowProvider{info: llm.ModelInfo{ContextWindow: 999999}}
-	ctx2 := &core.Context{Provider: p2, Configs: map[string]any{"compactor": core.CompactionConfig{ContextWindow: 32768}}}
+	ctx2 := &core.Context{Configs: map[string]any{"compactor": agent.CompactionConfig{ContextWindow: 32768}}}
+	ctx2.ApplyOffer("provider", "provider", p2)
 	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{plugin: &Plugin{}, seam: "provider"}, &Plugin{}}, ctx2, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	c2 := ctx2.Compactor.(*Compactor)
+	c2, ok := ctx2.Services().Resolve("compactor").(*Compactor)
+	if !ok {
+		t.Fatal("compactor offer missing")
+	}
 	if c2.AutoWindow() != 0 || p2.calls != 0 {
 		t.Fatalf("manual config probed: AutoWindow=%d calls=%d, want 0/0", c2.AutoWindow(), p2.calls)
 	}
@@ -164,7 +169,8 @@ func TestMountProbesAutoWindowOnlyWhenConfigZero(t *testing.T) {
 
 func TestMountProbeFailureStillBoots(t *testing.T) {
 	p := &contextWindowProvider{err: context.DeadlineExceeded}
-	ctx := &core.Context{Provider: p, Configs: map[string]any{"compactor": core.CompactionConfig{ContextWindow: 0}}}
+	ctx := &core.Context{Configs: map[string]any{"compactor": agent.CompactionConfig{ContextWindow: 0}}}
+	ctx.ApplyOffer("provider", "provider", p)
 	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{plugin: &Plugin{}, seam: "provider"}, &Plugin{}}, ctx, nil, nil); err != nil {
 		t.Fatalf("Mount must not fail on probe error: %v", err)
 	}

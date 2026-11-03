@@ -58,8 +58,8 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		n, _ := ctx.Services().Resolve("notifications").(finishedThings)
 		return n
 	}
-	p.gate = NewGate(cfg, verdicts, notes, ctx.Logger)
-	if err := api.RegisterApprovals(p.gate); err != nil {
+	p.gate = NewGate(cfg, verdicts, notes, seam[agent.LoggerProvider](ctx, "logger"))
+	if err := api.Offer("approvals", p.gate); err != nil {
 		return err
 	}
 	// the prompt guidance rides the same Mount (every module self-

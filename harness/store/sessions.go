@@ -7,7 +7,7 @@ package store
 // core StoreProvider: ListSessions filters to agent='default', so the
 // pre-agent session list, tree and search see exactly what they always
 // saw. Everything agent-scoped lives here and opts in through the
-// core.AgentSessionStore optional interface.
+// agent.AgentSessionStore optional interface.
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-var _ core.AgentSessionStore = (*Store)(nil)
+var _ agent.AgentSessionStore = (*Store)(nil)
 
 // CreateAgentSession creates a session bound to agentName - the binding
 // is written on the row itself, never inferred later. parentID links
@@ -78,7 +78,7 @@ func (s *Store) ListAgentSessions(ctx context.Context, agentName string) ([]core
 // - the same env main sets for every process - and an AgentSessionStore
 // (a store without the optional interface renders zero counts, which is
 // exactly how many sessions such a store can attribute).
-func HandleAgentsCommand(ctx context.Context, st core.StoreProvider) (core.CommandResult, error) {
+func HandleAgentsCommand(ctx context.Context, st agent.StoreProvider) (core.CommandResult, error) {
 	home := os.Getenv("OMEGA_HOME")
 	profiles := agent.LoadProfiles(home)
 	fillProfileSessions(ctx, st, profiles)
@@ -102,7 +102,7 @@ func HandleAgentsCommand(ctx context.Context, st core.StoreProvider) (core.Comma
 
 // HandleAgentDetailCommand renders the TUI's /agent <name>: config
 // summary, skills, memory size, and this agent's own sessions.
-func HandleAgentDetailCommand(ctx context.Context, st core.StoreProvider, arg string) (core.CommandResult, error) {
+func HandleAgentDetailCommand(ctx context.Context, st agent.StoreProvider, arg string) (core.CommandResult, error) {
 	home := os.Getenv("OMEGA_HOME")
 	arg = strings.TrimSpace(arg)
 	if arg == "" {
@@ -133,8 +133,8 @@ func HandleAgentDetailCommand(ctx context.Context, st core.StoreProvider, arg st
 // fillProfileSessions writes per-agent session counts and the most
 // recent updated_at into the profiles. Store-free callers (nil or a
 // store without the optional surface) keep the zero values.
-func fillProfileSessions(ctx context.Context, st core.StoreProvider, profiles []agent.Profile) {
-	as, ok := st.(core.AgentSessionStore)
+func fillProfileSessions(ctx context.Context, st agent.StoreProvider, profiles []agent.Profile) {
+	as, ok := st.(agent.AgentSessionStore)
 	if !ok {
 		return
 	}

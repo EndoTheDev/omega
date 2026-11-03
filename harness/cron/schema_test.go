@@ -288,7 +288,7 @@ func (m *modelLog) last() string {
 }
 
 type streamSpy struct {
-	inner core.Provider
+	inner agent.Provider
 	log   *modelLog
 }
 
@@ -298,10 +298,10 @@ func (s *streamSpy) Stream(ctx context.Context, msgs []core.Message, tools []cor
 }
 func (s *streamSpy) ModelName() string         { return s.inner.ModelName() }
 func (s *streamSpy) SetThinkingLevel(l string) { s.inner.SetThinkingLevel(l) }
-func (s *streamSpy) WithModel(m string) core.Provider {
+func (s *streamSpy) WithModel(m string) agent.Provider {
 	return &streamSpy{inner: s.inner.WithModel(m), log: s.log}
 }
-func (s *streamSpy) WithThinkingLevel(l string) core.Provider { return s.inner.WithThinkingLevel(l) }
+func (s *streamSpy) WithThinkingLevel(l string) agent.Provider { return s.inner.WithThinkingLevel(l) }
 func (s *streamSpy) ListModels() ([]string, error)            { return s.inner.ListModels() }
 func (s *streamSpy) ModelInfo() (core.ModelInfo, error)       { return s.inner.ModelInfo() }
 
@@ -312,7 +312,7 @@ func TestFireModelOverrideAndInherit(t *testing.T) {
 	}
 	defer st.Close()
 	spawner := &streamSpy{
-		inner: llm.NewFakeProviderScripts("session-model", []core.ProviderStreamEvent{
+		inner: agent.NewFakeProviderScripts("session-model", []core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "done"},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		}),
@@ -320,7 +320,7 @@ func TestFireModelOverrideAndInherit(t *testing.T) {
 	}
 	r := newTestRunner(t, t.TempDir(), Job{Name: "m", Schedule: "0 8 * * *", Prompt: "p"})
 	r.store = st
-	r.ag = core.NewAgent(spawner, nil, 0)
+	r.ag = agent.NewAgent(spawner, nil, 0)
 	r.ag.SetLoopProvider(loop.Loop{})
 
 	// the defaulting law, model side: empty model = the session

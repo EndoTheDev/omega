@@ -111,11 +111,12 @@ func TestPluginMount(t *testing.T) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
-	defer ctx.Store.Close()
-
-	if ctx.Store == nil {
-		t.Fatal("Store slot not populated")
+	svc := ctx.Services().Resolve("store")
+	st, ok := svc.(agent.StoreProvider)
+	if !ok || st == nil {
+		t.Fatalf("store offer not populated: %v", svc)
 	}
+	defer st.Close()
 	if len(ctx.ToolProviders) != 1 {
 		t.Fatalf("expected 1 tool provider, got %d", len(ctx.ToolProviders))
 	}

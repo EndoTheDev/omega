@@ -43,14 +43,14 @@ type cronState struct {
 type Runner struct {
 	home   string
 	cfg    *Config // initial jobs, from Mount
-	logger core.LoggerProvider
+	logger agent.LoggerProvider
 	// memory is the consumer-side face of the memory capsule's store
 	// (part 3): only the methods the deliver target calls, resolved
 	// from the universal registry at Start. Nil-safe: no capsule, no
 	// delivery (the loop logs and continues).
 	memory memoryStore
-	ag     *core.Agent
-	store  core.StoreProvider
+	ag     *agent.Agent
+	store  agent.StoreProvider
 	// notifier is the finished-things emitter face, resolved from the
 	// universal registry at Start (card t_5d9032d3). Nil-safe: no
 	// capsule, no emission.
@@ -107,8 +107,8 @@ func NewRunner(cfg *Config, home string) *Runner {
 // the host knows StartDeps).
 type runnerDeps struct {
 	Ctx   *core.Context
-	Agent *core.Agent
-	Store core.StoreProvider
+	Agent *agent.Agent
+	Store agent.StoreProvider
 }
 
 // memoryStore is the consumer-side face of the memory capsule (part 3
@@ -130,8 +130,10 @@ type finishedThings interface {
 func (r *Runner) Start(ctx context.Context, deps runnerDeps) error {
 	if deps.Ctx != nil {
 		r.memory, _ = deps.Ctx.Services().Resolve("memory").(memoryStore)
-		if r.logger == nil {
-			r.logger = deps.Ctx.Logger
+		if r.logger == nil && deps.Ctx.Services().Resolve("logger") != nil {
+			if lg, ok := deps.Ctx.Services().Resolve("logger").(agent.LoggerProvider); ok {
+				r.logger = lg
+			}
 		}
 		// The wake-tick emitter rides the Context's event spine (card
 		// t_72ecca67): cron owns WHEN, the continuous capsule owns

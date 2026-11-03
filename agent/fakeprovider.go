@@ -1,4 +1,4 @@
-package llm
+package agent
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// FakeProvider implements core.Provider and emits a scripted sequence of
+// FakeProvider implements the agent.Provider face and emits a scripted sequence of
 // StreamEvents instead of calling a real API. It unlocks deterministic
 // agent loop testing.
 type FakeProvider struct {
@@ -68,7 +68,7 @@ func (p *FakeProvider) ThinkingLevel() string { return p.lastRequestedLevel }
 
 // WithModel returns a copy of the provider serving model. The copy
 // shares the scripts so it streams the same sequence.
-func (p *FakeProvider) WithModel(model string) core.Provider {
+func (p *FakeProvider) WithModel(model string) Provider {
 	cp := *p
 	cp.modelName = model
 	return &cp
@@ -77,7 +77,7 @@ func (p *FakeProvider) WithModel(model string) core.Provider {
 // WithThinkingLevel returns a copy of the provider at the given
 // thinking level. Same copy discipline as WithModel: shares the
 // scripts, leaves the receiver unchanged.
-func (p *FakeProvider) WithThinkingLevel(level string) core.Provider {
+func (p *FakeProvider) WithThinkingLevel(level string) Provider {
 	cp := *p
 	cp.lastRequestedLevel = level
 	return &cp
@@ -89,8 +89,8 @@ func (p *FakeProvider) ListModels() ([]string, error) {
 }
 
 // ModelInfo returns a fixed context window for testing.
-func (p *FakeProvider) ModelInfo() (ModelInfo, error) {
-	return ModelInfo{ContextWindow: 8192}, nil
+func (p *FakeProvider) ModelInfo() (core.ModelInfo, error) {
+	return core.ModelInfo{ContextWindow: 8192}, nil
 }
 
 // Stream replays the scripted events on a channel, respecting context

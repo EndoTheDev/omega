@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,7 +17,7 @@ import (
 // pass moves on.
 
 // complete runs ONE collect-the-text completion over the provider.
-func complete(ctx context.Context, prov core.Provider, prompt string) (string, error) {
+func complete(ctx context.Context, prov agent.Provider, prompt string) (string, error) {
 	if prov == nil {
 		return "", fmt.Errorf("no provider")
 	}
@@ -61,7 +62,7 @@ type absorbedSection struct {
 // the source's contents, out comes rules-only text for a new section.
 // The answer format is JSON ({"title","body"}) so the code path is
 // deterministic about what is section text.
-func (sp *SkillsProvider) draftAbsorption(ctx context.Context, prov core.Provider, umbrella, umbrellaBody, source, sourceBody string) (absorbedSection, error) {
+func (sp *SkillsProvider) draftAbsorption(ctx context.Context, prov agent.Provider, umbrella, umbrellaBody, source, sourceBody string) (absorbedSection, error) {
 	var sb strings.Builder
 	sb.WriteString("You are the skills curator. A narrow skill is being absorbed into an umbrella skill. Distill the SOURCE's unique insights into concise rules that will live inside the UMBRELLA as one new section. Keep only what the umbrella does not already say; rules, not narration.\n\n")
 	fmt.Fprintf(&sb, "UMBRELLA: %s (current body below)\n%s\n\n", umbrella, oneLine(umbrellaBody, 6000))
@@ -87,7 +88,7 @@ func (sp *SkillsProvider) draftAbsorption(ctx context.Context, prov core.Provide
 
 // draftDistill asks for ONE call: rewrite the oversized body tighter,
 // same procedures, no loss of load-bearing facts.
-func (sp *SkillsProvider) draftDistill(ctx context.Context, prov core.Provider, name, body string) (string, error) {
+func (sp *SkillsProvider) draftDistill(ctx context.Context, prov agent.Provider, name, body string) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("You are the skills curator. The skill below exceeds the body-size floor. Rewrite its body tighter: same procedures, preserved commands and exact identifiers, cut narration and repetition. No frontmatter - body text only.\n\n")
 	fmt.Fprintf(&sb, "SKILL: %s (full body below)\n%s\n\n", name, body)

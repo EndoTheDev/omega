@@ -50,7 +50,7 @@ func (l *plugLogger) Close() error                      { return nil }
 
 type plugLoop struct{}
 
-func (plugLoop) Run(ctx context.Context, opts core.LoopOptions) error { return nil }
+func (plugLoop) Run(ctx context.Context, opts LoopOptions) error { return nil }
 
 type plugCompactor struct{}
 
@@ -230,7 +230,7 @@ func (classicStore) Name() string       { return "classic" }
 func (classicStore) Provides() []string { return []string{"store"} }
 func (classicStore) Requires() []string { return nil }
 func (classicStore) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
-	ctx.Store = fakeStore{}
+	ctx.ApplyOffer("store", "test", fakeStore{})
 	return nil
 }
 

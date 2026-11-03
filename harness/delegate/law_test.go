@@ -155,7 +155,7 @@ func TestSubagentChildMountsNoDelegateTools(t *testing.T) {
 // CreateSession is reachable - everything else rides the nil embedded
 // interface (calling it panics, and nothing does).
 type stubStore struct {
-	core.StoreProvider
+	agent.StoreProvider
 	created  []string // "id|parent|label" rows, in call order
 	failWith error
 }

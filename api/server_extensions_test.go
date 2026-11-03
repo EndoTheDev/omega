@@ -31,7 +31,7 @@ import (
 // MountAll → NewFromContext, scaled to a hermetic subset (the provider
 // plugin is required material - compactor lists it as its Requires seam
 // - and mounts fine on zero config). Configs point at the scratch home.
-func mountRealRegistry(t *testing.T) *core.Agent {
+func mountRealRegistry(t *testing.T) *agent.Agent {
 	t.Helper()
 	home := t.TempDir()
 	plugins := []agent.Plugin{
@@ -45,15 +45,15 @@ func mountRealRegistry(t *testing.T) *core.Agent {
 		"logging":   logging.Config{Enabled: true, File: filepath.Join(home, "omega.log")},
 		"skills":    skills.Config{Dir: filepath.Join(home, "skills")},
 		"store":     store.Config{DBPath: filepath.Join(home, "sessions.db")},
-		"compactor": core.CompactionConfig{},
+		"compactor": agent.CompactionConfig{},
 	}
 	ctx := &core.Context{Configs: cfgs}
 	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
-	// The way the host builds it (core.NewFromContext does
+	// The way the host builds it (agent.NewFromContext does
 	// SetExtensionInfos(ctx.Infos) internally).
-	return core.NewFromContext(ctx, core.AgentOptions{})
+	return agent.NewFromContext(ctx, agent.AgentOptions{})
 }
 
 func TestHandleExtensionsRealRegistry(t *testing.T) {
@@ -145,7 +145,7 @@ func TestHandleExtensionsRealRegistry(t *testing.T) {
 func TestHandleExtensionsEmptyRegistry(t *testing.T) {
 	// Zero extensions mounted: an honest empty array, like the other
 	// inspector reads. The webui tab renders its empty state from this.
-	a := core.NewAgent(newMockProvider("mock"), nil, 0)
+	a := agent.NewAgent(newMockProvider("mock"), nil, 0)
 	s := NewServer(a, nil, nil, nil, nil, nil)
 
 	rec := httptest.NewRecorder()
@@ -165,7 +165,7 @@ func TestHandleExtensionsEmptyRegistry(t *testing.T) {
 }
 
 func TestHandleExtensionsMethodGuard(t *testing.T) {
-	a := core.NewAgent(newMockProvider("mock"), nil, 0)
+	a := agent.NewAgent(newMockProvider("mock"), nil, 0)
 	s := NewServer(a, nil, nil, nil, nil, nil)
 
 	rec := httptest.NewRecorder()
@@ -218,7 +218,7 @@ func TestHandleExtensionsFollowsLiveToggle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := core.NewFromContext(ctx, core.AgentOptions{})
+	a := agent.NewFromContext(ctx, agent.AgentOptions{})
 	s := NewServer(a, nil, nil, nil, nil, nil)
 
 	extensionRows := func() []extensionListing {

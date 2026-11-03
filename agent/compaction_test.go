@@ -62,7 +62,7 @@ func TestBuildCompactedMessagesNoOpWhenNothingToCompact(t *testing.T) {
 // and wraps it with BuildCompactedMessages. Disabled or under-budget
 // = no-op.
 type mockCompactionProvider struct {
-	Provider llm.Provider
+	Provider Provider
 	Config   *CompactionConfig
 }
 

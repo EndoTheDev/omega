@@ -1,96 +1,12 @@
-package core
+package agent
 
 import (
 	"context"
-	"maps"
 	"sort"
 	"sync"
+
+	"github.com/EndoTheDev/omega/core"
 )
-
-// ToolAction is one named sub-action of a domain tool. A tool that
-// packs several verbs behind one name declares them here so the JSON
-// schema enum, the system prompt, and the /tools inventory all derive
-// from this one source of truth - enum drift becomes impossible.
-type ToolAction struct {
-	Name        string
-	Description string // one-liner, labeled under the tool in the prompt
-}
-
-// Tool is a callable the model may invoke. The map key is the tool name.
-type Tool struct {
-	Description string
-	Parameters  map[string]any
-	Run         func(ctx context.Context, args map[string]any) (string, error)
-
-	// Actions optionally lists the sub-actions of a domain tool. When
-	// set, the "action" property's enum in the JSON schema derives from
-	// these names (see SchemaParameters), and the prompt + /tools
-	// render the split (domain line, then labeled sub-actions).
-	Actions []ToolAction
-
-	// AliasOf marks a backward-compatibility shim: an old tool name
-	// that maps onto a folded domain tool. Aliases stay callable by
-	// the model until the v0.12 mount migration retires them but are
-	// hidden from the prompt and the /tools inventory, which show the
-	// folded tool only.
-	AliasOf string
-
-	// Origin stamps WHERE the tool was registered from, for surface
-	// routing (card t_c2da3379): "mcp" = an MCP bridge tool (belongs
-	// to the webui MCP tab only), "" = native. Nothing keys on the
-	// name - native tools like sessions.search/shell.run are dotted
-	// too. Modules outside the mcp bridge never set it.
-	Origin string
-}
-
-// ToolOriginMCP is the Origin value an MCP-bridge-registered tool
-// carries. The only comparison point - consumers filter on this exact
-// value, never on dotted-name shape.
-const ToolOriginMCP = "mcp"
-
-// ActionNames returns the action names in declaration order.
-func (t Tool) ActionNames() []string {
-	if len(t.Actions) == 0 {
-		return nil
-	}
-	names := make([]string, len(t.Actions))
-	for i, a := range t.Actions {
-		names[i] = a.Name
-	}
-	return names
-}
-
-// SchemaParameters returns the tool's parameter schema with the
-// "action" property's enum derived from Actions. Tools without
-// Actions are returned untouched. The derivation replaces only the
-// enum (and injects the property if the tool forgot to declare it);
-// any property description survives.
-func (t Tool) SchemaParameters() map[string]any {
-	if len(t.Actions) == 0 {
-		return t.Parameters
-	}
-	out := maps.Clone(t.Parameters)
-	if out == nil {
-		out = map[string]any{}
-	}
-	propsRaw, _ := out["properties"]
-	props, _ := propsRaw.(map[string]any)
-	if props == nil {
-		props = map[string]any{}
-	}
-	newProps := maps.Clone(props)
-	actionRaw := props["action"]
-	action, _ := actionRaw.(map[string]any)
-	newAction := maps.Clone(action)
-	if newAction == nil {
-		newAction = map[string]any{}
-	}
-	newAction["type"] = "string"
-	newAction["enum"] = t.ActionNames()
-	newProps["action"] = newAction
-	out["properties"] = newProps
-	return out
-}
 
 // Agent runs the multi-turn conversation loop between a provider and a
 // set of tools. It holds configuration and delegates execution to a
@@ -100,8 +16,8 @@ func (t Tool) SchemaParameters() map[string]any {
 // the agent-loop plugin in agent/loop/).
 type Agent struct {
 	provider      Provider
-	tools         map[string]Tool
-	toolProviders []ToolProvider
+	tools         map[string]core.Tool
+	toolProviders []core.ToolProvider
 	// tpMu guards toolProviders and extensionInfos: a live module
 	// toggle (v0.12 E2) swaps both sets mid-process while concurrent
 	// runs and the /tools and /extensions inventories read them under
@@ -125,22 +41,22 @@ type Agent struct {
 	promptContext  string
 	promptBuilder  PromptBuilder
 	nudge          TurnNudger // learning-loop reminder seam (t_9972dfd0; nil = off)
-	extensionInfos []ExtensionInfo
-	captioner      Captioner
+	extensionInfos []core.ExtensionInfo
+	captioner      core.Captioner
 	userInput      chan string
-	injectedStream InjectedStream
+	injectedStream core.InjectedStream
 	pendingDeleg   func(affinity string) int
 	loop           LoopProvider
 	logger         LoggerProvider
 	// eventObserverSource reads the Context's spine subscriptions at
 	// each Run (card t_72ecca67, M3). Nil-safe: an Agent built without
 	// NewFromContext runs observer-free.
-	eventObserverSource func() []EventObserver
+	eventObserverSource func() []core.EventObserver
 }
 
 // EventObservers returns the agent's spine snapshot source; nil is the
 // empty subscription set (a bare Agent has none).
-func (a *Agent) eventObservers() []EventObserver {
+func (a *Agent) eventObservers() []core.EventObserver {
 	if a.eventObserverSource == nil {
 		return nil
 	}
@@ -150,14 +66,14 @@ func (a *Agent) eventObservers() []EventObserver {
 // SetEventObserverSource wires the Context's spine subscriptions (a
 // snapshot per run - a live toggle's remount re-reads it on the next
 // run, never mid-run).
-func (a *Agent) SetEventObserverSource(src func() []EventObserver) {
+func (a *Agent) SetEventObserverSource(src func() []core.EventObserver) {
 	a.eventObserverSource = src
 }
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
 // The agent starts with no loop — the host must wire one via
 // SetLoopProvider or by mounting the agent-loop plugin.
-func NewAgent(provider Provider, tools map[string]Tool, maxTurns int) *Agent {
+func NewAgent(provider Provider, tools map[string]core.Tool, maxTurns int) *Agent {
 	return &Agent{
 		provider: provider,
 		tools:    tools,
@@ -204,7 +120,7 @@ func (a *Agent) SetPromptContext(s string) {
 // Their tools are merged on each Run. The live-toggle path (v0.12 E2)
 // calls this mid-process; concurrent runs read it under the tpMu lock -
 // the loop always receives a snapshot taken under the same lock.
-func (a *Agent) SetToolProviders(tps []ToolProvider) {
+func (a *Agent) SetToolProviders(tps []core.ToolProvider) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
 	a.toolProviders = tps
@@ -222,17 +138,17 @@ func (a *Agent) RefreshToolProviders(ctx *Context) {
 	if !a.tpLive || ctx == nil {
 		return
 	}
-	providers := make([]ToolProvider, len(ctx.ToolProviders))
+	providers := make([]core.ToolProvider, len(ctx.ToolProviders))
 	copy(providers, ctx.ToolProviders)
 	a.toolProviders = providers
 }
 
 // Tools returns a snapshot of the agent's executable tool registry: the
-// explicit tools plus every ToolProvider's map - the union Run actually
+// explicit tools plus every core.ToolProvider's map - the union Run actually
 // loops with (see RunWithProvider / the loop's merge order). The copy is
 // defensive: callers (e.g. the HTTP channel's /tools listing) can never
 // mutate the agent's underlying maps.
-func (a *Agent) Tools() map[string]Tool {
+func (a *Agent) Tools() map[string]core.Tool {
 	a.tpMu.RLock()
 	providers := a.toolProviders
 	disabled := a.disabledTools
@@ -243,7 +159,7 @@ func (a *Agent) Tools() map[string]Tool {
 			size += len(tp.Tools())
 		}
 	}
-	tools := make(map[string]Tool, size)
+	tools := make(map[string]core.Tool, size)
 	for name, t := range a.tools {
 		tools[name] = t
 	}
@@ -302,7 +218,7 @@ func (a *Agent) RefreshApprovals(ctx *Context) {
 	if !a.tpLive || ctx == nil {
 		return
 	}
-	a.approvals = ctx.Approvals
+	a.approvals = bindNeed[ApprovalProvider](ctx, "approvals")
 }
 
 // RefreshDisabledTools re-reads the disable list from the mounted
@@ -355,7 +271,7 @@ func (a *Agent) SetTurnNudger(n TurnNudger) {
 // ExtensionInfos returns the metadata about loaded extensions (name,
 // description, seams, tool/command counts). The http_channel inspector
 // surfaces it on GET /extensions - the webui parity surface.
-func (a *Agent) ExtensionInfos() []ExtensionInfo {
+func (a *Agent) ExtensionInfos() []core.ExtensionInfo {
 	a.tpMu.RLock()
 	defer a.tpMu.RUnlock()
 	return a.extensionInfos
@@ -363,7 +279,7 @@ func (a *Agent) ExtensionInfos() []ExtensionInfo {
 
 // SetExtensionInfos sets the metadata about loaded extensions, used
 // for prompt building and the /extensions command.
-func (a *Agent) SetExtensionInfos(infos []ExtensionInfo) {
+func (a *Agent) SetExtensionInfos(infos []core.ExtensionInfo) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
 	a.extensionInfos = infos
@@ -385,7 +301,7 @@ func (a *Agent) RefreshExtensionInfos(ctx *Context) {
 	if !a.tpLive || ctx == nil {
 		return
 	}
-	infos := make([]ExtensionInfo, len(ctx.Infos))
+	infos := make([]core.ExtensionInfo, len(ctx.Infos))
 	copy(infos, ctx.Infos)
 	a.extensionInfos = infos
 }
@@ -393,7 +309,7 @@ func (a *Agent) RefreshExtensionInfos(ctx *Context) {
 // SetCaptioner installs the image captioner (agent/caption.go). When
 // set, image-carrying user messages are described once before the loop
 // and the loop-visible text carries the caption. Nil = images untouched.
-func (a *Agent) SetCaptioner(c Captioner) {
+func (a *Agent) SetCaptioner(c core.Captioner) {
 	a.captioner = c
 }
 
@@ -414,7 +330,7 @@ func (a *Agent) SetUserInput(ch chan string) {
 // result injection (t_f3fb7c52). The loop polls and waits through this
 // seam addressed by its OWN run affinity key, so concurrent runs never
 // drain each other's results.
-func (a *Agent) SetInjectedStream(stream InjectedStream) {
+func (a *Agent) SetInjectedStream(stream core.InjectedStream) {
 	a.injectedStream = stream
 }
 
@@ -448,29 +364,25 @@ type AgentOptions struct {
 // are optional zero-values — setters tolerate zero like the
 // constructor defaults do.
 func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
-	ag := NewAgent(ctx.Provider, nil, opts.MaxTurns)
+	ag := NewAgent(bindNeed[Provider](ctx, "provider"), nil, opts.MaxTurns)
 	ag.SetToolProviders(ctx.ToolProviders)
 	ag.SetDisabledTools(ctx.DisabledTools)
 	ag.tpLive = true // the Context stays the source of truth: live toggles re-read it
-	ag.SetLoopProvider(ctx.Loop)
-	ag.SetPromptBuilder(ctx.PromptBuilder)
+	ag.SetLoopProvider(bindNeed[LoopProvider](ctx, "loop"))
+	ag.SetPromptBuilder(bindNeed[PromptBuilder](ctx, "prompt"))
 	ag.SetExtensionInfos(ctx.Infos)
-	ag.SetLogger(ctx.Logger)
+	ag.SetLogger(bindNeed[LoggerProvider](ctx, "logger"))
 	ag.SetMaxToolOutput(opts.MaxToolOutput)
 	ag.SetPromptCustom(opts.PromptCustom)
 	ag.SetPromptAppend(opts.PromptAppend)
 	ag.SetPromptContext(opts.PromptContext)
 	ag.SetCWD(opts.CWD)
 	ag.SetEventObserverSource(ctx.EventObservers)
-	if ctx.Compactor != nil {
-		ag.SetCompactionProvider(ctx.Compactor)
-	}
+	ag.SetCompactionProvider(bindNeed[CompactionProvider](ctx, "compactor"))
 	// The smart-approval seam (card t_c2b52cb5): nil rides as nil -
 	// a host with no gate (mode off, no module) runs the loop ungated.
-	ag.SetApprovals(ctx.Approvals)
-	if ctx.Nudge != nil {
-		ag.SetTurnNudger(ctx.Nudge)
-	}
+	ag.SetApprovals(bindNeed[ApprovalProvider](ctx, "approvals"))
+	ag.SetTurnNudger(bindNeed[TurnNudger](ctx, "nudger"))
 	if ctx.InjectedMessages != nil {
 		ag.SetInjectedStream(ctx.InjectedMessages)
 	}
@@ -490,7 +402,7 @@ func (a *Agent) Provider() Provider {
 }
 
 // ModelInfo returns the current model's metadata (context window).
-func (a *Agent) ModelInfo() (ModelInfo, error) {
+func (a *Agent) ModelInfo() (core.ModelInfo, error) {
 	return a.provider.ModelInfo()
 }
 
@@ -509,7 +421,7 @@ func (a *Agent) ListModels() ([]string, error) {
 // upgrade supplies the flags when the provider carries them; a
 // name-only provider (interface stayed un-upgraded) answers through
 // ListModels with empty capability sets.
-func (a *Agent) ListModelEntries() ([]ModelEntry, error) {
+func (a *Agent) ListModelEntries() ([]core.ModelEntry, error) {
 	if lp, ok := a.provider.(ModelCapabilitiesProvider); ok {
 		return lp.ListModelEntries()
 	}
@@ -517,9 +429,9 @@ func (a *Agent) ListModelEntries() ([]ModelEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	entries := make([]ModelEntry, len(names))
+	entries := make([]core.ModelEntry, len(names))
 	for i, name := range names {
-		entries[i] = ModelEntry{Name: name}
+		entries[i] = core.ModelEntry{Name: name}
 	}
 	return entries, nil
 }
@@ -534,19 +446,19 @@ func (a *Agent) ListModelEntries() ([]ModelEntry, error) {
 // to give a run its own model.
 //
 // Run affinity (t_f3fb7c52): injected subagent results are queued per
-// run and drained through the InjectedStream seam addressed by the
+// run and drained through the core.InjectedStream seam addressed by the
 // run's own affinity key, so concurrent runs can no longer drain each
 // other's delegate results (the ponytail note this replaces: the shared
 // channel drained into an arbitrary active run).
-func (a *Agent) Run(ctx context.Context, messages []Message, tools map[string]Tool) <-chan Event {
+func (a *Agent) Run(ctx context.Context, messages []core.Message, tools map[string]core.Tool) <-chan core.Event {
 	return a.RunWithProvider(ctx, a.provider, messages, tools)
 }
 
 // RunWithProvider starts a run on the given provider - typically a copy
 // derived from Provider() via WithModel, carrying a per-request model.
 // Returns a channel of events, closed when the run ends.
-func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages []Message, tools map[string]Tool) <-chan Event {
-	inner := make(chan Event)
+func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages []core.Message, tools map[string]core.Tool) <-chan core.Event {
+	inner := make(chan core.Event)
 	events := inner
 	// The event spine (card t_72ecca67, M3): a snapshot of the
 	// registered observers forwards every event to before the host
@@ -554,7 +466,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 	// the run (the contract says cheap), but an event can NEVER be
 	// delivered to the host before the observers saw it.
 	if obs := a.eventObservers(); len(obs) > 0 {
-		forwarded := make(chan Event)
+		forwarded := make(chan core.Event)
 		events = forwarded
 		go func() {
 			defer close(forwarded)
@@ -569,7 +481,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 	go func() {
 		defer close(inner)
 		if a.loop == nil {
-			inner <- AgentEnd{Type: "agent_end", FinishReason: "error", Error: "no loop configured — mount the agent-loop plugin or call SetLoopProvider"}
+			inner <- core.AgentEnd{Type: "agent_end", FinishReason: "error", Error: "no loop configured — mount the agent-loop plugin or call SetLoopProvider"}
 			return
 		}
 		// Image captioning (vision_model knob): captioned copies go to
@@ -578,7 +490,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 		// provider 400 about unseen pixels.
 		messages, err := a.applyCaptions(ctx, messages)
 		if err != nil {
-			inner <- AgentEnd{Type: "agent_end", FinishReason: "error", Error: err.Error()}
+			inner <- core.AgentEnd{Type: "agent_end", FinishReason: "error", Error: err.Error()}
 			return
 		}
 		runTools := tools
@@ -591,10 +503,10 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 		// (the process working directory) stay untouched for runs
 		// without a session workspace. Empty overrides are unset.
 		runCWD, runPromptContext := a.cwd, a.promptContext
-		if dir := RunWorkspace(ctx); dir != "" {
+		if dir := core.RunWorkspace(ctx); dir != "" {
 			runCWD = dir
 		}
-		if pc := RunPromptContext(ctx); pc != "" {
+		if pc := core.RunPromptContext(ctx); pc != "" {
 			runPromptContext = pc
 		}
 		a.tpMu.RLock()

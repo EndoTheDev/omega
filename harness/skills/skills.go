@@ -7,6 +7,7 @@
 package skills
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"bufio"
 	"context"
 	"fmt"
@@ -40,7 +41,7 @@ type SkillsProvider struct {
 	// missing provider skips the LLM proposals instead of rewriting
 	// anything. CuratorModel overrides the consult model; empty = the
 	// session provider's own model.
-	providerFn   func() core.Provider
+	providerFn   func() agent.Provider
 	CuratorModel string
 
 	disableMu sync.RWMutex
@@ -56,10 +57,10 @@ func (sp *SkillsProvider) SetDisabled(names []string) {
 
 // SetProviderFn installs the live provider reader (the plugin passes
 // api.Provider); the CLI passes a config-built provider.
-func (sp *SkillsProvider) SetProviderFn(fn func() core.Provider) { sp.providerFn = fn }
+func (sp *SkillsProvider) SetProviderFn(fn func() agent.Provider) { sp.providerFn = fn }
 
 // provider returns the consult provider for one pass, nil-safe.
-func (sp *SkillsProvider) provider() core.Provider {
+func (sp *SkillsProvider) provider() agent.Provider {
 	if sp.providerFn == nil {
 		return nil
 	}
@@ -645,7 +646,7 @@ func scanSkills(dir string) ([]Skill, error) {
 // Boot-only: runtime scans skip the legacy shape, this once-per-boot
 // scan is the visibility contract (card t_5baad951). Returns the
 // warned skill names. No auto-migration - a rename is the fix.
-func (sp *SkillsProvider) WarnLegacyShape(logger core.LoggerProvider) []string {
+func (sp *SkillsProvider) WarnLegacyShape(logger agent.LoggerProvider) []string {
 	var warned []string
 	for _, dir := range sp.scanDirs(sp.Dir) {
 		entries, err := os.ReadDir(dir)

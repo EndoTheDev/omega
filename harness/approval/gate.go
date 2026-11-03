@@ -12,7 +12,7 @@ import (
 
 // The gate (design Q3/Q11/Q13): one gate, one policy text - agent
 // sessions AND cron workers consult the same object. The Gate is the
-// approval module's core.ApprovalProvider implementation.
+// approval module's agent.ApprovalProvider implementation.
 type Gate struct {
 	cfg Config
 
@@ -22,7 +22,7 @@ type Gate struct {
 	// classic law. The owner capsules never know this gate exists.
 	verdicts      func() verdictHub         // read live: the service stays the source of truth
 	notifications func() finishedThings     // read live; nil-safe
-	logger        core.LoggerProvider
+	logger        agent.LoggerProvider
 	reviewer      Reviewer
 	audit         *Audit
 	cache         *Cache
@@ -64,7 +64,7 @@ const (
 // logger may be nil. Smart mode without a reviewer host/model still
 // mounts - every gated command then fails closed into escalation,
 // honest about a dead review rather than silently open.
-func NewGate(cfg Config, verdicts func() verdictHub, notifications func() finishedThings, logger core.LoggerProvider) *Gate {
+func NewGate(cfg Config, verdicts func() verdictHub, notifications func() finishedThings, logger agent.LoggerProvider) *Gate {
 	return &Gate{
 		cfg:           cfg,
 		verdicts:      verdicts,
@@ -145,7 +145,7 @@ func (g *Gate) stamp(o Outcome, fromCard bool) string {
 	return ""
 }
 
-// Gate implements core.ApprovalProvider. Contract: nil error =
+// Gate implements agent.ApprovalProvider. Contract: nil error =
 // execute, non-nil = the tool result refusing execution; the line is
 // the decision record stamped onto the call's tool result (empty =
 // no machine decision). Concurrency-safe: the loop runs a turn's

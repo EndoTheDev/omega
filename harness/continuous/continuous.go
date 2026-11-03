@@ -203,7 +203,7 @@ func (m *Machine) Roster() []RosterRow {
 
 // canonicalView opens an agent's own store for the canonical chat -
 // the allow-listed cross-home read (ruling 5).
-func canonicalView(agentDir string) (core.StoreProvider, error) {
+func canonicalView(agentDir string) (agent.StoreProvider, error) {
 	return store.Open(filepath.Join(agentDir, "data", "omega.db"))
 }
 

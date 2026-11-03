@@ -16,8 +16,11 @@ import (
 // exact way it always has: @file unresolvable, @session left as-is.
 type AtMentionEnv struct {
 	// Store backs @session:<id> history injection. Nil leaves those
-	// tokens untouched.
-	Store StoreProvider
+	// tokens untouched. The neutral `any` carrier: the caller passes
+	// the store service it resolved from the universal registry; the
+	// consult below asserts the one face THIS expansion needs
+	// (consumer-side, part 3) - no named store contract in core.
+	Store any
 	// Docs backs @skill:<name> content injection - name/content pairs
 	// the caller resolved from the mounted skill capsule. Nil/empty
 	// leaves those tokens untouched.
@@ -137,8 +140,14 @@ func atMentionToken(token string, env AtMentionEnv) (string, *ImageContent, int,
 	// path, t_17365247: a branched session injects its selected
 	// branch, never the parked variants).
 	if strings.HasPrefix(path, "session:") && env.Store != nil {
+		st, ok := env.Store.(interface {
+			GetActiveMessages(ctx context.Context, sessionID string) ([]Message, error)
+		})
+		if !ok {
+			return token, nil, atLiteral, nil // store without the load face, sent as-is
+		}
 		sid := path[8:]
-		msgs, sErr := env.Store.GetActiveMessages(context.Background(), sid)
+		msgs, sErr := st.GetActiveMessages(context.Background(), sid)
 		if sErr != nil || len(msgs) == 0 {
 			return token, nil, atLiteral, nil // session not found, sent as-is
 		}

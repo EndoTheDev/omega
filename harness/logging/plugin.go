@@ -26,7 +26,7 @@ func (p *Plugin) Description() string {
 // ctx.Configs (see agent.Describer). Empty = reads no section.
 func (p *Plugin) ConfigKey() string { return "logging" }
 
-func (p *Plugin) Provides() []string { return []string{"logging"} }
+func (p *Plugin) Provides() []string { return []string{"logger"} }
 func (p *Plugin) Requires() []string { return nil }
 
 // MountWithAPI implements agent.APIPlugin. Creates the logger from
@@ -43,7 +43,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err != nil {
 		return fmt.Errorf("logging: %w", err)
 	}
-	if err := api.RegisterLogger(logger); err != nil {
+	if err := api.Offer("logger", logger); err != nil {
 		return err
 	}
 	return api.RegisterCommand("/logs", "tail omega.log", []string{}, logsHandler(ctx))

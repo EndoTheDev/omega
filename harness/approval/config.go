@@ -7,7 +7,7 @@
 // Capsule law: the gate, detector, parser, ladder, cache and audit
 // log all ship from this package's one Mount - removing the module
 // removes the feature whole, zero approval vocabulary outside the
-// seam (core.ApprovalProvider).
+// seam (agent.ApprovalProvider).
 package approval
 
 // Config is the approvals config section. Mode/Model/SmartPolicy are
