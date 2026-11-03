@@ -6,11 +6,11 @@ webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> llm (provi
 
 | Layer    | Package     | Responsibility                                                                                                                                          |
 | -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core     | `core`      | Zero-behavior contract layer: message vocabulary, seam interfaces (23 of them, `RegistryToggles` newest: the config.yaml `disabled:` registry-browser toggle fold), Context, canvas panel types, captioner, kanban task vocabulary, universal-mount vocabulary (`api.go`: Refusal/RefusalSink, ModulePanicError) |
-| Agent    | `agent`     | Multi-turn loop machinery, Plugin system (Context alias, MountAllAPI, RouteConfigs), the ExtensionAPI registration surface (the universal mount, v0.12), TurnSink seam, canvas runtime, insights/caption/compaction helpers   |
-| LLM      | `llm`       | The `llm.Provider`/`llm.ToolSchema`/`llm.ModelInfo` aliases of the core contract (the module-boundary address), HTTP client, retry, think-level ladder, image sniffing |
+| Core     | `core`      | Zero-behavior contract layer: wire vocabulary (`QuestionPrompt`/`QuestionAnswer`, `Notice`), channel + mount machinery interfaces, the `Services` registry, Context, canvas panel types, captioner, universal-mount vocabulary (`api.go`: Refusal/RefusalSink, ModulePanicError); zero capsule nouns (the noun tests) |
+| Agent    | `agent`     | Multi-turn loop machinery + the loop's need-face declarations (`agent/seams.go`), Plugin system (Context alias, MountAllAPI, RouteConfigs), the ExtensionAPI registration surface (the universal mount, v0.12), TurnSink seam, canvas runtime, insights/caption/compaction helpers   |
+| LLM      | `llm`       | Shared provider infra: SSE streaming client, retry, the think-level ladder, image sniffing; the core wire-shape aliases (`llm.ToolSchema`, `llm.ModelInfo`) - it carries no provider contract (consumers declare their own faces) |
 | CLI      | `cmd/omega` | Entry point, CLI loop + setup, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                       |
-| Modules  | `harness/`  | In-process Go packages: provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, cron, verdict, approval, continuous, notifications, process (detached background-process registry), terminal, browser, trust + `datadir` (imported leaf) + `ui`, the Nuxt webui source |
+| Modules  | `harness/`  | In-process Go packages: provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, cron, verdict, approval, continuous, notifications, process, terminal, browser, kanban, trust + `datadir` (the imported leaf) |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
@@ -28,12 +28,15 @@ sits behind one mutex.
 ```txt
 cmd/omega/        Single binary entry point (serve, run, health, chat, update)
 cmd/omega/examples/  Config templates, embedded for first-run bootstrap
-core/             Zero-behavior contracts: message vocabulary, seam interfaces,
-                  Context, canvas panel types, captioner, kanban vocabulary
-llm/               Provider contract (llm.Provider aliases core.Provider), retry,
-                  HTTP client, think-level ladder, image sniffing
-agent/            Multi-turn loop machinery, Plugin system, TurnSink seam,
-                  canvas runtime, insights/caption/compaction helpers
+core/             Zero-behavior contracts: wire vocabulary (QuestionPrompt,
+                  Notice), channel/mount machinery, the Services registry,
+                  Context, canvas panel types, captioner
+llm/               Shared provider infra (SSE client, retry, think-level
+                  ladder, image sniffing); wire-shape aliases only - no
+                  provider contract (consumers declare their own faces)
+agent/            Multi-turn loop machinery + the loop's need-face
+                  declarations (agent/seams.go), Plugin system, TurnSink
+                  seam, canvas runtime, insights/caption/compaction helpers
 harness/          In-process module packages (21 packages: 20 plugins +
                   datadir, an imported leaf; every capsule removable -
                   compiled into omega)
@@ -104,8 +107,8 @@ dual-mount parity tests and the fail-loud stubs went with them):
   handlers own their payload shapes (binary purity), the ledger
   (module, seam, failed predicate) records toggle-level refusals
 
-The seam census (15 exclusive slots) and its registration mapping
-live in the header of `agent/extensionapi.go`; the vocabulary types
+The registration census and its mapping table live in the header of
+`agent/extensionapi.go`; the vocabulary types
 (Refusal, RefusalSink, ModulePanicError) live in
 `core/api.go`. Hosts call `agent.MountAllAPI` (it returns the
 registry: claims, module routes, the refusal ledger) - every host
@@ -117,3 +120,88 @@ and a re-enabled one's return, through the same RewireSeams re-read
 every other served seam follows. Binary purity is machine law:
 `scripts/nm-purity.sh` proves a capsule leaves the binary whole
 (kanban canary every push, full rotation on the nightly).
+
+## The seam constitution (part 3)
+
+One universal seam mechanism; the substrate follows the capsules'
+grammar. At mount every extension runs the same moves:
+
+```txt
+mount -> declare surface (the additive rails, api.Register*) ->
+offer services under a key (api.Offer) -> consume others' services
+by resolving the key and asserting the consumer's OWN local
+interface -> subscribe to events.
+```
+
+core carries zero domain or capsule nouns: wire types (the shapes
+every consumer and the serving surface marshal identically), mount
+machinery, the `Services` registry. Deleting a capsule deletes every
+owner-shaped type, register and consult site with it; the consumer
+keeps its own need statement (a private local interface) plus
+nil handling. Offers ride the same one-name-one-tenant law as every
+claim: a key held by another tenant is a boot error
+(`core.ErrSeamForeignTenant`, `core/registry.go`). Import law
+unchanged: harness -> agent -> llm -> core.
+
+### The need-key namespace (the closed list, 8)
+
+The loop machinery declares its needs in `agent/seams.go` (Go
+implicit interfaces - the interface belongs to the consumer), and
+resolves + asserts every need at bind: a missing supply is the
+documented floor, a wrong-shaped offer is a loud boot failure naming
+the need. Never a silent nil discovered mid-turn, never a lazy
+resolve. Capsules offer supplies under these keys; proposing a ninth
+is a design event, argued in a card:
+
+| Key         | The need                        | Supplying capsule               |
+| ----------- | ------------------------------- | --------------------------------|
+| `provider`  | the model client                | `harness/provider`              |
+| `store`     | session persistence             | `harness/store`                 |
+| `loop`      | the multi-turn loop             | `agent/loop` (the default; a capsule may replace it) |
+| `logger`    | operational logging             | `harness/logging`               |
+| `compactor` | context compaction              | `harness/compactor`             |
+| `prompt`    | system prompt + guidelines      | `harness/prompt`                |
+| `nudger`    | the learning-loop reminder      | `harness/skills`                |
+| `approvals` | the smart approval gate         | `harness/approval`              |
+
+Floor detail: `provider` refuses the boot upstream (the unconfigured
+host posture). The host binds `store` itself (`cmd/omega/main.go`,
+newAgent): a wrong shape is the loud named-need boot failure, and a
+MISSING store capsule makes the host offer its own in-memory fallback
+under the same key ("host" tenant, sessions will not persist). The
+rest degrade to nil-safe floors: no logging, no compaction (context
+overflow surfaces a friendly error), no system prompt, no nudger, no
+gate.
+
+### The capsule-service namespace (the closed list, 6)
+
+`skills`, `memory`, `trust`, `cron`, `notifications`, `verdicts` -
+services one capsule owns and others (capsules, the serving surface,
+the host) consume: resolve the key, assert to the consumer's own
+1-2 method local interface (e.g. the host's `trustResolver` in
+`cmd/omega/trust.go`), nil-handle absence. The owner capsule never
+knows its consumers; deleting it removes the service whole. The
+census flags each mounted key: `core/census.go`'s slot list (the 14
+keys above, plus the host-built captioner - not an offer).
+`harness/kanban`'s `"kanban"` Provides() string is a mount-order
+claim only; nothing is offered under it.
+
+### Enforcement
+
+- `agent/seams_test.go`: the substrate noun scan (core/ + llm/ carry
+  no capsule name - comments and string keys never trip, the scan is
+  `go/ast` identifier-level), the consumer-home pin (each need face
+  declared in `agent/seams.go`), the deletability scan (the Class B
+  owner faces dead in core, llm, agent, api, cmd), and the
+  closed-list scan (every `api.Offer` call site inside the 8 + 6,
+  and every need key actually supplied).
+- `core/importability_test.go`: the substrate's own leg - no capsule
+  noun in core/, beside the stdlib-only import law. If a name
+  returns, the recipe's stop signal fires in the test, not in
+  production.
+- `scripts/nm-purity.sh`: the same removal at binary level (kanban
+  canary every push, full rotation on the nightly).
+
+The residual trace (the honest ceiling of the grammar): a consumer's
+resolve call keeps the string key - one inert, nil-handled data
+trace per consumer. Strings are data, not type-system vocabulary.

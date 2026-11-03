@@ -1,8 +1,9 @@
 # Removing a module (the capsule recipe)
 
 A module is a capsule: everything a card can see it through ships from
-one registration point - the plugin's mount. The seam (`ctx.Kanban`),
-the tools, the slash commands, the canvas panels and their actions are
+one registration point - the plugin's mount. The service offer (the
+"kanban" Provides claim; a consumer resolves it by key), the tools,
+the slash commands, the canvas panels and their actions are
 all registered from that one function. Delete the module's
 registration and every face vanishes by construction - nothing outside
 the module holds a reference. Kanban is the worked example below (arc
@@ -53,8 +54,8 @@ surface) is its sibling: `docs/migrating-a-module.md`.
    grep -rn 'kanban' docs                         # route tables, command docs, layer table
    ```
 
-   Expect hits in: the seam claim (`RegisterKanban` in the module's
-   mount), the route table (`harness/kanban/rest.go` registering the
+   Expect hits in: the seam claim (the module's Provides() list),
+   the route table (`harness/kanban/rest.go` registering the
    patterns through `api.RegisterRoute`), the tool registry
    (the bare domain `kanban` tool - the legacy `kanban.task`
    namespaced name retired by the one-domain tool law, t_e06b38bc),
@@ -156,9 +157,11 @@ surface) is its sibling: `docs/migrating-a-module.md`.
 - A fallback surface outside the module - a renderer that guesses the
   panel shape, a route that reimplements the store's grammar. Both
   frontends render the canvas generically; that is the whole point.
-- Deleting the core seam types while any seam signature references
-  them (`core.KanbanProvider` is `ctx.Kanban`'s type and
-  `harness/kanban` implements it).
+- Deleting a core-named seam type (part 3 removed them all: core
+  carries wire types, mount machinery, the registry - no capsule
+  noun; the consumer's local interface is its own need statement).
+  The noun tests (`agent/seams_test.go`, `core/importability_test.go`)
+  red on any return, so this is a closed failure class.
 - A `Requires()` edge left pointing at a removed module - the mount
   fails with the missing seam at startup, which is the correct
   behavior: fix the edge, never widen a guard.
