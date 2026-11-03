@@ -21,10 +21,23 @@ func skipOnWindows(t *testing.T) {
 }
 
 // testRegistry builds a registry over a fresh temp home with a fast
-// kill grace for the tests.
+// kill grace for the tests. Close is registered AFTER t.TempDir's
+// cleanup, so LIFO runs the fence first: every reaper is joined and no
+// child survives before the TempDir's RemoveAll - the CI fence for the
+// t_de398140 cleanup race.
 func testRegistry(t *testing.T) *Registry {
 	t.Helper()
-	return NewRegistry(Config{Home: t.TempDir(), KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
+	r := NewRegistry(Config{Home: t.TempDir(), KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
+	t.Cleanup(r.Close)
+	return r
+}
+
+// ownedReapers counts the registry's live reaper goroutines (the reaper
+// map shrinks as each watcher finishes, so zero means all joined).
+func ownedReapers(r *Registry) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.reapers)
 }
 
 // waitFor polls condition until it holds or fails the test.
@@ -232,6 +245,7 @@ func TestRestartPidRecheck(t *testing.T) {
 	skipOnWindows(t)
 	home := t.TempDir()
 	r1 := NewRegistry(Config{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
+	t.Cleanup(r1.Close) // joins the sleep 300 reaper before the TempDir teardown
 	if _, err := r1.Spawn(context.Background(), "sleep 300", "longop"); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
@@ -253,6 +267,7 @@ func TestRestartPidRecheck(t *testing.T) {
 	// A liveness-verified dead pid: a spawn whose process already
 	// exited in THIS process (the reaper recorded it).
 	probe := NewRegistry(Config{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
+	t.Cleanup(probe.Close) // the fast-exit spawn's reaper must not outlive the TempDir
 	if _, err := probe.Spawn(context.Background(), "exit 0", "dead-pid-source"); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
@@ -273,6 +288,49 @@ func TestRestartPidRecheck(t *testing.T) {
 			t.Fatalf("a gone pid must reconcile to exited-unknown: %+v", e)
 		}
 	}
+}
+
+// TestCloseJoinsReapers is the CI fence (card t_de398140): a fast-exit
+// command whose reaper previously wrote the state file after the test
+// returned, racing the TempDir RemoveAll on the runner (the "directory
+// not empty" red). The fence closes the window structurally: after
+// Close the reaper is joined, the entry is terminal, and nothing can
+// write to the home again. Run with -count=10; the race is runner
+// timing, the fence makes it impossible.
+func TestCloseJoinsReapers(t *testing.T) {
+	skipOnWindows(t)
+	r := testRegistry(t)
+	if _, err := r.Spawn(context.Background(), "exit 0", "fast"); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	r.Close() // the fence the TempDir cleanup would otherwise race
+	// Terminal state, whichever way it landed: the child beat the fence
+	// (exit code 0) or the fence's kill beat the child's exec (signal
+	// death, code -1). Either way the reaper recorded before Close
+	// returned - the invariant TempDir cleanup relies on.
+	e := stateEntry(t, r, "fast")
+	if !e.Exited || e.ExitCode == nil || (*e.ExitCode != 0 && *e.ExitCode != -1) {
+		t.Fatalf("fast exit must be terminal after the fence: %+v", e)
+	}
+	if n := ownedReapers(r); n != 0 {
+		t.Fatalf("reapers left unjoined after Close: %d", n)
+	}
+}
+
+// TestSpawnReturnsBeforeExit exercises the same fence through test
+// lifetime instead: the test returns with a RUNNING child (the shape
+// TestToolFace's sleep 120 had), and t.Cleanup's Close must kill the
+// child and join the reaper before the TempDir teardown - no late
+// save, no leftover sleep outliving the test.
+func TestSpawnReturnsBeforeExit(t *testing.T) {
+	skipOnWindows(t)
+	r := testRegistry(t)
+	if _, err := r.Spawn(context.Background(), "echo left-behind; sleep 120", "leaver"); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	// Returns immediately with the child still running - the fence is
+	// the whole point. Nothing further to assert here: a failed
+	// cleanup fails the test itself (the exact CI red this fixes).
 }
 
 // TestCorruptStateIgnored proves a corrupt state file starts empty
