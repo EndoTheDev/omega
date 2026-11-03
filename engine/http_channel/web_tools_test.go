@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
+	"github.com/EndoTheDev/omega/agent"
 	"gopkg.in/yaml.v3"
 )
 
@@ -204,7 +204,7 @@ func TestDoFetchHTTP401(t *testing.T) {
 }
 
 // TestDoSearchHTTP500 verifies 5xx responses surface as loud errors
-// through the ai.RetryHTTP path: RetryHTTP returns the last (500)
+// through the llm.RetryHTTP path: RetryHTTP returns the last (500)
 // response rather than a Go error, so doSearch reads its body and
 // reports the status. OMEGA_MAX_RETRIES=0 keeps the test fast.
 func TestDoSearchHTTP500(t *testing.T) {

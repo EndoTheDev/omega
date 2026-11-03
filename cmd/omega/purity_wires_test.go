@@ -51,7 +51,7 @@ func cmdGoFiles(t *testing.T) []string {
 // ParseCardAnswer called inline, hint/echo helpers in the host - and
 // the scrubber's line-only deletion of the verdict wires left dead
 // identifiers and a stranded return, so the verdict rotation built
-// red. The exchange lives in modules/verdict (AnswerInline) behind ONE
+// red. The exchange lives in harness/verdict (AnswerInline) behind ONE
 // wire line whose shape the line deletion cannot break: a named
 // return on the host function. An inline re-copy in cmd/ is the exact
 // past red.
@@ -62,7 +62,7 @@ func TestVerdictExchangeStaysInCapsule(t *testing.T) {
 			t.Fatalf("read %s: %v", f, err)
 		}
 		if strings.Contains(string(b), "ParseCardAnswer") {
-			t.Errorf("%s names ParseCardAnswer: the verdict answer exchange must live in modules/verdict - an inline host copy re-strands dead identifiers under the verdict rotation (bea6abc, card t_8abdbb15)", f)
+			t.Errorf("%s names ParseCardAnswer: the verdict answer exchange must live in harness/verdict - an inline host copy re-strands dead identifiers under the verdict rotation (bea6abc, card t_8abdbb15)", f)
 		}
 	}
 	b, err := os.ReadFile("loop.go")

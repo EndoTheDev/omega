@@ -1,0 +1,1346 @@
+package provider
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/llm"
+)
+
+// testContext returns a background context for tests.
+func testContext() context.Context { return context.Background() }
+
+// drainEvents reads all events from a stream channel and returns
+// the final StreamEnd. Fails the test if the last event is not a
+// StreamEnd.
+func drainEvents(events <-chan core.ProviderStreamEvent) core.StreamEnd {
+	var end core.StreamEnd
+	for e := range events {
+		if se, ok := e.(core.StreamEnd); ok {
+			end = se
+		}
+	}
+	if end.Type == "" {
+		panic("no StreamEnd event received")
+	}
+	return end
+}
+
+// TestProviderImplementsAIProvider verifies Provider satisfies the
+// llm.Provider interface at compile time.
+func TestProviderImplementsAIProvider(t *testing.T) {
+	var _ llm.Provider = (*Provider)(nil)
+}
+
+// TestNewProviderDefaults verifies defaults are applied: empty type
+// becomes "ollama", empty baseURL gets the Ollama default.
+func TestNewProviderDefaults(t *testing.T) {
+	p := NewProvider("", "", "", "")
+	if p.typ != "ollama" {
+		t.Fatalf("typ = %q, want %q", p.typ, "ollama")
+	}
+	if p.baseURL != "http://localhost:11434" {
+		t.Fatalf("baseURL = %q, want %q", p.baseURL, "http://localhost:11434")
+	}
+}
+
+// TestWithModel verifies WithModel returns a copy on the new model and
+// leaves the original untouched.
+func TestWithModel(t *testing.T) {
+	p := NewProvider("ollama", "old", "", "")
+	cp := p.WithModel("new")
+	if cp.ModelName() != "new" {
+		t.Fatalf("copy ModelName() = %q, want %q", cp.ModelName(), "new")
+	}
+	if p.ModelName() != "old" {
+		t.Fatalf("original ModelName() = %q, want %q", p.ModelName(), "old")
+	}
+}
+
+// TestSetThinkingLevel verifies SetThinkingLevel stores the level.
+func TestSetThinkingLevel(t *testing.T) {
+	p := NewProvider("ollama", "m", "", "")
+	p.SetThinkingLevel("high")
+	if p.thinkingLevel != "high" {
+		t.Fatalf("thinkingLevel = %q, want %q", p.thinkingLevel, "high")
+	}
+}
+
+// TestWithThinkingLevel verifies WithThinkingLevel threads the level
+// through a copy (composed with the WithModel copy) and leaves the
+// original untouched - the per-run derivation the http_channel uses.
+func TestWithThinkingLevel(t *testing.T) {
+	p := NewProvider("ollama", "m", "", "")
+	p.SetThinkingLevel("medium")
+	cp, ok := p.WithModel("other").WithThinkingLevel("ultra").(*Provider)
+	if !ok {
+		t.Fatal("WithThinkingLevel did not return *Provider")
+	}
+	if cp.thinkingLevel != "ultra" {
+		t.Fatalf("copy thinkingLevel = %q, want ultra", cp.thinkingLevel)
+	}
+	if cp.modelName != "other" {
+		t.Fatalf("copy model = %q, want other", cp.modelName)
+	}
+	if p.thinkingLevel != "medium" || p.modelName != "m" {
+		t.Fatalf("base mutated: level %q model %q", p.thinkingLevel, p.modelName)
+	}
+}
+
+// TestUnknownProviderStreamError verifies Stream returns an error
+// StreamEnd for an unknown provider type without panicking.
+func TestUnknownProviderStreamError(t *testing.T) {
+	p := &Provider{typ: "bogus", baseURL: "http://localhost"}
+	events := p.Stream(testContext(), nil, nil)
+	end := drainEvents(events)
+	if end.FinishReason != "error" {
+		t.Fatalf("FinishReason = %q, want %q", end.FinishReason, "error")
+	}
+	if end.Error == "" {
+		t.Fatal("expected non-empty error message")
+	}
+}
+
+// TestMessagesToJSON verifies role fields are added and timestamps
+// are stripped for each message type.
+func TestMessagesToJSON(t *testing.T) {
+	msgs := []core.Message{
+		core.NewSystem("sys"),
+		core.NewUser("hello"),
+		core.NewAssistant("hi"),
+		core.NewToolResult("result", "t1", false),
+	}
+	result := messagesToJSON(msgs, false)
+	if len(result) != 4 {
+		t.Fatalf("got %d maps, want 4", len(result))
+	}
+	wantRoles := []string{"system", "user", "assistant", "tool"}
+	for i, want := range wantRoles {
+		role, _ := result[i]["role"].(string)
+		if role != want {
+			t.Errorf("msg %d role = %q, want %q", i, role, want)
+		}
+		if _, hasTS := result[i]["timestamp"]; hasTS {
+			t.Errorf("msg %d should not have timestamp", i)
+		}
+	}
+}
+
+// TestThinkingMappers verifies the three thinking-level mappers across
+// every supported level using table-driven subtests.
+func TestThinkingMappers(t *testing.T) {
+	t.Run("ollamaThinkValue", func(t *testing.T) {
+		cases := []struct {
+			level string
+			want  any
+		}{
+			{"off", false},
+			{"on", true},
+			{"minimal", "low"},
+			{"low", "low"},
+			{"medium", "medium"},
+			{"high", "high"},
+			{"extra high", "max"},
+			{"max", "max"},
+			{"ultra", "max"},
+			{"none", nil},
+			{"unknown", nil},
+		}
+		for _, c := range cases {
+			t.Run(c.level, func(t *testing.T) {
+				got := ollamaThinkValue(c.level)
+				if !reflect.DeepEqual(got, c.want) {
+					t.Fatalf("ollamaThinkValue(%q) = %v (%T), want %v (%T)", c.level, got, got, c.want, c.want)
+				}
+			})
+		}
+	})
+
+	t.Run("openaiReasoningEffort", func(t *testing.T) {
+		cases := []struct {
+			level string
+			want  string
+		}{
+			{"minimal", "low"},
+			{"low", "low"},
+			{"medium", "medium"},
+			{"high", "high"},
+			{"extra high", "high"},
+			{"max", "high"},
+			{"ultra", "high"},
+			{"none", ""},
+			{"unknown", ""},
+		}
+		for _, c := range cases {
+			t.Run(c.level, func(t *testing.T) {
+				got := openaiReasoningEffort(c.level)
+				if got != c.want {
+					t.Fatalf("openaiReasoningEffort(%q) = %q, want %q", c.level, got, c.want)
+				}
+			})
+		}
+	})
+
+	t.Run("anthropicBudgetTokens", func(t *testing.T) {
+		cases := []struct {
+			level string
+			want  int
+		}{
+			{"minimal", 1024},
+			{"low", 2048},
+			{"medium", 4096},
+			{"high", 8192},
+			{"extra high", 16384},
+			{"max", 24576},
+			{"ultra", 32768},
+			{"none", 0},
+			{"unknown", 0},
+		}
+		for _, c := range cases {
+			t.Run(c.level, func(t *testing.T) {
+				got := anthropicBudgetTokens(c.level)
+				if got != c.want {
+					t.Fatalf("anthropicBudgetTokens(%q) = %d, want %d", c.level, got, c.want)
+				}
+			})
+		}
+	})
+}
+
+// TestAnthropicConvertMessages verifies system prompt is lifted,
+// tool results are folded, and assistant tool calls are converted.
+func TestAnthropicConvertMessages(t *testing.T) {
+	messages := []map[string]any{
+		{"role": "system", "content": "be helpful"},
+		{"role": "user", "content": "hi"},
+		{"role": "assistant", "content": "hello", "tool_calls": []any{
+			map[string]any{
+				"id": "t1",
+				"function": map[string]any{
+					"name":      "search",
+					"arguments": map[string]any{"q": "test"},
+				},
+			},
+		}},
+		{"role": "tool", "content": "found", "tool_call_id": "t1"},
+	}
+	system, result := anthropicConvertMessages(messages)
+	if system != "be helpful" {
+		t.Fatalf("system = %q, want %q", system, "be helpful")
+	}
+	if len(result) != 3 {
+		t.Fatalf("got %d messages, want 3", len(result))
+	}
+	// user message stays as-is
+	if result[0]["role"] != "user" {
+		t.Fatalf("msg 0 role = %v, want user", result[0]["role"])
+	}
+	// assistant message has content blocks with tool_use
+	asstContent, _ := result[1]["content"].([]map[string]any)
+	if len(asstContent) != 2 {
+		t.Fatalf("assistant blocks = %d, want 2", len(asstContent))
+	}
+	if asstContent[1]["type"] != "tool_use" {
+		t.Fatalf("block 1 type = %v, want tool_use", asstContent[1]["type"])
+	}
+	// tool result folded into user message
+	if result[2]["role"] != "user" {
+		t.Fatalf("msg 2 role = %v, want user", result[2]["role"])
+	}
+	toolBlocks, _ := result[2]["content"].([]map[string]any)
+	if len(toolBlocks) != 1 {
+		t.Fatalf("tool blocks = %d, want 1", len(toolBlocks))
+	}
+	if toolBlocks[0]["type"] != "tool_result" {
+		t.Fatalf("tool block type = %v, want tool_result", toolBlocks[0]["type"])
+	}
+}
+
+// TestPluginInterface verifies the Plugin adapter returns the right
+// metadata.
+func TestPluginInterface(t *testing.T) {
+	p := Plugin{}
+	if p.Name() != "provider" {
+		t.Fatalf("Name() = %q, want %q", p.Name(), "provider")
+	}
+	provides := p.Provides()
+	if len(provides) != 1 || provides[0] != "provider" {
+		t.Fatalf("Provides() = %v, want [provider]", provides)
+	}
+	if len(p.Requires()) != 0 {
+		t.Fatalf("Requires() = %v, want []", p.Requires())
+	}
+}
+
+// TestInitDefaults verifies initDefaults resolves API keys from env
+// vars and fills default base URLs for all three provider types.
+func TestInitDefaults(t *testing.T) {
+	cases := []struct {
+		name        string
+		typ         string
+		inBaseURL   string
+		inAPIKey    string
+		setEnv      map[string]string
+		wantBaseURL string
+		wantAPIKey  string
+	}{
+		// a. openai default baseURL
+		{
+			name:        "openai_default_baseURL",
+			typ:         "openai",
+			wantBaseURL: "https://api.openai.com/v1",
+			wantAPIKey:  "",
+		},
+		// b. anthropic default baseURL
+		{
+			name:        "anthropic_default_baseURL",
+			typ:         "anthropic",
+			wantBaseURL: "https://api.anthropic.com/v1",
+			wantAPIKey:  "",
+		},
+		// c. ollama with OLLAMA_API_KEY env var set
+		{
+			name:        "ollama_apiKey_from_env",
+			typ:         "ollama",
+			setEnv:      map[string]string{"OLLAMA_API_KEY": "ollama-key"},
+			wantBaseURL: "http://localhost:11434",
+			wantAPIKey:  "ollama-key",
+		},
+		// d. openai with OPENAI_API_KEY env var set
+		{
+			name:        "openai_apiKey_from_env",
+			typ:         "openai",
+			setEnv:      map[string]string{"OPENAI_API_KEY": "openai-key"},
+			wantBaseURL: "https://api.openai.com/v1",
+			wantAPIKey:  "openai-key",
+		},
+		// e. anthropic with ANTHROPIC_API_KEY env var set
+		{
+			name:        "anthropic_apiKey_from_env",
+			typ:         "anthropic",
+			setEnv:      map[string]string{"ANTHROPIC_API_KEY": "anthropic-key"},
+			wantBaseURL: "https://api.anthropic.com/v1",
+			wantAPIKey:  "anthropic-key",
+		},
+		// f. ollama with OLLAMA_HOST env var set
+		{
+			name:        "ollama_baseURL_from_env",
+			typ:         "ollama",
+			setEnv:      map[string]string{"OLLAMA_HOST": "http://myhost:11434"},
+			wantBaseURL: "http://myhost:11434",
+			wantAPIKey:  "",
+		},
+		// g. explicit baseURL and apiKey are NOT overridden by env vars
+		{
+			name:        "explicit_values_win_over_env",
+			typ:         "ollama",
+			inBaseURL:   "http://explicit:11434",
+			inAPIKey:    "explicit-key",
+			setEnv:      map[string]string{"OLLAMA_API_KEY": "env-key", "OLLAMA_HOST": "http://envhost:11434"},
+			wantBaseURL: "http://explicit:11434",
+			wantAPIKey:  "explicit-key",
+		},
+		// h. trailing slash trimming on baseURL for all three provider types
+		{
+			name:        "openai_trailing_slash_trimmed",
+			typ:         "openai",
+			inBaseURL:   "https://api.openai.com/v1/",
+			wantBaseURL: "https://api.openai.com/v1",
+			wantAPIKey:  "",
+		},
+		{
+			name:        "anthropic_trailing_slash_trimmed",
+			typ:         "anthropic",
+			inBaseURL:   "https://api.anthropic.com/v1/",
+			wantBaseURL: "https://api.anthropic.com/v1",
+			wantAPIKey:  "",
+		},
+		{
+			name:        "ollama_trailing_slash_trimmed",
+			typ:         "ollama",
+			setEnv:      map[string]string{"OLLAMA_HOST": "http://localhost:11434/"},
+			wantBaseURL: "http://localhost:11434",
+			wantAPIKey:  "",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// Clear all relevant env vars before each subtest to ensure isolation.
+			t.Setenv("OLLAMA_API_KEY", "")
+			t.Setenv("OPENAI_API_KEY", "")
+			t.Setenv("ANTHROPIC_API_KEY", "")
+			t.Setenv("OLLAMA_HOST", "")
+
+			for k, v := range c.setEnv {
+				t.Setenv(k, v)
+			}
+
+			p := NewProvider(c.typ, "m", c.inBaseURL, c.inAPIKey)
+			if p.baseURL != c.wantBaseURL {
+				t.Errorf("baseURL = %q, want %q", p.baseURL, c.wantBaseURL)
+			}
+			if p.apiKey != c.wantAPIKey {
+				t.Errorf("apiKey = %q, want %q", p.apiKey, c.wantAPIKey)
+			}
+			if strings.HasSuffix(p.baseURL, "/") {
+				t.Errorf("baseURL should not have trailing slash, got %q", p.baseURL)
+			}
+		})
+	}
+}
+
+// TestProviderModelCommand verifies /model <name> updates the base
+// provider via WithModel and returns set_model + refresh_title +
+// fetch_model_info CmdActions.
+func TestProviderModelCommand(t *testing.T) {
+	p := &Plugin{}
+	ctx := &core.Context{}
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
+	}
+
+	result, err := ctx.CommandHandler(context.Background(), "/model", "qwen2.5")
+	if err != nil {
+		t.Fatalf("CommandHandler: %v", err)
+	}
+	if !strings.Contains(result.Text, "switched to qwen2.5") {
+		t.Fatalf("expected confirmation text, got %q", result.Text)
+	}
+	if len(result.Actions) != 3 {
+		t.Fatalf("expected 3 actions, got %d", len(result.Actions))
+	}
+	if result.Actions[0].Type != "set_model" || result.Actions[0].Value != "qwen2.5" {
+		t.Fatalf("expected set_model action, got %+v", result.Actions[0])
+	}
+	if result.Actions[1].Type != "refresh_title" {
+		t.Fatalf("expected refresh_title action, got %+v", result.Actions[1])
+	}
+	if result.Actions[2].Type != "fetch_model_info" {
+		t.Fatalf("expected fetch_model_info action, got %+v", result.Actions[2])
+	}
+}
+
+// TestProviderModelNoArgs verifies /model with no args returns usage.
+func TestProviderModelNoArgs(t *testing.T) {
+	p := &Plugin{}
+	ctx := &core.Context{}
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
+	}
+
+	result, err := ctx.CommandHandler(context.Background(), "/model", "")
+	if err != nil {
+		t.Fatalf("CommandHandler: %v", err)
+	}
+	if !strings.Contains(result.Text, "usage") {
+		t.Fatalf("expected usage text, got %q", result.Text)
+	}
+}
+
+// TestProviderInfoCommand verifies /provider returns provider + model info.
+func TestProviderInfoCommand(t *testing.T) {
+	p := &Plugin{}
+	ctx := &core.Context{}
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
+	}
+
+	result, err := ctx.CommandHandler(context.Background(), "/provider", "")
+	if err != nil {
+		t.Fatalf("CommandHandler: %v", err)
+	}
+	if !strings.Contains(result.Text, "provider:") {
+		t.Fatalf("expected provider info, got %q", result.Text)
+	}
+	if !strings.Contains(result.Text, "model:") {
+		t.Fatalf("expected model info, got %q", result.Text)
+	}
+}
+
+// TestListModels verifies listModels against fake HTTP servers for
+// each provider type: endpoint paths, model name extraction, sorting,
+// unknown types, and HTTP error statuses.
+func TestListModels(t *testing.T) {
+	// ollama: GET /api/tags, "models" array with "name" fields.
+	var ollamaPath string
+	ollamaSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ollamaPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"models":[{"name":"qwen"},{"name":"llama3"}]}`)
+	}))
+	defer ollamaSrv.Close()
+
+	p := &Provider{typ: "ollama", baseURL: ollamaSrv.URL}
+	names, err := p.ListModels()
+	if err != nil {
+		t.Fatalf("listModels (ollama): %v", err)
+	}
+	if ollamaPath != "/api/tags" {
+		t.Errorf("ollama request path = %q, want /api/tags", ollamaPath)
+	}
+	if !reflect.DeepEqual(names, []string{"llama3", "qwen"}) {
+		t.Errorf("ollama names = %v, want [llama3 qwen] (sorted)", names)
+	}
+
+	// Exported ListModels() wrapper should return the same result.
+	expNames, err := p.ListModels()
+	if err != nil {
+		t.Fatalf("ListModels (ollama): %v", err)
+	}
+	if !reflect.DeepEqual(expNames, []string{"llama3", "qwen"}) {
+		t.Errorf("ListModels (ollama) = %v, want [llama3 qwen] (sorted)", expNames)
+	}
+
+	// openai: GET /models, "data" array with "id" fields.
+	var openaiPath string
+	openaiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		openaiPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[{"id":"gpt-x"}]}`)
+	}))
+	defer openaiSrv.Close()
+
+	p = &Provider{typ: "openai", baseURL: openaiSrv.URL, apiKey: "sk-test"}
+	names, err = p.ListModels()
+	if err != nil {
+		t.Fatalf("listModels (openai): %v", err)
+	}
+	if openaiPath != "/models" {
+		t.Errorf("openai request path = %q, want /models", openaiPath)
+	}
+	if !reflect.DeepEqual(names, []string{"gpt-x"}) {
+		t.Errorf("openai names = %v, want [gpt-x]", names)
+	}
+
+	// anthropic: GET /models, "data" array with "id" fields.
+	var anthropicPath string
+	anthropicSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		anthropicPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[{"id":"claude-x"}]}`)
+	}))
+	defer anthropicSrv.Close()
+
+	p = &Provider{typ: "anthropic", baseURL: anthropicSrv.URL, apiKey: "ak-test"}
+	names, err = p.ListModels()
+	if err != nil {
+		t.Fatalf("listModels (anthropic): %v", err)
+	}
+	if anthropicPath != "/models" {
+		t.Errorf("anthropic request path = %q, want /models", anthropicPath)
+	}
+	if !reflect.DeepEqual(names, []string{"claude-x"}) {
+		t.Errorf("anthropic names = %v, want [claude-x]", names)
+	}
+
+	// unknown provider type errors out before any HTTP request.
+	p = &Provider{typ: "bogus", baseURL: ollamaSrv.URL}
+	if names, err := p.ListModels(); err == nil {
+		t.Errorf("listModels (unknown type) = %v, want error", names)
+	}
+
+	// HTTP 500 surfaces as an error.
+	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer errSrv.Close()
+
+	p = &Provider{typ: "ollama", baseURL: errSrv.URL}
+	if names, err := p.ListModels(); err == nil {
+		t.Errorf("listModels (HTTP 500) = %v, want error", names)
+	}
+}
+
+// TestListModelEntries verifies the capability-carrying list
+// (card t_70c28128): the ollama /api/tags "capabilities" array lands
+// on the entries, the openai/anthropic id lists answer with nil
+// capabilities, and ListModels still projects plain names.
+func TestListModelEntries(t *testing.T) {
+	// ollama with capabilities: entries carry the flags as sent.
+	ollamaSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"models":[
+			{"name":"clef:27b","capabilities":["decision","vision"]},
+			{"name":"gpt-oss:20b","capabilities":["completion","tools","thinking"]}
+		]}`)
+	}))
+	defer ollamaSrv.Close()
+
+	p := &Provider{typ: "ollama", baseURL: ollamaSrv.URL}
+	entries, err := p.ListModelEntries()
+	if err != nil {
+		t.Fatalf("ListModelEntries (ollama): %v", err)
+	}
+	if len(entries) != 2 || entries[0].Name != "clef:27b" || entries[1].Name != "gpt-oss:20b" {
+		t.Fatalf("entries = %+v, want [clef:27b gpt-oss:20b] (sorted)", entries)
+	}
+	if !reflect.DeepEqual(entries[0].Capabilities, []string{"decision", "vision"}) {
+		t.Errorf("clef capabilities = %v, want [decision vision]", entries[0].Capabilities)
+	}
+	if !reflect.DeepEqual(entries[1].Capabilities, []string{"completion", "tools", "thinking"}) {
+		t.Errorf("gpt-oss capabilities = %v, want [completion tools thinking]", entries[1].Capabilities)
+	}
+
+	// openai: ids only, capabilities stay nil.
+	openaiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[{"id":"gpt-x"}]}`)
+	}))
+	defer openaiSrv.Close()
+
+	p = &Provider{typ: "openai", baseURL: openaiSrv.URL, apiKey: "sk-test"}
+	entries, err = p.ListModelEntries()
+	if err != nil {
+		t.Fatalf("ListModelEntries (openai): %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name != "gpt-x" || entries[0].Capabilities != nil {
+		t.Fatalf("entries = %+v, want [{gpt-x <nil>}]", entries)
+	}
+
+	// ListModels still projects the plain names.
+	names, err := p.ListModels()
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if !reflect.DeepEqual(names, []string{"gpt-x"}) {
+		t.Errorf("ListModels = %v, want [gpt-x]", names)
+	}
+}
+
+// TestModelInfo verifies modelInfo: ollama /api/show context_length
+// extraction, non-200 error, and 0/nil for other provider types.
+func TestModelInfo(t *testing.T) {
+	var gotPath string
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"model_info":{"gemma4.context_length": 131072}}`)
+	}))
+	defer srv.Close()
+
+	// ollama: returns the context length from model_info.
+	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "gemma4"}
+	info, err := p.modelInfo()
+	if err != nil {
+		t.Fatalf("modelInfo (ollama): %v", err)
+	}
+	if info != 131072 {
+		t.Errorf("modelInfo (ollama) = %d, want 131072", info)
+	}
+	if gotPath != "/api/show" {
+		t.Errorf("request path = %q, want /api/show", gotPath)
+	}
+	var sent map[string]any
+	if err := json.Unmarshal(gotBody, &sent); err != nil {
+		t.Fatalf("request body is not JSON: %v", err)
+	}
+	if sent["model"] != "gemma4" {
+		t.Errorf("request body model = %v, want gemma4", sent["model"])
+	}
+
+	// Exported ModelInfo() wrapper should return an llm.ModelInfo with
+	// ContextWindow set to the value extracted by modelInfo().
+	expInfo, err := p.ModelInfo()
+	if err != nil {
+		t.Fatalf("ModelInfo (ollama): %v", err)
+	}
+	if expInfo.ContextWindow != 131072 {
+		t.Errorf("ModelInfo (ollama) ContextWindow = %d, want 131072", expInfo.ContextWindow)
+	}
+
+	// non-200 response is an error.
+	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer errSrv.Close()
+
+	p = &Provider{typ: "ollama", baseURL: errSrv.URL, modelName: "gemma4"}
+	if info, err := p.modelInfo(); err == nil {
+		t.Errorf("modelInfo (HTTP 500) = %d, want error", info)
+	}
+
+	// openai/anthropic: ollama-lane hosts (keypool -> ollama-cloud) serve
+	// /api/show at the root; the same test server exposes it, so both types
+	// now report the real context window.
+	p = &Provider{typ: "openai", baseURL: srv.URL}
+	if info, err := p.modelInfo(); err != nil || info != 131072 {
+		t.Errorf("modelInfo (openai) = %d, %v; want 131072, nil", info, err)
+	}
+	p = &Provider{typ: "anthropic", baseURL: srv.URL}
+	if info, err := p.modelInfo(); err != nil || info != 131072 {
+		t.Errorf("modelInfo (anthropic) = %d, %v; want 131072, nil", info, err)
+	}
+}
+
+// TestSendEvent verifies sendEvent delivers on a ready channel and
+// drops the event instead of blocking when the context is cancelled
+// and the channel is full.
+func TestSendEvent(t *testing.T) {
+	// buffered channel: event is delivered.
+	events := make(chan core.ProviderStreamEvent, 1)
+	sendEvent(testContext(), events, core.StreamEnd{FinishReason: "stop"})
+	ev := <-events
+	end, ok := ev.(core.StreamEnd)
+	if !ok {
+		t.Fatalf("received event type %T, want core.StreamEnd", ev)
+	}
+	if end.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "stop")
+	}
+
+	// unbuffered channel + cancelled context: returns without blocking.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		sendEvent(ctx, make(chan core.ProviderStreamEvent), core.StreamEnd{FinishReason: "stop"})
+	}()
+	select {
+	case <-done:
+		// returned without blocking.
+	case <-time.After(2 * time.Second):
+		t.Fatal("sendEvent blocked on cancelled context with full channel")
+	}
+}
+
+// testToolCall is the generic parameter for flushToolCalls tests.
+type testToolCall struct {
+	ID   string
+	Name string
+	JSON string
+}
+
+// TestFlushToolCalls verifies flushToolCalls: empty pending sends
+// nothing, and out-of-order pending entries are flushed in index
+// order with their argument JSON unmarshalled.
+func TestFlushToolCalls(t *testing.T) {
+	// empty pending: no events.
+	events := make(chan core.ProviderStreamEvent, 4)
+	flushToolCalls(testContext(), events, map[int]*testToolCall{},
+		func(tc *testToolCall) string { return tc.ID },
+		func(tc *testToolCall) string { return tc.Name },
+		func(tc *testToolCall) string { return tc.JSON })
+	if len(events) != 0 {
+		t.Fatalf("empty pending sent %d events, want 0", len(events))
+	}
+
+	// out-of-index-order entries flush in sorted index order.
+	pending := map[int]*testToolCall{
+		2: {ID: "c3", Name: "third", JSON: `{"n":3}`},
+		0: {ID: "c1", Name: "first", JSON: `{"n":1}`},
+		1: {ID: "c2", Name: "second", JSON: `{"n":2}`},
+	}
+	flushToolCalls(testContext(), events, pending,
+		func(tc *testToolCall) string { return tc.ID },
+		func(tc *testToolCall) string { return tc.Name },
+		func(tc *testToolCall) string { return tc.JSON })
+
+	wantOrder := []struct {
+		id, name string
+		n        float64
+	}{
+		{"c1", "first", 1},
+		{"c2", "second", 2},
+		{"c3", "third", 3},
+	}
+	for i, want := range wantOrder {
+		if len(events) == 0 {
+			t.Fatalf("event %d: channel empty, want ToolCallEvent", i)
+		}
+		ev := <-events
+		tce, ok := ev.(core.ToolCallEvent)
+		if !ok {
+			t.Fatalf("event %d: got type %T, want core.ToolCallEvent", i, ev)
+		}
+		if tce.Type != "tool_call" {
+			t.Errorf("event %d: Type = %q, want %q", i, tce.Type, "tool_call")
+		}
+		if tce.ToolCall.ID != want.id {
+			t.Errorf("event %d: ID = %q, want %q (index order)", i, tce.ToolCall.ID, want.id)
+		}
+		if tce.ToolCall.Name != want.name {
+			t.Errorf("event %d: Name = %q, want %q", i, tce.ToolCall.Name, want.name)
+		}
+		if n, _ := tce.ToolCall.Arguments["n"].(float64); n != want.n {
+			t.Errorf("event %d: args n = %v, want %v", i, tce.ToolCall.Arguments["n"], want.n)
+		}
+	}
+	if len(events) != 0 {
+		t.Fatalf("got %d extra events after draining", len(events))
+	}
+}
+
+// collectEvents reads all events from a stream channel and returns
+// them in order. Fails the test if no events arrive or the last
+// event is not a StreamEnd.
+func collectEvents(t *testing.T, events <-chan core.ProviderStreamEvent) []core.ProviderStreamEvent {
+	t.Helper()
+	var out []core.ProviderStreamEvent
+	for e := range events {
+		out = append(out, e)
+	}
+	if len(out) == 0 {
+		t.Fatal("no events received")
+	}
+	if _, ok := out[len(out)-1].(core.StreamEnd); !ok {
+		t.Fatalf("last event type %T, want core.StreamEnd", out[len(out)-1])
+	}
+	return out
+}
+
+// TestStreamOllama verifies Stream against a fake Ollama NDJSON
+// endpoint: content chunks, done-line counters, request path, and
+// the thinking-level "think" field in the request body.
+func TestStreamOllama(t *testing.T) {
+	var gotPath string
+	bodies := make(chan []byte, 8) // ponytail: handler pushes each request body in request order; channel beats a mutex+racy shared var
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		body, _ := io.ReadAll(r.Body)
+		bodies <- body
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		fmt.Fprintln(w, `{"message":{"content":"Hello "}}`)
+		fmt.Fprintln(w, `{"message":{"content":"world"}}`)
+		fmt.Fprintln(w, `{"done":true,"prompt_eval_count":12,"eval_count":34}`)
+	}))
+	defer srv.Close()
+
+	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "llama3"}
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+	<-bodies // drain the default-level request body
+
+	if gotPath != "/api/chat" {
+		t.Errorf("request path = %q, want /api/chat", gotPath)
+	}
+
+	wantContents := []string{"Hello ", "world"}
+	chunks := 0
+	for _, e := range got {
+		rc, ok := e.(core.ResponseChunk)
+		if !ok {
+			continue
+		}
+		if chunks >= len(wantContents) {
+			t.Fatalf("got more than %d ResponseChunk events", len(wantContents))
+		}
+		if rc.Content != wantContents[chunks] {
+			t.Errorf("chunk %d content = %q, want %q", chunks, rc.Content, wantContents[chunks])
+		}
+		chunks++
+	}
+	if chunks != len(wantContents) {
+		t.Fatalf("got %d ResponseChunk events, want %d", chunks, len(wantContents))
+	}
+
+	end := got[len(got)-1].(core.StreamEnd)
+	if end.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "stop")
+	}
+	if end.PromptEvalCount == nil || *end.PromptEvalCount != 12 {
+		t.Errorf("PromptEvalCount = %v, want 12", end.PromptEvalCount)
+	}
+	if end.EvalCount == nil || *end.EvalCount != 34 {
+		t.Errorf("EvalCount = %v, want 34", end.EvalCount)
+	}
+
+	// thinking level "high" maps to "think":"high" in the request body.
+	p = &Provider{typ: "ollama", baseURL: srv.URL, modelName: "llama3", thinkingLevel: "high"}
+	collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+	var sent map[string]any
+	if err := json.Unmarshal(<-bodies, &sent); err != nil {
+		t.Fatalf("request body is not JSON: %v", err)
+	}
+	if sent["think"] != "high" {
+		t.Errorf("request body think = %v, want %q", sent["think"], "high")
+	}
+
+	// thinking level "none" omits the "think" key entirely.
+	p = &Provider{typ: "ollama", baseURL: srv.URL, modelName: "llama3", thinkingLevel: "none"}
+	collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+	sent = nil
+	if err := json.Unmarshal(<-bodies, &sent); err != nil {
+		t.Fatalf("request body is not JSON: %v", err)
+	}
+	if _, ok := sent["think"]; ok {
+		t.Errorf("request body should not contain a think key, got %v", sent["think"])
+	}
+}
+
+// TestStreamOllamaToolCalls verifies the native tool-call wire format
+// end to end: tools carried in the request, tool_calls parsed from the
+// response (id from the wire, synthetic id when the wire omits one,
+// arguments as object and as JSON string), thinking chunks alongside,
+// done_reason/usage counters on the final line, and
+// finish_reason=tool_call.
+func TestStreamOllamaToolCalls(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		fmt.Fprintln(w, `{"message":{"role":"assistant","content":"","thinking":"checking weather"},"done":false}`)
+		fmt.Fprintln(w, `{"message":{"role":"assistant","content":"Calling."},"done":false}`)
+		fmt.Fprintln(w, `{"message":{"role":"assistant","content":"","tool_calls":[{"id":"call_ext","function":{"index":0,"name":"get_weather","arguments":{"city":"Tokyo"}}},{"function":{"index":1,"name":"get_weather","arguments":"{\"city\":\"Oslo\"}"}}]},"done":false}`)
+		fmt.Fprintln(w, `{"done":true,"done_reason":"stop","prompt_eval_count":100,"eval_count":20,"prompt_eval_cached_count":50}`)
+	}))
+	defer srv.Close()
+
+	tools := []llm.ToolSchema{{Name: "get_weather", Description: "Get current weather", Parameters: map[string]any{"type": "object"}}}
+	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "gpt-oss:20b"}
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("weather?")}, tools))
+
+	var sent map[string]any
+	if err := json.Unmarshal(gotBody, &sent); err != nil {
+		t.Fatalf("request body is not JSON: %v", err)
+	}
+	apiTools, _ := sent["tools"].([]any)
+	if len(apiTools) != 1 {
+		t.Fatalf("request tools = %v, want 1 function entry", sent["tools"])
+	}
+	fn, _ := apiTools[0].(map[string]any)["function"].(map[string]any)
+	if fn["name"] != "get_weather" {
+		t.Errorf("tool function name = %v, want get_weather", fn["name"])
+	}
+
+	var calls []core.ToolCallEvent
+	for _, e := range got {
+		switch ev := e.(type) {
+		case core.ThinkingChunk:
+			if ev.Content != "checking weather" {
+				t.Errorf("thinking chunk = %q, want %q", ev.Content, "checking weather")
+			}
+		case core.ToolCallEvent:
+			calls = append(calls, ev)
+		}
+	}
+	if len(calls) != 2 {
+		t.Fatalf("got %d ToolCallEvents, want 2", len(calls))
+	}
+	if calls[0].ToolCall.ID != "call_ext" {
+		t.Errorf("call 0 ID = %q, want wire id %q", calls[0].ToolCall.ID, "call_ext")
+	}
+	if city, _ := calls[0].ToolCall.Arguments["city"].(string); city != "Tokyo" {
+		t.Errorf("call 0 args city = %v, want Tokyo (arguments as object)", calls[0].ToolCall.Arguments["city"])
+	}
+	// second call has no id on the wire: a stable synthetic id fills in.
+	if calls[1].ToolCall.ID != "call_1" {
+		t.Errorf("call 1 ID = %q, want synthetic %q", calls[1].ToolCall.ID, "call_1")
+	}
+	if city, _ := calls[1].ToolCall.Arguments["city"].(string); city != "Oslo" {
+		t.Errorf("call 1 args city = %v, want Oslo (arguments as JSON string)", calls[1].ToolCall.Arguments["city"])
+	}
+
+	end := got[len(got)-1].(core.StreamEnd)
+	if end.FinishReason != "tool_call" {
+		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "tool_call")
+	}
+	if end.PromptEvalCount == nil || *end.PromptEvalCount != 100 || end.EvalCount == nil || *end.EvalCount != 20 {
+		t.Errorf("usage = %v/%v, want 100/20", end.PromptEvalCount, end.EvalCount)
+	}
+	if end.CachedCount == nil || *end.CachedCount != 50 {
+		t.Errorf("CachedCount = %v, want 50 (prompt_eval_cached_count)", end.CachedCount)
+	}
+}
+
+// TestStreamOllamaToolResultRoundTrip verifies the request side of the
+// native round-trip: an assistant turn with tool calls serializes to
+// the OpenAI-shaped wire format ollama accepts, and tool results keep
+// their tool_call_id for correlation.
+func TestStreamOllamaToolResultRoundTrip(t *testing.T) {
+	var gotMessages []any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var sent map[string]any
+		json.Unmarshal(body, &sent)
+		gotMessages, _ = sent["messages"].([]any)
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		fmt.Fprintln(w, `{"message":{"content":"30C"},"done":true,"done_reason":"stop","prompt_eval_count":8,"eval_count":4}`)
+	}))
+	defer srv.Close()
+
+	assistant := core.NewAssistant("")
+	assistant.ToolCalls = []core.ToolCall{{ID: "call_ext", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}
+	messages := []core.Message{
+		core.NewUser("weather?"),
+		assistant,
+		core.NewToolResult("30C and sunny", "call_ext", false),
+	}
+	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "gpt-oss:20b"}
+	collectEvents(t, p.Stream(testContext(), messages, nil))
+
+	if len(gotMessages) != 3 {
+		t.Fatalf("request messages = %d, want 3 (user, assistant, tool)", len(gotMessages))
+	}
+	// assistant tool_calls serialize to the wire format.
+	am, _ := gotMessages[1].(map[string]any)
+	calls, _ := am["tool_calls"].([]any)
+	if len(calls) != 1 {
+		t.Fatalf("assistant tool_calls = %d, want 1", len(calls))
+	}
+	call, _ := calls[0].(map[string]any)
+	if call["id"] != "call_ext" || call["type"] != "function" {
+		t.Errorf("tool call wire = %v, want id call_ext + type function", call)
+	}
+	fn, _ := call["function"].(map[string]any)
+	if fn["name"] != "get_weather" {
+		t.Errorf("tool call function name = %v, want get_weather", fn["name"])
+	}
+	// ollama's native path requires arguments as the object; a JSON
+	// string fails upstream with "Value looks like object".
+	args, _ := fn["arguments"].(map[string]any)
+	if args["city"] != "Tokyo" {
+		t.Errorf("tool call arguments = %v, want object {city: Tokyo}", fn["arguments"])
+	}
+	// tool result keeps role + tool_call_id.
+	tm, _ := gotMessages[2].(map[string]any)
+	if tm["role"] != "tool" {
+		t.Errorf("tool result role = %v, want tool", tm["role"])
+	}
+	if tm["tool_call_id"] != "call_ext" {
+		t.Errorf("tool result tool_call_id = %v, want call_ext", tm["tool_call_id"])
+	}
+}
+
+// TestStreamOllamaDoneReason verifies the wire's done_reason is
+// respected as the finish reason when the stream produced no tool
+// calls (the phase inference takes precedence for tool_call).
+func TestStreamOllamaDoneReason(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		fmt.Fprintln(w, `{"message":{"content":"partial"},"done":true,"done_reason":"length"}`)
+	}))
+	defer srv.Close()
+
+	p := &Provider{typ: "ollama", baseURL: srv.URL, modelName: "m"}
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+	end := got[len(got)-1].(core.StreamEnd)
+	if end.FinishReason != "length" {
+		t.Errorf("FinishReason = %q, want wire done_reason %q", end.FinishReason, "length")
+	}
+}
+
+// TestStreamOllamaErrors verifies error paths: an in-stream error
+// payload (bare string or object form), a malformed NDJSON line, a
+// terminal HTTP status, and a stream that just ends without a done
+// line.
+func TestStreamOllamaErrors(t *testing.T) {
+	t.Run("in_stream_error_string", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintln(w, `{"error":"model not found"}`)
+		}))
+		defer srv.Close()
+		p := &Provider{typ: "ollama", baseURL: srv.URL}
+		end := drainEvents(p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+		if end.FinishReason != "error" || !strings.Contains(end.Error, "model not found") {
+			t.Errorf("FinishReason = %q Error = %q, want error / model not found", end.FinishReason, end.Error)
+		}
+	})
+
+	t.Run("in_stream_error_object", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintln(w, `{"error":{"message":"quota exceeded"}}`)
+		}))
+		defer srv.Close()
+		p := &Provider{typ: "ollama", baseURL: srv.URL}
+		end := drainEvents(p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+		if end.FinishReason != "error" || !strings.Contains(end.Error, "quota exceeded") {
+			t.Errorf("FinishReason = %q Error = %q, want error / quota exceeded", end.FinishReason, end.Error)
+		}
+	})
+
+	t.Run("malformed_ndjson", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintln(w, `{not json}`)
+		}))
+		defer srv.Close()
+		p := &Provider{typ: "ollama", baseURL: srv.URL}
+		end := drainEvents(p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+		if end.FinishReason != "error" || !strings.Contains(end.Error, "parse error") {
+			t.Errorf("FinishReason = %q Error = %q, want error / parse error", end.FinishReason, end.Error)
+		}
+	})
+
+	t.Run("http_400", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "nope", http.StatusBadRequest)
+		}))
+		defer srv.Close()
+		p := &Provider{typ: "ollama", baseURL: srv.URL}
+		end := drainEvents(p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+		if end.FinishReason != "error" || !strings.Contains(end.Error, "HTTP 400") || !strings.Contains(end.Error, "nope") {
+			t.Errorf("FinishReason = %q Error = %q, want error / HTTP 400 body", end.FinishReason, end.Error)
+		}
+	})
+
+	t.Run("eof_without_done", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintln(w, `{"message":{"content":"hi"}}`)
+		}))
+		defer srv.Close()
+		p := &Provider{typ: "ollama", baseURL: srv.URL}
+		end := drainEvents(p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+		if end.FinishReason != "stop" {
+			t.Errorf("FinishReason = %q, want stop", end.FinishReason)
+		}
+	})
+}
+
+// TestMessagesToJSONToolArgsEncoding verifies the tool_calls argument
+// encoding per provider wire: string for openai, object for ollama
+// (the native path rejects the string) and Anthropic.
+func TestMessagesToJSONToolArgsEncoding(t *testing.T) {
+	assistant := core.NewAssistant("")
+	assistant.ToolCalls = []core.ToolCall{{ID: "c1", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}
+	msgs := []core.Message{core.NewUser("hi"), assistant}
+
+	for _, c := range []struct {
+		name       string
+		stringArgs bool
+		want       any
+	}{
+		{"openai_string", true, `{"city":"Tokyo"}`},
+		{"native_object", false, map[string]any{"city": "Tokyo"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			result := messagesToJSON(msgs, c.stringArgs)
+			// Round-trip through JSON: the wire slice is
+			// []map[string]any in Go, which a []any assertion misses.
+			data, err := json.Marshal(result[1])
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			var am map[string]any
+			if err := json.Unmarshal(data, &am); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			calls, _ := am["tool_calls"].([]any)
+			if len(calls) != 1 {
+				t.Fatalf("tool_calls = %d, want 1", len(calls))
+			}
+			call, _ := calls[0].(map[string]any)
+			fn, _ := call["function"].(map[string]any)
+			if !reflect.DeepEqual(fn["arguments"], c.want) {
+				t.Errorf("function.arguments = %v (%T), want %v (%T)", fn["arguments"], fn["arguments"], c.want, c.want)
+			}
+			if call["type"] != "function" {
+				t.Errorf("type = %v, want function", call["type"])
+			}
+		})
+	}
+}
+
+// TestStreamOpenAIToolResultRoundTrip verifies the openai wire keeps
+// the JSON-string argument encoding in message history (the shape the
+// openai endpoint requires), in contrast to the ollama native path.
+func TestStreamOpenAIToolResultRoundTrip(t *testing.T) {
+	var gotMessages []any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var sent map[string]any
+		json.Unmarshal(body, &sent)
+		gotMessages, _ = sent["messages"].([]any)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	assistant := core.NewAssistant("")
+	assistant.ToolCalls = []core.ToolCall{{ID: "call_ext", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}
+	messages := []core.Message{
+		core.NewUser("weather?"),
+		assistant,
+		core.NewToolResult("30C and sunny", "call_ext", false),
+	}
+	p := &Provider{typ: "openai", baseURL: srv.URL, modelName: "gpt-x", apiKey: "test-key"}
+	collectEvents(t, p.Stream(testContext(), messages, nil))
+
+	if len(gotMessages) != 3 {
+		t.Fatalf("request messages = %d, want 3 (user, assistant, tool)", len(gotMessages))
+	}
+	am, _ := gotMessages[1].(map[string]any)
+	calls, _ := am["tool_calls"].([]any)
+	if len(calls) != 1 {
+		t.Fatalf("assistant tool_calls = %d, want 1", len(calls))
+	}
+	call, _ := calls[0].(map[string]any)
+	fn, _ := call["function"].(map[string]any)
+	if args, _ := fn["arguments"].(string); args != `{"city":"Tokyo"}` {
+		t.Errorf("openai arguments = %v, want JSON string", fn["arguments"])
+	}
+}
+
+// TestStreamOpenAI verifies Stream against a fake OpenAI SSE endpoint:
+// content chunks, fragmented tool-call accumulation, finish_reason,
+// Authorization header, and the in-stream error event.
+func TestStreamOpenAI(t *testing.T) {
+	var gotPath string
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call1\",\"function\":{\"name\":\"shell\",\"arguments\":\"{\\\"cmd\\\":\"}},{\"index\":0,\"id\":\"\",\"function\":{\"name\":null,\"arguments\":\"\\\"ls\\\"}\"}}]}}]}\n\n")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	p := &Provider{typ: "openai", baseURL: srv.URL, modelName: "gpt-x", apiKey: "test-key"}
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+
+	if gotPath != "/chat/completions" {
+		t.Errorf("request path = %q, want /chat/completions", gotPath)
+	}
+	if gotAuth != "Bearer test-key" {
+		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer test-key")
+	}
+
+	chunks := 0
+	var toolCalls []core.ToolCallEvent
+	for _, e := range got {
+		switch ev := e.(type) {
+		case core.ResponseChunk:
+			if ev.Content != "Hi" {
+				t.Errorf("chunk content = %q, want %q", ev.Content, "Hi")
+			}
+			chunks++
+		case core.ToolCallEvent:
+			toolCalls = append(toolCalls, ev)
+		}
+	}
+	if chunks != 1 {
+		t.Errorf("got %d ResponseChunk events, want 1", chunks)
+	}
+	if len(toolCalls) != 1 {
+		t.Fatalf("got %d ToolCallEvents, want 1", len(toolCalls))
+	}
+	tc := toolCalls[0].ToolCall
+	if tc.ID != "call1" {
+		t.Errorf("tool call ID = %q, want %q", tc.ID, "call1")
+	}
+	if tc.Name != "shell" {
+		t.Errorf("tool call Name = %q, want %q", tc.Name, "shell")
+	}
+	if args, _ := tc.Arguments["cmd"].(string); args != "ls" {
+		t.Errorf("tool call args cmd = %v, want %q (fragments accumulated)", tc.Arguments["cmd"], "ls")
+	}
+
+	end := got[len(got)-1].(core.StreamEnd)
+	if end.FinishReason != "tool_calls" {
+		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "tool_calls")
+	}
+
+	// error path: in-stream error JSON surfaces as an error StreamEnd.
+	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "data: {\"error\":{\"message\":\"bad\"}}\n\n")
+	}))
+	defer errSrv.Close()
+
+	p = &Provider{typ: "openai", baseURL: errSrv.URL, apiKey: "test-key"}
+	end = drainEvents(p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+	if end.FinishReason != "error" {
+		t.Errorf("error path FinishReason = %q, want %q", end.FinishReason, "error")
+	}
+	if !strings.Contains(end.Error, "bad") {
+		t.Errorf("error path Error = %q, want it to contain %q", end.Error, "bad")
+	}
+}
+
+// TestStreamAnthropic verifies Stream against a fake Anthropic SSE
+// endpoint: text deltas, fragmented input_json_delta accumulation,
+// stop_reason, auth headers, and the in-stream error event.
+func TestStreamAnthropic(t *testing.T) {
+	var gotPath string
+	var gotAPIKey, gotVersion string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAPIKey = r.Header.Get("x-api-key")
+		gotVersion = r.Header.Get("anthropic-version")
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "event: message_start\ndata: {\"type\":\"message_start\"}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"tu1\",\"name\":\"files.read\"}}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"path\\\":\"}}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\\\"x.go\\\"}\"}}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"hey\"}}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"}}\n\n")
+	}))
+	defer srv.Close()
+
+	p := &Provider{typ: "anthropic", baseURL: srv.URL, modelName: "claude-x", apiKey: "test-key"}
+	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+
+	if gotPath != "/messages" {
+		t.Errorf("request path = %q, want /messages", gotPath)
+	}
+	if gotAPIKey != "test-key" {
+		t.Errorf("x-api-key = %q, want %q", gotAPIKey, "test-key")
+	}
+	if gotVersion != "2023-06-01" {
+		t.Errorf("anthropic-version = %q, want %q", gotVersion, "2023-06-01")
+	}
+
+	chunks := 0
+	var toolCalls []core.ToolCallEvent
+	for _, e := range got {
+		switch ev := e.(type) {
+		case core.ResponseChunk:
+			if ev.Content != "hey" {
+				t.Errorf("chunk content = %q, want %q", ev.Content, "hey")
+			}
+			chunks++
+		case core.ToolCallEvent:
+			toolCalls = append(toolCalls, ev)
+		}
+	}
+	if chunks != 1 {
+		t.Errorf("got %d ResponseChunk events, want 1", chunks)
+	}
+	if len(toolCalls) != 1 {
+		t.Fatalf("got %d ToolCallEvents, want 1", len(toolCalls))
+	}
+	tc := toolCalls[0].ToolCall
+	if tc.ID != "tu1" {
+		t.Errorf("tool call ID = %q, want %q", tc.ID, "tu1")
+	}
+	if tc.Name != "files.read" {
+		t.Errorf("tool call Name = %q, want %q", tc.Name, "files.read")
+	}
+	if args, _ := tc.Arguments["path"].(string); args != "x.go" {
+		t.Errorf("tool call args path = %v, want %q (fragments accumulated)", tc.Arguments["path"], "x.go")
+	}
+
+	end := got[len(got)-1].(core.StreamEnd)
+	if end.FinishReason != "tool_use" {
+		t.Errorf("FinishReason = %q, want %q", end.FinishReason, "tool_use")
+	}
+
+	// error path: in-stream error event surfaces as an error StreamEnd.
+	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "data: {\"type\":\"error\",\"error\":{\"message\":\"overloaded\"}}\n\n")
+	}))
+	defer errSrv.Close()
+
+	p = &Provider{typ: "anthropic", baseURL: errSrv.URL, apiKey: "test-key"}
+	end = drainEvents(p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+	if end.FinishReason != "error" {
+		t.Errorf("error path FinishReason = %q, want %q", end.FinishReason, "error")
+	}
+	if !strings.Contains(end.Error, "overloaded") {
+		t.Errorf("error path Error = %q, want it to contain %q", end.Error, "overloaded")
+	}
+}

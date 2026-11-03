@@ -1,0 +1,422 @@
+// Package verdict implements verdict cards v1 (card t_2ecf9c51): the
+// agent issues a question mid-turn, the turn HARD-PAUSES inside the
+// verdict tool, and the user answers by click (webui) or type
+// (TUI). Whichever surface answers first wins - the second answerer is
+// rejected with a reason, never double-applied. Advisory in v1: the
+// verdict is recorded as session messages; the agent then acts through
+// its normal tools. Nothing on the card executes automatically.
+//
+// Seam: verdicts (exclusive), tools (additive), store (read-only
+// persistence of the card + verdict records).
+package verdict
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/agent"
+)
+
+// DefaultTimeout is the per-card default deadline (design Q5): twenty
+// minutes. A tool call's timeout_s argument overrides it per card.
+const DefaultTimeout = 20 * time.Minute
+
+// Hub is the in-memory registry of verdict cards. Cards live in issued
+// order; the transcript persistence (core.VerdictCard / core.VerdictRecord rows,
+// via the store) is the durable audit trail - the hub itself survives
+// only for the process. A restart with still-pending cards leaves the
+// transcript's card unreconciled (no tool result) - the next run is not
+// blocked by it; a v2 card can reconcile against the store.
+//
+// ponytail: terminal cards stay in memory forever. Each is a few
+// hundred bytes and issuance is human-paced; the upgrade path is a
+// prune pass when the slice exceeds a few hundred entries.
+type Hub struct {
+	store  core.StoreProvider
+	logger core.LoggerProvider
+	// deadline is the default per-card timeout when a call passes none.
+	deadline time.Duration
+
+	mu    sync.Mutex
+	cards []*cardState
+}
+
+// cardState is one card's identity plus its answer race: exactly one
+// resolution channel send wins (Answer or the expiry timer), and any
+// later Answer sees the settled state and returns the reason.
+type cardState struct {
+	prompt       core.VerdictPrompt
+	answer       chan core.Verdict
+	settled      bool // answered, skipped, or expired
+	expired      bool
+	skipped      bool
+	option       string
+	optionIx     int
+	optionIxs    []int
+	optionLabels []string
+	text         string
+}
+
+// NewHub builds a hub. store is optional (ephemeral sessions and
+// store-less hosts skip persistence); logger optional.
+func NewHub(store core.StoreProvider, logger core.LoggerProvider) *Hub {
+	return &Hub{store: store, logger: logger, deadline: DefaultTimeout}
+}
+
+// Close is the host shutdown hook: it settles every still-pending card
+// so a later Answer is rejected cleanly, instead of delivering into a
+// dead tool call. A run's ctx cancellation already does this per card;
+// Close is the belt-and-braces sweep. Tests use it to unblock an Ask
+// deterministically without spinning a context cancellation.
+func (h *Hub) Close() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, c := range h.cards {
+		if !c.settled {
+			c.settled = true
+			close(c.answer) // waiter sees zero Verdict + closed
+		}
+	}
+}
+
+// Ask implements core.VerdictsProvider: registers the card, persists
+// the core.VerdictCard record, arms the expiry timer, and blocks until
+// an answer, the expiry, or ctx cancellation. ctx cancellation (run
+// stop / shutdown) settles the card; Close is the host-wide sweep.
+func (h *Hub) Ask(ctx context.Context, card core.VerdictPrompt) (core.Verdict, error) {
+	if card.ID == "" {
+		id, err := agent.NewSessionID()
+		if err != nil {
+			return core.Verdict{}, fmt.Errorf("mint card id: %w", err)
+		}
+		card.ID = id
+	}
+	timeout := h.deadline
+	if card.TimeoutS > 0 {
+		timeout = time.Duration(card.TimeoutS) * time.Second
+	}
+	card.ExpiresAt = time.Now().Add(timeout)
+
+	state := &cardState{prompt: card, answer: make(chan core.Verdict, 1)}
+
+	// Persist the card BEFORE the pause - and before the card enters
+	// the pending list - so the audit trail always reads
+	// [verdict_card, verdict]: a surface only learns the card exists
+	// through Pending, which starts below. The session is card.SessionID
+	// (persistAs never scans); best effort, the question itself never
+	// fails on a persistence problem.
+	h.persistAs(card.SessionID, core.NewVerdictCard(card.ID, card.Title, card.Body, card.Options, card.Multi, card.AllowText, card.TimeoutS))
+
+	h.mu.Lock()
+	h.cards = append(h.cards, state)
+	h.mu.Unlock()
+
+	timer := time.AfterFunc(timeout, func() { h.expire(card.ID) })
+	defer timer.Stop()
+
+	select {
+	case v, ok := <-state.answer:
+		if !ok {
+			return core.Verdict{}, fmt.Errorf("verdict cancelled: the hub closed mid-question")
+		}
+		return v, nil
+	case <-ctx.Done():
+		// Run stop / shutdown: settle the card so a later Answer is
+		// rejected cleanly instead of delivering into a dead tool call.
+		h.mu.Lock()
+		state.settled = true
+		h.mu.Unlock()
+		return core.Verdict{}, ctx.Err()
+	}
+}
+
+// expire fires the card's safe answer (deny / no-pick): the waiter gets
+// Verdict{Expired: true}, the transcript records the expiry event.
+// A card that was answered first is untouched (the timer lost the race).
+func (h *Hub) expire(cardID string) {
+	h.mu.Lock()
+	c := h.byIDLocked(cardID)
+	if c == nil || c.settled {
+		h.mu.Unlock()
+		return
+	}
+	c.settled = true
+	c.expired = true
+	record := core.NewVerdictRecord(cardID, nil, nil, "", false, true)
+	h.mu.Unlock()
+
+	// The record persists before Ask wakes: same contract as Answer -
+	// the waiter (the tool result) sees the expiry only after the audit
+	// row exists.
+	h.persist(record)
+	c.answer <- core.Verdict{CardID: cardID, Expired: true}
+
+	if h.logger != nil {
+		h.logger.Printf("verdict card %s expired with no answer", cardID)
+	}
+}
+
+// Answer implements core.VerdictsProvider. cardID empty means the
+// session's OLDEST pending card (one run per session, so the common
+// case is exactly one; ambiguous cases name the count in the error and
+// leave the choice to the caller). First answer wins; every later
+// attempt errors with the reason.
+func (h *Hub) Answer(sessionID, cardID string, v core.Verdict) (core.Verdict, error) {
+	h.mu.Lock()
+	var c *cardState
+	if cardID == "" {
+		// oldest pending card for the session (one run per session, so
+		// the common case is exactly one; ambiguous cases name the
+		// count in the error and leave the choice to the caller)
+		if sessionID == "" {
+			h.mu.Unlock()
+			return core.Verdict{}, fmt.Errorf("answer is ambiguous: no session and no card given")
+		}
+		for _, cand := range h.cards {
+			if !cand.settled && cand.prompt.SessionID == sessionID {
+				c = cand
+				break
+			}
+		}
+		if c == nil {
+			h.mu.Unlock()
+			return core.Verdict{}, fmt.Errorf("no pending verdict card in session %s", sessionID)
+		}
+		cardID = c.prompt.ID
+	} else {
+		c = h.byIDLocked(cardID)
+		if c == nil {
+			h.mu.Unlock()
+			return core.Verdict{}, fmt.Errorf("no pending verdict card %s", cardID)
+		}
+		// session boundary: a known card from another session cannot be
+		// answered through this session's surface (the URL is the
+		// boundary, v1). Empty sessionID trusts the card id (the TUI's
+		// /verdict command answers without a session context).
+		if sessionID != "" && c.prompt.SessionID != sessionID {
+			h.mu.Unlock()
+			return core.Verdict{}, fmt.Errorf("verdict card %s belongs to a different session", cardID)
+		}
+	}
+	if c.settled {
+		h.mu.Unlock()
+		if c.expired {
+			return core.Verdict{}, fmt.Errorf("verdict card %s already expired", cardID)
+		}
+		if c.skipped {
+			return core.Verdict{}, fmt.Errorf("verdict card %s already skipped", cardID)
+		}
+		return core.Verdict{}, fmt.Errorf("verdict card %s already answered", cardID)
+	}
+
+	// Validations per card shape (design point 1: ONE card shape):
+	// a pick must land on real option(s); free text only when the card
+	// allows it; a skip is always allowed and is recorded, never
+	// silent. A multi card takes option_indexes; a single card takes
+	// one option_index.
+	switch {
+	case v.Skipped:
+		// always fine
+	case len(v.OptionIndexes) > 0:
+		if !c.prompt.Multi {
+			h.mu.Unlock()
+			return core.Verdict{}, fmt.Errorf("card %s takes a single pick (1..%d), not a multi-select answer", cardID, len(c.prompt.Options))
+		}
+		labels := make([]string, 0, len(v.OptionIndexes))
+		for _, ix := range v.OptionIndexes {
+			if ix < 1 || ix > len(c.prompt.Options) {
+				h.mu.Unlock()
+				return core.Verdict{}, fmt.Errorf("option %d is out of range: the card has %d options", ix, len(c.prompt.Options))
+			}
+			labels = append(labels, c.prompt.Options[ix-1].Label)
+		}
+		v.Options = labels
+		v.OptionIndex = v.OptionIndexes[0]
+		v.Option = labels[0]
+	case v.OptionIndex > 0:
+		if v.OptionIndex > len(c.prompt.Options) {
+			h.mu.Unlock()
+			return core.Verdict{}, fmt.Errorf("option %d is out of range: the card has %d options", v.OptionIndex, len(c.prompt.Options))
+		}
+		if c.prompt.Multi {
+			h.mu.Unlock()
+			return core.Verdict{}, fmt.Errorf("card %s is multi-select: answer with option_indexes (1..%d)", cardID, len(c.prompt.Options))
+		}
+		v.Option = c.prompt.Options[v.OptionIndex-1].Label
+	case v.Text != "":
+		if len(c.prompt.Options) > 0 && !c.prompt.AllowText {
+			h.mu.Unlock()
+			return core.Verdict{}, fmt.Errorf("card %s takes an option, not free text", cardID)
+		}
+	default:
+		if len(c.prompt.Options) > 0 {
+			h.mu.Unlock()
+			return core.Verdict{}, fmt.Errorf("card %s needs an option pick (1..%d) or a skip", cardID, len(c.prompt.Options))
+		}
+		h.mu.Unlock()
+		return core.Verdict{}, fmt.Errorf("card %s needs free text or a skip", cardID)
+	}
+
+	c.settled = true
+	c.skipped = v.Skipped
+	c.option = v.Option
+	c.optionIx = v.OptionIndex
+	c.optionIxs = v.OptionIndexes
+	c.optionLabels = v.Options
+	c.text = v.Text
+	v.CardID = cardID
+	// a single pick rides OptionIndex/Option; a multi pick rides
+	// OptionIndexes/Options. The record normalizes both to the
+	// indexed shape so the audit row always names the pick(s).
+	ixs, labels := v.OptionIndexes, v.Options
+	if ixs == nil && v.OptionIndex > 0 {
+		ixs = []int{v.OptionIndex}
+	}
+	if labels == nil && v.Option != "" {
+		labels = []string{v.Option}
+	}
+	record := core.NewVerdictRecord(cardID, ixs, labels, v.Text, v.Skipped, false)
+	h.mu.Unlock()
+
+	// The record persists before Ask wakes (the seam contract): the
+	// first answer returns - and the blocked turn resumes - only after
+	// its audit row exists, so the transcript can never read
+	// [verdict, verdict_card].
+	h.persist(record)
+	c.answer <- v
+	return v, nil
+}
+
+// Pending implements core.VerdictsProvider: unanswered, unexpired
+// cards, oldest first. Empty filter lists every session.
+func (h *Hub) Pending(sessionID string) []core.VerdictPrompt {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	now := time.Now()
+	out := make([]core.VerdictPrompt, 0, len(h.cards))
+	for _, c := range h.cards {
+		if c.settled {
+			continue
+		}
+		if sessionID != "" && c.prompt.SessionID != sessionID {
+			continue
+		}
+		if now.After(c.prompt.ExpiresAt) {
+			// the timer has not fired yet; the card is dead either way
+			continue
+		}
+		out = append(out, c.prompt)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].ExpiresAt.Before(out[j].ExpiresAt) })
+	return out
+}
+
+// byIDLocked finds one card by id. Callers hold h.mu.
+func (h *Hub) byIDLocked(cardID string) *cardState {
+	for _, c := range h.cards {
+		if c.prompt.ID == cardID {
+			return c
+		}
+	}
+	return nil
+}
+
+// persist appends one record to the session transcript when the hub
+// has a store and knows the session. Best effort: a persistence
+// failure logs and moves on - the question itself must not fail
+// because the audit row could not be written.
+func (h *Hub) persist(msg core.Message) {
+	if h.store == nil {
+		return
+	}
+	cardID := cardOf(msg)
+	if cardID == "" {
+		return
+	}
+	h.mu.Lock()
+	session := ""
+	for _, c := range h.cards {
+		if c.prompt.ID == cardID {
+			session = c.prompt.SessionID
+			break
+		}
+	}
+	h.mu.Unlock()
+	h.persistAs(session, msg)
+}
+
+// persistAs is persist with the session already known - the Ask path
+// uses it so the card row lands before the card becomes answerable
+// (registration), not just before the pause. An empty session (a card
+// the hub never registered under a session) persists nothing.
+func (h *Hub) persistAs(session string, msg core.Message) {
+	cardID := cardOf(msg)
+	if h.store == nil || session == "" || cardID == "" {
+		return
+	}
+	// Ephemeral sessions (the `eph-` namespace minted by the HTTP
+	// channel) live in memory only. A card issued there must keep its
+	// records out of the store: an `eph-` row on disk is a durable
+	// transcript under an id no store read serves - it would never be
+	// read back and never be deleted (the ephemeral nothing-on-disk
+	// law). Skip persistence wholesale for the namespace.
+	if strings.HasPrefix(session, "eph-") {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := h.store.AppendMessage(ctx, session, msg); err != nil && h.logger != nil {
+		h.logger.Errorf("verdict %s: persist %s record: %v", cardID, core.MessageRole(msg), err)
+	}
+}
+
+// cardOf extracts the CardID from the two record kinds persist carries.
+func cardOf(msg core.Message) string {
+	switch m := msg.(type) {
+	case core.VerdictCard:
+		return m.CardID
+	case core.VerdictRecord:
+		return m.CardID
+	}
+	return ""
+}
+
+// resultMap is the wire shape the verdict TOOL RESULT carries
+// back to the model (the loop persists it through the normal tool
+// result path). Flat and small: the agent reads it, acts through its
+// normal tools, nothing executes off it. A multi answer adds the
+// selected indexes and their labels.
+func resultMap(v core.Verdict) string {
+	out := map[string]any{
+		"card_id": v.CardID,
+		"verdict": v.Kind(),
+	}
+	if len(v.OptionIndexes) > 0 {
+		out["option_indexes"] = v.OptionIndexes
+		out["options"] = v.Options
+	}
+	if v.OptionIndex > 0 {
+		out["option_index"] = v.OptionIndex
+		out["option"] = v.Option
+	}
+	if v.Text != "" {
+		out["text"] = v.Text
+	}
+	if v.Skipped {
+		out["skipped"] = true
+	}
+	if v.Expired {
+		out["expired"] = true
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return fmt.Sprintf("verdict: %s", v.Kind())
+	}
+	return string(b)
+}

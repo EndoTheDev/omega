@@ -13,9 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/modules/datadir"
-	"github.com/EndoTheDev/omega/modules/store"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/harness/datadir"
+	"github.com/EndoTheDev/omega/harness/store"
 	"gopkg.in/yaml.v3"
 )
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Dependency-law gate: engine/ai/ and engine/agent/ never import modules/, directly or
+# Dependency-law gate: llm/ and agent/ never import harness/, directly or
 # transitively. Modules may import agent and ai; the layers below never
 # reach back. Standalone or in the build.sh cascade (after vet).
 #
@@ -24,11 +24,11 @@ violation() {
 
 gen() {
 	# -test pulls in each layer package's test files; second call yields
-	# the flat transitive closure of engine/ai/ and engine/agent/.
+	# the flat transitive closure of llm/ and agent/.
 	go list -test -f \
 		'{{.ImportPath}}|{{join .Imports " "}}|{{join .TestImports " "}}' \
-		./engine/ai/... ./engine/agent/... &&
-	go list -deps -test ./engine/ai/... ./engine/agent/...
+		./llm/... ./agent/... &&
+	go list -deps -test ./llm/... ./agent/...
 }
 
 scan() {
@@ -43,13 +43,13 @@ scan() {
 				for field in ${fields//|/ }; do
 					for imp in $field; do
 						case "$imp" in
-							"$MODROOT"/modules/*)
+							"$MODROOT"/harness/*)
 								violation "$pkg imports $imp" ;;
 						esac
 					done
 				done ;;
-			"$MODROOT"/modules/*)
-				violation "engine engine/ai/agent dep closure includes $line" ;;
+			"$MODROOT"/harness/*)
+				violation "engine llm/agent dep closure includes $line" ;;
 		esac
 	done
 }
@@ -62,6 +62,6 @@ else
 fi
 
 if [ "$violations" -gt 0 ]; then
-	echo "$violations dep-law violation(s): modules/ never appears in the engine/ai/agent import graph"
+	echo "$violations dep-law violation(s): harness/ never appears in the llm/agent import graph"
 	exit 1
 fi

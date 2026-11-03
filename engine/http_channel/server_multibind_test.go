@@ -21,8 +21,8 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/modules/store"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/harness/store"
 )
 
 func TestChatActionPipeMirrorKeepsTheRunVisible(t *testing.T) {

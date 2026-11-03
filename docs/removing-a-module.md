@@ -27,14 +27,14 @@ surface) is its sibling: `docs/migrating-a-module.md`.
 - Core stays a pure witness. Since the v0.12 phase-F core-purity
   move, core carries ZERO module nouns (the machine check is
   `scripts/nm-purity.sh`): the module-shaped types live in the capsule
-  (`modules/kanban`), so removing a module takes its types with it.
+  (`harness/kanban`), so removing a module takes its types with it.
   Core retains only the shared vocabulary (`core/seams.go`,
   `core/routes.go`) that is a layer contract, not a module shape.
 
 ## The recipe
 
 1. **Check dependents first.** `Requires()` edges are declared data,
-   not prose: `grep -rn '"kanban"' modules/*/plugin.go` - a hit inside
+   not prose: `grep -rn '"kanban"' harness/*/plugin.go` - a hit inside
    another module's `Requires()` means removing kanban takes that
    emitter with it (the notifications removal proved this: kanban,
    cron and delegate all name `notifications`). Remove or re-route
@@ -48,21 +48,21 @@ surface) is its sibling: `docs/migrating-a-module.md`.
    ```bash
    grep -rn '"kanban"' cmd modules core docs --include='*.go'
    grep -rn 'Module: "kanban"' modules            # module-qualified action ids
-   grep -rn '"kanban"' modules/kanban             # the tool registry (the bare domain tool, the one-domain law)
+   grep -rn '"kanban"' harness/kanban             # the tool registry (the bare domain tool, the one-domain law)
    grep -rn '"/board"' cmd modules                # the /board, /boards commands
    grep -rn 'kanban' docs                         # route tables, command docs, layer table
    ```
 
    Expect hits in: the seam claim (`RegisterKanban` in the module's
-   mount), the route table (`modules/kanban/rest.go` registering the
+   mount), the route table (`harness/kanban/rest.go` registering the
    patterns through `api.RegisterRoute`), the tool registry
    (the bare domain `kanban` tool - the legacy `kanban.task`
    namespaced name retired by the one-domain tool law, t_e06b38bc),
    the command chain
    (`/board`, `/boards` registered through `api.RegisterCommand`), the
-   canvas panels (`modules/kanban/panel.go`,
+   canvas panels (`harness/kanban/panel.go`,
    namespaced action ids), and the docs. Then delete the module
-   directory (`modules/kanban/`) - tests die with it.
+   directory (`harness/kanban/`) - tests die with it.
 4. **Write the removal proof against the mounts, not the directory.**
    The pattern is `TestKanbanRemovalProof` (`cmd/omega/removal_test.go`
    - `TestNotificationsRemovalProof` started it): build the full
@@ -88,7 +88,7 @@ surface) is its sibling: `docs/migrating-a-module.md`.
    mechanical, not assertive: `scripts/nm-purity.sh --module kanban`
    scrubs every wire to the module out of a copy of the tree, builds
    the binary, and asserts two things on `go tool nm` output: zero
-   `modules/<name>` paths, and zero module-noun words in OMEGA-OWNED
+   `harness/<name>` paths, and zero module-noun words in OMEGA-OWNED
    symbols - paths under `github.com/EndoTheDev/omega/`, main-package
    symbols, and type descriptors naming a main-scope type. Third-party
    symbols are out of scope: a library's own names (robfig/cron,
@@ -158,7 +158,7 @@ surface) is its sibling: `docs/migrating-a-module.md`.
   frontends render the canvas generically; that is the whole point.
 - Deleting the core seam types while any seam signature references
   them (`core.KanbanProvider` is `ctx.Kanban`'s type and
-  `modules/kanban` implements it).
+  `harness/kanban` implements it).
 - A `Requires()` edge left pointing at a removed module - the mount
   fails with the missing seam at startup, which is the correct
   behavior: fix the edge, never widen a guard.

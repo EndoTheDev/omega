@@ -97,7 +97,7 @@ func (t Tool) SchemaParameters() map[string]any {
 // LoopProvider. Harness concerns (system prompt, compaction) are injected
 // via interfaces. The loop itself is swappable via SetLoopProvider.
 // The loop is not set by default — the host must wire one (e.g. via
-// the agent-loop plugin in modules/agent_loop/).
+// the agent-loop plugin in agent/loop/).
 type Agent struct {
 	provider      Provider
 	tools         map[string]Tool
@@ -390,7 +390,7 @@ func (a *Agent) RefreshExtensionInfos(ctx *Context) {
 	a.extensionInfos = infos
 }
 
-// SetCaptioner installs the image captioner (engine/agent/caption.go). When
+// SetCaptioner installs the image captioner (agent/caption.go). When
 // set, image-carrying user messages are described once before the loop
 // and the loop-visible text carries the caption. Nil = images untouched.
 func (a *Agent) SetCaptioner(c Captioner) {
@@ -620,7 +620,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			Events:             inner,
 			// InjectedMessages is the run-affinity drain seam
 			// (t_f3fb7c52): the loop drains for its OWN run's affinity
-			// key (engine/agent.RunAffinityFromContext), so a sibling
+			// key (agent.RunAffinityFromContext), so a sibling
 			// run's queued results never drain into this Run.
 			InjectedMessages:   a.injectedStream,
 			UserInput:          a.userInput,

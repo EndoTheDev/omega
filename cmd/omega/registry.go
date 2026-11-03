@@ -17,8 +17,8 @@ import (
 	"sync"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/agent"
-	"github.com/EndoTheDev/omega/modules/skills"
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/harness/skills"
 )
 
 // omegaRegistries implements core.RegistryToggles for the serve host.

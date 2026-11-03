@@ -27,12 +27,12 @@ const TABS: Array<{
   actions: string[];
 }> = [
   { file: "app/components/files/FilesTab.vue", title: null, scrollClass: "files-scroll", actions: ["add file", "refresh files"] },
-  { file: "../../modules/cron/ui/CronJobs.vue", title: "Cron", scrollClass: "cron-body", actions: ["refresh cron jobs", "Search cron jobs"] },
-  { file: "../../modules/skills/ui/SkillsList.vue", title: "Skills", scrollClass: "skills-body", actions: ["refresh skills", "Search skills"] },
-  { file: "../../modules/tools/ui/ToolsList.vue", title: "Tools", scrollClass: "tools-body", actions: ["refresh tools", "Search tools"] },
+  { file: "../../harness/cron/ui/CronJobs.vue", title: "Cron", scrollClass: "cron-body", actions: ["refresh cron jobs", "Search cron jobs"] },
+  { file: "../../harness/skills/ui/SkillsList.vue", title: "Skills", scrollClass: "skills-body", actions: ["refresh skills", "Search skills"] },
+  { file: "../../harness/tools/ui/ToolsList.vue", title: "Tools", scrollClass: "tools-body", actions: ["refresh tools", "Search tools"] },
   { file: "../../engine/http_channel/ui/LogsList.vue", title: "Logs", scrollClass: "logs-body", actions: [] },
-  { file: "../../modules/mcp/ui/McpServers.vue", title: "MCP", scrollClass: "mcp-body", actions: ["refresh mcp servers", "Search MCP servers"] },
-  { file: "../../modules/kanban/ui/Board.vue", title: "Kanban", scrollClass: "board-scroll", actions: ["board-remove-btn"] },
+  { file: "../../harness/mcp/ui/McpServers.vue", title: "MCP", scrollClass: "mcp-body", actions: ["refresh mcp servers", "Search MCP servers"] },
+  { file: "../../harness/kanban/ui/Board.vue", title: "Kanban", scrollClass: "board-scroll", actions: ["board-remove-btn"] },
   { file: "app/components/shell/ExtensionsTab.vue", title: "Modules", scrollClass: "inspector-extensions", actions: [] },
   { file: "app/components/agents/AgentsPanel.vue", title: "Agents", scrollClass: "agents-body", actions: ["scaffold a new agent directory"] },
   { file: "app/components/insights/InsightsTab.vue", title: "Insights", scrollClass: "insights-scroll", actions: ["window in days, 0 = all time"] },

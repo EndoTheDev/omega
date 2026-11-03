@@ -40,7 +40,7 @@ Every PR passes the same admission rules, in plain words:
    any reason. If review needs an exception, the answer is to extend
    CI, not to run things on maintainer machines.
 4. **Security-touch surfaces get a named security review.** Changes
-   touching `modules/trust/`, the attach/fetch endpoints, config
+   touching `harness/trust/`, the attach/fetch endpoints, config
    handling, the shell tool, or any server-side URL fetch are
    reviewed and approved for security specifically, by name, before
    merge. The bar is the `internalHostGuard` pattern in

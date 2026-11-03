@@ -1,0 +1,357 @@
+package provider
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+
+	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/llm"
+)
+
+func (p *Provider) streamAnthropic(ctx context.Context, events chan<- core.ProviderStreamEvent, messages, tools []map[string]any) core.StreamEnd {
+	if p.apiKey == "" {
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "anthropic: ANTHROPIC_API_KEY not set"}
+	}
+
+	// Anthropic requires system prompt as top-level field, and tool
+	// results folded into user messages.
+	system, apiMessages := anthropicConvertMessages(messages)
+
+	payload := map[string]any{
+		"model":    p.modelName,
+		"messages": apiMessages,
+		"stream":   true,
+	}
+	// A thinking budget larger than max_tokens is a 400 on the real
+	// Anthropic API (budget_tokens must be less than max_tokens). Grow
+	// max_tokens with the budget.
+	maxTokens := 4096
+	if budget := anthropicBudgetTokens(p.thinkingLevel); budget > 0 {
+		if budget >= maxTokens {
+			maxTokens = budget + 2048
+		}
+		payload["max_tokens"] = maxTokens
+		payload["thinking"] = map[string]any{
+			"type":          "enabled",
+			"budget_tokens": budget,
+		}
+	} else {
+		payload["max_tokens"] = maxTokens
+	}
+	if system != "" {
+		payload["system"] = system
+	}
+	if len(tools) > 0 {
+		apiTools := make([]map[string]any, 0, len(tools))
+		for _, tool := range tools {
+			apiTools = append(apiTools, map[string]any{
+				"name":         tool["name"],
+				"description":  tool["description"],
+				"input_schema": tool["parameters"],
+			})
+		}
+		payload["tools"] = apiTools
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/messages", bytes.NewReader(payloadBytes))
+	if err != nil {
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", p.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := llm.RetryHTTP(req)
+	if err != nil {
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("anthropic: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))}
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	pending := make(map[int]*pendingTool)
+	finishReason := "stop"
+	// Usage arrives on message_start (input side) and message_delta
+	// (output side, and on keypool also the input side). Either may
+	// omit fields; only report what was actually seen.
+	var promptTokens, completionTokens, cachedTokens *int
+
+	for {
+		payloadLine, ok, err := llm.SSEData(reader)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			if ctx.Err() != nil {
+				return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: ctx.Err().Error()}
+			}
+			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: err.Error()}
+		}
+		if !ok {
+			break
+		}
+
+		var chunk struct {
+			Type  string `json:"type"`
+			Index *int   `json:"index"`
+			Delta *struct {
+				Type         string `json:"type"`
+				Text         string `json:"text"`
+				Thinking     string `json:"thinking"`
+				InputJSON    string `json:"partial_json"`
+				StopReason   string `json:"stop_reason"`
+				StopSequence string `json:"stop_sequence"`
+			} `json:"delta"`
+			ContentBlock *struct {
+				Type string `json:"type"`
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"content_block"`
+			Message *struct {
+				Usage *anthropicUsage `json:"usage"`
+			} `json:"message"`
+			Usage *anthropicUsage `json:"usage"`
+			Error *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(payloadLine), &chunk); err != nil {
+			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("anthropic: parse error: %v", err)}
+		}
+		if chunk.Error != nil {
+			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("anthropic: %s", chunk.Error.Message)}
+		}
+		if chunk.Message != nil {
+			chunk.Usage = chunk.Message.Usage // message_start carries usage nested in the message object
+		}
+		if chunk.Usage != nil {
+			if chunk.Usage.InputTokens != nil {
+				n := *chunk.Usage.InputTokens
+				promptTokens = &n
+			}
+			if chunk.Usage.OutputTokens != nil {
+				n := *chunk.Usage.OutputTokens
+				completionTokens = &n
+			}
+			if chunk.Usage.CacheReadInputTokens != nil {
+				n := *chunk.Usage.CacheReadInputTokens
+				cachedTokens = &n
+			}
+		}
+
+		switch chunk.Type {
+		case "content_block_start":
+			if chunk.ContentBlock != nil && chunk.ContentBlock.Type == "tool_use" {
+				idx := 0
+				if chunk.Index != nil {
+					idx = *chunk.Index
+				}
+				pending[idx] = &pendingTool{
+					id:   chunk.ContentBlock.ID,
+					name: chunk.ContentBlock.Name,
+				}
+			}
+		case "content_block_delta":
+			if chunk.Delta == nil {
+				continue
+			}
+			switch chunk.Delta.Type {
+			case "text_delta":
+				if chunk.Delta.Text != "" {
+					sendEvent(ctx, events, core.ResponseChunk{Type: "response_chunk", Content: chunk.Delta.Text})
+				}
+			case "thinking_delta":
+				if chunk.Delta.Thinking != "" {
+					sendEvent(ctx, events, core.ThinkingChunk{Type: "thinking_chunk", Content: chunk.Delta.Thinking})
+				}
+			case "input_json_delta":
+				idx := 0
+				if chunk.Index != nil {
+					idx = *chunk.Index
+				}
+				if pc, ok := pending[idx]; ok {
+					pc.inputJSON += chunk.Delta.InputJSON
+				}
+			}
+		case "message_delta":
+			if chunk.Delta != nil && chunk.Delta.StopReason != "" {
+				finishReason = chunk.Delta.StopReason
+			}
+		}
+	}
+
+	// Flush accumulated tool calls in block-index order.
+	flushToolCalls(ctx, events, pending,
+		func(pt *pendingTool) string { return pt.id },
+		func(pt *pendingTool) string { return pt.name },
+		func(pt *pendingTool) string { return pt.inputJSON },
+	)
+
+	return core.StreamEnd{Type: "stream_end", FinishReason: finishReason, PromptEvalCount: promptTokens, EvalCount: completionTokens, CachedCount: cachedTokens}
+}
+
+// anthropicUsage is the usage block on message_start and message_delta.
+// Fields are pointers so omitted fields stay unreported (nil) on the
+// StreamEnd rather than becoming a fake zero.
+type anthropicUsage struct {
+	InputTokens          *int `json:"input_tokens"`
+	OutputTokens         *int `json:"output_tokens"`
+	CacheReadInputTokens *int `json:"cache_read_input_tokens"`
+}
+
+// --- Anthropic message conversion ---
+
+// userImageBlocks lifts a user message's images key (the object shape
+// core.User marshals: [{"media_type","base64"}]) into Anthropic image
+// source blocks. Messages without images yield nil.
+func userImageBlocks(msg map[string]any) []any {
+	imgs, ok := msg["images"].([]any)
+	if !ok || len(imgs) == 0 {
+		return nil
+	}
+	blocks := make([]any, 0, len(imgs))
+	for _, im := range imgs {
+		ic, ok := im.(map[string]any)
+		if !ok {
+			continue
+		}
+		mediaType, _ := ic["media_type"].(string)
+		base64Data, _ := ic["base64"].(string)
+		if mediaType == "" || base64Data == "" {
+			continue
+		}
+		blocks = append(blocks, map[string]any{
+			"type": "image",
+			"source": map[string]any{
+				"type":       "base64",
+				"media_type": mediaType,
+				"data":       base64Data,
+			},
+		})
+	}
+	return blocks
+}
+
+// anthropicConvertMessages converts generic message maps to Anthropic
+// format: system prompt lifted to top-level, tool results folded into
+// user messages.
+func anthropicConvertMessages(messages []map[string]any) (system string, result []map[string]any) {
+	for i := 0; i < len(messages); i++ {
+		role, _ := messages[i]["role"].(string)
+		switch role {
+		case "system":
+			content, _ := messages[i]["content"].(string)
+			system += content + "\n"
+		case "user":
+			// Images ride alongside the text as image source blocks;
+			// content stays a plain string when there are none.
+			imgs := userImageBlocks(messages[i])
+			if content, ok := messages[i]["content"].([]any); ok {
+				blocks := append([]any(nil), imgs...)
+				result = append(result, map[string]any{"role": "user", "content": append(blocks, content...)})
+			} else if len(imgs) > 0 {
+				content, _ := messages[i]["content"].(string)
+				blocks := append([]any(nil), imgs...)
+				if content != "" {
+					blocks = append(blocks, map[string]any{"type": "text", "text": content})
+				}
+				result = append(result, map[string]any{"role": "user", "content": blocks})
+			} else {
+				content, _ := messages[i]["content"].(string)
+				result = append(result, map[string]any{"role": "user", "content": content})
+			}
+		case "assistant":
+			toolCalls, _ := messages[i]["tool_calls"].([]any)
+			if len(toolCalls) == 0 {
+				content, _ := messages[i]["content"].(string)
+				result = append(result, map[string]any{"role": "assistant", "content": content})
+				continue
+			}
+			blocks := make([]map[string]any, 0, len(toolCalls)+1)
+			if content, _ := messages[i]["content"].(string); content != "" {
+				blocks = append(blocks, map[string]any{"type": "text", "text": content})
+			}
+			for _, raw := range toolCalls {
+				tc, _ := raw.(map[string]any)
+				fn, _ := tc["function"].(map[string]any)
+				name, _ := fn["name"].(string)
+				args, _ := fn["arguments"]
+				callID, _ := tc["id"].(string)
+				blocks = append(blocks, map[string]any{
+					"type":  "tool_use",
+					"id":    callID,
+					"name":  name,
+					"input": args,
+				})
+			}
+			result = append(result, map[string]any{"role": "assistant", "content": blocks})
+		case "tool":
+			// Fold consecutive tool results into one user message.
+			var blocks []map[string]any
+			for i < len(messages) {
+				r, ok := messages[i]["role"].(string)
+				if !ok || r != "tool" {
+					break
+				}
+				content, _ := messages[i]["content"].(string)
+				toolCallID, _ := messages[i]["tool_call_id"].(string)
+				block := map[string]any{
+					"type":        "tool_result",
+					"tool_use_id": toolCallID,
+					"content":     content,
+				}
+				if isErr, ok := messages[i]["is_error"].(bool); ok && isErr {
+					block["is_error"] = true
+				}
+				blocks = append(blocks, block)
+				i++
+			}
+			i--
+			result = append(result, map[string]any{"role": "user", "content": blocks})
+		}
+	}
+	system = strings.TrimSuffix(system, "\n")
+	return system, result
+}
+
+// --- shared helpers ---
+
+// sendEvent sends an event on the channel, respecting context
+// cancellation. Non-blocking: if the context is cancelled, the event
+// is dropped.
+
+func anthropicBudgetTokens(level string) int {
+	switch level {
+	case "minimal":
+		return 1024
+	case "low":
+		return 2048
+	case "medium":
+		return 4096
+	case "high":
+		return 8192
+	case "extra high":
+		return 16384
+	case "max":
+		return 24576
+	case "ultra":
+		return 32768
+	default:
+		return 0
+	}
+}

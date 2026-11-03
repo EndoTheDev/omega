@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/engine/ai"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 // parseFileArgs splits args into image content and text prompt. Args
@@ -22,7 +22,7 @@ func parseFileArgs(args []string) (string, []core.ImageContent, error) {
 			continue
 		}
 		path := arg[1:]
-		img, err := ai.DetectImage(path)
+		img, err := llm.DetectImage(path)
 		if err != nil {
 			return "", nil, err
 		}

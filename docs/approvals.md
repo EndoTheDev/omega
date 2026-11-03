@@ -1,6 +1,6 @@
 # The Approval Gate
 
-The approval capsule (`modules/approval/`) gates shell commands with
+The approval capsule (`harness/approval/`) gates shell commands with
 write, network or system effects: flagged commands pass a reviewer
 before they run. Benign traffic pays one detector pass and never a
 cloud call or a prompt.
@@ -103,7 +103,7 @@ dropdown in the settings pane). All knobs apply on restart.
 
 ## Removability
 
-Capsule law: removing `modules/approval/` removes the feature whole -
+Capsule law: removing `harness/approval/` removes the feature whole -
 detection, parser, reviewer, ladder, cache, audit file and settings
 group. Outside the capsule only the `core.ApprovalProvider` seam, the
 loop's consult hook and the host's config/settings wiring remain.

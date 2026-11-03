@@ -56,13 +56,13 @@ const SITES = [
     labelProp: /label="window in days, 0 = all time"/,
   },
   {
-    file: join(repo, "modules", "kanban", "ui", "Board.vue"),
+    file: join(repo, "harness", "kanban", "ui", "Board.vue"),
     label: "the board switcher",
     select: /<BandSelect[\s\S]*?:options="boardOptions"/,
     labelProp: /@update:model-value="switchBoard\(\$event\)"/,
   },
   {
-    file: join(repo, "modules", "kanban", "ui", "board", "DetailDrawer.vue"),
+    file: join(repo, "harness", "kanban", "ui", "board", "DetailDrawer.vue"),
     label: "the drawer status",
     select: /<BandSelect[\s\S]*?:options="statusOptions"/,
     labelProp: /@update:model-value="\$emit\('move', \$event\)"/,
@@ -95,7 +95,7 @@ test("insights rides the token ladder (audit M7)", () => {
 });
 
 test("board radii ride the ladder (the named band-work gaps)", () => {
-  const board = read(repo, "modules", "kanban", "ui", "Board.vue");
+  const board = read(repo, "harness", "kanban", "ui", "Board.vue");
   for (const [px, token] of [
     ["8px", "--r-pane"],
     ["6px", "--r-card"],

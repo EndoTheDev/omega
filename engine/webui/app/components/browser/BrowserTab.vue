@@ -99,7 +99,7 @@
   // 2026-11-01: "the browser should be like a normal browser which also
   // allows me to visit other websites"). A URL bar + an iframe embed,
   // any origin, no allowlist, no origin gate. The server side is
-  // modules/browser's GET/PUT /browser/last - the resume URL this tab
+  // harness/browser's GET/PUT /browser/last - the resume URL this tab
   // restores on mount and persists after every successful embed load;
   // a refused frame never persists (the no-load rule above is also the
   // write gate, for free).

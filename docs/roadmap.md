@@ -49,7 +49,7 @@ and git history.
 
 ### v0.9.0 (shipped)
 
-- Module-owned UI: modules ship components in `modules/<name>/ui/`,
+- Module-owned UI: modules ship components in `harness/<name>/ui/`,
   composed at build time (no runtime registry)
 - Backend-owns-facts foundation: transcript endpoint (render-ready
   items, one contract for restore + live SSE), explicit running state
@@ -61,7 +61,7 @@ and git history.
   contract, chat tabs with same-session multi-tab streaming
 - Session archive + delete, cancel/retry in the composer
 - Store-is-the-only-door: the tool layer refuses direct database
-  writes, enforcing the engine/agent/store boundary
+  writes, enforcing the agent/store boundary
 - Context compaction auto-window (provider-aware), trust + config
   layout migration, magnetic pane snapping, process-group kill fix
   for cancelled shell runs, status bar durability (uptime, version,
