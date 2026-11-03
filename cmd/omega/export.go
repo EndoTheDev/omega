@@ -15,8 +15,7 @@ import (
 )
 
 // exportMessages writes messages as JSONL (one JSON object per line with
-// role and content fields) to w. Used by both the CLI export subcommand
-// and the TUI /export slash command.
+// role and content fields) to w. Used by the CLI export subcommand.
 func exportMessages(messages []core.Message, w io.Writer) error {
 	enc := json.NewEncoder(w)
 	for _, msg := range messages {

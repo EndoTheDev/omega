@@ -1,5 +1,5 @@
 // omega webui: the / command palette and @ mention picker (card
-// t_07aed3f9). The TUI is the spec: slash commands run LOCALLY and
+// t_07aed3f9). Slash commands run LOCALLY and
 // never hit the agent; the palette lists the webui's shell commands,
 // the extension command registry (ctx.Commands via GET /commands) and
 // skills as /<skill-name>. @-mention expansion itself is SERVER-SIDE
@@ -31,10 +31,10 @@ export interface PaletteItem {
 // a dispatch (module command or skill) to POST /commands/dispatch.
 // Declared after the table it mirrors.
 
-// The webui's shell set: the TUI's knownCommands minus /exit (nothing
-// to quit) with webui-native equivalents for the rest. The open
+// The webui's shell set: /exit is deliberately absent (nothing
+// to quit), with webui-native equivalents for the rest. The open
 // first-pass ruling (card t_07aed3f9): theme, fork, retry, variant,
-// help at minimum - the full TUI set maps like this.
+// help at minimum - the full shell set.
 export const WEBUI_SHELL_COMMANDS: PaletteItem[] = [
   { name: "/copy", description: "copy the last response to the clipboard", kind: "shell" },
   // card t_210a0d19 rename law: /modules is the new name, /extensions
@@ -52,8 +52,7 @@ export const WEBUI_SHELL_COMMANDS: PaletteItem[] = [
 ];
 
 // paletteCommands assembles the slash list: shell commands, then
-// extension commands (GET /commands rows), then skills as /<skill-name>
-// - the same assembly order the TUI's buildCommands uses.
+// extension commands (GET /commands rows), then skills as /<skill-name>.
 export function paletteCommands(
   extensions: { name: string; description?: string }[],
   skills: { name: string; description: string }[],
@@ -78,7 +77,7 @@ export function paletteCommands(
 // a dispatch (module command or skill) to POST /commands/dispatch.
 export const SHELL_COMMAND_NAMES = new Set(WEBUI_SHELL_COMMANDS.map((c) => c.name));
 
-// filterCommands mirrors the TUI autocomplete: case-insensitive
+// filterCommands: a case-insensitive
 // substring over the name AND the description (a description match
 // finds a command when you remember what it does, not what it is).
 export function filterCommands(query: string, items: PaletteItem[]): PaletteItem[] {

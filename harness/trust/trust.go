@@ -144,7 +144,7 @@ func (p *Provider) State(cwd string, approve, noApprove bool) string {
 
 // ResolveContext returns the project context string for cwd,
 // applying the trust gate. approve/noApprove are the CLI flags;
-// interactive enables the stdin trust prompt (TUI). Non-interactive
+// interactive enables the stdin trust prompt. Non-interactive
 // callers skip untrusted context with a warning. --no-approve wins
 // over --approve.
 func (p *Provider) ResolveContext(cwd string, approve, noApprove, interactive bool) string {

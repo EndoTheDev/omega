@@ -13,7 +13,7 @@ import (
 )
 
 // HandleSessionsCommand lists all sessions with message counts.
-// Returns a text table for the TUI to display.
+// Returns a text table for the command surface to display.
 func HandleSessionsCommand(ctx context.Context, store agent.StoreProvider, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
@@ -35,7 +35,7 @@ func HandleSessionsCommand(ctx context.Context, store agent.StoreProvider, args 
 	maxCount := 4
 	for i, s := range sessions {
 		count, _ := store.CountMessages(ctx, s.ID)
-		name := SessionDisplayName(s.Label, s.ID)
+		name := sessionDisplayName(s.Label, s.ID)
 		rows[i] = row{name: name, count: count, id: s.ID}
 		if len(name) > maxName {
 			maxName = len(name)
@@ -78,7 +78,7 @@ func HandleTreeCommand(ctx context.Context, store agent.StoreProvider) (core.Com
 	var flatten func(node *core.SessionNode, depth int, last bool)
 	flatten = func(node *core.SessionNode, depth int, last bool) {
 		count, _ := store.CountMessages(ctx, node.ID)
-		name := SessionDisplayName(node.Label, node.ID)
+		name := sessionDisplayName(node.Label, node.ID)
 		glyph := ""
 		if depth > 0 {
 			if last {
@@ -168,9 +168,8 @@ func HandleInsightsCommand(ctx context.Context, store agent.StoreProvider, args 
 	return core.CommandResult{Text: agent.FormatInsights(stats)}, nil
 }
 
-// SessionDisplayName returns the label, or a truncated ID if no label.
-// Shared by store commands and the TUI.
-func SessionDisplayName(label, id string) string {
+// sessionDisplayName returns the label, or a truncated ID if no label.
+func sessionDisplayName(label, id string) string {
 	if label != "" {
 		return label
 	}
@@ -180,9 +179,10 @@ func SessionDisplayName(label, id string) string {
 	return id
 }
 
-// HandleNewCommand returns a new_session action. The TUI resets state.
+// HandleNewCommand returns a new_session action. The consuming surface
+// resets state.
 // Flags: --ephemeral skips the store; --agent <name> binds the session
-// the TUI's first message will create to that agent profile (card
+// the surface's first message will create to that agent profile (card
 // t_7e2b7002). The agent name rides Action.List[0]; unknown names fail
 // at creation, not here - the flag parse stays store-free.
 func HandleNewCommand(args string) (core.CommandResult, error) {
@@ -219,7 +219,7 @@ func HandleNewCommand(args string) (core.CommandResult, error) {
 }
 
 // HandleResumeCommand resolves the argument to a session ID using the
-// store, then returns a load_session action for the TUI to load.
+// store, then returns a load_session action for the surface to load.
 func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
@@ -267,7 +267,7 @@ func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args st
 }
 
 // HandleBranchCommand creates a child session and returns a branch_session
-// action with the child ID. The TUI loads the ancestor messages.
+// action with the child ID. The consuming surface loads the ancestor messages.
 func HandleBranchCommand(ctx context.Context, store agent.StoreProvider, parentID, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
@@ -292,7 +292,7 @@ func HandleBranchCommand(ctx context.Context, store agent.StoreProvider, parentI
 }
 
 // HandleLabelCommand updates the session label in the store and returns
-// a set_label action for the TUI to update its display.
+// a set_label action for the surface to update its display.
 func HandleLabelCommand(ctx context.Context, store agent.StoreProvider, sessionID, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
@@ -317,7 +317,7 @@ func HandleLabelCommand(ctx context.Context, store agent.StoreProvider, sessionI
 }
 
 // HandleExportCommand reads messages from the store and writes them as
-// JSONL to the given path. No TUI state needed.
+// JSONL to the given path. No surface state needed.
 func HandleExportCommand(ctx context.Context, store agent.StoreProvider, sessionID, args string) (core.CommandResult, error) {
 	if store == nil || sessionID == "" {
 		return core.CommandResult{}, fmt.Errorf("no active session to export")
