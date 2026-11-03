@@ -234,7 +234,7 @@ stable channel from ever seeing a nightly.
 | Piece                | Job                                                     |
 | -------------------- | ------------------------------------------------------- |
 | `docs/release-gate.md` | the gate's operating law: round cap, noise tags, lens brief, regression set |
-| `scripts/embed-lane.sh` | the ONE owner of committed `engine/http_channel/static/` |
+| `scripts/embed-lane.sh` | the ONE owner of committed `api/static/` |
 | `scripts/train-pass.sh` | one mechanical landing per pass + marker refs + strikes |
 | `scripts/train-bisect.sh` | the marker-chain walk: --list, or bisect by check   |
 | `scripts/review-at-close.sh` | fresh review worktree + cold diff vs merge-base |

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# embed-lane.sh - the ONE lane that owns engine/http_channel/static/.
+# embed-lane.sh - the ONE lane that owns api/static/.
 #
 # Webui cards commit SOURCE ONLY (engine/webui/ and harness/<name>/ui/).
 # The committed SPA bundle is regenerated and committed here, right
@@ -30,7 +30,7 @@ set -euo pipefail
 #     comparing, so regenerating unchanged source skips instead of
 #     churning build ids into history.
 #   - fail-loud: any build failure aborts the merge pass loudly.
-#     engine/http_channel/static/ is NEVER hand-resolved; it is regenerated, or the merge
+#     api/static/ is NEVER hand-resolved; it is regenerated, or the merge
 #     fails. (The root build.sh conflict-marker gate stays as belt
 #     and suspenders; this script re-checks before committing.)
 #
@@ -38,7 +38,7 @@ set -euo pipefail
 #   EMBED_LANE_BUILD_CMD - the command that regenerates the bundle.
 #   The real pass uses engine/webui/scripts/build.sh.
 
-STATIC="engine/http_channel/static"
+STATIC="api/static"
 LANE_PREFIX="embed-lane: rebuild webui bundle for"
 
 # ui_changed <base> <head>: non-empty output when the diff touches
@@ -157,7 +157,7 @@ regen_bundle() {
 	echo "==> embed-lane: regenerating the webui bundle (source changed)"
 	if ! "${EMBED_LANE_BUILD_CMD:-engine/webui/scripts/build.sh}"; then
 		echo "FATAL: embed-lane: webui build FAILED - the merge pass aborts here." >&2
-		echo "       engine/http_channel/static/ is NEVER hand-resolved: fix the ui source or the" >&2
+		echo "       api/static/ is NEVER hand-resolved: fix the ui source or the" >&2
 		echo "       build, then rerun embed-lane (regeneration is the only path)." >&2
 		exit 1
 	fi

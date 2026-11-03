@@ -8,7 +8,7 @@ omega binary via `go:embed` and served by the HTTP channel at `/`. An
 installed instance owns port 8099; the dev tree's omega serves 8098.
 The two never touch each other.
 
-Source of truth: `engine/webui/` (contracts below), `engine/http_channel/static/`
+Source of truth: `engine/webui/` (contracts below), `api/static/`
 (the committed built bundle), and the wire contract in [api.md](api.md).
 
 ## Design tokens
@@ -262,7 +262,7 @@ Everything else animates through `transition`, not keyframes.
   send; the server mints an `eph-` id on the leading `session` frame.
 - **Pure in-memory.** No store row, no messages on disk: conversation
   context, transcript items and telemetry live in the server's
-  `ephRegistry` (engine/http_channel/server_ephemeral.go). Restart
+  `ephRegistry` (api/server_ephemeral.go). Restart
   kills; reload reattaches from server memory (transcript endpoint,
   same reattach machinery). Never a persisted-then-deleted shape.
 - **Invisible to every store-derived surface by law**: session lists,
@@ -418,7 +418,7 @@ of the module table (docs/architecture.md).
 
 ```bash
 node --test "test/*.test.ts"        # from webui — node's built-in runner
-bash scripts/build.sh               # SPA generate + sync to engine/http_channel/static
+bash scripts/build.sh               # SPA generate + sync to api/static
 python3 scripts/stream_check.py http://127.0.0.1:8098   # transport probe (dev omega must run)
 ```
 
@@ -445,13 +445,13 @@ transitions), `composer-retry.test.ts` (the morphing button), `panemodel.test.ts
 
 ## The embed lane
 
-- The built SPA is COMMITTED: `engine/http_channel/static/` is
+- The built SPA is COMMITTED: `api/static/` is
   tracked, so `go install` and plain `go build` always produce the
   complete product. Webui cards commit **SOURCE ONLY**; the merge pass
   runs `scripts/embed-lane.sh`, which owns every `static/` commit.
 - `scripts/build.sh` runs `nuxt generate` (NOT `nuxt build` — an
   ssr:false `nuxt build` emits a nitro server; generate emits the
-  static SPA) and syncs to `../engine/http_channel/static/`. Run it before
+  static SPA) and syncs to `../api/static/`. Run it before
   `go build`.
 - Never hand-resolve `static/` conflicts — regenerate.
 

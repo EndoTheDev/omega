@@ -16,7 +16,7 @@ import { scanModuleUIs } from "./app/composables/compose";
 const uiRoot = dirname(fileURLToPath(import.meta.url)); // engine/webui/ under the checkout root
 const repoRoot = resolve(uiRoot, "../.."); // the repo root (engine/webui is two levels deep)
 const modulesRoot = resolve(repoRoot, "harness"); // harness/
-const engineRoot = resolve(repoRoot, "engine"); // engine/ (agent, http_channel, webui)
+const engineRoot = resolve(repoRoot, "api"); // api/ (the serving shell, was engine/http_channel)
 const moduleUIs = scanModuleUIs(modulesRoot, engineRoot);
 
 // One panel per module component file, imports relative to this dir.

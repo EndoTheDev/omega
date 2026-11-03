@@ -1,4 +1,4 @@
-package http_channel
+package api
 
 // GET /extensions tests (card t_14f73742): the endpoint must return the
 // real mounted module registry, not a fixture. This test mounts the

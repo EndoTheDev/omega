@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/engine/http_channel"
+	"github.com/EndoTheDev/omega/api"
 	"github.com/EndoTheDev/omega/harness/logging"
 	"github.com/EndoTheDev/omega/harness/memory"
 	"github.com/EndoTheDev/omega/harness/provider"
@@ -414,19 +414,19 @@ func TestBuildConfigs(t *testing.T) {
 		t.Errorf("provider.APIKey = %q, want %q", pc.APIKey, cfg.Provider.APIKey)
 	}
 
-	// http_channel: http_channel.Config{Port}
-	hc, ok := configs["http_channel"].(http_channel.Config)
+	// http_channel: api.Config{Port}
+	hc, ok := configs["http_channel"].(api.Config)
 	if !ok {
-		t.Fatalf("http_channel config is %T, want http_channel.Config", configs["http_channel"])
+		t.Fatalf("http_channel config is %T, want api.Config", configs["http_channel"])
 	}
 	if hc.Port != cfg.Server.Port {
-		t.Errorf("http_channel.Port = %d, want %d", hc.Port, cfg.Server.Port)
+		t.Errorf("api.Port = %d, want %d", hc.Port, cfg.Server.Port)
 	}
 	if hc.WebTools.APIKey != cfg.Provider.APIKey {
-		t.Errorf("http_channel.WebTools.APIKey = %q, want %q", hc.WebTools.APIKey, cfg.Provider.APIKey)
+		t.Errorf("api.WebTools.APIKey = %q, want %q", hc.WebTools.APIKey, cfg.Provider.APIKey)
 	}
 	if hc.WebTools.BaseURL != cfg.Provider.Host {
-		t.Errorf("http_channel.WebTools.BaseURL = %q, want %q", hc.WebTools.BaseURL, cfg.Provider.Host)
+		t.Errorf("api.WebTools.BaseURL = %q, want %q", hc.WebTools.BaseURL, cfg.Provider.Host)
 	}
 
 	// skills: skills.Config{Dir}

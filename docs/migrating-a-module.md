@@ -77,7 +77,7 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
 
 5. **Register your REST surface through `RegisterRoute`.** Since the
    phase-F core-purity move the engine holds no module shape:
-   `engine/http_channel/module_routes.go` serves exactly the patterns the
+   `api/module_routes.go` serves exactly the patterns the
    capsules registered (missing pattern answers 404, no seam-nil
    guard). Kanban moved `/tasks*` and `/boards` onto
    `api.RegisterRoute` in `harness/kanban/rest.go` - the reference.

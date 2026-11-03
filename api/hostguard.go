@@ -1,4 +1,4 @@
-package http_channel
+package api
 
 import (
 	"net"

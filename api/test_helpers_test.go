@@ -1,4 +1,4 @@
-package http_channel
+package api
 
 // The shell's mock helpers. After the carve (card t_905fa502) the
 // agent-surface tests took the original fixtures to agent/api; the

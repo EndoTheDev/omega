@@ -28,7 +28,7 @@ Every PR passes the same admission rules, in plain words:
 2. **Same gates as our own cards.** `go build ./...`, `go vet ./...`,
    `go test ./...`, `-race`, and — when `webui` changes — an SPA
    regen through the embed lane (`engine/webui/scripts/build.sh`, then
-   commit the synced `engine/http_channel/static/`). These gates run
+   commit the synced `api/static/`). These gates run
    in **GitHub CI, never on any private machine**. That is explicit
    policy, not a convenience. (Today's CI job runs vet + test + the
    shell scratch-repo suite, and fails dev pushes on the drift gate;
@@ -44,7 +44,7 @@ Every PR passes the same admission rules, in plain words:
    handling, the shell tool, or any server-side URL fetch are
    reviewed and approved for security specifically, by name, before
    merge. The bar is the `internalHostGuard` pattern in
-   `engine/http_channel/server_images.go` - detail in the security
+   `api/server_images.go` - detail in the security
    section below.
 5. **No new dependencies without stated justification.** Anything
    added to `go.mod` or `package.json` needs a paragraph in the PR
@@ -80,7 +80,7 @@ trusted. Rule 3 isn't distrust of you — it's refusal to make the
 honesty of review dependent on what any diff says about itself.
 
 The concrete bar for rule 4 is the `internalHostGuard` pattern in
-`engine/http_channel/server_images.go`: the server-side URL fetch
+`api/server_images.go`: the server-side URL fetch
 refuses IP literals inside the box (loopback, link-local incl. cloud
 metadata, RFC1918, CGNAT) and the guard is a seam so tests can stub
 it. Any new server-side fetch or trust decision must show the same

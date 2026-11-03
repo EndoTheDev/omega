@@ -1,4 +1,4 @@
-package http_channel
+package api
 
 // TestChannelMountCarriesWebTools, the shell half of the carve (card
 // t_905fa502): the web tool pair's registration is PLUGIN mount work
@@ -8,8 +8,8 @@ package http_channel
 import (
 	"testing"
 
-	agentapi "github.com/EndoTheDev/omega/agent/api"
 	"github.com/EndoTheDev/omega/agent"
+	agentapi "github.com/EndoTheDev/omega/agent/api"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -44,4 +44,3 @@ func TestChannelMountCarriesWebTools(t *testing.T) {
 		t.Error("the channel must stay engine vocabulary (not Toggleable)")
 	}
 }
-

@@ -1,4 +1,4 @@
-package http_channel
+package api
 
 // The E2 /modules handler tests bind at the wire shape the settings
 // pane consumes: the engine ring never appears (tier law), the pane's

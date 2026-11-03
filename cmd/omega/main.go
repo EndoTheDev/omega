@@ -19,8 +19,8 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/agent/loop"
+	"github.com/EndoTheDev/omega/api"
 	"github.com/EndoTheDev/omega/core"
-	httpchannel "github.com/EndoTheDev/omega/engine/http_channel"
 	"github.com/EndoTheDev/omega/harness/approval"
 	browserModule "github.com/EndoTheDev/omega/harness/browser"
 	"github.com/EndoTheDev/omega/harness/compactor"
@@ -488,7 +488,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		approval.NewPlugin(),
 		mcpPlugin,
 		delegate.NewPlugin(),
-		httpchannel.NewPlugin(),
+		api.NewPlugin(),
 		trust.NewPlugin(),
 		cron.NewPlugin(),
 		kanbanModule.NewPlugin(),

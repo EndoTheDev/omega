@@ -1,4 +1,4 @@
-package http_channel
+package api
 
 import (
 	"context"
@@ -305,7 +305,7 @@ func TestLogsUnconfiguredIs404(t *testing.T) {
 
 func TestLogsLoggerWithoutPathIs404(t *testing.T) {
 	s := inspectorServer(t)
- // NopLogger twin: LoggerProvider, no Path
+	// NopLogger twin: LoggerProvider, no Path
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/logs")
 	if err != nil {
