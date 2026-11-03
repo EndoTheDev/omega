@@ -314,6 +314,32 @@ func (r *Registry) Spawn(ctx context.Context, command, name string) (*Entry, err
 	return e, nil
 }
 
+// Close is the test-visible shutdown fence (card t_de398140): it kills
+// every child this registry still owns and joins every reaper
+// goroutine, so no reaper write can land after the caller releases the
+// home - a t.TempDir teardown must never race a late save. Production
+// never calls it: reapers are detached by design, and the per-handle
+// Kill contract already covers shutdown needs. Bounded: a reaper that
+// misses the cap is logged on stderr, never a hang.
+func (r *Registry) Close() {
+	r.mu.Lock()
+	live := make([]*reaper, 0, len(r.reapers))
+	for pid, watcher := range r.reapers {
+		_ = signalKill(pid)
+		live = append(live, watcher)
+	}
+	r.mu.Unlock()
+	deadline := time.After(10 * time.Second)
+	for _, watcher := range live {
+		select {
+		case <-watcher.done:
+		case <-deadline:
+			fmt.Fprintf(os.Stderr, "omega process: close: %d reaper(s) not joined within the cap\n", len(live))
+			return
+		}
+	}
+}
+
 // List resolves every liveness question and returns a snapshot sorted
 // by name.
 func (r *Registry) List() []Entry {
