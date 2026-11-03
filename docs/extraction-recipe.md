@@ -3,6 +3,17 @@
 Status: DORMANT. Nothing below has fired. This is a recipe, not a
 plan in motion — phase 7 stays dormant until Endo's word moves it.
 
+SEA-CONSTITUTION RESYNC (2026-11-03, part 3 of the restructure): the
+seam inventory this recipe counts is superseded. Core no longer
+carries any seam interface (23 counted here - zero now); the need
+faces live with their consumers (`agent/seams.go` and each owner of a
+consult), services are offers under the closed 14-key namespace, and
+the module plugins no longer fill slots at all. Re-derive any seam
+count from the tree if this ever fires: the grammar lives in
+docs/architecture.md's seam-constitution section, the enforcement in
+agent/seams_test.go. The line numbers and shapes below are the
+2026-10 historical snapshot.
+
 Written 2026-10-25 against dev @ 2e9ae66. Every dir list and seam
 count here was re-verified against the real build at that commit:
 `ls modules/`, `buildPlugins()` (cmd/omega/main.go:308), the seam
@@ -64,8 +75,8 @@ ordering) plus the plugins' `Provides()` declarations:
 | `harness/notifications` | notifications | notifications | notifications |
 | `harness/trust` | trust | trust | trust |
 | `harness/compactor` | compactor | compactor | compactor |
-| `harness/prompt` | prompt | prompt_builder | (none) |
-| `harness/logging` | logging | logging | logging |
+| `harness/prompt` | prompt | prompt | (none) |
+| `harness/logging` | logging | logger | logging |
 | `harness/provider` | provider | provider | provider |
 | `harness/skills` | skills | skills, tools, prompt_sections | skills |
 
