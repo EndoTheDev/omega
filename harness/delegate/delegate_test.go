@@ -120,16 +120,16 @@ func TestPluginMount(t *testing.T) {
 // emitter-delivery pin.
 type stubNotifier struct{}
 
-func (stubNotifier) Emit(core.Notification) (core.Notification, error) {
-	return core.Notification{}, nil
+func (stubNotifier) Emit(core.Notice) (core.Notice, error) {
+	return core.Notice{}, nil
 }
-func (stubNotifier) List(context.Context, bool, int, int) ([]core.Notification, int, error) {
+func (stubNotifier) List(context.Context, bool, int, int) ([]core.Notice, int, error) {
 	return nil, 0, nil
 }
 func (stubNotifier) MarkRead(context.Context, int64) error { return nil }
 func (stubNotifier) MarkAllRead(context.Context) error     { return nil }
-func (stubNotifier) Subscribe() (<-chan core.Notification, func()) {
-	ch := make(chan core.Notification)
+func (stubNotifier) Subscribe() (<-chan core.Notice, func()) {
+	ch := make(chan core.Notice)
 	return ch, func() {}
 }
 
@@ -156,6 +156,6 @@ func (stubNotificationsPlugin) Name() string       { return "notifications" }
 func (stubNotificationsPlugin) Provides() []string { return []string{"notifications"} }
 func (stubNotificationsPlugin) Requires() []string { return nil }
 func (stubNotificationsPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
-	ctx.Notifications = stubNotifier{}
+	ctx.ApplyOffer("notifications", "notifications", stubNotifier{})
 	return nil
 }

@@ -10,22 +10,22 @@ import (
 // recordingNotifier captures the finished-things emissions (card
 // t_5d9032d3).
 type recordingNotifier struct {
-	got []core.Notification
+	got []core.Notice
 }
 
-func (r *recordingNotifier) Emit(n core.Notification) (core.Notification, error) {
+func (r *recordingNotifier) Emit(n core.Notice) (core.Notice, error) {
 	n.ID = int64(len(r.got) + 1)
 	n.CreatedAt = "2026-10-22T04:00:00Z"
 	r.got = append(r.got, n)
 	return n, nil
 }
-func (r *recordingNotifier) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notification, int, error) {
+func (r *recordingNotifier) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notice, int, error) {
 	return nil, 0, nil
 }
 func (r *recordingNotifier) MarkRead(ctx context.Context, id int64) error { return nil }
 func (r *recordingNotifier) MarkAllRead(ctx context.Context) error        { return nil }
-func (r *recordingNotifier) Subscribe() (<-chan core.Notification, func()) {
-	ch := make(chan core.Notification, 4)
+func (r *recordingNotifier) Subscribe() (<-chan core.Notice, func()) {
+	ch := make(chan core.Notice, 4)
 	return ch, func() {}
 }
 

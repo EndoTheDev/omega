@@ -89,7 +89,7 @@ func TestHotReloadPushesPanelDelta(t *testing.T) {
 		t.Fatalf("canvas: %v", err)
 	}
 
-	r := p.runner.(*Runner)
+	r := p.runner
 	r.applyReload(t.Context(), &Config{
 		Jobs: []Job{
 			{Name: "starter", Schedule: "0 5 1 * *", Prompt: "p"},

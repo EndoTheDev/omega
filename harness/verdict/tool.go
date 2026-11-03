@@ -21,7 +21,7 @@ var verdictActions = []core.ToolAction{
 // blocks on the hub until the user answers, the card expires, or the
 // run's context dies.
 type verdictToolProvider struct {
-	hub core.VerdictsProvider
+	hub cardHub
 }
 
 // Tools implements core.ToolProvider. The one-domain tool law
@@ -85,7 +85,7 @@ func (p *verdictToolProvider) runRequest(ctx context.Context, args map[string]an
 	// hard-pause for a click. Unknown origin (tests, one-shot) is
 	// treated as interactive.
 	switch core.RunOriginFromContext(ctx) {
-	case core.RunOriginCron, core.RunOriginDelegate:
+	case originScheduled, originSubagent:
 		return "", fmt.Errorf("verdict is not available in background turns (origin %q) - decide without the user or surface the question in the transcript",
 			core.RunOriginFromContext(ctx))
 	}
@@ -116,7 +116,7 @@ func (p *verdictToolProvider) runRequest(ctx context.Context, args map[string]an
 		return "", fmt.Errorf("verdict: a card needs at least one option or allow_text=true")
 	}
 
-	card := core.VerdictPrompt{
+	card := core.QuestionPrompt{
 		SessionID: agent.SessionIDFromContext(ctx),
 		Title:     title,
 		Body:      body,
@@ -136,17 +136,17 @@ func (p *verdictToolProvider) runRequest(ctx context.Context, args map[string]an
 // plain strings for one-word picks) out of the untyped tool args map.
 // Non-conforming entries are skipped (the model sends objects;
 // anything else is malformed and dropped, not fatal).
-func argOptions(args map[string]any, key string) []core.VerdictOption {
+func argOptions(args map[string]any, key string) []core.QuestionOption {
 	raw, ok := args[key].([]any)
 	if !ok {
 		return nil
 	}
-	out := make([]core.VerdictOption, 0, len(raw))
+	out := make([]core.QuestionOption, 0, len(raw))
 	for _, v := range raw {
 		switch o := v.(type) {
 		case string:
 			if s := strings.TrimSpace(o); s != "" {
-				out = append(out, core.VerdictOption{Label: s})
+				out = append(out, core.QuestionOption{Label: s})
 			}
 		case map[string]any:
 			label, _ := o["label"].(string)
@@ -155,7 +155,7 @@ func argOptions(args map[string]any, key string) []core.VerdictOption {
 				continue
 			}
 			desc, _ := o["description"].(string)
-			out = append(out, core.VerdictOption{Label: label, Description: strings.TrimSpace(desc)})
+			out = append(out, core.QuestionOption{Label: label, Description: strings.TrimSpace(desc)})
 		}
 	}
 	return out

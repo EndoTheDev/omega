@@ -112,13 +112,15 @@ type seamSet struct {
 	// 404 lane: a URL rooted at a module route that matches no
 	// registered pattern answers 404, not the SPA shell. Empty when
 	// no routes: history-mode routes like /tasks-off-webui stay SPA.
-	routeRoots    map[string]bool
-	skills        core.SkillsProvider
-	cron          core.CronProvider
-	logger        core.LoggerProvider
-	notifications core.NotificationsProvider
-	verdicts      core.VerdictsProvider
-	trust         core.TrustProvider
+	routeRoots map[string]bool
+	logger     core.LoggerProvider
+	// ctx is the live Context (part 3, the seam constitution): the
+	// capsule-facing routes resolve their services per request from
+	// the universal registry - a live toggle swaps the pointer under
+	// their feet exactly the way the old pinned fields followed the
+	// rewire. Nil-safe: a directly constructed Server (tests) with no
+	// Context rewired answers the nil-seam degradation (501 / empty).
+	ctx *core.Context
 	// commands + commandHandler are the extension command registry
 	// (ctx.Commands, ctx.CommandHandler) - the palette's dispatch
 	// surface reads them per request (card t_07aed3f9).
@@ -126,38 +128,79 @@ type seamSet struct {
 	commandHandler func(ctx context.Context, name, args string) (core.CommandResult, error)
 }
 
-// Accessors, one per seam. All nil-safe: the nil seam is the contract
-// the handlers degrade through (501 / empty list / context-free run).
+// LiveServices returns the live universal seam registry (part 3): the
+// shell's capsule-facing inspector routes resolve by key. Nil-safe.
+func (s *Server) LiveServices() *core.Services {
+	s.seams.mu.RLock()
+	defer s.seams.mu.RUnlock()
+	if s.seams.ctx == nil {
+		return nil
+	}
+	return s.seams.ctx.Services()
+}
 
-func (s *Server) Skills() core.SkillsProvider {
-	s.seams.mu.RLock()
-	defer s.seams.mu.RUnlock()
-	return s.seams.skills
+// Consumers' local faces (part 3): every capsule-facing route
+// type-asserts the resolved service to what it calls - no shared
+// named interface crosses the seam.
+
+// noticeBoard is the finished-things face the bell routes hold.
+type noticeBoard interface {
+	List(ctx context.Context, unreadOnly bool, limit, offset int) (notes []core.Notice, unread int, err error)
+	MarkRead(ctx context.Context, id int64) error
+	MarkAllRead(ctx context.Context) error
+	Subscribe() (<-chan core.Notice, func())
 }
-func (s *Server) Cron() core.CronProvider {
-	s.seams.mu.RLock()
-	defer s.seams.mu.RUnlock()
-	return s.seams.cron
+
+// cardBoard is the question-card face the /verdicts routes hold.
+type cardBoard interface {
+	Answer(sessionID, cardID string, v core.QuestionAnswer) (core.QuestionAnswer, error)
+	Pending(sessionID string) []core.QuestionPrompt
 }
+
+// skillFaces is the skill inventory face the content/atmention
+// consumers hold (std types only; the capsule owns its type).
+type skillFaces interface {
+	SkillsEntries() (index map[string]string, contents map[string]string, err error)
+	SkillRead(name string) (description, content string, err error)
+}
+
+// contextResolver is the workspace prompt-context face the
+// session-send path holds: resolve AGENTS.md context behind the
+// mounted trust capsule.
+type contextResolver interface {
+	ResolveContext(cwd string, approve, noApprove, interactive bool) string
+}
+
+// notices resolves the finished-things service, asserted to this
+// server's face. Nil when the capsule is absent (or wrong-shaped -
+// the boot failed loud then anyway).
+func (s *Server) notices() noticeBoard {
+	svc, _ := s.LiveServices().Resolve("notifications").(noticeBoard)
+	return svc
+}
+
+// cards resolves the question-card service.
+func (s *Server) cards() cardBoard {
+	svc, _ := s.LiveServices().Resolve("verdicts").(cardBoard)
+	return svc
+}
+
+// skills resolves the skill inventory service.
+func (s *Server) skills() skillFaces {
+	svc, _ := s.LiveServices().Resolve("skills").(skillFaces)
+	return svc
+}
+
+// trustResolver resolves the trust service for workspace sessions.
+func (s *Server) trustResolver() contextResolver {
+	svc, _ := s.LiveServices().Resolve("trust").(contextResolver)
+	return svc
+}
+
 func (s *Server) Logger() core.LoggerProvider {
 	s.seams.mu.RLock()
 	defer s.seams.mu.RUnlock()
 	return s.seams.logger
-}
-func (s *Server) Notifications() core.NotificationsProvider {
-	s.seams.mu.RLock()
-	defer s.seams.mu.RUnlock()
-	return s.seams.notifications
-}
-func (s *Server) Verdicts() core.VerdictsProvider {
-	s.seams.mu.RLock()
-	defer s.seams.mu.RUnlock()
-	return s.seams.verdicts
-}
-func (s *Server) Trust() core.TrustProvider {
-	s.seams.mu.RLock()
-	defer s.seams.mu.RUnlock()
-	return s.seams.trust
 }
 
 // rewireSeams re-reads the module seams from the live Context: the
@@ -176,12 +219,8 @@ func (s *Server) RewireSeams(ctx *core.Context, modmux *http.ServeMux, roots map
 	s.seams.mu.Lock()
 	s.seams.modules = modmux
 	s.seams.routeRoots = roots
-	s.seams.skills = ctx.Skills
-	s.seams.cron = ctx.Cron
 	s.seams.logger = ctx.Logger
-	s.seams.notifications = ctx.Notifications
-	s.seams.verdicts = ctx.Verdicts
-	s.seams.trust = ctx.Trust
+	s.seams.ctx = ctx
 	s.seams.commands = append([]core.ExtensionCommand(nil), ctx.Commands...)
 	s.seams.commandHandler = ctx.CommandHandler
 	s.seams.mu.Unlock()
@@ -321,17 +360,13 @@ func (s *Server) Canvas() *agent.Canvas { return s.canvas }
 func (s *Server) ActiveRun(id string) bool { return s.runs.active(id) }
 
 // BindInspectSeams installs the optional provider surfaces the shell's
-// inspector reads serve (cron jobs, skills, logs). The writes land in
+// inspector reads serve (cron jobs, skills, logs). The logger lands in
 // the same seamSet RewireSeams rewrites; the shell's tests use it where
-// the pre-split suite set the fields directly.
-func (s *Server) BindInspectSeams(skills core.SkillsProvider, cron core.CronProvider, logger core.LoggerProvider) {
+// the pre-split suite set the fields directly. The capsule services
+// (cron, skills) ride the universal registry instead - the caller
+// rewires the Context (RewireSeams) and the routes resolve by key.
+func (s *Server) BindInspectSeams(logger core.LoggerProvider) {
 	s.seams.mu.Lock()
-	if skills != nil {
-		s.seams.skills = skills
-	}
-	if cron != nil {
-		s.seams.cron = cron
-	}
 	if logger != nil {
 		s.seams.logger = logger
 	}
@@ -650,8 +685,10 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	// resolution skips an untrusted folder's context with a stderr
 	// note - the same gate the host applies at boot.
 	req.workspace = sess.Workspace
-	if sess.Workspace != "" && s.Trust() != nil {
-		req.workspacePromptContext = s.Trust().ResolveContext(sess.Workspace, false, false, false)
+	if sess.Workspace != "" {
+		if tr := s.trustResolver(); tr != nil {
+			req.workspacePromptContext = tr.ResolveContext(sess.Workspace, false, false, false)
+		}
 	}
 
 	// @-mention expansion (card t_07aed3f9): the new input is expanded
@@ -1154,7 +1191,7 @@ func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, f
 	ctx = core.WithRunWorkspace(ctx, req.workspace, req.workspacePromptContext)
 	// Verdict cards v1: the no-store legacy path is still an interactive
 	// turn - the verdict tool may issue from here.
-	ctx = core.WithRunOrigin(ctx, core.RunOriginInteractive)
+	ctx = core.WithRunOrigin(ctx, "interactive")
 	// Turn copy persistence belongs to the loop (card t_471f6d4a): the
 	// sink carries the session and the head-parent pin, the run input
 	// rides req.persistInput. Channels render from the store, never

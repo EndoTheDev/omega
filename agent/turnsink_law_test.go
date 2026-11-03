@@ -23,7 +23,7 @@ import (
 var turnCopyAppendAllowlist = map[string]string{
 	"agent/api/server_branch.go":   "tree operation - branch summary System marker on the child session",
 	"agent/api/server_variants.go": "tree operation - core.NewVariantSelect marker",
-	"harness/verdict/hub.go":                 "verdict audit records (VerdictCard/Verdict) - extension-owned Q&A records, not model turns",
+	"harness/verdict/hub.go":                 "verdict audit records (QuestionCard/Verdict) - extension-owned Q&A records, not model turns",
 }
 
 var appendMessageCall = regexp.MustCompile(`\.AppendMessage\(`)

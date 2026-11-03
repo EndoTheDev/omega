@@ -92,7 +92,7 @@ func (sp *SkillsProvider) scanDirs(dir string) []string {
 // name with the first (shared) occurrence winning. Missing
 // directories return an empty slice, not an error. If dir is empty,
 // uses the provider's configured Dir.
-func (sp *SkillsProvider) LoadSkills(dir string) ([]core.Skill, error) {
+func (sp *SkillsProvider) LoadSkills(dir string) ([]Skill, error) {
 	if dir == "" {
 		dir = sp.Dir
 	}
@@ -101,7 +101,7 @@ func (sp *SkillsProvider) LoadSkills(dir string) ([]core.Skill, error) {
 		return nil, nil
 	}
 	seen := map[string]bool{}
-	var out []core.Skill
+	var out []Skill
 	for _, d := range dirs {
 		skills, err := scanSkills(d)
 		if err != nil {
@@ -123,13 +123,45 @@ func (sp *SkillsProvider) LoadSkills(dir string) ([]core.Skill, error) {
 // name. The directory is the live source of truth - a re-scan on every
 // listing is the point; there is no cached loader state to invalidate.
 // A missing directory is an empty inventory, not an error.
-func (sp *SkillsProvider) ListSkills() ([]core.Skill, error) {
+func (sp *SkillsProvider) ListSkills() ([]Skill, error) {
 	skills, err := sp.LoadSkills("")
 	if err != nil {
 		return nil, err
 	}
 	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
 	return skills, nil
+}
+
+// SkillsEntries is the std-typed inventory view consumers read
+// through the universal registry (part 3 seam constitution): the
+// merged skill set as name -> description and name -> content pairs,
+// one fresh scan, the merge law's winner per name. A missing directory
+// is an empty inventory. Disabled names stay in (the registry tab
+// lists them; exclusion is the prompt section's business).
+func (sp *SkillsProvider) SkillsEntries() (index map[string]string, contents map[string]string, err error) {
+	skills, err := sp.LoadSkills("")
+	if err != nil {
+		return nil, nil, err
+	}
+	index = make(map[string]string, len(skills))
+	contents = make(map[string]string, len(skills))
+	for _, s := range skills {
+		index[s.Name] = s.Description
+		contents[s.Name] = s.Content
+	}
+	return index, contents, nil
+}
+
+// SkillRead reads one skill by name through the merge law's winner
+// rule - the std-typed face of ReadSkill for consumers that cannot
+// name the capsule type. The error (the not-found line with the
+// available names) passes through unchanged.
+func (sp *SkillsProvider) SkillRead(name string) (description, content string, err error) {
+	s, err := sp.ReadSkill(name)
+	if err != nil {
+		return "", "", err
+	}
+	return s.Description, s.Content, nil
 }
 
 // promptSectionOrder places the Available Skills section behind the
@@ -150,7 +182,7 @@ func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.Pr
 		for _, n := range off {
 			offSet[n] = true
 		}
-		enabled := make([]core.Skill, 0, len(skills))
+		enabled := make([]Skill, 0, len(skills))
 		for _, s := range skills {
 			if !offSet[s.Name] {
 				enabled = append(enabled, s)
@@ -380,14 +412,14 @@ func (sp *SkillsProvider) writePatched(path, content string) (string, error) {
 // Content (the body under the fence). Resolution follows the LoadSkills
 // merge order (shared first, own second), so a name collision reads the
 // same winner the prompt listing and runRead use.
-func (sp *SkillsProvider) ReadSkill(name string) (core.Skill, error) {
+func (sp *SkillsProvider) ReadSkill(name string) (Skill, error) {
 	skillFile, err := sp.resolveSkillFile(name)
 	if err != nil {
-		return core.Skill{}, err
+		return Skill{}, err
 	}
 	s, err := loadSkill(skillFile)
 	if err != nil {
-		return core.Skill{}, fmt.Errorf("read SKILL.md: %w", err)
+		return Skill{}, fmt.Errorf("read SKILL.md: %w", err)
 	}
 	s.Name = name
 	s.Dir = filepath.Dir(skillFile)
@@ -575,7 +607,7 @@ func (sp *SkillsProvider) Commands() []core.ExtensionCommand {
 // scanSkills scans a directory for <name>/SKILL.md skill files. The
 // folder name is the skill name (card t_5baad951): frontmatter cannot
 // rename a skill, so the parsed name field (retired) is overridden.
-func scanSkills(dir string) ([]core.Skill, error) {
+func scanSkills(dir string) ([]Skill, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -583,7 +615,7 @@ func scanSkills(dir string) ([]core.Skill, error) {
 		}
 		return nil, err
 	}
-	var skills []core.Skill
+	var skills []Skill
 	for _, entry := range entries {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
@@ -653,14 +685,14 @@ func fileExists(path string) bool {
 // loadSkill reads a single SKILL.md file and parses its YAML
 // frontmatter. The frontmatter is delimited by --- lines; only the
 // description is read from it - the skill name is the folder name.
-func loadSkill(path string) (core.Skill, error) {
+func loadSkill(path string) (Skill, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return core.Skill{}, err
+		return Skill{}, err
 	}
 	defer f.Close()
 
-	var s core.Skill
+	var s Skill
 	scanner := bufio.NewScanner(f)
 	if !scanner.Scan() || strings.TrimSpace(scanner.Text()) != "---" {
 		s.Content = scanner.Text() + "\n" + readRemaining(scanner)
@@ -688,7 +720,7 @@ func loadSkill(path string) (core.Skill, error) {
 	return s, scanner.Err()
 }
 
-func formatSkill(s core.Skill) string {
+func formatSkill(s Skill) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Skill: %s\n", s.Name)
 	fmt.Fprintf(&sb, "Directory: %s\n\n", s.Dir)

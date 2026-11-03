@@ -31,12 +31,20 @@ type Store struct {
 	// notifier is the finished-things seam (card t_5d9032d3), wired by
 	// the kanban plugin after MountAllAPI order places notifications
 	// first. Nil-safe: a store without the seam just doesn't notify.
-	notifier core.NotificationsProvider
+	notifier finishedThings
 }
 
-// SetNotifier wires the finished-things seam (the plugin calls this
-// post-mount; exposed for tests to inject a recorder).
-func (s *Store) SetNotifier(n core.NotificationsProvider) {
+// finishedThings is the consumer-side face of the finished-things
+// store (part 3 seam constitution): just the emit method this store
+// calls when a task lands done. The notifications capsule satisfies
+// it structurally; no shared type exists.
+type finishedThings interface {
+	Emit(n core.Notice) (core.Notice, error)
+}
+
+// SetNotifier wires the finished-things consumers face (the plugin
+// calls this post-mount; exposed for tests to inject a recorder).
+func (s *Store) SetNotifier(n finishedThings) {
 	s.notifier = n
 }
 
@@ -47,7 +55,7 @@ func (s *Store) emitDone(taskID string) {
 	if s.notifier == nil {
 		return
 	}
-	_, _ = s.notifier.Emit(core.Notification{
+	_, _ = s.notifier.Emit(core.Notice{
 		Kind:     "task",
 		SourceID: taskID,
 		Title:    "task " + taskID + " done",

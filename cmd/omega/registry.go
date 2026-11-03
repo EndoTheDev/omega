@@ -18,7 +18,6 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/harness/skills"
 )
 
 // omegaRegistries implements core.RegistryToggles for the serve host.
@@ -85,12 +84,26 @@ func (r *omegaRegistries) applyLive() {
 	agentList := r.fold.Agents
 	r.mu.Unlock()
 	r.pctx.DisabledTools = tools
-	if sp, ok := r.pctx.Skills.(*skills.SkillsProvider); ok && sp != nil {
+	if sp, ok := r.pctx.Services().Resolve("skills").(skillDisabler); ok && sp != nil {
 		sp.SetDisabled(skillList)
 	}
 	if r.setAgents != nil {
 		r.setAgents(agentList)
 	}
+}
+
+// skillDisabler is the host registry's own need face of the skills
+// capsule (part 3): the toggle seam swaps the skill disable list live.
+// Resolved by key from the universal registry; the capsule's type
+// stays the capsule's.
+type skillDisabler interface {
+	SetDisabled(names []string)
+}
+
+// skillInventory is the registry's validation face: the loaded names
+// for unknown-name rejection (std-typed, part 3).
+type skillInventory interface {
+	SkillsEntries() (index map[string]string, contents map[string]string, err error)
 }
 
 // Disabled returns the three registry lists verbatim (sorted; the wire
@@ -109,7 +122,7 @@ func (r *omegaRegistries) Disabled() core.DisabledNames {
 // the session prompt build; the registry keeps it (the tab lists it).
 func (r *omegaRegistries) ToggleSkill(name string, enabled bool) error {
 	return r.toggle("skills", name, enabled, r.skillKnown, func(next []string) {
-		if sp, ok := r.pctx.Skills.(*skills.SkillsProvider); ok && sp != nil {
+		if sp, ok := r.pctx.Services().Resolve("skills").(skillDisabler); ok && sp != nil {
 			sp.SetDisabled(next)
 		}
 	})
@@ -214,21 +227,19 @@ func (r *omegaRegistries) toggle(kind, name string, enabled bool, known func(nam
 // lists loaded skills, so a persisted unknown name would be invisible
 // forever (and re-enabling one would look like a silent no-op).
 func (r *omegaRegistries) skillKnown(name string) error {
-	if r.pctx == nil || r.pctx.Skills == nil {
+	if r.pctx == nil {
 		return nil // no skills module: nothing to validate
 	}
-	lister, hasSkills := r.pctx.Skills.(core.SkillsLister)
+	lister, hasSkills := r.pctx.Services().Resolve("skills").(skillInventory)
 	if !hasSkills {
 		return nil
 	}
-	inventory, listErr := lister.ListSkills()
+	_, contents, listErr := lister.SkillsEntries()
 	if listErr != nil {
 		return fmt.Errorf("skills registry: %w", listErr)
 	}
-	for _, s := range inventory {
-		if s.Name == name {
-			return nil
-		}
+	if _, ok := contents[name]; ok {
+		return nil
 	}
 	return &registryToggleError{kind: "skills", name: name, unknown: true,
 		cause: fmt.Errorf("no such skill in the loaded inventory")}

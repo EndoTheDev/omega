@@ -654,8 +654,8 @@ func TestPluginMount(t *testing.T) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
-	if ctx.Memory == nil {
-		t.Fatal("ctx.Memory is nil after Mount")
+	if ctx.Services().Resolve("memory") == nil {
+		t.Fatal("the memory offer is nil after Mount")
 	}
 
 	// Verify the bare-domain memory tool is registered.

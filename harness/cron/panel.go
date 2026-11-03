@@ -114,7 +114,7 @@ func (c *capsule) Panels() []core.Panel {
 
 // jobsPanel builds the panel descriptor from the live runner.
 func (c *capsule) jobsPanel() core.Panel {
-	infos := []core.CronJobInfo(nil)
+	infos := []JobInfo(nil)
 	if c.runner != nil {
 		infos = c.runner.Jobs()
 	}

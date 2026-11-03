@@ -71,7 +71,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	}
 
 	steps := []func() error{
-		func() error { return api.RegisterSkills(sp) },
+		func() error { return api.Offer("skills", sp) },
 		// The CLI face of the curator pass (t_9972dfd0): the
 		// subcommand dies with the module - the registry table is
 		// the only mount path (CLI homecoming, scrub-safe).

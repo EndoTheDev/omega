@@ -21,6 +21,30 @@ import (
 	"github.com/EndoTheDev/omega/harness/terminal"
 )
 
+// Local consumer faces for the proof tests (part 3, the seam
+// constitution): every consumer names its own std-typed face and
+// resolves the service by key. The capsule types stay in the capsules -
+// even the proof carries no capsule noun.
+type proofNotifier interface {
+	Emit(n core.Notice) (core.Notice, error)
+	List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notice, int, error)
+	MarkAllRead(ctx context.Context) error
+}
+
+type proofVerdicts interface {
+	Pending(sessionID string) []core.QuestionPrompt
+	Answer(sessionID, cardID string, v core.QuestionAnswer) (core.QuestionAnswer, error)
+}
+
+// proofResolve fails the test loud naming the offer key - the negative
+// of the boot-time bind assert.
+func proofResolve(t *testing.T, ctx *core.Context, key string) {
+	t.Helper()
+	if ctx.Services().Resolve(key) == nil {
+		t.Fatalf("FULL MOUNT: the %q offer is nil - capsule did not mount", key)
+	}
+}
+
 // TestNotificationsRemovalProof is the arc 4b removal proof (card
 // t_9339ad05): the first module capsule migrates everything - list
 // panel, toast event, emitter wiring - and unmount kills all of it.
@@ -58,9 +82,7 @@ func TestNotificationsRemovalProof(t *testing.T) {
 	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
-	if ctx.Notifications == nil {
-		t.Fatal("FULL MOUNT: notifications seam nil - capsule did not mount")
-	}
+	proofResolve(t, ctx, "notifications")
 	canvas, err := agent.NewCanvas(ctx, nil)
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
@@ -85,10 +107,11 @@ func TestNotificationsRemovalProof(t *testing.T) {
 
 	// a seam emit pushes the toast and the list onto the spine
 	var deltas []core.Panel
-	if _, err := ctx.Notifications.Emit(core.Notification{Kind: "task", SourceID: "proof", Title: "task proof done", Verdict: "ok"}); err != nil {
+	notifier, _ := ctx.Services().Resolve("notifications").(proofNotifier)
+	if _, err := notifier.Emit(core.Notice{Kind: "task", SourceID: "proof", Title: "task proof done", Verdict: "ok"}); err != nil {
 		t.Fatalf("emit: %v", err)
 	}
-	if _, err := ctx.Notifications.Emit(core.Notification{Kind: "cron", SourceID: "proof2", Title: "cron proof2 finished", Verdict: "failed"}); err != nil {
+	if _, err := notifier.Emit(core.Notice{Kind: "cron", SourceID: "proof2", Title: "cron proof2 finished", Verdict: "failed"}); err != nil {
 		t.Fatalf("emit 2: %v", err)
 	}
 	c2, err := agent.NewCanvas(ctx, func(ev core.Event) {
@@ -120,7 +143,7 @@ func TestNotificationsRemovalProof(t *testing.T) {
 	if _, err := c2.Dispatch(core.ActionCall{Module: "notifications", Action: "notifications.mark_all"}); err != nil {
 		t.Fatalf("dispatch notifications.mark_all: %v", err)
 	}
-	if _, unread, err := ctx.Notifications.List(t.Context(), false, 10, 0); err != nil || unread != 0 {
+	if _, unread, err := notifier.List(t.Context(), false, 10, 0); err != nil || unread != 0 {
 		t.Fatalf("FULL MOUNT: notifications.mark_all did not clear the store (unread=%d err=%v)", unread, err)
 	}
 	t.Log("PROOF action-pipe: notifications.mark_all cleared the store, list refreshed through the canvas")
@@ -141,7 +164,7 @@ func TestNotificationsRemovalProof(t *testing.T) {
 	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
-	if ctx2.Notifications != nil {
+	if _, ok := ctx2.Services().Resolve("notifications").(proofNotifier); ok {
 		t.Fatal("REMOVED MOUNT: seam still mounted")
 	}
 	noCanvas, err := agent.NewCanvas(ctx2, nil)
@@ -419,9 +442,7 @@ func TestCronRemovalProof(t *testing.T) {
 	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
-	if ctx.Cron == nil {
-		t.Fatal("FULL MOUNT: cron seam nil - the module did not mount")
-	}
+	proofResolve(t, ctx, "cron")
 	canvas, err := agent.NewCanvas(ctx, nil)
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
@@ -473,7 +494,7 @@ func TestCronRemovalProof(t *testing.T) {
 	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
-	if ctx2.Cron != nil {
+	if _, ok := ctx2.Services().Resolve("cron").(interface{ Stop() error }); ok {
 		t.Fatal("REMOVED MOUNT: cron seam still mounted")
 	}
 	noCanvas, err := agent.NewCanvas(ctx2, nil)
@@ -501,11 +522,9 @@ func TestCronRemovalProof(t *testing.T) {
 			}
 		}
 	}
-	// core types remain - intentional (the seam signature references
-	// them; layers never import modules). Compile-time proof:
-	_ = core.CronDeps{}
-	_ = core.CronLister(nil)
-	_ = core.CronJobInfo{}
+	// capsule-owned types moved with the capsule (part 3): CronDeps and
+	// JobInfo live in harness/cron now, nothing left to compile here.
+	_ = struct{}{}
 	t.Log("PROOF removed: seam nil (GET /cron/jobs falls through to its seam-nil guard, the settled empty-set answer), canvas carries no cron panel, the action pipe answers ErrUnknownModule, /cron unregistered, no cron-shaped tools; core/seams.go cron types remain - documented as intentional")
 }
 
@@ -579,10 +598,8 @@ func TestMemoryRemovalProof(t *testing.T) {
 	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
-	if ctx.Memory == nil {
-		t.Fatal("FULL MOUNT: memory seam nil - capsule did not mount")
-	}
-	t.Log("PROOF mount=full: seam mounted (ctx.Memory), tool + prompt section from the same Mount")
+	proofResolve(t, ctx, "memory")
+	t.Log("PROOF mount=full: seam mounted (the memory offer), tool + prompt section from the same Mount")
 
 	// the tool face: the registry carries the memory tool and a real
 	// add lands in the store
@@ -615,8 +632,9 @@ func TestMemoryRemovalProof(t *testing.T) {
 	}
 
 	// the prompt-section face: the same store renders as the snapshot
-	// block through the sectioner seam
-	secs := ctx.Memory.(core.PromptSectioner).PromptSections(core.PromptBuildOptions{})
+	// block through the sectioner rail
+	mem, _ := ctx.Services().Resolve("memory").(core.PromptSectioner)
+	secs := mem.PromptSections(core.PromptBuildOptions{})
 	if len(secs) != 1 {
 		t.Fatalf("FULL MOUNT: prompt sections = %d, want the one memory block", len(secs))
 	}
@@ -659,7 +677,7 @@ func TestMemoryRemovalProof(t *testing.T) {
 	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
-	if ctx2.Memory != nil {
+	if ctx2.Services().Resolve("memory") != nil {
 		t.Fatal("REMOVED MOUNT: memory seam still mounted")
 	}
 	for _, tp := range ctx2.ToolProviders {
@@ -686,7 +704,7 @@ func TestMemoryRemovalProof(t *testing.T) {
 	// the dependent that reads the seam without a Requires edge: cron
 	// mounts still, and its deliver=memory jobs degrade through the
 	// documented nil-guard ("no memory extension loaded") at fire time
-	if ctx2.Cron == nil {
+	if _, ok := ctx2.Services().Resolve("cron").(interface{ Stop() error }); !ok {
 		t.Fatal("REMOVED MOUNT: cron did not mount - the memory removal must not take a dependent")
 	}
 	// data is not code: the two store files stay on disk
@@ -695,9 +713,9 @@ func TestMemoryRemovalProof(t *testing.T) {
 			t.Fatalf("REMOVED MOUNT: store file %s vanished - data is not code", f)
 		}
 	}
-	// core types remain - intentional (the seam signature references
-	// them; layers never import modules). Compile-time proof:
-	_ = core.MemoryProvider(nil)
+	// capsule-owned types moved with the capsule (part 3): nothing left
+	// to compile here.
+	_ = struct{}{}
 	t.Log("PROOF removed: seam nil, no memory-shaped tools, no memory prompt block, the action pipe answers ErrUnknownModule, cron keeps mounting (deliver=memory degrades through its nil-guard), the store files stay on disk - data is not code; core/seams.go memory types remain - documented as intentional")
 }
 
@@ -832,9 +850,10 @@ func TestDelegateRemovalProof(t *testing.T) {
 	}
 	// finish() emits after it injects - the record may land a beat
 	// after the drain, so poll the store briefly
+	notifier2, _ := ctx.Services().Resolve("notifications").(proofNotifier)
 	sawFinish := false
 	for i := 0; i < 50 && !sawFinish; i++ {
-		notes, _, err := ctx.Notifications.List(context.Background(), false, 10, 0)
+		notes, _, err := notifier2.List(context.Background(), false, 10, 0)
 		if err != nil {
 			t.Fatalf("notifications list: %v", err)
 		}
@@ -848,7 +867,7 @@ func TestDelegateRemovalProof(t *testing.T) {
 		}
 	}
 	if !sawFinish {
-		notes, _, _ := ctx.Notifications.List(context.Background(), false, 10, 0)
+		notes, _, _ := notifier2.List(context.Background(), false, 10, 0)
 		t.Fatalf("FULL MOUNT: no chat/task-1/ok finished-things record from the spawn: %+v", notes)
 	}
 	t.Log("PROOF spawn: the echo child's result rode the inject channel; one chat finished-things record emitted through the notifications edge")
@@ -902,7 +921,7 @@ func TestDelegateRemovalProof(t *testing.T) {
 	// the emitter edge points from delegate AT notifications, not the
 	// reverse: the notifications seam must still mount (its own proof
 	// removes the emitters with it - that is the counter-case)
-	if ctx2.Notifications == nil {
+	if ctx2.Services().Resolve("notifications") == nil {
 		t.Fatal("REMOVED MOUNT: notifications seam lost - the removal must not take a module it depends on")
 	}
 	noCanvas, err := agent.NewCanvas(ctx2, nil)
@@ -1134,7 +1153,7 @@ for line in sys.stdin:
 	}
 	// the neighbors keep mounting: the removal takes no dependents
 	// (mcp requires nothing, nothing requires mcp)
-	if ctx2.Notifications == nil {
+	if ctx2.Services().Resolve("notifications") == nil {
 		t.Fatal("REMOVED MOUNT: notifications seam lost - the removal must not take a module it does not own")
 	}
 	// the additive tools seam remains - shared vocabulary, not mcp
@@ -1173,7 +1192,7 @@ for line in sys.stdin:
 // session store (roles "verdict_card" / "verdict") - the store is a
 // different module and keeps rows from mounts gone by; data is not
 // code. The core types stay too (core/seams.go: VerdictsProvider,
-// VerdictPrompt, Verdict) - the seam signature references them and
+// QuestionPrompt, Verdict) - the seam signature references them and
 // layers never import modules. Intentional residue, documented: this
 // test compiles them to prove it.
 func TestVerdictRemovalProof(t *testing.T) {
@@ -1200,10 +1219,8 @@ func TestVerdictRemovalProof(t *testing.T) {
 	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
-	if ctx.Verdicts == nil {
-		t.Fatal("FULL MOUNT: verdicts seam nil - capsule did not mount")
-	}
-	t.Log("PROOF mount=full: seam mounted (ctx.Verdicts), tool + command + prompt section from the same Mount")
+	proofResolve(t, ctx, "verdicts")
+	t.Log("PROOF mount=full: seam mounted (the verdicts offer), tool + command + prompt section from the same Mount")
 
 	// the prompt-section face: the same Mount renders the Verdict
 	// Cards guidance between Project Context and Environment
@@ -1254,9 +1271,10 @@ func TestVerdictRemovalProof(t *testing.T) {
 		resCh <- toolResult{res: res, err: err}
 	}()
 	var cardID string
+	vp, _ := ctx.Services().Resolve("verdicts").(proofVerdicts)
 	cardDeadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(cardDeadline) {
-		if cards := ctx.Verdicts.Pending(""); len(cards) > 0 {
+		if cards := vp.Pending(""); len(cards) > 0 {
 			cardID = cards[0].ID
 			break
 		}
@@ -1265,7 +1283,7 @@ func TestVerdictRemovalProof(t *testing.T) {
 	if cardID == "" {
 		t.Fatal("FULL MOUNT: the blocked tool call never registered a pending card")
 	}
-	if _, err := ctx.Verdicts.Answer("", cardID, core.Verdict{OptionIndex: 2}); err != nil {
+	if _, err := vp.Answer("", cardID, core.QuestionAnswer{OptionIndex: 2}); err != nil {
 		t.Fatalf("FULL MOUNT: answer through the seam failed: %v", err)
 	}
 	var got toolResult
@@ -1337,7 +1355,7 @@ func TestVerdictRemovalProof(t *testing.T) {
 	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
-	if ctx2.Verdicts != nil {
+	if ctx2.Services().Resolve("verdicts") != nil {
 		t.Fatal("REMOVED MOUNT: verdicts seam still mounted")
 	}
 	for _, tp := range ctx2.ToolProviders {
@@ -1378,14 +1396,14 @@ func TestVerdictRemovalProof(t *testing.T) {
 	}
 	// the neighbors keep mounting: the removal takes no dependents
 	// (verdict requires store and logging, nothing requires verdicts)
-	if ctx2.Notifications == nil {
+	if ctx2.Services().Resolve("notifications") == nil {
 		t.Fatal("REMOVED MOUNT: notifications seam lost - the removal must not take a module it does not own")
 	}
-	// core types remain - intentional (the seam signature references
-	// them; layers never import modules). Compile-time proof:
-	_ = core.VerdictsProvider(nil)
-	_ = core.VerdictPrompt{}
-	_ = core.Verdict{}
+	// capsule-owned types moved with the capsule (part 3): the card and
+	// answer WIRE types still live here - they are core vocabulary, the
+	// seam interface is consumer-owned. Compile-time proof:
+	_ = core.QuestionPrompt{}
+	_ = core.QuestionAnswer{}
 	t.Log("PROOF removed: seam nil (the /verdicts routes fall through to their 501 guard), no verdict tool, no /verdict command, no Verdict Cards prompt block, no canvas panel or verdict-qualified actions, the action pipe answers ErrUnknownModule; the card + verdict audit rows stay on disk in the session store (data is not code) and the shell keeps its guarded surfaces inert (busy-Enter sees a nil seam, the denied tool name denies nothing); core/seams.go verdict types remain - documented as intentional")
 }
 
@@ -1442,10 +1460,8 @@ func TestTrustRemovalProof(t *testing.T) {
 	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
-	if ctx.Trust == nil {
-		t.Fatal("FULL MOUNT: trust seam nil - capsule did not mount")
-	}
-	t.Log("PROOF mount=full: trust seam mounted (ctx.Trust - the trust.yaml gate), the whole surface ships from the one Mount")
+	proofResolve(t, ctx, "trust")
+	t.Log("PROOF mount=full: trust seam mounted (the trust offer - the trust.yaml gate), the whole surface ships from the one Mount")
 
 	// a real project directory with a real AGENTS.md, in a home
 	// (OMEGA_HOME) that keeps the trust store; the gate walks the
@@ -1461,12 +1477,12 @@ func TestTrustRemovalProof(t *testing.T) {
 
 	// the run/serve face: an untrusted project outside an --approve run
 	// loads no context (skip + warning)
-	if got := trustGate(ctx.Trust, proj, trustFlags{}, false); got != "" {
+	if got := trustGate(ctx, proj, trustFlags{}, false); got != "" {
 		t.Fatalf("FULL MOUNT: untrusted project loaded context anyway: %q", got)
 	}
 	// the --approve face: the gate persists the project root into
 	// trust.yaml and returns the AGENTS.md text
-	approved := trustGate(ctx.Trust, proj, trustFlags{approve: true}, false)
+	approved := trustGate(ctx, proj, trustFlags{approve: true}, false)
 	if !strings.Contains(approved, marker) {
 		t.Fatalf("FULL MOUNT: the approve path did not load the project context (got %.80q)", approved)
 	}
@@ -1476,14 +1492,14 @@ func TestTrustRemovalProof(t *testing.T) {
 	}
 	t.Log("PROOF gate wiring: --approve persisted the project root into trust.yaml and the same call returned the AGENTS.md context")
 	// the status-bar face: State reads trusted off the persisted store
-	if st := trustStatus(ctx.Trust, proj, trustFlags{}); st != "trusted" {
+	if st := trustStatus(ctx, proj, trustFlags{}); st != "trusted" {
 		t.Fatalf("FULL MOUNT: State = %q, want trusted", st)
 	}
 	// --no-approve wins, on both faces, by the seam's own rule
-	if st := trustStatus(ctx.Trust, proj, trustFlags{noApprove: true}); st != "untrusted" {
+	if st := trustStatus(ctx, proj, trustFlags{noApprove: true}); st != "untrusted" {
 		t.Fatalf("FULL MOUNT: State with --no-approve = %q, want untrusted", st)
 	}
-	if got := trustGate(ctx.Trust, proj, trustFlags{noApprove: true}, false); got != "" {
+	if got := trustGate(ctx, proj, trustFlags{noApprove: true}, false); got != "" {
 		t.Fatalf("FULL MOUNT: --no-approve loaded context anyway: %.80q", got)
 	}
 	t.Log("PROOF gate faces: untrusted skip, approve + persist + load, trusted status, --no-approve wins - all answered through the seam")
@@ -1533,7 +1549,7 @@ func TestTrustRemovalProof(t *testing.T) {
 	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
-	if ctx2.Trust != nil {
+	if ctx2.Services().Resolve("trust") != nil {
 		t.Fatal("REMOVED MOUNT: trust seam still mounted")
 	}
 	// the frontends stay alive: the host entry paths are nil-guarded -
@@ -1575,7 +1591,7 @@ func TestTrustRemovalProof(t *testing.T) {
 	}
 	// the neighbors keep mounting: the removal takes no dependents
 	// (trust requires nothing, nothing requires trust)
-	if ctx2.Notifications == nil {
+	if ctx2.Services().Resolve("notifications") == nil {
 		t.Fatal("REMOVED MOUNT: notifications seam lost - the removal must not take a module it does not own")
 	}
 	kRoutes := false
@@ -1594,7 +1610,9 @@ func TestTrustRemovalProof(t *testing.T) {
 	}
 	// core types remain - intentional (the seam signature references
 	// them; layers never import modules). Compile-time proof:
-	_ = core.TrustProvider(nil)
+	// capsule-owned types moved with the capsule (part 3): nothing left
+	// to compile here.
+	_ = struct{}{}
 	t.Log("PROOF removed: seam nil, the host entry paths answer empty through their nil-guard (serve + run stay alive), no trust tool, no /trust command, no canvas panel or trust-qualified action, the action pipe answers ErrUnknownModule; trust.yaml and its entries stay on disk (data is not code); core/seams.go TrustProvider remains - documented as intentional")
 }
 

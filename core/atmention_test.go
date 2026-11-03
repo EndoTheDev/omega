@@ -109,8 +109,8 @@ func testDetectImage(path string) (*ImageContent, error) {
 	return &ImageContent{MediaType: media, Base64: base64.StdEncoding.EncodeToString(data)}, nil
 }
 
-func env(store StoreProvider, skills []Skill) AtMentionEnv {
-	return AtMentionEnv{Store: store, Skills: skills, DetectImage: testDetectImage, MessageText: testMessageText}
+func env(store StoreProvider, docs []AtDoc) AtMentionEnv {
+	return AtMentionEnv{Store: store, Docs: docs, DetectImage: testDetectImage, MessageText: testMessageText}
 }
 
 func TestUserWithImagesRoundTrip(t *testing.T) {
@@ -245,33 +245,33 @@ func TestExpandAtMentionsNoTokens(t *testing.T) {
 
 func TestExpandAtMentionsSkillInjection(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  string
-		skills []Skill
-		want   string
+		name  string
+		input string
+		docs  []AtDoc
+		want  string
 	}{
 		{
 			name:   "skill found",
 			input:  "use @skill:foo here",
-			skills: []Skill{{Name: "foo", Content: "skill body text"}},
+			docs:   []AtDoc{{Name: "foo", Content: "skill body text"}},
 			want:   "use skill body text here",
 		},
 		{
 			name:   "skill not found leaves token",
 			input:  "use @skill:bar here",
-			skills: []Skill{{Name: "foo", Content: "skill body text"}},
+			docs:   []AtDoc{{Name: "foo", Content: "skill body text"}},
 			want:   "use @skill:bar here",
 		},
 		{
 			name:   "skill not found with empty skills",
 			input:  "use @skill:foo here",
-			skills: nil,
+			docs:   nil,
 			want:   "use @skill:foo here",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			prompt, images, _, err := ExpandAtMentions(tt.input, env(nil, tt.skills))
+			prompt, images, _, err := ExpandAtMentions(tt.input, env(nil, tt.docs))
 			if err != nil {
 				t.Fatalf("ExpandAtMentions: %v", err)
 			}

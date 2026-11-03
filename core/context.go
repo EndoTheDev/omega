@@ -26,10 +26,8 @@ type Context struct {
 	Provider      Provider
 	Compactor     CompactionProvider
 	Store         StoreProvider
-	Skills        SkillsProvider
 	Loop          LoopProvider
 	Logger        LoggerProvider
-	Memory        MemoryProvider
 	PromptBuilder PromptBuilder
 
 	// Captioner is optional (vision_model knob): the host builds it
@@ -63,21 +61,12 @@ type Context struct {
 	// Mount - one seam declares both the panels and their action
 	// handlers. The canvas runtime seeds the snapshot from these.
 	PanelProviders []PanelProvider
-	Trust          TrustProvider
-	Cron           CronProvider
-	// Notifications is the finished-things store seam (card t_5d9032d3):
-	// kanban completions, cron fires and dispatched chat runs each emit
-	// one record the webui bell serves. Nil when the notifications
-	// plugin is absent - every emitter is nil-safe, the HTTP endpoints
-	// answer 501.
-	Notifications NotificationsProvider
 
-	// Verdicts is the interactive-question seam (verdict cards v1):
-	// the verdict tool blocks on Ask, the HTTP channel and the
-	// CLI loop answer through it. Nil when the verdict module is absent -
-	// the tool refuses to block without the seam, the HTTP endpoints
-	// answer 501.
-	Verdicts VerdictsProvider
+	// services is the universal seam registry (part 3, the seam
+	// constitution). Pointer-held so a Context value-copy (dismount
+	// replay) shares the one registry instead of copying it; reach it
+	// through Services, never assign it directly.
+	services *Services
 
 	// Approvals is the smart-approval seam (card t_c2b52cb5): the loop
 	// consults it before every tool execution; the approval module
@@ -115,6 +104,31 @@ type Context struct {
 
 	// Metadata (built during MountAllAPI).
 	Infos []ExtensionInfo
+}
+
+// applyOffer lands one validated offer on this Context's registry -
+// the mount journal's apply replay (the loud claim check happened at
+// the Offer registration; the replay is silent).
+func (c *Context) ApplyOffer(key, module string, svc any) {
+	if ns, err := c.Services().With(key, module, svc); err == nil {
+		c.services = ns
+	}
+}
+
+// dropOffer is the mount journal's offer undo: the dismount replay
+// removes the key when this module still owns it.
+func (c *Context) DropOffer(key, module string) {
+	c.services = c.Services().Without(key, module)
+}
+
+// Services returns the Context's universal seam registry, creating it
+// on first use. Capsules offer services through the mount API; every
+// consumer resolves by key and type-asserts to its own interface.
+func (c *Context) Services() *Services {
+	if c.services == nil {
+		c.services = NewServices()
+	}
+	return c.services
 }
 
 // RunGroup returns the Context's fence run-group (the goroutine

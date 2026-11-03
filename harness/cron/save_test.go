@@ -14,8 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/EndoTheDev/omega/core"
 )
 
 const saveTestCrons = `# the human-authored file
@@ -46,8 +44,8 @@ func newSaveTestRunner(t *testing.T, mainYAML string) (*Runner, string) {
 	return NewRunner(cfg, home), path
 }
 
-func listingByKey(jobs []core.CronJobInfo) map[string]core.CronJobInfo {
-	by := map[string]core.CronJobInfo{}
+func listingByKey(jobs []JobInfo) map[string]JobInfo {
+	by := map[string]JobInfo{}
 	for _, j := range jobs {
 		by[j.Name] = j
 	}

@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // cwd returns the current working directory, or "." if it cannot be
@@ -16,12 +16,29 @@ func cwd() string {
 	return dir
 }
 
+// The host's own need faces of the trust capsule (part 3, the seam
+// constitution): consumers declare the interface, Go satisfies it
+// structurally, and the seam resolves by key from the universal
+// registry at call time. The "trust" key is data, not a shared type -
+// delete the capsule and these faces nil-handle exactly as before
+// (proof: TestTrustRemovalProof, removal_test.go, eighth).
+type trustResolver interface {
+	ResolveContext(dir string, approve, noApprove, interactive bool) string
+}
+
+type trustStateReader interface {
+	State(dir string, approve, noApprove bool) string
+}
+
 // trustGate walks the trust seam's ResolveContext on behalf of the
 // host entry paths. Nil-guarded by capsule law: an unmounted trust
 // plugin answers "" (the gate simply does not exist) instead of panics
-// at serve/run startup - proof: TestTrustRemovalProof (removal_test.go,
-// eighth).
-func trustGate(seam core.TrustProvider, dir string, flags trustFlags, interactive bool) string {
+// at serve/run startup.
+func trustGate(pctx *agent.Context, dir string, flags trustFlags, interactive bool) string {
+	if pctx == nil {
+		return ""
+	}
+	seam, _ := pctx.Services().Resolve("trust").(trustResolver)
 	if seam == nil {
 		return ""
 	}
@@ -30,7 +47,11 @@ func trustGate(seam core.TrustProvider, dir string, flags trustFlags, interactiv
 
 // trustStatus is trustGate for the frontend status bar: the same
 // nil-guard, an unmounted seam leaves the status line bare.
-func trustStatus(seam core.TrustProvider, dir string, flags trustFlags) string {
+func trustStatus(pctx *agent.Context, dir string, flags trustFlags) string {
+	if pctx == nil {
+		return ""
+	}
+	seam, _ := pctx.Services().Resolve("trust").(trustStateReader)
 	if seam == nil {
 		return ""
 	}

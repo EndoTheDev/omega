@@ -44,7 +44,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if !ok {
 		cfg = Default()
 	}
-	return api.RegisterTrust(NewProvider(cfg.Home))
+	return api.Offer("trust", NewProvider(cfg.Home))
 }
 
 // Toggleable marks this capsule as a module capsule (v0.12 E1, the

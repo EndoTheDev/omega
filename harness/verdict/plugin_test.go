@@ -56,8 +56,8 @@ func TestMountWithAPIShape(t *testing.T) {
 	if p.hub == nil {
 		t.Fatal("the hub was not built")
 	}
-	if ctx.Verdicts == nil {
-		t.Fatal("seam mismatch: ctx.Verdicts is nil after the api mount")
+	if ctx.Services().Resolve("verdicts") == nil {
+		t.Fatal("seam mismatch: the verdicts offer is nil after the api mount")
 	}
 	names := map[string]int{}
 	for _, tp := range ctx.ToolProviders {

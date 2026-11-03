@@ -307,22 +307,26 @@ func (r *Registry) claimSlotQuiet(seam, module string) {
 	r.owner[seam] = module
 }
 
-// emitterReg is one registered finished-things hook.
+// emitterReg is one registered finished-things hook. The delivered
+// value is the service under the offer key "notifications" - the hook
+// type-asserts to its own local interface (part 3: the mount carries
+// no capsule type).
 type emitterReg struct {
 	module string
-	fn     func(core.NotificationsProvider)
+	fn     func(svc any)
 }
 
-// deliverEmitters hands the mounted Notifications seam (nil when the
-// module is absent - emitters stay nil-safe by the classic law) to
-// every hook at mount end (boot: MountAllAPI's final deliver).
+// deliverEmitters hands the mounted finished-things service (nil when
+// the module is absent - emitters stay nil-safe by the classic law)
+// to every hook at mount end (boot: MountAllAPI's final deliver).
 func (r *Registry) deliverEmitters(ctx *Context) {
 	r.mu.Lock()
 	hooks := make([]emitterReg, len(r.emitter))
 	copy(hooks, r.emitter)
 	r.mu.Unlock()
+	svc := ctx.Services().Resolve("notifications")
 	for _, h := range hooks {
-		h.fn(ctx.Notifications)
+		h.fn(svc)
 	}
 }
 
@@ -342,8 +346,9 @@ func (r *Registry) deliverModuleEmitters(ctx *Context, module string) {
 		}
 	}
 	r.mu.Unlock()
+	svc := ctx.Services().Resolve("notifications")
 	for _, h := range hooks {
-		h.fn(ctx.Notifications)
+		h.fn(svc)
 	}
 }
 
@@ -677,11 +682,11 @@ func (api *ExtensionAPI) RegisterSubcommand(name, summary string, handler func(a
 }
 
 // RegisterEmitter registers the capsule's finished-things hook: at
-// mount end the mounted Notifications seam is handed to it (nil when
-// the notifications module is absent - emitters stay nil-safe). The
-// the hook is the registration-shape
-// shape (phase C).
-func (api *ExtensionAPI) RegisterEmitter(fn func(n core.NotificationsProvider)) error {
+// mount end the service under the "notifications" key is handed to it
+// (nil when the notifications module is absent - emitters stay
+// nil-safe). The hook type-asserts the value to its own local
+// interface. The hook is the registration shape (phase C).
+func (api *ExtensionAPI) RegisterEmitter(fn func(svc any)) error {
 	if fn == nil {
 		return fmt.Errorf("emitter %q: a registration carries its hook", api.module)
 	}
@@ -834,6 +839,39 @@ func (api *ExtensionAPI) mountSeam(seam string, apply func(*core.Context), undo 
 	return nil
 }
 
+// Offer mounts one service under a stringly-keyed seam (restructure
+// part 3, the seam constitution): the universal mechanism every
+// capsule - and the substrate itself - shares. One owner per key: a
+// foreign offer on a held key fails the mount loud (Q5), a
+// same-tenant re-offer replaces (the clean-idempotent remount, Q7).
+// Consumers resolve by key from ctx.Services() and type-assert to
+// their OWN interfaces; the key string is data, never a shared type.
+// Offer is journaled like every registration: the dismount removes
+// the offer, a remount replaces it.
+//
+// The key namespace is closed per direction: capsule services use the
+// capsule's own name ("cron", "trust", "verdicts", "notifications",
+// "skills", "memory"); the substrate need-keys are a documented
+// closed list (provider, store, logger, compactor, prompt, nudger,
+// approvals) - proposing need key #8 is a design event, argued in a
+// card.
+func (api *ExtensionAPI) Offer(key string, svc any) error {
+	if svc == nil {
+		return fmt.Errorf("service %q: a registration carries its service", key)
+	}
+	// Claim-check on the mounting context's live registry - the loud
+	// boot failure happens here, at mount, not at a lazy resolve.
+	if _, err := api.ctx.Services().With(key, api.module, svc); err != nil {
+		return err
+	}
+	module := api.module
+	api.writeSlot(
+		func(c *core.Context) { c.ApplyOffer(key, module, svc) },
+		func(c *core.Context) { c.DropOffer(key, module) },
+	)
+	return nil
+}
+
 // RegisterProvider maps the provider seam.
 func (api *ExtensionAPI) RegisterProvider(p core.Provider) error {
 	if p == nil {
@@ -873,17 +911,6 @@ func (api *ExtensionAPI) RegisterStore(s core.StoreProvider) error {
 		func(c *core.Context) { c.Store = prev })
 }
 
-// RegisterSkills maps the skills seam.
-func (api *ExtensionAPI) RegisterSkills(s core.SkillsProvider) error {
-	if s == nil {
-		return fmt.Errorf("skills %q: a registration carries its provider", api.module)
-	}
-	prev := api.ctx.Skills
-	return api.mountSeam("skills",
-		func(c *core.Context) { c.Skills = s },
-		func(c *core.Context) { c.Skills = prev })
-}
-
 // RegisterTurnNudger maps the learning-loop reminder seam (t_9972dfd0):
 // the loop injects the nudger's one line into the next turn prep when
 // the tool-iteration interval elapses without a skill write.
@@ -919,17 +946,6 @@ func (api *ExtensionAPI) RegisterLogger(l core.LoggerProvider) error {
 		func(c *core.Context) { c.Logger = prev })
 }
 
-// RegisterMemory maps the memory seam.
-func (api *ExtensionAPI) RegisterMemory(m core.MemoryProvider) error {
-	if m == nil {
-		return fmt.Errorf("memory %q: a registration carries its provider", api.module)
-	}
-	prev := api.ctx.Memory
-	return api.mountSeam("memory",
-		func(c *core.Context) { c.Memory = m },
-		func(c *core.Context) { c.Memory = prev })
-}
-
 // RegisterPromptBuilder maps the prompt_builder seam.
 func (api *ExtensionAPI) RegisterPromptBuilder(p core.PromptBuilder) error {
 	if p == nil {
@@ -939,50 +955,6 @@ func (api *ExtensionAPI) RegisterPromptBuilder(p core.PromptBuilder) error {
 	return api.mountSeam("prompt_builder",
 		func(c *core.Context) { c.PromptBuilder = p },
 		func(c *core.Context) { c.PromptBuilder = prev })
-}
-
-// RegisterTrust maps the trust seam.
-func (api *ExtensionAPI) RegisterTrust(t core.TrustProvider) error {
-	if t == nil {
-		return fmt.Errorf("trust %q: a registration carries its provider", api.module)
-	}
-	prev := api.ctx.Trust
-	return api.mountSeam("trust",
-		func(c *core.Context) { c.Trust = t },
-		func(c *core.Context) { c.Trust = prev })
-}
-
-// RegisterCron maps the cron seam.
-func (api *ExtensionAPI) RegisterCron(cr core.CronProvider) error {
-	if cr == nil {
-		return fmt.Errorf("cron %q: a registration carries its provider", api.module)
-	}
-	prev := api.ctx.Cron
-	return api.mountSeam("cron",
-		func(c *core.Context) { c.Cron = cr },
-		func(c *core.Context) { c.Cron = prev })
-}
-
-// RegisterNotifications maps the notifications seam.
-func (api *ExtensionAPI) RegisterNotifications(n core.NotificationsProvider) error {
-	if n == nil {
-		return fmt.Errorf("notifications %q: a registration carries its provider", api.module)
-	}
-	prev := api.ctx.Notifications
-	return api.mountSeam("notifications",
-		func(c *core.Context) { c.Notifications = n },
-		func(c *core.Context) { c.Notifications = prev })
-}
-
-// RegisterVerdicts maps the verdicts seam.
-func (api *ExtensionAPI) RegisterVerdicts(v core.VerdictsProvider) error {
-	if v == nil {
-		return fmt.Errorf("verdicts %q: a registration carries its provider", api.module)
-	}
-	prev := api.ctx.Verdicts
-	return api.mountSeam("verdicts",
-		func(c *core.Context) { c.Verdicts = v },
-		func(c *core.Context) { c.Verdicts = prev })
 }
 
 // RegisterApprovals maps the smart-approval seam.

@@ -15,11 +15,11 @@ import (
 )
 
 // vo builds pick rows from labels: the test shorthand for
-// []core.VerdictOption (labels only, no description).
-func vo(labels ...string) []core.VerdictOption {
-	out := make([]core.VerdictOption, len(labels))
+// []core.QuestionOption (labels only, no description).
+func vo(labels ...string) []core.QuestionOption {
+	out := make([]core.QuestionOption, len(labels))
 	for i, l := range labels {
-		out[i] = core.VerdictOption{Label: l}
+		out[i] = core.QuestionOption{Label: l}
 	}
 	return out
 }
@@ -31,7 +31,7 @@ func verdictServer(t *testing.T) (*httptest.Server, *verdict.Hub) {
 	t.Helper()
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	h := verdict.NewHub(nil, nil)
-	s.seams.verdicts = h
+	offerServices(t, s, map[string]any{"verdicts": h})
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return ts, h
@@ -61,7 +61,7 @@ func issueCard(t *testing.T, h *verdict.Hub, session, id string) <-chan struct{}
 	t.Helper()
 	done := make(chan struct{})
 	go func() {
-		_, _ = h.Ask(context.Background(), core.VerdictPrompt{
+		_, _ = h.Ask(context.Background(), core.QuestionPrompt{
 			ID: id, SessionID: session, Title: "Approve?", Options: vo("yes", "no"),
 		})
 		close(done)
@@ -176,9 +176,9 @@ func TestVerdictsMultiAnswerEchoesIndexes(t *testing.T) {
 	ts, h := verdictServer(t)
 	done := make(chan struct{})
 	go func() {
-		_, _ = h.Ask(context.Background(), core.VerdictPrompt{
+		_, _ = h.Ask(context.Background(), core.QuestionPrompt{
 			ID: "cm", SessionID: "s1", Title: "Pick lanes", Multi: true,
-			Options: []core.VerdictOption{{Label: "Ship", Description: "merge now"}, {Label: "Hold"}, {Label: "Stop"}},
+			Options: []core.QuestionOption{{Label: "Ship", Description: "merge now"}, {Label: "Hold"}, {Label: "Stop"}},
 		})
 		close(done)
 	}()
@@ -289,13 +289,13 @@ func TestVerdictsMethodNotAllowed(t *testing.T) {
 // gateHubCard issues one gate-shaped card in the background.
 func gateHubCard(t *testing.T, h *verdict.Hub, session, id string) <-chan struct{} {
 	t.Helper()
-	return issueCardShaped(t, h, session, id, core.VerdictPrompt{
+	return issueCardShaped(t, h, session, id, core.QuestionPrompt{
 		ID: id, SessionID: session, Title: "rm -rf /tmp/scratch", Options: vo("approve", "deny"), AllowText: true,
 	})
 }
 
 // issueCardShaped is issueCard with the card shape a parameter.
-func issueCardShaped(t *testing.T, h *verdict.Hub, session, id string, card core.VerdictPrompt) <-chan struct{} {
+func issueCardShaped(t *testing.T, h *verdict.Hub, session, id string, card core.QuestionPrompt) <-chan struct{} {
 	t.Helper()
 	done := make(chan struct{})
 	go func() {

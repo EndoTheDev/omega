@@ -18,7 +18,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
 )
 
@@ -62,7 +61,7 @@ func TestToggleJobWritesFlagAndKeepsStyle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	byKey := map[string]core.CronJobInfo{}
+	byKey := map[string]JobInfo{}
 	for _, j := range jobs {
 		byKey[j.Name] = j
 	}
@@ -201,7 +200,7 @@ func TestToggleJobAgentHomeWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	byKey := map[string]core.CronJobInfo{}
+	byKey := map[string]JobInfo{}
 	for _, j := range jobs {
 		byKey[j.Name+"|"+j.Agent] = j
 	}

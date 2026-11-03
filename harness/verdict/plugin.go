@@ -60,7 +60,7 @@ func (p *Plugin) Requires() []string { return []string{"store", "logging"} }
 // (cmd/omega/removal_test.go, seventh).
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	p.hub = NewHub(ctx.Store, ctx.Logger)
-	if err := api.RegisterVerdicts(p.hub); err != nil {
+	if err := api.Offer("verdicts", p.hub); err != nil {
 		return err
 	}
 	for name, tool := range (&verdictToolProvider{hub: p.hub}).Tools() {

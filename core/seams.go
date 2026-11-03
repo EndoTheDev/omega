@@ -218,22 +218,9 @@ type SessionContextStore interface {
 	SetSessionWorkspace(ctx context.Context, sessionID, workspace string) error
 }
 
-// SkillsProvider is the skill loading seam. The default implementation
-// scans a directory for <name>/<name>.md files, provided via the skills
-// plugin. The host uses this to populate the skill list for autocomplete,
-// inline invocation, and @skill: mentions.
-type SkillsProvider interface {
-	LoadSkills(dir string) ([]Skill, error)
-}
-
-// SkillsReader is the single-content read seam (card t_36ceb99b, the
-// webui's skill viewer tab): read one skill's SKILL.md by name, resolved
-// the same way the merge law resolves every read (shared dir first, own
-// dir second). The webui's GET /skills/content checks for it the way
-// /skills checks for SkillsLister - a host without it answers 501.
-type SkillsReader interface {
-	ReadSkill(name string) (Skill, error)
-}
+// The single-content read face of the skill inventory (card
+// t_36ceb99b, the webui's skill viewer tab is its consumer) is a
+// consumer-side declaration now; core carries none.
 
 // LoggerProvider is the logging seam. Extensions call it to write
 // log entries. The default implementation writes to a file in
@@ -245,32 +232,6 @@ type LoggerProvider interface {
 	Errorf(format string, args ...any)
 	// Close flushes and closes the log output.
 	Close() error
-}
-
-// MemoryProvider manages persistent memory across sessions.
-// The prompt builder calls Snapshot to inject current memory into
-// the system prompt. The memory tool calls Add/Replace/Remove to
-// mutate entries during a session.
-type MemoryProvider interface {
-	// Snapshot returns the formatted prompt block for system prompt
-	// injection. Reads files fresh on each call.
-	Snapshot() string
-
-	// Add appends a new entry to the target store ("memory" or "user").
-	// Returns the new usage string and an error if the entry would
-	// exceed the char limit or is an exact duplicate.
-	Add(target, content string) (usage string, err error)
-
-	// Replace finds the entry matching oldText (unique substring) and
-	// replaces it with content. Returns usage string and error.
-	Replace(target, oldText, content string) (usage string, err error)
-
-	// Remove finds the entry matching oldText (unique substring) and
-	// deletes it. Returns usage string and error.
-	Remove(target, oldText string) (usage string, err error)
-
-	// List returns all entries for the target.
-	List(target string) ([]string, error)
 }
 
 // PromptBuilder builds the system prompt and supplies guideline
@@ -474,113 +435,34 @@ type ChannelDeps struct {
 	Version    string
 }
 
-// CronProvider schedules omega prompts on cron expressions. The
-// default implementation is the cron extension (harness/cron/),
-// backed by crons.yaml in OMEGA_HOME. Each fire is one full agent
-// turn in a session labeled cron:<name>.
-//
-// Like Channel, Start blocks until the context is cancelled. The
-// serve host starts the mounted Cron after MountAllAPI (with the store
-// open) and stops it on shutdown.
-type CronProvider interface {
-	// Start runs the scheduler until the context is cancelled or Stop
-	// is called. Blocks.
-	Start(ctx context.Context, deps CronDeps) error
-	// Stop shuts the scheduler down. Called by the host on shutdown.
-	Stop() error
-}
-
-// CronDeps carries everything the cron runner needs. Ctx is the
-// fully-wired plugin Context (Memory for the memory deliver target,
-// Logger for run logs), Agent runs each fire as a full agent turn,
-// Store persists the cron:<name> sessions.
-type CronDeps struct {
-	Ctx   *Context
-	Agent *Agent
-	Store StoreProvider
-}
-
-// CronJobInfo is one read-only row in the cron inspector listing
-// (GET /cron/jobs, card t_db430fea): the job's definition fields, its
-// kind (cron 5-field schedule or interval minutes), whether the
-// scheduler fires it, and the next fire time in RFC3339 local time.
-// Next is empty when the job is disabled, the schedule does not parse,
-// or nothing ever fires - a disabled job must never promise a next
-// fire.
-type CronJobInfo struct {
-	Name   string `json:"name"`
-	Kind   string `json:"kind"` // cron | interval
-	// Schedule is the 5-field expression for kind cron; empty for
-	// kind interval, whose cadence rides Minutes.
-	Schedule string `json:"schedule"`
-	Minutes  int    `json:"minutes,omitempty"`
-	// Deliver is the resolved output target (new-session,
-	// continuous-agent, append-to-file) - the ONE deliver vocabulary
-	// the cron Job schema carries, legacy aliases already folded.
-	Deliver string `json:"deliver"`
-	Enabled bool   `json:"enabled"`
-	Next    string `json:"next"`
-	// Agent names the agent the job fires under, per the defaulting
-	// law (empty authored field = the default agent): the agent home's
-	// name for loader-owned wake jobs, the authored `agent:` for
-	// main-home continuous-agent jobs, empty once resolved to the
-	// default for in-process jobs (the default IS the absence).
-	Agent string `json:"agent,omitempty"`
-	// Model is the authored per-job model override; empty = the
-	// session provider model (the defaulting law).
-	Model string `json:"model,omitempty"`
-	// File is the append-to-file target, home-relative; empty for the
-	// other targets (and for append-to-file, where the empty file
-	// means the journal/<date>.md naming).
-	File string `json:"file,omitempty"`
-}
-
-// CronLister is the read-only inspector view over the cron scheduler.
-// It is a separate interface from CronProvider on purpose: starting a
-// scheduler and reading its state are different concerns, and any type
-// implementing CronProvider may grow this method without breaking the
-// serve host. A CronProvider that is not a CronLister serves an empty
-// listing.
-type CronLister interface {
-	// Jobs returns the current job set with computed next fire times.
-	Jobs() []CronJobInfo
-}
-
-// SkillsLister is the read-only inspector view over the skill
-// inventory (GET /skills, card t_db430fea). SkillsProvider loads one
-// shot from a directory; a SkillsLister re-reads on demand, so the
-// listing tracks the directory without a reload step.
-type SkillsLister interface {
-	// ListSkills returns the currently loaded skills, name and
-	// description included (content is inspector-irrelevant).
-	ListSkills() ([]Skill, error)
-}
-
-// VerdictPrompt is one agent-issued question (verdict cards v1) as it
-// is registered with the verdicts seam: the tool's arguments plus the
-// runtime identity (id, session, deadline). Each option carries a
-// label and an optional description (empty = no options, allow-text
-// only). Multi allows several picks in one answer; AllowText
-// additionally allows a typed answer. Defaults ride the seam
-// implementation (20 minutes).
-type VerdictPrompt struct {
+// QuestionPrompt is one agent-issued question card (verdict cards
+// v1) as it rides the wire and the transcript surfaces: the issuing
+// tool's arguments plus the runtime identity (id, session, deadline).
+// Each option carries a label and an optional description (empty = no
+// options, allow-text only). Multi allows several picks in one answer;
+// AllowText additionally allows a typed answer. Defaults ride the
+// implementing capsule (20 minutes). Wire vocabulary, not seam
+// vocabulary: the card shape survives in core so every consumer and
+// the serving surface marshal the same bytes; the seam interface
+// itself lives with each consumer.
+type QuestionPrompt struct {
 	ID        string
 	SessionID string
 	Title     string
 	Body      string
-	Options   []VerdictOption
+	Options   []QuestionOption
 	Multi     bool
 	AllowText bool
 	TimeoutS  int
 	ExpiresAt time.Time
 }
 
-// Verdict is the recorded answer to one VerdictPrompt: a single pick
-// (index is 1-based; Option the label), a multi pick (OptionIndexes
-// every selected index, Options the labels), free text, a recorded
-// skip (no silent dismissal), or the expiry firing. Exactly one of
-// the five applies.
-type Verdict struct {
+// QuestionAnswer is the recorded answer to one QuestionPrompt: a
+// single pick (index is 1-based; Option the label), a multi pick
+// (OptionIndexes every selected index, Options the labels), free
+// text, a recorded skip (no silent dismissal), or the expiry firing.
+// Exactly one of the five applies.
+type QuestionAnswer struct {
 	CardID        string
 	OptionIndex   int
 	Option        string
@@ -591,9 +473,9 @@ type Verdict struct {
 	Expired       bool
 }
 
-// Kind labels the verdict for tool results and wire payloads:
+// Kind labels the answer for tool results and wire payloads:
 // "answer", "skip", "expired".
-func (v Verdict) Kind() string {
+func (v QuestionAnswer) Kind() string {
 	switch {
 	case v.Expired:
 		return "expired"
@@ -602,31 +484,6 @@ func (v Verdict) Kind() string {
 	default:
 		return "answer"
 	}
-}
-
-// VerdictsProvider is the interactive-question seam (verdict cards v1).
-// The verdict module implements it; the tool blocks on Ask, the HTTP
-// channel and the CLI loop answer through it. Whichever surface answers
-// first wins - Answer enforces the race. Nil on the Context (module
-// absent) is the only valid "not implemented" answer: the tool refuses
-// to block without the seam.
-type VerdictsProvider interface {
-	// Ask registers the card and BLOCKS until the user answers, the
-	// card expires, ctx is cancelled (run stop / shutdown), or the
-	// seam stops. Expired is a normal return (Verdict.Expired), not an
-	// error. The card persists to the session transcript before
-	// blocking when a store is behind the seam.
-	Ask(ctx context.Context, card VerdictPrompt) (Verdict, error)
-	// Answer records the user's answer to one pending card. The FIRST
-	// answer wins; a second one errors naming the reason (already
-	// answered, already expired, unknown card). The record persists
-	// before Ask wakes. Returns the RESOLVED verdict (card id and the
-	// picked option label filled in) so the answering surface can echo
-	// what actually landed.
-	Answer(sessionID, cardID string, v Verdict) (Verdict, error)
-	// Pending lists the unanswered, unexpired cards, oldest first.
-	// A session filter of "" lists every session's pending cards.
-	Pending(sessionID string) []VerdictPrompt
 }
 
 // ApprovalProvider is the smart-approval seam (card t_c2b52cb5). The
@@ -651,17 +508,10 @@ type ApprovalProvider interface {
 	Gate(ctx context.Context, toolName string, args map[string]any) (string, error)
 }
 
-// Run origins (verdict cards v1): which surface launched the agent
-// verdict only issues from interactive turns - cron fires
-// and delegate subagents must never hard-pause waiting for a click.
-const (
-	RunOriginInteractive = "interactive"
-	RunOriginCron        = "cron"
-	RunOriginDelegate    = "delegate"
-)
-
 // WithRunOrigin tags the run context with its launching surface. The
-// verdict tool reads it to refuse background origins.
+// verdict tool reads it to refuse background origins. The origin is a
+// plain string value supplied by the launching surface ("interactive",
+// "cron", "delegate" today) - data, not vocabulary.
 func WithRunOrigin(ctx context.Context, origin string) context.Context {
 	if origin == "" {
 		return ctx
@@ -718,52 +568,29 @@ func WithRunWorkspace(ctx context.Context, dir, promptContext string) context.Co
 	return context.WithValue(ctx, runScopeKey{}, runScope{CWD: dir, PromptContext: promptContext})
 }
 
-// TrustProvider gates project context (AGENTS.md) behind a trust
-// check. The default implementation reads trust.yaml from omega home.
-// The host calls ResolveContext before building the agent; State is
-// used for the serving surfaces' status displays.
-type TrustProvider interface {
-	ResolveContext(cwd string, approve, noApprove, interactive bool) string
-	State(cwd string, approve, noApprove bool) string
-}
+// The trust capsule's own consumer surfaces (the serving surface's
+// workspace prompt-context resolution, the approval gate, the CLI
+// loop) declare their private read faces; core carries none.
 
-// Notification is one finished-thing record (card t_5d9032d3): a kanban
-// task completed, a cron fire finished, or a dispatched chat run ended.
-// The title line is METADATA ONLY (source kind + id + verdict) - prompt
-// and session content never ride a notification (privacy law).
-type Notification struct {
+// Notice is one finished-thing record (card t_5d9032d3): a kanban
+// task completed, a scheduled job run finished, or a dispatched chat
+// run ended. The title line is METADATA ONLY (source kind + id +
+// verdict) - prompt and session content never rides a notice
+// (privacy law). Wire vocabulary, not seam vocabulary: the record
+// shape survives in core so every emitter and the serving surface
+// marshal the same bytes; the seam interface itself lives with each
+// consumer.
+type Notice struct {
 	ID        int64  `json:"id"`
 	Kind      string `json:"kind"` // task | cron | chat
 	SourceID  string `json:"source_id"`
-	Title     string `json:"title"`   // metadata line, no prompt/session content
+	Title     string `json:"title"` // metadata line, no prompt/session content
 	Verdict   string `json:"verdict"` // ok | failed
 	CreatedAt string `json:"created_at"`
 	Read      bool   `json:"read"`
 }
 
-// NotificationsProvider is the finished-things store seam. The default
-// implementation is harness/notifications (a small SQLite db in the
-// data dir, same family as the board). Emitters (kanban, cron,
-// delegate) call Emit; the HTTP channel serves List/Mark* to the webui
-// bell and live-forwards Emit traffic to Subscribe clients (toasts).
-type NotificationsProvider interface {
-	// Emit records one notification. The store fills ID and CreatedAt
-	// and validates Kind ("task", "cron", "chat") and Verdict ("",
-	// "ok", "failed" - "" normalizes to ok). Retention keeps the 200
-	// newest records; the oldest pruned on insert.
-	Emit(n Notification) (Notification, error)
-	// List returns records newest-first. A non-empty unreadOnly
-	// filters to unread rows. limit <= 0 means the server default;
-	// offset pages deeper. The second return is the current unread
-	// count (computed over the whole set, not the page).
-	List(ctx context.Context, unreadOnly bool, limit, offset int) (notes []Notification, unread int, err error)
-	// MarkRead flags one record read. A missing id errors.
-	MarkRead(ctx context.Context, id int64) error
-	// MarkAllRead flags every record read.
-	MarkAllRead(ctx context.Context) error
-	// Subscribe returns a live channel of newly emitted records plus a
-	// cancel func that releases the subscription. Delivery is
-	// best-effort: a slow reader drops frames rather than blocking
-	// emission. Cancel is idempotent.
-	Subscribe() (<-chan Notification, func())
-}
+// Emitter delivery is generic (mount machinery), so core carries no
+// emitter contract at all: a hook is func(svc any) over a registry
+// key, and the hook's owner type-asserts the value to its own local
+// interface.

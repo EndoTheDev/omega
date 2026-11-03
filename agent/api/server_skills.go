@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/EndoTheDev/omega/core"
 )
 
 // The skills content-view surface (card t_36ceb99b): the webui's skill
@@ -52,12 +51,13 @@ func (s *Server) handleSkillsContent(w http.ResponseWriter, r *http.Request) {
 		fileError(w, http.StatusBadRequest, "name must be a single skill folder name")
 		return
 	}
-	reader, ok := s.Skills().(core.SkillsReader)
-	if !ok || reader == nil {
+	sk := s.skills()
+	if sk == nil {
 		fileError(w, http.StatusNotImplemented, "skills content seam not mounted")
 		return
 	}
-	skill, err := reader.ReadSkill(name)
+	description, content, err := sk.SkillRead(name)
+	_ = description
 	if err != nil {
 		// the seam's not-found is a loud 404 (the viewer tab shows it);
 		// everything else is a server failure
@@ -68,15 +68,14 @@ func (s *Server) handleSkillsContent(w http.ResponseWriter, r *http.Request) {
 		fileError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	content := skill.Content
 	truncated := false
 	if len(content) > fileReadCap {
 		content = content[:fileReadCap]
 		truncated = true
 	}
 	writeJSON(w, http.StatusOK, skillsContentRow{
-		Name:        skill.Name,
-		Description: skill.Description,
+		Name:        name,
+		Description: description,
 		Content:     content,
 		Truncated:   truncated,
 	})

@@ -32,19 +32,18 @@ const retention = 200
 // a wedged SSE client must never stall a task completion.
 const subscriberBuf = 8
 
-// Store implements core.NotificationsProvider over SQLite. Safe for
+// Store implements finishedThings over SQLite. Safe for
 // concurrent use via *sql.DB (WAL + busy_timeout, the board/session
 // recipe). Live delivery fans out through a mutexed subscriber set.
 type Store struct {
 	db *sql.DB
 
 	mu    sync.Mutex
-	subs  map[int64]chan core.Notification
+	subs  map[int64]chan core.Notice
 	subID int64
 }
 
-// Compile-time assertion: *Store implements the notifications seam.
-var _ core.NotificationsProvider = (*Store)(nil)
+// The Offer under the notifications key is the mount-time assertion.
 
 // Open opens (creating if needed) the database at dsn and ensures the
 // schema. ":memory:" works for tests. A dsn inside a data/ directory
@@ -64,7 +63,7 @@ func Open(dsn string) (*Store, error) {
 	if dsn == ":memory:" {
 		db.SetMaxOpenConns(1)
 	}
-	s := &Store{db: db, subs: map[int64]chan core.Notification{}}
+	s := &Store{db: db, subs: map[int64]chan core.Notice{}}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -115,38 +114,38 @@ func (s *Store) Close() error {
 // Emit inserts one record, prunes beyond retention, and broadcasts the
 // stored record to subscribers. Kind must be task, cron or chat;
 // verdict "" normalizes to ok, "failed" stays, anything else errors.
-func (s *Store) Emit(n core.Notification) (core.Notification, error) {
+func (s *Store) Emit(n core.Notice) (core.Notice, error) {
 	switch n.Kind {
 	case "task", "cron", "chat":
 	default:
-		return core.Notification{}, fmt.Errorf("notification kind must be task, cron or chat, got %q", n.Kind)
+		return core.Notice{}, fmt.Errorf("notification kind must be task, cron or chat, got %q", n.Kind)
 	}
 	switch n.Verdict {
 	case "":
 		n.Verdict = "ok"
 	case "ok", "failed":
 	default:
-		return core.Notification{}, fmt.Errorf("notification verdict must be ok or failed, got %q", n.Verdict)
+		return core.Notice{}, fmt.Errorf("notification verdict must be ok or failed, got %q", n.Verdict)
 	}
 	if strings.TrimSpace(n.SourceID) == "" {
-		return core.Notification{}, fmt.Errorf("notification source_id is required")
+		return core.Notice{}, fmt.Errorf("notification source_id is required")
 	}
 	n.CreatedAt = now()
 	res, err := s.db.Exec(`INSERT INTO notifications (kind, source_id, title, verdict, created_at, read)
 VALUES (?, ?, ?, ?, ?, 0)`, n.Kind, n.SourceID, n.Title, n.Verdict, n.CreatedAt)
 	if err != nil {
-		return core.Notification{}, err
+		return core.Notice{}, err
 	}
 	n.ID, err = res.LastInsertId()
 	if err != nil {
-		return core.Notification{}, err
+		return core.Notice{}, err
 	}
 	// Prune beyond retention: keep the retention-row-newest set. The
 	// boundary is the retention-th newest row's id (ids only ever
 	// grow, so id order is time order even across pruned gaps).
 	if _, err := s.db.Exec(`DELETE FROM notifications WHERE id < (
 SELECT id FROM notifications ORDER BY id DESC LIMIT 1 OFFSET ?)`, retention-1); err != nil {
-		return core.Notification{}, fmt.Errorf("prune: %w", err)
+		return core.Notice{}, fmt.Errorf("prune: %w", err)
 	}
 	s.broadcast(n)
 	return n, nil
@@ -154,7 +153,7 @@ SELECT id FROM notifications ORDER BY id DESC LIMIT 1 OFFSET ?)`, retention-1); 
 
 // broadcast fans one record out to every subscriber. Non-blocking: a
 // full buffer drops the frame for that subscriber only.
-func (s *Store) broadcast(n core.Notification) {
+func (s *Store) broadcast(n core.Notice) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, ch := range s.subs {
@@ -168,8 +167,8 @@ func (s *Store) broadcast(n core.Notification) {
 // Subscribe registers a live channel of emitted records (webui SSE
 // toasts). Cancel removes the subscription and closes the channel;
 // idempotent, safe to call from a deferred or SSE-close path.
-func (s *Store) Subscribe() (<-chan core.Notification, func()) {
-	ch := make(chan core.Notification, subscriberBuf)
+func (s *Store) Subscribe() (<-chan core.Notice, func()) {
+	ch := make(chan core.Notice, subscriberBuf)
 	s.mu.Lock()
 	s.subID++
 	id := s.subID
@@ -192,7 +191,7 @@ func (s *Store) Subscribe() (<-chan core.Notification, func()) {
 // List returns records newest-first. unreadOnly filters to unread
 // rows; limit <= 0 takes the server default (50); offset pages deeper.
 // unread counts over the whole set, not the page.
-func (s *Store) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notification, int, error) {
+func (s *Store) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notice, int, error) {
 	unread := 0
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notifications WHERE read = 0`).Scan(&unread); err != nil {
 		return nil, 0, err
@@ -213,9 +212,9 @@ func (s *Store) List(ctx context.Context, unreadOnly bool, limit, offset int) ([
 		return nil, 0, err
 	}
 	defer rows.Close()
-	out := []core.Notification{}
+	out := []core.Notice{}
 	for rows.Next() {
-		var n core.Notification
+		var n core.Notice
 		var read int
 		if err := rows.Scan(&n.ID, &n.Kind, &n.SourceID, &n.Title, &n.Verdict, &n.CreatedAt, &read); err != nil {
 			return nil, 0, err

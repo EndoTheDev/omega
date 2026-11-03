@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	httptest "net/http/httptest"
@@ -21,32 +20,36 @@ import (
 
 // --- test doubles ---
 
-// fakeCronLister satisfies core.CronProvider + core.CronLister.
-type fakeCronLister struct {
-	jobs []core.CronJobInfo
+// cronRow decodes one /cron/jobs wire row (the capsule pre-marshals;
+// the shape is the row the shared type always produced).
+type cronRow struct {
+	Name     string `json:"name"`
+	Schedule string `json:"schedule"`
+	Enabled  bool   `json:"enabled"`
+	Next     string `json:"next"`
 }
 
-func (*fakeCronLister) Start(_ context.Context, _ core.CronDeps) error { return nil } //nolint:unused // interface filler
-func (*fakeCronLister) Stop() error                                    { return nil }
+// fakeCronRows is the cron capsule's wire face (part 3): the route
+// resolves "cron" and asserts JobRows - std types only.
+type fakeCronRows struct{ rows []json.RawMessage }
 
-func (f *fakeCronLister) Jobs() []core.CronJobInfo { return f.jobs }
+func (f *fakeCronRows) JobRows() []json.RawMessage { return f.rows }
 
-// cronProviderNoLister satisfies CronProvider only - the handler must
-// degrade to an empty list, never panic.
-type cronProviderNoLister struct{}
+// cronNoRows offers a "cron" service without the row face - the
+// handler must degrade to an empty list, never panic.
+type cronNoRows struct{}
 
-func (*cronProviderNoLister) Start(_ context.Context, _ core.CronDeps) error { return nil }
-func (*cronProviderNoLister) Stop() error                                    { return nil }
+func (cronNoRows) Stop() error { return nil }
 
-// fakeSkillLister satisfies core.SkillsProvider + core.SkillsLister.
-type fakeSkillLister struct {
-	skills []core.Skill
-	err    error
+// fakeSkillEntries serves the std-typed inventory face (part 3).
+type fakeSkillEntries struct {
+	index map[string]string
+	err   error
 }
 
-func (*fakeSkillLister) LoadSkills(string) ([]core.Skill, error) { return nil, nil }
-
-func (f *fakeSkillLister) ListSkills() ([]core.Skill, error) { return f.skills, f.err }
+func (f *fakeSkillEntries) SkillsEntries() (map[string]string, map[string]string, error) {
+	return f.index, map[string]string{}, f.err
+}
 
 // fakePathLogger satisfies core.LoggerProvider with a readable path.
 type fakePathLogger struct{ path string }
@@ -70,6 +73,21 @@ func serveInspector(t *testing.T, s *Server) *httptest.Server {
 	return ts
 }
 
+// wireInspector offers the fake supplies into a fresh Context and
+// rewires the server against it - the same rewire the live toggle runs
+// (one code path, no test-only seam plumbing).
+func wireInspector(t *testing.T, s *Server, offers map[string]any, logger core.LoggerProvider) {
+	t.Helper()
+	ctx := &core.Context{}
+	for k, v := range offers {
+		ctx.ApplyOffer(k, "fake", v)
+	}
+	ctx.Logger = logger
+	if err := s.RewireSeams(ctx, nil, nil); err != nil {
+		t.Fatalf("rewire: %v", err)
+	}
+}
+
 func TestCronJobsUnconfiguredIsEmptyList(t *testing.T) {
 	ts := serveInspector(t, inspectorServer(t))
 	res, err := http.Get(ts.URL + "/cron/jobs")
@@ -80,7 +98,7 @@ func TestCronJobsUnconfiguredIsEmptyList(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("cron/jobs = %d, want 200 (empty list, not 501)", res.StatusCode)
 	}
-	var got []core.CronJobInfo
+	var got []cronRow
 	if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
@@ -91,16 +109,18 @@ func TestCronJobsUnconfiguredIsEmptyList(t *testing.T) {
 
 func TestCronJobsListsRowsFromSeam(t *testing.T) {
 	s := inspectorServer(t)
-	s.BindInspectSeams(nil, &fakeCronLister{jobs: []core.CronJobInfo{
-		{Name: "daily-journal", Schedule: "0 8 * * *", Enabled: true, Next: "2026-10-19T08:00:00+07:00"},
-	}}, nil)
+	row, mErr := json.Marshal(cronRow{Name: "daily-journal", Schedule: "0 8 * * *", Enabled: true, Next: "2026-10-19T08:00:00+07:00"})
+	if mErr != nil {
+		t.Fatal(mErr)
+	}
+	wireInspector(t, s, map[string]any{"cron": &fakeCronRows{rows: []json.RawMessage{row}}}, nil)
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/cron/jobs")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer res.Body.Close()
-	var got []core.CronJobInfo
+	var got []cronRow
 	json.NewDecoder(res.Body).Decode(&got)
 	if len(got) != 1 || got[0].Name != "daily-journal" ||
 		got[0].Schedule != "0 8 * * *" || !got[0].Enabled ||
@@ -111,7 +131,7 @@ func TestCronJobsListsRowsFromSeam(t *testing.T) {
 
 func TestCronJobsProviderWithoutListerIsEmpty(t *testing.T) {
 	s := inspectorServer(t)
-	s.BindInspectSeams(nil, &cronProviderNoLister{}, nil)
+	wireInspector(t, s, map[string]any{"cron": cronNoRows{}}, nil)
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/cron/jobs")
 	if err != nil {
@@ -121,7 +141,7 @@ func TestCronJobsProviderWithoutListerIsEmpty(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("cron/jobs = %d", res.StatusCode)
 	}
-	var got []core.CronJobInfo
+	var got []cronRow
 	json.NewDecoder(res.Body).Decode(&got)
 	if len(got) != 0 {
 		t.Fatalf("jobs = %+v, want empty", got)
@@ -159,10 +179,10 @@ func TestSkillsUnconfiguredIsEmptyList(t *testing.T) {
 
 func TestSkillsListsNameAndDescriptionOnly(t *testing.T) {
 	s := inspectorServer(t)
-	s.BindInspectSeams(&fakeSkillLister{skills: []core.Skill{
-		{Name: "a-skill", Description: "first", Content: "SECRET-BODY", Dir: "/home/endo/.omega/skills/a"},
-		{Name: "b-skill", Description: "second", Content: "SECRET-BODY", Dir: "/home/endo/.omega/skills/b"},
-	}}, nil, nil)
+	wireInspector(t, s, map[string]any{"skills": &fakeSkillEntries{index: map[string]string{
+		"a-skill": "first",
+		"b-skill": "second",
+	}}}, nil)
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/skills")
 	if err != nil {
@@ -191,7 +211,7 @@ func TestSkillsListsNameAndDescriptionOnly(t *testing.T) {
 
 func TestSkillsScanErrorSurfaces(t *testing.T) {
 	s := inspectorServer(t)
-	s.BindInspectSeams(&fakeSkillLister{err: os.ErrPermission}, nil, nil)
+	wireInspector(t, s, map[string]any{"skills": &fakeSkillEntries{err: os.ErrPermission}}, nil)
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/skills")
 	if err != nil {
@@ -218,7 +238,7 @@ func TestLogsTailRealFile(t *testing.T) {
 	}
 
 	s := inspectorServer(t)
-	s.BindInspectSeams(nil, nil, &fakePathLogger{path: path})
+	wireInspector(t, s, nil, &fakePathLogger{path: path})
 	ts := serveInspector(t, s)
 
 	// default: 200 lines
@@ -319,7 +339,7 @@ func TestLogsLoggerWithoutPathIs404(t *testing.T) {
 
 func TestLogsMissingFileIs404(t *testing.T) {
 	s := inspectorServer(t)
-	s.BindInspectSeams(nil, nil, &fakePathLogger{path: filepath.Join(t.TempDir(), "gone.log")})
+	wireInspector(t, s, nil, &fakePathLogger{path: filepath.Join(t.TempDir(), "gone.log")})
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/logs")
 	if err != nil {

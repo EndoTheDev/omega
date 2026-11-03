@@ -12,21 +12,26 @@ import (
 // same law SERVER-SIDE on /chat - the browser never expands. One law,
 // one function: core.ExpandAtMentions.
 
-// contextSkills snapshots the mounted skills module's list. An
-// unmounted module (or a listing failure) degrades to nil - @skill:
-// tokens stay as-is, exactly like every other unresolvable token.
-func (s *Server) contextSkills() []core.Skill {
-	sk := s.Skills()
+// contextDocs snapshots the mounted skill capsule's inventory as
+// name/content pairs for the @skill: tokens and the /commands skill
+// dispatch. An unmounted module (or a listing failure) degrades to
+// nil - tokens stay as-is, exactly like every other unresolvable
+// token. The pairs are data the consumer resolved; no capsule type
+// crosses (part 3 seam constitution).
+func (s *Server) contextDocs() []core.AtDoc {
+	sk := s.skills()
 	if sk == nil {
 		return nil
 	}
-	if lister, ok := sk.(core.SkillsLister); ok {
-		skills, err := lister.ListSkills()
-		if err == nil {
-			return skills
-		}
+	_, contents, listErr := sk.SkillsEntries()
+	if listErr != nil || len(contents) == 0 {
+		return nil
 	}
-	return nil
+	out := make([]core.AtDoc, 0, len(contents))
+	for name, content := range contents {
+		out = append(out, core.AtDoc{Name: name, Content: content})
+	}
+	return out
 }
 
 // expandAtMentions runs the core @-mention law over the run's new
@@ -49,7 +54,7 @@ func (s *Server) expandAtMentions(incoming []core.Message, dir string) []core.Me
 	}
 	env := core.AtMentionEnv{
 		Store:         s.store,
-		Skills:        s.contextSkills(),
+		Docs:          s.contextDocs(),
 		DetectImage:   llm.DetectImage,
 		MessageText:   agent.MessageText,
 		Dir:           dir,

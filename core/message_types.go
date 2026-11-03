@@ -175,54 +175,54 @@ func NewVariantSelect(branch, child string) VariantSelect {
 	return VariantSelect{Branch: branch, Child: child, Timestamp: NowISO()}
 }
 
-// VerdictOption is one pick row on a verdict card (verdict cards
+// QuestionOption is one pick row on a verdict card (verdict cards
 // v1.1): the label the card shows, plus an optional one-line
 // description rendered under the label. UnmarshalJSON accepts the
 // v1 shape (a bare string) so old audit rows keep decoding; the
 // marshal side is always the object form.
-type VerdictOption struct {
+type QuestionOption struct {
 	Label       string `json:"label"`
 	Description string `json:"description,omitempty"`
 }
 
-func (v *VerdictOption) UnmarshalJSON(b []byte) error {
+func (v *QuestionOption) UnmarshalJSON(b []byte) error {
 	var label string
 	if err := json.Unmarshal(b, &label); err == nil {
 		v.Label = label
 		return nil
 	}
-	type plain VerdictOption
+	type plain QuestionOption
 	var p plain
 	if err := json.Unmarshal(b, &p); err != nil {
 		return err
 	}
-	*v = VerdictOption(p)
+	*v = QuestionOption(p)
 	return nil
 }
 
-// VerdictCard is the transcript record of one agent-issued question
+// QuestionCard is the transcript record of one agent-issued question
 // (verdict cards v1): appended when the verdict tool issues the
 // card, before the user answers. A bookkeeping entry exactly like
 // ModelChange: persisted to the store, invisible to context assembly
 // (the model sees the tool call and result, never this row), rendered
 // by every transcript surface that wants the audit trail. Roles on the
 // store row: "verdict_card".
-type VerdictCard struct {
+type QuestionCard struct {
 	CardID    string          `json:"card_id"`
 	Title     string          `json:"title"`
 	Body      string          `json:"body,omitempty"`
-	Options   []VerdictOption `json:"options,omitempty"`
+	Options   []QuestionOption `json:"options,omitempty"`
 	Multi     bool            `json:"multi,omitempty"`
 	AllowText bool            `json:"allow_text,omitempty"`
 	TimeoutS  int             `json:"timeout_s,omitempty"`
 	Timestamp string          `json:"timestamp,omitempty"`
 }
 
-func (VerdictCard) isMessage() {}
+func (QuestionCard) isMessage() {}
 
-// NewVerdictCard creates a VerdictCard entry with timestamp set.
-func NewVerdictCard(cardID, title, body string, options []VerdictOption, multi, allowText bool, timeoutS int) VerdictCard {
-	return VerdictCard{
+// NewQuestionCard creates a QuestionCard entry with timestamp set.
+func NewQuestionCard(cardID, title, body string, options []QuestionOption, multi, allowText bool, timeoutS int) QuestionCard {
+	return QuestionCard{
 		CardID:    cardID,
 		Title:     title,
 		Body:      body,
@@ -234,14 +234,14 @@ func NewVerdictCard(cardID, title, body string, options []VerdictOption, multi, 
 	}
 }
 
-// VerdictRecord is the transcript record of one answer: a single
+// QuestionRecord is the transcript record of one answer: a single
 // pick, a multi-select pick (every selected index), free text, a
 // recorded skip (no silent dismissal), or the expiry firing with no
-// answer. Role on the store row: "verdict". Named VerdictRecord (not
-// Verdict) because core.Verdict is already the runtime answer record
+// answer. Role on the store row: "verdict". Named QuestionRecord (not
+// Verdict) because core.QuestionAnswer is already the runtime answer record
 // returned by the verdict seam - the transcript row is a superset with
 // the store timestamp.
-type VerdictRecord struct {
+type QuestionRecord struct {
 	CardID        string   `json:"card_id"`
 	OptionIndex   int      `json:"option_index,omitempty"`
 	Option        string   `json:"option,omitempty"`
@@ -253,14 +253,14 @@ type VerdictRecord struct {
 	Timestamp     string   `json:"timestamp,omitempty"`
 }
 
-func (VerdictRecord) isMessage() {}
+func (QuestionRecord) isMessage() {}
 
-// NewVerdictRecord creates a VerdictRecord entry with timestamp set. A
+// NewVerdictRecord creates a QuestionRecord entry with timestamp set. A
 // single pick indexes one option (optionIndex >= 1, option its label);
 // a multi pick carries the selected indexes and their labels; text,
 // skip, and expiry carry none.
-func NewVerdictRecord(cardID string, optionIndexes []int, options []string, text string, skipped, expired bool) VerdictRecord {
-	v := VerdictRecord{
+func NewVerdictRecord(cardID string, optionIndexes []int, options []string, text string, skipped, expired bool) QuestionRecord {
+	v := QuestionRecord{
 		CardID:    cardID,
 		Text:      text,
 		Skipped:   skipped,
@@ -294,9 +294,9 @@ func MessageRole(m Message) string {
 		return "assistant"
 	case ToolResult:
 		return "tool"
-	case VerdictCard:
+	case QuestionCard:
 		return "verdict_card"
-	case VerdictRecord:
+	case QuestionRecord:
 		return "verdict"
 	default:
 		return "unknown"
@@ -323,9 +323,9 @@ func EncodeMessage(msg Message) (string, []byte, error) {
 		role = "thinking_level_change"
 	case VariantSelect:
 		role = "variant_select"
-	case VerdictCard:
+	case QuestionCard:
 		role = "verdict_card"
-	case VerdictRecord:
+	case QuestionRecord:
 		role = "verdict"
 	default:
 		return "", nil, fmt.Errorf("unknown message type %T", msg)
@@ -384,13 +384,13 @@ func DecodeMessage(role string, payload []byte) (Message, error) {
 		}
 		return m, nil
 	case "verdict_card":
-		var m VerdictCard
+		var m QuestionCard
 		if err := json.Unmarshal(payload, &m); err != nil {
 			return nil, err
 		}
 		return m, nil
 	case "verdict":
-		var m VerdictRecord
+		var m QuestionRecord
 		if err := json.Unmarshal(payload, &m); err != nil {
 			return nil, err
 		}

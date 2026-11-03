@@ -27,6 +27,14 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
+// finishedThings is the consumer-side face of the finished-things
+// store (part 3 seam constitution): just the emit method the
+// dispatched-run reports call. The notifications capsule satisfies it
+// structurally; no shared type exists.
+type finishedThings interface {
+	Emit(n core.Notice) (core.Notice, error)
+}
+
 // Delegate manages background subagent tasks. It implements ToolProvider
 // and supplies InjectedMessages (the run-affinity InjectedStream) +
 // PendingDelegations to the agent Context.
@@ -35,9 +43,10 @@ type Delegate struct {
 	tasks       map[string]*delegateTask
 	taskCounter int64
 	logger      core.LoggerProvider
-	// notifier is the finished-things seam (card t_5d9032d3), wired by
-	// the plugin at mount. Nil-safe: no seam, no notification.
-	notifier core.NotificationsProvider
+	// notifier is the finished-things consumers face (card
+	// t_5d9032d3), wired by the plugin at mount from the universal
+	// registry. Nil-safe: no capsule, no notification.
+	notifier finishedThings
 	// store is the session-persistence seam, captured from the mount
 	// Context (nil-safe: no store module, no child session). The store
 	// mounts before delegate (slice-order tiebreak: no Requires edge -
@@ -485,7 +494,7 @@ func (d *Delegate) finish(taskID string, runErr error) {
 	if runErr != nil {
 		verdict = "failed"
 	}
-	_, _ = d.notifier.Emit(core.Notification{
+	_, _ = d.notifier.Emit(core.Notice{
 		Kind:     "chat",
 		SourceID: taskID,
 		Title:    "chat " + taskID + " finished",

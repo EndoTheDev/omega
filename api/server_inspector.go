@@ -1,8 +1,10 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -26,15 +28,18 @@ func (s *Server) handleCronJobs(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
 		return
 	}
-	out := []core.CronJobInfo{}
-	if s.Cron() != nil {
-		if lister, ok := s.Cron().(core.CronLister); ok {
-			if jobs := lister.Jobs(); jobs != nil {
-				out = jobs
-			}
+	// The consumer face (part 3 seam constitution): the route is the
+	// shell's, the job rows pre-marshaled by the cron capsule - std
+	// types only, the wire bytes identical to what the shared row type
+	// produced. Unmounted module: an empty list, the same normal state
+	// the empty-list law ever served.
+	rows := []json.RawMessage{}
+	if svc, ok := s.LiveServices().Resolve("cron").(interface{ JobRows() []json.RawMessage }); ok {
+		if got := svc.JobRows(); got != nil {
+			rows = got
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, rows)
 }
 
 // extensionListing is one GET /extensions row: the same facts the
@@ -122,17 +127,25 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
 		return
 	}
+	// The consumer face (part 3): rows built server-side from the
+	// std-typed inventory view - same name+description rows, same
+	// name sort, same empty-list degradation for an unmounted module.
 	out := []skillListing{}
-	if s.Skills() != nil {
-		if lister, ok := s.Skills().(core.SkillsLister); ok {
-			skills, err := lister.ListSkills()
-			if err != nil {
-				http.Error(w, "list skills: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			for _, sk := range skills {
-				out = append(out, skillListing{Name: sk.Name, Description: sk.Description})
-			}
+	if svc, ok := s.LiveServices().Resolve("skills").(interface {
+		SkillsEntries() (index map[string]string, contents map[string]string, err error)
+	}); ok {
+		index, _, listErr := svc.SkillsEntries()
+		if listErr != nil {
+			http.Error(w, "list skills: "+listErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		names := make([]string, 0, len(index))
+		for n := range index {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			out = append(out, skillListing{Name: n, Description: index[n]})
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

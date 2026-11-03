@@ -20,10 +20,10 @@ func TestMountWithAPIShape(t *testing.T) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
-	if ctx.Trust == nil {
-		t.Fatal("seam mismatch: ctx.Trust is nil after the api mount")
+	if ctx.Services().Resolve("trust") == nil {
+		t.Fatal("seam mismatch: the trust offer is nil after the api mount")
 	}
-	if _, ok := ctx.Trust.(*Provider); !ok {
-		t.Fatalf("unexpected seam implementation: %T", ctx.Trust)
+	if _, ok := ctx.Services().Resolve("trust").(*Provider); !ok {
+		t.Fatal("unexpected seam implementation")
 	}
 }

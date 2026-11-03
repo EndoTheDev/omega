@@ -11,8 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/EndoTheDev/omega/core"
 )
 
 func writeSkill(t *testing.T, dir, name, description string) {
@@ -104,7 +102,7 @@ func TestPerAgentSkillOnlyToItsOwner(t *testing.T) {
 	}
 }
 
-func names(skills []core.Skill) []string {
+func names(skills []Skill) []string {
 	out := make([]string, len(skills))
 	for i, s := range skills {
 		out[i] = s.Name

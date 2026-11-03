@@ -115,7 +115,7 @@ func (c *capsule) push(p core.Panel) {
 }
 
 // emittingStore is the seam implementation the plugin mounts: the
-// NotificationsProvider face the emitters (kanban, cron, delegate) and
+// finishedThings face the emitters (kanban, cron, delegate) and
 // the HTTP channel hold. Every emit records through the store and
 // pushes the capsule's panels - the emitter wiring in the module
 // (capsule law, settled answer 3). Mark* go straight through; the
@@ -127,13 +127,11 @@ type emittingStore struct {
 	capsule *capsule
 }
 
-var _ core.NotificationsProvider = (*emittingStore)(nil)
-
 // Emit records one notification and pushes the canvas surface: the
 // toast panel carries the new record, the list panel refreshes. The
 // push is best-effort by the capsule's law - a nil sink or a failed
 // route never fails the emit (the record is already in the store).
-func (e *emittingStore) Emit(n core.Notification) (core.Notification, error) {
+func (e *emittingStore) Emit(n core.Notice) (core.Notice, error) {
 	got, err := e.store.Emit(n)
 	if err == nil {
 		e.capsule.pushEmit(got)
@@ -141,7 +139,7 @@ func (e *emittingStore) Emit(n core.Notification) (core.Notification, error) {
 	return got, err
 }
 
-func (e *emittingStore) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notification, int, error) {
+func (e *emittingStore) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notice, int, error) {
 	return e.store.List(ctx, unreadOnly, limit, offset)
 }
 
@@ -153,7 +151,7 @@ func (e *emittingStore) MarkAllRead(ctx context.Context) error {
 	return e.store.MarkAllRead(ctx)
 }
 
-func (e *emittingStore) Subscribe() (<-chan core.Notification, func()) {
+func (e *emittingStore) Subscribe() (<-chan core.Notice, func()) {
 	return e.store.Subscribe()
 }
 
@@ -218,7 +216,7 @@ func (c *capsule) toastPanel() core.Panel {
 // noteRow strips a record to its view-model row (no mark binding -
 // the toast is a notice, not a control surface; the list panel holds
 // the actions).
-func noteRow(n core.Notification) row {
+func noteRow(n core.Notice) row {
 	return row{
 		ID:        n.ID,
 		Kind:      n.Kind,
@@ -234,7 +232,7 @@ func noteRow(n core.Notification) row {
 // panel (the canvas event) and refreshes the list panel (the new row
 // and unread badge) - both on the sink the runtime installed. Called
 // from the mounted seam implementation, not from the store.
-func (c *capsule) pushEmit(n core.Notification) {
+func (c *capsule) pushEmit(n core.Notice) {
 	c.push(c.toastPanelFor(n))
 	c.push(c.listPanel())
 }
@@ -243,7 +241,7 @@ func (c *capsule) pushEmit(n core.Notification) {
 // directly from the record - a push carries the record verbatim
 // instead of re-reading the store (the store's newest row is the same
 // record only until the next emit lands).
-func (c *capsule) toastPanelFor(n core.Notification) core.Panel {
+func (c *capsule) toastPanelFor(n core.Notice) core.Panel {
 	return core.Panel{
 		ID:      toastPanelID,
 		Title:   "Toast",

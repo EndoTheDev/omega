@@ -16,8 +16,12 @@ import (
 type Gate struct {
 	cfg Config
 
-	verdicts      func() core.VerdictsProvider      // read live: the seam stays the source of truth
-	notifications func() core.NotificationsProvider // read live; nil-safe
+	// verdicts/notifications are the consumer-side faces (part 3 seam
+	// constitution): local interfaces with just what the gate calls,
+	// resolved live from the universal registry, nil-safe by the
+	// classic law. The owner capsules never know this gate exists.
+	verdicts      func() verdictHub         // read live: the service stays the source of truth
+	notifications func() finishedThings     // read live; nil-safe
 	logger        core.LoggerProvider
 	reviewer      Reviewer
 	audit         *Audit
@@ -26,12 +30,41 @@ type Gate struct {
 	policyFP      string
 }
 
+// verdictHub is the consumer-side face of the verdict capsules
+// question cards (part 3 seam constitution): just the methods the gate
+// calls. The verdict capsule satisfies it structurally; no shared
+// type exists.
+type verdictHub interface {
+	// Ask registers the card and BLOCKS for the answer (see the
+	// implementing capsule for the race and expiry law).
+	Ask(ctx context.Context, card core.QuestionPrompt) (core.QuestionAnswer, error)
+	// Answer records the user's answer to one pending card; FIRST
+	// answer wins.
+	Answer(sessionID, cardID string, v core.QuestionAnswer) (core.QuestionAnswer, error)
+	// Pending lists the unanswered, unexpired cards, oldest first.
+	Pending(sessionID string) []core.QuestionPrompt
+}
+
+// finishedThings is the consumer-side face of the finished-things
+// store: just the emit method the escalation notice calls.
+type finishedThings interface {
+	Emit(n core.Notice) (core.Notice, error)
+}
+
+// The run-origin values the gate compares (the launch surfaces write
+// them; the words stay stable on the wire while the identifiers carry
+// no capsule noun).
+const (
+	originScheduled = "cron"
+	originSubagent  = "delegate"
+)
+
 // NewGate builds the gate. verdicts and notifications are closures
 // over the live Context (a seam rewire is visible at ask time); the
 // logger may be nil. Smart mode without a reviewer host/model still
 // mounts - every gated command then fails closed into escalation,
 // honest about a dead review rather than silently open.
-func NewGate(cfg Config, verdicts func() core.VerdictsProvider, notifications func() core.NotificationsProvider, logger core.LoggerProvider) *Gate {
+func NewGate(cfg Config, verdicts func() verdictHub, notifications func() finishedThings, logger core.LoggerProvider) *Gate {
 	return &Gate{
 		cfg:           cfg,
 		verdicts:      verdicts,
@@ -143,7 +176,7 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 	key := g.cache.Key(sanitized, targets, g.cfg.SmartPolicy)
 	origin := core.RunOriginFromContext(ctx)
 	session := agent.SessionIDFromContext(ctx)
-	background := origin == core.RunOriginCron || origin == core.RunOriginDelegate
+	background := origin == originScheduled || origin == originSubagent
 
 	if rec, ok := g.cache.Lookup(key); ok {
 		// Q8: a recorded APPROVE/DENY replays with zero cloud calls;
@@ -296,11 +329,11 @@ func (g *Gate) humanCard(ctx context.Context, command string, o Outcome) (Outcom
 	if len(title) > 120 {
 		title = title[:117] + "…"
 	}
-	card := core.VerdictPrompt{
+	card := core.QuestionPrompt{
 		SessionID: agent.SessionIDFromContext(ctx),
 		Title:     title,
 		Body:      "approval gate - " + o.Step + ": " + o.Reason,
-		Options: []core.VerdictOption{
+		Options: []core.QuestionOption{
 			{Label: "approve", Description: "run the command"},
 			{Label: "deny", Description: "refuse; the agent is told the command did not run"},
 		},
@@ -343,10 +376,10 @@ func (g *Gate) notifyEscalation(session, origin, command string, o Outcome) {
 		return
 	}
 	kind := "cron"
-	if origin == core.RunOriginDelegate {
+	if origin == originSubagent {
 		kind = "chat"
 	}
-	_, _ = prov.Emit(core.Notification{
+	_, _ = prov.Emit(core.Notice{
 		Kind:     kind,
 		SourceID: session,
 		Title:    "approval escalated (" + o.Step + "): " + truncTo(command, 80),

@@ -18,7 +18,7 @@ import (
 // session's oldest pending card. Returns false when no card is pending
 // (the line belongs to the chat queue). Echoes land on printf - the
 // host's renderer owns the palette.
-func AnswerInline(vp core.VerdictsProvider, sessionID, line string, printf func(format string, args ...any)) bool {
+func AnswerInline(vp answerSink, sessionID, line string, printf func(format string, args ...any)) bool {
 	cards := vp.Pending(sessionID)
 	if len(cards) == 0 {
 		return false
@@ -39,7 +39,7 @@ func AnswerInline(vp core.VerdictsProvider, sessionID, line string, printf func(
 }
 
 // answerHint renders the one-line answer guide for a card.
-func answerHint(card core.VerdictPrompt) string {
+func answerHint(card core.QuestionPrompt) string {
 	parts := make([]string, 0, len(card.Options))
 	for i, o := range card.Options {
 		parts = append(parts, fmt.Sprintf("%d=%s", i+1, o.Label))

@@ -16,7 +16,7 @@ import (
 type Plugin struct {
 	cfg     *Config
 	home    string
-	runner  core.CronProvider // the mounted scheduler; nil = not mounted
+	runner  *Runner           // the mounted scheduler; nil = not mounted
 	capsule *capsule          // the canvas surface; nil = not mounted
 }
 
@@ -81,7 +81,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	p.home = home
 	r := NewRunner(cfg, home)
 	p.runner = r
-	if err := api.RegisterCron(r); err != nil {
+	if err := api.Offer("cron", r); err != nil {
 		return err
 	}
 	// The goroutine fence (v0.12 E1): the runner comes live only when
@@ -94,7 +94,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		"runner",
 		func(ctx context.Context, deps core.StartDeps) error {
 			go func() {
-				if err := r.Start(ctx, core.CronDeps{Ctx: deps.Ctx, Agent: deps.Agent, Store: deps.Store}); err != nil {
+				if err := r.Start(ctx, runnerDeps{Ctx: deps.Ctx, Agent: deps.Agent, Store: deps.Store}); err != nil {
 					fmt.Fprintf(os.Stderr, "omega: cron runner: %v\n", err)
 				}
 			}()

@@ -9,7 +9,22 @@ import (
 	"net/http"
 	httptest "net/http/httptest"
 	"testing"
+
+	"github.com/EndoTheDev/omega/core"
 )
+
+// offerServices offers the fake supplies into a fresh Context and
+// rewires the server against it (part 3: consumers resolve by key).
+func offerServices(t *testing.T, s *Server, offers map[string]any) {
+	t.Helper()
+	ctx := &core.Context{}
+	for k, v := range offers {
+		ctx.ApplyOffer(k, "fake", v)
+	}
+	if err := s.RewireSeams(ctx, nil, nil); err != nil {
+		t.Fatalf("rewire: %v", err)
+	}
+}
 
 func inspectorServer(t *testing.T) *Server {
 	t.Helper()
