@@ -11,5 +11,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Drift gate (FAIL RED when dev is over 10 commits or over 7 days ahead of master)
+      - name: "Drift gate (advisory: warns when dev is over 30 commits or over 7 days ahead of master)"
         run: scripts/drift-gate.sh
+        env:
+          # Advisory per-push: the badge means THIS COMMIT'S CODE IS GOOD.
+          # Over budget becomes a greppable DRIFT WARNING line, exit 0.
+          # Hard-fail stays the default for local + release-gate use.
+          DRIFT_ADVISORY: "1"

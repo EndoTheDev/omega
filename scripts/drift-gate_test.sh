@@ -107,6 +107,34 @@ printf '%s' "$OUT" | grep -Eq 'DRIFT GATE' && \
 	grep -q 'commits ahead of master' "$sum" && \
 	ok || bad "S8: summary block missing or not written to GITHUB_STEP_SUMMARY"
 
+# --- advisory mode (DRIFT_ADVISORY=1): over budget warns, exits 0 ---
+
+# A9: the commit trip stays exit 0, the warning line carries the count
+fx=$(fixture 31 0)
+run_case "$fx" DRIFT_ADVISORY=1
+[ "$RC" -eq 0 ] && ok || bad "A9: advisory 31 commits -> expected exit 0, got $RC"
+printf '%s' "$OUT" | grep -q "DRIFT WARNING: 31 commits / 0 days ahead of master - reconcile at the next release round" && \
+	ok || bad "A9: greppable warning line missing: $OUT"
+
+# A10: the day trip stays exit 0 in advisory mode
+fx=$(fixture 1 8)
+run_case "$fx" DRIFT_ADVISORY=1
+[ "$RC" -eq 0 ] && ok || bad "A10: advisory 8 days -> expected exit 0, got $RC"
+printf '%s' "$OUT" | grep -q "DRIFT WARNING: 1 commits / 8 days" && \
+	ok || bad "A10: warning line missing the day count"
+
+# A11: summary records the advisory verdict (badge story in the UI)
+fx=$(fixture 31 0)
+run_case "$fx" DRIFT_ADVISORY=1 GITHUB_STEP_SUMMARY="$sum"
+[ "$RC" -eq 0 ] && ok || bad "A11: advisory with summary -> expected exit 0, got $RC"
+grep -q 'Verdict: ADVISORY' "$sum" && \
+	ok || bad "A11: summary does not record the advisory verdict"
+
+# A12: advisory does NOT green an unmeasurable base (exit 2 is unmoved)
+fx=$(fixture 1 0)
+run_case "$fx" DRIFT_ADVISORY=1 DRIFT_BASE=origin/nope
+[ "$RC" -eq 2 ] && ok || bad "A12: advisory + missing base -> expected exit 2, got $RC"
+
 echo
 echo "drift-gate_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]

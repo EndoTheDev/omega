@@ -27,6 +27,13 @@ G() { git -C "$R" -c user.name=fence -c user.email=fence@local "$@"; }  # real g
 S() { env -C "$R" "$SHIM" "$@"; }                 # shim, unstamped
 F() { env -C "$R" OMEGA_WORKER=1 "$SHIM" "$@"; }  # shim, fenced
 
+# Repo-local identity: the unstamped passthrough runs bare git with no -c
+# flags (the `merge dev` below is a real merge commit), and a CI runner has
+# no global user.name/email - a dev box does. Seed the fixture's identity
+# so the commit does not depend on global config.
+
+G config user.name fence
+G config user.email fence@local
 G commit -q --allow-empty -m base
 G branch -q dev HEAD
 G branch -q feat HEAD
