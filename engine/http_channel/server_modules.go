@@ -28,11 +28,11 @@ func (s *Server) handleModules(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.modules == nil {
+	if s.ModuleToggles() == nil {
 		http.Error(w, "module toggles not configured", http.StatusNotImplemented)
 		return
 	}
-	all := s.modules.Modules()
+	all := s.ModuleToggles().Modules()
 	mods := make([]core.ModuleStatus, 0, len(all))
 	for _, m := range all {
 		if engineModules[m.Name] {
@@ -40,7 +40,7 @@ func (s *Server) handleModules(w http.ResponseWriter, r *http.Request) {
 		}
 		mods = append(mods, m)
 	}
-	payload := &modulesPayload{Modules: mods, Refusals: refusalsTail(s.modules)}
+	payload := &modulesPayload{Modules: mods, Refusals: refusalsTail(s.ModuleToggles())}
 	writeSettingsJSON(w, payload)
 }
 
@@ -88,7 +88,7 @@ func (s *Server) handleModuleToggle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.modules == nil {
+	if s.ModuleToggles() == nil {
 		http.Error(w, "module toggles not configured", http.StatusNotImplemented)
 		return
 	}
@@ -113,11 +113,11 @@ func (s *Server) handleModuleToggle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request: enabled is required", http.StatusBadRequest)
 		return
 	}
-	if err := s.modules.Toggle(r.Context(), name, *body.Enabled); err != nil {
+	if err := s.ModuleToggles().Toggle(r.Context(), name, *body.Enabled); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	all := s.modules.Modules()
+	all := s.ModuleToggles().Modules()
 	mods := make([]core.ModuleStatus, 0, len(all))
 	for _, m := range all {
 		if engineModules[m.Name] {
@@ -125,5 +125,5 @@ func (s *Server) handleModuleToggle(w http.ResponseWriter, r *http.Request) {
 		}
 		mods = append(mods, m)
 	}
-	writeSettingsJSON(w, &modulesPayload{Modules: mods, Refusals: refusalsTail(s.modules)})
+	writeSettingsJSON(w, &modulesPayload{Modules: mods, Refusals: refusalsTail(s.ModuleToggles())})
 }

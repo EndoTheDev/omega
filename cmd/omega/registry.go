@@ -16,8 +16,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/skills"
 )
 

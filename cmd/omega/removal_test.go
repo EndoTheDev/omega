@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/kanban"
 	"github.com/EndoTheDev/omega/harness/process"
 	"github.com/EndoTheDev/omega/harness/terminal"

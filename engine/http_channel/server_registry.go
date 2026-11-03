@@ -24,8 +24,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // disabledLists is the /disabled wire shape: always three lists - a
@@ -43,23 +43,23 @@ func (s *Server) handleDisabled(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.registries == nil {
+	if s.Registries() == nil {
 		http.Error(w, "registry toggles not configured", http.StatusNotImplemented)
 		return
 	}
-	writeSettingsJSON(w, disabledPayload(s.registries.Disabled()))
+	writeSettingsJSON(w, disabledPayload(s.Registries().Disabled()))
 }
 
 // handleDisabledSkills PUTs one disabled.skills entry.
 func (s *Server) handleDisabledSkills(w http.ResponseWriter, r *http.Request) {
-	s.handleDisabledToggle(w, r, s.registries.ToggleSkill)
+	s.handleDisabledToggle(w, r, s.Registries().ToggleSkill)
 }
 
 // handleDisabledTools PUTs one disabled.tools entry. The seam carries
 // the built-in-wins merge law: a built-in tool cannot be disabled and
 // names no seat - the request errors instead of writing a dead key.
 func (s *Server) handleDisabledTools(w http.ResponseWriter, r *http.Request) {
-	s.handleDisabledToggle(w, r, s.registries.ToggleTool)
+	s.handleDisabledToggle(w, r, s.Registries().ToggleTool)
 }
 
 // handleDisabledAgents PUTs one disabled.agents entry (the soft
@@ -69,7 +69,7 @@ func (s *Server) handleDisabledTools(w http.ResponseWriter, r *http.Request) {
 // EVER!") - a curl must hit the same wall the UI's locked pill
 // renders, and the fold stays untouched.
 func (s *Server) handleDisabledAgents(w http.ResponseWriter, r *http.Request) {
-	s.handleDisabledToggle(w, r, guardDefaultAgent(s.registries))
+	s.handleDisabledToggle(w, r, guardDefaultAgent(s.Registries()))
 }
 
 // guardDefaultAgent wraps the agents toggle seam with the locked
@@ -93,7 +93,7 @@ func (s *Server) handleDisabledToggle(w http.ResponseWriter, r *http.Request, to
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.registries == nil {
+	if s.Registries() == nil {
 		http.Error(w, "registry toggles not configured", http.StatusNotImplemented)
 		return
 	}
@@ -118,10 +118,10 @@ func (s *Server) handleDisabledToggle(w http.ResponseWriter, r *http.Request, to
 	// the module registries + the Context; the serving agent re-reads
 	// so the next run and the /tools inventory honor it without a
 	// restart (core.LiveSeams law, one re-read per toggle).
-	if s.agent != nil {
-		s.agent.SetDisabledTools(s.registries.Disabled().Tools)
+	if s.Agent() != nil {
+		s.Agent().SetDisabledTools(s.Registries().Disabled().Tools)
 	}
-	writeSettingsJSON(w, disabledPayload(s.registries.Disabled()))
+	writeSettingsJSON(w, disabledPayload(s.Registries().Disabled()))
 }
 
 // disabledPayload renders the wire shape: nil lists become [].

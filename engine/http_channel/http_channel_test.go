@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 func TestPluginMount(t *testing.T) {

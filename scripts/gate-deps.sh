@@ -5,9 +5,14 @@ set -euo pipefail
 # transitively. Modules may import agent and ai; the layers below never
 # reach back. Standalone or in the build.sh cascade (after vet).
 #
+# Production imports only (restructure part 2, t_905fa502): the law
+# guards the shipped graph, and _test.go files may ride harness fixtures
+# (the cmd tests and the moved agent/api tests open the real store). The
+# scan below therefore reads .Imports, never .TestImports.
+#
 # Self-test override: OMEGA_GATE_FIXTURE=<file> reads synthetic cascade
 # data instead of querying go list. Two line shapes:
-#   PKG <importpath>|<imports>|<testimports>   direct imports of a layer package
+#   PKG <importpath>|<imports>                 direct imports of a layer package
 #   <importpath>                               a path in the transitive dep closure
 # See gate-deps_testdata/ for the fixtures.
 
@@ -23,12 +28,13 @@ violation() {
 }
 
 gen() {
-	# -test pulls in each layer package's test files; second call yields
+	# Production imports only: .Imports of each layer package (never
+	# .TestImports - test files ride harness fixtures, see header) plus
 	# the flat transitive closure of llm/ and agent/.
-	go list -test -f \
-		'{{.ImportPath}}|{{join .Imports " "}}|{{join .TestImports " "}}' \
+	go list -f \
+		'{{.ImportPath}}|{{join .Imports " "}}|' \
 		./llm/... ./agent/... &&
-	go list -deps -test ./llm/... ./agent/...
+	go list -deps ./llm/... ./agent/...
 }
 
 scan() {

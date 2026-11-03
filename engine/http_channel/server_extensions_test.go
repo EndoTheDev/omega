@@ -17,8 +17,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/compactor"
 	"github.com/EndoTheDev/omega/harness/logging"
 	"github.com/EndoTheDev/omega/harness/provider"

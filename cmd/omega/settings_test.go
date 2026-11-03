@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/llm"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/compactor"
+	"github.com/EndoTheDev/omega/llm"
 	"gopkg.in/yaml.v3"
 )
 

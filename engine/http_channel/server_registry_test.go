@@ -45,8 +45,8 @@ func dirWord(enabled bool) string {
 
 func newToggleTestServer(t *testing.T, rt core.RegistryToggles) *httptest.Server {
 	t.Helper()
-	s, _ := newTestServerWithStore(t)
-	s.registries = rt
+	// registries ride the constructor: the base field is shell-invisible.
+	s, _ := newTestServerWithStoreSeam(t, rt)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /disabled", s.handleDisabled)
 	mux.HandleFunc("PUT /disabled/agents", s.handleDisabledAgents)

@@ -13,10 +13,7 @@ import (
 // no fallback); anything else serves the SPA shell. The engine holds
 // no module shape: the routes ride the live Context.
 func (s *Server) handleModuleOrSPA(w http.ResponseWriter, r *http.Request) {
-	s.seams.mu.RLock()
-	modmux := s.seams.modules
-	roots := s.seams.routeRoots
-	s.seams.mu.RUnlock()
+	modmux, roots := s.ModuleMux()
 	if modmux != nil {
 		seg := ""
 		if rest, ok := strings.CutPrefix(r.URL.Path, "/"); ok && rest != "" {

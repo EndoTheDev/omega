@@ -17,11 +17,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/llm"
-	httpchannel "github.com/EndoTheDev/omega/engine/http_channel"
 	"github.com/EndoTheDev/omega/agent/loop"
+	"github.com/EndoTheDev/omega/core"
+	httpchannel "github.com/EndoTheDev/omega/engine/http_channel"
+	"github.com/EndoTheDev/omega/harness/approval"
 	browserModule "github.com/EndoTheDev/omega/harness/browser"
 	"github.com/EndoTheDev/omega/harness/compactor"
 	"github.com/EndoTheDev/omega/harness/continuous"
@@ -29,13 +29,12 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 	"github.com/EndoTheDev/omega/harness/delegate"
 	kanbanModule "github.com/EndoTheDev/omega/harness/kanban"
-	"github.com/EndoTheDev/omega/harness/approval"
 	"github.com/EndoTheDev/omega/harness/logging"
 	"github.com/EndoTheDev/omega/harness/mcp"
 	"github.com/EndoTheDev/omega/harness/memory"
 	"github.com/EndoTheDev/omega/harness/notifications"
-	"github.com/EndoTheDev/omega/harness/prompt"
 	"github.com/EndoTheDev/omega/harness/process"
+	"github.com/EndoTheDev/omega/harness/prompt"
 	"github.com/EndoTheDev/omega/harness/provider"
 	"github.com/EndoTheDev/omega/harness/skills"
 	"github.com/EndoTheDev/omega/harness/store"
@@ -43,6 +42,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/tools"
 	"github.com/EndoTheDev/omega/harness/trust"
 	"github.com/EndoTheDev/omega/harness/verdict"
+	"github.com/EndoTheDev/omega/llm"
 )
 
 func main() {

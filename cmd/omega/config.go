@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
+	agentapi "github.com/EndoTheDev/omega/agent/api"
 	httpchannel "github.com/EndoTheDev/omega/engine/http_channel"
 	"github.com/EndoTheDev/omega/harness/approval"
 	"github.com/EndoTheDev/omega/harness/continuous"
@@ -758,7 +759,7 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "provider":
 		return provider.Config{Type: c.Provider.Type, ModelName: c.Provider.ModelName, Host: c.Provider.Host, APIKey: c.Provider.APIKey}, true
 	case "http_channel":
-		return httpchannel.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, DefaultWorkspace: c.Server.DefaultWorkspace, TitleModel: c.TitleModel, WebTools: httpchannel.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
+		return httpchannel.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, DefaultWorkspace: c.Server.DefaultWorkspace, TitleModel: c.TitleModel, WebTools: agentapi.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
 	case "skills":
 		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.Skills), NudgeInterval: c.Skills.NudgeInterval, CuratorModel: c.Skills.CuratorModel}, true
 	case "memory":
