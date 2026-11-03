@@ -42,7 +42,7 @@ type Delegate struct {
 	mu          sync.Mutex
 	tasks       map[string]*delegateTask
 	taskCounter int64
-	logger      core.LoggerProvider
+	logger      agent.LoggerProvider
 	// notifier is the finished-things consumers face (card
 	// t_5d9032d3), wired by the plugin at mount from the universal
 	// registry. Nil-safe: no capsule, no notification.
@@ -51,7 +51,7 @@ type Delegate struct {
 	// Context (nil-safe: no store module, no child session). The store
 	// mounts before delegate (slice-order tiebreak: no Requires edge -
 	// one naming delegate is the removal recipe's stop signal).
-	store core.StoreProvider
+	store agent.StoreProvider
 	// spawnable reports the recursion guard's mount verdict: false
 	// inside a subagent child (OMEGA_SUBAGENT set) - delegate.task
 	// never registers there, so depth stays at one level.

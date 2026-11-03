@@ -9,7 +9,6 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/llm"
 )
 
 // runFrame is one prepared SSE frame: the event type plus its JSON data.
@@ -320,7 +319,7 @@ func (h *RunHub) finish(run *activeRun) {
 // path (the tool result errors out, the next turn boundary emits a
 // cancelled agent_end); an explicit error frame names the cap, and
 // whatever accumulated still persists.
-func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov llm.Provider, messages []core.Message, tools map[string]core.Tool, req chatRequest) {
+func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Provider, messages []core.Message, tools map[string]core.Tool, req chatRequest) {
 	// Branch pin (t_19c100dd): BEFORE beginRun's first delta - the
 	// opening push must already compose with the old sibling's rows
 	// cut, so the retry's first paint is in place. Plain sends pin
@@ -410,7 +409,7 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov llm.Prov
 // into a broadcast error frame instead of a write to one request's wire
 // - nobody in particular is listening when persistence fails, and every
 // attached wire should learn about the failure the same way.
-func (s *Server) persistRun(ctx context.Context, run *activeRun, prov llm.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *core.LastRunStats) {
+func (s *Server) persistRun(ctx context.Context, run *activeRun, prov agent.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *core.LastRunStats) {
 	if err := s.persistAssistant(ctx, prov, req, recs, usage, last); err != nil {
 		s.runs.broadcast(run, runFrame{event: "error", data: []byte(err.Error())})
 	}

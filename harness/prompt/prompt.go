@@ -4,7 +4,7 @@
 // environment, user-supplied custom/append, plus whatever sections
 // other modules contribute via the core.PromptSectioner seam. Modules
 // own their prompt content; this package owns only the assembly order.
-// It implements core.PromptBuilder.
+// It implements agent.PromptBuilder.
 package prompt
 
 import (

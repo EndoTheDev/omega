@@ -26,7 +26,7 @@ func FormatInsights(in *core.Insights) string {
 	sb.WriteString(fmt.Sprintf("  Sessions:          %d\n", in.Sessions))
 	sb.WriteString(fmt.Sprintf("  Messages:          %d\n", in.Messages))
 	sb.WriteString(fmt.Sprintf("  User messages:     %d\n", in.UserMessages))
-	sb.WriteString(fmt.Sprintf("  Tool calls:        %d\n", in.ToolCalls))
+	sb.WriteString(fmt.Sprintf("  core.Tool calls:        %d\n", in.ToolCalls))
 	sb.WriteString(fmt.Sprintf("  Tokens (est.):     %s\n", FormatNumber(in.TotalTokens)))
 	sb.WriteString(fmt.Sprintf("  Avg msgs/session:  %.1f\n\n", in.AvgSessionMsgs))
 

@@ -72,9 +72,9 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if c, ok := ctx.Configs["sessions"].(HygieneConfig); ok {
 		hyg = c
 	}
-	hygiene := &hygieneToolProvider{store: s, cfg: hyg, providerFn: func() core.Provider { return api.Provider() }}
+	hygiene := &hygieneToolProvider{store: s, cfg: hyg, providerFn: func() agent.Provider { return seam[agent.Provider](ctx, "provider") }}
 	steps := []func() error{
-		func() error { return api.RegisterStore(s) },
+		func() error { return api.Offer("store", s) },
 		func() error {
 			for name, t := range search.Tools() {
 				if err := api.RegisterTool(name, t); err != nil {

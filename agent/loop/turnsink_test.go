@@ -44,10 +44,10 @@ func TestLoopPersistsTurnCopiesOnce(t *testing.T) {
 		core.ResponseChunk{Type: "response_chunk", Content: "two"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}
-	prov := llm.NewFakeProviderScripts("test", script1, script2).WithDelay(5 * time.Millisecond)
+	prov := agent.NewFakeProviderScripts("test", script1, script2).WithDelay(5 * time.Millisecond)
 
 	events := make(chan core.Event, 64)
-	opts := core.LoopOptions{
+	opts := agent.LoopOptions{
 		Provider: prov,
 		Messages: []core.Message{core.NewUser("hi")},
 		Tools:    map[string]core.Tool{"nop": tool},
@@ -95,7 +95,7 @@ func TestLoopPersistsTurnCopiesOnce(t *testing.T) {
 // pinStore satisfies the store seam while recording appends. Only
 // AppendMessage is called by the store sink under test.
 type pinStore struct {
-	core.StoreProvider
+	agent.StoreProvider
 	msgs []core.Message
 }
 

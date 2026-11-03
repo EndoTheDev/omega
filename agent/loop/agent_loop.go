@@ -30,7 +30,7 @@ type Loop struct{}
 // Run executes the conversation loop. It reads all inputs from opts
 // and writes events to opts.Events. The caller is responsible for
 // closing the events channel.
-func (Loop) Run(ctx context.Context, opts core.LoopOptions) error {
+func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	tools := opts.Tools
 	if tools == nil {
 		tools = map[string]core.Tool{}
@@ -460,7 +460,7 @@ func isOverflowError(err string) bool {
 // TurnSink. Persistence failures log and move on - a dead store never
 // kills a live run, the channel surfaces the reload gap instead of an
 // error frame mid-stream.
-func persistTurnMessage(ctx context.Context, sink agent.TurnSink, logger core.LoggerProvider, msg core.Message, stage string) {
+func persistTurnMessage(ctx context.Context, sink agent.TurnSink, logger agent.LoggerProvider, msg core.Message, stage string) {
 	if sink == nil {
 		return
 	}

@@ -518,7 +518,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 // via the in-process plugin system. The store and plugin context are
 // returned so the caller can close the store and start channels. The
 // mount registry rides along for the E2 module-toggle surface.
-func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent, core.StoreProvider, core.LoggerProvider, *agent.Context, *agent.Registry, func([]string), error) {
+func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.LoggerProvider, *agent.Context, *agent.Registry, func([]string), error) {
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, fmt.Errorf("build plugins: %w", err)
@@ -554,21 +554,33 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent
 	// The store resolves BEFORE the agent is built: the captioner
 	// (vision_model knob) holds the caption sink from the start, and
 	// NewFromContext copies ctx.Captioner onto every agent it creates.
-	if ctx.Store != nil {
-		if err := ctx.Store.Open(cfg.Store.DBPath); err != nil {
-			return nil, nil, nil, nil, nil, nil, fmt.Errorf("open store: %w", err)
+	// Part 3: needs resolve by key from the universal registry; the
+	// host's in-memory fallback is its own offer under the same key
+	// when the store capsule is absent (the owner ledger records
+	// "host"). Wrong shape is the loud named-need boot failure.
+	logger, _ := ctx.Services().Resolve("logger").(agent.LoggerProvider)
+	st2 := agent.StoreProvider(nil)
+	if svc := ctx.Services().Resolve("store"); svc != nil {
+		st, ok := svc.(agent.StoreProvider)
+		if !ok {
+			return nil, nil, nil, nil, nil, nil, fmt.Errorf("seam \"store\": the offered service (%T) does not satisfy the store need (wrong shape) - fix the offering capsule", svc)
 		}
-	} else {
-		ctx.Logger.Errorf("omega: no store extension loaded — using in-memory store (sessions will not persist)")
+		st2 = st
+	}
+	if st2 == nil {
+		if logger != nil {
+			logger.Errorf("omega: no store extension loaded — using in-memory store (sessions will not persist)")
+		}
 		s, err := store.Open(":memory:")
 		if err != nil {
 			return nil, nil, nil, nil, nil, nil, fmt.Errorf("open in-memory store: %w", err)
 		}
-		ctx.Store = s
+		st2 = s
+		ctx.ApplyOffer("store", "host", st2)
 	}
 	wireCaptioner(cfg, ctx)
 
-	ag := core.NewFromContext(ctx, core.AgentOptions{
+	ag := agent.NewFromContext(ctx, agent.AgentOptions{
 		MaxTurns:      cfg.MaxTurns,
 		MaxToolOutput: cfg.Compaction.MaxToolOutput,
 		PromptCustom:  cfg.SystemPrompt,
@@ -577,7 +589,7 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*core.Agent
 		CWD:           cwd(),
 	})
 
-	return ag, ctx.Store, ctx.Logger, ctx, reg, setAgents, nil
+	return ag, st2, logger, ctx, reg, setAgents, nil
 }
 
 // wireCaptioner builds the image captioner (vision_model knob) onto the
@@ -590,17 +602,25 @@ func wireCaptioner(cfg Config, pctx *agent.Context) {
 	if cfg.VisionModel == "" || pctx == nil {
 		return
 	}
+	resolve := func(key string) any { return pctx.Services().Resolve(key) }
 	var sink agent.CaptionStore
-	if cs, ok := pctx.Store.(agent.CaptionStore); ok {
+	if cs, ok := resolve("store").(agent.CaptionStore); ok {
 		sink = cs
 	}
-	pctx.Captioner = provider.NewCaptioner(pctx.Provider, cfg.VisionModel, sink, pctx.Logger)
-	if sink == nil && pctx.Logger != nil {
-		pctx.Logger.Printf("omega: vision_model set but the store does not support captions - captions cache in-process only")
+	var prov agent.Provider
+	if p, ok := resolve("provider").(agent.Provider); ok {
+		prov = p
+	}
+	var lg agent.LoggerProvider
+	if l, ok := resolve("logger").(agent.LoggerProvider); ok {
+		lg = l
+	}
+	pctx.Captioner = provider.NewCaptioner(prov, cfg.VisionModel, sink, lg)
+	if sink == nil && lg != nil {
+		lg.Printf("omega: vision_model set but the store does not support captions - captions cache in-process only")
 	}
 }
 
-// signalContext returns a context cancelled on SIGINT/SIGTERM.
 func signalContext() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }

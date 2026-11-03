@@ -36,7 +36,7 @@ func (p *Plugin) Provides() []string { return []string{"tools"} }
 // dispatched-run emitter is a registration now - the seam arrives at
 // mount end, nil when the module is absent (recipe law 4,
 // docs/migrating-a-module.md, v0.12 phase C2).
-func (p *Plugin) Requires() []string { return []string{"logging"} }
+func (p *Plugin) Requires() []string { return []string{"logger"} }
 
 // MountWithAPI implements agent.APIPlugin. This registration is the
 // module's whole surface (arc 6 capsule, card t_47675b6a): the inject
@@ -49,12 +49,12 @@ func (p *Plugin) Requires() []string { return []string{"logging"} }
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	// the logger is read at mount time - the logging Requires edge
 	// stays (recipe law 4)
-	p.delegate.logger = ctx.Logger
+	p.delegate.logger = seam[agent.LoggerProvider](ctx, "logger")
 	// the store seam is an opportunistic capture, NOT a Requires edge:
 	// the store mounts before delegate (slice-order tiebreak) and is
 	// not toggleable, but an edge naming delegate from here would be
 	// the removal recipe's stop signal in the other direction. Nil-safe.
-	p.delegate.store = ctx.Store
+	p.delegate.store = seam[agent.StoreProvider](ctx, "store")
 	// card t_5d9032d3: dispatched runs report to the finished-things
 	// store. The hook receives the mounted notifications seam at mount
 	// end, nil when the module is absent (nil is legal - the emitter

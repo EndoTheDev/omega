@@ -12,7 +12,7 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ core.PromptBuilder = (*PromptBuilder)(nil)
+	_ agent.PromptBuilder = (*PromptBuilder)(nil)
 	_ agent.Plugin       = (*Plugin)(nil)
 )
 
@@ -49,7 +49,7 @@ func TestMountSetsPromptBuilder(t *testing.T) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
-	if ctx.PromptBuilder == nil {
+	if ctx.Services().Resolve("prompt") == nil {
 		t.Fatal("ctx.PromptBuilder is nil after Mount")
 	}
 }

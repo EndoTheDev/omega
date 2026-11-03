@@ -7,12 +7,14 @@ import (
 )
 
 // Context is the shared service container that extensions mount into.
-// Each slot corresponds to a capability seam. The host creates a Context,
-// runs MountAllAPI to populate it, then passes it to the agent loop.
+// The host creates a Context, runs MountAllAPI to populate it, then
+// passes it to the agent loop.
 //
-// Seam slots (Provider, Compactor, Store, Skills, Loop, PromptBuilder)
-// are exclusive: one plugin per slot. ToolProviders and Channels are
-// additive: multiple plugins contribute.
+// Exclusive seam offers (provider, store, logger, compactor, prompt,
+// nudger, approvals, loop - part 3, the seam constitution) live in the
+// universal registry (Services): one owner per key, capsule services
+// resolve by key and assert their own consumer faces. ToolProviders
+// and Channels are additive: multiple plugins contribute.
 type Context struct {
 	// Event observers (card t_72ecca67, M3): additive subscriptions on
 	// the run event spine. A module appends its observer at mount (the
@@ -21,14 +23,6 @@ type Context struct {
 	// Pointer-held so a Context value-copy (dismount replay) shares the
 	// one guard instead of copying it.
 	eventOb *eventObserverSet
-
-	// Seam slots (exclusive — one plugin per slot).
-	Provider      Provider
-	Compactor     CompactionProvider
-	Store         StoreProvider
-	Loop          LoopProvider
-	Logger        LoggerProvider
-	PromptBuilder PromptBuilder
 
 	// Captioner is optional (vision_model knob): the host builds it
 	// once config and store are resolved, before NewFromContext, and
@@ -63,23 +57,11 @@ type Context struct {
 	PanelProviders []PanelProvider
 
 	// services is the universal seam registry (part 3, the seam
-	// constitution). Pointer-held so a Context value-copy (dismount
-	// replay) shares the one registry instead of copying it; reach it
-	// through Services, never assign it directly.
 	services *Services
 
-	// Approvals is the smart-approval seam (card t_c2b52cb5): the loop
-	// consults it before every tool execution; the approval module
-	// decides (approve / deny / escalate). Nil when the module is
-	// absent OR its mode is off - the gate is then fully absent,
-	// exactly as before the card, and the loop pays nothing.
-	Approvals ApprovalProvider
-
-	// Nudge is the learning-loop reminder seam (t_9972dfd0): the
-	// skills module counts tool iterations between skill writes; the
-	// loop injects the seam's one-line reminder into the next turn
-	// prep. Nil when the module is absent - nudging is off.
-	Nudge TurnNudger
+	// Nudge is gone with the Class A flip (part 3, the seam
+	// constitution): the nudger offer resolves by key at bind, the
+	// registry above holds it alongside everything else.
 
 	// Channels (additive — multiple plugins contribute delivery
 	// transports). The host starts all mounted channels after MountAllAPI.

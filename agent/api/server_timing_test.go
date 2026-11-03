@@ -38,7 +38,7 @@ const eventDelay = 60 * time.Millisecond
 // strictly below it and well above eventDelay.
 const toolSleep = 150 * time.Millisecond
 
-func timingTestAgent(t *testing.T) (*core.Agent, *store.Store, *httptest.Server, *http.Client) {
+func timingTestAgent(t *testing.T) (*agent.Agent, *store.Store, *httptest.Server, *http.Client) {
 	t.Helper()
 	tools := map[string]core.Tool{
 		"sleep": {
@@ -69,8 +69,8 @@ func timingTestAgent(t *testing.T) (*core.Agent, *store.Store, *httptest.Server,
 		core.ResponseChunk{Type: "response_chunk", Content: "done"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}
-	prov := llm.NewFakeProviderScripts("fake", script1, script2, script3).WithDelay(eventDelay)
-	a := core.NewAgent(prov, nil, 0)
+	prov := agent.NewFakeProviderScripts("fake", script1, script2, script3).WithDelay(eventDelay)
+	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(loop.Loop{})
 	st, err := store.Open(":memory:")
 	if err != nil {

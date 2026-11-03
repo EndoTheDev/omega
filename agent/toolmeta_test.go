@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// fakeProvider is a ToolProvider stub for mount tests.
+// fakeProvider is a core.ToolProvider stub for mount tests.
 type fakeProvider struct {
 	tools map[string]core.Tool
 }

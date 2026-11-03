@@ -57,7 +57,7 @@ func (s *stubStream) Wait(ctx context.Context, affinity string) (core.InjectedMe
 // Mock implementations for PromptBuilder and CompactionProvider
 // ---------------------------------------------------------------------------
 
-// mockPromptBuilder implements core.PromptBuilder, returning a fixed prompt
+// mockPromptBuilder implements agent.PromptBuilder, returning a fixed prompt
 // and guidelines for testing the system-prompt prepend path.
 type mockPromptBuilder struct {
 	prompt     string
@@ -74,7 +74,7 @@ func (m *mockPromptBuilder) Guidelines() []string {
 	return m.guidelines
 }
 
-// mockCompactionProvider implements core.CompactionProvider, recording
+// mockCompactionProvider implements agent.CompactionProvider, recording
 // calls and returning a compacted message set.
 type mockCompactionProvider struct {
 	called    bool
@@ -97,7 +97,7 @@ func (m *mockCompactionProvider) Compact(_ context.Context, messages []core.Mess
 // context. The loop should emit AgentEnd with FinishReason="cancelled" and
 // an error containing "context canceled".
 func TestRunContextCancellation(t *testing.T) {
-	provider := llm.NewFakeProvider("test",
+	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -108,7 +108,7 @@ func TestRunContextCancellation(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(ctx, core.LoopOptions{
+		Loop{}.Run(ctx, agent.LoopOptions{
 			Provider: provider,
 			Messages: []core.Message{core.NewUser("hi")},
 			Events:   events,
@@ -128,7 +128,7 @@ func TestRunContextCancellation(t *testing.T) {
 // (plural) with tools that get merged. The merged tool should be callable
 // by the provider.
 func TestRunToolProvidersMerging(t *testing.T) {
-	provider := llm.NewFakeProviderScripts("test",
+	provider := agent.NewFakeProviderScripts("test",
 		// Turn 1: call a tool provided by ToolProviders.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "merged_tool", Arguments: map[string]any{}}},
@@ -158,7 +158,7 @@ func TestRunToolProvidersMerging(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), core.LoopOptions{
+		Loop{}.Run(context.Background(), agent.LoopOptions{
 			Provider:      provider,
 			Messages:      []core.Message{core.NewUser("go")},
 			ToolProviders: []core.ToolProvider{toolProvider},
@@ -179,7 +179,7 @@ func TestRunToolProvidersMerging(t *testing.T) {
 // prompt and guidelines. The loop should prepend a system message containing
 // the prompt and guidelines to the message history.
 func TestRunPromptBuilder(t *testing.T) {
-	provider := llm.NewFakeProvider("test",
+	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -192,7 +192,7 @@ func TestRunPromptBuilder(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), core.LoopOptions{
+		Loop{}.Run(context.Background(), agent.LoopOptions{
 			Provider:      provider,
 			Messages:      []core.Message{core.NewUser("hi")},
 			PromptBuilder: pb,
@@ -231,7 +231,7 @@ func TestRunPromptBuilder(t *testing.T) {
 // that compacts messages. It should be called each turn and the compacted
 // messages should replace the original history.
 func TestRunCompactionProvider(t *testing.T) {
-	provider := llm.NewFakeProvider("test",
+	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -241,7 +241,7 @@ func TestRunCompactionProvider(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), core.LoopOptions{
+		Loop{}.Run(context.Background(), agent.LoopOptions{
 			Provider:           provider,
 			Messages:           []core.Message{core.NewUser("hi"), core.NewUser("second"), core.NewUser("third")},
 			CompactionProvider: compactor,
@@ -272,7 +272,7 @@ func TestRunCompactionProvider(t *testing.T) {
 func TestRunMaxToolOutputTruncation(t *testing.T) {
 	longOutput := strings.Repeat("a", 100)
 
-	provider := llm.NewFakeProviderScripts("test",
+	provider := agent.NewFakeProviderScripts("test",
 		// Turn 1: call the verbose tool.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "verbose", Arguments: map[string]any{}}},
@@ -298,7 +298,7 @@ func TestRunMaxToolOutputTruncation(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), core.LoopOptions{
+		Loop{}.Run(context.Background(), agent.LoopOptions{
 			Provider:      provider,
 			Messages:      []core.Message{core.NewUser("go")},
 			Tools:         tools,
@@ -333,7 +333,7 @@ func TestRunMaxToolOutputTruncation(t *testing.T) {
 // exist in the tools map. The result should contain "unknown tool: <name>"
 // and have IsError=true.
 func TestRunUnknownTool(t *testing.T) {
-	provider := llm.NewFakeProviderScripts("test",
+	provider := agent.NewFakeProviderScripts("test",
 		// Turn 1: call a non-existent tool.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "nonexistent", Arguments: map[string]any{}}},
@@ -349,7 +349,7 @@ func TestRunUnknownTool(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), core.LoopOptions{
+		Loop{}.Run(context.Background(), agent.LoopOptions{
 			Provider: provider,
 			Messages: []core.Message{core.NewUser("go")},
 			Tools:    map[string]core.Tool{}, // empty tools map, no "nonexistent" tool
@@ -381,7 +381,7 @@ func TestRunUnknownTool(t *testing.T) {
 // affinity key (pinned on the run ctx). After a turn, the loop should
 // drain them, combine into a user message, and continue.
 func TestRunInjectedMessagesDraining(t *testing.T) {
-	provider := llm.NewFakeProviderScripts("test",
+	provider := agent.NewFakeProviderScripts("test",
 		// Turn 1: respond and stop (no tool calls).
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "first"},
@@ -401,7 +401,7 @@ func TestRunInjectedMessagesDraining(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(agent.WithRunAffinity(context.Background(), "run-affinity-1"), core.LoopOptions{
+		Loop{}.Run(agent.WithRunAffinity(context.Background(), "run-affinity-1"), agent.LoopOptions{
 			Provider:         provider,
 			Messages:         []core.Message{core.NewUser("go")},
 			Events:           events,
@@ -441,7 +441,7 @@ func TestRunInjectedMessagesDraining(t *testing.T) {
 // a sibling run's queued result (the wrong-run steal the title turn
 // committed) is unreachable.
 func TestRunInjectedMessagesRunAffinityIsolation(t *testing.T) {
-	provider := llm.NewFakeProviderScripts("test",
+	provider := agent.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "first"},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -459,7 +459,7 @@ func TestRunInjectedMessagesRunAffinityIsolation(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(agent.WithRunAffinity(context.Background(), "run-affinity-1"), core.LoopOptions{
+		Loop{}.Run(agent.WithRunAffinity(context.Background(), "run-affinity-1"), agent.LoopOptions{
 			Provider:         provider,
 			Messages:         []core.Message{core.NewUser("go")},
 			Events:           events,
@@ -498,7 +498,7 @@ func TestRunInjectedMessagesRunAffinityIsolation(t *testing.T) {
 // ThinkingChunk events. They should appear in the assistant message's
 // Thinking field.
 func TestRunThinkingChunk(t *testing.T) {
-	provider := llm.NewFakeProvider("test",
+	provider := agent.NewFakeProvider("test",
 		core.ThinkingChunk{Type: "thinking_chunk", Content: "Let me think..."},
 		core.ThinkingChunk{Type: "thinking_chunk", Content: " about this."},
 		core.ResponseChunk{Type: "response_chunk", Content: "Here is my answer."},
@@ -508,7 +508,7 @@ func TestRunThinkingChunk(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), core.LoopOptions{
+		Loop{}.Run(context.Background(), agent.LoopOptions{
 			Provider: provider,
 			Messages: []core.Message{core.NewUser("hi")},
 			Events:   events,
@@ -541,7 +541,7 @@ func TestRunThinkingChunk(t *testing.T) {
 // TestRunToolProviderSingular covers passing a single ToolProvider
 // via ToolProviders (plural) should merge its tools.
 func TestRunToolProviderSingular(t *testing.T) {
-	provider := llm.NewFakeProviderScripts("test",
+	provider := agent.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "singular_tool", Arguments: map[string]any{}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -569,7 +569,7 @@ func TestRunToolProviderSingular(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), core.LoopOptions{
+		Loop{}.Run(context.Background(), agent.LoopOptions{
 			Provider:      provider,
 			Messages:      []core.Message{core.NewUser("go")},
 			ToolProviders: []core.ToolProvider{toolProvider},
@@ -589,7 +589,7 @@ func TestRunToolProviderSingular(t *testing.T) {
 // TestRunCompactionError covers lines 121-124: CompactionProvider.Compact
 // returns an error. The loop should emit AgentEnd with FinishReason="error".
 func TestRunCompactionError(t *testing.T) {
-	provider := llm.NewFakeProvider("test",
+	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -599,7 +599,7 @@ func TestRunCompactionError(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), core.LoopOptions{
+		Loop{}.Run(context.Background(), agent.LoopOptions{
 			Provider:           provider,
 			Messages:           []core.Message{core.NewUser("hi")},
 			CompactionProvider: compactor,
@@ -625,7 +625,7 @@ func (errorCompactor) Compact(_ context.Context, _ []core.Message) ([]core.Messa
 // TestRunOverflowRetryWithCompactor covers lines 174-187: an overflow error
 // with a CompactionProvider triggers one auto-compaction and retry.
 func TestRunOverflowRetryWithCompactor(t *testing.T) {
-	provider := llm.NewFakeProviderScripts("test",
+	provider := agent.NewFakeProviderScripts("test",
 		// Turn 1: overflow error with no content streamed.
 		[]core.ProviderStreamEvent{
 			core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "context length exceeded"},
@@ -642,7 +642,7 @@ func TestRunOverflowRetryWithCompactor(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), core.LoopOptions{
+		Loop{}.Run(context.Background(), agent.LoopOptions{
 			Provider:           provider,
 			Messages:           []core.Message{core.NewUser("hi")},
 			CompactionProvider: compactor,
@@ -667,7 +667,7 @@ func TestRunOverflowRetryWithCompactor(t *testing.T) {
 // TestRunNilToolProviderEntry covers line 43: a nil entry in ToolProviders
 // should be skipped without panic.
 func TestRunNilToolProviderEntry(t *testing.T) {
-	provider := llm.NewFakeProvider("test",
+	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -675,7 +675,7 @@ func TestRunNilToolProviderEntry(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), core.LoopOptions{
+		Loop{}.Run(context.Background(), agent.LoopOptions{
 			Provider: provider,
 			Messages: []core.Message{core.NewUser("hi")},
 			// Include a nil entry in ToolProviders.
@@ -693,7 +693,7 @@ func TestRunNilToolProviderEntry(t *testing.T) {
 // TestRunNilToolsMap covers lines 32-35: nil Tools map should be initialized
 // to an empty map (the loop should not panic).
 func TestRunNilToolsMap(t *testing.T) {
-	provider := llm.NewFakeProvider("test",
+	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -701,7 +701,7 @@ func TestRunNilToolsMap(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), core.LoopOptions{
+		Loop{}.Run(context.Background(), agent.LoopOptions{
 			Provider: provider,
 			Messages: []core.Message{core.NewUser("hi")},
 			Tools:    nil, // nil tools map
@@ -721,7 +721,7 @@ func TestRunNilToolsMap(t *testing.T) {
 func TestRunBlockingInjectionCancellation(t *testing.T) {
 	// Provider that always stops without tool calls, so we reach the
 	// blocking-injection path on every turn.
-	provider := llm.NewFakeProvider("test",
+	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -732,7 +732,7 @@ func TestRunBlockingInjectionCancellation(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(ctx, core.LoopOptions{
+		Loop{}.Run(ctx, agent.LoopOptions{
 			Provider:         provider,
 			Messages:         []core.Message{core.NewUser("hi")},
 			Events:           events,

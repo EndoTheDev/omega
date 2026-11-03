@@ -1,6 +1,7 @@
 package store
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"context"
 	"encoding/json"
 	"os"
@@ -719,7 +720,7 @@ func TestHandleExportCommandEmptySession(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Compile-time: *Store satisfies core.StoreProvider.
+// Compile-time: *Store satisfies agent.StoreProvider.
 // ---------------------------------------------------------------------------
 
-var _ core.StoreProvider = (*Store)(nil)
+var _ agent.StoreProvider = (*Store)(nil)

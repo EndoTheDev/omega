@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"context"
 	"strings"
 	"sync"
@@ -28,14 +29,14 @@ func testImage() core.ImageContent {
 // captionTestLoop is a minimal loop: one provider stream, then done.
 type captionTestLoop struct{}
 
-func (captionTestLoop) Run(ctx context.Context, opts core.LoopOptions) error {
+func (captionTestLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	for range opts.Provider.Stream(ctx, opts.Messages, nil) {
 	}
 	opts.Events <- core.AgentEnd{Type: "agent_end", FinishReason: "stop"}
 	return nil
 }
 
-// countingProvider is a scripted llm.Provider whose call counter and
+// countingProvider is a scripted agent.Provider whose call counter and
 // seen records are shared across WithModel copies - NewCaptioner pins a
 // WithModel copy, so test assertions must see through it.
 type countingProvider struct {
@@ -55,13 +56,13 @@ func newCountingProvider(model string, script ...core.ProviderStreamEvent) *coun
 	return &countingProvider{mu: &sync.Mutex{}, seen: &countingSeen{}, name: model, scripts: script}
 }
 
-func (p *countingProvider) WithModel(model string) llm.Provider {
+func (p *countingProvider) WithModel(model string) agent.Provider {
 	cp := *p
 	cp.name = model
 	return &cp
 }
 
-func (p *countingProvider) WithThinkingLevel(level string) llm.Provider { return p }
+func (p *countingProvider) WithThinkingLevel(level string) agent.Provider { return p }
 func (p *countingProvider) ModelName() string                          { return p.name }
 func (p *countingProvider) SetThinkingLevel(level string)              {}
 func (p *countingProvider) ListModels() ([]string, error) {
@@ -118,7 +119,7 @@ func (p *countingProvider) lastMessages() []core.Message {
 // again (the card's caption-once gate).
 func TestCaptionOnceAcrossTurns(t *testing.T) {
 	main := newCountingProvider("main", core.StreamEnd{Type: "stream_end", FinishReason: "stop"})
-	ag := core.NewAgent(main, nil, 0)
+	ag := agent.NewAgent(main, nil, 0)
 	ag.SetLoopProvider(captionTestLoop{})
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -153,7 +154,7 @@ func TestCaptionRouting(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer st.Close()
-	ag := core.NewAgent(main, nil, 0)
+	ag := agent.NewAgent(main, nil, 0)
 	ag.SetLoopProvider(captionTestLoop{})
 	ag.SetCaptioner(NewCaptioner(vision, "gemma4:31b", st, nil))
 	original := core.NewUserWithImages("what is this?", []core.ImageContent{testImage()})

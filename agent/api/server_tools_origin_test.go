@@ -11,6 +11,7 @@ package api
 // both are dotted, the origin field is the only distinction.
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -35,7 +36,7 @@ func TestToolsListingCarriesOrigin(t *testing.T) {
 		t.Fatalf("ToolOriginMCP drift: %q", core.ToolOriginMCP)
 	}
 
-	a := core.NewAgent(nil, tools, 0)
+	a := agent.NewAgent(nil, tools, 0)
 	s := NewServer(a, nil, nil, nil, nil, nil)
 
 	rec := httptest.NewRecorder()

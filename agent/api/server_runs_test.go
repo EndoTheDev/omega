@@ -40,12 +40,12 @@ func (p *stepProvider) ModelName() string { return p.modelName }
 
 func (p *stepProvider) SetThinkingLevel(level string) {}
 
-func (p *stepProvider) WithThinkingLevel(level string) llm.Provider {
+func (p *stepProvider) WithThinkingLevel(level string) agent.Provider {
 	cp := *p
 	return &cp
 }
 
-func (p *stepProvider) WithModel(model string) llm.Provider {
+func (p *stepProvider) WithModel(model string) agent.Provider {
 	cp := *p
 	cp.modelName = model
 	return &cp
@@ -98,7 +98,7 @@ func finalStep(content string) []core.ProviderStreamEvent {
 func newStepServer(t *testing.T) (*Server, *stepProvider, *store.Store, *httptest.Server) {
 	t.Helper()
 	prov := newStepProvider("step")
-	a := core.NewAgent(prov, nil, 0)
+	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -498,7 +498,7 @@ func fetchDetail(t *testing.T, url string) map[string]any {
 // agent_end, exactly as the real loop unwinds.
 type hangLoop struct{}
 
-func (hangLoop) Run(ctx context.Context, opts core.LoopOptions) error {
+func (hangLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	opts.Events <- core.AgentStart{Type: "agent_start"}
 	turns := 0
 	for {
@@ -535,7 +535,7 @@ func (hangLoop) Run(ctx context.Context, opts core.LoopOptions) error {
 // and green: it covers the LIVE run, this covers the runaway one.
 func TestDetachedRunTimeoutUnbricksSession(t *testing.T) {
 	prov := newStepProvider("step")
-	a := core.NewAgent(prov, nil, 0)
+	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(hangLoop{})
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -623,7 +623,7 @@ func stopHangTool(started func()) core.Tool {
 // produces the cancelled agent_end. The cancel parks in the tool.
 type scriptedStopLoop struct{ started func() }
 
-func (l scriptedStopLoop) Run(ctx context.Context, opts core.LoopOptions) error {
+func (l scriptedStopLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	opts.Events <- core.AgentStart{Type: "agent_start"}
 	opts.Events <- core.TurnStart{Type: "turn_start", Turn: 1}
 	opts.Events <- core.StreamEvent{Event: core.ResponseChunk{Type: "response_chunk", Content: "par"}}
@@ -667,7 +667,7 @@ func (l scriptedStopLoop) Run(ctx context.Context, opts core.LoopOptions) error 
 func TestDetachedRunStopCancelsLiveRun(t *testing.T) {
 	toolStarted := make(chan struct{})
 	prov := newStepProvider("step")
-	a := core.NewAgent(prov, nil, 0)
+	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(scriptedStopLoop{started: sync.OnceFunc(func() { close(toolStarted) })})
 	st, err := store.Open(":memory:")
 	if err != nil {

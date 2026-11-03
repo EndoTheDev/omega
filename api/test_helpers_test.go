@@ -65,18 +65,18 @@ func newTestServer() *Server {
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		),
 	)
-	a := core.NewAgent(provider, nil, 0)
+	a := agent.NewAgent(provider, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	return NewServer(a, nil, nil, nil, nil, nil)
 }
 func (m *mockProvider) ModelName() string             { return m.modelName }
 func (m *mockProvider) SetThinkingLevel(level string) { m.thinkingLevel = level }
-func (m *mockProvider) WithThinkingLevel(level string) llm.Provider {
+func (m *mockProvider) WithThinkingLevel(level string) agent.Provider {
 	cp := *m
 	cp.thinkingLevel = level
 	return &cp
 }
-func (m *mockProvider) WithModel(model string) llm.Provider {
+func (m *mockProvider) WithModel(model string) agent.Provider {
 	cp := *m
 	cp.modelName = model
 	return &cp
@@ -125,7 +125,7 @@ func (m *mockProvider) streamCalls() int {
 	return *m.calls
 }
 func (p testToolProvider) Tools() map[string]core.Tool { return p.tools }
-func (testLoop) Run(ctx context.Context, opts core.LoopOptions) error {
+func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	sink := agent.RunTurnSink(ctx)
 	// Persistence outlives the run ctx - same WithoutCancel law the
 	// real loop applies, so a cancelled run still lands its copy.
@@ -194,7 +194,7 @@ func newTestServerWithStore(t *testing.T) (*Server, *store.Store) {
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		),
 	)
-	a := core.NewAgent(provider, nil, 0)
+	a := agent.NewAgent(provider, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	return NewServer(a, nil, st, nil, nil, nil), st
 }
@@ -217,12 +217,12 @@ func (p *multiProvider) ModelName() string { return p.modelName }
 
 func (p *multiProvider) SetThinkingLevel(level string) {}
 
-func (p *multiProvider) WithThinkingLevel(level string) llm.Provider {
+func (p *multiProvider) WithThinkingLevel(level string) agent.Provider {
 	cp := *p
 	return &cp
 }
 
-func (p *multiProvider) WithModel(model string) llm.Provider {
+func (p *multiProvider) WithModel(model string) agent.Provider {
 	cp := *p
 	cp.modelName = model
 	return &cp
@@ -347,7 +347,7 @@ func newTestServerWithStoreSeam(t *testing.T, rt core.RegistryToggles) (*Server,
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		),
 	)
-	a := core.NewAgent(provider, nil, 0)
+	a := agent.NewAgent(provider, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	return NewServer(a, nil, st, nil, nil, rt), st
 }

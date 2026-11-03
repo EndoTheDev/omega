@@ -24,7 +24,7 @@
 //	RegisterTurnNudger             RegisterTurnNudger (t_9972dfd0)
 //	RegisterNotifications          RegisterNotifications
 //	 Verdicts                      RegisterVerdicts
-//	 Captioner                     host-built after the mount today
+//	 core.Captioner                     host-built after the mount today
 //
 //	 Additive surfaces (7)          Registration
 //	 ToolProviders                 RegisterTool / RegisterRuntimeTools
@@ -783,7 +783,7 @@ func (api *ExtensionAPI) RegisterCommand(name, description string, args []string
 
 // RegisterDelegation maps the delegation pipe (both fields of the
 // classic delegate seam in one registration). The injected side is the
-// run-affinity InjectedStream (t_f3fb7c52) - results are queued per run
+// run-affinity core.InjectedStream (t_f3fb7c52) - results are queued per run
 // and drained by the run's own affinity key; the pending side counts
 // THIS run's running tasks.
 func (api *ExtensionAPI) RegisterDelegation(injected core.InjectedStream, pending func(affinity string) int) error {
@@ -870,100 +870,4 @@ func (api *ExtensionAPI) Offer(key string, svc any) error {
 		func(c *core.Context) { c.DropOffer(key, module) },
 	)
 	return nil
-}
-
-// RegisterProvider maps the provider seam.
-func (api *ExtensionAPI) RegisterProvider(p core.Provider) error {
-	if p == nil {
-		return fmt.Errorf("provider %q: a registration carries its provider", api.module)
-	}
-	prev := api.ctx.Provider
-	return api.mountSeam("provider",
-		func(c *core.Context) { c.Provider = p },
-		func(c *core.Context) { c.Provider = prev })
-}
-
-// Provider reads the provider seam live - the lazy read seam a
-// module's later call uses when it must see the CURRENT provider
-// (module-toggles and re-mounts swap it) instead of a mount-time
-// pin (t_9972dfd0, the skills curator).
-func (api *ExtensionAPI) Provider() core.Provider { return api.ctx.Provider }
-
-// RegisterCompactor maps the compactor seam.
-func (api *ExtensionAPI) RegisterCompactor(cp core.CompactionProvider) error {
-	if cp == nil {
-		return fmt.Errorf("compactor %q: a registration carries its compactor", api.module)
-	}
-	prev := api.ctx.Compactor
-	return api.mountSeam("compactor",
-		func(c *core.Context) { c.Compactor = cp },
-		func(c *core.Context) { c.Compactor = prev })
-}
-
-// RegisterStore maps the store seam.
-func (api *ExtensionAPI) RegisterStore(s core.StoreProvider) error {
-	if s == nil {
-		return fmt.Errorf("store %q: a registration carries its store", api.module)
-	}
-	prev := api.ctx.Store
-	return api.mountSeam("store",
-		func(c *core.Context) { c.Store = s },
-		func(c *core.Context) { c.Store = prev })
-}
-
-// RegisterTurnNudger maps the learning-loop reminder seam (t_9972dfd0):
-// the loop injects the nudger's one line into the next turn prep when
-// the tool-iteration interval elapses without a skill write.
-func (api *ExtensionAPI) RegisterTurnNudger(n core.TurnNudger) error {
-	if n == nil {
-		return fmt.Errorf("turn-nudger %q: a registration carries its nudger", api.module)
-	}
-	prev := api.ctx.Nudge
-	return api.mountSeam("nudge",
-		func(c *core.Context) { c.Nudge = n },
-		func(c *core.Context) { c.Nudge = prev })
-}
-
-// RegisterLoop maps the loop seam.
-func (api *ExtensionAPI) RegisterLoop(l core.LoopProvider) error {
-	if l == nil {
-		return fmt.Errorf("loop %q: a registration carries its loop", api.module)
-	}
-	prev := api.ctx.Loop
-	return api.mountSeam("loop",
-		func(c *core.Context) { c.Loop = l },
-		func(c *core.Context) { c.Loop = prev })
-}
-
-// RegisterLogger maps the logging seam.
-func (api *ExtensionAPI) RegisterLogger(l core.LoggerProvider) error {
-	if l == nil {
-		return fmt.Errorf("logging %q: a registration carries its logger", api.module)
-	}
-	prev := api.ctx.Logger
-	return api.mountSeam("logging",
-		func(c *core.Context) { c.Logger = l },
-		func(c *core.Context) { c.Logger = prev })
-}
-
-// RegisterPromptBuilder maps the prompt_builder seam.
-func (api *ExtensionAPI) RegisterPromptBuilder(p core.PromptBuilder) error {
-	if p == nil {
-		return fmt.Errorf("prompt_builder %q: a registration carries its builder", api.module)
-	}
-	prev := api.ctx.PromptBuilder
-	return api.mountSeam("prompt_builder",
-		func(c *core.Context) { c.PromptBuilder = p },
-		func(c *core.Context) { c.PromptBuilder = prev })
-}
-
-// RegisterApprovals maps the smart-approval seam.
-func (api *ExtensionAPI) RegisterApprovals(a core.ApprovalProvider) error {
-	if a == nil {
-		return fmt.Errorf("approvals %q: a registration carries its provider", api.module)
-	}
-	prev := api.ctx.Approvals
-	return api.mountSeam("approvals",
-		func(c *core.Context) { c.Approvals = a },
-		func(c *core.Context) { c.Approvals = prev })
 }

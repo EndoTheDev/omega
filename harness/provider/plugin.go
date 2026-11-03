@@ -42,7 +42,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		cfg = c
 	}
 	prov := NewProvider(cfg.Type, cfg.ModelName, cfg.Host, cfg.APIKey)
-	if err := api.RegisterProvider(prov); err != nil {
+	if err := api.Offer("provider", prov); err != nil {
 		return err
 	}
 	commands := []struct {

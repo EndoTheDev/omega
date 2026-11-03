@@ -1,4 +1,4 @@
-package llm
+package agent
 
 import (
 	"context"
