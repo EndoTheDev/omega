@@ -47,7 +47,7 @@ is a review finding; its content lands in its mapped home instead.
 - **Secrets never committed.** `.env` and the home `config/*.yaml`
   files are gitignored.
 - **Extensions are in-process.** All extensions are Go packages under
-  `modules/`. No stdio, no IPC, no runtime loading. The host calls
+  `harness/`. No stdio, no IPC, no runtime loading. The host calls
   `MountAllAPI` at startup - the universal registration surface is the
   only mount path; the agent loop reads from `Context`.
 - **The agent loop is the only place tools execute.** The HTTP channel
@@ -63,7 +63,7 @@ is a review finding; its content lands in its mapped home instead.
 ## Module laws
 
 Terse operational rules. Layer references live in `docs/` (map below);
-`modules/README.md` is the extension authoring guide.
+`harness/README.md` is the extension authoring guide.
 
 - **Plugin contract.** Every extension implements `agent.Plugin`
   (`Name`, `Provides`, `Requires`, `MountWithAPI`). Exclusive seams take
@@ -87,17 +87,17 @@ Terse operational rules. Layer references live in `docs/` (map below);
   Start after the mount commit; StopAll walks handles in reverse. A
   blocking Start is a fence violation.
 - **Import law.** Modules import `core/` for contracts (types, events,
-  seams, messagetree); `engine/agent/` is for the loop runtime and real helpers
+  seams, messagetree); `agent/` is for the loop runtime and real helpers
   only (`Plugin`, `MountAllAPI`, `TurnSink`, profiles, `NewSessionID`).
   No module imports another module - shared shapes live in core
   (card t_fb49d5cf). TIER AMENDMENT (v0.12 tier law, 2026-10-26;
   TUI retired 2026-11-01, card t_0744eb8e):
   `engine/http_channel/` is ENGINE ring, not modules - a module
   importing it is module-imports-engine, not module-imports-module.
-- **New extension recipe.** Create `modules/<name>/` with `<name>.go`,
+- **New extension recipe.** Create `harness/<name>/` with `<name>.go`,
   `plugin.go` (Plugin adapter), `<name>_test.go`; register in
   `buildPlugins()` in `cmd/omega/main.go`; append tools to
-  `ctx.ToolProviders` in `Mount()`. Full steps: `modules/README.md`.
+  `ctx.ToolProviders` in `Mount()`. Full steps: `harness/README.md`.
 - **Tool merge.** Extension tools merge into the registry at run time;
   built-in tools win on name conflict.
 - **Binary purity.** core carries ZERO module nouns; module-shaped
@@ -152,7 +152,7 @@ Terse operational rules. Layer references live in `docs/` (map below);
   `done_reason: "load"` (ollama-cloud cold-load) are retried with the
   same budget before surfacing as a LOUD stream error - never a silent
   empty turn (t_854eef1b). New provider: a `streamX` function
-  plus a case in the `Stream` switch in `modules/provider/`.
+  plus a case in the `Stream` switch in `harness/provider/`.
   Fragmented tool-call deltas (OpenAI, Anthropic) accumulate by index
   and flush in order after the stream ends; consecutive Anthropic
   `ToolResult`s fold into one user message. `FakeProvider` scripts
@@ -212,15 +212,15 @@ card t_8abdbb15; full contract and templates in `docs/release-gate.md`):
 
 | Area | What it is | Docs |
 | ---- | ---------- | ---- |
-| `engine/ai/` | LLM provider contract: interface, message/event types, tool schema, shared HTTP infra, retry, ThinkingLevels, `DetectImage` | `docs/api.md` |
-| `engine/agent/` | Multi-turn loop contract (`LoopProvider`), capability seams, Plugin system (`Context`, `MountAllAPI`), events, shared types | `docs/architecture.md` |
+| `llm/` | LLM provider contract: interface, message/event types, tool schema, shared HTTP infra, retry, ThinkingLevels, `DetectImage` | `docs/api.md` |
+| `agent/` | Multi-turn loop contract (`LoopProvider`), capability seams, Plugin system (`Context`, `MountAllAPI`), events, shared types | `docs/architecture.md` |
 | `core/` | Core types, events, seams, message vocabulary, messagetree; stdlib-only imports, enforced by `core/importability_test.go` | `docs/architecture.md` |
 | `engine/http_channel/` | ENGINE ring (always on, never disabled): HTTP/SSE delivery channel + embedded SPA serving | `docs/api.md` |
 | `cmd/omega/loop.go` + `setup.go` | The CLI agent loop + the mandatory first-run setup wizard (the TUI retired 2026-11-01) | `docs/cli.md` |
-| `modules/` | In-process extension packages (one `agent.Plugin` each) - the TOGGLEABLE tier; new extensions go here, never into the engine ring | `docs/architecture.md` (table), `modules/README.md` (authoring) |
+| `harness/` | In-process extension packages (one `agent.Plugin` each) - the TOGGLEABLE tier; new extensions go here, never into the engine ring | `docs/architecture.md` (table), `harness/README.md` (authoring) |
 | `engine/webui/` | ENGINE shell (always on, never disabled): Nuxt 4 webui SPA source at checkout root, built output embedded into the binary via the embed lane | `docs/webui.md` |
-| `modules/cron/` | Scheduled prompts (`crons.yaml`, `cron:<name>` sessions) | `docs/cli.md` (`/cron`) |
-| `modules/trust/` | Project trust gate (`TrustProvider`, `trust.yaml`, AGENTS.md loading) | `docs/project-trust.md` |
+| `harness/cron/` | Scheduled prompts (`crons.yaml`, `cron:<name>` sessions) | `docs/cli.md` (`/cron`) |
+| `harness/trust/` | Project trust gate (`TrustProvider`, `trust.yaml`, AGENTS.md loading) | `docs/project-trust.md` |
 | `cmd/omega/` | Single binary entry point, config, home resolution, self-update | `docs/cli.md` |
 | `docs/` | User and worker documentation | start at `docs/architecture.md` |
 
@@ -263,7 +263,7 @@ go vet ./...      # no suspicious constructs
 - `docs/release-gate.md` - the review gate law: rounds, tags, the lens brief, the regression set
 - `docs/removing-a-module.md` - the module removal recipe (capsule law)
 - `docs/migrating-a-module.md` - the module migration recipe (universal mount)
-- `modules/README.md` - extension authoring guide
+- `harness/README.md` - extension authoring guide
 - `.agents/COMMIT.md` - commit convention and voice
 
 ## Style
