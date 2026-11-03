@@ -6,10 +6,10 @@ import (
 )
 
 // Plugin mounts the verdicts seam and its surfaces: the
-// verdict tool, the /verdict TUI command, and a short prompt
+// verdict tool, the /verdict command, and a short prompt
 // section so the model knows when to ask. The hub is built once and
 // shared by the tool (the blocking Ask), the HTTP channel (the answer
-// POSTs), and the TUI (the answer command) - that one object is the
+// POSTs), and the command surface (the /verdict command) - that one object is the
 // single-answer race. It mounts through the ExtensionAPI exclusively
 // (v0.12 phase C2; the classic Mount body is retired to the fail-loud
 // stub below).
@@ -43,7 +43,7 @@ func (p *Plugin) Requires() []string { return []string{"store", "logger"} }
 // MountWithAPI builds the hub from the seams the mount reads in place
 // (store, logger - the Requires edges stay, recipe law 4) and
 // registers every face: the verdicts seam, the verdict tool,
-// the TUI renderer, and the Verdict Cards prompt section.
+// the /verdict command, and the Verdict Cards prompt section.
 //
 // Capsule posture (arc 6, card t_78935c07): this registration is the
 // module's whole surface - the seam, the blocking verdict tool, the

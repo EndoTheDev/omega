@@ -190,7 +190,7 @@ func cmdAgents(args []string) error {
 }
 
 // printAgents renders the CLI table (same data as the webui /agents
-// list and the TUI /agents command - one scan, three renderers).
+// list - one scan, two renderers).
 func printAgents(home string) error {
 	profiles := agent.LoadProfiles(home)
 	fmt.Printf("%-14s %-28s %-22s %6s %6s  %s\n", "AGENT", "DESCRIPTION", "MODEL", "SKILLS", "MEMORY", "DIR")

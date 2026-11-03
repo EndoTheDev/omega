@@ -1,6 +1,6 @@
 // omega webui: tool-result display mode (/tools auto parity, card
 // t_868633b3). Three modes: expanded (every row open), collapsed (every
-// row shut), auto - the TUI default where a running call expands and a
+// row shut), auto - a running call expands and a
 // settled one collapses. Persisted in localStorage under
 // omega.tool-display (same pattern as omega.appearance); a manual
 // summary toggle pins a row's state for the session - the mode
@@ -20,7 +20,7 @@ export function parseToolDisplay(v: unknown): ToolDisplay {
 }
 
 // toolRowWantOpen: the pure mode+status -> open mapping for a row the
-// user has NOT pinned. Auto = the TUI behavior: a running call is open
+// user has NOT pinned. Auto: a running call is open
 // (you watch it work), a settled one is closed (the result collapses).
 // Pure.
 export function toolRowWantOpen(status: string, mode: ToolDisplay): boolean {

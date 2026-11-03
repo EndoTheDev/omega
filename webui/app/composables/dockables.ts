@@ -257,8 +257,8 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     closable: false,
   },
   {
-    // card t_14f73742: the extensions inventory joins the inspector - the
-    // webui parity of the TUI /extensions command. A SHELL tab over
+    // card t_14f73742: the extensions inventory joins the inspector -
+    // a SHELL tab over
     // GET /extensions (the composition-contract ruling is recorded in
     // extensionsRows.ts): the shell owns the listing because it
     // aggregates every module, so no module can own this panel. has-ui

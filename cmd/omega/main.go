@@ -476,7 +476,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		// synchronous shell stays where it is).
 		process.NewPlugin(),
 		// card t_2ecf9c51: verdict cards - verdict tool, the
-		// verdicts seam, and the /verdict TUI command. Requires store
+		// verdicts seam, and the /verdict command. Requires store
 		// (the hub captures it at Mount to persist card + verdict rows);
 		// placed after the tools module so the prompt section lands
 		// after the tools list.
@@ -596,7 +596,7 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 // context: a pinned vision-model provider copy, the store as the caption
 // sink, and the logger. An unset knob (or a store without caption
 // support) changes nothing. Called after the store resolves, before any
-// agent is built from the context - serve, TUI, and cron agents all
+// agent is built from the context - serve, loop, and cron agents all
 // inherit through NewFromContext.
 func wireCaptioner(cfg Config, pctx *agent.Context) {
 	if cfg.VisionModel == "" || pctx == nil {

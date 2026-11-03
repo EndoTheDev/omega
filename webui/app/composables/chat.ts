@@ -116,10 +116,9 @@ export interface ChatState {
   ephemeral?: boolean;
   // armed skill injection (card t_07aed3f9): the /skill command
   // dispatch resolved a skill's content server-side and holds it here;
-  // the NEXT send carries it as a system preamble (the TUI appended a
-  // System message to its history the same way). Consumed on submit.
+  // the NEXT send carries it as a system preamble. Consumed on submit.
   // Live-verified on a store-backed session: the preamble persists as a
-  // system row (it rides later sends' context, the TUI's behavior), and
+  // system row (it rides later sends' context), and
   // /transcript drops system rows - no visible bubble anywhere.
   pendingSkill: { name: string; content: string } | null;
   // the draft workspace intent (card t_ea7e6a58): the pre-session
@@ -679,8 +678,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     const images = st.attachments.slice();
     st.attachments = [];
     // the armed skill (t_07aed3f9) rides THIS send as a system
-    // preamble - the same injection the TUI made into its history; one
-    // send consumes it
+    // preamble; one send consumes it
     const messages: OmegaMessage[] = [{ role: "user", content: text, images: images.length ? images : undefined }];
     if (st.pendingSkill?.content) {
       messages.unshift({ role: "system", content: st.pendingSkill.content });

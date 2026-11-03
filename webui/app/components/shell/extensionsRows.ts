@@ -1,5 +1,5 @@
 // omega webui: pure row model for the EXTENSIONS inspector tab
-// (card t_14f73742 - the webui parity of the TUI /extensions command;
+// (card t_14f73742 - the /extensions inventory;
 // card t_210a0d19 - the tab becomes the module lifecycle cockpit).
 //
 // Composition contract note: this inventory tab is a SHELL tab over the
@@ -15,7 +15,7 @@
 // commands, seams, expansion names). GET /modules covers the registry
 // introspection (live state, toggleable, dependents) - the toggle
 // cockpit's data - and filters the shell modules, so a row the
-// introspection does not know is the SHELL ring (http_channel, tui):
+// introspection does not know is the SHELL ring (http_channel):
 // always on by tier law, no toggle. A module the inventory does not
 // know is DISABLED (it unmounted, so /extensions never listed it): it
 // rides the tail with empty detail. Pure on purpose: no Vue, no fetch
@@ -64,7 +64,7 @@ export interface ExtensionRow {
 
 // extensionsRows merges the endpoint payload, the composition manifest
 // and the registry introspection into renderable rows: mounted rows in
-// payload order (mount order - the same facts the TUI renders), then
+// payload order (mount order), then
 // the introspection-only rows (disabled modules) in registry order.
 export function extensionsRows(
   extensions: readonly OmegaExtension[],

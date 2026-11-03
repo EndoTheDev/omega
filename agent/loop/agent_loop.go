@@ -277,7 +277,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		assistant.ToolCalls = toolCalls
 		// Timing rides the assistant record itself: the loop's meters
 		// are the persisted ones, so every surface's reload (webui,
-		// TUI, export) sees thinking/response spans - not only the
+		// the CLI loop, export) sees thinking/response spans - not only the
 		// sessions the http channel used to meter.
 		if thinkMs, respMs := meter.spans(); thinkMs > 0 || respMs > 0 {
 			assistant.Timing = &core.Timing{ThinkingMs: thinkMs, ResponseMs: respMs}
@@ -408,7 +408,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 
 		if len(toolCalls) == 0 {
 			// One-shot mode (UserInput == nil): block if subagents are
-			// still running. TUI mode (UserInput != nil) never blocks.
+			// still running. Interactive mode (UserInput != nil) never blocks.
 			// Run affinity (t_f3fb7c52): the wait is addressed to THIS
 			// run's key - another run's result never releases or
 			// enters this block.

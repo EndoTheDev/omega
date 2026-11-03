@@ -49,7 +49,7 @@ export interface OmegaImage {
 export interface OmegaMessage {
   // "system" rides the skill-command arm (t_07aed3f9): the dispatch
   // surface returns a skill's content and the next send carries it as
-  // a system preamble - the TUI injected skill content the same way.
+  // a system preamble.
   // The server's decodeMessages accepts all four roles.
   role: "user" | "assistant" | "system";
   content: string;
@@ -1576,7 +1576,7 @@ export function postFilesMkdir(path: string, session?: string): Promise<void> {
 }
 
 // --- insights (card t_e1e61680): the webui's /insights parity ---
-// The payload mirrors the TUI's /insights report: overview counts, a
+// The payload is the insights report: overview counts, a
 // per-tool breakdown, and weekday activity. The wire shape is the
 // handler's insightsPayload (http_channel/server_insights.go).
 export interface InsightsToolRow {
@@ -1613,7 +1613,7 @@ export interface InsightsPayload {
 }
 
 // fetchInsights reads the cross-session usage analytics. days mirrors
-// the TUI command's arg semantics: null = the server default (30),
+// the /insights arg semantics: null = the server default (30),
 // 0 = all time. The server's lists are nil Go slices on empty windows -
 // they come over the wire as null (tools) - normalized to [] here so
 // the view never reads .length off null (card t_d7fd3ad3: the journey
@@ -2038,7 +2038,7 @@ export async function fetchSessions(): Promise<Session[]> {
 
 // --- extensions inventory: GET /extensions (card t_14f73742) ---
 
-// OmegaExtension is one loaded module: the TUI /extensions facts (name,
+// OmegaExtension is one loaded module: the /extensions facts (name,
 // tool + command counts, seams) plus the module's own one-line
 // description (omitted when the module doesn't implement agent.Describer).
 // has-ui is NOT on the wire - the shell derives it from the composition
