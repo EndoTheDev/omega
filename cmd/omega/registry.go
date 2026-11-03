@@ -50,7 +50,7 @@ func (r *omegaRegistries) Sync(d DisabledNamespaces) {
 		return
 	}
 	r.mu.Lock()
-	r.fold.Skills = sortedCopy(d.Skills)
+	r.fold.SkillNames = sortedCopy(d.SkillNames)
 	r.fold.Tools = sortedCopy(d.Tools)
 	r.fold.Agents = sortedCopy(d.Agents)
 	r.mu.Unlock()
@@ -80,7 +80,7 @@ func (r *omegaRegistries) applyLive() {
 	}
 	r.mu.Lock()
 	tools := r.fold.Tools
-	skillList := r.fold.Skills
+	skillList := r.fold.SkillNames
 	agentList := r.fold.Agents
 	r.mu.Unlock()
 	r.pctx.DisabledTools = tools
@@ -112,7 +112,7 @@ func (r *omegaRegistries) Disabled() core.DisabledNames {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return core.DisabledNames{
-		Skills: slices.Clone(r.fold.Skills),
+		Skills: slices.Clone(r.fold.SkillNames),
 		Tools:  slices.Clone(r.fold.Tools),
 		Agents: slices.Clone(r.fold.Agents),
 	}
@@ -167,7 +167,7 @@ func (r *omegaRegistries) toggle(kind, name string, enabled bool, known func(nam
 	var cur []string
 	switch kind {
 	case "skills":
-		cur = r.fold.Skills
+		cur = r.fold.SkillNames
 	case "tools":
 		cur = r.fold.Tools
 	case "agents":
@@ -191,7 +191,7 @@ func (r *omegaRegistries) toggle(kind, name string, enabled bool, known func(nam
 	prev := slices.Clone(cur)
 	switch kind {
 	case "skills":
-		r.fold.Skills = next
+		r.fold.SkillNames = next
 	case "tools":
 		r.fold.Tools = next
 	case "agents":
@@ -203,7 +203,7 @@ func (r *omegaRegistries) toggle(kind, name string, enabled bool, known func(nam
 	if err := writeDisabled(r.configPath, *r.fold); err != nil {
 		switch kind {
 		case "skills":
-			r.fold.Skills = prev
+			r.fold.SkillNames = prev
 		case "tools":
 			r.fold.Tools = prev
 		case "agents":
