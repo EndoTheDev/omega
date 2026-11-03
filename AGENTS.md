@@ -141,7 +141,7 @@ Terse operational rules. Layer references live in `docs/` (map below);
   backslash continues the line; mid-run typing queues or answers a
   verdict card. The webui is the app; the terminal is setup and
   config. Context window priority: provider probe > compaction
-  config > `core.DefaultContextWindow` (8192); `ModelInfo` runs on a
+  config > `core.DefaultContextWindow` (32768); `ModelInfo` runs on a
   per-lookup `WithModel` copy.
 - **ai.** Provider failures are stream events, not Go errors:
   `StreamEnd` with `FinishReason="error"` and `Error` set; the channel
