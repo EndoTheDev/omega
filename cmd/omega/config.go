@@ -78,7 +78,7 @@ type Config struct {
 // list carries no state, and an all-empty key carries none at all.
 type DisabledNamespaces struct {
 	Modules []string `yaml:"modules"`
-	Skills  []string `yaml:"skills"`
+	SkillNames []string `yaml:"skills"`
 	Tools   []string `yaml:"tools"`
 	Agents  []string `yaml:"agents"`
 }
@@ -89,7 +89,7 @@ type DisabledNamespaces struct {
 // block, never a boolean operand inside the return expression
 // (nm-purity scrub shape).
 func (d DisabledNamespaces) empty() bool {
-	if len(d.Skills) > 0 {
+	if len(d.SkillNames) > 0 {
 		return false
 	}
 	return len(d.Modules) == 0 && len(d.Tools) == 0 && len(d.Agents) == 0
@@ -163,7 +163,7 @@ func sortedCopy(names []string) []string {
 func cleanNamespaces(d DisabledNamespaces) DisabledNamespaces {
 	return DisabledNamespaces{
 		Modules: sortedCopy(d.Modules),
-		Skills:  sortedCopy(d.Skills),
+		SkillNames: sortedCopy(d.SkillNames),
 		Tools:   sortedCopy(d.Tools),
 		Agents:  sortedCopy(d.Agents),
 	}
@@ -537,7 +537,7 @@ func writeDisabled(path string, fold DisabledNamespaces) error {
 			names []string
 		}{
 			{"modules", fold.Modules},
-			{"skills", fold.Skills},
+			{"skills", fold.SkillNames},
 			{"tools", fold.Tools},
 			{"agents", fold.Agents},
 		} {
@@ -761,7 +761,7 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "http_channel":
 		return api.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, DefaultWorkspace: c.Server.DefaultWorkspace, TitleModel: c.TitleModel, WebTools: agentapi.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
 	case "skills":
-		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.Skills), NudgeInterval: c.Skills.NudgeInterval, CuratorModel: c.Skills.CuratorModel}, true
+		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.SkillNames), NudgeInterval: c.Skills.NudgeInterval, CuratorModel: c.Skills.CuratorModel}, true
 	case "memory":
 		return memory.Config{Enabled: c.Memory.Enabled, UserProfileEnabled: c.Memory.UserProfileEnabled, CharLimit: c.Memory.CharLimit, UserProfileCharLimit: c.Memory.UserProfileCharLimit, File: c.Memory.File, UserProfileFile: c.Memory.UserProfileFile}, true
 	case "logging":
