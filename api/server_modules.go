@@ -14,14 +14,14 @@ import (
 // core.ModuleToggles seam) provides it. A host without the seam (nil
 // modules) answers 501 so the pane can hide the list.
 
-// engineModules never appear in the list (the tier law: engine ring,
+// shellModules never appear in the list (the tier law: the shell ring,
 // always on - the frontend does not render its own on/off switch).
-var engineModules = map[string]bool{
+var shellModules = map[string]bool{
 	"http_channel": true,
 }
 
-// handleModules serves GET: the module list (introspection, engine
-// ring filtered out) plus the refusal ledger tail (Q12 - rejections
+// handleModules serves GET: the module list (introspection, shell
+// modules filtered out) plus the refusal ledger tail (Q12 - rejections
 // visible as events). no-store: the state changes under the pane.
 func (s *Server) handleModules(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -35,8 +35,8 @@ func (s *Server) handleModules(w http.ResponseWriter, r *http.Request) {
 	all := s.ModuleToggles().Modules()
 	mods := make([]core.ModuleStatus, 0, len(all))
 	for _, m := range all {
-		if engineModules[m.Name] {
-			continue // tier law: the engine never toggles
+		if shellModules[m.Name] {
+			continue // tier law: the shell never toggles
 		}
 		mods = append(mods, m)
 	}
@@ -97,8 +97,8 @@ func (s *Server) handleModuleToggle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing module name", http.StatusBadRequest)
 		return
 	}
-	if engineModules[name] {
-		http.Error(w, "module "+name+" is engine ring - always on, never toggled", http.StatusBadRequest)
+	if shellModules[name] {
+		http.Error(w, "module "+name+" is shell - always on, never toggled", http.StatusBadRequest)
 		return
 	}
 	var body struct {
@@ -120,7 +120,7 @@ func (s *Server) handleModuleToggle(w http.ResponseWriter, r *http.Request) {
 	all := s.ModuleToggles().Modules()
 	mods := make([]core.ModuleStatus, 0, len(all))
 	for _, m := range all {
-		if engineModules[m.Name] {
+		if shellModules[m.Name] {
 			continue
 		}
 		mods = append(mods, m)

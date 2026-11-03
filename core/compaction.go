@@ -11,7 +11,7 @@ const defaultReserveTokens = 16384
 
 // CompactionConfig controls when the agent summarizes old messages to
 // stay within the model's context window. It lives in core (not the
-// host) so the loop engines can consume it without importing a layer
+// host) so the loop packages can consume it without importing a layer
 // above themselves. The config is passed to the compactor plugin via
 // Context; the plugin owns the compaction logic.
 type CompactionConfig struct {

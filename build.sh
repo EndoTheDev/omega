@@ -17,7 +17,7 @@ if OMEGA_GATE_FIXTURE=scripts/gate-deps_testdata/bad.txt ./scripts/gate-deps.sh;
 fi
 ./scripts/gate-deps.sh
 echo "==> webui bundle gate (no conflict markers in the embedded SPA)"
-if grep -rqE '<<<<<<<|Stashed changes' engine/http_channel/static/; then
+if grep -rqE '<<<<<<<|Stashed changes' api/static/; then
 	echo "conflict markers in the embedded SPA - regenerate via harness/ui/scripts/build.sh"
 	exit 1
 fi

@@ -45,7 +45,7 @@ disabled:
 
 A `disabled:` entry skips that capsule at boot (its routes answer 404).
 Machine-critical capsules (provider, store, loop, logging) and the
-engine ring (http_channel) are not on the list — booting with
+serving shell (http_channel) are not on the list — booting with
 them disabled fails loud. The v0.12 `omega.json` sidecar is folded
 into this key at boot and deleted; an unknown entry fails the boot
 naming it.

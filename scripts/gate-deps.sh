@@ -55,7 +55,7 @@ scan() {
 					done
 				done ;;
 			"$MODROOT"/harness/*)
-				violation "engine llm/agent dep closure includes $line" ;;
+				violation "tier llm/agent dep closure includes $line" ;;
 		esac
 	done
 }

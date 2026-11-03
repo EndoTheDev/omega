@@ -76,10 +76,10 @@ against localhost from the same host is unaffected.
 Optional seams degrade with a status code, never a panic: no store ->
 `/sessions*` and `/sessions/search` answer 501; no settings seam ->
 `/settings` answers 501. Module REST (`/tasks*`, `/boards`) is
-capsule-registered (v0.12 phase F): the engine serves it from the live
+capsule-registered (v0.12 phase F): the shell serves it from the live
 registry (`module_routes.go`) - a registered-pattern miss answers 404,
 and with the module absent its paths fall to the SPA catch-all (the
-engine holds no knowledge of the module's roots - that ignorance is
+shell holds no knowledge of the module's roots - that ignorance is
 the binary-purity law).
 
 Session titles generate on first exchange via a detached second agent

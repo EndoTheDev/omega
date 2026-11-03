@@ -703,7 +703,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	// The fence (v0.12 E1): module background work starts here, after
 	// the mount commit. The run group owns the Start/Stop handles the
 	// capsules registered in Mount (cron first); the channels stay
-	// host-started - engine ring, no module handles.
+	// host-started - shell, no module handles.
 	if err := pctx.RunGroup().StartAll(ctx, core.StartDeps{
 		Ctx:   pctx,
 		Agent: ag,

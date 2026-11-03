@@ -16,7 +16,7 @@ import (
 // WebTools is the web search/fetch tool pair the channel mounts
 // (v0.13 shell law 1, card t_f76ecdbe: the modules/web capsule
 // dissolved into the channel - serving and these tools are the
-// channel's job, one place, one word). The pair is engine vocabulary
+// channel's job, one place, one word). The pair is built-in vocabulary
 // now: always mounted with the channel at natural names (web.search,
 // web.fetch - the builtin tier carries them, no namespace pairing),
 // never in the disable list.

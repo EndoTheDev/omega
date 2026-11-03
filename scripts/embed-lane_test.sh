@@ -34,8 +34,8 @@ new_repo() {
 	git -C "$TMP" init -q
 	git -C "$TMP" config user.email t@t
 	git -C "$TMP" config user.name t
-	mkdir -p "$TMP/engine/webui/app" "$TMP/harness/tools/ui" "$TMP/cmd"
-	echo "source v1" >"$TMP/engine/webui/app/Foo.vue"
+	mkdir -p "$TMP/webui/app" "$TMP/harness/tools/ui" "$TMP/cmd"
+	echo "source v1" >"$TMP/webui/app/Foo.vue"
 	echo "tool v1" >"$TMP/harness/tools/ui/Bar.vue"
 	echo 'package main' >"$TMP/cmd/omega.go"
 	mk_mock
@@ -106,7 +106,7 @@ check "go-only merge: change-gate skip logged" contains "change gate" "$TMP/run.
 
 # webui source change -> regen + lane commit
 STAMP="s1"
-echo "source v2" >"$TMP/engine/webui/app/Foo.vue"
+echo "source v2" >"$TMP/webui/app/Foo.vue"
 git -C "$TMP" commit -qam "ui change: Foo v2"
 run --base "$BASE" "card t_test1"
 check "webui change: exit 0" test "$rc" -eq 0
@@ -142,7 +142,7 @@ check "harness/*/ui change: lane commit created" contains "embed-lane: rebuild w
 
 # fail-loud: broken build aborts, static/ untouched, no commit
 STAMP="s3"
-echo "source v3" >"$TMP/engine/webui/app/Foo.vue"
+echo "source v3" >"$TMP/webui/app/Foo.vue"
 git -C "$TMP" commit -qam "ui change: Foo v3"
 before_static="$(git -C "$TMP" rev-parse HEAD:api/static)"
 MOCK_FAIL=1 run --base "$(git -C "$TMP" rev-parse HEAD~1)" "card t_test3"
@@ -165,7 +165,7 @@ check "no --base on a root commit: error logged" contains "no parent commit" "$O
 
 # linear (fast-forward-landed) HEAD: default base = HEAD^1 works
 STAMP="s1"
-echo "source v2" >"$TMP/engine/webui/app/Foo.vue"
+echo "source v2" >"$TMP/webui/app/Foo.vue"
 git -C "$TMP" commit -qam "ui commit: Foo v2 (linear landing)"
 run
 check "linear HEAD: default base = HEAD^1 -> rc 0" test "$rc" -eq 0
@@ -187,7 +187,7 @@ check "merge HEAD: default base = first parent (lane commit created)" contains "
 new_repo
 STAMP="pa"
 git -C "$TMP" checkout -q -b wui-a "$BASE"
-echo "aa: source" >"$TMP/engine/webui/app/Foo.vue"
+echo "aa: source" >"$TMP/webui/app/Foo.vue"
 git -C "$TMP" commit -qam "branch A: component 1"
 git -C "$TMP" checkout -q "$MAIN_BRANCH"
 git -C "$TMP" checkout -q -b wui-b "$BASE"

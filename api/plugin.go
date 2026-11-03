@@ -104,7 +104,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// Web tools (v0.13 shell law 1, card t_f76ecdbe): the former
 	// modules/web capsule dissolved into the channel - serving and
 	// these tools are the channel's job, one place, one word. The
-	// pair is engine vocabulary: always mounted with the channel at
+	// pair is shell vocabulary: always mounted with the channel at
 	// its natural names (web.search, web.fetch - the builtin tier
 	// registers natural names, no namespace pairing), never in the
 	// disable list.
@@ -121,7 +121,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 func NewPlugin() *Plugin { return &Plugin{} }
 
 // Dismount removes the channels Mount appended, by identity (the E1
-// dismount proof). The engine ring never lands in the disable list -
+// dismount proof). The shell never lands in the disable list -
 // Dismount exists for the teardown proof, not for toggling.
 func (p *Plugin) Dismount(ctx *core.Context) error {
 	chans := ctx.Channels[:0]

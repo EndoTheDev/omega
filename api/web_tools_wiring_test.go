@@ -15,7 +15,7 @@ import (
 
 // TestChannelMountCarriesWebTools verifies the channel mount registers
 // the web tool pair from the config - the pair's only mount since the
-// v0.13 dissolution (card t_f76ecdbe). Natural names, engine tier:
+// v0.13 dissolution (card t_f76ecdbe). Natural names, shell tier:
 // the channel plugin is not Toggleable, so the pair is never
 // disable-list material.
 func TestChannelMountCarriesWebTools(t *testing.T) {
@@ -41,6 +41,6 @@ func TestChannelMountCarriesWebTools(t *testing.T) {
 		t.Error("the unprefixed consolidated web tool must be retired")
 	}
 	if _, toggleable := agent.Plugin(p).(agent.Toggleable); toggleable {
-		t.Error("the channel must stay engine vocabulary (not Toggleable)")
+		t.Error("the channel must stay shell vocabulary (not Toggleable)")
 	}
 }

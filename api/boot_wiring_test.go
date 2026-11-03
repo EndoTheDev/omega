@@ -1,7 +1,7 @@
 package api
 
 // The boot-wiring pin (card t_7ee284e8): at lane boot the canvas
-// handlers map carries the engine-ring panel namespace. The Oct-27
+// handlers map carries the shell panel namespace. The Oct-27
 // incident: a toggle-storm chopped the Start-time chat registration
 // off the Context (a journal truncation undo, retired by d73fecd) and
 // every chat panel push thereafter logged
@@ -60,7 +60,7 @@ func TestBootWiringKeepsEngineRingInHandlers(t *testing.T) {
 	if canvas == nil {
 		t.Fatalf("wire left the server without a canvas")
 	}
-	// 1. the handler map routes the engine-ring namespace: Snapshot
+	// 1. the handler map routes the shell namespace: Snapshot
 	// seeds the chat panel, Dispatch reaches the capsule (a not-started
 	// channel answers its own degradation, never ErrUnknownModule).
 	snap := canvas.Snapshot()
