@@ -119,7 +119,7 @@ Terse operational rules. Layer references live in `docs/` (map below);
   title generation fails silently (last write wins under races). Pure
   logic tests go in `server_pure_test.go`, handler tests in
   `server_test.go`. SPA-affecting changes ship via
-  `engine/webui/scripts/build.sh` with the committed `static/` output in
+  `webui/scripts/build.sh` with the committed `static/` output in
   the same change (`scripts/embed-lane.sh` owns `static/` commits at
   merge time). A rebuilt `server.go` needs a serve restart - the
   binary is a snapshot of its build time.
@@ -215,10 +215,10 @@ card t_8abdbb15; full contract and templates in `docs/release-gate.md`):
 | `llm/` | LLM provider contract: interface, message/event types, tool schema, shared HTTP infra, retry, ThinkingLevels, `DetectImage` | `docs/api.md` |
 | `agent/` | Multi-turn loop contract (`LoopProvider`), capability seams, Plugin system (`Context`, `MountAllAPI`), events, shared types | `docs/architecture.md` |
 | `core/` | Core types, events, seams, message vocabulary, messagetree; stdlib-only imports, enforced by `core/importability_test.go` | `docs/architecture.md` |
-| `engine/http_channel/` | ENGINE ring (always on, never disabled): HTTP/SSE delivery channel + embedded SPA serving | `docs/api.md` |
+| `api/` + `agent/api/` | Shell ring (always on, never disabled): serving shell (listener, hostguard, module routes, static embed, themes) + the agent's base endpoint set (sessions, chat, canvas, files, tools) | `docs/api.md` |
 | `cmd/omega/loop.go` + `setup.go` | The CLI agent loop + the mandatory first-run setup wizard (the TUI retired 2026-11-01) | `docs/cli.md` |
-| `harness/` | In-process extension packages (one `agent.Plugin` each) - the TOGGLEABLE tier; new extensions go here, never into the engine ring | `docs/architecture.md` (table), `harness/README.md` (authoring) |
-| `engine/webui/` | ENGINE shell (always on, never disabled): Nuxt 4 webui SPA source at checkout root, built output embedded into the binary via the embed lane | `docs/webui.md` |
+| `harness/` | In-process extension packages (one `agent.Plugin` each) - the TOGGLEABLE tier; new extensions go here, never into the shell ring | `docs/architecture.md` (table), `harness/README.md` (authoring) |
+| `webui/` | Shell SPA (always on, never disabled): Nuxt 4 webui SPA source at checkout root, built output embedded into the binary via the embed lane | `docs/webui.md` |
 | `harness/cron/` | Scheduled prompts (`crons.yaml`, `cron:<name>` sessions) | `docs/cli.md` (`/cron`) |
 | `harness/trust/` | Project trust gate (`TrustProvider`, `trust.yaml`, AGENTS.md loading) | `docs/project-trust.md` |
 | `cmd/omega/` | Single binary entry point, config, home resolution, self-update | `docs/cli.md` |
