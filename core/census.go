@@ -57,31 +57,32 @@ func Census(ctx *Context) CensusSnapshot {
 	for _, rt := range ctx.ModuleRoutes {
 		s.Routes = append(s.Routes, rt.Pattern)
 	}
-	for _, slot := range []struct {
-		name string
-		set  bool
-	}{
-		// Exclusive machine slots (Class A) stay field-read this wave;
-		// capsule services resolve from the universal registry by key -
-		// the slot names are data, the same words every consumer uses.
-		{"provider", ctx.Provider != nil},
-		{"compactor", ctx.Compactor != nil},
-		{"store", ctx.Store != nil},
-		{"skills", ctx.Services().Has("skills")},
-		{"loop", ctx.Loop != nil},
-		{"logging", ctx.Logger != nil},
-		{"memory", ctx.Services().Has("memory")},
-		{"prompt_builder", ctx.PromptBuilder != nil},
-		{"captioner", ctx.Captioner != nil},
-
-		{"trust", ctx.Services().Has("trust")},
-		{"cron", ctx.Services().Has("cron")},
-		{"notifications", ctx.Services().Has("notifications")},
-		{"verdicts", ctx.Services().Has("verdicts")},
+	for _, slot := range []string{
+		// The universal registry reads presence (part 3, the seam
+		// constitution): need-key offers and capsule services resolve
+		// from the same one tenant ledger. The captioner stays
+		// host-built (not an offer), read from the Context field.
+		"provider",
+		"store",
+		"loop",
+		"logger",
+		"compactor",
+		"prompt",
+		"nudger",
+		"approvals",
+		"skills",
+		"memory",
+		"trust",
+		"cron",
+		"notifications",
+		"verdicts",
 	} {
-		if slot.set {
-			s.Slots[slot.name] = true
+		if ctx.Services().Has(slot) {
+			s.Slots[slot] = true
 		}
+	}
+	if ctx.Captioner != nil {
+		s.Slots["captioner"] = true
 	}
 	for _, tp := range ctx.ToolProviders {
 		if tp == nil {

@@ -30,7 +30,7 @@ import (
 
 // Server exposes the agent over HTTP with SSE streaming.
 type Server struct {
-	agent *core.Agent
+	agent *agent.Agent
 	tools map[string]core.Tool
 	// runs is a per-PROCESS hub, not per-bind (t_c6f13a82): every
 	// multi-bind mirror shares it (HTTPChannel.Start swaps it in), or a
@@ -43,7 +43,7 @@ type Server struct {
 	// live here, never in the store - invisible to every store-derived
 	// surface, gone at restart (card t_d96a5cd5).
 	eph      ephRegistry
-	store    core.StoreProvider
+	store    agent.StoreProvider
 	settings core.Settings
 	// modules is the optional module-toggle seam (v0.12 E2): the
 	// /modules endpoints serve registry introspection + live toggles
@@ -113,7 +113,7 @@ type seamSet struct {
 	// registered pattern answers 404, not the SPA shell. Empty when
 	// no routes: history-mode routes like /tasks-off-webui stay SPA.
 	routeRoots map[string]bool
-	logger     core.LoggerProvider
+	logger     agent.LoggerProvider
 	// ctx is the live Context (part 3, the seam constitution): the
 	// capsule-facing routes resolve their services per request from
 	// the universal registry - a live toggle swaps the pointer under
@@ -197,7 +197,7 @@ func (s *Server) trustResolver() contextResolver {
 	return svc
 }
 
-func (s *Server) Logger() core.LoggerProvider {
+func (s *Server) Logger() agent.LoggerProvider {
 	s.seams.mu.RLock()
 	defer s.seams.mu.RUnlock()
 	return s.seams.logger
@@ -219,7 +219,15 @@ func (s *Server) RewireSeams(ctx *core.Context, modmux *http.ServeMux, roots map
 	s.seams.mu.Lock()
 	s.seams.modules = modmux
 	s.seams.routeRoots = roots
-	s.seams.logger = ctx.Logger
+	if lg := ctx.Services().Resolve("logger"); lg != nil {
+		logger, ok := lg.(agent.LoggerProvider)
+		if !ok {
+			panic(fmt.Sprintf("seam %q: offered service (%T) does not satisfy the %q need (wrong shape)", "logger", lg, "logger"))
+		}
+		s.seams.logger = logger
+	} else {
+		s.seams.logger = nil
+	}
 	s.seams.ctx = ctx
 	s.seams.commands = append([]core.ExtensionCommand(nil), ctx.Commands...)
 	s.seams.commandHandler = ctx.CommandHandler
@@ -249,7 +257,7 @@ func (s *Server) RewireSeams(ctx *core.Context, modmux *http.ServeMux, roots map
 // composition routes to the same mux and wraps the listener in the host
 // guard - one mux, one guard law over fixed routes AND module capsule
 // routes alike.
-func NewServer(a *core.Agent, tools map[string]core.Tool, store core.StoreProvider, settings core.Settings, modules core.ModuleToggles, registries core.RegistryToggles) *Server {
+func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProvider, settings core.Settings, modules core.ModuleToggles, registries core.RegistryToggles) *Server {
 	if tools == nil {
 		tools = map[string]core.Tool{}
 	}
@@ -337,7 +345,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 // Agent exposes the agent handle (the shell's extension-inventory and
 // disabled-tools surfaces ride it).
-func (s *Server) Agent() *core.Agent { return s.agent }
+func (s *Server) Agent() *agent.Agent { return s.agent }
 
 // ModuleToggles exposes the module-toggle seam (GET/PUT /modules).
 func (s *Server) ModuleToggles() core.ModuleToggles { return s.modules }
@@ -365,7 +373,7 @@ func (s *Server) ActiveRun(id string) bool { return s.runs.active(id) }
 // the pre-split suite set the fields directly. The capsule services
 // (cron, skills) ride the universal registry instead - the caller
 // rewires the Context (RewireSeams) and the routes resolve by key.
-func (s *Server) BindInspectSeams(logger core.LoggerProvider) {
+func (s *Server) BindInspectSeams(logger agent.LoggerProvider) {
 	s.seams.mu.Lock()
 	if logger != nil {
 		s.seams.logger = logger
@@ -631,7 +639,7 @@ func (e *runError) Error() string { return e.msg }
 // pinned provider and tool set, and the resolved context messages.
 type chatPrepare struct {
 	run      *activeRun
-	prov     llm.Provider
+	prov     agent.Provider
 	messages []core.Message
 	tools    map[string]core.Tool
 }
@@ -709,7 +717,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	if sessionKnown {
 		if req.Model != "" {
 			if req.Model != sess.Model {
-				if scx, ok := s.store.(core.SessionContextStore); ok {
+				if scx, ok := s.store.(agent.SessionContextStore); ok {
 					_ = scx.SetSessionModel(ctx, req.SessionID, req.Model)
 				}
 			}
@@ -862,7 +870,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "workspace: "+err.Error(), http.StatusBadRequest)
 				return
 			}
-			if _, ok := s.store.(core.SessionContextStore); !ok {
+			if _, ok := s.store.(agent.SessionContextStore); !ok {
 				http.Error(w, "session store has no session-context surface", http.StatusNotImplemented)
 				return
 			}
@@ -873,7 +881,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if wsDir != "" {
-			scx := s.store.(core.SessionContextStore)
+			scx := s.store.(agent.SessionContextStore)
 			if err := scx.SetSessionWorkspace(r.Context(), id, wsDir); err != nil {
 				http.Error(w, "set session workspace: "+err.Error(), http.StatusInternalServerError)
 				return
@@ -1144,7 +1152,7 @@ func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 // parameter sent, the provider keeps its default. The copy rides
 // LoopOptions - no shared state mutated. Shared by the prepareRun
 // detach path and the legacy inline path (chat-last 1/3).
-func (s *Server) pinProvider(req *chatRequest) (llm.Provider, *runError) {
+func (s *Server) pinProvider(req *chatRequest) (agent.Provider, *runError) {
 	prov := s.agent.Provider()
 	if req.Model != "" {
 		prov = prov.WithModel(req.Model)
@@ -1180,7 +1188,7 @@ func (s *Server) turnSinkFor(req chatRequest) agent.TurnSink {
 // prov is the per-request provider (a copy carrying the request's model).
 // It returns the accumulated assistant records for session persistence
 // and the real provider-reported usage for the token totals.
-func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov llm.Provider, messages []core.Message, tools map[string]core.Tool, req chatRequest) ([]assistantRecord, streamUsage, *core.LastRunStats) {
+func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov agent.Provider, messages []core.Message, tools map[string]core.Tool, req chatRequest) ([]assistantRecord, streamUsage, *core.LastRunStats) {
 	// tools run in THIS session's context: board tools read the session
 	// id from ctx to auto-link tasks created mid-chat.
 	ctx = agent.WithSessionID(ctx, req.SessionID)
@@ -1328,7 +1336,7 @@ func phaseDelta(last, open, now time.Time) time.Duration {
 // error is RETURNED, not written to a wire - the caller owns the wire
 // (the legacy request writes one error frame; the detached run
 // broadcasts one).
-func (s *Server) persistAssistant(ctx context.Context, prov llm.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *core.LastRunStats) error {
+func (s *Server) persistAssistant(ctx context.Context, prov agent.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *core.LastRunStats) error {
 	if req.Ephemeral && req.SessionID != "" {
 		// In-memory commit (card t_d96a5cd5): the run's records land in
 		// the registry (transcript items + telemetry) - the messages
@@ -1388,7 +1396,7 @@ func (s *Server) persistAssistant(ctx context.Context, prov llm.Provider, req ch
 // /sessions/{id}, /label) is never overwritten by a generated one.
 // prov is the pinned per-request provider copy. Runs detached; failure
 // is silent - an untitled session is cosmetic, not fatal.
-func (s *Server) maybeTitleSession(ctx context.Context, prov llm.Provider, req chatRequest, lastAssistant string, final bool) {
+func (s *Server) maybeTitleSession(ctx context.Context, prov agent.Provider, req chatRequest, lastAssistant string, final bool) {
 	// title_model knob: when set, BOTH title calls route through it -
 	// the request's pinned provider (the model that served the chat)
 	// is overridden. Without the knob everything is unchanged.
@@ -1594,7 +1602,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "workspace: "+err.Error(), http.StatusBadRequest)
 				return
 			}
-			if _, ok := s.store.(core.SessionContextStore); !ok {
+			if _, ok := s.store.(agent.SessionContextStore); !ok {
 				http.Error(w, "session store has no session-context surface", http.StatusNotImplemented)
 				return
 			}
@@ -1605,7 +1613,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if wsDir != "" {
-			scx := s.store.(core.SessionContextStore)
+			scx := s.store.(agent.SessionContextStore)
 			if err := scx.SetSessionWorkspace(r.Context(), req.ID, wsDir); err != nil {
 				http.Error(w, "set session workspace: "+err.Error(), http.StatusInternalServerError)
 				return
@@ -1848,7 +1856,7 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 		// - a store without it (fakes, embedders) answers 501 on the
 		// model/workspace fields instead of failing the whole patch.
 		if body.Model != nil || body.Workspace != nil {
-			scx, ok := s.store.(core.SessionContextStore)
+			scx, ok := s.store.(agent.SessionContextStore)
 			if !ok {
 				http.Error(w, "session store has no session-context surface", http.StatusNotImplemented)
 				return

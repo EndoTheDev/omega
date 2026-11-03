@@ -89,11 +89,25 @@ func (c *HTTPChannel) SetDefaultWorkspace(ws string) {
 // state (hub, chat capsule, canvas). Split from Start so a host or
 // test can wire a mirror without serving it.
 func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
-	if deps.Ctx == nil || deps.Ctx.Provider == nil {
+	if deps.Ctx == nil || deps.Ctx.Services().Resolve("provider") == nil {
 		return fmt.Errorf("http_channel: no provider configured")
 	}
-	ag := core.NewFromContext(deps.Ctx, core.AgentOptions{})
-	c.srv = NewServer(ag, nil, deps.Store, deps.Settings, deps.Modules, deps.Registries)
+	svc := deps.Ctx.Services().Resolve("provider")
+	prov, ok := svc.(agent.Provider)
+	if !ok {
+		return fmt.Errorf("http_channel: offered service (%T) does not satisfy the provider need (wrong shape)", svc)
+	}
+	_ = prov
+	var store agent.StoreProvider
+	if deps.Store != nil {
+		st, ok := deps.Store.(agent.StoreProvider)
+		if !ok {
+			return fmt.Errorf("http_channel: offered service (%T) does not satisfy the store need (wrong shape)", deps.Store)
+		}
+		store = st
+	}
+	ag := agent.NewFromContext(deps.Ctx, agent.AgentOptions{})
+	c.srv = NewServer(ag, nil, store, deps.Settings, deps.Modules, deps.Registries)
 	// Chat panel (chat-last 1/3): bind the plugin's registered capsule
 	// to THIS server before the canvas runtime builds over the
 	// providers, and register it with the canvas seam here - gated on

@@ -55,7 +55,11 @@ func TestBuildPromptWithSkillsSection(t *testing.T) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{logging.NewPlugin(), skills.NewPlugin(), NewPlugin()}, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
-	prompt, ok := ctx.PromptBuilder.BuildPrompt(context.Background(), core.PromptBuildOptions{})
+	pb, pbOK := ctx.Services().Resolve("prompt").(agent.PromptBuilder)
+	if !pbOK {
+		t.Fatal("prompt offer missing")
+	}
+	prompt, ok := pb.BuildPrompt(context.Background(), core.PromptBuildOptions{})
 	if !ok {
 		t.Fatal("BuildPrompt returned false")
 	}

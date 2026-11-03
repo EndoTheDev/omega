@@ -14,7 +14,7 @@ import (
 
 // HandleSessionsCommand lists all sessions with message counts.
 // Returns a text table for the TUI to display.
-func HandleSessionsCommand(ctx context.Context, store core.StoreProvider, args string) (core.CommandResult, error) {
+func HandleSessionsCommand(ctx context.Context, store agent.StoreProvider, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
 	}
@@ -57,7 +57,7 @@ func HandleSessionsCommand(ctx context.Context, store core.StoreProvider, args s
 }
 
 // HandleTreeCommand renders the session tree.
-func HandleTreeCommand(ctx context.Context, store core.StoreProvider) (core.CommandResult, error) {
+func HandleTreeCommand(ctx context.Context, store agent.StoreProvider) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
 	}
@@ -119,7 +119,7 @@ func HandleTreeCommand(ctx context.Context, store core.StoreProvider) (core.Comm
 }
 
 // HandleSearchCommand runs an FTS5 search across session messages.
-func HandleSearchCommand(ctx context.Context, store core.StoreProvider, args string) (core.CommandResult, error) {
+func HandleSearchCommand(ctx context.Context, store agent.StoreProvider, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no session store available")
 	}
@@ -150,7 +150,7 @@ func HandleSearchCommand(ctx context.Context, store core.StoreProvider, args str
 }
 
 // HandleInsightsCommand computes cross-session usage analytics.
-func HandleInsightsCommand(ctx context.Context, store core.StoreProvider, args string) (core.CommandResult, error) {
+func HandleInsightsCommand(ctx context.Context, store agent.StoreProvider, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no session store available")
 	}
@@ -220,7 +220,7 @@ func HandleNewCommand(args string) (core.CommandResult, error) {
 
 // HandleResumeCommand resolves the argument to a session ID using the
 // store, then returns a load_session action for the TUI to load.
-func HandleResumeCommand(ctx context.Context, store core.StoreProvider, args string) (core.CommandResult, error) {
+func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
 	}
@@ -268,7 +268,7 @@ func HandleResumeCommand(ctx context.Context, store core.StoreProvider, args str
 
 // HandleBranchCommand creates a child session and returns a branch_session
 // action with the child ID. The TUI loads the ancestor messages.
-func HandleBranchCommand(ctx context.Context, store core.StoreProvider, parentID, args string) (core.CommandResult, error) {
+func HandleBranchCommand(ctx context.Context, store agent.StoreProvider, parentID, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
 	}
@@ -293,7 +293,7 @@ func HandleBranchCommand(ctx context.Context, store core.StoreProvider, parentID
 
 // HandleLabelCommand updates the session label in the store and returns
 // a set_label action for the TUI to update its display.
-func HandleLabelCommand(ctx context.Context, store core.StoreProvider, sessionID, args string) (core.CommandResult, error) {
+func HandleLabelCommand(ctx context.Context, store agent.StoreProvider, sessionID, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
 	}
@@ -318,7 +318,7 @@ func HandleLabelCommand(ctx context.Context, store core.StoreProvider, sessionID
 
 // HandleExportCommand reads messages from the store and writes them as
 // JSONL to the given path. No TUI state needed.
-func HandleExportCommand(ctx context.Context, store core.StoreProvider, sessionID, args string) (core.CommandResult, error) {
+func HandleExportCommand(ctx context.Context, store agent.StoreProvider, sessionID, args string) (core.CommandResult, error) {
 	if store == nil || sessionID == "" {
 		return core.CommandResult{}, fmt.Errorf("no active session to export")
 	}

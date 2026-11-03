@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-// TurnNudger implements core.TurnNudger, the learning-loop reminder
+// TurnNudger implements agent.TurnNudger, the learning-loop reminder
 // seam (card t_9972dfd0). The loop reports every executed tool call;
 // the nudger counts tool iterations since the last persisted lesson
 // (a skills write or update) and, at the configured interval, hands

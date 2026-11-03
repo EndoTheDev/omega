@@ -28,7 +28,7 @@ import (
 
 func TestChatActionPipeMirrorKeepsTheRunVisible(t *testing.T) {
 	prov := newMultiProvider("step")
-	a := core.NewAgent(prov, nil, 0)
+	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -38,7 +38,7 @@ func TestChatActionPipeMirrorKeepsTheRunVisible(t *testing.T) {
 	sA := NewServer(a, nil, st, nil, nil, nil)
 	// The second mirror gets its own agent (each channel start builds
 	// one) over the same provider + store: the mirror executes runs.
-	aB := core.NewAgent(prov, nil, 0)
+	aB := agent.NewAgent(prov, nil, 0)
 	aB.SetLoopProvider(testLoop{})
 	sB := NewServer(aB, nil, st, nil, nil, nil)
 
@@ -123,12 +123,10 @@ func TestMultiBindServesOneCanvas(t *testing.T) {
 	// The plugin's Mount: one hub, one capsule, one canvas builder
 	// carried by every bind's channel.
 	p := NewPlugin()
-	ctx := &core.Context{
-		Provider: prov,
-		Configs: map[string]any{
+	ctx := &core.Context{Configs: map[string]any{
 			"http_channel": Config{Port: port, Bind: []string{"127.0.0.1", "127.0.0.2"}},
-		},
-	}
+		}}
+	ctx.ApplyOffer("provider", "test", prov)
 	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("mount: %v", err)
 	}

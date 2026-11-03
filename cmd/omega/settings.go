@@ -588,10 +588,11 @@ func hotApply(cfg Config, pctx *agent.Context) {
 			setter.SetDefaultWorkspace(cfg.Server.DefaultWorkspace)
 		}
 	}
-	if pctx.Compactor == nil {
+	svc := pctx.Services().Resolve("compactor")
+	if svc == nil {
 		return
 	}
-	if c, ok := pctx.Compactor.(*compactor.Compactor); ok {
+	if c, ok := svc.(*compactor.Compactor); ok {
 		c.SetConfig(cfg.Compaction)
 	}
 }
@@ -615,7 +616,7 @@ func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
 	if s.pctx == nil {
 		return schema, nil
 	}
-	c, ok := s.pctx.Compactor.(*compactor.Compactor)
+	c, ok := s.pctx.Services().Resolve("compactor").(*compactor.Compactor)
 	if !ok {
 		return schema, nil
 	}

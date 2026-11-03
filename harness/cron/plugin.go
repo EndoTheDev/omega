@@ -94,7 +94,11 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		"runner",
 		func(ctx context.Context, deps core.StartDeps) error {
 			go func() {
-				if err := r.Start(ctx, runnerDeps{Ctx: deps.Ctx, Agent: deps.Agent, Store: deps.Store}); err != nil {
+				var ag *agent.Agent
+				var st agent.StoreProvider
+				ag, _ = deps.Agent.(*agent.Agent)
+				st, _ = deps.Store.(agent.StoreProvider)
+				if err := r.Start(ctx, runnerDeps{Ctx: deps.Ctx, Agent: ag, Store: st}); err != nil {
 					fmt.Fprintf(os.Stderr, "omega: cron runner: %v\n", err)
 				}
 			}()

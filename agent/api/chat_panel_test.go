@@ -8,6 +8,7 @@ package api
 // render from.
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -213,7 +214,7 @@ func TestChatPanelDeltasRunTheBatchLaw(t *testing.T) {
 		core.ResponseChunk{Type: "response_chunk", Content: "lo"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	))
-	a := core.NewAgent(prov, nil, 0)
+	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	s := NewServer(a, nil, nil, nil, nil, nil)
 	st, err := store.Open(":memory:")
@@ -351,7 +352,7 @@ func TestChatPanelStaleRunNeverPaints(t *testing.T) {
 // exit flush paints the completed state.
 func TestChatActionStopThroughThePipe(t *testing.T) {
 	gated := newGatedProvider()
-	a := core.NewAgent(gated, nil, 0)
+	a := agent.NewAgent(gated, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	s := NewServer(a, nil, nil, nil, nil, nil)
 	st, err := store.Open(":memory:")
@@ -472,8 +473,8 @@ type gateHoldProvider struct {
 
 func (p *gateHoldProvider) ModelName() string                     { return "gate" }
 func (p *gateHoldProvider) SetThinkingLevel(string)               {}
-func (p *gateHoldProvider) WithModel(string) llm.Provider         { return p }
-func (p *gateHoldProvider) WithThinkingLevel(string) llm.Provider { return p }
+func (p *gateHoldProvider) WithModel(string) agent.Provider         { return p }
+func (p *gateHoldProvider) WithThinkingLevel(string) agent.Provider { return p }
 func (p *gateHoldProvider) ListModels() ([]string, error)         { return []string{"gate"}, nil }
 func (p *gateHoldProvider) ModelInfo() (llm.ModelInfo, error)     { return llm.ModelInfo{}, nil }
 
@@ -496,7 +497,7 @@ func (p *gateHoldProvider) Stream(context.Context, []core.Message, []llm.ToolSch
 // answer as a selectable sibling.
 func TestRetryRendersInPlaceMidRun(t *testing.T) {
 	prov := &gateHoldProvider{release: make(chan struct{})}
-	a := core.NewAgent(prov, nil, 0)
+	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	s := NewServer(a, nil, nil, nil, nil, nil)
 	st, err := store.Open(":memory:")
@@ -620,7 +621,7 @@ func TestRetryRendersInPlaceMidRun(t *testing.T) {
 // the session's last user turn as a sibling variant, detached - the
 // same variant hop /chat's retry body drives.
 func TestChatActionRetryThroughThePipe(t *testing.T) {
-	a := core.NewAgent(newMockProvider("mock", scripted(
+	a := agent.NewAgent(newMockProvider("mock", scripted(
 		core.ResponseChunk{Type: "response_chunk", Content: "first answer"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)), nil, 0)
@@ -741,7 +742,7 @@ func postChatGetSessionID(t *testing.T, ts *httptest2.Server) string {
 // serialize as view_model_delta frames on the same stream the chat
 // already rides - no new transport.
 func TestChatDeltaRidesTheRunStream(t *testing.T) {
-	a := core.NewAgent(newMockProvider("mock", scripted(
+	a := agent.NewAgent(newMockProvider("mock", scripted(
 		core.ResponseChunk{Type: "response_chunk", Content: "hel"},
 		core.ResponseChunk{Type: "response_chunk", Content: "lo"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -841,7 +842,7 @@ func nextFrameW(t *testing.T, rd *bufio.Reader) (sseFrame, bool) {
 // test pins a batcher tick inside its build window exactly, and fires
 // endRun there (t_877f4bce's race window, made deterministic).
 type gateStore struct {
-	core.StoreProvider
+	agent.StoreProvider
 	mu      sync.Mutex
 	armed   bool
 	entered chan struct{}
@@ -888,7 +889,7 @@ func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 		core.ResponseChunk{Type: "response_chunk", Content: "hel"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	))
-	a := core.NewAgent(prov, nil, 0)
+	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -972,7 +973,7 @@ func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 // not a flattened 500.
 func TestUIActionRetryOnLiveRunIsA409(t *testing.T) {
 	prov := &gateHoldProvider{release: make(chan struct{})}
-	a := core.NewAgent(prov, nil, 0)
+	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	s := NewServer(a, nil, nil, nil, nil, nil)
 	st, err := store.Open(":memory:")

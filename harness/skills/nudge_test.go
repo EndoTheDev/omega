@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"testing"
 
 	"github.com/EndoTheDev/omega/core"
@@ -102,4 +103,4 @@ func TestNudgeConcurrentObservation(t *testing.T) {
 }
 
 // TestTurnNudgerMeetsSeam: the compile-time shape the loop consumes.
-var _ core.TurnNudger = (*TurnNudger)(nil)
+var _ agent.TurnNudger = (*TurnNudger)(nil)

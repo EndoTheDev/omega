@@ -26,7 +26,7 @@ func (p *Plugin) Description() string {
 // ctx.Configs (see agent.Describer). Empty = reads no section.
 func (p *Plugin) ConfigKey() string { return "" }
 
-func (p *Plugin) Provides() []string { return []string{"prompt_builder"} }
+func (p *Plugin) Provides() []string { return []string{"prompt"} }
 
 // Requires lists seams that must be mounted before this plugin. The
 // assembler renders sections contributed by other modules at build
@@ -37,7 +37,7 @@ func (p *Plugin) Requires() []string { return nil }
 // one registration. The builder reads prompt section contributors
 // from the Context at build time.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
-	return api.RegisterPromptBuilder(NewPromptBuilder(ctx))
+	return api.Offer("prompt", NewPromptBuilder(ctx))
 }
 
 // Compile-time check: Plugin implements agent.Plugin.

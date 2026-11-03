@@ -6,6 +6,7 @@ package api
 // here - the same shapes the webui will consume in arc 3c.
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -237,8 +238,8 @@ func newGatedProvider() *gatedProvider {
 
 func (p *gatedProvider) ModelName() string                     { return "gated" }
 func (p *gatedProvider) SetThinkingLevel(string)               {}
-func (p *gatedProvider) WithModel(string) llm.Provider         { return p }
-func (p *gatedProvider) WithThinkingLevel(string) llm.Provider { return p }
+func (p *gatedProvider) WithModel(string) agent.Provider         { return p }
+func (p *gatedProvider) WithThinkingLevel(string) agent.Provider { return p }
 func (p *gatedProvider) ListModels() ([]string, error)         { return []string{"gated"}, nil }
 func (p *gatedProvider) ModelInfo() (llm.ModelInfo, error)     { return llm.ModelInfo{}, nil }
 
@@ -265,7 +266,7 @@ func (e *stubError) Error() string { return e.msg }
 func gatedCanvasServer(t *testing.T) (*Server, *httptest2.Server, *gatedProvider, chan struct{}) {
 	t.Helper()
 	gated := newGatedProvider()
-	a := core.NewAgent(gated, nil, 0)
+	a := agent.NewAgent(gated, nil, 0)
 	a.SetLoopProvider(testLoop{})
 	s := NewServer(a, nil, nil, nil, nil, nil)
 	st, err := store.Open(":memory:")

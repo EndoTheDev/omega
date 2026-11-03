@@ -256,7 +256,7 @@ func newTestLoop(t *testing.T) (*cliLoop, *bytes.Buffer) {
 	t.Helper()
 	buf := &bytes.Buffer{}
 	lo := &cliLoop{
-		ag: core.NewAgent(nil, nil, 8),
+		ag: agent.NewAgent(nil, nil, 8),
 		pctx: &agent.Context{
 			Commands: []core.ExtensionCommand{
 				{Name: "/cron", Description: "the cron board"},

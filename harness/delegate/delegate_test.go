@@ -61,14 +61,14 @@ func TestPendingCount(t *testing.T) {
 type loggingPlugin struct{}
 
 func (loggingPlugin) Name() string       { return "logging" }
-func (loggingPlugin) Provides() []string { return []string{"logging"} }
+func (loggingPlugin) Provides() []string { return []string{"logger"} }
 func (loggingPlugin) Requires() []string { return nil }
 func (loggingPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
-	ctx.Logger = stubLogger{}
+	ctx.ApplyOffer("logger", "logging", stubLogger{})
 	return nil
 }
 
-// stubLogger is the minimal core.LoggerProvider.
+// stubLogger is the minimal agent.LoggerProvider.
 type stubLogger struct{}
 
 func (stubLogger) Printf(format string, args ...any) {}

@@ -7,6 +7,7 @@ package api
 // 501 (the Settings precedent).
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"context"
 	"errors"
 	"io"
@@ -236,7 +237,7 @@ func TestRewireRefreshesToolInventory(t *testing.T) {
 		"kanban.create": {Description: "create a card"},
 	}}
 	ctx := &core.Context{ToolProviders: []core.ToolProvider{provider}}
-	ag := core.NewFromContext(ctx, core.AgentOptions{})
+	ag := agent.NewFromContext(ctx, agent.AgentOptions{})
 	s := NewServer(ag, nil, nil, nil, nil, nil)
 	if err := s.rewireSeams(ctx); err != nil {
 		t.Fatalf("rewire: %v", err)

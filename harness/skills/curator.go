@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 )
 
 // The weekly curator pass (card t_9972dfd0, ported from Hermes
@@ -56,7 +56,7 @@ type CuratorReport struct {
 // RunCurator executes one pass against the provider's own skills dir.
 // prov may be nil - the deterministic staleness pass still runs; the
 // LLM proposal steps are skipped and the report says so.
-func (sp *SkillsProvider) RunCurator(ctx context.Context, prov core.Provider, curatorModel string) (CuratorReport, error) {
+func (sp *SkillsProvider) RunCurator(ctx context.Context, prov agent.Provider, curatorModel string) (CuratorReport, error) {
 	if sp.Dir == "" {
 		return CuratorReport{}, fmt.Errorf("curator: skills directory not configured")
 	}
@@ -264,7 +264,7 @@ type proposalSet struct {
 // proposeMutations runs the single proposal call: skill inventory in,
 // JSON proposals out. The candidates are NOT applied here - they are
 // validated and re-verified per skill in the apply steps.
-func (sp *SkillsProvider) proposeMutations(ctx context.Context, prov core.Provider) ([]mergeProposal, []distillProposal, string, error) {
+func (sp *SkillsProvider) proposeMutations(ctx context.Context, prov agent.Provider) ([]mergeProposal, []distillProposal, string, error) {
 	usage := readUsage(sp.Dir)
 	var sb strings.Builder
 	sb.WriteString("You are the skills curator for an AI agent. Below is the skill inventory. Propose consolidations.\n\n")
@@ -325,7 +325,7 @@ func oneLine(s string, max int) string {
 // applyMerge validates one merge candidate and applies it: distilled
 // section drafted by the LLM, appended to the umbrella body; the
 // source is backed up and archived. One ledger row covers both files.
-func (sp *SkillsProvider) applyMerge(ctx context.Context, prov core.Provider, m mergeProposal) (string, error) {
+func (sp *SkillsProvider) applyMerge(ctx context.Context, prov agent.Provider, m mergeProposal) (string, error) {
 	m.Source, m.Into = strings.TrimSpace(m.Source), strings.TrimSpace(m.Into)
 	if m.Source == "" || m.Into == "" || m.Source == m.Into {
 		return "", fmt.Errorf("empty or self-merge proposal")
@@ -405,7 +405,7 @@ func (sp *SkillsProvider) applyMerge(ctx context.Context, prov core.Provider, m 
 // applyDistill validates one distill candidate (over the threshold
 // only) and applies it: the LLM drafts a tighter body, frontmatter is
 // kept byte-for-byte, backup + ledger ride along.
-func (sp *SkillsProvider) applyDistill(ctx context.Context, prov core.Provider, d distillProposal) (string, error) {
+func (sp *SkillsProvider) applyDistill(ctx context.Context, prov agent.Provider, d distillProposal) (string, error) {
 	name := strings.TrimSpace(d.Name)
 	if name == "" {
 		return "", fmt.Errorf("empty distill proposal")

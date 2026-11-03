@@ -1,6 +1,7 @@
 package verdict
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,11 +15,11 @@ import (
 
 // fakeStore captures AppendMessage calls so a test can assert the
 // transcript audit trail (the card record before the pause, the verdict
-// record after the answer / expiry). Implements core.StoreProvider by
+// record after the answer / expiry). Implements agent.StoreProvider by
 // embedding the interface for the methods the hub never calls (it only
 // calls AppendMessage) and overriding that one.
 type fakeStore struct {
-	core.StoreProvider
+	agent.StoreProvider
 	mu       sync.Mutex
 	records  []recorded
 	appendOK bool

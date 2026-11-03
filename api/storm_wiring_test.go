@@ -83,7 +83,7 @@ func TestToggleStormLeavesEngineRingPushing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mount: %v", err)
 	}
-	ctx.Provider = prov
+	ctx.ApplyOffer("provider", "test", prov)
 
 	st, err := store.Open(":memory:")
 	if err != nil {

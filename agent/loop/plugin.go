@@ -31,5 +31,5 @@ func (p *Plugin) Requires() []string { return nil }
 // MountWithAPI implements agent.APIPlugin: the loop seam, one
 // registration.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
-	return api.RegisterLoop(Loop{})
+	return api.Offer("loop", Loop{})
 }

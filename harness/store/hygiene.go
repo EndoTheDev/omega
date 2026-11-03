@@ -18,6 +18,7 @@ package store
 // different organ and works.
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"context"
 	"fmt"
 	"os"
@@ -67,7 +68,7 @@ const maxSummariesPerPass = 5
 // nothing. model routes the consult through prov.WithModel when set
 // (the curated ruling: empty = the session provider model). Empty
 // transcripts produce no summary: nothing to say.
-func (s *Store) RunSummarizer(ctx context.Context, prov core.Provider, model string, afterHours int) (HygieneReport, error) {
+func (s *Store) RunSummarizer(ctx context.Context, prov agent.Provider, model string, afterHours int) (HygieneReport, error) {
 	rep := HygieneReport{}
 	if afterHours <= 0 {
 		afterHours = DefaultSummarizeAfterHours
@@ -141,7 +142,7 @@ func (s *Store) unsummarized(ctx context.Context, cutoff time.Time) ([]core.Sess
 // summarizeSession runs the one LLM call: transcript in, one-paragraph
 // summary out. The answer is trimmed; an empty answer is refused (a
 // summary row never stores nothing - that would re-queue forever).
-func (s *Store) summarizeSession(ctx context.Context, prov core.Provider, sess core.Session) (string, error) {
+func (s *Store) summarizeSession(ctx context.Context, prov agent.Provider, sess core.Session) (string, error) {
 	msgs, err := s.GetMessages(ctx, sess.ID)
 	if err != nil {
 		return "", fmt.Errorf("messages: %w", err)
@@ -212,7 +213,7 @@ func renderTranscript(msgs []core.Message, maxChars int) string {
 // (the curator's thin bridge shape, mirrored here so the two LLM passes
 // stay identical in posture: no tool loop, no retries beyond the ai
 // layer's own, failures surface and the pass moves on).
-func completeText(ctx context.Context, prov core.Provider, prompt string) (string, error) {
+func completeText(ctx context.Context, prov agent.Provider, prompt string) (string, error) {
 	var sb strings.Builder
 	for ev := range prov.Stream(ctx, []core.Message{core.NewUser(prompt)}, nil) {
 		switch e := ev.(type) {
@@ -366,7 +367,7 @@ func fileSize(path string) int64 {
 // steps run in that order on purpose - the summarizer consults the
 // LLM BEFORE anything is deleted, and the vacuum happens last so the
 // report's file sizes state the post-maintenance shape.
-func (s *Store) RunHygiene(ctx context.Context, prov core.Provider, cfg HygieneConfig) (HygieneReport, error) {
+func (s *Store) RunHygiene(ctx context.Context, prov agent.Provider, cfg HygieneConfig) (HygieneReport, error) {
 	rep := HygieneReport{}
 	sum, err := s.RunSummarizer(ctx, prov, cfg.SummarizerModel, cfg.SummarizeAfterHours)
 	if err != nil {

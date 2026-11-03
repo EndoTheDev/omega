@@ -10,12 +10,12 @@ import (
 )
 
 // Compile-time assertions.
-var _ core.LoopProvider = Loop{}
+var _ agent.LoopProvider = Loop{}
 var _ agent.Plugin = (*Plugin)(nil)
 
 // TestLoopBasic verifies the loop runs a simple one-turn conversation.
 func TestLoopBasic(t *testing.T) {
-	provider := llm.NewFakeProvider("test",
+	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
@@ -23,7 +23,7 @@ func TestLoopBasic(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), core.LoopOptions{
+		Loop{}.Run(context.Background(), agent.LoopOptions{
 			Provider: provider,
 			Messages: []core.Message{core.NewUser("hi")},
 			Events:   events,
@@ -68,7 +68,7 @@ func TestLoopNilProvider(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), core.LoopOptions{
+		Loop{}.Run(context.Background(), agent.LoopOptions{
 			Provider: nil,
 			Messages: []core.Message{core.NewUser("hi")},
 			Events:   events,
@@ -104,14 +104,14 @@ func TestPluginMount(t *testing.T) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
-	if ctx.Loop == nil {
+	if ctx.Services().Resolve("loop") == nil {
 		t.Fatal("ctx.Loop not set after Mount")
 	}
 }
 
 // TestLoopWithToolCalls verifies a two-turn loop with a tool call.
 func TestLoopWithToolCalls(t *testing.T) {
-	provider := llm.NewFakeProviderScripts("test",
+	provider := agent.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"msg": "hi"}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -136,7 +136,7 @@ func TestLoopWithToolCalls(t *testing.T) {
 	events := make(chan core.Event, 64)
 	go func() {
 		defer close(events)
-		Loop{}.Run(context.Background(), core.LoopOptions{
+		Loop{}.Run(context.Background(), agent.LoopOptions{
 			Provider: provider,
 			Messages: []core.Message{core.NewUser("go")},
 			Tools:    tools,
@@ -168,7 +168,7 @@ func TestLoopWithToolCalls(t *testing.T) {
 // a denied run, and a tool the model still cannot help calling errors as
 // an IsError result instead of executing.
 func TestLoopDeniedTool(t *testing.T) {
-	provider := llm.NewFakeProviderScripts("test",
+	provider := agent.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "memory", Arguments: map[string]any{"action": "add"}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -195,7 +195,7 @@ func TestLoopDeniedTool(t *testing.T) {
 	ctx := agent.WithDeniedTools(context.Background(), "memory")
 	go func() {
 		defer close(events)
-		Loop{}.Run(ctx, core.LoopOptions{
+		Loop{}.Run(ctx, agent.LoopOptions{
 			Provider: provider,
 			Messages: []core.Message{core.NewUser("go")},
 			Tools:    map[string]core.Tool{},
@@ -228,7 +228,7 @@ func TestLoopDeniedTool(t *testing.T) {
 // calling it errors as an IsError result instead of executing. Unlike
 // the deny list, no name is enumerated: the run is toolless, period.
 func TestLoopToolless(t *testing.T) {
-	provider := llm.NewFakeProviderScripts("test",
+	provider := agent.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "delegate.task", Arguments: map[string]any{"goal": "spawn"}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -262,7 +262,7 @@ func TestLoopToolless(t *testing.T) {
 	ctx := agent.WithToolless(context.Background())
 	go func() {
 		defer close(events)
-		Loop{}.Run(ctx, core.LoopOptions{
+		Loop{}.Run(ctx, agent.LoopOptions{
 			Provider: provider,
 			Messages: []core.Message{core.NewUser("go")},
 			Tools:    callerTools,

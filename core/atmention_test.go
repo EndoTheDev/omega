@@ -34,7 +34,6 @@ func (m *mockStore) GetMessagesWithTimes(context.Context, string) ([]StoredMessa
 	return nil, nil
 }
 
-var _ StoreProvider = (*mockStore)(nil)
 
 func (m *mockStore) GetActiveView(context.Context, string) (ActiveView, error) {
 	return ActiveView{}, m.err
@@ -109,7 +108,7 @@ func testDetectImage(path string) (*ImageContent, error) {
 	return &ImageContent{MediaType: media, Base64: base64.StdEncoding.EncodeToString(data)}, nil
 }
 
-func env(store StoreProvider, docs []AtDoc) AtMentionEnv {
+func env(store any, docs []AtDoc) AtMentionEnv {
 	return AtMentionEnv{Store: store, Docs: docs, DetectImage: testDetectImage, MessageText: testMessageText}
 }
 

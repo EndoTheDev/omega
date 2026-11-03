@@ -1,4 +1,4 @@
-// Package store provides the session persistence seam (core.StoreProvider)
+// Package store provides the session persistence seam (agent.StoreProvider)
 // via the SQLite implementation in store_impl.go, plus the sessions.search
 // tool that lets the agent search past conversations via FTS5.
 //
@@ -6,6 +6,7 @@
 package store
 
 import (
+	"github.com/EndoTheDev/omega/agent"
 	"context"
 	"fmt"
 	"strings"
@@ -15,7 +16,7 @@ import (
 
 // searchToolProvider provides the sessions.search tool.
 type searchToolProvider struct {
-	store core.StoreProvider
+	store agent.StoreProvider
 }
 
 // Tools returns the sessions.search tool definition.
@@ -69,12 +70,12 @@ func (p *searchToolProvider) runSearch(ctx context.Context, args map[string]any)
 type hygieneToolProvider struct {
 	store      *Store
 	cfg        HygieneConfig
-	providerFn func() core.Provider // live provider reader, wired at mount
+	providerFn func() agent.Provider // live provider reader, wired at mount
 }
 
 // provider resolves the live provider seam at call time (nil-safe,
 // mirroring the skills capsule's providerFn discipline).
-func (p *hygieneToolProvider) provider() core.Provider {
+func (p *hygieneToolProvider) provider() agent.Provider {
 	if p.providerFn == nil {
 		return nil
 	}

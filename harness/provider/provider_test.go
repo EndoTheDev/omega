@@ -37,9 +37,9 @@ func drainEvents(events <-chan core.ProviderStreamEvent) core.StreamEnd {
 }
 
 // TestProviderImplementsAIProvider verifies Provider satisfies the
-// llm.Provider interface at compile time.
+// agent.Provider interface at compile time.
 func TestProviderImplementsAIProvider(t *testing.T) {
-	var _ llm.Provider = (*Provider)(nil)
+	var _ agent.Provider = (*Provider)(nil)
 }
 
 // TestNewProviderDefaults verifies defaults are applied: empty type

@@ -32,7 +32,7 @@ type omegaRegistries struct {
 	configPath string
 	home       string
 	setAgents  func([]string) // the continuous capsule's disabled-agents fold, nil when it is not mounted
-	logger     core.LoggerProvider
+	logger     agent.LoggerProvider
 
 	mu *sync.Mutex // one fold mutation + write at a time - SHARED pointer with omegaModules (gate must-fix 1)
 }

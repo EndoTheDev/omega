@@ -54,7 +54,7 @@ func (s *Server) fillAgentSessions(profiles []agent.Profile) {
 	if s.store == nil {
 		return
 	}
-	as, ok := s.store.(core.AgentSessionStore)
+	as, ok := s.store.(agent.AgentSessionStore)
 	if !ok {
 		return
 	}
@@ -203,7 +203,7 @@ func (s *Server) handleAgentSessions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session store not configured", http.StatusNotImplemented)
 		return
 	}
-	as, ok := s.store.(core.AgentSessionStore)
+	as, ok := s.store.(agent.AgentSessionStore)
 	if !ok {
 		http.Error(w, "store does not support agent sessions", http.StatusNotImplemented)
 		return
