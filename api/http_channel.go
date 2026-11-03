@@ -3,7 +3,7 @@
 // in this package; the adapter wires it to the Channel seam.
 //
 // Seam: channel (additive — multiple channels can run simultaneously).
-package http_channel
+package api
 
 import (
 	"context"

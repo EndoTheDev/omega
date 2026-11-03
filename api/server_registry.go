@@ -1,4 +1,4 @@
-package http_channel
+package api
 
 // server_registry.go: the registry-browser toggle surface (v0.14.1).
 //

@@ -1,4 +1,4 @@
-package http_channel
+package api
 
 // The boot-wiring pin (card t_7ee284e8): at lane boot the canvas
 // handlers map carries the engine-ring panel namespace. The Oct-27

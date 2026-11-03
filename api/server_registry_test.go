@@ -1,4 +1,4 @@
-package http_channel
+package api
 
 // server_registry_test.go: the registry-toggle handler gates (card
 // t_2d8deb8c). The locked default agent is a HANDLER law: a PUT

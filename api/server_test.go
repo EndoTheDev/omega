@@ -1,4 +1,4 @@
-package http_channel
+package api
 
 import (
 	"encoding/json"
@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 )
-
 
 func TestHealth(t *testing.T) {
 	s := newTestServer()
@@ -108,7 +107,6 @@ func TestSPAFallback(t *testing.T) {
 		t.Fatalf("/index.html status = %d, want 301", rec.Code)
 	}
 }
-
 
 func TestHealthMethodNotAllowed(t *testing.T) {
 	s := newTestServer()

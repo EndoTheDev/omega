@@ -16,7 +16,7 @@ No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
 consumes them and runs the tool loop. The HTTP channel exposes
 everything over HTTP and serves the embedded webui SPA (built by
-engine/webui/scripts/build.sh, committed in engine/http_channel/static/,
+engine/webui/scripts/build.sh, committed in api/static/,
 baked in at compile time). Mutating routes ride the Host/Origin guard
 (t_b52d09f3): a write from a foreign origin answers 403. Config and
 capsule writes are atomic - a temp file plus rename, so a killed
@@ -40,7 +40,7 @@ harness/          In-process module packages (21 packages: 20 plugins +
   harness/continuous  Continuous-agent machinery: agent homes (folder-as-
                   registration under agents/), wake subprocesses, the
                   canonical chat, the evidence ledger, the roster REST + webui pane
-engine/http_channel/static/  Built webui SPA (tracked, embedded via go:embed)
+api/static/  Built webui SPA (tracked, embedded via go:embed)
 webui        webui - Nuxt 4 SPA (see docs/webui.md); built output embedded into the binary
 docs/             User documentation (cli.md, api.md, webui.md,
                   configuration.md, architecture.md, troubleshooting.md, roadmap.md)
@@ -111,7 +111,7 @@ live in the header of `agent/extensionapi.go`; the vocabulary types
 registry: claims, module routes, the refusal ledger) - every host
 does, including the binary and the engines. Module REST rides
 `core.ModuleRoute` declarations (`core/routes.go`) registered through
-`RegisterRoute`; `engine/http_channel/module_routes.go` serves exactly what
+`RegisterRoute`; `api/module_routes.go` serves exactly what
 the live registry carries, so a disabled capsule's routes answer 404
 and a re-enabled one's return, through the same RewireSeams re-read
 every other served seam follows. Binary purity is machine law:

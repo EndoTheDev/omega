@@ -30,7 +30,7 @@ const TABS: Array<{
   { file: "../../harness/cron/ui/CronJobs.vue", title: "Cron", scrollClass: "cron-body", actions: ["refresh cron jobs", "Search cron jobs"] },
   { file: "../../harness/skills/ui/SkillsList.vue", title: "Skills", scrollClass: "skills-body", actions: ["refresh skills", "Search skills"] },
   { file: "../../harness/tools/ui/ToolsList.vue", title: "Tools", scrollClass: "tools-body", actions: ["refresh tools", "Search tools"] },
-  { file: "../../engine/http_channel/ui/LogsList.vue", title: "Logs", scrollClass: "logs-body", actions: [] },
+  { file: "../../api/ui/LogsList.vue", title: "Logs", scrollClass: "logs-body", actions: [] },
   { file: "../../harness/mcp/ui/McpServers.vue", title: "MCP", scrollClass: "mcp-body", actions: ["refresh mcp servers", "Search MCP servers"] },
   { file: "../../harness/kanban/ui/Board.vue", title: "Kanban", scrollClass: "board-scroll", actions: ["board-remove-btn"] },
   { file: "app/components/shell/ExtensionsTab.vue", title: "Modules", scrollClass: "inspector-extensions", actions: [] },

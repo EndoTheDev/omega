@@ -1,4 +1,4 @@
-package http_channel
+package api
 
 import (
 	agentapi "github.com/EndoTheDev/omega/agent/api"

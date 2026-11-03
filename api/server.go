@@ -1,4 +1,4 @@
-package http_channel
+package api
 
 // The HTTP channel's serving skeleton (restructure part 2, card
 // t_905fa502): listener, mux assembly, host guard, SPA fallback and the

@@ -1,4 +1,4 @@
-package http_channel
+package api
 
 // TestChatPanelRegistersThroughTheMountSeam (chat-last 2b ruling), the
 // shell half of the carve (t_905fa502): the plugin's Mount only CREATES
@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	agentapi "github.com/EndoTheDev/omega/agent/api"
 	"github.com/EndoTheDev/omega/agent"
+	agentapi "github.com/EndoTheDev/omega/agent/api"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -27,7 +27,7 @@ import (
 // the canvas seam, and the pipe routes to the capsule's handler.
 func TestChatPanelRegistersThroughTheMountSeam(t *testing.T) {
 	s, st := newTestServerWithStore(t)
-		plugin := NewPlugin()
+	plugin := NewPlugin()
 	pctx := &core.Context{Configs: map[string]any{"http_channel": Config{Port: 1}}}
 	if _, err := agent.MountAllAPI([]agent.Plugin{plugin}, pctx, nil, nil); err != nil {
 		t.Fatalf("mount: %v", err)
@@ -69,4 +69,3 @@ func TestChatPanelRegistersThroughTheMountSeam(t *testing.T) {
 		t.Fatal("failed prepare left the run slot held")
 	}
 }
-

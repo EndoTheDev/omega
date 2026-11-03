@@ -1,4 +1,4 @@
-package http_channel
+package api
 
 // The live-toggle storm pin (card t_7ee284e8): the Oct-27 lane ran a
 // toggle storm (kanban, memory, notifications, verdict, mcp, delegate,

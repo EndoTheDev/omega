@@ -65,7 +65,7 @@ const RETROFIT: Array<{
     rules: [/\.cron-list\.narrow \.cron-body \{/],
   },
   {
-    rel: "engine/http_channel/ui/LogsList.vue",
+    rel: "api/ui/LogsList.vue",
     label: "logs",
     module: "http_channel",
     rules: [/\.logs-list\.narrow \./],
