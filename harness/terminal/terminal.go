@@ -134,14 +134,12 @@ type Session struct {
 	exitCode  int
 	lastUse   time.Time
 	removed   bool
-}
-
-// idle reports whether the session is unrecoverably idle: exited, no
-// attached panes, and untouched since cutoff.
-func (s *Session) idle(cutoff time.Time) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.exited && s.removed == false && len(s.subs) == 0 && s.lastUse.Before(cutoff)
+	// claimed is the open's ownership mark: Claim sets it while the
+	// pane's stream has not subscribed yet, subscribe() clears it. It
+	// makes the claim/attach gap honest - reattach and the birth of a
+	// fresh spawn both mark under s.mu (the Store's scan reads them
+	// there too), so a second racing pane never takes an owned shell.
+	claimed bool
 }
 
 // subscribe registers a pane atomically with the replay snapshot: the
@@ -160,6 +158,7 @@ func (s *Session) subscribe() (*subscription, []byte, bool) {
 	}
 	s.subs[sub] = struct{}{}
 	s.lastUse = time.Now()
+	s.claimed = false // the stream adopted the claim: the sub owns it now
 	tail := replayTailOf(s.buf)
 	snap := make([]byte, len(tail))
 	copy(snap, tail)
@@ -415,20 +414,27 @@ func (st *Store) Stop() error {
 
 // Claim hands out a session: the newest live one with no attached
 // pane (a pane remounting after a sibling-tab switch or a page
-// reload reattaches to its previous shell), else a fresh spawn. One
-// lock covers the reattach scan + the spawn, so two panes racing
-// Open never claim the same shell twice. The bool is the claim
-// report: false = freshly spawned, true = reattached.
+// reload reattaches to its previous shell), else a fresh spawn. The
+// scan, the mark and the spawn ride one lock: reattach claims mark
+// the session taken (fresh spawns are born taken) and the pane's
+// stream subscribe clears the mark later - so two panes racing Open
+// never take the same shell, even though subscribe happens after the
+// lock comes off. The bool is the claim report: false = freshly
+// spawned, true = reattached.
 func (st *Store) Claim() (*Session, bool, error) {
 	st.mu.Lock()
-	// reattach: newest live session with zero subscribers
+	// reattach: newest live session with zero subscribers and no
+	// standing claim
 	for i := len(st.order) - 1; i >= 0; i-- {
 		s := st.sessions[st.order[i]]
 		if s == nil {
 			continue
 		}
 		s.mu.Lock()
-		attachable := !s.exited && !s.removed && len(s.subs) == 0
+		attachable := !s.exited && !s.removed && !s.claimed && len(s.subs) == 0
+		if attachable {
+			s.claimed = true // taken until the pane's stream subscribes
+		}
 		s.mu.Unlock()
 		if attachable {
 			st.mu.Unlock()
@@ -460,7 +466,7 @@ func (st *Store) Claim() (*Session, bool, error) {
 		st.mu.Unlock()
 		return nil, false, err
 	}
-	s := &Session{id: id, proc: proc, createdAt: st.now(), lastUse: st.now()}
+	s := &Session{id: id, proc: proc, createdAt: st.now(), lastUse: st.now(), claimed: true}
 	st.sessions[id] = s
 	st.order = append(st.order, id)
 	st.mu.Unlock()
@@ -473,12 +479,19 @@ func (st *Store) Claim() (*Session, bool, error) {
 // session first (a dead shell holds only a replay buffer), then the
 // oldest with no subscribers (an idle shell nobody owns). Live
 // attached sessions are the panes' shells - NEVER reaped silently;
-// nothing reapable = the cap refusal.
+// nothing reapable = the cap refusal. The want funcs read under
+// s.mu: watchLoop and remove write exited/removed there.
 func (st *Store) reapCandidateLocked() *Session {
 	for _, want := range []func(*Session) bool{
-		func(s *Session) bool { return s.exited && !s.removed },
 		func(s *Session) bool {
-			return !s.exited && !s.removed && s.emptySubs()
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			return s.exited && !s.removed
+		},
+		func(s *Session) bool {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			return !s.exited && !s.removed && len(s.subs) == 0
 		},
 	} {
 		for i := 0; i < len(st.order); i++ {
@@ -492,12 +505,6 @@ func (st *Store) reapCandidateLocked() *Session {
 		}
 	}
 	return nil
-}
-
-func (s *Session) emptySubs() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return len(s.subs) == 0
 }
 
 func (st *Store) forget(id string) {

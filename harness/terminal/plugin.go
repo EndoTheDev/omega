@@ -121,7 +121,9 @@ type claimReply struct {
 }
 
 // handleClaim claims-else-spawns one session (the pane's open). The
-// reattach scan and the spawn ride one lock in Store.Claim.
+// reattach scan, the spawn and the claim mark ride one lock in
+// Store.Claim; the stream's subscribe below clears the mark - the
+// claim/attach gap cannot hand the shell to a second pane.
 func (p *Plugin) handleClaim(w http.ResponseWriter, r *http.Request) {
 	s, claimed, err := p.store.Claim()
 	if err != nil {
@@ -152,6 +154,8 @@ func (p *Plugin) handleStream(w http.ResponseWriter, r *http.Request) {
 		httpError(w, fmt.Errorf("no such terminal"), http.StatusNotFound)
 		return
 	}
+	// the adopt: a stream opening the claimed session clears the
+	// claim mark inside Session.subscribe (one lock, no replay/live gap)
 	sub, replay, alreadyExited := s.subscribe()
 	defer s.unsubscribe(sub)
 
