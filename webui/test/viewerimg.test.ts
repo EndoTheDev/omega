@@ -19,8 +19,9 @@ const readRepo = (rel: string) => readFileSync(`${repo}/${rel}`, "utf8");
 
 const viewer = read("app/components/ViewerTab.vue");
 const omega = read("app/composables/omega.ts");
-const serverFiles = readRepo("webui/http_channel/server_files.go");
-const serverGo = readRepo("webui/http_channel/server.go");
+const serverFiles = readRepo("agent/api/server_files.go");
+// the /files/raw registration lives in agent/api (the base endpoint set)
+const serverGo = readRepo("agent/api/server.go");
 
 // --- the viewer's image branch -------------------------------------------------
 

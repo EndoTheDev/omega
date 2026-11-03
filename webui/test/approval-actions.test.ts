@@ -230,7 +230,7 @@ test("toolCallCommand reads the command argument, junk-safe", () => {
 // --- source pins (components are not importable in node) ---
 
 test("GateCard renders the three options and every resolution path", () => {
-  const vue = read("webui/app/components/chat/GateCard.vue");
+  const vue = read("app/components/chat/GateCard.vue");
   assert.match(vue, /"approve"/, "the first button runs the command");
   assert.match(vue, /"deny"/, "the second skips it");
   assert.match(vue, /follow-up prompt/, "the third opens the typed surface");
@@ -245,10 +245,10 @@ test("GateCard renders the three options and every resolution path", () => {
 });
 
 test("ChatItem rides the gate card on the tool call row, ChatTab binds it", () => {
-  const chatItem = read("webui/app/components/ChatItem.vue");
+  const chatItem = read("app/components/ChatItem.vue");
   assert.match(chatItem, /<GateCard/, "the pending gate question rides the tool call row");
   assert.match(chatItem, /item\.kind === 'tool' && gateCard/, "only a tool row hosts the card");
-  const chatTab = read("webui/app/components/ChatTab.vue");
+  const chatTab = read("app/components/ChatTab.vue");
   assert.match(chatTab, /bindGateQuestions/, "ChatTab binds pending cards onto the transcript");
   assert.match(chatTab, /:gate-card="gateCardForItem\(item\)"/, "the binding arrives per rendered row");
   assert.match(chatTab, /sessionGateBinding\.standalone/, "cards with no running row render standalone at the tail");
@@ -256,7 +256,7 @@ test("ChatItem rides the gate card on the tool call row, ChatTab binds it", () =
 });
 
 test("the notification surface answers approve/deny and keeps the jump", () => {
-  const panel = read("webui/app/components/notifications/NotificationsPanel.vue");
+  const panel = read("app/components/notifications/NotificationsPanel.vue");
   assert.match(panel, /@click\.stop="answerQuestion\(p, 'approve'\)"/, "approve answers in place, it does not navigate");
   assert.match(panel, /@click\.stop="answerQuestion\(p, 'deny'\)"/, "deny answers in place, it does not navigate");
   assert.match(panel, /approveDenyOptions/, "buttons render only on the pair contract");
@@ -269,7 +269,7 @@ test("the chat gate card is the notification card's sibling, same endpoint same 
   // both surfaces answer the SAME pending question id through the SAME
   // endpoint; the chat card binds to the row, the notification row
   // carries the id in its payload
-  const wire = read("http_channel/server_verdicts.go");
+  const wire = read("../agent/api/server_verdicts.go");
   assert.match(wire, /SessionID\s+string\s+`json:"session_id"`/, "the pending listing payload carries the session id");
   assert.match(wire, /Message\s+string\s+`json:"message,omitempty"`/, "the verdict endpoint accepts the follow-up message");
 });

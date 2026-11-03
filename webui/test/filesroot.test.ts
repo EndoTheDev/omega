@@ -208,7 +208,7 @@ describe("the ChatHost carries sessionRow (behavior pin, card t_cd2f25b0)", () =
 describe("settings: default workspace knob (structural pins)", () => {
   const tab = read("app/components/settings/SettingsTab.vue");
   const settingsServer = readFileSync(
-    `${root}/../../cmd/omega/settings.go`,
+    `${root}/../cmd/omega/settings.go`,
     "utf8",
   );
   const wsSelect = read("app/components/chat/WorkspaceSelect.vue");

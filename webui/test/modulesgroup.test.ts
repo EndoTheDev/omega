@@ -82,8 +82,8 @@ test("the extensions tab rows merge the registry introspection", () => {
   );
   assert.match(
     rowModel,
-    /state: m \? m\.state : "webui"/,
-    "an introspection-unknown row is webui ring (tier law)",
+    /state: m \? m\.state : "shell"/,
+    "an introspection-unknown row is the shell ring (tier law)",
   );
 });
 
@@ -125,9 +125,9 @@ test("module rows keep the E2 toggle contract (two-step arm, annotations)", () =
   );
 });
 
-test("webui ring rows never toggle (the tier law stays visual)", () => {
-  assert.match(extTab, /extension-webui/, "the webui badge exists");
-  assert.match(extTab, /row\.state === 'webui'/, "webui rows branch off");
+test("shell ring rows never toggle (the tier law stays visual)", () => {
+  assert.match(extTab, /extension-shell/, "the shell badge exists");
+  assert.match(extTab, /row\.state === 'shell'/, "shell rows branch off");
 });
 
 test("expansion reveals the module's tools, commands and panels", () => {

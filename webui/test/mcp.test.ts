@@ -176,7 +176,7 @@ test("the refresh button renders the FilesTab toolbar pattern", () => {
   // card t_308e6d9b: the single header row IS the shared TabBand now -
   // the toolbar role/aria-label are the band component's contract, the
   // panel composes the band with its title.
-  const band = read(root, "webui", "webui", "app", "components", "ui", "TabBand.vue");
+  const band = read(root, "webui", "app", "components", "ui", "TabBand.vue");
   assert.ok(band.includes('role="toolbar"') && band.includes("actions"), "the single header row is the toolbar (the shared band)");
   assert.match(src, /<TabBand[\s\S]{0,80}title="MCP">/, "the composes band carries the tab's title");
   assert.ok(src.includes('aria-label="refresh mcp servers"'), "the refresh action's accessible name");
@@ -290,7 +290,7 @@ test("the clipping shape stays dead: no fixed-width tool columns, chips ellipse"
   // control right) where NOTHING wraps: the name and the subtitle
   // ellipsize in the shared anatomy, the chips render below the row.
   assert.match(src, /class="mcp-row-main reg-row-head"/, "the row head rides the shared reg-row-head anatomy");
-  const anatomy = read(root, "webui", "webui", "app", "assets", "css", "registry-row.css");
+  const anatomy = read(root, "webui", "app", "assets", "css", "registry-row.css");
   assert.match(anatomy, /\.reg-row-name\s*\{[^}]*text-overflow:\s*ellipsis/, "the shared anatomy ellipsizes the name - nothing clips vertically");
   assert.match(anatomy, /\.reg-row-sub-text\s*\{[^}]*text-overflow:\s*ellipsis/, "the shared anatomy ellipsizes the subtitle");
 });
@@ -318,7 +318,7 @@ test("the row speaks the design tokens: status dot, transport pill, no bare mono
   // .reg-row-name (the row law's line 1) - the template rides the
   // anatomy class, the shared file carries the semibold.
   assert.match(src, /class="mcp-name reg-row-name"/, "the server name rides the shared row-law name line");
-  const anatomy = read(root, "webui", "webui", "app", "assets", "css", "registry-row.css");
+  const anatomy = read(root, "webui", "app", "assets", "css", "registry-row.css");
   assert.match(anatomy, /\.reg-row-name\s*\{[^}]*font-weight:\s*600/, "the shared anatomy carries the semibold name line");
   assert.match(src, /serverEnabled\(s\)/, "the disabled row renders muted-but-visible in the template");
   assert.match(src, /\.mcp-off \.mcp-name/, "its muted styling ships in the stylesheet");
@@ -331,7 +331,7 @@ test("the row speaks the design tokens: status dot, transport pill, no bare mono
 });
 
 test("the shell mounts the panel: the outlet template rides app.vue, the route is GET-only", () => {
-  const appvue = read(root, "webui", "webui", "app", "app.vue");
+  const appvue = read(root, "webui", "app", "app.vue");
   assert.match(appvue, /#pane-mcp[\s\S]*?module="mcp"/, "the outlet template hosts the composition panel");
   const plugin = read(root, "harness", "mcp", "plugin.go");
   assert.ok(plugin.includes(`"GET /mcp/servers"`), "the go route pattern is registered in the mount");

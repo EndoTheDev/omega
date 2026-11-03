@@ -125,8 +125,8 @@ describe("extensionsRows", () => {
     // machine-critical: same, with the always-on law
     assert.equal(rows[1].state, "mounted");
     assert.equal(rows[1].toggleable, false);
-    // a module the introspection never lists = webui ring (tier law)
-    assert.equal(rows[2].state, "webui");
+    // a module the introspection never lists = the shell ring (tier law)
+    assert.equal(rows[2].state, "shell");
     assert.equal(rows[2].toggleable, false);
   });
 
