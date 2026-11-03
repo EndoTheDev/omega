@@ -23,10 +23,10 @@ const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 // the shared component + the five SFC seats (paths root-relative; the
 // modules' paths leave webui/ - the repo-relative convention)
 const TABS: Array<{ file: string; placeholder: string }> = [
-  { file: "../../harness/cron/ui/CronJobs.vue", placeholder: "Search cron jobs" },
-  { file: "../../harness/skills/ui/SkillsList.vue", placeholder: "Search skills" },
-  { file: "../../harness/tools/ui/ToolsList.vue", placeholder: "Search tools" },
-  { file: "../../harness/mcp/ui/McpServers.vue", placeholder: "Search MCP servers" },
+  { file: "../harness/cron/ui/CronJobs.vue", placeholder: "Search cron jobs" },
+  { file: "../harness/skills/ui/SkillsList.vue", placeholder: "Search skills" },
+  { file: "../harness/tools/ui/ToolsList.vue", placeholder: "Search tools" },
+  { file: "../harness/mcp/ui/McpServers.vue", placeholder: "Search MCP servers" },
   { file: "app/components/settings/SettingsTab.vue", placeholder: "filter settings" },
 ];
 
