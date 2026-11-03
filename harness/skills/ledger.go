@@ -236,9 +236,11 @@ func copyDir(src, dst string) error {
 
 // Rollback reverts one ledger row: the single-edit revert (card law).
 // A merge/distill restores every recorded file's before bytes; an
-// archive moves the folder back from .archive (and restores SKILL.md
-// bytes exactly as recorded). The rollback itself is ledgered, so a
-// reverted curator pass leaves two rows, not none. Returns a report.
+// archive (or a merge's absorbed source) moves the whole folder back
+// from .archive, so a multi-file skill's scripts/ and references/
+// survive the undo (card t_c8f31a8c). The rollback itself is
+// ledgered, so a reverted curator pass leaves two rows, not none.
+// Returns a report.
 func (sp *SkillsProvider) Rollback(id string) (string, error) {
 	ledgerMu.Lock()
 	defer ledgerMu.Unlock()
@@ -260,7 +262,49 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 		return "", fmt.Errorf("rollback: entry %s is already a rollback", id)
 	}
 	var report strings.Builder
+	// Archive and merge rollbacks move the retired folder back whole
+	// (card t_c8f31a8c): the ledger records SKILL.md bytes only, so
+	// restoring just the recorded files would drop a multi-file
+	// skill's scripts/ and references/ payloads.
+	arched, aerr := sp.archiveDir()
+	if aerr != nil {
+		return "", aerr
+	}
+	moved := false
+	if target.Action == LedgerArchive || target.Action == LedgerMerge {
+		archived := filepath.Join(arched, target.Skill)
+		live := filepath.Join(sp.Dir, target.Skill)
+		if _, serr := os.Stat(archived); serr == nil {
+			if _, lerr := os.Stat(live); lerr == nil {
+				return "", fmt.Errorf("rollback: %s exists live and in .archive - resolve by hand", live)
+			}
+			// The archived copy itself must match the recorded before
+			// bytes - a hand-tampered folder is not this entry's undo.
+			for _, f := range target.Files {
+				if f.Path != filepath.Join(sp.Dir, target.Skill, "SKILL.md") {
+					continue
+				}
+				if b, rerr := os.ReadFile(filepath.Join(archived, "SKILL.md")); rerr == nil && string(b) != f.Before {
+					return "", fmt.Errorf("rollback: %s changed since entry %s - restore it by hand", f.Path, id)
+				}
+			}
+			if err := moveDir(archived, live); err != nil {
+				return "", fmt.Errorf("rollback: move back %s: %w", target.Skill, err)
+			}
+			report.WriteString("restored " + live + "\n")
+			moved = true
+		} else if !os.IsNotExist(serr) {
+			return "", fmt.Errorf("rollback: %w", serr)
+		}
+	}
+	movedRoot := filepath.Join(sp.Dir, target.Skill) + string(os.PathSeparator)
 	for _, f := range target.Files {
+		if moved && strings.HasPrefix(f.Path, movedRoot) {
+			// The folder came back whole; skip the recorded files it
+			// carried (writing them again could clobber the payload
+			// copy with a stale ledger line).
+			continue
+		}
 		// Refuse when the file changed since the row: the single-edit
 		// restore would clobber newer work.
 		cur, rerr := os.ReadFile(f.Path)
@@ -272,11 +316,8 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 		}
 		switch target.Action {
 		case LedgerArchive:
-			// The folder moved to .archive; every recorded file goes
-			// back to its before bytes and the archived copy goes away.
-			if err := os.MkdirAll(filepath.Dir(f.Path), 0o755); err != nil {
-				return "", fmt.Errorf("rollback: %w", err)
-			}
+			// Degraded fallback: the archived folder is gone, so the
+			// recorded files are all that is left to restore.
 			if err := os.WriteFile(f.Path, []byte(f.Before), 0o644); err != nil {
 				return "", fmt.Errorf("rollback: %w", err)
 			}

@@ -152,6 +152,15 @@ func TestCuratorMergeByteExactRollback(t *testing.T) {
 	sp := NewSkillsProvider(dir)
 	writeAgentSkill(t, dir, "umbrella", "# umbrella\n\nexisting rules")
 	writeAgentSkill(t, dir, "narrow", "narrow insight one")
+	// A payload file the ledger row never records - it must survive
+	// the merge rollback through the folder move back (t_c8f31a8c).
+	if err := os.MkdirAll(filepath.Join(dir, "narrow", "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := "echo absorbed-nothing\n"
+	if err := os.WriteFile(filepath.Join(dir, "narrow", "scripts", "run.sh"), []byte(script), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	srcBefore, _ := os.ReadFile(filepath.Join(dir, "narrow", "SKILL.md"))
 	tgtBefore, _ := os.ReadFile(filepath.Join(dir, "umbrella", "SKILL.md"))
 
@@ -199,6 +208,13 @@ func TestCuratorMergeByteExactRollback(t *testing.T) {
 	if string(srcNow) != string(srcBefore) {
 		t.Fatal("source rollback is not byte-exact")
 	}
+	scriptNow, err := os.ReadFile(filepath.Join(dir, "narrow", "scripts", "run.sh"))
+	if err != nil {
+		t.Fatalf("source payload lost in merge rollback: %v", err)
+	}
+	if string(scriptNow) != script {
+		t.Fatal("source payload not byte-exact after merge rollback")
+	}
 	if _, err := os.Stat(filepath.Join(dir, ".archive", "narrow")); !os.IsNotExist(err) {
 		t.Fatal("archived copy survived the rollback")
 	}
@@ -242,6 +258,75 @@ func TestCuratorArchiveRollbackByteExact(t *testing.T) {
 	if m["oldone"].State == StateArchived {
 		t.Fatal("usage record still archived after rollback")
 	}
+}
+
+// TestCuratorArchiveRollbackMultiFile: a multi-file skill survives
+// archive + rollback whole (card t_c8f31a8c) - the folder moves back
+// from .archive, so scripts/ and references/ come home byte-exact
+// instead of vanishing with a ledger row that only recorded SKILL.md.
+func TestCuratorArchiveRollbackMultiFile(t *testing.T) {
+	dir := t.TempDir()
+	sp := NewSkillsProvider(dir)
+	writeAgentSkill(t, dir, "payloaded", "body with payload")
+	script := "#!/bin/sh\necho payload\n"
+	ref := "see also: everything"
+	for _, w := range []struct{ sub, name, body string }{
+		{"scripts", "x.sh", script},
+		{"references", "y.md", ref},
+	} {
+		d := filepath.Join(dir, "payloaded", w.sub)
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, w.name), []byte(w.body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := map[string]string{
+		"SKILL.md":        readStr(t, filepath.Join(dir, "payloaded", "SKILL.md")),
+		"scripts/x.sh":    script,
+		"references/y.md": ref,
+	}
+	if err := writeUsageAt(dir, map[string]UsageRecord{
+		"payloaded": {CreatedAt: daysAgo(100), LastUsed: daysAgo(40), UseCount: 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sp.RunCurator(context.Background(), nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".archive", "payloaded", "scripts", "x.sh")); err != nil {
+		t.Fatalf("payload missing from .archive after pass: %v", err)
+	}
+	entries, _ := sp.readLedger()
+	if len(entries) != 1 || entries[0].Action != LedgerArchive {
+		t.Fatalf("ledger: %+v", entries)
+	}
+	if _, err := sp.Rollback(entries[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"SKILL.md", "scripts/x.sh", "references/y.md"} {
+		got, err := os.ReadFile(filepath.Join(dir, "payloaded", filepath.FromSlash(name)))
+		if err != nil {
+			t.Fatalf("payload lost in rollback (%s): %v", name, err)
+		}
+		if string(got) != before[name] {
+			t.Fatalf("%s not byte-exact after rollback", name)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".archive", "payloaded")); !os.IsNotExist(err) {
+		t.Fatal("archived copy survived rollback")
+	}
+}
+
+// readStr reads a file; a missing file fails the test.
+func readStr(t *testing.T, p string) string {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 // TestCuratorRefusesHandAuthoredMerge: the LLM proposes it, the code
