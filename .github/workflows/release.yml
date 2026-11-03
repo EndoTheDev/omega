@@ -11,6 +11,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        # full history + all tags: the release notes need the commit range
+        # back to the previous stable tag and the tag annotation reads off
+        # the checked-out tag object
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
@@ -84,6 +89,39 @@ jobs:
       - name: Generate checksums
         run: cd dist && sha256sum omega-* | sed 's|dist/||' > checksums.txt
 
+      - name: Generate release notes
+        # deterministic counts + highlights from the round's commit log; the
+        # one prose line rides the ANNOTATED tag message (empty annotation =
+        # counts + highlights only - loud is nice, blocking on prose is not)
+        run: scripts/release-notes.sh "" "${{ steps.version.outputs.VERSION }}"
+
+      - name: Compose release body
+        # static asset sections + the story; generate_release_notes appends
+        # the PR-listing notes after this body
+        run: |
+          cat > dist/release-body.md <<'EOF'
+          ## omega ${{ steps.version.outputs.VERSION }}
+
+          ### Downloads
+          - **Windows**: `omega-${{ steps.version.outputs.VERSION }}-windows_amd64.zip`
+          - **Linux**: `omega-${{ steps.version.outputs.VERSION }}-linux_amd64.tar.gz`
+          - **Linux (arm64, e.g. Raspberry Pi)**: `omega-${{ steps.version.outputs.VERSION }}-linux_arm64.tar.gz`
+          - **macOS (Apple Silicon)**: `omega-${{ steps.version.outputs.VERSION }}-darwin_arm64.tar.gz`
+          - **macOS (Intel)**: `omega-${{ steps.version.outputs.VERSION }}-darwin_amd64.tar.gz`
+
+          ### Install
+          1. Download the archive for your OS
+          2. Extract to a directory on your PATH
+          3. Run `omega setup` on first install, then `omega` to start the CLI loop
+
+          ### Update
+          If you already have omega installed: `omega update`
+
+          ## What changed
+
+          EOF
+          cat dist/release-notes-body.md >> dist/release-body.md
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -96,33 +134,18 @@ jobs:
             dist/omega-${{ steps.version.outputs.VERSION }}-darwin_arm64.tar.gz
             dist/omega-${{ steps.version.outputs.VERSION }}-darwin_amd64.tar.gz
             dist/checksums.txt
-          body: |
-            ## omega ${{ steps.version.outputs.VERSION }}
-
-            ### Downloads
-            - **Windows**: `omega-${{ steps.version.outputs.VERSION }}-windows_amd64.zip`
-            - **Linux**: `omega-${{ steps.version.outputs.VERSION }}-linux_amd64.tar.gz`
-            - **Linux (arm64, e.g. Raspberry Pi)**: `omega-${{ steps.version.outputs.VERSION }}-linux_arm64.tar.gz`
-            - **macOS (Apple Silicon)**: `omega-${{ steps.version.outputs.VERSION }}-darwin_arm64.tar.gz`
-            - **macOS (Intel)**: `omega-${{ steps.version.outputs.VERSION }}-darwin_amd64.tar.gz`
-
-            ### Install
-            1. Download the archive for your OS
-            2. Extract to a directory on your PATH
-            3. Run `omega` to start the TUI
-
-            ### Update
-            If you already have omega installed: `omega update`
+          body_path: dist/release-body.md
 
       - name: Post to Discord
         # the word is the marketing moment: nightlies soak quietly, only
-        # stable releases announce
+        # stable releases announce. The payload file is generated in the
+        # notes step - curl -d @file, never an inline -d string.
         if: success() && steps.version.outputs.PRERELEASE == 'false'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          curl -X POST -H "Content-Type: application/json" \
-            -d "{\"content\":\"🚀 **omega ${{ steps.version.outputs.VERSION }}** is out!\\n\\n[Download here](https://github.com/EndoTheDev/omega/releases/tag/${{ steps.version.outputs.VERSION }})\",\"username\":\"omega releases\"}" \
+          curl -sS -X POST -H "Content-Type: application/json" \
+            -d @dist/discord-release.json \
             "$DISCORD_WEBHOOK_URL"
 
   windows-smoke:
