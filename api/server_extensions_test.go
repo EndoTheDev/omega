@@ -51,6 +51,11 @@ func mountRealRegistry(t *testing.T) *agent.Agent {
 	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
+	// The offered file logger holds omega.log open; windows refuses the
+	// TempDir cleanup while a handle lives, so close it when done.
+	if l, ok := ctx.Services().Resolve("logger").(interface{ Close() error }); ok {
+		t.Cleanup(func() { l.Close() })
+	}
 	// The way the host builds it (agent.NewFromContext does
 	// SetExtensionInfos(ctx.Infos) internally).
 	return agent.NewFromContext(ctx, agent.AgentOptions{})
