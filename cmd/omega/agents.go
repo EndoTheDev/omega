@@ -80,28 +80,28 @@ func ApplyAgentLayer(cfg *Config, home, name string) error {
 	// its directory. A path the layer set explicitly wins - re-read
 	// the layer's path knobs so the defaults only apply to what the
 	// layer left unset.
-	var files struct {
+	var pathKnobs struct {
 		Skills  SkillsConfig  `yaml:"skills"`
 		Memory  MemoryConfig  `yaml:"memory"`
 		Logging LoggingConfig `yaml:"logging"`
 	}
-	if err := yaml.Unmarshal(data, &files); err != nil {
+	if err := yaml.Unmarshal(data, &pathKnobs); err != nil {
 		return fmt.Errorf("parse agent config %s: %w", name, err)
 	}
 	dir := agent.AgentDir(home, name)
-	if files.Skills.Dir == "" {
+	if pathKnobs.Skills.Dir == "" {
 		cfg.Skills.Dir = filepath.Join(dir, "skills")
 	}
-	if files.Skills.SharedDir == "" {
+	if pathKnobs.Skills.SharedDir == "" {
 		cfg.Skills.SharedDir = filepath.Join(home, "skills", "shared")
 	}
-	if files.Memory.File == "" {
+	if pathKnobs.Memory.File == "" {
 		cfg.Memory.File = filepath.Join(dir, "memory.md")
 	}
-	if files.Memory.UserProfileFile == "" {
+	if pathKnobs.Memory.UserProfileFile == "" {
 		cfg.Memory.UserProfileFile = filepath.Join(dir, "user.md")
 	}
-	if files.Logging.File == "" {
+	if pathKnobs.Logging.File == "" {
 		cfg.Logging.File = filepath.Join(dir, name+".log")
 	}
 	// Data isolation (ruling 4): the agent's sessions store and boards
