@@ -581,22 +581,10 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 		st2 = st
 	}
 	if st2 == nil {
-		// The three-layer sessions law (the shell-ring shrink wave 2,
-		// ADR Workshop/omega-shell-ring-shrink.md): the default SUPPLY
-		// is substrate-class - a boot without the store capsule still
-		// opens omega.db, never :memory:. A fresh chat persists across
-		// a restart through this supply; only the session management
-		// face (the capsule's tab + routes) is gone.
-		dsn := store.DefaultSupplyPath()
-		if logger != nil {
-			logger.Printf("omega: no store capsule loaded - serving the default supply (%s)", dsn)
-		}
-		s, err := store.Open(dsn)
+		st2, err = openDefaultSupply(ctx, logger)
 		if err != nil {
-			return nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("open default supply (%s): %w", dsn, err)
+			return nil, nil, nil, nil, nil, nil, nil, err
 		}
-		st2 = s
-		ctx.ApplyOffer("store", "host", st2)
 	}
 	wireCaptioner(cfg, ctx)
 
@@ -643,6 +631,30 @@ func wireCaptioner(cfg Config, pctx *agent.Context) {
 
 func signalContext() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+}
+
+// openDefaultSupply opens the substrate-class default SUPPLY when no
+// store capsule offered the "store" seam (the three-layer sessions
+// law, the shell-ring shrink wave 2 - ADR
+// Workshop/omega-shell-ring-shrink.md). The capsule's mount resolves
+// the same file its own way (config DBPath - datadir.AgentHome /
+// DBPath); the supply fallback opens the same <home>/data/omega.db,
+// never :memory: - a fresh chat boots and persists across a restart
+// through this supply, only the management face (the capsule's tab +
+// routes) is gone. The handle offers back under "store"/"host": the
+// chat floor reads it exactly like a capsule-opened store, and the
+// owner ledger records which side answered.
+func openDefaultSupply(pctx *agent.Context, logger agent.LoggerProvider) (agent.StoreProvider, error) {
+	dsn := store.DefaultSupplyPath()
+	if logger != nil {
+		logger.Printf("omega: no store capsule loaded - serving the default supply (%s)", dsn)
+	}
+	s, err := store.Open(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open default supply (%s): %w", dsn, err)
+	}
+	pctx.ApplyOffer("store", "host", s)
+	return s, nil
 }
 
 // cmdServe loads config, wires the agent, and starts all mounted
