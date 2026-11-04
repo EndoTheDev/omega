@@ -20,12 +20,12 @@ import {
 import {
   continuousIndex,
   mergedRowDetail,
-} from "../app/components/agents/agentsRows.ts";
+} from "../../harness/continuous/ui/agentsRows.ts";
 import { DOCK_COMPONENTS, DOCKABLES } from "../app/composables/dockables.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const src = (p: string): string => readFileSync(`${root}${p}`, "utf8");
-const agentsPanel = src("app/components/agents/AgentsPanel.vue");
+const agentsPanel = src("../harness/continuous/ui/AgentsPanel.vue");
 const registryList = src("app/components/RegistryList.vue");
 const app = src("app/app.vue");
 const panelGone = !existsSync(`${root}app/components/agents/ContinuousPanel.vue`);
@@ -87,7 +87,7 @@ describe("the merge: one Agents tab (card t_c7222095, deletability law)", () => 
     assert.doesNotMatch(app, /#pane-continuous/, "the outlet dropped");
     assert.doesNotMatch(app, /openContinuousTab/, "the opener dropped");
     assert.doesNotMatch(app, /new-continuous/, "the sidebar emit wiring dropped");
-    assert.doesNotMatch(src("app/components/sessions/AppSidebar.vue"), /new-continuous|"Continuous"/, "the picker entry dropped");
+    assert.doesNotMatch(src("../harness/store/ui/AppSidebar.vue"), /new-continuous|"Continuous"/, "the picker entry dropped");
     assert.doesNotMatch(src("app/composables/icons.ts"), /continuous: CircleDot/, "the icon vocabulary entry dropped");
   });
 
@@ -121,7 +121,7 @@ describe("the merge: one Agents tab (card t_c7222095, deletability law)", () => 
     assert.match(agentsPanel, /sleep sent/, "sleep feedback");
     // t_2d8deb8c: the unread state rides the status vocabulary - the
     // word is rowStatus's "unread report", decorated with the dot.
-    assert.match(src("app/components/agents/agentsRows.ts"), /label !== "sleeping"/, "the on/dim split is the vocabulary");
+    assert.match(src("../harness/continuous/ui/agentsRows.ts"), /label !== "sleeping"/, "the on/dim split is the vocabulary");
     // the chat fetch in the merge marks the canonical session read (the
     // roster's unread flag clears on the reload) - the expand fetches it
     assert.match(agentsPanel, /\/chat`\)/, "the expand fetches the canonical chat (mark-read parity)");

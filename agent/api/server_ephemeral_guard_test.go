@@ -4,16 +4,15 @@ package api
 // t_860033e3, finding 4): the `eph-` namespace is minted by the /chat
 // ephemeral lane and lives in memory only. A durable row under one of
 // those ids would be unreachable - misrouted - on every store-read
-// endpoint. Both creation endpoints refuse the prefix with 400.
+// endpoint. Both creation endpoints refuse the prefix with 400. (The
+// roster capsule's create endpoint rides the same guard - the guard
+// test moved with the roster routes to harness/continuous, wave 2.)
 
 import (
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
-
-	"github.com/EndoTheDev/omega/agent"
 )
 
 func TestCreateSessionRejectsEphemeralPrefix(t *testing.T) {
@@ -31,22 +30,5 @@ func TestCreateSessionRejectsEphemeralPrefix(t *testing.T) {
 	}
 }
 
-func TestAgentSessionsRejectEphemeralPrefix(t *testing.T) {
-	s, st := newTestServerWithStore(t)
-	t.Setenv("OMEGA_HOME", t.TempDir())
-	if err := agent.ScaffoldAgent(os.Getenv("OMEGA_HOME"), "scout", "probe duty"); err != nil {
-		t.Fatal(err)
-	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/agents/{name}/sessions", s.handleAgentSessions)
-
-	req := httptest.NewRequest(http.MethodPost, "/agents/scout/sessions", strings.NewReader(`{"id":"eph-sneaky"}`))
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400: %q", rec.Code, rec.Body.String())
-	}
-	if _, err := st.GetSession(t.Context(), "eph-sneaky"); err == nil {
-		t.Fatal("eph-sneaky row exists in the store - the durable lane minted an eph- id")
-	}
-}
+// The roster capsule's guard: TestAgentSessionsRejectEphemeralPrefix
+// lives in harness/continuous/agents_test.go with the moved routes.

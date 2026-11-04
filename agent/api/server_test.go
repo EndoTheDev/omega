@@ -497,20 +497,9 @@ func TestSessionsCRUD(t *testing.T) {
 		t.Fatalf("created id = %q, want s1", created.ID)
 	}
 
-	// GET /sessions lists it.
-	req = httptest.NewRequest(http.MethodGet, "/sessions", nil)
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("list status = %d, want 200", rec.Code)
-	}
-	var list []core.Session
-	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
-		t.Fatalf("decode list: %v", err)
-	}
-	if len(list) != 1 || list[0].ID != "s1" {
-		t.Fatalf("list = %+v, want [s1]", list)
-	}
+	// GET /sessions lists it (the sessions list rode the store capsule
+	// out with the shell-ring shrink wave 2 - the list law lives in
+	// harness/store/routes_test.go now).
 
 	// GET /sessions/s1 returns session + empty messages.
 	req = httptest.NewRequest(http.MethodGet, "/sessions/s1", nil)
@@ -593,60 +582,12 @@ func TestSessionMessagesCarryCreatedAt(t *testing.T) {
 
 func TestSessionsNoStore(t *testing.T) {
 	s := newTestServer()
-	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	// The create floor keeps its no-store gate: POST answers 501.
+	req := httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader(`{"id":"x1"}`))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotImplemented {
 		t.Fatalf("status = %d, want 501", rec.Code)
-	}
-}
-
-func TestSessionsListCounts(t *testing.T) {
-	s, st := newTestServerWithStore(t)
-	ctx := context.Background()
-	if err := st.CreateSession(ctx, "s1", "", ""); err != nil {
-		t.Fatalf("create s1: %v", err)
-	}
-	if err := st.CreateSession(ctx, "s2", "", ""); err != nil {
-		t.Fatalf("create s2: %v", err)
-	}
-	// s1 carries messages; the tool calls ride the assistant, the
-	// results are separate tool-role rows.
-	s1 := []core.Message{
-		core.NewUser("hi"),
-		core.NewAssistant("working"),
-		core.ToolResult{Content: "r1"},
-		core.ToolResult{Content: "r2"},
-		core.NewUser("again"),
-		core.NewAssistant("done"),
-	}
-	for _, m := range s1 {
-		if err := st.AppendMessage(ctx, "s1", m); err != nil {
-			t.Fatalf("append: %v", err)
-		}
-	}
-	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
-	}
-	var list []sessionPayload
-	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
-		t.Fatalf("decode list: %v", err)
-	}
-	if len(list) != 2 {
-		t.Fatalf("len = %d, want 2", len(list))
-	}
-	byID := map[string]sessionPayload{}
-	for _, row := range list {
-		byID[row.ID] = row
-	}
-	if got := byID["s1"]; got.MessageCount != 6 || got.ToolCount != 2 {
-		t.Fatalf("s1 = %+v, want 6 messages / 2 tools", got)
-	}
-	if got := byID["s2"]; got.MessageCount != 0 || got.ToolCount != 0 {
-		t.Fatalf("s2 = %+v, want 0/0", got)
 	}
 }
 
@@ -705,16 +646,14 @@ func TestSessionTokensPersistAndAccumulate(t *testing.T) {
 		t.Fatalf("turn 2 totals = %d/%d, want 140/25 (accumulated)", sess.PromptTokens, sess.CompletionTokens)
 	}
 
-	// The totals flow through GET /sessions.
-	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	var list []sessionPayload
-	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
-		t.Fatalf("decode list: %v", err)
+	// The totals land on the row the session store serves (the list
+	// payload rides the store capsule now - the row truth is here).
+	sess, err = st.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("reget totals: %v", err)
 	}
-	if len(list) != 1 || list[0].PromptTokens != 140 || list[0].CompletionTokens != 25 {
-		t.Fatalf("sessions payload = %+v, want totals 140/25", list)
+	if sess.PromptTokens != 140 || sess.CompletionTokens != 25 {
+		t.Fatalf("row totals = %d/%d, want 140/25 (accumulated)", sess.PromptTokens, sess.CompletionTokens)
 	}
 }
 
@@ -962,135 +901,6 @@ func TestSessionsPostInvalidJSON(t *testing.T) {
 	}
 }
 
-func TestSessionSearch(t *testing.T) {
-	s, st := newTestServerWithStore(t)
-	ctx := context.Background()
-	for _, id := range []string{"s1", "s2", "s3"} {
-		if err := st.CreateSession(ctx, id, "", ""); err != nil {
-			t.Fatalf("create %s: %v", id, err)
-		}
-	}
-	// s4 matches by LABEL only - the unified search must surface it as
-	// a title hit (titleMatch set, snippet = the label itself).
-	if err := st.CreateSession(ctx, "s4", "", "Harbor patrol log"); err != nil {
-		t.Fatalf("create s4: %v", err)
-	}
-	// s1 matches twice - the response must dedupe to one hit; s2 has a
-	// title-independent content match; s3 stays silent.
-	for _, m := range []struct {
-		id string
-		m  core.Message
-	}{
-		{"s1", core.NewUser("the harbor hides at midnight")},
-		{"s1", core.NewAssistant("harbor confirmed")},
-		{"s2", core.NewUser("weather bulletin: harbor closed")},
-		{"s3", core.NewUser("nothing to see here")},
-	} {
-		if err := st.AppendMessage(ctx, m.id, m.m); err != nil {
-			t.Fatalf("append: %v", err)
-		}
-	}
-	h := s.Handler()
-
-	// content term matches s1 and s2, one row each
-	req := httptest.NewRequest(http.MethodGet, "/sessions/search?q=harbor", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
-	}
-	var hits []sessionSearchHit
-	if err := json.Unmarshal(rec.Body.Bytes(), &hits); err != nil {
-		t.Fatalf("decode hits: %v", err)
-	}
-	ids := map[string]string{}
-	titled := map[string]bool{}
-	for _, ht := range hits {
-		if _, dup := ids[ht.ID]; dup {
-			t.Fatalf("duplicate hit for %s", ht.ID)
-		}
-		ids[ht.ID] = ht.Snippet
-		titled[ht.ID] = ht.TitleMatch
-	}
-	if len(ids) != 3 || ids["s1"] == "" || ids["s2"] == "" {
-		t.Fatalf("hits = %+v, want one snippet each for s1, s2 and s4", hits)
-	}
-	// s4 hit by label: titleMatch set, snippet is the label itself, and
-	// it leads (title hits rank ahead of content hits).
-	if !titled["s4"] || hits[0].ID != "s4" || hits[0].Snippet != "Harbor patrol log" {
-		t.Fatalf("s4 must be the first, title-marked hit; got %+v", hits)
-	}
-
-	// Renaming s4's label away from the term drops its title hit; s4
-	// has no harbor content, so any leftover s4 row must not be
-	// title-marked (the fresh label never contains 'harbor').
-	if err := st.UpdateSession(ctx, "s4", "Fishing journal"); err != nil {
-		t.Fatalf("rename s4: %v", err)
-	}
-	req = httptest.NewRequest(http.MethodGet, "/sessions/search?q=harbor", nil)
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("post-rename: status = %d; body=%s", rec.Code, rec.Body.String())
-	}
-	hits = nil
-	if err := json.Unmarshal(rec.Body.Bytes(), &hits); err != nil {
-		t.Fatalf("decode post-rename hits: %v", err)
-	}
-	for _, ht := range hits {
-		if ht.ID == "s4" && ht.TitleMatch {
-			t.Fatalf("stale label must not be a title hit after rename: %+v", hits)
-		}
-	}
-
-	// empty q searches nothing, 200 []
-	req = httptest.NewRequest(http.MethodGet, "/sessions/search?q=", nil)
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "[]" {
-		t.Fatalf("empty q: status = %d body = %q, want 200 []", rec.Code, rec.Body.String())
-	}
-
-	// SearchMessages phrase-quotes the term, so even FTS-breaking
-	// input ("unbalanced quote) becomes a valid literal phrase and
-	// degrades to a no-hit search, not an error. The 400 backstop
-	// for FTS syntax errors stays in the handler for store-level
-	// faults, but user input can no longer reach it.
-	req = httptest.NewRequest(http.MethodGet, `/sessions/search?q=%22unbalanced`, nil)
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "[]" {
-		t.Fatalf(`unbalanced quote term: status = %d body = %q, want 200 []`, rec.Code, rec.Body.String())
-	}
-
-	// wrong method and no store
-	req = httptest.NewRequest(http.MethodPost, "/sessions/search?q=harbor", nil)
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("post: status = %d, want 405", rec.Code)
-	}
-	nn := NewServer(nil, nil, nil, nil, nil, nil)
-	req = httptest.NewRequest(http.MethodGet, "/sessions/search?q=harbor", nil)
-	rec = httptest.NewRecorder()
-	nn.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotImplemented {
-		t.Fatalf("no store: status = %d, want 501", rec.Code)
-	}
-}
-
-func TestSessionSearchBeforeSessions(t *testing.T) {
-	// /sessions/search must win over /sessions/{id} even though it
-	// sits inside the {id} segment space.
-	s, _ := newTestServerWithStore(t)
-	req := httptest.NewRequest(http.MethodGet, "/sessions/search?q=x", nil)
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code == http.StatusNotFound {
-		t.Fatalf("/sessions/search fell through to the {id} handler")
-	}
-}
-
 func TestSessionByIDNoStore(t *testing.T) {
 	s := newTestServer()
 	req := httptest.NewRequest(http.MethodGet, "/sessions/abc", nil)
@@ -1142,16 +952,10 @@ func TestSessionPatchPinned(t *testing.T) {
 		t.Fatalf("patch response pinned = false, want true")
 	}
 
-	// the flag survives a fresh list (the webui reload case)
-	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
-	listRec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(listRec, req)
-	var list []sessionPayload
-	if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
-		t.Fatalf("decode list: %v", err)
-	}
-	if len(list) != 1 || !list[0].Pinned {
-		t.Fatalf("list = %+v, want one pinned session", list)
+	// the flag survives the row read (the list payload rides the store
+	// capsule now; the row truth is the store)
+	if pinned, _ := st.GetSession(ctx, "s1"); !pinned.Pinned {
+		t.Fatalf("row pinned = false after the pin PATCH, want true")
 	}
 
 	rec = patch(t, `{"pinned": false}`)
@@ -1205,29 +1009,12 @@ func TestSessionPatchArchived(t *testing.T) {
 	}
 	updatedAt := sess.UpdatedAt
 
-	// default list excludes archived; include brings it back
-	listDec := func(t *testing.T, url string) []sessionPayload {
-		t.Helper()
-		req := httptest.NewRequest(http.MethodGet, url, nil)
-		listRec := httptest.NewRecorder()
-		s.Handler().ServeHTTP(listRec, req)
-		if listRec.Code != http.StatusOK {
-			t.Fatalf("%s status = %d", url, listRec.Code)
-		}
-		var list []sessionPayload
-		if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
-			t.Fatalf("decode list: %v", err)
-		}
-		return list
+	// the exclude/restore law rides the store capsule's list (ported to
+	// harness/store/routes_test.go); here the row truth: the flag is on
+	// and the PATCH is not activity - updated_at untouched
+	if archived, _ := st.GetSession(ctx, "s1"); !archived.Archived {
+		t.Fatalf("row archived = false after the archive PATCH, want true")
 	}
-	if list := listDec(t, "/sessions"); len(list) != 0 {
-		t.Fatalf("default list = %+v, want archived session excluded", list)
-	}
-	if list := listDec(t, "/sessions?archived=include"); len(list) != 1 || !list[0].Archived {
-		t.Fatalf("include list = %+v, want one archived session", list)
-	}
-
-	// the PATCH is not activity: updated_at untouched
 	if got, _ := st.GetSession(ctx, "s1"); got.UpdatedAt != updatedAt {
 		t.Fatalf("archive moved updated_at: %q -> %q", updatedAt, got.UpdatedAt)
 	}
@@ -1239,9 +1026,6 @@ func TestSessionPatchArchived(t *testing.T) {
 	if after, _ := st.GetSession(ctx, "s1"); after.Archived {
 		t.Fatalf("archived = true after unarchive, want false")
 	}
-	if list := listDec(t, "/sessions"); len(list) != 1 {
-		t.Fatalf("default list after unarchive = %+v, want the session back", list)
-	}
 
 	rec = patch(t, `not json`)
 	if rec.Code != http.StatusBadRequest {
@@ -1250,52 +1034,6 @@ func TestSessionPatchArchived(t *testing.T) {
 	rec = patch(t, `{}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("missing archived status = %d, want 400", rec.Code)
-	}
-}
-
-// TestSessionSearchArchivedFilter covers the search-side archived
-// filter: hits whose session is archived are excluded by default and
-// restored by archived=include.
-func TestSessionSearchArchivedFilter(t *testing.T) {
-	s, st := newTestServerWithStore(t)
-	ctx := context.Background()
-	for _, id := range []string{"s1", "s2"} {
-		if err := st.CreateSession(ctx, id, "", ""); err != nil {
-			t.Fatalf("create %s: %v", id, err)
-		}
-		if err := st.AppendMessage(ctx, id, core.NewUser("quiet harbor town")); err != nil {
-			t.Fatalf("append %s: %v", id, err)
-		}
-	}
-	if err := st.SetSessionArchived(ctx, "s1", true); err != nil {
-		t.Fatalf("archive s1: %v", err)
-	}
-
-	searchDec := func(t *testing.T, url string) map[string]string {
-		t.Helper()
-		req := httptest.NewRequest(http.MethodGet, url, nil)
-		rec := httptest.NewRecorder()
-		s.Handler().ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%s status = %d; body=%s", url, rec.Code, rec.Body.String())
-		}
-		var hits []sessionSearchHit
-		if err := json.Unmarshal(rec.Body.Bytes(), &hits); err != nil {
-			t.Fatalf("decode: %v", err)
-		}
-		out := map[string]string{}
-		for _, h := range hits {
-			out[h.ID] = h.Snippet
-		}
-		return out
-	}
-
-	if hits := searchDec(t, "/sessions/search?q=harbor"); len(hits) != 1 || hits["s2"] == "" {
-		t.Fatalf("default hits = %+v, want only the unarchived s2", hits)
-	}
-	hits := searchDec(t, "/sessions/search?q=harbor&archived=include")
-	if len(hits) != 2 || hits["s1"] == "" || hits["s2"] == "" {
-		t.Fatalf("include hits = %+v, want s1 and s2", hits)
 	}
 }
 
@@ -1309,28 +1047,11 @@ func TestSessionPatchRead(t *testing.T) {
 	if err := st.CreateSession(ctx, "s1", "", "label"); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	// Output lands after birth - the session reads unread at the API.
+	// Output lands after birth - the row is unread before the mark-read,
+	// and the detail endpoint exposes the same read-time state the
+	// capsule's list carries.
 	if err := st.AppendMessage(ctx, "s1", core.NewUser("hi")); err != nil {
 		t.Fatalf("append message: %v", err)
-	}
-
-	list := func(t *testing.T) sessionPayload {
-		t.Helper()
-		req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
-		rec := httptest.NewRecorder()
-		s.Handler().ServeHTTP(rec, req)
-		var rows []sessionPayload
-		if err := json.Unmarshal(rec.Body.Bytes(), &rows); err != nil {
-			t.Fatalf("decode list: %v", err)
-		}
-		if len(rows) != 1 {
-			t.Fatalf("list = %d rows, want 1", len(rows))
-		}
-		return rows[0]
-	}
-
-	if row := list(t); !row.Unread {
-		t.Fatalf("row after new output unread = false, want true")
 	}
 
 	patch := func(t *testing.T, body string) *httptest.ResponseRecorder {
@@ -1347,7 +1068,7 @@ func TestSessionPatchRead(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("patch status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
-	if row := list(t); row.Unread {
+	if read, _ := st.GetSession(ctx, "s1"); agent.SessionUnread(read) {
 		t.Fatalf("row after mark-read unread = true, want false")
 	}
 	// Reading is not activity: updated_at is untouched.

@@ -79,7 +79,7 @@ test("lucide-vue-next is imported ONLY by the iconset composable", () => {
     "app/components/settings/SettingsTab.vue",
     "app/components/shell/ExtensionsTab.vue",
     "app/components/shell/MenuBar.vue",
-    "app/components/sessions/AppSidebar.vue",
+    "../harness/store/ui/AppSidebar.vue",
   ];
   const offenders = scan
     .filter((f) => read(f).includes('from "lucide-vue-next"'))
@@ -104,7 +104,7 @@ test("zero hand-rolled inline SVG in application components", () => {
     "app/components/settings/SettingsTab.vue",
     "app/components/shell/ExtensionsTab.vue",
     "app/components/shell/MenuBar.vue",
-    "app/components/sessions/AppSidebar.vue",
+    "../harness/store/ui/AppSidebar.vue",
     "app/components/chat/ToolCallLine.vue",
     "app/components/chat/ThinkingBlock.vue",
   ]) {

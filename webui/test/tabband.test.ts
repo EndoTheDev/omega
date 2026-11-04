@@ -34,8 +34,8 @@ const TABS: Array<{
   { file: "../harness/mcp/ui/McpServers.vue", title: "MCP", scrollClass: "mcp-body", actions: ["refresh mcp servers", "Search MCP servers"] },
   { file: "../harness/kanban/ui/Board.vue", title: "Kanban", scrollClass: "board-scroll", actions: ["board-remove-btn"] },
   { file: "app/components/shell/ExtensionsTab.vue", title: "Modules", scrollClass: "inspector-extensions", actions: [] },
-  { file: "app/components/agents/AgentsPanel.vue", title: "Agents", scrollClass: "agents-body", actions: ["scaffold a new agent directory"] },
-  { file: "app/components/insights/InsightsTab.vue", title: "Insights", scrollClass: "insights-scroll", actions: ["window in days, 0 = all time"] },
+  { file: "../harness/continuous/ui/AgentsPanel.vue", title: "Agents", scrollClass: "agents-body", actions: ["scaffold a new agent directory"] },
+  { file: "../harness/store/ui/InsightsTab.vue", title: "Insights", scrollClass: "insights-scroll", actions: ["window in days, 0 = all time"] },
   { file: "app/components/settings/SettingsTab.vue", title: "Settings", scrollClass: "settings-body", actions: ["filter settings"] },
   // card t_529628d5 (Endo's band-search ruling, 2026-11-01): the EXISTING
   // settings filter SEATED IN the band - card t_f1a034dc's own filter row
@@ -46,7 +46,7 @@ const TABS: Array<{
   // the band's band-tool slot too ("Search sessions", the shared
   // SearchInput's own aria-label). The new-session button keeps its own
   // row below the band (pinned in test/sidebar-order.test.ts).
-  { file: "app/components/sessions/AppSidebar.vue", title: "Sessions", scrollClass: "session-list", actions: ["Search sessions"] },
+  { file: "../harness/store/ui/AppSidebar.vue", title: "Sessions", scrollClass: "session-list", actions: ["Search sessions"] },
 ];
 
 describe("the universal band (card t_308e6d9b)", () => {

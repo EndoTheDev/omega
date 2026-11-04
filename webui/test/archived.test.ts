@@ -101,7 +101,7 @@ describe("bucketSessions: the archived group", () => {
 // --- wiring: the footer toggle died with the group ---
 describe("archived group wiring (sources)", () => {
   it("the sidebar holds no archived footer toggle and no showArchived prop", () => {
-    const sidebar = src("app/components/sessions/AppSidebar.vue");
+    const sidebar = src("../harness/store/ui/AppSidebar.vue");
     assert.ok(!sidebar.includes("sessions-foot"), "sessions-foot removed");
     assert.ok(!sidebar.includes("archived-toggle"), "archived-toggle removed");
     assert.ok(!sidebar.includes("showArchived"), "showArchived prop removed");
@@ -112,7 +112,7 @@ describe("archived group wiring (sources)", () => {
   });
 
   it("the archived section renders last, dimmed via bucket-archived", () => {
-    const sidebar = src("app/components/sessions/AppSidebar.vue");
+    const sidebar = src("../harness/store/ui/AppSidebar.vue");
     assert.match(
       sidebar,
       /\{ label: "archived", rows: b\.archived, archived: true \}/,

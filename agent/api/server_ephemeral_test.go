@@ -225,26 +225,13 @@ func TestEphemeralInvisibleToStoreSurfaces(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	ephID, _ := ephemeralChat(t, s, "", "ephemeral hello", nil)
 
-	// search (FTS5) must never match it: only the store is indexed,
-	// and the eph conversation never got there
-	req := httptest.NewRequest(http.MethodGet, "/sessions/search?q=ephemeral", nil)
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("search status = %d, want 200", rec.Code)
-	}
-
-	// export is store-gated: an eph id has no row to export
-	req = httptest.NewRequest(http.MethodGet, "/sessions/"+ephID+"/export", nil)
-	rec = httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code == http.StatusOK {
-		t.Fatalf("export served an ephemeral session - the invisibility law broke")
-	}
+	// search (FTS5) + export invisibility rode the store capsule out
+	// with wave 2 (the capsule's routes_test.go pins both: only the
+	// store is indexed, an eph id has no row to export)
 
 	// the read-stamp PATCH answers 204 without a store write
-	req = httptest.NewRequest(http.MethodPatch, "/sessions/"+ephID, bytes.NewReader([]byte(`{"read":true}`)))
-	rec = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/sessions/"+ephID, bytes.NewReader([]byte(`{"read":true}`)))
+	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("read-stamp status = %d, want 204", rec.Code)

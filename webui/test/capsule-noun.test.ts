@@ -40,6 +40,12 @@ const CAPSULE_NOUNS = [
   "mcp",
   "tools",
   "files", // card t_48eeb015: the file explorer rides out of the shell
+  // card t_490fed88 (the shell-ring shrink wave 2): the sessions pane
+  // and the insights view ride the store capsule (harness/store/ui/),
+  // the roster surface rides continuous (harness/continuous/ui/)
+  "sessions",
+  "agents",
+  "insights",
   "memory",
   "trust",
   "verdicts",

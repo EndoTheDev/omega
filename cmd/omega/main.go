@@ -581,12 +581,19 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 		st2 = st
 	}
 	if st2 == nil {
+		// The three-layer sessions law (the shell-ring shrink wave 2,
+		// ADR Workshop/omega-shell-ring-shrink.md): the default SUPPLY
+		// is substrate-class - a boot without the store capsule still
+		// opens omega.db, never :memory:. A fresh chat persists across
+		// a restart through this supply; only the session management
+		// face (the capsule's tab + routes) is gone.
+		dsn := store.DefaultSupplyPath()
 		if logger != nil {
-			logger.Errorf("omega: no store extension loaded — using in-memory store (sessions will not persist)")
+			logger.Printf("omega: no store capsule loaded - serving the default supply (%s)", dsn)
 		}
-		s, err := store.Open(":memory:")
+		s, err := store.Open(dsn)
 		if err != nil {
-			return nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("open in-memory store: %w", err)
+			return nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("open default supply (%s): %w", dsn, err)
 		}
 		st2 = s
 		ctx.ApplyOffer("store", "host", st2)

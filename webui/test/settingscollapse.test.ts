@@ -53,8 +53,14 @@ test("defaults stay expanded: null storage parses empty", () => {
 // --- the shared SearchInput: one component, two consumers ---
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+// card t_490fed88 (the shell-ring shrink wave 2): AppSidebar lives in
+// the store capsule's ui/ now - a home outside webui/app/components,
+// so the resolver takes the file's home dir with the webui root as
+// reference and only the shell surfaces keep the components/ prefix.
+const compAt = (dir: string, name: string) =>
+  readFileSync(`${root}${dir}/${name}.vue`, "utf8");
 const comp = (name: string, area: string) =>
-  readFileSync(`${root}/app/components/${area}/${name}.vue`, "utf8");
+  compAt(`app/components/${area}`, name);
 
 test("SearchInput owns exactly one input (no duplicated look)", () => {
   const src = comp("SearchInput", "shell");
@@ -68,11 +74,11 @@ test("SearchInput owns exactly one input (no duplicated look)", () => {
 
 test("AppSidebar and SettingsTab both consume SearchInput via v-model", () => {
   const consumers = [
-    ["AppSidebar", "sessions"],
-    ["SettingsTab", "settings"],
+    ["AppSidebar", "../harness/store/ui"],
+    ["SettingsTab", "app/components/settings"],
   ] as const;
-  for (const [name, area] of consumers) {
-    const src = comp(name, area);
+  for (const [name, dir] of consumers) {
+    const src = compAt(dir, name);
     assert.ok(
       src.includes("<SearchInput"),
       `${name} renders the shared component`,

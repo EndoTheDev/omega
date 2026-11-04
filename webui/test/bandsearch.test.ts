@@ -66,7 +66,7 @@ describe("TabBand: the shared compact search seat (card t_529628d5)", () => {
   });
 
   it("the sidebar consumes the shared seat - no second definition", () => {
-    const sidebar = read("app/components/sessions/AppSidebar.vue");
+    const sidebar = read("../harness/store/ui/AppSidebar.vue");
     const chunk = bandChunk(sidebar);
     assert.match(chunk, /class="band-search"/, "the sessions seat is the same wrapper");
     // the sidebar keeps only its STACK rules; the seat geometry is gone
