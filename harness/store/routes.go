@@ -28,9 +28,11 @@ package store
 // coupled strands. One capsule, one strand, one deletability proof.
 //
 // The list's running flag resolves the "chat-runs" service per request
-// (agent.ChatRunsReader - the live run hub offered by the serving
-// channel). Missing offer = never-running: the honest empty state on a
-// boot with no serving channel, never a fault.
+// through this capsule's OWN local ChatRunsReader face (the
+// consumer-owned-face law, the seam constitution; the live run hub
+// is offered by the serving channel). Missing offer = never-running:
+// the honest empty state on a boot with no serving channel, never a
+// fault.
 
 import (
 	"encoding/json"
@@ -113,9 +115,21 @@ type sessionRow struct {
 	Running      bool   `json:"running"`
 }
 
+// ChatRunsReader is the consumer-owned local face of the "chat-runs"
+// service (the first shell-offered capsule-service key, Endo ruling
+// 2026-11-04: owner = the serving shell; consumers = any capsule
+// reading live-run state through their own interface; missing offer =
+// honest never-running). The serving channel offers the
+// implementation; the run hub itself never leaves the chat surface -
+// only this read crosses the seam. The owner never knows this face
+// exists (no core-named seam type anywhere).
+type ChatRunsReader interface {
+	Active(id string) bool
+}
+
 // chatRuns resolves the live-run read per request.
-func (rt *Routes) chatRuns() agent.ChatRunsReader {
-	svc, _ := rt.ctx.Services().Resolve("chat-runs").(agent.ChatRunsReader)
+func (rt *Routes) chatRuns() ChatRunsReader {
+	svc, _ := rt.ctx.Services().Resolve("chat-runs").(ChatRunsReader)
 	return svc
 }
 
@@ -416,8 +430,8 @@ func insightsPayloadOf(in *core.Insights) insightsPayload {
 		// Store file sizes ride every response (the webui's insights
 		// pane renders them when non-zero - a ":memory:" test store
 		// sends 0/0 and that is honest).
-		DBSizeBytes: in.DBSizeBytes,
-		WALSizeBytes:  in.WALSizeBytes,
+		DBSizeBytes:  in.DBSizeBytes,
+		WALSizeBytes: in.WALSizeBytes,
 	}
 	p.NotableTokens = insightsNotableRow{Value: in.NotableTokens.Value, Detail: in.NotableTokens.Detail}
 	p.NotableTools = insightsNotableRow{Value: in.NotableTools.Value, Detail: in.NotableTools.Detail}

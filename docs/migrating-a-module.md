@@ -11,7 +11,7 @@ this recipe stays for the day a capsule is added outside the register.
 
 Since part 3 (the seam constitution, 2026-11-03), a service is not a
 slot fill but an offer: `api.Offer(key, svc)` on the `Services`
-registry, closed at 14 keys (8 need keys + 6 capsule-service keys -
+registry, closed at 15 keys (8 need keys + 7 capsule-service keys -
 docs/architecture.md's seam-constitution section); needs live with
 their consumers and no core-named seam type exists.
 

@@ -333,7 +333,7 @@ func (nilEmitterCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 // census (post-flip, part 3 wave 2): the exclusive slots ride Offers
 // under the closed need-key namespace - there is no per-slot Register*
 // method anymore - and the additive surfaces keep their registrations
-// (15 exclusive slots as need keys, 7 additive surfaces - the
+// (16 exclusive slots as offer keys, 7 additive surfaces - the
 // delegation pipe carries both its fields) plus the two
 // no-classic-seam families (routes, emitters). A name going missing
 // breaks the census.

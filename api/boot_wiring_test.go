@@ -91,13 +91,26 @@ func TestBootWiringKeepsEngineRingInHandlers(t *testing.T) {
 		t.Fatalf("push payload did not land: %+v", snap[0].Payload)
 	}
 
+	// 2b. the chat-runs offer rides the wire through the proper
+	// api.Offer surface (Endo ruling 2026-11-04): live after wire -
+	// the first shell-offered capsule-service key, resolvable by the
+	// store capsule's own face, never the raw core primitive.
+	if ctx.Services().Resolve("chat-runs") == nil {
+		t.Fatalf("wire did not offer the chat-runs service")
+	}
+
 	// 3. the teardown proof stays valid: the channel registration
 	// dismounts clean (the chat capsule rides Start-time registration,
-	// not the mount journal - the journal may never own it).
+	// not the mount journal - the journal may never own it). The
+	// chat-runs offer is the mirror: journaled at wire, the dismount
+	// must release it (the census equality).
 	if err := reg.Dismount(ctx, "http_channel"); err != nil {
 		t.Fatalf("dismount (teardown proof): %v", err)
 	}
 	if len(ctx.Channels) != 0 {
 		t.Fatalf("dismount left channels: %d", len(ctx.Channels))
+	}
+	if ctx.Services().Resolve("chat-runs") != nil {
+		t.Fatalf("dismount left the chat-runs offer live - the journal must own its release")
 	}
 }

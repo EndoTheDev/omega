@@ -43,10 +43,10 @@ func (sc *sharedCanvas) build(ctx *core.Context, emit func(core.Event)) (*agent.
 // HTTPChannel adapts the HTTP server to the core.Channel interface.
 // It creates one agent from the Context and reuses it for all requests.
 type HTTPChannel struct {
-	addr             string
-	runTimeout       time.Duration // detached-run wall-clock cap from config
-	titleModel       string        // title_model knob from config
-	srv              *Server
+	addr       string
+	runTimeout time.Duration // detached-run wall-clock cap from config
+	titleModel string        // title_model knob from config
+	srv        *Server
 	// hub is the process-wide run registry (t_c6f13a82): one per
 	// plugin, shared by every bind's server. A second bind must not get
 	// a second hub - the action pipe's launchRun registers on the
@@ -62,6 +62,13 @@ type HTTPChannel struct {
 	// Start binds it to this channel's server before the canvas runtime
 	// builds - the snapshot and the action pipe meet the served state.
 	chat *agentapi.ChatCapsule
+	// ext is the mount-time registration surface (Endo ruling
+	// 2026-11-04): wire offers the chat-runs service through the
+	// proper api.Offer path - the journal claims the key and the
+	// census names it - never the raw core primitive. Set by the
+	// plugin at Mount; a hand-built test channel carries nil and
+	// skips the offer (the consumer's missing-offer floor).
+	ext *agent.ExtensionAPI
 }
 
 // Start creates an agent from deps.Ctx and serves HTTP/SSE until the
@@ -116,13 +123,24 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	if c.hub != nil {
 		c.srv.BindRunHub(c.hub)
 	}
-	// The chat-runs offer (the shell-ring shrink wave 2): the store
-	// capsule's session list reads the live-run truth per request
-	// through this service (agent.ChatRunsReader). The hub binds per
-	// this channel's server, so the offered reader is the bound one -
-	// the multi-bind mirror law rides through untouched. Re-offer on
-	// every wire: a seam re-read (a module toggle) refreshes it.
-	deps.Ctx.ApplyOffer("chat-runs", "http_channel", c.srv)
+	// The chat-runs offer (the shell-ring shrink wave 2, Endo ruling
+	// 2026-11-04): the first shell-offered capsule-service key. The
+	// store capsule's session list reads the live-run truth per
+	// request through this service - its OWN consumer-owned
+	// ChatRunsReader face (harness/store), never a shared type. The
+	// offer rides the proper api.Offer surface: the journal claims
+	// the key, the one-tenant ledger holds it, the dismount releases
+	// it - the raw deps.Ctx.ApplyOffer primitive is the mount
+	// machinery's own, not a bypass (the enforcement test now pins
+	// ApplyOffer call sites too, seams_test). The hub binds per this
+	// channel's server, so the offered reader is the bound one - the
+	// multi-bind mirror law rides through untouched; every bind
+	// re-offers, a same-tenant replace (Q7).
+	if c.ext != nil {
+		if err := c.ext.Offer("chat-runs", c.srv); err != nil {
+			return fmt.Errorf("http_channel: chat-runs offer: %w", err)
+		}
+	}
 	// Canvas transport (arc 3b): the runtime is built from the fully
 	// mounted Context after MountAllAPI - the same registration point
 	// every other seam reads (card t_058edeb3). Deltas fan out through

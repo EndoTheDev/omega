@@ -336,10 +336,12 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 }
 
 // Active reports whether the session has a live run right now - the
-// exported face of the RunHub (the chat-runs service the http channel
-// offers under "chat-runs"; agent.ChatRunsReader). The store capsule's
-// session list reads it per request; the run hub itself stays the base
-// set's (the shell-ring shrink wave 2 disclosure).
+// RunHub read the serving channel offers under the "chat-runs"
+// capsule-service key (the store capsule resolves it per request
+// through its OWN consumer-owned ChatRunsReader face in
+// harness/store - no shared type; the seam constitution, Endo
+// ruling 2026-11-04). The run hub itself stays the base set's (the
+// shell-ring shrink wave 2 disclosure).
 func (s *Server) Active(id string) bool { return s.runs.active(id) }
 
 // --- carve seams: the shell reaches the base state it must wire,

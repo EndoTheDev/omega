@@ -842,10 +842,12 @@ func (api *ExtensionAPI) mountSeam(seam string, apply func(*core.Context), undo 
 //
 // The key namespace is closed per direction: capsule services use the
 // capsule's own name ("cron", "trust", "verdicts", "notifications",
-// "skills", "memory"); the substrate need-keys are a documented
-// closed list (provider, store, logger, compactor, prompt, nudger,
-// approvals) - proposing need key #8 is a design event, argued in a
-// card.
+// "skills", "memory") plus the shell-offered "chat-runs" (Endo ruling
+// 2026-11-04, the first shell-offered service key - the census names
+// it, the consumer owns the face); the substrate need-keys are a
+// documented closed list (provider, store, loop, logger, compactor,
+// prompt, nudger, approvals) - proposing need key #9 is a design
+// event, argued in a card.
 func (api *ExtensionAPI) Offer(key string, svc any) error {
 	if svc == nil {
 		return fmt.Errorf("service %q: a registration carries its service", key)

@@ -27,6 +27,12 @@ type Plugin struct {
 	// GET serves, the action pipe routes and the deltas carry must be
 	// the same on all mirrors.
 	canvas *sharedCanvas
+	// api is the mount-time registration surface, stashed for the
+	// channels' wire (Endo ruling 2026-11-04): the chat-runs offer
+	// rides the proper api.Offer path at wire time - claimed on the
+	// journal, named in the census - instead of the raw core
+	// primitive.
+	api *agent.ExtensionAPI
 	// mounted carries the channels Mount appended - the value Dismount
 	// removes by identity (the E1 dismount proof).
 	mounted []core.Channel
@@ -86,14 +92,16 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// SSE attach agree on what is live regardless of which bind speaks.
 	p.hub = &agentapi.RunHub{}
 	p.canvas = &sharedCanvas{}
+	p.api = api
 	for _, b := range binds {
 		ch := &HTTPChannel{
-			addr:             fmt.Sprintf("%s:%d", b, port),
-			runTimeout:       time.Duration(cfg.RunTimeoutSeconds()) * time.Second,
-			titleModel:       cfg.TitleModel,
-			chat:             p.chat,
-			hub:              p.hub,
-			canvas:           p.canvas,
+			addr:       fmt.Sprintf("%s:%d", b, port),
+			runTimeout: time.Duration(cfg.RunTimeoutSeconds()) * time.Second,
+			titleModel: cfg.TitleModel,
+			chat:       p.chat,
+			hub:        p.hub,
+			canvas:     p.canvas,
+			ext:        p.api,
 		}
 		p.mounted = append(p.mounted, ch)
 		if err := api.RegisterChannel(ch); err != nil {
