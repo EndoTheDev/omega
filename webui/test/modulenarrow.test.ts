@@ -19,6 +19,9 @@ import { isNarrowWidth as toolsIsNarrowWidth } from "../../harness/tools/ui/narr
 // fold too (a drag between hosts must show one adaptation, not two)
 import { isNarrowWidth as boardIsNarrowWidth } from "../../harness/kanban/ui/board/boardLogic.ts";
 import { isNarrowWidth as mcpIsNarrowWidth } from "../../harness/mcp/ui/narrow.ts";
+// card t_617c2ad0: the browser tab left the shell - its copy rides the
+// module list now
+import { isNarrowWidth as browserIsNarrowWidth } from "../../harness/browser/ui/narrow.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", ".."); // the repo root (webui/test up to root)
 const modules = root; // the RETROFIT rel paths are repo-root relative
@@ -37,6 +40,7 @@ test("every narrow copy agrees with the shell threshold (shell + all modules)", 
     ["tools", toolsIsNarrowWidth],
     ["kanban", boardIsNarrowWidth],
     ["mcp", mcpIsNarrowWidth],
+    ["browser", browserIsNarrowWidth],
   ] as const) {
     for (const px of [0, 100, 240, 300, 360, 400, 640]) {
       assert.equal(fn(px), isNarrowWidth(px), `${name} at ${px}px`);
@@ -52,7 +56,7 @@ test("every narrow copy agrees with the shell threshold (shell + all modules)", 
 const RETROFIT: Array<{
   rel: string;
   label: string;
-  module: "cron" | "http_channel" | "skills" | "tools" | "mcp" | null;
+  module: "cron" | "http_channel" | "skills" | "tools" | "mcp" | "browser" | null;
   rules: RegExp[];
 }> = [
   {
@@ -96,6 +100,14 @@ const RETROFIT: Array<{
     // off the row), so the narrowed line-reflow rule died - the pin is
     // the condensed scroll body + the anatomy's narrow row rhythm.
     rules: [/\.mcp-list\.narrow \{/, /\.mcp-list\.narrow \.mcp-body \{/],
+  },
+  {
+    // card t_617c2ad0: the browser tab view is the browser capsule's own
+    // (harness/browser/ui/) - the recipe's narrow rules moved with it
+    rel: "harness/browser/ui/BrowserTab.vue",
+    label: "browser",
+    module: "browser",
+    rules: [/\.browser-tab\.narrow \.band-tool\[aria-label="browser back"\]/],
   },
   {
     // the shell's own inspector Files tab rides the same recipe

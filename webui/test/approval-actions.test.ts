@@ -256,7 +256,7 @@ test("ChatItem rides the gate card on the tool call row, ChatTab binds it", () =
 });
 
 test("the notification surface answers approve/deny and keeps the jump", () => {
-  const panel = read("app/components/notifications/NotificationsPanel.vue");
+  const panel = read("../harness/notifications/ui/NotificationsPanel.vue");
   assert.match(panel, /@click\.stop="answerQuestion\(p, 'approve'\)"/, "approve answers in place, it does not navigate");
   assert.match(panel, /@click\.stop="answerQuestion\(p, 'deny'\)"/, "deny answers in place, it does not navigate");
   assert.match(panel, /approveDenyOptions/, "buttons render only on the pair contract");

@@ -17,7 +17,7 @@ import {
   agentStatusFor,
   type OmegaAgent,
 } from "../app/components/agents/agentsRows.ts";
-import type { OmegaContinuousRow } from "../app/components/agents/continuousRows.ts";
+import type { OmegaContinuousRow } from "../../harness/continuous/ui/continuousRows.ts";
 
 // the AgentsPanel source is three levels up from test/ (the repo root)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");

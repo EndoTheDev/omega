@@ -318,10 +318,10 @@ test("VerdictCard renders the list layout and sends every answer shape", () => {
 });
 
 test("the notifications badge counts pending verdict cards (card t_180db2cb)", () => {
-  const store = read("app/components/notifications/store.ts");
+  const store = read("app/components/shell/notificationFeed.ts");
   assert.match(store, /fetchVerdicts/, "the feed store consumes the pending-cards listing");
   assert.match(store, /unread\.value \+ pendingVerdicts\.value\.length/, "the badge sums finished-things and pending questions");
-  const panel = read("app/components/notifications/NotificationsPanel.vue");
+  const panel = read("../harness/notifications/ui/NotificationsPanel.vue");
   assert.match(panel, /openVerdict/, "a pending card row routes to its chat session");
 });
 

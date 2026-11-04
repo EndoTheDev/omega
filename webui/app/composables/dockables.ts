@@ -27,6 +27,31 @@
 // outlet templates and the composition lookup agree without an alias map.
 // card t_49d0b308: settings left the main-pane tab class for the
 // inspector, and the kanban board joined it as the seventh tab.
+// card t_617c2ad0 (the capsule-ui migration): the TAB capsules - the
+// modules whose dockable is ONE tab view, not an inspector panel body.
+// The shell keeps the composition decision (which modules the dock
+// hosts as tabs, in this order - the registry order below): the capsule
+// ships the component in harness/<name>/ui/ and the build's module-tabs
+// scan (nuxt.config.ts) generates the import manifest
+// (module-tabs.generated.ts); app.vue's outlets bind the component
+// from that manifest, never a hardcoded import. Removing the capsule
+// drops its manifest entry and the outlet hosts nothing (the panel
+// capsules' empty-body shape) - the deletability proof.
+export const TAB_MODULES = [
+  // card t_55a3fc4b (Endo ruling 2026-11-01, the v0.15 arc): the
+  // integrated terminal - VS Code-style, no restrictions (no
+  // confirm-gate, no opt-in; the owner's box behind the tailnet). Its
+  // default home is the bottom panel - the t_67fc1905 reservation.
+  "terminal",
+  // card t_95c91f9c (Endo ruling 2026-11-01): the general web browser
+  // pane - URL bar + iframe embed, ANY origin allowed (no allowlist, no
+  // origin gate; the tailnet-only restriction was rejected).
+  "browser",
+  // card t_180db2cb (Endo ruling 2026-10-29): the notifications tab -
+  // the durable feed/history in the inspector; the transient toasts
+  // are the shell's own (they serve ANY emitter, components/shell/).
+  "notifications",
+] as const;
 export const DOCK_COMPONENTS = [
   "sidebar",
   "chat",
@@ -49,7 +74,6 @@ export const DOCK_COMPONENTS = [
   // more terminals = more panes/splits. Its default home is the bottom
   // panel - the home the dock registry's comments reserved for it since
   // card t_67fc1905 - and it moves freely like every non-locked tab.
-  "terminal",
   // card t_95c91f9c (Endo ruling 2026-11-01): the general web browser
   // pane - URL bar + iframe embed, ANY origin allowed (no allowlist, no
   // origin gate; the tailnet-only restriction was rejected). Known
@@ -57,14 +81,15 @@ export const DOCK_COMPONENTS = [
   // refuse the embed, and the tab answers with a clean fallback panel
   // (open in a new tab + copy-URL), never a silent blank frame. No
   // proxy, no header stripping in v1.
-  "browser",
   // card t_180db2cb (Endo ruling 2026-10-29): "notifications should move
   // from top right to its own tab (secondary pane)". The top-right bell
   // entry point is GONE entirely (deletability law - no bell chrome, no
   // popover); the durable feed/history lives in this inspector tab, the
-  // transient toasts stay shell-level (components/notifications/), and
+  // transient toasts stay shell-owned (components/shell/), and
   // the unread badge rides THIS tab's icon chip in the dock.
-  "notifications",
+  // The tab capsules' views ride the module-tabs manifest - the
+  // components below these ids live in harness/<name>/ui/ now.
+  ...TAB_MODULES,
   // card t_c7222095 (deletability law): "continuous" left the dock
   // registry with its tab - the roster folded into the Agents tab
   // (one agent = one row: config + wake state + report preview). A
@@ -331,10 +356,12 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     // card t_95c91f9c: the general web browser - a MAIN-pane content tab
     // like chat and the viewer. Singleton (one browser in the shell: the
     // menu opener FOCUSES it - two live iframes are two sites one pane
-    // should own), closable like chat. The panel body is the shell's
-    // components/browser/BrowserTab.vue over harness/browser's GET/PUT
-    // /browser/last (the resume URL); sites that refuse embedding get
-    // the tab's fallback panel, never a silent blank frame.
+    // should own), closable like chat. The panel body is the browser
+    // capsule's own harness/browser/ui/BrowserTab.vue (card t_617c2ad0,
+    // the tabs manifest carries the import) over harness/browser's
+    // GET/PUT /browser/last (the resume URL); sites that refuse
+    // embedding get the tab's fallback panel, never a silent blank
+    // frame.
     id: "browser",
     title: "Browser",
     icon: "browser",
@@ -348,8 +375,9 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     // from the top-right bell popover into the secondary pane (Endo's
     // two rulings, 2026-10-29: (1) the bell icon dies entirely - the
     // notifications dockable's icon chip carries the unread badge;
-    // (2) transient toasts STAY for live events). The shell-owned panel
-    // body is components/notifications/NotificationsPanel.vue over GET
+    // (2) transient toasts STAY for live events). The panel body is the
+    // capsule's own (harness/notifications/ui/NotificationsPanel.vue,
+    // card t_617c2ad0 - the tabs manifest carries the import) over GET
     // /notifications + POST /notifications/read (data source unchanged).
     // Opening/focusing the tab marks the feed read (the badge clears on
     // open). Unclosable like every inspector view.

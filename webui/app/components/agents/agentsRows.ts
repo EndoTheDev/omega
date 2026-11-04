@@ -9,7 +9,7 @@
 
 // RECORD: card t_c7222095 - continuousRows.ts types fold in here (the
 // merged agent row carries the wake state).
-import { rowStatus, type OmegaContinuousRow } from "./continuousRows.ts";
+import { rowStatus, type OmegaContinuousRow } from "../../../../harness/continuous/ui/continuousRows.ts";
 
 export interface OmegaAgent {
   name: string;

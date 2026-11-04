@@ -129,19 +129,27 @@
             :open="isMobile ? inspectorOpen : false" />
         </template>
         <!-- card t_55a3fc4b: the terminal tab - the integrated shell
-             (the terminal module's own view-model rides it; the shell
+             (the terminal module's own view rides it; the shell
              keeps running while a sibling tab activates - the outlet
-             unmounts the SSE, never the pty). -->
+             unmounts the SSE, never the pty). The view is the capsule's
+             own (harness/terminal/ui/, card t_617c2ad0): bound from the
+             tabs manifest, missing = the outlet hosts nothing. -->
         <template #pane-terminal>
-          <TerminalTab v-if="!isMobile" class="pane" />
+          <component
+            :is="terminalTabView"
+            v-if="terminalTabView && !isMobile"
+            class="pane" />
         </template>
-        <!-- card t_95c91f9c: the general web browser tab - shell-owned
-             main-pane content (like chat/viewer), the URL bar + iframe
-             embed over harness/browser's /browser/last. Singleton: the
-             opener FOCUSES the one instance. -->
+        <!-- card t_95c91f9c: the general web browser tab - the main-pane
+             content tab (like chat/viewer), the URL bar + iframe embed
+             over harness/browser's /browser/last. Singleton: the opener
+             FOCUSES the one instance. The view is the capsule's own
+             (harness/browser/ui/, card t_617c2ad0): bound from the tabs
+             manifest, missing = the outlet hosts nothing. -->
         <template #pane-browser>
-          <BrowserTab
-            v-if="!isMobile"
+          <component
+            :is="browserTabView"
+            v-if="browserTabView && !isMobile"
             class="pane" />
         </template>
         <template #pane-skills>
@@ -234,10 +242,12 @@
              finished-things feed rehomed from the top-right bell (which
              died entirely), same data + rendering, mounted when its
              inspector tab is active. The mount marks the feed read (the
-             tab chip's badge clears on open). -->
+             tab chip's badge clears on open). The view is the capsule's
+             own (harness/notifications/ui/, card t_617c2ad0). -->
         <template #pane-notifications>
-          <NotificationsPanel
-            v-if="!isMobile"
+          <component
+            :is="notificationsPanelView"
+            v-if="notificationsPanelView && !isMobile"
             class="pane"
             @open="openNotification" />
         </template>
@@ -338,9 +348,11 @@
       <!-- card t_180db2cb: the notifications feed panel seats through its
            own branch like the other shell-owned tabs - the module
            catch-all would render an empty InspectorPanel(module=
-           "notifications") body. -->
-      <NotificationsPanel
-        v-else-if="inspectorDrawerActiveId === 'notifications'"
+           "notifications") body (the feed view is a TAB capsule, not a
+           panel; card t_617c2ad0). -->
+      <component
+        :is="notificationsPanelView"
+        v-else-if="notificationsPanelView && inspectorDrawerActiveId === 'notifications'"
         class="pane"
         @open="openNotification" />
       <!-- v0.14.3: the canvas drawer branch left with the tab (the fold
@@ -449,6 +461,10 @@
 <script setup lang="ts">
   import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from "vue";
   import { modulePanels } from "./composables/module-panels.generated";
+  // card t_617c2ad0: the tab capsules' views (terminal / browser /
+  // notifications) ride this generated manifest - dockables.ts TAB_MODULES
+  // declares the composition, the codegen carries the import.
+  import { moduleTabs } from "./composables/module-tabs.generated";
   import {
     archiveSession,
     branchSession,
@@ -584,8 +600,8 @@
   // closable) - the outlet renders it when its tab is active
   import InsightsTab from "./components/insights/InsightsTab.vue";
   // card t_180db2cb: the notifications dock tab (the durable feed; the
-  // bell entry point is gone) - desktop outlet + mobile drawer branch
-  import NotificationsPanel from "./components/notifications/NotificationsPanel.vue";
+  // bell entry point is gone) - the view rides the tabs manifest
+  // (harness/notifications/ui/, card t_617c2ad0)
   import AgentsPanel from "./components/agents/AgentsPanel.vue";
   // card t_14f73742: the extensions inventory joins the inspector (registry:
   // singleton, pinned right) - the outlet renders it when its tab is active
@@ -594,7 +610,6 @@
   // from a row click) - outlet below, opener + titles wired at the
   // provides
   import ViewerTab from "./components/ViewerTab.vue";
-  import BrowserTab from "./components/browser/BrowserTab.vue";
   import {
     DOCK_VIEWER_OPEN_KEY,
     FOCUSED_SESSION_KEY,
@@ -606,6 +621,17 @@
     type ViewerRef,
   } from "./composables/dockables";
   const healthy = ref(false);
+
+  // --- the tab capsules' views (card t_617c2ad0): static manifest
+  // lookups, not imports. A capsule whose ui/ view is gone (deleted
+  // capsule, the deletability proof) yields undefined - the outlet
+  // template then hosts nothing, exactly like a panel capsule's
+  // InspectorPanel body after a removal.
+  const terminalTabView = moduleTabs.find((t) => t.module === "terminal")?.component;
+  const browserTabView = moduleTabs.find((t) => t.module === "browser")?.component;
+  const notificationsPanelView = moduleTabs.find(
+    (t) => t.module === "notifications",
+  )?.component;
   // /health durability payload: server build tag + uptime (polled, the
   // bar's version + up seg - and the health dot gets a periodic check)
   const healthVersion = ref("");

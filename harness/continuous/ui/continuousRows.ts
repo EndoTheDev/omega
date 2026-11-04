@@ -1,6 +1,9 @@
 // continuousRows.ts: the pure view-model helpers for the continuous
 // roster pane (card t_72ecca67, ruling 18). Render-free; every function
-// is unit-tested in modules/ui/test/continuous.test.ts.
+// is unit-tested in webui/test/continuous.test.ts. card t_617c2ad0: the
+// continuous capsule owns this file (harness/continuous/ui/) - the
+// merged Agents tab (shell-owned) imports the row model from here, so
+// removing the capsule is visible in the shell's own imports.
 
 // OmegaContinuousRow is one roster payload row (GET /continuous/roster):
 // the agent profile facts plus the wake state (rulings 5, 10, 18) - the

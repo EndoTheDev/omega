@@ -2,7 +2,7 @@
   <div
     ref="rootEl"
     class="browser-tab"
-    :class="{ narrow }">
+    :class="{ narrow: narrow }">
     <!-- the URL row: back / forward / the address / reload. The address
          is the pane's OWN record - cross-origin frame history is
          unreadable, so the stack is the typed-commit log here. -->
@@ -103,7 +103,6 @@
   // restores on mount and persists after every successful embed load;
   // a refused frame never persists (the no-load rule above is also the
   // write gate, for free).
-  import { computed, onMounted, ref } from "vue";
   import {
     FALLBACK_AFTER_MS,
     PERSIST_GRACE_MS,
@@ -115,11 +114,43 @@
     stepNav,
     type NavHistory,
   } from "./browserLogic";
-  import { useNarrow } from "~/composables/narrow";
-  import Icon from "../ui/Icon.vue";
+  // card t_617c2ad0: this view is the browser capsule's own now
+  // (harness/browser/ui/). The narrow recipe is module-owned (module UI
+  // imports no shell code - the Board/boardLogic.ts precedent): the
+  // threshold lives in ./narrow, the observer wiring is the .vue inline
+  // (the only DOM-measuring part). Icon rides the shell's global
+  // auto-import (components/ui/Icon.vue) - no shell import statement.
+  import { isNarrowWidth } from "./narrow";
+  import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
   const rootEl = ref<HTMLElement | null>(null);
-  const narrow = useNarrow(rootEl);
+  // inline narrow adaptation (the Board pattern): observe the rendered
+  // root, flip the class on the next frame - a callback that mutates
+  // this frame re-enters the resize cycle ("ResizeObserver loop").
+  const narrow = ref(false);
+  let resizeObs: ResizeObserver | null = null;
+  onMounted(() => {
+    if (typeof ResizeObserver === "undefined" || !rootEl.value) return;
+    resizeObs = new ResizeObserver((entries) => {
+      const pending = entries
+        .map((e) => Math.round(e.contentRect.width))
+        .filter((w) => w > 0);
+      if (pending.length === 0) return;
+      requestAnimationFrame(() => {
+        if (resizeObs === null) return;
+        for (const w of pending) narrow.value = isNarrowWidth(w);
+      });
+    });
+    resizeObs.observe(rootEl.value);
+    // mount measures NOW: a tab remount in place produces no further
+    // resize entry, so the class must not wait for the next width
+    // change (the shell's useNarrow does the same on mount)
+    narrow.value = isNarrowWidth(Math.round(rootEl.value.getBoundingClientRect().width));
+  });
+  onBeforeUnmount(() => {
+    resizeObs?.disconnect();
+    resizeObs = null;
+  });
 
   // the bar's draft text (type freely, commit on Enter)
   const urlInput = ref("");
@@ -423,9 +454,9 @@
     border-color: var(--accent);
     color: var(--accent);
   }
-  /* narrow recipe: the shell's own component, the shared threshold
-     (composables/narrow.ts) - below 360px the bar drops the arrow
-     buttons and the url input takes the full row width */
+  /* narrow recipe: module-owned threshold (./narrow.ts, pinned to agree
+     with the shell's by modulenarrow.test.ts) - below 360px the bar
+     drops the arrow buttons and the url input takes the full row width */
   .browser-tab.narrow .band-tool[aria-label="browser back"],
   .browser-tab.narrow .band-tool[aria-label="browser forward"] {
     display: none;

@@ -185,7 +185,7 @@
     type VariantBlock,
   } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
-  import { pendingVerdictList, refreshNotifications } from "../components/notifications/store";
+  import { pendingVerdictList, refreshNotifications } from "./shell/notificationFeed";
   import AppComposer from "./chat/AppComposer.vue";
   import ChatItem from "./ChatItem.vue";
   import GateCard from "./chat/GateCard.vue";

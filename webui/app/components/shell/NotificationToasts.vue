@@ -39,7 +39,7 @@
     openToastRecord,
     startNotificationFeed,
     stopNotificationFeed,
-  } from "./store";
+  } from "./notificationFeed";
   import type { OmegaNotification } from "../../composables/notifications";
 
   const emit = defineEmits<{

@@ -358,7 +358,13 @@ bottom pane (`TerminalTab`, journey 95), and the browser module hosts
 an any-origin iframe tab in the main area (`BrowserTab` over
 GET/PUT /browser/last, the resume URL; sites refusing embedding get
 an explicit fallback panel, journey 96). Both are in-process capsules
-of the module table (docs/architecture.md).
+of the module table (docs/architecture.md). Both views are the
+capsules' own - they ship at `harness/<name>/ui/` and the shell's dock
+outlets bind them from the generated module-tabs manifest
+(`module-tabs.generated.ts`, card t_617c2ad0; the shell's registry in
+`dockables.ts` keeps the composition: `TAB_MODULES`, the pinned-root
+order, title/icon/policy). Removing a capsule drops its manifest
+entry - the tab hosts nothing, same shape as a removed panel capsule.
 
 ## Component map
 
@@ -402,10 +408,13 @@ of the module table (docs/architecture.md).
   config knobs as a dock-tab singleton; the theme picker is TWO knobs —
   color mode and the custom theme, t_a94b1cda; model slots ride
   `ModelField`, the BandSelect listbox with capability filters).
-  Terminal: `TerminalTab` (the bottom-host PTY over the terminal
-  module's ws). Browser: `BrowserTab` (URL bar + iframe over
+  Terminal view: `harness/terminal/ui/TerminalTab` (the bottom-host PTY
+  over the terminal module's routes). Browser view:
+  `harness/browser/ui/BrowserTab` (URL bar + iframe over
   GET/PUT /browser/last; X-Frame-Options refusals render the fallback
-  panel, never a silent blank frame).
+  panel, never a silent blank frame). Both are tab capsules - their
+  views live in the capsule, the shell's outlets bind them through
+  `module-tabs.generated.ts` (card t_617c2ad0).
 - Canvas (arc 3c): `composables/canvas.ts` is the store —
   snapshot load (GET /ui/canvas) + view_model_delta merge (forwarded
   by the chat host's `canvasDelta` dep) + the action pipe POST

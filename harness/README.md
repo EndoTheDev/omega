@@ -220,6 +220,15 @@ in the shell's inspector, and the module name is the namespace prefix,
 so module and shell component names never collide. A module's UI is
 tested there and reviewed as part of the module.
 
+Card t_617c2ad0: modules the shell hosts as DOCK TABS - not inspector
+panels - also live here (the tab capsules: `harness/terminal/ui/`,
+`harness/browser/ui/`, `harness/notifications/ui/`). A tab module
+ships exactly ONE .vue view; the build carries it in
+`module-tabs.generated.ts` (the shell's dock outlets bind from that
+manifest - never a hardcoded shell import), the composition decision
+(which modules are tabs, their order and pinned roots) stays the
+shell's in `dockables.ts` (`TAB_MODULES`).
+
 Example:
 
 ```go

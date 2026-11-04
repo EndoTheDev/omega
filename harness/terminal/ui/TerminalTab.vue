@@ -1,7 +1,10 @@
 <template>
   <!-- card t_55a3fc4b: the webui Terminal tab - the integrated shell,
        VS Code-style with zero restrictions (the owner's ruling; no
-       gate, no enable step). One terminal per pane: the pane's session is
+       gate, no enable step). card t_617c2ad0: THE TERMINAL CAPSULE'S
+       OWN view (harness/terminal/ui/) - the shell's dock outlet binds
+       it from module-tabs.generated.ts; the registry only opens the
+       tab. One terminal per pane: the pane's session is
        claimed on mount (the terminal module's POST /terminal/sessions
        reattaches to the pane's last shell when one idles - the dock
        unmounts this outlet on sibling activation and the shell keeps

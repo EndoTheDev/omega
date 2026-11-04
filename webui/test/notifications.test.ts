@@ -283,7 +283,7 @@ test("selectBoardFor publishes the stash + the event, skips the empty pick", () 
 // --- arc 4b (t_9339ad05): the toast is a canvas event ---
 
 test("the toast stack renders from the canvas - no per-frontend SSE stream (t_180db2cb rehome)", () => {
-  const store = read("webui", "app", "components", "notifications", "store.ts");
+  const store = read("webui", "app", "components", "shell", "notificationFeed.ts");
   // the store subscribes to the canvas feed, not its own EventSource
   assert.ok(store.includes("onToastPanel("), "the feed store consumes the canvas toast feed");
   assert.ok(store.includes("decodeToast("), "the store owns the record-shape read");
@@ -293,7 +293,7 @@ test("the toast stack renders from the canvas - no per-frontend SSE stream (t_18
   assert.ok(!store.includes("/notifications/events"), "no SSE toast stream stays reachable from the shell");
   // the toast stack component renders FROM THE STORE and stays fixed
   // positioned (shell chrome, not pane content)
-  const toasts = read("webui", "app", "components", "notifications", "NotificationToasts.vue");
+  const toasts = read("webui", "app", "components", "shell", "NotificationToasts.vue");
   assert.ok(toasts.includes("notificationToasts"), "the stack renders the store's toast rows");
   assert.ok(toasts.includes("transition-group"), "the merge behavior (12833fd) keeps its enter/leave group");
   assert.match(toasts, /position: fixed/, "the stack is chrome, not pane content");
