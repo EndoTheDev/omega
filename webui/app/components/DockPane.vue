@@ -279,7 +279,7 @@
   import { isLockedTab } from "../composables/dockables";
   // card t_36ceb99b: the viewer chip's extension-glyph vocabulary (the
   // same pure table the file tree's row glyphs read)
-  import { glyphKindFor, glyphIcon } from "./files/rowicon";
+  import { glyphKindFor, glyphIcon } from "../../../harness/files/ui/rowicon";
   // card t_180db2cb: the notifications tab chip's unread badge - the
   // page-lifetime feed store's computed ("" at zero = no chip)
   import { notificationsBadgeText } from "./shell/notificationFeed";

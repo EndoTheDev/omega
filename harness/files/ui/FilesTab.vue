@@ -124,16 +124,16 @@
     postFilesMkdir,
     postFilesWrite,
     sortFileEntries,
-  } from "../../composables/omega";
-  import { latestWins } from "../../composables/latestfetch";
-  import type { FileEntry, FilesBrowsePayload, SelectedNode } from "../../composables/omega";
-  import { CHAT_HOST_KEY } from "../../composables/chat";
+  } from "~/composables/omega";
+  import { latestWins } from "~/composables/latestfetch";
+  import type { FileEntry, FilesBrowsePayload, SelectedNode } from "~/composables/omega";
+  import { CHAT_HOST_KEY } from "~/composables/chat";
   import { useNarrow } from "~/composables/narrow";
-  import { DOCK_VIEWER_OPEN_KEY, FOCUSED_SESSION_KEY } from "../../composables/viewer";
-  import type { ViewerRef } from "../../composables/dockables";
+  import { DOCK_VIEWER_OPEN_KEY, FOCUSED_SESSION_KEY } from "~/composables/viewer";
+  import type { ViewerRef } from "~/composables/dockables";
   import FileTree from "./FileTree.vue";
   // card t_a4504a25: the toolbar's glyph set (icons.ts vocabulary)
-  import Icon from "../ui/Icon.vue";
+  import Icon from "~/components/ui/Icon.vue";
 
   // `open` is the mobile drawer overlay state (desktop tabs never pass it
   // up - the pane is always shown). Root listing loads on mount: the dock

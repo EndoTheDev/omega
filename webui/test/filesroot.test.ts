@@ -136,7 +136,7 @@ describe("header name + visibility (pure predicates)", () => {
 });
 
 describe("the re-root contract (structural pins)", () => {
-  const tab = read("app/components/files/FilesTab.vue");
+  const tab = read("../harness/files/ui/FilesTab.vue");
   const viewer = read("app/components/ViewerTab.vue");
   const app = read("app/app.vue");
   const viewerSeam = read("app/composables/viewer.ts");

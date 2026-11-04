@@ -19,9 +19,10 @@ const readRepo = (rel: string) => readFileSync(`${repo}/${rel}`, "utf8");
 
 const viewer = read("app/components/ViewerTab.vue");
 const omega = read("app/composables/omega.ts");
-const serverFiles = readRepo("agent/api/server_files.go");
-// the /files/raw registration lives in agent/api (the base endpoint set)
-const serverGo = readRepo("agent/api/server.go");
+const serverFiles = readRepo("harness/files/routes.go");
+// the /files/raw registration lives in the files capsule (the module
+// routes rail, card t_48eeb015)
+const filesPlugin = readRepo("harness/files/plugin.go");
 
 // --- the viewer's image branch -------------------------------------------------
 
@@ -54,7 +55,11 @@ describe("ViewerTab's image branch (t_08d822bb)", () => {
 
 describe("GET /files/raw (t_08d822bb)", () => {
   it("is registered; images only; the sniff is stdlib", () => {
-    assert.match(serverGo, /"\/files\/raw", s\.handleFilesRaw/, "the route is registered");
+    assert.match(
+      filesPlugin,
+      /RegisterRoute\("\/files\/raw"/,
+      "the route is registered (the files capsule's route rail)",
+    );
     assert.match(serverFiles, /http\.DetectContentType/, "the sniff is stdlib, no new dependency");
     assert.match(
       serverFiles,
@@ -66,7 +71,7 @@ describe("GET /files/raw (t_08d822bb)", () => {
 
   it("rides the EXACT read surface's root jail, never a copy", () => {
     const handler = serverFiles.slice(
-      serverFiles.indexOf("func (s *Server) handleFilesRaw"),
+      serverFiles.indexOf("func (r *Routes) handleFilesRaw"),
       serverFiles.indexOf("// filesPostCap"),
     );
     for (const step of [

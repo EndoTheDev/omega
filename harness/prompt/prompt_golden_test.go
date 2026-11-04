@@ -11,8 +11,10 @@ import (
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/harness/logging"
+	"github.com/EndoTheDev/omega/harness/files"
 	"github.com/EndoTheDev/omega/harness/memory"
 	"github.com/EndoTheDev/omega/harness/skills"
+	"github.com/EndoTheDev/omega/harness/terminal"
 	"github.com/EndoTheDev/omega/harness/tools"
 )
 
@@ -42,6 +44,11 @@ func wireContext(t *testing.T, skillDir string, memCfg memory.Config) *core.Cont
 		memory.NewPlugin(),
 		skills.NewPlugin(),
 		tools.NewPlugin(),
+		// card t_48eeb015: the tool capsules ride their own plugins now
+		// (the registry lists ext rows by owner) - the same mount shape
+		// cmd/omega wires.
+		files.NewPlugin(),
+		terminal.NewShellPlugin(),
 		NewPlugin(),
 	}
 	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {

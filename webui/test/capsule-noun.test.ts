@@ -39,6 +39,7 @@ const CAPSULE_NOUNS = [
   "skills",
   "mcp",
   "tools",
+  "files", // card t_48eeb015: the file explorer rides out of the shell
   "memory",
   "trust",
   "verdicts",
@@ -100,10 +101,19 @@ describe("module-panels / module-tabs partition", () => {
   it("a capsule appears in exactly one manifest", () => {
     const panels = manifestModules("app/composables/module-panels.generated.ts");
     const tabs = manifestModules("app/composables/module-tabs.generated.ts");
+    // card t_48eeb015: the partition is by manifest TYPE, not by entry
+    // count - a multi-view module (files: the tab view + its tree) lists
+    // one entry per component in the panels manifest, and never ALSO
+    // rides the tabs manifest. What must never happen: the same module
+    // appearing on BOTH sides (the codegen's one-partition law).
     const seen = new Set<string>();
-    for (const m of [...panels, ...tabs]) {
-      assert.ok(!seen.has(m), `capsule "${m}" is listed twice across the manifests`);
+    for (const m of tabs) {
+      assert.ok(!seen.has(m), `capsule "${m}" is listed twice in the tabs manifest`);
       seen.add(m);
+    }
+    const tabSet = seen;
+    for (const m of panels) {
+      assert.ok(!tabSet.has(m), `capsule "${m}" appears in BOTH manifests`);
     }
   });
 

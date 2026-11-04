@@ -111,7 +111,7 @@ const RETROFIT: Array<{
   },
   {
     // the shell's own inspector Files tab rides the same recipe
-    rel: "webui/app/components/files/FilesTab.vue",
+    rel: "harness/files/ui/FilesTab.vue",
     label: "files",
     module: null,
     // t_36ceb99b: the preview left (viewer tab now); the measuring root
@@ -158,9 +158,9 @@ for (const entry of RETROFIT) {
 }
 
 test("FilesTab passes the narrow flag down to the recursive tree", () => {
-  const tab = read(modules, "webui", "app", "components", "files", "FilesTab.vue");
+  const tab = read(modules, "harness", "files", "ui", "FilesTab.vue");
   assert.match(tab, /:narrow="narrow"/, "the host passes its measurement down");
-  const tree = read(modules, "webui", "app", "components", "files", "FileTree.vue");
+  const tree = read(modules, "harness", "files", "ui", "FileTree.vue");
   assert.match(tree, /narrow\?: boolean/, "the child accepts the inherited flag");
   assert.match(tree, /:narrow="narrow"/, "the recursion forwards it");
   assert.match(tree, /\.files-tree\.narrow \.size \{/, "the condensed-columns rule");

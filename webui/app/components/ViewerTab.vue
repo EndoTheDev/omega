@@ -79,7 +79,7 @@
   import { fetchFilesRead, filesRawUrl } from "../composables/omega";
   import Icon from "./ui/Icon.vue";
   import { useNarrow } from "~/composables/narrow";
-  import { glyphKindFor, glyphIcon } from "./files/rowicon";
+  import { glyphKindFor, glyphIcon } from "../../../harness/files/ui/rowicon";
 
   const props = defineProps<{ viewer?: ViewerRef }>();
 

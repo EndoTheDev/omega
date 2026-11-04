@@ -101,7 +101,7 @@ describe("boot focus carries the ACTIVE chat tab (dock.activeChatTab)", () => {
 });
 
 describe("the fix wires itself into the boot paths (structural pins)", () => {
-  const tab = read("app/components/files/FilesTab.vue");
+  const tab = read("../harness/files/ui/FilesTab.vue");
   const app = read("app/app.vue");
   const dock = read("app/composables/dock.ts");
 

@@ -162,14 +162,14 @@ test("the canary component lives in the tools module, not the shell", () => {
   // the shell's inspector host must stay GENERIC - it resolves the panel
   // by module NAME (the dock tab id), never a module component by name
   assert.ok(
-    !readFileSync(`${root}/app/components/files/InspectorPanel.vue`, "utf8")
+    !readFileSync(`${root}/app/components/InspectorPanel.vue`, "utf8")
       .includes("ToolsList"),
   );
 });
 
 test("the inspector's module tab hosts only the active panel's module", () => {
   const panelVue = readFileSync(
-    `${root}/app/components/files/InspectorPanel.vue`,
+    `${root}/app/components/InspectorPanel.vue`,
     "utf8",
   );
   assert.ok(panelVue.includes("module-panels.generated"), "imports the generated list");

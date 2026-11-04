@@ -28,6 +28,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/cron"
 	"github.com/EndoTheDev/omega/harness/datadir"
 	"github.com/EndoTheDev/omega/harness/delegate"
+	"github.com/EndoTheDev/omega/harness/files"
 	kanbanModule "github.com/EndoTheDev/omega/harness/kanban"
 	"github.com/EndoTheDev/omega/harness/logging"
 	"github.com/EndoTheDev/omega/harness/mcp"
@@ -471,6 +472,14 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		notifications.NewPlugin(),
 		prompt.NewPlugin(),
 		tools.NewPlugin(),
+		// card t_48eeb015 (the shell-ring shrink wave 1): the file
+		// domain leaves the tools capsule - the files capsule is the
+		// files tool + the /files explorer routes (Toggleable: the
+		// disabled fold may name it), and the shell tool rides the
+		// terminal capsule's package (the builtin shell plugin). Both
+		// contribute the same additive tools rail the registry owns.
+		files.NewPlugin(),
+		terminal.NewShellPlugin(),
 		// card t_5782d11e: the background process registry - the five
 		// process.* verbs over the detached state (long ops only; the
 		// synchronous shell stays where it is).

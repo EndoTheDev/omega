@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 
-const tree = read("app/components/files/FileTree.vue");
+const tree = read("../harness/files/ui/FileTree.vue");
 const css = read("app/assets/css/main.css");
 
 // --- ruling 1:chevrons die ---
