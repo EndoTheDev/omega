@@ -26,7 +26,7 @@
 
 <script setup lang="ts">
   import { computed } from "vue";
-  import { modulePanels } from "../../composables/module-panels.generated";
+  import { modulePanels } from "../composables/module-panels.generated";
 
   // module = the dock-tab component id (cron / http_channel / skills /
   // tools): the composition's module name IS the tab id, no alias map
