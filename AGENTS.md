@@ -66,15 +66,28 @@ Terse operational rules. Layer references live in `docs/` (map below);
 `harness/README.md` is the extension authoring guide.
 
 - **Plugin contract.** Every extension implements `agent.Plugin`
-  (`Name`, `Provides`, `Requires`, `MountWithAPI`). Exclusive seams take
-  one plugin per slot (`provider`, `compactor`, `store`, `skills`,
-  `loop`, `logging`, `memory`, `prompt_builder`, `captioner`,
-  `frontend`, `trust`, `cron`, `kanban`, `notifications`, `verdicts`).
-  15 exclusive slots; `kanban` is a seam claim only (no Context field).
-  `tools` and `channel` are additive. Commands register via
-  `ctx.Commands` + `ctx.CommandHandler` (chain the previous handler on
-  miss); a handler returns `CommandResult` with optional `CmdAction`
-  directives - the host interprets actions, extensions declare intent.
+  (`Name`, `Provides`, `Requires`, `MountWithAPI`). ONE universal seam
+  mechanism (part 3, the seam constitution): at mount a capsule
+  declares its surface (the additive rails, `api.Register*`) and
+  offers services (`api.Offer(key, svc)`, one tenant per key on the
+  `Services` registry). Two closed offer namespaces, 14 keys:
+  - the 8 NEED keys - `provider`, `store`, `loop`, `logger`,
+    `compactor`, `prompt`, `nudger`, `approvals` - the loop
+    machinery's shopping list (the faces live in `agent/seams.go`,
+    resolved + shape-asserted at bind; missing supply = the documented
+    floor, wrong shape = loud boot failure naming the need). Proposing
+    a ninth need key is a design event, argued in a card.
+  - the 6 capsule-SERVICE keys - `skills`, `memory`, `trust`, `cron`,
+    `notifications`, `verdicts` - consumed by other capsules, the
+    serving surface and the host through consumer-owned local
+    interfaces: no core-named seam type exists anywhere (the noun
+    tests hold the namespace; `agent/seams_test.go` +
+    `core/importability_test.go`). The consumer declaring its need is
+    its own truth; the owner capsule never knows its consumers.
+  Commands register via `ctx.Commands` + `ctx.CommandHandler` (chain
+  the previous handler on miss); a handler returns `CommandResult`
+  with optional `CmdAction` directives - the host interprets actions,
+  extensions declare intent.
 - **Mount order.** Mount order is declared data: an extension whose
   `Mount()` reads a seam another plugin owns needs a `Requires()` edge
   naming that seam (delegate, kanban and cron require `notifications`).
@@ -86,8 +99,9 @@ Terse operational rules. Layer references live in `docs/` (map below);
   Context.RunGroup; Mount never starts background work. The host calls
   Start after the mount commit; StopAll walks handles in reverse. A
   blocking Start is a fence violation.
-- **Import law.** Modules import `core/` for contracts (types, events,
-  seams, messagetree); `agent/` is for the loop runtime and real helpers
+- **Import law.** Modules import `core/` for contracts (wire types,
+  events, mount machinery, messagetree); `agent/` is for the loop runtime
+  and real helpers
   only (`Plugin`, `MountAllAPI`, `TurnSink`, profiles, `NewSessionID`).
   No module imports another module - shared shapes live in core
   (card t_fb49d5cf). TIER AMENDMENT (v0.12 tier law, 2026-10-26;
@@ -96,8 +110,9 @@ Terse operational rules. Layer references live in `docs/` (map below);
   module-imports-shell, not module-imports-module.
 - **New extension recipe.** Create `harness/<name>/` with `<name>.go`,
   `plugin.go` (Plugin adapter), `<name>_test.go`; register in
-  `buildPlugins()` in `cmd/omega/main.go`; append tools to
-  `ctx.ToolProviders` in `Mount()`. Full steps: `harness/README.md`.
+  `buildPlugins()` in `cmd/omega/main.go`; declare the surface and
+  offer the supply in `MountWithAPI` (`api.Register*`, `api.Offer`).
+  Full steps: `harness/README.md`.
 - **Tool merge.** Extension tools merge into the registry at run time;
   built-in tools win on name conflict.
 - **Binary purity.** core carries ZERO module nouns; module-shaped
@@ -212,15 +227,15 @@ card t_8abdbb15; full contract and templates in `docs/release-gate.md`):
 
 | Area | What it is | Docs |
 | ---- | ---------- | ---- |
-| `llm/` | LLM provider contract: interface, message/event types, tool schema, shared HTTP infra, retry, ThinkingLevels, `DetectImage` | `docs/api.md` |
-| `agent/` | Multi-turn loop contract (`LoopProvider`), capability seams, Plugin system (`Context`, `MountAllAPI`), events, shared types | `docs/architecture.md` |
-| `core/` | Core types, events, seams, message vocabulary, messagetree; stdlib-only imports, enforced by `core/importability_test.go` | `docs/architecture.md` |
+| `llm/` | Shared provider infra: SSE streaming client, retry, the think-level ladder, image sniffing, wire-shape aliases - no provider contract (consumers declare their own faces) | `docs/api.md` |
+| `agent/` | Multi-turn loop machinery + its need-face declarations (`agent/seams.go`), Plugin system (`Context`, `MountAllAPI`), the universal registration surface, events, shared types | `docs/architecture.md` |
+| `core/` | Wire types, events, mount machinery, the Services registry, message vocabulary, messagetree; zero capsule nouns (the noun tests) + stdlib-only imports, enforced by `core/importability_test.go` | `docs/architecture.md` |
 | `api/` + `agent/api/` | Shell ring (always on, never disabled): serving shell (listener, hostguard, module routes, static embed, themes) + the agent's base endpoint set (sessions, chat, canvas, files, tools) | `docs/api.md` |
 | `cmd/omega/loop.go` + `setup.go` | The CLI agent loop + the mandatory first-run setup wizard (the TUI retired 2026-11-01) | `docs/cli.md` |
 | `harness/` | In-process extension packages (one `agent.Plugin` each) - the TOGGLEABLE tier; new extensions go here, never into the shell ring | `docs/architecture.md` (table), `harness/README.md` (authoring) |
 | `webui/` | Shell SPA (always on, never disabled): Nuxt 4 webui SPA source at checkout root, built output embedded into the binary via the embed lane | `docs/webui.md` |
 | `harness/cron/` | Scheduled prompts (`crons.yaml`, `cron:<name>` sessions) | `docs/cli.md` (`/cron`) |
-| `harness/trust/` | Project trust gate (`TrustProvider`, `trust.yaml`, AGENTS.md loading) | `docs/project-trust.md` |
+| `harness/trust/` | Project trust gate (`trust.yaml`, AGENTS.md loading; the host reads it through its own nil-guarded need faces) | `docs/project-trust.md` |
 | `cmd/omega/` | Single binary entry point, config, home resolution, self-update | `docs/cli.md` |
 | `docs/` | User and worker documentation | start at `docs/architecture.md` |
 
