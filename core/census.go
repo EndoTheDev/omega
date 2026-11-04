@@ -16,7 +16,7 @@ import (
 // produce equal snapshots (zero surface, zero run-group entries).
 type CensusSnapshot struct {
 	// Slots records the exclusive seams that are mounted (one flag
-	// each of the 15 exclusive slots + the host-built captioner).
+	// each of the closed 15-key census + the host-built captioner).
 	Slots map[string]bool
 
 	// Tools are the model-facing tool names across every provider,
@@ -60,8 +60,9 @@ func Census(ctx *Context) CensusSnapshot {
 	for _, slot := range []string{
 		// The universal registry reads presence (part 3, the seam
 		// constitution): need-key offers and capsule services resolve
-		// from the same one tenant ledger. The captioner stays
-		// host-built (not an offer), read from the Context field.
+		// from the same one tenant ledger. chat-runs is the first
+		// shell-offered key (Endo ruling 2026-11-04). The captioner
+		// stays host-built (not an offer), read from the Context field.
 		"provider",
 		"store",
 		"loop",
@@ -76,6 +77,7 @@ func Census(ctx *Context) CensusSnapshot {
 		"cron",
 		"notifications",
 		"verdicts",
+		"chat-runs",
 	} {
 		if ctx.Services().Has(slot) {
 			s.Slots[slot] = true

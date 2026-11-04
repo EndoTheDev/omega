@@ -77,6 +77,11 @@ var needKeys = []string{
 // (part 3 wave 1): owner-offered capsule services, consumed through
 // consumer-owned local interfaces. kanban is a Provides claim only
 // (no service is offered under it - the census carries it no slot).
+// chat-runs is the first SHELL-offered key (Endo ruling 2026-11-04,
+// the shell-ring shrink wave 2): owner = the serving shell, offered
+// through the proper api.Offer surface at channel wire time;
+// consumers = any capsule reading live-run state through its own
+// interface; a missing offer = honest never-running.
 var capsuleServiceKeys = []string{
 	"skills",
 	"memory",
@@ -84,6 +89,7 @@ var capsuleServiceKeys = []string{
 	"cron",
 	"notifications",
 	"verdicts",
+	"chat-runs",
 }
 
 // TestBindMissingStoreOffersFloor pins the missing-supply flip side
@@ -301,11 +307,16 @@ func TestCapsuleOwnerFacesLeaveTheTree(t *testing.T) {
 	}
 }
 
-// TestOffersStayInClosedKeys walks every Offer call site in the tree
-// and holds the namespace shut: the only legal offer keys are the 8
-// need keys (needKeys above) plus the 6 capsule-service keys
-// (capsuleServiceKeys). Offering a 15th key is a design event, argued
-// in a card - not a line a capsule may add silently.
+// TestOffersStayInClosedKeys walks every Offer AND ApplyOffer call site
+// in the tree and holds the namespace shut: the only legal offer keys
+// are the 8 need keys (needKeys above) plus the 7 capsule-service keys
+// (capsuleServiceKeys). Offering a 16th key is a design event, argued
+// in a card - not a line a capsule may add silently. The ApplyOffer
+// walk closes the one-abstraction bypass (Endo ruling 2026-11-04,
+// wave-2 review): a census that only pins .Offer( call sites is
+// decoration - the raw core primitive is the mount machinery's own,
+// and every literal-key caller (the host's store offer, the shell's
+// chat-runs) must sit in the same closed list.
 func TestOffersStayInClosedKeys(t *testing.T) {
 	closed := map[string]bool{}
 	for _, k := range needKeys {
@@ -315,7 +326,9 @@ func TestOffersStayInClosedKeys(t *testing.T) {
 		closed[k] = true
 	}
 	offered := map[string]int{}
-	offerRE := regexp.MustCompile(`\.Offer\("([a-z_]+)",`)
+	// The key charset includes the hyphen (chat-runs); the alternation
+	// pins both the ExtensionAPI surface and the raw core primitive.
+	offerRE := regexp.MustCompile(`\.(?:Offer|ApplyOffer)\("([a-z_-]+)",`)
 	root, err := filepath.Abs("..")
 	if err != nil {
 		t.Fatalf("abs root: %v", err)

@@ -40,7 +40,7 @@ type LoopOptions struct {
 	// law is untouched; the fold settles existence, not precedence).
 	DisabledTools      []string
 	CompactionProvider CompactionProvider
-	PromptBuilder      PromptBuilder   // builds system prompt + guidelines
+	PromptBuilder      PromptBuilder        // builds system prompt + guidelines
 	ExtensionInfos     []core.ExtensionInfo // for prompt building context
 	MaxTurns           int
 	MaxToolOutput      int
@@ -195,19 +195,6 @@ type AgentSessionStore interface {
 	// ListAgentSessions returns the sessions bound to agentName,
 	// ordered by creation time.
 	ListAgentSessions(ctx context.Context, agentName string) ([]core.Session, error)
-}
-
-// ChatRunsReader is the live-run read the management routes resolve as
-// the "chat-runs" service (the shell-ring shrink wave 2, ADR
-// Workshop/omega-shell-ring-shrink.md). The http channel offers the
-// implementation (the run hub stays chat-serving - the base set); the
-// store capsule's session list reads it to stamp each row's running
-// flag - "is this session streaming right now" is the backend's single
-// truth, but the run hub itself never leaves the chat surface. A
-// missing offer (no serving channel up) answers never-running: the
-// honest empty state, not an error.
-type ChatRunsReader interface {
-	Active(id string) bool
 }
 
 // SessionContextStore is the optional session-context surface (card

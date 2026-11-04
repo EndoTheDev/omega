@@ -173,16 +173,18 @@ rest degrade to nil-safe floors: no logging, no compaction (context
 overflow surfaces a friendly error), no system prompt, no nudger, no
 gate.
 
-### The capsule-service namespace (the closed list, 6)
+### The capsule-service namespace (the closed list, 7)
 
-`skills`, `memory`, `trust`, `cron`, `notifications`, `verdicts` -
-services one capsule owns and others (capsules, the serving surface,
-the host) consume: resolve the key, assert to the consumer's own
-1-2 method local interface (e.g. the host's `trustResolver` in
-`cmd/omega/trust.go`), nil-handle absence. The owner capsule never
-knows its consumers; deleting it removes the service whole. The
-census flags each mounted key: `core/census.go`'s slot list (the 14
-keys above, plus the host-built captioner - not an offer).
+`skills`, `memory`, `trust`, `cron`, `notifications`, `verdicts`,
+`chat-runs` - services one capsule (or, for `chat-runs`, the serving
+shell - the first shell-offered key, Endo ruling 2026-11-04) owns and
+others (capsules, the serving surface, the host) consume: resolve the
+key, assert to the consumer's own 1-2 method local interface (e.g. the
+host's `trustResolver` in `cmd/omega/trust.go`, the store capsule's
+`ChatRunsReader` in `harness/store/routes.go`), nil-handle absence.
+The owner never knows its consumers; deleting it removes the service
+whole. The census flags each mounted key: `core/census.go`'s slot list
+(the 15 keys above, plus the host-built captioner - not an offer).
 `harness/kanban`'s `"kanban"` Provides() string is a mount-order
 claim only; nothing is offered under it.
 
