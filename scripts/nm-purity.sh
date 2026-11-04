@@ -64,6 +64,11 @@ MODULES=("${RUN[@]}")
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/nm-purity.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
+# native tools (python, go) read a bare /tmp as C:\tmp on windows (msys),
+# while msys tar rejects the C:\ spelling - so keep TMP posix and convert
+# per call site. cygpath exists only on msys; the fallback keeps linux
+# (CI runners) on the original spelling.
+nat() { cygpath -w "$1" 2>/dev/null || echo "$1"; }
 
 # The scrubber: deletes the module's wires from a .go file and prunes
 # the orphaned constructs the deletions leave behind. The cascade is
@@ -548,9 +553,9 @@ for MOD in "${MODULES[@]}"; do
 
   spec="$MOD=$MOD"
   # the scrub walks the work COPY only - run inside $WORK with relative paths
-  ( cd "$WORK" && python3 "$TMP/scrub.py" "$(paste -sd, "$FALLIST")" $spec )
+  ( cd "$WORK" && python3 "$(nat "$TMP/scrub.py")" "$(paste -sd, "$FALLIST")" $spec )
 
-  if ( cd "$WORK" && go build -o "$WORK/omega" ./cmd/omega ) > "$TMP/$MOD.build.log" 2>&1; then
+  if ( cd "$WORK" && go build -o "$(nat "$WORK/omega")" ./cmd/omega ) > "$TMP/$MOD.build.log" 2>&1; then
     build=ok
   else
     build=red
@@ -565,7 +570,7 @@ for MOD in "${MODULES[@]}"; do
   # pipefail: grep exits at the first match, the upstream nm dies of
   # SIGPIPE, and the pipeline exit 141 reads as no-match - the noun
   # check fired or not on a race.
-  if ! go tool nm "$WORK/omega" > "$TMP/$MOD.nm" 2>"$TMP/$MOD.nm.err"; then
+  if ! go tool nm "$(nat "$WORK/omega")" > "$TMP/$MOD.nm" 2>"$TMP/$MOD.nm.err"; then
     echo "nm-purity [$MOD]: FAIL - go tool nm could not read the binary:" >&2
     sed 's/^/    /' "$TMP/$MOD.nm.err" | head -5 >&2
     fails=$((fails+1)); continue
