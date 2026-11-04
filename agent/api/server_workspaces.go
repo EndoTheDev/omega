@@ -93,7 +93,9 @@ func (s *Server) handleWorkspacesBrowse(w http.ResponseWriter, r *http.Request) 
 		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
 	parent := ""
-	if abs != string(filepath.Separator) {
+	// "/" is the documented root default on every platform; on windows
+	// it never equals filepath.Separator, so both spellings are roots.
+	if root := string(filepath.Separator); abs != root && abs != "/" {
 		parent = filepath.Dir(abs)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"path": abs, "parent": parent, "dirs": out})
