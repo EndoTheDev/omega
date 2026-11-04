@@ -116,6 +116,13 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	if c.hub != nil {
 		c.srv.BindRunHub(c.hub)
 	}
+	// The chat-runs offer (the shell-ring shrink wave 2): the store
+	// capsule's session list reads the live-run truth per request
+	// through this service (agent.ChatRunsReader). The hub binds per
+	// this channel's server, so the offered reader is the bound one -
+	// the multi-bind mirror law rides through untouched. Re-offer on
+	// every wire: a seam re-read (a module toggle) refreshes it.
+	deps.Ctx.ApplyOffer("chat-runs", "http_channel", c.srv)
 	// Canvas transport (arc 3b): the runtime is built from the fully
 	// mounted Context after MountAllAPI - the same registration point
 	// every other seam reads (card t_058edeb3). Deltas fan out through

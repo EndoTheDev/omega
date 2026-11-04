@@ -16,7 +16,7 @@ import {
   agentDetailLines,
   agentStatusFor,
   type OmegaAgent,
-} from "../app/components/agents/agentsRows.ts";
+} from "../../harness/continuous/ui/agentsRows.ts";
 import type { OmegaContinuousRow } from "../../harness/continuous/ui/continuousRows.ts";
 
 // the AgentsPanel source is three levels up from test/ (the repo root)
@@ -69,7 +69,7 @@ test("the agents fold merges by name; the disable note names roster+wake", () =>
 });
 
 test("AgentsPanel renders the shared pattern and the SOFT toggle wire", () => {
-  const src = readFileSync(join(root, "webui", "app", "components", "agents", "AgentsPanel.vue"), "utf8");
+  const src = readFileSync(join(root, "harness", "continuous", "ui", "AgentsPanel.vue"), "utf8");
   assert.ok(src.includes("<RegistryList"), "the shared component, not a bespoke list");
   assert.ok(src.includes('kind="agents"'), "the agents namespace rides to the note law");
   assert.ok(src.includes("/disabled/agents"), "the soft toggle PUTs the agents namespace");
@@ -95,7 +95,7 @@ test("agentStatusFor: pulse is on, sleeping is dim, config-only is undefined", (
 
 // the locked law: the default row never renders a disable affordance.
 test("AgentsPanel locks the default agent (no disabled render, no arm path)", () => {
-  const panel = readFileSync(join(root, "webui", "app", "components", "agents", "AgentsPanel.vue"), "utf8");
+  const panel = readFileSync(join(root, "harness", "continuous", "ui", "AgentsPanel.vue"), "utf8");
   const list = readFileSync(join(root, "webui", "app", "components", "RegistryList.vue"), "utf8");
   assert.ok(panel.includes("locked: a.name === DefaultAgentName"), "the default row is locked");
   assert.ok(panel.includes('a.name === DefaultAgentName ? false : set.has(a.name)'), "the default row never renders disabled");
@@ -109,7 +109,7 @@ test("AgentsPanel locks the default agent (no disabled render, no arm path)", ()
 
 // ruling 3: the expansion is details + edit; zero session rows.
 test("AgentsPanel expansion: config edit wire, no session surface", () => {
-  const panel = readFileSync(join(root, "webui", "app", "components", "agents", "AgentsPanel.vue"), "utf8");
+  const panel = readFileSync(join(root, "harness", "continuous", "ui", "AgentsPanel.vue"), "utf8");
   assert.ok(panel.includes(`fetch(\`/agents/\${`), "the edit writes through the agents API");
   assert.ok(panel.includes('"PUT"'), "the edit is a PUT");
   assert.ok(panel.includes("saveAgentEdit"), "the save affordance exists");
@@ -120,6 +120,6 @@ test("AgentsPanel expansion: config edit wire, no session surface", () => {
   assert.ok(!panel.includes("new session as this agent"), "the new-session button died");
   assert.ok(!panel.includes("/sessions`"), "no session fetch rides the tab");
   // the detail facts lost the sessions line (ruling 3)
-  const rows = readFileSync(join(root, "webui", "app", "components", "agents", "agentsRows.ts"), "utf8");
+  const rows = readFileSync(join(root, "harness", "continuous", "ui", "agentsRows.ts"), "utf8");
   assert.ok(!rows.includes("`sessions: ${"), "the sessions count line died from the detail");
 });

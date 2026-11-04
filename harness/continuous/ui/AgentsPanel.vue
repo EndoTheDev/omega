@@ -265,7 +265,7 @@ import {
   type OmegaChatMessage,
   type OmegaContinuousRow,
   type OmegaEvidenceRow,
-} from "../../../../harness/continuous/ui/continuousRows.ts";
+} from "./continuousRows.ts";
 import type { RegistryRow } from "~/composables/omega";
 
 const profiles = ref<OmegaAgent[]>([]);

@@ -33,6 +33,19 @@ func (p *Plugin) ConfigKey() string { return "store" }
 func (p *Plugin) Provides() []string { return []string{"store", "tools"} }
 func (p *Plugin) Requires() []string { return nil }
 
+// Toggleable marks the store capsule a module capsule (the shell-ring
+// shrink wave 2, the three-layer sessions law - the seam constitution's
+// tier rule: a Toggleable capsule IS the module class). The config
+// disabled: list may name it; a disabled mount takes the MANAGEMENT
+// face (the sessions tab, its routes, the hygiene tool) and the
+// capsule's supply with it, and the host boots the substrate: the
+// default supply file at <home>/data/omega.db (the same resolution the
+// capsule's mount runs - DefaultSupplyPath), never :memory:. Data is
+// not code: disable never deletes the database. Dependent strands ride
+// the Requires-edge law (continuous, verdicts, approval name the seam
+// and fail the boot loudly unless disabled with it).
+func (p *Plugin) Toggleable() bool { return true }
+
 // MountWithAPI implements agent.APIPlugin. Opens the store from
 // config, registers the store seam, the sessions.search tool provider
 // and the eleven session commands. The store connection is host-owned
@@ -73,6 +86,11 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		hyg = c
 	}
 	hygiene := &hygieneToolProvider{store: s, cfg: hyg, providerFn: func() agent.Provider { return seam[agent.Provider](ctx, "provider") }}
+	// The management REST face (the shell-ring shrink wave 2, the
+	// three-layer sessions law): the sessions list, the search seat,
+	// branch, export and the insights view mount and die with this
+	// capsule (harness/store/routes.go). The chat floor stays base.
+	routes := newRoutes(ctx, s)
 	steps := []func() error{
 		func() error { return api.Offer("store", s) },
 		func() error {
@@ -95,6 +113,17 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 					func(c context.Context, name, args string) (core.CommandResult, error) {
 						return p.handleSessionCommand(s, c, name, args)
 					}); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+		// The management REST face registers last so a half-mount
+		// failure below never leaves a route answering on a closed
+		// store (every failure path closes s).
+		func() error {
+			for _, row := range routes.registrationRows() {
+				if err := api.RegisterRoute(row.pattern, row.handler); err != nil {
 					return err
 				}
 			}

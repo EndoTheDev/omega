@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/EndoTheDev/omega/core"
 )
 
 // TestSessionContextPatch pins the session-context PATCH surface (card
@@ -34,42 +36,36 @@ func TestSessionContextPatch(t *testing.T) {
 		t.Fatalf("patch: status = %d (%s), want 200", rec.Code, rec.Body.String())
 	}
 
-	// GET /sessions carries the pinned model in the list payload.
-	req = httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	// GET /sessions/{id} carries the pinned fields (the list payload rode
+	// the store capsule out with wave 2; the row truth is the store).
+	req = httptest.NewRequest(http.MethodGet, "/sessions/cx1", nil)
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
-	var rows []sessionPayload
-	if err := json.Unmarshal(rec.Body.Bytes(), &rows); err != nil {
-		t.Fatalf("decode sessions: %v", err)
+	var detail struct {
+		Session core.Session
 	}
-	found := false
-	for _, r := range rows {
-		if r.ID == "cx1" {
-			found = true
-			if r.Model != "glm-5.3" {
-				t.Errorf("list model = %q, want \"glm-5.3\"", r.Model)
-			}
-			if filepath.Clean(r.Workspace) != filepath.Clean(ws) {
-				t.Errorf("list workspace = %q, want %q", r.Workspace, ws)
-			}
-		}
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("decode detail: %v", err)
 	}
-	if !found {
-		t.Fatalf("session cx1 missing from the list")
+	if detail.Session.Model != "glm-5.3" {
+		t.Errorf("row model = %q, want \"glm-5.3\"", detail.Session.Model)
+	}
+	if filepath.Clean(detail.Session.Workspace) != filepath.Clean(ws) {
+		t.Errorf("row workspace = %q, want %q", detail.Session.Workspace, ws)
 	}
 
 	// GET /sessions/{id} restores both fields (reopen semantics).
 	req = httptest.NewRequest(http.MethodGet, "/sessions/cx1", nil)
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
-	var detail struct {
-		Session sessionPayload
+	var restored struct {
+		Session core.Session
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+	if err := json.Unmarshal(rec.Body.Bytes(), &restored); err != nil {
 		t.Fatalf("decode detail: %v", err)
 	}
-	if detail.Session.Model != "glm-5.3" || filepath.Clean(detail.Session.Workspace) != filepath.Clean(ws) {
-		t.Fatalf("detail restore: model %q workspace %q", detail.Session.Model, detail.Session.Workspace)
+	if restored.Session.Model != "glm-5.3" || filepath.Clean(restored.Session.Workspace) != filepath.Clean(ws) {
+		t.Fatalf("detail restore: model %q workspace %q", restored.Session.Model, restored.Session.Workspace)
 	}
 
 	// A nonexistent workspace dir is rejected BEFORE any write.

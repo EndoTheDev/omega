@@ -471,6 +471,16 @@
   // binds the tab view explicitly: files' ui/ carries two .vue views,
   // so the manifest's module lookup alone cannot pick the tab body.
   import FilesTab from "../../harness/files/ui/FilesTab.vue";
+  // card t_490fed88 (the shell-ring shrink wave 2): the sessions pane,
+  // the roster surface and the insights view ride their capsules the
+  // same way (store ships the sessions pane + insights view; continuous
+  // ships the roster). Explicit imports like FilesTab - the capsule owns
+  // the component, the shell owns the composition (the wiring stays in
+  // app.vue's outlets, so removing the capsule fails this build loud -
+  // the deletability proof).
+  import AppSidebar from "../../harness/store/ui/AppSidebar.vue";
+  import InsightsTab from "../../harness/store/ui/InsightsTab.vue";
+  import AgentsPanel from "../../harness/continuous/ui/AgentsPanel.vue";
   import {
     archiveSession,
     branchSession,
@@ -603,12 +613,14 @@
     selectBoardFor,
   } from "./composables/notifications";
   // card t_e1e61680: insights joins the main area (registry: singleton,
-  // closable) - the outlet renders it when its tab is active
-  import InsightsTab from "./components/insights/InsightsTab.vue";
+  // closable) - the outlet renders it when its tab is active; the view
+  // moved to harness/store/ui/ (the wave-2 disclosure: insights is a
+  // view over store data and rides the store capsule)
   // card t_180db2cb: the notifications dock tab (the durable feed; the
   // bell entry point is gone) - the view rides the tabs manifest
   // (harness/notifications/ui/, card t_617c2ad0)
-  import AgentsPanel from "./components/agents/AgentsPanel.vue";
+  // the roster surface moved to harness/continuous/ui/ (the wave-2
+  // continuous capsule)
   // card t_14f73742: the extensions inventory joins the inspector (registry:
   // singleton, pinned right) - the outlet renders it when its tab is active
   import ExtensionsTab from "./components/shell/ExtensionsTab.vue";

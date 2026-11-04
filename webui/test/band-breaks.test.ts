@@ -24,7 +24,7 @@ const src = (p: string): string => readFileSync(`${root}/${p}`, "utf8");
 
 const settings = src("app/components/settings/SettingsTab.vue");
 const tools = src("../harness/tools/ui/ToolsList.vue");
-const insights = src("app/components/insights/InsightsTab.vue");
+const insights = src("../harness/store/ui/InsightsTab.vue");
 const skills = src("../harness/skills/ui/SkillsList.vue");
 const tabband = src("app/components/ui/TabBand.vue");
 const maincss = src("app/assets/css/main.css");

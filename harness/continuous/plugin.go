@@ -26,6 +26,7 @@ type Plugin struct {
 	home    string   // the ROOT omega home; "" = datadir.Home() fallback
 	cfg     Config   // the mounted config section
 	machine *Machine // nil until MountWithAPI
+	ctx     *core.Context
 }
 
 // Compile-time assertion that *Plugin implements agent.Plugin.
@@ -79,6 +80,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	}
 	machine := NewMachine(home, cfg)
 	p.machine = machine
+	p.ctx = ctx
 	// The evidence ledger (ruling 11): runtime-owned, spine-fed, and
 	// NEVER tool-writable - it subscribes through AddEventObserver, a
 	// surface no tool registry reaches. Per-agent stores fall out of
@@ -131,10 +133,13 @@ type routeRow struct {
 // routes builds the capsule's REST face. The v1 cross-home reads are
 // the roster, the canonical chat view and the ledger rows (rulings 5
 // and 11); the writes are the create flow, the human wake and the
-// sleep button - nothing else crosses a home boundary.
+// sleep button - nothing else crosses a home boundary. The roster
+// MANAGEMENT surface (the /agents family) rides the same face since
+// the shell-ring shrink wave 2 (agentsrest.go): the agents tab is
+// this capsule's face.
 func (p *Plugin) routes() []routeRow {
 	m := p.machine
-	return []routeRow{
+	rows := []routeRow{
 		{"GET /continuous/roster", rosterHandler(m)},
 		{"POST /continuous", createHandler(m)},
 		{"GET /continuous/{name}/chat", chatHandler(m)},
@@ -142,6 +147,10 @@ func (p *Plugin) routes() []routeRow {
 		{"GET /continuous/{name}/evidence", evidenceHandler(m)},
 		{"POST /continuous/{name}/sleep", sleepHandler(m)},
 	}
+	for _, r := range (&agentRoutes{home: p.home, ctx: p.ctx}).registrationRows() {
+		rows = append(rows, routeRow{pattern: r.pattern, handler: r.handler})
+	}
+	return rows
 }
 
 // rosterHandler answers the webui roster pane (ruling 18).

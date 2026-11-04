@@ -1,14 +1,15 @@
-package api
+package continuous
 
-// server_agents_test.go: the /agents REST surface gates (card
-// t_7e2b7002). Route note: the mux mount lines live in server.go,
-// owned by card t_14f73742 while it runs (same-file ruling, recorded
-// on the card). These tests wire the REAL handlers into a local mux
-// exactly the way the mount lines will - so the review pass's mount
-// drops tests-already-green endpoints in.
+// agentsrest_test.go: the /agents roster face's gates (card t_490fed88,
+// the shell-ring shrink wave 2). The handlers moved whole from
+// agent/api/server_agents.go, so the tests port with them - the
+// fixture wires the REAL registrationRows() into a local mux (the way
+// the plugin's mount does) and serves it on a real listener.
 //
-// PROFILE probes set OMEGA_HOME at a scratch home: the surface is
-// store-free on the profile side (no personal content is ever seeded).
+// The scaffold probes use a scratch home dir (no OMEGA_HOME games -
+// the home is the struct's field now): no personal content is ever
+// seeded, the store is :memory: and offered under the exact key the
+// fixture resolves.
 
 import (
 	"bytes"
@@ -26,27 +27,29 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// newAgentsTestServer wires the handlers with the deferred mount
-// shape and returns the server + the store.
-func newAgentsTestServer(t *testing.T) (*httptest.Server, *store.Store) {
+// newAgentsFixture mounts the roster REST face on a real listener with
+// a scratch home and an in-memory store under the "store" seam key.
+func newAgentsFixture(t *testing.T) (*httptest.Server, *store.Store, string) {
 	t.Helper()
-	s, st := newTestServerWithStore(t)
-	t.Setenv("OMEGA_HOME", t.TempDir())
-	if err := agent.ScaffoldAgent(os.Getenv("OMEGA_HOME"), "scout", "probe duty"); err != nil {
+	home := t.TempDir()
+	if err := agent.ScaffoldAgent(home, "scout", "probe duty"); err != nil {
 		t.Fatal(err)
 	}
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	ctx := &core.Context{}
+	ctx.ApplyOffer("store", "test", st)
+	ar := &agentRoutes{home: home, ctx: ctx}
 	mux := http.NewServeMux()
-	// the deferred-mount lines (see server_agents.go header) plus the
-	// edit affordance (card t_2d8deb8c): the method-pinned PUT rides a
-	// pattern of its own - GET /agents/{name} stays on the unpinned
-	// line above it.
-	mux.HandleFunc("/agents", s.handleAgents)
-	mux.HandleFunc("/agents/{name}", s.handleAgent)
-	mux.HandleFunc("PUT /agents/{name}", s.handleAgentUpdate)
-	mux.HandleFunc("/agents/{name}/sessions", s.handleAgentSessions)
+	for _, row := range ar.registrationRows() {
+		mux.HandleFunc(row.pattern, row.handler)
+	}
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return srv, st
+	return srv, st, home
 }
 
 func getJSON(t *testing.T, url string) (int, []byte) {
@@ -60,9 +63,8 @@ func getJSON(t *testing.T, url string) (int, []byte) {
 	return res.StatusCode, body
 }
 
-// postAny posts a JSON body and returns the status only (the generic
-// postJSON helper in server_variants_test.go returns a decoded map,
-// this file mostly asserts statuses).
+// postAny posts a JSON body and returns the status only (the roster
+// creations here assert statuses, the created payload rides the store).
 func postAny(t *testing.T, url string, payload any) (int, error) {
 	t.Helper()
 	data, err := json.Marshal(payload)
@@ -77,8 +79,29 @@ func postAny(t *testing.T, url string, payload any) (int, error) {
 	return res.StatusCode, nil
 }
 
+// putAny PUTs a JSON body and returns the status + body head.
+func putAny(t *testing.T, url string, payload any) (int, string) {
+	t.Helper()
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return 0, err.Error()
+	}
+	req, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(data))
+	if err != nil {
+		return 0, err.Error()
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, err.Error()
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+	return res.StatusCode, string(body)
+}
+
 func TestAgentsListEndpoint(t *testing.T) {
-	srv, _ := newAgentsTestServer(t)
+	srv, _, _ := newAgentsFixture(t)
 	code, body := getJSON(t, srv.URL+"/agents")
 	if code != http.StatusOK {
 		t.Fatalf("status %d: %s", code, body)
@@ -105,8 +128,7 @@ func TestAgentsListEndpoint(t *testing.T) {
 }
 
 func TestScaffoldEndpoint(t *testing.T) {
-	srv, _ := newAgentsTestServer(t)
-	home := os.Getenv("OMEGA_HOME")
+	srv, _, home := newAgentsFixture(t)
 	res, _ := postAny(t, srv.URL+"/agents", map[string]any{"name": "writer", "description": "docs agent"})
 	if res != http.StatusCreated {
 		t.Fatalf("scaffold status = %d", res)
@@ -125,7 +147,7 @@ func TestScaffoldEndpoint(t *testing.T) {
 }
 
 func TestAgentDetailEndpoint(t *testing.T) {
-	srv, _ := newAgentsTestServer(t)
+	srv, _, _ := newAgentsFixture(t)
 	code, body := getJSON(t, srv.URL+"/agents/scout")
 	if code != http.StatusOK {
 		t.Fatalf("status %d: %s", code, body)
@@ -144,7 +166,7 @@ func TestAgentDetailEndpoint(t *testing.T) {
 }
 
 func TestAgentSessionsEndpoint(t *testing.T) {
-	srv, st := newAgentsTestServer(t)
+	srv, st, _ := newAgentsFixture(t)
 
 	// create a session as scout.
 	res, err := postAny(t, srv.URL+"/agents/scout/sessions", map[string]any{})
@@ -169,7 +191,7 @@ func TestAgentSessionsEndpoint(t *testing.T) {
 	}
 
 	// THE list-scoping law: the default list never shows it. This
-	// asserts the store filter the deferred GET /sessions rides on.
+	// asserts the store filter the capsule list rides on.
 	def, err := st.ListSessions(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -188,9 +210,8 @@ func TestAgentSessionsEndpoint(t *testing.T) {
 // t_619832ee): a freshly scaffolded agent has zero sessions, the store
 // returns a nil slice, and the endpoint must still answer literal []
 // with 200 - the webui session read crashes on a null .length body.
-// Scout is fresh here: TestAgentSessionsEndpoint runs its own server.
 func TestAgentSessionsEmptyListEmitsArray(t *testing.T) {
-	srv, _ := newAgentsTestServer(t)
+	srv, _, _ := newAgentsFixture(t)
 	code, body := getJSON(t, srv.URL+"/agents/scout/sessions")
 	if code != http.StatusOK {
 		t.Fatalf("scout sessions status %d", code)
@@ -201,7 +222,7 @@ func TestAgentSessionsEmptyListEmitsArray(t *testing.T) {
 }
 
 func TestAgentsListCarriesSessionCounts(t *testing.T) {
-	srv, _ := newAgentsTestServer(t)
+	srv, _, _ := newAgentsFixture(t)
 	if res, err := postAny(t, srv.URL+"/agents/scout/sessions", map[string]any{}); err != nil || res != 201 {
 		t.Fatalf("create session: %d %v", res, err)
 	}
@@ -224,13 +245,13 @@ func TestAgentsListCarriesSessionCounts(t *testing.T) {
 	}
 }
 
-// TestAgentUpdateEndpoint pins the expansion's edit affordance (card
-// t_2d8deb8c, ruling 3): PUT /agents/{name} writes the scaffold field
-// set through the agent config layer, nil fields stay untouched, the
-// DEFAULT agent answers 409 locked, an unknown agent 404s, and an
+// TestAgentUpdateEndpoint pins the roster's edit affordance (card
+// t_2d8deb8c, ruling 3): PUT writes the scaffold field set through the
+// agent config layer, an empty update is an honest no-op, the DEFAULT
+// agent answers 409 locked, an unknown agent 404s, and an
 // unscaffolded provider type is the 400 lane.
 func TestAgentUpdateEndpoint(t *testing.T) {
-	srv, _ := newAgentsTestServer(t)
+	srv, _, _ := newAgentsFixture(t)
 
 	if res, _ := putAny(t, srv.URL+"/agents/scout", map[string]any{
 		"description":   "night watch",
@@ -271,25 +292,4 @@ func TestAgentUpdateEndpoint(t *testing.T) {
 	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{"provider_type": "gemini"}); res != http.StatusBadRequest {
 		t.Errorf("bad provider status = %d (%s), want 400", res, body)
 	}
-}
-
-// putAny PUTs a JSON body and returns the status + body head.
-func putAny(t *testing.T, url string, payload any) (int, string) {
-	t.Helper()
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return 0, err.Error()
-	}
-	req, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(data))
-	if err != nil {
-		return 0, err.Error()
-	}
-	req.Header.Set("Content-Type", "application/json")
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return 0, err.Error()
-	}
-	defer res.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
-	return res.StatusCode, string(body)
 }

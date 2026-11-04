@@ -388,15 +388,15 @@ func TestDetachedRunConflict(t *testing.T) {
 
 	// The 409 must not persist anything: the slot gate runs BEFORE
 	// loadSessionMessages, so the rejected user message never lands -
-	// the next successful send would otherwise double it.
-	rows := fetchList(t, ts.URL+"/sessions")
-	for _, row := range rows {
-		if row["id"] == "s3" {
-			if row["message_count"] != float64(1) {
-				t.Fatalf("409'd chat leaked a message: message_count = %v, want 1", row["message_count"])
-			}
-			break
-		}
+	// the next successful send would otherwise double it. (The message
+	// count is the capsule list's row field; the row truth is the
+	// store's own messages after the wave-2 list move.)
+	msgs, err := st3.GetMessages(context.Background(), "s3")
+	if err != nil {
+		t.Fatalf("messages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("409'd chat leaked a message: message count = %d, want 1 (the user turn)", len(msgs))
 	}
 
 	// unwind
@@ -405,21 +405,14 @@ func TestDetachedRunConflict(t *testing.T) {
 	_ = resp.Body.Close()
 }
 
-// TestSessionsListRunningFlag: the list and detail surfaces report the
-// server-owned running flag the webui pulse reconciles against - and
-// the list row carries it ALWAYS (running:false too, not omitted), so
-// a false absence can never be read as "unknown".
-func TestSessionsListRunningFlag(t *testing.T) {
+// TestSessionDetailRunningFlag: the detail surface reports the
+// server-owned running flag the webui pulse reconciles against. (The
+// LIST row's flag law moved with the list - the store capsule's
+// routes_test.go pins it through the offered chat-runs service, wave 2.)
+func TestSessionDetailRunningFlag(t *testing.T) {
 	s, prov, st4, ts := newStepServer(t)
 	createSession(t, ts, "s4")
 	muteTitles(t, st4, "s4")
-
-	// Before any run: the row explicitly reports running:false.
-	rows := fetchList(t, ts.URL+"/sessions")
-	assertRunning(t, rows, "s4", false, "list idle")
-	if _, ok := rows[0]["running"]; !ok {
-		t.Fatal("list idle: running key absent - the row must carry it explicitly")
-	}
 
 	resp, cancel, sc := postChatStream(t, ts, "s4")
 	defer cancel()
@@ -427,10 +420,7 @@ func TestSessionsListRunningFlag(t *testing.T) {
 	readFrames(t, sc, "response_chunk", 1)
 	waitFor(t, "run registered active", func() bool { return s.runs.active("s4") })
 
-	// List row running == true mid-run.
-	rows = fetchList(t, ts.URL+"/sessions")
-	assertRunning(t, rows, "s4", true, "list mid-run")
-	// Detail running == true mid-run.
+	// Detail running == true mid-run (always present, running:false too).
 	detail := fetchDetail(t, ts.URL+"/sessions/s4")
 	if !detail["running"].(bool) {
 		t.Fatal("detail mid-run: running = false, want true")
@@ -440,41 +430,11 @@ func TestSessionsListRunningFlag(t *testing.T) {
 	prov.done()
 	waitFor(t, "run finished", func() bool { return !s.runs.active("s4") })
 
-	rows = fetchList(t, ts.URL+"/sessions")
-	assertRunning(t, rows, "s4", false, "list after finish")
 	detail = fetchDetail(t, ts.URL+"/sessions/s4")
 	if detail["running"].(bool) {
 		t.Fatal("detail after finish: running = true, want false")
 	}
 	_ = resp.Body.Close()
-}
-
-func fetchList(t *testing.T, url string) []map[string]any {
-	t.Helper()
-	resp, err := http.Get(url)
-	if err != nil {
-		t.Fatalf("get %s: %v", url, err)
-	}
-	defer resp.Body.Close()
-	var rows []map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
-		t.Fatalf("decode list: %v", err)
-	}
-	return rows
-}
-
-func assertRunning(t *testing.T, rows []map[string]any, id string, want bool, where string) {
-	t.Helper()
-	for _, row := range rows {
-		if row["id"] == id {
-			got, _ := row["running"].(bool)
-			if got != want {
-				t.Fatalf("%s: running = %v, want %v", where, got, want)
-			}
-			return
-		}
-	}
-	t.Fatalf("%s: session %s missing from list", where, id)
 }
 
 func fetchDetail(t *testing.T, url string) map[string]any {

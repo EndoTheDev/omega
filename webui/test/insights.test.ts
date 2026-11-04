@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { fetchInsights } from "../app/composables/omega.ts";
-import { INSIGHTS_DEFAULT_DAYS } from "../app/components/insights/defaultWindow.ts";
+import { INSIGHTS_DEFAULT_DAYS } from "../../harness/store/ui/defaultWindow.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const modules = join(here, "..", "..");
@@ -88,7 +88,7 @@ test("fetchInsights throws the server's message, not a bare status", async () =>
 // --- InsightsTab.vue: the render contract ---
 
 test("the view renders from the payload - every block the TUI prints has a home", () => {
-  const vue = read("webui", "app", "components", "insights", "InsightsTab.vue");
+  const vue = read("webui", "..", "harness", "store", "ui", "InsightsTab.vue");
   // one source: the omega fetch helper, no inline fetch
   assert.match(vue, /fetchInsights/, "the view fetches through omega.ts");
   assert.ok(!/fetch\(\s*["'`\/]/.test(vue), "no private fetch: the endpoint URL lives in omega.ts");
@@ -108,7 +108,7 @@ test("the view renders from the payload - every block the TUI prints has a home"
 });
 
 test("an empty window is honest: text, zeroed payload, no fake rows", () => {
-  const vue = read("webui", "app", "components", "insights", "InsightsTab.vue");
+  const vue = read("webui", "..", "harness", "store", "ui", "InsightsTab.vue");
   // the sessions === 0 branch prints text (mirrors the TUI's
   // "[no sessions in the last N days]"), all-time gets its own voice
   assert.match(vue, /data\.sessions === 0/, "the empty branch exists");
@@ -123,14 +123,14 @@ test("the tab's initial window is 7 days, not the server default 30 (Endo 2026-1
   assert.equal(INSIGHTS_DEFAULT_DAYS, 7);
   // the initial ref is wired to the constant (behavior via the import,
   // not a literal in the SFC)
-  const vue = read("webui", "app", "components", "insights", "InsightsTab.vue");
+  const vue = read("webui", "..", "harness", "store", "ui", "InsightsTab.vue");
   assert.match(vue, /ref<number \| null>\(INSIGHTS_DEFAULT_DAYS\)/);
   // the bare-endpoint fold survives: load() still maps null -> no param
   assert.match(vue, /days\.value === null \? null : days\.value/);
 });
 
 test("the window selector rides the themed listbox and mirrors the TUI arg semantics", () => {
-  const vue = read("webui", "app", "components", "insights", "InsightsTab.vue");
+  const vue = read("webui", "..", "harness", "store", "ui", "InsightsTab.vue");
   assert.match(vue, /<BandSelect/, "BandSelect, not a native select (card t_acad02ec)");
   assert.match(vue, /value: 0, label: "all time"/, "0 = all time option");
   assert.match(vue, /value: 30, label: "30 days"/, "30 days option in the selector");

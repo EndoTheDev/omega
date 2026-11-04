@@ -20,7 +20,7 @@ import { fileURLToPath, URL } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const src = (p: string): string => readFileSync(`${root}${p}`, "utf8");
 
-const sidebar = src("app/components/sessions/AppSidebar.vue");
+const sidebar = src("../harness/store/ui/AppSidebar.vue");
 const mainCss = src("app/assets/css/main.css");
 const tabband = src("app/components/ui/TabBand.vue");
 

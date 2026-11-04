@@ -283,19 +283,26 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/models", s.handleModels)
 	mux.HandleFunc("/chat", s.handleChat)
 	mux.HandleFunc("/attach-image", s.handleAttachImage)
-	mux.HandleFunc("/sessions", s.handleSessions)
-	mux.HandleFunc("/sessions/search", s.handleSessionSearch)
-	mux.HandleFunc("/sessions/{id}/events", s.handleSessionEvents)
-	mux.HandleFunc("/sessions/{id}/stop", s.handleSessionStop)
-	mux.HandleFunc("/sessions/{id}/transcript", s.handleSessionTranscript)
-	mux.HandleFunc("/sessions/{id}/variants", s.handleSessionVariants)
-	mux.HandleFunc("/sessions/{id}/branch", s.handleSessionBranch)
-	mux.HandleFunc("/sessions/{id}/export", s.handleSessionExport)
-	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	// card t_08d822bb: (the raw-bytes image route was the file explorer's
 	// - it rode /files/* and moved with the file capsule, the shell-ring
 	// shrink wave 1. The /workspaces routes below stay: the workspace
 	// chip is the base set until wave 3's classification calls it.)
+	// The shell-ring shrink wave 2 (ADR Workshop/omega-shell-ring-shrink.md,
+	// the three-layer sessions law): the session MANAGEMENT surface rides
+	// the store capsule - GET /sessions (list), /sessions/search,
+	// /sessions/{id}/branch, /sessions/{id}/export and GET /insights are
+	// capsule routes now (harness/store/routes.go); the /agents roster
+	// reads ride the continuous capsule (harness/continuous/agentsrest.go).
+	// The base keeps the chat floor: POST /sessions (session id
+	// creation), /sessions/{id} (detail/context/delete - pattern-atomic,
+	// the chat page calls its PATCH and ephemeral DELETE live), and the
+	// live-run reads (events/stop/transcript/variants) + verdicts.
+	mux.HandleFunc("POST /sessions", s.handleSessionCreate)
+	mux.HandleFunc("/sessions/{id}/events", s.handleSessionEvents)
+	mux.HandleFunc("/sessions/{id}/stop", s.handleSessionStop)
+	mux.HandleFunc("/sessions/{id}/transcript", s.handleSessionTranscript)
+	mux.HandleFunc("/sessions/{id}/variants", s.handleSessionVariants)
+	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	mux.HandleFunc("/workspaces/browse", s.handleWorkspacesBrowse)
 	mux.HandleFunc("/workspaces/files", s.handleWorkspaceFiles)
 	mux.HandleFunc("/tools", s.handleTools)
@@ -303,7 +310,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/commands/dispatch", s.handleCommandDispatch)
 	mux.HandleFunc("/skills/content", s.handleSkillsContent)
 	mux.HandleFunc("/settings", s.handleSettings)
-	mux.HandleFunc("/insights", s.handleInsights)
+	// GET /insights rode the store capsule out with wave 2 (a view over
+	// store data disclosed in the review comment).
 	// card t_5d9032d3: the finished-things surface. Handlers live in
 	// server_notify.go; /notifications/events is the live toast stream.
 	mux.HandleFunc("/notifications", s.handleNotifications)
@@ -311,22 +319,28 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/notifications/events", s.handleNotificationEvents)
 	// card t_2ecf9c51: the verdict-cards answer surface. /verdicts is
 	// the cross-session listing (the bell count); /sessions/{id}/verdicts
-	// lists one session and accepts the answer POST.
+	// lists one session and accepts the answer POST. The verdict
+	// surface serves the chat page directly - wave 3's classification
+	// sweep owns the verdict if it ever demotes.
 	mux.HandleFunc("/verdicts", s.handleVerdicts)
 	mux.HandleFunc("/sessions/{id}/verdicts", s.handleVerdicts)
-	// card t_7e2b7002 (deferred mount, review pass): the multi-agent
-	// REST surface. Handlers live in server_agents.go.
-	mux.HandleFunc("/agents", s.handleAgents)
-	mux.HandleFunc("/agents/{name}", s.handleAgent)
-	// card t_2d8deb8c: the expansion's edit affordance - the PUT writes
-	// the scaffold field set through the agent config layer.
-	mux.HandleFunc("PUT /agents/{name}", s.handleAgentUpdate)
-	mux.HandleFunc("/agents/{name}/sessions", s.handleAgentSessions)
+	// The /agents roster surface rode the continuous capsule out with
+	// wave 2 (harness/continuous/agentsrest.go): every handler in the
+	// old server_agents.go served the roster tab - the chat page never
+	// fetches agent profiles (verified: the only /agents consumer is
+	// AgentsPanel.vue), so the whole file moved.
 	// card t_e143f41f (arc 3b): the canvas transport. Handlers live in
 	// server_canvas.go.
 	mux.HandleFunc("/ui/canvas", s.handleCanvas)
 	mux.HandleFunc("/ui/actions", s.handleUIActions)
 }
+
+// Active reports whether the session has a live run right now - the
+// exported face of the RunHub (the chat-runs service the http channel
+// offers under "chat-runs"; agent.ChatRunsReader). The store capsule's
+// session list reads it per request; the run hub itself stays the base
+// set's (the shell-ring shrink wave 2 disclosure).
+func (s *Server) Active(id string) bool { return s.runs.active(id) }
 
 // --- carve seams: the shell reaches the base state it must wire,
 // through these exported methods. Every one mirrors what the
@@ -1479,78 +1493,17 @@ func truncate(s string, n int) string {
 	return string(r[:n]) + "…"
 }
 
-// sessionPayload is one /sessions list row: the session row (which
-// carries the pinned flag, the persisted token totals, and the
-// last-read stamp) plus the read-time counts, the last recorded model,
-// the read-time unread state, and whether the session has a live run
-// right now (the sidebar's streaming pulse after a page refresh - the
-// in-memory busy map no longer survives the reload). The running flag
-// is the backend's single truth for "is this session streaming" (it
-// derives from the RunHub, never from a client's memory of its own
-// stream), so it is ALWAYS present on the row - true and false alike -
-// and every tab reconciles its pulse against it.
-type sessionPayload struct {
-	core.Session
-	MessageCount int    `json:"message_count"`
-	ToolCount    int    `json:"tool_count"`
-	Model        string `json:"model,omitempty"`
-	Unread       bool   `json:"unread"`
-	Running      bool   `json:"running"`
-}
-
-// handleSessions serves GET /sessions (list) and POST /sessions (create).
+// handleSessionCreate serves POST /sessions - the chat floor's session
+// id creation + born-pin. The GET /sessions list rode the store capsule
+// out with the shell-ring shrink wave 2 (the three-layer sessions law,
+// ADR Workshop/omega-shell-ring-shrink.md; harness/store/routes.go).
 // It returns 501 when the server has no store.
-func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		http.Error(w, "session store not configured", http.StatusNotImplemented)
 		return
 	}
 	switch r.Method {
-	case http.MethodGet:
-		sessions, err := s.store.ListSessions(r.Context())
-		if err != nil {
-			http.Error(w, "list sessions: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		// Archived filter: default excludes archived sessions from the
-		// list; archived=include returns them (with the rest). The flag
-		// is a user-list concern, so the filter lives at the read.
-		includeArchived := r.URL.Query().Get("archived") == "include"
-		// ponytail: counts are computed at read time from SQL COUNT, so
-		// the list stays accurate with no maintained counters.
-		counts, err := s.store.SessionCounts(r.Context())
-		if err != nil {
-			http.Error(w, "session counts: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		models, err := s.store.SessionModels(r.Context())
-		if err != nil {
-			http.Error(w, "session models: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		out := make([]sessionPayload, 0, len(sessions))
-		for _, sess := range sessions {
-			if sess.Archived && !includeArchived {
-				continue
-			}
-			payload := sessionPayload{Session: sess}
-			if c, ok := counts[sess.ID]; ok {
-				payload.MessageCount = c.MessageCount
-				payload.ToolCount = c.ToolCount
-			}
-			// The pinned model wins; the model_change trail is the
-			// fallback for sessions that never carried a pin (card t_9de5b009).
-			payload.Model = models[sess.ID]
-			if sess.Model != "" {
-				payload.Model = sess.Model
-			}
-			// computed at read time from the row itself - no counters,
-			// no schema writes (same pattern as the counts)
-			payload.Unread = agent.SessionUnread(sess)
-			payload.Running = s.runs.active(sess.ID)
-			out = append(out, payload)
-		}
-		writeJSON(w, http.StatusOK, out)
 	case http.MethodPost:
 		var req struct {
 			ID string `json:"id"`
@@ -1617,72 +1570,6 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-}
-
-// sessionSearchHit is one /sessions/search row: the matching session
-// id plus the hit (a title hit carries the label with titleMatch set;
-// a content hit carries a snippet stub - a later card renders the
-// context).
-type sessionSearchHit struct {
-	ID         string `json:"id"`
-	Snippet    string `json:"snippet,omitempty"`
-	TitleMatch bool   `json:"titleMatch,omitempty"`
-}
-
-// handleSessionSearch serves GET /sessions/search?q=<term>: the store's
-// unified FTS5 search (SearchSessions) - one endpoint, one result
-// shape, session labels AND message content in the same index pass,
-// deduped to one hit per session with title hits ranked first. It
-// returns 501 when the server has no store, 200 [] on a missing/empty
-// q (nothing to search), and 400 when FTS5 rejects the query syntax.
-func (s *Server) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if s.store == nil {
-		http.Error(w, "session store not configured", http.StatusNotImplemented)
-		return
-	}
-	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	if q == "" {
-		writeJSON(w, http.StatusOK, []sessionSearchHit{})
-		return
-	}
-	results, err := s.store.SearchSessions(r.Context(), q)
-	if err != nil {
-		// The only input-dependent failure mode of this read-only
-		// query is the query itself; the sqlite driver surfaces FTS5
-		// syntax errors as plain "SQL logic error" strings, so the
-		// bad call gets 400 (a real store fault trips on the /sessions
-		// list too, not just here).
-		http.Error(w, "search: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	// Archived filter: default excludes hits whose session is archived
-	// (the sidebar's toggle drives the same archived=include param the
-	// list takes); archived=include keeps them. One read of the session
-	// list builds the exclusion set - the search stays a pure FTS
-	// query, the flag is a user-list concern applied at read time.
-	if r.URL.Query().Get("archived") != "include" {
-		sessions, err := s.store.ListSessions(r.Context())
-		if err != nil {
-			http.Error(w, "list sessions: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		archived := make(map[string]bool, len(sessions))
-		for _, sess := range sessions {
-			archived[sess.ID] = sess.Archived
-		}
-		results = slices.DeleteFunc(results, func(res core.SearchResult) bool {
-			return archived[res.SessionID]
-		})
-	}
-	out := make([]sessionSearchHit, 0, len(results))
-	for _, res := range results {
-		out = append(out, sessionSearchHit{ID: res.SessionID, Snippet: res.Snippet, TitleMatch: res.Title})
-	}
-	writeJSON(w, http.StatusOK, out)
 }
 
 // handleSessionByID serves GET /sessions/{id} (session + messages) and

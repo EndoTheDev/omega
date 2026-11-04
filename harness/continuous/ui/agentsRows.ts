@@ -1,15 +1,16 @@
 // omega webui: the agents surface model (card t_7e2b7002). PURE: no
 // fetch, no Vue. The AgentsPanel renders from these rows and the unit
 // suite pins the honest-display rules here.
-// NOTE (card t_7e2b7002, same-file ruling): this lives in
-// app/components/agents/, NOT composables/ - omega.ts and dockables.ts
+// NOTE (card t_7e2b7002, same-file ruling): this lives beside its panel
+// (the capsules' ui/ dir; the shell-ring shrink wave 2 moved the agents
+// surface out of the shell's components). omega.ts and dockables.ts
 // are owned by card t_14f73742 while it runs. The panel fetches its
 // own payloads until the wiring lands; the deferred mount lines are
 // recorded in the card comment.
 
 // RECORD: card t_c7222095 - continuousRows.ts types fold in here (the
 // merged agent row carries the wake state).
-import { rowStatus, type OmegaContinuousRow } from "../../../../harness/continuous/ui/continuousRows.ts";
+import { rowStatus, type OmegaContinuousRow } from "./continuousRows.ts";
 
 export interface OmegaAgent {
   name: string;

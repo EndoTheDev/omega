@@ -50,14 +50,18 @@ func newEphRegistry() *ephRegistry {
 	return &ephRegistry{records: map[string]*ephemeralSession{}}
 }
 
-// ephemeralPrefix is the id namespace of no-persist sessions.
-const ephemeralPrefix = "eph-"
+// ephemeralPrefix is the id namespace of no-persist sessions. The
+// namespace constant is the agent package's (agent.EphemeralIDPrefix) -
+// the id creators in the roster capsule enforce the same namespace, and
+// a substrate-shared constant cannot drift from the capsule's guard.
+const ephemeralPrefix = agent.EphemeralIDPrefix
 
 // isEphemeralID reports whether an id belongs to the ephemeral
-// namespace. Store ids are base session ids from agent.NewSessionID or
-// the sess- fallback; they can never carry the prefix.
+// namespace (the "eph-" prefix) - the agent package's predicate. Store
+// ids are base session ids from agent.NewSessionID or the sess-
+// fallback; they can never carry the prefix.
 func isEphemeralID(id string) bool {
-	return len(id) > len(ephemeralPrefix) && id[:len(ephemeralPrefix)] == ephemeralPrefix
+	return agent.IsEphemeralID(id)
 }
 
 // mintEphemeralID builds a fresh namespace id. crypto/rand never fails

@@ -227,7 +227,7 @@
 <script setup lang="ts">
   import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from "vue";
   // card t_502b8e81: the iconset wrapper - every glyph in the sidebar
-  import Icon from "../ui/Icon.vue";
+  import Icon from "~/components/ui/Icon.vue";
   import {
     bucketSessions,
     commitSessionRename,
@@ -242,8 +242,8 @@
     parseCollapsedLabels,
     serializeCollapsedKeys,
     sessionRowStatus,
-  } from "../../composables/omega";
-  import type { Session, SessionBuckets } from "../../composables/omega";
+  } from "~/composables/omega";
+  import type { Session, SessionBuckets } from "~/composables/omega";
 
   const props = defineProps<{
     sessions: Session[];

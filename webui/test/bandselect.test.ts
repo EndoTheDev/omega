@@ -50,7 +50,7 @@ const SITES = [
     labelProp: /:label="knob\.label"/,
   },
   {
-    file: join(webui, "app", "components", "insights", "InsightsTab.vue"),
+    file: join(webui, "..", "harness", "store", "ui", "InsightsTab.vue"),
     label: "the insights window",
     select: /<BandSelect[\s\S]*?:options="WINDOW_OPTIONS"/,
     labelProp: /label="window in days, 0 = all time"/,
@@ -86,7 +86,7 @@ test("the drawer paints a real surface - no phantom --omega-bg token (audit M4)"
 });
 
 test("insights rides the token ladder (audit M7)", () => {
-  const insights = read(webui, "app", "components", "insights", "InsightsTab.vue");
+  const insights = read(webui, "..", "harness", "store", "ui", "InsightsTab.vue");
   assert.match(insights, /border-radius:\s*var\(--r-chip\)/, "the bar radius rides the 8/6/4 ladder, not 3px");
   assert.doesNotMatch(insights, /border-radius:\s*3px/);
   assert.doesNotMatch(insights, /border: 1px solid var\(--z1-raised\)/, "--z1-raised is a fill, not a border");

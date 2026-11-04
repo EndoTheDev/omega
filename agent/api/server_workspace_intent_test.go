@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
@@ -32,7 +33,7 @@ func sessionRowWorkspace(t *testing.T, s *Server, id string) (found bool, worksp
 		t.Fatalf("get %s: status = %d (%s)", id, rec.Code, rec.Body.String())
 	}
 	var detail struct {
-		Session sessionPayload
+		Session core.Session
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
 		t.Fatalf("decode detail: %v", err)

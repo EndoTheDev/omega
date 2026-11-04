@@ -25,7 +25,7 @@ const src = (p: string): string => readFileSync(`${root}/${p}`, "utf8");
 
 const maincss = src("app/assets/css/main.css");
 const tools = src("../harness/tools/ui/ToolsList.vue");
-const insights = src("app/components/insights/InsightsTab.vue");
+const insights = src("../harness/store/ui/InsightsTab.vue");
 
 // ...a rule block: selector ... { ... } - the FIRST `}` closing it.
 function ruleBlock(css: string, selector: string): string {

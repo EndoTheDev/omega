@@ -19,7 +19,7 @@ import {
   agentSessionTitle,
   agentSkillsText,
   agentsListIsEmpty,
-} from "../app/components/agents/agentsRows.ts";
+} from "../../harness/continuous/ui/agentsRows.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const modules = join(here, "..", "..");
@@ -65,7 +65,7 @@ test("agents list is never empty by construction: default exists", () => {
 // --- AgentsPanel.vue: the wire contract ---
 
 test("AgentsPanel fetches the real endpoints (the wiring pass folded omega.ts in)", () => {
-  const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
+  const vue = read("webui", "..", "harness", "continuous", "ui", "AgentsPanel.vue");
   assert.match(vue, /["'`]\/agents["'`]/, "GET inventory");
   // card t_2d8deb8c: the edit affordance replaces the session surface -
   // the tab's agent-scoped write is PUT /agents/{name}; the sessions
@@ -82,7 +82,7 @@ test("AgentsPanel fetches the real endpoints (the wiring pass folded omega.ts in
 // --- card t_2d8deb8c, ruling 3: the expansion is details + edit ---
 
 test("AgentsPanel expansion carries the edit affordance, not sessions", () => {
-  const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
+  const vue = read("webui", "..", "harness", "continuous", "ui", "AgentsPanel.vue");
   assert.match(vue, /class="agents-edit"/, "the edit form renders");
   assert.match(vue, /saveAgentEdit/, "the save affordance exists");
   for (const field of ["agent description", "provider type", "model name", "api key", "system prompt"]) {
@@ -98,7 +98,7 @@ test("AgentsPanel expansion carries the edit affordance, not sessions", () => {
 });
 
 test("the default agent is read-only in the expansion (its config is the home config)", () => {
-  const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
+  const vue = read("webui", "..", "harness", "continuous", "ui", "AgentsPanel.vue");
   assert.match(vue, /row\.name === DefaultAgentName/, "the default agent branches off");
   assert.match(vue, /agents-readonly-note/, "the read-only note explains why");
 });
@@ -106,7 +106,7 @@ test("the default agent is read-only in the expansion (its config is the home co
 // --- the list contract (card t_619832ee) ---
 
 test("AgentsPanel coerces a 200/null body, never crashes the render", () => {
-  const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
+  const vue = read("webui", "..", "harness", "continuous", "ui", "AgentsPanel.vue");
   // Trust boundary: the backend used to answer a zero-session agent with
   // the literal body `null`, detailSessions.length threw, and the whole
   // sidebar went blank. Every list fetch carries the ?? [] guard; the
@@ -119,7 +119,7 @@ test("AgentsPanel coerces a 200/null body, never crashes the render", () => {
 // --- t_c7222095: the Agents/Continuous merge (one tab) ---
 
 test("AgentsPanel merges the continuous roster into the rows (status word, no preview)", () => {
-  const vue = read("webui", "app", "components", "agents", "AgentsPanel.vue");
+  const vue = read("webui", "..", "harness", "continuous", "ui", "AgentsPanel.vue");
   assert.match(vue, /fetch\("\/continuous\/roster"\)/, "the roster loads with the agents");
   assert.match(vue, /continuousIndex\(roster\.value\)/, "the roster joins by name");
   assert.match(vue, /mergedRowDetail\(a, c\)/, "the detail carries the wake line");

@@ -139,14 +139,14 @@
 
 <script setup lang="ts">
   import { computed, onMounted, ref, watch } from "vue";
-  import RegistryList from "../RegistryList.vue";
-  import Icon from "../ui/Icon.vue";
+  import RegistryList from "~/components/RegistryList.vue";
+  import Icon from "~/components/ui/Icon.vue";
   import {
     fetchInsights,
     InsightsPayload,
     InsightsDayRow,
     type RegistryRow,
-  } from "../../composables/omega";
+  } from "~/composables/omega";
   import { INSIGHTS_DEFAULT_DAYS } from "./defaultWindow";
 
   const data = ref<InsightsPayload | null>(null);
