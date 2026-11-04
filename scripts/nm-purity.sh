@@ -603,6 +603,16 @@ for MOD in "${MODULES[@]}"; do
   # capsule's own text, never across the host's.
   sed -E 's#github\.com/EndoTheDev/omega/(modules|harness)/[A-Za-z0-9_][^, ]*##g' \
     "$TMP/$MOD.own" > "$TMP/$MOD.own.host" 2>/dev/null || true
+  # The stdlib embed.FS member is not the host's vocabulary either:
+  # every `var <X> embed.FS` in the tree emits an nm symbol
+  # `...<X>.files` (the struct's unexported member), which survives
+  # every scrub no matter how cleanly a module leaves. Collect the
+  # tree's embed var names and drop their member symbols - the field
+  # name is stdlib's, exactly the carve-out class above.
+  for EV in $(grep -rhoE '^var +([A-Za-z_][A-Za-z0-9_]*) +embed\.FS\b' \
+      --include='*.go' "$ROOT" | awk '{print $2}' | sort -u); do
+    sed -i -E "/\.$EV\.files$/d" "$TMP/$MOD.own.host" 2>/dev/null || true
+  done
   if grep -w "$MOD" "$TMP/$MOD.own.host" > "$TMP/$MOD.noun.log" 2>&1; then
     echo "nm-purity [$MOD]: FAIL - the module noun survives as an omega-owned symbol:" >&2
     sed 's/^/    /' "$TMP/$MOD.noun.log" | head -10 >&2
