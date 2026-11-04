@@ -602,26 +602,49 @@ func waitExited(t *testing.T, s *Session) {
 }
 
 // drainUntil reads the output stream until the needle appears or the
-// deadline passes (the prompt/echo dance needs a window, not a poll).
+// deadline passes. The read loop lives in a goroutine feeding a
+// buffered channel: proc.Read is a blocking syscall on the pty
+// master, so a deadline checked only after Read returns can never
+// fire against silent output. Select is the deadline - a missing
+// needle fails within the window instead of hanging the suite forever.
+// On timeout the goroutine stays parked in Read; the caller's Kill
+// (the master close) unblocks it, and its one buffered send drops.
 func drainUntil(t *testing.T, proc process, needle string, d time.Duration) error {
 	t.Helper()
-	deadline := time.Now().Add(d)
+	var mu sync.Mutex
 	acc := ""
-	for {
-		if time.Now().After(deadline) {
-			return errors.New(needle + " never arrived; saw: " + acc)
-		}
+	found := make(chan error, 1)
+	go func() {
 		buf := make([]byte, 4096)
-		n, err := proc.Read(buf)
-		if n > 0 {
-			acc += string(buf[:n])
-			if strings.Contains(acc, needle) {
-				return nil
+		for {
+			n, err := proc.Read(buf)
+			if n > 0 {
+				mu.Lock()
+				acc += string(buf[:n])
+				matched := strings.Contains(acc, needle)
+				mu.Unlock()
+				if matched {
+					found <- nil
+					return
+				}
+			}
+			if err != nil {
+				mu.Lock()
+				saw := acc
+				mu.Unlock()
+				found <- errors.New("stream ended before " + needle + ": " + saw)
+				return
 			}
 		}
-		if err != nil {
-			return errors.New("stream ended before " + needle + ": " + acc)
-		}
+	}()
+	select {
+	case err := <-found:
+		return err
+	case <-time.After(d):
+		mu.Lock()
+		saw := acc
+		mu.Unlock()
+		return errors.New(needle + " never arrived; saw: " + saw)
 	}
 }
 
@@ -632,6 +655,13 @@ func TestRealPTYShellEcho(t *testing.T) {
 	if _, err := os.Stat("/bin/sh"); err != nil {
 		t.Skipf("no /bin/sh: %v", err)
 	}
+	// Hermetic shell pin: the spawn reads $SHELL first (the VS Code
+	// preference law stands - that is product behavior, not test
+	// behavior), so whatever shell the invoking env carries decides
+	// the prompt. An interactive zsh here prints updates and waits
+	// before any prompt bytes - the literal needle never arrives.
+	// Pinning keeps the test hermetic on every box.
+	t.Setenv("SHELL", "/bin/sh")
 	proc, err := spawnProcess(t.TempDir())
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
@@ -648,6 +678,40 @@ func TestRealPTYShellEcho(t *testing.T) {
 	}
 	if err := drainUntil(t, proc, "omega-term-proof", 5*time.Second); err != nil {
 		t.Fatalf("echo: %v", err)
+	}
+}
+
+// TestDrainUntilDeadlineOnMissingNeedle pins the drain's own law: a
+// needle that never arrives fails inside the window, never hangs.
+// The shell prints a prompt (so the pty stream is alive) but the
+// needle cannot appear in it; a deadline checked only after the
+// blocking master read returns would be unreachable from now to the
+// package timeout.
+func TestDrainUntilDeadlineOnMissingNeedle(t *testing.T) {
+	if _, err := os.Stat("/dev/ptmx"); err != nil {
+		t.Skipf("no /dev/ptmx on this box: %v", err)
+	}
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skipf("no /bin/sh: %v", err)
+	}
+	t.Setenv("SHELL", "/bin/sh")
+	proc, err := spawnProcess(t.TempDir())
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	defer proc.Kill()
+	const needle = "OMEGA-NEVER-ARRIVES-79af2c"
+	start := time.Now()
+	err = drainUntil(t, proc, needle, 2*time.Second)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatalf("%s arrived on a fresh prompt pty - impossible", needle)
+	}
+	if !strings.Contains(err.Error(), "never arrived") {
+		t.Fatalf("missing-needle failure shape: %v", err)
+	}
+	if elapsed > 5*time.Second {
+		t.Fatalf("miss failed at %v - the deadline did not fire on time", elapsed)
 	}
 }
 
