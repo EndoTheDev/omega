@@ -1,40 +1,50 @@
-// Package tools provides the built-in shell and file tools as an
-// in-process core.ToolProvider. shell.run, plus the consolidated
-// files domain tool (read/write/edit under one action protocol, with
-// an atomic batch operations array). The legacy files.read /
-// files.write / files.edit names remain registered as alias shims.
-package tools
+// Package files owns the file domain, all of it (the shell-ring shrink
+// wave 1, ADR Workshop/omega-shell-ring-shrink.md): the consolidated
+// file tool (read/write/edit sub-actions under one action protocol,
+// with an atomic batch operations array; the legacy files.read /
+// files.write / files.edit names remain registered as alias shims) and
+// the webui explorer's REST face (/files/browse, /files/read, /files/raw,
+// /files/write, /files/mkdir - the root-resolution law rides the same
+// capsule). The legacy alias shims stay callable by the model until the
+// v0.12 mount migration retires them and are hidden from the prompt and
+// the /tools inventory by the AliasOf marker.
+//
+// The instance-database deny law (ENDO'S LAW 2026-10-18) is the db
+// family's own (harness/datadir's Guard); the file tool's paths and
+// the shell tool's commands consult it, the tool layer refuses the
+// accidental db-touch class.
+package files
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// ToolProvider implements core.ToolProvider. It holds per-path file
-// locks so concurrent tool calls on the same file are serialized.
-type ToolProvider struct {
+// FileProvider serves the consolidated files tool as an additive
+// tools-seam contributor. It holds per-path file locks so concurrent
+// tool calls on the same file are serialized, and the db-door guard
+// every file path must pass.
+type FileProvider struct {
 	// fileLocks serializes read/write/edit on the same path.
 	// ponytail: unbounded growth ceiling = distinct paths per session.
 	// Upgrade path: LRU eviction of idle mutexes if path count grows
 	// large, but in practice the set is bounded by working-tree size.
 	fileLocks sync.Map // map[string]*sync.Mutex, keyed by abs path
 
-	// dbGuard refuses any shell command or file path that resolves
-	// into the instance database (ENDO'S LAW 2026-10-18). nil and
-	// zero-value guards are pass-through.
-	dbGuard *dbGuard
+	// guard refuses any file path that resolves into the instance
+	// database (ENDO'S LAW 2026-10-18). nil and zero-value guards are
+	// pass-through.
+	guard *datadir.Guard
 }
 
 // filesActions is the structured sub-action metadata for the consolidated
@@ -46,8 +56,8 @@ var filesActions = []core.ToolAction{
 	{Name: "edit", Description: "Apply a targeted find-and-replace patch to a file."},
 }
 
-// filesAliasName maps a read/write/edit-style action to its legacy tool
-// name (the alias shim set registered alongside the folded tool).
+// filesLegacyName maps a read/write/edit-style action to its legacy
+// tool name (the alias shim set registered alongside the folded tool).
 func filesLegacyName(action string) string {
 	switch action {
 	case "read":
@@ -61,24 +71,13 @@ func filesLegacyName(action string) string {
 }
 
 // Tools returns the tool map keyed by tool name. The file tools are
-// consolidated into one "files" domain tool: the domain description
-// carries the contract (targets, atomic batch), Actions carries the
-// verbs, and the legacy files.read/files.write/files.edit names stay
-// registered as alias shims until the v0.12 mount migration retires
-// them.
-func (p *ToolProvider) Tools() map[string]core.Tool {
+// consolidated into one "files" domain tool (the one-domain law,
+// t_e06b38bc): the domain description carries the contract (targets,
+// atomic batch), Actions carries the verbs, and the legacy
+// files.read/files.write/files.edit names stay registered as alias
+// shims until the v0.12 mount migration retires them.
+func (p *FileProvider) Tools() map[string]core.Tool {
 	tools := map[string]core.Tool{
-		"shell.run": {
-			Description: "Run a shell command and return its stdout and stderr.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"command": map[string]any{"type": "string", "description": "The command to run."},
-				},
-				"required": []string{"command"},
-			},
-			Run: p.RunShell,
-		},
 		"files": {
 			Description: "Read, write, and edit files on disk. Writes create parent directories as needed. Batch: pass operations (write and edit ops across multiple files) for an atomic multi-file change - any failure rolls the whole batch back.",
 			Actions:     filesActions,
@@ -124,7 +123,7 @@ func (p *ToolProvider) Tools() map[string]core.Tool {
 // stay callable by the model until the v0.12 mount migration retires
 // them and are hidden from the prompt and /tools inventory by
 // the AliasOf marker.
-func (p *ToolProvider) fileAliasTools() map[string]core.Tool {
+func (p *FileProvider) fileAliasTools() map[string]core.Tool {
 	out := make(map[string]core.Tool, len(filesActions))
 	for _, a := range filesActions {
 		legacy := filesLegacyName(a.Name)
@@ -170,7 +169,7 @@ func resolveToolPath(ctx context.Context, path string) string {
 // (action read/write/edit) or an atomic batch via operations. The
 // action enum itself is derived server-side from filesActions (see
 // Tool.SchemaParameters); here we only route.
-func (p *ToolProvider) RunFiles(ctx context.Context, args map[string]any) (string, error) {
+func (p *FileProvider) RunFiles(ctx context.Context, args map[string]any) (string, error) {
 	if opsRaw, ok := args["operations"]; ok && opsRaw != nil {
 		ops, err := parseFileOperations(opsRaw)
 		if err != nil {
@@ -235,7 +234,7 @@ func parseFileOperations(raw any) ([]fileOp, error) {
 // write; if any operation fails, every snapshot is restored - a
 // half-applied multi-file change is impossible. Each file surface is a
 // plain file, not a DB, so snapshot/restore is the rollback.
-func (p *ToolProvider) runFileBatch(ctx context.Context, ops []fileOp) (string, error) {
+func (p *FileProvider) runFileBatch(ctx context.Context, ops []fileOp) (string, error) {
 	// Root every op at the run's session workspace FIRST (card
 	// t_9de5b009): the snapshot, the dispatch and the error text all
 	// see the same rooted path, and absolute op paths pass through.
@@ -321,7 +320,7 @@ func restoreFiles(snap map[string][]byte, existed map[string]bool, modes map[str
 }
 
 // fileMutex returns a per-path mutex, creating one if needed.
-func (p *ToolProvider) fileMutex(path string) *sync.Mutex {
+func (p *FileProvider) fileMutex(path string) *sync.Mutex {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		abs = path
@@ -343,88 +342,8 @@ func argString(args map[string]any, key string) (string, error) {
 	return s, nil
 }
 
-// shellOutputCap bounds how much of a command's combined output
-// buffers in memory: CombinedOutput buffered EVERYTHING before the
-// agent loop's MaxToolOutput truncation ever ran, so 'cat 500MB' or a
-// forever-streaming command ballooned omega's RSS into an OOM that
-// killed the server holding the store.
-const shellOutputCap = 1 << 20 // 1 MB
-
-// cappedBuffer accepts all writes but keeps at most shellOutputCap
-// bytes, counting the overflow for an honest truncation note.
-type cappedBuffer struct {
-	mu   sync.Mutex
-	buf  bytes.Buffer
-	over int64
-}
-
-func (b *cappedBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if room := shellOutputCap - b.buf.Len(); room > 0 {
-		if len(p) <= room {
-			b.buf.Write(p) //nolint:errcheck // bytes.Buffer never errors
-		} else {
-			b.buf.Write(p[:room]) //nolint:errcheck // bytes.Buffer never errors
-		}
-	}
-	b.over += int64(len(p))
-	return len(p), nil
-}
-
-// RunShell executes a shell command and returns combined output. The
-// command runs under the call ctx: a cancelled ctx (the detached run's
-// wall-clock cap) kills the process - without this, a command that
-// never returns hangs the tool loop past any run timeout. Output is
-// capped at shellOutputCap bytes (cappedBuffer), not buffered whole.
-func (p *ToolProvider) RunShell(ctx context.Context, args map[string]any) (string, error) {
-	command, err := argString(args, "command")
-	if err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(command) == "" {
-		return "", fmt.Errorf("command must not be empty")
-	}
-	if p.dbGuard.denyShell(command) {
-		return "", dbDenied(command)
-	}
-
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "cmd", "/C", command)
-	} else {
-		cmd = exec.CommandContext(ctx, "sh", "-c", command)
-		shellKillSetup(cmd)
-	}
-	// A session-rooted run executes INSIDE its workspace (card
-	// t_9de5b009): relative commands (ls, grep, go test...) operate on
-	// the session's folder. No workspace = the process working
-	// directory, exactly as before.
-	cmd.Dir = core.RunWorkspace(ctx)
-	outBuf := &cappedBuffer{}
-	cmd.Stdout = outBuf
-	cmd.Stderr = outBuf
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("command failed: %w", err)
-	}
-	if err := cmd.Wait(); err != nil {
-		return shellOutput(outBuf), fmt.Errorf("command failed: %w", err)
-	}
-	return shellOutput(outBuf), nil
-}
-
-// shellOutput renders a capped buffer: the kept bytes plus an honest
-// total-count note when output was dropped.
-func shellOutput(b *cappedBuffer) string {
-	out := b.buf.String()
-	if b.over > 0 {
-		out += fmt.Sprintf("\n... [output truncated, %d bytes total]", b.over+int64(b.buf.Len()))
-	}
-	return out
-}
-
 // RunReadFile reads a file with line numbers, honoring offset/limit.
-func (p *ToolProvider) RunReadFile(ctx context.Context, args map[string]any) (string, error) {
+func (p *FileProvider) RunReadFile(ctx context.Context, args map[string]any) (string, error) {
 	// Session workspace rooting (card t_9de5b009): the alias shims and
 	// the fold dispatch root the path before this handler reads it -
 	// resolve again for the direct-call safety (idempotent when
@@ -439,8 +358,8 @@ func (p *ToolProvider) RunReadFile(ctx context.Context, args map[string]any) (st
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("path must not be empty")
 	}
-	if p.dbGuard.denyFile(path) {
-		return "", dbDenied(path)
+	if p.guard.DenyFile(path) {
+		return "", datadir.DBDenied(path)
 	}
 
 	mu := p.fileMutex(path)
@@ -497,7 +416,7 @@ func (p *ToolProvider) RunReadFile(ctx context.Context, args map[string]any) (st
 }
 
 // RunWriteFile writes content to a file, creating parent dirs.
-func (p *ToolProvider) RunWriteFile(ctx context.Context, args map[string]any) (string, error) {
+func (p *FileProvider) RunWriteFile(ctx context.Context, args map[string]any) (string, error) {
 	if v, ok := args["path"].(string); ok {
 		args["path"] = resolveToolPath(ctx, v)
 	}
@@ -512,8 +431,8 @@ func (p *ToolProvider) RunWriteFile(ctx context.Context, args map[string]any) (s
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("path must not be empty")
 	}
-	if p.dbGuard.denyFile(path) {
-		return "", dbDenied(path)
+	if p.guard.DenyFile(path) {
+		return "", datadir.DBDenied(path)
 	}
 
 	mu := p.fileMutex(path)
@@ -533,7 +452,7 @@ func (p *ToolProvider) RunWriteFile(ctx context.Context, args map[string]any) (s
 }
 
 // RunEdit applies a find-and-replace patch to a file.
-func (p *ToolProvider) RunEdit(ctx context.Context, args map[string]any) (string, error) {
+func (p *FileProvider) RunEdit(ctx context.Context, args map[string]any) (string, error) {
 	if v, ok := args["path"].(string); ok {
 		args["path"] = resolveToolPath(ctx, v)
 	}
@@ -552,8 +471,8 @@ func (p *ToolProvider) RunEdit(ctx context.Context, args map[string]any) (string
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("path must not be empty")
 	}
-	if p.dbGuard.denyFile(path) {
-		return "", dbDenied(path)
+	if p.guard.DenyFile(path) {
+		return "", datadir.DBDenied(path)
 	}
 	if oldString == "" {
 		return "", fmt.Errorf("old_string must not be empty")

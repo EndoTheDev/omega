@@ -1,4 +1,4 @@
-package api
+package files
 
 import (
 	"bytes"
@@ -11,25 +11,12 @@ import (
 	"testing"
 )
 
-// chdirToWorkdir points the file surface at a temp directory: the
-// handlers root on the process working directory, so the tests chdir
-// into it.
-func chdirToWorkdir(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	t.Cleanup(func() { os.Chdir("/") }) //nolint:errcheck // test cleanup only
-	return dir
-}
-
 func filesGet(t *testing.T, path string) (*http.Response, map[string]any) {
 	t.Helper()
-	s := newTestServer()
+	s := filesRouteMux(t)
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
+	s.ServeHTTP(rec, req)
 	res := rec.Result()
 	var body map[string]any
 	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
@@ -196,10 +183,10 @@ func TestFilesBrowseRejections(t *testing.T) {
 
 func TestFilesBrowseMethodGate(t *testing.T) {
 	chdirToWorkdir(t)
-	s := newTestServer()
+	s := filesRouteMux(t)
 	req := httptest.NewRequest(http.MethodPost, "/files/browse", nil)
 	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
+	s.ServeHTTP(rec, req)
 	if rec.Result().StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("POST /files/browse status = %d; want 405", rec.Result().StatusCode)
 	}
@@ -269,10 +256,10 @@ func TestFilesReadRejections(t *testing.T) {
 
 func TestFilesReadMethodGate(t *testing.T) {
 	chdirToWorkdir(t)
-	s := newTestServer()
+	s := filesRouteMux(t)
 	req := httptest.NewRequest(http.MethodPut, "/files/read", strings.NewReader("nope"))
 	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
+	s.ServeHTTP(rec, req)
 	if rec.Result().StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("PUT /files/read status = %d; want 405", rec.Result().StatusCode)
 	}
@@ -359,11 +346,11 @@ func TestFilesRootBehindSymlink(t *testing.T) {
 // read half: a real Server.Handler() round-trip against the chdir'd root.
 func filesPost(t *testing.T, path string, jsonBody string) (*http.Response, map[string]any) {
 	t.Helper()
-	s := newTestServer()
+	s := filesRouteMux(t)
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(jsonBody))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
+	s.ServeHTTP(rec, req)
 	res := rec.Result()
 	var body map[string]any
 	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
@@ -533,13 +520,13 @@ func TestFilesDotSymlinkEscape(t *testing.T) {
 
 func TestFilesWriteMethodGate(t *testing.T) {
 	chdirToWorkdir(t)
-	s := newTestServer()
+	_, r, _, _ := filesRouteMuxWithStore(t)
 	// invoked DIRECTLY: the mux registers only the POST pattern, so a
 	// wrong verb in production falls to the SPA catch-all - the handler's
 	// own gate is the pinned defense here
 	req := httptest.NewRequest(http.MethodGet, "/files/write", nil)
 	rec := httptest.NewRecorder()
-	s.handleFilesWrite(rec, req)
+	r.handleFilesWrite(rec, req)
 	if rec.Result().StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("GET (direct) /files/write status = %d; want 405", rec.Result().StatusCode)
 	}
@@ -589,11 +576,11 @@ func TestFilesMkdirRefusals(t *testing.T) {
 
 func TestFilesMkdirMethodGate(t *testing.T) {
 	chdirToWorkdir(t)
-	s := newTestServer()
+	_, r, _, _ := filesRouteMuxWithStore(t)
 	// direct invocation - see TestFilesWriteMethodGate
 	req := httptest.NewRequest(http.MethodPut, "/files/mkdir", strings.NewReader("{}"))
 	rec := httptest.NewRecorder()
-	s.handleFilesMkdir(rec, req)
+	r.handleFilesMkdir(rec, req)
 	if rec.Result().StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("PUT (direct) /files/mkdir status = %d; want 405", rec.Result().StatusCode)
 	}

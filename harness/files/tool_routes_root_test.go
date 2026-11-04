@@ -1,4 +1,4 @@
-package api
+package files
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // The root resolution law (card t_a5f9d185): the file surface roots on
@@ -17,21 +19,20 @@ import (
 // default_workspace, (3) the process cwd. Every test here drives the
 // HTTP handlers, never the resolver alone - the law lives on the wire.
 
-// filesRootServer wires a store-backed server whose cwd is `cwdDir` via
-// chdirToWorkdir; the returned setWorkspace pins the default_workspace
-// knob the hot seam sets.
-func filesRootServer(t *testing.T) (*Server, string, func(string)) {
+// filesRootServer wires the capsule's routes with an in-memory store
+// (cwd is `cwd` via chdirToWorkdir); the returned setDefault pins the
+// default_workspace knob the hot seam sets.
+func filesRootServer(t *testing.T) (*http.ServeMux, string, agent.StoreProvider, func(string)) {
 	t.Helper()
-	cwd := chdirToWorkdir(t)
-	s, _ := newTestServerWithStore(t)
-	return s, cwd, func(ws string) { s.SetDefaultWorkspace(ws) }
+	mux, r, st, cwd := filesRouteMuxWithStore(t)
+	return mux, cwd, st, filesDefaultSetter(r)
 }
 
 // createWorkspaceSession mints one real store session whose Workspace
 // column pins `dir` - the law's step 1.
-func createWorkspaceSession(t *testing.T, s *Server, dir string) string {
+func createWorkspaceSession(t *testing.T, st agent.StoreProvider, dir string) string {
 	t.Helper()
-	st, ok := s.store.(interface {
+	sst, ok := st.(interface {
 		CreateSession(context.Context, string, string, string) error
 		SetSessionWorkspace(context.Context, string, string) error
 	})
@@ -40,12 +41,12 @@ func createWorkspaceSession(t *testing.T, s *Server, dir string) string {
 	}
 	id := "sess-root-law"
 	ctx := context.Background()
-	if err := st.CreateSession(ctx, id, "", "root law"); err != nil {
+	if err := sst.CreateSession(ctx, id, "", "root law"); err != nil {
 		if !strings.Contains(err.Error(), "exists") && !strings.Contains(err.Error(), "unique") {
 			t.Fatalf("create session: %v", err)
 		}
 	}
-	if err := st.SetSessionWorkspace(ctx, id, dir); err != nil {
+	if err := sst.SetSessionWorkspace(ctx, id, dir); err != nil {
 		t.Fatalf("set session workspace: %v", err)
 	}
 	return id
@@ -53,11 +54,11 @@ func createWorkspaceSession(t *testing.T, s *Server, dir string) string {
 
 // browseRoot GETs the root listing and returns the resolved root +
 // source the response reports.
-func browseRoot(t *testing.T, s *Server, url string) (int, string, string) {
+func browseRoot(t *testing.T, s *http.ServeMux, url string) (int, string, string) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
+	s.ServeHTTP(rec, req)
 	res := rec.Result()
 	var body map[string]any
 	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
@@ -69,7 +70,7 @@ func browseRoot(t *testing.T, s *Server, url string) (int, string, string) {
 }
 
 func TestFilesRootResolutionChain(t *testing.T) {
-	s, cwd, setDefault := filesRootServer(t)
+	s, cwd, st, setDefault := filesRootServer(t)
 
 	// No session, no default: the cwd fallback stands, source=cwd.
 	status, root, source := browseRoot(t, s, "/files/browse")
@@ -90,7 +91,7 @@ func TestFilesRootResolutionChain(t *testing.T) {
 	// A session with a pinned workspace: step 1 outranks the knob -
 	// even when the pin points somewhere else entirely.
 	sessDir := t.TempDir()
-	id := createWorkspaceSession(t, s, sessDir)
+	id := createWorkspaceSession(t, st, sessDir)
 	_, root, source = browseRoot(t, s, fmt.Sprintf("/files/browse?session=%s", id))
 	if source != filesSourceSession || root != sessDir {
 		t.Fatalf("session browse: root=%q source=%q; want %q %q", root, source, sessDir, filesSourceSession)
@@ -101,17 +102,17 @@ func TestFilesRootSessionOutranksDefault(t *testing.T) {
 	// Direct check of the same ordering the chain test walks, at the
 	// sub-listing level: the session workspace's marker dir lists, the
 	// default workspace's never does.
-	s, _, setDefault := filesRootServer(t)
+	s, _, st, setDefault := filesRootServer(t)
 	ws := t.TempDir()
 	sessDir := t.TempDir()
 	os.MkdirAll(filepath.Join(sessDir, "sess-marker"), 0o755) //nolint:errcheck // setup
 	os.MkdirAll(filepath.Join(ws, "default-marker"), 0o755)   //nolint:errcheck // setup
 	setDefault(ws)
-	id := createWorkspaceSession(t, s, sessDir)
+	id := createWorkspaceSession(t, st, sessDir)
 
 	req := httptest.NewRequest(http.MethodGet, "/files/browse?session="+id, nil)
 	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
+	s.ServeHTTP(rec, req)
 	var body struct {
 		Entries []fileEntry `json:"entries"`
 		Root    string      `json:"root"`
@@ -140,14 +141,15 @@ func TestFilesRootSessionOutranksDefault(t *testing.T) {
 func TestFilesRootUnknownSessionFallsToDefault(t *testing.T) {
 	// The law: an unknown session id falls through (no 404 on browse) -
 	// a draft tab or a lost id must not break the files surface.
-	s, _, setDefault := filesRootServer(t)
+	s, _, _, setDefault := filesRootServer(t)
 	setDefault(t.TempDir())
 	status, _, source := browseRoot(t, s, "/files/browse?session=eph-nope")
 	if status != http.StatusOK || source != filesSourceDefault {
 		t.Fatalf("unknown session: status=%d source=%q; want 200 %q", status, source, filesSourceDefault)
 	}
 	// ...and with no default either, all the way down to cwd.
-	s2, cwd2, _ := filesRootServer(t)
+	s2 := filesRouteMux(t)
+	cwd2, _ := os.Getwd()
 	status, root, source := browseRoot(t, s2, "/files/browse?session=eph-nope")
 	if status != http.StatusOK || root != cwd2 || source != filesSourceCwd {
 		t.Fatalf("unknown session, no default: status=%d root=%q source=%q; want 200 %q %q",
@@ -160,15 +162,15 @@ func TestFilesConfinementUnderSessionRoot(t *testing.T) {
 	// from the process cwd, a relative path must still be jailed to the
 	// RESOLVED root - browse inside works, traversal and writes through
 	// symlinks out die on the same rules as ever.
-	s, cwd, _ := filesRootServer(t)
+	s, cwd, st, _ := filesRootServer(t)
 	sessDir := t.TempDir()
-	id := createWorkspaceSession(t, s, sessDir)
+	id := createWorkspaceSession(t, st, sessDir)
 	os.WriteFile(filepath.Join(sessDir, "notes.txt"), []byte("hello"), 0o644) //nolint:errcheck // setup
 
 	// read inside the resolved root works
 	req := httptest.NewRequest(http.MethodGet, "/files/read?path=notes.txt&session="+id, nil)
 	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
+	s.ServeHTTP(rec, req)
 	if rec.Result().StatusCode != http.StatusOK {
 		t.Fatalf("read inside session root: status=%d", rec.Result().StatusCode)
 	}
@@ -179,7 +181,7 @@ func TestFilesConfinementUnderSessionRoot(t *testing.T) {
 	os.WriteFile(cwdFile, []byte("x"), 0o644) //nolint:errcheck // setup
 	req = httptest.NewRequest(http.MethodGet, "/files/read?path=only-in-cwd.txt&session="+id, nil)
 	rec = httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
+	s.ServeHTTP(rec, req)
 	if rec.Result().StatusCode != http.StatusNotFound {
 		t.Fatalf("read of a cwd file through a session-rooted request: status=%d; want 404",
 			rec.Result().StatusCode)
@@ -190,7 +192,7 @@ func TestFilesConfinementUnderSessionRoot(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/files/write",
 		strings.NewReader(fmt.Sprintf(`{"path":"made.txt","content":"y","session":%q}`, sessionParam)))
 	rec = httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
+	s.ServeHTTP(rec, req)
 	if rec.Result().StatusCode != http.StatusOK {
 		t.Fatalf("write under session root: status=%d", rec.Result().StatusCode)
 	}
@@ -204,7 +206,7 @@ func TestFilesConfinementUnderSessionRoot(t *testing.T) {
 	// traversal through the session root stays refused
 	req = httptest.NewRequest(http.MethodGet, "/files/browse?path=..&session="+id, nil)
 	rec = httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
+	s.ServeHTTP(rec, req)
 	if rec.Result().StatusCode != http.StatusBadRequest {
 		t.Fatalf("traversal under session root: status=%d; want 400", rec.Result().StatusCode)
 	}

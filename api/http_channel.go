@@ -46,7 +46,6 @@ type HTTPChannel struct {
 	addr             string
 	runTimeout       time.Duration // detached-run wall-clock cap from config
 	titleModel       string        // title_model knob from config
-	defaultWorkspace string        // default_workspace knob from config
 	srv              *Server
 	// hub is the process-wide run registry (t_c6f13a82): one per
 	// plugin, shared by every bind's server. A second bind must not get
@@ -72,17 +71,6 @@ func (c *HTTPChannel) Start(ctx context.Context, deps core.ChannelDeps) error {
 		return err
 	}
 	return c.srv.Serve(ctx, c.addr)
-}
-
-// SetDefaultWorkspace hot-sets the files surface's default_workspace
-// knob (t_a5f9d185): the settings seam's hotApply pushes a save to
-// every mounted channel through this method - the resolution chain
-// reads it per request, so a settings-pane save re-roots the Files tab
-// live, no restart. No-op before wire: no server exists to root.
-func (c *HTTPChannel) SetDefaultWorkspace(ws string) {
-	if c.srv != nil {
-		c.srv.SetDefaultWorkspace(ws)
-	}
 }
 
 // wire builds the channel's server and binds it to the process-wide
@@ -150,7 +138,6 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	// /cron/jobs, /skills and /logs endpoints. All optional - the
 	// handlers degrade to empty lists / 404 when a module is absent.
 	c.srv.SetChannelKnobs(c.runTimeout, c.titleModel)
-	c.srv.SetDefaultWorkspace(c.defaultWorkspace)
 	c.srv.version = deps.Version
 	// The capsule pin goes live LAST, after every server field above
 	// is written: the Store publishes (release) a fully-wired server,

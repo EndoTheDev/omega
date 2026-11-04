@@ -20,7 +20,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
@@ -81,11 +80,6 @@ type Server struct {
 	// through this model when set, instead of the call's pinned
 	// provider (the main model). Empty = no override.
 	titleModel string
-	// defaultWorkspace is the `default_workspace` knob (the files
-	// surface's middle resolution step). Written by SetDefaultWorkspace
-	// (wire time + the settings seam's hot-apply) while requests read
-	// it concurrently, so it rides an atomic value - never a bare field.
-	defaultWorkspace atomic.Value
 
 	ctxMu     sync.Mutex
 	ctxWindow map[string]int // model name -> context window (probed once)
@@ -298,15 +292,10 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/sessions/{id}/branch", s.handleSessionBranch)
 	mux.HandleFunc("/sessions/{id}/export", s.handleSessionExport)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
-	mux.HandleFunc("/files/browse", s.handleFilesBrowse)
-	mux.HandleFunc("/files/read", s.handleFilesRead)
-	// card t_08d822bb: the viewer tab's image branch - raw bytes for
-	// image/* files only, same root jail as the read surface.
-	mux.HandleFunc("/files/raw", s.handleFilesRaw)
-	// card t_a4504a25: the Files tab toolbar's write half - add file /
-	// add folder. Same root jail as the GET half, POST-only bodies.
-	mux.HandleFunc("POST /files/write", s.handleFilesWrite)
-	mux.HandleFunc("POST /files/mkdir", s.handleFilesMkdir)
+	// card t_08d822bb: (the raw-bytes image route was the file explorer's
+	// - it rode /files/* and moved with the file capsule, the shell-ring
+	// shrink wave 1. The /workspaces routes below stay: the workspace
+	// chip is the base set until wave 3's classification calls it.)
 	mux.HandleFunc("/workspaces/browse", s.handleWorkspacesBrowse)
 	mux.HandleFunc("/workspaces/files", s.handleWorkspaceFiles)
 	mux.HandleFunc("/tools", s.handleTools)
@@ -1959,6 +1948,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
+}
+
+// fileError writes the structured JSON error envelope for the request
+// surfaces whose failures are data, not panic material (the workspace
+// chip's routes and the skills content route).
+func fileError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
 }
 
 // decodeMessages decodes polymorphic core.Message values from JSON using a

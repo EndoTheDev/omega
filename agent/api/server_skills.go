@@ -38,6 +38,12 @@ func validSkillRequestName(name string) bool {
 	return !strings.HasPrefix(name, ".") && strings.TrimSpace(name) == name
 }
 
+// skillReadCap is the viewer's SKILL.md preview cap - the 64 KiB cut
+// the file explorer's preview enforces (the files capsule's fileReadCap;
+// the wire shapes match, the import does not cross the agent/harness
+// boundary).
+const skillReadCap = 64 * 1024
+
 // handleSkillsContent serves GET /skills/content?name=<skill>: the full
 // SKILL.md body for the webui viewer tab. The read is capped at the
 // file surface's 64 KiB preview cap with the truncated flag - a viewer
@@ -69,8 +75,8 @@ func (s *Server) handleSkillsContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	truncated := false
-	if len(content) > fileReadCap {
-		content = content[:fileReadCap]
+	if len(content) > skillReadCap {
+		content = content[:skillReadCap]
 		truncated = true
 	}
 	writeJSON(w, http.StatusOK, skillsContentRow{

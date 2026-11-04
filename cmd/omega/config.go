@@ -17,6 +17,7 @@ import (
 	"github.com/EndoTheDev/omega/api"
 	"github.com/EndoTheDev/omega/harness/approval"
 	"github.com/EndoTheDev/omega/harness/continuous"
+	files "github.com/EndoTheDev/omega/harness/files"
 	kanbanModule "github.com/EndoTheDev/omega/harness/kanban"
 	"github.com/EndoTheDev/omega/harness/logging"
 	"github.com/EndoTheDev/omega/harness/memory"
@@ -759,7 +760,7 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "provider":
 		return provider.Config{Type: c.Provider.Type, ModelName: c.Provider.ModelName, Host: c.Provider.Host, APIKey: c.Provider.APIKey}, true
 	case "http_channel":
-		return api.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, DefaultWorkspace: c.Server.DefaultWorkspace, TitleModel: c.TitleModel, WebTools: agentapi.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
+		return api.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, TitleModel: c.TitleModel, WebTools: agentapi.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
 	case "skills":
 		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.SkillNames), NudgeInterval: c.Skills.NudgeInterval, CuratorModel: c.Skills.CuratorModel}, true
 	case "memory":
@@ -770,6 +771,8 @@ func (c Config) ConfigSection(name string) (any, bool) {
 		return c.Compaction, true
 	case "trust":
 		return trust.Config{Home: omegaHome()}, true
+	case "files":
+		return files.Config{DefaultWorkspace: c.Server.DefaultWorkspace}, true
 	case "kanban":
 		return kanbanModule.Config{DBPath: c.Kanban.DBPath}, true
 	case "continuous":

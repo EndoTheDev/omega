@@ -391,13 +391,14 @@ func TestSchemaMasksAPIKey(t *testing.T) {
 
 func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	comp := &compactor.Compactor{}
-	// the settings-echo channel stub: the files surface's default
-	// workspace rides the mounted channels (t_a5f9d185) - a channel
-	// implementing the SetDefaultWorkspace seam must receive the save.
+	// the file knob holder stub: the files capsule's routes are the
+	// default_workspace knob holder (the shell-ring shrink wave 1) -
+	// the hot-apply resolves the "files" service by key and pushes a
+	// save through SetDefaultWorkspace (the compactor's shape).
 	pushed := ""
-	ch := echoChannel{got: &pushed}
-	pctx := &agent.Context{Channels: []core.Channel{ch}}
+	pctx := &agent.Context{}
 	pctx.ApplyOffer("compactor", "test", comp)
+	pctx.ApplyOffer("files", "test", filesKnob{got: &pushed})
 	cfg := DefaultConfig()
 	cfg.HTTPTimeout = 42
 	cfg.Compaction.Enabled = false
@@ -409,7 +410,7 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 		t.Errorf("http client timeout %v, want 42s", got)
 	}
 	if pushed != "/tmp/lane" {
-		t.Errorf("SetDefaultWorkspace seam: channel received %q, want /tmp/lane (the hot-apply must push to mounted channels)", pushed)
+		t.Errorf("SetDefaultWorkspace seam: files knob received %q, want /tmp/lane (the hot-apply must push to the knob holder)", pushed)
 	}
 	// the compactor honors the saved config on every Compact call:
 	// disabled compaction returns the input untouched regardless of size
@@ -426,18 +427,13 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	hotApply(cfg, nil)
 }
 
-// echoChannel records the default_workspace push (the seam shape
-// http_channel's *HTTPChannel implements).
-type echoChannel struct {
+// filesKnob records the default_workspace push (the seam shape the
+// files capsule's routes implement).
+type filesKnob struct {
 	got *string
 }
 
-func (e echoChannel) Start(ctx context.Context, deps core.ChannelDeps) error { //nolint:revive // test stub
-	return nil
-}
-func (e echoChannel) Stop() error                   { return nil } //nolint:whitespace // test stub
-func (e echoChannel) Name() string                  { return "echo" }
-func (e echoChannel) SetDefaultWorkspace(ws string) { *e.got = ws }
+func (f filesKnob) SetDefaultWorkspace(ws string) { *f.got = ws }
 
 func TestOmegaSettingsImplementsSeam(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML)

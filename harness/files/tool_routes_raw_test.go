@@ -1,4 +1,4 @@
-package api
+package files
 
 import (
 	"encoding/json"
@@ -13,10 +13,10 @@ import (
 // returns the response plus (for the JSON error paths) the decoded body.
 func rawGet(t *testing.T, path string) (*http.Response, []byte) {
 	t.Helper()
-	s := newTestServer()
+	s := filesRouteMux(t)
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
+	s.ServeHTTP(rec, req)
 	res := rec.Result()
 	return res, rec.Body.Bytes()
 }
@@ -221,10 +221,10 @@ func TestFilesRawMethodAndSessionRooting(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 	// the raw route is GET-only, like its read sibling
-	s := newTestServer()
+	s := filesRouteMux(t)
 	req := httptest.NewRequest(http.MethodPost, "/files/raw?path=shot.png", nil)
 	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
+	s.ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST /files/raw = %d; want 405", rec.Code)
 	}

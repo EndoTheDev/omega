@@ -15,9 +15,11 @@ import (
 )
 
 // Plugin adapts the terminal capsule into omega's plugin system. It
-// provides no seams - no tools, no commands, no panels: the module's
+// provides no seams of its own - no commands, no panels: the module's
 // whole surface is its REST routes (the pane streams those) plus the
-// lifecycle fence that owns the shells. Mounts through the
+// lifecycle fence that owns the shells. (The model's shell.run tool
+// rides the same package through the separate builtin shell plugin -
+// shelltool.go.) Mounts through the
 // ExtensionAPI exclusively; the trust-model ruling (the package
 // comment) is part of the design - the route surface is the whole
 // feature and it is unconditionally available like the files routes.
