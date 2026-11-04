@@ -267,7 +267,7 @@ func TestSaveSettingsPersistsAndReturnsRefreshedSchema(t *testing.T) {
 	pctx := &agent.Context{}
 	pctx.ApplyOffer("compactor", "test", &compactor.Compactor{})
 
-	payload, err := saveSettings(path, pctx, map[string]any{
+	payload, err := saveSettings(path, pctx, nil, map[string]any{
 		"compaction.enabled":  false,
 		"provider.model_name": "new-model",
 	})
@@ -314,7 +314,7 @@ func TestSaveSettingsRejectsInvalidValuesWithoutWriting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := saveSettings(path, nil, map[string]any{
+	if _, err := saveSettings(path, nil, nil, map[string]any{
 		"server.port": float64(0),
 	}); err == nil {
 		t.Fatal("expected validation error for port 0")
@@ -369,7 +369,7 @@ func TestSchemaMasksAPIKey(t *testing.T) {
 		t.Errorf("GET schema api_key %q, want masked", got)
 	}
 	// the save-refresh payload rides the same channel: masked too
-	refreshed, err := saveSettings(path, nil, map[string]any{
+	refreshed, err := saveSettings(path, nil, nil, map[string]any{
 		"compaction.keep_last": float64(4),
 	})
 	if err != nil {
@@ -391,26 +391,26 @@ func TestSchemaMasksAPIKey(t *testing.T) {
 
 func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	comp := &compactor.Compactor{}
-	// the file knob holder stub: the files capsule's routes are the
-	// default_workspace knob holder (the shell-ring shrink wave 1) -
-	// the hot-apply resolves the "files" service by key and pushes a
-	// save through SetDefaultWorkspace (the compactor's shape).
+	// the files knob hook stub: the files capsule owns the
+	// default_workspace knob (the shell-ring shrink wave 1) - the
+	// host threads the capsule's SetDefaultWorkspace as a bare func
+	// and the hot-apply pushes a save through it.
 	pushed := ""
+	setFilesWorkspace := func(ws string) { pushed = ws }
 	pctx := &agent.Context{}
 	pctx.ApplyOffer("compactor", "test", comp)
-	pctx.ApplyOffer("files", "test", filesKnob{got: &pushed})
 	cfg := DefaultConfig()
 	cfg.HTTPTimeout = 42
 	cfg.Compaction.Enabled = false
 	cfg.Compaction.KeepLast = 7
 	cfg.Server.DefaultWorkspace = "/tmp/lane"
-	hotApply(cfg, pctx)
+	hotApply(cfg, pctx, setFilesWorkspace)
 
 	if got := llm.HTTPClient().Timeout; got != 42*time.Second {
 		t.Errorf("http client timeout %v, want 42s", got)
 	}
 	if pushed != "/tmp/lane" {
-		t.Errorf("SetDefaultWorkspace seam: files knob received %q, want /tmp/lane (the hot-apply must push to the knob holder)", pushed)
+		t.Errorf("SetDefaultWorkspace hook: files knob received %q, want /tmp/lane (the hot-apply must push to the knob hook)", pushed)
 	}
 	// the compactor honors the saved config on every Compact call:
 	// disabled compaction returns the input untouched regardless of size
@@ -423,17 +423,11 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 		t.Errorf("disabled compaction changed the message count")
 	}
 
-	// nil context must not panic
-	hotApply(cfg, nil)
+	// nil hook (no files capsule mounted) and nil context must not panic
+	hotApply(cfg, pctx, nil)
+	hotApply(cfg, nil, setFilesWorkspace)
+	hotApply(cfg, nil, nil)
 }
-
-// filesKnob records the default_workspace push (the seam shape the
-// files capsule's routes implement).
-type filesKnob struct {
-	got *string
-}
-
-func (f filesKnob) SetDefaultWorkspace(ws string) { *f.got = ws }
 
 func TestOmegaSettingsImplementsSeam(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML)

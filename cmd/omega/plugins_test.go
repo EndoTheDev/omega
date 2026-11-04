@@ -26,7 +26,10 @@ func TestBuildPlugins(t *testing.T) {
 	// +browser (t_95c91f9c, the general web browser pane) = 20.
 	// +approval (t_c2b52cb5, the smart approval gate) = 21.
 	// +process (t_5782d11e, the background process registry) = 22.
-	const want = 22
+	// +files + the builtin shell plugin (t_48eeb015, the shell-ring
+	// shrink wave 1: the file domain leaves the tools capsule, the
+	// shell.run tool rides the terminal capsule's package) = 24.
+	const want = 24
 	if len(plugins) != want {
 		t.Fatalf("buildPlugins returned %d plugins, want %d", len(plugins), want)
 	}

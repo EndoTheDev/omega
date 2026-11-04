@@ -278,7 +278,7 @@ func ptrF(n float64) *float64 { return &n }
 // saveSettings applies values (dotted yaml path -> value), validates,
 // and writes config.yaml atomically, then hot-applies the live knobs to
 // the running context. Returns the refreshed schema payload.
-func saveSettings(path string, pctx *agent.Context, values map[string]any) (*core.SettingsSchema, error) {
+func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(string), values map[string]any) (*core.SettingsSchema, error) {
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		return nil, err
@@ -292,7 +292,7 @@ func saveSettings(path string, pctx *agent.Context, values map[string]any) (*cor
 	if err := writeConfigFile(path, &cfg); err != nil {
 		return nil, err
 	}
-	hotApply(cfg, pctx)
+	hotApply(cfg, pctx, setFilesWorkspace)
 	return &core.SettingsSchema{Groups: settingGroups(&cfg)}, nil
 }
 
@@ -574,21 +574,20 @@ func writeConfigFile(path string, cfg *Config) error {
 // a settings-pane save re-roots the Files tab live. WatchConfig's
 // on-disk reload goes through the same path, so a hand edit and a
 // settings-pane save behave identically.
-func hotApply(cfg Config, pctx *agent.Context) {
+func hotApply(cfg Config, pctx *agent.Context, setFilesWorkspace func(string)) {
 	llm.SetHTTPTimeout(cfg.HTTPTimeout)
 	if pctx == nil {
 		return
 	}
-	// default_workspace rides the files capsule's knob holder (the
+	// default_workspace rides the files capsule's knob hook (the
 	// shell-ring shrink wave 1: the files routes own the root
 	// resolution law, the channels stopped carrying the knob). The
-	// hot-apply resolves the "files" service by key and pushes through
-	// SetDefaultWorkspace - the same assertion shape the compactor's
-	// check below keeps; only a capsule that mounted the knob moves.
-	if svc := pctx.Services().Resolve("files"); svc != nil {
-		if r, ok := svc.(interface{ SetDefaultWorkspace(string) }); ok {
-			r.SetDefaultWorkspace(cfg.Server.DefaultWorkspace)
-		}
+	// hook is a bare func threaded from the mount (the continuous
+	// capsule's setAgents shape): nil means no files capsule is
+	// mounted and the knob stays where it was. No service-registry
+	// key - the offer namespaces stay closed at fourteen.
+	if setFilesWorkspace != nil {
+		setFilesWorkspace(cfg.Server.DefaultWorkspace)
 	}
 	svc := pctx.Services().Resolve("compactor")
 	if svc == nil {
@@ -602,8 +601,9 @@ func hotApply(cfg Config, pctx *agent.Context) {
 // omegaSettings implements core.Settings for the serve host: the webui
 // settings pane rides the http_channel through this.
 type omegaSettings struct {
-	path string
-	pctx *agent.Context
+	path              string
+	pctx              *agent.Context
+	setFilesWorkspace func(string) // the files capsule's hot knob, nil when it is not mounted
 }
 
 func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
@@ -635,7 +635,7 @@ func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
 }
 
 func (s *omegaSettings) Save(values map[string]any) (*core.SettingsSchema, error) {
-	return saveSettings(s.path, s.pctx, values)
+	return saveSettings(s.path, s.pctx, s.setFilesWorkspace, values)
 }
 
 // Compile-time assertion that omegaSettings implements core.Settings.
