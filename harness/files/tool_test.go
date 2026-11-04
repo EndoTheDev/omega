@@ -1,4 +1,4 @@
-package tools
+package files
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 // provider serves one "files" domain tool with Actions metadata; the
 // legacy names survive only as AliasOf-marked shims.
 func TestFilesToolRegisteredAsDomainTool(t *testing.T) {
-	p := &ToolProvider{}
+	p := &FileProvider{}
 	tools := p.Tools()
 
 	files, ok := tools["files"]
@@ -54,7 +54,7 @@ func TestRunFilesActionEnumCoversAllVerbs(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f.txt")
 
-	p := &ToolProvider{}
+	p := &FileProvider{}
 
 	// write
 	_, err := p.RunFiles(context.Background(), map[string]any{"action": "write", "path": path, "content": "alpha\nbeta\n"})
@@ -90,7 +90,7 @@ func TestRunFilesAliasesCallDomainTool(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f.txt")
 
-	p := &ToolProvider{}
+	p := &FileProvider{}
 	tools := p.Tools()
 
 	if _, err := tools["files.write"].Run(context.Background(), map[string]any{"path": path, "content": "hello\n"}); err != nil {
@@ -116,7 +116,7 @@ func TestRunFilesBatchAtomicRollback(t *testing.T) {
 	}
 	fresh := filepath.Join(dir, "fresh.txt")
 
-	p := &ToolProvider{}
+	p := &FileProvider{}
 	ops := []map[string]any{
 		{"action": "write", "path": fresh, "content": "new bytes\n"},
 		// Second op fails on its own terms: edit old_string not found.
@@ -144,7 +144,7 @@ func TestRunFilesBatchSuccess(t *testing.T) {
 	a := filepath.Join(dir, "a.txt")
 	b := filepath.Join(dir, "b.txt")
 
-	p := &ToolProvider{}
+	p := &FileProvider{}
 	out, err := p.RunFiles(context.Background(), map[string]any{"operations": []map[string]any{
 		{"action": "write", "path": a, "content": "A\n"},
 		{"action": "write", "path": b, "content": "B\n"},
@@ -164,7 +164,7 @@ func TestRunFilesBatchSuccess(t *testing.T) {
 
 // TestRunFilesBatchValidation covers op-shape errors before any write.
 func TestRunFilesBatchValidation(t *testing.T) {
-	p := &ToolProvider{}
+	p := &FileProvider{}
 	_, err := p.RunFiles(context.Background(), map[string]any{"operations": []map[string]any{}})
 	if err == nil {
 		t.Fatal("empty operations accepted")

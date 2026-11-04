@@ -7,12 +7,14 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// Plugin adapts ToolProvider into the agent.Plugin interface.
-// It registers shell and file tools as an additive tools-seam provider
-// and mounts through the ExtensionAPI exclusively (v0.12 phase F).
+// Plugin adapts the tools registry into the agent.Plugin interface.
+// It provides NO tools itself: the built-in tool capsules (files,
+// shell) register their own providers through the same additive rail.
+// This capsule is the REGISTRY - the merge machinery's claim law, the
+// /tools command, the ToolsList panel and the prompt section (v0.12
+// phase F; the shell-ring shrink wave 1 moved the built-ins out).
 type Plugin struct{}
 
 // Name returns the extension name shown in /extensions.
@@ -20,41 +22,31 @@ func (p *Plugin) Name() string { return "tools" }
 
 // Description implements agent.Describer.
 func (p *Plugin) Description() string {
-	return "built-in tools: shell.run and the files domain (read/write/edit, batch operations)"
+	return "the tools registry: tool claims and conflict law, the /tools command, the ToolsList panel and the prompt section"
 }
 
-// Provides lists seam names this plugin mounts. "tools" is additive,
-// so multiple plugins can contribute tool providers without conflict.
+// Provides lists seam names this plugin mounts: the prompt section
+// (the Tools section renders every extension's tool list from the
+// mount Context's inventory). The tools-seam rail is contributed by
+// the tool capsules themselves (files, shell) - the registry owns
+// none of it.
 // ConfigKey names the config section this plugin reads from
 // ctx.Configs (see agent.Describer). Empty = reads no section.
 func (p *Plugin) ConfigKey() string { return "" }
 
-func (p *Plugin) Provides() []string { return []string{"tools", "prompt_sections"} }
+func (p *Plugin) Provides() []string { return []string{"prompt_sections"} }
 
-// Requires lists seam names that must be mounted first. tools
-// has no dependencies — it only provides tools, which need nothing.
+// Requires lists seam names that must be mounted first. The registry
+// has no dependencies.
 func (p *Plugin) Requires() []string { return nil }
 
-// MountWithAPI implements agent.APIPlugin. Registers the tool
-// provider, the prompt section, the /tools command and the /files
-// browser renderer. The provider carries the store-door deny-guard
-// (ENDO'S LAW 2026-10-18) built from the store config.
+// MountWithAPI implements agent.APIPlugin. Registers the prompt
+// section and the /tools command. The /tools command stays the
+// display-toggle feature: it returns CommandResult with display-mode
+// actions the shell interprets, and its list view reads the mount
+// Context's inventory - the same capture the classic wrapper held.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
-	provider := &ToolProvider{}
-	if c, ok := ctx.Configs["store"].(store.Config); ok {
-		provider.dbGuard = newDBGuard(c.DBPath)
-	} else {
-		provider.dbGuard = newDBGuard("")
-	}
 	steps := []func() error{
-		func() error {
-			for name, t := range provider.Tools() {
-				if err := api.RegisterTool(name, t); err != nil {
-					return err
-				}
-			}
-			return nil
-		},
 		func() error { return api.RegisterPromptSectioner(p) },
 		// /tools stays an extension command (it returns CommandResult
 		// with display-mode actions the shell interprets); its enum

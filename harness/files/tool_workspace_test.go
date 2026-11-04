@@ -1,4 +1,4 @@
-package tools
+package files
 
 import (
 	"context"
@@ -11,15 +11,16 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestWorkspaceToolsRoot pins the session-workspace rooting (card
-// t_9de5b009): a run scoped to a folder resolves RELATIVE paths against
-// it (files and shell alike), absolute paths pass through, and runs
-// without a workspace keep today's behavior exactly.
-func TestWorkspaceToolsRoot(t *testing.T) {
+// TestWorkspaceFilesRoot pins the session-workspace rooting (card
+// t_9de5b009) for the file tool (the shell half is pinned in
+// harness/terminal): a run scoped to a folder resolves RELATIVE paths
+// against it, absolute paths pass through, and runs without a
+// workspace keep today's behavior exactly.
+func TestWorkspaceFilesRoot(t *testing.T) {
 	ws := t.TempDir()
 	ctx := core.WithRunWorkspace(context.Background(), ws, "")
 	plain := context.Background()
-	p := &ToolProvider{}
+	p := &FileProvider{}
 
 	// Write rooted: a relative path lands inside the workspace.
 	if _, err := p.RunWriteFile(ctx, map[string]any{"path": "nested/out.txt", "content": "rooted"}); err != nil {
@@ -58,13 +59,6 @@ func TestWorkspaceToolsRoot(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(ws, "a.txt")); err != nil {
 		t.Fatalf("batch a.txt not in workspace: %v", err)
-	}
-
-	// Shell rooted: the command's working directory IS the workspace
-	// (pwd output contains it; the output may carry truncation notes).
-	out, err = p.RunShell(ctx, map[string]any{"command": "pwd"})
-	if err != nil || !strings.Contains(out, ws) {
-		t.Fatalf("shell pwd: %v (got %q, want it to contain %q)", err, out, ws)
 	}
 
 	// Absolute paths pass through untouched, workspace or not.

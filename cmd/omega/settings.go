@@ -579,13 +579,15 @@ func hotApply(cfg Config, pctx *agent.Context) {
 	if pctx == nil {
 		return
 	}
-	// default_workspace rides the mounted channels (SetDefaultWorkspace
-	// is an http_channel capability): every bind's server roots on it
-	// the next file request. The seam-style assertion mirrors the
-	// compactor's type check below - only channels that opt in move.
-	for _, ch := range pctx.Channels {
-		if setter, ok := ch.(interface{ SetDefaultWorkspace(string) }); ok {
-			setter.SetDefaultWorkspace(cfg.Server.DefaultWorkspace)
+	// default_workspace rides the files capsule's knob holder (the
+	// shell-ring shrink wave 1: the files routes own the root
+	// resolution law, the channels stopped carrying the knob). The
+	// hot-apply resolves the "files" service by key and pushes through
+	// SetDefaultWorkspace - the same assertion shape the compactor's
+	// check below keeps; only a capsule that mounted the knob moves.
+	if svc := pctx.Services().Resolve("files"); svc != nil {
+		if r, ok := svc.(interface{ SetDefaultWorkspace(string) }); ok {
+			r.SetDefaultWorkspace(cfg.Server.DefaultWorkspace)
 		}
 	}
 	svc := pctx.Services().Resolve("compactor")

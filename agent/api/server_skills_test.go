@@ -79,7 +79,7 @@ func TestSkillsContentHappyPath(t *testing.T) {
 }
 
 func TestSkillsContentCapMarksTruncated(t *testing.T) {
-	body := strings.Repeat("a", fileReadCap) + "tail-marker"
+	body := strings.Repeat("a", skillReadCap) + "tail-marker"
 	s := inspectorServer(t)
 	offerServices(t, s, map[string]any{"skills": &fakeSkillReader{
 		desc: map[string]string{"big": ""},
@@ -93,7 +93,7 @@ func TestSkillsContentCapMarksTruncated(t *testing.T) {
 	defer res.Body.Close()
 	var got skillsContentRow
 	json.NewDecoder(res.Body).Decode(&got)
-	if !got.Truncated || len(got.Content) != fileReadCap {
+	if !got.Truncated || len(got.Content) != skillReadCap {
 		t.Fatalf("content len = %d truncated = %v, want cap+flag", len(got.Content), got.Truncated)
 	}
 	if strings.Contains(mustJSON(t, got), "tail-marker") {

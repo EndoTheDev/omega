@@ -1,37 +1,36 @@
-package tools
+// ENDO'S LAW 2026-10-18: omega must never touch its database through the
+// filesystem - only through the store seam and the task/session tools.
+// The deny guard lives beside the db-path layout it guards (datadir is
+// the instance-database's path authority), consumed by the tool
+// capsules (harness/files for the file tools, harness/terminal for
+// shell.run). The shell matcher also greps the raw command string for
+// the db basename - a deny-list is inherently heuristic (a determined
+// agent can base64 around it); this guard kills the accidental class,
+// the prompt law covers intent, and WAL + backups are the recovery
+// floor.
+
+package datadir
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// ENDO'S LAW 2026-10-18: omega must never touch its database through the
-// filesystem - only through the store seam and the task/session tools.
-// This file denies the accidental class at the tool layer: the shell
-// tool and the file tools refuse any path that resolves to the instance
-// database (omega.db plus its -wal/-shm siblings). The shell matcher
-// also greps the raw command string for the db basename - a deny-list
-// is inherently heuristic (a determined agent can base64 around it);
-// this guard kills the accidental class, the prompt law covers intent,
-// and WAL + backups are the recovery floor.
+// DBDenyLaw is the law named in every refusal.
+const DBDenyLaw = "omega.db is the store's door: use the task/session tools, not the filesystem."
 
-// dbDenyLaw is the law named in every refusal.
-const dbDenyLaw = "omega.db is the store's door: use the task/session tools, not the filesystem."
-
-// dbDenied builds the loud refusal error for a hit.
-func dbDenied(what string) error {
-	return fmt.Errorf("REFUSED by ENDO'S LAW 2026-10-18: %s (requested: %s)", dbDenyLaw, what)
+// DBDenied builds the loud refusal error for a hit.
+func DBDenied(what string) error {
+	return fmt.Errorf("REFUSED by ENDO'S LAW 2026-10-18: %s (requested: %s)", DBDenyLaw, what)
 }
 
-// dbGuard holds the real filesystem paths of the instance database
+// Guard holds the real filesystem paths of the instance database
 // family (omega.db, omega.db-wal, omega.db-shm), symlink-resolved the
-// same way the files endpoints resolve paths. nil means no instance
-// home was determinable and everything passes.
-type dbGuard struct {
+// same way the files endpoints resolve paths. A nil Guard means no
+// instance home was determinable and everything passes.
+type Guard struct {
 	reals map[string]bool
 }
 
@@ -42,20 +41,20 @@ func dbSuffixed(dbPath string) []string {
 	return []string{dbPath, dbPath + "-wal", dbPath + "-shm"}
 }
 
-// newDBGuard builds the deny set from the instance db path. The db
+// NewGuard builds the deny set from the instance db path. The db
 // file may not exist yet (fresh home, created lazily by the store),
 // so resolution falls back to the real parent directory like the
 // files endpoints do. If path is empty, the standard install layout
-// (data db under OMEGA_HOME or ~/.omega, via harness/datadir) is used.
-func newDBGuard(dbPath string) *dbGuard {
+// (data db under OMEGA_HOME or ~/.omega) is used.
+func NewGuard(dbPath string) *Guard {
 	if strings.TrimSpace(dbPath) == "" {
-		datadirHome := datadir.Home()
+		datadirHome := Home()
 		if datadirHome == "" {
 			return nil
 		}
-		dbPath = datadir.DBPath(datadirHome, "omega.db")
+		dbPath = DBPath(datadirHome, "omega.db")
 	}
-	g := &dbGuard{reals: map[string]bool{}}
+	g := &Guard{reals: map[string]bool{}}
 	for _, cand := range dbSuffixed(dbPath) {
 		abs, err := filepath.Abs(cand)
 		if err != nil {
@@ -92,9 +91,9 @@ func realResolve(path string) string {
 	return filepath.Clean(path)
 }
 
-// denyFile reports whether a file-tool path resolves into the
+// DenyFile reports whether a file-tool path resolves into the
 // instance database family.
-func (g *dbGuard) denyFile(path string) bool {
+func (g *Guard) DenyFile(path string) bool {
 	if g == nil {
 		return false
 	}
@@ -107,13 +106,13 @@ func (g *dbGuard) denyFile(path string) bool {
 	return false
 }
 
-// denyShell reports whether a shell command is denied: either the raw
+// DenyShell reports whether a shell command is denied: either the raw
 // string spells the db basename, or some path-like token in it resolves
 // into the instance database family. Tokens are examined individually
 // so a harmless mention of the basename in a long command is still
 // evaluated by the stronger resolver-based check - but a bare basename
 // hit denies outright, since the command could be anything.
-func (g *dbGuard) denyShell(command string) bool {
+func (g *Guard) DenyShell(command string) bool {
 	if g == nil {
 		return false
 	}
@@ -149,7 +148,7 @@ func (g *dbGuard) denyShell(command string) bool {
 			}
 			path = filepath.Join(wd, path)
 		}
-		if g.denyFile(path) {
+		if g.DenyFile(path) {
 			return true
 		}
 	}

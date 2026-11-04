@@ -1,4 +1,18 @@
-package api
+// The file domain's REST face (the webui explorer): browse, read and
+// preview the RESOLVED root, the raw image bytes, plus the write half
+// (card t_a4504a25, the Files tab toolbar's add-file/add-folder).
+// GET routes answer reads; POST /files/write and POST /files/mkdir
+// create nodes INSIDE the same root, guarded by the SAME three layers
+// the read half enforces: relative paths and empty segments are
+// rejected, ONLY the "." and ".." traversal segments die (hidden names
+// like .git and .gitignore are ordinary paths - hiding them is the
+// listings' job, never the guard's), and the cleaned path is
+// symlink-resolved and verified to stay under the root before the disk
+// is touched. The routes are capsule vocabulary (the module REST rail,
+// RegisterRoute): a disabled files capsule answers 404 at the module
+// mux - the explorer is the file tools wearing a second face.
+
+package files
 
 import (
 	"context"
@@ -12,20 +26,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
-)
 
-// Read-only file surface for the webui inspector: browse and preview the
-// process working directory. GET routes only - then the write half (card
-// t_a4504a25, the Files tab toolbar's add-file/add-folder): POST
-// /files/write and POST /files/mkdir create nodes INSIDE the same root,
-// guarded by the SAME three layers the read half enforces: relative
-// paths and empty segments are rejected, ONLY the "." and ".." traversal
-// segments die (hidden names like .git and .gitignore are ordinary
-// paths - hiding them is the listings' job, never the guard's), and
-// the cleaned path is symlink-resolved and verified to stay under the
-// root before the disk is touched.
+	"github.com/EndoTheDev/omega/core"
+)
 
 // fileReadCap is the preview size cap: contents are cut at 64 KiB and
 // the truncated flag tells the UI the cut happened.
@@ -130,6 +136,13 @@ func fileError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
+// writeJSON writes v as a JSON response with the given status code.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v) //nolint:errcheck // the client is gone; nothing to report to
+}
+
 // files root sources, reported on every /files/browse response so the
 // UI knows whether the tree sits on a real workspace (header shows) or
 // the bare cwd fallback (header hides entirely - the Endo ruling: no
@@ -140,12 +153,47 @@ const (
 	filesSourceCwd     = "cwd"
 )
 
-// setDefaultWorkspace stores the `default_workspace` knob. The hot
-// setter: wire time carries the boot config, the settings seam's
-// hot-apply pushes later saves. atomic.Value because file-surface
-// requests read it concurrently with the seam's writes.
-func (s *Server) SetDefaultWorkspace(ws string) {
-	s.defaultWorkspace.Store(ws)
+// sessionStores is the workspace-pin face the roots chain reads (the
+// store capsule offered under the "store" key): the resolved root's
+// step 1 - the focused session's pinned workspace. The capsule's own
+// local interface per the seam grammar; nil-safe absence = the chain
+// falls through to the default knob and the cwd.
+type sessionStores interface {
+	GetSession(ctx context.Context, id string) (core.Session, error)
+}
+
+// Routes is the file domain's REST face: the five explorer routes
+// bound under the capsule's /files namespace, the default_workspace
+// knob (hot: the resolution law reads it per request), and the live
+// store resolver (the seam resolve per request - a toggle swaps the
+// offer under the handlers' feet, exactly the Server's seam law).
+//
+// The knob's default arrives at mount from the capsule's config
+// section (cfg.Server.DefaultWorkspace, card t_a5f9d185); the
+// settings seam's hot-apply pushes later saves through
+// SetDefaultWorkspace, so a settings-pane save re-roots the Files tab
+// live, no restart.
+type Routes struct {
+	// storeFn resolves the workspace-pin face LIVE per request.
+	storeFn func() sessionStores
+	// defaultWorkspace is the `default_workspace` knob. Written by
+	// SetDefaultWorkspace (wire time + the settings seam's hot-apply)
+	// while requests read it concurrently, so it rides an atomic
+	// value - never a bare field.
+	defaultWorkspace atomic.Value
+}
+
+// SetDefaultWorkspace hot-sets the default_workspace knob: the mid
+// chain step of the root resolution law.
+func (r *Routes) SetDefaultWorkspace(ws string) {
+	r.defaultWorkspace.Store(ws)
+}
+
+// newRoutes builds the route surface against the live store resolver.
+func newRoutes(ctx *core.Context) *Routes {
+	return &Routes{
+		storeFn: func() sessionStores { return seam[sessionStores](ctx, "store") },
+	}
 }
 
 // resolveFilesRoot is the Files tab root resolution law, server-side
@@ -161,14 +209,17 @@ func (s *Server) SetDefaultWorkspace(ws string) {
 // A session id the store does not know (a draft, an unknown id, a
 // no-store lane) simply falls through the chain - resolution never
 // fails on it.
-func (s *Server) resolveFilesRoot(ctx context.Context, sessionID string) (root, source string, err error) {
-	if sessionID != "" && s.store != nil {
-		if sess, ferr := s.store.GetSession(ctx, sessionID); ferr == nil &&
-			strings.TrimSpace(sess.Workspace) != "" {
-			return sess.Workspace, filesSourceSession, nil
+func (r *Routes) resolveFilesRoot(ctx context.Context, sessionID string) (root, source string, err error) {
+	if sessionID != "" {
+		sess := r.storeFn()
+		if sess != nil {
+			if s, ferr := sess.GetSession(ctx, sessionID); ferr == nil &&
+				strings.TrimSpace(s.Workspace) != "" {
+				return s.Workspace, filesSourceSession, nil
+			}
 		}
 	}
-	if ws, _ := s.defaultWorkspace.Load().(string); strings.TrimSpace(ws) != "" {
+	if ws, _ := r.defaultWorkspace.Load().(string); strings.TrimSpace(ws) != "" {
 		return ws, filesSourceDefault, nil
 	}
 	wd, werr := os.Getwd()
@@ -182,17 +233,17 @@ func (s *Server) resolveFilesRoot(ctx context.Context, sessionID string) (root, 
 // listing one directory of the RESOLVED root (the resolution law). Empty
 // or missing path lists the root. The response carries root + source so
 // the tab's header knows exactly what it sits on.
-func (s *Server) handleFilesBrowse(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+func (r *Routes) handleFilesBrowse(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	rel, err := validateRelPath(r.URL.Query().Get("path"))
+	rel, err := validateRelPath(req.URL.Query().Get("path"))
 	if err != nil {
 		fileError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	root, source, err := s.resolveFilesRoot(r.Context(), r.URL.Query().Get("session"))
+	root, source, err := r.resolveFilesRoot(req.Context(), req.URL.Query().Get("session"))
 	if err != nil {
 		fileError(w, http.StatusInternalServerError, "resolve working directory: "+err.Error())
 		return
@@ -249,17 +300,17 @@ func (s *Server) handleFilesBrowse(w http.ResponseWriter, r *http.Request) {
 // as binary=true with empty content - the content is not previewed here;
 // the mime field tells the viewer whether the file is an image it can
 // pull from /files/raw (card t_08d822bb) or a binary it announces.
-func (s *Server) handleFilesRead(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+func (r *Routes) handleFilesRead(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	rel, err := validateRelPath(r.URL.Query().Get("path"))
+	rel, err := validateRelPath(req.URL.Query().Get("path"))
 	if err != nil {
 		fileError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	root, _, err := s.resolveFilesRoot(r.Context(), r.URL.Query().Get("session"))
+	root, _, err := r.resolveFilesRoot(req.Context(), req.URL.Query().Get("session"))
 	if err != nil {
 		fileError(w, http.StatusInternalServerError, "resolve working directory: "+err.Error())
 		return
@@ -345,17 +396,17 @@ func detectFileMime(head []byte, rel string) string {
 // is images only - no pdf/audio/video surface). The file streams with
 // the sniffed Content-Type plus nosniff, so a mislabelled payload can
 // never render as something it is not.
-func (s *Server) handleFilesRaw(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+func (r *Routes) handleFilesRaw(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	rel, err := validateRelPath(r.URL.Query().Get("path"))
+	rel, err := validateRelPath(req.URL.Query().Get("path"))
 	if err != nil {
 		fileError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	root, _, err := s.resolveFilesRoot(r.Context(), r.URL.Query().Get("session"))
+	root, _, err := r.resolveFilesRoot(req.Context(), req.URL.Query().Get("session"))
 	if err != nil {
 		fileError(w, http.StatusInternalServerError, "resolve working directory: "+err.Error())
 		return
@@ -473,20 +524,20 @@ func resolveForWrite(root, req string) (rel, resolved string, err error) {
 // loud 400 - there is no "write the root". The parent directory must
 // already exist (the toolbar's add-folder button makes it), the leaf
 // must not be a directory, and empty content is a legal empty file.
-func (s *Server) handleFilesWrite(w http.ResponseWriter, r *http.Request) {
+func (r *Routes) handleFilesWrite(w http.ResponseWriter, req *http.Request) {
 	var body struct {
 		Path    string `json:"path"`
 		Content string `json:"content"`
 		Session string `json:"session,omitempty"`
 	}
-	if !filesPostBody(w, r, &body) {
+	if !filesPostBody(w, req, &body) {
 		return
 	}
 	if strings.TrimSpace(body.Path) == "" {
 		fileError(w, http.StatusBadRequest, "empty path")
 		return
 	}
-	root, _, err := s.resolveFilesRoot(r.Context(), body.Session)
+	root, _, err := r.resolveFilesRoot(req.Context(), body.Session)
 	if err != nil {
 		fileError(w, http.StatusInternalServerError, "resolve working directory: "+err.Error())
 		return
@@ -524,8 +575,8 @@ func (s *Server) handleFilesWrite(w http.ResponseWriter, r *http.Request) {
 	}
 	tmp := tmpFile.Name()
 	if _, werr := tmpFile.WriteString(body.Content); werr != nil {
-		tmpFile.Close()
-		os.Remove(tmp) //nolint:errcheck // best-effort cleanup
+		tmpFile.Close() //nolint:errcheck // best-effort cleanup
+		os.Remove(tmp)  //nolint:errcheck // best-effort cleanup
 		fileError(w, http.StatusInternalServerError, "write file: "+werr.Error())
 		return
 	}
@@ -552,19 +603,19 @@ func (s *Server) handleFilesWrite(w http.ResponseWriter, r *http.Request) {
 // 400s; the leaf chain must already exist above the leaf - the same
 // resolution rule the write half runs under (no made-up parent chains,
 // no symlinks smuggled through a half-existing path).
-func (s *Server) handleFilesMkdir(w http.ResponseWriter, r *http.Request) {
+func (r *Routes) handleFilesMkdir(w http.ResponseWriter, req *http.Request) {
 	var body struct {
 		Path    string `json:"path"`
 		Session string `json:"session,omitempty"`
 	}
-	if !filesPostBody(w, r, &body) {
+	if !filesPostBody(w, req, &body) {
 		return
 	}
 	if strings.TrimSpace(body.Path) == "" {
 		fileError(w, http.StatusBadRequest, "empty path")
 		return
 	}
-	root, _, err := s.resolveFilesRoot(r.Context(), body.Session)
+	root, _, err := r.resolveFilesRoot(req.Context(), body.Session)
 	if err != nil {
 		fileError(w, http.StatusInternalServerError, "resolve working directory: "+err.Error())
 		return

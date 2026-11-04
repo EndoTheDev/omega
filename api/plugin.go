@@ -91,7 +91,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 			addr:             fmt.Sprintf("%s:%d", b, port),
 			runTimeout:       time.Duration(cfg.RunTimeoutSeconds()) * time.Second,
 			titleModel:       cfg.TitleModel,
-			defaultWorkspace: cfg.DefaultWorkspace,
 			chat:             p.chat,
 			hub:              p.hub,
 			canvas:           p.canvas,

@@ -1,6 +1,6 @@
 //go:build windows
 
-package tools
+package terminal
 
 import "os/exec"
 
