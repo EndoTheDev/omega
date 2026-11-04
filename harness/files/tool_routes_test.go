@@ -320,6 +320,7 @@ func TestFilesRootBehindSymlink(t *testing.T) {
 	t.Setenv("PWD", link)
 	os.Chdir(link)                      //nolint:errcheck // verified via Getwd below
 	t.Cleanup(func() { os.Chdir("/") }) //nolint:errcheck // test cleanup only
+	claimTestWorkdir(t, link)           // the mux builder must keep this cwd
 	if wd, err := os.Getwd(); err != nil || wd != link {
 		t.Fatalf("Getwd = %q, %v; want %q", wd, err, link)
 	}

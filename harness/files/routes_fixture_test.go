@@ -18,15 +18,37 @@ import (
 
 // chdirToWorkdir points the file routes at a temp directory: the root
 // chain falls to the process cwd when no session/workspace exists, so
-// the tests chdir into it.
+// the tests chdir into it. Idempotent per test: a test that already
+// chdir'd gets the SAME dir back (the mux builder below also calls it,
+// and a second chdir would strand the test's fixtures in the first
+// dir while the routes serve the second - every write-then-request
+// test read empty and 404'd).
+var testWorkdir string
+
 func chdirToWorkdir(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir: %v", err)
+	if testWorkdir == "" {
+		dir := t.TempDir()
+		if err := os.Chdir(dir); err != nil {
+			t.Fatalf("chdir: %v", err)
+		}
+		testWorkdir = dir
+		t.Cleanup(func() {
+			testWorkdir = ""
+			os.Chdir("/") //nolint:errcheck // test cleanup only
+		})
 	}
-	t.Cleanup(func() { os.Chdir("/") }) //nolint:errcheck // test cleanup only
-	return dir
+	return testWorkdir
+}
+
+// claimTestWorkdir registers an already-chdir'd directory as this
+// test's workdir, so the mux builder below reuses it instead of
+// chdir-ing away (the symlink-root test needs the process to stay in
+// the directory it entered).
+func claimTestWorkdir(t *testing.T, dir string) {
+	t.Helper()
+	testWorkdir = dir
+	t.Cleanup(func() { testWorkdir = "" })
 }
 
 // filesRouteMux mounts one files plugin (no store; the chain ends at

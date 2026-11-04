@@ -78,10 +78,10 @@ type Config struct {
 // their own seams. An all-off namespace is never written: an empty
 // list carries no state, and an all-empty key carries none at all.
 type DisabledNamespaces struct {
-	Modules []string `yaml:"modules"`
+	Modules    []string `yaml:"modules"`
 	SkillNames []string `yaml:"skills"`
-	Tools   []string `yaml:"tools"`
-	Agents  []string `yaml:"agents"`
+	Tools      []string `yaml:"tools"`
+	Agents     []string `yaml:"agents"`
 }
 
 // empty reports whether every namespace is nil. Slices make the struct
@@ -163,10 +163,10 @@ func sortedCopy(names []string) []string {
 // the all-empty key omits itself).
 func cleanNamespaces(d DisabledNamespaces) DisabledNamespaces {
 	return DisabledNamespaces{
-		Modules: sortedCopy(d.Modules),
+		Modules:    sortedCopy(d.Modules),
 		SkillNames: sortedCopy(d.SkillNames),
-		Tools:   sortedCopy(d.Tools),
-		Agents:  sortedCopy(d.Agents),
+		Tools:      sortedCopy(d.Tools),
+		Agents:     sortedCopy(d.Agents),
 	}
 }
 

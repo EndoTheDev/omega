@@ -7,8 +7,8 @@
 package files
 
 import (
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/datadir"
 	"github.com/EndoTheDev/omega/harness/store"
 )
@@ -56,9 +56,9 @@ func (p *Plugin) Toggleable() bool { return true }
 
 // MountWithAPI implements agent.APIPlugin. Registers the file tool
 // (+ the legacy alias shims), the five /files explorer routes, and
-// offers the knob holder ("files") the host's hot settings apply
-// pushes default_workspace through. The db-door guard (ENDO'S LAW
-// 2026-10-18) is built from the store config.
+// pushes the mounted config's default_workspace into the routes. The
+// db-door guard (ENDO'S LAW 2026-10-18) is built from the store
+// config.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Config{}
 	if c, ok := ctx.Configs["files"].(Config); ok {
@@ -92,10 +92,12 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		func() error { return api.RegisterRoute("/files/raw", p.routes.handleFilesRaw) },
 		func() error { return api.RegisterRoute("POST /files/write", p.routes.handleFilesWrite) },
 		func() error { return api.RegisterRoute("POST /files/mkdir", p.routes.handleFilesMkdir) },
-		// The hot default_workspace push: the host's settings hot-apply
-		// resolves the capsule's knob holder by key (compactor's shape).
+		// The default_workspace knob lands at mount; the host's
+		// settings hot-apply pushes later changes through
+		// SetDefaultWorkspace (a bare func hook the host threads,
+		// the continuous capsule's setAgents shape - no service
+		// registry key, the namespaces stay closed).
 		func() error { p.routes.SetDefaultWorkspace(cfg.DefaultWorkspace); return nil },
-		func() error { return api.Offer("files", p.routes) },
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {
@@ -107,3 +109,12 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 
 // NewPlugin creates the files capsule plugin.
 func NewPlugin() *Plugin { return &Plugin{} }
+
+// SetDefaultWorkspace is the host's hot-apply hook: the settings pane
+// (and the config watcher) push a changed default_workspace through it
+// without a remount.
+func (p *Plugin) SetDefaultWorkspace(ws string) {
+	if p.routes != nil {
+		p.routes.SetDefaultWorkspace(ws)
+	}
+}

@@ -370,13 +370,15 @@ func TestBuildConfigs(t *testing.T) {
 	}
 	configs := agent.RouteConfigs(plugins, cfg)
 
-	// All 12 expected keys must be present (kanban joined with the
+	// All 13 expected keys must be present (kanban joined with the
 	// board module card t_33487fb6; continuous with t_72ecca67;
-	// process with t_5782d11e).
+	// process with t_5782d11e; files with the shell-ring shrink
+	// wave 1 t_48eeb015).
 	wantKeys := []string{
 		"store", "provider", "http_channel", "skills",
 		"memory", "logging", "compactor", "trust",
 		"kanban", "continuous", "approvals", "process",
+		"files",
 	}
 	for _, k := range wantKeys {
 		if _, ok := configs[k]; !ok {
