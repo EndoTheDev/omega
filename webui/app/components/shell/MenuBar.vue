@@ -97,7 +97,7 @@
   // card t_180db2cb: the notifications surface is the notifications DOCK
   // TAB (the panel lives in app.vue's outlet); the menubar hosts only
   // the live toast stack (the bell button + popover died with it).
-  import NotificationToasts from "../notifications/NotificationToasts.vue";
+  import NotificationToasts from "./NotificationToasts.vue";
   // card t_6215474b: the back/forward/palette cluster centered in this bar
   import NavCluster from "../nav/NavCluster.vue";
 

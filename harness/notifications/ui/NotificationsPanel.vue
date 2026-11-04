@@ -101,15 +101,15 @@
     notificationAge,
     refreshNotifications,
     startNotificationFeed,
-  } from "./store";
+  } from "~/components/shell/notificationFeed";
   import {
     approveDenyOptions,
     fetchVerdicts,
     isSettledRace,
     postVerdict,
     type PendingVerdictCard,
-  } from "../../composables/omega";
-  import type { OmegaNotification } from "../../composables/notifications";
+  } from "~/composables/omega";
+  import type { OmegaNotification } from "~/composables/notifications";
 
   const emit = defineEmits<{
     // navigation intent: app.vue routes task -> board, cron -> the

@@ -26,7 +26,7 @@ import {
   normalizeUrl,
   pushNav,
   stepNav,
-} from "../app/components/browser/browserLogic.ts";
+} from "../../harness/browser/ui/browserLogic.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
@@ -136,7 +136,7 @@ describe("browserLogic: the refused-embed fallback", () => {
     // window AND fires the probe; only a definitive negative flips the
     // fallback; a refused load event may NOT heal it (probeRefused) and
     // may NOT persist
-    const src = read("app/components/browser/BrowserTab.vue");
+    const src = read("../harness/browser/ui/BrowserTab.vue");
     assert.ok(src.includes("FALLBACK_AFTER_MS"), "the constant is used");
     assert.ok(src.includes("onFrameLoad"), "the load handler exists");
     const win = src.match(/fallbackTimer = setTimeout\(\(\) => \{[\s\S]*?FALLBACK_AFTER_MS/);
@@ -153,7 +153,7 @@ describe("browserLogic: the refused-embed fallback", () => {
   });
 
   it("the honesty note lives in the logic file (probe: headers only, never content)", () => {
-    const logic = read("app/components/browser/browserLogic.ts");
+    const logic = read("../harness/browser/ui/browserLogic.ts");
     assert.match(logic, /Chromium fires the load event/);
     assert.match(logic, /the probe reads headers, never content/);
   });
@@ -173,9 +173,10 @@ describe("browserLogic: the probe verdict", () => {
 // --- the structural wiring -------------------------------------------------------
 
 describe("browser wiring", () => {
-  it("the outlet template mounts BrowserTab in app.vue", () => {
+  it("the outlet template mounts the manifest's browser view", () => {
     const app = read("app/app.vue");
     assert.ok(app.includes('#pane-browser'), "the outlet exists");
-    assert.ok(app.includes("<BrowserTab"), "the component is the outlet body");
+    assert.ok(app.includes(':is="browserTabView"'), "the outlet binds the tabs manifest's view (card t_617c2ad0)");
+    assert.ok(!app.includes("components/browser"), "no hardcoded capsule path rides the shell");
   });
 });

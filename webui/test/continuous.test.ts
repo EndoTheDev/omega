@@ -16,7 +16,7 @@ import {
   verifierVoice,
   type OmegaContinuousRow,
   type OmegaEvidenceRow,
-} from "../app/components/agents/continuousRows.ts";
+} from "../../harness/continuous/ui/continuousRows.ts";
 import {
   continuousIndex,
   mergedRowDetail,
@@ -51,7 +51,7 @@ describe("continuous view-model helpers", () => {
   // previewLine DIED (card t_2d8deb8c, ruling 3): the row renders no
   // third line, so the helper is gone entirely.
   it("previewLine is deleted from the module (the row carries no preview)", () => {
-    assert.doesNotMatch(src("app/components/agents/continuousRows.ts"), /previewLine/, "the preview helper is gone");
+    assert.doesNotMatch(src("../harness/continuous/ui/continuousRows.ts"), /previewLine/, "the preview helper is gone");
   });
 
   it("evidenceSummary counts without fabricating a verdict on zero rows", () => {

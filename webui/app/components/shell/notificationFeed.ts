@@ -1,5 +1,11 @@
 // omega webui: the notifications feed store (card t_180db2cb).
 //
+// card t_617c2ad0: this store is the page-lifetime machinery the SHELL
+// owns - it serves ANY emitter (the canvas toast funnel, the dock
+// chip's badge, the chat surface's pending-verdict pull), so it lives
+// in components/shell/ with the toast host, while the feed PANEL is
+// the notifications capsule's own (harness/notifications/ui/).
+//
 // The bell died with its popover: the durable feed/history lives in the
 // notifications dock tab (NotificationsPanel.vue), the transient toasts
 // stay shell-level (NotificationToasts.vue, mounted by MenuBar), and the

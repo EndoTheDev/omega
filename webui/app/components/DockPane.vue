@@ -282,7 +282,7 @@
   import { glyphKindFor, glyphIcon } from "./files/rowicon";
   // card t_180db2cb: the notifications tab chip's unread badge - the
   // page-lifetime feed store's computed ("" at zero = no chip)
-  import { notificationsBadgeText } from "./notifications/store";
+  import { notificationsBadgeText } from "./shell/notificationFeed";
   // the recursive split renderer, lazy: DockSplit imports DockPane for its
   // leaf cells; the eager direction stays one-way (v0.14.4 ruling 1)
   const DockSplitNode = defineAsyncComponent(() => import("./DockSplit.vue"));

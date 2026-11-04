@@ -66,12 +66,12 @@ test("the registry's every entry keeps its floor law (terminal = tool family)", 
 const appVue = read(root, "webui/app/app.vue");
 const tabVue = read(
   root,
-  "webui/app/components/terminal/TerminalTab.vue",
+  "harness/terminal/ui/TerminalTab.vue",
 );
 
 test("app.vue hosts the terminal outlet - any pane slot by union membership", () => {
   assert.match(appVue, /#pane-terminal/, "the dock slot template exists");
-  assert.match(appVue, /<[Tt]erminalTab/, "the outlet renders the tab");
+  assert.match(appVue, /:is="terminalTabView"/, "the outlet binds the tabs manifest's view (card t_617c2ad0)");
 });
 
 test("the pane claims (reattach-else-spawn) and never gates", () => {

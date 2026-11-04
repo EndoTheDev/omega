@@ -80,7 +80,7 @@ test("the badge lives on the dockable's icon chip, not on dead window chrome", (
 });
 
 test("the badge text is the store's computed over unread + pending questions", () => {
-  const store = read("app/components/notifications/store.ts");
+  const store = read("app/components/shell/notificationFeed.ts");
   assert.match(
     store,
     /notificationsBadge = computed/,
@@ -125,7 +125,7 @@ test("the notifications surface is a dock tab, not window chrome", () => {
   // the outlet seats the panel like the other inspector views
   assert.match(app, /#pane-notifications/, "the pane outlet exists");
   const outlet = app.slice(app.indexOf("#pane-notifications"));
-  assert.match(outlet, /<NotificationsPanel/, "the outlet renders the feed panel");
+  assert.match(outlet, /:is="notificationsPanelView"/, "the outlet renders the feed panel (the tabs manifest, card t_617c2ad0)");
   assert.match(outlet, /@open="openNotification"/, "row clicks route through the same router");
   // and the mobile drawer seats it before the module catch-all, like the
   // other shell-owned tabs (t_d7fd3ad3's branch rule)
@@ -140,7 +140,7 @@ test("the notifications surface is a dock tab, not window chrome", () => {
 // --- open/focus marks read (the badge clears on open) --------------------
 
 test("opening or focusing the tab marks the feed read", () => {
-  const panel = read("app/components/notifications/NotificationsPanel.vue");
+  const panel = read("../harness/notifications/ui/NotificationsPanel.vue");
   // the outlet mounts ONLY the active tab, so the panel's mount IS the
   // open/focus event
   assert.match(panel, /onMounted\(async/, "the activation runs in the mount");
@@ -150,14 +150,14 @@ test("opening or focusing the tab marks the feed read", () => {
     /notificationsUnread\.value > 0[\s\S]*markAllRead\(\)/,
     "unread finished-things clear in one POST (the badge drops on open)",
   );
-  const store = read("app/components/notifications/store.ts");
+  const store = read("app/components/shell/notificationFeed.ts");
   assert.match(store, /markAllNotificationsRead\(\)/, "markAllRead rides the existing all:true transport");
 });
 
 // --- the durable feed reuses the existing rendering ----------------------
 
 test("the feed panel is the bell popover's body rehomed, not a rebuild", () => {
-  const panel = read("app/components/notifications/NotificationsPanel.vue");
+  const panel = read("../harness/notifications/ui/NotificationsPanel.vue");
   // the same row vocabulary the popover rendered: verdict cards on top,
   // feed rows with kind glyph + title + verdict + age, empty voice
   for (const cls of ["<TabBand", "notif-verdicts", "notif-list", "notif-row", "notif-empty"]) {
