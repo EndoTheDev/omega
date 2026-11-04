@@ -5,7 +5,7 @@
 // iconset, rendered through the Icon wrapper. Run: node --test webui/test/
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { folderIcon, glyphKindFor, glyphIcon } from "../app/components/files/rowicon.ts";
+import { folderIcon, glyphKindFor, glyphIcon } from "../../harness/files/ui/rowicon.ts";
 import { ICON_NAMES } from "../app/composables/icons.ts";
 
 describe("glyphKindFor", () => {

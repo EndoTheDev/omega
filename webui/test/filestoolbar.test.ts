@@ -155,9 +155,9 @@ describe("the band contract (structural pins, no DOM)", () => {
   // row. Card t_308e6d9b: that row is the SHARED TabBand now (the
   // universal band) and it is STRUCTURALLY pinned - it renders BEFORE
   // the scroll body (.files-scroll), so a long tree never scrolls it.
-  const tab = read("app/components/files/FilesTab.vue");
+  const tab = read("../harness/files/ui/FilesTab.vue");
   const band = read("app/components/ui/TabBand.vue");
-  const tree = read("app/components/files/FileTree.vue");
+  const tree = read("../harness/files/ui/FileTree.vue");
   const icons = read("app/composables/icons.ts");
 
   it("the Files tab renders the shared TabBand with the four actions", () => {

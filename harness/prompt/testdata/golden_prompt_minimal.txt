@@ -39,11 +39,13 @@ Call the skills tool (action read) with a skill name to read its full content; a
   .update: Patch an existing skill: find it by name, replace one exact occurrence in its SKILL.md.
   .curate: Run one learning-loop curator pass: the deterministic staleness pass (stale at 14d, archive at 30d) plus LLM-proposed merges/distills applied with backup and audit ledger. Returns the report and ledger ids.
 
-### tools
+### files
 - files: Read, write, and edit files on disk. Writes create parent directories as needed. Batch: pass operations (write and edit ops across multiple files) for an atomic multi-file change - any failure rolls the whole batch back.
   .read: Read a file, returning its contents with line numbers.
   .write: Write content to a file, creating parent directories as needed.
   .edit: Apply a targeted find-and-replace patch to a file.
+
+### shell
 - shell.run: Run a shell command and return its stdout and stderr.
 
 

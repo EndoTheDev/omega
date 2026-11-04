@@ -465,6 +465,12 @@
   // notifications) ride this generated manifest - dockables.ts TAB_MODULES
   // declares the composition, the codegen carries the import.
   import { moduleTabs } from "./composables/module-tabs.generated";
+  // card t_48eeb015 (the shell-ring shrink wave 1): the file explorer
+  // rides out of the shell - the files capsule ships its own views
+  // (harness/files/ui/, the module-panels codegen lists them). app.vue
+  // binds the tab view explicitly: files' ui/ carries two .vue views,
+  // so the manifest's module lookup alone cannot pick the tab body.
+  import FilesTab from "../../harness/files/ui/FilesTab.vue";
   import {
     archiveSession,
     branchSession,

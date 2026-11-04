@@ -26,7 +26,7 @@ const TABS: Array<{
   scrollClass: string;
   actions: string[];
 }> = [
-  { file: "app/components/files/FilesTab.vue", title: null, scrollClass: "files-scroll", actions: ["add file", "refresh files"] },
+  { file: "../harness/files/ui/FilesTab.vue", title: null, scrollClass: "files-scroll", actions: ["add file", "refresh files"] },
   { file: "../harness/cron/ui/CronJobs.vue", title: "Cron", scrollClass: "cron-body", actions: ["refresh cron jobs", "Search cron jobs"] },
   { file: "../harness/skills/ui/SkillsList.vue", title: "Skills", scrollClass: "skills-body", actions: ["refresh skills", "Search skills"] },
   { file: "../harness/tools/ui/ToolsList.vue", title: "Tools", scrollClass: "tools-body", actions: ["refresh tools", "Search tools"] },

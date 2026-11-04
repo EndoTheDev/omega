@@ -73,13 +73,13 @@
   import {
     createFileTreeStore,
     type FileTreeStore,
-  } from "../../composables/filetree";
-  import { joinRelPath } from "../../composables/omega";
-  import type { FileEntry } from "../../composables/omega";
-  import { FOCUSED_SESSION_KEY } from "../../composables/viewer";
+  } from "~/composables/filetree";
+  import { joinRelPath } from "~/composables/omega";
+  import type { FileEntry } from "~/composables/omega";
+  import { FOCUSED_SESSION_KEY } from "~/composables/viewer";
   import { folderIcon, glyphKindFor, glyphIcon } from "./rowicon";
   // card t_502b8e81: the iconset wrapper - the tree's row glyphs
-  import Icon from "../ui/Icon.vue";
+  import Icon from "~/components/ui/Icon.vue";
 
   // card t_a5f9d185: every branch expansion roots on the focused
   // session's RESOLVED root - the id is read live at fetch time, so a
