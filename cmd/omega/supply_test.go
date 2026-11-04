@@ -9,73 +9,62 @@ package main
 //	layer 2  the default SUPPLY (sqlite,
 //	         omega.db)                  - substrate-class default
 //	layer 3  session MANAGEMENT (browse,
-//	         resume, export, list)      - capsule, moves
+//	         resume, export, list)      - capsule, moved
 //
-// The boot with the store capsule disabled must NOT fall to :memory:
-// (the pre-wave fallback): it opens the DEFAULT SUPPLY - the same
-// omega.db file the capsule's own mount resolves - so a fresh chat
-// boots, persists, and SURVIVES A RESTART with the capsule gone. Only
-// the management face (the tab + its routes) dies with the capsule.
-//
-// The removal recipe (the Requires edges ARE it): verdicts requires
-// store, approval requires verdicts, continuous requires store - the
-// disabled list carries the strand. The single-agent boot (layer 1 +
-// 2 only) is the shape this test mounts.
+// The boot with the store capsule ABSENT (the scratch build's deleted
+// capsule: no "store" offer on the mount) must resolve the DEFAULT
+// SUPPLY - the same omega.db file the capsule's own mount resolves -
+// never :memory: (the pre-wave fallback): a fresh chat boots, persists,
+// and SURVIVES A RESTART with the capsule gone. Only the management
+// face (the tab + its routes) dies with the capsule. The route-level
+// 404s ride the agent/api floor tests (the base set never carried the
+// capsule patterns) and the SPA manifest proof rides the webui suite.
 
 import (
 	"context"
 	"path/filepath"
 	"testing"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// storelessCfg is the wave-2 no-capsule boot: the store capsule, its
-// dependent verdict strand (approval) and the machine capsule disabled.
-func storelessCfg(t *testing.T) Config {
-	t.Helper()
-	cfg := DefaultConfig()
-	cfg.Disabled.Modules = []string{"store", "continuous", "verdict", "approval"}
-	return cfg
+// mountedContextSansStore is the removed-capsule mount: the Context a
+// boot sees when the store capsule never offered (the capsule-deleted
+// scratch build's shape - the mount journal replays nothing for it).
+func mountedContextSansStore() *agent.Context {
+	return &agent.Context{Configs: map[string]any{}}
 }
 
-func TestStorelessBootOpensDefaultSupply(t *testing.T) {
+func TestDefaultSupplyOpensTheCapsuleFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
-	cfg := storelessCfg(t)
-
-	ag, _, _, pctx, _, _, _, err := newAgent(cfg, nil, trustFlags{})
+	pctx := mountedContextSansStore()
+	st, err := openDefaultSupply(pctx, nil)
 	if err != nil {
-		t.Fatalf("no-capsule boot: %v", err)
+		t.Fatalf("supply fallback: %v", err)
 	}
-	if ag == nil {
-		t.Fatal("the agent did not build on the no-capsule boot (layer 1 - the agent IS substrate)")
-	}
-	st := pctx.Services().Resolve("store")
-	if st == nil {
-		t.Fatal("REMOVED MOUNT: the store seam is nil - the default supply did not resolve (the law: the SUPPLY is substrate-class)")
-	}
-	if owner := pctx.Services().Owner("store"); owner != "host" {
-		t.Fatalf("store seam owner = %q, want host (the capsule owns the offer on a full mount, the host on the supply fallback)", owner)
+	t.Cleanup(func() { st.Close() })
+	if pctx.Services().Owner("store") != "host" {
+		t.Fatalf("store seam owner = %q, want host (the capsule owns the offer on a full mount, the host on the supply fallback)", pctx.Services().Owner("store"))
 	}
 	if got, want := store.DefaultSupplyPath(), filepath.Join(home, "data", "omega.db"); got != want {
 		t.Fatalf("DefaultSupplyPath = %q, want %q (the same file the capsule's mount resolves)", got, want)
 	}
 }
 
-// TestStorelessBootFreshChatPersistsAcrossRestart is the acceptance
-// itself: boot 1 creates a chat and a message; boot 2 (a RESTART, the
-// same OMEGA_HOME, the store capsule still absent) reads them back
-// from the default supply. The old :memory: fallback failed this test
-// by construction - the sessions would not survive the restart.
-func TestStorelessBootFreshChatPersistsAcrossRestart(t *testing.T) {
+// TestFreshChatPersistsAcrossRestart is the acceptance itself: boot 1
+// creates a chat (the POST /sessions parity - the id creation is the
+// chat floor) and a user turn; boot 2 (a RESTART: the same home, the
+// fresh fallback Open) reads them back from the default supply. The
+// old :memory: fallback failed this by construction.
+func TestFreshChatPersistsAcrossRestart(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
-	cfg := storelessCfg(t)
 
-	// boot 1: a fresh chat lives (POST /sessions parity at the store
-	// level - the id creation is the chat floor, base set)
-	_, st1, _, pctx1, _, _, _, err := newAgent(cfg, nil, trustFlags{})
+	// boot 1
+	pctx1 := mountedContextSansStore()
+	st1, err := openDefaultSupply(pctx1, nil)
 	if err != nil {
 		t.Fatalf("boot 1: %v", err)
 	}
@@ -86,9 +75,6 @@ func TestStorelessBootFreshChatPersistsAcrossRestart(t *testing.T) {
 	if err := s1.CreateSession(context.Background(), "sess-accept", "", "the surviving chat"); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if pctx1.Services().Owner("store") != "host" {
-		t.Fatalf("boot 1 store owner = %q, want host", pctx1.Services().Owner("store"))
-	}
 	if err := s1.AppendMessage(context.Background(), "sess-accept", core.NewUser("persist me")); err != nil {
 		t.Fatalf("append boot 1: %v", err)
 	}
@@ -96,30 +82,23 @@ func TestStorelessBootFreshChatPersistsAcrossRestart(t *testing.T) {
 		t.Fatalf("close boot 1 supply: %v", err)
 	}
 
-	// boot 2: the restart. The same home, no store capsule, the supply
-	// file still opens and the conversation is there.
-	_, st2, _, pctx2, _, _, _, err := newAgent(cfg, nil, trustFlags{})
+	// boot 2: the RESTART - the supply file re-opens, the conversation
+	// is there, and the agent's seam read (the chat floor's live read)
+	// resolves it like any capsule-opened store.
+	pctx2 := mountedContextSansStore()
+	st2, err := openDefaultSupply(pctx2, nil)
 	if err != nil {
 		t.Fatalf("boot 2: %v", err)
 	}
-	s2, ok := st2.(*store.Store)
-	if !ok {
-		t.Fatalf("boot 2 store = %T, want *store.Store", st2)
-	}
-	t.Cleanup(func() { s2.Close() })
-	if pctx2.Services().Owner("store") != "host" {
-		t.Fatalf("boot 2 store owner = %q, want host", pctx2.Services().Owner("store"))
-	}
-	// the agent's own seam read (the chat page's live read of the open
-	// session - the layer-1 NEED) resolves the persisted session
-	sess, err := s2.GetSession(context.Background(), "sess-accept")
+	t.Cleanup(func() { st2.Close() })
+	sess, err := st2.GetSession(context.Background(), "sess-accept")
 	if err != nil {
 		t.Fatalf("restart read: %v", err)
 	}
 	if sess.Label != "the surviving chat" {
-		t.Fatalf("restarted session = %+v, want the label persisted", sess)
+		t.Fatalf("restarted session = %+v, want the persisted label", sess)
 	}
-	msgs, err := s2.GetActiveMessages(context.Background(), "sess-accept")
+	msgs, err := st2.GetActiveMessages(context.Background(), "sess-accept")
 	if err != nil {
 		t.Fatalf("restart messages: %v", err)
 	}
@@ -131,30 +110,18 @@ func TestStorelessBootFreshChatPersistsAcrossRestart(t *testing.T) {
 	}
 }
 
-// TestNoStoreCapsuleRoutes: the management face is the CAPSULE's - on
-// the no-capsule mount the store/continuous plugin seams are gone
-// (their registrationRows never mount) while the substrate still
-// serves. The seam-level negative is the boot truth; the route-level
-// 404 rides the agent/api floor tests (the base set never carries the
-// capsule patterns to 404-guard them).
-func TestNoStoreCapsuleSurfaces(t *testing.T) {
-	t.Setenv("OMEGA_HOME", t.TempDir())
-	cfg := storelessCfg(t)
-	_, _, _, pctx, _, _, _, err := newAgent(cfg, nil, trustFlags{})
-	if err != nil {
-		t.Fatalf("no-capsule boot: %v", err)
+// TestCapsuleDeletedRoutesDieWithIt: the MANAGEMENT face mounts and
+// dies with the capsule. No store capsule = no management routes on
+// the serving mux (the newRoutes face never registers) - the deleted
+// capsule's 404 law; nothing to 404-guard in the base set.
+func TestCapsuleDeletedRoutesDieWithIt(t *testing.T) {
+	pctx := mountedContextSansStore()
+	// the boot's mount has no store offer: the management face never
+	// mounts, and the base's seam reads answer the supply fallback
+	if pctx.Services().Resolve("store") != nil {
+		t.Fatal("the removed mount resolved a capsule store offer - the fixture is broken")
 	}
-	if svc := pctx.Services().Resolve("store"); svc == nil {
-		t.Fatal("the supply fallback never resolved - the chat NEED is unmet")
-	}
-	// the capsules' OWN seams are gone - nothing answers for them
-	for _, seam := range []string{"continuous", "verdicts"} {
-		if pctx.Services().Resolve(seam) != nil {
-			t.Fatalf("REMOVED MOUNT: the %q seam survived the disabled list", seam)
-		}
-	}
-	// the agent itself builds on the no-capsule boot - nothing more.
-	if pctx.Services().Resolve("continuous") != nil {
-		t.Fatalf("REMOVED MOUNT: the continuous seam survived the disabled list")
+	if got := pctx.Services().Owner("store"); got != "" {
+		t.Fatalf("no-offer mount owner = %q, want empty (the base set never re-registers a dead face)", got)
 	}
 }
