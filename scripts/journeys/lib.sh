@@ -110,20 +110,32 @@ open_app() {
   step "open: $JOURNEY_BASE_URL"
 }
 
-# open_journey_row <label>: click the journey session's sidebar row,
+# open_journey_row <label>: open the journey session's sidebar row,
 # retrying while the sidebar's session list is still loading (the SPA
-# fetches /sessions after boot - a one-shot find races that boot).
-# The find can also dispatch a REAL click too early: a row whose Vue
-# handlers have not hydrated yet swallows the click silently (route
-# unchanged, no tab opens) while the find reports success. So the
-# verdict is the OPEN - the focused chat tab drives the route to
-# /chat/<id> - re-clicked on every poll until the route moves.
+# fetches /sessions after boot - a one-shot click races that boot).
+# The open rides a DOM click on the matching .session-list li, never a
+# pointer-pipeline click: a real-mouse click on a row whose title is
+# long enough to reach the hover action cluster (x93..201 at the 240px
+# sidebar, 5 buttons since t_6bf696e4) lights the cluster through
+# li:hover FIRST (main.css: .session-list li:hover .row-actions ->
+# pointer-events:auto) and the mousedown lands on a @click.stop action
+# button - rename opens, the row never does. The plain DOM click skips
+# the hover lit-up entirely (the t_7adf2e7f law: the row stays one
+# click target; the buttons stay hover-reached).
+# The verdict is the OPEN, and the route must CHANGE: open_app leaves
+# the SPA on the dock-restored route of an earlier recipe's (deleted)
+# journey session - a swallowed click on an already-/chat/ route read
+# as opened and 61 red'd "dock tab missing" on every run since birth
+# (195ddbf8). Re-clicked on every poll until the route moves.
 open_journey_row() {
-  local label="$1" i=0 opened
+  local label="$1" i=0 before after clicked opened
+  before=$(jsq 'location.pathname' 2>&1 | tail -1 | tr -d '"')
   while [ "$i" -lt 30 ]; do
-    if ab find text "$label" click >/dev/null 2>&1; then
+    clicked=$(jsq "(()=>{const rows=[...document.querySelectorAll('.session-list li')];const r=rows.find(x=>(x.innerText||'').includes(\"$label\"));return r?(r.click(),1):0})()" 2>&1 | tail -1)
+    if [ "$clicked" = "1" ]; then
       opened=$(jsq 'location.pathname.startsWith("/chat/") ? 1 : 0' 2>&1 | tail -1)
-      if [ "$opened" = "1" ]; then
+      after=$(jsq 'location.pathname' 2>&1 | tail -1 | tr -d '"')
+      if [ "$opened" = "1" ] && [ "$after" != "$before" ]; then
         step "ok: opened journey session row: $label"
         return 0
       fi
