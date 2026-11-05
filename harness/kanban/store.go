@@ -140,7 +140,32 @@ func (s *Store) migrate(db *sql.DB) error {
 	if err := rebuildLegacyRows(db); err != nil {
 		return err
 	}
+	if err := migrateTaskPositions(db); err != nil {
+		return err
+	}
 	_, err := db.Exec(boardIndexes)
+	return err
+}
+
+// migrateTaskPositions adds the drag-order column when it is missing
+// (any legacy or legacy-rebuilt database carries the pre-position
+// shape) and backfills it so the display order the board already
+// rendered (created_at DESC, id DESC within each column) is frozen
+// into explicit positions. Only the ALTER branch backfills: re-running
+// the backfill on a database where reorders already happened would
+// destroy the live order.
+func migrateTaskPositions(db *sql.DB) error {
+	if !tableMissingColumn(db, "tasks", "position") {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN position INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	_, err := db.Exec(`
+UPDATE tasks SET position = (
+	SELECT COUNT(*) FROM tasks t2
+	WHERE t2.board_id = tasks.board_id AND t2.status = tasks.status
+	  AND (t2.created_at, t2.id) > (tasks.created_at, tasks.id))`)
 	return err
 }
 
@@ -158,7 +183,8 @@ CREATE TABLE IF NOT EXISTS tasks (
 	created_at   TEXT NOT NULL,
 	started_at   TEXT NOT NULL DEFAULT '',
 	completed_at TEXT NOT NULL DEFAULT '',
-	board_id     INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE
+	board_id     INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+	position     INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS task_comments (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -282,6 +308,24 @@ func tableMissingColumn(db *sql.DB, table, column string) bool {
 	return !found
 }
 
+// topPosition is the slot a landing card takes on top of its column:
+// one below the lowest position (the column was newest-first before
+// the order column existed, so a fresh card keeps landing on top).
+// db may be *sql.DB or an open *sql.Tx.
+func topPosition(ctx context.Context, db QueryRowContexter, boardID int64, status string) (int64, error) {
+	var top int64
+	err := db.QueryRowContext(ctx,
+		`SELECT COALESCE(MIN(position), 0) - 1 FROM tasks WHERE board_id = ? AND status = ?`,
+		boardID, status).Scan(&top)
+	return top, err
+}
+
+// QueryRowContexter is the single-row read half *sql.DB and *sql.Tx
+// share - topPosition accepts either.
+type QueryRowContexter interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 // CreateTask inserts a task on the named board ("" = the current
 // board). ID, Status (default triage) and CreatedAt are filled by the
 // store; title must be non-empty.
@@ -300,15 +344,20 @@ func (s *Store) CreateTask(ctx context.Context, board string, in KanbanTask) (Ka
 	if err != nil {
 		return KanbanTask{}, err
 	}
+	top, err := topPosition(ctx, s.db, bid, status)
+	if err != nil {
+		return KanbanTask{}, err
+	}
+	in.Position = top
 	for range 5 {
 		in.ID = newTaskID()
 		in.Status = status
 		in.CreatedAt = now()
 		_, err := s.db.ExecContext(ctx, `
-INSERT INTO tasks (id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, board_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+INSERT INTO tasks (id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, board_id, position)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			in.ID, in.Title, in.Body, in.Assignee, in.Status,
-			in.SessionID, in.Source, in.CreatedAt, in.StartedAt, in.CompletedAt, bid)
+			in.SessionID, in.Source, in.CreatedAt, in.StartedAt, in.CompletedAt, bid, in.Position)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNIQUE") {
 				continue // id collision: retry with a fresh draw
@@ -335,15 +384,18 @@ func describeNew(t KanbanTask) string {
 	return detail
 }
 
-// ListTasks returns tasks on the named board, newest first. Empty
-// status lists every task. The board filter is ALWAYS applied - the
-// board_id column carries the isolation the per-board files used to.
+// ListTasks returns the board's tasks in board order: the explicit
+// position column when the column carries one (drag order), falling
+// back to newest first for tasks that share a position (legacy rows
+// and merged boards all sit at 0). Empty status lists every task. The
+// board filter is ALWAYS applied - the board_id column carries the
+// isolation the per-board files used to.
 func (s *Store) ListTasks(ctx context.Context, board, status string) ([]KanbanTask, error) {
 	bid, err := s.boardID(board)
 	if err != nil {
 		return nil, err
 	}
-	query := `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at FROM tasks WHERE board_id = ?`
+	query := `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, position FROM tasks WHERE board_id = ?`
 	args := []any{bid}
 	if status != "" {
 		if !IsStatus(status) {
@@ -352,7 +404,7 @@ func (s *Store) ListTasks(ctx context.Context, board, status string) ([]KanbanTa
 		query += " AND status = ?"
 		args = append(args, status)
 	}
-	query += " ORDER BY created_at DESC, id DESC"
+	query += " ORDER BY position ASC, created_at DESC, id DESC"
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -372,7 +424,7 @@ func (s *Store) ListTasks(ctx context.Context, board, status string) ([]KanbanTa
 func scanTask(row interface{ Scan(...any) error }) (*KanbanTask, error) {
 	var t KanbanTask
 	err := row.Scan(&t.ID, &t.Title, &t.Body, &t.Assignee, &t.Status,
-		&t.SessionID, &t.Source, &t.CreatedAt, &t.StartedAt, &t.CompletedAt)
+		&t.SessionID, &t.Source, &t.CreatedAt, &t.StartedAt, &t.CompletedAt, &t.Position)
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +437,7 @@ func (s *Store) GetTask(ctx context.Context, board, id string) (KanbanTask, erro
 	if err != nil {
 		return KanbanTask{}, err
 	}
-	row := s.db.QueryRowContext(ctx, `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at FROM tasks WHERE id = ? AND board_id = ?`, id, bid)
+	row := s.db.QueryRowContext(ctx, `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, position FROM tasks WHERE id = ? AND board_id = ?`, id, bid)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return KanbanTask{}, ErrNotFound
@@ -520,6 +572,15 @@ func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch Kanb
 				t.CompletedAt = ""
 			}
 			t.Status = patch.Status
+			// a column change drops the card on top of its new column
+			// (the same slot a drag without a target position takes -
+			// stale positions from the old column must not leak into
+			// the new column's order)
+			top, err := topPosition(ctx, tx, bid, patch.Status)
+			if err != nil {
+				return KanbanTask{}, err
+			}
+			t.Position = top
 			events = append(events, [2]string{"moved", detail})
 		}
 	}
@@ -556,9 +617,9 @@ func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch Kanb
 
 	if _, err := tx.ExecContext(ctx, `
 UPDATE tasks SET title=?, body=?, assignee=?, status=?, session_id=?, source=?,
-	started_at=?, completed_at=? WHERE id=? AND board_id=?`,
+	started_at=?, completed_at=?, position=? WHERE id=? AND board_id=?`,
 		t.Title, t.Body, t.Assignee, t.Status, t.SessionID, t.Source,
-		t.StartedAt, t.CompletedAt, t.ID, bid); err != nil {
+		t.StartedAt, t.CompletedAt, t.Position, t.ID, bid); err != nil {
 		return KanbanTask{}, err
 	}
 	for _, e := range events {
@@ -573,4 +634,126 @@ UPDATE tasks SET title=?, body=?, assignee=?, status=?, session_id=?, source=?,
 		s.emitDone(taskID)
 	}
 	return t, nil
+}
+
+// ReorderTask places a task at an explicit slot on the named board:
+// the target column (patch.Status-style, "" = keep the current column)
+// and the sibling the card lands after (afterID, "" = top of the
+// column). The target column is resequenced to dense positions, so the
+// drag order lives in the sqlite rows and survives every reload. A
+// column change rides UpdateTask's machinery first (the stamp rules
+// and the moved event); the slot is applied in its own transaction
+// with a "reordered" audit event whenever anything actually changed.
+// afterID must sit in the target column; afterID naming the task
+// itself resolves to the top slot.
+func (s *Store) ReorderTask(ctx context.Context, board, taskID, status, afterID string) (KanbanTask, error) {
+	if status != "" && !IsStatus(status) {
+		return KanbanTask{}, fmt.Errorf("illegal status %q", status)
+	}
+	bid, err := s.boardID(board)
+	if err != nil {
+		return KanbanTask{}, err
+	}
+	t, err := s.GetTask(ctx, board, taskID)
+	if err != nil {
+		return KanbanTask{}, err
+	}
+	target := status
+	if target == "" {
+		target = t.Status
+	}
+	if target != t.Status {
+		t, err = s.UpdateTask(ctx, board, taskID, KanbanPatch{Status: target})
+		if err != nil {
+			return KanbanTask{}, err
+		}
+	}
+
+	// the target column, in display order, with the moved card's slot
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return KanbanTask{}, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `
+SELECT id FROM tasks WHERE board_id = ? AND status = ?
+ORDER BY position ASC, created_at DESC, id DESC`, bid, target)
+	if err != nil {
+		return KanbanTask{}, err
+	}
+	all := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return KanbanTask{}, err
+		}
+		all = append(all, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return KanbanTask{}, err
+	}
+	rows.Close()
+
+	// the siblings without the moved card
+	others := make([]string, 0, len(all))
+	for _, id := range all {
+		if id != taskID {
+			others = append(others, id)
+		}
+	}
+	oldIndex := -1
+	for i, id := range all {
+		if id == taskID {
+			oldIndex = i
+			break
+		}
+	}
+	at := 0
+	if afterID != "" && afterID != taskID {
+		at = -1
+		for i, id := range others {
+			if id == afterID {
+				at = i + 1
+				break
+			}
+		}
+		if at < 0 {
+			return KanbanTask{}, fmt.Errorf("after task %q not in column %q", afterID, target)
+		}
+	}
+	// a drop that leaves the rendered order unchanged writes nothing:
+	// no resequencing, no audit event (the list above is already
+	// exactly the order the slot implies)
+	if at == oldIndex {
+		if err := tx.Commit(); err != nil {
+			return KanbanTask{}, err
+		}
+		return t, nil
+	}
+	// dense positions: the siblings shift around the inserted slot
+	for i, id := range others {
+		p := int64(i)
+		if i >= at {
+			p++
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE tasks SET position = ? WHERE id = ? AND board_id = ?`, p, id, bid); err != nil {
+			return KanbanTask{}, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE tasks SET position = ? WHERE id = ? AND board_id = ?`, at, taskID, bid); err != nil {
+		return KanbanTask{}, err
+	}
+	detail := "top"
+	if afterID != "" && afterID != taskID {
+		detail = "after " + afterID
+	}
+	if err := recordEvent(ctx, tx, bid, taskID, "reordered", detail); err != nil {
+		return KanbanTask{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return KanbanTask{}, err
+	}
+	return s.GetTask(ctx, board, taskID)
 }

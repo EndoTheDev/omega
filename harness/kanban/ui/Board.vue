@@ -50,6 +50,7 @@
         v-for="(col, i) in cols"
         :key="BOARD_STATUSES[i]"
         class="board-col"
+        :data-status="BOARD_STATUSES[i]"
         :class="{
           settled: isSettled(BOARD_STATUSES[i]),
           folded: isSettled(BOARD_STATUSES[i]) && !expanded.has(BOARD_STATUSES[i]),
@@ -92,7 +93,10 @@
             v-for="t in col"
             :key="t.id"
             class="card"
-            @click="openDetail(t)">
+            :data-id="t.id"
+            :class="{ dragging: isDragging(t.id) }"
+            @click="onCardClick(t)"
+            @pointerdown="onCardPointerDown($event, t)">
             <div class="card-title">{{ t.title }}</div>
             <div class="card-meta">
               <span
@@ -162,6 +166,7 @@
     isNarrowWidth,
     isSettled,
     pickBootBoard,
+    reorderAfter,
     step,
     withBoard,
     type BoardComment,
@@ -317,6 +322,7 @@
   let timer: ReturnType<typeof setInterval> | undefined;
 
   async function fetchBoard() {
+    if (drag.value && drag.value.moved) return; // a live drag owns the list
     try {
       const res = await fetch(withBoard("/tasks", boardName.value));
       if (!res.ok) throw new Error(`GET /tasks: ${res.status}`);
@@ -399,6 +405,137 @@
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e);
     }
+  }
+
+  // --- drag-and-drop reorder (card t_09b44af1): a card is draggable
+  // with the pointer; during the drag the board's list itself is
+  // reordered live (the pushed-around cards ARE the drop feedback),
+  // and the drop PATCHes the same pair the live view rendered -
+  // {status, after_id} - so the optimistic view is exactly what the
+  // server persisted. A drag that never clears the threshold stays a
+  // click (the drawer). The click that trails a real drag is
+  // suppressed, and the 5s poll pauses while a drag is live so fetch
+  // cannot clobber the gesture.
+  interface DragState {
+    id: string;
+    fromStatus: string;
+    status: string;
+    afterId: string;
+    over: boolean;
+    moved: boolean;
+  }
+  const drag = ref<DragState | null>(null);
+  const DRAG_THRESHOLD_PX = 6;
+
+  function isDragging(id: string): boolean {
+    return drag.value !== null && drag.value.moved && drag.value.id === id;
+  }
+
+  function updateDropTarget(x: number, y: number) {
+    const d = drag.value;
+    if (!d || !boardEl.value) return;
+    // the pointer rides elementsFromPoint - the dragged card itself may
+    // be under the cursor, so search the stack, not just the top element
+    const colEl = document
+      .elementsFromPoint(x, y)
+      .flatMap((el) => (el instanceof Element ? [el.closest(".board-col")] : []))
+      .find((c): c is HTMLElement => c !== null);
+    if (!colEl || !colEl.dataset.status) {
+      d.over = false; // released off-board: the drop reverts, no PATCH
+      return;
+    }
+    const cards = Array.from(colEl.querySelectorAll<HTMLElement>(".card")).filter(
+      (c) => c.dataset.id !== d.id,
+    );
+    let index = cards.length;
+    for (let i = 0; i < cards.length; i++) {
+      const r = cards[i].getBoundingClientRect();
+      if (y < r.top + r.height / 2) {
+        index = i;
+        break;
+      }
+    }
+    const status = colEl.dataset.status;
+    const afterId = index > 0 ? (cards[index - 1].dataset.id ?? "") : "";
+    d.over = true;
+    if (status === d.status && afterId === d.afterId) return; // idempotent slot
+    d.status = status;
+    d.afterId = afterId;
+    tasks.value = reorderAfter(tasks.value, d.id, status, afterId) ?? tasks.value;
+  }
+
+  function onCardPointerDown(ev: PointerEvent, t: BoardTask) {
+    if (ev.button !== 0) return;
+    if ((ev.target as HTMLElement).closest("button, input")) return; // the meta buttons
+    const sx = ev.clientX;
+    const sy = ev.clientY;
+    drag.value = {
+      id: t.id,
+      fromStatus: t.status,
+      status: t.status,
+      afterId: "",
+      over: false,
+      moved: false,
+    };
+    const move = (e: PointerEvent) => {
+      const d = drag.value;
+      if (!d) return;
+      if (!d.moved && Math.hypot(e.clientX - sx, e.clientY - sy) < DRAG_THRESHOLD_PX) return;
+      d.moved = true;
+      updateDropTarget(e.clientX, e.clientY);
+    };
+    const up = () => {
+      endDragListeners();
+      const d = drag.value;
+      drag.value = null;
+      if (d && d.moved) {
+        suppressNextClick = true;
+        void commitDrag(d);
+      }
+    };
+    const endDragListeners = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    ev.preventDefault(); // no text selection started by a drag press
+  }
+
+  async function commitDrag(d: DragState) {
+    if (!d.over) {
+      // released off-board: snap the optimistic view back to the server
+      await fetchBoard();
+      return;
+    }
+    try {
+      const res = await fetch(
+        withBoard(`/tasks/${encodeURIComponent(d.id)}`, boardName.value),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: d.status, after_id: d.afterId }),
+        },
+      );
+      if (!res.ok) throw new Error(`PATCH /tasks/${d.id}: ${res.status}`);
+    } catch (e) {
+      // the server refused the slot: the refetch below snaps the card back
+      setNotice(e instanceof Error ? e.message : String(e), true);
+    }
+    await fetchBoard();
+  }
+
+  // click trails pointerup: a real drag suppresses it once, a plain
+  // press (below threshold) opens the drawer
+  let suppressNextClick = false;
+  function onCardClick(t: BoardTask) {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      return;
+    }
+    openDetail(t);
   }
 
   // --- detail drawer
@@ -645,6 +782,11 @@
   }
   .card:hover {
     border-color: color-mix(in srgb, currentcolor 22%, transparent);
+  }
+  /* drag-and-drop reorder: the live-wrestled card dims in place */
+  .card.dragging {
+    opacity: 0.35;
+    cursor: grabbing;
   }
   .card-title {
     font-size: 12px;

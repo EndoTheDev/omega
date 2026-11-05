@@ -320,14 +320,20 @@ window help reports what startup auto-probed).
   endpoint: a PATCH moves a card inside its board only, switching
   boards is a pointer operation, never a card op.
 
-- `GET /tasks` — list rows; `?status=` filters, the empty value lists
+- `GET /tasks` — list rows in board order (the column's drag order,
+  newest-first fallback); `?status=` filters, the empty value lists
   every status.
 - `POST /tasks` — create; `title` required, unspecified status defaults
-  to `triage` in the store.
+  to `triage` in the store. A fresh card lands on top of its column.
 - `GET /tasks/{id}` — the task plus its thread (comments + events).
 - `PATCH /tasks/{id}` — any legal status transition; PATCH pointer
   fields distinguish "set to this value (possibly empty)" from "leave
-  alone".
+  alone". An `after_id` body is the drag-order slot instead: the card
+  moves to `status` ("" keeps the column) and lands after that sibling
+  ("" = top), the target column resequencing to dense positions - the
+  order survives every reload. Requires the store to implement the
+  `Reorderer` capability (the kanban store does; without it the PATCH
+  answers 400 and the board refetches, the card snapping back).
 - `POST /tasks/{id}/comments` — add a comment; an ABSENT author is
   `"web"`, so the board can tell a human UI comment from an agent tool
   comment.
