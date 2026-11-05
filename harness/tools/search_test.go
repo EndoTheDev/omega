@@ -336,4 +336,63 @@ func TestNoMatchesSentinel(t *testing.T) {
 	}
 }
 
+// Audit round (card t_db98ebfe): a single-file root with a glob
+// filter must match the file by its base name, not silently miss it
+// (rel is "." for the root file itself).
+func TestGrepSingleFileRootWithGlobFilter(t *testing.T) {
+	root := seedTree(t)
+	p := filepath.Join(root, "notes.md")
+	got, err := provider().RunGrep(context.Background(), map[string]any{
+		"pattern": "search me",
+		"path":    p,
+		"glob":    "*.md",
+	})
+	if err != nil {
+		t.Fatalf("RunGrep: %v", err)
+	}
+	if !strings.Contains(got, "notes.md") {
+		t.Errorf("single-file root must match its own glob filter:\n%s", got)
+	}
+	// and a non-matching filter still excludes it
+	got, err = provider().RunGrep(context.Background(), map[string]any{
+		"pattern": "search me",
+		"path":    p,
+		"glob":    "*.go",
+	})
+	if err != nil {
+		t.Fatalf("RunGrep: %v", err)
+	}
+	if got != "no matches" {
+		t.Errorf("non-matching filter must exclude the root file: got %q", got)
+	}
+}
+
+// Audit round (card t_db98ebfe): a scan error mid-file must not print
+// partial matches as if the file was fully read - an overlong line
+// (bufio.ErrTooLong) ends the scan and the output carries the read
+// error note.
+func TestGrepScanErrorNotesTheFile(t *testing.T) {
+	root := t.TempDir()
+	long := strings.Repeat("x", 2*1024*1024) // 2 MB line: over the 1 MB scanner cap
+	err := os.WriteFile(filepath.Join(root, "long.txt"),
+		[]byte("search me before\n"+long+"\n"), 0o644)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	got, err := provider().RunGrep(context.Background(), map[string]any{
+		"pattern":     "search me",
+		"path":        root,
+		"output_mode": "content",
+	})
+	if err != nil {
+		t.Fatalf("RunGrep: %v", err)
+	}
+	if !strings.Contains(got, "long.txt:1: search me before") {
+		t.Errorf("the match row must still print:\n%s", got)
+	}
+	if !strings.Contains(got, "read error") {
+		t.Errorf("the partial read must carry an honest note:\n%s", got)
+	}
+}
+
 func itoa(n int) string { return fmt.Sprintf("%d", n) }

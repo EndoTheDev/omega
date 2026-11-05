@@ -178,13 +178,21 @@ func globToRegexp(pattern string) (*regexp.Regexp, error) {
 }
 
 // relMatch matches an entry's path relative to the search root
-// (slash-separated) against the filter pattern.
+// (slash-separated) against the filter pattern. A single-file root
+// (path == root, rel ".") also matches on its base name, so grep
+// over one file with a glob filter still applies.
 func relMatch(re *regexp.Regexp, root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	if err != nil {
 		return false
 	}
-	return re.MatchString(filepath.ToSlash(rel))
+	if re.MatchString(filepath.ToSlash(rel)) {
+		return true
+	}
+	if path == root {
+		return re.MatchString(filepath.ToSlash(filepath.Base(root)))
+	}
+	return false
 }
 
 // skipReason reports why a file is out of the search's reach: it
@@ -345,6 +353,10 @@ func (p *SearchProvider) grepFile(out *strings.Builder, root, path string, re *r
 	if err != nil {
 		rel = path
 	}
+	if rel == "." && path == root {
+		// single-file root: name the file, not "."
+		rel = filepath.Base(path)
+	}
 	rel = filepath.ToSlash(rel)
 
 	scanner := bufio.NewScanner(f)
@@ -363,7 +375,13 @@ func (p *SearchProvider) grepFile(out *strings.Builder, root, path string, re *r
 			}
 		}
 		if count == 0 {
+			if serr := scanner.Err(); serr != nil {
+				skipped["read errors"]++
+			}
 			return nil
+		}
+		if serr := scanner.Err(); serr != nil {
+			fmt.Fprintf(out, "[%s read error: %v]\n", rel, serr)
 		}
 		if mode == "count" {
 			fmt.Fprintf(out, "%s: %d\n", rel, count)
@@ -391,6 +409,14 @@ func (p *SearchProvider) grepFile(out *strings.Builder, root, path string, re *r
 		}
 		text.Write(scopy(line))
 		text.WriteByte('\n')
+	}
+	if serr := scanner.Err(); serr != nil {
+		if len(matches) == 0 {
+			skipped["read errors"]++
+			return nil
+		}
+		// a partial read: render what matched, then the honest note
+		fmt.Fprintf(out, "[%s read error: %v]\n", rel, serr)
 	}
 	if len(matches) == 0 {
 		return nil
