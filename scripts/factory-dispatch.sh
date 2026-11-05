@@ -45,20 +45,112 @@ An unknown or malformed flag is refused (exit 2, this usage text to
 stderr) before anything happens - it must never fall through to a real
 dispatch. Without --max the cap is the LIVE config knob
 kanban.max_in_progress_per_profile; it is never hardcoded.
+
+Hermes home + board follow the hermes CLI's own resolution:
+HERMES_KANBAN_DB (pins the DB file) > HERMES_KANBAN_BOARD /
+HERMES_KANBAN_HOME > HERMES_HOME (a profiles/<name> home names its
+root), else windows $LOCALAPPDATA/hermes, else POSIX $HOME/.hermes;
+<root>/kanban/current names the active board, else the default board's
+DB at <root>/kanban.db. The DB reader is the python sqlite3 module (the
+sqlite3 CLI is absent on some fleet hosts). A missing reader, module or
+board DB is a LOUD refusal (exit 3, message to stderr) - verdicts are
+never printed from empty lists.
 USAGE_EOF
 }
 usage_err() { echo "factory-dispatch.sh: $1" >&2; usage >&2; exit 2; }
 
-DB="$HOME/.hermes/kanban/boards/project-omega/kanban.db"
+# ---- hermes home + board resolution - the CLI's own chain (2026-11-05) ----
+# The old hardcoded $HOME/.hermes layout is wrong on windows hosts: the real
+# board DB sits under $LOCALAPPDATA/hermes, and the sqlite3 CLI is absent on
+# some fleet hosts entirely (proven live 2026-11-05 on winbtw: the guard died
+# twice on `sqlite3: command not found`, then printed verdicts computed from
+# EMPTY lists - false-legal in the dangerous direction). Resolution mirrors
+# hermes' own code (hermes_constants.get_default_hermes_root,
+# kanban_db.kanban_home/get_current_board): nothing is hardcoded to one host.
+root_of_env() {  # a trailing profiles/<name> segment names its ROOT home
+  local h="${1//\\//}"   # windows backslashes -> forward slashes
+  if [ "$h" != "$(dirname "$h")" ] && [ "$(basename "$(dirname "$h")")" = profiles ]; then
+    h="$(dirname "$(dirname "$h")")"
+  fi
+  printf '%s' "$h"
+}
+resolve_hermes() {
+  # 1) HERMES_KANBAN_HOME - kanban_home()'s own override
+  # 2) HERMES_HOME - a profile-routed host names its root through profiles/
+  # 3) platform default: windows $LOCALAPPDATA/hermes, POSIX $HOME/.hermes
+  if [ -n "${HERMES_KANBAN_HOME:-}" ]; then ROOT="${HERMES_KANBAN_HOME//\\//}"; return; fi
+  if [ -n "${HERMES_HOME:-}" ]; then ROOT=$(root_of_env "$HERMES_HOME"); return; fi
+  if [ -n "${LOCALAPPDATA:-}" ]; then ROOT="${LOCALAPPDATA//\\//}/hermes"; else ROOT="$HOME/.hermes"; fi
+}
+resolve_board() {  # HERMES_KANBAN_DB pins the file > HERMES_KANBAN_BOARD >
+                   # <root>/kanban/current (slug with a DB) > default board
+  local cand
+  if [ -n "${HERMES_KANBAN_DB:-}" ]; then DB="${HERMES_KANBAN_DB//\\//}"; BOARD="<pinned>"; return; fi
+  for cand in "${HERMES_KANBAN_BOARD:-}" "$(cat "$ROOT/kanban/current" 2>/dev/null || true)"; do
+    [ -n "$cand" ] || continue
+    case "$cand" in *[/*\\]*) continue ;; esac   # malformed slug: fall through, never crash
+    if [ "$cand" = default ]; then DB="$ROOT/kanban.db"; BOARD="$cand"; return; fi
+    if [ -f "$ROOT/kanban/boards/$cand/kanban.db" ]; then
+      DB="$ROOT/kanban/boards/$cand/kanban.db"; BOARD="$cand"; return
+    fi
+  done
+  DB="$ROOT/kanban.db"; BOARD="default"
+}
+die() { echo "factory-dispatch.sh: $1" >&2; exit "${2:-3}"; }
+readers_up() {  # loud-refusal gate: no reader, no verdicts from empty lists
+  # (FD_PY is a test/ops hook: pin the interpreter, or point it nowhere to
+  # exercise the refusal path.)
+  PY="${FD_PY:-}"
+  if [ -z "$PY" ]; then
+    if command -v python3 >/dev/null 2>&1; then PY=python3
+    elif command -v python >/dev/null 2>&1; then PY=python; fi
+  fi
+  [ -n "$PY" ] || die "no python on PATH - the sqlite3-module DB reader is unavailable"
+  "$PY" -c 'import sqlite3' >/dev/null 2>&1 \
+    || die "python '$PY' lacks the sqlite3 module - DB reader unavailable"
+  [ -f "$DB" ] \
+    || die "board DB not found at $DB (root '$ROOT', board '$BOARD')"
+}
+# The DB reader: the python sqlite3 module. One process per statement (the
+# pass runs ~15 statements - startup cost is noise against a 60s tick).
+# A failed open or statement exits 3 with a named error - set -e then stops
+# the pass LOUD. An empty result stays the legitimately-empty-board case.
+DBPY='
+import sqlite3, sys
+sys.stdout.reconfigure(newline="\n")   # windows: no \r\n row translation
+path, mode, sql = sys.argv[1], sys.argv[2], sys.argv[3]
+what = "write" if mode == "x" else "read"
+try:
+    con = sqlite3.connect(path, timeout=10)
+except sqlite3.Error as exc:
+    sys.stderr.write("factory-dispatch.sh: DB open failed: %s\n" % exc)
+    sys.exit(3)
+try:
+    if mode == "x":
+        con.execute(sql)
+        con.commit()
+    else:
+        for row in con.execute(sql):
+            sys.stdout.write("|".join("" if v is None else str(v) for v in row) + "\n")
+except sqlite3.Error as exc:
+    sys.stderr.write("factory-dispatch.sh: DB %s failed: %s\n" % (what, exc))
+    sys.exit(3)
+finally:
+    con.close()
+'
+dbq() { "$PY" -c "$DBPY" "$DB" q "$1"; }
+dbx() { "$PY" -c "$DBPY" "$DB" x "$1"; }
 
 # The cap is the LIVE config knob kanban.max_in_progress_per_profile
-# (Endo, 2026-10-28: "back to 2"), never a hardcode: a hardcode drifted
+# (2026-11-05 live: 1; the main session flips it to 2 after this card's
+# proof - this reader must always MATCH the live value, never hardcode),
+# never a hardcode: a hardcode drifted
 # from the law (CAP=4 while the config said 2) and the guard could spawn
 # past the sanctioned concurrency when the queue held several legal
 # candidates. grep/sed only - no yq dependence. Falls back to 2 when the
 # key or the file is absent (sandbox homes, CI runners).
 config_cap() {
-  local f="$HOME/.hermes/config.yaml"
+  local f="$ROOT/config.yaml"
   [ -f "$f" ] || return 0
   sed -n '/^kanban:/,/^[^[:space:]#]/p' "$f" \
     | grep -E '^[[:space:]]*max_in_progress_per_profile:' \
@@ -78,6 +170,9 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+resolve_hermes
+resolve_board
+readers_up
 CAP=$(config_cap)
 case "$CAP" in ''|*[!0-9]*|0) CAP=2 ;; esac
 [ "$MAXARG" -gt 0 ] && CAP="$MAXARG"   # --max overrides: N stays a live concurrency cap
@@ -137,7 +232,7 @@ tokens_of() {  # extract repo paths from free text (body or diff)
 
 candidate_tokens() {  # id -> WRITE-surface tokens: curated FILES: lines win over body prose
   local body files
-  body=$(sqlite3 "$DB" "SELECT body FROM tasks WHERE id='$1';")
+  body=$(dbq "SELECT body FROM tasks WHERE id='$1';")
   files=$(grep -i '^FILES:' <<<"$body" | head -1 | cut -d: -f2- || true)
   if [ -n "$files" ]; then
     { tokens_of <<<"$files"
@@ -156,7 +251,7 @@ surface_of_card() {  # id -> file tokens: worktree diff against dev + body
       git -C "$wt" status --short 2>/dev/null | awk '{print $NF}'
     } | sort -u
   fi
-  sqlite3 "$DB" "SELECT body FROM tasks WHERE id='$id';" | tokens_of
+  dbq "SELECT body FROM tasks WHERE id='$id';" | tokens_of
 }
 
 class_of() {  # id -> webui | go | docs  (FILES: line is the truth; body text
@@ -164,7 +259,7 @@ class_of() {  # id -> webui | go | docs  (FILES: line is the truth; body text
               # mentions misclassify cards, proven: a pure-Go TUI card
               # classed webui because its OUT OF SCOPE line said "webui")
   local t files
-  t=$(sqlite3 "$DB" "SELECT lower(title||' '||body) FROM tasks WHERE id='$1';")
+  t=$(dbq "SELECT lower(title||' '||body) FROM tasks WHERE id='$1';")
   files=$(grep -o 'files:.*' <<<"$t" | head -1)
   if [ -n "$files" ]; then
     if grep -q "webui\|\.ts\|\.vue\|nuxt" <<<"$files"; then echo webui
@@ -207,7 +302,9 @@ overlaps() {  # candidate tokens, running tokens -> hit if any token pair overla
 # here; the gate, the surface holds and the slot math all read the same
 # post-reclaim set. A zombie the inner somehow keeps stays bounded -
 # DISPATCH_MAX is a hard cap either way.
-mapfile -t RUNNING < <(sqlite3 "$DB" "SELECT id FROM tasks WHERE status='running' AND (claim_expires IS NULL OR claim_expires > strftime('%s','now')) ORDER BY created_at;")
+RUNNING_RAW=$(dbq "SELECT id FROM tasks WHERE status='running' AND (claim_expires IS NULL OR claim_expires > strftime('%s','now')) ORDER BY created_at;")
+RUNNING=()
+[ -n "$RUNNING_RAW" ] && mapfile -t RUNNING <<<"$RUNNING_RAW"
 SURF=/tmp/fd_running_surface.$$; : >"$SURF"
 for r in "${RUNNING[@]:-}"; do
   [ -z "$r" ] && continue
@@ -220,13 +317,21 @@ RUN_HAS_SURFACE=$(grep -q . "$SURF" && echo 1 || echo 0)
 # jump a queued refactor chain. Higher priority number = more urgent
 # (10 = release-blocking class, 5 = standing queue, 0 = default).
 # Ties stay oldest-first (FIFO preserved for the default mass).
-mapfile -t CAND < <(sqlite3 "$DB" "SELECT id FROM tasks WHERE status='ready' AND claim_lock IS NULL ORDER BY priority DESC, created_at;")
+CAND_RAW=$(dbq "SELECT id FROM tasks WHERE status='ready' AND claim_lock IS NULL ORDER BY priority DESC, created_at;")
+CAND=()
+[ -n "$CAND_RAW" ] && mapfile -t CAND <<<"$CAND_RAW"
 # guard bug #7 (2026-10-30): a ready card carrying a NAMED claim_lock
 # (deliberate holds like 'pibtw:v0.14.0-hold') is INVISIBLE to the
 # dispatcher (its claim filter is claim_lock IS NULL) - as a candidate
 # it was marked legal, held every younger card behind it pairwise, and
 # the real dispatch claimed nothing: board deadlock with legal cards
 # starving (proven: dry-run 'legal: t_55a3fc4b' beside 2 starved cards).
+# board-state snapshot (2026-11-05 card): the tick log must show the REAL
+# running set and candidate count - a dry-run whose verdict section is
+# empty because the board is empty must be indistinguishable from one
+# whose computation went blind.
+echo "running: ${RUNNING[*]:-none} (surface tokens: $(grep -c . "$SURF" || true))"
+echo "candidates: ${#CAND[@]} ready, unclaimed"
 PARKED=(); LEGAL=0
 
 # guard bug #4 (2026-10-25): hermes kanban dispatch once claimed a card
@@ -236,7 +341,9 @@ PARKED=(); LEGAL=0
 # duration of the dispatch call - the EXIT trap unparks them.
 # Ceiling: if the daemon ever mis-claims todo/blocked cards the same
 # way, widen this status list.
-mapfile -t REVIEWCARDS < <(sqlite3 "$DB" "SELECT id FROM tasks WHERE status='review' AND (claim_lock IS NULL OR claim_lock='');" 2>/dev/null || true)
+REVIEWCAND=$(dbq "SELECT id FROM tasks WHERE status='review' AND (claim_lock IS NULL OR claim_lock='');")
+REVIEWCARDS=()
+[ -n "$REVIEWCAND" ] && mapfile -t REVIEWCARDS <<<"$REVIEWCAND"
 PARKED+=("${REVIEWCARDS[@]:-}")
 PASS_SURF=$(mktemp); : >"$PASS_SURF"   # surfaces of candidates already marked legal THIS pass (pairwise)
 for c in "${CAND[@]:-}"; do
@@ -315,15 +422,16 @@ rm -f "$SURF" "$PASS_SURF"
 # below guards against the inner sweep re-promoting it (the bug #11 path)
 # exactly as before.
 HOLDS=()
+HOLDSRAW=$(dbq "SELECT id||'|'||status FROM tasks WHERE claim_lock LIKE 'pibtw:%-hold';")
 while IFS='|' read -r hid hstat; do
   [ -n "$hid" ] || continue
   if [ "$hstat" != "blocked" ]; then
-    sqlite3 "$DB" "UPDATE tasks SET status='blocked' WHERE id='$hid' AND status='$hstat' AND claim_lock LIKE 'pibtw:%-hold';"
+    dbx "UPDATE tasks SET status='blocked' WHERE id='$hid' AND status='$hstat' AND claim_lock LIKE 'pibtw:%-hold';"
     echo "hold-drift normalized: $hid ($hstat -> blocked, drifted before the pass)"
     hstat=blocked
   fi
   HOLDS+=("$hid|$hstat")
-done < <(sqlite3 "$DB" "SELECT id||'|'||status FROM tasks WHERE claim_lock LIKE 'pibtw:%-hold';")
+done <<<"$HOLDSRAW"
 
 # -- park colliders (sentinel claim-lock: the dispatcher skips locked cards;
 #    a status flip does NOT protect - unclaimed cards are daemon food), dispatch, restore --
@@ -331,11 +439,11 @@ done < <(sqlite3 "$DB" "SELECT id||'|'||status FROM tasks WHERE claim_lock LIKE 
 # from a tick's canonical park) keeps it - overwriting it unparked a parked card live.
 # unpark restores NULL, never '': the dispatcher's claim filter is `claim_lock IS NULL`,
 # and an '' lock left the card invisible to every later dispatch (Spawned: 0, all buckets empty).
-park()   { local p; for p in "$@"; do [ -n "$p" ] || continue; sqlite3 "$DB" "UPDATE tasks SET claim_lock='pibtw:dispatch-hold' WHERE id='$p' AND (claim_lock IS NULL OR claim_lock='');"; done; }
-unpark() { local p; for p in "$@"; do [ -n "$p" ] || continue; sqlite3 "$DB" "UPDATE tasks SET claim_lock=NULL WHERE id='$p' AND claim_lock='pibtw:dispatch-hold';"; done; }
+park()   { local p; for p in "$@"; do [ -n "$p" ] || continue; dbx "UPDATE tasks SET claim_lock='pibtw:dispatch-hold' WHERE id='$p' AND (claim_lock IS NULL OR claim_lock='');"; done; }
+unpark() { local p; for p in "$@"; do [ -n "$p" ] || continue; dbx "UPDATE tasks SET claim_lock=NULL WHERE id='$p' AND claim_lock='pibtw:dispatch-hold';"; done; }
 park "${PARKED[@]:-}"
 trap 'unpark "${PARKED[@]:-}"' EXIT
-if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE status='ready';")" -gt 0 ]; then
+if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(dbq "SELECT COUNT(*) FROM tasks WHERE status='ready';")" -gt 0 ]; then
   DOUT=$(mktemp)
   if [ "$MAXARG" -gt 0 ]; then
     # an explicit --max N bounds TRUE concurrency: pass N through unchanged.
@@ -383,10 +491,11 @@ if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(sqlite3 "$DB" "SELECT COUNT(*) FROM t
   # stale one. What the guard CAN do: re-read running after the call and report
   # the delta, so over-runs surface in the tick log instead of hiding.
   WANT="$DISPATCH_MAX"
-  NOWRUN=$(sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE status='running';")
+  NOWRUN=$(dbq "SELECT COUNT(*) FROM tasks WHERE status='running';")
+  RUNNOW=$(dbq "SELECT id FROM tasks WHERE status='running';")
   NEWRUN=$(comm -13 \
     <(printf '%s\n' "${RUNNING[@]:-}" | sort -u) \
-    <(sqlite3 "$DB" "SELECT id FROM tasks WHERE status='running';" | sort -u) \
+    <(printf '%s\n' "$RUNNOW" | sort -u) \
     | tr '\n' ' ')
   echo "handoff: wanted <=$WANT running (snapshot ${#RUNNING[@]} + slots $SLOTS), after: $NOWRUN (delta $(( NOWRUN - ${#RUNNING[@]} )) since snapshot)"
   [ -n "$NEWRUN" ] && echo "  newly running: $NEWRUN"
@@ -406,9 +515,9 @@ if [ "${#HOLDS[@]}" -gt 0 ]; then
   for hs in "${HOLDS[@]:-}"; do
     [ -n "$hs" ] || continue
     hid="${hs%%|*}"; hwas="${hs#*|}"
-    hnow=$(sqlite3 "$DB" "SELECT status FROM tasks WHERE id='$hid' AND claim_lock LIKE 'pibtw:%-hold';" || true)
+    hnow=$(dbq "SELECT status FROM tasks WHERE id='$hid' AND claim_lock LIKE 'pibtw:%-hold';" || true)
     if [ -n "$hnow" ] && [ "$hnow" != "$hwas" ]; then
-      sqlite3 "$DB" "UPDATE tasks SET status='$hwas' WHERE id='$hid' AND status='$hnow';"
+      dbx "UPDATE tasks SET status='$hwas' WHERE id='$hid' AND status='$hnow';"
       echo "re-parked: $hid ($hnow -> $hwas, named hold lifted by the dispatch sweep)"
     fi
   done
