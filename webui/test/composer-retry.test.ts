@@ -224,12 +224,13 @@ describe("composer structure: one button, + in the input row", () => {
   it("the + attach affordance sits IN the input row", () => {
     assert.match(composer, /<div class="composer-row">/);
     assert.match(composer, /class="plus-btn"/);
-    // plus and textarea are siblings in the same row
+    // plus and the editor are siblings in the same row (t_e67c372b: the
+    // editor is a contenteditable div now)
     const row = composer.slice(composer.indexOf('<div class="composer-row">'));
     const rowEnd = row.indexOf("</div>");
     assert.match(row.slice(0, rowEnd), /plus-btn/, "plus first");
-    assert.match(row.slice(0, rowEnd), /<textarea/, "textarea in the row");
-    assert.match(row.slice(0, rowEnd), /placeholder="message omega"/);
+    assert.match(row.slice(0, rowEnd), /class="composer-input"/, "the editor in the row");
+    assert.match(row.slice(0, rowEnd), /data-placeholder/, "the placeholder rides the data attr");
   });
 });
 
