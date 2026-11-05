@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -231,9 +232,11 @@ func TestTargetContentHashBindsMutation(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "deploy.sh")
 	os.WriteFile(script, []byte("echo hi\n"), 0o755)
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
+	// t.Chdir, not bare os.Chdir: the cleanup restores the process
+	// working directory BEFORE TempDir's RemoveAll - on windows the
+	// restored cwd frees the temp dir's unlink (a live CWD is an open
+	// handle there), on posix it is harmless symmetry.
+	t.Chdir(dir)
 	p := Parse("./deploy.sh")
 	h1 := TargetContentHash(p.Segments)
 	os.WriteFile(script, []byte("echo CHANGED\n"), 0o755)
@@ -452,10 +455,14 @@ func TestAuditRows(t *testing.T) {
 	if row.Executed {
 		t.Fatal("an escalated row must record not-executed")
 	}
-	// file mode 0600
-	info, _ := os.Stat(filepath.Join(home, auditFileName))
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("audit file mode: %v", info.Mode().Perm())
+	// file mode 0600 - a unix-only shape: windows Go carries no unix
+	// mode bits (every writable regular file stats 0666, perms live in
+	// NTFS ACLs), so the pin holds only where Mode() means something
+	if runtime.GOOS != "windows" {
+		info, _ := os.Stat(filepath.Join(home, auditFileName))
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("audit file mode: %v", info.Mode().Perm())
+		}
 	}
 }
 

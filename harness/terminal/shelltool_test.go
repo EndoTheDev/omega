@@ -3,6 +3,7 @@ package terminal
 import (
 	"context"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -87,9 +88,19 @@ func TestShellRoot(t *testing.T) {
 	ctx := core.WithRunWorkspace(context.Background(), ws, "")
 	p := &ShellProvider{}
 
-	out, err := p.RunShell(ctx, map[string]any{"command": "pwd"})
+	// the cwd-printing probe is OS-shaped: `pwd` is an external binary
+	// everywhere, and on windows `cmd /C pwd` resolves whatever
+	// pwd.exe sits on the inherited PATH (an MSYS coreutils install
+	// answers with the /tmp-translated path, not the workspace).
+	// `cd` bare is the cmd builtin that prints the cwd.
+	probe := "pwd"
+	if runtime.GOOS == "windows" {
+		probe = "cd"
+	}
+
+	out, err := p.RunShell(ctx, map[string]any{"command": probe})
 	if err != nil || !strings.Contains(out, ws) {
-		t.Fatalf("shell pwd: %v (got %q, want it to contain %q)", err, out, ws)
+		t.Fatalf("shell %s: %v (got %q, want it to contain %q)", probe, err, out, ws)
 	}
 }
 

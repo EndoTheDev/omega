@@ -38,6 +38,13 @@ type fakeProc struct {
 	closed  bool
 	code    int
 	kills   int
+	// readsInFlight announces a live Read: windows must never close
+	// an os.File behind a pending pipe Read (the Close waits in
+	// CancelIoEx/decref behind the interrupted op and hung a full
+	// suite run to the 10m alarm), so Kill closes the write end to
+	// break the reader and waits out the announced read before
+	// touching the read handle.
+	readsInFlight sync.WaitGroup
 }
 
 func newFakeProc() *fakeProc {
@@ -48,7 +55,11 @@ func newFakeProc() *fakeProc {
 	return &fakeProc{read: r, write: w, done: make(chan struct{})}
 }
 
-func (f *fakeProc) Read(b []byte) (int, error)  { return f.read.Read(b) }
+func (f *fakeProc) Read(b []byte) (int, error) {
+	f.readsInFlight.Add(1)
+	defer f.readsInFlight.Done()
+	return f.read.Read(b)
+}
 func (f *fakeProc) Write(b []byte) (int, error) { return f.write.Write(b) }
 func (f *fakeProc) Close() error {
 	f.mu.Lock()
@@ -71,19 +82,30 @@ func (f *fakeProc) Resize(rows, cols uint16) error {
 
 func (f *fakeProc) Done() <-chan struct{} { return f.done }
 
-// Kill closes the master and reports a signal death.
+// Kill takes the shell down with the REAL pty shape (pty_unix.go:145
+// closes the master inside Kill): the pipes close here, so an
+// outstanding readLoop Read breaks out BEFORE remove()'s Close. The
+// reap order is load-bearing on windows: write-first close breaks the
+// pending Read (eof/broken pipe), the in-flight read is waited out,
+// and only then does the read handle close - closing an os.File
+// behind a still-pending pipe Read hung a full-suite run there to
+// the 10m alarm (posix close-unblocks-reader; windows does not).
 func (f *fakeProc) Kill() error {
 	f.kills++
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	select {
 	case <-f.done:
 	default:
-		f.mu.Lock()
 		f.code = -1
-		f.mu.Unlock()
 		close(f.done)
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
+	if !f.closed {
+		f.closed = true
+		f.write.Close()
+		f.readsInFlight.Wait() // the announced Read leaves before its handle does
+		f.read.Close()
+	}
 	return nil
 }
 

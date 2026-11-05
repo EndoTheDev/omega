@@ -177,7 +177,10 @@ func writeStubArgs(t *testing.T, name string) string {
 	var body string
 	if runtime.GOOS == "windows" {
 		bin += ".bat"
-		body = "@echo off\r\necho argc=%*\r\nexit /b 0\r\n"
+		// `args=%*` (the posix branches echo `args="$*"`): the tests
+		// pin `args=` as the echo marker, so the token must match
+		// across stub shapes
+		body = "@echo off\r\necho args=%*\r\nexit /b 0\r\n"
 	} else {
 		bin += ".sh"
 		body = "#!/bin/sh\necho args=\"$*\"\nexit 0\n"
