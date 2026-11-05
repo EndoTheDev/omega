@@ -40,8 +40,8 @@ Project rules live here.
 
 ## Environment
 CWD: /test/cwd
-OS: linux
-Shell: bash
+OS: <env>
+Shell: <env>
 Date: <date>
 
 Tone: direct.
