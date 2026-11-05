@@ -17,6 +17,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -80,6 +81,17 @@ type Server struct {
 	// through this model when set, instead of the call's pinned
 	// provider (the main model). Empty = no override.
 	titleModel string
+
+	// defaultWorkspace is the server.default_workspace knob (card
+	// t_ccf74d88): the TOOLS' fallback working directory. A session
+	// without a pinned workspace roots its tool runs here instead of
+	// the process working directory - a defined default, not an
+	// implicit cwd. Empty = unset, the cwd fallback stands.
+	defaultWorkspace string
+
+	// wsMu guards defaultWorkspace: the settings-pane hot apply writes
+	// it while a detached run's prepareRun may be reading it.
+	wsMu sync.Mutex
 
 	ctxMu     sync.Mutex
 	ctxWindow map[string]int // model name -> context window (probed once)
@@ -453,6 +465,21 @@ func (s *Server) SetChannelKnobs(runTimeout time.Duration, titleModel string) {
 	s.titleModel = titleModel
 }
 
+// SetDefaultWorkspace applies the server.default_workspace knob (card
+// t_ccf74d88): the tools' fallback workdir for sessions without a
+// pinned workspace. Called by the wire (boot value) and the settings
+// hot apply (a live knob save). A path that no longer exists is
+// ignored - a broken knob must not root every tool call into a
+// tool-call failure.
+func (s *Server) SetDefaultWorkspace(dir string) {
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		dir = ""
+	}
+	s.wsMu.Lock()
+	s.defaultWorkspace = dir
+	s.wsMu.Unlock()
+}
+
 // WriteJSON is the exported seam for the shell's JSON responses.
 func WriteJSON(w http.ResponseWriter, status int, v any) { writeJSON(w, status, v) }
 
@@ -743,11 +770,18 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	// scope off ctx) and serves the folder's trust-gated AGENTS.md
 	// context instead of the process working directory's. Non-tty
 	// resolution skips an untrusted folder's context with a stderr
-	// note - the same gate the host applies at boot.
+	// note - the same gate the host applies at boot. A session without
+	// a pin falls back to the default_workspace knob (card t_ccf74d88):
+	// the tools run against a DEFINED directory, never an implicit cwd.
+	s.wsMu.Lock()
 	req.workspace = sess.Workspace
-	if sess.Workspace != "" {
+	if req.workspace == "" {
+		req.workspace = s.defaultWorkspace
+	}
+	s.wsMu.Unlock()
+	if req.workspace != "" {
 		if tr := s.trustResolver(); tr != nil {
-			req.workspacePromptContext = tr.ResolveContext(sess.Workspace, false, false, false)
+			req.workspacePromptContext = tr.ResolveContext(req.workspace, false, false, false)
 		}
 	}
 
@@ -998,13 +1032,23 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// No store: the legacy path. The run IS the request - inline, the
 	// client's presence gates it, no run slot, no chat panel (no
 	// session to cover). Same provider pin and eph-id wall the
-	// prepareRun path enforces.
+	// prepareRun path enforces. The default_workspace fallback applies
+	// here too (card t_ccf74d88): a no-store run's tools are rooted at
+	// the defined knob, @-mention expansion along with them.
 	if s.store == nil && !req.Ephemeral {
 		if isEphemeralID(req.SessionID) {
 			http.Error(w, "ephemeral session id requires the ephemeral flag", http.StatusBadRequest)
 			return
 		}
-		messageIn := s.expandAtMentions(messages, "")
+		// the default_workspace fallback applies here too (card
+		// t_ccf74d88): a no-store run's tools are rooted at the knob,
+		// @-mention expansion along with them.
+		s.wsMu.Lock()
+		if req.workspace == "" {
+			req.workspace = s.defaultWorkspace
+		}
+		s.wsMu.Unlock()
+		messageIn := s.expandAtMentions(messages, req.workspace)
 		prov, pinErr := s.pinProvider(&req)
 		if pinErr != nil {
 			http.Error(w, pinErr.Error(), pinErr.code)
