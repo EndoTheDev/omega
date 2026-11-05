@@ -50,6 +50,33 @@ func doReq(t *testing.T, srv *httptest.Server, method, host, origin string) int 
 	return res.StatusCode
 }
 
+// -- declared public hosts (v0.15.1) ---------------------------------------
+
+// The operator declares a tunneled domain (server.public_hosts); the
+// guard answers it and keeps refusing every name not on the list.
+func TestGuardPublicHostPassesWhenDeclared(t *testing.T) {
+	srv := guardServer(t, "127.0.0.1:8099")
+	g := srv.Config.Handler.(*hostGuard)
+	g.public.Store(map[string]bool{"omega.endothe.dev": true})
+
+	// the declared domain: reads pass
+	if got := doReq(t, srv, http.MethodGet, "omega.endothe.dev", ""); got != http.StatusOK {
+		t.Errorf("GET via declared public host: got %d, want 200", got)
+	}
+	// the declared domain: same-origin writes pass (the SPA served
+	// through the tunnel posts with Origin = the domain)
+	if got := doReq(t, srv, http.MethodPost, "omega.endothe.dev", "https://omega.endothe.dev"); got != http.StatusOK {
+		t.Errorf("POST via declared public host, same-origin: got %d, want 200", got)
+	}
+	// any OTHER domain still dies - the declaration is exact, the
+	// rebinding class stays dead
+	for _, host := range []string{"evil.example", "attacker.com", "omega.endothe.dev.evil.example"} {
+		if got := doReq(t, srv, http.MethodGet, host, ""); got != http.StatusForbidden {
+			t.Errorf("GET via undeclared host %s: got %d, want 403", host, got)
+		}
+	}
+}
+
 // -- loopback mutate passes ------------------------------------------------
 
 func TestGuardLoopbackMutatePasses(t *testing.T) {
