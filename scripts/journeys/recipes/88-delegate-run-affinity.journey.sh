@@ -43,8 +43,8 @@ spawn_run() {
     -d "{\"session_id\": \"${sid}\", \"messages\": [{\"role\": \"user\", \"content\": \"${prompt}\"}]}" \
     > "$out" 2>&1
 }
-spawn_run "${JRN_A}" "${sentA}" /tmp/omega-jrn-affA.sse &
-spawn_run "${JRN_B}" "${sentB}" /tmp/omega-jrn-affB.sse &
+spawn_run "${JRN_A}" "${sentA}" "$JOURNEY_WORKTMP/omega-jrn-affA.sse" &
+spawn_run "${JRN_B}" "${sentB}" "$JOURNEY_WORKTMP/omega-jrn-affB.sse" &
 wait
 step "both /chat streams settled"
 
@@ -65,11 +65,11 @@ step "ok: both transcripts carry an injected user turn"
 # --- the affinity assertion ---
 # tokens spawned by run X: the prompt exactly as X typed it into
 # delegate.task (the SSE wire), not the instructed string
-curl -s "${JOURNEY_BASE_URL}/sessions/${JRN_A}" > /tmp/omega-jrn-affA-tx.json
-curl -s "${JOURNEY_BASE_URL}/sessions/${JRN_B}" > /tmp/omega-jrn-affB-tx.json
+curl -s "${JOURNEY_BASE_URL}/sessions/${JRN_A}" > "$JOURNEY_WORKTMP/omega-jrn-affA-tx.json"
+curl -s "${JOURNEY_BASE_URL}/sessions/${JRN_B}" > "$JOURNEY_WORKTMP/omega-jrn-affB-tx.json"
 python3 - \
-  /tmp/omega-jrn-affA.sse /tmp/omega-jrn-affB.sse \
-  /tmp/omega-jrn-affA-tx.json /tmp/omega-jrn-affB-tx.json \
+  "$JOURNEY_WORKTMP/omega-jrn-affA.sse" "$JOURNEY_WORKTMP/omega-jrn-affB.sse" \
+  "$JOURNEY_WORKTMP/omega-jrn-affA-tx.json" "$JOURNEY_WORKTMP/omega-jrn-affB-tx.json" \
   "${sentA}" "${sentB}" <<'PYEOF' \
   || die "run affinity broken (t_f3fb7c52 regression): see the assertion output above"
 import json, re, sys

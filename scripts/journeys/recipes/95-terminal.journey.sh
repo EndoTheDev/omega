@@ -36,7 +36,7 @@ printf '%s' "$lst" | grep -qE "\"id\": ?\"$tid\"" || \
 step "ok: session listed"
 
 # --- stream: live SSE, replay tail first ----------------------------------
-ssetmp=$(mktemp /tmp/jrn-term-stream.XXXXXX)
+ssetmp=$(mktemp "$JOURNEY_WORKTMP/jrn-term-stream.XXXXXX")
 curl -sN --max-time 25 "$B/terminal/$tid/stream" > "$ssetmp" &
 curpid=$!
 head -1 "$ssetmp" | grep -qF 'data: {"t":"o"' || sleep 2

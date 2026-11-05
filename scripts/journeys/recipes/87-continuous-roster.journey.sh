@@ -26,7 +26,7 @@
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 runtag=$(date +%d%H%M%S)
-printf '%s' "$runtag" > "${JRN_TAGFILE:-/tmp/omega-jrn-runtag}"
+printf '%s' "$runtag" > "${JRN_TAGFILE:-$JOURNEY_WORKTMP/omega-jrn-runtag}"
 CONT_NAME="jrn-${runtag}-roster"
 JRN_ID="$CONT_NAME" # cleanup_journey_sessions' fast path is a no-op; the trap below owns the home
 

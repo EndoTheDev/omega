@@ -23,6 +23,20 @@ JOURNEY_BASE_URL=${JOURNEY_BASE_URL:-http://127.0.0.1:8098}
 JOURNEY_CHROME_PORT=${JOURNEY_CHROME_PORT:-9333}
 JOURNEY_SESSION=${JOURNEY_SESSION:-omega-journey}
 
+# JOURNEY_WORKTMP: a scratch path EVERY tool in the recipe can read.
+# On MSYS hosts (windows git-bash) the native binaries recipes invoke
+# (python3 is a native win32 build) cannot open MSYS /tmp paths - they
+# resolve them to <drive>:\tmp and the file is not there. cygpath -m
+# rewrites the scratch dir to a mixed C:/... form that bash reads,
+# writes and spawns natively; POSIX hosts have no cygpath and pass the
+# directory through unchanged (TMPDIR unset on the CI lane stays /tmp).
+if command -v cygpath >/dev/null 2>&1; then
+  JOURNEY_WORKTMP="$(cygpath -m "${TMPDIR:-/tmp}")"
+else
+  JOURNEY_WORKTMP="${TMPDIR:-/tmp}"
+fi
+export JOURNEY_WORKTMP
+
 # ab <args...>: one agent-browser call, ALWAYS in this run's browser
 # session: the daemon multiplexes concurrent clients (another card's
 # journey run rides the same daemon) and the default connection is
@@ -176,7 +190,7 @@ assert_no_console_errors() {
 
 # journey session lifecycle -------------------------------------------------
 
-JRN_TAGFILE="${TMPDIR:-/tmp}/omega-jrn-runtag"
+JRN_TAGFILE="${JRN_TAGFILE:-$JOURNEY_WORKTMP/omega-jrn-runtag}"
 
 # new_journey_session <name>: POST /sessions with a unique id; prints
 # the id; writes the unique run tag to $JRN_TAGFILE (function runs in a
