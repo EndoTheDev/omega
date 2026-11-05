@@ -94,7 +94,14 @@ func (t treeKiller) close() {
 	}
 }
 
-// groupAlive probes the pid through the process table handle.
+// stillActive is the windows sentinel for "no exit code yet"
+// (STATUS_PENDING); every other value means the process has shot.
+const stillActive = 259
+
+// groupAlive probes the pid's exit code: an openable handle alone is a
+// false verdict on windows - a terminated-but-not-yet-released pid
+// still opens, so Kill would report a process it just killed as
+// "still alive". STILL_ACTIVE means alive; any exit code means dead.
 func groupAlive(pid int) bool {
 	if pid <= 0 {
 		return false
@@ -103,8 +110,12 @@ func groupAlive(pid int) bool {
 	if err != nil {
 		return false
 	}
-	syscall.CloseHandle(handle)
-	return true
+	defer syscall.CloseHandle(handle)
+	var code uint32
+	if err := syscall.GetExitCodeProcess(handle, &code); err != nil {
+		return false
+	}
+	return code == stillActive
 }
 
 // signalTerm on windows is TerminateProcess: a TERM is a KILL (the

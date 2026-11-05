@@ -235,9 +235,20 @@ func writeJobsYAML(path string, doc *yaml.Node) error {
 		return fmt.Errorf("marshal %s: %w", path, err)
 	}
 	// the config files are operator-owned: the same mode the
-	// fold-write uses (no chmod churn)
-	if err := os.WriteFile(path, out, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
+	// fold-write uses (no chmod churn). tmp+rename - a crash or
+	// power loss mid-write must never truncate the operator's
+	// hand-owned file to zero bytes (the config writer's pattern).
+	mode := os.FileMode(0o644)
+	if fi, statErr := os.Stat(path); statErr == nil {
+		mode = fi.Mode()
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, out, mode); err != nil {
+		return fmt.Errorf("write %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp) //nolint:errcheck // best-effort cleanup
+		return fmt.Errorf("replace %s: %w", path, err)
 	}
 	return nil
 }
