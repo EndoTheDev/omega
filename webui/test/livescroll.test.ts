@@ -139,3 +139,73 @@ describe("live-run scroll chain: the body is contained, not clipped (t_64878551)
     );
   });
 });
+
+describe("content-change follow (t_bef3f45e)", () => {
+  it("the scroll decision routes through the shrink-clamp guard", () => {
+    const src = chatTab();
+    assert.match(
+      src,
+      /pinned\.value = resumesFollow\(/,
+      "onScroll must derive the follow state from resumesFollow",
+    );
+    // the guard fuel: the scroller height at the last scroll event -
+    // declared once, written only in the scroll handler (RO callbacks
+    // must never touch it, or the shrink guard loses its pre-fold value)
+    const writers = src.match(/lastScrollHeight\s*=/g) ?? [];
+    assert.equal(
+      writers.length,
+      2,
+      "lastScrollHeight: the declaration plus exactly one write - in the scroll handler",
+    );
+  });
+
+  it("a ResizeObserver follows content growth between transcript changes", () => {
+    const src = chatTab();
+    assert.match(
+      src,
+      /new ResizeObserver\(onContentResize\)/,
+      "the content observer must be the follow's second driver",
+    );
+    assert.match(src, /function resizeContentRO\(/, "the target sync exists");
+    // the callback follows under the pinned gate and keeps the pill fresh
+    const cb = src.indexOf("function onContentResize");
+    assert.ok(cb !== -1, "onContentResize missing");
+    const body = src.slice(cb, src.indexOf("}", src.indexOf("jumpPill.value", cb)));
+    assert.match(body, /scrollDown\(\)/, "the RO callback follows (scrollDown gates on pinned)");
+    assert.match(
+      body,
+      /jumpPill\.value = pillVisible\(/,
+      "the RO callback keeps the pill fresh between scroll events",
+    );
+  });
+
+  it("the RO targets re-sync on every growth surface", () => {
+    const src = chatTab();
+    // transcript deltas (items mount, branch swaps rebuild targets)
+    const tw = src.indexOf("watch(transcript, () => {");
+    assert.ok(tw !== -1, "the transcript watcher exists");
+    assert.match(
+      src.slice(tw, tw + 300),
+      /resizeContentRO/,
+      "the transcript watcher must re-sync the RO targets",
+    );
+    // the live branch transitions swap container nodes
+    const lw = src.indexOf("watch(\n    liveLayout,");
+    assert.ok(lw !== -1, "the liveLayout watch exists");
+    assert.match(
+      src.slice(lw, src.indexOf('flush: "post"', lw)),
+      /resizeContentRO/,
+      "the liveLayout watch must re-sync the RO targets post-flush",
+    );
+    // mount-time priming
+    const mounted = src.indexOf("onMounted(async () => {");
+    assert.ok(mounted !== -1);
+    assert.match(
+      src.slice(mounted, mounted + 900),
+      /resizeContentRO/,
+      "the mount primes the RO targets",
+    );
+    // teardown
+    assert.match(src, /contentRO\?\.disconnect\(\)/, "the observer disconnects on unmount");
+  });
+});
