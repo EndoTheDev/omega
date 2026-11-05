@@ -104,7 +104,6 @@ All modules are in-process Go packages under `harness/`. See
 | Project Trust   | [docs/project-trust.md](docs/project-trust.md)     |
 | Architecture    | [docs/architecture.md](docs/architecture.md)       |
 | Landing pipeline | [docs/pipeline.md](docs/pipeline.md)              |
-| Roadmap         | [docs/roadmap.md](docs/roadmap.md)                 |
 | Troubleshooting | [docs/troubleshooting.md](docs/troubleshooting.md) |
 
 ## License
