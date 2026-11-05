@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -440,7 +441,11 @@ func TestAuditRows(t *testing.T) {
 	g := newTestGate(t, ModeManual)
 	home := g.cfg.Home
 	g.verdicts = func() verdictHub { return nil }
-	_, _ = g.Gate(core.WithRunOrigin(context.Background(), "cron"), "shell.run", map[string]any{"command": "rm x.txt"})
+	// The cron fire's session rides the run context (cody card
+	// t_e203c2f6): the row must name it - a background origin's
+	// decision is evidence about a session, not an anonymous one.
+	ctx := agent.WithSessionID(core.WithRunOrigin(context.Background(), "cron"), "sess-cron-gate")
+	_, _ = g.Gate(ctx, "shell.run", map[string]any{"command": "rm x.txt"})
 	raw, err := os.ReadFile(filepath.Join(home, auditFileName))
 	if err != nil {
 		t.Fatalf("audit log missing: %v", err)
@@ -451,6 +456,15 @@ func TestAuditRows(t *testing.T) {
 	}
 	if row.Command != "rm x.txt" || row.Step == "" || row.Mode != ModeManual || row.Origin != "cron" {
 		t.Fatalf("row shape wrong: %+v", row)
+	}
+	if row.Session != "sess-cron-gate" {
+		t.Fatalf("row session = %q, want the run's session id", row.Session)
+	}
+	if row.DecidedBy != "manual" {
+		t.Fatalf("cron + no verdicts seam decides by %q, want manual", row.DecidedBy)
+	}
+	if row.TS == "" {
+		t.Fatal("row must carry its timestamp")
 	}
 	if row.Executed {
 		t.Fatal("an escalated row must record not-executed")
@@ -463,6 +477,63 @@ func TestAuditRows(t *testing.T) {
 		if info.Mode().Perm() != 0o600 {
 			t.Fatalf("audit file mode: %v", info.Mode().Perm())
 		}
+	}
+}
+
+// TestEveryDecisionLandsARow pins the audit ledger's completeness
+// (card t_e203c2f6): every gate decision - a card approval, a cache
+// replay, a card denial - appends exactly one decision row, each with
+// its verdict, its decided-by rule and the session. Benign traffic is
+// not a decision (TestBenignTrafficPaysNothing) and stays rowless.
+func TestEveryDecisionLandsARow(t *testing.T) {
+	g := newTestGate(t, ModeManual)
+	fv := &fakeVerdicts{answers: core.QuestionAnswer{OptionIndex: 1, Option: "approve"}}
+	g.verdicts = func() verdictHub { return fv }
+	ctx := agent.WithSessionID(core.WithRunOrigin(context.Background(), "interactive"), "sess-gate")
+
+	if _, err := g.Gate(ctx, "shell.run", map[string]any{"command": "rm note.md"}); err != nil {
+		t.Fatalf("approved card must let the command run: %v", err)
+	}
+	if _, err := g.Gate(ctx, "shell.run", map[string]any{"command": "rm note.md"}); err != nil {
+		t.Fatalf("cached approve replays: %v", err)
+	}
+	deny := &fakeVerdicts{answers: core.QuestionAnswer{OptionIndex: 2, Option: "deny"}}
+	g.verdicts = func() verdictHub { return deny }
+	if _, err := g.Gate(ctx, "shell.run", map[string]any{"command": "rm other.md"}); err == nil {
+		t.Fatal("denied card must refuse execution")
+	}
+
+	raw, err := os.ReadFile(filepath.Join(g.cfg.Home, auditFileName))
+	if err != nil {
+		t.Fatalf("audit log missing: %v", err)
+	}
+	var rows []AuditRow
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		var r AuditRow
+		if err := json.Unmarshal([]byte(line), &r); err != nil {
+			t.Fatalf("row not JSONL: %v", err)
+		}
+		rows = append(rows, r)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("row count = %d, want one per decision (3)", len(rows))
+	}
+	for _, r := range rows {
+		if r.Session != "sess-gate" {
+			t.Fatalf("row session = %q, want sess-gate", r.Session)
+		}
+		if r.TS == "" {
+			t.Fatal("row must carry its timestamp")
+		}
+	}
+	if rows[0].Verdict != VerdictApprove || rows[0].DecidedBy != "human_card" || !rows[0].Executed {
+		t.Fatalf("card approve row = verdict %q decided_by %q executed %v", rows[0].Verdict, rows[0].DecidedBy, rows[0].Executed)
+	}
+	if rows[1].Verdict != VerdictApprove || rows[1].DecidedBy != "cache" || !rows[1].Cached {
+		t.Fatalf("cache replay row = verdict %q decided_by %q cached %v", rows[1].Verdict, rows[1].DecidedBy, rows[1].Cached)
+	}
+	if rows[2].Verdict != VerdictDeny || rows[2].DecidedBy != "human_card" || rows[2].Executed {
+		t.Fatalf("card deny row = verdict %q decided_by %q executed %v", rows[2].Verdict, rows[2].DecidedBy, rows[2].Executed)
 	}
 }
 

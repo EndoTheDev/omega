@@ -83,7 +83,12 @@ never replay.
 Every verdict appends one JSONL row to
 `<home>/approval-decisions.jsonl` (mode 0600, rotated at 4 MB):
 the parsed command, all six answers, the fired ladder step, rule
-hits, policy hash, mode, origin and latency. The log is the eval
+hits, policy hash, mode, origin and latency. Every row also names the
+run's session: the http channel and the CLI loop wrap the session id
+on the run context, and a cron fire or `run --session` turn that only
+persists through its turn sink inherits it from the agent's
+attribution default - a background origin's decision is evidence
+about a session, never anonymous. The log is the eval
 data source - the corpus regression (`TestDetectorCorpus`,
 ladder table tests, adversarial canaries) pins the expected behavior;
 the audit log measures it in production.

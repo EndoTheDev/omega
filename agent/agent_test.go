@@ -264,6 +264,77 @@ func TestRunMultiTurnToolLoop(t *testing.T) {
 	}
 }
 
+// sessionRecordingAgent records the session id its run context carries.
+type sessionRecordingAgent struct {
+	session string
+	tools   map[string]core.Tool
+}
+
+// TestRunWithProviderAttributesTheSinkSession pins the session
+// attribution default (card t_e203c2f6): a run persisting through a
+// store turn sink carries that session id in its run context even when
+// the host never wrapped WithSessionID (cron fires, `omega run
+// --session`), so every run-attributed record - the approval gate's
+// evidence ledger first - names the session. A host that DID wrap one
+// wins over the sink.
+func TestRunWithProviderAttributesTheSinkSession(t *testing.T) {
+	// A fresh provider per subcase: FakeProviderScripts advance their
+	// script per Stream call, so a shared instance would replay the
+	// tool-call script only for the first agent.
+	newProvider := func() *FakeProvider {
+		return NewFakeProviderScripts("fake",
+			[]core.ProviderStreamEvent{
+				core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "rec", Arguments: map[string]any{"text": "x"}}},
+				core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+			},
+			[]core.ProviderStreamEvent{
+				core.ResponseChunk{Type: "response_chunk", Content: "done"},
+				core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+			},
+		)
+	}
+	rec := func() *sessionRecordingAgent {
+		r := &sessionRecordingAgent{}
+		r.tools = map[string]core.Tool{
+			"rec": {
+				Description: "record the run's session attribution",
+				Parameters:  map[string]any{"type": "object"},
+				Run: func(ctx context.Context, args map[string]any) (string, error) {
+					r.session = SessionIDFromContext(ctx)
+					return args["text"].(string), nil
+				},
+			},
+		}
+		return r
+	}
+
+	rec1 := rec()
+	ag := newTestAgent(newProvider(), rec1.tools, 0)
+	ctx := WithTurnSink(context.Background(), NewStoreTurnSink(fakeStore{}, "cron-sess-42", ""))
+	collect(t, ag.Run(ctx, []core.Message{core.NewUser("go")}, nil))
+	if rec1.session != "cron-sess-42" {
+		t.Fatalf("run context session = %q, want the sink's session id cron-sess-42", rec1.session)
+	}
+
+	// A host that wraps the session itself wins over the sink.
+	rec2 := rec()
+	ag2 := newTestAgent(newProvider(), rec2.tools, 0)
+	ctx2 := WithSessionID(WithTurnSink(context.Background(), NewStoreTurnSink(fakeStore{}, "sink-sess-43", "")), "host-sess-44")
+	collect(t, ag2.Run(ctx2, []core.Message{core.NewUser("go")}, nil))
+	if rec2.session != "host-sess-44" {
+		t.Fatalf("run context session = %q, want the host-wrapped host-sess-44", rec2.session)
+	}
+
+	// A run with no sink and no wrap stays unattributed - honest:
+	// a one-shot run has no session to name.
+	rec3 := rec()
+	ag3 := newTestAgent(newProvider(), rec3.tools, 0)
+	collect(t, ag3.Run(context.Background(), []core.Message{core.NewUser("go")}, nil))
+	if rec3.session != "" {
+		t.Fatalf("run context session = %q, want empty for a sessionless run", rec3.session)
+	}
+}
+
 func TestRunMaxTurnsCap(t *testing.T) {
 	provider := NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{

@@ -12,7 +12,11 @@ import (
 // SessionIDFromContext returns the id of the session the current agent
 // run belongs to, or "" when the run has no session (one-shot runs,
 // tests). The host wraps the run context with WithSessionID so tools
-// can attribute board state to the conversation they ran in.
+// can attribute board state to the conversation they ran in; a host
+// that only carries the session through its turn sink (cron fires,
+// `omega run --session`) gets the same attribution from the
+// RunWithProvider default that derives the id from the store sink
+// (card t_e203c2f6).
 func SessionIDFromContext(ctx context.Context) string {
 	id, _ := ctx.Value(sessionIDKey{}).(string)
 	return id
