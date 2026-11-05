@@ -93,6 +93,37 @@ describe("capsule noun law (webui)", () => {
       "capsule UI squats in the shell's components dir (card t_617c2ad0): a capsule's views live in harness/<name>/ui/",
     );
   });
+
+  // card t_b75df168 (the shell-ring shrink wave 3): the shrunk
+  // agent/api carries no capsule-owned opinion file either. The full
+  // verdict table (the census pin) is the Go half -
+  // agent/api/api_census_test.go - this leg rides the same gate and
+  // catches a capsule-nouned filename coming back (the cheap tell).
+  it("agent/api/ carries no capsule-nouned production file", () => {
+    // /tools is base vocabulary here: the inventory endpoint serves the
+    // chat loop directly (GET /tools + the web.search/web.fetch pair
+    // the shell has owned since v0.13). The noun stays forbidden in
+    // webui/app/components (ToolsList.vue rode out with the tools
+    // capsule), not in agent/api.
+    const apiNouns = CAPSULE_NOUNS.filter((n) => n !== "tools");
+    const goFiles = walkComponents(join(root, "..", "agent", "api"), "")
+      .filter((p) => p.endsWith(".go") && !p.endsWith("_test.go"));
+    assert.ok(goFiles.length > 0, "agent/api walked empty - the walk is broken");
+    const offenders: string[] = [];
+    for (const p of goFiles) {
+      const lowered = p.toLowerCase();
+      for (const noun of apiNouns) {
+        if (lowered.includes(noun)) {
+          offenders.push(`${p} carries the "${noun}" noun`);
+        }
+      }
+    }
+    assert.deepEqual(
+      offenders,
+      [],
+      "capsule opinion squats in the shell's base endpoint set (card t_b75df168): a capsule's routes live in harness/<name>/routes.go",
+    );
+  });
 });
 
 // --- the two manifests (the codegen's panel/tab partition) ---------------
