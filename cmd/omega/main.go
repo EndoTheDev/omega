@@ -297,14 +297,23 @@ func dispatchSubcommand(reg *agent.Registry, sub string, rest []string) (bool, e
 }
 
 // splitSubcommand returns the first non-flag argument as the subcommand
-// and the remaining arguments (including any leading flags) as rest.
+// and every other argument as rest - leading flags included, so
+// --config/--approve/--no-approve work before a subcommand or project
+// path exactly as the help text promises. With no subcommand at all
+// (the bare REPL entry) rest is the full flag list: the bare entry must
+// parse trust flags identically to subcommand paths (card t_18b13390 -
+// `omega --approve` used to hand the loop an empty rest and the flag
+// silently died).
 func splitSubcommand(args []string) (string, []string) {
 	for i, a := range args {
 		if !strings.HasPrefix(a, "-") {
-			return a, args[i+1:]
+			rest := make([]string, 0, len(args)-1)
+			rest = append(rest, args[:i]...)
+			rest = append(rest, args[i+1:]...)
+			return a, rest
 		}
 	}
-	return "", nil
+	return "", args
 }
 
 // parseConfigFlag extracts the value of --config from args, or "" if
@@ -681,11 +690,49 @@ func openDefaultSupply(pctx *agent.Context, logger agent.LoggerProvider) (agent.
 	return s, nil
 }
 
+// serveBinds renders the resolved HTTP bind strings for the startup
+// banner: every configured bind joined to the resolved port, the
+// loopback default standing in for an unset bind list - the same
+// default the api capsule binds with (api/plugin.go).
+func serveBinds(cfg Config) []string {
+	port := cfg.Server.Port
+	binds := cfg.Server.Bind
+	if len(binds) == 0 {
+		binds = []string{"127.0.0.1"}
+	}
+	out := make([]string, 0, len(binds))
+	for _, b := range binds {
+		out = append(out, fmt.Sprintf("%s:%d", b, port))
+	}
+	return out
+}
+
+// providerEndpoint strips the wire scheme off the provider endpoint:
+// the banner names the machine, not the protocol.
+func providerEndpoint(host string) string {
+	s := strings.TrimPrefix(host, "https://")
+	return strings.TrimPrefix(s, "http://")
+}
+
+// serveBanner is the boot line a person can read: version, the binds
+// being served, the config file actually read, the data dir, the model
+// and its endpoint host. One line, real values only.
+func serveBanner(version string, channels int, binds []string, configPath, dataDir, model, providerHost string) string {
+	line := fmt.Sprintf("omega %s · serving %d channel(s) on %s",
+		version, channels, strings.Join(binds, ", "))
+	line += fmt.Sprintf(" · config %s · data %s · model %s", configPath, dataDir, model)
+	if ep := providerEndpoint(providerHost); ep != "" {
+		line += fmt.Sprintf(" via %s", ep)
+	}
+	return line
+}
+
 // cmdServe loads config, wires the agent, and starts all mounted
 // channels (HTTP, Discord, etc.) until a signal triggers graceful
 // shutdown.
 func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error {
-	cfg, err := LoadConfig(resolveConfigPath(configPath))
+	cfgPath := resolveConfigPath(configPath)
+	cfg, err := LoadConfig(cfgPath)
 	if err != nil {
 		return err
 	}
@@ -789,9 +836,16 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		return fmt.Errorf("start module lifecycle: %w", err)
 	}
 
-	fmt.Printf("omega: serving %d channel(s) (model %s)\n", len(pctx.Channels), ag.ModelName())
+	// The startup banner (card t_18b13390): a serve tells a person
+	// WHERE it serves and WHAT it is - version (the same stamp /health
+	// serves), the resolved bind strings, the config file actually read,
+	// the data dir, the model and its endpoint. Every value is real
+	// boot-resolved shape, nothing hardcoded.
+	banner := serveBanner(omegaVersion, len(pctx.Channels), serveBinds(cfg),
+		cfgPath, canonPath(datadir.Dir(omegaHome())), ag.ModelName(), cfg.Provider.Host)
+	fmt.Println(banner)
 	if logger != nil {
-		logger.Printf("omega: serving %d channel(s), model %s", len(pctx.Channels), ag.ModelName())
+		logger.Printf("%s", banner)
 	}
 
 	// Wait for signal or first channel error.
