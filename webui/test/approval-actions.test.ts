@@ -269,7 +269,7 @@ test("the chat gate card is the notification card's sibling, same endpoint same 
   // both surfaces answer the SAME pending question id through the SAME
   // endpoint; the chat card binds to the row, the notification row
   // carries the id in its payload
-  const wire = read("../agent/api/server_verdicts.go");
+  const wire = read("../harness/verdict/routes.go");
   assert.match(wire, /SessionID\s+string\s+`json:"session_id"`/, "the pending listing payload carries the session id");
   assert.match(wire, /Message\s+string\s+`json:"message,omitempty"`/, "the verdict endpoint accepts the follow-up message");
 });
