@@ -164,7 +164,10 @@ NATIVE_HOME="$HOME_DIR"
 if command -v cygpath >/dev/null 2>&1; then NATIVE_HOME=$(cygpath -m "$HOME_DIR"); fi
 
 cd "$STAGE/bin"
-OMEGA_HOME="$NATIVE_HOME" ./omega-proof serve &
+# OMEGA_MAX_RETRIES=0: the stub provider's dial error surfaces as the
+# stream's error event immediately - the retry budget is not what this
+# proof exercises.
+OMEGA_HOME="$NATIVE_HOME" OMEGA_MAX_RETRIES=0 ./omega-proof serve &
 PID=$!
 step "serve pid $PID on port $PORT"
 cleanup() { kill "$PID" 2>/dev/null || taskkill //F //PID "$PID" >/dev/null 2>&1 || true; }
@@ -184,29 +187,36 @@ step "booted: GET /health -> $CODE"
 
 # 7. the base faces answer
 say() { printf 'proof %s\n' "$*"; }
+# the header probe rides a GET with dumped headers: Go's method-scoped
+# mux answers a bare HEAD 405 (the handlers register GET, not HEAD),
+# and native curl cannot write MSYS /tmp paths - so every -o target is
+# the native home form.
+probe() { # probe <path> -> echoes "<code> <ct>" ; body lands in $NATIVE_HOME/p.json
+  CODE=$(curl -s -o "$NATIVE_HOME/p.json" -w '%{http_code}' "$BASE$1")
+  CT=$(curl -s -D - -o /dev/null "$BASE$1" | tr -d '\r' | grep -i '^content-type:' | cut -d' ' -f2)
+  printf '%s %s' "$CODE" "$CT"
+}
 
 # settings: GET /settings answers the schema (the third shell-ring face)
-CODE=$(curl -s -o "$HOME_DIR/p.json" -w '%{http_code}' "$BASE/settings")
-CT=$(curl -sI "$BASE/settings" | tr -d '\r' | grep -i '^content-type:' | cut -d' ' -f2)
-say "GET /settings -> $CODE $CT ($(wc -c < "$HOME_DIR/p.json") bytes)"
-case "$CODE:$CT" in 200:application/json*) : ;; *) fail "settings did not answer JSON base: $CODE $CT" ;; esac
+V=$(probe /settings)
+say "GET /settings -> $V ($(wc -c < "$HOME_DIR/p.json") bytes)"
+case "$V" in "200 application/json"*) : ;; *) fail "settings did not answer JSON base: $V" ;; esac
 
 # canvas: the snapshot answers, an empty canvas is 200 []
-CODE=$(curl -s -o "$HOME_DIR/p.json" -w '%{http_code}' "$BASE/ui/canvas")
-BODY=$(cat "$HOME_DIR/p.json")
-say "GET /ui/canvas -> $CODE body: ${BODY:-<empty>}"
-case "$CODE" in 200) : ;; *) fail "canvas snapshot not 200: $CODE" ;; esac
+V=$(probe /ui/canvas)
+say "GET /ui/canvas -> $V body: $(head -c 80 "$HOME_DIR/p.json")"
+case "$V" in 200*) : ;; *) fail "canvas snapshot not 200: $V" ;; esac
 
 # models + the chat floor: POST /sessions must answer (the in-memory
 # store fallback the host offers when the store capsule is gone)
 SID="proof-$(date +%s)$$"
-CODE=$(curl -s -o "$HOME_DIR/p.json" -w '%{http_code}' -X POST "$BASE/sessions" \
+CODE=$(curl -s -o "$NATIVE_HOME/p.json" -w '%{http_code}' -X POST "$BASE/sessions" \
   -H 'Content-Type: application/json' -d "{\"id\":\"$SID\",\"title\":\"removal proof\"}")
 say "POST /sessions -> $CODE body head: $(head -c 80 "$HOME_DIR/p.json")"
 case "$CODE" in 2*) : ;; *) fail "the chat's session floor did not answer: $CODE" ;; esac
 
 # /models answers from config
-CODE=$(curl -s -o "$HOME_DIR/p.json" -w '%{http_code}' "$BASE/models")
+CODE=$(curl -s -o "$NATIVE_HOME/p.json" -w '%{http_code}' "$BASE/models")
 say "GET /models -> $CODE body head: $(head -c 80 "$HOME_DIR/p.json")"
 case "$CODE" in 200) : ;; *) fail "models did not answer: $CODE" ;; esac
 
@@ -223,7 +233,7 @@ else
 fi
 
 # /commands answers (the palette over the universal seam; no capsules = empty)
-CODE=$(curl -s -o "$HOME_DIR/p.json" -w '%{http_code}' "$BASE/commands")
+CODE=$(curl -s -o "$NATIVE_HOME/p.json" -w '%{http_code}' "$BASE/commands")
 say "GET /commands -> $CODE body head: $(head -c 60 "$HOME_DIR/p.json")"
 case "$CODE" in 2*) : ;; *) fail "commands did not answer: $CODE" ;; esac
 
@@ -233,8 +243,8 @@ case "$CODE" in 2*) : ;; *) fail "commands did not answer: $CODE" ;; esac
 # the journey recipe: in the full build the same probe IS JSON.)
 NOTHING_ELSE_OK=1
 for p in /sessions /tasks /notifications /verdicts /skills/content /logs /agents /files/browse /workspaces/browse /insights /cron/jobs; do
-  CODE=$(curl -s -o "$HOME_DIR/p2" -w '%{http_code}' "$BASE$p")
-  CT=$(curl -sI "$BASE$p" | tr -d '\r' | grep -i '^content-type:' | cut -d' ' -f2)
+  CODE=$(curl -s -o "$NATIVE_HOME/p2" -w '%{http_code}' "$BASE$p")
+  CT=$(curl -s -D - -o /dev/null "$BASE$p" | tr -d '\r' | grep -i '^content-type:' | cut -d' ' -f2)
   say "GET $p -> $CODE $CT"
   case "$CT" in
     application/json*) if [ "$p" = "/logs" ] || [ "$p" = "/cron/jobs" ]; then
