@@ -158,11 +158,22 @@ def strip_host():
         "\t}, nil",
         "}",
     ], "main: buildPlugins")
-    f.del_head_through_block("\tvar setAgents func([]string)",
-                             "for _, p := range plugins {",
-                             "main: the setAgents/setFilesWorkspace hook discovery")
+    f.del_block("\tfor _, p := range plugins {",
+                "main: the setAgents/setFilesWorkspace hook discovery (the vars stay; the type assert dies)")
     f.del_block("if st2 == nil {", "main: the default-supply call")
     f.replace_func("func openDefaultSupply(", [], "main: openDefaultSupply")
+    f.replace_func("func wireCaptioner(", [
+        "func wireCaptioner(cfg Config, pctx *agent.Context) {",
+        "\t// the every-capsule-removed host: the captioner rides the provider",
+        "\t// capsule out - the vision knob answers no captioner",
+        "}",
+    ], "main: wireCaptioner (the captioner is the provider capsule's type)")
+    f.drop_line("ctx = agent.WithTurnSink(ctx, continuous.WrapWakeSink(agent.RunTurnSink(ctx)))",
+                "main: the wake wrap")
+    f.add_after("agent.NewStoreTurnSink(store, sessionID,", [
+        "\t\t// the every-capsule-removed host: the wake-report shape rode",
+        "\t\t// the continuous capsule out (the shrink wave 2)",
+    ], "main: the wake wrap comment")
     f.assert_pure("main")
     f.save()
 
@@ -182,6 +193,16 @@ def strip_host():
                    "\t\t\tNudgeInterval: 15, // the skills capsule's DefaultNudgeInterval",
                    "config: the nudge default")
     f.replace_func("func (c Config) ConfigSection(", [
+        "// modeValid is the host's approvals.mode vocabulary - the strip's",
+        "// inlining of approval.ValidMode (the approval capsule rides out).",
+        "func modeValid(m string) bool {",
+        "\tswitch m {",
+        "\tcase \"\", \"off\", \"manual\", \"smart\":",
+        "\t\treturn true",
+        "\t}",
+        "\treturn false",
+        "}",
+        "",
         "func (c Config) ConfigSection(name string) (any, bool) {",
         "\t// the every-capsule-removed host: the shell's own sections stay,",
         "\t// every capsule section rides its capsule out",
@@ -193,7 +214,9 @@ def strip_host():
         "\t}",
         "\treturn nil, false",
         "}",
-    ], "config: ConfigSection")
+    ], "config: ConfigSection (+ modeValid)")
+    f.replace_line("if !approval.ValidMode(c.Approvals.Mode) {",
+                   "if !modeValid(c.Approvals.Mode) {", "config: approvals.mode validation")
     f.assert_pure("config")
     f.save()
 
@@ -206,6 +229,8 @@ def strip_host():
     f.del_head_through_block("c, ok := s.pctx.Services().Resolve(\"compactor\")",
                              "if w := c.AutoWindow(); w > 0 {",
                              "settings: the schema's compactor hint")
+    f.replace_line("if !approval.ValidMode(m) {",
+                   "if !modeValid(m) {", "settings: approvals.mode validation")
     f.assert_pure("settings")
     f.save()
 
