@@ -8,7 +8,9 @@ import (
 // KanbanTask is one board task. Timestamps are RFC3339 UTC strings;
 // zero-value ("") timestamps are unset. All 9 statuses share the
 // hermes board grammar: triage todo scheduled ready running blocked
-// review done archived.
+// review done archived. Position is the card's order inside its
+// column - store-internal state, never serialized to the wire (the
+// GET /tasks list arrives in position order already).
 type KanbanTask struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`
@@ -20,6 +22,7 @@ type KanbanTask struct {
 	CreatedAt   string `json:"created_at"`
 	StartedAt   string `json:"started_at"`
 	CompletedAt string `json:"completed_at"`
+	Position    int64  `json:"-"`
 }
 
 // KanbanComment is one comment in a task's thread.
@@ -76,6 +79,19 @@ type BoardLister interface {
 	// Boards lists every board the registry knows about, the current
 	// one flagged. Never includes non-existent boards.
 	Boards(ctx context.Context) ([]BoardInfo, error)
+}
+
+// Reorderer is the optional drag-order capability on the kanban seam:
+// place a task at an explicit slot (the column plus the sibling it
+// lands after, "" = top). The kanban module's Store implements it; a
+// provider without order persistence stays legal without it (the
+// PATCH after_id then answers 400 - the UI refetches and the card
+// snaps back).
+type Reorderer interface {
+	// ReorderTask moves taskID to (status, after afterID) on the named
+	// board and resequences that column to dense positions. status ""
+	// keeps the current column; afterID "" drops at the top.
+	ReorderTask(ctx context.Context, board, taskID, status, afterID string) (KanbanTask, error)
 }
 
 // KanbanProvider is the board seam: task CRUD plus the comment and
