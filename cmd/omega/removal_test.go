@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -1758,20 +1759,24 @@ func TestTerminalRemovalProof(t *testing.T) {
 			t.Log("PROOF spawn+kill cycle: a live shell claimed and reaped through the routes")
 		}
 	}
-	// the lifecycle fence: the toggle-off reaps the shells
-	st := termPlugin.Store()
-	for range 2 {
-		if _, _, err := st.Claim(); err != nil {
-			t.Fatalf("FULL MOUNT: claim for the fence proof: %v", err)
+	// the lifecycle fence: the toggle-off reaps the shells. A box with
+	// no pty (windows in this build) cannot claim a shell - the fence
+	// proof is gated exactly like the spawn+kill route face above.
+	if _, err := os.Stat("/dev/ptmx"); err == nil {
+		st := termPlugin.Store()
+		for range 2 {
+			if _, _, err := st.Claim(); err != nil {
+				t.Fatalf("FULL MOUNT: claim for the fence proof: %v", err)
+			}
 		}
+		if err := st.Stop(); err != nil {
+			t.Fatalf("lifecycle stop: %v", err)
+		}
+		if len(st.List()) != 0 {
+			t.Fatalf("FULL MOUNT: %d rows survive the lifecycle stop", len(st.List()))
+		}
+		t.Log("PROOF fence: the lifecycle stop reaped every shell (the toggle-off kills its terminals)")
 	}
-	if err := st.Stop(); err != nil {
-		t.Fatalf("lifecycle stop: %v", err)
-	}
-	if len(st.List()) != 0 {
-		t.Fatalf("FULL MOUNT: %d rows survive the lifecycle stop", len(st.List()))
-	}
-	t.Log("PROOF fence: the lifecycle stop reaped every shell (the toggle-off kills its terminals)")
 
 	// --- mount 2: the capsule removed ---
 	var removed []agent.Plugin
@@ -1974,9 +1979,16 @@ func TestProcessRemovalProof(t *testing.T) {
 		}
 	}
 	// a real round-trip: spawn a sleeper through the tool face, read
-	// the log, wait the timeout, kill it
+	// the log, wait the timeout, kill it. The sleeper must STAY alive
+	// until the kill (a reaper that sees a dead child rotates the log
+	// away and process.read answers "no log yet") - the portable
+	// pause is ping -n on windows, sleep elsewhere.
+	spawnCmd := "echo proof-round-trip; sleep 300"
+	if runtime.GOOS == "windows" {
+		spawnCmd = "echo proof-round-trip && ping -n 300 127.0.0.1 > nul"
+	}
 	spawnTool, _ := pluginTool(ctx, "process.spawn")
-	res, runErr := spawnTool(context.Background(), map[string]any{"command": "echo proof-round-trip; sleep 300", "name": "proof"})
+	res, runErr := spawnTool(context.Background(), map[string]any{"command": spawnCmd, "name": "proof"})
 	if runErr != nil || !strings.Contains(res, "spawned") {
 		t.Fatalf("FULL MOUNT: process.spawn round-trip failed (res=%s err=%v)", res, runErr)
 	}

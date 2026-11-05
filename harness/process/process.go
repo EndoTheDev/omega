@@ -95,6 +95,10 @@ type Entry struct {
 // channel closes when the child was reaped and the entry recorded.
 type reaper struct {
 	done chan struct{}
+	// tree is the detached child's tree guard (the windows job
+	// object; a no-op struct on unix). term/kill tear the tree down
+	// in one stop, close releases the job after the wait.
+	tree treeKiller
 }
 
 // Registry holds the state. One instance per omega process; a second
@@ -267,14 +271,16 @@ func (r *Registry) Spawn(ctx context.Context, command, name string) (*Entry, err
 	}
 
 	cmd := buildShell(command)
-	detachChild(cmd)
+	tree := detachChild(cmd)
 	cmd.Dir = core.RunWorkspace(ctx)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
+		tree.close()
 		return nil, fmt.Errorf("spawn failed: %w", err)
 	}
+	tree.attach(cmd)
 	logFile.Close() // the child holds its own copy of the fd
 
 	e := &Entry{
@@ -284,7 +290,7 @@ func (r *Registry) Spawn(ctx context.Context, command, name string) (*Entry, err
 		StartedAt: time.Now().Unix(),
 		LogPath:   logPath,
 	}
-	watcher := &reaper{done: make(chan struct{})}
+	watcher := &reaper{done: make(chan struct{}), tree: tree}
 	r.reapers[e.PID] = watcher
 	r.entries[name] = e
 	// A size-capped log: rotation runs only once the child is dead,
@@ -295,6 +301,10 @@ func (r *Registry) Spawn(ctx context.Context, command, name string) (*Entry, err
 	r.saveNote()
 	go func() {
 		waitErr := cmd.Wait()
+		// Release the tree guard before the entry lands: the job
+		// close (windows) kills the grandchildren the shell left
+		// behind, so the log rename below never races a live handle.
+		tree.close()
 		r.mu.Lock()
 		// The reaper owns the entry only while it still holds the
 		// name - a replaced name's old entry is out of the map already.
@@ -325,7 +335,7 @@ func (r *Registry) Close() {
 	r.mu.Lock()
 	live := make([]*reaper, 0, len(r.reapers))
 	for pid, watcher := range r.reapers {
-		_ = signalKill(pid)
+		_ = watcher.tree.kill(pid)
 		live = append(live, watcher)
 	}
 	r.mu.Unlock()
@@ -438,20 +448,27 @@ func (r *Registry) Kill(name string) (string, error) {
 	pid := e.PID
 	watcher, owned := r.reapers[pid]
 	grace := time.Duration(r.cfg.KillGraceSeconds) * time.Second
-	if err := signalTerm(pid); err != nil {
+	// An owned child takes its tree guard: one stop for the shell and
+	// everything it left behind (windows). An orphan has no tree -
+	// the pid-level TERM stands.
+	termErr := signalTerm(pid)
+	if owned {
+		termErr = watcher.tree.term(pid)
+	}
+	if termErr != nil {
 		r.mu.Unlock()
 		// The process died between the liveness check and the signal.
 		if cur, ok := r.Find(name); ok && cur.Exited {
 			return fmt.Sprintf("%q already exited before the TERM landed (%s)", name, stateOf(&cur)), nil
 		}
-		return "", fmt.Errorf("TERM pid %d: %w", pid, err)
+		return "", fmt.Errorf("TERM pid %d: %w", pid, termErr)
 	}
 	r.mu.Unlock()
 	if owned {
 		select {
 		case <-watcher.done: // the reaper records before it closes
 		case <-time.After(grace):
-			_ = signalKill(pid)
+			_ = watcher.tree.kill(pid)
 			select {
 			case <-watcher.done:
 			case <-time.After(3 * time.Second):
