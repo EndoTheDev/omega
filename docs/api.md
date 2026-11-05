@@ -80,7 +80,12 @@ capsule-registered (v0.12 phase F): the shell serves it from the live
 registry (`module_routes.go`) - a registered-pattern miss answers 404,
 and with the module absent its paths fall to the SPA catch-all (the
 shell holds no knowledge of the module's roots - that ignorance is
-the binary-purity law).
+the binary-purity law). A capsule's literal pattern also exact-matches
+ahead of the base mux dispatch (the `moduleLiterals` rescue lane in
+`agent/api`): ServeMux has no precedence view across muxes, so the
+base's own fixed wildcard (`/sessions/{id}`) would otherwise out-specify
+a literal like `GET /sessions/search` living behind the catch-all - the
+50-sessions-reload nightly red (2026-11-05).
 
 Session titles generate on first exchange via a detached second agent
 run (`context.WithoutCancel`); failures are silent and rapid first
