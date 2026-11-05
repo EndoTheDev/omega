@@ -119,7 +119,7 @@ test("indent guides are overlay hairlines revealed by :hover only", () => {
   );
   assert.match(
     tree,
-    /"\-\-guide-x": `\$\{props\.depth \* 14 \+ 12\}px`/,
+    /"\-\-guide-x": `\$\{props\.depth \* 10 \+ 12\}px`/,
     "each level ul positions its own line from the depth step",
   );
   // layout-shift guard: the overlay never participates in flow
@@ -135,11 +135,18 @@ test("indent guides are overlay hairlines revealed by :hover only", () => {
   );
 });
 
-// --- explicitly NOT in this card (open forks) - the untouched law ---
+// --- the indent law as of card t_3bf6420b (2026-11-05, Endo): the
+// subfolder indent STEP moved 14px -> 10px so nested branches read
+// tighter. Base unchanged; guides keep their 6px-before-glyph offset. ---
 
-test("the density/indent/typography law stays exactly as ruled before", () => {
-  // the 14px step and the +10 base remain the indent math on BOTH sides
-  assert.match(tree, /props.depth \* 14 \+ 10}px`/, "row indent math unchanged");
+test("the density/indent law pins the current step, base and rhythm", () => {
+  // the 10px step and the +10 base remain the indent math on BOTH sides
+  assert.match(tree, /props\.depth \* 10 \+ 10}px`/, "row indent math unchanged");
+  assert.match(
+    tree,
+    /props\.depth \* 10 \+ 12}px`/,
+    "guide-x rides the same 10px step, 6px before the glyph",
+  );
   assert.match(
     css,
     /\.files-tree \{\n  list-style: none;\n  margin: 0;\n  padding: 0 8px;\n\}/,

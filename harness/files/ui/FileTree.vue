@@ -61,7 +61,7 @@
       <p
         v-else-if="entry.is_dir && isLoading(entryPath(entry))"
         class="tree-error"
-        :style="{ paddingInlineStart: `${depth * 14 + 24}px` }">
+        :style="{ paddingInlineStart: `${depth * 10 + 24}px` }">
         loading
       </p>
     </li>
@@ -126,17 +126,20 @@
     provide("omega-filetree", store);
   }
 
-  const indent = computed(() => `${props.depth * 14 + 10}px`);
+  // card t_3bf6420b: the subfolder indent step is 10px (down from 14 -
+  // Endo 2026-11-05: nested branches rendered too deep; 8px ul padding
+  // (main.css .files-tree) + the 10px step = an 18px per-level shift).
+  const indent = computed(() => `${props.depth * 10 + 10}px`);
 
   // t_63582d1f hover indent guides: every level ul carries ONE hairline
   // as an absolutely-positioned ::before overlay (never flow content -
   // the reveal is opacity-only, zero layout shift). The per-level ul
   // padding (8px x nesting depth, main.css) already sits inside the
-  // containing block, so depth*14 + 12px from the level ul's edge puts
+  // containing block, so depth*10 + 12px from the level ul's edge puts
   // the line 6px before that level's first glyph.
   const guideStyle = computed(() =>
     props.depth > 0
-      ? ({ "--guide-x": `${props.depth * 14 + 12}px` } as Record<string, string>)
+      ? ({ "--guide-x": `${props.depth * 10 + 12}px` } as Record<string, string>)
       : undefined,
   );
 
