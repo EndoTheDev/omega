@@ -2,6 +2,8 @@ package files
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,7 +75,10 @@ func TestWorkspaceFilesRoot(t *testing.T) {
 	// No workspace: relative paths behave today - they resolve against
 	// the process cwd, where the path simply does not exist.
 	out, err = p.RunReadFile(plain, map[string]any{"path": "definitely/missing/nowhere.txt"})
-	if err == nil || !strings.Contains(err.Error(), "no such file") {
+	// not-exist via errors.Is, never the posix "no such file" text:
+	// windows os errors word it "The system cannot find the path
+	// specified." and the words are not a contract, the sentinel is
+	if err == nil || !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("plain read: %v (got %q)", err, out)
 	}
 	if _, statErr := os.Stat(filepath.Clean(ws + "/definitely")); !os.IsNotExist(statErr) {

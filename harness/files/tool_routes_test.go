@@ -86,17 +86,25 @@ func TestSortFileEntries(t *testing.T) {
 }
 
 func TestEnsureUnderRoot(t *testing.T) {
-	if err := ensureUnderRoot("/work", "/work"); err != nil {
+	// the product calls this with native (EvalSymlinks-resolved) paths
+	// and builds its prefix with filepath.Separator - feed native
+	// shapes, slash literals alone are a posix pin
+	root := filepath.Join("/", "work")
+	if err := ensureUnderRoot(root, root); err != nil {
 		t.Errorf("root itself rejected: %v", err)
 	}
-	if err := ensureUnderRoot("/work", "/work/sub/file"); err != nil {
+	if err := ensureUnderRoot(root, filepath.Join(root, "sub", "file")); err != nil {
 		t.Errorf("subpath rejected: %v", err)
 	}
 	// a literal prefix check - callers pass EvalSymlinks-resolved paths,
 	// so a ".." segment can never reach this function (validateRelPath
 	// rejects them upstream; the handler tests cover the full request path)
-	for _, p := range []string{"/workup", "/etc/passwd", "/worker/file"} {
-		if err := ensureUnderRoot("/work", p); err == nil {
+	for _, p := range []string{
+		filepath.Join("/", "workup"),
+		filepath.Join("/", "etc", "passwd"),
+		filepath.Join("/", "worker", "file"),
+	} {
+		if err := ensureUnderRoot(root, p); err == nil {
 			t.Errorf("ensureUnderRoot accepted escape %q", p)
 		}
 	}
@@ -271,9 +279,22 @@ func TestFilesReadMethodGate(t *testing.T) {
 // read of the target.
 func TestFilesSymlinkEscape(t *testing.T) {
 	dir := chdirToWorkdir(t)
+	// targets must EXIST for the escape guard to answer: a dangling
+	// link fails the resolution upstream and the route 404s before the
+	// guard can say 400 (the /etc/* links are the posix shape; they do
+	// not exist on windows at all). Build real targets beside the
+	// workdir root: this second TempDir call is a sibling of the
+	// workdir, never inside it.
+	outside := filepath.Join(t.TempDir(), "outsider")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatalf("outside dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "passwd"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("outside target: %v", err)
+	}
 	targets := map[string]string{
-		"passwd.lnk": "/etc/passwd", // file target outside the root
-		"out.lnk":    "/etc",        // directory target outside the root
+		"passwd.lnk": filepath.Join(outside, "passwd"), // file target outside the root
+		"out.lnk":    outside,                          // directory target outside the root
 	}
 	for name, target := range targets {
 		if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {

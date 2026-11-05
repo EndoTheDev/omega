@@ -185,10 +185,13 @@ func TestMigrateOtherName(t *testing.T) {
 }
 
 func TestDBPath(t *testing.T) {
-	if got, want := DBPath("/home/x/.omega", "omega.db"), "/home/x/.omega/data/omega.db"; got != want {
+	// wants are slash spellings; the product joins with filepath.Join
+	// (native separators are the canon for this port), so compare in
+	// native shape
+	if got, want := DBPath("/home/x/.omega", "omega.db"), filepath.FromSlash("/home/x/.omega/data/omega.db"); got != want {
 		t.Errorf("DBPath = %q, want %q", got, want)
 	}
-	if got, want := Dir("/home/x/.omega"), "/home/x/.omega/data"; got != want {
+	if got, want := Dir("/home/x/.omega"), filepath.FromSlash("/home/x/.omega/data"); got != want {
 		t.Errorf("Dir = %q, want %q", got, want)
 	}
 }
@@ -216,10 +219,13 @@ func TestAgentHome(t *testing.T) {
 	if got, err := AgentHome(); err != nil || got != "/explicit/home" {
 		t.Errorf("AgentHome(default) = %q %v, want the home root", got, err)
 	}
-	// a continuous agent homes at agents/<name>.
+	// a continuous agent homes at agents/<name>; the product joins with
+	// filepath.Join (native separators), the want stays a slash
+	// spelling read back through FromSlash
 	t.Setenv("OMEGA_AGENT", "scout")
-	if got, err := AgentHome(); err != nil || got != "/explicit/home/agents/scout" {
-		t.Errorf("AgentHome(scout) = %q %v, want /explicit/home/agents/scout", got, err)
+	scoutHome := filepath.FromSlash("/explicit/home/agents/scout")
+	if got, err := AgentHome(); err != nil || got != scoutHome {
+		t.Errorf("AgentHome(scout) = %q %v, want %q", got, err, scoutHome)
 	}
 	// hostile names never escape agents/.
 	t.Setenv("OMEGA_AGENT", "../../etc")
@@ -228,7 +234,7 @@ func TestAgentHome(t *testing.T) {
 	}
 	// whitespace is trimmed (the spawn contract trims nothing).
 	t.Setenv("OMEGA_AGENT", " scout ")
-	if got, err := AgentHome(); err != nil || got != "/explicit/home/agents/scout" {
+	if got, err := AgentHome(); err != nil || got != scoutHome {
 		t.Errorf("AgentHome whitespace = %q %v", got, err)
 	}
 }
