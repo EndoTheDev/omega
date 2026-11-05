@@ -124,7 +124,9 @@ Terse operational rules. Layer references live in `docs/` (map below);
   core.ModuleRoute) and served by api/module_routes.go from the
   live Context; a module-rooted miss answers 404, an absent module's
   paths ride the SPA catch-all. Seam-nil 501 guards survive only for
-  shell-served seams (store, settings, notifications).
+  shell-served seams (store, settings). (notifications REST rode its
+  capsule out with shrink wave 3, card t_b75df168 - the 501
+  degradation retired with the 404 module lane.)
 - **http_channel.** Persistence order is provider-correct and old
   baked sessions are never rewritten: user -> assistant(A + thinking +
   calls) -> tool results -> assistant(B). List-row concerns
@@ -230,9 +232,9 @@ card t_8abdbb15; full contract and templates in `docs/release-gate.md`):
 | `llm/` | Shared provider infra: SSE streaming client, retry, the think-level ladder, image sniffing, wire-shape aliases - no provider contract (consumers declare their own faces) | `docs/api.md` |
 | `agent/` | Multi-turn loop machinery + its need-face declarations (`agent/seams.go`), Plugin system (`Context`, `MountAllAPI`), the universal registration surface, events, shared types | `docs/architecture.md` |
 | `core/` | Wire types, events, mount machinery, the Services registry, message vocabulary, messagetree; zero capsule nouns (the noun tests) + stdlib-only imports, enforced by `core/importability_test.go` | `docs/architecture.md` |
-| `api/` + `agent/api/` | Shell ring (always on, never disabled): serving shell (listener, hostguard, module routes, static embed, themes) + the agent's base endpoint set (sessions, chat, canvas, files, tools) | `docs/api.md` |
+| `api/` + `agent/api/` | Shell ring (always on, never disabled): serving shell (listener, hostguard, module routes, static embed, themes) + the agent's base endpoint set - chat + canvas + settings (the chat floor: sessions, live runs, tools, command palette). Remove every capsule and what remains is a usable agent with a chat face (the census law, pinned by `agent/api/api_census_test.go`) | `docs/api.md` |
 | `cmd/omega/loop.go` + `setup.go` | The CLI agent loop + the mandatory first-run setup wizard (the TUI retired 2026-11-01) | `docs/cli.md` |
-| `harness/` | In-process extension packages (one `agent.Plugin` each) - the TOGGLEABLE tier; new extensions go here, never into the shell ring | `docs/architecture.md` (table), `harness/README.md` (authoring) |
+| `harness/` | In-process extension packages (one `agent.Plugin` each) - the TOGGLEABLE tier; capsules own their module REST (`routes.go` per capsule, api.RegisterRoute); new extensions go here, never into the shell ring | `docs/architecture.md` (table), `harness/README.md` (authoring) |
 | `webui/` | Shell SPA (always on, never disabled): Nuxt 4 webui SPA source at checkout root, built output embedded into the binary via the embed lane | `docs/webui.md` |
 | `harness/cron/` | Scheduled prompts (`crons.yaml`, `cron:<name>` sessions) | `docs/cli.md` (`/cron`) |
 | `harness/trust/` | Project trust gate (`trust.yaml`, AGENTS.md loading; the host reads it through its own nil-guarded need faces) | `docs/project-trust.md` |
