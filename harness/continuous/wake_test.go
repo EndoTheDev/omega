@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -22,9 +23,19 @@ import (
 // stubExeScript writes an executable child script that records its
 // argv, cwd, and the OMEGA_ env deltas into outPath, then sleeps long
 // enough for the guards to be observed. It runs as the wake child's
-// binary with the machine's own argv.
+// binary with the machine's own argv. Windows gets a .bat (CreateProcess
+// cannot run a shebang script), posix keeps the sh stub.
 func stubExeScript(t *testing.T, outPath string) func() (string, error) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		if stubExePath == "" {
+			t.Fatal("wake stub exe missing (TestMain build failed?)")
+		}
+		// The stub reads its out path from the env: the spawned child
+		// inherits the test process's env (os.Environ feeds cmd.Env).
+		t.Setenv("WAKE_STUB_OUT", outPath)
+		return func() (string, error) { return stubExePath, nil }
+	}
 	script := filepath.Join(t.TempDir(), "wake-child")
 	body := fmt.Sprintf(`#!/bin/sh
 {
@@ -107,17 +118,7 @@ func TestWakeSpawnContract(t *testing.T) {
 	// The child exits, the live entry clears: wait for the marker then
 	// verify the machine reports the agent asleep again (the sleep IS
 	// the process death; the stub sleeps 30s so poll via Sleep kill).
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if !m.LiveWake("scout") {
-			break
-		}
-		m.Sleep("scout")
-		time.Sleep(100 * time.Millisecond)
-	}
-	if m.LiveWake("scout") {
-		t.Fatal("wake never cleared after sleep")
-	}
+	wakeSleep(t, m, "scout")
 }
 
 func TestWakeOneLiveGuardAndSleep(t *testing.T) {
@@ -137,14 +138,7 @@ func TestWakeOneLiveGuardAndSleep(t *testing.T) {
 		t.Fatalf("second wake = %v, want ErrAwake", err)
 	}
 	// Sleep terminates the live child (the roster's sleep button).
-	m.Sleep("scout")
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) && m.LiveWake("scout") {
-		time.Sleep(50 * time.Millisecond)
-	}
-	if m.LiveWake("scout") {
-		t.Fatal("sleep never ended the live wake")
-	}
+	wakeSleep(t, m, "scout")
 	// Sleeping a sleeping agent is a no-op, not an error.
 	m.Sleep("scout")
 }
@@ -183,8 +177,12 @@ func TestWakeModelOverrideRidesEnv(t *testing.T) {
 	}
 	data := waitFile(t, out2, func(d string) bool { return strings.Contains(d, "OMEGA_AGENT=scout") })
 	if strings.Contains(data, "OMEGA_MODEL=") {
-		t.Errorf("empty model must inherit, env carries an override:\\n%s", data)
+		t.Errorf("empty model must inherit, env carries an override:\n%s", data)
 	}
+	// Both wakes end before the temp dirs are cleaned (windows holds
+	// an open file against the remover).
+	wakeSleep(t, m, "scout")
+	wakeSleep(t, m2, "scout")
 }
 
 func TestTickObserverDispatchesAndSkips(t *testing.T) {
@@ -216,5 +214,5 @@ func TestTickObserverDispatchesAndSkips(t *testing.T) {
 	}
 	obs(core.TickEvent{Module: "cron", Kind: "wake", Payload: payload})
 	waitFile(t, out, func(d string) bool { return strings.Contains(d, "tick patrol") })
-	m.Sleep("scout")
+	wakeSleep(t, m, "scout")
 }
