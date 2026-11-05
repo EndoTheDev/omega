@@ -113,7 +113,14 @@ JOURNEY_SESSION="${JOURNEY_SESSION:-omega-journey}"
 AB="$(command -v agent-browser 2>/dev/null | head -1)"
 if [ -z "$AB" ]; then
   AB="$(find "$HOME/.hermes/tools" -maxdepth 5 -type f \
-     \( -name 'agent-browser-linux-arm64' -o -name 'agent-browser-linux-x64' \) 2>/dev/null | head -1)"
+     \( -name 'agent-browser-linux-arm64' -o -name 'agent-browser-linux-x64' \
+        -o -name 'agent-browser-win32-x64.exe' -o -name 'agent-browser-win32-arm64.exe' \) 2>/dev/null | head -1)"
+fi
+if [ -z "$AB" ]; then
+  # extensionless shim class: a tiny wrapper script (e.g. win hosts keep
+  # ~/.hermes/tools/journeywinbin/agent-browser, a bash exec into the
+  # .exe) that PATH did not carry when this suite started.
+  AB="$(find "$HOME/.hermes/tools" -maxdepth 3 -type f -name 'agent-browser' 2>/dev/null | head -1)"
 fi
 if [ -z "$AB" ]; then
   echo "journeys: agent-browser CLI not found (PATH or ~/.hermes/tools)" >&2

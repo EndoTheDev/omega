@@ -254,10 +254,10 @@ armed=$(jsq '(()=>{return [...document.querySelectorAll(".pane.agents button.reg
 assert_eq "$armed" "0" "the locked pill never armed (clicking it does nothing)"
 # the wire: a curl hits the same wall the pill renders - refusal 409,
 # the reason text states the law, nothing persists.
-code=$(curl -s -o /tmp/omega-jrn-disable-default.$$ -w '%{http_code}' -X PUT "$JOURNEY_BASE_URL/disabled/agents" \
+code=$(curl -s -o "$JOURNEY_WORKTMP/omega-jrn-disable-default.$$" -w '%{http_code}' -X PUT "$JOURNEY_BASE_URL/disabled/agents" \
   -H 'Content-Type: application/json' -d '{"name": "default", "enabled": false}')
-body=$(cat /tmp/omega-jrn-disable-default.$$ 2>/dev/null)
-rm -f /tmp/omega-jrn-disable-default.$$
+body=$(cat "$JOURNEY_WORKTMP/omega-jrn-disable-default.$$" 2>/dev/null)
+rm -f "$JOURNEY_WORKTMP/omega-jrn-disable-default.$$"
 assert_eq "$code" "409" "the default-agent disable PUT is refused 409"
 printf '%s' "$body" | grep -q "cannot be disabled" || die "the refusal text lost the law: $body"
 case "$(disabled_names agents)" in *"default"*) die "the default agent landed in the fold (refusal bypassed)" ;; esac

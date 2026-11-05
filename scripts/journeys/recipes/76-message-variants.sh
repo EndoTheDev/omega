@@ -109,13 +109,13 @@ step "ok: the cancelled run lives as a sibling, active on the path"
 SIBS=$(tx | grep -o '"siblings":\[[^]]*\]' | head -1 | sed 's/.*\[\(.*\)\].*/\1/')
 FIRST=$(printf '%s' "$SIBS" | cut -d, -f1 | tr -d '"')
 [ -n "$FIRST" ] || die "variants block carries no sibling ids"
-code=$(curl -s -o /tmp/omegaj76-sel -w '%{http_code}' -X POST \
+code=$(curl -s -o "$JOURNEY_WORKTMP/omegaj76-sel" -w '%{http_code}' -X POST \
   "$BASE/sessions/$SID/variants" -H 'Content-Type: application/json' \
   -d "{\"message_id\": \"$BUBBLE\", \"select\": 0}")
 assert_eq "$code" "200" "select variant 1 returns 200"
-assert_eq "$(cat /tmp/omegaj76-sel | grep -o '"active":[0-9]*' | head -1 | grep -o '[0-9]*$')" "0" \
+assert_eq "$(cat "$JOURNEY_WORKTMP/omegaj76-sel" | grep -o '"active":[0-9]*' | head -1 | grep -o '[0-9]*$')" "0" \
   "select response reports variant 1 active"
-rm -f /tmp/omegaj76-sel
+rm -f "$JOURNEY_WORKTMP/omegaj76-sel"
 # a fresh reload (new fetch, same server-side state) still selects variant 1
 assert_eq "$(txint active)" "0" "selection survives reload"
 # the first run renders on the active path again (its whole conversation)

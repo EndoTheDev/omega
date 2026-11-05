@@ -58,7 +58,7 @@ step "ok: default detail answers, ghost 404s"
 
 # --- binding: create a session AS the default agent ---
 runtag=$(date +%d%b%H%M%S)
-printf '%s' "$runtag" > "${JRN_TAGFILE:-/tmp/omega-jrn-runtag}"
+printf '%s' "$runtag" > "${JRN_TAGFILE:-$JOURNEY_WORKTMP/omega-jrn-runtag}"
 JRN_ID="jrn-${runtag}-agents"
 resp=$(curl -s -X POST "${JOURNEY_BASE_URL}/agents/default/sessions" \
        -H 'Content-Type: application/json' -d "{\"id\": \"${JRN_ID}\"}")
