@@ -32,28 +32,14 @@
         title="drop the fork anchor"
         @click="$emit('clear-fork')">&times;</button>
     </div>
-    <!-- the reference pills (card t_7f09bd0c): the draft's /skill and
-         @file tokens as clickable pills ABOVE the textarea - the strip
-         is the same family as the attach strip and the fork chip above
-         (the composer stays a textarea; the raw text is always the
-         recoverable truth). Click opens the target, x removes the token
-         from the draft; Backspace with the caret behind a token kills it
-         whole (tokenBeforeCaret's law). -->
-    <div
-      v-if="refPills.length"
-      class="ref-strip">
-      <span
-        v-for="t in refPills"
-        :key="t.kind + ':' + t.start"
-        class="ref-pill-wrap">
-        <ReferencePill :pill="t" @open="openRef(t)" />
-        <button
-          class="ref-remove"
-          type="button"
-          :title="'remove ' + t.name"
-          @click="removeToken(t)">&times;</button>
-      </span>
-    </div>
+    <!-- the reference CHIPS (card t_e67c372b): the draft's /skill and
+         @file tokens render INLINE in the editor - a pill REPLACES the
+         text it represents (chip replaces text), the raw draft string
+         keeps the tokens throughout. The chip is non-editable; click
+         opens the target, its x removes the token, Backspace with the
+         caret behind it dissolves the chip back to the raw token text
+         (the dissolve law). The strip is gone: pills sit beside their
+         text was the whole complaint. -->
     <div class="composer-row">
       <button
         v-if="!expanded"
@@ -62,20 +48,34 @@
         title="attach images"
         aria-label="attach images"
         @click="fileInput?.click()">+</button>
-      <textarea
+      <!-- THE EDITOR (card t_e67c372b): a contenteditable div, not a
+           textarea - chips must render inline in the text flow. The
+           div's children are NEVER Vue-patched (the user's typed DOM is
+           the live truth; the template deliberately leaves the element
+           empty) - the sync module below rebuilds children from the
+           draft only when the plan and the DOM disagree, so native
+           typing never churns the caret. Draft extraction carries the
+           raw tokens out of the chips' data-token, keeping the draft
+           string the server-side expansion's exact truth. -->
+      <div
         ref="ta"
-        :value="draft"
+        class="composer-input"
+        contenteditable="true"
+        role="textbox"
+        aria-multiline="true"
+        :data-placeholder="'message omega'"
         :aria-expanded="paletteOpen"
         aria-haspopup="listbox"
         :aria-activedescendant="
           paletteOpen && active >= 0 ? 'composer-palette-opt-' + active : undefined
         "
-        placeholder="message omega"
-        rows="1"
+        spellcheck="false"
         @input="onInput"
         @keydown="onKeydown"
         @keyup.left="onCaret"
         @keyup.right="onCaret"
+        @keyup.up="onCaret"
+        @keyup.down="onCaret"
         @keyup.home="onCaret"
         @keyup.end="onCaret"
         @click="onCaret"
@@ -200,6 +200,7 @@
   import WorkspaceSelect from "./WorkspaceSelect.vue";
   import BandSelect from "../ui/BandSelect.vue";
   import ReferencePill from "./ReferencePill.vue";
+  import { computed, getCurrentInstance, h, render } from "vue";
   import {
     dataUrl,
     mediaTypeFromBase64,
@@ -226,14 +227,20 @@
   // token surgery, and the @ path list's dir-first helpers share one
   // module with the sent-message renderer
   import {
+    chipFor,
     deleteTokenAt,
+    editorNodes,
     filterMentionRows,
     mentionDirOf,
     mentionRows,
     scanRefTokens,
     tokenBeforeCaret,
   } from "../../composables/pills";
-  import type { RefToken } from "../../composables/pills";
+  import type {
+    EditorChipNode,
+    EditorPiece,
+    RefToken,
+  } from "../../composables/pills";
   import { DOCK_VIEWER_OPEN_KEY } from "../../composables/viewer";
 
   const props = defineProps<{
@@ -303,7 +310,7 @@
 
   const MAX_ATTACH_BYTES = 10 * 1024 * 1024; // mirrors the backend's cap
 
-  const ta = ref<HTMLTextAreaElement | null>(null);
+  const ta = ref<HTMLElement | null>(null);
   const fileInput = ref<HTMLInputElement | null>(null);
   const expanded = ref(false);
   const overflowing = ref(false);
@@ -348,7 +355,7 @@
     if (!el || el === ta.value) return;
     if (
       el.closest(
-        "button, input, textarea, [role=listbox], .composer-palette, .attach-strip, .fork-chip, .ref-strip, .model-select, .thinking-select, .workspace-select, .toolbar",
+        "button, input, [role=listbox], .composer-palette, .attach-strip, .fork-chip, .ref-chip, .model-select, .thinking-select, .workspace-select, .toolbar",
       )
     ) {
       return;
@@ -356,11 +363,9 @@
     ta.value?.focus();
   }
 
-  // draft clears after send (parent) - shrink back on the next tick
-  watch(
-    () => props.draft,
-    () => nextTick(resize),
-  );
+  // the height follows every draft write: the plan watch fires the sync
+  // (a no-op with chip parity, a rebuild otherwise) and resize runs in
+  // both of its paths - the textarea-era draft watch folded into it.
 
   // fileToImage reads one File into the ai.ImageContent shape: base64
   // (data: prefix stripped) plus a magic-sniffed media type. Returns
@@ -561,16 +566,13 @@
   });
 
   function onInput(e: Event) {
-    const el = e.target as HTMLTextAreaElement;
-    caretAt.value = el.selectionStart ?? 0;
-    dismissed.value = false;
-    emit("update:draft", el.value);
-    resize();
+    absorbWrite(e.target as HTMLElement);
   }
 
   function onCaret(e: Event) {
-    const el = e.target as HTMLTextAreaElement;
-    caretAt.value = el.selectionStart ?? 0;
+    const el = e.target as HTMLElement;
+    const at = caretFromDom(el);
+    if (at >= 0) caretAt.value = at;
   }
 
   // the lazy loads ride mode transitions reactively (same race note as
@@ -605,32 +607,342 @@
   });
   onMounted(() => {
     if (slashSurface.value) void loadPaletteData();
+    // a remount carrying a draft (tab switches keep per-tab state, card
+    // t_e67c372b): the chips rebuild - and skill chips need the skills
+    // snapshot the slash surface would otherwise only load on the next
+    // "/" press
+    if (scanRefTokens(props.draft).some((t) => t.kind === "skill")) {
+      void loadPaletteData();
+    }
+    syncEditor();
   });
 
   function closePalette() {
     dismissed.value = true;
   }
 
-  // --- the pill strip (t_7f09bd0c) ---
-  // The draft's pills: a skill token validates against the loaded skills
-  // (a shell verb like "/theme" is a command, never a pill - the slash
-  // surface has already loaded the skills snapshot for any "/ "-draft);
-  // a file token stands as-is (the path reference IS the semantics).
+  // --- the chip editor (t_e67c372b): a pill REPLACES the text it ---
+  // --- represents, inline in the flow                              ---
+  //
+  // The editor is a contenteditable div (a textarea cannot render markup
+  // in place). Its children are owned by this module, never by Vue's
+  // patcher: native typing mutates the DOM freely, and the sync rewrites
+  // the children ONLY when the plan (the chip law over the draft) and
+  // the DOM disagree - a rebuild restores the caret at the same
+  // draft-space index, so the cursor never visibly jumps. The draft
+  // string always carries the RAW tokens: chips are a view of their
+  // spans (data-token carries the span out), and the send posts the
+  // same text the strip-era flow posted (the server-side at-mention
+  // expansion is the consumer of that exact string).
+
+  // chip eligibility: a file token stands as-is; a skill token chips as
+  // soon as its name is a loaded skill's (a shell verb like "/theme" is
+  // a command, never a pill - the slash surface has already loaded the
+  // skills snapshot for any "/"-draft)
   const skillNames = computed(() => new Set(skillRows.value.map((s) => s.name)));
-  const refPills = computed<RefToken[]>(() =>
-    scanRefTokens(props.draft).filter(
-      (p) => p.kind === "file" || skillNames.value.has(p.name),
+  const isPill = (t: RefToken): boolean =>
+    t.kind === "file" || skillNames.value.has(t.name);
+
+  // fresh swallows (the accept path) and dissolved reveals (the
+  // Backspace law). Keys ride chipKeyOf's token identity; reactive Set
+  // instances are replaced whole so the plan's computed re-runs.
+  const forcedChip = ref<ReadonlySet<string>>(new Set());
+  const dissolvedChip = ref<ReadonlySet<string>>(new Set());
+
+  const editorPlan = computed<EditorPiece[]>(() =>
+    editorNodes(
+      props.draft,
+      {
+        caret: caretAt.value,
+        paletteOpen: paletteOpen.value,
+        forced: forcedChip.value,
+        dissolved: dissolvedChip.value,
+      },
+      isPill,
     ),
   );
 
-  // pill click (the card's law): a file opens in the Files pane, a skill
-  // opens its SKILL.md - the same inject the Files tab's row clicks ride
+  // --- caret arithmetic (draft space <-> editor DOM) ---
+  //
+  // A chip contributes its token's full length to draft space but
+  // offers exactly two caret seats: before it (the token's start index)
+  // and after it (the span's end index). A token's interior indexes
+  // exist in draft space but never in the chip'd DOM - a chip there
+  // means the span is raw (dissolved or being typed), an ordinary text
+  // node the caret can sit inside.
+
+  // draftTextOf reads the editor's text: text nodes verbatim, chips via
+  // their data-token. Stray browser elements walk into (they carry no
+  // draft text that matters; the input paths never create them).
+  function draftTextOf(el: HTMLElement): string {
+    let out = "";
+    const walk = (n: Node) => {
+      for (const c of n.childNodes) {
+        if (c.nodeType === Node.TEXT_NODE) {
+          out += c.nodeValue ?? "";
+        } else if (c instanceof Element) {
+          if (c.dataset.refchip !== undefined) out += c.dataset.token ?? "";
+          else walk(c);
+        }
+      }
+    };
+    walk(el);
+    return out;
+  }
+
+  // caretFromDom maps the selection's collapsed caret to a draft index;
+  // -1 means "no collapsed caret in the editor" (a ranged selection,
+  // focus elsewhere) - callers fall back rather than guess.
+  function caretFromDom(el: HTMLElement): number {
+    const sel = window.getSelection();
+    if (!sel?.rangeCount) return -1;
+    const range = sel.getRangeAt(0);
+    if (!range.collapsed) return -1;
+    const anchor = range.startContainer;
+    if (!el.contains(anchor)) return -1;
+    const kids = Array.from(el.childNodes);
+    let idx = 0;
+    for (let i = 0; i < kids.length; i++) {
+      const c = kids[i]!;
+      // the caret anchors on the editor itself: offset i = before the
+      // i-th child; offset kid-count = after everything (the loop end)
+      if (anchor === el) {
+        if (range.startOffset === i) return idx;
+      } else if (c === anchor) {
+        // the caret anchors on the child: a text node's offset, or an
+        // element's start edge (defensive - the chip swallows mousedown)
+        return c.nodeType === Node.TEXT_NODE ?
+            idx + Math.min(range.startOffset, (c.nodeValue ?? "").length)
+          : idx;
+      }
+      if (c.nodeType === Node.TEXT_NODE) idx += (c.nodeValue ?? "").length;
+      else if (c instanceof Element && c.dataset.refchip !== undefined)
+        idx += (c.dataset.token ?? "").length;
+    }
+    if (anchor === el && range.startOffset === kids.length) return idx;
+    return -1; // an anchor deeper than the flat child list: not representable
+  }
+
+  // placeCaretAt puts the caret at a draft-space index in the DOM: text
+  // interiors select into the text node, chip boundaries select against
+  // the editor element (before/after the chip), the end collapses at the
+  // child list's end. A silent no-op while the editor is not focused.
+  function placeCaretAt(el: HTMLElement, index: number): void {
+    if (document.activeElement !== el) return;
+    const sel = window.getSelection();
+    if (!sel) return;
+    const kids = Array.from(el.childNodes);
+    let idx = 0;
+    for (let i = 0; i < kids.length; i++) {
+      const c = kids[i]!;
+      const len =
+        c instanceof Element && c.dataset.refchip !== undefined ?
+          (c.dataset.token ?? "").length
+          : (c.nodeValue ?? "").length;
+      if (index === idx) {
+        sel.collapse(el, i);
+        return;
+      }
+      if (index > idx && index < idx + len && c.nodeType === Node.TEXT_NODE) {
+        sel.collapse(c, index - idx);
+        return;
+      }
+      if (index === idx + len) {
+        sel.collapse(el, i + 1);
+        return;
+      }
+      idx += len;
+    }
+    sel.collapse(el, kids.length);
+  }
+
+  // --- the chip DOM + the sync ---
+
+  const appContext = getCurrentInstance()?.appContext ?? null;
+
+  // buildChip mounts ONE renderer's instance into a non-editable span:
+  // ReferencePill stays the ONE renderer (composer chip + transcript
+  // bubble = the same component, the same click law - open through the
+  // viewer inject). The wrapper carries the raw token in data-token
+  // (the draft reader's exact source), swallows mousedown (an element
+  // selection would turn the next Backspace into a whole-chip delete -
+  // the dissolve law needs the parked caret) and dragstart.
+  function buildChip(t: RefToken): HTMLElement {
+    const wrap = document.createElement("span");
+    wrap.className = "ref-chip";
+    wrap.contentEditable = "false";
+    wrap.dataset.refchip = "";
+    wrap.dataset.token = t.token;
+    wrap.addEventListener("mousedown", (e) => e.preventDefault());
+    wrap.addEventListener("dragstart", (e) => e.preventDefault());
+    // chip click (t_7f09bd0c's law): a file opens in the Files pane, a
+    // skill opens its SKILL.md. The x keeps the old strip's outright
+    // removal; Backspace is the dissolve.
+    const vnode = h("span", { class: "ref-chip-body" }, [
+      h(ReferencePill, { pill: t, onOpen: () => openRef(t) }),
+      h(
+        "button",
+        {
+          class: "ref-remove",
+          type: "button",
+          title: "remove " + t.name,
+          onClick: () => removeToken(t),
+        },
+        "\u00d7",
+      ),
+    ]);
+    if (appContext) vnode.appContext = appContext;
+    render(vnode, wrap);
+    return wrap;
+  }
+
+  // openRef: the viewer inject the Files tab's row clicks ride
   const openViewerRef = inject(DOCK_VIEWER_OPEN_KEY, null);
   function openRef(t: RefToken) {
     openViewerRef?.({ kind: t.kind, name: t.name });
   }
 
-  // removeToken: the strip's x - the token dies out of the draft, the
+  // sync brings the editor's DOM to the plan and rebuilds ONLY on
+  // disagreement (the DOM's text out of parity with the draft, or the
+  // chip sequence drifted) - typing and caret moves take the no-op path
+  // and never churn the caret. Stale chip-state keys sweep first: a
+  // token that left the scan (edited into prose, removed) releases its
+  // forced/dissolved entry.
+  function syncEditor(): void {
+    const el = ta.value;
+    if (!el) return;
+    const live = new Set(scanRefTokens(props.draft).map((t) => t.token));
+    let swept = false;
+    for (const setref of [forcedChip, dissolvedChip] as const) {
+      let next: Set<string> | null = null;
+      for (const k of setref.value) {
+        if (!live.has(k)) {
+          if (!next) next = new Set(setref.value);
+          next.delete(k);
+          swept = true;
+        }
+      }
+      if (next) {
+        (setref as { value: ReadonlySet<string> }).value = next;
+      }
+    }
+    const domText = draftTextOf(el);
+    const domChips = Array.from(el.children)
+      .filter((c) => c instanceof Element && c.dataset.refchip !== undefined)
+      .map((c) => (c as HTMLElement).dataset.token ?? "");
+    const wantChips = editorPlan.value
+      .filter((p): p is EditorChipNode => p.type === "chip")
+      .map((p) => p.token.token);
+    if (domText === props.draft && domChips.join("\u0000") === wantChips.join("\u0000")) {
+      // parity: maybe resize anyway (heights follow plain text edits,
+      // whose own flush took the plan watch here)
+      resize();
+      return;
+    }
+    caretAt.value = Math.min(caretAt.value, props.draft.length);
+    for (const c of Array.from(el.children)) {
+      if (c instanceof Element && c.dataset.refchip !== undefined) {
+        render(null, c); // unmount the renderer instance (no leak)
+      }
+    }
+    while (el.firstChild) el.removeChild(el.firstChild);
+    for (const p of editorPlan.value) {
+      if (p.type === "text") el.appendChild(document.createTextNode(p.text));
+      else el.appendChild(buildChip(p.token));
+    }
+    placeCaretAt(el, caretAt.value);
+    resize();
+  }
+
+  // the sync triggers: any plan change (draft text, caret, chip state)
+  // rebuilds the chip layer after the DOM settles
+  watch(editorPlan, () => nextTick(syncEditor));
+
+  // dissolveBehindCaret runs the Backspace law (t_e67c372b): the caret
+  // collapsed and immediately behind a CHIPPED token - the chip dies and
+  // the raw token text re-materializes. A reveal, not a delete: the
+  // draft string is unchanged (the token was always in it), the reveal
+  // is suppressed while the caret works the span, and leaving the span
+  // re-chips it. Returns false so the default backspace runs (a ranged
+  // selection, no chip behind the caret, a dissolved span's next
+  // single-char delete).
+  function dissolveBehindCaret(): boolean {
+    const el = ta.value;
+    if (!el) return false;
+    const caret = caretFromDom(el);
+    if (caret === -1) return false;
+    const tok = tokenBeforeCaret(props.draft, caret);
+    if (!tok || !isPill(tok)) return false;
+    if (
+      !chipFor(tok, {
+        caret,
+        paletteOpen: paletteOpen.value,
+        forced: forcedChip.value,
+        dissolved: dissolvedChip.value,
+      })
+    ) {
+      return false;
+    }
+    if (forcedChip.value.has(tok.token)) {
+      const next = new Set(forcedChip.value);
+      next.delete(tok.token);
+      forcedChip.value = next;
+    }
+    if (!dissolvedChip.value.has(tok.token)) {
+      const next = new Set(dissolvedChip.value);
+      next.add(tok.token);
+      dissolvedChip.value = next;
+    }
+    // the caret stays parked at the span's end; the plan watch performs
+    // the reveal and restores the caret there
+    caretAt.value = tok.start + tok.token.length;
+    return true;
+  }
+
+  // absorbWrite: the shared tail of every text write (typing, paste, the
+  // newline insert) - read the text, clear a dismissed palette, sync the
+  // caret, drop a browser-emptied editor's stray <br> artifact (it would
+  // rob :empty of the placeholder), emit the draft, size.
+  function absorbWrite(el: HTMLElement): void {
+    const text = draftTextOf(el);
+    dismissed.value = false;
+    const at = caretFromDom(el);
+    if (at >= 0) caretAt.value = Math.min(at, text.length);
+    if (text === "" && el.hasChildNodes()) el.replaceChildren();
+    emit("update:draft", text);
+    resize();
+  }
+
+  // insertAtCaret writes plain text into the editor at the caret and
+  // runs the input path by hand (manual DOM writes fire no input event).
+  // The contenteditable's own paste would insert markup and its own
+  // newline would insert div nodes - neither is draft-readable; text
+  // nodes + pre-wrap carry both, the way native typing does.
+  function insertAtCaret(text: string): void {
+    const el = ta.value;
+    if (!el || text === "") return;
+    const sel = window.getSelection();
+    let range: Range | null = null;
+    if (sel?.rangeCount) {
+      const r = sel.getRangeAt(0);
+      if (r.collapsed && el.contains(r.startContainer)) range = r;
+    }
+    if (!range) {
+      // no caret in the editor: append at the end
+      range = document.createRange();
+      range.setStart(el, el.childNodes.length);
+      range.collapse(true);
+    }
+    const node = document.createTextNode(text);
+    range.insertNode(node);
+    range.setStartAfter(node);
+    range.collapse(true);
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    absorbWrite(el);
+  }
+
+  // removeToken: the chip's x - the token dies out of the draft, the
   // caret parks at the cut
   function removeToken(t: RefToken) {
     const next = deleteTokenAt(props.draft, t);
@@ -639,7 +951,7 @@
       const el = ta.value;
       if (el) {
         el.focus();
-        el.setSelectionRange(next.caret, next.caret);
+        placeCaretAt(el, next.caret);
         caretAt.value = next.caret;
       }
     });
@@ -664,14 +976,20 @@
       const rest = space === -1 ? "" : props.draft.slice(space);
       const text = item.name + rest;
       closePalette();
+      // the fresh swallow (t_e67c372b): the completed token chips
+      // immediately - the caret parks at the draft's end, `forced`
+      // holds the chip for this span until a dissolve releases it
+      const forced = new Set(forcedChip.value);
+      forced.add(item.name);
+      forcedChip.value = forced;
+      caretAt.value = text.length;
       emit("update:draft", text);
       active.value = -1;
       nextTick(() => {
         const el = ta.value;
         if (el) {
           el.focus();
-          el.setSelectionRange(text.length, text.length);
-          caretAt.value = text.length;
+          placeCaretAt(el, text.length);
         }
       });
       return;
@@ -695,15 +1013,22 @@
     const dir = mentionDirOf(mention.value.token);
     const insertion = "@" + dir + item.name + (isDir ? "/" : "");
     const next = replaceMentionToken(props.draft, caretAt.value, mention.value.token, insertion);
-    if (!isDir) closePalette();
+    if (!isDir) {
+      closePalette();
+      // the fresh swallow (t_e67c372b): a completed file token chips
+      // immediately (dir rows drill; they are never a pill)
+      const forced = new Set(forcedChip.value);
+      forced.add(insertion);
+      forcedChip.value = forced;
+    }
+    caretAt.value = next.caret;
     emit("update:draft", next.draft);
     active.value = -1;
     nextTick(() => {
       const el = ta.value;
       if (el && next.caret >= 0) {
         el.focus();
-        el.setSelectionRange(next.caret, next.caret);
-        caretAt.value = next.caret;
+        placeCaretAt(el, next.caret);
       }
     });
   }
@@ -716,7 +1041,17 @@
     if (submit) return acceptItem(item);
     if (!mention.value.active) {
       emit("update:draft", item.name);
+      // the completion parks the caret at the draft's end; a skill
+      // completion fresh-swallows into a chip (t_e67c372b)
+      caretAt.value = item.name.length;
+      if (item.kind === "skill") {
+        const forced = new Set(forcedChip.value);
+        forced.add(item.name);
+        forcedChip.value = forced;
+      }
       closePalette();
+      const el = ta.value;
+      if (el) nextTick(() => placeCaretAt(el, item.name.length));
       return;
     }
     // a mention Tab completes too (TUI acceptMatch parity): the token
@@ -756,29 +1091,30 @@
         return;
       }
     }
-    // Backspace ON a pill kills the token whole (t_7f09bd0c): no
-    // selection and the caret immediately behind a token. While the
-    // palette is open the Backspace edits the running query char by
-    // char - untouched, this branch must not hijack the list.
-    if (e.key === "Backspace" && !paletteOpen.value) {
-      const el = ta.value;
-      const start = el?.selectionStart ?? -1;
-      const end = el?.selectionEnd ?? -1;
-      if (el && start >= 0 && start === end) {
-        const tok = tokenBeforeCaret(props.draft, start);
-        if (tok) {
-          e.preventDefault();
-          const next = deleteTokenAt(props.draft, tok);
-          emit("update:draft", next.draft);
-          caretAt.value = next.caret;
-          nextTick(() => el.setSelectionRange(next.caret, next.caret));
-          return;
-        }
-      }
-    }
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Backspace ON a chip dissolves it (t_e67c372b): no selection and
+    // the caret immediately behind the token - the chip dies, the RAW
+    // token text re-materializes in its place (a reveal, not a delete:
+    // the draft string is unchanged, the token was always in it). While
+    // the palette is open the Backspace edits the running query char by
+    // char - untouched, this branch must not hijack the list. The NEXT
+    // Backspace behind a revealed span is the browser's own single-char
+    // delete; the chip's x is the outright remove.
+    if (e.key === "Backspace" && !paletteOpen.value && dissolveBehindCaret()) {
       e.preventDefault();
-      emit("send");
+      return;
+    }
+    if (e.key === "Enter") {
+      // EDITOR (t_e67c372b): the editor claims every Enter - Shift+Enter
+      // inserts the newline as a text node (the browser's contenteditable
+      // newline would insert a div node the draft reader cannot read),
+      // plain Enter (and Ctrl/Alt+Enter - only the shift modifier is
+      // exempt) sends. Same law, new mechanics.
+      e.preventDefault();
+      if (e.shiftKey) {
+        insertAtCaret("\n");
+      } else {
+        emit("send");
+      }
     }
   }
 
