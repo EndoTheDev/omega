@@ -59,6 +59,20 @@ func (p *Plugin) Provides() []string { return []string{"kanban", "tools"} }
 // edge retired with the mount-time capture (v0.12 phase C1).
 func (p *Plugin) Requires() []string { return nil }
 
+// Dismount releases the mounted board store: beyond-Context state the
+// journal cannot see (the open sqlite handle). A store handle left
+// open blocks the removal of the data directory on windows, so the
+// host shutdown and every test mount dismount instead of abandoning
+// it. Nil-safe: never mounted (or already dismounted) closes nothing.
+func (p *Plugin) Dismount(ctx *core.Context) error {
+	if p.store == nil {
+		return nil
+	}
+	err := p.store.Close()
+	p.store = nil
+	return err
+}
+
 // MountWithAPI implements agent.APIPlugin. The store opens here (the
 // one database, legacy per-board dirs folded in - MountRegistry); every
 // face registers through the api: the kanban seam, the folded task
@@ -88,6 +102,12 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	s, err := MountRegistryDSN(home, dsn)
 	if err != nil {
 		return err
+	}
+	// A same-instance re-mount (the double-mount removal proofs) opens
+	// a second store: the prior handle is dead weight - close it, or
+	// the abandoned handle keeps the database file locked on windows.
+	if p.store != nil {
+		_ = p.store.Close()
 	}
 	p.store = s
 	p.tools = &ToolProvider{board: s}

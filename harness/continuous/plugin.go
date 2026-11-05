@@ -27,6 +27,7 @@ type Plugin struct {
 	cfg     Config   // the mounted config section
 	machine *Machine // nil until MountWithAPI
 	ctx     *core.Context
+	ledger  *Ledger // nil until MountWithAPI; Close releases it
 }
 
 // Compile-time assertion that *Plugin implements agent.Plugin.
@@ -95,6 +96,13 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err != nil {
 		return fmt.Errorf("continuous: ledger: %w", err)
 	}
+	// A same-instance re-mount (the double-mount removal proofs) opens
+	// a second ledger: the prior handle is dead weight - close it, or
+	// the abandoned handle keeps the database file locked on windows.
+	if p.ledger != nil {
+		_ = p.ledger.Close()
+	}
+	p.ledger = ledger
 	ctx.AddEventObserver(ledger.observer())
 	ctx.AddEventObserver(machine.tickObserver())
 
@@ -121,6 +129,21 @@ func (p *Plugin) SetDisabledAgents(names []string) {
 	if p.machine != nil {
 		p.machine.SetDisabledAgents(names)
 	}
+}
+
+// Dismount releases the mounted evidence ledger. The mount keeps the
+// ledger's database open for the process's lifetime - beyond-Context
+// state the journal cannot see. A handle left open blocks the removal
+// of the data directory on windows, so the host shutdown and every
+// test mount dismount instead of abandoning it. Nil-safe: Close before
+// a mount (or twice) closes nothing.
+func (p *Plugin) Dismount(ctx *core.Context) error {
+	if p.ledger == nil {
+		return nil
+	}
+	err := p.ledger.Close()
+	p.ledger = nil
+	return err
 }
 
 // routeRow is one REST registration: natural wire shape, tenant-checked

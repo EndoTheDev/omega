@@ -199,7 +199,11 @@ func run(args []string) error {
 func printHelp(args []string) {
 	fmt.Print(helpText)
 	subs := []agent.Subcommand{}
-	if reg, _, err := mountRegistry(configForCLI(args)); err == nil {
+	if reg, pctx, err := mountRegistry(configForCLI(args)); err == nil {
+		// The mount is borrowed for the listing only: dismount before
+		// returning - the capsules' stores hold open file handles a
+		// windows process leaves behind otherwise (agent.Dismounter).
+		defer agent.DismountAll(reg, pctx)
 		subs = reg.Subcommands()
 	}
 	printModuleSubcommands(subs, os.Stdout)
@@ -266,11 +270,18 @@ func configForCLI(args []string) Config {
 // name. The module handler receives the argv after the subcommand
 // untouched - the module parses its own argv (Q6).
 func dispatchModuleCLI(args []string, sub string, rest []string) (bool, error) {
-	reg, _, err := mountRegistry(configForCLI(args))
+	reg, pctx, err := mountRegistry(configForCLI(args))
 	if err != nil {
 		return false, err
 	}
-	return dispatchSubcommand(reg, sub, rest)
+	handled, derr := dispatchSubcommand(reg, sub, rest)
+	// The mount is borrowed for one dispatch: tear it down before
+	// returning (agent.Dismounter) - a live store handle outlives the
+	// short-lived CLI registry otherwise, and windows keeps the data
+	// file locked to the dead handle. The command result is the
+	// contract; the teardown's error never eats it.
+	_ = agent.DismountAll(reg, pctx)
+	return handled, derr
 }
 
 // dispatchSubcommand consults the registry's cli table. Linear scan:

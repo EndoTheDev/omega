@@ -79,7 +79,9 @@ func TestNotificationsRemovalProof(t *testing.T) {
 		t.Fatal("FULL MOUNT: the kanban capsule is absent from buildPlugins")
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
+	reg1, err := agent.MountAllAPI(plugins, ctx, nil, nil)
+	dismountCleanup(t, reg1, ctx)
+	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	proofResolve(t, ctx, "notifications")
@@ -161,7 +163,9 @@ func TestNotificationsRemovalProof(t *testing.T) {
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
+	reg2, err := agent.MountAllAPI(removed, ctx2, nil, nil)
+	dismountCleanup(t, reg2, ctx2)
+	if err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	if _, ok := ctx2.Services().Resolve("notifications").(proofNotifier); ok {
@@ -234,7 +238,9 @@ func TestKanbanRemovalProof(t *testing.T) {
 		t.Fatal("FULL MOUNT: the kanban capsule is absent from buildPlugins")
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
+	reg3, err := agent.MountAllAPI(plugins, ctx, nil, nil)
+	dismountCleanup(t, reg3, ctx)
+	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	routes := map[string]string{}
@@ -333,7 +339,9 @@ func TestKanbanRemovalProof(t *testing.T) {
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
+	reg4, err := agent.MountAllAPI(removed, ctx2, nil, nil)
+	dismountCleanup(t, reg4, ctx2)
+	if err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	for _, rt := range ctx2.ModuleRoutes {
@@ -439,7 +447,9 @@ func TestCronRemovalProof(t *testing.T) {
 		}
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
+	reg5, err := agent.MountAllAPI(plugins, ctx, nil, nil)
+	dismountCleanup(t, reg5, ctx)
+	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	proofResolve(t, ctx, "cron")
@@ -491,7 +501,9 @@ func TestCronRemovalProof(t *testing.T) {
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
+	reg6, err := agent.MountAllAPI(removed, ctx2, nil, nil)
+	dismountCleanup(t, reg6, ctx2)
+	if err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	if _, ok := ctx2.Services().Resolve("cron").(interface{ Stop() error }); ok {
@@ -596,7 +608,9 @@ func TestMemoryRemovalProof(t *testing.T) {
 		}
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
+	reg7, err := agent.MountAllAPI(plugins, ctx, nil, nil)
+	dismountCleanup(t, reg7, ctx)
+	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	proofResolve(t, ctx, "memory")
@@ -675,7 +689,9 @@ func TestMemoryRemovalProof(t *testing.T) {
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
+	reg8, err := agent.MountAllAPI(removed, ctx2, nil, nil)
+	dismountCleanup(t, reg8, ctx2)
+	if err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	if ctx2.Services().Resolve("memory") != nil {
@@ -770,7 +786,9 @@ func TestDelegateRemovalProof(t *testing.T) {
 		}
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
+	reg9, err := agent.MountAllAPI(plugins, ctx, nil, nil)
+	dismountCleanup(t, reg9, ctx)
+	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	if ctx.InjectedMessages == nil {
@@ -903,7 +921,9 @@ func TestDelegateRemovalProof(t *testing.T) {
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
+	reg10, err := agent.MountAllAPI(removed, ctx2, nil, nil)
+	dismountCleanup(t, reg10, ctx2)
+	if err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	if ctx2.InjectedMessages != nil {
@@ -1057,7 +1077,9 @@ for line in sys.stdin:
 		}
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
+	reg11, err := agent.MountAllAPI(plugins, ctx, nil, nil)
+	dismountCleanup(t, reg11, ctx)
+	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 
@@ -1117,7 +1139,9 @@ for line in sys.stdin:
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
+	reg12, err := agent.MountAllAPI(removed, ctx2, nil, nil)
+	dismountCleanup(t, reg12, ctx2)
+	if err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	// the tool registry: no proof.* tool, and nothing answered the env
@@ -1218,7 +1242,9 @@ func TestVerdictRemovalProof(t *testing.T) {
 		}
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
+	reg13, err := agent.MountAllAPI(plugins, ctx, nil, nil)
+	dismountCleanup(t, reg13, ctx)
+	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	proofResolve(t, ctx, "verdicts")
@@ -1354,7 +1380,9 @@ func TestVerdictRemovalProof(t *testing.T) {
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
+	reg14, err := agent.MountAllAPI(removed, ctx2, nil, nil)
+	dismountCleanup(t, reg14, ctx2)
+	if err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	if ctx2.Services().Resolve("verdicts") != nil {
@@ -1459,7 +1487,9 @@ func TestTrustRemovalProof(t *testing.T) {
 		}
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
+	reg15, err := agent.MountAllAPI(plugins, ctx, nil, nil)
+	dismountCleanup(t, reg15, ctx)
+	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	proofResolve(t, ctx, "trust")
@@ -1548,7 +1578,9 @@ func TestTrustRemovalProof(t *testing.T) {
 		removed = append(removed, p)
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
+	reg16, err := agent.MountAllAPI(removed, ctx2, nil, nil)
+	dismountCleanup(t, reg16, ctx2)
+	if err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	if ctx2.Services().Resolve("trust") != nil {
@@ -1678,7 +1710,9 @@ func TestTerminalRemovalProof(t *testing.T) {
 		t.Fatal("FULL MOUNT: the terminal capsule is not toggleable")
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
+	reg17, err := agent.MountAllAPI(plugins, ctx, nil, nil)
+	dismountCleanup(t, reg17, ctx)
+	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	wantRoutes := []string{
@@ -1757,7 +1791,9 @@ func TestTerminalRemovalProof(t *testing.T) {
 		}
 	}
 	ctx2 := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if _, err := agent.MountAllAPI(removed, ctx2, nil, nil); err != nil {
+	reg18, err := agent.MountAllAPI(removed, ctx2, nil, nil)
+	dismountCleanup(t, reg18, ctx2)
+	if err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	for _, rt := range ctx2.ModuleRoutes {
@@ -1811,7 +1847,9 @@ func TestApprovalRemovalProof(t *testing.T) {
 	}
 	cfg := DefaultConfig()
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
+	reg19, err := agent.MountAllAPI(plugins, ctx, nil, nil)
+	dismountCleanup(t, reg19, ctx)
+	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	if ctx.Services().Resolve("approvals") == nil {
@@ -1834,7 +1872,9 @@ func TestApprovalRemovalProof(t *testing.T) {
 	offCfg := DefaultConfig()
 	offCfg.Approvals.Mode = "off"
 	ctxOff := &core.Context{Configs: agent.RouteConfigs(plugins, offCfg)}
-	if _, err := agent.MountAllAPI(plugins, ctxOff, nil, nil); err != nil {
+	reg20, err := agent.MountAllAPI(plugins, ctxOff, nil, nil)
+	dismountCleanup(t, reg20, ctxOff)
+	if err != nil {
 		t.Fatalf("mount off-mode: %v", err)
 	}
 	if ctxOff.Services().Resolve("approvals") != nil {
@@ -1870,7 +1910,9 @@ func TestApprovalRemovalProof(t *testing.T) {
 		}
 	}
 	ctxRm := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if _, err := agent.MountAllAPI(removed, ctxRm, nil, nil); err != nil {
+	reg21, err := agent.MountAllAPI(removed, ctxRm, nil, nil)
+	dismountCleanup(t, reg21, ctxRm)
+	if err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	if ctxRm.Services().Resolve("approvals") != nil {
@@ -1920,7 +1962,9 @@ func TestProcessRemovalProof(t *testing.T) {
 		t.Fatalf("FULL MOUNT: the process capsule is not toggleable")
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
+	reg22, err := agent.MountAllAPI(plugins, ctx, nil, nil)
+	dismountCleanup(t, reg22, ctx)
+	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
 	wantVerbs := []string{"process.spawn", "process.list", "process.read", "process.kill", "process.wait"}
@@ -1972,7 +2016,9 @@ func TestProcessRemovalProof(t *testing.T) {
 		}
 	}
 	ctxRm := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	if _, err := agent.MountAllAPI(removed, ctxRm, nil, nil); err != nil {
+	reg23, err := agent.MountAllAPI(removed, ctxRm, nil, nil)
+	dismountCleanup(t, reg23, ctxRm)
+	if err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	for _, verb := range wantVerbs {

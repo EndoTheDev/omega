@@ -39,6 +39,7 @@ func bootMount(t *testing.T, sink core.RefusalSink) (*agent.Registry, *core.Cont
 	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
+	dismountCleanup(t, reg, ctx)
 	canvas, err := agent.NewCanvas(ctx, nil)
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
