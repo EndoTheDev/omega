@@ -320,13 +320,10 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/notifications", s.handleNotifications)
 	mux.HandleFunc("/notifications/read", s.handleNotificationsRead)
 	mux.HandleFunc("/notifications/events", s.handleNotificationEvents)
-	// card t_2ecf9c51: the verdict-cards answer surface. /verdicts is
-	// the cross-session listing (the bell count); /sessions/{id}/verdicts
-	// lists one session and accepts the answer POST. The verdict
-	// surface serves the chat page directly - wave 3's classification
-	// sweep owns the verdict if it ever demotes.
-	mux.HandleFunc("/verdicts", s.handleVerdicts)
-	mux.HandleFunc("/sessions/{id}/verdicts", s.handleVerdicts)
+	// The /verdicts answer surface rode the verdict capsule out with
+	// wave 3 (card t_b75df168, harness/verdict/routes.go): the bell's
+	// pending listing + the answering POST are module routes now - the
+	// card renders live from the tool SSE frames it always has.
 	// The /agents roster surface rode the continuous capsule out with
 	// wave 2 (harness/continuous/agentsrest.go): every handler in the
 	// old server_agents.go served the roster tab - the chat page never

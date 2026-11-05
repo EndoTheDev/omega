@@ -1,4 +1,4 @@
-package api
+package verdict
 
 import (
 	"context"
@@ -11,30 +11,28 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/harness/verdict"
 )
 
-// vo builds pick rows from labels: the test shorthand for
-// []core.QuestionOption (labels only, no description).
-func vo(labels ...string) []core.QuestionOption {
-	out := make([]core.QuestionOption, len(labels))
-	for i, l := range labels {
-		out[i] = core.QuestionOption{Label: l}
-	}
-	return out
-}
+// The verdict REST face's self-check (moved whole from
+// agent/api/server_verdicts_test.go by the shell-ring shrink wave 3,
+// card t_b75df168): pin the answering wire contract directly against
+// the capsule's Routes - the base package no longer serves these
+// (they are module routes; a disabled capsule answers 404 at the
+// module mux, so the old 501-without-seam probe is gone with the
+// surface's own home).
 
-// verdictServer builds a server with the verdicts seam mounted on a
-// fresh hub, plus a helper to issue a blocking card in the background
-// (the answer POST or the hub's expiry resolves it).
-func verdictServer(t *testing.T) (*httptest.Server, *verdict.Hub) {
+// vo already exists in hub_test.go - the routes tests reuse it.
+// routesServer builds the capsule route mux on a fresh hub - the same
+// patterns RegisterRoute mounts register.
+func routesServer(t *testing.T) (*httptest.Server, *Hub) {
 	t.Helper()
-	s := NewServer(nil, nil, nil, nil, nil, nil)
-	h := verdict.NewHub(nil, nil)
-	offerServices(t, s, map[string]any{"verdicts": h})
-	ts := httptest.NewServer(s.Handler())
+	rt := newRoutes(NewHub(nil, nil))
+	mux := http.NewServeMux()
+	mux.HandleFunc("/verdicts", rt.handleVerdicts)
+	mux.HandleFunc("/sessions/{id}/verdicts", rt.handleVerdicts)
+	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
-	return ts, h
+	return ts, rt.hub
 }
 
 func verdictGet(t *testing.T, ts *httptest.Server, path string) map[string]any {
@@ -57,7 +55,7 @@ func verdictGet(t *testing.T, ts *httptest.Server, path string) map[string]any {
 
 // issueCard runs hub.Ask in the background and returns a done channel
 // plus the card id once it is registered.
-func issueCard(t *testing.T, h *verdict.Hub, session, id string) <-chan struct{} {
+func issueCard(t *testing.T, h *Hub, session, id string) <-chan struct{} {
 	t.Helper()
 	done := make(chan struct{})
 	go func() {
@@ -78,35 +76,8 @@ func issueCard(t *testing.T, h *verdict.Hub, session, id string) <-chan struct{}
 	return done
 }
 
-func TestVerdictsEndpoints501WithoutSeam(t *testing.T) {
-	ts := httptest.NewServer(NewServer(nil, nil, nil, nil, nil, nil).Handler())
-	t.Cleanup(ts.Close)
-
-	for _, path := range []string{"/verdicts", "/sessions/s1/verdicts"} {
-		r, err := http.Get(ts.URL + path)
-		if err != nil {
-			t.Fatalf("GET %s: %v", path, err)
-		}
-		if r.StatusCode != http.StatusNotImplemented {
-			t.Errorf("GET %s without seam = %d, want 501", path, r.StatusCode)
-		}
-		r.Body.Close()
-	}
-
-	// answering without the seam also 501s (not 400): the seam is the
-	// precondition, the bad-method/status layering comes after.
-	r, err := http.Post(ts.URL+"/sessions/s1/verdicts", "application/json", strings.NewReader(`{"option_index":1}`))
-	if err != nil {
-		t.Fatalf("POST: %v", err)
-	}
-	if r.StatusCode != http.StatusNotImplemented {
-		t.Errorf("POST without seam = %d, want 501", r.StatusCode)
-	}
-	r.Body.Close()
-}
-
 func TestVerdictsListEmpty(t *testing.T) {
-	ts, _ := verdictServer(t)
+	ts, _ := routesServer(t)
 	out := verdictGet(t, ts, "/verdicts")
 	if out["count"] != float64(0) {
 		t.Fatalf("count = %v, want 0", out["count"])
@@ -114,7 +85,7 @@ func TestVerdictsListEmpty(t *testing.T) {
 }
 
 func TestVerdictsListPendingAndAnswer(t *testing.T) {
-	ts, h := verdictServer(t)
+	ts, h := routesServer(t)
 	done := issueCard(t, h, "s1", "c1")
 	t.Cleanup(func() { <-done })
 
@@ -148,7 +119,7 @@ func TestVerdictsListPendingAndAnswer(t *testing.T) {
 }
 
 func TestVerdictsSecondAnswerReturns409(t *testing.T) {
-	ts, h := verdictServer(t)
+	ts, h := routesServer(t)
 	done := issueCard(t, h, "s1", "c1")
 	// first answer wins
 	r, _ := http.Post(ts.URL+"/sessions/s1/verdicts", "application/json", strings.NewReader(`{"option_index":1}`))
@@ -173,7 +144,7 @@ func TestVerdictsSecondAnswerReturns409(t *testing.T) {
 }
 
 func TestVerdictsMultiAnswerEchoesIndexes(t *testing.T) {
-	ts, h := verdictServer(t)
+	ts, h := routesServer(t)
 	done := make(chan struct{})
 	go func() {
 		_, _ = h.Ask(context.Background(), core.QuestionPrompt{
@@ -232,7 +203,7 @@ func TestVerdictsMultiAnswerEchoesIndexes(t *testing.T) {
 }
 
 func TestVerdictsAnswerUnknownCard404(t *testing.T) {
-	ts, h := verdictServer(t)
+	ts, h := routesServer(t)
 	// no pending card in s1 at all -> answering by a ghost card id 404s
 	r, _ := http.Post(ts.URL+"/sessions/s1/verdicts", "application/json",
 		strings.NewReader(`{"card_id":"ghost","option_index":1}`))
@@ -245,7 +216,7 @@ func TestVerdictsAnswerUnknownCard404(t *testing.T) {
 }
 
 func TestVerdictsInvalidBody400(t *testing.T) {
-	ts, _ := verdictServer(t)
+	ts, _ := routesServer(t)
 	r, _ := http.Post(ts.URL+"/sessions/s1/verdicts", "application/json",
 		strings.NewReader(`{not json`))
 	r.Body.Close()
@@ -255,7 +226,7 @@ func TestVerdictsInvalidBody400(t *testing.T) {
 }
 
 func TestVerdictsPostWithoutSession400(t *testing.T) {
-	ts, _ := verdictServer(t)
+	ts, _ := routesServer(t)
 	r, _ := http.Post(ts.URL+"/verdicts", "application/json", strings.NewReader(`{"option_index":1}`))
 	r.Body.Close()
 	if r.StatusCode != http.StatusBadRequest {
@@ -264,7 +235,7 @@ func TestVerdictsPostWithoutSession400(t *testing.T) {
 }
 
 func TestVerdictsMethodNotAllowed(t *testing.T) {
-	ts, _ := verdictServer(t)
+	ts, _ := routesServer(t)
 	r, err := http.NewRequest(http.MethodDelete, ts.URL+"/verdicts", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -287,7 +258,7 @@ func TestVerdictsMethodNotAllowed(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // gateHubCard issues one gate-shaped card in the background.
-func gateHubCard(t *testing.T, h *verdict.Hub, session, id string) <-chan struct{} {
+func gateHubCard(t *testing.T, h *Hub, session, id string) <-chan struct{} {
 	t.Helper()
 	return issueCardShaped(t, h, session, id, core.QuestionPrompt{
 		ID: id, SessionID: session, Title: "rm -rf /tmp/scratch", Options: vo("approve", "deny"), AllowText: true,
@@ -295,7 +266,7 @@ func gateHubCard(t *testing.T, h *verdict.Hub, session, id string) <-chan struct
 }
 
 // issueCardShaped is issueCard with the card shape a parameter.
-func issueCardShaped(t *testing.T, h *verdict.Hub, session, id string, card core.QuestionPrompt) <-chan struct{} {
+func issueCardShaped(t *testing.T, h *Hub, session, id string, card core.QuestionPrompt) <-chan struct{} {
 	t.Helper()
 	done := make(chan struct{})
 	go func() {
@@ -314,7 +285,7 @@ func issueCardShaped(t *testing.T, h *verdict.Hub, session, id string, card core
 }
 
 func TestVerdictsMessageCarriesToTheVerdict(t *testing.T) {
-	ts, h := verdictServer(t)
+	ts, h := routesServer(t)
 	done := gateHubCard(t, h, "s1", "c1")
 	t.Cleanup(func() { <-done })
 
@@ -340,7 +311,7 @@ func TestVerdictsMessageCarriesToTheVerdict(t *testing.T) {
 }
 
 func TestVerdictsEmptyMessageIsThePlainDeny(t *testing.T) {
-	ts, h := verdictServer(t)
+	ts, h := routesServer(t)
 	done := gateHubCard(t, h, "s1", "c1")
 	t.Cleanup(func() { <-done })
 
@@ -364,7 +335,7 @@ func TestVerdictsEmptyMessageIsThePlainDeny(t *testing.T) {
 }
 
 func TestVerdictsMessageCap(t *testing.T) {
-	ts, h := verdictServer(t)
+	ts, h := routesServer(t)
 	done := gateHubCard(t, h, "s1", "c1")
 	t.Cleanup(func() { <-done })
 
