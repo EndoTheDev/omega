@@ -207,3 +207,83 @@ claim only; nothing is offered under it.
 The residual trace (the honest ceiling of the grammar): a consumer's
 resolve call keeps the string key - one inert, nil-handled data
 trace per consumer. Strings are data, not type-system vocabulary.
+
+## The shell-ring census (shrink wave 3)
+
+The executable sentence (Endo ruling 2026-11-04, ADR
+Workshop/omega-shell-ring-shrink.md): **remove every capsule and what
+remains is a usable agent with a chat face.** `agent/api` is the
+serving shell's BASE set - chat + canvas + settings - and carries no
+capsule opinion surface. Every production file there carries a census
+verdict; the table below IS the verdict table, pinned in
+`agent/api/api_census_test.go` (a new production file either gets a
+verdict or moves to its feature's capsule's `routes.go` through
+`api.RegisterRoute`). Every wave-1/2/3 mover carries a tombstone in
+the same test - the moved files cannot come back.
+
+Verdict principle: serves chat + canvas directly = base; everything
+else = opinion, moves with its capsule. Trivial opinion surface with
+no capsule home rides the closest capsule (disclosed, not invented
+into a new package).
+
+| File | Verdict |
+| ---- | ------- |
+| `chat_panel.go` | chat - the composer panel + the /chat turn handling |
+| `runs.go` | chat - the live run: the RunHub, detached runs, the SSE run frames + the store floor guards |
+| `server.go` | chat - the chat floor: /models, /chat, the session-existence floor (POST /sessions, /sessions/{id}), /tools, the command palette, canvas wiring |
+| `server_atmention.go` | chat - the @-mention expansion on the submit path (the browser never expands; /chat does) |
+| `server_canvas.go` | canvas - the transport: GET /ui/canvas snapshot + POST /ui/actions, deltas fan out on the run streams |
+| `server_commands.go` | chat - the command palette's server surface (GET /commands + POST /commands/dispatch, the composer's slash-command face over the universal registration seam) |
+| `server_ephemeral.go` | chat - ephemeral sessions: the no-persist chat mode of /chat (in-memory, eph- ids, gone at restart) |
+| `server_images.go` | chat - image serving + /attach-image (chat renders images) |
+| `server_settings.go` | settings - the third shell-ring face (GET/PUT /settings) |
+| `server_transcript.go` | chat - the transcript serving (live + store-backed restore) |
+| `server_variants.go` | chat - message variants on the live run (regenerate/branch selection) |
+| `web_tools.go` | chat - the web.search/web.fetch tool pair: built-in shell vocabulary since v0.13 (shell law 1), always mounted |
+
+The movers' tombstones (the capsule their surface rides, the wave that
+moved it):
+
+| File | Rides | Wave |
+| ---- | ----- | ---- |
+| `server_files.go` | harness/files (tool + explorer endpoints) | t_48eeb015 |
+| `server_sessions.go` | harness/store (the session MANAGEMENT surface) | t_490fed88 |
+| `server_branch.go` | harness/store (/sessions/{id}/branch) | t_490fed88 |
+| `server_insights.go` | harness/store (GET /insights) | t_490fed88 |
+| `server_agents.go` | harness/continuous (the roster) | t_490fed88 |
+| `server_workspaces.go` | harness/files (the workspaces picker) | t_b75df168 |
+| `server_verdicts.go` | harness/verdict (the verdict answer surface) | t_b75df168 |
+| `server_notify.go` | harness/notifications (the finished-things face) | t_b75df168 |
+| `server_skills.go` | harness/skills (the skills content view) | t_b75df168 |
+
+Machine-enforced in the same gate as the webui noun check:
+`agent/api/api_census_test.go` (the pin + the tombstones + the
+production-filename noun scan) and
+`webui/test/capsule-noun.test.ts` (capsule names must not appear under
+`webui/app/components/`, beside the agent/api production-filename walk
+- `/tools` is base vocabulary there: the inventory endpoint serves the
+chat loop).
+
+## The three-layer sessions law (shrink wave 2)
+
+A session's surface exists in exactly one of three layers:
+
+1. **The chat floor** - `agent/api` base (the census above): session
+   EXISTENCE. POST /sessions (create + read-back), /sessions/{id}
+   detail/delete, the transcript the restore path serves, the
+   ephemeral registry. Everything a live chat touches.
+2. **The management face** - the store capsule: the roster
+   (list/search/pin/archive/read-stamps/counts), /sessions/search,
+   /sessions/{id}/branch, /sessions/{id}/export, GET /insights. List-
+   row concerns never touch `updated_at`.
+3. **The host's default supply** - when no store capsule offers the
+   `store` seam, the host opens `<home>/data/omega.db` itself
+   (`openDefaultSupply` in cmd/omega/main.go; never :memory:) and
+   offers the same handle back under `store`/`host`: a fresh chat
+   boots and persists, only the management face is gone. In the
+   every-capsule-removed proof build the sqlite driver rides the
+   capsule package out entirely, so the fallback is the host's
+   in-memory proof supply (`cmd/omega/proofstore.go`, written by
+   scripts/proof-strip.py): the chat face answers, persistence is the
+   store capsule's opinion and rides out with it - that is the proof
+   script's PASS line.
