@@ -1868,6 +1868,31 @@ export function pillVisible(
   return !isAtBottom(scrollTop, clientHeight, scrollHeight, threshold);
 }
 
+// resumesFollow decides what a scroll event does to the follow state
+// (card t_bef3f45e). A pinned view is governed by the plain near-bottom
+// check only. An UNPINNED view re-arms the follow on a real scroll back
+// to the bottom - but NOT when it ARRIVED at the bottom through a
+// shrink clamp: content above the viewport shrinking (a thinking block
+// folding at answer start, an expanded tool card collapsing) drags the
+// scroll position to the tail without the user touching the wheel, and
+// auto-reprising the follow there yanks the reader to live output they
+// stepped away from. The guard compares the scroller's height against
+// the height the LAST scroll event saw: growth since then cannot
+// produce a positive shrink, a fold can.
+export function resumesFollow(
+  prevPinned: boolean,
+  lastScrollHeight: number,
+  scrollTop: number,
+  clientHeight: number,
+  scrollHeight: number,
+  threshold: number = SCROLL_NEAR_PX,
+): boolean {
+  if (prevPinned) {
+    return isAtBottom(scrollTop, clientHeight, scrollHeight, threshold);
+  }
+  return scrollHeight >= lastScrollHeight && isAtBottom(scrollTop, clientHeight, scrollHeight, threshold);
+}
+
 // scrollFlushTick picks how a notify-driven scroll reaches the layout.
 // requestAnimationFrame is frozen for the lifetime of a hidden document
 // (send -> switch tab/window: the run's body would never follow the tail

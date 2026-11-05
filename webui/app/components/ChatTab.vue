@@ -170,8 +170,8 @@
     type ElapsedMeter,
     createItemKeySource,
     bindGateQuestions,
-    isAtBottom,
     pillVisible,
+    resumesFollow,
     normalizeChatPayload,
     lastUserText,
     liveRunSlice,
@@ -423,6 +423,13 @@
   watch(busy, (live) => {
     if (live) void refreshNotifications();
   });
+  // a standalone gate card mounts at the tail OUTSIDE the transcript
+  // (the verdict poll binding) - its mount height is growth the RO must
+  // see (card t_bef3f45e)
+  watch(
+    () => sessionGateBinding.value.standalone.length,
+    () => nextTick(resizeContentRO),
+  );
   onBeforeUnmount(() => {
     if (gatePoll) {
       clearInterval(gatePoll);
@@ -474,6 +481,12 @@
   const liveBodyEl = ref<HTMLElement | null>(null);
   const pinned = ref(true);
   const jumpPill = ref(false);
+  // the scroller's height at the LAST scroll event - the shrink-clamp
+  // guard fuel (resumesFollow). RO callbacks never touch it: a fold's
+  // clamped arrival at the bottom fires its scroll event with this value
+  // still pre-fold, so the event reads as a layout event, not a user
+  // scroll. (card t_bef3f45e)
+  let lastScrollHeight = 0;
 
   // the ACTIVE scroll container: the live-run body owns scrolling while
   // the live layout is mounted (.messages listeners suspend for the
@@ -483,16 +496,60 @@
     return liveBodyEl.value ?? messagesEl.value;
   }
 
-  function nearBottom(): boolean {
-    const el = scrollEl();
-    if (!el) return true;
-    return isAtBottom(el.scrollTop, el.clientHeight, el.scrollHeight);
-  }
+  // --- content-change follow (card t_bef3f45e): the transcript
+  // watcher below fires per delta, but paint does not always grow the
+  // scrollport on that tick. The streaming text bubble renders on a
+  // 150ms debounce (createRenderScheduler), the thinking body grows on
+  // its own text, the details fold at answer start - height changes
+  // arrive BETWEEN transcript changes. A ResizeObserver on the scroll
+  // container and its items is the honest witness: it follows when
+  // pinned and keeps the pill fresh when not. scrollDown gates itself
+  // on the pinned flag, so an observe-registration fire is a no-op
+  // follow, not a forced jump.
+  let contentRO: ResizeObserver | null = null;
+  const roTargets = new WeakSet<HTMLElement>();
 
-  function onScroll() {
-    pinned.value = nearBottom();
+  function resizeContentRO(): void {
     const el = scrollEl();
     if (!el) return;
+    if (typeof ResizeObserver === "undefined") return;
+    if (contentRO === null) contentRO = new ResizeObserver(onContentResize);
+    // the container itself: a pane drag or the wrap reflowing changes
+    // the box and can move the pill verdict
+    if (!roTargets.has(el)) {
+      roTargets.add(el);
+      contentRO.observe(el);
+    }
+    for (const child of Array.from(el.children)) {
+      if (roTargets.has(child)) continue;
+      roTargets.add(child);
+      contentRO.observe(child);
+    }
+  }
+
+  function onContentResize(): void {
+    const el = scrollEl();
+    if (!el) return;
+    scrollDown();
+    jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
+  }
+
+  onBeforeUnmount(() => {
+    contentRO?.disconnect();
+    contentRO = null;
+  });
+
+  function onScroll() {
+    const el = scrollEl();
+    if (!el) return;
+    pinned.value = resumesFollow(
+      pinned.value,
+      lastScrollHeight,
+      el.scrollTop,
+      el.clientHeight,
+      el.scrollHeight,
+    );
+    lastScrollHeight = el.scrollHeight;
     jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
   }
 
@@ -501,7 +558,8 @@
   // settled column at the run's block - the same post-run feel as the
   // tail-follow the branch just held. Post-flush: the scroll reads the
   // freshly patched settled element (the v-else column remounts on the
-  // swap), not the pre-patch world.
+  // swap), not the pre-patch world. Both transitions also re-sync the
+  // RO targets - the branches swap container nodes (card t_bef3f45e).
   watch(
     liveLayout,
     (live, was) => {
@@ -516,6 +574,7 @@
           if (el) el.scrollTop = el.scrollHeight;
         });
       }
+      nextTick(resizeContentRO);
     },
     { flush: "post" },
   );
@@ -544,8 +603,13 @@
   // the painted transcript changes (canvas deltas, restore fetches or
   // streaming repaints): follow the tail when the view is pinned. The
   // pinned flag only changes on real scroll events - never measured
-  // after the append (the scroll-pinning law).
-  watch(transcript, () => scrollDown());
+  // after the append (the scroll-pinning law). The RO target list rides
+  // each paint too: new items and branch swaps must enter the
+  // observation set (card t_bef3f45e).
+  watch(transcript, () => {
+    scrollDown();
+    nextTick(resizeContentRO);
+  });
 
   // --- send / retry ---
   function onSend() {
@@ -657,6 +721,10 @@
     // re-binds on every branch swap (the live-run v-if/v-else replaces
     // the settled column element; an onMounted-bound listener would die
     // with the first swap and leave the settled column deaf)
+    // the RO targets start observing after the first paint batch - a
+    // registration fire rides the pinned gate, so priming this way never
+    // forces a mount-time jump (card t_bef3f45e)
+    nextTick(resizeContentRO);
     // pending selection focus for a tab minted after the request (the
     // new-chat / fresh-session open path)
     if (focusSignal && focusSignal.focusKey.value !== null) deliverFocus();
