@@ -83,33 +83,35 @@ func TestApplyAgentLayerScopesWritablePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := agentLayerBase()
-	cfg.Store.DBPath = filepath.Join(home, "data", "omega.db")
-	cfg.Memory.File = filepath.Join(home, "memory.md")
-	cfg.Memory.UserProfileFile = filepath.Join(home, "user.md")
-	cfg.Logging.File = filepath.Join(home, "omega.log")
-	cfg.Skills.Dir = filepath.Join(home, "skills")
+	// the boundary's resolved main dsn (canon spelling, card t_630e595d)
+	cfg.Store.DBPath = filepath.ToSlash(filepath.Join(home, "data", "omega.db"))
+	cfg.Memory.File = filepath.ToSlash(filepath.Join(home, "memory.md"))
+	cfg.Memory.UserProfileFile = filepath.ToSlash(filepath.Join(home, "user.md"))
+	cfg.Logging.File = filepath.ToSlash(filepath.Join(home, "omega.log"))
+	cfg.Skills.Dir = filepath.ToSlash(filepath.Join(home, "skills"))
 	if err := ApplyAgentLayer(&cfg, home, "scout"); err != nil {
 		t.Fatalf("apply layer: %v", err)
 	}
-	dir := agent.AgentDir(home, "scout")
+	dir := filepath.ToSlash(agent.AgentDir(home, "scout"))
 	// Data isolation (ruling 4): the store dsn re-points under the
 	// agent's own data dir; memory/user/skills/log move into the home.
-	if cfg.Store.DBPath != filepath.Join(dir, "data", "omega.db") {
+	// All wants on canon spelling (the boundary's policy).
+	if cfg.Store.DBPath != filepath.ToSlash(filepath.Join(dir, "data", "omega.db")) {
 		t.Errorf("store db = %q, want the agent's own data dir", cfg.Store.DBPath)
 	}
-	if cfg.Memory.File != filepath.Join(dir, "memory.md") {
+	if cfg.Memory.File != filepath.ToSlash(filepath.Join(dir, "memory.md")) {
 		t.Errorf("memory = %q, want agent-scoped", cfg.Memory.File)
 	}
-	if cfg.Memory.UserProfileFile != filepath.Join(dir, "user.md") {
+	if cfg.Memory.UserProfileFile != filepath.ToSlash(filepath.Join(dir, "user.md")) {
 		t.Errorf("user profile = %q, want agent-scoped", cfg.Memory.UserProfileFile)
 	}
-	if cfg.Skills.Dir != filepath.Join(dir, "skills") {
+	if cfg.Skills.Dir != filepath.ToSlash(filepath.Join(dir, "skills")) {
 		t.Errorf("skills dir = %q, want agent-own", cfg.Skills.Dir)
 	}
-	if cfg.Skills.SharedDir != filepath.Join(home, "skills", "shared") {
+	if cfg.Skills.SharedDir != filepath.ToSlash(filepath.Join(home, "skills", "shared")) {
 		t.Errorf("shared dir = %q, want home/skills/shared", cfg.Skills.SharedDir)
 	}
-	if cfg.Logging.File != filepath.Join(dir, "scout.log") {
+	if cfg.Logging.File != filepath.ToSlash(filepath.Join(dir, "scout.log")) {
 		t.Errorf("log = %q, want the agent's own <name>.log (ruling 1: no logs/ dir)", cfg.Logging.File)
 	}
 }
@@ -195,10 +197,14 @@ func TestResolveHomePathsMainPersonaAtRoot(t *testing.T) {
 	if err := resolveHomePaths(&cfg); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Memory.File != filepath.Join(home, "memory.md") {
+	// want: canon spelling (the resolveHomePaths boundary normalizes
+	// the separators it constructs - card t_630e595d, ruling 3).
+	wantMem := filepath.ToSlash(filepath.Join(home, "memory.md"))
+	if cfg.Memory.File != wantMem {
 		t.Errorf("memory.file = %q, want the home root (ruling 3)", cfg.Memory.File)
 	}
-	if cfg.Memory.UserProfileFile != filepath.Join(home, "user.md") {
+	wantUser := filepath.ToSlash(filepath.Join(home, "user.md"))
+	if cfg.Memory.UserProfileFile != wantUser {
 		t.Errorf("user profile = %q, want the home root", cfg.Memory.UserProfileFile)
 	}
 }

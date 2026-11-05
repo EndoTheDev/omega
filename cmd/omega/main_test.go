@@ -179,7 +179,7 @@ func TestResolveConfigPath(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("x: 1"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		want := home + "/config.yaml"
+		want := filepath.ToSlash(filepath.Join(home, "config.yaml"))
 		if got := resolveConfigPath(""); got != want {
 			t.Errorf("resolveConfigPath(\"\") = %q, want %q", got, want)
 		}
@@ -201,7 +201,7 @@ func TestResolveConfigPath(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(home, "config", "config.yaml"), []byte("x: 1"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		want := home + "/config/config.yaml"
+		want := filepath.ToSlash(filepath.Join(home, "config", "config.yaml"))
 		if got := resolveConfigPath(""); got != want {
 			t.Errorf("resolveConfigPath(\"\") = %q, want %q", got, want)
 		}
@@ -219,7 +219,7 @@ func TestResolveConfigPath(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("x: root"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		want := home + "/config.yaml"
+		want := filepath.ToSlash(filepath.Join(home, "config.yaml"))
 		if got := resolveConfigPath(""); got != want {
 			t.Errorf("resolveConfigPath(\"\") = %q, want root %q (legacy wins)", got, want)
 		}
@@ -236,11 +236,15 @@ func TestResolveHomePaths(t *testing.T) {
 	cfg := DefaultConfig()
 	resolveHomePaths(&cfg)
 
-	if cfg.Store.DBPath != home+"/data/omega.db" {
-		t.Errorf("DBPath = %q, want %q", cfg.Store.DBPath, home+"/data/omega.db")
+	// want: canon spelling (the resolveHomePaths boundary normalizes
+	// the separators it constructs - card t_630e595d).
+	wantDB := filepath.ToSlash(filepath.Join(home, "data", "omega.db"))
+	if cfg.Store.DBPath != wantDB {
+		t.Errorf("DBPath = %q, want %q", cfg.Store.DBPath, wantDB)
 	}
-	if cfg.Skills.Dir != home+"/skills" {
-		t.Errorf("Skills.Dir = %q, want %q", cfg.Skills.Dir, home+"/skills")
+	wantSkills := filepath.ToSlash(filepath.Join(home, "skills"))
+	if cfg.Skills.Dir != wantSkills {
+		t.Errorf("Skills.Dir = %q, want %q", cfg.Skills.Dir, wantSkills)
 	}
 	if fi, err := os.Stat(home); err != nil || !fi.IsDir() {
 		t.Errorf("home dir not created: err=%v", err)
@@ -485,8 +489,10 @@ func TestBuildConfigs(t *testing.T) {
 	if !ok {
 		t.Fatalf("trust config is %T, want trust.Config", configs["trust"])
 	}
-	if tc.Home != home {
-		t.Errorf("trust.Home = %q, want %q (omegaHome)", tc.Home, home)
+	// trust: trust.Config{Home} must equal omegaHome() (i.e. OMEGA_HOME)
+	// on canon spelling (card t_630e595d).
+	if tc.Home != filepath.ToSlash(home) {
+		t.Errorf("trust.Home = %q, want %q (omegaHome)", tc.Home, filepath.ToSlash(home))
 	}
 }
 

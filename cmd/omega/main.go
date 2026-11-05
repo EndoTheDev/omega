@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"runtime/debug"
 	"sort"
@@ -373,17 +374,29 @@ func stripAppendPrompts(args []string) []string {
 	return out
 }
 
+// canonPath is the boundary's separator policy (card t_630e595d, Endo's
+// ruling on t_fb4cb3d2): every path this package CONSTRUCTS - the omega
+// home, the resolved defaults off it, agent-layer joins, the resolved
+// config path - carries forward-slash separators, one spelling. A raw
+// windows join otherwise leaves mixed shapes ("C:\...\001/data/omega.db")
+// in config.yaml, the db dsns, and the boot warnings. Explicitly
+// configured values pass through untouched: the boundary canonizes what
+// it builds, never what the operator wrote.
+func canonPath(p string) string {
+	return filepath.ToSlash(p)
+}
+
 // omegaHome returns the omega home directory: OMEGA_HOME env var,
 // the binary's directory (release-folder installs), or ~/.omega for
 // bin-dir installs (see homeForExe). This is where config, db, and
-// skills live.
+// skills live. The result is canon spelling (canonPath).
 func omegaHome() string {
 	exePath := ""
 	if exe, err := os.Executable(); err == nil {
 		exePath = exe
 	}
 	userHome, _ := os.UserHomeDir()
-	return homeForExe(os.Getenv("OMEGA_HOME"), exePath, userHome)
+	return canonPath(homeForExe(os.Getenv("OMEGA_HOME"), exePath, userHome))
 }
 
 // resolveConfigPath returns the --config value, or the home config.yaml
@@ -424,12 +437,12 @@ func requireConfig(configPath string) error {
 func resolveHomePaths(cfg *Config) error {
 	home := omegaHome()
 	if cfg.Store.DBPath == "omega.db" {
-		cfg.Store.DBPath = datadir.DBPath(home, "omega.db")
+		cfg.Store.DBPath = canonPath(datadir.DBPath(home, "omega.db"))
 	}
 	if cfg.Kanban.DBPath == "kanban.db" {
 		// one kanban.db owns all boards (t_feae19d3): the pointer file
 		// is retired, resolution is the single database
-		cfg.Kanban.DBPath = datadir.DBPath(home, "kanban.db")
+		cfg.Kanban.DBPath = canonPath(datadir.DBPath(home, "kanban.db"))
 	}
 	if cfg.Skills.Dir == "skills" {
 		cfg.Skills.Dir = home + "/skills"

@@ -88,37 +88,37 @@ func ApplyAgentLayer(cfg *Config, home, name string) error {
 	if err := yaml.Unmarshal(data, &pathKnobs); err != nil {
 		return fmt.Errorf("parse agent config %s: %w", name, err)
 	}
-	dir := agent.AgentDir(home, name)
+	dir := canonPath(agent.AgentDir(home, name))
 	if pathKnobs.Skills.Dir == "" {
-		cfg.Skills.Dir = filepath.Join(dir, "skills")
+		cfg.Skills.Dir = canonPath(filepath.Join(dir, "skills"))
 	}
 	if pathKnobs.Skills.SharedDir == "" {
-		cfg.Skills.SharedDir = filepath.Join(home, "skills", "shared")
+		cfg.Skills.SharedDir = canonPath(filepath.Join(home, "skills", "shared"))
 	}
 	if pathKnobs.Memory.File == "" {
-		cfg.Memory.File = filepath.Join(dir, "memory.md")
+		cfg.Memory.File = canonPath(filepath.Join(dir, "memory.md"))
 	}
 	if pathKnobs.Memory.UserProfileFile == "" {
-		cfg.Memory.UserProfileFile = filepath.Join(dir, "user.md")
+		cfg.Memory.UserProfileFile = canonPath(filepath.Join(dir, "user.md"))
 	}
 	if pathKnobs.Logging.File == "" {
-		cfg.Logging.File = filepath.Join(dir, name+".log")
+		cfg.Logging.File = canonPath(filepath.Join(dir, name+".log"))
 	}
 	// Data isolation (ruling 4): the agent's sessions store and boards
 	// resolve under its own data/, not the main home's. resolveHomePaths
 	// already pinned the main-resolved dsn values in; re-point those
 	// defaults. A path the layer set explicitly wins - it is the agent's
 	// own knob, not cross-home traffic.
-	agentDataDir := filepath.Join(dir, "data")
+	agentDataDir := canonPath(filepath.Join(dir, "data"))
 	if cfg.Store.DBPath == "" || cfg.Store.DBPath == "omega.db" ||
-		cfg.Store.DBPath == datadir.DBPath(home, "omega.db") {
-		cfg.Store.DBPath = filepath.Join(agentDataDir, "omega.db")
+		cfg.Store.DBPath == canonPath(datadir.DBPath(home, "omega.db")) {
+		cfg.Store.DBPath = canonPath(filepath.Join(agentDataDir, "omega.db"))
 	}
 	if cfg.Kanban.DBPath == "" || cfg.Kanban.DBPath == "kanban.db" ||
-		cfg.Kanban.DBPath == datadir.DBPath(home, "kanban.db") {
+		cfg.Kanban.DBPath == canonPath(datadir.DBPath(home, "kanban.db")) {
 		// one kanban.db owns all boards (t_feae19d3); the agent's own
 		// data dir carries its own single database
-		cfg.Kanban.DBPath = datadir.DBPath(dir, "kanban.db")
+		cfg.Kanban.DBPath = canonPath(datadir.DBPath(dir, "kanban.db"))
 	}
 	_ = os.MkdirAll(agentDataDir, 0o755)
 	return nil
