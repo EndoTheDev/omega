@@ -124,7 +124,7 @@ describe("production-boundary wiring (test law: the served shape)", () => {
   it("the composer renders a keyboard-navigable listbox with aria", () => {
     assert.ok(composer.includes('role="listbox"'), "the palette is an ARIA listbox");
     assert.ok(composer.includes('role="option"'));
-    assert.ok(composer.includes(":aria-expanded"), "the textarea exposes open state");
+    assert.ok(composer.includes(":aria-expanded"), "the editor exposes open state");
     assert.ok(composer.includes("aria-activedescendant"), "the highlight is announced");
     assert.ok(composer.includes(`e.key === "ArrowDown"`), "arrow keys move the selection");
     assert.ok(composer.includes(`e.key === "Escape"`), "Esc dismisses the palette");
