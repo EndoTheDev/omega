@@ -7,34 +7,39 @@ import (
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/harness/datadir"
+	"github.com/EndoTheDev/omega/harness/store"
 )
 
 // Plugin adapts the tools registry into the agent.Plugin interface.
-// It provides NO tools itself: the built-in tool capsules (files,
-// shell) register their own providers through the same additive rail.
-// This capsule is the REGISTRY - the merge machinery's claim law, the
-// /tools command, the ToolsList panel and the prompt section (v0.12
-// phase F; the shell-ring shrink wave 1 moved the built-ins out).
-type Plugin struct{}
+// It provides the search tools (grep + glob, card t_db98ebfe: the
+// roadmap's search stubs, two single-purpose domains) and the
+// REGISTRY - the merge machinery's claim law, the /tools command,
+// the ToolsList panel and the prompt section (v0.12 phase F; the
+// shell-ring shrink wave 1 moved the built-in file and shell tools
+// out into their own capsules).
+type Plugin struct {
+	search *SearchProvider
+}
 
 // Name returns the extension name shown in /extensions.
 func (p *Plugin) Name() string { return "tools" }
 
 // Description implements agent.Describer.
 func (p *Plugin) Description() string {
-	return "the tools registry: tool claims and conflict law, the /tools command, the ToolsList panel and the prompt section"
+	return "the tools registry: the grep/glob search tools, tool claim and conflict law, the /tools command, the ToolsList panel and the prompt section"
 }
 
 // Provides lists seam names this plugin mounts: the prompt section
 // (the Tools section renders every extension's tool list from the
-// mount Context's inventory). The tools-seam rail is contributed by
-// the tool capsules themselves (files, shell) - the registry owns
-// none of it.
+// mount Context's inventory) and the additive tools rail (the
+// search provider). The tools-seam rail is also contributed by the
+// other built-in tool capsules (files, shell) through the same rail.
 // ConfigKey names the config section this plugin reads from
 // ctx.Configs (see agent.Describer). Empty = reads no section.
 func (p *Plugin) ConfigKey() string { return "" }
 
-func (p *Plugin) Provides() []string { return []string{"prompt_sections"} }
+func (p *Plugin) Provides() []string { return []string{"prompt_sections", "tools"} }
 
 // Requires lists seam names that must be mounted first. The registry
 // has no dependencies.
@@ -46,7 +51,27 @@ func (p *Plugin) Requires() []string { return nil }
 // actions the shell interprets, and its list view reads the mount
 // Context's inventory - the same capture the classic wrapper held.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
+	// The search tools pass the same db-door guard the file tools
+	// use (ENDO'S LAW 2026-10-18): the guard is built from the store
+	// config (the instance db path); nil/zero-value guards are
+	// pass-through.
+	var guard *datadir.Guard
+	if c, ok := ctx.Configs["store"].(store.Config); ok {
+		guard = datadir.NewGuard(c.DBPath)
+	} else {
+		guard = datadir.NewGuard("")
+	}
+	p.search = NewSearchProvider(guard)
+
 	steps := []func() error{
+		func() error {
+			for name, t := range p.search.Tools() {
+				if err := api.RegisterTool(name, t); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
 		func() error { return api.RegisterPromptSectioner(p) },
 		// /tools stays an extension command (it returns CommandResult
 		// with display-mode actions the shell interprets); its enum
