@@ -38,3 +38,60 @@ func TestStripTrustArgs(t *testing.T) {
 		}
 	}
 }
+
+// TestSplitSubcommandBareFlags is the card t_18b13390 pin: the bare
+// REPL entry must parse trust flags identically to subcommand paths. It
+// used to return an empty rest, so `omega --approve` reached the loop
+// with approve=false and the documented flag was dead (warning printed,
+// no trust.yaml written).
+func TestSplitSubcommandBareFlags(t *testing.T) {
+	sub, rest := splitSubcommand([]string{"--approve"})
+	if sub != "" {
+		t.Fatalf("sub = %q, want empty (bare entry)", sub)
+	}
+	if got := parseTrustArgs(rest); !got.approve {
+		t.Fatalf("parseTrustArgs(rest) = %+v, want approve=true (bare entry must honor --approve)", got)
+	}
+	sub, rest = splitSubcommand([]string{"--no-approve", "--approve"})
+	if sub != "" {
+		t.Fatalf("sub = %q, want empty (bare entry)", sub)
+	}
+	got := parseTrustArgs(rest)
+	if !got.approve || !got.noApprove {
+		t.Fatalf("parseTrustArgs(rest) = %+v, want both flags parsed (ResolveContext owns precedence)", got)
+	}
+}
+
+// TestSplitSubcommandLeadingFlagsBeforePath: trust flags also survive
+// when they sit before a project path - previously anything before the
+// first non-flag argument was dropped from rest.
+func TestSplitSubcommandLeadingFlagsBeforePath(t *testing.T) {
+	sub, rest := splitSubcommand([]string{"--approve", "D:/proj"})
+	if sub != "D:/proj" {
+		t.Fatalf("sub = %q, want D:/proj", sub)
+	}
+	if got := parseTrustArgs(rest); !got.approve {
+		t.Fatalf("parseTrustArgs(rest) = %+v, want approve=true", got)
+	}
+}
+
+// TestSplitSubcommandTrailingFlagsBeforeSub: flags after the
+// subcommand keep parsing through the run prompt unchanged.
+func TestSplitSubcommandTrailingFlagsBeforeSub(t *testing.T) {
+	sub, rest := splitSubcommand([]string{"run", "prompt", "--approve"})
+	if sub != "run" {
+		t.Fatalf("sub = %q, want run", sub)
+	}
+	if got := parseTrustArgs(rest); !got.approve {
+		t.Fatalf("parseTrustArgs(rest) = %+v, want approve=true", got)
+	}
+	found := false
+	for _, a := range rest {
+		if a == "prompt" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("rest lost the run prompt: %v", rest)
+	}
+}
