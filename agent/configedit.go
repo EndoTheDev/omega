@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -65,7 +66,7 @@ func UpdateAgentConfigLayer(home, name string, u AgentConfigUpdates) error {
 	}
 	if u.ProviderType != nil {
 		pt := strings.TrimSpace(*u.ProviderType)
-		if pt != "" && !slicesContains(ScaffoldProviderTypes, pt) {
+		if pt != "" && !slices.Contains(ScaffoldProviderTypes, pt) {
 			return &AgentConfigScaffoldError{Message: fmt.Sprintf("provider type %q is not scaffolded (want one of: %s)", pt, strings.Join(ScaffoldProviderTypes, ", "))}
 		}
 	}
@@ -182,13 +183,4 @@ func ensureMapping(m *yaml.Node, key string) *yaml.Node {
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
 		prov)
 	return prov
-}
-
-func slicesContains(list []string, want string) bool {
-	for _, s := range list {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }

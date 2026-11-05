@@ -19,6 +19,8 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"slices"
+	"maps"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
@@ -685,16 +687,5 @@ func compactToolArgs(args map[string]any) string {
 }
 
 func sortedKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	for i := 0; i < len(keys); i++ {
-		for j := i + 1; j < len(keys); j++ {
-			if keys[j] < keys[i] {
-				keys[i], keys[j] = keys[j], keys[i]
-			}
-		}
-	}
-	return keys
+	return slices.Sorted(maps.Keys(m))
 }

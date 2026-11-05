@@ -25,7 +25,7 @@ is a review finding; its content lands in its mapped home instead.
 - **Entry point:** `omega` (single binary: `serve`, `run`, `health`,
   `chat`, `export`, `update`, `insights`, `rollback`, `setup`;
   no arg -> the CLI agent loop (`cmd/omega/loop.go`; unconfigured
-  refuses exit 1 pointing at `omega setup`), `<path>` -> chdir +
+  runs `omega setup` inline first), `<path>` -> chdir +
   loop). CLI reference and law:
   `docs/cli.md`.
 
@@ -151,7 +151,8 @@ Terse operational rules. Layer references live in `docs/` (map below);
 - **cli loop.** (TUI retired 2026-11-01, card t_0744eb8e - the
   three-shells-to-two flip.) `omega setup` is the mandatory first-run
   wizard (provider/host/model, live connection test);
-  unconfigured `serve`/`run`/loop refuse exit 1 pointing at it. The
+  unconfigured `serve`/`run` refuse exit 1 pointing at it; the bare
+  loop runs the wizard inline first. The
   bare `omega` loop (`cmd/omega/loop.go`) is a streaming agent
   conversation with tech-support posture: a leading slash is a
   command (`/help` lists), `"""` opens a multiline block, a trailing
@@ -177,8 +178,7 @@ Terse operational rules. Layer references live in `docs/` (map below);
 - **cmd/omega.** Subcommands are the only entry surface;
   `--help`/`-h`/`--version`/`-v` print globally and exit before
   dispatch - there is no per-subcommand help. No subcommand means the
-  CLI agent loop (unconfigured: refuse exit 1 pointing at
-  `omega setup`); a non-subcommand argument is a project path
+  CLI agent loop (unconfigured: runs `omega setup` inline first); a non-subcommand argument is a project path
   (chdir + loop);
   subcommand names beat same-named directories. `resolveHomePaths`
   runs after `LoadConfig` and before opening the store. `/settings`
