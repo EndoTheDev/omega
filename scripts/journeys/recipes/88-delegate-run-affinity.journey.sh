@@ -21,6 +21,7 @@
 # the delegate module mountable - the child runs the lane's own binary
 # via OMEGA_BIN / the exe-sibling fallback. NOT in regression.list: the
 # two-child cost is nightly-reviewer policy, not the suite's.
+JOURNEY_NEEDS_MODEL=1
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 runtag=$(date +%d%b%H%M%S)
