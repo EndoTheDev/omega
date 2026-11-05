@@ -15,7 +15,9 @@ func NewSkillsProvider(dir string) *SkillsProvider {
 
 // Plugin is the agent.Plugin adapter for the skills extension. It
 // mounts through the ExtensionAPI exclusively (v0.12 phase F).
-type Plugin struct{}
+type Plugin struct {
+	routes *Routes
+}
 
 // NewPlugin returns a skills Plugin.
 func NewPlugin() *Plugin { return &Plugin{} }
@@ -72,6 +74,10 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 
 	steps := []func() error{
 		func() error { return api.Offer("skills", sp) },
+		// The skill viewer's content route rides the capsule too
+		// (shell-ring shrink wave 3, card t_b75df168): the viewer tab's
+		// reads mount and die with the provider they read.
+		func() error { p.routes = newRoutes(sp); return api.RegisterRoute("/skills/content", p.routes.handleSkillsContent) },
 		// The CLI face of the curator pass (t_9972dfd0): the
 		// subcommand dies with the module - the registry table is
 		// the only mount path (CLI homecoming, scrub-safe).

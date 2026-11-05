@@ -23,6 +23,13 @@ import (
 // std-typed inventory view for the /<skill-name> dispatch path.
 type listingSkills struct{}
 
+// errNotFound: the skill provider's plain not-found phrasing (the
+// skills capsule moved home with the shrink wave 3; the phrase law
+// pins here for the fake reader).
+type errNotFound struct{}
+
+func (*errNotFound) Error() string { return `skill %q not found. Available: none` }
+
 func (listingSkills) SkillRead(name string) (description, content string, err error) {
 	index, contents, _ := listingSkills{}.SkillsEntries()
 	if _, ok := index[name]; !ok {
