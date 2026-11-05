@@ -117,7 +117,10 @@ does, including the binary and the shell. Module REST rides
 `RegisterRoute`; `api/module_routes.go` serves exactly what
 the live registry carries, so a disabled capsule's routes answer 404
 and a re-enabled one's return, through the same RewireSeams re-read
-every other served seam follows. Binary purity is machine law:
+every other served seam follows. A registered literal additionally
+exact-matches ahead of the base mux (`moduleLiterals`, agent/api): the
+base's fixed wildcards would otherwise shadow a literal route behind
+the catch-all. Binary purity is machine law:
 `scripts/nm-purity.sh` proves a capsule leaves the binary whole
 (kanban canary every push, full rotation on the nightly).
 
