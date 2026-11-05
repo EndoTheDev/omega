@@ -460,6 +460,21 @@ func (a *Agent) Run(ctx context.Context, messages []core.Message, tools map[stri
 func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages []core.Message, tools map[string]core.Tool) <-chan core.Event {
 	inner := make(chan core.Event)
 	events := inner
+	// Session attribution default (card t_e203c2f6): a run persisting
+	// into a session IS that session's run, even when its host never
+	// wrapped WithSessionID - the http channel and the CLI loop wrap
+	// it, but a cron fire (harness/cron agentTurn) and `omega run
+	// --session` set only the turn sink. The context's session id is
+	// what the approval gate's evidence ledger (and every other
+	// run-attributed record) reads; without this default its rows lose
+	// the session exactly on the background origins. The store sink
+	// never exists without a session id (NewStoreTurnSink turns an
+	// empty one away), and a host that already wrapped one wins here.
+	if SessionIDFromContext(ctx) == "" {
+		if st, ok := RunTurnSink(ctx).(*storeTurnSink); ok {
+			ctx = WithSessionID(ctx, st.sessionID)
+		}
+	}
 	// The event spine (card t_72ecca67, M3): a snapshot of the
 	// registered observers forwards every event to before the host
 	// consumer sees it. Inline, never buffered: a slow observer slows
