@@ -19,6 +19,7 @@ import {
   isBoardPath,
   isSettled,
   pickBootBoard,
+  reorderAfter,
   step,
   withBoard,
   type BoardInfo,
@@ -208,4 +209,55 @@ test("board view carries the remove control: armed confirm, DELETE route, notice
   assert.match(boardVue, /board-notice/, "a visible notice reports the removal or refusal");
   assert.match(boardVue, /DEFAULT_BOARD_NAME/, "selection falls back to the default board");
   assert.match(boardVue, /disarmRemove/, "board switches disarm an armed confirm");
+});
+
+// --- drag-and-drop reorder (card t_09b44af1)
+
+test("reorderAfter: slots a card after a sibling inside the same column", () => {
+  const list = [task({ id: "t_a", title: "a" }), task({ id: "t_b", title: "b" }), task({ id: "t_c", title: "c" })];
+  // c comes after a: [a, c, b]
+  const moved = reorderAfter(list, "t_c", "triage", "t_a");
+  if (!moved) throw new Error("reorderAfter returned null");
+  assert.deepEqual(moved.map((t) => t.title), ["a", "c", "b"]);
+  // c keeps its fields, its status rides
+  assert.equal(moved[1].id, "t_c");
+  assert.equal(moved[1].status, "triage");
+  // the input list is untouched (pure)
+  assert.equal(list[0].title, "a");
+  assert.equal(list.length, 3);
+});
+
+test("reorderAfter: crossing a column stamps the new status at the drop slot", () => {
+  const list = [
+    task({ id: "t_a" }),
+    task({ id: "t_b" }),
+    task({ id: "t_r", status: "running" }),
+  ];
+  // b drops into running after the card already there: [a, r(=b running), b-status...]
+  const moved = reorderAfter(list, "t_b", "running", "t_r");
+  if (!moved) throw new Error("reorderAfter returned null");
+  const running = moved.filter((t) => t.status === "running");
+  assert.deepEqual(running.map((t) => t.id), ["t_r", "t_b"]);
+  assert.equal(moved[0].id, "t_a");
+});
+
+test("reorderAfter: empty afterId drops at the top, unknown id returns null", () => {
+  const list = [task({ id: "t_a" }), task({ id: "t_b" })];
+  const moved = reorderAfter(list, "t_b", "todo", "");
+  if (!moved) throw new Error("reorderAfter returned null");
+  assert.deepEqual(moved.map((t) => t.id), ["t_b", "t_a"]);
+  assert.equal(reorderAfter(list, "t_zzz", "todo", ""), null);
+});
+
+test("board view drives drag reorder through the pointer + the server slot", () => {
+  const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
+  assert.match(boardVue, /@pointerdown="onCardPointerDown\(/, "cards take pointer drags");
+  assert.match(boardVue, /DRAG_THRESHOLD_PX/, "a drag must clear a threshold to stay a click or a drag");
+  assert.match(boardVue, /reorderAfter\(tasks\.value/, "the live view reorders while dragging");
+  assert.match(boardVue, /after_id: d\.afterId/, "the drop PATCHes the same slot the view rendered");
+  assert.match(boardVue, /status: d\.status/, "a crossed column rides the same PATCH");
+  assert.match(boardVue, /elementsFromPoint/, "the drop target survives the dragged card under the cursor");
+  assert.match(boardVue, /if \(drag\.value && drag\.value\.moved\) return/, "the poll pauses while a drag is live");
+  assert.match(boardVue, /suppressNextClick/, "the click trailing a real drag is suppressed");
+  assert.match(boardVue, /closest\("button, input"\)/, "the card's own buttons never start a drag");
 });
