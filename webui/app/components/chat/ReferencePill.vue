@@ -1,10 +1,13 @@
-<!-- omega webui: THE reference pill (card t_7f09bd0c). One renderer for
-     both pill sources and both surfaces: the composer's strip and the
-     sent message's inline pill. A pill is pure data (pills.ts RefToken);
+<!-- omega webui: THE reference pill. One renderer for
+     both pill surfaces: the sent message's inline pill and, since card
+     t_e67c372b, the composer's inline chip - the editor wraps this
+     component non-editable where the token span was (the pill REPLACES
+     the text it represents). A pill is pure data (pills.ts RefToken);
      the icon is the iconset's (icons.ts), never an emoji or a library.
      Click opens the target - a file in the Files-pane viewer, a skill's
      SKILL.md: one renderer, skills are files. The component emits
-     "open"; the surface decides how (both inject the app's viewer open). -->
+     "open"; the surface decides how (both inject the app's viewer
+     open). -->
 <template>
   <button
     class="ref-pill"

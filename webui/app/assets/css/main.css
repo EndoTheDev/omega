@@ -1531,18 +1531,19 @@ labels stopped short of the right edge. */
 }
 .fork-clear:hover { color: var(--text); }
 
-/* the reference pills (card t_7f09bd0c): the composer's strip rides the
-   same family as the fork chip above; the sent bubble carries the same
-   pill inline. File pills read dim on the stroke; skill pills read the
-   accent - the invocation glyph is the zap. */
-.ref-strip {
-  display: flex;
-  flex-wrap: wrap;
+/* the reference chips (card t_e67c372b): the pill is INLINE in the
+   composer's editor now - the chip wraps the pill renderer non-editable
+   inside the contenteditable, and the draft text flows around it like
+   the transcript bubble's pill below. File pills read dim on the
+   stroke; skill pills read the accent - the invocation glyph is the
+   zap. */
+.ref-chip {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px 0;
+  vertical-align: middle;
+  margin: 0 2px;
 }
-.ref-pill-wrap {
+.ref-chip-body {
   display: inline-flex;
   align-items: center;
 }
@@ -2027,11 +2028,11 @@ labels stopped short of the right edge. */
   flex: 1; /* the tall element: the row eats the card's free height */
   align-items: stretch; /* the textarea fills the grown row's height */
 }
-.composer.expanded textarea {
+.composer.expanded .composer-input {
   flex: 1;
   height: auto;
   min-height: 0;
-  /* the collapse chevron's gutter: the textarea's scrollbar ends left of
+  /* the collapse chevron's gutter: the editor's scrollbar ends left of
      the right edge strip the button lives in - no sliver collision */
   margin-right: 40px;
 }
@@ -2046,12 +2047,12 @@ labels stopped short of the right edge. */
 }
 .composer-bottom .send:disabled { opacity: 1; }
 
-.composer textarea {
+.composer .composer-input {
   flex: 1 1 auto; /* the row's content: shrink-able, scrollable */
   min-width: 0;
-  resize: none;
+  min-height: 21px; /* one empty line: the placeholder's seat */
+  box-sizing: border-box;
   background: transparent;
-  border: none;
   color: var(--text);
   font-family: var(--sans);
   font-size: 15px;
@@ -2059,6 +2060,22 @@ labels stopped short of the right edge. */
   padding: 10px 12px 4px;
   overflow-y: auto;
   outline: none;
+  cursor: text;
+  /* EDITOR (t_e67c372b): the editor reads pre-wrap so text nodes carry
+     their own newlines (the input paths only ever insert text nodes -
+     paste and the Shift+Enter newline included); long tokens wrap */
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+/* the placeholder: the contenteditable's :empty ::before ("message
+   omega") - the browser's emptied-editor <br> artifact is swept by the
+   composer's input path so :empty really is empty */
+.composer .composer-input:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-dim);
+  cursor: text;
+  user-select: none;
+  pointer-events: none;
 }
 
 /* the attach affordance lives in the input (t_357cbe9c): a "+" in front

@@ -55,9 +55,9 @@ open_journey_row "(journey) retry-single $TAG"
 # the session label up from the list refresh.
 focus=0
 for i in 1 2 3 4 5 6 7 8 9 10; do
-  focus=$(panejs '(p.querySelector(".composer textarea")||{}).focus ? 1 : 0')
+  focus=$(panejs '(p.querySelector(".composer .composer-input")||{}).focus ? 1 : 0')
   if [ "$focus" = "1" ]; then
-    panejs 'p.querySelector(".composer textarea").focus(), 1' >/dev/null 2>&1
+    panejs 'p.querySelector(".composer .composer-input").focus(), 1' >/dev/null 2>&1
     break
   fi
   sleep 1
