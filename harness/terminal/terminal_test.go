@@ -82,7 +82,7 @@ func (f *fakeProc) Resize(rows, cols uint16) error {
 
 func (f *fakeProc) Done() <-chan struct{} { return f.done }
 
-// Kill takes the shell down with the REAL pty shape (pty_unix.go:145
+// Kill takes the shell down with the REAL pty shape (pty_linux.go:145
 // closes the master inside Kill): the pipes close here, so an
 // outstanding readLoop Read breaks out BEFORE remove()'s Close. The
 // reap order is load-bearing on windows: write-first close breaks the

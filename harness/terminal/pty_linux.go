@@ -1,12 +1,14 @@
-//go:build unix
+//go:build linux
 
 // Package terminal — the PTY seam: one real pty pair per terminal
 // session, the shell running on the child side. Stdlib-only plus
 // golang.org/x/sys/unix (already a dependency): no cgo, no pty library.
 //
-// Build-tagged: the pty vocabulary exists on unix only (omega runs the
-// webui on the box). pty_other.go carries the !unix stub so the module
-// still compiles - spawn returns an error, the routes answer it.
+// Build-tagged: the pty vocabulary is linux-only (/dev/ptmx + the Linux
+// pty ioctl set — darwin carries no equivalent constants, so its build
+// never reaches here). pty_other.go carries the !linux stub so the module
+// still compiles on every other platform - spawn returns an error, the
+// routes answer it.
 package terminal
 
 import (
