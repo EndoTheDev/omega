@@ -170,10 +170,13 @@ func multiBoardCtx(t *testing.T) (*core.Context, string) {
 		t.Fatal(err)
 	}
 	ctx := &core.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
-	if _, err := agent.MountAllAPI([]agent.Plugin{NewPlugin()}, ctx, nil, nil); err != nil {
+	p := NewPlugin()
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
-	// close on cleanup: the plugin's store opened kanban.db
+	// close on cleanup: the plugin's store opened kanban.db - a handle
+	// left open keeps windows from removing the TempDir's data dir
+	t.Cleanup(func() { _ = p.store.Close() })
 	return ctx, home
 }
 
