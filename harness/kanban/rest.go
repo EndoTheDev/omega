@@ -152,20 +152,39 @@ func taskByIDHandler(store restProvider) func(http.ResponseWriter, *http.Request
 				Assignee  *string `json:"assignee"`
 				Status    string  `json:"status"`
 				SessionID *string `json:"session_id"`
+				AfterID   *string `json:"after_id"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
 				return
 			}
 			// task.update keeps a simple non-pointer Status field
-			// ("" = no change); wire it through directly
-			out, err := store.UpdateTask(r.Context(), boardParam(r), id, KanbanPatch{
-				Title:     body.Title,
-				Body:      body.Body,
-				Assignee:  body.Assignee,
-				Status:    body.Status,
-				SessionID: body.SessionID,
-			})
+			// ("" = no change); wire it through directly. An after_id body
+			// is the drag-order slot instead: the reorder capability is
+			// optional on the seam (single-order-agnostic stores stay
+			// legal), so an after_id against one that cannot reorder
+			// answers 400 with the reason - the board refetches and the
+			// card snaps back.
+			var (
+				out KanbanTask
+				err error
+			)
+			if body.AfterID != nil {
+				ro, ok := any(store).(Reorderer)
+				if !ok {
+					http.Error(w, "this kanban store cannot reorder tasks", http.StatusBadRequest)
+					return
+				}
+				out, err = ro.ReorderTask(r.Context(), boardParam(r), id, body.Status, *body.AfterID)
+			} else {
+				out, err = store.UpdateTask(r.Context(), boardParam(r), id, KanbanPatch{
+					Title:     body.Title,
+					Body:      body.Body,
+					Assignee:  body.Assignee,
+					Status:    body.Status,
+					SessionID: body.SessionID,
+				})
+			}
 			if err != nil {
 				taskByIDError(w, err)
 				return

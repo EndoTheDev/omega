@@ -156,6 +156,32 @@ export function boardDeletePath(name: string): string {
 }
 
 /**
+ * reorderAfter moves one task to (status, after a sibling) inside the
+ * board's flat list and returns the new array - or null when the id is
+ * unknown. afterId names the card ABOVE the insertion slot ("" = top
+ * of the column), the exact pair the server's PATCH after_id takes, so
+ * the optimistic board view is exactly what persisted.
+ */
+export function reorderAfter(
+  tasks: BoardTask[],
+  id: string,
+  status: string,
+  afterId: string,
+): BoardTask[] | null {
+  const from = tasks.findIndex((t) => t.id === id);
+  if (from < 0) return null;
+  const rest = tasks.slice();
+  const moved = rest.splice(from, 1)[0];
+  let at = 0;
+  if (afterId) {
+    const j = rest.findIndex((t) => t.id === afterId);
+    at = j < 0 ? 0 : j + 1;
+  }
+  rest.splice(at, 0, { ...moved, status });
+  return rest;
+}
+
+/**
  * age renders a card's created_at as a compact relative age
  * ("now", "42m", "3h", "5d"). Unparseable stamps render nothing.
  */
