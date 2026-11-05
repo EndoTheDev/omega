@@ -4,11 +4,11 @@
 package provider
 
 import (
-	"github.com/EndoTheDev/omega/agent"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/EndoTheDev/omega/agent"
 	"net/http"
 	"os"
 	"sort"
@@ -25,6 +25,25 @@ type Provider struct {
 	baseURL       string
 	apiKey        string
 	thinkingLevel string
+	// instances carries the named provider instances this resolver
+	// knows (config.yaml providers:, card t_7dcd4280). Nil = no
+	// configured instances beyond the default; copy discipline keeps
+	// derived copies (WithModel/WithThinkingLevel) resolving through
+	// the same set.
+	instances map[string]*Provider
+}
+
+// Instance returns the named provider instance (card t_7dcd4280) and
+// whether it exists. A copy of the base (its thinking level) is built
+// if needed - the default instance never mutates. Implements
+// agent.ProviderInstances: the shell fails a run pinned to an unknown
+// name loudly, never silently falling back to the default instance.
+func (p *Provider) Instance(name string) (agent.Provider, bool) {
+	inst, ok := p.instances[name]
+	if !ok {
+		return nil, false
+	}
+	return inst, true
 }
 
 // NewProvider creates a Provider from the given configuration fields.

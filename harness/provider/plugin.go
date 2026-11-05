@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/llm"
 )
 
@@ -42,6 +42,19 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		cfg = c
 	}
 	prov := NewProvider(cfg.Type, cfg.ModelName, cfg.Host, cfg.APIKey)
+	// Named instances (card t_7dcd4280): one resolver per config
+	// providers: entry, eager at mount (no network at construction).
+	// The shell resolves a run's pinned instance through
+	// agent.ProviderInstances and fails loudly on a missing name,
+	// which is how a removed instance can never strand a session's
+	// run into a silent fallback. Applies on restart, like the rest
+	// of the provider section.
+	if len(cfg.Instances) > 0 {
+		prov.instances = make(map[string]*Provider, len(cfg.Instances))
+		for name, inst := range cfg.Instances {
+			prov.instances[name] = NewProvider(inst.Type, inst.ModelName, inst.Host, inst.APIKey)
+		}
+	}
 	if err := api.Offer("provider", prov); err != nil {
 		return err
 	}
