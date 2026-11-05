@@ -122,11 +122,18 @@ open_app() {
 # button - rename opens, the row never does. The plain DOM click skips
 # the hover lit-up entirely (the t_7adf2e7f law: the row stays one
 # click target; the buttons stay hover-reached).
-# The verdict is the OPEN, and the route must CHANGE: open_app leaves
-# the SPA on the dock-restored route of an earlier recipe's (deleted)
-# journey session - a swallowed click on an already-/chat/ route read
-# as opened and 61 red'd "dock tab missing" on every run since birth
-# (195ddbf8). Re-clicked on every poll until the route moves.
+# The verdict is the OPEN, and it has two honest pass shapes:
+# the route moved to /chat/ (fresh open), or a focused .dock-tab
+# already carries this row's label - a fresh_open remount restores the
+# dock's last route, so the reopened session's tab is back BEFORE the
+# click and the route legitimately does not move (83's pin-restore
+# reopen). A same-route pass WITHOUT the matching tab is the earlier
+# recipe's deleted-session route and must fail: that lie red'd
+# 61 on every run since birth (195ddbf8).
+# Re-clicked on every poll until the verdict passes.
+dock_tab_match_js() {
+  jsq "(()=>{const els=[...document.querySelectorAll('.dock-tab')];return els.some(e=>(((e.querySelector('.dock-tab-title')?e.querySelector('.dock-tab-title').textContent:null)??e.getAttribute('aria-label')??e.title??'').trim()).includes(\"$1\")&&e.getAttribute('aria-selected')==='true')?1:0})()"
+}
 open_journey_row() {
   local label="$1" i=0 before after clicked opened
   before=$(jsq 'location.pathname' 2>&1 | tail -1 | tr -d '"')
@@ -134,10 +141,12 @@ open_journey_row() {
     clicked=$(jsq "(()=>{const rows=[...document.querySelectorAll('.session-list li')];const r=rows.find(x=>(x.innerText||'').includes(\"$label\"));return r?(r.click(),1):0})()" 2>&1 | tail -1)
     if [ "$clicked" = "1" ]; then
       opened=$(jsq 'location.pathname.startsWith("/chat/") ? 1 : 0' 2>&1 | tail -1)
-      after=$(jsq 'location.pathname' 2>&1 | tail -1 | tr -d '"')
-      if [ "$opened" = "1" ] && [ "$after" != "$before" ]; then
-        step "ok: opened journey session row: $label"
-        return 0
+      if [ "$opened" = "1" ]; then
+        after=$(jsq 'location.pathname' 2>&1 | tail -1 | tr -d '"')
+        if [ "$after" != "$before" ] || [ "$(dock_tab_match_js "$label")" = "1" ]; then
+          step "ok: opened journey session row: $label"
+          return 0
+        fi
       fi
     fi
     sleep 1
