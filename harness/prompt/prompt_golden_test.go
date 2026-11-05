@@ -23,9 +23,25 @@ import (
 // refactors - the goldens must stay byte-stable across them.
 var updateGolden = os.Getenv("OMEGA_UPDATE_GOLDEN") == "1"
 
-// dateLine matches the environment date stamp. It is scrubbed before
-// comparison so the goldens do not expire at midnight.
-var dateLine = regexp.MustCompile(`(?m)^Date: .*$`)
+// envLine matches the environment stamp lines that vary by host:
+// the date stamp, and the OS/Shell pair (windows answers windows +
+// cmd.exe, everything else linux + bash). All three are scrubbed
+// before comparison so the goldens stay portable across hosts.
+var envLine = regexp.MustCompile(`(?m)^(Date|OS|Shell): .*$`)
+
+// scrubEnv replaces the host-varying environment lines with placeholders.
+func scrubEnv(prompt string) string {
+	return envLine.ReplaceAllStringFunc(prompt, func(line string) string {
+		switch {
+		case strings.HasPrefix(line, "Date: "):
+			return "Date: <date>"
+		case strings.HasPrefix(line, "OS: "):
+			return "OS: <env>"
+		default:
+			return "Shell: <env>"
+		}
+	})
+}
 
 // wireContext mounts the production extension set the same way
 // cmd/omega does: memory, skills, tools, prompt, with their configs.
@@ -106,10 +122,11 @@ func minimalOpts(ctx *core.Context) core.PromptBuildOptions {
 }
 
 // compareGolden renders a scenario and checks it against its golden
-// file under testdata/. Scrubs the date line first.
+// file under testdata/. Host-varying environment lines are scrubbed
+// first (scrubEnv).
 func compareGolden(t *testing.T, name string, prompt string) {
 	t.Helper()
-	scrubbed := dateLine.ReplaceAllString(prompt, "Date: <date>")
+	scrubbed := scrubEnv(prompt)
 	goldenPath := filepath.Join("testdata", name+".txt")
 	if updateGolden {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {

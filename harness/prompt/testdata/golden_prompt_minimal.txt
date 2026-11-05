@@ -51,6 +51,6 @@ Call the skills tool (action read) with a skill name to read its full content; a
 
 ## Environment
 CWD: /test/cwd
-OS: linux
-Shell: bash
+OS: <env>
+Shell: <env>
 Date: <date>
