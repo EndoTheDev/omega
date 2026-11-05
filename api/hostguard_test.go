@@ -7,9 +7,11 @@ import (
 	"testing"
 )
 
-// The Host/Origin guard tests (v0.14.1 audit p10 acceptance): cross-origin
-// mutating requests refuse, loopback mutating requests pass, reads stay
-// open. Driven against a real httptest server whose handler chain is the
+// The Host/Origin guard tests (v0.14.1 audit p10 acceptance; read side
+// closed at v0.15.0): cross-origin mutating requests refuse, loopback
+// mutating requests pass, and EVERY request - reads included - must
+// name the bind in Host. Driven against a real httptest server whose
+// handler chain is the
 // guard only (the bind is faked through addr.Store) so the Host header is
 // settable per request - httptest auto-fills Host from the listener, and
 // the guard must judge the header the CLIENT sent, not the one the test
@@ -86,9 +88,17 @@ func TestGuardCrossOriginMutateRefused(t *testing.T) {
 	if got := doReq(t, srv, http.MethodPut, "127.0.0.1:8098", "http://127.0.0.1:9999"); got != http.StatusForbidden {
 		t.Errorf("PUT with wrong-port Origin: got %d, want 403", got)
 	}
-	// reads on the foreign host still pass - no secret rides a GET
-	if got := doReq(t, srv, http.MethodGet, "evil.example:8098", ""); got != http.StatusOK {
-		t.Errorf("GET with rebinding Host: got %d, want 200 (reads stay open)", got)
+	// reads on a foreign host die too - a rebinding GET carries no
+	// Origin to lean on, and /files/read answers bytes (v0.15.0)
+	if got := doReq(t, srv, http.MethodGet, "evil.example:8098", ""); got != http.StatusForbidden {
+		t.Errorf("GET with rebinding Host: got %d, want 403", got)
+	}
+	// legit reads keep passing: the operator's browser and curl both
+	// name the true serving host
+	for _, host := range []string{"127.0.0.1:8098", "localhost:8098", "[::1]:8098"} {
+		if got := doReq(t, srv, http.MethodGet, host, ""); got != http.StatusOK {
+			t.Errorf("GET with Host %s: got %d, want 200", host, got)
+		}
 	}
 }
 

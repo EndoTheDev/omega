@@ -8,19 +8,22 @@ import (
 	"sync/atomic"
 )
 
-// The mutating-request Host/Origin guard (v0.14.1 audit p10). The local
-// surface is unauthenticated by design (loopback, one operator), so the
-// browser same-site rules are the only firewall it has - and a cross-site
-// POST of Content-Type text/plain triggers no CORS preflight, which made
-// POST /files/write, POST /files/mkdir, the module writes (PATCH
-// /tasks/{id}, DELETE /boards/{name}, ...) reachable from any web page
-// the operator visits while the server runs. DNS rebinding moves the
-// same attack onto the Host header. The guard closes both on the wire:
-// a mutating request (anything but GET/HEAD/OPTIONS) must name the bind
-// address in Host and, when it carries an Origin, that Origin must be
-// the same surface. Reads stay open - no secret leaves through them, and
-// the SPA's own POSTs carry the serving host:port as both Host and
-// Origin, so every legit caller passes untouched.
+// The Host/Origin guard (v0.14.1 audit p10; read side closed at v0.15.0).
+// The local surface is unauthenticated by design (loopback, one
+// operator), so the browser same-site rules are the only firewall it
+// has - and a cross-site POST of Content-Type text/plain triggers no
+// CORS preflight, which made POST /files/write, POST /files/mkdir, the
+// module writes (PATCH /tasks/{id}, DELETE /boards/{name}, ...) and
+// the byte-returning reads (GET /files/read, GET /files/raw, the
+// transcript GETs) reachable from any web page the operator visits
+// while the server runs. DNS rebinding moves the same attack onto the
+// Host header, and a top-level navigation GET carries no Origin, so
+// reads cannot lean on the Origin rule. The guard closes the class on
+// the wire: EVERY request must name the bind address in Host, and a
+// mutating request (anything but GET/HEAD/OPTIONS) must also carry no
+// Origin or the serving surface as Origin. The SPA's own requests
+// carry the serving host:port as both Host and Origin, so every legit
+// caller passes untouched.
 
 // mutatingRequest reports whether the method changes server state. The
 // safe method set is the usual CORS-simple read set; everything else
@@ -44,14 +47,20 @@ type hostGuard struct {
 }
 
 func (g *hostGuard) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if mutatingRequest(r.Method) {
-		bind, _ := g.addr.Load().(string)
-		allowed := allowedHosts(bind)
-		if !hostAllowed(r.Host, allowed) || !originAllowed(r, allowed) {
-			http.Error(w, "forbidden: mutating request from a foreign origin (Host/Origin guard)",
-				http.StatusForbidden)
-			return
-		}
+	bind, _ := g.addr.Load().(string)
+	allowed := allowedHosts(bind)
+	// Every request names the bind in Host - reads included: a
+	// rebinding GET carries no Origin to lean on, and /files/read
+	// answers bytes (the v0.15.0 audit p10, closed here).
+	if !hostAllowed(r.Host, allowed) {
+		http.Error(w, "forbidden: request from a foreign host (Host guard)",
+			http.StatusForbidden)
+		return
+	}
+	if mutatingRequest(r.Method) && !originAllowed(r, allowed) {
+		http.Error(w, "forbidden: mutating request from a foreign origin (Host/Origin guard)",
+			http.StatusForbidden)
+		return
 	}
 	g.next.ServeHTTP(w, r)
 }
