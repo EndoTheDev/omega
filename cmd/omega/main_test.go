@@ -66,10 +66,9 @@ func TestRunVersion(t *testing.T) {
 func TestServeBanner(t *testing.T) {
 	got := serveBanner("v0.14.0-ca8e1142", 2,
 		[]string{"127.0.0.1:8098", "100.108.38.32:8098"},
-		"bin/config/config.yaml", "C:/omega/data", "glm-5.3",
-		"http://100.101.126.30:11435")
+		"bin/config/config.yaml", "C:/omega/data", "glm-5.3")
 	want := "omega v0.14.0-ca8e1142 · serving 2 channel(s) on 127.0.0.1:8098, 100.108.38.32:8098" +
-		" · config bin/config/config.yaml · data C:/omega/data · model glm-5.3 via 100.101.126.30:11435"
+		" · config bin/config/config.yaml · data C:/omega/data · model glm-5.3"
 	if got != want {
 		t.Fatalf("serveBanner =\n%q\nwant\n%q", got, want)
 	}
@@ -88,21 +87,6 @@ func TestServeBinds(t *testing.T) {
 	want := []string{"127.0.0.1:8098", "100.108.38.32:8098"}
 	if got := serveBinds(cfg); !reflect.DeepEqual(got, want) {
 		t.Fatalf("serveBinds = %v, want %v", got, want)
-	}
-}
-
-// TestProviderEndpoint: the banner names the machine - wire scheme
-// stripped, bare host passes through, empty stays empty.
-func TestProviderEndpoint(t *testing.T) {
-	for host, want := range map[string]string{
-		"http://100.101.126.30:11435": "100.101.126.30:11435",
-		"https://api.openai.com/v1":   "api.openai.com/v1",
-		"100.101.126.30:11435":        "100.101.126.30:11435",
-		"":                            "",
-	} {
-		if got := providerEndpoint(host); got != want {
-			t.Errorf("providerEndpoint(%q) = %q, want %q", host, got, want)
-		}
 	}
 }
 

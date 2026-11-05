@@ -707,24 +707,14 @@ func serveBinds(cfg Config) []string {
 	return out
 }
 
-// providerEndpoint strips the wire scheme off the provider endpoint:
-// the banner names the machine, not the protocol.
-func providerEndpoint(host string) string {
-	s := strings.TrimPrefix(host, "https://")
-	return strings.TrimPrefix(s, "http://")
-}
-
 // serveBanner is the boot line a person can read: version, the binds
-// being served, the config file actually read, the data dir, the model
-// and its endpoint host. One line, real values only.
-func serveBanner(version string, channels int, binds []string, configPath, dataDir, model, providerHost string) string {
-	line := fmt.Sprintf("omega %s · serving %d channel(s) on %s",
-		version, channels, strings.Join(binds, ", "))
-	line += fmt.Sprintf(" · config %s · data %s · model %s", configPath, dataDir, model)
-	if ep := providerEndpoint(providerHost); ep != "" {
-		line += fmt.Sprintf(" via %s", ep)
-	}
-	return line
+// being served, the config file actually read, the data dir, and the
+// model. One line, real values only. The model comes from the agent's
+// own API - the host does not reach into provider config here (the
+// nm-purity law: no new provider wire in the host shell).
+func serveBanner(version string, channels int, binds []string, configPath, dataDir, model string) string {
+	return fmt.Sprintf("omega %s · serving %d channel(s) on %s · config %s · data %s · model %s",
+		version, channels, strings.Join(binds, ", "), configPath, dataDir, model)
 }
 
 // cmdServe loads config, wires the agent, and starts all mounted
@@ -842,7 +832,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	// the data dir, the model and its endpoint. Every value is real
 	// boot-resolved shape, nothing hardcoded.
 	banner := serveBanner(omegaVersion, len(pctx.Channels), serveBinds(cfg),
-		cfgPath, canonPath(datadir.Dir(omegaHome())), ag.ModelName(), cfg.Provider.Host)
+		cfgPath, canonPath(datadir.Dir(omegaHome())), ag.ModelName())
 	fmt.Println(banner)
 	if logger != nil {
 		logger.Printf("%s", banner)
