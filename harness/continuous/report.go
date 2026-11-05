@@ -25,6 +25,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -94,7 +95,11 @@ func (s *wakeReportSink) shape(ctx context.Context, content string) string {
 var claimVerbs = regexp.MustCompile(`(?i)\b(created|wrote|updated|deleted|removed|edited|modified|renamed|moved|fetched|downloaded|uploaded|saved|read|installed|deployed)\b`)
 
 // pathTokens finds the checkable objects of a claim: a path or a URL.
-var pathTokens = regexp.MustCompile(`https?://[\w.@%+=:/~#?&-]+|(?:\.{1,2}/|~/|/)[\w.@%+=:/~-]+|\b[\w-]+(?:\.[\w-]+)+\b`)
+// The file branch carries the optional drive-letter prefix and the
+// backslash separator (card t_630e595d): a windows full-path claim
+// ("C:\Data\notes\today.md", "\\server\share\f.txt") tokenizes whole,
+// not as its bare basename. The URL branch stays as it was.
+var pathTokens = regexp.MustCompile(`https?://[\w.@%+=:/~#?&-]+|(?:[A-Za-z]:)?(?:\.{1,2}/|~/|/|\\)[\w.@%+=:/\\~-]+|\b[\w-]+(?:\.[\w-]+)+\b`)
 
 // maxTailRows caps the id list the evidence tail names.
 const maxTailRows = 12
@@ -279,25 +284,46 @@ func isNumericToken(tok string) bool {
 }
 
 // resolve maps a claim token onto the ledger's path key for the same
-// file: exact, or the row path's basename when the token is file-like.
-// Every miss resolves to the token itself (unseen -> strip).
+// file: exact, or suffix match on the separator-canonical spelling
+// when the token is file-like. Every miss resolves to the token
+// itself (unseen -> strip).
+//
+// The suffix match normalizes both sides (Clean -> ToSlash,
+// card t_630e595d): the ledger key is the raw tool-arg path, a
+// backslash shape on windows, and the old hardcoded "/"+token join
+// never matched it, so every claim stripped and no citation landed.
 func resolve(tok string, ev evidence) string {
 	token := strings.TrimPrefix(strings.TrimPrefix(tok, "./"), "~/")
 	present := func(p string) bool { return ev.fileVerified[p] != nil || ev.fileFailed[p] }
 	if present(token) {
 		return token
 	}
+	normToken := canonKey(token)
 	for p := range ev.fileVerified {
-		if strings.HasSuffix(p, "/"+token) {
+		if keySuffixMatch(p, normToken) {
 			return p
 		}
 	}
 	for p := range ev.fileFailed {
-		if strings.HasSuffix(p, "/"+token) {
+		if keySuffixMatch(p, normToken) {
 			return p
 		}
 	}
 	return token
+}
+
+// canonKey is the one match spelling for path keys and claim tokens:
+// cleaned and separator-flattened, so `\`-shaped and `/`-shaped
+// spellings of the same file agree.
+func canonKey(p string) string {
+	return filepath.ToSlash(filepath.Clean(strings.ReplaceAll(p, `\`, "/")))
+}
+
+// keySuffixMatch reports whether the ledger path p IS the canonical
+// token or ends with it as a full path segment.
+func keySuffixMatch(p, normToken string) bool {
+	canon := canonKey(p)
+	return canon == normToken || strings.HasSuffix(canon, "/"+normToken)
 }
 
 // evidenceSets folds the run's rows into the claim tables. Rows with a

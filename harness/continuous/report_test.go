@@ -280,6 +280,47 @@ func TestURLLocatorWithoutCheckStaysOutOfFileTables(t *testing.T) {
 	}
 }
 
+// TestShapeReportWindowsShapedClaims (card t_630e595d, the windows
+// red wave): backslash-shaped ledger keys and backslash-shaped
+// claims must still meet. The fixtures are literal shapes on every
+// OS - the shaper is a pure function and the shapes, not the host,
+// are what is under test.
+func TestShapeReportWindowsShapedClaims(t *testing.T) {
+	winKey := `file:exists:C:\Data\notes\plan.md`
+	k := func(id int64) record {
+		return row(id, true, winKey)
+	}
+
+	// A basename claim over a windows-shaped ledger key cites.
+	rows := []record{k(21)}
+	out := shapeReport("I created plan.md and moved on.", rows)
+	if !strings.Contains(out, "[ledger #21]") {
+		t.Errorf("basename claim over a windows ledger key uncited: %q", out)
+	}
+
+	// A full windows-path claim tokenizes whole and cites.
+	rows = []record{k(22)}
+	out = shapeReport("I created " + `C:\Data\notes\plan.md` + " as asked.", rows)
+	if !strings.Contains(out, "[ledger #22]") {
+		t.Errorf("full windows-path claim uncited: %q", out)
+	}
+
+	// A /-spelled claim meets a backslash-shaped ledger key.
+	rows = []record{k(23)}
+	out = shapeReport("I created C:/Data/notes/plan.md as asked.", rows)
+	if !strings.Contains(out, "[ledger #23]") {
+		t.Errorf("slash-spelled claim over windows key uncited: %q", out)
+	}
+
+	// A backslash-shaped rooted claim meets a posix ledger key (the
+	// reverse mix).
+	rows = []record{row(24, true, "file:exists:/Data/notes/plan.md")}
+	out = shapeReport("I created " + `\Data\notes\plan.md` + " as asked.", rows)
+	if !strings.Contains(out, "[ledger #24]") {
+		t.Errorf("windows-spelled claim over posix key uncited: %q", out)
+	}
+}
+
 func TestMixedClaimStripsUntilEveryTokenIsBacked(t *testing.T) {
 	dir := t.TempDir()
 	log := filepath.Join(dir, "feed.md")
