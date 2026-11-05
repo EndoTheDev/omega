@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 func mountWithRegistry(t *testing.T, cfg Config, plugins []agent.Plugin) *agent.Registry {
@@ -25,7 +26,21 @@ func mountWithRegistry(t *testing.T, cfg Config, plugins []agent.Plugin) *agent.
 	if err != nil {
 		t.Fatalf("mount: %v", err)
 	}
+	dismountCleanup(t, reg, ctx)
 	return reg
+}
+
+// dismountCleanup registers the teardown of a bare test mount: the
+// capsules' stores hold open file handles (kanban.db, ledger.db) that
+// windows keeps locked, so the TempDir cleanup runs the Dismounter
+// hooks (agent.DismountAll, reverse topo order) instead of abandoning
+// the mount. The teardown error is not the test's assertion; the
+// mount's registrations and the proof stay untouched.
+func dismountCleanup(t *testing.T, reg *agent.Registry, ctx *core.Context) {
+	t.Helper()
+	t.Cleanup(func() {
+		_ = agent.DismountAll(reg, ctx)
+	})
 }
 
 func fullPlugins(t *testing.T) []agent.Plugin {
