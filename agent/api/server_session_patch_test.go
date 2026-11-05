@@ -14,7 +14,13 @@ import (
 // TestSessionContextPatch pins the session-context PATCH surface (card
 // t_9de5b009): model + workspace land on the row, the list payload
 // serves the pinned model, invalid workspaces are rejected before any
-// write, and GET /sessions/{id} restores both fields.
+// write, and GET /sessions/{id} restores both fields. The file used to
+// be the workspaces surface's whole test (both GET routes served from
+// agent/api); the picker routes rode the files capsule out with wave 3
+// (card t_b75df168, harness/files/workspaces_test.go) and only the
+// session-row PATCH face is left here - the file renamed with it.
+// The workspace-path validator itself is core.ResolveWorkspaceDir now
+// (the shared guard both consumers ride).
 func TestSessionContextPatch(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 
@@ -82,42 +88,6 @@ func TestSessionContextPatch(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("clear patch: status = %d, want 200", rec.Code)
-	}
-
-	// The workspaces browse endpoint lists dirs and reports a parent.
-	req = httptest.NewRequest(http.MethodGet, "/workspaces/browse", nil)
-	rec = httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("browse root: status = %d", rec.Code)
-	}
-	var listing struct {
-		Path   string
-		Parent string
-		Dirs   []struct{ Name, Path string }
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &listing); err != nil {
-		t.Fatalf("decode browse: %v", err)
-	}
-	if listing.Path != "/" && listing.Path != "" {
-		t.Errorf("browse root path = %q, want \"/\"", listing.Path)
-	}
-	if listing.Parent != "" {
-		t.Errorf("browse root parent = %q, want empty", listing.Parent)
-	}
-
-	// A relative path is rejected; an absolute dir lists its subdirs.
-	req = httptest.NewRequest(http.MethodGet, "/workspaces/browse?path=rel/ative", nil)
-	rec = httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("relative browse: status = %d, want 400", rec.Code)
-	}
-	req = httptest.NewRequest(http.MethodGet, "/workspaces/browse?path="+mustQuery(ws), nil)
-	rec = httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("browse dir: status = %d", rec.Code)
 	}
 }
 

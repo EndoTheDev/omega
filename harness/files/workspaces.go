@@ -1,54 +1,32 @@
-package api
+// The session workspace surface, riding the file domain capsule
+// (shell-ring shrink wave 3, card t_b75df168: a filesystem listing face
+// is the files domain's work - the workspace PICKER is the session's
+// row truth (the store's Workspace column); these routes only WALK
+// directories, unbuzzed from the explorer's rooted cwd). The picker
+// reads the local filesystem to pick a folder; strictly read-only GET -
+// no write, delete or exec path exists here. The browse walks REAL
+// directories (an absolute path selects any folder on the box - a
+// session workspace is not contained by the process working directory,
+// unlike the /files inspector, which stays rooted there).
+//
+// Safety rules, every request:
+//   - absolute paths only (no browser-relative confusion), validated
+//     by core.ResolveWorkspaceDir (the shared guard the session
+//     create/PATCH paths use - one validator, two consumers)
+//   - "."-prefixed segments and hidden entries are rejected/filtered
+//   - the path is symlink-resolved before the disk is touched
+//   - only directory listings are served, never file contents
+package files
 
 import (
-	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/EndoTheDev/omega/core"
 )
-
-// The session workspace surface (card t_9de5b009): the picker reads the
-// local filesystem to pick a folder, the PATCH validates the row write.
-// Strictly read-only GET on the browse side - no write, delete or exec
-// path exists here. The browse walks REAL directories (an absolute path
-// selects any folder on the box - a session workspace is not contained
-// by the process working directory, unlike the /files inspector, which
-// stays rooted there).
-//
-// Safety rules, every request:
-//   - absolute paths only (no browser-relative confusion)
-//   - "."-prefixed segments and hidden entries are rejected/filtered
-//   - the path is symlink-resolved before the disk is touched
-//   - only directory listings are served, never file contents
-
-// resolveWorkspaceDir validates and normalizes a user-supplied workspace
-// path: it must be absolute, exist, be a directory, and survive symlink
-// resolution. Returns the cleaned absolute path. Hidden segments are NOT
-// rejected here - a project may legitimately live under a dot directory
-// (~/projects/.local); typing such a path is allowed even though the
-// browse listing filters hidden entries out of the picker's view.
-func resolveWorkspaceDir(raw string) (string, error) {
-	if strings.TrimSpace(raw) == "" {
-		return "", errors.New("path must not be empty")
-	}
-	if !filepath.IsAbs(raw) {
-		return "", errors.New("workspace must be an absolute path")
-	}
-	abs, err := filepath.EvalSymlinks(filepath.Clean(raw))
-	if err != nil {
-		return "", err
-	}
-	info, err := os.Stat(abs)
-	if err != nil {
-		return "", err
-	}
-	if !info.IsDir() {
-		return "", errors.New("not a directory")
-	}
-	return abs, nil
-}
 
 // workspaceDir is one /workspaces/browse row.
 type workspaceDir struct {
@@ -60,9 +38,9 @@ type workspaceDir struct {
 // listing one directory's child folders. Empty or missing path lists
 // "/". Hidden entries (and every dot-prefixed name) are filtered, and
 // dot segments are rejected in the query path - no browsing into hidden
-// trees. The response carries the entries plus the parent path ("" when
-// at the root - the UI hides the climb there).
-func (s *Server) handleWorkspacesBrowse(w http.ResponseWriter, r *http.Request) {
+// trees. The response carries the entries plus the parent path (""
+// when at the root - the UI hides the climb there).
+func (rt *Routes) handleWorkspacesBrowse(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -71,7 +49,7 @@ func (s *Server) handleWorkspacesBrowse(w http.ResponseWriter, r *http.Request) 
 	abs := "/"
 	if raw != "" {
 		var err error
-		abs, err = resolveWorkspaceDir(raw)
+		abs, err = core.ResolveWorkspaceDir(raw)
 		if err != nil {
 			fileError(w, http.StatusBadRequest, err.Error())
 			return
@@ -116,13 +94,13 @@ type workspaceFile struct {
 // not the process working directory /files/browse is jailed to (card
 // t_ea7e6a58). Read-only, one level deep, hidden entries filtered, the
 // same absolute-path + symlink rules as the browse endpoint.
-func (s *Server) handleWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
+func (rt *Routes) handleWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	raw := r.URL.Query().Get("path")
-	abs, err := resolveWorkspaceDir(raw)
+	abs, err := core.ResolveWorkspaceDir(raw)
 	if err != nil {
 		fileError(w, http.StatusBadRequest, err.Error())
 		return

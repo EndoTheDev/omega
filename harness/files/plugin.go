@@ -92,6 +92,12 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		func() error { return api.RegisterRoute("/files/raw", p.routes.handleFilesRaw) },
 		func() error { return api.RegisterRoute("POST /files/write", p.routes.handleFilesWrite) },
 		func() error { return api.RegisterRoute("POST /files/mkdir", p.routes.handleFilesMkdir) },
+		// The session workspace picker face (shell-ring shrink wave 3,
+		// card t_b75df168): the folder picker + the @ intent walk ride
+		// the file domain too - they list directories, the explorer's
+		// business, just unbuzzed from the rooted cwd.
+		func() error { return api.RegisterRoute("/workspaces/browse", p.routes.handleWorkspacesBrowse) },
+		func() error { return api.RegisterRoute("/workspaces/files", p.routes.handleWorkspaceFiles) },
 		// The default_workspace knob lands at mount; the host's
 		// settings hot-apply pushes later changes through
 		// SetDefaultWorkspace (a bare func hook the host threads,

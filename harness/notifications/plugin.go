@@ -3,6 +3,7 @@ package notifications
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/EndoTheDev/omega/core"
@@ -27,6 +28,7 @@ func Default() Config { return Config{} }
 type Plugin struct {
 	store   *Store
 	capsule *capsule
+	routes  *Routes
 }
 
 var _ agent.Plugin = (*Plugin)(nil)
@@ -85,11 +87,29 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// ships no store, no panels, no toasts, no wiring - removal kills
 	// all of it together.
 	p.capsule = newCapsule(s)
-	if err := api.Offer("notifications", &emittingStore{store: s, capsule: p.capsule}); err != nil {
+	seam := &emittingStore{store: s, capsule: p.capsule}
+	p.routes = newRoutes(seam)
+	if err := api.Offer("notifications", seam); err != nil {
 		return err
 	}
 	if err := api.RegisterPanelProvider(p.capsule); err != nil {
 		return err
+	}
+	// The REST face over the same service handle (shell-ring shrink
+	// wave 3, card t_b75df168): the bell's list/read + the toast SSE
+	// ride the capsule - they register and die with the mount, exactly
+	// like the panel surface above them.
+	for _, r := range []struct {
+		pattern string
+		h       func(http.ResponseWriter, *http.Request)
+	}{
+		{"/notifications", p.routes.handleNotifications},
+		{"/notifications/read", p.routes.handleNotificationsRead},
+		{"/notifications/events", p.routes.handleNotificationEvents},
+	} {
+		if err := api.RegisterRoute(r.pattern, r.h); err != nil {
+			return err
+		}
 	}
 	// The read-only /notifications table command (the /board pattern:
 	// one registration per command, the wrapper falls through on a
