@@ -285,8 +285,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/attach-image", s.handleAttachImage)
 	// card t_08d822bb: (the raw-bytes image route was the file explorer's
 	// - it rode /files/* and moved with the file capsule, the shell-ring
-	// shrink wave 1. The /workspaces routes below stay: the workspace
-	// chip is the base set until wave 3's classification calls it.)
+	// shrink wave 1. The workspaces routes also rode out with wave 3.
 	// The shell-ring shrink wave 2 (ADR Workshop/omega-shell-ring-shrink.md,
 	// the three-layer sessions law): the session MANAGEMENT surface rides
 	// the store capsule - GET /sessions (list), /sessions/search,
@@ -303,8 +302,12 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/sessions/{id}/transcript", s.handleSessionTranscript)
 	mux.HandleFunc("/sessions/{id}/variants", s.handleSessionVariants)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
-	mux.HandleFunc("/workspaces/browse", s.handleWorkspacesBrowse)
-	mux.HandleFunc("/workspaces/files", s.handleWorkspaceFiles)
+	// The workspace PICKER + @ intent walk rode the files capsule out
+	// with wave 3 (card t_b75df168): a filesystem listing face is the
+	// files domain's work - /workspaces/browse and /workspaces/files
+	// are module routes (harness/files/workspaces.go) now; the
+	// session-born PIN (the row writes below) stays base, it is the
+	// session row's own truth.
 	mux.HandleFunc("/tools", s.handleTools)
 	mux.HandleFunc("/commands", s.handleCommands)
 	mux.HandleFunc("/commands/dispatch", s.handleCommandDispatch)
@@ -870,7 +873,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		// without the context seam answers 501, both create nothing.
 		var wsDir string
 		if req.Workspace != "" {
-			dir, err := resolveWorkspaceDir(req.Workspace)
+			dir, err := core.ResolveWorkspaceDir(req.Workspace)
 			if err != nil {
 				http.Error(w, "workspace: "+err.Error(), http.StatusBadRequest)
 				return
@@ -1541,7 +1544,7 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		// answers 501 and creates nothing.
 		var wsDir string
 		if req.Workspace != "" {
-			dir, err := resolveWorkspaceDir(req.Workspace)
+			dir, err := core.ResolveWorkspaceDir(req.Workspace)
 			if err != nil {
 				http.Error(w, "workspace: "+err.Error(), http.StatusBadRequest)
 				return
@@ -1704,7 +1707,7 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 		if body.Workspace != nil {
 			resolvedDir = ""
 			if *body.Workspace != "" {
-				dir, err := resolveWorkspaceDir(*body.Workspace)
+				dir, err := core.ResolveWorkspaceDir(*body.Workspace)
 				if err != nil {
 					http.Error(w, "workspace: "+err.Error(), http.StatusBadRequest)
 					return

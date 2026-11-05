@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"net/http"
 	httptest2 "net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -177,62 +176,8 @@ func TestChatCreateWorkspace(t *testing.T) {
 	}
 }
 
-// TestWorkspaceFilesListing: /workspaces/files lists first-level
-// entries of a validated absolute dir (hidden filtered), refusing
-// relative and nonexistent paths - the @ picker's draft-intent read.
-func TestWorkspaceFilesListing(t *testing.T) {
-	s, _ := newTestServerWithStore(t)
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("hi"), 0o644); err != nil {
-		t.Fatalf("seed file: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, ".hidden"), []byte("x"), 0o644); err != nil {
-		t.Fatalf("seed hidden: %v", err)
-	}
-
-	req := httptest2.NewRequest(http.MethodGet, "/workspaces/files?path="+mustQuery(dir), nil)
-	rec := httptest2.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("list: status = %d (%s)", rec.Code, rec.Body.String())
-	}
-	var body struct {
-		Path    string
-		Entries []struct {
-			Name  string `json:"name"`
-			IsDir bool   `json:"is_dir"`
-		}
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if filepath.Clean(body.Path) != filepath.Clean(dir) {
-		t.Errorf("path = %q, want %q", body.Path, dir)
-	}
-	names := map[string]bool{}
-	for _, e := range body.Entries {
-		names[e.Name] = e.IsDir
-	}
-	if names["note.txt"] {
-		t.Errorf("note.txt flagged as dir")
-	}
-	if _, ok := names["note.txt"]; !ok {
-		t.Errorf("note.txt missing from the listing")
-	}
-	if _, ok := names[".hidden"]; ok {
-		t.Errorf(".hidden must stay filtered")
-	}
-
-	// Refusals: relative, nonexistent, a file not a dir.
-	for _, bad := range []string{"relative/path", "/definitely/not/here", filepath.Join(dir, "note.txt")} {
-		req = httptest2.NewRequest(http.MethodGet, "/workspaces/files?path="+mustQuery(bad), nil)
-		rec = httptest2.NewRecorder()
-		s.Handler().ServeHTTP(rec, req)
-		if rec.Code != http.StatusBadRequest {
-			t.Errorf("bad path %q: status = %d, want 400", bad, rec.Code)
-		}
-	}
-}
+// TestWorkspaceFilesListing moved with the /workspaces/files route to
+// the files capsule (harness/files/workspaces_test.go, card t_b75df168).
 
 // firstSessionID returns the store's only session id (the /chat run
 // creates exactly one).
