@@ -383,7 +383,13 @@ func validateJob(job Job, line int) error {
 		if job.DeliverTarget() != deliverAppendToFile {
 			return fmt.Errorf("job %q (line %d): file only applies to deliver append-to-file", job.Name, line)
 		}
-		if filepath.IsAbs(job.File) || strings.HasPrefix(filepath.ToSlash(filepath.Clean(job.File)), "..") {
+		// The jail is relative-or-nothing: IsAbs misses the windows
+		// rooted-but-driveless shapes (/absolute, \rooted - no volume
+		// prefix), so the separator check has to go through ToSlash,
+		// where every rooted shape keeps its leading "/" and posix
+		// acceptance is untouched (posix rooted paths are all IsAbs).
+		clean := filepath.ToSlash(filepath.Clean(job.File))
+		if filepath.IsAbs(job.File) || strings.HasPrefix(clean, "..") || strings.HasPrefix(clean, "/") {
 			return fmt.Errorf("job %q (line %d): file must be a path inside the omega home (relative, no ..)", job.Name, line)
 		}
 	}
