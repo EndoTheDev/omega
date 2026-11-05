@@ -135,21 +135,9 @@ func (s *Server) LiveServices() *core.Services {
 
 // Consumers' local faces (part 3): every capsule-facing route
 // type-asserts the resolved service to what it calls - no shared
-// named interface crosses the seam.
-
-// noticeBoard is the finished-things face the bell routes hold.
-type noticeBoard interface {
-	List(ctx context.Context, unreadOnly bool, limit, offset int) (notes []core.Notice, unread int, err error)
-	MarkRead(ctx context.Context, id int64) error
-	MarkAllRead(ctx context.Context) error
-	Subscribe() (<-chan core.Notice, func())
-}
-
-// cardBoard is the question-card face the /verdicts routes hold.
-type cardBoard interface {
-	Answer(sessionID, cardID string, v core.QuestionAnswer) (core.QuestionAnswer, error)
-	Pending(sessionID string) []core.QuestionPrompt
-}
+// named interface crosses the seam. (The finished-things and
+// question-card faces rode their capsules out with the shrink wave 3 -
+// card t_b75df168; the routes resolve their own handles there.)
 
 // skillFaces is the skill inventory face the content/atmention
 // consumers hold (std types only; the capsule owns its type).
@@ -163,20 +151,6 @@ type skillFaces interface {
 // mounted trust capsule.
 type contextResolver interface {
 	ResolveContext(cwd string, approve, noApprove, interactive bool) string
-}
-
-// notices resolves the finished-things service, asserted to this
-// server's face. Nil when the capsule is absent (or wrong-shaped -
-// the boot failed loud then anyway).
-func (s *Server) notices() noticeBoard {
-	svc, _ := s.LiveServices().Resolve("notifications").(noticeBoard)
-	return svc
-}
-
-// cards resolves the question-card service.
-func (s *Server) cards() cardBoard {
-	svc, _ := s.LiveServices().Resolve("verdicts").(cardBoard)
-	return svc
 }
 
 // skills resolves the skill inventory service.
@@ -311,15 +285,16 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/tools", s.handleTools)
 	mux.HandleFunc("/commands", s.handleCommands)
 	mux.HandleFunc("/commands/dispatch", s.handleCommandDispatch)
-	mux.HandleFunc("/skills/content", s.handleSkillsContent)
 	mux.HandleFunc("/settings", s.handleSettings)
 	// GET /insights rode the store capsule out with wave 2 (a view over
 	// store data disclosed in the review comment).
-	// card t_5d9032d3: the finished-things surface. Handlers live in
-	// server_notify.go; /notifications/events is the live toast stream.
-	mux.HandleFunc("/notifications", s.handleNotifications)
-	mux.HandleFunc("/notifications/read", s.handleNotificationsRead)
-	mux.HandleFunc("/notifications/events", s.handleNotificationEvents)
+	// The /notifications finished-things surface (card t_5d9032d3: the
+	// list/read + the toast SSE, /notifications/events) rode the
+	// notifications capsule out with wave 3 (card t_b75df168,
+	// harness/notifications/routes.go) - the bell reads the capsule it
+	// belongs to, the 501 degradation retired with the 404 module lane.
+	// The skills content-view route (card t_36ceb99b) rode the skills
+	// capsule out in the same sweep (harness/skills/routes.go).
 	// The /verdicts answer surface rode the verdict capsule out with
 	// wave 3 (card t_b75df168, harness/verdict/routes.go): the bell's
 	// pending listing + the answering POST are module routes now - the
