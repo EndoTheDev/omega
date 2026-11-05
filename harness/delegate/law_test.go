@@ -80,6 +80,12 @@ func TestWorkerFenceStamp(t *testing.T) {
 	}
 
 	// Real shim beside the binary: exe dir + shims/git, executable.
+	// Windows: the exec-bit gate cannot fire on NTFS (perms live in
+	// ACLs), so the fence honestly degrades to the env-only posture -
+	// a real windows fence is the parked windows-fence design item.
+	if runtime.GOOS == "windows" {
+		t.Skip("windows fence = design item; exec-bit gate cannot fire on NTFS; see the fence design card")
+	}
 	bindir := t.TempDir()
 	shimsdir := filepath.Join(bindir, "shims")
 	if err := os.MkdirAll(shimsdir, 0o755); err != nil {
