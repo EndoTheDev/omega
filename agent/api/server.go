@@ -88,6 +88,11 @@ type Server struct {
 	// endpoint set here; the shell registers its composition routes on
 	// the same mux and wraps the listener in the host guard.
 	mux *http.ServeMux
+	// serve is the serving handler Handler() returns: the module
+	// literal rescue wrapping mux (serveModuleRescue). Built once in
+	// NewServer; registration on mux keeps working - the rescue reads
+	// the live seamSet, never a stale route table.
+	serve http.Handler
 }
 
 // seamSet is the optional-module surface behind the Server's routes
@@ -107,7 +112,17 @@ type seamSet struct {
 	// registered pattern answers 404, not the SPA shell. Empty when
 	// no routes: history-mode routes like /tasks-off-webui stay SPA.
 	routeRoots map[string]bool
-	logger     agent.LoggerProvider
+	// moduleLiterals is the exact-match lane of the module REST set
+	// (the same ctx.ModuleRoutes at every rewire): "METHOD /path" and
+	// "ANY /path" keys holding capsule handlers for literal patterns
+	// (no wildcards). It exists because the base mux's fixed wildcard
+	// patterns out-specify a capsule literal living behind the "/"
+	// catch-all - without this exact-match lane, GET /sessions/search
+	// died into the base /sessions/{id} detail handler (proven live
+	// 2026-11-05: the 50-sessions-reload nightly red). ServeMux has no
+	// precedence hook across muxes, so the rescue layer reads this.
+	moduleLiterals map[string]http.HandlerFunc
+	logger         agent.LoggerProvider
 	// ctx is the live Context (part 3, the seam constitution): the
 	// capsule-facing routes resolve their services per request from
 	// the universal registry - a live toggle swaps the pointer under
@@ -187,6 +202,7 @@ func (s *Server) RewireSeams(ctx *core.Context, modmux *http.ServeMux, roots map
 	s.seams.mu.Lock()
 	s.seams.modules = modmux
 	s.seams.routeRoots = roots
+	s.seams.moduleLiterals = moduleLiterals(ctx.ModuleRoutes)
 	if lg := ctx.Services().Resolve("logger"); lg != nil {
 		logger, ok := lg.(agent.LoggerProvider)
 		if !ok {
@@ -236,6 +252,7 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 	s.chat = NewChatCapsule()
 	s.chat.srv.Store(s)
 	s.registerRoutes(s.mux)
+	s.serve = http.HandlerFunc(s.serveModuleRescue)
 	return s
 }
 
@@ -243,10 +260,65 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 // composition routes onto the same mux.
 func (s *Server) Mux() *http.ServeMux { return s.mux }
 
-// Handler returns the HTTP handler, for tests and embedding. Bare mux:
-// the host guard is the shell's vocabulary - the rump wraps this with
-// the same guard the shell's own NewServer always did.
-func (s *Server) Handler() http.Handler { return s.mux }
+// Handler returns the HTTP handler, for tests and embedding. The
+// module-literal rescue outer layer wraps the bare mux (the host guard
+// is the shell's vocabulary - the rump wraps Handler() with the same
+// guard the shell's own NewServer always did).
+func (s *Server) Handler() http.Handler { return s.serve }
+
+// serveModuleRescue is the outer serving layer: a capsule's literal
+// route exact-matches here BEFORE the base mux dispatches, because the
+// base mux has no view of module patterns and its own fixed wildcards
+// (/sessions/{id}) out-specify a module literal behind the "/"
+// catch-all in every dispatch. Wildcard module patterns are unaffected
+// (no base pattern shares their shape beyond the collision family) and
+// the module-rooted 404 lane in handleModuleOrSPA is untouched: the
+// rescue only answers an exact registered literal, everything else
+// rides the mux as always.
+func (s *Server) serveModuleRescue(w http.ResponseWriter, r *http.Request) {
+	if h, ok := s.moduleLiteralLookup(r.Method, r.URL.Path); ok {
+		h(w, r)
+		return
+	}
+	s.mux.ServeHTTP(w, r)
+}
+
+// moduleLiteralLookup exact-matches the live module route set under one
+// read lock: "METHOD /path" first (a method-scoped registration), then
+// "ANY /path" (a methodless registration answers every method).
+func (s *Server) moduleLiteralLookup(method, path string) (http.HandlerFunc, bool) {
+	s.seams.mu.RLock()
+	defer s.seams.mu.RUnlock()
+	if h, ok := s.seams.moduleLiterals[method+" "+path]; ok {
+		return h, true
+	}
+	h, ok := s.seams.moduleLiterals["ANY "+path]
+	return h, ok
+}
+
+// moduleLiterals builds the exact-match lane from the live module
+// routes: literal patterns only (a wildcard pattern rides the muxes).
+// Method-scoped patterns key "METHOD /path"; methodless ones key
+// "ANY /path". Same-path re-registration lands the same handler the
+// capsules registered; a nil map is a legal empty lane.
+func moduleLiterals(routes []core.ModuleRoute) map[string]http.HandlerFunc {
+	out := map[string]http.HandlerFunc{}
+	for _, rt := range routes {
+		if strings.Contains(rt.Pattern, "{") {
+			continue
+		}
+		p := strings.TrimSpace(rt.Pattern)
+		if p == "" {
+			continue
+		}
+		if i := strings.IndexByte(p, ' '); i > 0 {
+			out[p[:i]+" "+p[i+1:]] = rt.Handler
+			continue
+		}
+		out["ANY "+p] = rt.Handler
+	}
+	return out
+}
 
 // registerRoutes mounts the base endpoint set onto the shared mux. The
 // patterns are exactly the ones the pre-split NewServer registered for

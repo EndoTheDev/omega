@@ -82,7 +82,7 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 	// refuses mutating requests with a foreign Host/Origin. Wrapped at
 	// the mux top so the fixed routes AND the module capsule routes
 	// (PATCH /tasks, DELETE /boards, ...) sit behind the same law.
-	s.httpSrv = &http.Server{Handler: &hostGuard{next: mux}}
+	s.httpSrv = &http.Server{Handler: &hostGuard{next: s.Server.Handler()}}
 	return s
 }
 
