@@ -77,6 +77,12 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err != nil {
 		return fmt.Errorf("notifications store: %w", err)
 	}
+	// A same-instance re-mount (the double-mount removal proofs) opens
+	// a second store: the prior handle is dead weight - close it, or
+	// the abandoned handle keeps the database file locked on windows.
+	if p.store != nil {
+		_ = p.store.Close()
+	}
 	p.store = s
 	// Capsule law (arc 4b, t_9339ad05): the module ships its view-model
 	// with its store. The seam the emitters see is the capsule-backed
@@ -148,6 +154,20 @@ func (p *Plugin) handleCommand(c context.Context, args string) (core.CommandResu
 	}
 	sb.WriteString("\n* unread\n")
 	return core.CommandResult{Text: sb.String()}, nil
+}
+
+// Dismount releases the mounted store (the open sqlite handle):
+// beyond-Context state the journal cannot see. A handle left open
+// blocks the removal of the data directory on windows, so the host
+// shutdown and every test mount dismount instead of abandoning it.
+// Nil-safe: never mounted (or already dismounted) closes nothing.
+func (p *Plugin) Dismount(ctx *core.Context) error {
+	if p.store == nil {
+		return nil
+	}
+	err := p.store.Close()
+	p.store = nil
+	return err
 }
 
 // Toggleable marks this capsule as a module capsule (v0.12 E1, the

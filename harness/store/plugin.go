@@ -14,7 +14,9 @@ import (
 // SQLite database from config and mounts it through the ExtensionAPI
 // exclusively (v0.12 phase F) - the StoreProvider seam, the
 // sessions.search tool and the session commands.
-type Plugin struct{}
+type Plugin struct {
+	store *Store // nil until MountWithAPI; Dismount releases it
+}
 
 // Compile-time assertion that *Plugin implements agent.Plugin.
 var _ agent.Plugin = (*Plugin)(nil)
@@ -32,6 +34,20 @@ func (p *Plugin) ConfigKey() string { return "store" }
 
 func (p *Plugin) Provides() []string { return []string{"store", "tools"} }
 func (p *Plugin) Requires() []string { return nil }
+
+// Dismount releases the mounted store (the open sqlite handle):
+// beyond-Context state the journal cannot see. A handle left open
+// blocks the removal of the data directory on windows, so the host
+// shutdown and every test mount dismount instead of abandoning it.
+// Nil-safe: never mounted (or already dismounted) closes nothing.
+func (p *Plugin) Dismount(ctx *core.Context) error {
+	if p.store == nil {
+		return nil
+	}
+	err := p.store.Close()
+	p.store = nil
+	return err
+}
 
 // MountWithAPI implements agent.APIPlugin. Opens the store from
 // config, registers the store seam, the sessions.search tool provider
@@ -63,6 +79,13 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err != nil {
 		return err
 	}
+	// A same-instance re-mount (the double-mount removal proofs) opens
+	// a second store: the prior handle is dead weight - close it, or
+	// the abandoned handle keeps the database file locked on windows.
+	if p.store != nil {
+		_ = p.store.Close()
+	}
+	p.store = s
 	search := &searchToolProvider{store: s}
 	// The hygiene pass's knobs ride the `sessions:` config section
 	// (card t_329b9312), routed by the host's config.go section table.
