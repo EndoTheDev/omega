@@ -68,7 +68,7 @@ func (p *SearchProvider) Tools() map[string]core.Tool {
 			Run: p.RunGrep,
 		},
 		"glob": {
-			Description: "List paths matching a name pattern under a directory. Supports * (never crosses a directory boundary), ** (crosses), and ? . Returns matching paths, newest-tree order.",
+			Description: "List paths matching a name pattern under a directory. The pattern matches the path relative to the root; * stays within one directory level, ** crosses levels, ? matches one character.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
