@@ -22,24 +22,26 @@ func TestCwd(t *testing.T) {
 	}
 }
 
-// TestOmegaHomeEnvVar verifies the OMEGA_HOME env var branch.
+// TestOmegaHomeEnvVar verifies the OMEGA_HOME env var branch. The home
+// carries canon separators (card t_630e595d).
 func TestOmegaHomeEnvVar(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("OMEGA_HOME", dir)
-	if got := omegaHome(); got != dir {
-		t.Errorf("omegaHome() = %q, want %q", got, dir)
+	if got := omegaHome(); got != filepath.ToSlash(dir) {
+		t.Errorf("omegaHome() = %q, want %q", got, filepath.ToSlash(dir))
 	}
 }
 
 // TestOmegaHomeBinaryDir verifies the os.Executable() branch when
-// OMEGA_HOME is unset.
+// OMEGA_HOME is unset. The home carries canon separators (card
+// t_630e595d).
 func TestOmegaHomeBinaryDir(t *testing.T) {
 	t.Setenv("OMEGA_HOME", "")
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatalf("os.Executable: %v", err)
 	}
-	want := filepath.Dir(exe)
+	want := filepath.ToSlash(filepath.Dir(exe))
 	if got := omegaHome(); got != want {
 		t.Errorf("omegaHome() = %q, want %q", got, want)
 	}
@@ -228,7 +230,9 @@ func TestLoggingFileNeverCwd(t *testing.T) {
 	if err := resolveHomePaths(&cfg); err != nil {
 		t.Fatalf("resolveHomePaths: %v", err)
 	}
-	want := filepath.Join(home, "omega.log")
+	// want: canon spelling (the resolveHomePaths boundary normalizes
+	// the separators it constructs - card t_630e595d).
+	want := filepath.ToSlash(filepath.Join(home, "omega.log"))
 	if cfg.Logging.File != want {
 		t.Errorf("resolved Logging.File = %q, want %q", cfg.Logging.File, want)
 	}

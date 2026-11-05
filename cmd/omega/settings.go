@@ -320,9 +320,12 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			err = setInt(&cfg.Server.RunTimeout, key, raw, 1, math.MaxInt32)
 		case "server.default_workspace":
 			// empty clears (the law's cwd fallback stands); anything
-			// else must be an absolute, existing directory - the same
-			// shape a session workspace pin validates, validated HERE
-			// so a typo never silently roots nothing
+			// else must be absolute and an existing directory - the
+			// same shape a session workspace pin validates, validated
+			// HERE so a typo never silently roots nothing. A "/"- or
+			// "\"-rooted spelling counts as absolute: it is volume
+			// rooted in the operator's eyes even where filepath.IsAbs
+			// disagrees (windows drive-relative roots).
 			v, verr := asTrimmedString(raw)
 			if verr != nil {
 				err = fmt.Errorf("%s: %w", key, verr)
@@ -332,13 +335,21 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 				cfg.Server.DefaultWorkspace = ""
 				break
 			}
-			if !filepath.IsAbs(v) {
+			if !filepath.IsAbs(v) && !strings.HasPrefix(v, "/") && !strings.HasPrefix(v, `\`) {
 				err = fmt.Errorf("%s: must be an absolute path, got %q", key, v)
 				break
 			}
 			abs, aerr := filepath.EvalSymlinks(filepath.Clean(v))
 			if aerr != nil {
-				err = fmt.Errorf("%s: %w", key, aerr)
+				// One not-exist message on every OS: the windows stat
+				// answers "The system cannot find the file specified."
+				// where posix answers ENOENT's words - the missing
+				// directory is the same fact, one canon sentence.
+				if os.IsNotExist(aerr) {
+					err = fmt.Errorf("%s: no such file or directory: %s", key, v)
+				} else {
+					err = fmt.Errorf("%s: %w", key, aerr)
+				}
 				break
 			}
 			info, serr2 := os.Stat(abs)
@@ -350,7 +361,7 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 				err = fmt.Errorf("%s: not a directory: %s", key, abs)
 				break
 			}
-			cfg.Server.DefaultWorkspace = abs
+			cfg.Server.DefaultWorkspace = canonPath(abs)
 		case "store.db_path", "system_prompt", "theme",
 			"skills.dir", "memory.file", "memory.user_file", "logging.file":
 			err = setStringField(cfg, key, raw)

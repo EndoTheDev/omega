@@ -20,27 +20,30 @@ var exampleFiles embed.FS
 // (/opt/homebrew/bin) falls back to exe-dir home - OMEGA_HOME overrides.
 func homeForExe(envHome, exePath, userHome string) string {
 	if envHome != "" {
-		return envHome
+		return canonPath(envHome)
 	}
 	if exePath == "" {
-		return filepath.Join(userHome, ".omega")
+		return canonPath(filepath.Join(userHome, ".omega"))
 	}
 	dir := filepath.Dir(exePath)
 	if isPathBinInstall(dir, userHome) {
-		return filepath.Join(userHome, ".omega")
+		return canonPath(filepath.Join(userHome, ".omega"))
 	}
-	return dir
+	return canonPath(dir)
 }
 
 // isPathBinInstall reports whether dir is a known PATH-style bin
 // directory where a self-contained home is impossible. A repo's bin/
 // build output (e.g. ~/dev/omega/bin) is deliberately NOT in this list -
-// repo builds keep config, db and examples beside the binary.
+// repo builds keep config, db and examples beside the binary. Both
+// sides compare on canon spelling: the callers' fakes and the real
+// exe path carry different separators.
 func isPathBinInstall(dir, userHome string) bool {
-	return dir == filepath.Join(userHome, "go", "bin") ||
-		dir == filepath.Join(userHome, ".local", "bin") ||
-		dir == filepath.Join(userHome, "bin") ||
-		dir == "/usr/local/bin"
+	dir = canonPath(dir)
+	return dir == canonPath(filepath.Join(userHome, "go", "bin")) ||
+		dir == canonPath(filepath.Join(userHome, ".local", "bin")) ||
+		dir == canonPath(filepath.Join(userHome, "bin")) ||
+		dir == canonPath("/usr/local/bin")
 }
 
 // bootstrapHome makes a fresh install self-documenting: writes the

@@ -173,7 +173,9 @@ func TestFoldOmegaJSONSiblingAndHomeSearch(t *testing.T) {
 	if len(cfg.Disabled.Modules) != 2 || cfg.Disabled.Modules[0] != "cron" || cfg.Disabled.Modules[1] != "kanban" {
 		t.Fatalf("wrong folded list, want [cron kanban]: %+v", cfg.Disabled.Modules)
 	}
-	if !strings.Contains(warning, filepath.Join(home, "config", "config.yaml")) {
+	// The warning names the fold target on canon spelling (card
+	// t_630e595d): the boundary normalizes the separators it constructs.
+	if !strings.Contains(warning, filepath.ToSlash(filepath.Join(home, "config", "config.yaml"))) {
 		t.Fatalf("warning must name the fold target, got: %q", warning)
 	}
 	// An empty sidecar is dead weight: deleted, nothing folded.
