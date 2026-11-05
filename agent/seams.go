@@ -207,6 +207,11 @@ type SessionContextStore interface {
 	// name the picker wrote; every send resolves through it). Empty
 	// clears the pin - the channel's default model serves again.
 	SetSessionModel(ctx context.Context, sessionID, model string) error
+	// SetSessionProvider pins the provider INSTANCE name the session
+	// remembers (card t_7dcd4280; every send resolves the name against
+	// the live config and fails the run loudly on an unknown one).
+	// Empty clears the pin - the default provider serves again.
+	SetSessionProvider(ctx context.Context, sessionID, provider string) error
 	// SetSessionWorkspace sets the session's working folder (absolute,
 	// existing directory - validated at the surface). Empty clears it:
 	// relative file operations root at the process working directory.
@@ -258,6 +263,20 @@ type Provider interface {
 	WithThinkingLevel(level string) Provider
 	ListModels() ([]string, error)
 	ModelInfo() (core.ModelInfo, error)
+}
+
+// ProviderInstances is the optional upgrade for provider seams that
+// carry NAMED instances (config.yaml providers:, card t_7dcd4280).
+// The shell resolves a chat run's pinned instance per run; an unknown
+// name (the instance was removed from the config) fails the run
+// loudly - never a silent fallback to the default. The Provider
+// interface stays name-only - a provider without configured instances
+// is a full member, the upgrade is probed at runtime like
+// ModelCapabilitiesProvider.
+type ProviderInstances interface {
+	// Instance returns the provider serving the named instance and
+	// whether it exists. Must not mutate the receiver.
+	Instance(name string) (Provider, bool)
 }
 
 // ModelCapabilitiesProvider is an optional interface upgrade for

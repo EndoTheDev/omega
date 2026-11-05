@@ -27,6 +27,7 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 		"provider.title_model":           true,
 		"provider.host":                  true,
 		"provider.api_key":               true,
+		"provider.instances":             true,
 		"server.port":                    true,
 		"server.bind":                    true,
 		"server.run_timeout":             true,
@@ -443,5 +444,166 @@ func TestOmegaSettingsImplementsSeam(t *testing.T) {
 	// Save through the seam shape too
 	if _, err := s.Save(map[string]any{"compaction.keep_last": float64(4)}); err != nil {
 		t.Fatalf("save: %v", err)
+	}
+}
+
+// card t_7dcd4280: the provider.instances knob - apply law.
+func TestApplyProviderInstancesKnob(t *testing.T) {
+	inst := func(name, typ, model string) map[string]any {
+		return map[string]any{"name": name, "type": typ, "model_name": model, "host": "", "api_key": ""}
+	}
+	// add two instances of one type: the card's headline
+	cfg := DefaultConfig()
+	err := applySettingValues(&cfg, map[string]any{
+		"provider.instances": []any{inst("backup", "openai", "gpt-4o"), inst("second", "openai", "gpt-4o")},
+	})
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if len(cfg.Providers) != 2 || cfg.Providers["second"].APIKey != "" {
+		t.Fatalf("instances not applied: %v", cfg.Providers)
+	}
+	// save-side validation: a bad type lands in the map and cfg.Validate()
+	// (run by saveSettings after apply) refuses it
+	cfg = DefaultConfig()
+	cfg.Provider.ModelName = "m"
+	if err := applySettingValues(&cfg, map[string]any{"provider.instances": []any{inst("bad", "azure", "m")}}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "not recognized") {
+		t.Fatal("expected Validate to refuse the unknown type, got", err)
+	}
+
+	// masked round trip: "****" keeps the EXISTING secret
+	cfg = DefaultConfig()
+	if err := applySettingValues(&cfg, map[string]any{
+		"provider.instances": []any{inst("backup", "openai", "gpt-4o")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p := cfg.Providers["backup"]
+	p.APIKey = "sk-real"
+	cfg.Providers["backup"] = p
+	// duplicate names fail before anything else
+	err = applySettingValues(&cfg, map[string]any{
+		"provider.instances": []any{inst("backup", "openai", "gpt-4o"), inst("backup", "openai", "gpt-4o")},
+	})
+	if err == nil {
+		t.Fatal("expected duplicated name in the list to fail")
+	}
+	// masked round trip: "****" keeps the EXISTING secret
+	cfg = DefaultConfig()
+	if err := applySettingValues(&cfg, map[string]any{
+		"provider.instances": []any{func() map[string]any {
+			m := inst("backup", "openai", "gpt-4o")
+			m["api_key"] = maskedSecret
+			return m
+		}()},
+	}); err == nil || !strings.Contains(err.Error(), "masked") {
+		t.Fatal("expected masked key on a NEW instance to refuse, got", err)
+	}
+	err = applySettingValues(&cfg, map[string]any{
+		"provider.instances": []any{func() map[string]any {
+			m := inst("backup", "openai", "gpt-4o")
+			m["api_key"] = maskedSecret
+			return m
+		}()},
+	})
+	if err == nil || !strings.Contains(err.Error(), "masked") {
+		t.Fatal("expected masked key with no stored secret to refuse, got", err)
+	}
+	// with a stored secret, "****" keeps it
+	if err := applySettingValues(&cfg, map[string]any{
+		"provider.instances": []any{inst("backup", "openai", "gpt-4o")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p = cfg.Providers["backup"]
+	p.APIKey = "sk-kept"
+	cfg.Providers["backup"] = p
+	if err := applySettingValues(&cfg, map[string]any{
+		"provider.instances": []any{func() map[string]any {
+			m := inst("backup", "openai", "gpt-4o")
+			m["api_key"] = maskedSecret
+			return m
+		}()},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Providers["backup"].APIKey != "sk-kept" {
+		t.Fatalf("masked round trip wiped the secret: %q", cfg.Providers["backup"].APIKey)
+	}
+
+	// removal: an emptied list clears the map
+	if err := applySettingValues(&cfg, map[string]any{"provider.instances": []any{}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Providers) != 0 {
+		t.Fatalf("empty list did not clear: %v", cfg.Providers)
+	}
+
+	// duplicate names and wrong shapes are loud
+	cfg = DefaultConfig()
+	err = applySettingValues(&cfg, map[string]any{
+		"provider.instances": []any{inst("dup", "openai", "m"), inst("dup", "openai", "m")},
+	})
+	if err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatal("expected duplicate-name refusal, got", err)
+	}
+	err = applySettingValues(&cfg, map[string]any{"provider.instances": "no list"})
+	if err == nil || !strings.Contains(err.Error(), "expected a list") {
+		t.Fatal("expected non-list refusal, got", err)
+	}
+	err = applySettingValues(&cfg, map[string]any{"provider.instances": []any{"row"}})
+	if err == nil || !strings.Contains(err.Error(), "expected an object") {
+		t.Fatal("expected non-object entry refusal, got", err)
+	}
+	err = applySettingValues(&cfg, map[string]any{"provider.instances": []any{inst("", "openai", "m")}})
+	if err == nil || !strings.Contains(err.Error(), "name is required") {
+		t.Fatal("expected empty-name refusal, got", err)
+	}
+}
+
+// TestSchemaProviderInstancesKnob: the schema sorts the names, types
+// ride lowercase and the keys mask.
+func TestSchemaProviderInstancesKnob(t *testing.T) {
+	path := writeTestConfig(t, testConfigYAML+`
+  host: http://localhost:11434
+providers:
+  zeta:
+    type: anthropic
+    model_name: claude-x
+    api_key: sk-z
+  alpha:
+    type: openai
+    model_name: gpt-4o
+`)
+	payload, err := settingsSchema(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var knob *core.SettingsKnob
+	for _, g := range payload.Groups {
+		for i, k := range g.Knobs {
+			if k.Key == "provider.instances" {
+				knob = &g.Knobs[i]
+			}
+		}
+	}
+	if knob == nil {
+		t.Fatal("no provider.instances knob in schema")
+	}
+	list, ok := knob.Value.([]map[string]any)
+	if !ok || len(list) != 2 {
+		t.Fatalf("instances knob value: %v", knob.Value)
+	}
+	if list[0]["name"] != "alpha" || list[1]["name"] != "zeta" {
+		t.Fatalf("names not sorted: %v", list)
+	}
+	if list[1]["api_key"] != maskedSecret {
+		t.Fatalf("instance key not masked: %v", list[1])
+	}
+	if list[0]["api_key"] != "" {
+		t.Fatalf("missing key must stay empty, got %v", list[0])
 	}
 }

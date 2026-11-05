@@ -13,8 +13,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	agent TEXT NOT NULL DEFAULT 'default',
 	last_run TEXT NOT NULL DEFAULT '',
 	model TEXT NOT NULL DEFAULT '',
+	provider TEXT NOT NULL DEFAULT '',
 	workspace TEXT NOT NULL DEFAULT '',
 	summary TEXT NOT NULL DEFAULT ''
 );
@@ -232,6 +233,7 @@ END;
 		`ALTER TABLE sessions ADD COLUMN agent TEXT NOT NULL DEFAULT 'default'`,
 		`ALTER TABLE sessions ADD COLUMN last_run TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN provider TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN workspace TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN summary TEXT NOT NULL DEFAULT ''`,
 	} {
@@ -331,7 +333,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) 
 	var lastRun string
 	if err := scanner.Scan(&sess.ID, &parent, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt,
 		&sess.PromptTokens, &sess.CompletionTokens, &pinned, &archived,
-		&sess.TitleState, &sess.LastReadAt, &sess.Agent, &lastRun, &sess.Model, &sess.Workspace,
+		&sess.TitleState, &sess.LastReadAt, &sess.Agent, &lastRun, &sess.Model, &sess.ProviderName, &sess.Workspace,
 		&sess.Summary); err != nil {
 		return core.Session{}, err
 	}
@@ -356,7 +358,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) 
 }
 
 // sessionColumns is the projection shared by GetSession and ListSessions.
-const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, agent, last_run, model, workspace, summary"
+const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, agent, last_run, model, provider, workspace, summary"
 
 // SetSessionLastRun writes the last-run stats block (JSON) on the
 // session's row, or clears it when stats is nil. It is a telemetry
@@ -381,6 +383,16 @@ func (s *Store) SetSessionLastRun(ctx context.Context, sessionID string, stats *
 func (s *Store) SetSessionModel(ctx context.Context, sessionID, model string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET model = ? WHERE id = ?`, model, sessionID)
+	return err
+}
+
+// SetSessionProvider pins the session's provider INSTANCE name (the
+// SessionContextStore seam, card t_7dcd4280). Empty clears the pin -
+// the default provider: section serves the session again. A picker
+// concern, not activity - updated_at is untouched.
+func (s *Store) SetSessionProvider(ctx context.Context, sessionID, provider string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET provider = ? WHERE id = ?`, provider, sessionID)
 	return err
 }
 
