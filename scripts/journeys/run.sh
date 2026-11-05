@@ -76,17 +76,68 @@ set -u
 # 2026-10-28, fixed the same day).
 JOURNEY_LOCK=/tmp/omega-journeys.lock
 JOURNEY_LOCK_WAIT="${JOURNEY_LOCK_WAIT:-0}"
+journey_lock_refuse() { # $1: holder pid text; callers pass 'cat-or-?'
+  printf 'journeys: another journey suite holds the run lock (pid %s) - refusing to interleave\n' "$1" >&2
+  printf '  queue behind it instead: JOURNEY_LOCK_WAIT=<secs> run.sh ...\n' >&2
+  exit 3
+}
 if command -v flock >/dev/null 2>&1; then
   exec 9>"$JOURNEY_LOCK" || { echo "journeys: cannot open $JOURNEY_LOCK" >&2; exit 2; }
   if ! flock -w "$JOURNEY_LOCK_WAIT" 9; then
-    holder="$(cat "${JOURNEY_LOCK}.pid" 2>/dev/null || echo '?')"
-    printf 'journeys: another journey suite holds the run lock (pid %s) - refusing to interleave\n' "$holder" >&2
-    printf '  queue behind it instead: JOURNEY_LOCK_WAIT=<secs> run.sh ...\n' >&2
-    exit 3
+    journey_lock_refuse "$(cat "${JOURNEY_LOCK}.pid" 2>/dev/null || echo '?')"
   fi
   printf '%s\n' "$$" > "${JOURNEY_LOCK}.pid"
+  journey_lock_release() { :; }
 else
-  echo "journeys: flock(1) not found - running without the suite run lock" >&2
+  # No flock(1) (git-bash/MSYS on winbtw): same lock as an atomic mkdir dir
+  # next to the flock file, pid file inside. mkdir(2) is atomic system-wide;
+  # a dir whose owner pid is dead is stale and gets reaped - the SIGKILL
+  # story a kernel flock gets for free. Release removes the dir on every
+  # trappable exit (traps set further down); no trappable exit leaves a
+  # dir the NEXT suite's staleness check reaps. /tmp is shared across
+  # every MSYS shell on the host, same as the flock file. fd 9 does not
+  # exist in this mode, so the suite-start sweep-chromes call stands down
+  # like any standalone sweep (its chrome scan is a no-op on MSYS anyway).
+  JOURNEY_LOCK_DIR="$JOURNEY_LOCK.d"
+  journey_lock_try() {
+    if mkdir "$JOURNEY_LOCK_DIR" 2>/dev/null; then
+      printf '%s\n' "$$" > "$JOURNEY_LOCK_DIR/pid"
+      JOURNEY_LOCK_MKDIR=1
+      return 0
+    fi
+    holder="$(cat "$JOURNEY_LOCK_DIR/pid" 2>/dev/null || echo '?')"
+    case "$holder" in
+      [0-9]*)
+        if ! kill -0 "$holder" 2>/dev/null; then
+          rm -rf "$JOURNEY_LOCK_DIR" 2>/dev/null
+          if mkdir "$JOURNEY_LOCK_DIR" 2>/dev/null; then
+            printf '%s\n' "$$" > "$JOURNEY_LOCK_DIR/pid"
+            JOURNEY_LOCK_MKDIR=1
+            return 0
+          fi
+        fi ;;
+    esac
+    JOURNEY_LOCK_LAST_HOLDER="$holder"
+    return 1
+  }
+  waited=0
+  if ! journey_lock_try; then
+    if [ "$JOURNEY_LOCK_WAIT" -gt 0 ]; then
+      while [ "$waited" -lt "$JOURNEY_LOCK_WAIT" ]; do
+        sleep 1
+        waited=$((waited + 1))
+        journey_lock_try && break
+      done
+    fi
+    if [ -z "${JOURNEY_LOCK_MKDIR:-}" ]; then
+      journey_lock_refuse "${JOURNEY_LOCK_LAST_HOLDER:-?}"
+    fi
+  fi
+  journey_lock_release() {
+    [ -n "${JOURNEY_LOCK_MKDIR:-}" ] || return 0
+    rm -rf "$JOURNEY_LOCK_DIR" 2>/dev/null
+    return 0
+  }
 fi
 
 JROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -220,7 +271,7 @@ stop_chrome() {
   CHROME_PID=""
 }
 
-trap 'stop_chrome' EXIT
+trap 'journey_lock_release; stop_chrome' EXIT
 
 # --- lane health -------------------------------------------------------------
 if ! curl -s "$JOURNEY_BASE_URL/health" 2>/dev/null | grep -q '"ok"'; then
