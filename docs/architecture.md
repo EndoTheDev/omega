@@ -46,7 +46,7 @@ harness/          In-process module packages (21 packages: 20 plugins +
 api/static/  Built webui SPA (tracked, embedded via go:embed)
 webui        webui - Nuxt 4 SPA (see docs/webui.md); built output embedded into the binary
 docs/             User documentation (cli.md, api.md, webui.md,
-                  configuration.md, architecture.md, troubleshooting.md, roadmap.md)
+                  configuration.md, architecture.md, troubleshooting.md)
 deploy/           Install artifacts (omega.service systemd unit)
 .agents/          Commit conventions (COMMIT.md)
 build.sh          Build script (Linux/macOS): vet + test + build

@@ -8,15 +8,15 @@ and CI is the only place this code runs.
 
 <!-- What this PR changes, in a sentence or three. -->
 
-## Why (roadmap fit)
+## Why (direction fit)
 
-<!-- Link the issue or the roadmap item this serves. Out-of-scope PRs
+<!-- Link the issue this serves. Out-of-scope PRs
      are closed even when the code is perfect - direction is decided
      before review. -->
 
 ## Checklist (the gate)
 
-- [ ] Fits the roadmap or an open issue (direction before correctness)
+- [ ] Fits an open issue (direction before correctness)
 - [ ] Gates pass in CI: build, vet, test, -race - plus an SPA re-sync
       via webui/scripts/build.sh if webui changed
 - [ ] I understand review is read-only: my code runs only on GitHub CI runners
