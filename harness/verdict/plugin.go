@@ -1,8 +1,10 @@
 package verdict
 
 import (
-	"github.com/EndoTheDev/omega/core"
+	"net/http"
+
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin mounts the verdicts seam and its surfaces: the
@@ -14,7 +16,8 @@ import (
 // (v0.12 phase C2; the classic Mount body is retired to the fail-loud
 // stub below).
 type Plugin struct {
-	hub *Hub
+	hub    *Hub
+	routes *Routes
 }
 
 var _ agent.Plugin = (*Plugin)(nil)
@@ -47,12 +50,13 @@ func (p *Plugin) Requires() []string { return []string{"store", "logger"} }
 //
 // Capsule posture (arc 6, card t_78935c07): this registration is the
 // module's whole surface - the seam, the blocking verdict tool, the
-// /verdict command, and the Verdict Cards prompt section all ship from
-// here, and the module ships nothing else. No canvas panel and no
-// module-qualified actions exist (the card renders in the chat stream
-// off the tool call; nothing rendered a verdict panel before the arc).
-// The /verdicts REST routes live in http_channel behind the
-// verdicts seam's nil guard - unmount answers 501 by construction.
+// /verdict command, the /verdicts REST routes (the answer surface
+// riding home with the capsule in the shrink wave 3 - card t_b75df168),
+// and the Verdict Cards prompt section all ship from here, and the
+// module ships nothing else. No canvas panel and no module-qualified
+// actions exist (the card renders in the chat stream off the tool
+// call). A disabled capsule's routes answer 404 at the module mux -
+// the chat bell empties with the feature.
 // The CLI loop's busy-time answer path (cmd/omega/loop.go via
 // ParseCardAnswer) reads the same seam and is nil-guarded: no mount,
 // no answering. Take verdict.NewPlugin() out of buildPlugins() and
@@ -60,8 +64,24 @@ func (p *Plugin) Requires() []string { return []string{"store", "logger"} }
 // (cmd/omega/removal_test.go, seventh).
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	p.hub = NewHub(seam[agent.StoreProvider](ctx, "store"), seam[agent.LoggerProvider](ctx, "logger"))
+	p.routes = newRoutes(p.hub)
 	if err := api.Offer("verdicts", p.hub); err != nil {
 		return err
+	}
+	// The answer surface is the capsule's REST face (shell-ring shrink
+	// wave 3, card t_b75df168): the bell's pending listing + the
+	// answering POST mount and die with the hub (registered here, no
+	// longer a shell seam-nil guard in agent/api).
+	for _, r := range []struct {
+		pattern string
+		h       func(http.ResponseWriter, *http.Request)
+	}{
+		{"/verdicts", p.routes.handleVerdicts},
+		{"/sessions/{id}/verdicts", p.routes.handleVerdicts},
+	} {
+		if err := api.RegisterRoute(r.pattern, r.h); err != nil {
+			return err
+		}
 	}
 	for name, tool := range (&verdictToolProvider{hub: p.hub}).Tools() {
 		if err := api.RegisterTool(name, tool); err != nil {

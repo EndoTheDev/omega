@@ -1,4 +1,18 @@
-package api
+// The verdict cards' REST face, riding the verdict capsule (shell-ring
+// shrink wave 3, card t_b75df168 - moved whole from
+// agent/api/server_verdicts.go, package unchanged, URLs unchanged).
+//
+// GET /verdicts (cross-session pending listing, the bell's count) +
+// /sessions/{id}/verdicts (one session's listing, and the answering
+// POST - card t_2ecf9c51's answer surface, the message guidance of
+// card t_63204dfd). The card itself renders live from the existing
+// tool_call / tool_result SSE frames (the verdict tool's args carry
+// title/options/timeout; the result carries the verdict JSON) - these
+// endpoints are the ANSWER path only. They hold the Hub the mount
+// offered under "verdicts", and a disabled capsule answers 404 at the
+// module mux - the routes mount and die with their capsule, so the
+// chat bell empties with the feature instead of polling a dead seam.
+package verdict
 
 import (
 	"encoding/json"
@@ -10,27 +24,19 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Verdict cards v1 (card t_2ecf9c51): the answer surface. The card
-// itself renders live from the existing tool_call / tool_result SSE
-// frames (the verdict tool's args carry title/options/timeout; the result
-// carries the verdict JSON) - these endpoints are the ANSWER path and
-// the pending listing the bell polls. The verdicts seam is optional:
-// a nil Server.Verdicts degrades to 501, mirroring the board and
-// notifications seams.
-
 // verdictCardWire is one pending card on the wire. ExpiresAt is a Unix
 // millisecond epoch so the client countdowns against the server clock
 // without a timezone dance.
 type verdictCardWire struct {
-	ID        string               `json:"id"`
-	SessionID string               `json:"session_id"`
-	Title     string               `json:"title"`
-	Body      string               `json:"body,omitempty"`
+	ID        string                `json:"id"`
+	SessionID string                `json:"session_id"`
+	Title     string                `json:"title"`
+	Body      string                `json:"body,omitempty"`
 	Options   []core.QuestionOption `json:"options,omitempty"`
-	Multi     bool                 `json:"multi,omitempty"`
-	AllowText bool                 `json:"allow_text,omitempty"`
-	TimeoutS  int                  `json:"timeout_s,omitempty"`
-	ExpiresAt int64                `json:"expires_at"`
+	Multi     bool                  `json:"multi,omitempty"`
+	AllowText bool                  `json:"allow_text,omitempty"`
+	TimeoutS  int                   `json:"timeout_s,omitempty"`
+	ExpiresAt int64                 `json:"expires_at"`
 }
 
 // verdictAnswerRequest is the POST /sessions/{id}/verdicts body. One of
@@ -55,7 +61,24 @@ type verdictAnswerRequest struct {
 // maxVerdictMessage caps the resolution message (card t_63204dfd).
 const maxVerdictMessage = 2000
 
-func (s *Server) handleVerdicts(w http.ResponseWriter, r *http.Request) {
+// Routes is the capsule's REST face over the hub (p.hub at mount).
+type Routes struct {
+	hub *Hub
+}
+
+// newRoutes builds the REST face on the mount's hub handle.
+func newRoutes(hub *Hub) *Routes { return &Routes{hub: hub} }
+
+// writeJSON serves the JSON responses.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// handleVerdicts serves GET /verdicts and GET+POST
+// /sessions/{id}/verdicts.
+func (rt *Routes) handleVerdicts(w http.ResponseWriter, r *http.Request) {
 	// All verdict endpoints live under /verdicts (cross-session listing)
 	// and /sessions/{id}/verdicts (per-session listing + answering).
 	id := r.PathValue("id")
@@ -64,19 +87,15 @@ func (s *Server) handleVerdicts(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if s.cards() == nil {
-		http.Error(w, "verdicts seam not mounted", http.StatusNotImplemented)
-		return
-	}
 	switch r.Method {
 	case http.MethodGet:
-		s.serveVerdictsList(w, r, id)
+		rt.serveVerdictsList(w, r, id)
 	case http.MethodPost:
 		if id == "" {
 			http.Error(w, "answering requires a session id", http.StatusBadRequest)
 			return
 		}
-		s.serveVerdictAnswer(w, r, id)
+		rt.serveVerdictAnswer(w, r, id)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -85,8 +104,8 @@ func (s *Server) handleVerdicts(w http.ResponseWriter, r *http.Request) {
 // serveVerdictsList answers GET /verdicts (all sessions) and GET
 // /sessions/{id}/verdicts (one session): the pending cards, oldest
 // first, that the bell counts and the webui re-renders after a reload.
-func (s *Server) serveVerdictsList(w http.ResponseWriter, r *http.Request, sessionID string) {
-	cards := s.cards().Pending(sessionID)
+func (rt *Routes) serveVerdictsList(w http.ResponseWriter, r *http.Request, sessionID string) {
+	cards := rt.hub.Pending(sessionID)
 	out := make([]verdictCardWire, 0, len(cards))
 	for _, c := range cards {
 		out = append(out, toVerdictWire(c))
@@ -100,7 +119,7 @@ func (s *Server) serveVerdictsList(w http.ResponseWriter, r *http.Request, sessi
 // both-frontend single-answer race). An unknown or expired card is 404
 // when there is no pending card to disambiguate against, 409 when the
 // card exists but is settled.
-func (s *Server) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, sessionID string) {
+func (rt *Routes) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, sessionID string) {
 	var req verdictAnswerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
@@ -123,7 +142,7 @@ func (s *Server) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, sess
 		Text:          text,
 		Skipped:       req.Skip,
 	}
-	answered, err := s.cards().Answer(sessionID, req.CardID, v)
+	answered, err := rt.hub.Answer(sessionID, req.CardID, v)
 	if err != nil {
 		// settled cards (answered/skipped/expired) race to 409 with the
 		// reason; unknown / no-pending-card is 404. The message names the
