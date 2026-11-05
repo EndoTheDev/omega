@@ -18,7 +18,7 @@ case "$title" in *omega*) ;; *) die "SPA title wrong: $title" ;; esac
 # (all eval assertions return bare numbers/booleans - agent-browser
 # quotes string results, so string-matching gets escaped into noise)
 sb=$(jsq 'document.querySelector(".sessions") ? 1 : 0' 2>&1)
-cp=$(jsq 'document.querySelector(".composer textarea") ? 1 : 0' 2>&1)
+cp=$(jsq 'document.querySelector(".composer .composer-input") ? 1 : 0' 2>&1)
 tabs=$(jsq 'document.querySelectorAll(".dock-tab, .view-tab").length' 2>&1)
 panes=$(jsq 'document.querySelectorAll("[data-pane-id]").length' 2>&1)
 assert_eq "$sb" "1" "sessions sidebar renders"
