@@ -97,6 +97,15 @@
             :knob="knob"
             :value="modelValue(knob)"
             @update="setServer(knob, $event)" />
+          <!-- providers (card t_7dcd4280: the named instances list -
+               one row per instance, name = the instance id, add and
+               remove included; the value is a structural list, saved
+               through the normal diff-only PUT) -->
+          <ProvidersField
+            v-else-if="knob.type === 'providers'"
+            :knob="knob"
+            :value="providersValue(knob)"
+            @update="setServer(knob, $event)" />
           <!-- textarea -->
           <textarea
             v-else-if="knob.type === 'textarea'"
@@ -180,6 +189,7 @@
     filterSettingGroups,
     saveSettings,
     settingsDiff,
+    valuesEqual,
     parseCollapsedKeys,
     serializeCollapsedKeys,
     themePickOptions,
@@ -189,11 +199,15 @@
     type SettingsPayload,
     type Appearance,
     type ColorMode,
-    type UserTheme,  } from "~/composables/omega";
+    type UserTheme,
+    type ProviderInstanceRow,
+  } from "~/composables/omega";
   // card t_70c28128: the typed model pickers ride the shared catalog
   // (one /models fetch per settings open) and the ModelField control
   import { refreshModelCatalog } from "~/composables/modelCatalog";
   import ModelField from "./ModelField.vue";
+  // card t_7dcd4280: the named provider instances list editor
+  import ProvidersField from "./ProvidersField.vue";
   import { useNarrow } from "~/composables/narrow";
   import type { ToolDisplay } from "~/composables/toolDisplay";
   // card t_502b8e81: the iconset wrapper - the group collapser chevron
@@ -483,6 +497,23 @@
     return v === "" ? "" : v;
   };
 
+  // providersValue (card t_7dcd4280): the list editor's rows - a
+  // structural value coerced to its shape (tolerant: an unexpected
+  // kind degrades to no rows, never a render crash).
+  const providersValue = (knob: SettingKnob): ProviderInstanceRow[] => {
+    const v = serverValue(knob);
+    if (!Array.isArray(v)) return [];
+    return v
+      .filter((r): r is ProviderInstanceRow => !!r && typeof r === "object")
+      .map((r) => ({
+        name: typeof r["name"] === "string" ? r["name"] : "",
+        type: typeof r["type"] === "string" ? r["type"] : "",
+        model_name: typeof r["model_name"] === "string" ? r["model_name"] : "",
+        host: typeof r["host"] === "string" ? r["host"] : "",
+        api_key: typeof r["api_key"] === "string" ? r["api_key"] : "",
+      }));
+  };
+
   function toggleValue(group: SettingGroup, knob: SettingKnob): boolean {
     if (isClient(group)) return clientValue(knob) === true;
     return serverValue(knob) === true;
@@ -530,7 +561,7 @@
   }
 
   const serverKnobDirty = (knob: SettingKnob): boolean =>
-    draft.value[knob.key] !== loaded.value[knob.key];
+    !valuesEqual(draft.value[knob.key], loaded.value[knob.key]);
 
   const dirtyCount = computed(
     () => Object.keys(settingsDiff(loaded.value, draft.value)).length,
