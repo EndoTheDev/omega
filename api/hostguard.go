@@ -43,16 +43,22 @@ func mutatingRequest(method string) bool {
 // ListenAndServe answers its first request.
 type hostGuard struct {
 	addr atomic.Value // string
-	next http.Handler
+	// public (map[string]bool) carries the operator-declared public
+	// identities (server.public_hosts) - a tunneled domain's Host
+	// never matches the bind, so the guard needs the declaration.
+	// Empty/nil = no public surface, nothing extra passes.
+	public atomic.Value // map[string]bool
+	next   http.Handler
 }
 
 func (g *hostGuard) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	bind, _ := g.addr.Load().(string)
 	allowed := allowedHosts(bind)
-	// Every request names the bind in Host - reads included: a
-	// rebinding GET carries no Origin to lean on, and /files/read
-	// answers bytes (the v0.15.0 audit p10, closed here).
-	if !hostAllowed(r.Host, allowed) {
+	pub, _ := g.public.Load().(map[string]bool)
+	// Every request names the bind (or a declared public host) in
+	// Host - reads included: a rebinding GET carries no Origin to
+	// lean on, and /files/read answers bytes (v0.15.0 audit p10).
+	if !hostAllowed(r.Host, allowed, pub) {
 		http.Error(w, "forbidden: request from a foreign host (Host guard)",
 			http.StatusForbidden)
 		return
@@ -101,18 +107,19 @@ func isLoopbackName(host string) bool {
 	return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
 }
 
-// hostAllowed checks the request's Host header against the derived set.
-// An empty set passes (wildcard bind - the Origin rule answers); a
-// request with no Host at all never does (HTTP/1.1 requires one, and a
-// missing Host is exactly what a raw-crafted rebinding probe looks like).
-func hostAllowed(host string, allowed map[string]bool) bool {
+// hostAllowed checks the request's Host header against the derived set
+// plus the operator-declared public hosts. An empty set passes (wildcard
+// bind - the Origin rule answers); a request with no Host at all never
+// does (HTTP/1.1 requires one, and a missing Host is exactly what a
+// raw-crafted rebinding probe looks like).
+func hostAllowed(host string, allowed map[string]bool, public map[string]bool) bool {
 	if allowed == nil {
 		return true
 	}
 	if host == "" {
 		return false
 	}
-	return allowed[host]
+	return allowed[host] || public[host]
 }
 
 // originAllowed checks the Origin header, when the client sent one:

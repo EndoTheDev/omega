@@ -86,6 +86,21 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 	return s
 }
 
+// SetPublicHosts hands the Host guard the operator-declared public
+// identities (server.public_hosts): a reverse proxy or tunnel forwards
+// the browser's domain as Host, which never matches the bind, so the
+// domain must be declared to pass. Mount-time call; the guard stores
+// the set atomically and refuses everything not on it.
+func (s *Server) SetPublicHosts(hosts []string) {
+	if g, ok := s.httpSrv.Handler.(*hostGuard); ok && len(hosts) > 0 {
+		set := make(map[string]bool, len(hosts))
+		for _, h := range hosts {
+			set[h] = true
+		}
+		g.public.Store(set)
+	}
+}
+
 // rewireSeams computes the capsule mux (the module vocab is the shell's)
 // and hands the seam re-read to the base under one name.
 func (s *Server) rewireSeams(ctx *core.Context) error {

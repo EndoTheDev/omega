@@ -43,10 +43,11 @@ func (sc *sharedCanvas) build(ctx *core.Context, emit func(core.Event)) (*agent.
 // HTTPChannel adapts the HTTP server to the core.Channel interface.
 // It creates one agent from the Context and reuses it for all requests.
 type HTTPChannel struct {
-	addr       string
-	runTimeout time.Duration // detached-run wall-clock cap from config
-	titleModel string        // title_model knob from config
-	srv        *Server
+	addr        string
+	runTimeout  time.Duration // detached-run wall-clock cap from config
+	titleModel  string        // title_model knob from config
+	publicHosts []string      // server.public_hosts: declared public identities
+	srv         *Server
 	// hub is the process-wide run registry (t_c6f13a82): one per
 	// plugin, shared by every bind's server. A second bind must not get
 	// a second hub - the action pipe's launchRun registers on the
@@ -163,6 +164,7 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	// /cron/jobs, /skills and /logs endpoints. All optional - the
 	// handlers degrade to empty lists / 404 when a module is absent.
 	c.srv.SetChannelKnobs(c.runTimeout, c.titleModel)
+	c.srv.SetPublicHosts(c.publicHosts)
 	c.srv.version = deps.Version
 	// The capsule pin goes live LAST, after every server field above
 	// is written: the Store publishes (release) a fully-wired server,

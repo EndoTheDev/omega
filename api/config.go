@@ -22,6 +22,13 @@ type Config struct {
 	// (provisional + final) route through it when set. Empty = the
 	// main model (today's behavior).
 	TitleModel string `yaml:"title_model"`
+	// PublicHosts (config key server.public_hosts) names the public
+	// identities this serve answers to - a domain fronted by a reverse
+	// proxy or tunnel (the tunnel forwards the browser's Host, which
+	// is never the bind address, so the Host guard would refuse it).
+	// Operator-declared opt-in, exact match, no wildcards: the guard
+	// keeps refusing every name not on this list.
+	PublicHosts []string `yaml:"public_hosts"`
 	// WebTools carries the web.search/web.fetch settings (v0.13 shell
 	// law 1: the former modules/web capsule dissolved into the
 	// channel). The host's ConfigSection derives both fields; an
