@@ -11,6 +11,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -143,6 +144,23 @@ func TestFileFieldValidation(t *testing.T) {
 	}
 	if _, err := ParseConfig([]byte("jobs:\n  - name: x\n    schedule: \"0 8 * * *\"\n    prompt: p\n    deliver: append-to-file\n    file: /absolute\n")); err == nil {
 		t.Error("absolute file path accepted")
+	}
+	// windows rooted-but-driveless shapes (no volume prefix, so IsAbs
+	// misses them): rooted means escape-shaped, rejected on windows.
+	// On posix /absolute/path is plain IsAbs; \rooted is a legal
+	// (if odd) file name and stays accepted.
+	if _, err := ParseConfig([]byte("jobs:\n  - name: x\n    schedule: \"0 8 * * *\"\n    prompt: p\n    deliver: append-to-file\n    file: /absolute/path\n")); err == nil {
+		t.Error("rooted file path /absolute/path accepted")
+	}
+	if _, err := ParseConfig([]byte("jobs:\n  - name: x\n    schedule: \"0 8 * * *\"\n    prompt: p\n    deliver: append-to-file\n    file: \\rooted\n")); err == nil {
+		if runtime.GOOS == "windows" {
+			t.Error("rooted file path \\rooted accepted")
+		}
+	} else if runtime.GOOS != "windows" {
+		t.Errorf("posix \\rooted file name rejected: %v", err)
+	}
+	if _, err := ParseConfig([]byte("jobs:\n  - name: x\n    schedule: \"0 8 * * *\"\n    prompt: p\n    deliver: append-to-file\n    file: ./data/out.txt\n")); err != nil {
+		t.Errorf("dot-relative file path rejected: %v", err)
 	}
 	cfg, err := ParseConfig([]byte("jobs:\n  - name: x\n    schedule: \"0 8 * * *\"\n    prompt: p\n    deliver: append-to-file\n    file: journal/report.md\n"))
 	if err != nil {
@@ -301,8 +319,8 @@ func (s *streamSpy) WithModel(m string) agent.Provider {
 	return &streamSpy{inner: s.inner.WithModel(m), log: s.log}
 }
 func (s *streamSpy) WithThinkingLevel(l string) agent.Provider { return s.inner.WithThinkingLevel(l) }
-func (s *streamSpy) ListModels() ([]string, error)            { return s.inner.ListModels() }
-func (s *streamSpy) ModelInfo() (core.ModelInfo, error)       { return s.inner.ModelInfo() }
+func (s *streamSpy) ListModels() ([]string, error)             { return s.inner.ListModels() }
+func (s *streamSpy) ModelInfo() (core.ModelInfo, error)        { return s.inner.ModelInfo() }
 
 func TestFireModelOverrideAndInherit(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
