@@ -95,14 +95,15 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	p.api = api
 	for _, b := range binds {
 		ch := &HTTPChannel{
-			addr:        fmt.Sprintf("%s:%d", b, port),
-			runTimeout:  time.Duration(cfg.RunTimeoutSeconds()) * time.Second,
-			titleModel:  cfg.TitleModel,
-			publicHosts: cfg.PublicHosts,
-			chat:        p.chat,
-			hub:         p.hub,
-			canvas:      p.canvas,
-			ext:         p.api,
+			addr:             fmt.Sprintf("%s:%d", b, port),
+			runTimeout:       time.Duration(cfg.RunTimeoutSeconds()) * time.Second,
+			titleModel:       cfg.TitleModel,
+			defaultWorkspace: cfg.DefaultWorkspace,
+			publicHosts:      cfg.PublicHosts,
+			chat:             p.chat,
+			hub:              p.hub,
+			canvas:           p.canvas,
+			ext:              p.api,
 		}
 		p.mounted = append(p.mounted, ch)
 		if err := api.RegisterChannel(ch); err != nil {
@@ -127,6 +128,18 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 
 // NewPlugin returns an HTTP channel Plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }
+
+// SetDefaultWorkspace is the settings hot-apply hook (card t_ccf74d88):
+// a live server.default_workspace save re-roots the tools' fallback
+// workdir on every mounted bind. The field write also covers a bind
+// that wires later (wire applies the channel's field at start).
+func (p *Plugin) SetDefaultWorkspace(ws string) {
+	for _, ch := range p.mounted {
+		if h, ok := ch.(*HTTPChannel); ok {
+			h.SetDefaultWorkspace(ws)
+		}
+	}
+}
 
 // Dismount removes the channels Mount appended, by identity (the E1
 // dismount proof). The shell never lands in the disable list -

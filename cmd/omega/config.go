@@ -235,11 +235,13 @@ type ServerConfig struct {
 	// never matches the bind, so the Host guard refuses them without
 	// this declaration). Exact names, no wildcards.
 	PublicHosts []string `yaml:"public_hosts"`
-	// DefaultWorkspace (config key default_workspace) is the Files
-	// tab's fallback root: when the focused session has no pinned
-	// workspace, the webui file surface roots here instead of the
-	// process working directory. Empty = unset - the cwd fallback
-	// stands (the resolution law lives in server_files.go).
+	// DefaultWorkspace (config key default_workspace) is the tools'
+	// fallback working directory (card t_ccf74d88): a session without a
+	// pinned workspace roots its tool runs (shell, files, processes)
+	// here instead of the process working directory, and the Files tab
+	// roots here when the focused session has no pin - both consumers
+	// share the one knob. Empty = unset - the cwd fallback
+	// stands (the tool-rooting law lives in agent/api's prepareRun).
 	DefaultWorkspace string `yaml:"default_workspace"`
 }
 
@@ -766,7 +768,7 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "provider":
 		return provider.Config{Type: c.Provider.Type, ModelName: c.Provider.ModelName, Host: c.Provider.Host, APIKey: c.Provider.APIKey}, true
 	case "http_channel":
-		return api.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, TitleModel: c.TitleModel, PublicHosts: c.Server.PublicHosts, WebTools: agentapi.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
+		return api.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, DefaultWorkspace: c.Server.DefaultWorkspace, TitleModel: c.TitleModel, PublicHosts: c.Server.PublicHosts, WebTools: agentapi.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
 	case "skills":
 		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.SkillNames), NudgeInterval: c.Skills.NudgeInterval, CuratorModel: c.Skills.CuratorModel}, true
 	case "memory":

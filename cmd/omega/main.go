@@ -560,10 +560,10 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 // via the in-process plugin system. The store and plugin context are
 // returned so the caller can close the store and start channels. The
 // mount registry rides along for the E2 module-toggle surface.
-func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.LoggerProvider, *agent.Context, *agent.Registry, func([]string), func(string), error) {
+func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.LoggerProvider, *agent.Context, *agent.Registry, func([]string), func(string), func(string), error) {
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("build plugins: %w", err)
+		return nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("build plugins: %w", err)
 	}
 	ctx := &agent.Context{
 		CWD:     cwd(),
@@ -578,7 +578,7 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 	// depending on one fails the boot naming the edge (Q3).
 	reg, err := agent.MountAllAPI(plugins, ctx, nil, cfg.Disabled.Modules)
 	if err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
+		return nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
 	}
 	// The registry-toggle adapter needs the one continuous plugin
 	// instance the mount created (agent soft-toggles live-swap its
@@ -588,12 +588,20 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 	// and the host keeps a nil hook (nm-purity scrub shape).
 	var setAgents func([]string)
 	var setFilesWorkspace func(string)
+	// setChatWorkspace is the HTTP channel plugin's default-workspace
+	// hot knob (card t_ccf74d88): the settings pane and the config
+	// watcher push a changed default_workspace onto the channel the
+	// same way the files capsule's knob travels.
+	var setChannelWorkspace func(string)
 	for _, p := range plugins {
 		if cp, ok := p.(*continuous.Plugin); ok {
 			setAgents = cp.SetDisabledAgents
 		}
 		if fp, ok := p.(*files.Plugin); ok {
 			setFilesWorkspace = fp.SetDefaultWorkspace
+		}
+		if hp, ok := p.(*api.Plugin); ok {
+			setChannelWorkspace = hp.SetDefaultWorkspace
 		}
 	}
 
@@ -609,14 +617,14 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 	if svc := ctx.Services().Resolve("store"); svc != nil {
 		st, ok := svc.(agent.StoreProvider)
 		if !ok {
-			return nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("seam \"store\": the offered service (%T) does not satisfy the store need (wrong shape) - fix the offering capsule", svc)
+			return nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("seam \"store\": the offered service (%T) does not satisfy the store need (wrong shape) - fix the offering capsule", svc)
 		}
 		st2 = st
 	}
 	if st2 == nil {
 		st2, err = openDefaultSupply(ctx, logger)
 		if err != nil {
-			return nil, nil, nil, nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, nil, nil, nil, err
 		}
 	}
 	wireCaptioner(cfg, ctx)
@@ -630,7 +638,7 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 		CWD:           cwd(),
 	})
 
-	return ag, st2, logger, ctx, reg, setAgents, setFilesWorkspace, nil
+	return ag, st2, logger, ctx, reg, setAgents, setFilesWorkspace, setChannelWorkspace, nil
 }
 
 // wireCaptioner builds the image captioner (vision_model knob) onto the
@@ -730,7 +738,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		return err
 	}
 	llm.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, logger, pctx, reg, setAgents, setFilesWorkspace, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, pctx, reg, setAgents, setFilesWorkspace, setChannelWorkspace, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}
@@ -795,7 +803,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		logger:     logger,
 	}
 	WatchConfig(configFile, func(newCfg Config) {
-		hotApply(newCfg, pctx, setFilesWorkspace)
+		hotApply(newCfg, pctx, setFilesWorkspace, setChannelWorkspace)
 		registries.Sync(newCfg.Disabled) // hand edits follow the toggle path
 	})
 	errCh := make(chan error, len(pctx.Channels))
@@ -803,7 +811,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		deps := core.ChannelDeps{
 			Ctx:        pctx,
 			Store:      store,
-			Settings:   &omegaSettings{path: configFile, pctx: pctx, setFilesWorkspace: setFilesWorkspace},
+			Settings:   &omegaSettings{path: configFile, pctx: pctx, setFilesWorkspace: setFilesWorkspace, setChannelWorkspace: setChannelWorkspace},
 			Modules:    mods,
 			Registries: registries,
 			Version:    omegaVersion,
@@ -933,7 +941,7 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 		applyModelEnvOverride(&cfg)
 	}
 	llm.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, logger, _, _, _, _, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, _, _, _, _, _, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}
