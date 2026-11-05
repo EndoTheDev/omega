@@ -1867,12 +1867,12 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 	out := make([]toolListing, 0, len(names))
 	for _, name := range names {
 		t := inventory[name]
+		if t.AliasOf != "" {
+			continue // compat shim, not inventory
+		}
 		row := toolListing{Name: name, Description: t.Description, Origin: t.Origin}
 		for _, a := range t.Actions {
 			row.Actions = append(row.Actions, toolActionListing{Name: a.Name, Description: a.Description})
-		}
-		if t.AliasOf != "" {
-			continue // compat shim, not inventory
 		}
 		out = append(out, row)
 	}
