@@ -88,10 +88,17 @@ describe("composer model+effort wrap group (t_641c2870)", () => {
     assert.doesNotMatch(groupRule[0], /min-width:\s*max-content/,
       "the group must not hard-pin to max-content - chips keep their shrink room");
     // the toolbar keeps its wrap: the GROUP crosses the boundary,
-    // the row still wraps
-    const toolbarRule = src.match(/\.toolbar\s*\{[^}]*\}/);
+    // the row still wraps. (Line-anchored: the base `.toolbar` rule -
+    // the compact mode override below it must not shadow the match.)
+    const toolbarRule = src.match(/^\.toolbar\s*\{[^}]*\}/m);
     assert.ok(toolbarRule, ".toolbar rule missing from main.css");
     assert.match(toolbarRule[0], /flex-wrap:\s*wrap/,
       ".toolbar must keep flex-wrap: wrap - the group wraps as a unit, the row still wraps");
+    // the compact mode override is the exception: ONE single line, the
+    // chips never wrap (card t_f9fd3820)
+    const compactRule = src.match(/\.composer\.mode-compact:not\(\.expanded\) \.toolbar\s*\{[^}]*\}/);
+    assert.ok(compactRule, "the compact mode toolbar rule missing from main.css");
+    assert.match(compactRule[0], /flex-wrap:\s*nowrap/,
+      "compact mode pins the toolbar to one line");
   });
 });
