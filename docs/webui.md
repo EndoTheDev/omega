@@ -399,16 +399,18 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   attach-strip with image thumbnails, paste + paperclip attach; the
   retry face is retired - the newest response's action row carries the
   msg-retry chip, card t_95d2bc34; `/` command palette + `@` mention
-  picker, see below; the DISPLAY MODES (card t_5752861e, reshape
-  t_f9fd3820 - the width ladder t_4a6431f8 was the wrong shape): the
-  settings' chat-group "composer display mode" select - compact / wide /
+  picker, see below; the DISPLAY MODES (card t_5752861e, v4
+  t_d14c2d14 - the three-mode set is retired, exactly two modes): the
+  settings' chat-group "composer display mode" select - compact /
   full - writes the shared signal (`composables/composerMode.ts`,
-  `omega.composer-mode` in localStorage). Wide is the pre-modes DEFAULT
-  (the unmodified `.composer`: full-width card, 12px inset, no class);
-  compact is the modifier `mode-compact`: ONE row (plus, input, chips,
-  send inline, nowrap) centered in the pane via auto margins with the
-  720px cap; full is the modifier `mode-full`: no cap, edge to edge, no
-  radius. The modes hold only while the composer is not expanded, and
+  `omega.composer-mode` in localStorage; a stored 'wide' migrates to
+  'full'). compact is the modifier `mode-compact`: the C5 'footer-send'
+  card - plus/input on top, chips left + send right on a bottom hairline
+  row, centered in the pane via auto margins with the 720px cap; full
+  is the modifier `mode-full`: the W6 'segmented' one-row bar (the old
+  'wide' renamed) - input | chips | send hairline segments across the
+  pane width with the card's 12px inset, no cap. The modes hold only
+  while the composer is not expanded, and
   mobile resets the cap (full pane). Pinned by the
   22-composer-modes journey and `webui/test/composermode.test.ts`,
   `ModelSelect` + the shared `BandSelect` effort chip (the dedicated
