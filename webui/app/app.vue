@@ -546,6 +546,8 @@
     findEdgePane,
     findComponentTab,
     isPinnedPane,
+    firstChatMainPaneId,
+    chatForegroundPlan,
     DOCK_API_KEY,
     DOCK_CHAT_OPEN_KEY,
     DOCK_TAB_TITLE_KEY,
@@ -1353,16 +1355,39 @@
   }
 
   // the pane the BOARD view hosts into (and chat opens fall back to): an
-  // actually chat-hosting pane first, else the first main pane (never the
+  // actually chat-hosting pane first - the FOCUSED one, else the first
+  // main pane that hosts a chat tab - else the first main pane (never the
   // pinned sidebars). The dock's ensureMainPane re-inserts a flexible pane
-  // when the user managed to remove every main pane.
+  // when the user managed to remove every main pane. card t_96844dcb
+  // (journey 98): the middle step matters - a chatless content pane (the
+  // browser singleton) sitting FIRST in the tree must not host the board
+  // route while a chat-hosting main pane exists.
   function resolveActivePaneId(): string {
     const tree = dock.tree.value;
     const focused = activeChatPaneId.value ?
       findPane(tree, activeChatPaneId.value) :
       null;
     if (focused && !isPinnedPane(focused) && focused.tabs.some((t) => t.component === "chat")) return focused.id;
+    const host = firstChatMainPaneId(tree);
+    if (host) return host;
     return dock.ensureMainPane();
+  }
+
+  // card t_96844dcb (journey 98): every /board activation goes through
+  // one door - mainView flips AND the host pane's foreground reclaims to
+  // chat. The board folds into the chat pane outlet, which DockPane
+  // renders only while the pane's ACTIVE tab is chat: a persisted content
+  // pane (the browser singleton left in the foreground by a previous
+  // boot) must not shadow the route, or Board.vue never mounts. The plan
+  // is pure (chatForegroundPlan); focus stays with the dock, the minted
+  // draft with openChatTab.
+  function resolveBoardRoute() {
+    mainView.value = "board";
+    const paneId = resolveActivePaneId();
+    const plan = chatForegroundPlan(dock.tree.value, paneId);
+    if (plan.mode === "focus") dock.focus(paneId, plan.index);
+    else if (plan.mode === "mint") openChatTab(null, paneId);
+    boardHostPane.value = paneId;
   }
 
   // openChatTab is THE tab-opener: the sidebar's row click (session id)
@@ -1426,10 +1451,10 @@
   // focused (and read), otherwise a new chat tab opens in the active
   // pane - the same flow a reload of /chat/<id> takes
   async function onPop() {
-    // /board re-enters the kanban view without touching chat focus
+    // /board re-enters the kanban view without touching chat focus;
+    // enterBoardRoute (t_96844dcb) reclaims the host pane's foreground
     if (/^\/board\/?$/.test(window.location.pathname)) {
-      mainView.value = "board";
-      boardHostPane.value = resolveActivePaneId();
+      resolveBoardRoute();
       return;
     }
     mainView.value = "chat";
@@ -2176,11 +2201,11 @@
     // focused in place, otherwise a tab opens into the active pane
     // (unknown/deleted ids and home route through the persisted chat
     // focus). Then the ChatTab mount restores + attaches per tab.
-    // /board boots into the kanban view (boardHostPane resolves on
-    // the first board overlay activation; boot keeps the default pane).
+    // /board boots into the kanban view through the same door as the
+    // popstate route (t_96844dcb: the foreground reclaims to chat - a
+    // persisted browser pane must not shadow the board on a fresh boot).
     if (/^\/board\/?$/.test(window.location.pathname)) {
-      mainView.value = "board";
-      boardHostPane.value = resolveActivePaneId();
+      resolveBoardRoute();
     }
     const initial = parseSessionPath(window.location.pathname);
     if (initial && dock.firstChatTab(initial)?.tab.sessionRef === initial) {
