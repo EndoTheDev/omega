@@ -2,15 +2,24 @@
   <header class="menubar">
     <span class="brand">Ωmega</span>
     <!-- card t_6215474b: the nav cluster - back / forward / palette
-         trigger, CENTERED in the topmost app bar (Endo's correction,
-         2026-11-02: this pane-toggle bar, NOT the frame rail). The dims
-         ride app.vue's nav history; the palette intent routes back up. -->
+         trigger. Seats INLINE after the brand (card t_3aed367e,
+         Endo's ruling 2026-11-06: the center wordmark vacated the
+         cluster's old absolute-center seat - the cluster's original
+         centering was card t_6215474b, the pane-toggle bar NOT the
+         frame rail). The dims ride app.vue's nav history; the palette
+         intent routes back up. -->
     <NavCluster
       :can-back="canBack"
       :can-forward="canForward"
       @back="$emit('back')"
       @forward="$emit('forward')"
       @open-palette="$emit('open-palette')" />
+    <!-- card t_3aed367e (Endo revision 2026-11-06): the PLAIN wordmark
+         seats dead center on the menubar's FULL width (absolute middle,
+         robust to any left/right width) - brand left, toggles far
+         right. No version here: the bottom status bar owns version +
+         uptime, no duplication. -->
+    <span class="menubar-wordmark">Omega</span>
     <span class="menubar-spacer" />
     <!-- card t_47b776ad: the desktop toggles are BACK. "Fixed" means
          identity + reopenability: the sidebars are pinned singleton panes
@@ -98,7 +107,8 @@
   // TAB (the panel lives in app.vue's outlet); the menubar hosts only
   // the live toast stack (the bell button + popover died with it).
   import NotificationToasts from "./NotificationToasts.vue";
-  // card t_6215474b: the back/forward/palette cluster centered in this bar
+  // card t_6215474b: the back/forward/palette cluster; card t_3aed367e:
+  // it seats inline after the brand - the wordmark owns the center
   import NavCluster from "../nav/NavCluster.vue";
 
   defineProps<{

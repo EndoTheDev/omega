@@ -3,7 +3,8 @@
 // suppressed, cap 100) at the boundary production uses: the reactive
 // shell createNavHistory + the pure push/back/forward math + the app
 // wiring assertions (app.vue's wrapper routes every activation through
-// one record path; the MenuBar cluster is centered with the ends dimmed
+// one record path; the MenuBar cluster seats inline after the brand
+// (card t_3aed367e: the wordmark owns the center) with the ends dimmed
 // via the disabled attribute).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -166,7 +167,7 @@ describe("nav cluster wiring", () => {
   const css = readFileSync(join(here, "../app/assets/css/main.css"), "utf8");
   const iconset = readFileSync(join(here, "../app/composables/icons.ts"), "utf8");
 
-  it("the cluster seats CENTERED in the menubar (the pane-toggle bar)", () => {
+  it("the cluster seats inline after the brand; the wordmark owns the center", () => {
     assert.match(menubar, /<NavCluster/);
     assert.match(menubar, /:can-back="canBack"/);
     assert.match(menubar, /@open-palette="\$emit\('open-palette'\)"/);
@@ -174,8 +175,18 @@ describe("nav cluster wiring", () => {
     // canBack undefined in the template and both arrows ship dead
     assert.match(menubar, /canBack: boolean/);
     assert.match(menubar, /canForward: boolean/);
-    assert.match(css, /\.nav-cluster\s*\{[^}]*left:\s*50%/);
-    assert.match(css, /\.nav-cluster\s*\{[^}]*translateX\(-50%\)/);
+    // card t_3aed367e: the cluster LEFT the menubar's absolute center -
+    // the wordmark's seat; the wordmark takes it (dead center on the
+    // menubar's full width) as the plain static text 'Omega'
+    assert.doesNotMatch(css, /\.nav-cluster\s*\{[^}]*left:\s*50%/);
+    assert.match(css, /\.menubar-wordmark\s*\{[^}]*left:\s*50%/);
+    assert.match(css, /\.menubar-wordmark\s*\{[^}]*translateX\(-50%\)/);
+    assert.match(css, /\.menubar-wordmark\s*\{[^}]*var\(--mono\)/);
+    assert.match(menubar, /<span class="menubar-wordmark">Omega<\/span>/);
+    // no version anywhere in the menubar - the status bar owns it
+    assert.match(menubar, /<span class="brand">Ωmega<\/span>/);
+    assert.doesNotMatch(menubar, /Omega v?\d+\.\d+/);
+    assert.doesNotMatch(menubar, /\/health/);
     // the ruling: disabled attribute dimming, never a click-swallow class
     assert.match(css, /\.nav-btn:disabled\s*\{[^}]*opacity/);
   });
