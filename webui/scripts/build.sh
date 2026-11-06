@@ -15,8 +15,13 @@
 # checkout.
 set -e
 cd "$(dirname "$0")/.."
-if [ ! -d node_modules ]; then
-	echo "==> npm ci (clean clone: node_modules missing)"
+# The empty-dir trap (winbtw, 2026-11-06, twice): the node_modules
+# DIRECTORY can exist-but-EMPTY and a dir-only check then skips install -
+# nuxt generate dies with ERR_MODULE_NOT_FOUND. Check a marker FILE npm ci
+# always leaves behind (node_modules/.package-lock.json) instead: a missing
+# marker means install, whether the dir is missing entirely or wiped empty.
+if [ ! -f node_modules/.package-lock.json ]; then
+	echo "==> npm ci (node_modules absent or empty: no .package-lock.json marker)"
 	npm ci --no-audit --no-fund
 fi
 # generate, not build: ssr:false build emits a nitro server, generate emits

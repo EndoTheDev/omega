@@ -18,7 +18,7 @@ fi
 ./scripts/gate-deps.sh
 echo "==> webui bundle gate (no conflict markers in the embedded SPA)"
 if grep -rqE '<<<<<<<|Stashed changes' api/static/; then
-	echo "conflict markers in the embedded SPA - regenerate via harness/ui/scripts/build.sh"
+	echo "conflict markers in the embedded SPA - regenerate via webui/scripts/build.sh"
 	exit 1
 fi
 echo "==> test"
