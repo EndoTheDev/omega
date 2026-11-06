@@ -78,6 +78,12 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		// (shell-ring shrink wave 3, card t_b75df168): the viewer tab's
 		// reads mount and die with the provider they read.
 		func() error { p.routes = newRoutes(sp); return api.RegisterRoute("/skills/content", p.routes.handleSkillsContent) },
+		// The tab editor's write face (card t_0a108f16): create +
+		// rewrite on /skills/save, remove on /skills/delete - POST
+		// method-prefixed routes riding the SAME mounted provider, so a
+		// capsule-less host answers 404 at the module mux for both.
+		func() error { return api.RegisterRoute("POST /skills/save", p.routes.handleSkillsSave) },
+		func() error { return api.RegisterRoute("POST /skills/delete", p.routes.handleSkillsDelete) },
 		// The CLI face of the curator pass (t_9972dfd0): the
 		// subcommand dies with the module - the registry table is
 		// the only mount path (CLI homecoming, scrub-safe).
