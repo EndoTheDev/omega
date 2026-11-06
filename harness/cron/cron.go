@@ -69,6 +69,7 @@ const (
 //	    agent: scout             # optional; empty = default agent
 //	    model: glm-5.3           # optional; empty = session provider model
 //	    prompt: "..."            # required, the user message the run sends
+//	    skills: omega-dev        # optional; skill names pinned into the fire
 //	    deliver: new-session     # see the deliver enum above, default new-session
 //	    file: notes/report.md    # required iff append-to-file, home-relative
 //	    enabled: true            # default true
@@ -95,6 +96,16 @@ type Job struct {
 	File     string `yaml:"file,omitempty"`
 	Model    string `yaml:"model,omitempty"`
 	Enabled  *bool  `yaml:"enabled"`
+	// Skills pins the skill names whose bodies ride the fire prompt
+	// (the capsule round t_3885c975): a scheduled job always runs the
+	// same procedure, so the editor authors the skills by name and the
+	// fire injects their SKILL.md content ahead of the prompt - no
+	// skill-hunting in a turn nobody watches. Names obey the folder
+	// grammar [a-z0-9-], trimmed and unique (validateJob); an unknown
+	// name is a fire-time error in the job log, the scheduler keeps
+	// standing. A wake has no fire prompt of its own - skills are
+	// rejected in agent homes at load (the deliver-target law's shape).
+	Skills []string `yaml:"skills,omitempty"`
 	// Agent is the job's agent reference. Authored in the yaml as
 	// `agent: <name>`, the DEFAULTING LAW resolves empty to the default
 	// agent (agent.DefaultAgentName). For jobs loaded from an agent
@@ -238,6 +249,13 @@ func LoadAllConfigs(home string) (*Config, error) {
 			default:
 				return nil, fmt.Errorf("agent %s job %q: deliver targets are a main-home feature (wakes deliver into the agent's canonical chat)", p.Name, j.Name)
 			}
+			// Skills ride the fire prompt - and a wake's fire prompt is the
+			// continuous capsule's property (the wake tick payload law).
+			// An authored list would parse fine and never take effect: the
+			// same silent-persist hole the deliver law closes, so reject.
+			if len(j.Skills) > 0 {
+				return nil, fmt.Errorf("agent %s job %q: skills pinning is a main-home feature (wakes follow the agent's own skills)", p.Name, j.Name)
+			}
 			cfg.Jobs = append(cfg.Jobs, j)
 		}
 	}
@@ -306,7 +324,7 @@ func ParseConfig(data []byte) (*Config, error) {
 var jobFields = map[string]bool{
 	"name": true, "kind": true, "schedule": true, "minutes": true,
 	"prompt": true, "deliver": true, "file": true, "model": true,
-	"agent": true, "enabled": true,
+	"agent": true, "enabled": true, "skills": true,
 }
 
 // parseJob decodes one jobs entry with line-aware validation.
@@ -324,11 +342,30 @@ func parseJob(node *yaml.Node) (*Job, error) {
 	if err := node.Decode(job); err != nil {
 		return nil, fmt.Errorf("line %d: bad job: %w", node.Line, err)
 	}
+	// The skills list normalizes here, the one place a yaml-authored
+	// value takes its final shape: entries trim, empties drop. The
+	// name grammar and the duplicates reject in validateJob with the
+	// line in the error (the schema keeps its one rejection voice).
+	job.Skills = normalizeSkills(job.Skills)
 
 	if err := validateJob(*job, node.Line); err != nil {
 		return nil, err
 	}
 	return job, nil
+}
+
+// normalizeSkills trims whitespace, drops empty entries, keeps order.
+func normalizeSkills(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // validateJob enforces the schema: name and prompt always required;
@@ -368,6 +405,20 @@ func validateJob(job Job, line int) error {
 	}
 	if job.Prompt == "" {
 		return fmt.Errorf("job %q (line %d): missing prompt", job.Name, line)
+	}
+	// The skills law: entries exist (the parser normalized them),
+	// names obey the folder grammar, duplicates are the same honesty
+	// the duplicate job names get - a rejection naming the line, never
+	// a silent dedupe of what the operator wrote.
+	seenSkills := make(map[string]bool, len(job.Skills))
+	for _, s := range job.Skills {
+		if !namePattern.MatchString(s) {
+			return fmt.Errorf("job %q (line %d): skill names must match [a-z0-9-] (got %q)", job.Name, line, s)
+		}
+		if seenSkills[s] {
+			return fmt.Errorf("job %q (line %d): duplicate skill %q", job.Name, line, s)
+		}
+		seenSkills[s] = true
 	}
 	switch job.DeliverTarget() {
 	case deliverNewSession, deliverContinuous, deliverAppendToFile, deliverMemory:

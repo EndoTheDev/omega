@@ -41,6 +41,8 @@
 #     agent: scout               # optional; empty = default agent
 #     model: glm-5.3             # optional; empty = session model
 #     prompt: "..."              # required, the user message the run sends
+#     skills:                    # optional; the named skills' bodies ride
+#       - omega-dev              # the fire prompt ahead of the prompt
 #     deliver: new-session       # new-session | continuous-agent | append-to-file
 #     file: notes/report.md      # the append-to-file target (home-relative)
 #     enabled: true              # default true

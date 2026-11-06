@@ -47,7 +47,7 @@ func TestFireEmitsNotificationOkAndFailed(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(), Job{Name: "nightly", Schedule: "0 3 * * *", Prompt: "p"})
 	n := &fakeNotifier{}
 	r.notifier = n
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		return "final", nil
 	}
 	r.fire(context.Background(), r.jobsSnapshot()[0], r.now())
@@ -66,7 +66,7 @@ func TestFireEmitsNotificationOkAndFailed(t *testing.T) {
 	}
 
 	// a failed run flips the verdict; job name stays the source id
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		return "", errors.New("provider dead")
 	}
 	r.fire(context.Background(), r.jobsSnapshot()[0], r.now())
@@ -79,7 +79,7 @@ func TestFireEmitsNotificationOkAndFailed(t *testing.T) {
 
 func TestFireWithoutNotifierNeverBlocks(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(), Job{Name: "solo", Schedule: "0 3 * * *", Prompt: "p"})
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		return "final", nil
 	}
 	// nil notifier: emission is a no-op, fire still completes
