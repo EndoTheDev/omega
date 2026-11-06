@@ -3,6 +3,7 @@ package terminal
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -110,6 +111,50 @@ func TestShellRoot(t *testing.T) {
 	out, err := p.RunShell(ctx, map[string]any{"command": probe})
 	if err != nil || !strings.Contains(out, ws) {
 		t.Fatalf("shell %s: %v (got %q, want it to contain %q)", probe, err, out, ws)
+	}
+}
+
+// TestShellDirOverride pins the per-call working-directory override
+// (card t_ccf74d88): an absolute dir wins over the session workspace, a
+// relative dir roots at the session workspace, and an impossible dir
+// is a named tool error instead of a cryptic exec chdir failure.
+func TestShellDirOverride(t *testing.T) {
+	ws := t.TempDir()
+	sub := filepath.Join(ws, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	other := t.TempDir()
+	ctx := core.WithRunWorkspace(context.Background(), ws, "")
+	p := &ShellProvider{}
+
+	probe := "pwd"
+	if runtime.GOOS == "windows" {
+		probe = "cd"
+	}
+
+	// Relative dir rides the session workspace root.
+	out, err := p.RunShell(ctx, map[string]any{"command": probe, "dir": "sub"})
+	if err != nil || !strings.Contains(out, sub) {
+		t.Fatalf("relative dir: %v (got %q, want cwd %q)", err, out, sub)
+	}
+
+	// Absolute dir wins over the session workspace.
+	out, err = p.RunShell(ctx, map[string]any{"command": probe, "dir": other})
+	if err != nil || !strings.Contains(out, other) {
+		t.Fatalf("absolute dir: %v (got %q, want cwd %q)", err, out, other)
+	}
+
+	// No dir argument: the session workspace stands (t_9de5b009).
+	out, err = p.RunShell(ctx, map[string]any{"command": probe})
+	if err != nil || !strings.Contains(out, filepath.Clean(ws)) {
+		t.Fatalf("no dir: %v (got %q, want cwd %q)", err, out, ws)
+	}
+
+	// The impossible dir names itself.
+	_, err = p.RunShell(ctx, map[string]any{"command": probe, "dir": "/omega-definitely-not-here"})
+	if err == nil || !strings.Contains(err.Error(), "omega-definitely-not-here") {
+		t.Fatalf("missing dir: err = %v, want a dir-named error", err)
 	}
 }
 
