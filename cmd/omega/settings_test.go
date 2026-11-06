@@ -463,15 +463,18 @@ func TestOmegaSettingsImplementsSeam(t *testing.T) {
 	}
 }
 
-// card t_7dcd4280: the provider.instances knob - apply law.
+// card t_7dcd4280 / t_1914a8c9: the provider.instances knob - apply law.
+// An instance is a NAMED ENDPOINT only: name, type, host, api_key. A
+// model_name row is a loud refusal (models come from the instance's
+// catalog through the pickers).
 func TestApplyProviderInstancesKnob(t *testing.T) {
-	inst := func(name, typ, model string) map[string]any {
-		return map[string]any{"name": name, "type": typ, "model_name": model, "host": "", "api_key": ""}
+	inst := func(name, typ string) map[string]any {
+		return map[string]any{"name": name, "type": typ, "host": "", "api_key": ""}
 	}
 	// add two instances of one type: the card's headline
 	cfg := DefaultConfig()
 	err := applySettingValues(&cfg, map[string]any{
-		"provider.instances": []any{inst("backup", "openai", "gpt-4o"), inst("second", "openai", "gpt-4o")},
+		"provider.instances": []any{inst("backup", "openai"), inst("second", "openai")},
 	})
 	if err != nil {
 		t.Fatalf("add: %v", err)
@@ -479,11 +482,18 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 	if len(cfg.Providers) != 2 || cfg.Providers["second"].APIKey != "" {
 		t.Fatalf("instances not applied: %v", cfg.Providers)
 	}
+	// a model_name row is a loud refusal, never silently dropped
+	err = applySettingValues(&cfg, map[string]any{
+		"provider.instances": []any{map[string]any{"name": "backup", "type": "openai", "model_name": "gpt-4o", "host": "", "api_key": ""}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "no longer settable") {
+		t.Fatalf("expected the model_name refusal, got %v", err)
+	}
 	// save-side validation: a bad type lands in the map and cfg.Validate()
 	// (run by saveSettings after apply) refuses it
 	cfg = DefaultConfig()
 	cfg.Provider.ModelName = "m"
-	if err := applySettingValues(&cfg, map[string]any{"provider.instances": []any{inst("bad", "azure", "m")}}); err != nil {
+	if err := applySettingValues(&cfg, map[string]any{"provider.instances": []any{inst("bad", "azure")}}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "not recognized") {
@@ -493,7 +503,7 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 	// masked round trip: "****" keeps the EXISTING secret
 	cfg = DefaultConfig()
 	if err := applySettingValues(&cfg, map[string]any{
-		"provider.instances": []any{inst("backup", "openai", "gpt-4o")},
+		"provider.instances": []any{inst("backup", "openai")},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +512,7 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 	cfg.Providers["backup"] = p
 	// duplicate names fail before anything else
 	err = applySettingValues(&cfg, map[string]any{
-		"provider.instances": []any{inst("backup", "openai", "gpt-4o"), inst("backup", "openai", "gpt-4o")},
+		"provider.instances": []any{inst("backup", "openai"), inst("backup", "openai")},
 	})
 	if err == nil {
 		t.Fatal("expected duplicated name in the list to fail")
@@ -511,7 +521,7 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 	cfg = DefaultConfig()
 	if err := applySettingValues(&cfg, map[string]any{
 		"provider.instances": []any{func() map[string]any {
-			m := inst("backup", "openai", "gpt-4o")
+			m := inst("backup", "openai")
 			m["api_key"] = maskedSecret
 			return m
 		}()},
@@ -520,7 +530,7 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 	}
 	err = applySettingValues(&cfg, map[string]any{
 		"provider.instances": []any{func() map[string]any {
-			m := inst("backup", "openai", "gpt-4o")
+			m := inst("backup", "openai")
 			m["api_key"] = maskedSecret
 			return m
 		}()},
@@ -530,7 +540,7 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 	}
 	// with a stored secret, "****" keeps it
 	if err := applySettingValues(&cfg, map[string]any{
-		"provider.instances": []any{inst("backup", "openai", "gpt-4o")},
+		"provider.instances": []any{inst("backup", "openai")},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -539,7 +549,7 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 	cfg.Providers["backup"] = p
 	if err := applySettingValues(&cfg, map[string]any{
 		"provider.instances": []any{func() map[string]any {
-			m := inst("backup", "openai", "gpt-4o")
+			m := inst("backup", "openai")
 			m["api_key"] = maskedSecret
 			return m
 		}()},
@@ -561,7 +571,7 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 	// duplicate names and wrong shapes are loud
 	cfg = DefaultConfig()
 	err = applySettingValues(&cfg, map[string]any{
-		"provider.instances": []any{inst("dup", "openai", "m"), inst("dup", "openai", "m")},
+		"provider.instances": []any{inst("dup", "openai"), inst("dup", "openai")},
 	})
 	if err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Fatal("expected duplicate-name refusal, got", err)
@@ -574,25 +584,23 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "expected an object") {
 		t.Fatal("expected non-object entry refusal, got", err)
 	}
-	err = applySettingValues(&cfg, map[string]any{"provider.instances": []any{inst("", "openai", "m")}})
+	err = applySettingValues(&cfg, map[string]any{"provider.instances": []any{inst("", "openai")}})
 	if err == nil || !strings.Contains(err.Error(), "name is required") {
 		t.Fatal("expected empty-name refusal, got", err)
 	}
 }
 
 // TestSchemaProviderInstancesKnob: the schema sorts the names, types
-// ride lowercase and the keys mask.
+// ride lowercase and the keys mask; no model column rides the rows.
 func TestSchemaProviderInstancesKnob(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML+`
   host: http://localhost:11434
 providers:
   zeta:
     type: anthropic
-    model_name: claude-x
     api_key: sk-z
   alpha:
     type: openai
-    model_name: gpt-4o
 `)
 	payload, err := settingsSchema(path)
 	if err != nil {
@@ -621,5 +629,8 @@ providers:
 	}
 	if list[0]["api_key"] != "" {
 		t.Fatalf("missing key must stay empty, got %v", list[0])
+	}
+	if _, has := list[0]["model_name"]; has {
+		t.Fatalf("rows must carry no model column: %v", list[0])
 	}
 }

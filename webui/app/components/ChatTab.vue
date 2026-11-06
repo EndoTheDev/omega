@@ -127,6 +127,7 @@
       v-model:draft="draft"
       :model="modelValue"
       :models="models"
+      :groups="groups"
       :busy="busy"
       :thinking="thinking"
       :workspace="workspaceValue"
@@ -135,6 +136,7 @@
       @clear-fork="host.setFork(stateKey, null)"
       @update:model="onModelChange"
       @update:thinking="emit('update:thinking', $event)"
+      @refresh-models="emit('refresh-models')"
       @update:workspace="onWorkspaceChange"
       @send="onSend"
       @cancel="host.cancel(stateKey)"
@@ -183,6 +185,7 @@
     type Session,
     type TranscriptItem,
     type VariantBlock,
+    type ModelProviderSection,
   } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
   import { defaultWorkspaceNow } from "../composables/defaultWorkspace";
@@ -199,8 +202,11 @@
     /** the app default model (an unpinned tab rides it; a pinned row
          holds its own pin - t_9de5b009's restorePins law) */
     model: string;
-    /** available model names (shared - the picker's list) */
+    /** available model names (shared - the picker's flat floor) */
     models: string[];
+    /** the grouped catalog (card t_1914a8c9): one section per provider -
+         the chat picker renders collapsible sections from these */
+    groups: ModelProviderSection[];
     /** the session this tab is bound to (null = unsaved draft tab) -
          its pinned model + workspace are what stick (card t_9de5b009) */
     session?: Session | null;
@@ -214,6 +220,7 @@
     (e: "update:model", value: string): void;
     (e: "update:thinking", value: string): void;
     (e: "update:workspace", value: string): void;
+    (e: "refresh-models"): void;
   }>();
 
   const host = inject(CHAT_HOST_KEY)!;
