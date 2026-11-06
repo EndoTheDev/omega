@@ -18,10 +18,18 @@ export interface CronJobWireFull extends CronJobWire {
   deliver?: string; // resolved target: new-session | continuous-agent | append-to-file
   model?: string; // empty = the session provider model
   file?: string; // the append-to-file target, home-relative
+  skills?: string[]; // the fire-pinned skill names
+  // the last fire's outcome: status "" (never fired) | ok | error, the
+  // completion wall clock in RFC3339, and the capped error message.
+  status?: string;
+  last?: string;
+  status_note?: string;
 }
 
 // JobDraft is the form shape: every field a string so inputs bind
-// directly (minutes and enabled turn typed at save time).
+// directly (minutes and enabled turn typed at save time). skills is
+// the comma-separated editor voice - the list shape lives only on the
+// wire (parseSkills turns it).
 export interface JobDraft {
   name: string;
   kind: string;
@@ -32,6 +40,7 @@ export interface JobDraft {
   file: string;
   agent: string;
   model: string;
+  skills: string;
   enabled: boolean;
 }
 
@@ -63,6 +72,7 @@ export function emptyDraft(): JobDraft {
     file: "",
     agent: "",
     model: "",
+    skills: "",
     enabled: true,
   };
 }
@@ -80,6 +90,7 @@ export function draftOf(j: CronJobWireFull): JobDraft {
     file: j.file ?? "",
     agent: j.agent ?? "",
     model: j.model ?? "",
+    skills: (j.skills ?? []).join(", "),
     enabled: j.enabled,
   };
 }
@@ -107,7 +118,25 @@ export function validateDraft(d: JobDraft): string {
     return "deliver must be new-session, continuous-agent, or append-to-file";
   if (d.file.trim() !== "" && deliver !== "append-to-file")
     return "file only applies to deliver append-to-file";
+  const seenSkills = new Set<string>();
+  for (const s of parseSkills(d.skills)) {
+    if (!/^[a-z0-9-]+$/.test(s)) return "skill names must match [a-z0-9-]";
+    if (seenSkills.has(s)) return `duplicate skill ${s}`;
+    seenSkills.add(s);
+  }
   return "";
+}
+
+// parseSkills turns the comma-separated editor voice into the wire's
+// list: split on the comma, trim, drop empties, keep order (the Go
+// loader's own normalizeSkills law, mirrored).
+export function parseSkills(s: string): string[] {
+  const out: string[] = [];
+  for (const part of s.split(",")) {
+    const name = part.trim();
+    if (name !== "") out.push(name);
+  }
+  return out;
 }
 
 // saveCronJob POSTs the full job definition (the /cron/save route: the
@@ -123,6 +152,7 @@ export async function saveCronJob(d: JobDraft): Promise<CronJobWireFull[]> {
     schedule: d.kind === "cron" ? d.schedule.trim() : "",
     minutes: d.kind === "interval" ? Number(d.minutes.trim()) : 0,
     prompt: d.prompt,
+    skills: parseSkills(d.skills),
     deliver: d.deliver,
     file: d.file.trim(),
     agent: d.agent,
@@ -176,5 +206,36 @@ export function jobMeta(j: CronJobWireFull): string {
   if (j.agent) parts.push(`agent ${j.agent}`);
   if (j.model) parts.push(`model ${j.model}`);
   if (j.file) parts.push(`file ${j.file}`);
+  if (j.skills?.length) parts.push(`skills ${j.skills.join(", ")}`);
   return parts.length ? ` - ${parts.join(", ")}` : "";
+}
+
+// lastMeta renders the row's last-fire voice (t_3885c975): " - last ok
+// 11/07 02:14", with the capped error note riding an error. The
+// never-fired row stays quiet - "-" means no fire, silence here is the
+// same truth. The note display caps under 120 chars: the row stays a
+// row (the full message is in /cron's log and the fire session).
+const NOTE_DISPLAY_CAP = 120;
+
+export function lastMeta(j: CronJobWireFull): string {
+  if (!j.status || !j.last) return "";
+  const stamp = statusStamp(j.last);
+  if (j.status === "error" && j.status_note) {
+    const note =
+      j.status_note.length > NOTE_DISPLAY_CAP
+        ? `${j.status_note.slice(0, NOTE_DISPLAY_CAP)}...`
+        : j.status_note;
+    return ` - last error ${stamp}: ${note}`;
+  }
+  return ` - last ${j.status} ${stamp}`;
+}
+
+// statusStamp renders an RFC3339 timestamp as a local, compact
+// date-time ("11/07 02:14") - the same shape the row renders `next`
+// with. An unparseable string renders verbatim (the wire's truth).
+export function statusStamp(rfc3339: string): string {
+  const t = new Date(rfc3339);
+  if (Number.isNaN(t.getTime())) return rfc3339;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(t.getMonth() + 1)}/${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
 }

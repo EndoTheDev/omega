@@ -80,7 +80,7 @@ func TestAgentJobFiresWakeTickNotTurn(t *testing.T) {
 	var payload *wakeTickPayload
 	r := newTestRunner(t, t.TempDir(),
 		Job{Name: "wake", Schedule: "17 * * * *", Prompt: "patrol", Agent: "scout", AgentOwned: true})
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		t.Error("agent job ran an in-process turn")
 		return "", nil
 	}

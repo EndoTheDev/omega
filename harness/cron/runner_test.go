@@ -55,7 +55,7 @@ func TestFireGuardSkipsConcurrentSameJobOthersStillRun(t *testing.T) {
 	// runTurn blocks for "slow" until released.
 	entered := make(chan string, 4)
 	release := make(chan struct{})
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		entered <- job.Name
 		<-release
 		return "done " + job.Name, nil
@@ -98,7 +98,7 @@ func TestFireGuardLogsSkip(t *testing.T) {
 	r.logger = rec
 
 	release := make(chan struct{})
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		<-release
 		return "ok", nil
 	}
@@ -175,7 +175,7 @@ func TestCatchUpFiresOnceWithin24h(t *testing.T) {
 	r.lastFire["daily"] = last.Unix()
 
 	var fired []time.Time
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		fired = append(fired, r.now())
 		return "ok", nil
 	}
@@ -208,7 +208,7 @@ func TestCatchUpSkipsOlderThan24h(t *testing.T) {
 	r.lastFire["weekly"] = last.Unix()
 
 	fired := false
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		fired = true
 		return "ok", nil
 	}
@@ -227,7 +227,7 @@ func TestCatchUpNeverFiresDisabledJob(t *testing.T) {
 	r.lastFire["off"] = mustLocal(2026, 10, 16, 4, 0).Unix()
 
 	fired := false
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		fired = true
 		return "ok", nil
 	}
@@ -240,7 +240,7 @@ func TestCatchUpNeverFiresDisabledJob(t *testing.T) {
 func TestCatchUpSkipsNeverFiredJob(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(), Job{Name: "fresh", Schedule: "30 7 * * *", Prompt: "p"})
 	fired := false
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		fired = true
 		return "ok", nil
 	}
@@ -337,7 +337,7 @@ func TestDeliverJournalCreatesFileAndAppends(t *testing.T) {
 	home := t.TempDir()
 	r := newTestRunner(t, home, Job{Name: "daily-journal", Schedule: "0 8 * * *", Prompt: "p", Deliver: "journal"})
 	r.now = func() time.Time { return mustLocal(2026, 10, 17, 8, 0) }
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		return "journal body", nil
 	}
 	r.fire(context.Background(), r.jobsSnapshot()[0], r.now())
@@ -352,7 +352,7 @@ func TestDeliverJournalCreatesFileAndAppends(t *testing.T) {
 		t.Fatalf("journal content wrong: %q", text)
 	}
 	// Second fire appends, does not overwrite.
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		return "second entry", nil
 	}
 	r.fire(context.Background(), r.jobsSnapshot()[0], r.now())
@@ -367,7 +367,7 @@ func TestDeliverMemoryStoresFinalViaMemorySeam(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(), Job{Name: "m", Schedule: "0 8 * * *", Prompt: "p", Deliver: "memory"})
 	fm := &fakeMemory{}
 	r.memory = fm
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		return "memory note", nil
 	}
 	r.fire(context.Background(), r.jobsSnapshot()[0], r.now())
@@ -381,7 +381,7 @@ func TestDeliverMemoryStoresFinalViaMemorySeam(t *testing.T) {
 func TestDeliverNoneWritesNothing(t *testing.T) {
 	home := t.TempDir()
 	r := newTestRunner(t, home, Job{Name: "n", Schedule: "0 8 * * *", Prompt: "p"})
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		return "ignored", nil
 	}
 	r.fire(context.Background(), r.jobsSnapshot()[0], r.now())
@@ -393,7 +393,7 @@ func TestDeliverNoneWritesNothing(t *testing.T) {
 func TestDeliverSkipsEmptyFinal(t *testing.T) {
 	home := t.TempDir()
 	r := newTestRunner(t, home, Job{Name: "e", Schedule: "0 8 * * *", Prompt: "p", Deliver: "journal"})
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		return "", fmt.Errorf("provider down")
 	}
 	r.fire(context.Background(), r.jobsSnapshot()[0], r.now())
@@ -550,7 +550,7 @@ func enabledOff() *bool {
 
 // Compile-time proof that the Runner satisfies the read-only inspector
 // seam the http_channel asserts.
-var _  = (*Runner)(nil)
+var _ = (*Runner)(nil)
 
 func TestJobsInspectorSnapshot(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(),
