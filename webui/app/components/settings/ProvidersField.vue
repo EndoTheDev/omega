@@ -26,7 +26,7 @@
             spellcheck="false"
             :value="inst.name"
             :aria-label="`instance ${i + 1} name`"
-            @input="setRow(i, 'name', $event)" />
+            @input="setRow(i, 'name', ($event.target as HTMLInputElement).value)" />
         </label>
         <label class="provider-cell">
           <span>type</span>
@@ -47,7 +47,7 @@
             spellcheck="false"
             :value="inst.model_name"
             :aria-label="`instance ${i + 1} model`"
-            @input="setRow(i, 'model_name', $event)" />
+            @input="setRow(i, 'model_name', ($event.target as HTMLInputElement).value)" />
         </label>
         <label class="provider-cell provider-host">
           <span>host</span>
@@ -58,7 +58,7 @@
             spellcheck="false"
             :value="inst.host"
             :aria-label="`instance ${i + 1} host`"
-            @input="setRow(i, 'host', $event)" />
+            @input="setRow(i, 'host', ($event.target as HTMLInputElement).value)" />
         </label>
         <label class="provider-cell">
           <span>api key</span>
@@ -68,7 +68,7 @@
             autocomplete="off"
             :value="inst.api_key"
             :aria-label="`instance ${i + 1} api key`"
-            @input="setRow(i, 'api_key', $event)" />
+            @input="setRow(i, 'api_key', ($event.target as HTMLInputElement).value)" />
         </label>
         <button
           class="provider-remove"
