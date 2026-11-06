@@ -16,6 +16,11 @@
 # j78-a); this run's cards carry the run tag in the title and arch out
 # at exit; non-archived leftovers of a crashed earlier run are archived
 # first so the seeded order is dense from zero.
+#
+# Card t_2bfd52ac: the switcher's chip wait is TWO-MOUNT (poll, reload,
+# re-poll) - the nightly red 42166671721 was one flaky /boards fetch
+# burning the cap, not a provider gate (78 waits the same chip on the
+# same no-provider lane and is green). The die names the API answer.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 BTAG="j98"
@@ -119,8 +124,22 @@ drag_release() {
 
 switch_to_board() {
   # the switcher rides the BandSelect listbox (recipe 78's shape): open
-  # the pop, then pick the pinned board by exact option text
-  wait_js "(()=>{return !!document.querySelector('.board-switch-select .model-chip')})()" 15
+  # the pop, then pick the pinned board by exact option text.
+  #
+  # The chip rides ONE mounted fetch: Board.vue gates the switcher on
+  # `boards.length > 1 || boardName` and fetchBoards() runs once per
+  # mount with no retry - a fetch that misses (lane hiccup under suite
+  # load: nightly run 42166671721 red at the hard wait here, unrepro on
+  # two zero-provider full-suite runs) leaves no chip for the whole page
+  # life. So: poll first; on a miss reload - a fresh mount re-fetches -
+  # and poll again; die only naming what the registry answered, so the
+  # next red carries its own diagnosis instead of a blind timeout.
+  if ! poll_js "(()=>{return !!document.querySelector('.board-switch-select .model-chip')})()" 15; then
+    ab reload >/dev/null 2>&1 || true
+    ab wait --load networkidle >/dev/null 2>&1 || true
+    poll_js "(()=>{return !!document.querySelector('.board-switch-select .model-chip')})()" 10 ||
+      die "board switcher chip never rendered on two mounts (GET /boards: $(curl -s "${JOURNEY_BASE_URL}/boards" | head -c 200))"
+  fi
   js '(()=>{const c=document.querySelector(".board-switch-select .model-chip");if(c.getAttribute("aria-expanded")!=="true")c.click();return 1})()' >/dev/null
   wait_js "(()=>{return [...document.querySelectorAll('.board-switch-select .model-list li')].some(l=>(l.textContent||'').trim()==='$BOARD')})()" 15
   js "$(printf '(()=>{const o=[...document.querySelectorAll(".board-switch-select .model-list li")].find(l=>(l.textContent||"").trim()==="%s");if(!o) return 0;o.click();return 1})()' "$BOARD")" >/dev/null
