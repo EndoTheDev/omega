@@ -285,7 +285,9 @@ Everything else animates through `transition`, not keyframes.
 The webui is the shell; the palette is webui-native. Registration and
 resolution mirror the one command law every surface follows:
 
-- **`/` at input start opens the command palette.** Rows: the webui's
+- **A `/` token at the caret opens the command palette** (t_d1a2951d:
+  caret/token-based, mid-sentence included - the draft's leading word
+  is just the boundary-free case). Rows: the webui's
   shell commands (`composables/commands.ts` `WEBUI_SHELL_COMMANDS` —
   `/new` and `/sessions` plus the local-action set
   `/copy /modules /fork /help /panels /retry /theme /variant`;
