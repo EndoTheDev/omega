@@ -161,6 +161,47 @@ const bandSelect = read(
   "BandSelect.vue",
 );
 
+test("settings normalization: the per-subsystem slot flag survives exactly as a boolean", () => {
+  const out = normalizeSettingsPayload({
+    groups: [
+      {
+        key: "provider",
+        label: "provider",
+        knobs: [
+          {
+            key: "provider.compaction_model",
+            label: "compaction model",
+            type: "model",
+            slot: true,
+            value: "",
+          },
+          // a truthy-but-not-true flag falls out (the normalizer
+          // reads === true, never truthiness)
+          {
+            key: "provider.summarizer_model",
+            label: "summarizer model",
+            type: "model",
+            slot: "yes",
+            value: "",
+          },
+          // plain model knobs keep slot undefined (the chat picker
+          // never lists instances)
+          {
+            key: "provider.model_name",
+            label: "model name",
+            type: "model",
+            value: "glm-5.3",
+          },
+        ],
+      },
+    ],
+  });
+  const knobs = out.groups[0].knobs;
+  assert.equal(knobs[0].slot, true);
+  assert.equal(knobs[1].slot, undefined, "non-boolean slot flags never survive");
+  assert.equal(knobs[2].slot, undefined);
+});
+
 test("the model knob renders ModelField, not a text input or a new select", () => {
   assert.match(settingsTab, /v-else-if="knob\.type === 'model'"/);
   assert.match(settingsTab, /<ModelField[\s\S]*?:knob="knob"/);
@@ -178,4 +219,23 @@ test("the degrade path: fetch failure or empty filtered list yields text + hint"
   assert.match(modelField, /type the model name/);
   // the pane refreshes the shared catalog (one request per settings open)
   assert.equal(typeof refreshModelCatalog, "function");
+});
+
+// --- the per-subsystem slots (card t_fc0b2f2d): the instance picker ---
+
+test("the slot mode: ModelField prepends instance:model options from the payload rows", () => {
+  // the component prop rides the pane's provider.instances rows
+  assert.match(modelField, /instances\?: ProviderInstanceRow\[\]/);
+  // the options lead with the instance pairs (a row without a name or
+  // model cannot resolve - it stays off the list), then the catalog
+  assert.match(
+    modelField,
+    /filter\(\(r\) => r\.name !== "" && r\.model_name !== ""\)/,
+  );
+  assert.match(modelField, /value: `\$\{r\.name\}:\$\{r\.model_name\}`/);
+  // only the slot knobs get the instance list; the chat pickers never
+  assert.match(modelField, /props\.knob\.slot !== true\)/);
+  // the pane hands ModelField the payload's provider.instances rows
+  assert.match(settingsTab, /:instances="instanceRows"/);
+  assert.match(settingsTab, /kn\.key === "provider\.instances"/);
 });

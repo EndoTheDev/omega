@@ -96,6 +96,7 @@
             v-else-if="knob.type === 'model'"
             :knob="knob"
             :value="modelValue(knob)"
+            :instances="instanceRows"
             @update="setServer(knob, $event)" />
           <!-- providers (card t_7dcd4280: the named instances list -
                one row per instance, name = the instance id, add and
@@ -449,6 +450,17 @@
     dockGroup.value,
     ...groups.value,
   ]);
+
+  // instanceRows (card t_fc0b2f2d): the model pickers that name
+  // provider instances ride the same payload's provider.instances
+  // rows - one read, no per-field plumbing.
+  const instanceRows = computed<ProviderInstanceRow[]>(() => {
+    for (const g of allGroups.value) {
+      const k = g.knobs.find((kn) => kn.key === "provider.instances");
+      if (k) return providersValue(k);
+    }
+    return [];
+  });
 
   const visibleGroups = computed<SettingGroup[]>(() =>
     filterSettingGroups(allGroups.value, query.value),
