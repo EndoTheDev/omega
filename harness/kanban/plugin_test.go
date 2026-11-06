@@ -58,7 +58,7 @@ func TestMountWithAPIShape(t *testing.T) {
 		}
 		patterns[rt.Pattern] = true
 	}
-	for _, want := range []string{"GET /tasks", "POST /tasks", "GET /tasks/{id}", "PATCH /tasks/{id}", "POST /tasks/{id}/comments", "GET /boards", "POST /boards", "DELETE /boards/{name}"} {
+	for _, want := range []string{"GET /tasks", "POST /tasks", "GET /tasks/{id}", "PATCH /tasks/{id}", "DELETE /tasks/{id}", "POST /tasks/{id}/comments", "GET /boards", "POST /boards", "DELETE /boards/{name}"} {
 		if !patterns[want] {
 			t.Fatalf("route %q not registered: %v", want, patterns)
 		}

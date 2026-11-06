@@ -15,15 +15,20 @@ import {
   BOARD_PATH,
   DEFAULT_BOARD_NAME,
   age,
+  bodyPreview,
   boardDeletePath,
   canRemoveBoard,
   columns,
   fetchBoardsRetry,
+  hasPriorityChip,
   isBoardPath,
   isSettled,
   pickBootBoard,
+  priorityLabel,
+  priorityOptions,
   reorderAfter,
   step,
+  taskDeletePath,
   withBoard,
   type BoardInfo,
   type BoardTask,
@@ -38,6 +43,7 @@ function task(over: Partial<BoardTask>): BoardTask {
     body: "",
     assignee: "",
     status: "triage",
+    priority: 0,
     session_id: "",
     source: "",
     created_at: "2026-10-19T00:00:00Z",
@@ -318,4 +324,52 @@ test("boards retry: 404 is not retried (single-board installs never heal)", asyn
   const boards = await fetchBoardsRetry(fetchImpl, { sleep: async () => {} });
   assert.equal(calls, 1, "the capability-absent answer exits on the first miss");
   assert.equal(boards, null);
+});
+
+// --- round t_f81e845e: the CRUD trio (create/edit/delete/comment) + the
+// event trail, all board-native. Source pins (these are wiring contracts
+// the board must carry) + unit tests for the pure helpers.
+
+test("boardLogic: priority helpers", () => {
+  assert.equal(hasPriorityChip(0), false, "normal priority renders no chip");
+  assert.equal(hasPriorityChip(2), true);
+  assert.equal(priorityLabel(0), "P0");
+  assert.equal(priorityLabel(3), "P3");
+  const opts = priorityOptions();
+  assert.deepEqual(opts.map((o) => o.value), [0, 1, 2, 3]);
+  assert.equal(opts[0].label, "P0 (normal)");
+  assert.equal(taskDeletePath("t_a/b"), "/tasks/t_a%2Fb");
+});
+
+test("boardLogic: bodyPreview takes the first non-empty line, truncated", () => {
+  assert.equal(bodyPreview(""), "");
+  assert.equal(bodyPreview("\n   \n"), "");
+  assert.equal(bodyPreview("\n second is first"), "second is first");
+  const long = "x".repeat(120);
+  assert.equal(bodyPreview(long).endsWith("…"), true);
+  assert.ok(bodyPreview(long).length <= 81);
+});
+
+test("CRUD: the board builds cards from a full form, edits in the drawer, deletes armed", () => {
+  const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
+  const drawerVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "board", "DetailDrawer.vue"), "utf8");
+  // create: full form POSTing title/body/assignee/priority with the column preset
+  assert.match(boardVue, /@submit\.prevent="submitCreate"/, "a column hosts the create form");
+  assert.match(boardVue, /toggleCreate\(BOARD_STATUSES\[i\]\)/, "every column grows cards, not just triage/todo");
+  assert.match(boardVue, /title,\n\s+body: createBody\.value,/, "create POSTs the body");
+  assert.match(boardVue, /priority: createPriority\.value,/, "create POSTs the priority");
+  assert.match(boardVue, /status,/, "the host column is the preset status");
+  // edit: the drawer's save PATCHes; the board refetches both views
+  assert.match(drawerVue, /\(e: "save", patch: \{ title\?: string; body\?: string; priority\?: number \}\)/, "the drawer reports save patches");
+  assert.match(boardVue, /@save="onDrawerSave"/, "the board wires the drawer's saves");
+  assert.match(boardVue, /await loadDetail\(id\)/, "a save refetches the drawer view");
+  // delete: armed second click, DELETE through the capability route
+  assert.match(drawerVue, /confirmingDelete/, "the card delete is an armed two-click");
+  assert.match(boardVue, /@delete="onDrawerDelete"/);
+  assert.match(boardVue, /method: "DELETE"/);
+  // events: the GET payload's events reach the drawer as a prop
+  assert.match(boardVue, /:events="detailEvents"/);
+  assert.match(boardVue, /detailEvents\.value = d\.events \?\? \[\]/, "the detail payload's events land in the drawer");
+  assert.match(drawerVue, /events: BoardEvent\[\]/);
+  assert.match(drawerVue, /class="event-list"/);
 });

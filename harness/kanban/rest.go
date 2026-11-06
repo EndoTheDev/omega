@@ -13,14 +13,14 @@ import (
 // served over the kanban core seam serve from the capsule itself now -
 // the module noun left core with the seam types (kanbantypes.go), and
 // the routes register through RegisterRoute. The wire shapes are the
-// ones the webui consumes, byte-stable from the source move:
+// the ones the webui consumes, byte-stable from the source move:
 // GET /tasks list/filter, POST /tasks create, GET /tasks/{id} detail
-// (task + comments + events), PATCH /tasks/{id}, POST
-// /tasks/{id}/comments, GET /boards, and - since the boards folded
-// into the one database (t_feae19d3) - POST /boards to create and
-// DELETE /boards/{name} to remove an empty non-default board. A
-// disabled kanban answers 404 - no route registered, nothing to
-// degrade to (Q7: one mount path).
+// (task + comments + events), PATCH /tasks/{id}, DELETE /tasks/{id}
+// (the TaskDeleter capability), POST /tasks/{id}/comments, GET /boards,
+// and - since the boards folded into the one database (t_feae19d3) -
+// POST /boards to create and DELETE /boards/{name} to remove an empty
+// non-default board. A disabled kanban answers 404 - no route
+// registered, nothing to degrade to (Q7: one mount path).
 //
 // There is deliberately no cross-board mutation endpoint: a PATCH
 // moves a card inside its board only. Switching boards is the registry
@@ -41,6 +41,23 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // boardParam reads the ?board= picker from the request.
 func boardParam(r *http.Request) string {
 	return r.URL.Query().Get("board")
+}
+
+// deleteFromStore deletes through the optional TaskDeleter capability
+// (BoardLister/Reorderer's shape): a store that cannot delete answers
+// 400 with the reason - the board UI's delete control refuses first,
+// this is the wire's backstop.
+func deleteFromStore(store restProvider, w http.ResponseWriter, r *http.Request, id string) {
+	td, ok := any(store).(TaskDeleter)
+	if !ok {
+		http.Error(w, "this kanban store cannot delete tasks", http.StatusBadRequest)
+		return
+	}
+	if err := td.DeleteTask(r.Context(), boardParam(r), id); err != nil {
+		taskByIDError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": id})
 }
 
 // taskDetail is the GET /tasks/{id} payload: the task plus its thread.
@@ -93,6 +110,7 @@ func tasksHandler(store restProvider) func(http.ResponseWriter, *http.Request) {
 				Title    string `json:"title"`
 				Body     string `json:"body"`
 				Assignee string `json:"assignee"`
+				Priority int    `json:"priority"`
 				Status   string `json:"status"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -103,6 +121,7 @@ func tasksHandler(store restProvider) func(http.ResponseWriter, *http.Request) {
 				Title:    body.Title,
 				Body:     body.Body,
 				Assignee: body.Assignee,
+				Priority: body.Priority,
 				Status:   body.Status,
 			})
 			if err != nil {
@@ -116,10 +135,12 @@ func tasksHandler(store restProvider) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-// taskByIDHandler serves GET /tasks/{id} (task + comments + events) and
+// taskByIDHandler serves GET /tasks/{id} (task + comments + events),
 // PATCH /tasks/{id} (any legal status transition by any caller - one
-// agent, no dispatch races to armor). PATCH pointer fields distinguish
-// "set to this value (possibly empty)" from "leave alone".
+// agent, no dispatch races to armor; PATCH pointer fields distinguish
+// "set to this value (possibly empty)" from "leave alone") and DELETE
+// /tasks/{id} (through the optional TaskDeleter capability - a store
+// without it answers 400 with the reason).
 func taskByIDHandler(store restProvider) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
@@ -150,6 +171,7 @@ func taskByIDHandler(store restProvider) func(http.ResponseWriter, *http.Request
 				Title     *string `json:"title"`
 				Body      *string `json:"body"`
 				Assignee  *string `json:"assignee"`
+				Priority  *int    `json:"priority"`
 				Status    string  `json:"status"`
 				SessionID *string `json:"session_id"`
 				AfterID   *string `json:"after_id"`
@@ -181,6 +203,7 @@ func taskByIDHandler(store restProvider) func(http.ResponseWriter, *http.Request
 					Title:     body.Title,
 					Body:      body.Body,
 					Assignee:  body.Assignee,
+					Priority:  body.Priority,
 					Status:    body.Status,
 					SessionID: body.SessionID,
 				})
@@ -191,7 +214,7 @@ func taskByIDHandler(store restProvider) func(http.ResponseWriter, *http.Request
 			}
 			writeJSON(w, http.StatusOK, out)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			deleteFromStore(store, w, r, id)
 		}
 	}
 }
@@ -307,6 +330,7 @@ func (p *Plugin) registerRoutes(api *agent.ExtensionAPI) error {
 		{"POST /tasks", tasksHandler(p.store)},
 		{"GET /tasks/{id}", taskByIDHandler(p.store)},
 		{"PATCH /tasks/{id}", taskByIDHandler(p.store)},
+		{"DELETE /tasks/{id}", taskByIDHandler(p.store)},
 		{"POST /tasks/{id}/comments", taskCommentsHandler(p.store)},
 	}
 	if b, ok := any(p.store).(BoardLister); ok {

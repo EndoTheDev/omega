@@ -68,6 +68,8 @@ func (s *Store) emitDone(taskID string) {
 var (
 	_ KanbanProvider = (*Store)(nil)
 	_ BoardLister    = (*Store)(nil)
+	_ Reorderer      = (*Store)(nil)
+	_ TaskDeleter    = (*Store)(nil)
 )
 
 // Open opens (creating if needed) the board database at dsn and
@@ -143,6 +145,9 @@ func (s *Store) migrate(db *sql.DB) error {
 	if err := migrateTaskPositions(db); err != nil {
 		return err
 	}
+	if err := migrateTaskPriority(db); err != nil {
+		return err
+	}
 	_, err := db.Exec(boardIndexes)
 	return err
 }
@@ -183,6 +188,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 	created_at   TEXT NOT NULL,
 	started_at   TEXT NOT NULL DEFAULT '',
 	completed_at TEXT NOT NULL DEFAULT '',
+	priority     INTEGER NOT NULL DEFAULT 0,
 	board_id     INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
 	position     INTEGER NOT NULL DEFAULT 0
 );
@@ -238,6 +244,7 @@ func rebuildLegacyRows(db *sql.DB) error {
 	created_at   TEXT NOT NULL,
 	started_at   TEXT NOT NULL DEFAULT '',
 	completed_at TEXT NOT NULL DEFAULT '',
+	priority     INTEGER NOT NULL DEFAULT 0,
 	board_id     INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE
 )`,
 		`CREATE TABLE task_comments (
@@ -326,6 +333,19 @@ type QueryRowContexter interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+// migrateTaskPriority adds the urgency column when it is missing (any
+// database from before the priority round carries the pre-priority
+// shape). DEFAULT 0 is the backfill: every pre-existing card was
+// created when only created_at ordered the columns, so neutral (0 =
+// normal) is the truthful read back.
+func migrateTaskPriority(db *sql.DB) error {
+	if !tableMissingColumn(db, "tasks", "priority") {
+		return nil
+	}
+	_, err := db.Exec(`ALTER TABLE tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`)
+	return err
+}
+
 // CreateTask inserts a task on the named board ("" = the current
 // board). ID, Status (default triage) and CreatedAt are filled by the
 // store; title must be non-empty.
@@ -339,6 +359,9 @@ func (s *Store) CreateTask(ctx context.Context, board string, in KanbanTask) (Ka
 	}
 	if !IsStatus(status) {
 		return KanbanTask{}, fmt.Errorf("illegal status %q", status)
+	}
+	if !ValidPriority(in.Priority) {
+		return KanbanTask{}, fmt.Errorf("illegal priority %d", in.Priority)
 	}
 	bid, err := s.boardID(board)
 	if err != nil {
@@ -354,10 +377,10 @@ func (s *Store) CreateTask(ctx context.Context, board string, in KanbanTask) (Ka
 		in.Status = status
 		in.CreatedAt = now()
 		_, err := s.db.ExecContext(ctx, `
-INSERT INTO tasks (id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, board_id, position)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+INSERT INTO tasks (id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, priority, board_id, position)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			in.ID, in.Title, in.Body, in.Assignee, in.Status,
-			in.SessionID, in.Source, in.CreatedAt, in.StartedAt, in.CompletedAt, bid, in.Position)
+			in.SessionID, in.Source, in.CreatedAt, in.StartedAt, in.CompletedAt, in.Priority, bid, in.Position)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNIQUE") {
 				continue // id collision: retry with a fresh draw
@@ -375,6 +398,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 // describeNew renders the created-event detail line.
 func describeNew(t KanbanTask) string {
 	detail := "status " + t.Status
+	if t.Priority != 0 {
+		detail += fmt.Sprintf(", priority %d", t.Priority)
+	}
 	if t.SessionID != "" {
 		detail += ", session " + t.SessionID
 	}
@@ -395,7 +421,7 @@ func (s *Store) ListTasks(ctx context.Context, board, status string) ([]KanbanTa
 	if err != nil {
 		return nil, err
 	}
-	query := `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, position FROM tasks WHERE board_id = ?`
+	query := `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, priority, position FROM tasks WHERE board_id = ?`
 	args := []any{bid}
 	if status != "" {
 		if !IsStatus(status) {
@@ -424,7 +450,7 @@ func (s *Store) ListTasks(ctx context.Context, board, status string) ([]KanbanTa
 func scanTask(row interface{ Scan(...any) error }) (*KanbanTask, error) {
 	var t KanbanTask
 	err := row.Scan(&t.ID, &t.Title, &t.Body, &t.Assignee, &t.Status,
-		&t.SessionID, &t.Source, &t.CreatedAt, &t.StartedAt, &t.CompletedAt, &t.Position)
+		&t.SessionID, &t.Source, &t.CreatedAt, &t.StartedAt, &t.CompletedAt, &t.Priority, &t.Position)
 	if err != nil {
 		return nil, err
 	}
@@ -437,7 +463,7 @@ func (s *Store) GetTask(ctx context.Context, board, id string) (KanbanTask, erro
 	if err != nil {
 		return KanbanTask{}, err
 	}
-	row := s.db.QueryRowContext(ctx, `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, position FROM tasks WHERE id = ? AND board_id = ?`, id, bid)
+	row := s.db.QueryRowContext(ctx, `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, priority, position FROM tasks WHERE id = ? AND board_id = ?`, id, bid)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return KanbanTask{}, ErrNotFound
@@ -595,6 +621,13 @@ func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch Kanb
 		t.Body = *patch.Body
 		edits = append(edits, "body")
 	}
+	if patch.Priority != nil && *patch.Priority != t.Priority {
+		if !ValidPriority(*patch.Priority) {
+			return KanbanTask{}, fmt.Errorf("illegal priority %d", *patch.Priority)
+		}
+		t.Priority = *patch.Priority
+		edits = append(edits, fmt.Sprintf("priority %d", t.Priority))
+	}
 	if patch.Assignee != nil && *patch.Assignee != t.Assignee {
 		t.Assignee = *patch.Assignee
 		if t.Assignee == "" {
@@ -616,9 +649,9 @@ func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch Kanb
 	}
 
 	if _, err := tx.ExecContext(ctx, `
-UPDATE tasks SET title=?, body=?, assignee=?, status=?, session_id=?, source=?,
+UPDATE tasks SET title=?, body=?, assignee=?, status=?, session_id=?, source=?, priority=?,
 	started_at=?, completed_at=?, position=? WHERE id=? AND board_id=?`,
-		t.Title, t.Body, t.Assignee, t.Status, t.SessionID, t.Source,
+		t.Title, t.Body, t.Assignee, t.Status, t.SessionID, t.Source, t.Priority,
 		t.StartedAt, t.CompletedAt, t.Position, t.ID, bid); err != nil {
 		return KanbanTask{}, err
 	}
@@ -634,6 +667,38 @@ UPDATE tasks SET title=?, body=?, assignee=?, status=?, session_id=?, source=?,
 		s.emitDone(taskID)
 	}
 	return t, nil
+}
+
+// DeleteTask implements TaskDeleter: the card, its comment thread and
+// its audit trail are removed in one transaction (explicit deletes -
+// the sqlite driver does not enable the FK pragma per connection, so
+// the ON DELETE CASCADE clauses are documentation, not enforcement).
+// There is no audit row to leave behind: the deleted task's events go
+// too. Archive (PATCH status=archived) is the reversible path; the UI's
+// armed confirm is the only guard this op gets.
+func (s *Store) DeleteTask(ctx context.Context, board, taskID string) error {
+	bid, err := s.boardID(board)
+	if err != nil {
+		return err
+	}
+	if _, err := s.GetTask(ctx, board, taskID); err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`DELETE FROM task_comments WHERE task_id = ? AND board_id = ?`,
+		`DELETE FROM task_events WHERE task_id = ? AND board_id = ?`,
+		`DELETE FROM tasks WHERE id = ? AND board_id = ?`,
+	} {
+		if _, err := tx.ExecContext(ctx, q, taskID, bid); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // ReorderTask places a task at an explicit slot on the named board:
