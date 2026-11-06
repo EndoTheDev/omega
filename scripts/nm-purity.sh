@@ -270,9 +270,14 @@ def scrub(text, modules, carried=None):
         # token is another identifier's member (cfg.Providers, pkg.X)
         # and reads as the qualifier's wire, never this token's value.
         # Comments are prose (mark_word already used them to MARK this
-        # chunk) and must not re-kill live lines here.
+        # chunk) and must not re-kill live lines here. The bare MODULE
+        # name is NOT a value-killer: a local or param may carry it
+        # (`trust trustFlags` - trustFlags is host vocabulary that
+        # survives the capsule) and only the qualified use is the
+        # package wire, which the access rule above models.
         code = re.sub(r"//[^\n]*", "", body)
-        for ident in sorted(dead_ids):
+        bare_ids = sorted(dead_ids - set(mnames))
+        for ident in bare_ids:
             for mt in re.finditer(r"\b" + re.escape(ident) + r"\b", code):
                 if mt.start() > 0 and code[mt.start() - 1] == ".":
                     continue
