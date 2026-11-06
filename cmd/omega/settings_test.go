@@ -279,7 +279,7 @@ func TestSaveSettingsPersistsAndReturnsRefreshedSchema(t *testing.T) {
 	pctx := &agent.Context{}
 	pctx.ApplyOffer("compactor", "test", &compactor.Compactor{})
 
-	payload, err := saveSettings(path, pctx, nil, nil, map[string]any{
+	payload, err := saveSettings(path, pctx, nil, nil, nil, map[string]any{
 		"compaction.enabled":  false,
 		"provider.model_name": "new-model",
 	})
@@ -326,7 +326,7 @@ func TestSaveSettingsRejectsInvalidValuesWithoutWriting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := saveSettings(path, nil, nil, nil, map[string]any{
+	if _, err := saveSettings(path, nil, nil, nil, nil, map[string]any{
 		"server.port": float64(0),
 	}); err == nil {
 		t.Fatal("expected validation error for port 0")
@@ -381,7 +381,7 @@ func TestSchemaMasksAPIKey(t *testing.T) {
 		t.Errorf("GET schema api_key %q, want masked", got)
 	}
 	// the save-refresh payload rides the same channel: masked too
-	refreshed, err := saveSettings(path, nil, nil, nil, map[string]any{
+	refreshed, err := saveSettings(path, nil, nil, nil, nil, map[string]any{
 		"compaction.keep_last": float64(4),
 	})
 	if err != nil {
@@ -409,8 +409,13 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	// and the hot-apply pushes a save through it.
 	pushed := ""
 	channelPushed := ""
+	agentPrompt := ""
+	agentTurns := 0
 	setFilesWorkspace := func(ws string) { pushed = ws }
 	setChannelWorkspace := func(ws string) { channelPushed = ws }
+	// t_f78acfd6: the runtime-knob hook - the hot-apply pushes
+	// system_prompt + max_turns through it (both agents ride it).
+	setAgentConfig := func(prompt string, maxTurns int) { agentPrompt, agentTurns = prompt, maxTurns }
 	pctx := &agent.Context{}
 	pctx.ApplyOffer("compactor", "test", comp)
 	cfg := DefaultConfig()
@@ -418,7 +423,9 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	cfg.Compaction.Enabled = false
 	cfg.Compaction.KeepLast = 7
 	cfg.Server.DefaultWorkspace = "/tmp/lane"
-	hotApply(cfg, pctx, setFilesWorkspace, setChannelWorkspace)
+	cfg.SystemPrompt = "be terse"
+	cfg.MaxTurns = 33
+	hotApply(cfg, pctx, setFilesWorkspace, setChannelWorkspace, setAgentConfig)
 
 	if got := llm.HTTPClient().Timeout; got != 42*time.Second {
 		t.Errorf("http client timeout %v, want 42s", got)
@@ -428,6 +435,9 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	}
 	if channelPushed != "/tmp/lane" {
 		t.Errorf("SetDefaultWorkspace hook: channel knob received %q, want /tmp/lane (the hot-apply must push to the knob hook)", channelPushed)
+	}
+	if agentPrompt != "be terse" || agentTurns != 33 {
+		t.Errorf("SetAgentConfig hook: prompt %q turns %d, want \"be terse\"/33 (the runtime knobs must ride the hook live)", agentPrompt, agentTurns)
 	}
 	// the compactor honors the saved config on every Compact call:
 	// disabled compaction returns the input untouched regardless of size
@@ -441,9 +451,10 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	}
 
 	// nil hook (no files capsule mounted) and nil context must not panic
-	hotApply(cfg, pctx, nil, nil)
-	hotApply(cfg, nil, setFilesWorkspace, nil)
-	hotApply(cfg, nil, nil, nil)
+	hotApply(cfg, pctx, nil, nil, nil)
+	hotApply(cfg, nil, setFilesWorkspace, nil, nil)
+	hotApply(cfg, nil, nil, nil, setAgentConfig)
+	hotApply(cfg, nil, nil, nil, nil)
 }
 
 func TestOmegaSettingsImplementsSeam(t *testing.T) {

@@ -60,7 +60,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// The curator reads the provider seam LIVE at consult time - the
 	// registry resolve, not a mount-time pin (toggles swap the offer).
 	sp.SetProviderFn(func() agent.Provider { return seam[agent.Provider](ctx, "provider") })
-	sp.CuratorModel = cfg.CuratorModel
+	sp.SetCuratorModel(cfg.CuratorModel)
 	// Legacy-format visibility (card t_5baad951): a folder holding
 	// <name>.md without SKILL.md is invisible to discovery - one boot
 	// warning per hit, never a silent skip. Reading the logging seam

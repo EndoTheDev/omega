@@ -12,6 +12,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/approval"
 	"github.com/EndoTheDev/omega/harness/compactor"
+	"github.com/EndoTheDev/omega/harness/store"
 	"github.com/EndoTheDev/omega/llm"
 	"gopkg.in/yaml.v3"
 )
@@ -119,11 +120,11 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Value: cfg.CompactionModel, Live: true,
 					Help: "model the compaction summarizer consults; instance:model rides a named provider instance (empty = the session provider model); applies live"},
 				{Key: "provider.summarizer_model", Label: "summarizer model", Type: "model", Slot: true,
-					Value: cfg.SummarizerModel,
-					Help:  "model the hygiene job consults for session summaries; instance:model rides a named provider instance (empty = the session provider model); applies on restart"},
+					Value: cfg.SummarizerModel, Live: true,
+					Help: "model the hygiene job consults for session summaries; instance:model rides a named provider instance (empty = the session provider model); applies live - the next sweep consults it (the report names the slot)"},
 				{Key: "provider.skills_model", Label: "skills curator model", Type: "model", Slot: true,
-					Value: cfg.SkillsModel,
-					Help:  "model the weekly skills curator consults for merge/distill proposals; instance:model rides a named provider instance (empty = the session provider model); applies on restart"},
+					Value: cfg.SkillsModel, Live: true,
+					Help: "model the weekly skills curator consults for merge/distill proposals; instance:model rides a named provider instance (empty = the session provider model); applies live - the next curator action consults it"},
 				{Key: "provider.approvals_model", Label: "approval decision model", Type: "model", Slot: true, Filter: "decision",
 					Value: cfg.ApprovalsModel, Live: true,
 					Help: "decision model the smart approval gate consults; instance:model routes the consult through a named provider instance (empty = fail-closed, every gated command escalates); applies live"},
@@ -164,12 +165,12 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			Knobs: []core.SettingsKnob{
 				{Key: "sessions.retention_days", Label: "retention (days)", Type: "number",
 					Min: ptrF(0), Step: ptrF(1),
-					Value: cfg.Sessions.RetentionDays,
-					Help:  "the hygiene job deletes sessions inactive longer than this many days (pinned sessions are exempt); 0 = never prune; applies on restart"},
+					Value: cfg.Sessions.RetentionDays, Live: true,
+					Help: "the hygiene job deletes sessions inactive longer than this many days (pinned sessions are exempt); 0 = never prune; applies live - the section rides the same hot-apply push as summarizer_model"},
 				{Key: "sessions.summarize_after_hours", Label: "summarize after (h)", Type: "number",
 					Min: ptrF(0), Step: ptrF(1),
-					Value: cfg.Sessions.SummarizeAfterHours,
-					Help:  "the hygiene job summarizes settled sessions that lack a summary once they are idle this many hours; 0 = the default (24h); applies on restart"},
+					Value: cfg.Sessions.SummarizeAfterHours, Live: true,
+					Help: "the hygiene job summarizes settled sessions that lack a summary once they are idle this many hours; 0 = the default (24h); applies live - the section rides the same hot-apply push as summarizer_model"},
 				// The summarizer's model moved to provider settings
 				// (card t_fc0b2f2d): provider.summarizer_model.
 			},
@@ -184,16 +185,16 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			Label: "runtime",
 			Knobs: []core.SettingsKnob{
 				{Key: "system_prompt", Label: "system prompt", Type: "textarea",
-					Value: cfg.SystemPrompt,
-					Help:  "extra custom prompt lines appended to the system prompt; applies on restart"},
+					Value: cfg.SystemPrompt, Live: true,
+					Help: "extra custom prompt lines appended to the system prompt; applies live - the next run reads it"},
 				{Key: "http_timeout", Label: "http timeout (s)", Type: "number",
 					Min: ptrF(1), Step: ptrF(1),
 					Value: cfg.HTTPTimeout,
 					Help:  "LLM request timeout in seconds", Live: true},
 				{Key: "max_turns", Label: "max turns", Type: "number",
 					Min: ptrF(0), Step: ptrF(1),
-					Value: cfg.MaxTurns,
-					Help:  "tool-loop turn cap per chat; applies on restart"},
+					Value: cfg.MaxTurns, Live: true,
+					Help: "tool-loop turn cap per chat; applies live - the next run reads it (0 = the 100 default)"},
 			},
 		},
 		{
@@ -337,7 +338,7 @@ func providerInstancesKnob(cfg *Config) []map[string]any {
 // saveSettings applies values (dotted yaml path -> value), validates,
 // and writes config.yaml atomically, then hot-applies the live knobs to
 // the running context. Returns the refreshed schema payload.
-func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string), values map[string]any) (*core.SettingsSchema, error) {
+func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string), setAgentConfig func(string, int), values map[string]any) (*core.SettingsSchema, error) {
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		return nil, err
@@ -351,7 +352,7 @@ func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(strin
 	if err := writeConfigFile(path, &cfg); err != nil {
 		return nil, err
 	}
-	hotApply(cfg, pctx, setFilesWorkspace, setChannelWorkspace)
+	hotApply(cfg, pctx, setFilesWorkspace, setChannelWorkspace, setAgentConfig)
 	return &core.SettingsSchema{Groups: settingGroups(&cfg)}, nil
 }
 
@@ -720,12 +721,15 @@ func writeConfigFile(path string, cfg *Config) error {
 
 // hotApply runs the knobs the running process can use without a
 // restart: the shared HTTP client timeout, the compactor's config
-// (Compact re-reads it on every call), and the files surface's default
+// (Compact re-reads it on every call), the files surface's default
 // workspace - hot because the resolution law reads it per request, so
-// a settings-pane save re-roots the Files tab live. WatchConfig's
-// on-disk reload goes through the same path, so a hand edit and a
-// settings-pane save behave identically.
-func hotApply(cfg Config, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string)) {
+// a settings-pane save re-roots the Files tab live - the hygiene and
+// skills capsules' model slots (SetConfig, re-read per pass), and the
+// serving agents' system_prompt / max_turns through the boot-captured
+// agent hook (card t_f78acfd6). WatchConfig's on-disk reload goes
+// through the same path, so a hand edit and a settings-pane save
+// behave identically.
+func hotApply(cfg Config, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string), setAgentConfig func(string, int)) {
 	llm.SetHTTPTimeout(cfg.HTTPTimeout)
 	if pctx == nil {
 		return
@@ -759,6 +763,39 @@ func hotApply(cfg Config, pctx *agent.Context, setFilesWorkspace func(string), s
 	if a, ok := pctx.Services().Resolve("approvals").(*approval.Gate); ok {
 		a.SetConfig(approvalSection(cfg))
 	}
+	// The store's hygiene pass goes live (card t_f78acfd6): the sweep
+	// resolves its model slot + retention window from the live section
+	// (store.SetHygieneConfig), so a summarizer_model flip reaches the
+	// next sweep. Unmounted store (the host's own supply) = a nil
+	// resolve, no-op.
+	if s, ok := pctx.Services().Resolve("store").(*store.Store); ok {
+		s.SetHygieneConfig(sessionsSection(cfg))
+	}
+	// The skills curator does the same for its consult slot: the next
+	// curator action resolves provider.skills_model live. Consumer law
+	// (the noun test): the host declares its own local face, the
+	// capsule's type name never leaves harness/.
+	if sp, ok := pctx.Services().Resolve("skills").(curatorSlotSetter); ok {
+		sp.SetCuratorModel(skillsSection(cfg).CuratorModel)
+	}
+	// The runtime knobs land on the AGENTS (card t_f78acfd6, the probe
+	// verdict): the loop re-reads prompt.Custom and the turn cap per
+	// Run, so a system_prompt / max_turns save answers with the new
+	// values at the next run - through the one boot-captured hook that
+	// covers the host-owned agent AND the HTTP channel's serving
+	// agent. Nil hook = the surface is not mounted (host fallback
+	// supply, tests).
+	if setAgentConfig != nil {
+		setAgentConfig(cfg.SystemPrompt, cfg.MaxTurns)
+	}
+}
+
+// curatorSlotSetter is the host's consumer-owned face for the skills
+// capsule's live consult slot (card t_f78acfd6): hotApply declares its
+// need here, the capsule satisfies it with SetCuratorModel - the owner
+// name never leaves harness/ (the noun test holds the namespace).
+type curatorSlotSetter interface {
+	SetCuratorModel(model string)
 }
 
 // omegaSettings implements core.Settings for the serve host: the webui
@@ -768,6 +805,7 @@ type omegaSettings struct {
 	pctx                *agent.Context
 	setFilesWorkspace   func(string) // the files capsule's hot knob, nil when it is not mounted
 	setChannelWorkspace func(string) // the HTTP channel's default-workspace hot knob, nil when unset
+	setAgentConfig      func(string, int) // the serving agents' runtime-knob hot hook (t_f78acfd6)
 }
 
 func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
@@ -799,7 +837,7 @@ func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
 }
 
 func (s *omegaSettings) Save(values map[string]any) (*core.SettingsSchema, error) {
-	return saveSettings(s.path, s.pctx, s.setFilesWorkspace, s.setChannelWorkspace, values)
+	return saveSettings(s.path, s.pctx, s.setFilesWorkspace, s.setChannelWorkspace, s.setAgentConfig, values)
 }
 
 // Compile-time assertion that omegaSettings implements core.Settings.
