@@ -2184,7 +2184,7 @@ export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
             kn.filter === "decision" || kn.filter === "vision"
               ? kn.filter
               : undefined,
-          slot: kn.slot === true,
+          slot: kn.slot === true ? true : undefined,
           min: typeof kn.min === "number" ? kn.min : undefined,
           max: typeof kn.max === "number" ? kn.max : undefined,
           step: typeof kn.step === "number" ? kn.step : undefined,
