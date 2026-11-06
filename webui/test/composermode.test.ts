@@ -1,14 +1,14 @@
-// omega webui: the composer's display modes (card t_5752861e, the width
-// ladder t_4a6431f8). Three modes - compact (the base card shape, the
-// class binding's null: 12px inset, 720px cap - the narrow reading
-// card), wide (mode-wide: the cap lifts to 1100px, inset 4px), full
-// (mode-full: no cap, edge to edge, no inset, no radius). Inset-only
-// deltas read as the same shape - each mode owns an upper WIDTH bound.
-// The knob rides the shared-signal shape
-// (bottomWidth.ts): SettingsTab writes, AppComposer reads, localStorage
-// persists under omega.composer-mode. The fullscreen (.expanded) card
-// geometry stays pinned by its own ruling - the modes hold only when
-// NOT expanded. Render-free; node's built-in test runner.
+// omega webui: the composer's display modes (card t_5752861e, reshape
+// t_f9fd3820 - the width ladder t_4a6431f8 was the wrong shape and is
+// superseded). Three modes - compact (the modifier `mode-compact`: ONE
+// row, plus/input/chips/send inline with nowrap, a centered card via
+// auto margins, the 720px cap), wide (the DEFAULT: the unmodified base
+// .composer, pre-modes geometry, no class), full (mode-full: no cap,
+// edge to edge, no inset, no radius). The knob rides the shared-signal
+// shape (bottomWidth.ts): SettingsTab writes, AppComposer reads,
+// localStorage persists under omega.composer-mode. The fullscreen
+// (.expanded) card geometry stays pinned by its own ruling - the modes
+// hold only when NOT expanded. Render-free; node's built-in test runner.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -70,7 +70,7 @@ describe("composerMode wiring", () => {
       /:class="\[composerModeClass, \{ expanded: expanded \}\]"/,
     );
     assert.match(composer, /import .*composables\/composerMode/);
-    assert.match(composer, /return m === "compact" \? null : `mode-\$\{m\}`/);
+    assert.match(composer, /return m === "wide" \? null : `mode-\$\{m\}`/);
   });
 
   it("SettingsTab carries the chat.composer_mode client knob and writes the signal", () => {
@@ -80,19 +80,26 @@ describe("composerMode wiring", () => {
     assert.match(settings, /if \(knob\.key === "chat\.composer_mode"\) return composerMode\.value/);
   });
 
-  it("the CSS carries both non-compact shapes, gated to NOT expanded", () => {
-    assert.match(css, /\.composer\.mode-wide:not\(\.expanded\)/);
+  it("the CSS carries both modifier shapes, gated to NOT expanded", () => {
+    assert.match(css, /\.composer\.mode-compact:not\(\.expanded\)/);
     assert.match(css, /\.composer\.mode-full:not\(\.expanded\)/);
+    assert.doesNotMatch(css, /mode-wide/); // the ladder is retired
   });
 
-  it("the mode ladder owns a WIDTH bound per mode - inset-only deltas are dead (t_4a6431f8)", () => {
+  it("wide is the pre-modes default; compact is the single-line centered card", () => {
     const base = css.match(/\.composer \{([^}]*)\}/)?.[1] ?? "";
-    assert.match(base, /max-width: 720px/); // compact: the narrow reading card
-    const wide = css.match(/\.composer\.mode-wide:not\(\.expanded\) \{([^}]*)\}/)?.[1] ?? "";
-    assert.match(wide, /max-width: 1100px/);
+    assert.doesNotMatch(base, /max-width/); // wide: no cap, the pre-modes shape
+    const compact = css.match(/\.composer\.mode-compact:not\(\.expanded\) \{([^}]*)\}/)?.[1] ?? "";
+    assert.match(compact, /flex-direction: row/); // the single line
+    assert.match(compact, /align-items: center/);
+    assert.match(compact, /max-width: 720px/);
+    assert.match(compact, /margin: 0 auto 12px/); // centered in the pane
+    // the row eats the leftover width and the chips never wrap
+    assert.match(css, /\.composer\.mode-compact:not\(\.expanded\) \.composer-row \{\s*flex: 1;/);
+    assert.match(css, /\.composer\.mode-compact:not\(\.expanded\) \.toolbar \{\s*flex-wrap: nowrap;/);
     const full = css.match(/\.composer\.mode-full:not\(\.expanded\) \{([^}]*)\}/)?.[1] ?? "";
     assert.match(full, /max-width: none/);
     const expanded = css.match(/\.composer\.expanded \{([^}]*)\}/)?.[1] ?? "";
-    assert.match(expanded, /max-width: none/); // fullscreen ignores the cap
+    assert.match(expanded, /max-width: none/); // fullscreen ignores the caps
   });
 });

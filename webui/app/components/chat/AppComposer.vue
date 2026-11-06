@@ -244,9 +244,9 @@
     RefToken,
   } from "../../composables/pills";
   import { DOCK_VIEWER_OPEN_KEY } from "../../composables/viewer";
-  // the composer's display mode (card t_5752861e, width ladder t_4a6431f8):
+  // the composer's display mode (card t_5752861e, reshape t_f9fd3820):
   // one shared signal - SettingsTab writes it, the class binding carries
-  // mode-wide/mode-full (compact is the base shape, the narrow 720px card)
+  // mode-compact/mode-full (wide is the base shape, no class)
   import { parseComposerMode, useComposerMode } from "../../composables/composerMode";
   const props = defineProps<{
     draft: string;
@@ -299,12 +299,12 @@
     THINKING_UI_LEVELS.map((level) => ({ value: level, label: level })),
   );
 
-  // the display mode's class (card t_5752861e): mode-compact is the
-  // mode classes beside it: compact is the BASE .composer shape (the 720px
-  // reading card), so only wide/full carry a class
+  // the display mode's class (card t_5752861e, reshape t_f9fd3820):
+  // wide is the unmodified base shape (pre-modes geometry, no class);
+  // compact and full carry their modifier classes
   const composerModeClass = computed(() => {
     const m = parseComposerMode(composerMode.value);
-    return m === "compact" ? null : `mode-${m}`;
+    return m === "wide" ? null : `mode-${m}`;
   });
 
   // the morph (t_357cbe9c): busy -> stop, else send. The retry face left
