@@ -141,6 +141,19 @@ func (p *Plugin) SetDefaultWorkspace(ws string) {
 	}
 }
 
+// SetAgentPromptConfig is the settings hot-apply hook for the serving
+// agent's live knobs (card t_f78acfd6): a system_prompt / max_turns
+// save re-seeds every mounted bind's agent (and covers a bind that
+// wires later through the channel's stored fields). Same walk as
+// SetDefaultWorkspace.
+func (p *Plugin) SetAgentPromptConfig(prompt string, maxTurns int) {
+	for _, ch := range p.mounted {
+		if h, ok := ch.(*HTTPChannel); ok {
+			h.SetAgentPromptConfig(prompt, maxTurns)
+		}
+	}
+}
+
 // Dismount removes the channels Mount appended, by identity (the E1
 // dismount proof). The shell never lands in the disable list -
 // Dismount exists for the teardown proof, not for toggling.

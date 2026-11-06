@@ -481,6 +481,22 @@ func (s *Server) SetDefaultWorkspace(dir string) {
 	s.wsMu.Unlock()
 }
 
+// SetAgentPrompt is the settings hot-apply hook for the live runtime
+// knobs (card t_f78acfd6): prompt.Custom (the settings system_prompt
+// knob) and the per-run turn cap (max_turns) land on THIS bind's
+// serving agent. The agent re-reads both per run (the probe verdict:
+// the loop rebuilds prompt + cap per Run from its fields), so a save
+// answers with the new values at the next run - no restart, no rewire.
+// The shell api.Server walks its mounted binds to call this; a nil
+// agent is a no-op.
+func (s *Server) SetAgentPrompt(prompt string, maxTurns int) {
+	if s.agent == nil {
+		return
+	}
+	s.agent.SetPromptCustom(prompt)
+	s.agent.SetMaxTurns(maxTurns)
+}
+
 // WriteJSON is the exported seam for the shell's JSON responses.
 func WriteJSON(w http.ResponseWriter, status int, v any) { writeJSON(w, status, v) }
 

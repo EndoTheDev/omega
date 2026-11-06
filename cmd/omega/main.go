@@ -560,10 +560,10 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 // via the in-process plugin system. The store and plugin context are
 // returned so the caller can close the store and start channels. The
 // mount registry rides along for the E2 module-toggle surface.
-func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.LoggerProvider, *agent.Context, *agent.Registry, func([]string), func(string), func(string), error) {
+func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.LoggerProvider, *agent.Context, *agent.Registry, func([]string), func(string), func(string), func(string, int), error) {
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("build plugins: %w", err)
+		return nil, nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("build plugins: %w", err)
 	}
 	ctx := &agent.Context{
 		CWD:     cwd(),
@@ -578,7 +578,7 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 	// depending on one fails the boot naming the edge (Q3).
 	reg, err := agent.MountAllAPI(plugins, ctx, nil, cfg.Disabled.Modules)
 	if err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
+		return nil, nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
 	}
 	// The registry-toggle adapter needs the one continuous plugin
 	// instance the mount created (agent soft-toggles live-swap its
@@ -593,6 +593,10 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 	// watcher push a changed default_workspace onto the channel the
 	// same way the files capsule's knob travels.
 	var setChannelWorkspace func(string)
+	// setAgentPromptHook is the HTTP channel plugin's serving-agent
+	// hot knob (card t_f78acfd6): the system_prompt / max_turns save
+	// re-seeds every mounted bind's agent through it.
+	var setAgentPromptHook func(string, int)
 	for _, p := range plugins {
 		if cp, ok := p.(*continuous.Plugin); ok {
 			setAgents = cp.SetDisabledAgents
@@ -602,6 +606,7 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 		}
 		if hp, ok := p.(*api.Plugin); ok {
 			setChannelWorkspace = hp.SetDefaultWorkspace
+			setAgentPromptHook = hp.SetAgentPromptConfig
 		}
 	}
 
@@ -617,14 +622,14 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 	if svc := ctx.Services().Resolve("store"); svc != nil {
 		st, ok := svc.(agent.StoreProvider)
 		if !ok {
-			return nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("seam \"store\": the offered service (%T) does not satisfy the store need (wrong shape) - fix the offering capsule", svc)
+			return nil, nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("seam \"store\": the offered service (%T) does not satisfy the store need (wrong shape) - fix the offering capsule", svc)
 		}
 		st2 = st
 	}
 	if st2 == nil {
 		st2, err = openDefaultSupply(ctx, logger)
 		if err != nil {
-			return nil, nil, nil, nil, nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, nil, nil, nil, nil, err
 		}
 	}
 	wireCaptioner(cfg, ctx)
@@ -638,7 +643,23 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 		CWD:           cwd(),
 	})
 
-	return ag, st2, logger, ctx, reg, setAgents, setFilesWorkspace, setChannelWorkspace, nil
+	// setAgentConfig is the runtime-knob hot hook (card t_f78acfd6):
+	// ONE closure covers BOTH agents a settings save of
+	// system_prompt / max_turns must reach - the host-owned agent
+	// here (cron and the continuous carriers ride it via StartDeps)
+	// and every mounted HTTP bind's serving agent (the channel builds
+	// its own agent with empty AgentOptions, so the boot values reach
+	// it only through the wire-time push the serve boot calls below);
+	// the channel store doubles as the boot bake for a late wire.
+	setAgentConfig := func(prompt string, maxTurns int) {
+		if setAgentPromptHook != nil {
+			setAgentPromptHook(prompt, maxTurns)
+		}
+		ag.SetPromptCustom(prompt)
+		ag.SetMaxTurns(maxTurns)
+	}
+
+	return ag, st2, logger, ctx, reg, setAgents, setFilesWorkspace, setChannelWorkspace, setAgentConfig, nil
 }
 
 // wireCaptioner builds the image captioner (vision_model knob) onto the
@@ -738,7 +759,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		return err
 	}
 	llm.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, logger, pctx, reg, setAgents, setFilesWorkspace, setChannelWorkspace, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, pctx, reg, setAgents, setFilesWorkspace, setChannelWorkspace, setAgentConfig, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}
@@ -803,15 +824,24 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		logger:     logger,
 	}
 	WatchConfig(configFile, func(newCfg Config) {
-		hotApply(newCfg, pctx, setFilesWorkspace, setChannelWorkspace)
+		hotApply(newCfg, pctx, setFilesWorkspace, setChannelWorkspace, setAgentConfig)
 		registries.Sync(newCfg.Disabled) // hand edits follow the toggle path
 	})
+	// The serving agent's boot bake (card t_f78acfd6): the HTTP
+	// channel builds its own agent with empty AgentOptions, so the
+	// boot config's system_prompt and max_turns reach the serving
+	// agent only through this pre-start push - the hook stores the
+	// channel fields, wire applies them at start. Runs through the
+	// same path the hot-apply uses.
+	if setAgentConfig != nil {
+		setAgentConfig(cfg.SystemPrompt, cfg.MaxTurns)
+	}
 	errCh := make(chan error, len(pctx.Channels))
 	for _, ch := range pctx.Channels {
 		deps := core.ChannelDeps{
 			Ctx:        pctx,
 			Store:      store,
-			Settings:   &omegaSettings{path: configFile, pctx: pctx, setFilesWorkspace: setFilesWorkspace, setChannelWorkspace: setChannelWorkspace},
+			Settings:   &omegaSettings{path: configFile, pctx: pctx, setFilesWorkspace: setFilesWorkspace, setChannelWorkspace: setChannelWorkspace, setAgentConfig: setAgentConfig},
 			Modules:    mods,
 			Registries: registries,
 			Version:    omegaVersion,
@@ -941,7 +971,7 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 		applyModelEnvOverride(&cfg)
 	}
 	llm.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, logger, _, _, _, _, _, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, _, _, _, _, _, _, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}

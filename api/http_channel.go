@@ -50,7 +50,14 @@ type HTTPChannel struct {
 	// tools' fallback workdir for workspace-less sessions (card
 	// t_ccf74d88). Empty = unset - the cwd fallback stands.
 	defaultWorkspace string
-	publicHosts      []string // server.public_hosts: declared public identities
+	// The serving agent's live knobs (card t_f78acfd6): the custom
+	// prompt (system_prompt) and the per-run turn cap (max_turns).
+	// The hot-apply writes BOTH sides - these fields cover a bind that
+	// wires later (wire applies them at start), the write-through on
+	// SetAgentPromptConfig covers the live bind.
+	agentPrompt   string
+	agentMaxTurns int
+	publicHosts   []string // server.public_hosts: declared public identities
 	srv              *Server
 	// hub is the process-wide run registry (t_c6f13a82): one per
 	// plugin, shared by every bind's server. A second bind must not get
@@ -83,6 +90,19 @@ func (c *HTTPChannel) Start(ctx context.Context, deps core.ChannelDeps) error {
 		return err
 	}
 	return c.srv.Serve(ctx, c.addr)
+}
+
+// SetAgentPromptConfig is the hot-apply hook for the serving agent's
+// live knobs (card t_f78acfd6): a settings save of system_prompt or
+// max_turns lands on the store-then-apply double - the fields cover a
+// bind that wires later, the write-through covers the running server.
+// Mirrors SetDefaultWorkspace's discipline exactly.
+func (c *HTTPChannel) SetAgentPromptConfig(prompt string, maxTurns int) {
+	c.agentPrompt = prompt
+	c.agentMaxTurns = maxTurns
+	if c.srv != nil {
+		c.srv.SetAgentPrompt(prompt, maxTurns)
+	}
 }
 
 // wire builds the channel's server and binds it to the process-wide
@@ -171,6 +191,12 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	// The default workspace knob rides its own setter (the hot apply
 	// calls it live): the wire applies the boot value here.
 	c.srv.SetDefaultWorkspace(c.defaultWorkspace)
+	// The serving agent's live knobs (card t_f78acfd6): the boot
+	// values for the custom prompt + turn cap (the hot-apply fields
+	// below). The channel builds its own agent with empty
+	// AgentOptions - the boot cfg never reached the serving agent
+	// through NewFromContext, so this pair is every surface they ride.
+	c.srv.SetAgentPrompt(c.agentPrompt, c.agentMaxTurns)
 	c.srv.SetPublicHosts(c.publicHosts)
 	c.srv.version = deps.Version
 	// The capsule pin goes live LAST, after every server field above
