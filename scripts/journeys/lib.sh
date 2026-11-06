@@ -97,6 +97,19 @@ wait_js() {
 # wait_text <text> <timeout_s>: wait until text renders, then die on miss
 wait_text() { ab wait --text "$1" >/dev/null 2>&1 || die "text never rendered: $1"; step "ok: text rendered: $1"; }
 
+# --- the selector-wait law (card t_2bfd52ac) ---------------------------------
+# A component fed by a single fetch-on-mount (a v-if gating a control
+# until a GET answers, e.g. the board switcher's BandSelect chip behind
+# Board.vue's `boards.length > 1 || boardName`) can never satisfy a hard
+# wait_js when that fetch silently fails - and the wait burns its cap as
+# a RED that says nothing. For such selectors:
+#   poll first (poll_js never dies) -> on a miss re-mount the surface
+#   (ab reload re-runs the fetch) -> poll again -> die NAMING the API's
+#   answer, so the next red carries its own diagnosis. Whole-recipe
+#   provider/model dependence remains run.sh's JOURNEY_NEEDS_MODEL gate;
+#   this law is for inline waits only. Proven shape: recipe 98's
+#   switch_to_board.
+
 # poll_js <expr> <timeout_s>: like wait_js but NEVER dies - returns 1 on
 # timeout. wait_js always exits the recipe on timeout (die calls exit, and
 # `wait_js ... || true` cannot catch an exit), so any fallback path must
