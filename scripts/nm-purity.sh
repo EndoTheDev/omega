@@ -235,8 +235,10 @@ def scrub(text, modules, carried=None):
             if re.search(r"\." + re.escape(ident) + r"\b", body):
                 return True
         stripped = ln.strip()
-        # a bare identifier or identifier list (list items, re-assigns)
-        if re.match(r"^((" + "|".join(re.escape(i) for i in sorted(dead_ids)) + r"))\s*(,\s*)*$", stripped):
+        # a bare identifier or identifier list (list items, re-assigns).
+        # The bare MODULE name is excluded (see the value rule below):
+        # it may name a live local or param.
+        if re.match(r"^((" + "|".join(re.escape(i) for i in sorted(dead_ids - set(mnames))) + r"))\s*(,\s*)*$", stripped):
             return True
         # a struct field typed by a dead host-config type - the tag is
         # string-stripped above, so the line body reads `Skills
@@ -393,9 +395,11 @@ def scrub(text, modules, carried=None):
                     kill.add(i)
                     i += 1
                     continue
-                # RHS = single dead value -> the line dies
+                # RHS = single dead value -> the line dies. The bare
+                # MODULE name is excluded - it may name a live local
+                # or param (see the value rule).
                 m = re.match(r'^([^=]+)=\s*([A-Za-z_][A-Za-z0-9_]*)\s*(//.*)?$', ln.strip())
-                if m and m.group(2) in dead_ids:
+                if m and m.group(2) in dead_ids and m.group(2) not in mnames:
                     kill.add(i)
                     i += 1
                     continue
@@ -464,7 +468,10 @@ def scrub(text, modules, carried=None):
                         val = val.strip().rstrip(",").strip()
                         if not val:
                             live_vals += 1
-                        elif val in dead_ids:
+                        elif val in dead_ids and val not in mnames:
+                            # a bare MODULE name as a return value is a
+                            # live local or param (the qualified use is
+                            # the access rule's wire)
                             dead_vals += 1
                         elif val in ("nil", "true", "false", "_") or val.isdigit() or val.startswith('"'):
                             pass
@@ -618,17 +625,30 @@ def scrub(text, modules, carried=None):
     # lines inside the import block are candidates - a `word "literal"`
     # line elsewhere is Go code, not an import.
     import_shapes = re.compile(r'^\s*([A-Za-z_]\w*\s+)?"((?:\\.|[^"\\])*)"\s*(//.*)?$')
+    # a single-LINE import (`import "sort"`, no block) prunes too - the
+    # import block below never opens for it
+    single_import = re.compile(r'^import\s+([^\s]+\s+)?"((?:\\.|[^"\\])*)"\s*(//.*)?$')
     b0 = next((k for k, ln in enumerate(out) if ln.strip() == "import ("), None)
     b1 = None
     if b0 is not None:
         b1 = next((k for k in range(b0 + 1, len(out)) if out[k].strip() == ")"), None)
 
     def is_import_line(k, ln):
+        if single_import.match(ln.strip()):
+            return True
         if b0 is None or k < b0:
             return False
         if b1 is not None and k > b1:
             return False
         return bool(import_shapes.match(ln))
+
+    def import_parts(ln):
+        s = ln.strip()
+        sm = single_import.match(s)
+        if sm:
+            return (sm.group(1) or "").strip(), sm.group(2)
+        m = import_shapes.match(ln)
+        return (m.group(1) or "").strip() if m else "", m.group(2) if m else ""
 
     body = "\n".join(ln for k, ln in enumerate(out) if not is_import_line(k, ln))
     pruned = []
@@ -636,16 +656,14 @@ def scrub(text, modules, carried=None):
         if not is_import_line(k, ln):
             pruned.append(ln)
             continue
-        m = import_shapes.match(ln)
         if ln.strip().startswith("."):
             # dotted import: side effect only, its path is never used
             pruned.append(ln)
             continue
-        alias = (m.group(1) or "").strip()
+        alias, path = import_parts(ln)
         if alias == "_":
             pruned.append(ln)
             continue
-        path = m.group(2)
         last = path.rstrip("/").split("/")[-1]
         cands = {last, last.split(".")[0]}
         if re.match(r"^v\d+$", last) and "/" in path:

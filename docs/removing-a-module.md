@@ -142,6 +142,20 @@ surface) is its sibling: `docs/migrating-a-module.md`.
      names in place (unread plain declarations die; a short form with
      no new name degrades to a plain assignment). Fixtures pin both in
      `scripts/nm-purity_test.sh`.
+   - The named-instances wiring (card t_4a1ed765) taught five more:
+     an aggregate config field typed through a composite (map key type,
+     slice/array mark, star) joins the SharedFields class and dies with
+     its `<Noun>Config` type; the type's VALUE uses (a constructor
+     literal, a make() type argument) are wires; a func whose body the
+     cascade emptied dies whole (a nil body refuses a non-error return)
+     and its name joins the dead vocabulary across the file boundary;
+     a stdlib import whose last reader died prunes; and a control head
+     that died WITH its block is never an anchor source - a range var
+     may shadow an outer binding. The counter-law is deliberate: a bare
+     module name (`provider string` as a param, `return provider`) is a
+     live local, never the package - only the qualified use
+     (`provider.X`) is the wire. Fixture 10 in
+     `scripts/nm-purity_test.sh` pins all five plus the counter-law.
 8. **Run the gates in the worktree**: `go build ./...`, `go vet ./...`,
    `go test ./...`. The journey suite proves the board behavior green
    before removal (`91-canvas-tab` and the module journeys) and green
