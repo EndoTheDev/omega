@@ -26,6 +26,7 @@ const (
 	LedgerArchive  = "archive"
 	LedgerMerge    = "merge"
 	LedgerDistill  = "distill"
+	LedgerRemove   = "remove"
 	LedgerRollback = "rollback"
 )
 
@@ -97,11 +98,13 @@ func (sp *SkillsProvider) readLedger() ([]LedgerEntry, error) {
 	return out, nil
 }
 
-// AppendLedger appends one audit row and returns its id. The before
+// AppendLedger appends one audit row and returns its id. The actor is
+// the writer's class (the curator's passes; ActorWebui for the tab
+// editor's own writes) - the audit trail names its writer. The before
 // contents are snapped from disk by the caller; this function only
 // records. Errors surface - the caller must not mutate anything when
 // the ledger refuses (the audit row IS the mutation's receipt).
-func (sp *SkillsProvider) AppendLedger(action, skill, reason string, files []LedgerFile, extra map[string]any) (string, error) {
+func (sp *SkillsProvider) AppendLedger(actor, action, skill, reason string, files []LedgerFile, extra map[string]any) (string, error) {
 	ledgerMu.Lock()
 	defer ledgerMu.Unlock()
 	entries, err := sp.readLedger()
@@ -116,7 +119,7 @@ func (sp *SkillsProvider) AppendLedger(action, skill, reason string, files []Led
 	e := LedgerEntry{
 		ID:       id,
 		TS:       time.Now().UTC().Format(time.RFC3339),
-		Actor:    "curator",
+		Actor:    actor,
 		Action:   action,
 		Skill:    skill,
 		Evidence: map[string]any{"reason": reason},
@@ -167,15 +170,23 @@ func (sp *SkillsProvider) archiveDir() (string, error) {
 	return filepath.Join(sp.Dir, ".archive"), nil
 }
 
-// BackupSkill copies a skill's whole folder (SKILL.md plus any
-// references/scripts) into .curator_backups/<ts>-<action>-<skill>/ and
-// prunes the oldest copies past backupKeep. Returns the backup path.
+// BackupSkill copies a skill folder into .curator_backups by NAME in
+// the own skills dir (the curator's callers; the editor's delete backs
+// up from the merge-winner's folder via backupFrom). Returns the
+// backup path.
 func (sp *SkillsProvider) BackupSkill(name, action string) (string, error) {
 	root, err := sp.backupDir()
 	if err != nil {
 		return "", err
 	}
-	src := filepath.Join(sp.Dir, name)
+	return sp.backupFrom(filepath.Join(sp.Dir, name), root, name, action)
+}
+
+// backupFrom copies one skill folder (src, the whole tree: SKILL.md
+// plus references/scripts) into the backup root named <ts>-<action>-
+// <skill>, pruned to the keep set. The source is the caller's resolved
+// folder so a shared-dir winner is backed up from where it lives.
+func (sp *SkillsProvider) backupFrom(src, root, name, action string) (string, error) {
 	dst := filepath.Join(root, fmt.Sprintf("%s-%s-%s", time.Now().UTC().Format("20060102-150405"), action, name))
 	if err := copyDir(src, dst); err != nil {
 		return "", fmt.Errorf("backup skill %s: %w", name, err)

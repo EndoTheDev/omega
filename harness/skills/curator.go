@@ -236,7 +236,7 @@ func (sp *SkillsProvider) archiveOne(name string, rec UsageRecord, usage map[str
 	rec.State = StateArchived
 	rec.ArchivedAt = time.Now().UTC().Format(time.RFC3339)
 	usage[name] = rec
-	id, err := sp.AppendLedger(LedgerArchive, name, "stale-only skill: no activity in "+fmt.Sprint(ArchiveAfterDays)+" days",
+	id, err := sp.AppendLedger("curator", LedgerArchive, name, "stale-only skill: no activity in "+fmt.Sprint(ArchiveAfterDays)+" days",
 		[]LedgerFile{{Path: skillFile, Before: before, After: ""}}, nil)
 	if err != nil {
 		return "", err
@@ -397,7 +397,7 @@ func (sp *SkillsProvider) applyMerge(ctx context.Context, prov agent.Provider, m
 	usage[m.Into] = t
 	writeUsageLocked(sp.Dir, usage)
 	usageMu.Unlock()
-	id, err := sp.AppendLedger(LedgerMerge, m.Source, m.Reason,
+	id, err := sp.AppendLedger("curator", LedgerMerge, m.Source, m.Reason,
 		[]LedgerFile{
 			{Path: tgtFile, Before: string(tgtRaw), After: patched},
 			{Path: srcFile, Before: string(srcRaw), After: ""},
@@ -459,7 +459,7 @@ func (sp *SkillsProvider) applyDistill(ctx context.Context, prov agent.Provider,
 	usage[name] = rec
 	writeUsageLocked(sp.Dir, usage)
 	usageMu.Unlock()
-	return sp.AppendLedger(LedgerDistill, name, reason,
+	return sp.AppendLedger("curator", LedgerDistill, name, reason,
 		[]LedgerFile{{Path: skillFile, Before: content, After: patched}},
 		map[string]any{"before_chars": len([]rune(body)), "after_chars": len([]rune(distilled))})
 }
