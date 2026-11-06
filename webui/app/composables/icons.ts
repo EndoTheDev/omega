@@ -35,6 +35,7 @@ import {
   Plus,
   History,
   Kanban,
+  MailOpen,
   MessageSquare,
   PanelBottomClose,
   PanelBottomOpen,
@@ -100,6 +101,7 @@ export const ICONS = {
   "panel-bottom-open": PanelBottomOpen,
   "panel-bottom-close": PanelBottomClose,
   inbox: Inbox, // the notifications feed tab (the bell died with its chrome)
+  mailOpen: MailOpen, // the mark-all-read action (the notifications band tool)
   brain: Brain, // the thinking block
   "chevron-down": ChevronDown, // collapsers (rotated per state)
   star: Star, // pinned sessions
