@@ -25,6 +25,10 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 		"provider.model_name":            true,
 		"provider.vision_model":          true,
 		"provider.title_model":           true,
+		"provider.compaction_model":      true,
+		"provider.summarizer_model":      true,
+		"provider.skills_model":          true,
+		"provider.approvals_model":       true,
 		"provider.host":                  true,
 		"provider.api_key":               true,
 		"provider.instances":             true,
@@ -35,7 +39,6 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 		"store.db_path":                  true,
 		"sessions.retention_days":        true,
 		"sessions.summarize_after_hours": true,
-		"sessions.summarizer_model":      true,
 		"compaction.enabled":             true,
 		"compaction.threshold":           true,
 		"compaction.context_window":      true,
@@ -48,7 +51,6 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 		"max_turns":                      true,
 		"skills.dir":                     true,
 		"skills.nudge_interval":          true,
-		"skills.curator_model":           true,
 		"memory.enabled":                 true,
 		"memory.user_profile_enabled":    true,
 		"memory.char_limit":              true,
@@ -58,7 +60,6 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 		"logging.enabled":                true,
 		"logging.file":                   true,
 		"approvals.mode":                 true,
-		"approvals.model":                true,
 		"approvals.smart_policy":         true,
 	}
 }
@@ -104,26 +105,27 @@ func TestModelKnobsTyped(t *testing.T) {
 				if k.Filter != "vision" {
 					t.Errorf("%s filter = %q, want vision", k.Key, k.Filter)
 				}
-			case "approvals.model":
+			case "approvals.model", "skills.curator_model", "sessions.summarizer_model":
+				t.Errorf("%s: the per-subsystem model knobs moved to provider settings (card t_fc0b2f2d); this case must die with the schema", k.Key)
+			case "provider.compaction_model", "provider.summarizer_model", "provider.skills_model":
+				if k.Type != "model" {
+					t.Errorf("%s type = %q, want model", k.Key, k.Type)
+				}
+				if k.Filter != "" {
+					t.Errorf("%s filter = %q, want empty (the full model list)", k.Key, k.Filter)
+				}
+				if !k.Slot {
+					t.Errorf("%s is not marked slot = true (the instance selector)", k.Key)
+				}
+			case "provider.approvals_model":
 				if k.Type != "model" {
 					t.Errorf("%s type = %q, want model", k.Key, k.Type)
 				}
 				if k.Filter != "decision" {
 					t.Errorf("%s filter = %q, want decision (the decision-family dropdown)", k.Key, k.Filter)
 				}
-			case "skills.curator_model":
-				if k.Type != "model" {
-					t.Errorf("%s type = %q, want model", k.Key, k.Type)
-				}
-				if k.Filter != "" {
-					t.Errorf("%s filter = %q, want empty (the full model list)", k.Key, k.Filter)
-				}
-			case "sessions.summarizer_model":
-				if k.Type != "model" {
-					t.Errorf("%s type = %q, want model", k.Key, k.Type)
-				}
-				if k.Filter != "" {
-					t.Errorf("%s filter = %q, want empty (the full model list)", k.Key, k.Filter)
+				if !k.Slot {
+					t.Errorf("%s is not marked slot = true (the instance selector)", k.Key)
 				}
 			default:
 				if k.Type == "model" {
@@ -180,21 +182,30 @@ const testConfigYAML = "provider:\n  model_name: test-model\n"
 func TestApplySettingValuesTyped(t *testing.T) {
 	cfg := DefaultConfig()
 	err := applySettingValues(&cfg, map[string]any{
-		"provider.host":            "  http://host:1234  ",
-		"provider.type":            " OpenAI ",
-		"server.port":              float64(9000),
-		"compaction.enabled":       false,
-		"compaction.threshold":     0.75,
-		"compaction.keep_first":    float64(3),
-		"http_timeout":             float64(120),
-		"logging.file":             "x.log",
-		"server.default_workspace": t.TempDir(),
+		"provider.host":             "  http://host:1234  ",
+		"provider.type":             " OpenAI ",
+		"provider.compaction_model": "big:big-model",
+		"provider.summarizer_model": "small-model",
+		"provider.skills_model":     "small-model",
+		"provider.approvals_model":  "big:big-model",
+		"server.port":               float64(9000),
+		"compaction.enabled":        false,
+		"compaction.threshold":      0.75,
+		"compaction.keep_first":     float64(3),
+		"http_timeout":              float64(120),
+		"logging.file":              "x.log",
+		"server.default_workspace":  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if cfg.Provider.Host != "http://host:1234" {
 		t.Errorf("host not trimmed: %q", cfg.Provider.Host)
+	}
+	if cfg.CompactionModel != "big:big-model" || cfg.SummarizerModel != "small-model" ||
+		cfg.SkillsModel != "small-model" || cfg.ApprovalsModel != "big:big-model" {
+		t.Errorf("per-subsystem model slots not applied: %q %q %q %q",
+			cfg.CompactionModel, cfg.SummarizerModel, cfg.SkillsModel, cfg.ApprovalsModel)
 	}
 	if cfg.Provider.Type != "OpenAI" {
 		t.Errorf("type not preserved case: %q", cfg.Provider.Type)

@@ -35,6 +35,14 @@ type CompactionConfig struct {
 	KeepLast      int     `yaml:"keep_last"`
 	ReserveTokens int     `yaml:"reserve_tokens"`
 	MaxToolOutput int     `yaml:"max_tool_output"`
+	// Model is the per-subsystem model slot (card t_fc0b2f2d):
+	// compaction's consult rides "instance:model" or a bare model,
+	// resolved through agent.ResolveModelSlot on every Compact call
+	// (the model knob is hot, mirroring every other compaction
+	// knob). The host routing (cmd/omega compactionSection) copies
+	// it in from the top-level compaction_model knob - never a
+	// separate yaml key.
+	Model string `yaml:"-"`
 }
 
 // Budget returns the token count at which compaction triggers,

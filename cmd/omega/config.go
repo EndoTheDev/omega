@@ -56,18 +56,30 @@ type Config struct {
 	// TitleModel is the auxiliary title generator (title_model knob):
 	// maybeTitleSession's cheap calls (provisional + final) route
 	// through it when set. Empty = the main model (today's behavior).
-	TitleModel  string            `yaml:"title_model"`
-	HTTPTimeout int               `yaml:"http_timeout"`
-	MaxTurns    int               `yaml:"max_turns"`
-	Skills      SkillsConfig      `yaml:"skills"`
-	Sessions    SessionsConfig    `yaml:"sessions"`
-	Memory      MemoryConfig      `yaml:"memory"`
-	Logging     LoggingConfig     `yaml:"logging"`
-	Web         WebConfig         `yaml:"web"`
-	Kanban      KanbanConfig      `yaml:"kanban"`
-	Continuous  continuous.Config `yaml:"continuous"`
-	Approvals   ApprovalConfig    `yaml:"approvals"`
-	Process     ProcessConfig     `yaml:"process"`
+	TitleModel string `yaml:"title_model"`
+	// The four per-subsystem model slots (card t_fc0b2f2d): provider
+	// settings assigns one named model per subsystem - compaction,
+	// summarizer, skills curator, approval gate - and the four call
+	// sites resolve it through agent.ParseModelSlot (the
+	// "instance:model" grammar; empty = the consumer's default). The
+	// schema keys ride the provider group (provider.*_model),
+	// mirroring vision_model / title_model: top-level knobs, one
+	// settings home, no per-section duplicates.
+	CompactionModel string            `yaml:"compaction_model"`
+	SummarizerModel string            `yaml:"summarizer_model"`
+	SkillsModel     string            `yaml:"skills_model"`
+	ApprovalsModel  string            `yaml:"approvals_model"`
+	HTTPTimeout     int               `yaml:"http_timeout"`
+	MaxTurns        int               `yaml:"max_turns"`
+	Skills          SkillsConfig      `yaml:"skills"`
+	Sessions        SessionsConfig    `yaml:"sessions"`
+	Memory          MemoryConfig      `yaml:"memory"`
+	Logging         LoggingConfig     `yaml:"logging"`
+	Web             WebConfig         `yaml:"web"`
+	Kanban          KanbanConfig      `yaml:"kanban"`
+	Continuous      continuous.Config `yaml:"continuous"`
+	Approvals       ApprovalConfig    `yaml:"approvals"`
+	Process         ProcessConfig     `yaml:"process"`
 	// Disabled is the config.yaml `disabled:` toggle fold (v0.12 E1,
 	// grill Q1; home moved from the omega.json sidecar to this key in
 	// the v0.13 shell law 3 - the sidecar folds at boot). v0.14.1
@@ -196,11 +208,9 @@ type SkillsConfig struct {
 	// t_9972dfd0): tool iterations between "persist a lesson"
 	// reminders in turn prep. 0 = nudging off. Default 15.
 	NudgeInterval int `yaml:"nudge_interval"`
-	// CuratorModel is the model the weekly skills curator pass
-	// consults for merge/distill proposals. Empty = the session
-	// provider model (Endo's ruling: default the session model,
-	// configurable in the settings).
-	CuratorModel string `yaml:"curator_model"`
+	// The curator's model moved to provider settings (card
+	// t_fc0b2f2d): it rides the top-level skills_model slot, routed
+	// into the capsule section by ConfigSection.
 }
 
 // MemoryConfig controls the persistent memory system.
@@ -288,10 +298,6 @@ type SessionsConfig struct {
 	// SummarizeAfterHours is the minimum age before the summarizer
 	// writes a session's summary.
 	SummarizeAfterHours int `yaml:"summarize_after_hours"`
-
-	// SummarizerModel is the model the summarizer consults. Empty =
-	// the session provider model (the curator ruling).
-	SummarizerModel string `yaml:"summarizer_model"`
 }
 
 // KanbanConfig configures the board database. The relative default
@@ -301,12 +307,14 @@ type KanbanConfig struct {
 }
 
 // ApprovalConfig configures the approval gate (card t_c2b52cb5):
-// mode off|manual|smart, the decision model, and the operator policy
-// text. Type name carries the host's config vocabulary for the
+// mode off|manual|smart and the operator policy text. THE MODEL moved
+// to provider settings (card t_fc0b2f2d): the decision model rides the
+// top-level approvals_model slot; ConfigSection resolves it into the
+// approval capsule's wiring (the capsule keeps the field, the config
+// key is gone). Type name carries the host's config vocabulary for the
 // nm-purity scrubber (SharedTypes law).
 type ApprovalConfig struct {
 	Mode        string `yaml:"mode"`
-	Model       string `yaml:"model"`
 	SmartPolicy string `yaml:"smart_policy"`
 }
 
@@ -655,7 +663,6 @@ func applyEnv(cfg *Config) {
 		{"OMEGA_LOGGING_FILE", &cfg.Logging.File},
 		{"OMEGA_DEFAULT_WORKSPACE", &cfg.Server.DefaultWorkspace},
 		{"OMEGA_APPROVALS_MODE", &cfg.Approvals.Mode},
-		{"OMEGA_APPROVALS_MODEL", &cfg.Approvals.Model},
 	} {
 		if v := os.Getenv(s.env); v != "" {
 			*s.target = v
@@ -807,11 +814,13 @@ func (c Config) ConfigSection(name string) (any, bool) {
 		return store.Config{DBPath: c.Store.DBPath}, true
 	case "sessions":
 		// card t_329b9312: the hygiene pass reads its knobs from the
-		// store capsule (the config session rides cfg.Sessions).
+		// store capsule (the config session rides cfg.Sessions). The
+		// summarizer's model slot (card t_fc0b2f2d) moved to provider
+		// settings - the capsule keeps the field, the slot is global.
 		return store.HygieneConfig{
 			RetentionDays:       c.Sessions.RetentionDays,
 			SummarizeAfterHours: c.Sessions.SummarizeAfterHours,
-			SummarizerModel:     c.Sessions.SummarizerModel,
+			SummarizerModel:     c.SummarizerModel,
 		}, true
 	case "provider":
 		// card t_7dcd4280: the named instances ride the section - the
@@ -829,13 +838,13 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "http_channel":
 		return api.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, DefaultWorkspace: c.Server.DefaultWorkspace, TitleModel: c.TitleModel, PublicHosts: c.Server.PublicHosts, WebTools: agentapi.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
 	case "skills":
-		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.SkillNames), NudgeInterval: c.Skills.NudgeInterval, CuratorModel: c.Skills.CuratorModel}, true
+		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.SkillNames), NudgeInterval: c.Skills.NudgeInterval, CuratorModel: c.SkillsModel}, true
 	case "memory":
 		return memory.Config{Enabled: c.Memory.Enabled, UserProfileEnabled: c.Memory.UserProfileEnabled, CharLimit: c.Memory.CharLimit, UserProfileCharLimit: c.Memory.UserProfileCharLimit, File: c.Memory.File, UserProfileFile: c.Memory.UserProfileFile}, true
 	case "logging":
 		return logging.Config{Enabled: c.Logging.Enabled, File: c.Logging.File}, true
 	case "compactor":
-		return c.Compaction, true
+		return compactionSection(c), true
 	case "trust":
 		return trust.Config{Home: omegaHome()}, true
 	case "files":
@@ -847,15 +856,19 @@ func (c Config) ConfigSection(name string) (any, bool) {
 		cont.Disabled = slices.Clone(c.Disabled.Agents) // v0.14.1: the disabled.agents fold rides the section
 		return cont, true
 	case "approvals":
-		// card t_c2b52cb5: mode/model/policy are Endo's knobs; host
-		// and home are wiring - the reviewer targets the provider
-		// host (the keypool mirror), the audit lands in the home.
+		// card t_c2b52cb5: mode/policy are Endo's knobs; host and home
+		// are wiring - the reviewer targets the provider host (the
+		// keypool mirror), the audit lands in the home. The decision
+		// model rides the provider settings slot (card t_fc0b2f2d):
+		// approvalSlot routes an "instance:model" prefix through the
+		// named provider instance.
+		host, key, model := approvalSlot(c)
 		return approval.Config{
 			Mode:        c.Approvals.Mode,
-			Model:       c.Approvals.Model,
+			Model:       model,
 			SmartPolicy: c.Approvals.SmartPolicy,
-			HTTPHost:    c.Provider.Host,
-			APIKey:      c.Provider.APIKey,
+			HTTPHost:    host,
+			APIKey:      key,
 			Home:        omegaHome(),
 		}, true
 	case "process":
@@ -886,4 +899,44 @@ func webBaseURL(baseURL, providerHost string) string {
 		return baseURL
 	}
 	return strings.TrimSuffix(providerHost, "/v1")
+}
+
+// compactionSection returns the compactor section (card t_fc0b2f2d):
+// the compaction knobs plus the model slot copied in from the
+// top-level compaction_model knob. The Model field is carrier wiring
+// (yaml "-"), so ConfigSection and hotApply keep one shape.
+func compactionSection(c Config) agent.CompactionConfig {
+	comp := c.Compaction
+	comp.Model = c.CompactionModel
+	return comp
+}
+
+// approvalSlot resolves the approval gate's decision slot (card
+// t_fc0b2f2d) into the reviewer's wiring: the ONE slot rule (a colon
+// prefix naming a configured instance, or "default") routes the
+// consult through that instance's host and key; anything else is the
+// whole slot as a bare model on the default provider. An instance
+// prefix with no model part serves the instance's own model.
+func approvalSlot(c Config) (host, key, model string) {
+	host = c.Provider.Host
+	key = c.Provider.APIKey
+	model = c.ApprovalsModel
+	name, m := agent.ParseModelSlot(c.ApprovalsModel)
+	if name == "" {
+		return host, key, model
+	}
+	if name == "default" {
+		return host, key, m
+	}
+	if inst, ok := c.Providers[name]; ok {
+		host = inst.Host
+		key = inst.APIKey
+		if m == "" {
+			m = inst.ModelName
+		}
+		model = m
+	}
+	// An unconfigured prefix stays a bare model: the whole slot rides
+	// to the default host and a missing model fails loudly there.
+	return host, key, model
 }
