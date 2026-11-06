@@ -34,7 +34,7 @@ func TestSearchToolsRunInScriptedSession(t *testing.T) {
 		// turn 1: the model greps the workspace
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{
-				ID: "c1", Name: "grep",
+				ID: "c1", Name: "files.grep",
 				Arguments: map[string]any{"pattern": "search me", "output_mode": "content", "context": float64(0)},
 			}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -42,7 +42,7 @@ func TestSearchToolsRunInScriptedSession(t *testing.T) {
 		// turn 2: then globs for the markdown notes
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{
-				ID: "c2", Name: "glob",
+				ID: "c2", Name: "files.glob",
 				Arguments: map[string]any{"pattern": "**/*.md", "type": "files"},
 			}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},

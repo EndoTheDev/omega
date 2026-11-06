@@ -29,8 +29,8 @@ Project rules live here.
   .curate: Run one learning-loop curator pass: the deterministic staleness pass (stale at 14d, archive at 30d) plus LLM-proposed merges/distills applied with backup and audit ledger. Returns the report and ledger ids.
 
 ### tools
-- glob: List paths matching a name pattern under a directory. The pattern matches the path relative to the root; * stays within one directory level, ** crosses levels, ? matches one character.
-- grep: Search file contents with a regular expression across a directory tree. Returns matching files, lines, or counts. Binary files are skipped and output is capped.
+- files.glob: List paths matching a name pattern under a directory. The pattern matches the path relative to the root; * stays within one directory level, ** crosses levels, ? matches one character.
+- files.grep: Search file contents with a regular expression across a directory tree. Returns matching files, lines, or counts. Binary files are skipped and output is capped.
 
 ### files
 - files: Read, write, and edit files on disk. Writes create parent directories as needed. Batch: pass operations (write and edit ops across multiple files) for an atomic multi-file change - any failure rolls the whole batch back.

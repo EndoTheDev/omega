@@ -52,7 +52,7 @@ type SearchProvider struct {
 // Tools returns the two search tools keyed by name.
 func (p *SearchProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
-		"grep": {
+		"files.grep": {
 			Description: "Search file contents with a regular expression across a directory tree. Returns matching files, lines, or counts. Binary files are skipped and output is capped.",
 			Parameters: map[string]any{
 				"type": "object",
@@ -67,7 +67,7 @@ func (p *SearchProvider) Tools() map[string]core.Tool {
 			},
 			Run: p.RunGrep,
 		},
-		"glob": {
+		"files.glob": {
 			Description: "List paths matching a name pattern under a directory. The pattern matches the path relative to the root; * stays within one directory level, ** crosses levels, ? matches one character.",
 			Parameters: map[string]any{
 				"type": "object",
