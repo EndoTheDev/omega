@@ -47,7 +47,7 @@ export async function markNotificationRead(id: number): Promise<void> {
 }
 
 // markAllNotificationsRead flags every record read (POST {"all": true})
-// - the panel's clear-all button; the badge drops to zero on success.
+// - the badge drops to zero on success.
 export async function markAllNotificationsRead(): Promise<void> {
   const r = await fetch("/notifications/read", {
     method: "POST",
@@ -55,6 +55,16 @@ export async function markAllNotificationsRead(): Promise<void> {
     body: JSON.stringify({ all: true }),
   });
   if (!r.ok) throw new Error(`read-all: ${r.status}`);
+}
+
+// clearAllNotifications deletes every record (DELETE /notifications) -
+// the tab's clear-all button: the feed GOES EMPTY, read flags or not.
+// Returns the server's cleared count (the receipt).
+export async function clearAllNotifications(): Promise<number> {
+  const r = await fetch("/notifications", { method: "DELETE" });
+  if (!r.ok) throw new Error(`clear-all: ${r.status}`);
+  const body = await r.json();
+  return typeof body.cleared === "number" ? body.cleared : 0;
 }
 
 // --- pure helpers (node-tested: test/notifications.test.ts) ---

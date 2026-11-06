@@ -20,6 +20,17 @@
         @click="markAll">
         mark all read
       </button>
+      <!-- the clear-all (card t_05ff5e35): the DELETE side of the
+           surface - the feed GOES EMPTY, not just its read flags. Live
+           toasts clear with the store's clearAll. Enabled on a
+           non-empty feed; history deletion needs no rows confirmation
+           (records are metadata only, retention prunes at 200). -->
+      <button
+        class="notif-clear-btn band-tool"
+        :disabled="clearingAll || notificationsList.length === 0"
+        @click="clearAllRecords">
+        clear all
+      </button>
     </TabBand>
     <ul
       v-if="pendingVerdictList.length"
@@ -98,6 +109,7 @@
     pendingVerdictList,
     markAllRead,
     markRecordRead,
+    clearAll,
     notificationAge,
     refreshNotifications,
     startNotificationFeed,
@@ -191,6 +203,20 @@
 
   async function markAll() {
     await markAllRead();
+  }
+
+  // the clear-all button: the feed deletes (records, not flags).
+  // clearingAll gates double clicks; the disabled state clears with it.
+  const clearingAll = ref(false);
+  async function clearAllRecords(): Promise<void> {
+    if (clearingAll.value) return;
+    clearingAll.value = true;
+    try {
+      await clearAll();
+      await refreshNotifications();
+    } finally {
+      clearingAll.value = false;
+    }
   }
 
   onMounted(async () => {

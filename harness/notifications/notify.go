@@ -243,6 +243,23 @@ func (s *Store) MarkAllRead(ctx context.Context) error {
 	return err
 }
 
+// Clear deletes every record (the webui tab's clear-all button): the
+// feed empties, not just its read flags. The id sequence keeps its
+// place - ids only ever grow, so the next emitted record still orders
+// correctly against any page a client cached. Returns the deleted
+// count so a response can say what it removed.
+func (s *Store) Clear(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM notifications`)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // now is the UTC RFC3339 timestamp stamp (the module family's form).
 func now() string {
 	return time.Now().UTC().Format(time.RFC3339)
