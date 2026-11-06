@@ -498,11 +498,24 @@ def scrub(text, modules, carried=None):
         # in place; if every name of a plain statement is unread, the
         # whole line dies. When no non-blank reader is new, the short
         # form degrades to a plain assignment (same block semantics).
+        # Readers are read in CODE text: strings blanked, comments
+        # stripped (same prelude as is_wire_line). A comment sighting
+        # is prose, not a reader - the approvals case whose `host,
+        # key, model :=` reader line died as a wire kept `host` and
+        # `model` alive off the comment prose above it and stranded
+        # both as declared-and-not-used (the nightly red, cascade class).
+        def code_text(ln):
+            body = re.sub(r"`[^`]*`", " ` ", ln)
+            body = re.sub(r'"(\\.|[^"\\])*"', '""', body)
+            body = re.sub(r"'[^']*'", "''", body)
+            body = re.sub(r"//[^\n]*", "", body)
+            return body
+
         for _pass in range(16):
             changed = False
 
             def predeclared(i2, n):
-                for pl in chunk[:i2]:
+                for pl in (code_text(x) for x in chunk[:i2]):
                     pm = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_,\s]*?)\s*:=\s*[^;{}]*$", pl)
                     if pm and re.search(r"\b" + re.escape(n) + r"\b", pm.group(1)):
                         return True
@@ -520,7 +533,7 @@ def scrub(text, modules, carried=None):
                 names = [n.strip() for n in m.group(1).split(",") if n.strip()]
                 if not all(re.match(r"^[A-Za-z_]\w*$", n) for n in names):
                     continue
-                others = "\n".join(chunk[:idx] + chunk[idx + 1:])
+                others = "\n".join(code_text(x) for x in chunk[:idx] + chunk[idx + 1:])
                 unused = [n for n in names
                           if n != "_" and not re.search(r"\b" + re.escape(n) + r"\b", others)]
                 if not unused:

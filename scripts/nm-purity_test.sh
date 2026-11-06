@@ -414,6 +414,72 @@ for f in "$TESTDIR/config.go" "$TESTDIR/calls.go" "$TESTDIR/knobs.go"; do
 done
 rm -rf "$TESTDIR" "$SCRUBPY"
 
+# 11. the comment-reader strand (card t_be5a81a2): the module's case
+# body wires through multi-name locals (`host, key, model := slotWire(c)`)
+# whose only consumer dies as a wire (the literal headed `return
+# slot.Config{`). The comments above the case carry the bare neighbor
+# words as prose - reading those prose sightings as readers false-keeps
+# `host` and `model`, and the strand compiles red (declared and not
+# used, the nightly red the card fixes). A comment is not a reader.
+TESTDIR="$(mktemp -d)"
+cat > "$TESTDIR/config.go" <<'EOF'
+package main
+
+type SlotConfig struct {
+	Mode string
+}
+
+type Config struct {
+	Slot SlotConfig `yaml:"slot"`
+}
+EOF
+cat > "$TESTDIR/sections.go" <<'EOF'
+package main
+
+var _ = Config{}.Slot
+
+func slotSections(c Config) (any, bool) {
+	switch "slot" {
+	case "slot":
+		// mode/policy are the user's knobs; host and
+		// model are wiring - the decision model rides
+		// the provider settings slot.
+		host, key, model := slotWire(c)
+		return slot.Config{
+			Mode:     c.Slot.Mode,
+			HTTPHost: host,
+			APIKey:   key,
+			Model:    model,
+		}, true
+	}
+	return nil, false
+}
+
+func slotWire(c Config) (string, string, string) {
+	return "default-host", "default-key", "default-model"
+}
+EOF
+SCRUBPY="$(mktemp)"
+awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
+(cd "$TESTDIR" && python3 "$SCRUBPY" "config.go,sections.go" slot) >/dev/null 2>&1
+if [ -s "$TESTDIR/sections.go" ] \
+  && ! grep -q 'slotWire(c)' "$TESTDIR/sections.go" \
+  && grep -q 'func slotWire' "$TESTDIR/sections.go" \
+  && grep -q 'return nil, false' "$TESTDIR/sections.go" \
+  && ! grep -q 'SlotConfig' "$TESTDIR/config.go"; then
+  ok
+else
+  bad "scrubber kept a declaration whose reader died (or ate slotWire / the literal-only return): $(cat "$TESTDIR/sections.go" 2>/dev/null)"
+fi
+for f in "$TESTDIR/config.go" "$TESTDIR/sections.go"; do
+  if ! gofmt -e "$f" > /dev/null 2>"$TESTDIR/gofmt.err"; then
+    bad "scrubbed fixture does not parse: $(cat "$TESTDIR/gofmt.err")"
+  else
+    ok
+  fi
+done
+rm -rf "$TESTDIR" "$SCRUBPY"
+
 if [ "$fail" -gt 0 ]; then
   echo "nm-purity_test: $pass ok, $fail FAIL" >&2
   exit 1
