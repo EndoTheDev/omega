@@ -1514,3 +1514,185 @@ func TestTools(t *testing.T) {
 		t.Fatalf("POST status = %d, want 405", rec3.Code)
 	}
 }
+
+// --- named provider instances (card t_7dcd4280) ---
+
+// instancesProvider wraps an agent.Provider with the named-instance
+// resolver the shell probes (agent.ProviderInstances): each configured
+// name serves through its own provider, copies included. Backed by a
+// live map, so tests can DELETE an instance to model removal.
+type instancesProvider struct {
+	agent.Provider
+	instances map[string]agent.Provider
+}
+
+func (p *instancesProvider) Instance(name string) (agent.Provider, bool) {
+	inst, ok := p.instances[name]
+	return inst, ok
+}
+
+// scriptOne is the one-script stream every provider in the tests below
+// replays.
+func scriptOne() []core.ProviderStreamEvent {
+	return scripted(
+		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
+}
+
+// newInstanceTestServer builds a server whose base provider resolves
+// "backup" (model "backup-model") through a live map, plus its store.
+func newInstanceTestServer(t *testing.T) (*Server, *store.Store, *mockProvider, map[string]agent.Provider) {
+	t.Helper()
+	base := newMockProvider("mock", scriptOne())
+	// A distinct provider, not a WithModel copy: the copy would share
+	// the recorder, making "the instance served" indistinguishable
+	// from "the default served" in the assertions below.
+	backup := newMockProvider("backup-model", scriptOne())
+	byName := map[string]agent.Provider{"backup": backup}
+	a := agent.NewAgent(&instancesProvider{Provider: base, instances: byName}, nil, 0)
+	a.SetLoopProvider(testLoop{})
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	s := NewServer(a, nil, nil, nil, nil, nil)
+	s.store = st
+	return s, st, backup, byName
+}
+
+// chatBody builds one /chat POST body: one user message, optional
+// session id and provider instance name (empty = omitted).
+func chatBody(sessionID, provider string) []byte {
+	msg := map[string]any{
+		"messages": []map[string]any{{"role": "user", "content": "hi"}},
+	}
+	if sessionID != "" {
+		msg["session_id"] = sessionID
+	}
+	if provider != "" {
+		msg["provider"] = provider
+	}
+	body, _ := json.Marshal(msg)
+	return body
+}
+
+// quiesce waits until the session has no live run (the detached run
+// finished), bounded, so the next POST below cannot trip the 409 slot.
+func quiesce(s *Server, sessionID string) {
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !s.runs.active(sessionID) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// TestChatProviderInstanceResolution: the wire provider name resolves
+// the named instance (the run streams through its model), an unknown
+// name is a loud 400 (never the default silently), and an
+// upgrade-less provider refuses any name - the default is never picked
+// up as a fallback for a named run.
+func TestChatProviderInstanceResolution(t *testing.T) {
+	s, _, backup, _ := newInstanceTestServer(t)
+
+	rec := postChatBody(s, chatBody("", "backup"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	names := backup.servedModelNames()
+	if len(names) == 0 {
+		t.Fatal("no stream served - the named instance never got the run")
+	}
+	// The named instance served at least this run (its model name rode
+	// the wire), and the default NEVER served behind it.
+	served := false
+	for _, n := range names {
+		if n == "backup-model" {
+			served = true
+		}
+	}
+	if !served {
+		t.Fatalf("streamed models = %v, want backup-model among them", names)
+	}
+	ip := s.agent.Provider().(*instancesProvider)
+	if names := ip.Provider.(*mockProvider).servedModelNames(); len(names) != 0 {
+		t.Fatalf("default provider served %v - a named run must never fall back silently", names)
+	}
+
+	rec = postChatBody(s, chatBody("", "gone"))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (unknown instance must fail loudly)", rec.Code)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "not configured") {
+		t.Fatalf("body = %q, want the loud not-configured message", body)
+	}
+
+	// An un-upgraded provider is a full member: no name, no problem.
+	bare := newTestServer()
+	rec = postChatBody(bare, chatBody("", "x"))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (provider carries no named instances)", rec.Code)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "carries no named instances") {
+		t.Fatalf("body = %q, want the no-named-instances message", body)
+	}
+}
+
+// TestChatProviderSessionPin: a wire provider name WINS and sticks on
+// the session (the model pin's shape); the next send resolves the
+// pinned name with no wire field - and when the instance is removed
+// from the resolver, the stranded session's next send fails LOUDLY
+// (400) - never a silent fallback to the default instance. Clearing
+// the pin serves the default again.
+func TestChatProviderSessionPin(t *testing.T) {
+	ctx := context.Background()
+	s, st, _, byName := newInstanceTestServer(t)
+	if err := st.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	scx := agent.SessionContextStore(st)
+
+	rec := postChatBody(s, chatBody("s1", "backup"))
+	quiesce(s, "s1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	sess, err := st.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if sess.ProviderName != "backup" {
+		t.Fatalf("pinned provider = %q, want backup (the wire wins and sticks)", sess.ProviderName)
+	}
+
+	// The stick: no wire field, the pinned name resolves again.
+	rec = postChatBody(s, chatBody("s1", ""))
+	quiesce(s, "s1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	// Removal: the instance vanishes, the session strands LOUDLY.
+	delete(byName, "backup")
+	rec = postChatBody(s, chatBody("s1", ""))
+	quiesce(s, "s1")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (a removed instance must strand its session loudly, body: %s)", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "not configured") {
+		t.Fatalf("body = %q, want the loud not-configured message", body)
+	}
+
+	// Clearing the pin: the default serves again.
+	if err := scx.SetSessionProvider(ctx, "s1", ""); err != nil {
+		t.Fatalf("clear pin: %v", err)
+	}
+	rec = postChatBody(s, chatBody("s1", ""))
+	quiesce(s, "s1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+}

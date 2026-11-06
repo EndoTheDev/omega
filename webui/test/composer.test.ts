@@ -67,7 +67,14 @@ function key(keyName: string, shiftKey = false): KE {
   return e;
 }
 
-function build(opts: { open?: boolean; items?: string[] } = {}) {
+function build(
+  opts: {
+    open?: boolean;
+    items?: string[];
+    dissolveBehindCaret?: () => boolean;
+    insertAtCaret?: (text: string) => void;
+  } = {},
+) {
   const sends: number[] = [];
   const accepted: Array<{ item: string; submit: boolean }> = [];
   const closed: number[] = [];
@@ -91,7 +98,7 @@ function build(opts: { open?: boolean; items?: string[] } = {}) {
   );
   const factory = new Function(
     "deps",
-    `const { paletteOpen, paletteItems, active, clampIndex, acceptActive, closePalette, emit } = deps;
+    `const { paletteOpen, paletteItems, active, clampIndex, acceptActive, closePalette, emit, dissolveBehindCaret, insertAtCaret } = deps;
      ${fnSrc}
      return onKeydown;`,
   );
@@ -103,6 +110,8 @@ function build(opts: { open?: boolean; items?: string[] } = {}) {
     acceptActive,
     closePalette,
     emit,
+    dissolveBehindCaret: opts.dissolveBehindCaret ?? (() => false),
+    insertAtCaret: opts.insertAtCaret ?? (() => {}),
   }) as (e: KE) => void;
   return { onKeydown, sends, accepted, closed, active };
 }
@@ -118,16 +127,19 @@ describe("composer Enter law: Enter sends, Shift+Enter breaks the line", () => {
     assert.equal(e.defaultPrevented, true, "Enter is claimed");
   });
 
-  it("Shift+Enter never sends - default NOT prevented, the native newline lands", () => {
-    const { onKeydown, sends } = build();
+  it("Shift+Enter never sends - the editor claims the key and writes the newline as a text node", () => {
+    // EDITOR (t_e67c372b): the contenteditable's own newline inserts a
+    // div node the draft reader cannot read - the branch claims the key
+    // and runs the text insert (pre-wrap renders it).
+    const inserts: string[] = [];
+    const { onKeydown, sends } = build({
+      insertAtCaret: (text: string) => inserts.push(text),
+    });
     const e = key("Enter", true);
     onKeydown(e);
     assert.equal(sends.length, 0, "no send on Shift+Enter");
-    assert.equal(
-      e.defaultPrevented,
-      false,
-      "default not prevented: the textarea inserts the newline itself",
-    );
+    assert.equal(e.defaultPrevented, true, "claimed: the editor writes the newline");
+    assert.deepEqual(inserts, ["\n"], "the newline lands as a text-node insert");
   });
 
   it("the guard is the shiftKey modifier - any other modifier key still sends", () => {
@@ -137,6 +149,16 @@ describe("composer Enter law: Enter sends, Shift+Enter breaks the line", () => {
     (e as unknown as { ctrlKey: boolean }).ctrlKey = true;
     onKeydown(e);
     assert.equal(sends.length, 1);
+  });
+
+  it("Backspace behind a chip hands to the dissolve and never reaches the send law", () => {
+    // the dissolve law is palette-closed-only: a behind-chip caret
+    // dissolves the chip back to its raw text, nothing sends
+    const { onKeydown, sends } = build({ dissolveBehindCaret: () => true });
+    const e = key("Backspace");
+    onKeydown(e);
+    assert.equal(sends.length, 0);
+    assert.equal(e.defaultPrevented, true, "the dissolve claims the key");
   });
 });
 
@@ -182,22 +204,29 @@ describe("palette ownership is unchanged (t_631b5362: palette block untouched)",
   it("the palette block never sees a shiftKey condition - it stays as it was", () => {
     const block = composer.slice(
       composer.indexOf("if (paletteOpen.value)"),
-      composer.indexOf('if (e.key === "Enter" && !e.shiftKey)'),
+      composer.indexOf('if (e.key === "Backspace"'),
     );
-    assert.ok(block.length > 0, "palette block precedes the guarded send");
+    assert.ok(block.length > 0, "palette block precedes the Backspace branch");
     assert.doesNotMatch(block, /shiftKey/);
   });
 });
 
-describe("source canary: the guard exists, the unconditional branch does not", () => {
-  it("the final branch guards with !e.shiftKey", () => {
-    assert.match(composer, /if \(e\.key === "Enter" && !e\.shiftKey\) \{/);
+// --- the editor's Enter branch (t_e67c372b) ---------------------------
+describe("source canary: the editor claims every Enter, the shift modifier is the exemption", () => {
+  it("the final branch owns Enter unconditionally, then branches on shiftKey", () => {
+    const at = composer.indexOf('if (e.key === "Enter") {');
+    assert.ok(at > -1, "the final Enter branch exists");
+    const end = composer.indexOf("</script>", at);
+    const block = composer.slice(at, end);
+    assert.match(block, /if \(e\.shiftKey\) \{\s*\n\s*insertAtCaret\("\\n"\)/s,
+      "Shift+Enter writes the newline as a text node");
+    assert.match(block, /emit\("send"\)/, "plain Enter sends");
   });
-  it("no bare Enter branch remains outside the palette block", () => {
-    const outside = composer.slice(
-      composer.indexOf('if (e.key === "Enter" && !e.shiftKey)'),
-    );
-    assert.doesNotMatch(outside, /e\.key === "Enter"\)/);
+  it("no unshifted send reaches the contenteditable's default newline", () => {
+    // the branch is claimed twice: the palette block and the final
+    // branch both preventDefault; Shift+Enter inserts text
+    const outside = composer.slice(composer.indexOf('if (e.key === "Enter") {'));
+    assert.ok(outside.includes('e.preventDefault()'), "Enter is always claimed");
   });
 });
 // --- the fullscreen column anatomy (card t_08ef793b) -------------------
@@ -234,7 +263,7 @@ describe("fullscreen composer: column anatomy (card t_08ef793b)", () => {
       /align-items:\s*stretch/,
       "the textarea fills the grown row's height (flex-start would leave dead space)",
     );
-    const ta = rule(".composer.expanded textarea {");
+    const ta = rule(".composer.expanded .composer-input {");
     assert.match(ta, /flex:\s*1/);
     assert.match(ta, /height:\s*auto/);
     assert.match(ta, /min-height:\s*0/);
@@ -270,7 +299,7 @@ describe("fullscreen composer: column anatomy (card t_08ef793b)", () => {
     );
     assert.match(
       composer,
-      /placeholder="message omega"/,
+      /data-placeholder/,
       "the placeholder renders in the grown canvas",
     );
   });
@@ -285,7 +314,7 @@ describe("fullscreen composer: column anatomy (card t_08ef793b)", () => {
     // the guard: control clicks pass, empty-space clicks focus
     const fn = composer.slice(
       composer.indexOf("function onCanvasClick"),
-      composer.indexOf("// draft clears after send"),
+      composer.indexOf("// the height follows every draft write"),
     );
     assert.match(fn, /expanded\.value/, "compact stays untouched (no hijack)");
     assert.match(fn, /closest\(/, "controls opt out");
@@ -313,7 +342,7 @@ describe("fullscreen composer: column anatomy (card t_08ef793b)", () => {
   });
 
   it("the textarea's scrollbar clears the chevron's gutter in fullscreen", () => {
-    const ta = rule(".composer.expanded textarea {");
+    const ta = rule(".composer.expanded .composer-input {");
     assert.match(ta, /margin-right:\s*40px/, "a dedicated right-edge gutter");
   });
 
@@ -366,13 +395,13 @@ describe("compact composer regression guard (card t_08ef793b: untouched)", () =>
     assert.match(toolbar, /padding:\s*6px 8px/);
     assert.doesNotMatch(toolbar, /composer-bottom/);
   });
-  it("the textarea keeps the deterministic 21px row math", () => {
-    const ta = rule(".composer textarea {");
+  it("the editor keeps the deterministic 21px row math", () => {
+    const ta = rule(".composer .composer-input {");
     assert.match(ta, /line-height:\s*21px/);
     assert.doesNotMatch(ta, /margin-right/);
   });
-  it("the base textarea block carries no fullscreen-only declarations", () => {
+  it("the base editor block carries no fullscreen-only declarations", () => {
     // the gutter and the stretch live under .composer.expanded only
-    assert.doesNotMatch(css, /\.composer textarea \{[^}]*margin-right/);
+    assert.doesNotMatch(css, /\.composer \.composer-input \{[^}]*margin-right/);
   });
 });

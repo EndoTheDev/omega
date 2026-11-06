@@ -10,6 +10,7 @@ import {
   splitBlocks,
   isAtBottom,
   pillVisible,
+  resumesFollow,
   scrollFlushTick,
 } from "../app/composables/omega.ts";
 
@@ -124,6 +125,57 @@ describe("live body tail-follow (long body)", () => {
 
   it("a body that does not fill the pane counts as at bottom (nothing to follow)", () => {
     assert.equal(isAtBottom(0, 400, 300), true);
+  });
+});
+
+describe("resumesFollow (shrink-clamp guard, t_bef3f45e)", () => {
+  // a thinking block folding at answer start (or an expanded tool card
+  // collapsing) can SHRINK the scroller enough that the browser clamps
+  // scrollTop to the new bottom - the scroll event then fires at the
+  // tail with the reader two viewports up in the folded content. That
+  // arrival at bottom is a layout event, not a scroll decision: it must
+  // NOT re-arm the tail-follow.
+  it("a pinned view stays governed by the plain near-bottom check", () => {
+    // at the tail: stays pinned
+    assert.equal(resumesFollow(true, 4000, 3600, 400, 4000), true);
+    // the user scrolled up: unpins
+    assert.equal(resumesFollow(true, 4000, 2000, 400, 4000), false);
+  });
+
+  it("an unpinned view scrolled back to the bottom on GROWN content re-arms the follow", () => {
+    // content grew since the last scroll event (thinking kept streaming
+    // while the user read); scrolling down to the tail is a real gesture
+    assert.equal(
+      resumesFollow(
+        false,
+        4000, // last scroll event saw this height
+        4600,
+        400,
+        5000, // grown past it
+      ),
+      true,
+    );
+    // same height (steady state, no shrink since) also re-arms
+    assert.equal(resumesFollow(false, 4000, 3600, 400, 4000), true);
+  });
+
+  it("an unpinned view arriving at the bottom of SHRUNK content holds the follow off", () => {
+    // the fold shrank the scroller from 4000 to 1600; the clamp delivered
+    // the reader to scrollTop 1200 = the new bottom. Layout event.
+    assert.equal(
+      resumesFollow(false, 4000, 1200, 400, 1600),
+      false,
+      "a clamp arrival at the tail must not resume the follow",
+    );
+  });
+
+  it("the guard only holds the tail-arrivals, not scrolls elsewhere in shrunk content", () => {
+    // still far from the bottom after the fold: stays unpinned either way
+    assert.equal(resumesFollow(false, 4000, 0, 400, 1600), false);
+  });
+
+  it("a pinned view ignores the shrink history (the clamp keeps it near bottom)", () => {
+    assert.equal(resumesFollow(true, 4000, 1210, 400, 1600), true);
   });
 });
 

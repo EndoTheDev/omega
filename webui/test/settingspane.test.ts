@@ -8,6 +8,7 @@ import {
   filterSettingGroups,
   normalizeSettingsPayload,
   settingsDiff,
+  valuesEqual,
   type SettingGroup,
 } from "../app/composables/omega.ts";
 
@@ -140,4 +141,48 @@ test("diff lists only keys whose draft differs from loaded", () => {
 
 test("identical draft and loaded diff to an empty map", () => {
   assert.deepEqual(settingsDiff({ a: 1 }, { a: 1 }), {});
+});
+// --- card t_7dcd4280: the named provider instances list knob ---
+
+test("normalize keeps the providers knob type", () => {
+  const knob = {
+    key: "provider.instances",
+    label: "provider instances",
+    type: "providers",
+    value: [{ name: "backup", type: "openai", model_name: "gpt-4o", host: "", api_key: "****" }],
+  };
+  const out = normalizeSettingsPayload({
+    groups: [{ key: "provider", label: "provider", knobs: [knob] }],
+  });
+  assert.equal(out.groups.length, 1);
+  assert.equal(out.groups[0].knobs.length, 1);
+  assert.equal(out.groups[0].knobs[0].type, "providers");
+});
+
+// valuesEqual: structural equality for object/array knob values - the
+// providers list round-trips JSON-equal but never identity-equal.
+test("valuesEqual compares structural values by content", () => {
+  const row = { name: "backup", type: "openai", model_name: "gpt-4o", host: "", api_key: "****" };
+  assert.equal(valuesEqual([row], JSON.parse(JSON.stringify([row]))), true);
+  assert.equal(valuesEqual([row], [{ ...row, model_name: "o3" }]), false);
+  assert.equal(valuesEqual([row], []), false);
+  // scalars keep the identity path
+  assert.equal(valuesEqual("a", "a"), true);
+  assert.equal(valuesEqual("a", "b"), false);
+  assert.equal(valuesEqual(1, 1), true);
+  assert.equal(valuesEqual(null, null), true);
+  assert.equal(valuesEqual(null, {}), false);
+  assert.equal(valuesEqual(undefined, null), false);
+});
+
+test("settingsDiff ships an edited providers list and skips a JSON-equal one", () => {
+  const row = { name: "backup", type: "openai", model_name: "gpt-4o", host: "", api_key: "****" };
+  const loaded = { provider_instances: [row] };
+  // round-tripped copy (fresh object identity) is NOT dirty
+  assert.deepEqual(settingsDiff(loaded, { provider_instances: JSON.parse(JSON.stringify([row])) }), {});
+  // a real edit IS dirty - removal and rename alike
+  assert.deepEqual(settingsDiff(loaded, { provider_instances: [] }), { provider_instances: [] });
+  const renamed = JSON.parse(JSON.stringify([row]));
+  renamed[0].name = "second";
+  assert.deepEqual(settingsDiff(loaded, { provider_instances: renamed }), { provider_instances: renamed });
 });

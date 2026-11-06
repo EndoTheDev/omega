@@ -97,6 +97,15 @@
             :knob="knob"
             :value="modelValue(knob)"
             @update="setServer(knob, $event)" />
+          <!-- providers (card t_7dcd4280: the named instances list -
+               one row per instance, name = the instance id, add and
+               remove included; the value is a structural list, saved
+               through the normal diff-only PUT) -->
+          <ProvidersField
+            v-else-if="knob.type === 'providers'"
+            :knob="knob"
+            :value="providersValue(knob)"
+            @update="setServer(knob, $event)" />
           <!-- textarea -->
           <textarea
             v-else-if="knob.type === 'textarea'"
@@ -180,6 +189,7 @@
     filterSettingGroups,
     saveSettings,
     settingsDiff,
+    valuesEqual,
     parseCollapsedKeys,
     serializeCollapsedKeys,
     themePickOptions,
@@ -189,13 +199,18 @@
     type SettingsPayload,
     type Appearance,
     type ColorMode,
-    type UserTheme,  } from "~/composables/omega";
+    type UserTheme,
+    type ProviderInstanceRow,
+  } from "~/composables/omega";
   // card t_70c28128: the typed model pickers ride the shared catalog
   // (one /models fetch per settings open) and the ModelField control
   import { refreshModelCatalog } from "~/composables/modelCatalog";
   import ModelField from "./ModelField.vue";
+  // card t_7dcd4280: the named provider instances list editor
+  import ProvidersField from "./ProvidersField.vue";
   import { useNarrow } from "~/composables/narrow";
   import type { ToolDisplay } from "~/composables/toolDisplay";
+  import type { ThinkingDisplay } from "~/composables/thinkingDisplay";
   // card t_502b8e81: the iconset wrapper - the group collapser chevron
   import Icon from "../ui/Icon.vue";
   import WorkspaceSelect from "../chat/WorkspaceSelect.vue";
@@ -222,6 +237,7 @@
     showThinking: boolean;
     appearance: Appearance;
     toolDisplay: ToolDisplay;
+    thinkingDisplay: ThinkingDisplay;
     colorMode: ColorMode;
     themeId: string;
     userThemes: UserTheme[];
@@ -240,6 +256,7 @@
     (e: "update:showThinking", value: boolean): void;
     (e: "update:appearance", value: Appearance): void;
     (e: "update:toolDisplay", value: ToolDisplay): void;
+    (e: "update:thinkingDisplay", value: ThinkingDisplay): void;
     (e: "set-color-mode", mode: ColorMode): void;
     (e: "set-theme", id: string): void;
   }>();
@@ -371,6 +388,16 @@
           "once it settles; a manual toggle pins a row; expanded/collapsed force one state",
       },
       {
+        key: "chat.thinking_display",
+        label: "thinking display",
+        type: "select",
+        value: props.thinkingDisplay,
+        options: ["auto", "expanded", "collapsed"],
+        help:
+          "auto keeps thinking blocks collapsed behind their one-line " +
+          "summary and a manual click pins one open; expanded/collapsed force one state",
+      },
+      {
         key: "chat.composer_mode",
         label: "composer display mode",
         type: "select",
@@ -477,6 +504,7 @@
     if (knob.key === "chat.show_thinking") return props.showThinking;
     if (knob.key === "chat.appearance") return props.appearance;
     if (knob.key === "chat.tool_display") return props.toolDisplay;
+    if (knob.key === "chat.thinking_display") return props.thinkingDisplay;
     if (knob.key === "dock.bottom_width") return bottomWidthMode.value;
     if (knob.key === "chat.composer_mode") return composerMode.value;
     if (knob.key === "chat.color_mode") return props.colorMode;
@@ -502,6 +530,23 @@
   const numberValue = (knob: SettingKnob): unknown => {
     const v = serverValue(knob);
     return v === "" ? "" : v;
+  };
+
+  // providersValue (card t_7dcd4280): the list editor's rows - a
+  // structural value coerced to its shape (tolerant: an unexpected
+  // kind degrades to no rows, never a render crash).
+  const providersValue = (knob: SettingKnob): ProviderInstanceRow[] => {
+    const v = serverValue(knob);
+    if (!Array.isArray(v)) return [];
+    return v
+      .filter((r): r is ProviderInstanceRow => !!r && typeof r === "object")
+      .map((r) => ({
+        name: typeof r["name"] === "string" ? r["name"] : "",
+        type: typeof r["type"] === "string" ? r["type"] : "",
+        model_name: typeof r["model_name"] === "string" ? r["model_name"] : "",
+        host: typeof r["host"] === "string" ? r["host"] : "",
+        api_key: typeof r["api_key"] === "string" ? r["api_key"] : "",
+      }));
   };
 
   function toggleValue(group: SettingGroup, knob: SettingKnob): boolean {
@@ -531,6 +576,8 @@
         emit("update:appearance", value as Appearance);
       else if (knob.key === "chat.tool_display")
         emit("update:toolDisplay", value as ToolDisplay);
+      else if (knob.key === "chat.thinking_display")
+        emit("update:thinkingDisplay", value as ThinkingDisplay);
       else if (knob.key === "dock.bottom_width")
         setBottomWidthMode(value === "full" ? "full" : "aligned");
       else if (knob.key === "chat.composer_mode")
@@ -553,7 +600,7 @@
   }
 
   const serverKnobDirty = (knob: SettingKnob): boolean =>
-    draft.value[knob.key] !== loaded.value[knob.key];
+    !valuesEqual(draft.value[knob.key], loaded.value[knob.key]);
 
   const dirtyCount = computed(
     () => Object.keys(settingsDiff(loaded.value, draft.value)).length,

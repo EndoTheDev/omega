@@ -72,6 +72,52 @@ func TestSessionContextRoundTrip(t *testing.T) {
 	}
 }
 
+// card t_7dcd4280: the provider INSTANCE pin round-trips like the
+// model pin - written, restored on reopen, cleared with "", and a
+// missing row is a silent no-op.
+func TestSessionProviderRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/rt.db"
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	ctx := context.Background()
+	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.SetSessionProvider(ctx, "s1", "backup"); err != nil {
+		t.Fatalf("set provider: %v", err)
+	}
+	s.Close()
+
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	defer s2.Close()
+	sess, err := s2.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if sess.ProviderName != "backup" {
+		t.Fatalf("provider round-trip: got %q, want \"backup\"", sess.ProviderName)
+	}
+	if err := s2.SetSessionProvider(ctx, "s1", ""); err != nil {
+		t.Fatalf("clear provider: %v", err)
+	}
+	sess, err = s2.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatalf("get session after clear: %v", err)
+	}
+	if sess.ProviderName != "" {
+		t.Fatalf("clear: got provider %q, want empty", sess.ProviderName)
+	}
+	if err := s2.SetSessionProvider(ctx, "gone", "x"); err != nil {
+		t.Errorf("set provider on missing row: %v (want nil)", err)
+	}
+}
+
 // TestSessionContextDefaultsEmpty pins the legacy contract: sessions
 // created before the session-context columns existed (and every session
 // since) boot with empty model and workspace - today's behavior.

@@ -34,11 +34,19 @@ import (
 // config.yaml, then overridden by environment variables, then defaults
 // are applied for anything still unset.
 type Config struct {
-	Provider     ProviderConfig         `yaml:"provider"`
-	Server       ServerConfig           `yaml:"server"`
-	Store        StoreConfig            `yaml:"store"`
-	Compaction   agent.CompactionConfig `yaml:"compaction"`
-	SystemPrompt string                 `yaml:"system_prompt"`
+	Provider ProviderConfig `yaml:"provider"`
+	// Providers are the NAMED provider instances (card t_7dcd4280):
+	// the map key IS the instance id, so two accounts of one type are
+	// two entries. The top-level provider: section stays the DEFAULT
+	// instance the agent serves; "default" is a reserved instance
+	// name (it would read as the provider: section). A session or
+	// run pinned to an instance that is gone from this map fails
+	// loudly (config: unknown instance) - never a silent fallback.
+	Providers    map[string]ProviderConfig `yaml:"providers,omitempty"`
+	Server       ServerConfig              `yaml:"server"`
+	Store        StoreConfig               `yaml:"store"`
+	Compaction   agent.CompactionConfig    `yaml:"compaction"`
+	SystemPrompt string                    `yaml:"system_prompt"`
 	// VisionModel is the auxiliary captioner (vision_model knob): when
 	// set, image-carrying user messages are described once with this
 	// model and the main model sees the caption as text. Empty keeps
@@ -217,6 +225,25 @@ type ProviderConfig struct {
 	ModelName string `yaml:"model_name"`
 	Host      string `yaml:"host"`
 	APIKey    string `yaml:"api_key"`
+}
+
+// validInstanceName is the instance-id syntax law (card t_7dcd4280):
+// conservative lower case so the id is safe in every consumer (config
+// keys, session pins, model-selection slots). Reserved name "default"
+// is checked by Validate separately.
+func validInstanceName(name string) bool {
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '-', c == '_':
+		default:
+			return false
+		}
+	}
+	return name[0] >= 'a' && name[0] <= 'z' || name[0] >= '0' && name[0] <= '9'
 }
 
 // ServerConfig configures the HTTP listener(s). Bind is the list of
@@ -697,6 +724,27 @@ func (c Config) Validate() error {
 			return fmt.Errorf("config: provider.type %q is not recognized (want ollama, openai, or anthropic)", c.Provider.Type)
 		}
 	}
+	// Named instances (card t_7dcd4280): the key IS the instance id.
+	// A name must survive every consumer that records it (session
+	// pins, model-selection slots), so the id space is conservative
+	// and "default" stays reserved for the provider: section.
+	providerTypes := map[string]string{
+		"ollama": "ollama", "openai": "openai", "anthropic": "anthropic",
+	}
+	for name, inst := range c.Providers {
+		if name == "default" {
+			return fmt.Errorf("config: provider instance %q is reserved (the provider: section is the default instance)", name)
+		}
+		if !validInstanceName(name) {
+			return fmt.Errorf("config: provider instance name %q is invalid (want lowercase letters, digits, - or _)", name)
+		}
+		if strings.ToLower(inst.Type) != "" && providerTypes[strings.ToLower(inst.Type)] == "" {
+			return fmt.Errorf("config: provider %s.type %q is not recognized (want ollama, openai, or anthropic)", name, inst.Type)
+		}
+		if inst.ModelName == "" {
+			return fmt.Errorf("config: provider %s.model_name is required", name)
+		}
+	}
 	if c.Provider.Host != "" {
 		if _, err := url.Parse(c.Provider.Host); err != nil {
 			return fmt.Errorf("config: provider.host is not a valid URL: %w", err)
@@ -764,7 +812,18 @@ func (c Config) ConfigSection(name string) (any, bool) {
 			SummarizerModel:     c.Sessions.SummarizerModel,
 		}, true
 	case "provider":
-		return provider.Config{Type: c.Provider.Type, ModelName: c.Provider.ModelName, Host: c.Provider.Host, APIKey: c.Provider.APIKey}, true
+		// card t_7dcd4280: the named instances ride the section - the
+		// provider capsule builds one resolver per entry at mount.
+		instances := make(map[string]provider.Config, len(c.Providers))
+		for name, inst := range c.Providers {
+			instances[name] = provider.Config{
+				Type:      inst.Type,
+				ModelName: inst.ModelName,
+				Host:      inst.Host,
+				APIKey:    inst.APIKey,
+			}
+		}
+		return provider.Config{Type: c.Provider.Type, ModelName: c.Provider.ModelName, Host: c.Provider.Host, APIKey: c.Provider.APIKey, Instances: instances}, true
 	case "http_channel":
 		return api.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, TitleModel: c.TitleModel, PublicHosts: c.Server.PublicHosts, WebTools: agentapi.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
 	case "skills":

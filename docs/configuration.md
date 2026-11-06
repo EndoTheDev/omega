@@ -24,11 +24,32 @@ provider:
   model_name: # required - e.g. llama3, gpt-4o, claude-sonnet-4-20250514
   host: http://localhost:11434 # use https://ollama.com for Ollama Cloud
   api_key: # required for Ollama Cloud, OpenAI, and Anthropic
+
+# Named provider instances (optional): the map key IS the instance id,
+# so two accounts of one type are two entries. The provider: section
+# above stays the default instance.
+providers:
+  backup: # instance id (lowercase letters, digits, - or _)
+    type: openai
+    model_name: gpt-4o
+    host: https://api.openai.com/v1
+    api_key: sk-...
 ```
 
 > **YAML indentation matters.** The keys under `provider:` must be
 > indented 2 spaces. If they are at the root level, omega will not
 > find them and report "provider.model_name is required".
+
+**Named instances.** Each `providers:` entry is one named instance
+(key = the id, must be lowercase letters/digits/`-`/`_`; `model_name`
+is required per instance; `default` is reserved). Instances apply on
+restart, like the rest of the provider section. The settings pane
+maintains them through the `provider.instances` list editor (add and
+remove rows; a row's name is the instance id). A session pinned to an
+instance that is later removed fails its next send LOUDLY (400, "not
+configured") - it never falls back silently to the default; clearing
+the pin restores the default. Send a run through an instance with the
+`/chat` `provider` field (see [api.md](api.md)).
 
 ## Module toggles
 
@@ -213,8 +234,8 @@ Ollama supports three connection modes:
   `api_key: <your-key>`. omega sends a Bearer token in the
   Authorization header.
 
-Provider changes (`provider.type`, `provider.api_key`) apply on
-restart. Per-run model changes ride the webui: the
-composer's model chip and each `/chat` request's `model` field build a
-provider copy for that run — the running sessions never share model
-state (see [api.md](api.md)).
+Provider changes (`provider.type`, `provider.api_key`,
+`providers:` instances) apply on restart. Per-run model changes ride
+the webui: the composer's model chip and each `/chat` request's
+`model` field build a provider copy for that run — the running
+sessions never share model state (see [api.md](api.md)).

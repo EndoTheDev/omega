@@ -53,6 +53,15 @@ type Session struct {
 	// before this data was recorded stay empty - today's behavior.
 	Model string `json:"model,omitempty"`
 
+	// ProviderName is the session's pinned provider INSTANCE id (card
+	// t_7dcd4280, empty = the default provider: section serves the
+	// session; json "provider" - a name datum, not a capsule noun).
+	// Resolution is config-driven per run: a name that is gone from
+	// config.yaml providers: fails the run loudly - a removed
+	// instance never strands a session into a silent fallback.
+	// Sessions saved before this column existed stay empty.
+	ProviderName string `json:"provider,omitempty"`
+
 	// Workspace is the session's working folder (empty = no root -
 	// relative file operations resolve against the process working
 	// directory, exactly as before). Set operations root file tools

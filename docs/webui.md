@@ -387,7 +387,11 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   role="listbox" pop, generalized over short option ladders: band
   toggles, the board switcher, the drawer status, settings knobs, the
   composer's reasoning-effort chip).
-- Chat: `AppComposer` (auto-grow textarea, ONE morphing action button -
+- Chat: `AppComposer` (auto-grow editable editor - `contenteditable`
+  `.composer-input`, the t_e67c372b chip law: a reference chip
+  REPLACES the token span it represents, inline in the flow, and
+  Backspace behind a chip dissolves it back to the raw token text while
+  the chip's x removes outright; ONE morphing action button -
   send/stop, dimmed at idle with no draft, `+` opens the file picker,
   attach-strip with image thumbnails, paste + paperclip attach; the
   retry face is retired - the newest response's action row carries the

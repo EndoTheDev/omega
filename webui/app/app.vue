@@ -190,6 +190,7 @@
             v-model:show-thinking="showThinking"
             v-model:appearance="appearance"
             v-model:tool-display="toolDisplay"
+            v-model:thinking-display="thinkingDisplay"
             :color-mode="colorMode"
             :theme-id="themeId"
             :user-themes="userThemes"
@@ -293,6 +294,7 @@
         v-model:show-thinking="showThinking"
         v-model:appearance="appearance"
         v-model:tool-display="toolDisplay"
+        v-model:thinking-display="thinkingDisplay"
         :color-mode="colorMode"
         :theme-id="themeId"
         :user-themes="userThemes"
@@ -323,6 +325,7 @@
         v-model:show-thinking="showThinking"
         v-model:appearance="appearance"
         v-model:tool-display="toolDisplay"
+        v-model:thinking-display="thinkingDisplay"
         :color-mode="colorMode"
         :theme-id="themeId"
         :user-themes="userThemes"
@@ -391,6 +394,7 @@
         v-model:show-thinking="showThinking"
         v-model:appearance="appearance"
         v-model:tool-display="toolDisplay"
+        v-model:thinking-display="thinkingDisplay"
         :color-mode="colorMode"
         :theme-id="themeId"
         :user-themes="userThemes"
@@ -524,6 +528,12 @@
     TOOL_DISPLAY_KEY,
     type ToolDisplay,
   } from "./composables/toolDisplay";
+  // card t_428ed4fb: the thinking block's display knob rides the same
+  // shared-ref shape as the tool rows' (composables/thinkingDisplay.ts)
+  import {
+    useThinkingDisplay,
+    THINKING_DISPLAY_KEY,
+  } from "./composables/thinkingDisplay";
   import {
     createDock,
     findPane,
@@ -709,6 +719,15 @@
   const toolDisplay = useToolDisplay();
   watch(toolDisplay, (mode) => {
     localStorage.setItem(TOOL_DISPLAY_KEY, mode);
+  });
+  // thinking display (card t_428ed4fb): auto | expanded | collapsed -
+  // v-model binds the SHARED ref (composables/thinkingDisplay.ts) so
+  // the settings knob writes the same signal the thinking blocks read,
+  // wherever they render. The ref restores from localStorage at module
+  // load; this watch keeps the choice persisted (same shape as above).
+  const thinkingDisplay = useThinkingDisplay();
+  watch(thinkingDisplay, (mode) => {
+    localStorage.setItem(THINKING_DISPLAY_KEY, mode);
   });
   // the knob flip re-renders instantly; the change persists for the
   // next reload (last choice wins, same pattern as the theme)

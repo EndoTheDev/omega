@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
@@ -94,6 +95,14 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				{Key: "provider.api_key", Label: "api key", Type: "secret",
 					Value: maskSecret(cfg.Provider.APIKey),
 					Help:  "masked here; edit config.yaml instead (blank for local ollama)"},
+				// card t_7dcd4280: the named instances - the list
+				// editor in the webui renders the rows (name, type,
+				// model, host, key), add and remove included. The
+				// list REPLACES the providers: map on save; a masked
+				// key round-trips as "keeping the existing secret".
+				{Key: "provider.instances", Label: "provider instances", Type: "providers",
+					Value: providerInstancesKnob(cfg),
+					Help:  "named provider instances: the name is the instance id, so two accounts of one type are two rows; the provider section above stays the default; changes apply on restart"},
 			},
 		},
 		{
@@ -275,6 +284,31 @@ func compactionKnobs(cfg *Config) []core.SettingsKnob {
 
 func ptrF(n float64) *float64 { return &n }
 
+// providerInstancesKnob renders the named provider instances (card
+// t_7dcd4280) as the list editor's value: one object per instance,
+// names sorted (a yaml map iterates unordered - the pane must not
+// reshuffle its rows between reloads). The api_key rides masked; the
+// save path treats a masked value as "keep the existing secret".
+func providerInstancesKnob(cfg *Config) []map[string]any {
+	names := make([]string, 0, len(cfg.Providers))
+	for n := range cfg.Providers {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	out := make([]map[string]any, 0, len(names))
+	for _, n := range names {
+		inst := cfg.Providers[n]
+		out = append(out, map[string]any{
+			"name":       n,
+			"type":       strings.ToLower(inst.Type),
+			"model_name": inst.ModelName,
+			"host":       inst.Host,
+			"api_key":    maskSecret(inst.APIKey),
+		})
+	}
+	return out
+}
+
 // saveSettings applies values (dotted yaml path -> value), validates,
 // and writes config.yaml atomically, then hot-applies the live knobs to
 // the running context. Returns the refreshed schema payload.
@@ -307,6 +341,14 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			err = setString(&cfg.Provider.Type, key, raw, trim)
 		case "provider.model_name", "provider.host", "provider.vision_model", "provider.title_model":
 			err = setStringField(cfg, key, raw)
+		case "provider.instances":
+			// The named instances (card t_7dcd4280): the card's point
+			// is add/remove-with-key through the settings UI, so the
+			// per-instance api_key IS hot-PUT-able here (masked read,
+			// masked round-trip keeps the secret). The default
+			// section's provider.api_key stays config.yaml-only -
+			// the gated knob below is untouched.
+			err = applyProviderInstances(cfg, key, raw)
 		case "provider.api_key", "server.bind":
 			// gated knobs: bind is the escalation lever for the whole
 			// LAN surface, api_key is the credential. Neither a
@@ -465,6 +507,71 @@ func setStringField(cfg *Config, key string, raw any) error {
 // trim normalizes plain string inputs: surrounding whitespace is never
 // significant in any config field.
 func trim(s string) string { return strings.TrimSpace(s) }
+
+// applyProviderInstances applies the instances knob (card t_7dcd4280):
+// the submitted list REPLACES cfg.Providers. Each entry carries
+// name, type, model_name, host and api_key; a masked api_key keeps
+// the entry's EXISTING secret ("****" means unchanged, not blank -
+// the plain text never rides the wire, so the round trip must not
+// wipe it), and a masked key on a NEW instance is an error. Unknown
+// types, reserved names and missing model_name all fail through
+// cfg.Validate() in saveSettings - the schema is the contract and a
+// typo must be loud, never silently dropped.
+func applyProviderInstances(cfg *Config, key string, raw any) error {
+	list, ok := raw.([]any)
+	if !ok {
+		return fmt.Errorf("%s: expected a list of instance objects, got %T", key, raw)
+	}
+	providers := make(map[string]ProviderConfig, len(list))
+	seen := make(map[string]bool, len(list))
+	for i, item := range list {
+		obj, ok := item.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s: entry %d: expected an object, got %T", key, i, item)
+		}
+		name, err := asTrimmedString(obj["name"])
+		if err != nil {
+			return fmt.Errorf("%s: entry %d: name: %w", key, i, err)
+		}
+		if name == "" {
+			return fmt.Errorf("%s: entry %d: name is required", key, i)
+		}
+		if seen[name] {
+			return fmt.Errorf("%s: entry %d: duplicate name %q", key, i, name)
+		}
+		seen[name] = true
+		inst := ProviderConfig{}
+		if inst.Type, err = asTrimmedString(obj["type"]); err != nil {
+			return fmt.Errorf("%s: %s.type: %w", key, name, err)
+		}
+		inst.Type = strings.ToLower(inst.Type)
+		if inst.ModelName, err = asTrimmedString(obj["model_name"]); err != nil {
+			return fmt.Errorf("%s: %s.model_name: %w", key, name, err)
+		}
+		if inst.Host, err = asTrimmedString(obj["host"]); err != nil {
+			return fmt.Errorf("%s: %s.host: %w", key, name, err)
+		}
+		if inst.APIKey, err = asTrimmedString(obj["api_key"]); err != nil {
+			return fmt.Errorf("%s: %s.api_key: %w", key, name, err)
+		}
+		if inst.APIKey == maskedSecret {
+			existing, has := cfg.Providers[name]
+			if !has || existing.APIKey == "" {
+				return fmt.Errorf("%s: %s.api_key is masked - set a real key", key, name)
+			}
+			inst.APIKey = existing.APIKey
+		}
+		providers[name] = inst
+	}
+	if len(providers) == 0 {
+		// An emptied list removes every instance - the writer omits
+		// the nil map entirely.
+		cfg.Providers = nil
+		return nil
+	}
+	cfg.Providers = providers
+	return nil
+}
 
 // asTrimmedString coerces a submitted JSON value into a trimmed string.
 func asTrimmedString(raw any) (string, error) {

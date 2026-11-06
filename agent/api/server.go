@@ -541,10 +541,19 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 // = no thinking parameter sent = provider default); unset means
 // provider default.
 type chatRequest struct {
-	Messages      []json.RawMessage `json:"messages"`
-	SessionID     string            `json:"session_id,omitempty"`
-	Model         string            `json:"model,omitempty"`
-	ThinkingLevel int               `json:"thinking_level,omitempty"`
+	Messages  []json.RawMessage `json:"messages"`
+	SessionID string            `json:"session_id,omitempty"`
+	Model     string            `json:"model,omitempty"`
+	// Provider selects the provider INSTANCE the run serves through
+	// (config.yaml providers:, card t_7dcd4280). Empty = the default
+	// provider: section. A name the config no longer carries (the
+	// instance was removed) fails the run loudly (400, "not
+	// configured") - never a silent fallback. A successful send pins
+	// the name on the session (the wire wins and sticks, the same
+	// rule the model pin carries), so the session keeps serving the
+	// instance until it is removed - and then fails loudly.
+	Provider      string `json:"provider,omitempty"`
+	ThinkingLevel int    `json:"thinking_level,omitempty"`
 	// Retry re-runs the session's LAST user turn as a SIBLING VARIANT
 	// (t_17365247, superseding the append semantics of t_357cbe9c): the
 	// fresh response's head parents to the same USER message the prior
@@ -760,6 +769,25 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	if err != nil {
 		s.runs.finish(run)
 		return nil, err
+	}
+
+	// Instance pin (card t_7dcd4280): a wire provider name WINS and
+	// sticks on the session (picker concerns ride the same shape the
+	// model pin carries). No wire name serves the session's pinned
+	// one - which is exactly how a removed instance strands ITS
+	// sessions: the next send resolves the dead name and the run
+	// fails loudly (pinProvider's 400), never a silent fallback to
+	// the default instance.
+	if sessionKnown {
+		if req.Provider != "" {
+			if req.Provider != sess.ProviderName {
+				if scx, ok := s.store.(agent.SessionContextStore); ok {
+					_ = scx.SetSessionProvider(ctx, req.SessionID, req.Provider)
+				}
+			}
+		} else if sess.ProviderName != "" {
+			req.Provider = sess.ProviderName
+		}
 	}
 
 	// Model pin: a wire model WINS and sticks (the picker's choice is
@@ -1198,14 +1226,31 @@ func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 	return flusher, true
 }
 
-// pinProvider pins the per-run provider copy: base with a model
-// override when the request carries one, plus a thinking level from
-// the shared ladder. thinking_level 0 ("none") is skipped: no
-// parameter sent, the provider keeps its default. The copy rides
-// LoopOptions - no shared state mutated. Shared by the prepareRun
-// detach path and the legacy inline path (chat-last 1/3).
+// pinProvider pins the per-run provider copy: instance resolution (card
+// t_7dcd4280), a model override when the request carries one, plus a
+// thinking level from the shared ladder. thinking_level 0 ("none") is
+// skipped: no parameter sent, the provider keeps its default. The copy
+// rides LoopOptions - no shared state mutated. Shared by the
+// prepareRun detach path and the legacy inline path (chat-last 1/3).
 func (s *Server) pinProvider(req *chatRequest) (agent.Provider, *runError) {
 	prov := s.agent.Provider()
+	if req.Provider != "" {
+		// Instance resolution (card t_7dcd4280): the run serves
+		// through the NAMED provider instance. Unknown name = the
+		// instance was removed (or never existed) - the run fails
+		// loudly and the default never picks the work up silently.
+		ir, ok := prov.(agent.ProviderInstances)
+		if !ok {
+			return nil, &runError{http.StatusBadRequest,
+				fmt.Sprintf("provider instance %q cannot serve: this provider carries no named instances", req.Provider)}
+		}
+		inst, ok := ir.Instance(req.Provider)
+		if !ok {
+			return nil, &runError{http.StatusBadRequest,
+				fmt.Sprintf("provider instance %q is not configured (it was removed, or the name is misspelled); session: re-select a provider to unstick", req.Provider)}
+		}
+		prov = inst
+	}
 	if req.Model != "" {
 		prov = prov.WithModel(req.Model)
 	}
@@ -1867,12 +1912,12 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 	out := make([]toolListing, 0, len(names))
 	for _, name := range names {
 		t := inventory[name]
+		if t.AliasOf != "" {
+			continue // compat shim, not inventory
+		}
 		row := toolListing{Name: name, Description: t.Description, Origin: t.Origin}
 		for _, a := range t.Actions {
 			row.Actions = append(row.Actions, toolActionListing{Name: a.Name, Description: a.Description})
-		}
-		if t.AliasOf != "" {
-			continue // compat shim, not inventory
 		}
 		out = append(out, row)
 	}
