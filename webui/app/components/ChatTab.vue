@@ -29,14 +29,26 @@
           class="messages live-body stacked"
           ref="liveBodyEl"
           @scroll="onScroll">
-          <ChatItem
-            v-for="item in liveRun.body"
-            :key="itemKey(item)"
-            :item="item"
-            :variant="variantOfItem(item)"
-            :gate-card="gateCardForItem(item)"
-            :session-id="sessionId"
-            :show-thinking="showThinking" />
+          <!-- card t_e4280de7: consecutive tool rows render as ONE
+               collapsible group here too - a live run is the noisiest
+               case (the run body is all calls) -->
+          <template
+            v-for="entry in groupedBody"
+            :key="entryKey(entry)">
+            <ToolGroup
+              v-if="isToolRun(entry)"
+              :items="entry.items"
+              :gate-cards="entry.items.map(gateCardForItem)"
+              :session-id="sessionId"
+              :live="busy" />
+            <ChatItem
+              v-else
+              :item="entry"
+              :variant="variantOfItem(entry)"
+              :gate-card="gateCardForItem(entry)"
+              :session-id="sessionId"
+              :show-thinking="showThinking" />
+          </template>
           <!-- card t_63204dfd: pending gate questions with no running
                row to ride render standalone at the tail -->
           <GateCard
@@ -64,37 +76,58 @@
              'stacked' wraps each turn block: a user message plus its
              full response subtree, separated by the block gap. -->
         <template v-if="appearance === 'stacked'">
+          <!-- card t_e4280de7: the block's own consecutive tool runs
+               group - a run is one block's subtree, so runs never span
+               blocks (a user message always breaks both) -->
           <div
-            v-for="block in blocks"
+            v-for="block in groupedBlocks"
             :key="blockKey(block)"
             class="msg-block">
+            <template
+              v-for="entry in block"
+              :key="entryKey(entry)">
+              <ToolGroup
+                v-if="isToolRun(entry)"
+                :items="entry.items"
+                :gate-cards="entry.items.map(gateCardForItem)"
+                :session-id="sessionId"
+                :live="busy" />
+              <ChatItem
+                v-else
+                :item="entry"
+                :variant="variantOfItem(entry)"
+                :retryable="retryableOfItem(entry)"
+                :gate-card="gateCardForItem(entry)"
+                :session-id="sessionId"
+                :show-thinking="showThinking"
+                @select="onSelect"
+                @fork="onFork"
+                @retry="onRetry" />
+            </template>
+          </div>
+        </template>
+        <template v-else>
+          <template
+            v-for="entry in groupedTranscript"
+            :key="entryKey(entry)">
+            <ToolGroup
+              v-if="isToolRun(entry)"
+              :items="entry.items"
+              :gate-cards="entry.items.map(gateCardForItem)"
+              :session-id="sessionId"
+              :live="busy" />
             <ChatItem
-              v-for="item in block"
-              :key="itemKey(item)"
-              :item="item"
-              :variant="variantOfItem(item)"
-              :retryable="retryableOfItem(item)"
-              :gate-card="gateCardForItem(item)"
+              v-else
+              :item="entry"
+              :variant="variantOfItem(entry)"
+              :retryable="retryableOfItem(entry)"
+              :gate-card="gateCardForItem(entry)"
               :session-id="sessionId"
               :show-thinking="showThinking"
               @select="onSelect"
               @fork="onFork"
               @retry="onRetry" />
-          </div>
-        </template>
-        <template v-else>
-          <ChatItem
-            v-for="item in transcript"
-            :key="itemKey(item)"
-            :item="item"
-            :variant="variantOfItem(item)"
-            :retryable="retryableOfItem(item)"
-            :gate-card="gateCardForItem(item)"
-            :session-id="sessionId"
-            :show-thinking="showThinking"
-            @select="onSelect"
-            @fork="onFork"
-            @retry="onRetry" />
+          </template>
         </template>
         <!-- card t_63204dfd: pending gate questions with no running row
              to ride render standalone at the tail -->
@@ -189,10 +222,14 @@
   } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
   import { defaultWorkspaceNow } from "../composables/defaultWorkspace";
+  // card t_e4280de7: consecutive tool rows collapse into ONE group
+  // block (render-site view, the transcript itself stays flat)
+  import { groupToolRuns, isToolRun, type ChatEntry } from "../composables/toolGroup";
   import { pendingVerdictList, refreshNotifications } from "./shell/notificationFeed";
   import AppComposer from "./chat/AppComposer.vue";
   import ChatItem from "./ChatItem.vue";
   import GateCard from "./chat/GateCard.vue";
+  import ToolGroup from "./chat/ToolGroup.vue";
 
   const props = defineProps<{
     /** the tab this instance renders (its `key` is the state key) */
@@ -330,9 +367,12 @@
   // The canvas item identity survives deltas, so the inner keys stay
   // stable through streaming repaints.
   const blocks = computed(() => splitBlocks(transcript.value));
-  function blockKey(block: TranscriptItem[]): number {
+  // the outer key rides the block's first ENTRY (card t_e4280de7): a
+  // block opening on a tool run groups it, and groupToolRuns keeps the
+  // head item's identity, so the key survives the grouping swap.
+  function blockKey(block: ChatEntry[]): number {
     const first = block[0];
-    return first ? itemKey(first) : -1;
+    return first ? entryKey(first) : -1;
   }
   // draft lives per state (survives tab switches)
   const draft = computed({
@@ -684,6 +724,26 @@
     if (!id) return null;
     return variantAnchorMap.value.get(id) ?? null;
   }
+
+  // --- tool-call grouping (card t_e4280de7): consecutive tool rows ---
+  //
+  // groupToolRuns folds each render list's runs of consecutive tool
+  // items into collapsible group blocks; a variant-anchored row stays
+  // in flow (the switcher must stay visible). Grouping is a RENDER-SITE
+  // view: the transcript itself stays flat, so every derivation above
+  // (variants, gates, retry, keys) keeps reading the raw items.
+  const groupedTranscript = computed(() => groupToolRuns(transcript.value, variantOfItem));
+  const groupedBlocks = computed(() =>
+    blocks.value.map((block) => groupToolRuns(block, variantOfItem)),
+  );
+  const groupedBody = computed(() => groupToolRuns(liveRun.value.body, variantOfItem));
+  // entry keys ride ITEM identity: a group's key is its head row's key,
+  // so a run growing (a new call streams in) keeps the same details
+  // element - and a pinned open state survives the growth.
+  function entryKey(entry: ChatEntry): number {
+    return isToolRun(entry) ? itemKey(entry.items[0]!) : itemKey(entry);
+  }
+
   function onSelect(messageId: string, index: number) {
     void host.selectVariant(stateKey, messageId, index);
   }

@@ -413,7 +413,13 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   ThinkingSelect retired — the BandSelect owns the select grammar; the
   model+effort pair is one nowrap wrap unit), `ChatMessage`,
   `ThinkingBlock`, `ToolCallLine` (running/done/error, expandable
-  result), `ChatTab` (transcript + composer, live-pin layout),
+  result), `ToolGroup` (the tool-group RENDERING law, card t_e4280de7:
+  a run's CONSECUTIVE tool rows collapse into ONE collapsible group -
+  `composables/toolGroup.ts` folds each render list strictly, a
+  variant-anchored row never gets swallowed, the group rides the shared
+  `chat.tool_display` knob with auto open-while-live and a session-scoped
+  pin; pinned by the 23-tool-group journey and `webui/test/toolgroup.test.ts`),
+  `ChatTab` (transcript + composer, live-pin layout),
   `ChatItem`.
 - Sessions: `AppSidebar` (band head with the in-band search, the
   full-width new-session row, pinned section, day buckets, per-row
