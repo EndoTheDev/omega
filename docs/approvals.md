@@ -29,8 +29,10 @@ forward pass (smart); a false pass costs whatever the command does.
 ## The reviewer (smart mode)
 
 One forward pass against the configured provider's `/v1/systemone`
-passthrough (`approvals.model`, conventionally `clef:27b`), asking
-the six questions verbatim - `verdict`, `policy_allows`,
+passthrough using the decision model (the `approvals_model` slot in
+provider settings - `instance:model` routes the consult through a
+named provider instance; conventionally `clef:27b`), asking the six
+questions verbatim - `verdict`, `policy_allows`,
 `blast_radius`, `self_advocating`, `reads_secrets`, `sends_outbound`.
 The command is reviewed in its shell-parsed, statically expanded form
 (quotes, tildes and known vars resolved; `$()`/backticks visible) -
@@ -98,13 +100,17 @@ the audit log measures it in production.
 ```yaml
 approvals:
   mode: manual        # off | manual | smart (default manual)
-  model: clef:27b     # decision model (smart mode; decision-family dropdown)
   smart_policy: |     # trusted operator policy the reviewer reads
     ...
 ```
 
-`approvals.model` rides the typed model picker (decision-filtered
-dropdown in the settings pane). All knobs apply on restart.
+The decision model moved to provider settings (card t_fc0b2f2d): the
+`approvals_model` slot (`provider.approvals_model` in the settings
+pane) rides the typed model picker, decision-filtered, and the picker
+also lists the named provider instances' models as `instance:model`
+values - the consult routes through that instance. Empty = fail-closed
+(every flagged command escalates). The mode and policy knobs above
+plus the model slot all apply on restart.
 
 ## Removability
 

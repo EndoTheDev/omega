@@ -55,7 +55,10 @@ type CuratorReport struct {
 
 // RunCurator executes one pass against the provider's own skills dir.
 // prov may be nil - the deterministic staleness pass still runs; the
-// LLM proposal steps are skipped and the report says so.
+// LLM proposal steps are skipped and the report says so. curatorModel
+// is the per-subsystem slot (card t_fc0b2f2d): "instance:model" rides
+// the named provider instance (ResolveModelSlot), a bare name routes
+// through prov.WithModel (empty = the instance's own model).
 func (sp *SkillsProvider) RunCurator(ctx context.Context, prov agent.Provider, curatorModel string) (CuratorReport, error) {
 	if sp.Dir == "" {
 		return CuratorReport{}, fmt.Errorf("curator: skills directory not configured")
@@ -68,6 +71,7 @@ func (sp *SkillsProvider) RunCurator(ctx context.Context, prov agent.Provider, c
 		rep.Skipped = append(rep.Skipped, "no provider mounted: LLM proposals skipped")
 		return rep, nil
 	}
+	prov, curatorModel = agent.ResolveModelSlot(prov, curatorModel)
 	if curatorModel != "" {
 		prov = prov.WithModel(curatorModel)
 	}

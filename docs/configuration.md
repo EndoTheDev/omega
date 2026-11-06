@@ -108,12 +108,15 @@ naming it.
 | `kanban.db_path`              | -                                  | `<home>/data/kanban.db`  | Task-board SQLite path; relative defaults resolve against the home like `store.db_path`                                                                                                   |
 | `vision_model`                | `OMEGA_VISION_MODEL`               | -                        | Captioner model for image messages: images are described once (persisted, content-addressed) and the main model sees the caption as text. Empty = images ride to the main model unchanged (a model that cannot see them fails loudly). Applies on restart |
 | `title_model`                 | `OMEGA_TITLE_MODEL`                | -                        | Cheap model for session-title generation (provisional + final). Empty = the main model. Applies on restart                                                                                                                                                |
+| `compaction_model`            | -                                  | the session model        | Model the compaction summarizer consults (settings key `provider.compaction_model`). `instance:model` routes the consult through a named provider instance. Empty = the session provider model. Applies live                                              |
+| `summarizer_model`            | -                                  | the session model        | Model the hygiene summarizer consults (settings key `provider.summarizer_model`). `instance:model` routes the consult through a named provider instance. Empty = the session provider model. Applies on restart                                           |
+| `skills_model`                | -                                  | the session model        | Model the weekly skills curator consults for merge/distill proposals (settings key `provider.skills_model`). `instance:model` routes the consult through a named provider instance. Empty = the session provider model. Applies on restart                |
+| `approvals_model`             | -                                  | -                        | Decision model the smart approval gate consults (settings key `provider.approvals_model`; full story in [approvals.md](approvals.md)). Empty = fail-closed (every gated command escalates). Applies on restart                                             |
 | `disabled`                    | -                                  | (empty)                  | Toggleable capsules to keep off (e.g. `- kanban`). The webui MODULES pane writes the same key; an unknown name fails the boot. Legacy `omega.json` sidecars fold into this key on first boot and are deleted                                               |
 | `continuous.wake_turn_budget` | -                                  | `0`                      | Per-wake turn budget a continuous agent's spawned loop gets (mapped onto `OMEGA_MAX_TURNS` in the child). 0 = the config's own `max_turns` (ruling 17: the ONLY budget - no daily cap, no wallet)                                                        |
 | `continuous.wake_timeout_seconds` | -                              | `1800`                   | Wall-clock fence per wake subprocess: a wedged wake is killed, never queued (crash isolation ruling 9)                                                                                                                                                    |
 | `sessions.retention_days`     | -                                  | `90`                     | The hygiene job deletes sessions inactive longer than this many days (pinned sessions are exempt). 0 = never prune. Applies on restart                                                                                                                    |
 | `sessions.summarize_after_hours` | -                               | `24`                     | Settled sessions without a summary get an LLM-written one (one short paragraph, searchable) once idle at least this many hours. 0 = the default. Applies on restart                                                                                        |
-| `sessions.summarizer_model`   | -                                  | the session model        | Model the hygiene summarizer consults. Empty = the session provider model (the curator ruling). Applies on restart                                                                                                                                        |
 
 ## Session hygiene
 
@@ -190,13 +193,13 @@ itself.
 ## The approval gate
 
 The approval capsule (`harness/approval/`, ship-dark default
-`manual`) takes three config.yaml knobs (full story:
-[approvals.md](approvals.md)):
+`manual`) takes two config.yaml knobs (full story:
+[approvals.md](approvals.md)); the decision model rides the provider
+settings (the `approvals_model` slot, above):
 
 | Key                  | Default   | Meaning                                                                                      |
 | -------------------- | --------- | -------------------------------------------------------------------------------------------- |
 | `approvals.mode`     | `manual`  | `off` \| `manual` \| `smart`. Empty = manual                                                  |
-| `approvals.model`    | -         | The smart mode's decision model (a `/v1/systemone` forward pass per flagged command; fail-closed when unreachable) |
 | `approvals.smart_policy` | -     | The operator policy text the reviewer sees (never command text)                              |
 
 ## The process registry

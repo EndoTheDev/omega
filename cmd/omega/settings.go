@@ -103,6 +103,24 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				{Key: "provider.instances", Label: "provider instances", Type: "providers",
 					Value: providerInstancesKnob(cfg),
 					Help:  "named provider instances: the name is the instance id, so two accounts of one type are two rows; the provider section above stays the default; changes apply on restart"},
+				// card t_fc0b2f2d: the four per-subsystem model
+				// slots - provider settings assigns one named model
+				// per subsystem ("instance:model" or a bare model;
+				// the selector also lists the named instances). The
+				// four call sites (compaction, summarizer, curator,
+				// approval reviewer) resolve the slot live.
+				{Key: "provider.compaction_model", Label: "compaction model", Type: "model", Slot: true,
+					Value: cfg.CompactionModel, Live: true,
+					Help: "model the compaction summarizer consults; instance:model rides a named provider instance (empty = the session provider model); applies live"},
+				{Key: "provider.summarizer_model", Label: "summarizer model", Type: "model", Slot: true,
+					Value: cfg.SummarizerModel,
+					Help:  "model the hygiene job consults for session summaries; instance:model rides a named provider instance (empty = the session provider model); applies on restart"},
+				{Key: "provider.skills_model", Label: "skills curator model", Type: "model", Slot: true,
+					Value: cfg.SkillsModel,
+					Help:  "model the weekly skills curator consults for merge/distill proposals; instance:model rides a named provider instance (empty = the session provider model); applies on restart"},
+				{Key: "provider.approvals_model", Label: "approval decision model", Type: "model", Slot: true, Filter: "decision",
+					Value: cfg.ApprovalsModel,
+					Help:  "decision model the smart approval gate consults; instance:model routes the consult through a named provider instance (empty = fail-closed, every gated command escalates); applies on restart"},
 			},
 		},
 		{
@@ -146,9 +164,8 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Min: ptrF(0), Step: ptrF(1),
 					Value: cfg.Sessions.SummarizeAfterHours,
 					Help:  "the hygiene job summarizes settled sessions that lack a summary once they are idle this many hours; 0 = the default (24h); applies on restart"},
-				{Key: "sessions.summarizer_model", Label: "summarizer model", Type: "model",
-					Value: cfg.Sessions.SummarizerModel,
-					Help:  "model the hygiene job consults for session summaries; empty = the session provider model; applies on restart"},
+				// The summarizer's model moved to provider settings
+				// (card t_fc0b2f2d): provider.summarizer_model.
 			},
 		},
 		{
@@ -184,9 +201,8 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Min: ptrF(0), Step: ptrF(1),
 					Value: cfg.Skills.NudgeInterval,
 					Help:  "learning-loop reminder cadence: tool iterations without a persisted lesson before the next turn prep carries one reminder line; 0 = off; applies on restart"},
-				{Key: "skills.curator_model", Label: "curator model", Type: "model",
-					Value: cfg.Skills.CuratorModel,
-					Help:  "model the weekly curator pass consults for merge/distill proposals; empty = the session provider model; applies on restart"},
+				// The curator's model moved to provider settings
+				// (card t_fc0b2f2d): provider.skills_model.
 			},
 		},
 		{
@@ -225,9 +241,9 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Help:  "applies on restart"},
 			},
 		},
-		// The approval gate group (card t_c2b52cb5): mode off|manual|smart,
-		// the decision model (the dropdown lists decision-capable models
-		// only), and the operator policy text. All restart-applied.
+		// The approval gate group (card t_c2b52cb5): mode off|manual|smart
+		// and the operator policy text. The decision model moved to
+		// provider settings (card t_fc0b2f2d). All restart-applied.
 		{
 			Key:   "approvals",
 			Label: "approvals",
@@ -236,9 +252,8 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Options: []string{"off", "manual", "smart"},
 					Value:   cfg.Approvals.Mode,
 					Help:    "off = no gate at all; manual = flagged commands ask you (default); smart = a decision model reviews them first; applies on restart"},
-				{Key: "approvals.model", Label: "decision model", Type: "model", Filter: "decision",
-					Value: cfg.Approvals.Model,
-					Help:  "the reviewer in smart mode; the dropdown lists decision-family models only (clef:27b by convention); empty = every flagged command escalates; applies on restart"},
+				// The decision model moved to provider settings (card
+				// t_fc0b2f2d): provider.approvals_model.
 				{Key: "approvals.smart_policy", Label: "operator policy", Type: "textarea",
 					Value: cfg.Approvals.SmartPolicy,
 					Help:  "trusted text the reviewer reads beside every command: describe routine operations that should not interrupt you; applies on restart"},
@@ -413,10 +428,6 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			err = setInt(&cfg.Sessions.RetentionDays, key, raw, 0, math.MaxInt32) // 0 = never prune
 		case "sessions.summarize_after_hours":
 			err = setInt(&cfg.Sessions.SummarizeAfterHours, key, raw, 0, math.MaxInt32) // 0 = the default
-		case "skills.curator_model":
-			err = setStringField(cfg, key, raw)
-		case "sessions.summarizer_model":
-			err = setStringField(cfg, key, raw)
 		case "compaction.enabled", "memory.enabled", "memory.user_profile_enabled",
 			"logging.enabled":
 			err = setBool(cfg, key, raw)
@@ -449,7 +460,12 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 				return fmt.Errorf("%s: must be off, manual, or smart, got %q", key, m)
 			}
 			cfg.Approvals.Mode = m
-		case "approvals.model", "approvals.smart_policy":
+		case "approvals.smart_policy":
+			err = setStringField(cfg, key, raw)
+		case "provider.compaction_model", "provider.summarizer_model",
+			"provider.skills_model", "provider.approvals_model":
+			// card t_fc0b2f2d: the per-subsystem model slots live in
+			// the provider group (setStringField routes them).
 			err = setStringField(cfg, key, raw)
 		default:
 			err = fmt.Errorf("unknown setting: %s", key)
@@ -476,6 +492,14 @@ func setStringField(cfg *Config, key string, raw any) error {
 		cfg.VisionModel = v
 	case "provider.title_model":
 		cfg.TitleModel = v
+	case "provider.compaction_model":
+		cfg.CompactionModel = v
+	case "provider.summarizer_model":
+		cfg.SummarizerModel = v
+	case "provider.skills_model":
+		cfg.SkillsModel = v
+	case "provider.approvals_model":
+		cfg.ApprovalsModel = v
 	case "provider.host":
 		cfg.Provider.Host = v
 	case "store.db_path":
@@ -484,18 +508,12 @@ func setStringField(cfg *Config, key string, raw any) error {
 		cfg.SystemPrompt = v
 	case "skills.dir":
 		cfg.Skills.Dir = v
-	case "skills.curator_model":
-		cfg.Skills.CuratorModel = v
-	case "sessions.summarizer_model":
-		cfg.Sessions.SummarizerModel = v
 	case "memory.file":
 		cfg.Memory.File = v
 	case "memory.user_file":
 		cfg.Memory.UserProfileFile = v
 	case "logging.file":
 		cfg.Logging.File = v
-	case "approvals.model":
-		cfg.Approvals.Model = v
 	case "approvals.smart_policy":
 		cfg.Approvals.SmartPolicy = v
 	default:
@@ -718,17 +736,17 @@ func hotApply(cfg Config, pctx *agent.Context, setFilesWorkspace func(string), s
 		return
 	}
 	if c, ok := svc.(*compactor.Compactor); ok {
-		c.SetConfig(cfg.Compaction)
+		c.SetConfig(compactionSection(cfg))
 	}
 }
 
 // omegaSettings implements core.Settings for the serve host: the webui
 // settings pane rides the http_channel through this.
 type omegaSettings struct {
-	path              string
-	pctx              *agent.Context
-	setFilesWorkspace   func(string)     // the files capsule's hot knob, nil when it is not mounted
-	setChannelWorkspace func(string)     // the HTTP channel's default-workspace hot knob, nil when unset
+	path                string
+	pctx                *agent.Context
+	setFilesWorkspace   func(string) // the files capsule's hot knob, nil when it is not mounted
+	setChannelWorkspace func(string) // the HTTP channel's default-workspace hot knob, nil when unset
 }
 
 func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {

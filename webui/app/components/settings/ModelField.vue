@@ -2,11 +2,14 @@
   <!-- omega webui: the TYPED MODEL PICKER (card t_70c28128). A
        settings model field renders the shared BandSelect listbox
        populated from the provider's live model catalog, narrowed to
-       the knob's slot (decision / vision / full chat list). No list =
-       no dropdown: the fetch's error state (or an empty filtered
-       result) falls back to free text with the hint spelled out - the
-       escape hatch is the DEGRADED state, never a silent dead
-       dropdown. -->
+       the knob's slot (decision / vision / full chat list). The
+       per-subsystem model knobs (card t_fc0b2f2d, knob.slot) ALSO
+       list the named provider instances' models as "instance:model"
+       values - the server routes the consult through that instance.
+       No list = no dropdown: the fetch's error state (or an empty
+       filtered result) falls back to free text with the hint spelled
+       out - the escape hatch is the DEGRADED state, never a silent
+       dead dropdown. -->
   <template v-if="mode === 'list'">
     <BandSelect
       class="setting-select setting-model"
@@ -31,7 +34,7 @@
 
 <script setup lang="ts">
   import { computed } from "vue";
-  import type { SettingKnob } from "~/composables/omega";
+  import type { SettingKnob, ProviderInstanceRow } from "~/composables/omega";
   import {
     filterModelEntries,
     useModelCatalog,
@@ -44,6 +47,10 @@
   const props = defineProps<{
     knob: SettingKnob;
     value: string;
+    // the named provider instances (the provider.instances knob's
+    // rows, passed through by the pane): the per-subsystem slots
+    // (knob.slot) list each row's model as an "instance:model" value
+    instances?: ProviderInstanceRow[];
   }>();
 
   defineEmits<{
@@ -52,22 +59,39 @@
 
   const { state: catalog } = useModelCatalog();
   const filter = (props.knob.filter ?? "") as ModelFilter;
+  // card t_fc0b2f2d: the per-subsystem slots also offer the named
+  // provider instances. A row without a name or model cannot resolve
+  // (the server validates both at boot) - it stays off the list.
+  const instanceOptions = computed(() => {
+    if (props.knob.slot !== true) return [];
+    return (props.instances ?? [])
+      .filter((r) => r.name !== "" && r.model_name !== "")
+      .map((r) => ({
+        value: `${r.name}:${r.model_name}`,
+        label: `${r.name}:${r.model_name}`,
+      }));
+  });
 
-  const options = computed(() =>
-    filterModelEntries(catalog.value.entries ?? [], filter).map((e) => ({
+  const options = computed(() => [
+    ...instanceOptions.value,
+    ...filterModelEntries(catalog.value.entries ?? [], filter).map((e) => ({
       value: e.name,
       label: e.name,
     })),
-  );
+  ]);
 
   type Mode = "list" | "fallback";
   // list = the dropdown renders: while the catalog is in flight
   // (brief round trip, the hint says loading) and once it landed with
   // a non-empty filtered list. A listing that answered but matched
   // nothing in a filtered slot degrades the same way a failed fetch
-  // does (the empty pop would be a dead dropdown with no escape).
+  // does (the empty pop would be a dead dropdown with no escape) -
+  // except a slot knob that already carries instance entries.
   const mode = computed<Mode>(() => {
-    if (catalog.value.error === null && (catalog.value.loading || options.value.length > 0))
+    if (
+      catalog.value.error === null &&
+      (catalog.value.loading || options.value.length > 0)
+    )
       return "list";
     return "fallback";
   });
@@ -75,8 +99,7 @@
   const hint = computed(() => {
     if (catalog.value.error !== null)
       return `provider model list unavailable (${catalog.value.error}) - type the model name`;
-    if (catalog.value.loading)
-      return "loading the provider's models…";
+    if (catalog.value.loading) return "loading the provider's models…";
     if (options.value.length === 0)
       return filter === "decision"
         ? "no decision models in the provider's list - type the model name"
