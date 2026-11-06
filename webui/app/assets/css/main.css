@@ -1305,6 +1305,8 @@ the stacked column - tool rows were still 70% wide, so their elapsed
 labels stopped short of the right edge. */
 .messages.stacked .toolcall { max-width: 100%; }
 .messages.stacked .thinking { max-width: 100%; }
+/* card t_e4280de7: the group rides the same stacked law as the rows */
+.messages.stacked .toolgroup { max-width: 100%; }
 
 
 .messages.stacked .msg.assistant .bubble {
@@ -1891,6 +1893,41 @@ labels stopped short of the right edge. */
    assistant answer bubble (.bubble) is never capped. */
 .tool-output.tool-result { max-height: 60vh; }
 .tool-output.is-error { color: var(--err); }
+
+/* card t_e4280de7: consecutive tool call rows group into ONE collapsible
+   block (ToolGroup.vue). The summary mirrors .thinking's block face, the
+   body keeps the rows in flow - rows render unchanged inside, and the
+   group's own width laws ride .toolcall's (70% / stacked 100% /
+   mobile 88%). */
+.toolgroup {
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-card);
+  background: var(--z1);
+  max-width: 70%;
+}
+.toolgroup summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: var(--r-chip);
+  cursor: pointer;
+  list-style: none;
+  min-height: 44px;
+}
+.toolgroup summary::-webkit-details-marker { display: none; }
+.toolgroup summary:hover { background: var(--z1-raised); }
+.toolgroup-label {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+/* the run is still streaming - one of the two permitted motions */
+.toolgroup-live { color: var(--accent); animation: blink 1s steps(2) infinite; }
+/* rows render at FULL group width inside - .toolcall's own 70% cap
+   applies to the group as a whole, not to the rows in its body */
+.toolgroup .toolcall { max-width: 100%; }
+.toolgroup-body { padding: 2px 0 4px; }
 
 /* status line under the streaming message */
 .status-line {
@@ -2828,7 +2865,7 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
      Revisit from a real phone browser test before re-adding. */
 
   .messages { padding: 12px; }
-  .bubble, .thinking, .toolcall { max-width: 88%; }
+  .bubble, .thinking, .toolcall, .toolgroup { max-width: 88%; }
 
   .composer { margin: 0 8px 8px; } /* full pane on mobile, tighter inset */
   .activity-line { margin: 0 8px 4px; }

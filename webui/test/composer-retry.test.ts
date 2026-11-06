@@ -165,7 +165,7 @@ describe("the retry affordance lives in the message action row", () => {
     // ChatMessage does not know the transcript: ChatItem carries the
     // retryable prop through, ChatTab derives it (idle + newest response)
     assert.match(chatItem, /:retryable="retryable && item\.role === 'assistant'"/);
-    assert.match(chatTab, /retryableOfItem\(item\)/);
+    assert.match(chatTab, /retryableOfItem\(entry\)/);
     // the signal: canRetry (idle gate) AND the item IS the newest
     // assistant response
     assert.match(chatTab, /item\.id === lastAssistantId\.value/);
