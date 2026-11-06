@@ -342,6 +342,14 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		// detached runs carry the session id too: task tools in the detached
 		// loop link to the same conversation the request started
 		ctx = agent.WithSessionID(ctx, req.SessionID)
+		// Session workspace (card t_9de5b009, hand-off fix t_74428a10):
+		// prepareRun resolved req.workspace (the session's pin or the
+		// default_workspace knob) and its trust-gated AGENTS.md context -
+		// this is where the value becomes the run's CWD. Without this
+		// wrap the tools of every session-backed chat ran at the
+		// process cwd (the service lane: C:\Windows\System32) and the
+		// prompt context the trust resolver built was silently dropped.
+		ctx = core.WithRunWorkspace(ctx, req.workspace, req.workspacePromptContext)
 		// Verdict cards v1 (card t_2ecf9c51): a webui /chat is an
 		// interactive turn - the verdict tool may issue from here.
 		ctx = core.WithRunOrigin(ctx, "interactive")
