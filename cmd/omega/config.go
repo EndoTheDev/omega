@@ -750,8 +750,12 @@ func (c Config) Validate() error {
 		if strings.ToLower(inst.Type) != "" && providerTypes[strings.ToLower(inst.Type)] == "" {
 			return fmt.Errorf("config: provider %s.type %q is not recognized (want ollama, openai, or anthropic)", name, inst.Type)
 		}
-		if inst.ModelName == "" {
-			return fmt.Errorf("config: provider %s.model_name is required", name)
+		// Card t_1914a8c9: an instance is a NAMED ENDPOINT only (the
+		// Hermes shape) - name, type, host, api_key. Models come from
+		// the instance's own catalog through the pickers; a bound
+		// model is a loud config error, never an ignored field.
+		if inst.ModelName != "" {
+			return fmt.Errorf("config: provider %s.model_name is no longer settable - providers are named endpoints only, pick the model in the model picker (instance:model)", name)
 		}
 	}
 	if c.Provider.Host != "" {

@@ -1,6 +1,9 @@
 package provider
 
-// card t_7dcd4280: the named provider instances - mount + resolver law.
+// card t_7dcd4280 / t_1914a8c9: the named provider instances - mount +
+// resolver law. An instance is a NAMED ENDPOINT only (name, type,
+// host, api_key; no model column - models come from the instance's
+// catalog through the pickers).
 
 import (
 	"testing"
@@ -17,7 +20,7 @@ func TestInstanceResolution(t *testing.T) {
 		Type:      "ollama",
 		ModelName: "main",
 		Instances: map[string]Config{
-			"backup": {Type: "openai", ModelName: "gpt-4o", Host: "https://api.openai.example", APIKey: "sk"},
+			"backup": {Type: "openai", Host: "https://api.openai.example", APIKey: "k"},
 		},
 	})
 	inst, ok := prov.(agent.ProviderInstances)
@@ -28,10 +31,10 @@ func TestInstanceResolution(t *testing.T) {
 	if !ok {
 		t.Fatal("configured instance did not resolve")
 	}
-	if backup.ModelName() != "gpt-4o" {
-		t.Fatalf("instance model = %q, want gpt-4o", backup.ModelName())
+	if backup.ModelName() != "" {
+		t.Fatalf("instance model = %q, want empty (named endpoints carry no model)", backup.ModelName())
 	}
-	if backup, _ := inst.Instance("backup"); backup.ModelName() != "gpt-4o" {
+	if backup, _ := inst.Instance("backup"); backup.ModelName() != "" {
 		t.Fatal("second resolution must return the same named instance")
 	}
 	if got, ok := inst.Instance("gone"); ok || got != nil {
@@ -42,15 +45,32 @@ func TestInstanceResolution(t *testing.T) {
 	if !ok {
 		t.Fatal("WithModel copy lost the instances resolver shape")
 	}
-	if inst2, ok := copied.Instance("backup"); !ok || inst2.ModelName() != "gpt-4o" {
+	if inst2, ok := copied.Instance("backup"); !ok || inst2.ModelName() != "" {
 		t.Fatal("derived copy does not resolve the named instance")
 	}
-	// no configured instances: unknown names stay (nil, false)
+	// InstanceNames (card t_1914a8c9): the serving shell's grouped
+	// catalog reads the id list here
+	names, ok := prov.(agent.ProviderInstanceNames)
+	if !ok {
+		t.Fatal("mounted provider must satisfy agent.ProviderInstanceNames")
+	}
+	if got := names.InstanceNames(); len(got) != 1 || got[0] != "backup" {
+		t.Fatalf("InstanceNames() = %v, want [backup]", got)
+	}
+	// no configured instances: unknown names stay (nil, false), the
+	// names list answers nil
 	bare := (&Plugin{}).mountForTest(t, Config{Type: "ollama", ModelName: "main"})
 	if ir, ok := bare.(agent.ProviderInstances); ok {
 		if got, ok2 := ir.Instance("anything"); ok2 || got != nil {
 			t.Fatal("instance-free provider must not resolve anything")
 		}
+	}
+	bareNames, ok := bare.(agent.ProviderInstanceNames)
+	if !ok {
+		t.Fatal("instance-free provider must still satisfy ProviderInstanceNames")
+	}
+	if got := bareNames.InstanceNames(); got != nil {
+		t.Fatalf("instance-free InstanceNames() = %v, want nil", got)
 	}
 }
 

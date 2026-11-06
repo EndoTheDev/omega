@@ -13,7 +13,7 @@
 // model (or no capabilities at all), the curated sets below supply
 // it: small, greppable, updated in this one file.
 import { ref } from "vue";
-import { fetchModels } from "./omega.ts";
+import { fetchModels, type ModelProviderSection } from "./omega.ts";
 
 export type ModelFilter = "decision" | "vision" | "";
 export interface ModelEntry {
@@ -80,12 +80,17 @@ export interface ModelCatalogState {
   entries: ModelEntry[] | null;
   error: string | null;
   loading: boolean;
+  /** the grouped catalog (card t_1914a8c9): one section per provider,
+      "default" first - the slot pickers read "instance:model" pairs
+      from the named sections. null until the payload carries one. */
+  sections: ModelProviderSection[] | null;
 }
 
 const state = ref<ModelCatalogState>({
   entries: null,
   error: null,
   loading: false,
+  sections: null,
 });
 let inflight: Promise<void> | null = null;
 
@@ -96,7 +101,7 @@ let inflight: Promise<void> | null = null;
 // error as the hint, never a silent dead dropdown.
 export function refreshModelCatalog() {
   if (inflight) return;
-  state.value = { entries: null, error: null, loading: true };
+  state.value = { entries: null, error: null, loading: true, sections: null };
   inflight = fetchModels()
     .then((info) => {
       const wireCaps = info.capabilities ?? {};
@@ -107,6 +112,7 @@ export function refreshModelCatalog() {
         })),
         error: null,
         loading: false,
+        sections: info.providers ?? null,
       };
     })
     .catch((err) => {
@@ -114,6 +120,7 @@ export function refreshModelCatalog() {
         entries: null,
         error: err instanceof Error ? err.message : String(err),
         loading: false,
+        sections: null,
       };
     })
     .finally(() => {

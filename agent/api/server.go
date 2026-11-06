@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -553,7 +554,105 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	if len(caps) > 0 {
 		out["capabilities"] = caps
 	}
+	// card t_1914a8c9: the GROUPED catalog - the chat picker renders
+	// one collapsible section per provider. The default instance
+	// first, then every named instance (sorted, the config map is
+	// unordered). Each section lists the endpoint's own /models
+	// answer; an instance that fails to answer still carries the
+	// section with the error named - the picker shows the failure
+	// inline, never a silent drop. Sections ride ALONGSIDE the flat
+	// fields above (the settings pickers read those).
+	if sections := s.modelSections(); len(sections) > 0 {
+		out["providers"] = sections
+	}
 	json.NewEncoder(w).Encode(out)
+}
+
+// ModelSection is one picker section (card t_1914a8c9): the named
+// endpoint and the models its own catalog answers, capability flags
+// included when the wire carries them. A listing failure keeps the
+// section alive with the error named - the picker's Refresh action
+// re-fetches, never a silent drop of the whole provider.
+type ModelSection struct {
+	Name         string              `json:"name"`
+	Models       []string            `json:"models"`
+	Capabilities map[string][]string `json:"capabilities,omitempty"`
+	Error        string              `json:"error,omitempty"`
+}
+
+// modelSections builds the grouped catalog: the default instance,
+// then every named instance (sorted - a config map iterates
+// unordered). Each listing rides its own provider copy, so no shared
+// state mutates; a listing error lands IN the section (the picker
+// shows it), never a 500 of the whole payload. A picker Refresh
+// re-runs the whole GET - each section is a fresh per-provider fetch.
+func (s *Server) modelSections() []ModelSection {
+	prov := s.agent.Provider()
+	if prov == nil {
+		return nil
+	}
+	type job struct {
+		name string
+		inst agent.Provider
+	}
+	jobs := []job{{name: "default", inst: prov}}
+	if ir, ok := prov.(agent.ProviderInstances); ok {
+		// the named set rides the listed names (an optional upgrade
+		// like the instances one); each name resolves through the
+		// same resolver a run's pin uses
+		if listed, ok := prov.(agent.ProviderInstanceNames); ok {
+			names := listed.InstanceNames()
+			sort.Strings(names)
+			for _, n := range names {
+				if inst, ok2 := ir.Instance(n); ok2 {
+					jobs = append(jobs, job{name: n, inst: inst})
+				}
+			}
+		}
+	}
+	out := make([]ModelSection, len(jobs))
+	var wg sync.WaitGroup
+	for i, j := range jobs {
+		wg.Add(1)
+		go func(i int, j job) {
+			defer wg.Done()
+			sec := ModelSection{Name: j.name, Models: []string{}}
+			// the same degradation agent.ListModelEntries applies:
+			// the capability upgrade answers entries when mounted, a
+			// name-only provider's ListModels is the floor
+			var entries []core.ModelEntry
+			var err error
+			if lp, ok := j.inst.(agent.ModelCapabilitiesProvider); ok {
+				entries, err = lp.ListModelEntries()
+			} else {
+				var names []string
+				names, err = j.inst.ListModels()
+				if err == nil {
+					entries = make([]core.ModelEntry, len(names))
+					for k, name := range names {
+						entries[k] = core.ModelEntry{Name: name}
+					}
+				}
+			}
+			if err != nil {
+				sec.Error = err.Error()
+				out[i] = sec
+				return
+			}
+			for _, e := range entries {
+				sec.Models = append(sec.Models, e.Name)
+				if len(e.Capabilities) > 0 {
+					if sec.Capabilities == nil {
+						sec.Capabilities = map[string][]string{}
+					}
+					sec.Capabilities[e.Name] = e.Capabilities
+				}
+			}
+			out[i] = sec
+		}(i, j)
+	}
+	wg.Wait()
+	return out
 }
 
 // chatRequest is the /chat body. tools is an optional list of tool names
@@ -812,6 +911,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	// sessions: the next send resolves the dead name and the run
 	// fails loudly (pinProvider's 400), never a silent fallback to
 	// the default instance.
+	wireProvider := req.Provider
 	if sessionKnown {
 		if req.Provider != "" {
 			if req.Provider != sess.ProviderName {
@@ -837,6 +937,28 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 			}
 		} else if sess.Model != "" {
 			req.Model = sess.Model
+		}
+	}
+
+	// Card t_1914a8c9: the model picker addresses an instance through
+	// the slot grammar - resolveSlotModel below. A slot that names a
+	// non-default instance can only succeed or 400 at pinProvider,
+	// never a silent fallback - nothing more to say here. The slot's
+	// resolved pin sticks like the wire rule of t_9de5b009 (best-
+	// effort): the session remembers the instance the picker chose.
+	s.resolveSlotModel(req, wireProvider)
+	if sessionKnown {
+		if scx, ok := s.store.(agent.SessionContextStore); ok {
+			switch {
+			case req.Provider != "" && req.Provider != sess.ProviderName:
+				// the slot's instance choice sticks like the wire rule
+				// of t_9de5b009 (best-effort)
+				_ = scx.SetSessionProvider(ctx, req.SessionID, req.Provider)
+			case req.Provider == "" && sess.ProviderName != "":
+				// the "default:" pick unpins (best-effort): the picker
+				// explicitly left the instance
+				_ = scx.SetSessionProvider(ctx, req.SessionID, "")
+			}
 		}
 	}
 
@@ -1077,6 +1199,9 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 		s.wsMu.Unlock()
 		messageIn := s.expandAtMentions(messages, req.workspace)
+		// Card t_1914a8c9: the picker's slot grammar applies on the
+		// legacy path too (no store, so no sticky pin to clear).
+		s.resolveSlotModel(&req, req.Provider)
 		prov, pinErr := s.pinProvider(&req)
 		if pinErr != nil {
 			http.Error(w, pinErr.Error(), pinErr.code)
@@ -1270,12 +1395,45 @@ func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 	return flusher, true
 }
 
-// pinProvider pins the per-run provider copy: instance resolution (card
-// t_7dcd4280), a model override when the request carries one, plus a
-// thinking level from the shared ladder. thinking_level 0 ("none") is
-// skipped: no parameter sent, the provider keeps its default. The copy
-// rides LoopOptions - no shared state mutated. Shared by the
-// prepareRun detach path and the legacy inline path (chat-last 1/3).
+// resolveSlotModel applies the model picker's slot grammar (card
+// t_1914a8c9). A model value shaped "instance:model" whose prefix
+// names a CONFIGURED instance wins OVER the session's (or wire's)
+// provider pin - the explicit picker choice is what the run serves
+// now. "default:model" names the base provider: when the wire carried
+// no provider of its own, it cancels the sticky pin for this run (the
+// picker explicitly left the instance). Anything else stays a bare
+// model on the request provider (ParseModelSlot is grammar-only, so
+// ollama-style "family:tag" names that do not collide with a
+// configured instance id pass through untouched). Call it after the
+// sticky pin + model pin fills, before pinProvider, on both the
+// prepareRun path and the legacy inline path; wireProvider is the
+// wire's own provider field.
+func (s *Server) resolveSlotModel(req *chatRequest, wireProvider string) bool {
+	inst, model := agent.ParseModelSlot(req.Model)
+	if inst == "" {
+		return false
+	}
+	if inst != "default" {
+		if prov := s.agent.Provider(); prov != nil {
+			if ir, ok := prov.(agent.ProviderInstances); ok {
+				if _, found := ir.Instance(inst); found {
+					req.Provider = inst
+					req.Model = model
+					return false
+				}
+			}
+		}
+		return false
+	}
+	// "default:model": only a picker-written prefix cancels the pin.
+	if wireProvider == "" {
+		req.Provider = ""
+		req.Model = model
+		return true
+	}
+	return false
+}
+
 func (s *Server) pinProvider(req *chatRequest) (agent.Provider, *runError) {
 	prov := s.agent.Provider()
 	if req.Provider != "" {

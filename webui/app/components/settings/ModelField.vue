@@ -34,11 +34,12 @@
 
 <script setup lang="ts">
   import { computed } from "vue";
-  import type { SettingKnob, ProviderInstanceRow } from "~/composables/omega";
+  import type { SettingKnob } from "~/composables/omega";
   import {
     filterModelEntries,
     useModelCatalog,
     type ModelFilter,
+    type ModelEntry,
   } from "~/composables/modelCatalog";
   // THE shared listbox (card t_acad02ec) - never a new select
   // component, never a native select popup (OS chrome over the panes)
@@ -47,10 +48,6 @@
   const props = defineProps<{
     knob: SettingKnob;
     value: string;
-    // the named provider instances (the provider.instances knob's
-    // rows, passed through by the pane): the per-subsystem slots
-    // (knob.slot) list each row's model as an "instance:model" value
-    instances?: ProviderInstanceRow[];
   }>();
 
   defineEmits<{
@@ -59,17 +56,28 @@
 
   const { state: catalog } = useModelCatalog();
   const filter = (props.knob.filter ?? "") as ModelFilter;
-  // card t_fc0b2f2d: the per-subsystem slots also offer the named
-  // provider instances. A row without a name or model cannot resolve
-  // (the server validates both at boot) - it stays off the list.
+  // card t_fc0b2f2d / t_1914a8c9: the per-subsystem slots also offer
+  // the named provider instances - the models come from each
+  // instance's own catalog section (the grouped /models payload), so
+  // a slot named instance:model resolves on the server as before. A
+  // section that failed to list contributes nothing (the picker shows
+  // the failure in the chat picker; the slots ride the default
+  // catalog's models and free text).
   const instanceOptions = computed(() => {
     if (props.knob.slot !== true) return [];
-    return (props.instances ?? [])
-      .filter((r) => r.name !== "" && r.model_name !== "")
-      .map((r) => ({
-        value: `${r.name}:${r.model_name}`,
-        label: `${r.name}:${r.model_name}`,
-      }));
+    const sections = catalog.value.sections ?? [];
+    return sections
+      .filter((s) => s.name !== "default" && !s.error)
+      .flatMap((s) => {
+        const entries: ModelEntry[] = (s.models ?? []).map((name) => ({
+          name,
+          capabilities: s.capabilities?.[name] ?? [],
+        }));
+        return filterModelEntries(entries, filter).map((e) => ({
+          value: `${s.name}:${e.name}`,
+          label: `${s.name}:${e.name}`,
+        }));
+      });
   });
 
   const options = computed(() => [

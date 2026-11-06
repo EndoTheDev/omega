@@ -961,6 +961,22 @@ export interface ModelsInfo {
   // model pickers fall back to their curated sets.
   capabilities?: Record<string, string[]>;
   context_window?: number;
+  // the GROUPED catalog (card t_1914a8c9): one section per provider -
+  // the chat picker renders collapsible provider sections from these,
+  // the chat slots read "instance:model" pairs out of the named ones.
+  providers?: ModelProviderSection[];
+}
+
+// ModelProviderSection is one grouped-catalog section (card
+// t_1914a8c9): a named endpoint (the instance id, "default" = the
+// provider: section) and the models its own catalog answers. error is
+// set when that endpoint's listing failed - the section still renders
+// (the picker names the failure); models is empty then.
+export interface ModelProviderSection {
+  name: string;
+  models: string[];
+  capabilities?: Record<string, string[]>;
+  error?: string;
 }
 
 // Stream handlers the composer transport paths consume. The
@@ -2131,14 +2147,16 @@ export interface SettingKnob {
   live?: boolean;
 }
 
-// ProviderInstanceRow is one providers-knob row (card t_7dcd4280):
-// the exact shape the provider.instances knob carries both ways. The
-// api_key rides MASKED on the wire ("****" = keep the server-side
-// secret); name is the instance id.
+// ProviderInstanceRow is one providers-knob row (card t_7dcd4280,
+// reshaped t_1914a8c9): the exact shape the provider.instances knob
+// carries both ways. An instance is a NAMED ENDPOINT only - name,
+// type, host, api_key, no model column (models come from the
+// instance's catalog through the pickers). The api_key rides MASKED
+// on the wire ("****" = keep the server-side secret); name is the
+// instance id.
 export interface ProviderInstanceRow {
   name: string;
   type: string;
-  model_name: string;
   host: string;
   api_key: string;
 }

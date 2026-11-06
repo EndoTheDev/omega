@@ -1,23 +1,25 @@
 <template>
   <!-- omega webui: the NAMED PROVIDER INSTANCES editor (card
-       t_7dcd4280). One row per instance: the row's name IS the
-       instance id (config.yaml providers:), so two accounts of one
-       type are two rows. remove drops the row (a removed instance
-       strands ITS sessions - their next send fails loudly, never a
-       silent fallback); add appends a blank row. The list REPLACES
-       the server's providers: map on save; a masked api key
-       ("****") round-trips as "keep the existing secret" - typing
-       over it replaces the secret, clearing it keeps the masked
-       round trip failing server-side (a masked key must mean
-       something). -->
+       t_7dcd4280, reshaped t_1914a8c9 to the Hermes shape). One row
+       per instance: the row's name IS the instance id (config.yaml
+       providers:) and the row is a NAMED ENDPOINT only - name, type,
+       base url, api key, NO model column (models come from the
+       instance's own catalog through the model pickers). remove drops
+       the row (a removed instance strands ITS sessions - their next
+       send fails loudly, never a silent fallback); add appends a
+       blank row. The list REPLACES the server's providers: map on
+       save; a masked api key ("****") round-trips as "keep the
+       existing secret" - typing over it replaces the secret, clearing
+       it keeps the masked round trip failing server-side (a masked
+       key must mean something). -->
   <div class="providers-editor">
-    <!-- card t_fec41e66: the rows carry no visible flow on their own -
-         one line above the list states what a row IS and how a run
-         reaches it, so the editor reads without the knob help -->
+    <!-- card t_fec41e66 (the one-line explainer survives the reshape):
+         the rows carry no visible flow on their own - one line above
+         the list states what a row IS and how a run reaches it -->
     <p class="provider-hint">
-      each row is one account of a provider type - the name is its
-      instance id, which the model pickers (chat picker and the slot
-      knobs below) offer as instance:model
+      each row is one provider account: a name, its type, a base url
+      and an api key - the model pickers (chat picker and the slot
+      knobs below) group that endpoint's models under its name
     </p>
     <div
       v-for="(inst, i) in rows"
@@ -47,20 +49,8 @@
             drop="down"
             @update:model-value="setRow(i, 'type', $event)" />
         </label>
-        <label class="provider-cell">
-          <span>model</span>
-          <input
-            class="setting-input"
-            type="text"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="llama3"
-            :value="inst.model_name"
-            :aria-label="`instance ${i + 1} model`"
-            @input="setRow(i, 'model_name', ($event.target as HTMLInputElement).value)" />
-        </label>
         <label class="provider-cell provider-host">
-          <span>host</span>
+          <span>base url</span>
           <input
             class="setting-input"
             type="text"
@@ -68,7 +58,7 @@
             spellcheck="false"
             placeholder="http://localhost:11434"
             :value="inst.host"
-            :aria-label="`instance ${i + 1} host`"
+            :aria-label="`instance ${i + 1} base url`"
             @input="setRow(i, 'host', ($event.target as HTMLInputElement).value)" />
         </label>
         <label class="provider-cell">
@@ -129,7 +119,7 @@
   function addRow() {
     emit("update", [
       ...rows.value,
-      { name: "", type: "openai", model_name: "", host: "", api_key: "" },
+      { name: "", type: "openai", host: "", api_key: "" },
     ]);
   }
 
@@ -157,7 +147,7 @@
 
   .provider-row-fields {
     display: grid;
-    grid-template-columns: minmax(6rem, 1fr) minmax(6rem, min-content) minmax(7rem, 1.2fr) minmax(6rem, 1.2fr) minmax(6rem, 1fr) min-content;
+    grid-template-columns: minmax(6rem, 1fr) minmax(6rem, min-content) minmax(8rem, 1.4fr) minmax(6rem, 1fr) min-content;
     gap: 0.4rem;
     align-items: end;
     padding-right: 0.25rem;
