@@ -1,8 +1,8 @@
 package approval
 
 import (
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin mounts the approval capsule (card t_c2b52cb5): the
@@ -39,6 +39,10 @@ func (p *Plugin) Requires() []string { return []string{"verdicts"} }
 // MountWithAPI registers the seam; nothing else exists (no tools - the
 // gate rides the loop's tool-exec hook - no commands, no routes, no
 // panels, no skills). Mode off registers nothing at all (Q10).
+// The offered gate re-reads its config per decision (card t_34cd1921):
+// the host's hot-apply path pushes fresh values on it (approval.Gate
+// implements SetConfig), so settings flips apply without a restart -
+// re-mounting after a boot-time off stays a restart (Q10 unchanged).
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["approvals"].(Config); ok {
