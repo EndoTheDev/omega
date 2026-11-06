@@ -193,8 +193,10 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
   sleep 1
 done
 assert_eq "$cleared" "" "workspace clear removed the pin"
-unset_chip=$(jsq '!!document.querySelector(".ws-btn .ws-unset")' 2>&1 | tail -1)
-assert_eq "$unset_chip" "true" "chip renders the unset state after clear"
+# the unset chip is a render state that may lag the wire by one SPA
+# beat - poll it (one-shot reads flake on slower lanes)
+wait_js '!!document.querySelector(".ws-btn .ws-unset")' 10 \
+  || die "chip never rendered the unset state after clear"
 
 assert_no_console_errors
 step "journey green"
