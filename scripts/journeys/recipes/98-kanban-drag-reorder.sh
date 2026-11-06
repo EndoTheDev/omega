@@ -21,6 +21,12 @@
 # re-poll) - the nightly red 42166671721 was one flaky /boards fetch
 # burning the cap, not a provider gate (78 waits the same chip on the
 # same no-provider lane and is green). The die names the API answer.
+#
+# Card t_54dd7215: the fetch-retry theory is FALSIFIED - the nightly
+# reds 4-for-4 WITH the bounded retry merged (d73402e0). The second-miss
+# die now also carries dom/body/console evidence (switch_chip_miss_die)
+# so the next red answers Board.vue-never-mounted vs
+# fetch-died-before-chip vs SPA-never-rendered by itself.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 BTAG="j98"
@@ -122,6 +128,32 @@ drag_release() {
   sleep 0.2
 }
 
+# switch_chip_miss_die: the two-mount die WITH its own diagnosis
+# (t_54dd7215 - the fetch-retry theory is falsified: CI reds 4-for-4
+# WITH the bounded /boards retry merged, while GET /boards answers
+# 5 boards; the local lane is green on the same tip). Runs in the die
+# path only. Each field is fault-tolerant: a dead browser must not
+# blank the other fields' evidence.
+#   dom  - url + .board container + .board-col/.card counts + switcher
+#          root: tells Board.vue-never-mounted apart from
+#          fetch-died-before-chip (board/cards rendered, switch shell
+#          there, chip gated) and from SPA-never-rendered.
+#   body - document.body.innerText sliced to 300 chars: what the SPA
+#          actually shows on the red.
+#   console - the session console bucket: a crashed hydrate or a chunk
+#          load failure shows up here before any assertion.
+switch_chip_miss_die() {
+  local errs body dom answer
+  errs=$(ab console 2>&1 | tr '\n' ' ' | tail -c 600)
+  [ -n "$errs" ] || errs="(ab console returned nothing)"
+  body=$(ab eval 'document.body.innerText.replace(/\s+/g," ").slice(0,300)' 2>&1 | tail -1)
+  [ -n "$body" ] || body="(body eval failed)"
+  dom=$(ab eval '(()=>{return "url="+location.pathname+" board="+(document.querySelector(".board")?1:0)+" cols="+document.querySelectorAll(".board-col").length+" cards="+document.querySelectorAll(".card").length+" switchroot="+(document.querySelector(".board-switch-select")?1:0)+" chip="+(document.querySelector(".board-switch-select .model-chip")?1:0)})()' 2>&1 | tail -1)
+  [ -n "$dom" ] || dom="(dom eval failed)"
+  answer=$(curl -s "${JOURNEY_BASE_URL}/boards" | head -c 200)
+  die "board switcher chip never rendered on two mounts | GET /boards: ${answer:-unavailable} | dom: ${dom} | body: ${body} | console: ${errs}"
+}
+
 switch_to_board() {
   # the switcher rides the BandSelect listbox (recipe 78's shape): open
   # the pop, then pick the pinned board by exact option text.
@@ -138,7 +170,7 @@ switch_to_board() {
     ab reload >/dev/null 2>&1 || true
     ab wait --load networkidle >/dev/null 2>&1 || true
     poll_js "(()=>{return !!document.querySelector('.board-switch-select .model-chip')})()" 10 ||
-      die "board switcher chip never rendered on two mounts (GET /boards: $(curl -s "${JOURNEY_BASE_URL}/boards" | head -c 200))"
+      switch_chip_miss_die
   fi
   js '(()=>{const c=document.querySelector(".board-switch-select .model-chip");if(c.getAttribute("aria-expanded")!=="true")c.click();return 1})()' >/dev/null
   wait_js "(()=>{return [...document.querySelectorAll('.board-switch-select .model-list li')].some(l=>(l.textContent||'').trim()==='$BOARD')})()" 15
