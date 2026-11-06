@@ -92,7 +92,11 @@ if not isinstance(items, list):
 else:
     runs, n = [], 0
     for it in items:
-        if it.get("kind") == "tool":
+        # wire shape: the endpoint serves TranscriptWireItem items where
+        # every tool_call opens a rendered tool row (the matching
+        # tool_result merges onto it) - so consecutive kind:"tool_call"
+        # wire items ARE consecutive rendered tool rows
+        if it.get("kind") == "tool_call":
             n += 1
         elif n:
             runs.append(n)
