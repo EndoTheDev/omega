@@ -163,6 +163,7 @@
     boardDeletePath,
     canRemoveBoard,
     columns,
+    fetchBoardsRetry,
     isNarrowWidth,
     isSettled,
     pickBootBoard,
@@ -198,15 +199,15 @@
   );
 
   async function fetchBoards() {
-    try {
-      const res = await fetch("/boards");
-      if (!res.ok) return; // capability absent: single-board install
-      const body = await res.json();
-      boards.value = body.boards ?? [];
-      boardName.value = pickBootBoard(boards.value);
-    } catch {
-      // registry noise stays silent - the board still renders
-    }
+    // The mounted fetch runs ONCE, so a miss under suite load left no
+    // switcher chip for the whole page life (nightlies 42268953671 and
+    // 42260775149, cards t_7cdac186 / t_82e5d149). The bounded retry
+    // lives in boardLogic (pure, stubbed-fetch test); a final miss
+    // keeps the old behavior - silent, the board still renders.
+    const fetched = await fetchBoardsRetry(fetch);
+    if (!fetched) return; // absent capability or every attempt missed
+    boards.value = fetched;
+    boardName.value = pickBootBoard(boards.value);
   }
 
   function switchBoard(name: string) {

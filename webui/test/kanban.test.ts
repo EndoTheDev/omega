@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
 import {
+  BOARD_FETCH_ATTEMPTS,
+  BOARD_FETCH_BACKOFF_MS,
   BOARD_STATUSES,
   BOARD_PATH,
   DEFAULT_BOARD_NAME,
@@ -16,6 +18,7 @@ import {
   boardDeletePath,
   canRemoveBoard,
   columns,
+  fetchBoardsRetry,
   isBoardPath,
   isSettled,
   pickBootBoard,
@@ -260,4 +263,59 @@ test("board view drives drag reorder through the pointer + the server slot", () 
   assert.match(boardVue, /if \(drag\.value && drag\.value\.moved\) return/, "the poll pauses while a drag is live");
   assert.match(boardVue, /suppressNextClick/, "the click trailing a real drag is suppressed");
   assert.match(boardVue, /closest\("button, input"\)/, "the card's own buttons never start a drag");
+});
+
+// --- the mounted /boards fetch retry (nightlies 42268953671 and
+// 42260775149, cards t_7cdac186 / t_82e5d149): the switcher chip gates
+// on `boards.length > 1 || boardName`, so a fetch that misses under
+// suite load left no chip for the whole page life. The retry is pure
+// logic in boardLogic - the fetch is stubbed, the sleep is injectable.
+
+function boardsResponse(boards: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => ({ boards }),
+  } as unknown as Response;
+}
+
+test("boards retry: a fetch that fails once then answers still populates", async () => {
+  let calls = 0;
+  const sleeps: number[] = [];
+  const fetchImpl = async () => {
+    calls++;
+    if (calls === 1) throw new TypeError("Failed to fetch");
+    return boardsResponse([{ name: "main", current: true }, { name: "j98", current: false }]);
+  };
+  const boards = await fetchBoardsRetry(fetchImpl, {
+    sleep: async (ms) => {
+      sleeps.push(ms);
+    },
+  });
+  assert.equal(calls, 2, "one miss, one retry - no third attempt");
+  assert.ok(boards, "the retry lands the registry");
+  assert.deepEqual(boards, [{ name: "main", current: true }, { name: "j98", current: false }]);
+  assert.deepEqual(sleeps, [BOARD_FETCH_BACKOFF_MS], "one backoff between the two attempts");
+});
+
+test("boards retry: every attempt missing degrades silently", async () => {
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls++;
+    throw new TypeError("Failed to fetch");
+  };
+  const boards = await fetchBoardsRetry(fetchImpl, { attempts: 3, sleep: async () => {} });
+  assert.equal(calls, BOARD_FETCH_ATTEMPTS, "bounded - it stops after the last attempt");
+  assert.equal(boards, null, "final miss keeps the silent board-still-renders behavior");
+});
+
+test("boards retry: 404 is not retried (single-board installs never heal)", async () => {
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls++;
+    return boardsResponse(undefined, 404);
+  };
+  const boards = await fetchBoardsRetry(fetchImpl, { sleep: async () => {} });
+  assert.equal(calls, 1, "the capability-absent answer exits on the first miss");
+  assert.equal(boards, null);
 });

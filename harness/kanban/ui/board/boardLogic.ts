@@ -196,3 +196,54 @@ export function age(iso: string, now: Date = new Date()): string {
   if (h < 24) return `${h}h`;
   return `${Math.floor(h / 24)}d`;
 }
+
+// --- the mounted /boards fetch retry (nightlies 42268953671 and
+// 42260775149, cards t_7cdac186 / t_82e5d149): the board switcher chip
+// gates on `boards.length > 1 || boardName`, and fetchBoards() runs
+// ONCE per mount - a fetch that misses under CI suite load left no
+// chip for the whole page life. Bounded retry: a few attempts with a
+// short backoff; a 404 exits immediately (single-board installs will
+// not heal on a wait); a final miss keeps the old behavior - silent,
+// the board still renders, the journey's reload fallback stays the
+// last resort. Lives here so the stubbed-fetch test can pin it.
+
+export const BOARD_FETCH_ATTEMPTS = 3;
+export const BOARD_FETCH_BACKOFF_MS = 300;
+
+export type BoardFetch = (url: string) => Promise<Response>;
+
+export type FetchBoardsOpts = {
+  attempts?: number;
+  backoffMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+};
+
+/**
+ * fetchBoardsRetry GETs /boards with a bounded retry and returns the
+ * board registry, or null when the capability is absent (404) or every
+ * attempt misses. Lives in boardLogic because it is pure: the fetch
+ * comes in as a parameter, the sleep is injectable, no window state.
+ */
+export async function fetchBoardsRetry(
+  fetchImpl: BoardFetch,
+  opts: FetchBoardsOpts = {},
+): Promise<BoardInfo[] | null> {
+  const attempts = opts.attempts ?? BOARD_FETCH_ATTEMPTS;
+  const backoffMs = opts.backoffMs ?? BOARD_FETCH_BACKOFF_MS;
+  const sleep =
+    opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const res = await fetchImpl("/boards");
+      if (res.ok) {
+        const body = await res.json();
+        return (body.boards ?? []) as BoardInfo[];
+      }
+      if (res.status === 404) return null; // capability absent: single-board install - a wait will not heal it
+    } catch {
+      // hiccup: transient under suite load, ride the backoff below
+    }
+    if (attempt < attempts - 1) await sleep(backoffMs);
+  }
+  return null; // final miss: silent, the board still renders
+}
