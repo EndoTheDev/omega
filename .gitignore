@@ -9,6 +9,10 @@ bin/*
 !bin/mcp.yaml.example
 !bin/skills/
 !bin/skills/**
+# lane-home runtime seeding (regenerates, never committed) - only the residue dirs;
+# bin/skills/learn-skill IS product code shipped by the repo and stays tracked
+bin/skills/.curator/
+bin/skills/delegate-token-echo/
 # the git fence shim is product code shipped by the repo (t_8b32a09a)
 !bin/shims/
 !bin/shims/**
