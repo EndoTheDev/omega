@@ -95,8 +95,8 @@ is not an error state.
 ## POST /chat
 
 Body: `{"messages": [...], "session_id": "...?", "model": "...?",
-"thinking_level": 0..9, "tools": ["name", ...], "retry": bool, "fork":
-"msg_id"}`.
+"provider": "...?", "thinking_level": 0..9, "tools": ["name", ...],
+"retry": bool, "fork": "msg_id"}`.
 
 - **`messages` is REQUIRED.** Each entry carries a `role` discriminator
   (`system`, `user`, `assistant`, or `tool`) plus its payload. A
@@ -121,6 +121,14 @@ Body: `{"messages": [...], "session_id": "...?", "model": "...?",
   pinned there (no messages); an assistant/tool target CONTINUES FROM
   it — it takes the fork's user message and runs. Mutually exclusive
   with `retry` (400).
+- **`provider`** (card t_7dcd4280): the named provider INSTANCE the run
+  serves through (a `providers:` config key; the webui provider picker
+  sends it). Empty = the default instance. An unknown name - the
+  instance was removed, or never existed - is a loud 400, NEVER a
+  silent fallback to the default. A wire name WINS and sticks on the
+  session like the model pin: the next send resolves the pinned name
+  with no wire field, so removing the pin's instance strands the
+  session (its next send 400s) until a new instance is selected.
 - **model**: per-run override via a provider copy — concurrent chats
   keep their own model, the default stays untouched.
 - **thinking_level**: indexes the shared thinking ladder (0 = none = no
