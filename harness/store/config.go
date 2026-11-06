@@ -27,8 +27,12 @@ const (
 
 // HygieneConfig configures the sessions hygiene pass (card t_329b9312):
 // the LLM session summarizer and the retention window. The `sessions:`
-// config.yaml section; routed into the store capsule at boot
-// (ctx.Configs), so changes apply on restart.
+// config.yaml section, routed into the store capsule at boot
+// (ctx.Configs). Live (card t_f78acfd6): the host's hot-apply path
+// re-sends this section on every settings save/reload
+// (store.SetHygieneConfig), so a summarizer_model flip reaches the
+// next sweep - and a retention flip the next prune - without a
+// restart.
 type HygieneConfig struct {
 	// RetentionDays is the session retention window. Sessions older
 	// than this (by updated_at) are deleted by the hygiene pass.
@@ -45,7 +49,9 @@ type HygieneConfig struct {
 	// (card t_fc0b2f2d): "instance:model" or a bare model, resolved
 	// through agent.ResolveModelSlot; empty = the session provider
 	// model (the curator ruling). Routed in from the top-level
-	// summarizer_model knob (provider settings).
+	// summarizer_model knob (provider settings) - live since card
+	// t_f78acfd6: the hot-apply re-sends the section every save, so
+	// the next sweep consults the new slot without a restart.
 	SummarizerModel string `yaml:"summarizer_model"`
 }
 

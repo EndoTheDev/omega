@@ -817,15 +817,7 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "store":
 		return store.Config{DBPath: c.Store.DBPath}, true
 	case "sessions":
-		// card t_329b9312: the hygiene pass reads its knobs from the
-		// store capsule (the config session rides cfg.Sessions). The
-		// summarizer's model slot (card t_fc0b2f2d) moved to provider
-		// settings - the capsule keeps the field, the slot is global.
-		return store.HygieneConfig{
-			RetentionDays:       c.Sessions.RetentionDays,
-			SummarizeAfterHours: c.Sessions.SummarizeAfterHours,
-			SummarizerModel:     c.SummarizerModel,
-		}, true
+		return sessionsSection(c), true
 	case "provider":
 		// card t_7dcd4280: the named instances ride the section - the
 		// provider capsule builds one resolver per entry at mount.
@@ -842,7 +834,7 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "http_channel":
 		return api.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, DefaultWorkspace: c.Server.DefaultWorkspace, TitleModel: c.TitleModel, PublicHosts: c.Server.PublicHosts, WebTools: agentapi.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
 	case "skills":
-		return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.SkillNames), NudgeInterval: c.Skills.NudgeInterval, CuratorModel: c.SkillsModel}, true
+		return skillsSection(c), true
 	case "memory":
 		return memory.Config{Enabled: c.Memory.Enabled, UserProfileEnabled: c.Memory.UserProfileEnabled, CharLimit: c.Memory.CharLimit, UserProfileCharLimit: c.Memory.UserProfileCharLimit, File: c.Memory.File, UserProfileFile: c.Memory.UserProfileFile}, true
 	case "logging":
@@ -892,6 +884,30 @@ func approvalSection(c Config) approval.Config {
 		APIKey:      key,
 		Home:        omegaHome(),
 	}
+}
+
+// sessionsSection returns the store capsule's hygiene section (card
+// t_329b9312): the hygiene pass reads its knobs from the store capsule
+// (the config session rides cfg.Sessions). The summarizer's model slot
+// (card t_fc0b2f2d) moved to provider settings - the capsule keeps the
+// field, the slot is global. One shape for BOTH the boot wiring
+// (RouteConfigs) and the hot-apply path (card t_f78acfd6: settings.go
+// re-sends the section on every save/reload via store.SetHygieneConfig,
+// so a summarizer_model flip reaches the next sweep without a restart).
+func sessionsSection(c Config) store.HygieneConfig {
+	return store.HygieneConfig{
+		RetentionDays:       c.Sessions.RetentionDays,
+		SummarizeAfterHours: c.Sessions.SummarizeAfterHours,
+		SummarizerModel:     c.SummarizerModel,
+	}
+}
+
+// skillsSection returns the skills capsule's section. One shape for
+// BOTH the boot wiring (RouteConfigs) and the hot-apply path (card
+// t_f78acfd6: settings.go re-sends it on every save/reload, and the
+// curator consult slot flows through skillsSection(...).CuratorModel).
+func skillsSection(c Config) skills.Config {
+	return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.SkillNames), NudgeInterval: c.Skills.NudgeInterval, CuratorModel: c.SkillsModel}
 }
 
 // webBaseURL returns the host the channel's web.search/web.fetch tools

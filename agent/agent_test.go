@@ -356,6 +356,31 @@ func TestRunMaxTurnsCap(t *testing.T) {
 	}
 }
 
+// TestSetMaxTurnsGoesLive (card t_f78acfd6, the probe verdict): the
+// loop re-reads the cap per Run, so a live SetMaxTurns flip applies at
+// the next run - the same agent instance, no rebuild.
+func TestSetMaxTurnsGoesLive(t *testing.T) {
+	provider := NewFakeProviderScripts("fake",
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+	)
+	tools := map[string]core.Tool{
+		"echo": {
+			Run: func(_ context.Context, _ map[string]any) (string, error) { return "x", nil },
+		},
+	}
+	agent := newTestAgent(provider, tools, 0) // boot cap: unset (the default)
+	agent.SetMaxTurns(2)                      // the hot-apply's flip
+	events := collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("go")}, nil))
+
+	end := lastAgentEnd(events)
+	if end.Turns != 2 || end.FinishReason != "max_turns" {
+		t.Fatalf("AgentEnd = %+v, want the flipped cap (2 turns / max_turns)", end)
+	}
+}
+
 func TestRunContextCancellation(t *testing.T) {
 	provider := NewFakeProvider("fake",
 		core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"text": "x"}}},

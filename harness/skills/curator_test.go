@@ -464,3 +464,52 @@ func TestRunCuratorNilProviderStillStaleRun(t *testing.T) {
 		t.Fatalf("nil-provider pass wrong: %+v", rep)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// The curator goes live (card t_f78acfd6): the consult slot resolves from
+// the LIVE SkillsProvider (curatorSlot) per pass; the host's hot-apply
+// swaps it (SetCuratorModel) and the next curator action consults the new
+// slot - no restart, no re-mount.
+// ---------------------------------------------------------------------------
+
+// spySlotProvider records every WithModel derivation: the consult's
+// slot is the fact the live-flip test pins.
+type spySlotProvider struct {
+	agent.Provider // the underlying fake (embedded interface)
+	saw            []string
+}
+
+// WithModel records the derived model before delegating. The returned
+// provider stays the plain fake (the caller streams from it); the spy
+// only needs the derivation trail.
+func (p *spySlotProvider) WithModel(model string) agent.Provider {
+	p.saw = append(p.saw, model)
+	return p.Provider.WithModel(model)
+}
+
+func TestSetCuratorModelGoesLive(t *testing.T) {
+	dir := t.TempDir()
+	sp := NewSkillsProvider(dir)
+	writeAgentSkill(t, dir, "solo", "body")
+	spy := &spySlotProvider{Provider: agent.NewFakeProvider("glm-test", chat(`{})`)...)}
+	sp.SetProviderFn(func() agent.Provider { return spy })
+	sp.SetCuratorModel("") // the boot section: slot empty
+
+	// Boot: empty slot = the session provider's own model, no derivation.
+	if _, err := sp.handleCuratorCommand(context.Background(), "run"); err != nil {
+		t.Fatal(err)
+	}
+	if len(spy.saw) != 0 {
+		t.Errorf("boot consult must not derive a slot: %v", spy.saw)
+	}
+
+	// THE flip: the live slot swaps - the SAME provider (no re-mount)
+	// consults the new slot on the next pass.
+	sp.SetCuratorModel("curator-flip")
+	if _, err := sp.handleCuratorCommand(context.Background(), "run"); err != nil {
+		t.Fatal(err)
+	}
+	if len(spy.saw) != 1 || spy.saw[0] != "curator-flip" {
+		t.Errorf("post-flip consult = %v, want one WithModel(\"curator-flip\") derivation", spy.saw)
+	}
+}

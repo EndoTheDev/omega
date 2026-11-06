@@ -39,12 +39,31 @@ type SkillsProvider struct {
 	// provider seam LIVE at every consult (api.Provider()) - a module
 	// toggle that swaps the provider is seen the next pass, and a
 	// missing provider skips the LLM proposals instead of rewriting
-	// anything. CuratorModel overrides the consult model; empty = the
-	// session provider's own model.
+	// anything. curatorModel is the consult slot (card t_fc0b2f2d),
+	// live since t_f78acfd6: the host's hot-apply swaps it
+	// (SetCuratorModel) on every settings save and the next pass
+	// re-reads it - empty = the session provider's own model.
 	providerFn   func() agent.Provider
-	CuratorModel string
+	curatorModel string
 
 	disableMu sync.RWMutex
+}
+
+// SetCuratorModel swaps the curator's consult slot live (card
+// t_f78acfd6, the compactor/approval SetConfig pattern): the host's
+// hot-apply pushes the provider.skills_model value, the next curator
+// action consults it.
+func (sp *SkillsProvider) SetCuratorModel(model string) {
+	sp.disableMu.Lock()
+	defer sp.disableMu.Unlock()
+	sp.curatorModel = model
+}
+
+// curatorSlot returns the live consult slot snapshot.
+func (sp *SkillsProvider) curatorSlot() string {
+	sp.disableMu.RLock()
+	defer sp.disableMu.RUnlock()
+	return sp.curatorModel
 }
 
 // SetDisabled swaps the disable list live (the host's toggle seam and
@@ -539,7 +558,7 @@ func (sp *SkillsProvider) handleCuratorCommand(ctx context.Context, args string)
 	}
 	switch verb {
 	case "", "run":
-		rep, err := sp.RunCurator(ctx, sp.provider(), sp.CuratorModel)
+		rep, err := sp.RunCurator(ctx, sp.provider(), sp.curatorSlot())
 		if err != nil {
 			return formatReport(rep), err
 		}
