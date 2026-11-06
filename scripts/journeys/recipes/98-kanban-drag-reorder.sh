@@ -135,23 +135,33 @@ for st in triage todo scheduled ready running blocked review done; do
   archive_cards $(col_ids "$st")
 done
 
-# seed: three in triage (alphabetical creation = dense order), one in todo
-A=$(card_id triage a)
-B=$(card_id triage b)
+# seed: three in triage, one in todo. Fresh cards land on TOP of a column
+# (topPosition is MIN-1), so seed in REVERSE creation order - c, then b,
+# then a - leaving the display order a,b,c dense from zero.
 C=$(card_id triage c)
+B=$(card_id triage b)
+A=$(card_id triage a)
 D=$(card_id todo d)
 trap 'archive_cards "$A" "$B" "$C" "$D"' EXIT
 [ -n "$A" ] && [ -n "$B" ] && [ -n "$C" ] && [ -n "$D" ] || die "card seeding failed"
 
-[ "$(col_ids triage)" = "$A $B $C" ] || die "triage seed order not dense (got: $(col_ids triage))"
-[ "$(col_ids todo)" = "$D" ] || die "todo seed order not dense (got: $(col_ids todo))"
-step "ok: seeded triage a/b/c, todo d on $BOARD"
-
 # ---- boot ----------------------------------------------------------------
+# open_app comes BEFORE the seed-order assert (and before every other
+# early die): the browser here is agent-browser's own auto-launched
+# chrome (no CDP attach ran), and the first ab call that goes through a
+# pipe - die's `ab screenshot | tail` - HANGS while the daemon is still
+# launching that chrome (the spawned tree holds the pipe's write-end,
+# proven live on winbtw: a fresh-session piped first call never returns).
+# open_app's unpiped ab open starts the chrome; every later piped call
+# hits a warm daemon that spawns nothing.
 open_app
 ab open "${JOURNEY_BASE_URL}/board" >/dev/null 2>&1 || die "cannot open /board"
 ab wait --load networkidle >/dev/null 2>&1 || true
 switch_to_board
+
+[ "$(col_ids triage)" = "$A $B $C" ] || die "triage seed order not dense (got: $(col_ids triage))"
+[ "$(col_ids todo)" = "$D" ] || die "todo seed order not dense (got: $(col_ids todo))"
+step "ok: seeded triage a/b/c, todo d on $BOARD"
 
 # ---- a: drag C into the gap between A and B (in-column) --------------------
 card_geo "$C"; afx=$CX; afy=$CY
