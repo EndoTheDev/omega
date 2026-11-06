@@ -76,6 +76,16 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Options: []string{"ollama", "openai", "anthropic"},
 					Value:   strings.ToLower(cfg.Provider.Type),
 					Help:    "provider flavor; empty defaults to ollama"},
+				// Card t_1914a8c9: the provider group is ordered CONNECTION
+				// FIRST (type, base url, api key), then the model knobs,
+				// then the instance list and the slots - the fields render
+				// in the shape the pane groups them.
+				{Key: "provider.host", Label: "base url", Type: "text",
+					Value: cfg.Provider.Host,
+					Help:  "provider base URL (default http://localhost:11434)"},
+				{Key: "provider.api_key", Label: "api key", Type: "secret",
+					Value: maskSecret(cfg.Provider.APIKey),
+					Help:  "masked here; edit config.yaml instead (blank for local ollama)"},
 				// card t_70c28128: model fields are typed pickers - the
 				// webui renders type "model" as a dropdown of the
 				// provider's live models, filtered by the knob's Filter
@@ -89,20 +99,16 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				{Key: "provider.title_model", Label: "title model", Type: "model",
 					Value: cfg.TitleModel,
 					Help:  "cheap model for session titles; empty = the main model; applies on restart"},
-				{Key: "provider.host", Label: "host", Type: "text",
-					Value: cfg.Provider.Host,
-					Help:  "provider base URL (default http://localhost:11434)"},
-				{Key: "provider.api_key", Label: "api key", Type: "secret",
-					Value: maskSecret(cfg.Provider.APIKey),
-					Help:  "masked here; edit config.yaml instead (blank for local ollama)"},
-				// card t_7dcd4280: the named instances - the list
-				// editor in the webui renders the rows (name, type,
-				// model, host, key), add and remove included. The
-				// list REPLACES the providers: map on save; a masked
-				// key round-trips as "keeping the existing secret".
+				// card t_7dcd4280, reshaped t_1914a8c9: the named
+				// instances - one row per instance, each a NAMED ENDPOINT
+				// only (name, type, base url, api key; no model column -
+				// models come from the instance's catalog through the
+				// model pickers). The list REPLACES the providers: map on
+				// save; a masked key round-trips as "keep the existing
+				// secret".
 				{Key: "provider.instances", Label: "provider instances", Type: "providers",
 					Value: providerInstancesKnob(cfg),
-					Help:  "named provider instances: the name is the instance id, so two accounts of one type are two rows; the provider section above stays the default; changes apply on restart"},
+					Help:  "named provider endpoints: the name is the instance id, so two accounts of one type are two rows; the provider section above stays the default; changes apply on restart"},
 				// card t_fc0b2f2d: the four per-subsystem model
 				// slots - provider settings assigns one named model
 				// per subsystem ("instance:model" or a bare model;
@@ -300,7 +306,9 @@ func compactionKnobs(cfg *Config) []core.SettingsKnob {
 func ptrF(n float64) *float64 { return &n }
 
 // providerInstancesKnob renders the named provider instances (card
-// t_7dcd4280) as the list editor's value: one object per instance,
+// t_7dcd4280, reshaped t_1914a8c9) as the list editor's value: one
+// object per instance - name, type, host, api_key, NO model column
+// (models come from the instance's catalog through the pickers) -
 // names sorted (a yaml map iterates unordered - the pane must not
 // reshuffle its rows between reloads). The api_key rides masked; the
 // save path treats a masked value as "keep the existing secret".
@@ -314,11 +322,10 @@ func providerInstancesKnob(cfg *Config) []map[string]any {
 	for _, n := range names {
 		inst := cfg.Providers[n]
 		out = append(out, map[string]any{
-			"name":       n,
-			"type":       strings.ToLower(inst.Type),
-			"model_name": inst.ModelName,
-			"host":       inst.Host,
-			"api_key":    maskSecret(inst.APIKey),
+			"name":    n,
+			"type":    strings.ToLower(inst.Type),
+			"host":    inst.Host,
+			"api_key": maskSecret(inst.APIKey),
 		})
 	}
 	return out
@@ -526,15 +533,17 @@ func setStringField(cfg *Config, key string, raw any) error {
 // significant in any config field.
 func trim(s string) string { return strings.TrimSpace(s) }
 
-// applyProviderInstances applies the instances knob (card t_7dcd4280):
-// the submitted list REPLACES cfg.Providers. Each entry carries
-// name, type, model_name, host and api_key; a masked api_key keeps
-// the entry's EXISTING secret ("****" means unchanged, not blank -
-// the plain text never rides the wire, so the round trip must not
-// wipe it), and a masked key on a NEW instance is an error. Unknown
-// types, reserved names and missing model_name all fail through
-// cfg.Validate() in saveSettings - the schema is the contract and a
-// typo must be loud, never silently dropped.
+// applyProviderInstances applies the instances knob (card t_7dcd4280,
+// reshaped t_1914a8c9): the submitted list REPLACES cfg.Providers.
+// Each entry carries name, type, host and api_key - an instance is a
+// named endpoint only, a model_name field is a loud error (models
+// come from the instance's catalog through the model pickers). A
+// masked api_key keeps the entry's EXISTING secret ("****" means
+// unchanged, not blank - the plain text never rides the wire, so the
+// round trip must not wipe it), and a masked key on a NEW instance is
+// an error. Unknown types, reserved names and duplicate ids fail
+// through apply + cfg.Validate() in saveSettings - the schema is the
+// contract and a typo must be loud, never silently dropped.
 func applyProviderInstances(cfg *Config, key string, raw any) error {
 	list, ok := raw.([]any)
 	if !ok {
@@ -558,6 +567,9 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 			return fmt.Errorf("%s: entry %d: duplicate name %q", key, i, name)
 		}
 		seen[name] = true
+		if v, err := asTrimmedString(obj["model_name"]); err == nil && v != "" {
+			return fmt.Errorf("%s: %s.model_name is no longer settable - providers are named endpoints only, pick the model in the model picker (instance:model)", key, name)
+		}
 		inst := ProviderConfig{}
 		if inst.Type, err = asTrimmedString(obj["type"]); err != nil {
 			return fmt.Errorf("%s: %s.type: %w", key, name, err)

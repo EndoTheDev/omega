@@ -152,7 +152,10 @@ server:
 	}
 }
 
-// card t_7dcd4280: the named provider instances - Validate law.
+// card t_7dcd4280 / t_1914a8c9: the named provider instances -
+// Validate law. An instance is a NAMED ENDPOINT only (name, type,
+// host, api_key); a model_name is a loud config error - models come
+// from the instance's catalog through the pickers.
 func TestValidateProviderInstances(t *testing.T) {
 	base := `
 provider:
@@ -167,32 +170,36 @@ provider:
 providers:
   backup:
     type: openai
-    model_name: gpt-4o
+    host: https://api.openai.example
+`, ""},
+		{"ok instance with key", `
+providers:
+  backup:
+    type: openai
+    api_key: sk-test
     host: https://api.openai.example
 `, ""},
 		{"reserved name", `
 providers:
   default:
     type: openai
-    model_name: gpt-4o
 `, "reserved"},
 		{"bad name", `
 providers:
   "My Account":
     type: openai
-    model_name: gpt-4o
 `, "invalid"},
 		{"bad type", `
 providers:
   backup:
     type: azure
-    model_name: gpt-4o
 `, "not recognized"},
-		{"missing model", `
+		{"bound model", `
 providers:
   backup:
     type: openai
-`, "model_name is required"},
+    model_name: gpt-4o
+`, "no longer settable"},
 	}
 	for _, tc := range cases {
 		path := writeTempConfig(t, base+tc.footer)

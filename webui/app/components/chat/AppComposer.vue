@@ -162,7 +162,9 @@
         <ModelSelect
           :model="model"
           :models="models"
-          @update:model="$emit('update:model', $event)" />
+          :groups="groups"
+          @update:model="$emit('update:model', $event)"
+          @refresh-models="$emit('refresh-models')" />
         <!-- the effort chip rides the shared BandSelect (v0.14.1 review
              lens: the dedicated chip+listbox was BandSelect's exact
              grammar minus nothing - one component, one grammar; only
@@ -250,6 +252,10 @@
     draft: string;
     model: string;
     models: string[];
+    /** the grouped catalog (card t_1914a8c9): one section per provider -
+         the picker renders collapsible sections from these, "default"
+         first; empty falls back to the flat models prop */
+    groups?: { name: string; models: string[]; capabilities?: Record<string, string[]>; error?: string }[];
     // THIS session's run is streaming: the send button is CANCEL now
     busy: boolean;
     thinking: string;
@@ -277,6 +283,7 @@
     (e: "update:workspace", value: string): void;
     (e: "send"): void;
     (e: "cancel"): void;
+    (e: "refresh-models"): void;
     (e: "attach-files", images: OmegaImage[]): void;
     (e: "remove-attachment", index: number): void;
     (e: "attach-url", url: string): void;

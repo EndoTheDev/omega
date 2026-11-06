@@ -1531,6 +1531,17 @@ func (p *instancesProvider) Instance(name string) (agent.Provider, bool) {
 	return inst, ok
 }
 
+// InstanceNames implements agent.ProviderInstanceNames: the serving
+// shell's grouped model catalog reads the id list (card t_1914a8c9).
+func (p *instancesProvider) InstanceNames() []string {
+	names := make([]string, 0, len(p.instances))
+	for n := range p.instances {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // scriptOne is the one-script stream every provider in the tests below
 // replays.
 func scriptOne() []core.ProviderStreamEvent {
@@ -1694,5 +1705,108 @@ func TestChatProviderSessionPin(t *testing.T) {
 	quiesce(s, "s1")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+}
+
+// --- the grouped model catalog (card t_1914a8c9) ---
+
+// TestModelsGroupedSections: the /models payload carries one section
+// per provider - the default first with its own listing, then the
+// named instances (sorted, the config map iterates unordered). An
+// instance whose provider carries no listing still renders the
+// section with the error named, never a silent drop; the flat fields
+// stay for the settings pickers.
+func TestModelsGroupedSections(t *testing.T) {
+	s, _, _, _ := newInstanceTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/models", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Models    []string `json:"models"`
+		Providers []struct {
+			Name   string   `json:"name"`
+			Models []string `json:"models"`
+			Error  string   `json:"error"`
+		} `json:"providers"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if len(body.Providers) != 2 {
+		t.Fatalf("sections = %v, want two (default + backup)", body.Providers)
+	}
+	if body.Providers[0].Name != "default" || body.Providers[1].Name != "backup" {
+		t.Fatalf("section order = %s, %s - the default leads, named follow sorted",
+			body.Providers[0].Name, body.Providers[1].Name)
+	}
+	if len(body.Providers[0].Models) == 0 {
+		t.Fatalf("default section models = %v, want the base listing", body.Providers[0].Models)
+	}
+	if body.Providers[0].Error != "" {
+		t.Fatalf("default section error = %q", body.Providers[0].Error)
+	}
+	if len(body.Providers[1].Models) == 0 || body.Providers[1].Error != "" {
+		t.Fatalf("instance section must carry the instance's own listing, got %v / %q",
+			body.Providers[1].Models, body.Providers[1].Error)
+	}
+}
+
+// TestChatModelSlotPickerGrammar: the picker's slot grammar rides the
+// MODEL field (card t_1914a8c9) - "backup:slot-model" routes the run
+// through the named instance and serves the SUFFIX as the model;
+// "default:plain" cancels the session's provider pin (the picker
+// explicitly left the instance) and serves the base provider; an
+// instance-shaped prefix that names NO configured instance stays a
+// bare model on the request provider (the ollama family:tag law).
+func TestChatModelSlotPickerGrammar(t *testing.T) {
+	s, st, backup, _ := newInstanceTestServer(t)
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	send := func(model string) string {
+		body, _ := json.Marshal(map[string]any{
+			"session_id": "s1",
+			"messages":   []map[string]any{{"role": "user", "content": "hi"}},
+			"model":      model,
+		})
+		rec := postChatBody(s, body)
+		quiesce(s, "s1")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("send %q: status = %d (body: %s)", model, rec.Code, rec.Body.String())
+		}
+		sess, err := st.GetSession(ctx, "s1")
+		if err != nil {
+			t.Fatalf("get session: %v", err)
+		}
+		return sess.ProviderName
+	}
+
+	// slot -> the named instance served the suffix as the model
+	if pin := send("backup:slot-model"); pin != "backup" {
+		t.Fatalf("provider pin = %q, want backup (the slot prefix wins and sticks)", pin)
+	}
+	if names := backup.servedModelNames(); len(names) == 0 || names[len(names)-1] != "slot-model" {
+		t.Fatalf("instance served %v, want slot-model among the served names", names)
+	}
+
+	// "default:" cancels the pin: the picker explicitly left the
+	// instance - the base provider serves the suffix
+	if pin := send("default:plain"); pin != "" {
+		t.Fatalf("provider pin after default pick = %q, want empty (the sticky pin must not survive)", pin)
+	}
+	base := s.agent.Provider().(*instancesProvider).Provider.(*mockProvider)
+	if names := base.servedModelNames(); len(names) == 0 || names[len(names)-1] != "plain" {
+		t.Fatalf("base served %v, want plain among the served names", names)
+	}
+
+	// a bare model with a colon that names no configured instance
+	// stays a bare model on the default provider (no pin, no route)
+	if pin := send("qwen2.5:7b"); pin != "" {
+		t.Fatalf("provider pin = %q, want empty (family:tag names stay bare)", pin)
 	}
 }

@@ -288,6 +288,18 @@ type ModelCapabilitiesProvider interface {
 	ListModelEntries() ([]core.ModelEntry, error)
 }
 
+// ProviderInstanceNames is the optional upgrade for providers that
+// carry NAMED instances: the id list the serving shell reads when it
+// renders the grouped model catalog (card t_1914a8c9). Paired with
+// ProviderInstances - a provider without the list is a full member
+// (the shell then renders the default section only), the upgrade is
+// probed at runtime like ModelCapabilitiesProvider. A copy that
+// carries the instances set (WithModel / WithThinkingLevel) reports
+// the same names.
+type ProviderInstanceNames interface {
+	InstanceNames() []string
+}
+
 // ApprovalProvider is the smart-approval seam (card t_c2b52cb5). The
 // agent loop consults it before EVERY tool execution; the approval
 // capsule decides whether the call may run. Model advises, Go decides:
