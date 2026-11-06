@@ -805,6 +805,7 @@ func (r *Runner) Jobs() []JobInfo {
 			Agent:    j.Agent,
 			Model:    j.Model,
 			File:     j.File,
+			Prompt:   j.Prompt,
 			Skills:   j.Skills,
 			Enabled:  j.IsEnabled(),
 		}

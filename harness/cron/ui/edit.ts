@@ -18,6 +18,7 @@ export interface CronJobWireFull extends CronJobWire {
   deliver?: string; // resolved target: new-session | continuous-agent | append-to-file
   model?: string; // empty = the session provider model
   file?: string; // the append-to-file target, home-relative
+  prompt?: string; // the authored user message (the editor's whole-job upsert needs it)
   skills?: string[]; // the fire-pinned skill names
   // the last fire's outcome: status "" (never fired) | ok | error, the
   // completion wall clock in RFC3339, and the capped error message.
@@ -85,7 +86,7 @@ export function draftOf(j: CronJobWireFull): JobDraft {
     kind: j.kind ?? "cron",
     schedule: j.schedule ?? "",
     minutes: j.minutes != null ? String(j.minutes) : "",
-    prompt: "",
+    prompt: j.prompt ?? "",
     deliver: j.deliver ?? "new-session",
     file: j.file ?? "",
     agent: j.agent ?? "",

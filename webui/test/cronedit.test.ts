@@ -313,3 +313,11 @@ test("draftOf round-trips the pinned skills into the editor voice", () => {
   const bare = draftOf({ name: "y", schedule: "0 8 * * *", enabled: true, next: "" } as never);
   assert.equal(bare.skills, "");
 });
+
+test("draftOf carries the listing row's prompt - editing a job never loses the message (t_3885c975 review fix)", () => {
+  const d = draftOf({ name: "x", schedule: "0 8 * * *", enabled: true, next: "", prompt: "the authored message" } as never);
+  assert.equal(d.prompt, "the authored message");
+  // a row with no prompt drafts empty (create flow)
+  const bare = draftOf({ name: "y", schedule: "0 8 * * *", enabled: true, next: "" } as never);
+  assert.equal(bare.prompt, "");
+});

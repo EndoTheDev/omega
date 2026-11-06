@@ -201,6 +201,18 @@ func TestAgentHomeRejectsSkills(t *testing.T) {
 	}
 }
 
+func TestJobsListingCarriesThePrompt(t *testing.T) {
+	// t_3885c975 review fix: the editor drafts the WHOLE job from the
+	// listing row, so the row must carry the authored prompt - an
+	// empty-prompt draft dies at "prompt is required" and editing
+	// forces a full re-type of the message.
+	r := newTestRunner(t, t.TempDir(),
+		Job{Name: "ed", Schedule: "0 12 * * *", Prompt: "the authored message"})
+	if got := r.Jobs()[0].Prompt; got != "the authored message" {
+		t.Fatalf("listing prompt = %q, want the authored prompt", got)
+	}
+}
+
 func TestEditorSaveRoundTripsSkills(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(), Job{Name: "fresh", Schedule: "0 8 * * *", Prompt: "p"})
 	jobs, err := r.SaveJob(Job{

@@ -50,6 +50,7 @@ type jobRow struct {
 	Agent    string   `json:"agent,omitempty"`
 	Model    string   `json:"model,omitempty"`
 	File     string   `json:"file,omitempty"`
+	Prompt   string   `json:"prompt,omitempty"`
 	Skills   []string `json:"skills,omitempty"`
 	Enabled  bool     `json:"enabled"`
 	Next     string   `json:"next,omitempty"`
@@ -135,6 +136,7 @@ func (c *capsule) jobsPanel() core.Panel {
 			Agent:      j.Agent,
 			Model:      j.Model,
 			File:       j.File,
+			Prompt:     j.Prompt,
 			Skills:     j.Skills,
 			Enabled:    j.Enabled,
 			Next:       j.Next,

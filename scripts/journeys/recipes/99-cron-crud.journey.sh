@@ -51,19 +51,21 @@ step "ok: cron tab renders (band + add tool)"
 # --- a: create -----------------------------------------------------------
 add=$(jsq '(()=>{const b=[...document.querySelectorAll(".cron-list .band-tool")].find((x)=>x.getAttribute("aria-label")==="add cron job");if(!b) return 0;b.click();return 1})()')
 assert_eq "$add" "1" "add cron job tool clicked"
-wait_js '(()=>document.querySelector(".cron-editor")!==null)' 10
+# ponytail: bare-arrow evals with `!==` return {} on this agent-browser CLI
+# (proven live 2026-11-07) - every wait uses the block-return shape instead.
+wait_js '(()=>{return !!document.querySelector(".cron-editor")})()' 10
 
 # fill name / schedule / prompt (v-model rides real input events)
 setfield() {
   local label="$1" value="$2"
-  jsq "(()=>{const lab=[...document.querySelectorAll('.cron-editor-field')].find((l)=>((l.querySelector('span')||{textContent:''}).textContent.trim())==='$label');if(!lab) return 0;const inp=lab.querySelector('input');if(!inp) return 0;const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(inp,'$value');inp.dispatchEvent(new Event('input',{bubbles:true}));return 1})()"
+  jsq "(()=>{const lab=[...document.querySelectorAll('.cron-editor-field')].find((l)=>((l.querySelector('span')||{textContent:''}).textContent.trim())==='$label');if(!lab) return 0;const inp=lab.querySelector('input')||lab.querySelector('textarea');if(!inp) return 0;const proto=inp.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const set=Object.getOwnPropertyDescriptor(proto,'value').set;set.call(inp,'$value');inp.dispatchEvent(new Event('input',{bubbles:true}));return 1})()"
 }
 assert_eq "$(setfield name "$JOB")" "1" "name field filled"
 assert_eq "$(setfield schedule '0 12 * * *')" "1" "schedule field filled"
 assert_eq "$(setfield prompt 'journey CRUD probe - say nothing and finish')" "1" "prompt field filled"
 
 jsq '(()=>{const b=[...document.querySelectorAll(".cron-editor-btn")].find((x)=>(x.textContent||"").trim().startsWith("save job"));if(!b) return 0;b.click();return 1})()' >/dev/null
-wait_js "(()=>(document.body.innerText||'').includes('$JOB'))" 15
+wait_js "(()=>{return (document.body.innerText||'').includes('$JOB')})()" 15
 step "ok: saved job row renders ($JOB)"
 
 # the wire carries the definition (hot reload without restart)
@@ -83,7 +85,7 @@ assert_eq "$have_status" "1" "a never-fired job carries no status (the '-' truth
 # --- b: edit --------------------------------------------------------------
 pencil=$(jsq "(()=>{const b=[...document.querySelectorAll('.cron-edit-ctrl')].find((x)=>x.getAttribute('aria-label')==='edit cron job $JOB');if(!b) return 0;b.click();return 1})()")
 assert_eq "$pencil" "1" "row pencil clicked"
-wait_js '(()=>document.querySelector(".cron-editor")!==null)' 10
+wait_js '(()=>{return !!document.querySelector(".cron-editor")})()' 10
 assert_eq "$(setfield schedule '0 13 * * *')" "1" "schedule re-filled (editor pre-filled the rest)"
 
 jsq '(()=>{const b=[...document.querySelectorAll(".cron-editor-btn")].find((x)=>(x.textContent||"").trim().startsWith("save job"));if(!b) return 0;b.click();return 1})()' >/dev/null
@@ -107,7 +109,7 @@ while [ "$i" -lt 20 ]; do
   sleep 0.5; i=$((i + 1))
 done
 [ "$gone" = "1" ] || die "the deleted job still rides the wire"
-wait_js "(()=>!(document.body.innerText||'').includes('$JOB'))" 15
+wait_js "(()=>{return !(document.body.innerText||'').includes('$JOB')})()" 15
 step "ok: the job is gone from the wire and the row list"
 
 assert_no_console_errors
