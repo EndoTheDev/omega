@@ -396,13 +396,18 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   attach-strip with image thumbnails, paste + paperclip attach; the
   retry face is retired - the newest response's action row carries the
   msg-retry chip, card t_95d2bc34; `/` command palette + `@` mention
-  picker, see below; the DISPLAY MODES (card t_5752861e): the
-  settings' chat-group "composer display mode" select - compact / wide
-  / full - writes the shared signal (`composables/composerMode.ts`,
-  `omega.composer-mode` in localStorage), and the mode rides the
-  composer's `mode-wide` / `mode-full` class (compact is the unstyled
-  base shape; the modes hold only while the composer is not expanded),
-  pinned by the 22-composer-modes journey),
+  picker, see below; the DISPLAY MODES (card t_5752861e, the width
+  ladder t_4a6431f8): the settings' chat-group "composer display mode"
+  select - compact / wide / full - writes the shared signal
+  (`composables/composerMode.ts`, `omega.composer-mode` in localStorage),
+  and the mode rides the composer's `mode-wide` / `mode-full` class. The
+  modes must be visibly distinct, so each owns an upper WIDTH bound, not
+  just a side inset: compact is the base shape (12px side inset, 720px
+  cap - the narrow reading card), wide lifts the cap to 1100px (4px
+  inset), full drops it entirely (edge to edge, no radius); the ladder
+  holds only while the composer is not expanded, and mobile resets the
+  cap (full pane). Pinned by the 22-composer-modes journey and
+  `webui/test/composermode.test.ts`,
   `ModelSelect` + the shared `BandSelect` effort chip (the dedicated
   ThinkingSelect retired — the BandSelect owns the select grammar; the
   model+effort pair is one nowrap wrap unit), `ChatMessage`,

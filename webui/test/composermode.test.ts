@@ -1,7 +1,10 @@
-// omega webui: the composer's display modes (card t_5752861e). Three
-// modes - compact (the base card shape, the class binding's null),
-// wide (mode-wide: the side inset tightens), full (mode-full: edge to
-// edge, no inset, no radius). The knob rides the shared-signal shape
+// omega webui: the composer's display modes (card t_5752861e, the width
+// ladder t_4a6431f8). Three modes - compact (the base card shape, the
+// class binding's null: 12px inset, 720px cap - the narrow reading
+// card), wide (mode-wide: the cap lifts to 1100px, inset 4px), full
+// (mode-full: no cap, edge to edge, no inset, no radius). Inset-only
+// deltas read as the same shape - each mode owns an upper WIDTH bound.
+// The knob rides the shared-signal shape
 // (bottomWidth.ts): SettingsTab writes, AppComposer reads, localStorage
 // persists under omega.composer-mode. The fullscreen (.expanded) card
 // geometry stays pinned by its own ruling - the modes hold only when
@@ -80,5 +83,16 @@ describe("composerMode wiring", () => {
   it("the CSS carries both non-compact shapes, gated to NOT expanded", () => {
     assert.match(css, /\.composer\.mode-wide:not\(\.expanded\)/);
     assert.match(css, /\.composer\.mode-full:not\(\.expanded\)/);
+  });
+
+  it("the mode ladder owns a WIDTH bound per mode - inset-only deltas are dead (t_4a6431f8)", () => {
+    const base = css.match(/\.composer \{([^}]*)\}/)?.[1] ?? "";
+    assert.match(base, /max-width: 720px/); // compact: the narrow reading card
+    const wide = css.match(/\.composer\.mode-wide:not\(\.expanded\) \{([^}]*)\}/)?.[1] ?? "";
+    assert.match(wide, /max-width: 1100px/);
+    const full = css.match(/\.composer\.mode-full:not\(\.expanded\) \{([^}]*)\}/)?.[1] ?? "";
+    assert.match(full, /max-width: none/);
+    const expanded = css.match(/\.composer\.expanded \{([^}]*)\}/)?.[1] ?? "";
+    assert.match(expanded, /max-width: none/); // fullscreen ignores the cap
   });
 });
