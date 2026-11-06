@@ -23,6 +23,7 @@
 
 import { computed, ref } from "vue";
 import {
+  clearAllNotifications,
   fetchNotifications,
   markAllNotificationsRead,
   markNotificationRead,
@@ -154,8 +155,37 @@ export async function markAllRead(): Promise<void> {
   }
 }
 
+// dismissToast: one toast out of the stack (its click or its expiry).
 export function dismissToast(key: number): void {
   toasts.value = toasts.value.filter((t) => t.key !== key);
+}
+
+// clearToasts: every toast out of the stack at once - the expiry
+// timers die with it (a toast that never renders fires no timer).
+export function clearToasts(): void {
+  for (const id of timers) clearTimeout(id);
+  timers.clear();
+  toasts.value = [];
+}
+
+// clearAll: every record DELETES (the tab's clear-all button) - the
+// feed empties, the unread count hits zero, the live toasts clear.
+// Optimistic like markAllRead; a failed DELETE restores the feed rows
+// and the unread count. The toasts stay dropped either way (transient
+// state - they would have expired within seconds regardless). Pending
+// questions are NOT this call's business: they are not finished things
+// (verdict cards live in their own list).
+export async function clearAll(): Promise<void> {
+  const before = { unread: unread.value, list: list.value };
+  list.value = [];
+  unread.value = 0;
+  clearToasts();
+  try {
+    await clearAllNotifications();
+  } catch {
+    list.value = before.list;
+    unread.value = before.unread;
+  }
 }
 
 // a toast click: mark the record read (the old openRecord contract),

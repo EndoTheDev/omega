@@ -49,7 +49,7 @@ against localhost from the same host is unaffected.
 | `/tasks`                             | GET, POST  | kanban board (list/create, `?board=` picker)    |
 | `/tasks/{id}`                        | GET, PATCH | task detail (task+comments+events) / edits     |
 | `/tasks/{id}/comments`               | POST       | add a comment (author default: `web`)          |
-| `/notifications`                     | GET        | finished-things list + unread (`?unread=1`, `?limit/?offset`) |
+| `/notifications`                     | GET, DELETE | finished-things list + unread (`?unread=1`, `?limit/?offset`) / clear-all (every record drops; the reply carries `cleared`) |
 | `/notifications/read`                | POST       | mark one (`{"id": N}`) or all (`{"all": true}`) |
 | `/notifications/events`              | GET        | SSE record stream (the public API surface; the webui's toasts ride the canvas) |
 | `/files/browse`, `/files/read`       | GET        | read-only working-dir surface for the inspector; read carries `mime` |
@@ -369,6 +369,8 @@ catch-all answers it).
   live unread count over the whole set, not the page.
 - `POST /notifications/read` — mark one (`{"id": N}`; a ghost id 404s)
   or everything (`{"all": true}`).
+- `DELETE /notifications` — clear-all: every record drops (the webui
+  tab's button); the reply carries `{"ok":true,"cleared":N}`.
 - `GET /notifications/events` — SSE: each subsequent emit becomes one
   `notification` frame.
 

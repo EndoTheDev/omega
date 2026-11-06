@@ -151,6 +151,17 @@ func (e *emittingStore) MarkAllRead(ctx context.Context) error {
 	return e.store.MarkAllRead(ctx)
 }
 
+// Clear drops every record and pushes the refreshed (empty) list panel
+// so canvas consumers converge on the cleared truth (the snapshot is
+// the catch-up, same law as mark-read).
+func (e *emittingStore) Clear(ctx context.Context) (int64, error) {
+	n, err := e.store.Clear(ctx)
+	if err == nil {
+		e.capsule.push(e.capsule.listPanel())
+	}
+	return n, err
+}
+
 func (e *emittingStore) Subscribe() (<-chan core.Notice, func()) {
 	return e.store.Subscribe()
 }

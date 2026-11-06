@@ -5,8 +5,10 @@
 // GET /notifications (list newest-first, ?unread=1 filter,
 // ?limit/?offset pagination, the payload also carries the live unread
 // count), POST /notifications/read (mark one by id or everything via
-// {"all":true}) and GET /notifications/events (SSE: every subsequent
-// emission becomes one "notification" frame - the webui toast source).
+// {"all":true}), DELETE /notifications (the webui tab's clear-all:
+// every record drops) and GET /notifications/events (SSE: every
+// subsequent emission becomes one "notification" frame - the webui
+// toast source).
 //
 // The routes hold the SAME emittingStore the mount offers under the
 // "notifications" key: mark-read goes through the capsule's wrapper
@@ -70,12 +72,21 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// handleNotifications serves GET /notifications.
+// handleNotifications serves GET /notifications (the list) and
+// DELETE /notifications (the webui tab's clear-all button).
 func (rt *Routes) handleNotifications(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		rt.listNotifications(w, r)
+	case http.MethodDelete:
+		rt.clearNotifications(w, r)
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
 	}
+}
+
+// listNotifications serves GET /notifications.
+func (rt *Routes) listNotifications(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	unreadOnly := q.Get("unread") == "1" || q.Get("unread") == "true"
 	limit := notificationsListDefault
@@ -108,6 +119,18 @@ func (rt *Routes) handleNotifications(w http.ResponseWriter, r *http.Request) {
 		"notifications": notes,
 		"unread":        unread,
 	})
+}
+
+// clearNotifications serves DELETE /notifications: every record drops
+// (the feed empties, not just its read flags). The response carries
+// the deleted count so the caller can say what it removed.
+func (rt *Routes) clearNotifications(w http.ResponseWriter, r *http.Request) {
+	n, err := rt.svc.Clear(r.Context())
+	if err != nil {
+		http.Error(w, "clear notifications: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "cleared": n})
 }
 
 // handleNotificationsRead serves POST /notifications/read: {"id": N}

@@ -7,6 +7,9 @@
 #                 notification record: kind=task, verdict=ok, unread+1.
 #   read        - POST /notifications/read {id} drops the unread count;
 #                 {"all":true} clears it. A ghost id 404s.
+#   clear       - DELETE /notifications drops every record (card
+#                 t_05ff5e35, the webui tab's clear-all); a post-clear
+#                 emit still records, POST to the list route 405s.
 #   live        - GET /notifications/events streams a notification
 #                 frame for a subsequent emit (the webui toast source).
 #   hygiene     - 501s only when the store is unmounted (covered in the
@@ -114,5 +117,34 @@ rm -f "$ssecmd"
 [ "$sse_ok" != "" ] || die "SSE stream got no notification frame within 10s"
 [ "$sse_ok" = "yes" ] || die "live frame wrong: $sse_ok"
 step "ok: /notifications/events streamed the live emit"
+
+# --- clear: DELETE drops every record (card t_05ff5e35, the webui tab's
+# clear-all button on the wire). The feed GOES EMPTY - and the store
+# still records after the delete. ---
+clear_out=$(curl -s -X DELETE "${JOURNEY_BASE_URL}/notifications")
+printf '%s' "$clear_out" | grep -Eq '"ok" ?: ?true' || die "clear-all answered: $clear_out"
+cleared=$(printf '%s' "$clear_out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["cleared"]);' 2>/dev/null)
+[ -n "$cleared" ] || die "clear-all lost the cleared count: $clear_out"
+step "ok: clear-all dropped $cleared records"
+
+empty=$(curl -s "${JOURNEY_BASE_URL}/notifications" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["notifications"]), end="");')
+assert_eq "$empty" "0" "clear-all leaves no rows"
+
+# and the store still works after the clear: the next emit records
+created3=$(curl -s -X POST "${JOURNEY_BASE_URL}/tasks" -H 'Content-Type: application/json' \
+  -d "{\"title\":\"${JRN_TASK}-3\"}")
+tid3=$(printf '%s' "$created3" | grep -oE '"id": ?"t_[a-f0-9]+"' | head -1 | sed 's/.*"\(t_[a-f0-9]*\)".*/\1/')
+[ -n "$tid3" ] || die "third task create failed: $created3"
+trap 'curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${tid1}" -H "Content-Type: application/json" -d "{\"status\":\"archived\"}" >/dev/null 2>&1; curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${tid2}" -H "Content-Type: application/json" -d "{\"status\":\"archived\"}" >/dev/null 2>&1; curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${tid3}" -H "Content-Type: application/json" -d "{\"status\":\"archived\"}" >/dev/null 2>&1 || true' EXIT
+curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${tid3}" -H 'Content-Type: application/json' -d '{"status":"done"}' >/dev/null
+post_ok=$(curl -s "${JOURNEY_BASE_URL}/notifications" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print(len([n for n in d['notifications'] if n['source_id']=='${tid3}']), end='')")
+assert_eq "$post_ok" "1" "a post-clear emit still records"
+# and the DELETE verb stays alone: a POST to the list route is a 405
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${JOURNEY_BASE_URL}/notifications" \
+  -H 'Content-Type: application/json' -d '{}')
+assert_eq "$code" "405" "POST /notifications is a 405 (the list route takes GET and DELETE only)"
 
 step "GREEN: notifications journey"

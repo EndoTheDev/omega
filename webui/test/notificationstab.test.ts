@@ -168,3 +168,35 @@ test("the feed panel is the bell popover's body rehomed, not a rebuild", () => {
   // the data source is unchanged: the same fetch wrappers, no new calls
   assert.ok(!panel.includes("fetch("), "the panel touches no transport of its own - the store owns the wire");
 });
+
+// --- clear-all: the DELETE side of the surface (card t_05ff5e35) ---------
+
+test("clear-all deletes the feed and the toasts, rides the DELETE transport", () => {
+  const panel = read("../harness/notifications/ui/NotificationsPanel.vue");
+  assert.match(panel, /clear all/, "the band tool renders the delete verb");
+  assert.match(
+    panel,
+    /notificationsList\.length === 0/,
+    "an empty feed disables the clear-all",
+  );
+  assert.match(panel, /clearingAll/, "double clicks gate on the in-flight flag");
+  assert.match(panel, /\bclearAll\(\)/, "the store owns the wire (the panel imports the action)");
+
+  const store = read("app/components/shell/notificationFeed.ts");
+  assert.match(
+    store,
+    /clearAllNotifications\(\)/,
+    "clearAll rides the DELETE /notifications transport",
+  );
+  assert.match(store, /clearToasts\(\)/, "the live toasts clear with the feed");
+  // only the clear action is scoped: pending questions are NOT finished things
+  const fn = store.slice(
+    store.indexOf("export async function clearAll"),
+    store.indexOf("export async function openToastRecord"),
+  );
+  assert.ok(fn.length > 0, "the clearAll action exists");
+  assert.ok(!fn.includes("pendingVerdicts"), "pending questions survive the clear");
+
+  const client = read("app/composables/notifications.ts");
+  assert.match(client, /method: "DELETE"/, "the transport is a DELETE, not a read flag");
+});

@@ -12,6 +12,7 @@ package notifications
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -125,6 +126,72 @@ func TestNotificationsListUnreadAndPagination(t *testing.T) {
 	res.Body.Close()
 	if page.Unread != 0 {
 		t.Fatalf("mark all left %d unread", page.Unread)
+	}
+}
+
+// The clear-all: DELETE /notifications drops every record (the feed
+// empties, not just its read flags), the count comes back, a
+// subsequent emit still records, and a read or POST on the list route
+// is still refused.
+func TestNotificationsClearAll(t *testing.T) {
+	ts, st := serveRoutes(t)
+	for i := 0; i < 3; i++ {
+		if _, err := st.Emit(core.Notice{Kind: "task", SourceID: "t_c", Title: "task t_c done"}); err != nil {
+			t.Fatalf("emit: %v", err)
+		}
+	}
+	if _, err := st.Emit(core.Notice{Kind: "task", SourceID: "t_c2", Title: "task t_c2 done"}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	if err := st.MarkRead(context.Background(), 1); err != nil {
+		t.Fatalf("mark read: %v", err)
+	}
+
+	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/notifications", nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		OK      bool  `json:"ok"`
+		Cleared int64 `json:"cleared"`
+	}
+	json.NewDecoder(res.Body).Decode(&body)
+	res.Body.Close()
+	if res.StatusCode != 200 || !body.OK || body.Cleared != 4 {
+		t.Fatalf("clear = http %d {ok=%v cleared=%d}, want 200/true/4", res.StatusCode, body.OK, body.Cleared)
+	}
+
+	var page struct {
+		Notifications []core.Notice `json:"notifications"`
+		Unread        int           `json:"unread"`
+	}
+	res, _ = http.Get(ts.URL + "/notifications")
+	json.NewDecoder(res.Body).Decode(&page)
+	res.Body.Close()
+	if len(page.Notifications) != 0 || page.Unread != 0 {
+		t.Fatalf("after clear: %d rows / %d unread", len(page.Notifications), page.Unread)
+	}
+
+	// the store still works after a clear: the next emit records
+	if _, err := st.Emit(core.Notice{Kind: "cron", SourceID: "nightly", Title: "cron nightly finished"}); err != nil {
+		t.Fatalf("emit after clear: %v", err)
+	}
+	res, _ = http.Get(ts.URL + "/notifications")
+	json.NewDecoder(res.Body).Decode(&page)
+	res.Body.Close()
+	if len(page.Notifications) != 1 || page.Unread != 1 {
+		t.Fatalf("post-clear emit: %d rows / %d unread", len(page.Notifications), page.Unread)
+	}
+
+	// the list route still refuses writes: PUT/POST answer 405
+	for _, m := range []string{http.MethodPost, http.MethodPut} {
+		req, _ := http.NewRequest(m, ts.URL+"/notifications", nil)
+		res, _ := http.DefaultClient.Do(req)
+		res.Body.Close()
+		if res.StatusCode != http.StatusMethodNotAllowed {
+			t.Fatalf("%s /notifications = %d, want 405", m, res.StatusCode)
+		}
 	}
 }
 
