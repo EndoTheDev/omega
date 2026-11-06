@@ -8,8 +8,8 @@
 # users always get the complete product because the lane keeps static/
 # true before the next build.
 #
-# Works from a clean clone: deps are installed when node_modules is
-# missing, and the module-UI composition (nuxt.config.ts eval time)
+# Works from a clean clone: deps are installed when the node_modules
+# marker file is missing, and the module-UI composition (nuxt.config.ts eval time)
 # regenerates app/composables/module-panels.generated.ts itself - there
 # are no local-path assumptions, the module scan is relative to the
 # checkout.
