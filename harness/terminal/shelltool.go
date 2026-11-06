@@ -14,13 +14,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/datadir"
 	"github.com/EndoTheDev/omega/harness/store"
 )
@@ -41,12 +44,46 @@ func (p *ShellProvider) Tools() map[string]core.Tool {
 				"type": "object",
 				"properties": map[string]any{
 					"command": map[string]any{"type": "string", "description": "The command to run."},
+					"dir":     map[string]any{"type": "string", "description": "Optional working directory for this call: absolute, or relative to the session workspace. Overrides the run's default directory (card t_ccf74d88)."},
 				},
 				"required": []string{"command"},
 			},
 			Run: p.RunShell,
 		},
 	}
+}
+
+// dirOverride resolves the optional working-directory argument (card
+// t_ccf74d88): an absolute path passes through cleaned; a relative one
+// roots at the run's session workspace, or at the process working
+// directory when the run has none. A missing or non-directory path is
+// a named tool error, never a cryptic exec chdir failure.
+func dirOverride(ctx context.Context, args map[string]any) (string, error) {
+	v, _ := args["dir"].(string)
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "", nil
+	}
+	abs := v
+	if !filepath.IsAbs(v) {
+		if root := core.RunWorkspace(ctx); root != "" {
+			abs = filepath.Join(root, v)
+		} else {
+			a, err := filepath.Abs(v)
+			if err != nil {
+				return "", fmt.Errorf("dir %q: %v", v, err)
+			}
+			abs = a
+		}
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", fmt.Errorf("dir %s: %v", abs, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("dir %s: not a directory", abs)
+	}
+	return abs, nil
 }
 
 // argString extracts a required string argument.
@@ -107,10 +144,23 @@ func (p *ShellProvider) RunShell(ctx context.Context, args map[string]any) (stri
 	if p.guard.DenyShell(command) {
 		return "", datadir.DBDenied(command)
 	}
+	// Per-call workdir override (card t_ccf74d88): an explicit dir
+	// wins over the run's session workspace. Empty = the workspace,
+	// else the process working directory - today's behavior.
+	workdir, err := dirOverride(ctx, args)
+	if err != nil {
+		return "", err
+	}
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
 		cmd = exec.CommandContext(ctx, "cmd", "/C", command)
+		// Windows exec carries no process-group kill (the 09828e16
+		// law): the ctx kill takes cmd.exe, but a pipe child (sleep,
+		// a long compiler) outlives it and holds cmd.Wait() past any
+		// cap. WaitDelay closes the pipes a bounded grace after the
+		// shell dies - the cancelled run actually returns.
+		cmd.WaitDelay = 500 * time.Millisecond
 	} else {
 		cmd = exec.CommandContext(ctx, "sh", "-c", command)
 		shellKillSetup(cmd)
@@ -120,6 +170,9 @@ func (p *ShellProvider) RunShell(ctx context.Context, args map[string]any) (stri
 	// the session's folder. No workspace = the process working
 	// directory, exactly as before.
 	cmd.Dir = core.RunWorkspace(ctx)
+	if workdir != "" {
+		cmd.Dir = workdir
+	}
 	outBuf := &cappedBuffer{}
 	cmd.Stdout = outBuf
 	cmd.Stderr = outBuf

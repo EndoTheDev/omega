@@ -29,6 +29,12 @@ type Config struct {
 	// Operator-declared opt-in, exact match, no wildcards: the guard
 	// keeps refusing every name not on this list.
 	PublicHosts []string `yaml:"public_hosts"`
+	// DefaultWorkspace is the server.default_workspace knob (card
+	// t_ccf74d88): the tools' fallback working directory. A chat
+	// session without a pinned workspace roots its tool runs here
+	// instead of the process working directory - a defined default,
+	// not an implicit cwd. Empty = unset, the cwd fallback stands.
+	DefaultWorkspace string `yaml:"default_workspace"`
 	// WebTools carries the web.search/web.fetch settings (v0.13 shell
 	// law 1: the former modules/web capsule dissolved into the
 	// channel). The host's ConfigSection derives both fields; an
