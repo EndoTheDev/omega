@@ -119,28 +119,42 @@ for row in pref + dirs:
     if try_row(row):
         strand = "ui"
         break
+knob = ""
+try:
+    settings = json.load(opener.open(root_url + "/settings", timeout=10))
+    for g in settings.get("groups", []):
+        for k in g.get("knobs", []):
+            if k.get("key") == "server.default_workspace":
+                knob = k.get("value") or ""
+except Exception:
+    pass
 if strand != "ui":
     target = resolved = ""
+    # wire strand: pin a browsable child of the knob when one exists
+    # (a pin distinct from the knob keeps the restore-vs-clear chip
+    # states visibly different on every lane), else the knob itself.
     try:
-        settings = json.load(opener.open(root_url + "/settings", timeout=10))
-        knob = ""
-        for g in settings.get("groups", []):
-            for k in g.get("knobs", []):
-                if k.get("key") == "server.default_workspace":
-                    knob = k.get("value") or ""
         if knob:
-            resolved = browse(knob)["path"]
+            kres = browse(knob)["path"]
+            resolved = kres
+            for d in browse(kres).get("dirs", []):
+                try:
+                    resolved = browse(d["path"])["path"]
+                    break
+                except Exception:
+                    continue
             strand = "wire"
     except Exception:
         pass
 if strand != "ui" and strand != "wire":
     strand = "none"
 sys.stdout.reconfigure(newline="\n")
-print(strand + "\t" + target + "\t" + resolved)
+print(strand + "\t" + target + "\t" + resolved + "\t" + knob)
 ') || die "workspace lane probe crashed"
 STRAND=$(printf '%s' "$WSPICK" | cut -f1)
 TARGET=$(printf '%s' "$WSPICK" | cut -f2)
 RESOLVED=$(printf '%s' "$WSPICK" | cut -f3)
+KNOB=$(printf '%s' "$WSPICK" | cut -f4)
 if [ "$STRAND" != "ui" ] && [ "$STRAND" != "wire" ]; then
   die "lane offers no browsable workspace pin (no usable root row, default_workspace unset)"
 fi
@@ -193,10 +207,19 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
   sleep 1
 done
 assert_eq "$cleared" "" "workspace clear removed the pin"
-# the unset chip is a render state that may lag the wire by one SPA
-# beat - poll it (one-shot reads flake on slower lanes)
-wait_js '!!document.querySelector(".ws-btn .ws-unset")' 10 \
-  || die "chip never rendered the unset state after clear"
+# the chip after clear mirrors the t_ccf74d88 effective-workdir law:
+# an empty row pin falls back to the server's default_workspace knob -
+# the chip only renders the unset blank on a knob-less lane. On a knob
+# lane the cleared chip keeps showing the knob's basename. Render
+# states lag the wire by a SPA beat - poll, never one-shot read.
+if [ -z "$KNOB" ]; then
+  wait_js '!!document.querySelector(".ws-btn .ws-unset")' 10 \
+    || die "chip never rendered the unset state after clear"
+else
+  knob_base=${KNOB##*/}
+  knob_ok=$(jsq "(()=>{const t = document.querySelector(\".ws-btn .chip-name:not(.ws-unset)\")?.textContent ?? \"\"; return t === \"$(jstr "$knob_base")\";})()" 2>&1 | tail -1)
+  assert_eq "$knob_ok" "true" "cleared chip mirrors the default workspace knob"
+fi
 
 assert_no_console_errors
 step "journey green"
