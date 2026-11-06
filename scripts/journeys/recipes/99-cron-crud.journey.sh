@@ -98,6 +98,11 @@ done
 step "ok: the schedule edit landed on the wire"
 
 # --- d: remove (armed, then confirm) --------------------------------------
+# the edit-save closes the editor - the delete button lives IN the editor,
+# so re-open it from the row pencil first.
+pencil=$(jsq "(()=>{const b=[...document.querySelectorAll('.cron-edit-ctrl')].find((x)=>x.getAttribute('aria-label')==='edit cron job $JOB');if(!b) return 0;b.click();return 1})()")
+assert_eq "$pencil" "1" "row pencil clicked (editor re-opened for delete)"
+wait_js '(()=>{return !!document.querySelector(".cron-editor")})()' 10
 jsq '(()=>{const b=[...document.querySelectorAll(".cron-editor-btn.danger")].find((x)=>(x.textContent||"").includes("delete job"));if(!b) return 0;b.click();return 1})()' >/dev/null
 wait_js '(()=>{const b=[...document.querySelectorAll(".cron-editor-btn.danger")].find((x)=>(x.textContent||"").includes("confirm delete?"));return !!b})()' 10
 step "ok: delete armed (two-step)"
@@ -109,7 +114,9 @@ while [ "$i" -lt 20 ]; do
   sleep 0.5; i=$((i + 1))
 done
 [ "$gone" = "1" ] || die "the deleted job still rides the wire"
-wait_js "(()=>{return !(document.body.innerText||'').includes('$JOB')})()" 15
+# scoped to the cron list: the LOGS pane keeps the "job added" line in
+# body.innerText forever, so a whole-body wait can never go true.
+wait_js "(()=>{const c=document.querySelector('.cron-list'); return c===null || !(c.innerText||'').includes('$JOB')})()" 15
 step "ok: the job is gone from the wire and the row list"
 
 assert_no_console_errors
