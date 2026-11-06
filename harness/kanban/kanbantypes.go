@@ -11,11 +11,16 @@ import (
 // review done archived. Position is the card's order inside its
 // column - store-internal state, never serialized to the wire (the
 // GET /tasks list arrives in position order already).
+// position-order already). Assigned/started/completed stamps and
+// Position are store-owned fields too; Priority is the urgency
+// tiebreak (Hermes parity: higher = picked sooner, 0 = normal,
+// negative is refused at the door).
 type KanbanTask struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`
 	Body        string `json:"body"`
 	Assignee    string `json:"assignee"`
+	Priority    int    `json:"priority"`
 	Status      string `json:"status"`
 	SessionID   string `json:"session_id"`
 	Source      string `json:"source"`
@@ -52,10 +57,16 @@ type KanbanPatch struct {
 	Title     *string
 	Body      *string
 	Assignee  *string
+	Priority  *int
 	Status    string // "" = no change
 	SessionID *string
 	Source    *string
 }
+
+// ValidPriority reports whether p may ride a task: the urgency
+// tiebreak is non-negative (0 = normal; higher = more urgent, the
+// Hermes parity law).
+func ValidPriority(p int) bool { return p >= 0 }
 
 // ErrTaskNotFound is the shared "no such task" sentinel on the kanban
 // seam: the store returns it and the HTTP channel maps it to a 404
@@ -92,6 +103,18 @@ type Reorderer interface {
 	// board and resequences that column to dense positions. status ""
 	// keeps the current column; afterID "" drops at the top.
 	ReorderTask(ctx context.Context, board, taskID, status, afterID string) (KanbanTask, error)
+}
+
+// TaskDeleter is the optional delete capability on the kanban seam
+// (BoardLister/Reorderer's shape): permanently remove a card. A
+// provider that cannot delete stays legal without it - the DELETE
+// route then answers 400 with that reason, and the board UI's delete
+// control refuses. Deleting a card takes its comments and events with
+// it (the FK cascades); archive is the reversible path, this is not.
+type TaskDeleter interface {
+	// DeleteTask removes taskID from the named board. Missing tasks
+	// answer ErrTaskNotFound.
+	DeleteTask(ctx context.Context, board, taskID string) error
 }
 
 // KanbanProvider is the board seam: task CRUD plus the comment and

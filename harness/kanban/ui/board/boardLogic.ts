@@ -50,11 +50,50 @@ export interface BoardTask {
   body: string;
   assignee: string;
   status: string;
+  priority: number;
   session_id: string;
   source: string;
   created_at: string;
   started_at: string;
   completed_at: string;
+}
+
+// --- priority (the round t_f81e845e): an integer urgency tiebreak in
+// the Hermes shape (higher = more urgent, 0 = normal). The store
+// accepts any non-negative int (tools/CLI may set more); the board UI
+// offers the 0..3 ladder and the card chip renders whatever stands.
+
+export const PRIORITY_LEVELS = [0, 1, 2, 3] as const;
+
+/** the chip/sel label for a priority value. */
+export function priorityLabel(n: number): string {
+  return `P${n}`;
+}
+
+/** true when a card wears its priority chip (0 = normal, silent). */
+export function hasPriorityChip(n: number): boolean {
+  return n > 0;
+}
+
+/** the BandSelect options for the priority ladder (0 = normal). */
+export function priorityOptions(): { value: number; label: string }[] {
+  return PRIORITY_LEVELS.map((n) => ({
+    value: n,
+    label: n === 0 ? "P0 (normal)" : priorityLabel(n),
+  }));
+}
+
+/**
+ * bodyPreview is the card's dimmed teaser: the body's first non-empty
+ * line, truncated for the column width.
+ */
+export function bodyPreview(body: string): string {
+  const line = (body ?? "")
+    .split("\n")
+    .map((s) => s.trim())
+    .find((s) => s !== "");
+  if (line === undefined) return "";
+  return line.length > 80 ? line.slice(0, 79) + "…" : line;
 }
 
 // --- board switcher (card t_d7a7beaa): named boards + a current-board
@@ -106,6 +145,15 @@ export interface BoardComment {
   created_at: string;
 }
 
+// One audit-trail row (GET /tasks/{id} payload, the "events" array).
+export interface BoardEvent {
+  id: number;
+  task_id: string;
+  kind: string;
+  detail: string;
+  created_at: string;
+}
+
 /**
  * columns buckets tasks into the canonical column order. Unknown
  * statuses cannot exist (the store validates at the door), but nothing
@@ -150,9 +198,18 @@ export function canRemoveBoard(name: string): boolean {
   return name !== "" && name !== DEFAULT_BOARD_NAME;
 }
 
-/** the DELETE path for removing a registry board (name always encoded). */
+/** the DELETE path for a registry board (name always encoded). */
 export function boardDeletePath(name: string): string {
   return `/boards/${encodeURIComponent(name)}`;
+}
+
+/**
+ * taskDeletePath is the DELETE path for one card (id always encoded) -
+ * the detail path with the DELETE method; board selection rides
+ * withBoard like every other task route.
+ */
+export function taskDeletePath(id: string): string {
+  return `/tasks/${encodeURIComponent(id)}`;
 }
 
 /**

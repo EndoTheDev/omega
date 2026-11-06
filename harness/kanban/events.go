@@ -14,7 +14,7 @@ type ExecContexter interface {
 // getTaskTx scans one task inside an open transaction. The board_id
 // filter carries the isolation: a task id only answers on its board.
 func getTaskTx(ctx context.Context, tx *sql.Tx, boardID int64, taskID string) (KanbanTask, error) {
-	row := tx.QueryRowContext(ctx, `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, position FROM tasks WHERE id = ? AND board_id = ?`, taskID, boardID)
+	row := tx.QueryRowContext(ctx, `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, priority, position FROM tasks WHERE id = ? AND board_id = ?`, taskID, boardID)
 	t, err := scanTask(row)
 	if err != nil {
 		if err == sql.ErrNoRows {

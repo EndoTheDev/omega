@@ -276,11 +276,12 @@ func (p *ToolProvider) sessionBoard() string {
 // t_e06b38bc - the domain tool names ITSELF; the session-link verb is
 // retired: a task is born with its session in create).
 var taskActions = []core.ToolAction{
-	{Name: "create", Description: "Create a board task (title is the short name, body carries the full spec)."},
+	{Name: "create", Description: "Create a board task (title is the short name, body carries the full spec; priority higher = more urgent, 0 = normal)."},
 	{Name: "list", Description: "List board tasks, optionally filtered by status."},
-	{Name: "update", Description: "Update a task: move status (any legal transition), set assignee, retitle, or rewrite the body."},
+	{Name: "update", Description: "Update a task: move status (any legal transition), set assignee, retitle, rewrite the body, or set priority."},
 	{Name: "complete", Description: "Mark a task done (moves it to the done column and stamps completion)."},
 	{Name: "comment", Description: "Add a comment to a task's thread."},
+	{Name: "delete", Description: "Permanently remove a task from the board (its comments and events go with it). Archive is the reversible path - prefer it unless the card must vanish."},
 }
 
 // taskActionNames returns the action names from the metadata.
@@ -303,7 +304,7 @@ func (p *ToolProvider) Tools() map[string]core.Tool {
 	statusDesc := "Board status: one of triage todo scheduled ready running blocked review done archived (create: initial status; update: new status; list: filter)."
 	tools := map[string]core.Tool{
 		"kanban": {
-			Description: "One tool for the kanban board: create, list, update, complete, comment on tasks. Board: pass board to operate on a named board; omit to use the active board (/board). Batch: pass operations to run several in one call (create several tasks, or update + comment together).",
+			Description: "One tool for the kanban board: create, list, update, complete, comment on, or delete tasks. Board: pass board to operate on a named board; omit to use the active board (/board). Batch: pass operations to run several in one call (create several tasks, or update + comment together).",
 			Actions:     taskActions,
 			Parameters: map[string]any{
 				"type": "object",
@@ -313,10 +314,11 @@ func (p *ToolProvider) Tools() map[string]core.Tool {
 						"description": "Which board operation to run.",
 					},
 					"board":    map[string]any{"type": "string", "description": "Board name to operate on (omit = the active board; 'main' is the default board)."},
-					"id":       map[string]any{"type": "string", "description": "Task id (update, complete, comment; batch ops carry their own)."},
+					"id":       map[string]any{"type": "string", "description": "Task id (update, complete, comment, delete; batch ops carry their own)."},
 					"title":    map[string]any{"type": "string", "description": "Short title (create); new title (update)."},
 					"body":     map[string]any{"type": "string", "description": "Full spec / body (create); new body (update); comment body (comment, required)."},
 					"assignee": map[string]any{"type": "string", "description": "Who the task is for (create); new assignee, empty string unassigns (update)."},
+					"priority": map[string]any{"type": "number", "description": "Urgency tiebreak, 0 = normal (default), higher = more urgent; negative refused (create; update)."},
 					"status":   map[string]any{"type": "string", "description": statusDesc},
 					"source":   map[string]any{"type": "string", "description": "Provenance tag, e.g. an automator's name (create)."},
 					"author":   map[string]any{"type": "string", "description": "Comment author (comment, default agent)."},
@@ -430,6 +432,8 @@ func (p *ToolProvider) runTaskOp(ctx context.Context, args map[string]any) (stri
 		return p.runComplete(ctx, board, args)
 	case "comment":
 		return p.runComment(ctx, board, args)
+	case "delete":
+		return p.runDelete(ctx, board, args)
 	default:
 		return "", fmt.Errorf("action is required: one of %v, or pass operations for a batch", taskActionNames())
 	}
@@ -440,6 +444,7 @@ func (p *ToolProvider) runCreate(ctx context.Context, board string, args map[str
 		Title:     str(args["title"]),
 		Body:      str(args["body"]),
 		Assignee:  str(args["assignee"]),
+		Priority:  intArg(args["priority"]),
 		Status:    str(args["status"]),
 		Source:    str(args["source"]),
 		SessionID: agent.SessionIDFromContext(ctx),
@@ -473,9 +478,10 @@ func (p *ToolProvider) runList(ctx context.Context, board string, args map[strin
 func (p *ToolProvider) runUpdate(ctx context.Context, board string, args map[string]any) (string, error) {
 	id := str(args["id"])
 	patch := KanbanPatch{
-		Status: str(args["status"]),
-		Title:  optStr(args["title"]),
-		Body:   optStr(args["body"]),
+		Status:   str(args["status"]),
+		Title:    optStr(args["title"]),
+		Body:     optStr(args["body"]),
+		Priority: optInt(args["priority"]),
 	}
 	if assignee, ok := args["assignee"]; ok {
 		patch.Assignee = optStr(assignee)
@@ -508,10 +514,43 @@ func (p *ToolProvider) runComplete(ctx context.Context, board string, args map[s
 	return "done " + out.ID + ": " + out.Title, nil
 }
 
+func (p *ToolProvider) runDelete(ctx context.Context, board string, args map[string]any) (string, error) {
+	td, ok := p.board.(TaskDeleter)
+	if !ok {
+		return "", fmt.Errorf("this board cannot delete tasks - archive instead (update status archived)")
+	}
+	id := str(args["id"])
+	if err := td.DeleteTask(ctx, board, id); err != nil {
+		return "", err
+	}
+	return "deleted " + id, nil
+}
+
 // str reads a tool arg that is always present.
 func str(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+// intArg is str for numbers: a JSON number decodes as float64 through
+// the args map; anything else (absent, wrong type) reads 0.
+func intArg(v any) int {
+	f, ok := v.(float64)
+	if !ok {
+		return 0
+	}
+	return int(f)
+}
+
+// optInt is intArg, but distinguishes "arg absent" (nil) from "arg
+// given" - the update patch's leave-alone/zero distinction.
+func optInt(v any) *int {
+	f, ok := v.(float64)
+	if !ok {
+		return nil
+	}
+	n := int(f)
+	return &n
 }
 
 // optStr is str, but distinguishes "arg absent" (nil) from "arg given".

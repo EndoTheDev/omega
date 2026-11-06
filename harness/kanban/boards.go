@@ -221,8 +221,8 @@ func (s *Store) CreateBoardRow(name string) error {
 // DeleteBoardRow removes the named board's row, refusing: the default
 // board, unknown boards, the current board (the flag would dangle),
 // and any board that still holds tasks (archived tasks are still rows
-// - there is no card deletion, so an emptiable board is one that never
-// held a task). Comments and events ride the tasks, so the task count
+// - a card's only escape from a board is DELETE /tasks/{id}, so an
+// emptiable board is one that holds no task rows). Comments and events ride the tasks, so the task count
 // is the emptiness test. There is deliberately no force flag: the
 // guards are the safety net the webui and the journeys rest on.
 func (s *Store) DeleteBoardRow(name string) error {

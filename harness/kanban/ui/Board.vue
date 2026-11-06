@@ -60,6 +60,16 @@
           @click="isSettled(BOARD_STATUSES[i]) && toggleFold(BOARD_STATUSES[i])">
           <span class="col-name">{{ BOARD_STATUSES[i] }}</span>
           <span class="col-count">{{ col.length }}</span>
+          <!-- round t_f81e845e: every column grows cards - the + opens
+               the full create form (title, body, assignee, priority);
+               the column the + sits in is the preset status -->
+          <button
+            class="icon-btn col-create-btn"
+            :title="`new card in ${BOARD_STATUSES[i]}`"
+            :aria-label="`new card in ${BOARD_STATUSES[i]}`"
+            @click.stop="toggleCreate(BOARD_STATUSES[i])">
+            +
+          </button>
           <button
             v-if="isSettled(BOARD_STATUSES[i])"
             class="icon-btn col-fold-btn"
@@ -69,21 +79,44 @@
           </button>
         </header>
 
+        <!-- the full create form (round t_f81e845e): open under exactly
+             one column at a time -->
         <form
-          v-if="i <= 1"
-          class="col-add"
-          :class="{ open: drafts[BOARD_STATUSES[i]].length > 0 }"
-          @submit.prevent="submitAdd(BOARD_STATUSES[i])">
+          v-if="createOpen === BOARD_STATUSES[i]"
+          class="col-create"
+          @submit.prevent="submitCreate"
+          @keydown.esc="closeCreate">
           <input
-            v-model="drafts[BOARD_STATUSES[i]]"
-            class="col-add-input"
-            :placeholder="`new task in ${BOARD_STATUSES[i]}`"
-            :aria-label="`new task in ${BOARD_STATUSES[i]}`" />
-          <button
-            class="col-add-btn"
-            :disabled="drafts[BOARD_STATUSES[i]].trim() === ''">
-            +
-          </button>
+            v-model="createTitle"
+            class="col-create-title"
+            placeholder="title"
+            aria-label="new card title" />
+          <textarea
+            v-model="createBody"
+            class="col-create-body"
+            placeholder="body (optional)"
+            aria-label="new card body" />
+          <input
+            v-model="createAssignee"
+            class="col-create-assignee"
+            placeholder="assignee (optional)"
+            aria-label="new card assignee" />
+          <BandSelect
+            class="col-create-prio"
+            :model-value="createPriority"
+            :options="priorityOptions()"
+            label="priority (higher = more urgent)"
+            @update:model-value="createPriority = $event" />
+          <div class="col-create-actions">
+            <button
+              class="col-add-btn"
+              type="submit"
+              :disabled="!createTitle.trim()">add</button>
+            <button
+              class="col-create-cancel"
+              type="button"
+              @click="closeCreate">cancel</button>
+          </div>
         </form>
 
         <div
@@ -97,7 +130,16 @@
             :class="{ dragging: isDragging(t.id) }"
             @click="onCardClick(t)"
             @pointerdown="onCardPointerDown($event, t)">
-            <div class="card-title">{{ t.title }}</div>
+            <div class="card-title-row">
+              <span
+                v-if="hasPriorityChip(t.priority)"
+                class="card-prio"
+                :class="`prio-${Math.min(t.priority, 3)}`">{{ priorityLabel(t.priority) }}</span>
+              <div class="card-title">{{ t.title }}</div>
+            </div>
+            <div
+              v-if="bodyPreview(t.body)"
+              class="card-preview">{{ bodyPreview(t.body) }}</div>
             <div class="card-meta">
               <span
                 v-if="t.assignee"
@@ -146,8 +188,11 @@
       v-if="selected"
       :task="selected"
       :comments="detailComments"
+      :events="detailEvents"
       @move="moveSelected"
+      @save="onDrawerSave"
       @comment="submitComment"
+      @delete="onDrawerDelete"
       @open-session="(id: string) => $emit('open-session', id)"
       @close="selected = null" />
   </section>
@@ -161,16 +206,22 @@
     DEFAULT_BOARD_NAME,
     age,
     boardDeletePath,
+    bodyPreview,
     canRemoveBoard,
     columns,
     fetchBoardsRetry,
+    hasPriorityChip,
     isNarrowWidth,
     isSettled,
     pickBootBoard,
+    priorityLabel,
+    priorityOptions,
     reorderAfter,
     step,
+    taskDeletePath,
     withBoard,
     type BoardComment,
+    type BoardEvent,
     type BoardInfo,
     type BoardTask,
   } from "./board/boardLogic";
@@ -372,23 +423,57 @@
     resizeObs = null;
   });
 
-  // --- add-task: triage and todo only (a board always has a spillway)
-  const drafts = reactive<Record<string, string>>({ triage: "", todo: "" });
+  // --- create form (round t_f81e845e): one column hosts it at a time,
+  // the host column is the preset status. Fields: title (required),
+  // body, assignee, priority (0..3, the board ladder).
+  const createOpen = ref<string | null>(null);
+  const createTitle = ref("");
+  const createBody = ref("");
+  const createAssignee = ref("");
+  const createPriority = ref(0);
 
-  async function submitAdd(status: string) {
-    const title = drafts[status].trim();
-    if (!title) return;
+  function toggleCreate(status: string) {
+    if (createOpen.value === status) {
+      closeCreate();
+      return;
+    }
+    createOpen.value = status;
+    createTitle.value = "";
+    createBody.value = "";
+    createAssignee.value = "";
+    createPriority.value = 0;
+    // focus the title once the form mounts (the ref array inside v-for
+    // is messy; the scoped query by data-status is straight)
+    requestAnimationFrame(() => {
+      boardEl.value
+        ?.querySelector<HTMLInputElement>(`.board-col[data-status="${status}"] .col-create-title`)
+        ?.focus();
+    });
+  }
+  function closeCreate() {
+    createOpen.value = null;
+  }
+  async function submitCreate() {
+    const title = createTitle.value.trim();
+    const status = createOpen.value;
+    if (!title || !status) return;
     try {
       const res = await fetch(withBoard("/tasks", boardName.value), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, status }),
+        body: JSON.stringify({
+          title,
+          body: createBody.value,
+          assignee: createAssignee.value.trim(),
+          priority: createPriority.value,
+          status,
+        }),
       });
       if (!res.ok) throw new Error(`POST /tasks: ${res.status}`);
-      drafts[status] = "";
+      closeCreate();
       await fetchBoard();
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e);
+      setNotice(e instanceof Error ? e.message : String(e), true);
     }
   }
 
@@ -542,10 +627,12 @@
   // --- detail drawer
   const selected = ref<BoardTask | null>(null);
   const detailComments = ref<BoardComment[]>([]);
+  const detailEvents = ref<BoardEvent[]>([]);
 
   function openDetail(t: BoardTask) {
     selected.value = { ...t, body: t.body };
     detailComments.value = [];
+    detailEvents.value = [];
     loadDetail(t.id);
   }
 
@@ -556,6 +643,7 @@
       const d = await res.json();
       selected.value = d.task;
       detailComments.value = d.comments ?? [];
+      detailEvents.value = d.events ?? [];
       // fold the fresh detail back into the board row - a move in the
       // drawer must not wait for the next poll to leave the column
       const i = tasks.value.findIndex((x) => x.id === id);
@@ -574,10 +662,55 @@
       const d = await res.json();
       selected.value = d.task;
       detailComments.value = d.comments ?? [];
+      detailEvents.value = d.events ?? [];
       const i = tasks.value.findIndex((x) => x.id === id);
       if (i >= 0) tasks.value[i] = d.task;
     } catch {
       // poll noise stays silent - the next poll retries
+    }
+  }
+
+  // --- in-place edits (round t_f81e845e): the drawer reports a patch
+  // (title/body/priority); the board PATCHes and refetches both views
+  async function onDrawerSave(patch: { title?: string; body?: string; priority?: number }) {
+    if (!selected.value) return;
+    const id = selected.value.id;
+    try {
+      const res = await fetch(withBoard(`/tasks/${encodeURIComponent(id)}`, boardName.value), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => `PATCH /tasks/${id}: ${res.status}`);
+        setNotice(detail, true);
+        return;
+      }
+      await fetchBoard();
+      await loadDetail(id);
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e), true);
+    }
+  }
+
+  // armed delete: the drawer confirmed; DELETE, drop the drawer, refetch
+  async function onDrawerDelete() {
+    if (!selected.value) return;
+    const id = selected.value.id;
+    try {
+      const res = await fetch(withBoard(taskDeletePath(id), boardName.value), {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => `DELETE /tasks/${id}: ${res.status}`);
+        setNotice(detail, true);
+        return;
+      }
+      setNotice(`card ${id} deleted`);
+      selected.value = null;
+      await fetchBoard();
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e), true);
     }
   }
 
@@ -730,20 +863,53 @@
     font-size: 11px;
     opacity: 0.4;
   }
-  .col-add {
+  .col-create-btn {
+    margin-left: auto;
+  }
+  .col-create {
     display: flex;
+    flex-direction: column;
     gap: 4px;
   }
-  .col-add-input {
-    flex: 1;
-    min-width: 0;
+  .col-create-title,
+  .col-create-body,
+  .col-create-assignee {
     font: inherit;
     font-size: 12px;
     color: inherit;
     background: color-mix(in srgb, currentcolor 6%, transparent);
-    border: 1px dashed color-mix(in srgb, currentcolor 18%, transparent);
+    border: 1px solid color-mix(in srgb, currentcolor 18%, transparent);
     border-radius: var(--r-card);
     padding: 5px 8px;
+  }
+  .col-create-body {
+    min-height: 40px;
+    resize: vertical;
+  }
+  .col-create-actions {
+    display: flex;
+    gap: 4px;
+  }
+  .col-create-actions {
+    align-items: center;
+  }
+  .col-create-cancel {
+    font: inherit;
+    font-size: 11px;
+    color: inherit;
+    cursor: pointer;
+    border: 1px solid color-mix(in srgb, currentcolor 18%, transparent);
+    border-radius: var(--r-chip);
+    background: none;
+    padding: 4px 8px;
+  }
+  .col-create-prio {
+    flex: none;
+  }
+  .col-create-prio :deep(.model-chip) {
+    background: transparent;
+    font-size: 11.5px;
+    padding: 2px 6px;
   }
   .col-add-btn {
     border: 1px solid color-mix(in srgb, currentcolor 18%, transparent);
@@ -788,6 +954,40 @@
   .card.dragging {
     opacity: 0.35;
     cursor: grabbing;
+  }
+  .card-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+  }
+  /* priority chip: heat rises with the level (0 stays silent entirely) */
+  .card-prio {
+    flex: none;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    border-radius: var(--r-chip);
+    padding: 1px 5px;
+    border: 1px solid color-mix(in srgb, currentcolor 25%, transparent);
+  }
+  .card-prio.prio-1 {
+    opacity: 0.75;
+  }
+  .card-prio.prio-2 {
+    background: color-mix(in srgb, currentcolor 12%, transparent);
+  }
+  .card-prio.prio-3 {
+    background: color-mix(in srgb, currentcolor 18%, transparent);
+    border-color: color-mix(in srgb, currentcolor 40%, transparent);
+  }
+  .card-preview {
+    font-size: 11px;
+    line-height: 1.3;
+    opacity: 0.55;
+    max-height: 2.6em;
+    overflow: hidden;
+    overflow-wrap: anywhere;
   }
   .card-title {
     font-size: 12px;
@@ -839,6 +1039,9 @@
   }
   .board.narrow .card {
     padding: 6px 8px;
+  }
+  .board.narrow .col-create-body {
+    min-height: 32px;
   }
   /* the drawer overlays the visible column, not the scrollable content */
   .board.narrow :deep(.drawer) {
