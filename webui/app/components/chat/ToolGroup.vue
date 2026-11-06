@@ -55,7 +55,8 @@
   import Icon from "../ui/Icon.vue";
   import ToolCallLine from "./ToolCallLine.vue";
   import type { PendingVerdictCard, ToolItem } from "../../composables/omega";
-  import { toolGroupWantOpen, useToolDisplay } from "../../composables/toolDisplay";
+  import { toolGroupWantOpen } from "../../composables/toolGroup";
+  import { useToolDisplay } from "../../composables/toolDisplay";
 
   const props = defineProps<{
     // the grouped consecutive tool rows (groupToolRuns) - the result

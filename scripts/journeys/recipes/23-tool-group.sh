@@ -57,7 +57,8 @@ TRFILE="${JOURNEY_WORKTMP:?no journey worktmp}/transcript-$SID.json"
 curl -s "$JOURNEY_BASE_URL/sessions/$SID/transcript" > "$TRFILE"
 RUNLEN=$(python - "$TRFILE" <<'PYEOF'
 import json, sys
-items = json.load(open(sys.argv[1], encoding="utf-8"))
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+items = data.get("items") if isinstance(data, dict) else data
 if not isinstance(items, list):
     print("NOITEMS")
 else:
