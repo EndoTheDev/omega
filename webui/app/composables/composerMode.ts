@@ -1,7 +1,9 @@
-// omega webui: the chat composer's DISPLAY MODE (card t_5752861e).
-// Three modes: "compact" - the current single-line grow shape (the card's
-// 12px side inset); "wide" - wider composer bounds (the side inset
-// tightens to 4px); "full" - full-width, edge to edge with no inset.
+// omega webui: the chat composer's DISPLAY MODE (card t_5752861e,
+// reshape t_f9fd3820 - the width ladder was the wrong shape).
+// Three modes: "wide" - the pre-modes default, the unmodified .composer
+// (full-width card, 12px side inset, no class); "compact" - ONE single
+// row (plus, input, chips, send inline) centered in the pane with a
+// 720px cap; "full" - edge to edge, no cap, no inset, no radius.
 // "compact" is the default. Persisted in localStorage under
 // omega.composer-mode (last choice wins; garbage restores the default -
 // the parseAppearance/bottomWidth tolerance). Global for v1 - the card

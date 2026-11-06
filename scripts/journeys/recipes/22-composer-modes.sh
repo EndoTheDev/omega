@@ -1,13 +1,16 @@
 #!/bin/bash
-# 22-composer-modes - the composer display modes (card t_5752861e, width
-# ladder t_4a6431f8): the settings' "composer display mode" select flips
-# the chat composer's footprint, live in the pane. The modes must be
-# visibly distinct, so each owns an upper WIDTH bound, not just a side
-# inset (inset-only deltas read as the same shape - the bug):
+# 22-composer-modes - the composer display modes (card t_5752861e, reshape
+# t_f9fd3820 - the width ladder t_4a6431f8 was the wrong shape and is
+# superseded). The settings' "composer display mode" select flips the chat
+# composer's footprint, live in the pane:
 #
-#   compact (default) -> the narrow reading card (12px side inset, 720px cap)
-#   wide              -> mode-wide, the cap lifts to 1100px (inset 4px)
-#   full              -> mode-full, no cap - edge to edge (inset 0, no radius)
+#   compact (default) -> mode-compact: ONE single row (plus-btn, input,
+#                        chips, send all inline, nowrap) AND centered in
+#                        the pane (auto margins; the 720px cap is the
+#                        centered card's width)
+#   wide              -> the pre-modes DEFAULT: the unmodified .composer
+#                        (full-width card, 12px inset, no cap, no class)
+#   full              -> mode-full, edge to edge (no cap, inset 0, no radius)
 #
 # The pick is a browser preference: localStorage omega.composer-mode
 # survives a reload; the recipe restores compact at the end.
@@ -75,24 +78,35 @@ if ! poll_js '(()=>{return !!document.querySelector(".setting-select .model-chip
 fi
 step "ok: the composer display mode knob renders"
 
-# --- 1. default = compact: no mode class, the narrow reading card ------
+# --- 1. default = compact: ONE line, centered, the 720px cap -----------
 mode_cls=$(panejs '[...p.querySelector(".composer").classList].filter(c=>c.startsWith("mode-")).join(",")')
-assert_eq "$mode_cls" "" "compact default carries no mode class"
-mleft=$(panejs 'getComputedStyle(p.querySelector(".composer")).marginLeft')
-assert_eq "$mleft" "12px" "compact default keeps the card side inset"
+assert_eq "$mode_cls" "mode-compact" "compact default carries the mode-compact class"
 mcap=$(panejs 'getComputedStyle(p.querySelector(".composer")).maxWidth')
-assert_eq "$mcap" "720px" "compact default pins the 720px width cap"
+assert_eq "$mcap" "720px" "compact pins the centered card's 720px width cap"
+mleft=$(panejs 'getComputedStyle(p.querySelector(".composer")).marginLeft')
+mright=$(panejs 'getComputedStyle(p.querySelector(".composer")).marginRight')
+assert_eq "$mleft" "$mright" "compact centers in the pane (equal resolved side margins)"
+assert_eq "1" "$(awk "BEGIN{print ($mleft > 0) ? 1 : 0}")" \
+  "compact is really inset from the pane edges (auto margins resolved to ${mleft}px)"
+flexdir=$(panejs 'getComputedStyle(p.querySelector(".composer")).flexDirection')
+assert_eq "$flexdir" "row" "compact flips the composer to ONE horizontal row"
+ch=$(panejs 'p.querySelector(".composer").clientHeight')
+assert_eq "1" "$(awk "BEGIN{print ($ch > 0 && $ch < 56) ? 1 : 0}")" \
+  "compact is one line tall (${ch}px - anything wrapped would exceed 56px)"
 wc=$(panejs 'p.querySelector(".composer").getBoundingClientRect().width')
-step "ok: compact is the default shape (12px inset, 720px cap)"
+step "ok: compact is the default shape (one line ${ch}px tall, centered, 720px cap)"
 
-# --- 2. wide: mode-wide, the cap lifts to 1100px ------------------------
+# --- 2. wide: NO class, the pre-modes default (full-width, 12px inset) --
 pick_mode wide
-scoped_wait 'p.querySelector(".composer").classList.contains("mode-wide")' 10
+scoped_wait '![...p.querySelector(".composer").classList].some(c=>c.startsWith("mode-"))' 10
 mleft=$(panejs 'getComputedStyle(p.querySelector(".composer")).marginLeft')
-assert_eq "$mleft" "4px" "wide tightens the side inset"
+assert_eq "$mleft" "12px" "wide keeps the pre-modes 12px side inset"
 mcap=$(panejs 'getComputedStyle(p.querySelector(".composer")).maxWidth')
-assert_eq "$mcap" "1100px" "wide lifts the width cap to 1100px"
-step "ok: wide applies (cap 720px -> 1100px, inset 12px -> 4px)"
+assert_eq "$mcap" "none" "wide lifts the width cap entirely (the base shape)"
+ww=$(panejs 'p.querySelector(".composer").getBoundingClientRect().width')
+assert_eq "1" "$(awk "BEGIN{print ($wc < $ww) ? 1 : 0}")" \
+  "wide widens for real (compact ${wc}px < wide ${ww}px)"
+step "ok: wide applies (no class, no cap, 12px inset; compact < wide proven)"
 
 # --- 3. full: mode-full, no cap, edge to edge (0 inset, no radius) ------
 pick_mode full
@@ -104,10 +118,9 @@ assert_eq "$mcap" "none" "full lifts the width cap entirely"
 radius=$(panejs 'getComputedStyle(p.querySelector(".composer")).borderRadius')
 assert_eq "$radius" "0px" "full drops the corner radius"
 wf=$(panejs 'p.querySelector(".composer").getBoundingClientRect().width')
-# the ladder law itself: the modes must be VISIBLY distinct widths
-assert_eq "1" "$(awk "BEGIN{print ($wc < $wf) ? 1 : 0}")" \
-  "the ladder widens for real (compact ${wc}px < full ${wf}px)"
-step "ok: full applies (no cap, edge to edge; compact < full proven)"
+assert_eq "1" "$(awk "BEGIN{print ($ww < $wf) ? 1 : 0}")" \
+  "full widens for real (wide ${ww}px < full ${wf}px)"
+step "ok: full applies (no cap, edge to edge)"
 
 # --- 4. the pick is a browser preference: it survives a reload ----------
 persisted=$(jsq 'localStorage.getItem("omega.composer-mode") || ""' 2>&1 | tr -d '"')
@@ -124,13 +137,16 @@ if ! poll_js '(()=>{return !!document.querySelector(".setting-select .model-chip
   die "the composer display mode knob never re-rendered for the restore"
 fi
 pick_mode compact
-scoped_wait '![...p.querySelector(".composer").classList].some(c=>c.startsWith("mode-"))' 15
-mleft=$(panejs 'getComputedStyle(p.querySelector(".composer")).marginLeft')
-assert_eq "$mleft" "12px" "compact restores the card inset"
+scoped_wait 'p.querySelector(".composer").classList.contains("mode-compact")' 15
+flexdir=$(panejs 'getComputedStyle(p.querySelector(".composer")).flexDirection')
+assert_eq "$flexdir" "row" "compact restores the single-line row shape"
+ch=$(panejs 'p.querySelector(".composer").clientHeight')
+assert_eq "1" "$(awk "BEGIN{print ($ch > 0 && $ch < 56) ? 1 : 0}")" \
+  "compact restores one-line height (${ch}px)"
 persisted=$(jsq 'localStorage.getItem("omega.composer-mode") || ""' 2>&1 | tr -d '"')
 assert_eq "$persisted" "compact" "compact restored in localStorage too"
 
 assert_no_console_errors
 
 cleanup_journey_sessions
-step "GREEN: the composer mode law holds (compact default, wide, full, persistence)"
+step "GREEN: the composer mode law holds (compact default one-line+centered, wide pre-modes default, full, persistence)"

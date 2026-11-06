@@ -1920,9 +1920,8 @@ labels stopped short of the right edge. */
 /* ---- composer: floating card inside the chat pane ---- */
 .composer {
   position: relative; /* anchor for the expand button and the palette */
-  margin: 0 12px 12px;
-  max-width: 720px; /* the COMPACT mode's width cap: the base shape is the
-     narrow reading card - the display-mode ladder widens it (t_4a6431f8) */
+  margin: 0 12px 12px; /* pre-modes geometry: full-width card (wide is the
+     unmodified base shape - the modifiers are mode-compact/mode-full) */
   background: var(--z1-raised);
   border: 1px solid var(--stroke);
   border-radius: var(--r-card);
@@ -2013,15 +2012,25 @@ labels stopped short of the right edge. */
 .expand-btn:hover { color: var(--text); border-color: var(--text-dim); }
 .composer:focus-within { border-color: rgba(232, 131, 58, 0.55); }
 
-/* the composer's display modes (card t_5752861e, the width ladder
-   t_4a6431f8): the modes must be VISIBLY distinct, so each mode owns an
-   upper bound too, not just a side inset - compact is the base shape
-   above (12px inset, 720px cap), wide lifts the cap, full drops it and
-   goes edge to edge. The fullscreen (.expanded) card geometry is pinned
-   by its own ruling, so the modes hold only when NOT expanded. */
-.composer.mode-wide:not(.expanded) {
-  max-width: 1100px; /* the cap lifts toward the pane's full width */
-  margin: 0 4px 12px; /* the side inset tightens */
+/* the composer's display modes (card t_5752861e, reshape t_f9fd3820):
+   wide is the DEFAULT shape above (pre-modes: full-width card, no cap,
+   12px inset, no class) - compact and full are the modifiers, holding
+   only when NOT expanded (the fullscreen .expanded card is pinned by
+   its own t_08ef793b ruling and ignores the modes). */
+.composer.mode-compact:not(.expanded) {
+  /* ONE row: plus-btn, input, chips, send all inline - the composer
+     flips to a horizontal flex, everything vertically centered */
+  flex-direction: row;
+  align-items: center;
+  /* the centered reading card: capped, auto margins center it in the pane */
+  max-width: 720px;
+  margin: 0 auto 12px;
+}
+.composer.mode-compact:not(.expanded) .composer-row {
+  flex: 1; /* the row eats the leftover width; the input shrinks inside it */
+}
+.composer.mode-compact:not(.expanded) .toolbar {
+  flex-wrap: nowrap; /* the single-line law: chips never wrap to row two */
 }
 .composer.mode-full:not(.expanded) {
   max-width: none; /* no cap: edge to edge */
@@ -2037,7 +2046,7 @@ labels stopped short of the right edge. */
    right) pins to the card's bottom edge with the compact padding rhythm. */
 .composer.expanded {
   flex-grow: 1000; /* outgrow .messages (flex 1) almost entirely */
-  max-width: none; /* the fullscreen card ignores the mode ladder's cap */
+  max-width: none; /* the fullscreen card ignores the mode caps */
   margin: 12px; /* card geometry: inset on all four sides, kept radius */
 }
 /* the focus ring is a compact-composer affordance: fullscreen keeps the
