@@ -18,6 +18,12 @@ fresh_open() { ab open "about:blank" >/dev/null 2>&1; open_app; }
 # the outer quote pair, unescape the inner ones.
 deq() { sed -e 's/^"//' -e 's/"$//' -e 's/\\"/"/g'; }
 
+# jstr: shell value -> a JS string literal (every backslash doubled,
+# every quote escaped). Windows drive paths carry backslashes; a raw
+# interpolation would eat them ("\U" becomes U, "\t" a tab) inside the
+# double-quoted JS comparators. Same escaping a JSON body needs.
+jstr() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+
 # row_model / row_workspace: wire truth from the /sessions row.
 row_field() {
   curl -s "$JOURNEY_BASE_URL/sessions" | python3 -c "
@@ -76,26 +82,105 @@ restored=$(jsq 'document.querySelector(".model-select:not(.thinking-select) .mod
 assert_eq "$restored" "$target" "pinned model restored on reopen"
 
 # --- the workspace chip writes the row ------------------------------
-jsq 'document.querySelector(".ws-btn")?.click()' >/dev/null 2>&1
-wait_js '!!document.querySelector(".ws-pop .ws-dirs .ws-dir")' 10
-# browse: "/" -> home (a non-hidden dir that exists on every linux
-# box), then apply the listed path - the crumb names current.path
-jsq '(()=>{const b = Array.from(document.querySelectorAll(".ws-pop .ws-dir")).find(x => (x.textContent || "").includes("home")); if (!b) return 0; b.click(); return 1;})()' >/dev/null 2>&1
-wait_js '(()=>{const c = document.querySelector(".ws-pop .ws-crumb"); return !!c && c.getAttribute("title") === "/home";})()' 10
-jsq 'document.querySelector(".ws-pop .ws-apply")?.click()' >/dev/null 2>&1
-ws=0
+# t_ca699ff3: the pin target is derived from the LANE over the wire,
+# never hardcoded - a non-Linux lane's home is a different shape, and
+# its root listing is a drive root where no "home" row exists. The
+# probe mirrors what the popover itself does (the root /workspaces/
+# browse listing) and prefers the dir named "home" when the lane root
+# has one (every Linux box: the pinned value stays what this journey
+# always asserted, byte-identical), else the first root row the browse
+# endpoint actually serves. Fallback: a lane whose root rows are all
+# refused by the browse validator - the write strand rides the wire
+# (the same lane-capability precedent as the one-model strand above),
+# seeded from the server.default_workspace knob; the restore and clear
+# strands below stay fully UI-driven. RESOLVED is the listing's own
+# path shape - the same symlink-resolved spelling the PATCH stores.
+WSPICK=$(JOURNEY_BASE_URL="$JOURNEY_BASE_URL" python3 -c '
+import json, os, sys, urllib.parse, urllib.request
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+root_url = os.environ["JOURNEY_BASE_URL"].rstrip("/")
+base = root_url + "/workspaces/browse"
+def browse(p):
+    url = base if p is None else base + "?" + urllib.parse.urlencode({"path": p})
+    return json.load(opener.open(url, timeout=10))
+dirs = browse(None).get("dirs", [])
+target = resolved = ""
+def try_row(row):
+    global target, resolved
+    try:
+        resolved = browse(row["path"])["path"]
+        target = row["path"]
+        return True
+    except Exception:
+        return False
+strand = ""
+pref = [d for d in dirs if d["name"] == "home"]
+for row in pref + dirs:
+    if try_row(row):
+        strand = "ui"
+        break
+if strand != "ui":
+    target = resolved = ""
+    try:
+        settings = json.load(opener.open(root_url + "/settings", timeout=10))
+        knob = ""
+        for g in settings.get("groups", []):
+            for k in g.get("knobs", []):
+                if k.get("key") == "server.default_workspace":
+                    knob = k.get("value") or ""
+        if knob:
+            resolved = browse(knob)["path"]
+            strand = "wire"
+    except Exception:
+        pass
+if strand != "ui" and strand != "wire":
+    strand = "none"
+sys.stdout.reconfigure(newline="\n")
+print(strand + "\t" + target + "\t" + resolved)
+') || die "workspace lane probe crashed"
+STRAND=$(printf '%s' "$WSPICK" | cut -f1)
+TARGET=$(printf '%s' "$WSPICK" | cut -f2)
+RESOLVED=$(printf '%s' "$WSPICK" | cut -f3)
+if [ "$STRAND" != "ui" ] && [ "$STRAND" != "wire" ]; then
+  die "lane offers no browsable workspace pin (no usable root row, default_workspace unset)"
+fi
+
+if [ "$STRAND" = "ui" ]; then
+  jsq 'document.querySelector(".ws-btn")?.click()' >/dev/null 2>&1
+  wait_js '!!document.querySelector(".ws-pop .ws-dirs .ws-dir")' 10 \
+    || die "workspace popover did not render the lane root listing"
+  clicked=$(jsq "(()=>{const t = \"$(jstr "$TARGET")\"; const b = Array.from(document.querySelectorAll(\".ws-pop .ws-dir\")).find(x => (x.getAttribute(\"title\") || \"\") === t); if (!b) return 0; b.click(); return 1;})()" 2>&1 | tail -1 | deq)
+  assert_eq "$clicked" "1" "popover rendered the lane-derived workspace dir"
+  # descend into it: the crumb carries the RESOLVED dir path (the same
+  # wire shape the listing serves and the PATCH stores)
+  wait_js "(()=>{const c = document.querySelector(\".ws-pop .ws-crumb\"); return !!c && c.getAttribute(\"title\") === \"$(jstr "$RESOLVED")\";})()" 10 \
+    || die "workspace popover never landed on the lane-derived dir"
+  jsq 'document.querySelector(".ws-pop .ws-apply")?.click()' >/dev/null 2>&1
+  step "workspace pin rides the popover browse"
+else
+  step "lane root rows are not browsable - write strand rides the wire, restore+clear stay UI"
+  curl -s -X PATCH "$JOURNEY_BASE_URL/sessions/$JRN_ID" \
+    -H 'Content-Type: application/json' \
+    -d "{\"workspace\": \"$(jstr "$RESOLVED")\"}" >/dev/null
+fi
+
+ws=""
 for i in 1 2 3 4 5 6 7 8 9 10; do
   ws=$(row_field "$JRN_ID" workspace)
-  [ -n "$ws" ] && break
+  [ "$ws" = "$RESOLVED" ] && break
   sleep 1
 done
-assert_eq "$ws" "/home" "workspace chip wrote the session row"
+assert_eq "$ws" "$RESOLVED" "workspace chip wrote the session row"
 
 # --- reload: the folder restores ------------------------------------
+# the chip name is the product's baseName shape (the last /-segment);
+# compared inside js - the deq house sed does not unescape doubled
+# backslashes, a windows-drive chip value would read back mangled.
 fresh_open
 open_journey_row "$LABEL"
-ws_set=$(jsq 'document.querySelector(".ws-btn .chip-name:not(.ws-unset)")?.textContent ?? ""' 2>&1 | tail -1 | deq)
-assert_eq "$ws_set" "home" "pinned workspace restored on reopen"
+ws_base=${RESOLVED##*/}
+ws_ok=$(jsq "(()=>{const t = document.querySelector(\".ws-btn .chip-name:not(.ws-unset)\")?.textContent ?? \"\"; return t === \"$(jstr "$ws_base")\";})()" 2>&1 | tail -1)
+assert_eq "$ws_ok" "true" "pinned workspace restored on reopen"
 
 # --- clear: the chip drops the pin ----------------------------------
 jsq 'document.querySelector(".ws-btn")?.click()' >/dev/null 2>&1
