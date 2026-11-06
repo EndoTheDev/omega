@@ -1,8 +1,8 @@
 <template>
   <details
-    class="thinking"
-    :open="streaming">
-    <summary>
+    ref="el"
+    class="thinking">
+    <summary @click="onSummaryClick">
       <!-- card t_502b8e81: the thinking block wears its iconset glyph -->
       <Icon
         name="brain"
@@ -30,17 +30,22 @@
 </template>
 
 <script setup lang="ts">
+  import { nextTick, onMounted, ref, watch } from "vue";
   import { useElapsed } from "../../composables/useElapsed";
   // card t_502b8e81: the iconset wrapper - brain on the thinking block
   import Icon from "../ui/Icon.vue";
+  // card t_428ed4fb: the thinking display knob (auto | expanded |
+  // collapsed) - the block's own auto state machine rides the shared
+  // mode like the tool rows' (card t_868633b3)
+  import { thinkingWantOpen, useThinkingDisplay } from "../../composables/thinkingDisplay";
   import VariantSwitcher from "./VariantSwitcher.vue";
   import type { VariantBlock } from "../../composables/omega";
 
-  // Auto-expand while streaming, collapse when the answer starts: the :open
-  // binding tracks `streaming` — true keeps the block open (reasoning visible),
-  // false removes the attribute and the details element folds shut.
   const props = defineProps<{
     content: string;
+    // the run's reasoning is being streamed - drives the live "…"
+    // marker and the elapsed meter (NOT the open state; auto stays
+    // collapsed while streaming, per card t_428ed4fb)
     streaming?: boolean;
     // server-measured duration from restored history - wins over the
     // live meter (restored items mount final and never start one)
@@ -61,4 +66,34 @@
     () => props.finalMs,
     () => props.streaming ?? false,
   );
+
+  // --- auto open/close (card t_428ed4fb, same shape as the tool rows)
+  // The display knob decides what a block does on its own: auto and
+  // collapsed keep the body shut (the one-line summary is all you get),
+  // expanded forces it open. A manual summary click PINS the block -
+  // its open state is the user's, and mode flips recompute around it,
+  // never over it. The details element stays uncontrolled (no :open
+  // binding): the browser owns the toggle, this side applies the mode
+  // on mount and on mode change only.
+  const el = ref<HTMLDetailsElement | null>(null);
+  const display = useThinkingDisplay();
+  const pinned = ref<boolean | null>(null);
+
+  function applyAuto() {
+    if (pinned.value !== null || !el.value) return;
+    el.value.open = thinkingWantOpen(display.value);
+  }
+
+  // nextTick: the mode flip may ride a render pass with other updates -
+  // apply after the DOM settles.
+  watch(display, () => void nextTick(applyAuto));
+  onMounted(applyAuto);
+
+  // Click fires BEFORE the browser's toggle default action, so !open is
+  // the state the click is about to produce - pin that, and auto
+  // never touches this block again this session.
+  function onSummaryClick() {
+    if (!el.value) return;
+    pinned.value = !el.value.open;
+  }
 </script>

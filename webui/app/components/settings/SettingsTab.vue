@@ -196,6 +196,7 @@
   import ModelField from "./ModelField.vue";
   import { useNarrow } from "~/composables/narrow";
   import type { ToolDisplay } from "~/composables/toolDisplay";
+  import type { ThinkingDisplay } from "~/composables/thinkingDisplay";
   // card t_502b8e81: the iconset wrapper - the group collapser chevron
   import Icon from "../ui/Icon.vue";
   import WorkspaceSelect from "../chat/WorkspaceSelect.vue";
@@ -214,6 +215,7 @@
     showThinking: boolean;
     appearance: Appearance;
     toolDisplay: ToolDisplay;
+    thinkingDisplay: ThinkingDisplay;
     colorMode: ColorMode;
     themeId: string;
     userThemes: UserTheme[];
@@ -232,6 +234,7 @@
     (e: "update:showThinking", value: boolean): void;
     (e: "update:appearance", value: Appearance): void;
     (e: "update:toolDisplay", value: ToolDisplay): void;
+    (e: "update:thinkingDisplay", value: ThinkingDisplay): void;
     (e: "set-color-mode", mode: ColorMode): void;
     (e: "set-theme", id: string): void;
   }>();
@@ -362,6 +365,16 @@
           "auto expands tool rows while a call runs and collapses them " +
           "once it settles; a manual toggle pins a row; expanded/collapsed force one state",
       },
+      {
+        key: "chat.thinking_display",
+        label: "thinking display",
+        type: "select",
+        value: props.thinkingDisplay,
+        options: ["auto", "expanded", "collapsed"],
+        help:
+          "auto keeps thinking blocks collapsed behind their one-line " +
+          "summary and a manual click pins one open; expanded/collapsed force one state",
+      },
     ],
   }));
 
@@ -457,6 +470,7 @@
     if (knob.key === "chat.show_thinking") return props.showThinking;
     if (knob.key === "chat.appearance") return props.appearance;
     if (knob.key === "chat.tool_display") return props.toolDisplay;
+    if (knob.key === "chat.thinking_display") return props.thinkingDisplay;
     if (knob.key === "dock.bottom_width") return bottomWidthMode.value;
     if (knob.key === "chat.color_mode") return props.colorMode;
     return props.themeId;
@@ -510,6 +524,8 @@
         emit("update:appearance", value as Appearance);
       else if (knob.key === "chat.tool_display")
         emit("update:toolDisplay", value as ToolDisplay);
+      else if (knob.key === "chat.thinking_display")
+        emit("update:thinkingDisplay", value as ThinkingDisplay);
       else if (knob.key === "dock.bottom_width")
         setBottomWidthMode(value === "full" ? "full" : "aligned");
       return;
