@@ -109,9 +109,21 @@ def seed_shared(names, files):
                 m = re.match(r"^\s*([A-Za-z_]\w*)\s+\*?([A-Za-z_][\w\.]*)\s*(\x60[^\x60]*\x60)?\s*$", line)
                 if m and name in m.group(2).lower() and m.group(2).lower().endswith("config"):
                     SharedFields[name].add(m.group(1))
+                # composite-typed aggregate fields (t_4a1ed765): the
+                # map/slice/array/star shapes (`Providers
+                # map[string]ProviderConfig`) are the same vocabulary
+                # class as the direct field - the type's NAME carries
+                # the module noun, so the aggregate field dies with the
+                # capsule. Peel the wrapper prefix and apply the same
+                # predicate to the final type identifier.
+                m = re.match(r"^\s*([A-Za-z_]\w*)\s+((?:map\[[^\]]*\]|\[[^\]\[]*\]|\*)+)\s*([A-Za-z_][\w\.]*)\s*(\x60[^\x60]*\x60)?\s*$", line)
+                if m and name in m.group(3).lower() and m.group(3).lower().endswith("config"):
+                    SharedFields[name].add(m.group(1))
 
-def scrub(text, modules):
-    """modules: list of module names. Returns scrubbed text."""
+def scrub(text, modules, carried=None):
+    """modules: list of module names. carried: func names a prior
+    scrub pass deleted in ANOTHER file. Returns (text, removed):
+    the scrubbed text and the func names deleted whole here."""
     mnames = [m for m in modules]
     lines = text.split("\n")
     dead_ids = set()
@@ -123,6 +135,8 @@ def scrub(text, modules):
         dead_ids.add(name)
         dead_ids.update(SharedTypes.get(name, ()))
         dead_fields.update(SharedFields.get(name, ()))
+    if carried:
+        dead_ids.update(carried)
 
     # 1. import lines + alias discovery (file-level)
     keep = []
@@ -150,20 +164,25 @@ def scrub(text, modules):
 
     # 2. split into top-level declaration chunks
     decl = re.compile(r"^(func|type|var|const)\b|^\}", re.M)
-    chunks = []
-    cur = []
-    depth = 0
-    for ln in keep:
-        cur.append(ln)
-        depth += ln.count("{") - ln.count("}")
-        if depth <= 0 and cur and (ln.strip() == "}" or ln.strip() == "()"):
+
+    def split_chunks(lines):
+        chunks = []
+        cur = []
+        depth = 0
+        for ln in lines:
+            cur.append(ln)
+            depth += ln.count("{") - ln.count("}")
+            if depth <= 0 and cur and (ln.strip() == "}" or ln.strip() == "()"):
+                chunks.append(cur)
+                cur = []
+            if depth <= 0 and ln.strip() == ")":
+                chunks.append(cur)
+                cur = []
+        if cur:
             chunks.append(cur)
-            cur = []
-        if depth <= 0 and ln.strip() == ")":
-            chunks.append(cur)
-            cur = []
-    if cur:
-        chunks.append(cur)
+        return chunks
+
+    chunks = split_chunks(keep)
 
     keywords = {"true", "false", "nil", "if", "else", "for", "range",
                 "return", "switch", "case", "default", "break", "continue",
@@ -229,6 +248,14 @@ def scrub(text, modules):
         if m and m.group(2) in dead_ids and m.group(1) not in keywords:
             dead_fields.add(m.group(1))
             return True
+        # the composite shape of the same class (t_4a1ed765): `Providers
+        # map[string]ProviderConfig` - a wrapper (map key type, slice or
+        # array mark, star) sits between the field name and the dead
+        # type's identifier
+        m = re.match(r"^\s*([A-Za-z_]\w*)\s+((?:map\[[^\]]*\]|\[[^\]\[]*\]|\*)+)\s*([A-Za-z_]\w*)\s*(//.*)?$", body)
+        if m and m.group(3) in dead_ids and m.group(1) not in keywords:
+            dead_fields.add(m.group(1))
+            return True
         # a composite-literal key typed by a dead host-config type
         # (`Kanban: KanbanConfig{` in DefaultConfig): dies with its
         # braces - the wire-headed block rule below eats the literal
@@ -236,6 +263,22 @@ def scrub(text, modules):
         if m and m.group(2) in dead_ids:
             dead_fields.add(m.group(1))
             return True
+        # a VALUE use of a dead identifier (t_4a1ed765): the type
+        # constructor `inst := ProviderConfig{}`, the make() type arg
+        # `make(map[string]ProviderConfig, n)`, the call of a dead
+        # function. Member access is the rules above; a dot-adjacent
+        # token is another identifier's member (cfg.Providers, pkg.X)
+        # and reads as the qualifier's wire, never this token's value.
+        # Comments are prose (mark_word already used them to MARK this
+        # chunk) and must not re-kill live lines here.
+        code = re.sub(r"//[^\n]*", "", body)
+        for ident in sorted(dead_ids):
+            for mt in re.finditer(r"\b" + re.escape(ident) + r"\b", code):
+                if mt.start() > 0 and code[mt.start() - 1] == ".":
+                    continue
+                if mt.end() < len(code) and code[mt.end()] == ".":
+                    continue
+                return True
         return False
 
     # mark_word: chunk GUARD matcher. Unlike dead_word it reads quoted
@@ -257,9 +300,10 @@ def scrub(text, modules):
         return None
 
     def scrub_chunk(chunk):
+        removed = set()
         # a chunk untouched by the module keeps every line
         if not any(dead_word(ln) or mark_word(ln) for ln in chunk):
-            return chunk
+            return chunk, removed
         # a host-config type named for the module dies whole: struct,
         # doc comment and all. The decl may share its chunk with
         # whatever comes before it - the first type in a file sits in
@@ -281,6 +325,7 @@ def scrub(text, modules):
                     e += 1
                 chunk = chunk[:s] + chunk[e + 1:]
                 break
+        start_len = len(chunk)
         for _ in range(15):
             n = len(chunk)
             kill = set()
@@ -288,7 +333,13 @@ def scrub(text, modules):
             while i < n:
                 ln = chunk[i]
                 if is_wire_line(ln):
-                    collect_anchors(ln)
+                    # control-flow heads are NOT anchor sources: a head
+                    # that dies with its block takes its := names' whole
+                    # scope with it, and an outer binding may shadow the
+                    # name (the range var "n" vs a sibling func's param,
+                    # t_4a1ed765) - anchoring it kills live lines.
+                    if not re.match(r"^\s*(if|for|switch)\b", ln):
+                        collect_anchors(ln)
                     delta = ln.count("{") - ln.count("}")
                     if ln.rstrip().endswith("{"):
                         # a wire-headed conditional dies WITH its block:
@@ -451,7 +502,7 @@ def scrub(text, modules):
             for idx, ln in enumerate(chunk):
                 if ":=" not in ln:
                     continue
-                m = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_,\s]*?)\s*:=\s*([^;{}]*)$", ln)
+                m = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_,\s]*?)\s*:=\s*([^;{}]*)(\{)?$", ln)
                 if not m:
                     continue
                 names = [n.strip() for n in m.group(1).split(",") if n.strip()]
@@ -464,8 +515,20 @@ def scrub(text, modules):
                     continue
                 head = bool(re.match(r"^\s*(if|for|switch)\b", ln))
                 if not head and len(unused) == len(names):
-                    # every name unread: the whole declaration dies
-                    chunk = chunk[:idx] + chunk[idx + 1:]
+                    # every name unread: the whole declaration dies. A
+                    # multi-line RHS (a map/slice literal head ending in
+                    # "{") dies WITH its balanced block - killing the
+                    # head line alone strands the literal body below
+                    # (providerTypes in Validate, t_4a1ed765).
+                    if ln.rstrip().endswith("{"):
+                        d5 = ln.count("{") - ln.count("}")
+                        e5 = idx
+                        while d5 > 0 and e5 + 1 < len(chunk):
+                            e5 += 1
+                            d5 += chunk[e5].count("{") - chunk[e5].count("}")
+                        chunk = chunk[:idx] + chunk[e5 + 1:]
+                    else:
+                        chunk = chunk[:idx] + chunk[idx + 1:]
                     changed = True
                     break
                 lhs = ", ".join("_" if n in unused else n for n in names)
@@ -483,26 +546,94 @@ def scrub(text, modules):
                 break
             if not changed:
                 break
-        return chunk
+        # a func whose body emptied in the cascade dies whole: a
+        # nil-bodied func with a non-error return refuses to compile
+        # ("missing return"), so its callers must follow. The name
+        # joins the dead vocabulary and scrub() re-runs the file so
+        # EARLIER chunks (the call sites) see it. Only a chunk that
+        # actually deleted something fires this rule - an always-empty
+        # live stub keeps its lines.
+        if len(chunk) != start_len:
+            scan = 0
+            while scan < len(chunk):
+                ln2 = chunk[scan]
+                if not re.match(r"^\s*func\b", ln2) or not ln2.rstrip().endswith("{"):
+                    scan += 1
+                    continue
+                d6 = ln2.count("{") - ln2.count("}")
+                e6 = scan
+                while d6 > 0 and e6 + 1 < len(chunk):
+                    e6 += 1
+                    d6 += chunk[e6].count("{") - chunk[e6].count("}")
+                if d6 > 0:
+                    scan += 1
+                    continue
+                interior = [x for x in chunk[scan + 1:e6]
+                            if x.strip() and not x.strip().startswith("//")]
+                if not interior:
+                    nm = re.match(r"^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)", ln2)
+                    if nm:
+                        removed.add(nm.group(1))
+                    s3 = scan
+                    while s3 > 0 and chunk[s3 - 1].lstrip().startswith("//"):
+                        s3 -= 1
+                    chunk = chunk[:s3] + chunk[e6 + 1:]
+                    scan = s3
+                    continue
+                scan = e6 + 1
+        return chunk, removed
 
     out = []
+    removed = set()
+    all_removed = set()
     for ch in chunks:
-        out.extend(scrub_chunk(ch))
+        r, rm = scrub_chunk(ch)
+        out.extend(r)
+        removed |= rm
+        all_removed |= rm
+    # a func whose body emptied left whole (scrub_chunk above) is dead
+    # vocabulary now, and its call sites sit in EARLIER chunks of this
+    # file. Feed the name back and re-run until no func leaves whole.
+    rounds = 0
+    while removed and rounds < 8:
+        rounds += 1
+        dead_ids.update(removed)
+        removed = set()
+        out2 = []
+        for ch in split_chunks(out):
+            r, rm = scrub_chunk(ch)
+            out2.extend(r)
+            removed |= rm
+            all_removed |= rm
+        out = out2
     # import pruning: a cascade that ate a package's last client
     # leaves the import behind, and Go compiles the leftovers loud
-    # ("imported and not used"). An import whose qualifier no longer
-    # appears outside the import lines dies with its clients. Blank
-    # imports stay (their side effect never showed as a qualifier).
-    result = "\n".join(out)
+    # ("imported and not used"). Stdlib imports prune too (sort lost
+    # its last reader with providerInstancesKnob, t_4a1ed765). Only
+    # lines inside the import block are candidates - a `word "literal"`
+    # line elsewhere is Go code, not an import.
     import_shapes = re.compile(r'^\s*([A-Za-z_]\w*\s+)?"((?:\\.|[^"\\])*)"\s*(//.*)?$')
-    body = "\n".join(ln for ln in out if not import_shapes.match(ln))
+    b0 = next((k for k, ln in enumerate(out) if ln.strip() == "import ("), None)
+    b1 = None
+    if b0 is not None:
+        b1 = next((k for k in range(b0 + 1, len(out)) if out[k].strip() == ")"), None)
+
+    def is_import_line(k, ln):
+        if b0 is None or k < b0:
+            return False
+        if b1 is not None and k > b1:
+            return False
+        return bool(import_shapes.match(ln))
+
+    body = "\n".join(ln for k, ln in enumerate(out) if not is_import_line(k, ln))
     pruned = []
-    for ln in out:
+    for k, ln in enumerate(out):
+        if not is_import_line(k, ln):
+            pruned.append(ln)
+            continue
         m = import_shapes.match(ln)
-        # only real import paths are pruning candidates: a line shaped
-        # `word "string"` (return "zz") is not an import, and a quoted
-        # string without a slash is a Go literal, not a module path
-        if not m or "/" not in m.group(2):
+        if ln.strip().startswith("."):
+            # dotted import: side effect only, its path is never used
             pruned.append(ln)
             continue
         alias = (m.group(1) or "").strip()
@@ -514,22 +645,38 @@ def scrub(text, modules):
         cands = {last, last.split(".")[0]}
         if re.match(r"^v\d+$", last) and "/" in path:
             cands.add(path.rstrip("/").split("/")[-2])
-        alias_used = alias or None
-        hits = alias_used and re.search(r"\b" + re.escape(alias_used) + r"\.", body)
-        if not hits and not any(re.search(r"\b" + re.escape(c) + r"\.", body) for c in cands):
+        hits = (alias and re.search(r"\b" + re.escape(alias) + r"\.", body)) or \
+            any(re.search(r"\b" + re.escape(c) + r"\.", body) for c in cands)
+        if not hits:
             continue
         pruned.append(ln)
-    return "\n".join(pruned)
+    return "\n".join(pruned), all_removed
 
 if __name__ == "__main__":
     modspecs = [s.split("=")[-1] for s in sys.argv[2:]]
     files = sys.argv[1].split(",")
     seed_shared(modspecs, files)
-    for fname in files:
-        with open(fname) as f:
-            text = f.read()
-        with open(fname, "w") as f:
-            f.write(scrub(text, modspecs))
+    # a func whose body emptied dies whole (scrub_chunk); its name is
+    # dead vocabulary for OTHER files too (a call site across the file
+    # boundary never sees one file's dead_ids). Pass over the file set
+    # until the deletion frontier is quiet (bounded, like the chunk
+    # re-run inside scrub()).
+    carried = set()
+    for _pass in range(6):
+        grew = False
+        for fname in files:
+            with open(fname) as f:
+                text = f.read()
+            text2, rem = scrub(text, modspecs, carried)
+            fresh = rem - carried
+            if fresh:
+                grew = True
+                carried |= fresh
+            if text2 != text:
+                with open(fname, "w") as f:
+                    f.write(text2)
+        if not grew:
+            break
 PYEOF
 # go files that may carry wires: cmd/ (the binary). Engine layers and
 # core importing a module is illegal already - the purity law says SO,
