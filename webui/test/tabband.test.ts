@@ -40,7 +40,11 @@ const TABS: Array<{
   // card t_529628d5 (Endo's band-search ruling, 2026-11-01): the EXISTING
   // settings filter SEATED IN the band - card t_f1a034dc's own filter row
   // below it died with the ruling (band-breaks.test.ts pins the move).
-  { file: "../harness/notifications/ui/NotificationsPanel.vue", title: "Notifications", scrollClass: "notif-list", actions: [] },
+  // card t_9794272d (Endo's de-crowd ruling, 2026-11-06): the two actions
+  // are ICON-only band tools now - the verbs live on the title/aria-label
+  // attrs, which the action probe below matches (the tooltip string is
+  // still quoted in source, inside the band).
+  { file: "../harness/notifications/ui/NotificationsPanel.vue", title: "Notifications", scrollClass: "notif-list", actions: ["mark all read", "clear all"] },
   // card t_7ee0a673 (Endo's comment 3, 2026-11-01): the sessions band
   // carried the TITLE ALONE (card t_311fc40b) - now the SEARCH seats in
   // the band's band-tool slot too ("Search sessions", the shared
