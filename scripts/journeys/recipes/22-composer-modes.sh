@@ -48,7 +48,7 @@ pick_mode() {
   local hdr
   hdr=$(jsq '(()=>{const c=document.querySelector(".setting-select .model-chip[aria-label=\"composer display mode\"]"); if(!c) return 0; c.click(); return 1})()' 2>&1 | tail -1)
   assert_eq "$hdr" "1" "composer display mode chip clicked (pop opens)"
-  if ! wait_js '(()=>{return [...document.querySelectorAll(".setting-select .model-list li")].some(l=>(l.textContent||"").trim()==="'$1'"))})()' 10; then
+  if ! wait_js '(()=>{return [...document.querySelectorAll(".setting-select .model-list li")].some(l=>(l.textContent||"").trim()==="'$1'")})()' 10; then
     die "composer display mode options never rendered (want $1)"
   fi
   local pick
@@ -132,17 +132,22 @@ assert_eq "1" "$(awk -v r="$radius" 'BEGIN{print (r != "0px") ? 1 : 0}')" \
 blw=$(panejs 'getComputedStyle(p.querySelector(".composer .toolbar")).borderLeftWidth')
 assert_eq "$blw" "1px" "the toolbar's left hairline divides input from chips"
 segdivs=$(panejs 'p.querySelectorAll(".composer .seg-div").length')
-assert_eq "$segdivs" "2" "full renders the two seg-div hairline segments"
+assert_eq "$segdivs" "1" "full renders the seg-div hairline (chips|send; the input|chips one is the toolbar's border-left)"
 # one row really: composer-row and toolbar share the row's top
 itop=$(panejs 'p.querySelector(".composer .composer-row").offsetTop')
 rtop=$(panejs 'p.querySelector(".composer .toolbar").offsetTop')
 assert_eq "1" "$(awk -v i="$itop" -v j="$rtop" 'BEGIN{d=(i>j)?i-j:j-i; print (d < 8) ? 1 : 0}')" \
   "full's segments share one row's top (input ${itop}px vs toolbar ${rtop}px)"
-# the input segment grows
-rw=$(panejs 'p.querySelector(".composer .composer-row").getBoundingClientRect().width')
-tw=$(panejs 'p.querySelector(".composer .toolbar").getBoundingClientRect().width')
-assert_eq "1" "$(awk -v i="$rw" -v j="$tw" 'BEGIN{print (i > j) ? 1 : 0}')" \
-  "the input's segment grows wider than the chips' segment (${rw}px > ${tw}px)"
+# the input segment grows into ALL the leftover width (flex-grow): it
+# ends where the hairline starts, the send anchors the row's right end
+rw=$(panejs 'p.querySelector(".composer .composer-row").getBoundingClientRect().right')
+tl=$(panejs 'p.querySelector(".composer .toolbar").getBoundingClientRect().left')
+assert_eq "1" "$(awk -v i="$rw" -v j="$tl" 'BEGIN{d=(i>j)?i-j:j-i; print (d < 3) ? 1 : 0}')" \
+  "the input segment ends at the input|chips hairline (gap ${rw}px vs ${tl}px)"
+tr=$(panejs 'p.querySelector(".composer .toolbar").getBoundingClientRect().right')
+cr=$(panejs 'p.querySelector(".composer").getBoundingClientRect().right')
+assert_eq "1" "$(awk -v i="$tr" -v j="$cr" 'BEGIN{print ((j-i) >= -1 && (j-i) < 6) ? 1 : 0}')" \
+  "the send anchors the row's right end (toolbar right ${tr}px vs composer ${cr}px)"
 ch=$(panejs 'p.querySelector(".composer").clientHeight')
 assert_eq "1" "$(awk "BEGIN{print ($ch > 0 && $ch < 56) ? 1 : 0}")" \
   "full is one row tall (${ch}px - anything wrapped would exceed 56px)"
