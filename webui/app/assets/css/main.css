@@ -2010,6 +2010,18 @@ labels stopped short of the right edge. */
 .expand-btn:hover { color: var(--text); border-color: var(--text-dim); }
 .composer:focus-within { border-color: rgba(232, 131, 58, 0.55); }
 
+/* the composer's display modes (card t_5752861e): mode-compact is the
+   base shape above - the knob's other two values carry a class. The
+   fullscreen (.expanded) card geometry is pinned by its own ruling, so
+   the modes hold only when the composer is NOT expanded. */
+.composer.mode-wide:not(.expanded) {
+  margin: 0 4px 12px; /* the side inset tightens - wider bounds */
+}
+.composer.mode-full:not(.expanded) {
+  margin: 0 0 12px; /* edge to edge: no side inset, no corner radius */
+  border-radius: 0;
+}
+
 /* expanded/fullscreen (card t_08ef793b, Endo ruling 2026-11-02): a floating
    CARD that owns the pane - "a floating card, not a focus ring". Column
    anatomy: the TEXT region is the tall element (the row grows, the textarea
