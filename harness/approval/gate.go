@@ -15,7 +15,7 @@ import (
 // sessions AND cron workers consult the same object. The Gate is the
 // approval module's agent.ApprovalProvider implementation.
 type Gate struct {
-	// cfgMu guards cfg and policyFP: the host's settings hot-apply
+	// cfgMu guards cfg: the host's settings hot-apply
 	// path replaces the config (SetConfig) while the loop gates tool
 	// calls in parallel. Every decision reads one consistent copy.
 	cfgMu sync.RWMutex
@@ -31,7 +31,6 @@ type Gate struct {
 	audit         *Audit
 	cache         *Cache
 	questionsFP   string
-	policyFP      string
 }
 
 // verdictHub is the consumer-side face of the verdict capsules
@@ -79,7 +78,6 @@ func NewGate(cfg Config, verdicts func() verdictHub, notifications func() finish
 		audit:         NewAudit(cfg.Home),
 		cache:         NewCache(),
 		questionsFP:   questionsFingerprint(),
-		policyFP:      policyHash(cfg.SmartPolicy),
 	}
 }
 
@@ -94,7 +92,6 @@ func (g *Gate) SetConfig(cfg Config) {
 	g.cfgMu.Lock()
 	defer g.cfgMu.Unlock()
 	g.cfg = cfg
-	g.policyFP = policyHash(cfg.SmartPolicy)
 }
 
 // config returns one consistent copy of the live config; callers read
@@ -479,7 +476,7 @@ func (g *Gate) row(in rowInput) AuditRow {
 		SendsOutbound:  answers.SendsOutbound,
 		Model:          live.Model,
 		HasPolicy:      live.SmartPolicy != "",
-		PolicyHash:     g.policyFP,
+		PolicyHash:     policyHash(live.SmartPolicy),
 		DecidedBy:      decidedBy,
 		CacheKey:       in.key,
 		Cached:         in.cached,
