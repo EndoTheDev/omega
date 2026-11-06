@@ -1,7 +1,7 @@
 <template>
   <div
     class="composer"
-    :class="{ expanded: expanded }"
+    :class="[composerModeClass, { expanded: expanded }]"
     @click="onCanvasClick">
     <div
       v-if="attachments.length"
@@ -235,7 +235,10 @@
   } from "../../composables/pills";
   import type { RefToken } from "../../composables/pills";
   import { DOCK_VIEWER_OPEN_KEY } from "../../composables/viewer";
-
+  // the composer's display mode (card t_5752861e): one shared signal -
+  // SettingsTab writes it, the class binding carries mode-wide/mode-full
+  // (compact is the unstyled default shape)
+  import { parseComposerMode, useComposerMode } from "../../composables/composerMode";
   const props = defineProps<{
     draft: string;
     model: string;
@@ -255,6 +258,10 @@
     // (the fork affordance on the response block) - shows the chip
     forkAnchor?: string | null;
   }>();
+
+  // the display mode's shared signal (card t_5752861e): module ref, no
+  // prop-drilling - the chat group's knob writes it straight
+  const composerMode = useComposerMode();
 
   const emit = defineEmits<{
     (e: "update:draft", value: string): void;
@@ -277,6 +284,13 @@
   const thinkingOptions = computed(() =>
     THINKING_UI_LEVELS.map((level) => ({ value: level, label: level })),
   );
+
+  // the display mode's class (card t_5752861e): mode-compact is the
+  // base .composer shape, so only wide/full carry a class
+  const composerModeClass = computed(() => {
+    const m = parseComposerMode(composerMode.value);
+    return m === "compact" ? null : `mode-${m}`;
+  });
 
   // the morph (t_357cbe9c): busy -> stop, else send. The retry face left
   // with the affordance (t_95d2bc34) - the action row owns replay now.
