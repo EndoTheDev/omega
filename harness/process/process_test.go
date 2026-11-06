@@ -68,7 +68,7 @@ func stateEntry(t *testing.T, r *Registry, name string) Entry {
 func TestSpawnReadWaitKill(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
-	e, err := r.Spawn(context.Background(), "echo out-line; sleep 120", "worker")
+	e, err := r.Spawn(context.Background(), "echo out-line; sleep 120", "worker", "")
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestSpawnReadWaitKill(t *testing.T) {
 func TestExitCodeRecorded(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
-	if _, err := r.Spawn(context.Background(), "sleep 0.3; exit 7", "boom"); err != nil {
+	if _, err := r.Spawn(context.Background(), "sleep 0.3; exit 7", "boom", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	got, err := r.Wait(context.Background(), "boom", 0)
@@ -118,7 +118,7 @@ func TestExitCodeRecorded(t *testing.T) {
 	if !e.Exited || e.ExitCode == nil || *e.ExitCode != 7 || e.FinishedAt == 0 {
 		t.Fatalf("exit record incomplete: %+v", e)
 	}
-	if _, err := r.Spawn(context.Background(), "sleep 0.2; exit 0", "quiet"); err != nil {
+	if _, err := r.Spawn(context.Background(), "sleep 0.2; exit 0", "quiet", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	got, err = r.Wait(context.Background(), "quiet", 0)
@@ -135,7 +135,7 @@ func TestExitCodeRecorded(t *testing.T) {
 func TestKillEscalation(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t) // 1 s grace
-	if _, err := r.Spawn(context.Background(), `trap "" TERM; sleep 300`, "stubborn"); err != nil {
+	if _, err := r.Spawn(context.Background(), `trap "" TERM; sleep 300`, "stubborn", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	waitFor(t, 5*time.Second, "stubborn to be live", func() bool {
@@ -160,7 +160,7 @@ func TestReadTailCaps(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
 	if _, err := r.Spawn(context.Background(),
-		`i=1; while [ $i -le 120 ]; do echo "line-$i"; i=$((i+1)); done; sleep 120`, "writer"); err != nil {
+		`i=1; while [ $i -le 120 ]; do echo "line-$i"; i=$((i+1)); done; sleep 120`, "writer", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	waitFor(t, 5*time.Second, "log completion", func() bool {
@@ -191,23 +191,23 @@ func TestReadTailCaps(t *testing.T) {
 func TestSpawnNameRules(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
-	if _, err := r.Spawn(context.Background(), "sleep 300", "  b@d name$$  "); err != nil {
+	if _, err := r.Spawn(context.Background(), "sleep 300", "  b@d name$$  ", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	e := stateEntry(t, r, "bdname") // spaces dropped, junk chars dropped
 	if e.Name != "bdname" {
 		t.Fatalf("sanitized handle: %+v", e)
 	}
-	if _, err := r.Spawn(context.Background(), "", "empty"); err == nil {
+	if _, err := r.Spawn(context.Background(), "", "empty", ""); err == nil {
 		t.Fatal("empty command must be refused")
 	}
-	if _, err := r.Spawn(context.Background(), "sleep 300", "worker"); err != nil {
+	if _, err := r.Spawn(context.Background(), "sleep 300", "worker", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	if _, err := r.Spawn(context.Background(), "echo x", "worker"); err == nil {
+	if _, err := r.Spawn(context.Background(), "echo x", "worker", ""); err == nil {
 		t.Fatal("reusing a RUNNING name must be refused")
 	}
-	generated, err := r.Spawn(context.Background(), "sleep 0.5; echo done", "")
+	generated, err := r.Spawn(context.Background(), "sleep 0.5; echo done", "", "")
 	if err != nil || generated.Name == "" {
 		t.Fatalf("generated name: %+v err=%v", generated, err)
 	}
@@ -218,13 +218,13 @@ func TestSpawnNameRules(t *testing.T) {
 func TestReplaceExitedRotatesLog(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
-	if _, err := r.Spawn(context.Background(), "echo gen-one", "rot"); err != nil {
+	if _, err := r.Spawn(context.Background(), "echo gen-one", "rot", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	if _, err := r.Wait(context.Background(), "rot", 5); err != nil {
 		t.Fatalf("wait: %v", err)
 	}
-	if _, err := r.Spawn(context.Background(), "echo gen-two; sleep 0.3", "rot"); err != nil {
+	if _, err := r.Spawn(context.Background(), "echo gen-two; sleep 0.3", "rot", ""); err != nil {
 		t.Fatalf("re-spawn: %v", err)
 	}
 	gen1, err := os.ReadFile(r.logsDir() + "/rot.log.1")
@@ -246,7 +246,7 @@ func TestRestartPidRecheck(t *testing.T) {
 	home := t.TempDir()
 	r1 := NewRegistry(Config{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
 	t.Cleanup(r1.Close) // joins the sleep 300 reaper before the TempDir teardown
-	if _, err := r1.Spawn(context.Background(), "sleep 300", "longop"); err != nil {
+	if _, err := r1.Spawn(context.Background(), "sleep 300", "longop", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	// --- the reboot: a fresh registry instance over the same home ---
@@ -268,7 +268,7 @@ func TestRestartPidRecheck(t *testing.T) {
 	// exited in THIS process (the reaper recorded it).
 	probe := NewRegistry(Config{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
 	t.Cleanup(probe.Close) // the fast-exit spawn's reaper must not outlive the TempDir
-	if _, err := probe.Spawn(context.Background(), "exit 0", "dead-pid-source"); err != nil {
+	if _, err := probe.Spawn(context.Background(), "exit 0", "dead-pid-source", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	waitFor(t, 5*time.Second, "the reaper to record the exit", func() bool {
@@ -300,7 +300,7 @@ func TestRestartPidRecheck(t *testing.T) {
 func TestCloseJoinsReapers(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
-	if _, err := r.Spawn(context.Background(), "exit 0", "fast"); err != nil {
+	if _, err := r.Spawn(context.Background(), "exit 0", "fast", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	r.Close() // the fence the TempDir cleanup would otherwise race
@@ -325,7 +325,7 @@ func TestCloseJoinsReapers(t *testing.T) {
 func TestSpawnReturnsBeforeExit(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
-	if _, err := r.Spawn(context.Background(), "echo left-behind; sleep 120", "leaver"); err != nil {
+	if _, err := r.Spawn(context.Background(), "echo left-behind; sleep 120", "leaver", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	// Returns immediately with the child still running - the fence is
@@ -347,7 +347,7 @@ func TestCorruptStateIgnored(t *testing.T) {
 	if list := r.List(); len(list) != 0 {
 		t.Fatalf("corrupt state must start empty: %+v", list)
 	}
-	if _, err := r.Spawn(context.Background(), "echo alive", "survivor"); err != nil {
+	if _, err := r.Spawn(context.Background(), "echo alive", "survivor", ""); err != nil {
 		t.Fatalf("tools work after a corrupt state: %v", err)
 	}
 }
