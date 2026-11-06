@@ -22,6 +22,10 @@ type FakeProvider struct {
 	// LastMessages records the messages passed to the most recent Stream
 	// call, so tests can assert on the history the agent built up.
 	LastMessages []core.Message
+	// instances carries the named fakes the Instance resolver serves
+	// (card t_7dcd4280). Nil = no instances; a nil-map copy in
+	// WithModel/WithThinkingLevel keeps resolving the same set.
+	instances map[string]Provider
 }
 
 // NewFakeProvider creates a FakeProvider that replays script in order
@@ -81,6 +85,19 @@ func (p *FakeProvider) WithThinkingLevel(level string) Provider {
 	cp := *p
 	cp.lastRequestedLevel = level
 	return &cp
+}
+
+// Instance returns the named instance fake (card t_7dcd4280),
+// implementing agent.ProviderInstances for shell tests.
+func (p *FakeProvider) Instance(name string) (Provider, bool) {
+	inst, ok := p.instances[name]
+	return inst, ok
+}
+
+// SetInstances installs named instance fakes for the Instance resolver.
+// Receiver mutation, so tests call it before wiring the provider in.
+func (p *FakeProvider) SetInstances(byName map[string]Provider) {
+	p.instances = byName
 }
 
 // ListModels returns a hardcoded list for testing.

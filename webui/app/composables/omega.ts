@@ -2094,12 +2094,22 @@ export async function fetchExtensions(): Promise<OmegaExtension[]> {
 // toggle, number, text, secret, select, textarea, bindlist (comma
 // separated address list rendered as one text input), model (the
 // typed model picker of card t_70c28128 - a BandSelect dropdown of
-// the provider's live models). Live knobs apply without a restart;
-// the rest say so in their help text.
+// the provider's live models), providers (card t_7dcd4280 - the
+// named provider instances list editor). Live knobs apply without a
+// restart; the rest say so in their help text.
 export interface SettingKnob {
   key: string;
   label: string;
-  type: "toggle" | "number" | "text" | "secret" | "select" | "textarea" | "bindlist" | "model";
+  type:
+    | "toggle"
+    | "number"
+    | "text"
+    | "secret"
+    | "select"
+    | "textarea"
+    | "bindlist"
+    | "model"
+    | "providers";
   value: unknown;
   // options drive select knobs: plain strings are value+label; the
   // object form splits them (user themes label their names, value
@@ -2116,6 +2126,18 @@ export interface SettingKnob {
   live?: boolean;
 }
 
+// ProviderInstanceRow is one providers-knob row (card t_7dcd4280):
+// the exact shape the provider.instances knob carries both ways. The
+// api_key rides MASKED on the wire ("****" = keep the server-side
+// secret); name is the instance id.
+export interface ProviderInstanceRow {
+  name: string;
+  type: string;
+  model_name: string;
+  host: string;
+  api_key: string;
+}
+
 export interface SettingGroup {
   key: string;
   label: string;
@@ -2130,7 +2152,7 @@ export interface SettingsPayload {
 // groups/knobs are dropped (wrong shape never blanks the pane with an
 // exception), knobs keep only known types - an unknown type would have
 // no control to render, so it falls out like any other stale entry.
-const SETTING_KNOB_TYPES = ["toggle", "number", "text", "secret", "select", "textarea", "bindlist", "model"];
+const SETTING_KNOB_TYPES = ["toggle", "number", "text", "secret", "select", "textarea", "bindlist", "model", "providers"];
 
 export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
   const groups: SettingGroup[] = [];
@@ -2558,18 +2580,29 @@ export function filterSettingGroups(
   return out;
 }
 
+// valuesEqual compares two knob values: strict equality for the scalar
+// types, JSON canonical equality for object/array values (the providers
+// list of card t_7dcd4280 is a structural value - identity comparison
+// would mark every reload dirty and miss every real edit). Pure.
+export function valuesEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 // settingsDiff lists draft values that differ from the loaded ones -
 // only changed knobs go on the wire, so an unrelated knob edited
 // server-side between load and save is never clobbered by stale data.
 // Pure; values compare by strict equality (JSON round-trips numbers,
-// booleans and strings losslessly for these knob types).
+// booleans and strings losslessly for these knob types; structural
+// values (the providers list) compare through valuesEqual).
 export function settingsDiff(
   loaded: Record<string, unknown>,
   draft: Record<string, unknown>,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(draft)) {
-    if (draft[key] !== loaded[key]) out[key] = draft[key];
+    if (!valuesEqual(draft[key], loaded[key])) out[key] = draft[key];
   }
   return out;
 }

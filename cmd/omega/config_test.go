@@ -152,6 +152,63 @@ server:
 	}
 }
 
+// card t_7dcd4280: the named provider instances - Validate law.
+func TestValidateProviderInstances(t *testing.T) {
+	base := `
+provider:
+  model_name: llama3
+`
+	cases := []struct {
+		name    string
+		footer  string
+		wantErr string
+	}{
+		{"ok instance", `
+providers:
+  backup:
+    type: openai
+    model_name: gpt-4o
+    host: https://api.openai.example
+`, ""},
+		{"reserved name", `
+providers:
+  default:
+    type: openai
+    model_name: gpt-4o
+`, "reserved"},
+		{"bad name", `
+providers:
+  "My Account":
+    type: openai
+    model_name: gpt-4o
+`, "invalid"},
+		{"bad type", `
+providers:
+  backup:
+    type: azure
+    model_name: gpt-4o
+`, "not recognized"},
+		{"missing model", `
+providers:
+  backup:
+    type: openai
+`, "model_name is required"},
+	}
+	for _, tc := range cases {
+		path := writeTempConfig(t, base+tc.footer)
+		_, err := LoadConfig(path)
+		if tc.wantErr == "" {
+			if err != nil {
+				t.Errorf("%s: unexpected error: %v", tc.name, err)
+			}
+			continue
+		}
+		if err == nil {
+			t.Errorf("%s: expected error matching %q, got nil", tc.name, tc.wantErr)
+		}
+	}
+}
+
 func TestValidateRejectsNonPositivePort(t *testing.T) {
 	path := writeTempConfig(t, `
 provider:
