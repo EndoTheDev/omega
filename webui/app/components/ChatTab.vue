@@ -185,6 +185,7 @@
     type VariantBlock,
   } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
+  import { defaultWorkspaceNow } from "../composables/defaultWorkspace";
   import { pendingVerdictList, refreshNotifications } from "./shell/notificationFeed";
   import AppComposer from "./chat/AppComposer.vue";
   import ChatItem from "./ChatItem.vue";
@@ -248,9 +249,15 @@
   // {workspace}, the auto-created row is born pinned, and the binding
   // swaps this read over to the row with no further state.
   const modelValue = ref(props.session?.model || props.model);
-  const workspaceValue = computed(() =>
-    sessionId.value ? (props.session?.workspace ?? "") : (state.value?.workspaceIntent ?? ""),
-  );
+  // The chip mirrors the folder the tool runs root at (card
+  // t_ccf74d88): a bound session with an EMPTY row pin has its runs
+  // rooted at the server's default_workspace, so the chip falls back
+  // to it - the chip shows the effective workdir, never a blank that
+  // hides the configured default.
+  const workspaceValue = computed(() => {
+    if (!sessionId.value) return state.value?.workspaceIntent ?? "";
+    return props.session?.workspace || defaultWorkspaceNow();
+  });
   // rebind (draft -> sent adopts an id; tab remount) restores from the
   // row; a row refresh adopts the pin the PATCH persisted. The pinned
   // model only wins while non-empty - a draft with no row keeps the

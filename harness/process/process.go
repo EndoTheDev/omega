@@ -26,8 +26,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
@@ -243,9 +243,11 @@ func spawnName(name string) string {
 
 // Spawn starts a command detached and records it. The command runs in
 // its own process group (survives omega dying) under the run's
-// workspace like shell.run. The handle name is the key: reusing an
-// exited name rotates the old log; reusing a RUNNING name is refused.
-func (r *Registry) Spawn(ctx context.Context, command, name string) (*Entry, error) {
+// workspace like shell.run, or under dir when the call carries an
+// explicit working-directory override (card t_ccf74d88). The handle
+// name is the key: reusing an exited name rotates the old log;
+// reusing a RUNNING name is refused.
+func (r *Registry) Spawn(ctx context.Context, command, name, dir string) (*Entry, error) {
 	if strings.TrimSpace(command) == "" {
 		return nil, fmt.Errorf("command must not be empty")
 	}
@@ -273,6 +275,19 @@ func (r *Registry) Spawn(ctx context.Context, command, name string) (*Entry, err
 	cmd := buildShell(command)
 	tree := detachChild(cmd)
 	cmd.Dir = core.RunWorkspace(ctx)
+	if dir != "" {
+		// A relative override roots at the run's workspace, else the
+		// process cwd - a relative cmd.Dir is a raw fork/exec failure
+		// on windows ("directory name is invalid"), so resolve here.
+		if !filepath.IsAbs(dir) {
+			if root := core.RunWorkspace(ctx); root != "" {
+				dir = filepath.Join(root, dir)
+			} else if abs, aerr := filepath.Abs(dir); aerr == nil {
+				dir = abs
+			}
+		}
+		cmd.Dir = dir
+	}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {

@@ -114,7 +114,7 @@ func cmdLoop(configPath string, appendPrompts []string, trust trustFlags) error 
 	// values so the operator's flags keep speaking last.
 	appendPrompts = append(appendPrompts, loopPersona())
 
-	ag, store, logger, pctx, _, _, _, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, pctx, _, _, _, _, err := newAgent(cfg, appendPrompts, trust)
 	if err != nil {
 		return err
 	}

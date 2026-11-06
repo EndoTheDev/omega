@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
@@ -107,6 +107,10 @@ func (p processProvider) Tools() map[string]core.Tool {
 				"type":        "string",
 				"description": "Handle for the later read/kill/wait calls. Generated (p-<timestamp>) when omitted.",
 			},
+			"dir": map[string]any{
+				"type":        "string",
+				"description": "Optional working directory: absolute, or relative to the session workspace. Overrides the run's default directory (card t_ccf74d88).",
+			},
 		},
 		"required": []string{"command"},
 	}
@@ -164,12 +168,21 @@ func (p processProvider) run(ctx context.Context, args map[string]any) (string, 
 			return "", err
 		}
 		name, _ := args["name"].(string)
-		e, err := p.reg.Spawn(ctx, command, name)
+		dir, err := dirOverride(ctx, args)
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("spawned name=%s pid=%d state=%s\nlog: %s\nread the tail: process.read name=%s",
-			e.Name, e.PID, stateOf(e), e.LogPath, e.Name), nil
+		e, err := p.reg.Spawn(ctx, command, name, dir)
+		if err != nil {
+			return "", err
+		}
+		out := fmt.Sprintf("spawned name=%s pid=%d state=%s\nlog: %s\nread the tail: process.read name=%s",
+			e.Name, e.PID, stateOf(e), e.LogPath, e.Name)
+		if dir != "" {
+			out = fmt.Sprintf("spawned name=%s pid=%d state=%s\ndir: %s\nlog: %s\nread the tail: process.read name=%s",
+				e.Name, e.PID, stateOf(e), dir, e.LogPath, e.Name)
+		}
+		return out, nil
 	case "list":
 		return renderList(p.reg.List()), nil
 	case "read":

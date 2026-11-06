@@ -122,7 +122,7 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Help:  "wall-clock cap per detached chat run, in seconds; applies on restart"},
 				{Key: "server.default_workspace", Label: "default workspace", Type: "text",
 					Value: cfg.Server.DefaultWorkspace, Live: true,
-					Help: "absolute path; the Files tab roots here when the focused session has no pinned workspace; empty = the process working directory; applies live"},
+					Help: "absolute path; the Files tab roots here when the focused session has no pinned workspace, and a workspace-less session's tool runs (shell, files, processes) root here instead of the process working directory; empty = the process working directory; applies live"},
 			},
 		},
 		{
@@ -312,7 +312,7 @@ func providerInstancesKnob(cfg *Config) []map[string]any {
 // saveSettings applies values (dotted yaml path -> value), validates,
 // and writes config.yaml atomically, then hot-applies the live knobs to
 // the running context. Returns the refreshed schema payload.
-func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(string), values map[string]any) (*core.SettingsSchema, error) {
+func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string), values map[string]any) (*core.SettingsSchema, error) {
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		return nil, err
@@ -326,7 +326,7 @@ func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(strin
 	if err := writeConfigFile(path, &cfg); err != nil {
 		return nil, err
 	}
-	hotApply(cfg, pctx, setFilesWorkspace)
+	hotApply(cfg, pctx, setFilesWorkspace, setChannelWorkspace)
 	return &core.SettingsSchema{Groups: settingGroups(&cfg)}, nil
 }
 
@@ -692,7 +692,7 @@ func writeConfigFile(path string, cfg *Config) error {
 // a settings-pane save re-roots the Files tab live. WatchConfig's
 // on-disk reload goes through the same path, so a hand edit and a
 // settings-pane save behave identically.
-func hotApply(cfg Config, pctx *agent.Context, setFilesWorkspace func(string)) {
+func hotApply(cfg Config, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string)) {
 	llm.SetHTTPTimeout(cfg.HTTPTimeout)
 	if pctx == nil {
 		return
@@ -706,6 +706,12 @@ func hotApply(cfg Config, pctx *agent.Context, setFilesWorkspace func(string)) {
 	// key - the offer namespaces stay closed at fourteen.
 	if setFilesWorkspace != nil {
 		setFilesWorkspace(cfg.Server.DefaultWorkspace)
+	}
+	// The same knob re-roots the tools' fallback workdir on the HTTP
+	// channel (card t_ccf74d88): a workspace-less session's tool runs
+	// follow the live save, not the boot copy.
+	if setChannelWorkspace != nil {
+		setChannelWorkspace(cfg.Server.DefaultWorkspace)
 	}
 	svc := pctx.Services().Resolve("compactor")
 	if svc == nil {
@@ -721,7 +727,8 @@ func hotApply(cfg Config, pctx *agent.Context, setFilesWorkspace func(string)) {
 type omegaSettings struct {
 	path              string
 	pctx              *agent.Context
-	setFilesWorkspace func(string) // the files capsule's hot knob, nil when it is not mounted
+	setFilesWorkspace   func(string)     // the files capsule's hot knob, nil when it is not mounted
+	setChannelWorkspace func(string)     // the HTTP channel's default-workspace hot knob, nil when unset
 }
 
 func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
@@ -753,7 +760,7 @@ func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
 }
 
 func (s *omegaSettings) Save(values map[string]any) (*core.SettingsSchema, error) {
-	return saveSettings(s.path, s.pctx, s.setFilesWorkspace, values)
+	return saveSettings(s.path, s.pctx, s.setFilesWorkspace, s.setChannelWorkspace, values)
 }
 
 // Compile-time assertion that omegaSettings implements core.Settings.
