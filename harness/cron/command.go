@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -43,7 +44,7 @@ func cronHandler(p *Plugin) func(context.Context, string, string) (core.CommandR
 func renderCronTable(jobs []JobInfo) string {
 	out := append([]JobInfo(nil), jobs...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	nameW, schedW, agentW := len("NAME"), len("SCHEDULE"), len("AGENT")
+	nameW, schedW, agentW, lastW := len("NAME"), len("SCHEDULE"), len("AGENT"), len("LAST")
 	for _, j := range out {
 		if len(j.Name) > nameW {
 			nameW = len(j.Name)
@@ -54,10 +55,13 @@ func renderCronTable(jobs []JobInfo) string {
 		if len(j.Agent) > agentW {
 			agentW = len(j.Agent)
 		}
+		if w := len(lastText(j)); w > lastW {
+			lastW = w
+		}
 	}
 	var sb strings.Builder
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("  %-*s  %-*s  %-*s  %-3s  %s\n", nameW, "NAME", schedW, "SCHEDULE", agentW, "AGENT", "ON", "NEXT"))
+	sb.WriteString(fmt.Sprintf("  %-*s  %-*s  %-*s  %-*s  %-3s  %s\n", nameW, "NAME", schedW, "SCHEDULE", agentW, "AGENT", lastW, "LAST", "ON", "NEXT"))
 	for _, j := range out {
 		next := j.Next
 		if next == "" {
@@ -71,9 +75,25 @@ func renderCronTable(jobs []JobInfo) string {
 		if !j.Enabled {
 			state = "no"
 		}
-		sb.WriteString(fmt.Sprintf("  %-*s  %-*s  %-*s  %-3s  %s\n", nameW, j.Name, schedW, cadenceText(j), agentW, agent, state, next))
+		sb.WriteString(fmt.Sprintf("  %-*s  %-*s  %-*s  %-*s  %-3s  %s\n", nameW, j.Name, schedW, cadenceText(j), agentW, agent, lastW, lastText(j), state, next))
 	}
 	return sb.String()
+}
+
+// lastText renders the row's last-fire voice: the status + the local
+// short time of the completion (the same "01/02 15:04" compactness the
+// webui row rides), "-" when the job never fired. An errored fire
+// reads "error" - the note lives in the webui Cron tab's row line, the
+// table stays one line per job.
+func lastText(j JobInfo) string {
+	if j.Status == "" || j.Last == "" {
+		return "-"
+	}
+	t, err := time.Parse(time.RFC3339, j.Last)
+	if err != nil {
+		return j.Status
+	}
+	return fmt.Sprintf("%s %s", j.Status, t.Format("01-02 15:04"))
 }
 
 // cadenceText renders the row's firing cadence: the 5-field expression

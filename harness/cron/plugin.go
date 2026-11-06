@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin adapts the cron Runner into omega's plugin system. It
@@ -16,8 +16,8 @@ import (
 type Plugin struct {
 	cfg     *Config
 	home    string
-	runner  *Runner           // the mounted scheduler; nil = not mounted
-	capsule *capsule          // the canvas surface; nil = not mounted
+	runner  *Runner  // the mounted scheduler; nil = not mounted
+	capsule *capsule // the canvas surface; nil = not mounted
 }
 
 // Compile-time assertion that *Plugin implements agent.Plugin.

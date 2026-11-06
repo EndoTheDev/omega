@@ -228,7 +228,7 @@ func TestScheduleForKinds(t *testing.T) {
 func TestIntervalJobCatchUpFiresOnGrid(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(), Job{Name: "pulse", Kind: kindInterval, Minutes: 10, Prompt: "p"})
 	fired := make(chan struct{}, 4)
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) {
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		fired <- struct{}{}
 		return "done", nil
 	}
@@ -342,14 +342,14 @@ func TestFireModelOverrideAndInherit(t *testing.T) {
 
 	// the defaulting law, model side: empty model = the session
 	// provider model - the base provider streams, no derivation
-	if _, err := r.agentTurn(context.Background(), "s1", Job{Name: "m", Prompt: "p"}); err != nil {
+	if _, err := r.agentTurn(context.Background(), "s1", Job{Name: "m", Prompt: "p"}, "p"); err != nil {
 		t.Fatal(err)
 	}
 	if got := spawner.log.last(); got != "session-model" {
 		t.Fatalf("inherited model = %q, want session-model", got)
 	}
 	// a named model derives a per-run provider via WithModel
-	if _, err := r.agentTurn(context.Background(), "s2", Job{Name: "m", Prompt: "p", Model: "cron-model"}); err != nil {
+	if _, err := r.agentTurn(context.Background(), "s2", Job{Name: "m", Prompt: "p", Model: "cron-model"}, "p"); err != nil {
 		t.Fatal(err)
 	}
 	// the derived spy sees the override; the base provider still
@@ -432,14 +432,16 @@ func TestContinuousAgentTargetWakeAndBadAgent(t *testing.T) {
 	// in-process fires with an EMPTY agent field just run: the
 	// defaulting law's silent inheritance case
 	r.store = nil
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) { return "ok", nil }
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) { return "ok", nil }
 	r.fire(ctx, Job{Name: "plain", Schedule: "0 8 * * *", Prompt: "go", Enabled: boolPtr()}, r.now())
 }
 
 func TestAppendToFileDeliver(t *testing.T) {
 	home := t.TempDir()
 	r := newTestRunner(t, home)
-	r.runTurn = func(ctx context.Context, sessionID string, job Job) (string, error) { return "the report", nil }
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
+		return "the report", nil
+	}
 	ctx := context.Background()
 	when := r.now()
 	r.fire(ctx, Job{Name: "filer", Schedule: "0 8 * * *", Prompt: "p", Deliver: deliverAppendToFile, File: "notes/report.md", Enabled: boolPtr()}, when)

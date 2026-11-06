@@ -15,8 +15,8 @@ import "encoding/json"
 // consumer interface receives the rows as pre-marshaled JSON, so the
 // wire bytes are identical to what the shared type produced.
 type JobInfo struct {
-	Name   string `json:"name"`
-	Kind   string `json:"kind"` // cron | interval
+	Name string `json:"name"`
+	Kind string `json:"kind"` // cron | interval
 	// Schedule is the 5-field expression for kind cron; empty for
 	// kind interval, whose cadence rides Minutes.
 	Schedule string `json:"schedule"`
@@ -40,6 +40,18 @@ type JobInfo struct {
 	// other targets (and for append-to-file, where the empty file
 	// means the journal/<date>.md naming).
 	File string `json:"file,omitempty"`
+	// Skills are the fire-pinned skill names (empty = the job hunts
+	// its own procedures; the bodies ride the fire prompt).
+	Skills []string `json:"skills,omitempty"`
+	// Last status: the outcome of the most recent fire. Status is ""
+	// (never fired), "ok", or "error"; Last is the completion wall
+	// clock in RFC3339 local time; StatusNote carries the capped error
+	// message when a fire errored. The record survives restarts in
+	// cronstate.json - a status is a promise the process can keep: it
+	// names something that already happened.
+	Status     string `json:"status,omitempty"`
+	Last       string `json:"last,omitempty"`
+	StatusNote string `json:"status_note,omitempty"`
 }
 
 // JobRows is the pre-marshaled wire form of Jobs() - the consumer

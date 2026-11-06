@@ -27,7 +27,6 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
-
 )
 
 // cronSaver is the write face the job editor rides, separate from the
@@ -42,16 +41,17 @@ type cronSaver interface {
 // CronJobInfo listing's fields plus the prompt. Enabled is explicit -
 // the editor always sends the whole job.
 type jobWire struct {
-	Name     string `json:"name"`
-	Kind     string `json:"kind,omitempty"`
-	Schedule string `json:"schedule,omitempty"`
-	Minutes  int    `json:"minutes,omitempty"`
-	Prompt   string `json:"prompt"`
-	Deliver  string `json:"deliver,omitempty"`
-	File     string `json:"file,omitempty"`
-	Agent    string `json:"agent,omitempty"`
-	Model    string `json:"model,omitempty"`
-	Enabled  bool   `json:"enabled"`
+	Name     string   `json:"name"`
+	Kind     string   `json:"kind,omitempty"`
+	Schedule string   `json:"schedule,omitempty"`
+	Minutes  int      `json:"minutes,omitempty"`
+	Prompt   string   `json:"prompt"`
+	Skills   []string `json:"skills,omitempty"`
+	Deliver  string   `json:"deliver,omitempty"`
+	File     string   `json:"file,omitempty"`
+	Agent    string   `json:"agent,omitempty"`
+	Model    string   `json:"model,omitempty"`
+	Enabled  bool     `json:"enabled"`
 }
 
 func (w jobWire) toJob() Job {
@@ -61,6 +61,7 @@ func (w jobWire) toJob() Job {
 		Schedule: w.Schedule,
 		Minutes:  w.Minutes,
 		Prompt:   w.Prompt,
+		Skills:   w.Skills,
 		Deliver:  w.Deliver,
 		File:     w.File,
 		Agent:    w.Agent,

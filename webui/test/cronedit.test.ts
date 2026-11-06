@@ -19,7 +19,10 @@ import {
   editableOf,
   emptyDraft,
   jobMeta,
+  lastMeta,
+  parseSkills,
   saveCronJob,
+  statusStamp,
   validateDraft,
   type JobDraft,
 } from "../../harness/cron/ui/edit.ts";
@@ -223,4 +226,90 @@ test("jobMeta renders only the non-default fields", () => {
     jobMeta({ ...plain, agent: "scout" } as never),
     " - agent scout",
   );
+  // t_3885c975: pinned skills speak in the meta line (fragment only;
+  // a plain job stays quiet)
+  assert.equal(jobMeta({ ...plain, skills: ["a", "b"] } as never), " - skills a, b");
+});
+
+// --- the last-fire status voice (card t_3885c975) ---
+
+// A local RFC3339 stamp the formatter re-renders in the same (host)
+// zone: built from local date parts, carried through UTC, so the
+// asserted output is one shape on every lane.
+function localRfc3339(y: number, mo: number, d: number, h: number, mi: number): string {
+  return new Date(y, mo - 1, d, h, mi).toISOString();
+}
+
+test("lastMeta speaks the last fire's outcome", () => {
+  const quiet = { name: "x", schedule: "", enabled: true, next: "" };
+  // the never-fired row stays quiet - "-" means no fire, silence here
+  // is the same truth
+  assert.equal(lastMeta(quiet as never), "");
+  const at = localRfc3339(2026, 11, 7, 2, 14);
+  assert.equal(
+    lastMeta({ ...quiet, status: "ok", last: at } as never),
+    " - last ok 11/07 02:14",
+  );
+  assert.equal(
+    lastMeta({ ...quiet, status: "error", last: at, status_note: "provider exploded" } as never),
+    ` - last error 11/07 02:14: provider exploded`,
+  );
+});
+
+test("lastMeta caps a long error note - the row stays a row", () => {
+  const at = localRfc3339(2026, 11, 7, 2, 14);
+  const long = "x".repeat(300);
+  const out = lastMeta({ name: "x", schedule: "", enabled: true, next: "", status: "error", last: at, status_note: long });
+  assert.ok(out.includes("last error 11/07 02:14: "), out);
+  assert.ok(out.endsWith("..."), "the note ends with the ellipsis");
+  // 120 chars + stamp + voice + ellipsis - the displayed note is the cap
+  assert.ok(out.length < 300, `row line length ${out.length} blew past the cap`);
+});
+
+test("statusStamp renders local compact stamps, verbatim on junk", () => {
+  assert.equal(statusStamp(localRfc3339(2026, 11, 7, 2, 14)), "11/07 02:14");
+  assert.equal(statusStamp("not-a-time"), "not-a-time");
+});
+
+// --- the fire-pinned skills (card t_3885c975) ---
+
+test("parseSkills mirrors the Go normalizeSkills law", () => {
+  assert.deepEqual(parseSkills("  omega-dev , ponytail,,grill-me  "), ["omega-dev", "ponytail", "grill-me"]);
+  assert.deepEqual(parseSkills(""), []);
+  assert.deepEqual(parseSkills("   "), []);
+});
+
+test("validateDraft pins the skills law (names, no duplicates)", () => {
+  const cases: Array<[JobDraft, string]> = [
+    [draft({ skills: "omega-dev, ponytail" }), ""],
+    [draft({ skills: "Bad_Name" }), "skill names must match [a-z0-9-]"],
+    [draft({ skills: "twice, twice" }), "duplicate skill twice"],
+    [draft({ skills: "  " }), ""], // empty list is the default
+  ];
+  for (const [d, want] of cases) {
+    assert.equal(validateDraft(d), want, `validateDraft(skills=${d.skills})`);
+  }
+});
+
+test("saveCronJob carries the skills list on the wire", async () => {
+  const calls = recordFetch((call) => {
+    if (call.url === "/cron/save") return { status: 200, payload: "[]", contentType: "application/json" };
+    if (call.url === "/cron/jobs") return { status: 200, payload: LISTING, contentType: "application/json" };
+    return { status: 404, payload: "wrong lane" };
+  });
+  try {
+    await saveCronJob(draft({ skills: "omega-dev, ponytail" }));
+    const body = JSON.parse(calls.find((c) => c.url === "/cron/save")!.body!) as Record<string, unknown>;
+    assert.deepEqual(body.skills, ["omega-dev", "ponytail"]);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("draftOf round-trips the pinned skills into the editor voice", () => {
+  const d = draftOf({ name: "x", schedule: "0 8 * * *", enabled: true, next: "", skills: ["a", "b"] } as never);
+  assert.equal(d.skills, "a, b");
+  // a row with no pins drafts an empty input
+  const bare = draftOf({ name: "y", schedule: "0 8 * * *", enabled: true, next: "" } as never);
+  assert.equal(bare.skills, "");
 });
