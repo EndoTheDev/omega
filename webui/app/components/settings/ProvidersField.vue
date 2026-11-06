@@ -11,6 +11,14 @@
        round trip failing server-side (a masked key must mean
        something). -->
   <div class="providers-editor">
+    <!-- card t_fec41e66: the rows carry no visible flow on their own -
+         one line above the list states what a row IS and how a run
+         reaches it, so the editor reads without the knob help -->
+    <p class="provider-hint">
+      each row is one account of a provider type - the name is its
+      instance id, which the model pickers (chat picker and the slot
+      knobs below) offer as instance:model
+    </p>
     <div
       v-for="(inst, i) in rows"
       :key="i"
@@ -24,6 +32,7 @@
             type="text"
             autocomplete="off"
             spellcheck="false"
+            placeholder="my-ollama"
             :value="inst.name"
             :aria-label="`instance ${i + 1} name`"
             @input="setRow(i, 'name', ($event.target as HTMLInputElement).value)" />
@@ -45,6 +54,7 @@
             type="text"
             autocomplete="off"
             spellcheck="false"
+            placeholder="llama3"
             :value="inst.model_name"
             :aria-label="`instance ${i + 1} model`"
             @input="setRow(i, 'model_name', ($event.target as HTMLInputElement).value)" />
@@ -56,6 +66,7 @@
             type="text"
             autocomplete="off"
             spellcheck="false"
+            placeholder="http://localhost:11434"
             :value="inst.host"
             :aria-label="`instance ${i + 1} host`"
             @input="setRow(i, 'host', ($event.target as HTMLInputElement).value)" />
@@ -136,6 +147,12 @@
     flex-direction: column;
     gap: 0.5rem;
     max-width: 100%;
+  }
+
+  .provider-hint {
+    margin: 0;
+    font-size: 11px;
+    color: var(--text-dim);
   }
 
   .provider-row-fields {
