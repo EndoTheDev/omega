@@ -85,6 +85,11 @@ type SettingsKnob struct {
 	// decision family only, "vision" lists vision-capable models only,
 	// empty = the full available list. Non-model knobs leave it empty.
 	Filter string `json:"filter,omitempty"`
+	// Slot marks the per-subsystem model knobs (card t_fc0b2f2d):
+	// the dropdown also lists the named provider instances' models as
+	// "instance:model" values the call sites resolve
+	// (agent.ParseModelSlot). Non-model knobs leave it empty.
+	Slot bool `json:"slot,omitempty"`
 }
 
 // SettingsGroup is one config section: a labeled set of knobs.
