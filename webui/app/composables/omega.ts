@@ -2119,6 +2119,11 @@ export interface SettingKnob {
   // "decision" = System One decision family only, "vision" =
   // vision-capable models only, undefined = the full available list.
   filter?: "decision" | "vision";
+  // slot marks the per-subsystem model knobs (card t_fc0b2f2d): the
+  // dropdown also lists the named provider instances' models as
+  // "instance:model" values the server resolves (prefix names the
+  // instance, the rest the model). Non-model knobs leave it empty.
+  slot?: boolean;
   min?: number;
   max?: number;
   step?: number;
@@ -2179,6 +2184,7 @@ export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
             kn.filter === "decision" || kn.filter === "vision"
               ? kn.filter
               : undefined,
+          slot: kn.slot === true ? true : undefined,
           min: typeof kn.min === "number" ? kn.min : undefined,
           max: typeof kn.max === "number" ? kn.max : undefined,
           step: typeof kn.step === "number" ? kn.step : undefined,

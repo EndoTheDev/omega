@@ -18,9 +18,12 @@ type Config struct {
 	// persisted lesson (skills write/update), the next turn prep
 	// carries one reminder line. 0 = nudging off.
 	NudgeInterval int `yaml:"nudge_interval"`
-	// CuratorModel is the model the weekly curator pass consults for
-	// its merge/distill proposals. Empty = the session provider's own
-	// model (Endo's ruling: default A, configurable in settings).
+	// CuratorModel carries the model slot the weekly curator pass
+	// consults for its merge/distill proposals: "instance:model" (a
+	// named provider instance, card t_7dcd4280) or a bare model -
+	// resolved through agent.ResolveModelSlot. Empty = the session
+	// provider's own model (Endo's ruling). Source: the top-level
+	// skills_model knob (provider settings, card t_fc0b2f2d).
 	CuratorModel string `yaml:"curator_model"`
 }
 

@@ -296,7 +296,10 @@ round-trips.
 PUT applies a **diff-only** values map keyed by the schema's dotted
 knob paths (`provider.api_key`, `compaction.keep_first`, ...) — note
 these are not all literal yaml paths (the vision/title models are root
-yaml keys exposed as `provider.vision_model` / `provider.title_model`);
+yaml keys exposed as `provider.vision_model` / `provider.title_model`,
+and the four per-subsystem model slots — compaction, summarizer,
+skills curator, approvals — are the same shape as
+`provider.*_model`);
 unknown keys are 400; `server.bind` and `provider.api_key` are gated —
 config.yaml is their only door. Knob help lines note which apply on
 restart vs hot-apply live (http timeout + compaction hot-apply; context

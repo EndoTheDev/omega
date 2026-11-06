@@ -65,9 +65,11 @@ const maxSummariesPerPass = 5
 
 // RunSummarizer summarizes sessions older than afterHours that lack a
 // summary. prov may be nil - the pass reports the skip and writes
-// nothing. model routes the consult through prov.WithModel when set
-// (the curated ruling: empty = the session provider model). Empty
-// transcripts produce no summary: nothing to say.
+// nothing. model is the per-subsystem slot (card t_fc0b2f2d):
+// "instance:model" rides the named provider instance (ResolveModelSlot),
+// a bare name routes through prov.WithModel (the curated ruling: empty
+// = the session provider model). Empty transcripts produce no summary:
+// nothing to say.
 func (s *Store) RunSummarizer(ctx context.Context, prov agent.Provider, model string, afterHours int) (HygieneReport, error) {
 	rep := HygieneReport{}
 	if afterHours <= 0 {
@@ -78,6 +80,7 @@ func (s *Store) RunSummarizer(ctx context.Context, prov agent.Provider, model st
 		rep.Pending = 0
 		return rep, nil
 	}
+	prov, model = agent.ResolveModelSlot(prov, model)
 	if model != "" {
 		prov = prov.WithModel(model)
 	}

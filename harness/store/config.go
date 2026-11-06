@@ -41,9 +41,11 @@ type HygieneConfig struct {
 	// written would be stale on arrival.
 	SummarizeAfterHours int `yaml:"summarize_after_hours"`
 
-	// SummarizerModel is the model the summarizer pass consults. Empty
-	// = the session provider's own model (Endo's ruling: default A,
-	// configurable in settings - the same law as the curator model).
+	// SummarizerModel is the model slot the summarizer pass consults
+	// (card t_fc0b2f2d): "instance:model" or a bare model, resolved
+	// through agent.ResolveModelSlot; empty = the session provider
+	// model (the curator ruling). Routed in from the top-level
+	// summarizer_model knob (provider settings).
 	SummarizerModel string `yaml:"summarizer_model"`
 }
 

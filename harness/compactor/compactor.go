@@ -98,7 +98,18 @@ func (c *Compactor) summarize(ctx context.Context, middle []core.Message) (strin
 		b.WriteString("\n")
 	}
 
-	events := c.provider.Stream(ctx, []core.Message{core.NewUser(b.String())}, nil)
+	// The consult resolves the per-subsystem model slot (card
+	// t_fc0b2f2d): an "instance:model" value rides the named provider
+	// instance, a bare value serves through the default instance, and
+	// an empty model keeps the instance's own default. Resolved per
+	// call - the model knob is hot (compaction config is re-read on
+	// every Compact).
+	prov, model := agent.ResolveModelSlot(c.provider, c.config.Model)
+	if model != "" {
+		prov = prov.WithModel(model)
+	}
+
+	events := prov.Stream(ctx, []core.Message{core.NewUser(b.String())}, nil)
 	var summary strings.Builder
 	for ev := range events {
 		switch e := ev.(type) {
