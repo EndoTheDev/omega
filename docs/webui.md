@@ -381,7 +381,8 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   search, transcript fetch, files browse/read, image attach,
   `renderMarkdown` (markdown-it, `html: false` — the lib's default
   escaping is the sanitizer), `createRenderScheduler`.
-- Shell: `MenuBar` (brand, toggles), `StatusBar` (health dot,
+- Shell: `MenuBar` (brand, nav cluster after the brand, the plain
+  'Omega' wordmark dead center, edge toggles far right), `StatusBar` (health dot,
   token/ctx/rate telemetry, build version + uptime), `SearchInput`,
   `PaneDivider`, `TabBand` (the universal panel top bar: title left,
   actions right, outside every scrollport), `TogglePill` (the one

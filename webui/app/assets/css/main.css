@@ -117,16 +117,28 @@ body {
 .menubar-spacer { flex: 1; }
 
 /* ---- card t_6215474b: the nav cluster + command palette ----
-   The cluster seats CENTERED in the menubar (the panes' row owns the
-   rest of the flex content; the cluster floats over the middle). The
-   ends dim via the real disabled attribute - VS Code states. */
+   The cluster seats INLINE after the brand (card t_3aed367e: the
+   center wordmark vacated the cluster's old absolute-center seat; the
+   panes' row owns the rest of the flex content). The ends dim via the
+   real disabled attribute - VS Code states. */
 .nav-cluster {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 2px;
+}
+/* ---- card t_3aed367e: the plain 'Omega' wordmark, dead center on the
+   menubar's FULL width (absolute middle - robust to any left/right
+   width, unlike spacer balancing). The brand's font treatment. No
+   version text: the bottom status bar owns version + uptime. */
+.menubar-wordmark {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 .nav-btn:disabled {
   opacity: 0.35;
