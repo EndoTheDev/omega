@@ -127,6 +127,15 @@ Body: `{"messages": [...], "session_id": "...?", "model": "...?",
   thinking parameter sent; unset = provider default).
 - **tools**: optional allowlist; empty enables the full server
   registry.
+- **Workspace rooting**: every tool run executes in the session's
+  workspace - the folder pinned on the session, or the
+  `server.default_workspace` knob for workspace-less sessions
+  (a vanished folder degrades to the unset case, the process cwd).
+  The webui's workspace chip mirrors the effective folder. Per-call
+  override: `shell.run` and `process.spawn` accept an optional `dir`
+  argument - absolute, or relative to the run's workspace; a missing
+  or non-directory path is a named tool error, never a cryptic
+  chdir failure.
 - **Images**: any user message rides AI image content (base64), capped
   at 10 MB decoded per image (400 above it, checked before anything
   runs).
