@@ -80,3 +80,20 @@ Regenerate, don't hand-fix: `cd webui && bash scripts/build.sh`,
 then rebuild `go build ./cmd/omega` and verify the served CSS/JS came
 out clean (grep served files, never the `.vue` sources). See
 "poisoned-bundle diagnosis" in [webui.md](webui.md).
+
+## Variant switch-back renders stale after a retry run (journey 30 class)
+
+The pane shows the old variant (`2/2`) after a switch-back click that the
+server accepted. Pinned by instrumented diagnosis (t_7ab2bc47, 2026-10-25;
+full evidence in git history, `diag/` at 14f2972c): the click, the server
+persistence, and the refetch ordering are all ruled out — root cause is
+the CLIENT RENDER GRAPH in the post-exit-flush window (~1-12s after a
+retry run settles): the canvas store receives fresh panel deltas and
+poller snapshots, but they never reach the ChatTab repaint. Severance
+lives in ChatTab's `panelPayload`/`canvasItems` computed and/or the
+`createCanvasTranscript` positional cache (signature `role:index:blockcount`
+folds variants onto one cached item object). The chain re-attaches on the
+next interaction. Related finding from the same pass: multi-row replays
+with a thinking branch-anchor render NO switcher at all — the
+`variantOfItem` guard requires kind `message`, so a tool-calling retry
+bricks the switcher (170043 family).
