@@ -44,9 +44,37 @@ ab press Enter
 ab press Enter
 step "typed"
 
-# wait for the run to finish (composer face leaves stop/cancel)
+# wait for the run to START (the cancel face appears, poll - a fast
+# text-only answer beats a fixed sleep) then finish
+poll_js '!document.querySelector("button.send.cancel, .composer .cancel")' 30 || \
+  die "cancel face never appeared - the model answered without a tool run (premise unmet)"
 wait_js '!document.querySelector("button.send.cancel, .composer .cancel")' 240
 step "ok: run finished"
+
+# the transcript must be SETTLED before the premise read: the canvas
+# item stream can lag the composer face - poll until the transcript
+# reads running:false and holds stable across two samples
+settle=0
+prev=""
+for i in $(seq 1 60); do
+  cur=$(curl -s "$JOURNEY_BASE_URL/sessions/$SID/transcript" | python -c "
+import json,sys
+d=json.load(sys.stdin)
+items=d.get('items') if isinstance(d,dict) else (d or [])
+n=len([i for i in (items if isinstance(items,list) else [])])
+print(('RUNNING' if d.get('running') else ('%d' % n)))
+" 2>/dev/null || echo ERR)
+  if [ "$cur" != "ERR" ] && [ "$cur" != "RUNNING" ] && [ -n "$cur" ] && [ "$cur" = "$prev" ]; then
+    settle=$((settle + 1))
+    [ "$settle" -ge 2 ] && break
+  else
+    settle=0
+  fi
+  prev="$cur"
+  sleep 1
+done
+[ "$settle" -ge 2 ] || die "transcript never settled (last: $prev)"
+step "ok: transcript settled at $prev items"
 
 # the premise, from the SERVER's transcript (GET /sessions/<id>/transcript,
 # the same items the pane renders): run lengths of consecutive
