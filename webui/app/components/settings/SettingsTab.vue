@@ -96,7 +96,6 @@
             v-else-if="knob.type === 'model'"
             :knob="knob"
             :value="modelValue(knob)"
-            :instances="instanceRows"
             @update="setServer(knob, $event)" />
           <!-- providers (card t_7dcd4280: the named instances list -
                one row per instance, name = the instance id, add and
@@ -451,16 +450,10 @@
     ...groups.value,
   ]);
 
-  // instanceRows (card t_fc0b2f2d): the model pickers that name
-  // provider instances ride the same payload's provider.instances
-  // rows - one read, no per-field plumbing.
-  const instanceRows = computed<ProviderInstanceRow[]>(() => {
-    for (const g of allGroups.value) {
-      const k = g.knobs.find((kn) => kn.key === "provider.instances");
-      if (k) return providersValue(k);
-    }
-    return [];
-  });
+  // instanceRows was the model pickers' instance feed (card t_fc0b2f2d)
+  // - card t_1914a8c9 moved the options to the grouped /models catalog
+  // (ModelField reads it from composables/modelCatalog), so the pane
+  // carries no rows plumbing anymore.
 
   const visibleGroups = computed<SettingGroup[]>(() =>
     filterSettingGroups(allGroups.value, query.value),
@@ -544,9 +537,10 @@
     return v === "" ? "" : v;
   };
 
-  // providersValue (card t_7dcd4280): the list editor's rows - a
-  // structural value coerced to its shape (tolerant: an unexpected
-  // kind degrades to no rows, never a render crash).
+  // providersValue (card t_7dcd4280, reshaped t_1914a8c9): the list
+  // editor's rows - a structural value coerced to its named-endpoint
+  // shape (no model column; tolerant: an unexpected kind degrades to
+  // no rows, never a render crash).
   const providersValue = (knob: SettingKnob): ProviderInstanceRow[] => {
     const v = serverValue(knob);
     if (!Array.isArray(v)) return [];
@@ -555,7 +549,6 @@
       .map((r) => ({
         name: typeof r["name"] === "string" ? r["name"] : "",
         type: typeof r["type"] === "string" ? r["type"] : "",
-        model_name: typeof r["model_name"] === "string" ? r["model_name"] : "",
         host: typeof r["host"] === "string" ? r["host"] : "",
         api_key: typeof r["api_key"] === "string" ? r["api_key"] : "",
       }));
