@@ -312,6 +312,106 @@ if ! gofmt -e "$TESTDIR/known.go" > /dev/null 2>"$TESTDIR/gofmt.err"; then
 else
   ok
 fi
+
+# 10. the named-instances strands (card t_4a1ed765):
+#   - the composite-typed aggregate field (`Providers
+#     map[string]ProviderConfig`) joins the SharedFields class and dies
+#     with the capsule - the nightly red the card fixes;
+#   - the type constructor and the make() type arg are value-position
+#     wires;
+#   - a func whose body emptied dies whole and its callers - even in a
+#     file the scrub already passed - follow (the file-level carried
+#     passes);
+#   - a stdlib import whose last reader was the deleted func prunes;
+#   - a param named exactly like the module (`provider string`)
+#     survives: the bare module name is not a value-killer, only the
+#     qualified use is the package wire.
+TESTDIR="$(mktemp -d)"
+cat > "$TESTDIR/config.go" <<'EOF'
+package main
+
+type ProviderConfig struct {
+	Type      string
+	ModelName string
+}
+
+type Config struct {
+	Provider  ProviderConfig `yaml:"provider"`
+	Providers map[string]ProviderConfig `yaml:"providers"`
+	Server    string         `yaml:"server"`
+}
+EOF
+cat > "$TESTDIR/calls.go" <<'EOF'
+package main
+
+func wrap(cfg *Config) {
+	knobList(cfg)
+	envOverride(cfg)
+	keep := cfg.Server
+	_ = keep
+}
+EOF
+cat > "$TESTDIR/knobs.go" <<'EOF'
+package main
+
+import "sort"
+
+func knobList(cfg *Config) []map[string]any {
+	names := make([]string, 0, len(cfg.Providers))
+	for n := range cfg.Providers {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return []map[string]any{{"name": names}}
+}
+
+func instances(cfg *Config, raw any) error {
+	list := make(map[string]ProviderConfig, 1)
+	_ = list
+	return nil
+}
+
+func envOverride(cfg *Config) {
+	if cfg.Provider.Type != "" {
+		cfg.Provider.ModelName = "x"
+	}
+}
+
+func passthrough(provider string) string {
+	return provider
+}
+EOF
+if [ -z "$SCRUBPY" ]; then
+  SCRUBPY="$(mktemp)"
+  awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
+fi
+# calls.go sits BEFORE knobs.go on purpose: pass 1 scrubs it before the
+# funcs die in knobs.go, so only the carried-pass loop cleans its call
+# sites.
+(cd "$TESTDIR" && python3 "$SCRUBPY" "config.go,calls.go,knobs.go" provider) >/dev/null 2>&1
+if ! grep -q 'knobList' "$TESTDIR/calls.go" \
+  && ! grep -q 'envOverride' "$TESTDIR/calls.go" \
+  && grep -q 'cfg.Server' "$TESTDIR/calls.go" \
+  && ! grep -q 'knobList' "$TESTDIR/knobs.go" \
+  && ! grep -q 'envOverride' "$TESTDIR/knobs.go" \
+  && ! grep -q '"sort"' "$TESTDIR/knobs.go" \
+  && grep -q 'return nil' "$TESTDIR/knobs.go" \
+  && grep -q 'passthrough' "$TESTDIR/knobs.go" \
+  && grep -q 'return provider' "$TESTDIR/knobs.go" \
+  && ! grep -q 'ProviderConfig' "$TESTDIR/config.go" \
+  && ! grep -q 'Providers' "$TESTDIR/config.go" \
+  && grep -q 'Server' "$TESTDIR/config.go"; then
+  ok
+else
+  bad "scrubber missed a named-instances strand (composite field, value use, emptied func, carried call site, stdlib import, bare module param)"
+fi
+for f in "$TESTDIR/config.go" "$TESTDIR/calls.go" "$TESTDIR/knobs.go"; do
+  if ! gofmt -e "$f" > /dev/null 2>"$TESTDIR/gofmt.err"; then
+    bad "scrubbed fixture does not parse: $(cat "$TESTDIR/gofmt.err")"
+  else
+    ok
+  fi
+done
 rm -rf "$TESTDIR" "$SCRUBPY"
 
 if [ "$fail" -gt 0 ]; then
