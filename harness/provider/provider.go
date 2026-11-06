@@ -46,6 +46,22 @@ func (p *Provider) Instance(name string) (agent.Provider, bool) {
 	return inst, true
 }
 
+// InstanceNames lists the configured instance ids (card t_1914a8c9):
+// the serving shell reads it for the grouped model catalog. The
+// instance-free provider answers nil (the shell renders the default
+// section only); a derived copy carries the same set.
+func (p *Provider) InstanceNames() []string {
+	if len(p.instances) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(p.instances))
+	for n := range p.instances {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // NewProvider creates a Provider from the given configuration fields.
 // typ defaults to "ollama" when empty. baseURL defaults to the
 // provider's standard endpoint when empty. apiKey is read from the

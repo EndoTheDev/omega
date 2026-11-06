@@ -70,12 +70,14 @@
               :show-thinking="showThinking"
               :model="selectedModel"
               :models="models"
+              :groups="modelGroups"
               :session="chatSession(tab)"
               :thinking="selectedThinking"
               :appearance="appearance"
               @update:model="onChatModel(tab, $event)"
               @update:thinking="selectedThinking = $event"
-              @update:workspace="onChatWorkspace(tab, $event)" />
+              @update:workspace="onChatWorkspace(tab, $event)"
+              @refresh-models="refreshModels().catch(() => {})" />
           </div>
           <div
             v-if="mainView === 'board' && pane === boardHostPane"
@@ -522,7 +524,11 @@
     type UserTheme,
     type ColorMode,
   } from "./composables/omega";
-  import type { Session, Appearance } from "./composables/omega";
+  import type {
+    Session,
+    Appearance,
+    ModelProviderSection,
+  } from "./composables/omega";
   import {
     useToolDisplay,
     TOOL_DISPLAY_KEY,
@@ -687,6 +693,19 @@
   }
   const models = ref<string[]>([]);
   const selectedModel = ref("");
+  // the GROUPED catalog (card t_1914a8c9): one section per provider -
+  // the chat picker renders collapsible sections from these; the
+  // picker's Refresh action re-runs the fetch.
+  const modelGroups = ref<ModelProviderSection[]>([]);
+  async function refreshModels() {
+    const m = await fetchModels();
+    models.value = m.models;
+    modelGroups.value = m.providers ?? [
+      { name: "default", models: m.models, capabilities: m.capabilities },
+    ];
+    if (m.context_window) contextSize.value = m.context_window;
+    return m;
+  }
   // reasoning effort: one app-level selection shared by every chat tab.
   // Persisted in localStorage (last choice wins across reloads, card
   // t_2b474945); "default" = no thinking_level field on the wire.
@@ -2117,11 +2136,9 @@
     // /models round-trip (shared keypool stall) used to hold the whole
     // sidebar hostage. Fire it off and let the picker fill in when it
     // lands - the session list renders independent of provider reachability.
-    void fetchModels()
+    void refreshModels()
       .then((m) => {
-        models.value = m.models;
         selectedModel.value = m.current;
-        if (m.context_window) contextSize.value = m.context_window;
       })
       .catch(() => {
         // models are decoration until a chat runs

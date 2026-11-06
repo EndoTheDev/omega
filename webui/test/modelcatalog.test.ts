@@ -221,21 +221,26 @@ test("the degrade path: fetch failure or empty filtered list yields text + hint"
   assert.equal(typeof refreshModelCatalog, "function");
 });
 
-// --- the per-subsystem slots (card t_fc0b2f2d): the instance picker ---
+// --- the per-subsystem slots (card t_fc0b2f2d, reshaped t_1914a8c9):
+// the instance picker reads the GROUPED CATALOG ---
 
-test("the slot mode: ModelField prepends instance:model options from the payload rows", () => {
-  // the component prop rides the pane's provider.instances rows
-  assert.match(modelField, /instances\?: ProviderInstanceRow\[\]/);
-  // the options lead with the instance pairs (a row without a name or
-  // model cannot resolve - it stays off the list), then the catalog
+test("the slot mode: ModelField prepends instance:model options from the grouped catalog sections", () => {
+  // the component reads the grouped /models sections, not a prop:
+  // a section without an error and not the default one offers its
+  // catalog as "instance:model" pairs (t_1914a8c9 removed the
+  // bound-model column from the instance rows, so the OLD
+  // ProviderInstanceRow prop is gone)
+  assert.doesNotMatch(modelField, /instances\?: ProviderInstanceRow\[\]/,
+    "the instance-row prop is gone - slots read the grouped catalog");
+  assert.match(modelField, /catalog\.value\.sections \?\? \[\]/);
   assert.match(
     modelField,
-    /filter\(\(r\) => r\.name !== "" && r\.model_name !== ""\)/,
+    /\.filter\(\(s\) => s\.name !== "default" && !s\.error\)/,
+    "the default section is the pane's own pickers; a failed section contributes nothing",
   );
-  assert.match(modelField, /value: `\$\{r\.name\}:\$\{r\.model_name\}`/);
+  assert.match(modelField, /value: `\$\{s\.name\}:\$\{e\.name\}`/);
   // only the slot knobs get the instance list; the chat pickers never
   assert.match(modelField, /props\.knob\.slot !== true\)/);
-  // the pane hands ModelField the payload's provider.instances rows
-  assert.match(settingsTab, /:instances="instanceRows"/);
-  assert.match(settingsTab, /kn\.key === "provider\.instances"/);
+  // the pane no longer hands ModelField instance rows
+  assert.doesNotMatch(settingsTab, /:instances="instanceRows"/);
 });
