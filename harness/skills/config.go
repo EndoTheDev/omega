@@ -23,7 +23,11 @@ type Config struct {
 	// named provider instance, card t_7dcd4280) or a bare model -
 	// resolved through agent.ResolveModelSlot. Empty = the session
 	// provider's own model (Endo's ruling). Source: the top-level
-	// skills_model knob (provider settings, card t_fc0b2f2d).
+	// skills_model knob (provider settings, card t_fc0b2f2d). Live
+	// since card t_f78acfd6: the host's hot-apply re-sends the
+	// skills section on every settings save
+	// (SkillsProvider.SetCuratorModel), so a skills_model flip
+	// reaches the next curator action without a restart.
 	CuratorModel string `yaml:"curator_model"`
 }
 

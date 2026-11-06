@@ -92,6 +92,17 @@ func (a *Agent) SetMaxToolOutput(n int) {
 	a.maxToolOutput = n
 }
 
+// SetMaxTurns swaps the per-run turn cap live (card t_f78acfd6, the
+// probe verdict: the loop re-reads it at every Run start, so the
+// host's hot-apply flips it without a restart). A value <= 0 lets the
+// loop's defaultMaxTurns cap apply. The write rides tpMu: a live run
+// reads the field under the same lock.
+func (a *Agent) SetMaxTurns(n int) {
+	a.tpMu.Lock()
+	defer a.tpMu.Unlock()
+	a.maxTurns = n
+}
+
 // SetCWD sets the working directory passed to extension-built prompts
 // via PromptBuildOptions.
 func (a *Agent) SetCWD(dir string) {
@@ -99,9 +110,30 @@ func (a *Agent) SetCWD(dir string) {
 }
 
 // SetPromptCustom stores the user-supplied custom prompt from config.
-// Passed to extensions via PromptBuildOptions.Custom.
+// Passed to extensions via PromptBuildOptions.Custom. The write rides
+// tpMu (card t_f78acfd6): the custom prompt is a live settings knob
+// now, and a running run reads the field under the same lock.
 func (a *Agent) SetPromptCustom(s string) {
+	a.tpMu.Lock()
+	defer a.tpMu.Unlock()
 	a.promptCustom = s
+}
+
+// PromptCustom returns the live custom prompt snapshot (card
+// t_f78acfd6): the hot-apply knob read for verification, under the
+// same lock its write and the run's read use.
+func (a *Agent) PromptCustom() string {
+	a.tpMu.RLock()
+	defer a.tpMu.RUnlock()
+	return a.promptCustom
+}
+
+// MaxTurns returns the live per-run turn cap snapshot (card
+// t_f78acfd6): the hot-apply's knob read for verification.
+func (a *Agent) MaxTurns() int {
+	a.tpMu.RLock()
+	defer a.tpMu.RUnlock()
+	return a.maxTurns
 }
 
 // SetPromptAppend stores extra prompts from --append-system-prompt.
@@ -528,6 +560,11 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 		toolProviders := a.toolProviders
 		disabledTools := a.disabledTools
 		approvals := a.approvals
+		// t_f78acfd6: maxTurns and the custom prompt are hot-apply
+		// knobs now - the run reads them under the same lock the
+		// settings save writes them through, never racy.
+		maxTurns := a.maxTurns
+		promptCustom := a.promptCustom
 		a.tpMu.RUnlock()
 		a.loop.Run(ctx, LoopOptions{
 			Provider:           provider,
@@ -538,10 +575,10 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			CompactionProvider: a.compactor,
 			PromptBuilder:      a.promptBuilder,
 			ExtensionInfos:     a.extensionInfos,
-			MaxTurns:           a.maxTurns,
+			MaxTurns:           maxTurns,
 			MaxToolOutput:      a.maxToolOutput,
 			CWD:                runCWD,
-			PromptCustom:       a.promptCustom,
+			PromptCustom:       promptCustom,
 			PromptAppend:       a.promptAppend,
 			PromptContext:      runPromptContext,
 			Events:             inner,

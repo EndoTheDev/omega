@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -37,6 +38,31 @@ type Store struct {
 	// dbPath is the dsn the store opened with (the hygiene pass reads
 	// the main + WAL file sizes off it). ":memory:" reads zero.
 	dbPath string
+	// hyg is the sessions hygiene config, live (card t_f78acfd6):
+	// the host's hot-apply path swaps it (SetHygieneConfig), and the
+	// pass resolves its model slot/retention window per run - a
+	// settings save reaches the next sweep without a restart. The
+	// mu guards it; reads snapshot under RLock.
+	hygMu sync.RWMutex
+	hyg   HygieneConfig
+}
+
+// SetHygieneConfig swaps the hygiene pass's knobs live (card
+// t_f78acfd6, the compactor/approval SetConfig pattern): the host's
+// hot-apply pushes a fresh section; the next sweep re-reads it.
+func (s *Store) SetHygieneConfig(cfg HygieneConfig) {
+	s.hygMu.Lock()
+	defer s.hygMu.Unlock()
+	s.hyg = cfg
+}
+
+// HygieneConfig returns a snapshot of the live hygiene config. The
+// copy is defensive: a concurrent hot-apply never mutates the
+// caller's view mid-sweep.
+func (s *Store) HygieneConfig() HygieneConfig {
+	s.hygMu.RLock()
+	defer s.hygMu.RUnlock()
+	return s.hyg
 }
 
 // Open opens (creating if needed) the SQLite database at dsn and ensures
@@ -52,7 +78,14 @@ func (s *Store) Open(dsn string) error {
 	if err != nil {
 		return err
 	}
-	*s = *newStore
+	// Field-by-field: the struct now carries hygMu (card t_f78acfd6)
+	// and a struct copy would swap live locks. The identity/handle
+	// fields land as before (single-threaded reopen).
+	s.hygMu.Lock()
+	defer s.hygMu.Unlock()
+	s.db = newStore.db
+	s.identity = newStore.identity
+	s.dbPath = newStore.dbPath
 	return nil
 }
 

@@ -89,13 +89,15 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	search := &searchToolProvider{store: s}
 	// The hygiene pass's knobs ride the `sessions:` config section
 	// (card t_329b9312), routed by the host's config.go section table.
-	// Absent section = the defaults; apply-on-restart like the rest of
-	// the capsule's config.
+	// Absent section = the defaults. Live since card t_f78acfd6: the
+	// section lands on the store (SetHygieneConfig) and the pass
+	// re-reads it per sweep - the hot-apply swaps it on every save.
 	hyg := DefaultHygiene()
 	if c, ok := ctx.Configs["sessions"].(HygieneConfig); ok {
 		hyg = c
 	}
-	hygiene := &hygieneToolProvider{store: s, cfg: hyg, providerFn: func() agent.Provider { return seam[agent.Provider](ctx, "provider") }}
+	s.SetHygieneConfig(hyg)
+	hygiene := &hygieneToolProvider{store: s, providerFn: func() agent.Provider { return seam[agent.Provider](ctx, "provider") }}
 	// The management REST face (the shell-ring shrink wave 2, the
 	// three-layer sessions law): the sessions list, the search seat,
 	// branch, export and the insights view mount and die with this

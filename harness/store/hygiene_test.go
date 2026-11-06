@@ -319,7 +319,8 @@ func TestHygieneToolActions(t *testing.T) {
 	}
 	ageSession(t, s, "a", 2)
 	cfg := DefaultHygiene()
-	tool := (&hygieneToolProvider{store: s, cfg: cfg, providerFn: func() agent.Provider {
+	s.SetHygieneConfig(cfg)
+	tool := (&hygieneToolProvider{store: s, providerFn: func() agent.Provider {
 		return fakeSummary("The user greeted the assistant; a greeting was returned.")
 	}}).Tools()["sessions.hygiene"]
 
@@ -359,4 +360,73 @@ func TestInsightsCarriesFileSizes(t *testing.T) {
 	}
 	// A WAL that exists after the migrate writes shows up too; do not
 	// pin the value (checkpoint timing), only that the db file reported.
+}
+
+// ---------------------------------------------------------------------------
+// Hygiene goes live (card t_f78acfd6): the sweep resolves its model slot
+// from the store's LIVE section per call; the host's hot-apply replaces
+// the section (SetHygieneConfig) and the next sweep consults the new
+// slot - no restart, no re-mount. The tool's report line names the
+// slot: the acceptance's proof.
+// ---------------------------------------------------------------------------
+
+// spySlotProvider records every WithModel derivation: the consult's
+// slot is the fact the live-flip test pins.
+type spySlotProvider struct {
+	agent.Provider // the underlying fake (embedded interface)
+	saw            []string
+}
+
+// WithModel records the derived model before delegating. The returned
+// provider stays the plain fake (the caller streams from it); the spy
+// only needs the derivation trail.
+func (p *spySlotProvider) WithModel(model string) agent.Provider {
+	p.saw = append(p.saw, model)
+	return p.Provider.WithModel(model)
+}
+
+func TestSetHygieneConfigGoesLive(t *testing.T) {
+	s := newFileStore(t)
+	ctx := context.Background()
+	for _, name := range []string{"a", "b"} {
+		if err := s.CreateSession(ctx, name, "", ""); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.AppendMessage(ctx, name, core.NewUser("hello")); err != nil {
+			t.Fatal(err)
+		}
+		ageSession(t, s, name, 2)
+	}
+	fake := fakeSummary("The user greeted the assistant; a greeting was returned.")
+	spy := &spySlotProvider{Provider: fake}
+	s.SetHygieneConfig(DefaultHygiene()) // the boot section: slot empty
+	tool := (&hygieneToolProvider{store: s, providerFn: func() agent.Provider {
+		return spy
+	}}).Tools()["sessions.hygiene"]
+
+	// Boot: empty slot = the session provider's own model, no derivation.
+	out, err := tool.Run(ctx, map[string]any{"action": "summarize"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "summarizer model: test-model") {
+		t.Errorf("boot consult line: %q", out)
+	}
+	if len(spy.saw) != 0 {
+		t.Errorf("boot consult must not derive a slot: %v", spy.saw)
+	}
+
+	// THE flip: the live section swaps - the SAME tool (no re-mount)
+	// consults the new slot on the next sweep, and the report names it.
+	s.SetHygieneConfig(HygieneConfig{SummarizerModel: "flip:sweep", SummarizeAfterHours: DefaultSummarizeAfterHours})
+	out, err = tool.Run(ctx, map[string]any{"action": "summarize"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "summarizer model: flip:sweep") {
+		t.Errorf("post-flip consult line: %q", out)
+	}
+	if len(spy.saw) != 1 || spy.saw[0] != "flip:sweep" {
+		t.Errorf("post-flip consult = %v, want one WithModel(\"flip:sweep\") derivation", spy.saw)
+	}
 }
