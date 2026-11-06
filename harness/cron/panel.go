@@ -42,16 +42,22 @@ const (
 // same view GET /cron/jobs and the /cron table render). No action
 // binding - the module is read-only.
 type jobRow struct {
-	Name     string `json:"name"`
-	Kind     string `json:"kind"`
-	Schedule string `json:"schedule,omitempty"`
-	Minutes  int    `json:"minutes,omitempty"`
-	Deliver  string `json:"deliver"`
-	Agent    string `json:"agent,omitempty"`
-	Model    string `json:"model,omitempty"`
-	File     string `json:"file,omitempty"`
-	Enabled  bool   `json:"enabled"`
-	Next     string `json:"next,omitempty"`
+	Name     string   `json:"name"`
+	Kind     string   `json:"kind"`
+	Schedule string   `json:"schedule,omitempty"`
+	Minutes  int      `json:"minutes,omitempty"`
+	Deliver  string   `json:"deliver"`
+	Agent    string   `json:"agent,omitempty"`
+	Model    string   `json:"model,omitempty"`
+	File     string   `json:"file,omitempty"`
+	Skills   []string `json:"skills,omitempty"`
+	Enabled  bool     `json:"enabled"`
+	Next     string   `json:"next,omitempty"`
+	// The last fire's outcome (t_3885c975): status + completion time,
+	// the same JobInfo fields the wire listing carries.
+	Status     string `json:"status,omitempty"`
+	Last       string `json:"last,omitempty"`
+	StatusNote string `json:"status_note,omitempty"`
 }
 
 // jobsPayload is the jobs panel's view-model: the job count (the
@@ -121,16 +127,20 @@ func (c *capsule) jobsPanel() core.Panel {
 	rows := make([]jobRow, 0, len(infos))
 	for _, j := range infos {
 		rows = append(rows, jobRow{
-			Name:     j.Name,
-			Kind:     j.Kind,
-			Schedule: j.Schedule,
-			Minutes:  j.Minutes,
-			Deliver:  j.Deliver,
-			Agent:    j.Agent,
-			Model:    j.Model,
-			File:     j.File,
-			Enabled:  j.Enabled,
-			Next:     j.Next,
+			Name:       j.Name,
+			Kind:       j.Kind,
+			Schedule:   j.Schedule,
+			Minutes:    j.Minutes,
+			Deliver:    j.Deliver,
+			Agent:      j.Agent,
+			Model:      j.Model,
+			File:       j.File,
+			Skills:     j.Skills,
+			Enabled:    j.Enabled,
+			Next:       j.Next,
+			Status:     j.Status,
+			Last:       j.Last,
+			StatusNote: j.StatusNote,
 		})
 	}
 	return core.Panel{

@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/robfig/cron/v3"
 )
 
@@ -34,10 +34,26 @@ const stateFileName = "crons.yaml"
 // "cron" on the wire, the identifier stays free of the capsule noun).
 const runOriginScheduled = "cron"
 
-// cronState is the on-disk shape of cronstate.json.
+// cronState is the on-disk shape of cronstate.json. Jobs keys the
+// covered scheduled times (the catch-up contract); Last keys the most
+// recent fire's outcome (the next-run row's sibling: status + when).
 type cronState struct {
-	Jobs map[string]int64 `json:"jobs"` // name -> last covered scheduled time (unix)
+	Jobs map[string]int64       `json:"jobs"` // name -> last covered scheduled time (unix)
+	Last map[string]fireOutcome `json:"last,omitempty"`
 }
+
+// fireOutcome is one completed fire's record: when the turn (or wake)
+// finished, whether it ran clean, and the capped error message when it
+// did not. Keyed on the job's StateKey like everything else in here.
+type fireOutcome struct {
+	At    int64  `json:"at"` // completion wall clock (unix)
+	Ok    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+// statusNoteCap bounds the persisted error message: the state file is
+// an operator's diagnostic, not a log dump.
+const statusNoteCap = 512
 
 // Runner is the scheduler. Safe for concurrent use.
 type Runner struct {
@@ -55,6 +71,12 @@ type Runner struct {
 	// universal registry at Start (card t_5d9032d3). Nil-safe: no
 	// capsule, no emission.
 	notifier finishedThings
+	// skills is the consumer-side face of the skills capsule (part 3):
+	// just the read method the pinned-skills injection calls, resolved
+	// from the universal registry at Start. Nil-safe: no capsule, no
+	// pinning (a job with skills errors at fire, the scheduler keeps
+	// standing - the same posture a bad agent name gets).
+	skills skillReader
 	// tickEmit is the event-spine wake-tick emitter, wired from
 	// deps.Ctx at Start (card t_72ecca67). Nil = the spine has no
 	// emitter (never started, or no Context): agent wakes go inert.
@@ -66,17 +88,18 @@ type Runner struct {
 	panels *capsule
 
 	mu        sync.Mutex
-	running   map[string]bool  // per-job fire guard
-	jobs      []Job            // current job set
-	sched     *cron.Cron       // active schedule; nil until started
-	lastFire  map[string]int64 // state from cronstate.json + this run
-	scheduled map[string]bool  // names currently scheduled (for logs/tests)
-	stop      chan struct{}    // closed by Stop() to end Start
+	running   map[string]bool        // per-job fire guard
+	jobs      []Job                  // current job set
+	sched     *cron.Cron             // active schedule; nil until started
+	lastFire  map[string]int64       // state from cronstate.json + this run
+	last      map[string]fireOutcome // state: the most recent fire's outcome
+	scheduled map[string]bool        // names currently scheduled (for logs/tests)
+	stop      chan struct{}          // closed by Stop() to end Start
 
 	// Test hooks. runTurn is swappable so guard/catch-up/fire tests
 	// don't need a live provider; now isolates time-dependent logic.
 	now          func() time.Time
-	runTurn      func(ctx context.Context, sessionID string, job Job) (string, error)
+	runTurn      func(ctx context.Context, sessionID string, job Job, prompt string) (string, error)
 	pollInterval time.Duration
 }
 
@@ -93,6 +116,7 @@ func NewRunner(cfg *Config, home string) *Runner {
 		jobs:         jobs,
 		running:      map[string]bool{},
 		lastFire:     map[string]int64{},
+		last:         map[string]fireOutcome{},
 		scheduled:    map[string]bool{},
 		stop:         make(chan struct{}),
 		now:          time.Now,
@@ -124,6 +148,14 @@ type finishedThings interface {
 	Emit(n core.Notice) (core.Notice, error)
 }
 
+// skillReader is the consumer-side face of the skills capsule (part 3,
+// the seam constitution): just the read the pinned-skills injection
+// calls. The skills capsule satisfies it structurally (SkillRead);
+// no shared type exists, absence is the floor.
+type skillReader interface {
+	SkillRead(name string) (description, content string, err error)
+}
+
 // Start runs the scheduler until the context is cancelled or Stop is
 // called. deps carries the agent, store, memory, and finished-things
 // faces resolved at host wiring time.
@@ -147,6 +179,12 @@ func (r *Runner) Start(ctx context.Context, deps runnerDeps) error {
 	r.store = deps.Store
 	if deps.Ctx != nil {
 		r.notifier, _ = deps.Ctx.Services().Resolve("notifications").(finishedThings)
+		// The pinned-skills face: resolved live at Start like every
+		// other registry consumer here. Wrong shape = nil (the shape
+		// panic lives behind the mount's own seam asserts; a resolved
+		//-but-non-conforming offer degrades to "no skills face" and
+		// jobs with a pinned list error at fire, loudly, in the log).
+		r.skills, _ = deps.Ctx.Services().Resolve("skills").(skillReader)
 	}
 
 	r.loadCronState()
@@ -249,9 +287,14 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	}
 	defer r.release(key)
 
+	// The last-status contract (t_3885c975): every fire return path
+	// lands an outcome - ok / error with the message - so the tab's
+	// status line always tells the truth about the last run. A wake
+	// with no tick emitter is an error, not an invisible success.
 	if job.IsAgent() {
-		r.fireAgentWake(job, job.Agent, key)
+		wakeErr := r.fireAgentWake(job, job.Agent, key)
 		r.recordFire(job, when)
+		r.recordOutcome(job, wakeErr)
 		return
 	}
 	if job.DeliverTarget() == deliverContinuous {
@@ -267,15 +310,18 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 		if err != nil {
 			r.errorf("job %s: agent %q unknown: %v", key, name, err)
 			r.recordFire(job, when)
+			r.recordOutcome(job, fmt.Errorf("agent %q unknown: %v", name, err))
 			return
 		}
 		if !prof.Continuous {
 			r.errorf("job %s: agent %q has no continuous session (main never wakes); deliver continuous-agent needs an agent home", key, name)
 			r.recordFire(job, when)
+			r.recordOutcome(job, fmt.Errorf("agent %q has no continuous session", name))
 			return
 		}
-		r.fireAgentWake(job, name, key)
+		wakeErr := r.fireAgentWake(job, name, key)
 		r.recordFire(job, when)
+		r.recordOutcome(job, wakeErr)
 		return
 	}
 	// In-process targets run under the default agent. A job naming a
@@ -285,6 +331,7 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	if name := job.ResolveAgent(); name != agent.DefaultAgentName {
 		r.errorf("job %s: agent %q: deliver %q runs in-process as the default agent; use deliver: continuous-agent to fire agent %s", key, name, job.DeliverTarget(), name)
 		r.recordFire(job, when)
+		r.recordOutcome(job, fmt.Errorf("deliver %q runs in-process as the default agent; agent %q needs deliver: continuous-agent", job.DeliverTarget(), name))
 		return
 	}
 
@@ -292,6 +339,18 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	sessionID, err := agent.NewSessionID()
 	if err != nil {
 		r.errorf("job %s: session id: %v", job.Name, err)
+		r.recordOutcome(job, fmt.Errorf("session id: %v", err))
+		return
+	}
+
+	// The pinned skills resolve BEFORE the session exists (the bad-agent
+	// posture, now for skills): a half-set table never opens a session,
+	// the error lands in the log and in the last-status record, the
+	// scheduler keeps standing.
+	promptText, pinErr := r.pinnedPrompt(job)
+	if pinErr != nil {
+		r.errorf("%v", pinErr)
+		r.recordOutcome(job, pinErr)
 		return
 	}
 
@@ -316,7 +375,7 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	// turn - the verdict tool refuses to hard-pause from this origin.
 	turnCtx = core.WithRunOrigin(turnCtx, runOriginScheduled)
 
-	final, runErr := r.runTurn(turnCtx, sessionID, job)
+	final, runErr := r.runTurn(turnCtx, sessionID, job, promptText)
 	if runErr != nil {
 		r.errorf("job %s: run failed after %s: %v", job.Name, sinceStart(start, r.now()), runErr)
 	} else {
@@ -325,6 +384,7 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 
 	r.applyDeliver(ctx, job, final)
 	r.recordFire(job, when)
+	r.recordOutcome(job, runErr)
 	r.emitFinished(job.Name, runErr == nil)
 }
 
@@ -369,23 +429,55 @@ type wakeTickPayload struct {
 // fireAgentWake is the agent-wake fire body: one tick through the
 // event spine, then done. agent is the resolved target (the owning
 // agent home's name, or the job's agent field via the defaulting law).
-// Nil tickEmit = the continuous capsule is toggled off - the tick
-// lands on an empty spine, the wake goes inert (the log names it), the
-// schedule stays.
-func (r *Runner) fireAgentWake(job Job, target string, key string) {
+// The error return feeds the fire's last-status record: nil tickEmit =
+// the continuous capsule is toggled off - the tick lands on an empty
+// spine, the wake goes inert (the log names it), the schedule stays.
+func (r *Runner) fireAgentWake(job Job, target string, key string) error {
 	if r.tickEmit == nil {
 		r.logf("wake %s: continuous not mounted, wake inert", key)
-		return
+		return fmt.Errorf("continuous not mounted, wake inert")
 	}
 	r.tickEmit(wakeTickPayload{Agent: target, Job: job.Name, Prompt: job.Prompt, Model: job.Model})
 	r.logf("wake %s: tick emitted", key)
+	return nil
+}
+
+// pinnedPrompt builds the fire's user message: the pinned skills'
+// bodies ahead of the job prompt (t_3885c975). A scheduled job runs
+// one fixed procedure unwatched - making it hunt the skill index is
+// noise, the editor pins the names and the fire ships the content.
+// A pinned name the skills capsule cannot read (unknown, unmounted,
+// unreadable) is an error the fire records - no run on a half-set
+// table, the scheduler keeps standing (the bad-agent posture).
+func (r *Runner) pinnedPrompt(job Job) (string, error) {
+	if len(job.Skills) == 0 {
+		return job.Prompt, nil
+	}
+	if r.skills == nil {
+		return "", fmt.Errorf("job %s: skills pinned but the skills module is not mounted", job.Name)
+	}
+	var sb strings.Builder
+	sb.WriteString("<pinned-skills>\n")
+	for _, name := range job.Skills {
+		_, content, err := r.skills.SkillRead(name)
+		if err != nil {
+			return "", fmt.Errorf("job %s: pinned skill %q: %w", job.Name, name, err)
+		}
+		sb.WriteString("<skill name=\"" + name + "\">\n")
+		sb.WriteString(strings.TrimRight(content, "\n"))
+		sb.WriteString("\n</skill>\n")
+	}
+	sb.WriteString("</pinned-skills>\n\n")
+	return sb.String() + job.Prompt, nil
 }
 
 // agentTurn is the default runTurn: one full agent turn in the cron
-// session. Sends the job prompt through the loop; the loop's sink
-// persists prompt, assistant, and tool results (t_471f6d4a) - the
-// runner only adds the session's token totals.
-func (r *Runner) agentTurn(ctx context.Context, sessionID string, job Job) (string, error) {
+// session. The prompt arrives pre-resolved - fire() pinned the skills
+// in before the session existed (the sessionless half-set-table law);
+// agentTurn sends it through the loop. The loop's sink persists
+// prompt, assistant, and tool results (t_471f6d4a) - the runner only
+// adds the session's token totals.
+func (r *Runner) agentTurn(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 	if r.ag == nil {
 		return "", fmt.Errorf("no agent wired (cron runner started without deps.Agent)")
 	}
@@ -399,18 +491,18 @@ func (r *Runner) agentTurn(ctx context.Context, sessionID string, job Job) (stri
 	// the context it is given, a sink applied after the call would
 	// miss the whole turn's persistence.
 	ctx = agent.WithTurnSink(ctx, agent.NewStoreTurnSink(r.store, sessionID, ""))
-	ctx = agent.WithPersistInput(ctx, []core.Message{core.NewUser(job.Prompt)})
-	prompt := []core.Message{core.NewUser(job.Prompt)}
+	ctx = agent.WithPersistInput(ctx, []core.Message{core.NewUser(prompt)})
+	promptMsgs := []core.Message{core.NewUser(prompt)}
 	var events <-chan core.Event
 	if model := strings.TrimSpace(job.Model); model != "" {
 		if p := r.ag.Provider(); p != nil {
-			events = r.ag.RunWithProvider(ctx, p.WithModel(model), prompt, nil)
+			events = r.ag.RunWithProvider(ctx, p.WithModel(model), promptMsgs, nil)
 		} else {
 			r.logf("job %s: model %q ignored, no provider wired", job.Name, model)
-			events = r.ag.Run(ctx, prompt, nil)
+			events = r.ag.Run(ctx, promptMsgs, nil)
 		}
 	} else {
-		events = r.ag.Run(ctx, prompt, nil)
+		events = r.ag.Run(ctx, promptMsgs, nil)
 	}
 	var promptTokens, completionTokens int
 	var final string
@@ -453,6 +545,40 @@ func (r *Runner) recordFire(job Job, when time.Time) {
 	if err := r.saveCronState(); err != nil {
 		r.errorf("job %s: save state: %v", job.Name, err)
 	}
+}
+
+// recordOutcome lands the fire's last-status record (t_3885c975): ok,
+// or error with the message. Every fire return path calls it, so the
+// tab's status line never lies about the last run. The record is the
+// COMPLETION wall clock (when the turn or wake finished), not the
+// scheduled slot the catch-up keys on - the two live as separate
+// entries in cronstate.json.
+func (r *Runner) recordOutcome(job Job, err error) {
+	r.mu.Lock()
+	if r.last == nil {
+		r.last = map[string]fireOutcome{}
+	}
+	r.last[job.StateKey()] = fireOutcome{
+		At:    r.now().Unix(),
+		Ok:    err == nil,
+		Error: truncateNote(err),
+	}
+	r.mu.Unlock()
+	if serr := r.saveCronState(); serr != nil {
+		r.errorf("job %s: save state: %v", job.Name, serr)
+	}
+}
+
+// truncateNote caps an error message for the state record.
+func truncateNote(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	if len(msg) > statusNoteCap {
+		msg = msg[:statusNoteCap]
+	}
+	return msg
 }
 
 // applyDeliver applies the run's deliver target to the final assistant
@@ -679,7 +805,20 @@ func (r *Runner) Jobs() []JobInfo {
 			Agent:    j.Agent,
 			Model:    j.Model,
 			File:     j.File,
+			Skills:   j.Skills,
 			Enabled:  j.IsEnabled(),
+		}
+		// The last-status fields ride the same snapshot: the record
+		// survives restarts, so a fresh serve still shows the truth
+		// about the previous process's fires.
+		if last, ok := r.outcomeOf(j.StateKey()); ok {
+			row.Last = time.Unix(last.At, 0).Local().Format(time.RFC3339)
+			if last.Ok {
+				row.Status = "ok"
+			} else {
+				row.Status = "error"
+				row.StatusNote = last.Error
+			}
 		}
 		if row.Enabled {
 			if sched, err := scheduleFor(j); err == nil {
@@ -702,10 +841,13 @@ func (r *Runner) Jobs() []JobInfo {
 // --- state (cronstate.json) ---
 
 // loadCronState reads cronstate.json. A missing or corrupt file is a
-// fresh state - no catch-up, regular schedule unaffected.
+// fresh state - no catch-up, regular schedule unaffected. The Last map
+// is optional (older state files carry jobs only): absent outcomes
+// read as the job never fired.
 func (r *Runner) loadCronState() {
 	r.mu.Lock()
 	r.lastFire = map[string]int64{}
+	r.last = map[string]fireOutcome{}
 	r.mu.Unlock()
 	data, err := os.ReadFile(filepath.Join(r.home, cronStateFileName))
 	if err != nil {
@@ -721,15 +863,25 @@ func (r *Runner) loadCronState() {
 	if r.lastFire == nil {
 		r.lastFire = map[string]int64{}
 	}
+	r.last = st.Last
+	if r.last == nil {
+		r.last = map[string]fireOutcome{}
+	}
 	r.mu.Unlock()
 }
 
 // saveCronState atomically writes cronstate.json.
 func (r *Runner) saveCronState() error {
 	r.mu.Lock()
-	st := cronState{Jobs: make(map[string]int64, len(r.lastFire))}
+	st := cronState{
+		Jobs: make(map[string]int64, len(r.lastFire)),
+		Last: make(map[string]fireOutcome, len(r.last)),
+	}
 	for k, v := range r.lastFire {
 		st.Jobs[k] = v
+	}
+	for k, v := range r.last {
+		st.Last[k] = v
 	}
 	r.mu.Unlock()
 	data, err := json.MarshalIndent(st, "", "  ")
@@ -750,6 +902,14 @@ func (r *Runner) lastFireOf(name string) (int64, bool) {
 	defer r.mu.Unlock()
 	v, ok := r.lastFire[name]
 	return v, ok
+}
+
+// outcomeOf returns the recorded last-fire outcome for a job.
+func (r *Runner) outcomeOf(key string) (fireOutcome, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	o, ok := r.last[key]
+	return o, ok
 }
 
 // --- hot reload ---

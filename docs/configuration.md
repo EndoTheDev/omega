@@ -167,6 +167,7 @@ prompt as a full agent turn in a session labeled `cron:<name>`.
 | `agent`     | optional — the agent home the fire runs under                                               |
 | `model`     | optional — the provider model for this fire                                                 |
 | `prompt`    | required, the user message the run sends                                                    |
+| `skills`    | optional list of skill names - their bodies ride the fire prompt ahead of the prompt (main-home jobs only; agent homes reject the field) |
 | `deliver`   | `new-session` (default) \| `continuous-agent` \| `append-to-file`                            |
 | `file`      | the append-to-file target (home-relative); empty = the journal naming                        |
 | `enabled`   | default true                                                                                |
@@ -189,6 +190,15 @@ The webui Cron tab edits every field through `POST /cron/save` +
 An agent-home wake job is refused by the editor (the cross-home law).
 omega can propose jobs in conversation but never writes the file
 itself.
+
+**Last status** (t_3885c975): every fire records its outcome
+(`ok` / `error` with the capped message) into `cronstate.json`, keyed
+on the same `<agent>/<name>` state keys. The GET `/cron/jobs` rows, the
+Cron tab and the `/cron` table carry `status`, `last` (the completion
+wall clock, RFC3339) and `status_note`; the record survives restarts.
+A never-fired job carries no status. A pinned skill the skills capsule
+cannot read is a fire-time error — no run on a half-set table, the
+scheduler keeps standing.
 
 ## The approval gate
 

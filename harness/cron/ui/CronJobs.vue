@@ -109,6 +109,14 @@
             v-model="editor.draft.model"
             placeholder="session model when empty" />
         </label>
+        <!-- t_3885c975: the fire-pinned skills - comma-separated names,
+             the bodies ride the fire prompt ahead of the prompt. -->
+        <label class="cron-editor-field">
+          <span>skills</span>
+          <input
+            v-model="editor.draft.skills"
+            placeholder="comma-separated skill names" />
+        </label>
         <label class="cron-editor-field cron-editor-wide">
           <span>prompt</span>
           <textarea
@@ -170,7 +178,7 @@
                  uniform row heights. -->
             <span class="reg-row-sub">
               <span class="cron-meta reg-row-sub-text">
-                {{ cadenceOf(j) }}<template v-if="j.next"> - next {{ shortTime(j.next) }}</template>{{ jobMeta(j) }}
+                {{ cadenceOf(j) }}<template v-if="j.next"> - next {{ shortTime(j.next) }}</template>{{ lastMeta(j) }}{{ jobMeta(j) }}
               </span>
             </span>
           </div>
@@ -265,6 +273,7 @@
     editableOf,
     emptyDraft,
     jobMeta,
+    lastMeta,
     saveCronJob,
     validateDraft,
     type JobDraft,
