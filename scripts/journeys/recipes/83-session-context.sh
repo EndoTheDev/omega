@@ -84,17 +84,19 @@ assert_eq "$restored" "$target" "pinned model restored on reopen"
 # --- the workspace chip writes the row ------------------------------
 # t_ca699ff3: the pin target is derived from the LANE over the wire,
 # never hardcoded - a non-Linux lane's home is a different shape, and
-# its root listing is a drive root where no "home" row exists. The
-# probe mirrors what the popover itself does (the root /workspaces/
-# browse listing) and prefers the dir named "home" when the lane root
-# has one (every Linux box: the pinned value stays what this journey
-# always asserted, byte-identical), else the first root row the browse
-# endpoint actually serves. Fallback: a lane whose root rows are all
-# refused by the browse validator - the write strand rides the wire
-# (the same lane-capability precedent as the one-model strand above),
-# seeded from the server.default_workspace knob; the restore and clear
-# strands below stay fully UI-driven. RESOLVED is the listing's own
-# path shape - the same symlink-resolved spelling the PATCH stores.
+# its root listing is a drive root. t_ccf74d88's effective-workdir law
+# decides WHERE the popover roots itself: a bound, un-pinned session's
+# chip presents the knob, so the click strand rides a row of the knob's
+# listing (a browsable child the cleared chip cannot mirror); a
+# knobless lane's chip opens at the drive root ("/" on linux,
+# volume-qualified on windows: t_7dcdc98e) and prefers the dir named
+# "home" when one exists (every Linux box: the pinned value stays what
+# this journey always asserted, byte-identical). Fallback: pins are
+# wire-written when no row the popover would render is left to click
+# (the same lane-capability precedent as the one-model strand above);
+# the restore and clear strands below stay fully UI-driven. RESOLVED
+# is the listing's own path shape - the same symlink-resolved spelling
+# the PATCH stores.
 WSPICK=$(JOURNEY_BASE_URL="$JOURNEY_BASE_URL" python3 -c '
 import json, os, sys, urllib.parse, urllib.request
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -104,6 +106,15 @@ def browse(p):
     url = base if p is None else base + "?" + urllib.parse.urlencode({"path": p})
     return json.load(opener.open(url, timeout=10))
 dirs = browse(None).get("dirs", [])
+knob = ""
+try:
+    settings = json.load(opener.open(root_url + "/settings", timeout=10))
+    for g in settings.get("groups", []):
+        for k in g.get("knobs", []):
+            if k.get("key") == "server.default_workspace":
+                knob = k.get("value") or ""
+except Exception:
+    pass
 target = resolved = ""
 def try_row(row):
     global target, resolved
@@ -114,36 +125,44 @@ def try_row(row):
     except Exception:
         return False
 strand = ""
-pref = [d for d in dirs if d["name"] == "home"]
-for row in pref + dirs:
-    if try_row(row):
-        strand = "ui"
-        break
-knob = ""
-try:
-    settings = json.load(opener.open(root_url + "/settings", timeout=10))
-    for g in settings.get("groups", []):
-        for k in g.get("knobs", []):
-            if k.get("key") == "server.default_workspace":
-                knob = k.get("value") or ""
-except Exception:
-    pass
-if strand != "ui":
-    target = resolved = ""
-    # wire strand: pin a browsable child of the knob when one exists
-    # (a pin distinct from the knob keeps the restore-vs-clear chip
-    # states visibly different on every lane), else the knob itself.
+# t_ccf74d88 effective-workdir law in the UI: a bound, unpinned
+# session chip presents the knob, so the popover opens at the knob
+# listing - only ITS rows are clickable there. A knob lane pin
+# therefore rides a knob-listing row (a browsable child, a value the
+# cleared chip cannot mirror); the root listing home preference
+# only applies where the chip has no knob to present (knobless lanes,
+# linux/CI: byte-identical).
+if knob:
     try:
-        if knob:
-            kres = browse(knob)["path"]
-            resolved = kres
-            for d in browse(kres).get("dirs", []):
-                try:
-                    resolved = browse(d["path"])["path"]
-                    break
-                except Exception:
-                    continue
-            strand = "wire"
+        kres = browse(knob)["path"]
+        for d in browse(kres).get("dirs", []):
+            if try_row(d):
+                strand = "ui"
+                break
+    except Exception:
+        pass
+if strand != "ui" and not knob:
+    pref = [d for d in dirs if d["name"] == "home"]
+    for row in pref + dirs:
+        if try_row(row):
+            strand = "ui"
+            break
+if strand != "ui" and knob:
+    # wire strand: the knob has no browsable child row to click -
+    # pin a browsable child directly if one exists (a pin distinct
+    # from the knob keeps the restore-vs-clear chip states visibly
+    # different on every lane), else the knob itself.
+    target = resolved = ""
+    try:
+        kres = browse(knob)["path"]
+        resolved = kres
+        for d in browse(kres).get("dirs", []):
+            try:
+                resolved = browse(d["path"])["path"]
+                break
+            except Exception:
+                continue
+        strand = "wire"
     except Exception:
         pass
 if strand != "ui" and strand != "wire":
@@ -162,7 +181,7 @@ fi
 if [ "$STRAND" = "ui" ]; then
   jsq 'document.querySelector(".ws-btn")?.click()' >/dev/null 2>&1
   wait_js '!!document.querySelector(".ws-pop .ws-dirs .ws-dir")' 10 \
-    || die "workspace popover did not render the lane root listing"
+    || die "workspace popover did not render the lane listing (knob dir on a knob lane, the root else)"
   clicked=$(jsq "(()=>{const t = \"$(jstr "$TARGET")\"; const b = Array.from(document.querySelectorAll(\".ws-pop .ws-dir\")).find(x => (x.getAttribute(\"title\") || \"\") === t); if (!b) return 0; b.click(); return 1;})()" 2>&1 | tail -1 | deq)
   assert_eq "$clicked" "1" "popover rendered the lane-derived workspace dir"
   # descend into it: the crumb carries the RESOLVED dir path (the same
@@ -172,7 +191,7 @@ if [ "$STRAND" = "ui" ]; then
   jsq 'document.querySelector(".ws-pop .ws-apply")?.click()' >/dev/null 2>&1
   step "workspace pin rides the popover browse"
 else
-  step "lane root rows are not browsable - write strand rides the wire, restore+clear stay UI"
+  step "no popover-clickable workspace row - write strand rides the wire, restore+clear stay UI"
   curl -s -X PATCH "$JOURNEY_BASE_URL/sessions/$JRN_ID" \
     -H 'Content-Type: application/json' \
     -d "{\"workspace\": \"$(jstr "$RESOLVED")\"}" >/dev/null
@@ -187,12 +206,17 @@ done
 assert_eq "$ws" "$RESOLVED" "workspace chip wrote the session row"
 
 # --- reload: the folder restores ------------------------------------
-# the chip name is the product's baseName shape (the last /-segment);
+# the chip name is the product's baseName shape (the last /-segment;
+# a windows-drive value contains no "/", so the whole value renders -
+# the same mirror the product's p.split("/").pop() performs).
 # compared inside js - the deq house sed does not unescape doubled
 # backslashes, a windows-drive chip value would read back mangled.
 fresh_open
 open_journey_row "$LABEL"
-ws_base=${RESOLVED##*/}
+case "$RESOLVED" in
+  */*) ws_base=${RESOLVED##*/} ;;
+  *)   ws_base=$RESOLVED ;;
+esac
 ws_ok=$(jsq "(()=>{const t = document.querySelector(\".ws-btn .chip-name:not(.ws-unset)\")?.textContent ?? \"\"; return t === \"$(jstr "$ws_base")\";})()" 2>&1 | tail -1)
 assert_eq "$ws_ok" "true" "pinned workspace restored on reopen"
 

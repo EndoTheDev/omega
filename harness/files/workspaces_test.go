@@ -17,6 +17,7 @@ import (
 	httptest2 "net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -58,7 +59,10 @@ func mustQueryWorkspace(v string) string {
 func TestWorkspaceBrowse(t *testing.T) {
 	rt := workspaceTestRoutes(t)
 
-	// The root listing lists the drive's root dirs and reports no parent.
+	// The root listing lists the root dirs and reports no parent. On
+	// windows the "/" default must be mounted on the process volume -
+	// a volume-less root's rows ("\Users") never re-validate on click
+	// (t_7dcdc98e): every emitted row path must be absolute.
 	req := httptest2.NewRequest(http.MethodGet, "/workspaces/browse", nil)
 	rec := httptest2.NewRecorder()
 	rt.handleWorkspacesBrowse(rec, req)
@@ -75,11 +79,39 @@ func TestWorkspaceBrowse(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &listing); err != nil {
 		t.Fatalf("decode browse: %v", err)
 	}
-	if listing.Path != "/" && listing.Path != "" {
+	if runtime.GOOS == "windows" {
+		if vol := filepath.VolumeName(listing.Path); vol == "" {
+			t.Errorf("browse root path = %q, want a volume-qualified root", listing.Path)
+		}
+	} else if listing.Path != "/" && listing.Path != "" {
 		t.Errorf("browse root path = %q, want \"/\"", listing.Path)
 	}
 	if listing.Parent != "" {
 		t.Errorf("browse root parent = %q, want empty", listing.Parent)
+	}
+	if len(listing.Dirs) == 0 {
+		t.Fatal("root listing is empty")
+	}
+	for _, d := range listing.Dirs {
+		if !filepath.IsAbs(d.Path) {
+			t.Errorf("root row %q is not absolute - the browse click would be refused", d.Path)
+		}
+	}
+	// The click-through wire shape: every root row path re-validates
+	// in the same endpoint that emitted it. A row may still 400 on a
+	// permission-bound dir (open ... Access is denied) - a real disk
+	// error, browsable by a user with the rights - but the
+	// "not an absolute path" refusal can no longer happen (t_7dcdc98e).
+	for _, d := range listing.Dirs {
+		req := httptest2.NewRequest(http.MethodGet, "/workspaces/browse?path="+mustQueryWorkspace(d.Path), nil)
+		rec := httptest2.NewRecorder()
+		rt.handleWorkspacesBrowse(rec, req)
+		if rec.Code == http.StatusOK {
+			continue
+		}
+		if strings.Contains(rec.Body.String(), "absolute path") {
+			t.Errorf("root row %q was refused as non-absolute: %s - the dead-click regression, t_7dcdc98e", d.Path, rec.Body.String())
+		}
 	}
 
 	// A relative path is rejected; an absolute dir lists its subdirs.
