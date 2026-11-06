@@ -51,7 +51,7 @@ func TestRegistryMountRegistersSearchTools(t *testing.T) {
 	if len(tools) != 2 {
 		t.Fatalf("search provider ships %d tools, want 2 (grep + glob)", len(tools))
 	}
-	for _, name := range []string{"grep", "glob"} {
+	for _, name := range []string{"files.grep", "files.glob"} {
 		if tools[name].Run == nil {
 			t.Fatalf("search tool %q missing from the mounted registry", name)
 		}
@@ -67,7 +67,7 @@ func TestRegistryMountRegistersSearchTools(t *testing.T) {
 func TestSearchToolsShape(t *testing.T) {
 	p := NewSearchProvider(nil)
 	tools := p.Tools()
-	for _, name := range []string{"grep", "glob"} {
+	for _, name := range []string{"files.grep", "files.glob"} {
 		tl, ok := tools[name]
 		if !ok {
 			t.Fatalf("tool %q missing from the provider map", name)
