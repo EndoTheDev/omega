@@ -144,6 +144,53 @@ export function replaceMentionToken(
   };
 }
 
+// --- the / slash token (t_d1a2951d: caret-based, like the @ token) ---
+
+// SlashQuery at a caret: active when the caret sits inside a token that
+// starts with "/" and runs back to a word boundary (whitespace, an open
+// paren, or the text start) - the draft's leading word is just the
+// boundary-free case, so a leading slash behaves exactly as before. The
+// raw token INCLUDES the slash.
+export interface SlashQuery {
+  active: boolean;
+  token: string;
+}
+
+export function slashTokenAt(draft: string, caret: number): SlashQuery {
+  const upto = draft.slice(0, Math.max(0, Math.min(caret, draft.length)));
+  const m = upto.match(/(^|[\s(])(\/\S*)$/);
+  if (!m) return { active: false, token: "" };
+  return { active: true, token: m[2] ?? "" };
+}
+
+// replaceSlashToken writes a completed command back into the draft at
+// the caret: the FULL slash word the caret sits inside (the query may be
+// its caret-truncated head) becomes the insertion, everything around it
+// stays. Returns the new draft; the caller moves the caret to
+// start + insertion.length. A caret outside any "/" word is a no-op.
+export function replaceSlashToken(
+  draft: string,
+  caret: number,
+  queryToken: string,
+  insertion: string,
+): { draft: string; caret: number } {
+  const at = Math.max(0, Math.min(caret, draft.length));
+  const w = /(^|[\s(])(\/\S*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = w.exec(draft)) !== null) {
+    const start = m.index + m[1]!.length;
+    const token = m[2]!;
+    const end = start + token.length;
+    if (at < start || at > end) continue;
+    if (!token.startsWith(queryToken)) return { draft, caret };
+    return {
+      draft: draft.slice(0, start) + insertion + draft.slice(end),
+      caret: start + insertion.length,
+    };
+  }
+  return { draft, caret };
+}
+
 // clampIndex is the only arithmetic the palette keyboard nav does:
 // ArrowDown/ArrowUp move active, wrapping at the ends. From no
 // selection (-1), ArrowDown highlights the first row, ArrowUp the

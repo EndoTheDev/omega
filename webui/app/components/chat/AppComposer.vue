@@ -82,11 +82,11 @@
         @paste="onPaste" />
     </div>
     <!-- the / command palette and @ mention picker (t_07aed3f9): the
-         TUI's autocomplete surface on the webui's tokens. "/" at input
-         start lists the commands (shell + module registry + skills);
-         "@" lists workspace files plus the session:/skill: context
-         injections. Expansion itself is server-side - the picker only
-         types the tokens. -->
+         TUI's autocomplete surface on the webui's tokens. A "/" token at
+         the caret (draft start or mid-sentence, t_d1a2951d) lists the
+         commands (shell + module registry + skills); "@" lists workspace
+         files plus the session:/skill: context injections. Expansion
+         itself is server-side - the picker only types the tokens. -->
     <div
       v-if="paletteOpen"
       ref="paletteEl"
@@ -220,6 +220,8 @@
     mentionQueryAt,
     mentionPrefixOf,
     replaceMentionToken,
+    slashTokenAt,
+    replaceSlashToken,
     clampIndex,
     fetchPaletteCommands,
     fetchPaletteSkills,
@@ -456,11 +458,11 @@
 
   // --- the / command palette and @ mention picker (t_07aed3f9) ---
   //
-  // Derived from draft + caret. "/" as the input's first char with the
-  // caret still inside its first word = the slash list; a running
-  // "@..." token at the caret = the mention list. Esc sets dismissed
-  // until the next draft change - a dropdown stays closed until a new
-  // query re-opens it.
+  // Derived from draft + caret. A "/" token under the caret (the draft's
+  // leading word is just its boundary-free case, t_d1a2951d) = the slash
+  // list; a running "@..." token at the caret = the mention list. Esc
+  // sets dismissed until the next draft change - a dropdown stays closed
+  // until a new query re-opens it.
   //
   // NOTE: the mode is DERIVED (mention.value.active), never stored in
   // an imperative ref flipped from onInput - that flip raced the draft
@@ -520,20 +522,22 @@
 
   const mention = computed(() => mentionQueryAt(props.draft, caretAt.value));
 
+  // the caret's "/" token (t_d1a2951d): the slash surface is TOKEN-based
+  // like the mention surface - anywhere in the draft
+  const slash = computed(() => slashTokenAt(props.draft, caretAt.value));
+
   const paletteOpen = computed(() => {
     if (dismissed.value) return false;
-    // slash lists while the caret is still inside the command word -
-    // past the first space it is arg territory, the palette stands down
-    if (props.draft.startsWith("/")) {
-      const space = props.draft.indexOf(" ");
-      if (caretAt.value <= (space === -1 ? props.draft.length : space)) return true;
-    }
+    // slash lists while the caret sits inside a "/" token - past its
+    // trailing space it is arg or plain-sentence territory (the token
+    // ended), the palette stands down
+    if (slash.value.active) return true;
     return mention.value.active;
   });
 
   // allItems branches on the DERIVED mode (see the note above): the
-  // mention computeds, else the slash list - slash mode when the draft
-  // starts with "/", and empty otherwise.
+  // mention computeds, else the slash list - slash mode when the caret
+  // sits inside a "/" token, and empty otherwise.
   const allItems = computed<PaletteItem[]>(() => {
     if (!paletteOpen.value) return [];
     if (mention.value.active) {
@@ -563,8 +567,8 @@
       const rows: PaletteItem[] = [...prefixRows, ...mentionRows(fileRows.value)];
       return filterMentionRows(tok, rows);
     }
-    if (!props.draft.startsWith("/")) return [];
-    const query = props.draft.slice(0, caretAt.value).replace(/\s.*/, "");
+    if (!slash.value.active) return [];
+    const query = slash.value.token;
     return filterCommands(query, paletteCommands(extCmds.value, skillRows.value));
   });
 
@@ -601,7 +605,7 @@
   // above): a mention opening loads its rows once; the slash surface
   // loads the command registry + skills snapshot
   const mentionActive = computed(() => mention.value.active);
-  const slashSurface = computed(() => !mentionActive.value && props.draft.startsWith("/"));
+  const slashSurface = computed(() => !mentionActive.value && slash.value.active);
   watch(mentionActive, (on) => {
     if (on) {
       void loadMentionRows();
@@ -994,34 +998,36 @@
       !mention.value.active &&
       item.kind === "skill"
     ) {
-      const space = props.draft.indexOf(" ");
-      const rest = space === -1 ? "" : props.draft.slice(space);
-      const text = item.name + rest;
+      // token surgery (t_d1a2951d): replace ONLY the "/" word under the
+      // caret - a mid-sentence token dies in place, a leading one keeps
+      // the old whole-args shape (the token runs to its own boundary)
+      const next = replaceSlashToken(props.draft, caretAt.value, slash.value.token, item.name);
       closePalette();
       // the fresh swallow (t_e67c372b): the completed token chips
-      // immediately - the caret parks at the draft's end, `forced`
-      // holds the chip for this span until a dissolve releases it
+      // immediately - `forced` holds the chip for this span until a
+      // dissolve releases it
       const forced = new Set(forcedChip.value);
       forced.add(item.name);
       forcedChip.value = forced;
-      caretAt.value = text.length;
-      emit("update:draft", text);
+      caretAt.value = next.caret;
+      emit("update:draft", next.draft);
       active.value = -1;
       nextTick(() => {
         const el = ta.value;
         if (el) {
           el.focus();
-          placeCaretAt(el, text.length);
+          placeCaretAt(el, next.caret);
         }
       });
       return;
     }
     if (!mention.value.active && (item.kind === "shell" || item.kind === "extension")) {
-      // preserve any args typed after the command word
-      const space = props.draft.indexOf(" ");
-      const rest = space === -1 ? "" : props.draft.slice(space);
+      // token surgery (t_d1a2951d): the completed command replaces only
+      // the "/" word under the caret; the message still submits whole
+      // (the palette's law: commands act locally)
+      const next = replaceSlashToken(props.draft, caretAt.value, slash.value.token, item.name);
       closePalette();
-      emit("update:draft", item.name + rest);
+      emit("update:draft", next.draft);
       emit("send");
       active.value = -1;
       return;
@@ -1056,16 +1062,19 @@
   }
 
   // Tab completes without submitting (TUI acceptMatch parity): the
-  // draft becomes the completed token, the palette closes.
+  // "/" word under the caret becomes the completed token, the palette
+  // closes.
   function acceptActive(submit: boolean) {
     const item = paletteItems.value[active.value];
     if (!item) return closePalette();
     if (submit) return acceptItem(item);
     if (!mention.value.active) {
-      emit("update:draft", item.name);
-      // the completion parks the caret at the draft's end; a skill
-      // completion fresh-swallows into a chip (t_e67c372b)
-      caretAt.value = item.name.length;
+      // token surgery (t_d1a2951d): only the "/" word dies - typed args
+      // around it stay (the old whole-draft rewrite was leading-only)
+      const next = replaceSlashToken(props.draft, caretAt.value, slash.value.token, item.name);
+      emit("update:draft", next.draft);
+      caretAt.value = next.caret;
+      // the completion chips a fresh skill token (t_e67c372b)
       if (item.kind === "skill") {
         const forced = new Set(forcedChip.value);
         forced.add(item.name);
@@ -1073,7 +1082,7 @@
       }
       closePalette();
       const el = ta.value;
-      if (el) nextTick(() => placeCaretAt(el, item.name.length));
+      if (el) nextTick(() => placeCaretAt(el, next.caret));
       return;
     }
     // a mention Tab completes too (TUI acceptMatch parity): the token

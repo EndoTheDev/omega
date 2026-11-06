@@ -20,6 +20,8 @@ import {
   mentionQueryAt,
   mentionPrefixOf,
   replaceMentionToken,
+  slashTokenAt,
+  replaceSlashToken,
   clampIndex,
 } from "../app/composables/commands.ts";
 // card t_6215474b: the shell's TopLevel command palette (Ctrl+K) - the
@@ -108,6 +110,46 @@ describe("mention token parsing", () => {
   });
 });
 
+// --- t_d1a2951d: the slash token is caret-based, mid-sentence included ---
+
+describe("slash token parsing (t_d1a2951d)", () => {
+  it("activates on a /token at the caret, anywhere in the draft", () => {
+    assert.deepEqual(slashTokenAt("use /sk to fix", 7), { active: true, token: "/sk" });
+    assert.deepEqual(slashTokenAt("/th", 3), { active: true, token: "/th" }, "leading stays");
+    assert.deepEqual(slashTokenAt("/", 1), { active: true, token: "/" });
+    // a paren is a word boundary like the file-token law
+    assert.deepEqual(slashTokenAt("(try /th", 8), { active: true, token: "/th" });
+    // the caret may sit before the token's tail: the full word extends it
+    assert.deepEqual(slashTokenAt("/theme dark", 3), { active: true, token: "/th" });
+  });
+
+  it("stands down past the token - args and plain sentence tails", () => {
+    assert.equal(slashTokenAt("use /sk to fix", 8).active, false, "past the space");
+    assert.equal(slashTokenAt("hello world", 11).active, false);
+    // a/b is one word that does not START with "/" - no palette
+    assert.equal(slashTokenAt("check a/b", 9).active, false);
+    // URLs: the slash never opens the palette mid-URL word
+    assert.equal(slashTokenAt("see https://x", 13).active, false);
+  });
+
+  it("replaceSlashToken replaces only the whole word under the caret", () => {
+    // mid-sentence: the sentence around the token stays
+    const mid = replaceSlashToken("use /sk to fix", 7, "/sk", "/skill");
+    assert.equal(mid.draft, "use /skill to fix");
+    assert.equal(mid.caret, 10);
+    // leading: the token is the first word, args ride along
+    const lead = replaceSlashToken("/th dark", 3, "/th", "/theme");
+    assert.equal(lead.draft, "/theme dark");
+    assert.equal(lead.caret, 6);
+    // a caret outside any /word is a no-op
+    const miss = replaceSlashToken("use /sk to fix", 14, "/sk", "/skill");
+    assert.equal(miss.draft, "use /sk to fix");
+    // a drifted query (stale token) is a no-op
+    const stale = replaceSlashToken("use /sk to fix", 7, "/zz", "/skill");
+    assert.equal(stale.draft, "use /sk to fix");
+  });
+});
+
 describe("palette keyboard nav", () => {
   it("wraps at both ends and starts the selection at a highlight edge", () => {
     assert.equal(clampIndex(0, 1, 3), 1);
@@ -130,6 +172,15 @@ describe("production-boundary wiring (test law: the served shape)", () => {
     assert.ok(composer.includes(`e.key === "Escape"`), "Esc dismisses the palette");
     assert.ok(composer.includes(`e.key === "Tab"`), "Tab completes without submitting");
     assert.ok(composer.includes("@pointerdown.prevent"), "clicking a row never steals focus");
+  });
+
+  it("the composer gates the slash palette on the caret's token, not draft start", () => {
+    assert.ok(composer.includes("slashTokenAt"), "the token rule drives the gates");
+    assert.equal(
+      composer.includes('startsWith("/")'),
+      false,
+      "the draft-starts-with gate is retired (t_d1a2951d)",
+    );
   });
 
   it("/skill tokens reach the message path - command drafts route through the host's send law", () => {
