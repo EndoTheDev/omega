@@ -109,8 +109,13 @@ The decision model moved to provider settings (card t_fc0b2f2d): the
 pane) rides the typed model picker, decision-filtered, and the picker
 also lists the named provider instances' models as `instance:model`
 values - the consult routes through that instance. Empty = fail-closed
-(every flagged command escalates). The mode and policy knobs above
-plus the model slot all apply on restart.
+(every flagged command escalates). The gate re-reads its config on
+every decision (card t_34cd1921): the mode, the policy and the model
+slot apply LIVE - a settings-pane save (or a hand-edited config.yaml)
+reaches the running gate without a restart (the host's hot-apply path
+pushes the fresh section; the reviewer request is rebuilt per ask
+from the live values). The one restart line that remains: `off` AT
+BOOT keeps the gate unmounted entirely - re-mounting is a restart.
 
 ## Removability
 
