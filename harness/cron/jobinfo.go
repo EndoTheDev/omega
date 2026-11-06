@@ -40,6 +40,10 @@ type JobInfo struct {
 	// other targets (and for append-to-file, where the empty file
 	// means the journal/<date>.md naming).
 	File string `json:"file,omitempty"`
+	// Prompt is the job's authored user message. The listing carries
+	// it so the editor drafts a full job (the whole-job upsert needs
+	// it - an empty-prompt draft dies at "prompt is required").
+	Prompt string `json:"prompt,omitempty"`
 	// Skills are the fire-pinned skill names (empty = the job hunts
 	// its own procedures; the bodies ride the fire prompt).
 	Skills []string `json:"skills,omitempty"`
