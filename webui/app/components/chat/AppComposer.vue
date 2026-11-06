@@ -242,9 +242,9 @@
     RefToken,
   } from "../../composables/pills";
   import { DOCK_VIEWER_OPEN_KEY } from "../../composables/viewer";
-  // the composer's display mode (card t_5752861e): one shared signal -
-  // SettingsTab writes it, the class binding carries mode-wide/mode-full
-  // (compact is the unstyled default shape)
+  // the composer's display mode (card t_5752861e, width ladder t_4a6431f8):
+  // one shared signal - SettingsTab writes it, the class binding carries
+  // mode-wide/mode-full (compact is the base shape, the narrow 720px card)
   import { parseComposerMode, useComposerMode } from "../../composables/composerMode";
   const props = defineProps<{
     draft: string;
@@ -293,7 +293,8 @@
   );
 
   // the display mode's class (card t_5752861e): mode-compact is the
-  // base .composer shape, so only wide/full carry a class
+  // mode classes beside it: compact is the BASE .composer shape (the 720px
+  // reading card), so only wide/full carry a class
   const composerModeClass = computed(() => {
     const m = parseComposerMode(composerMode.value);
     return m === "compact" ? null : `mode-${m}`;
