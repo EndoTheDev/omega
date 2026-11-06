@@ -80,7 +80,25 @@ func (c *Compactor) Compact(ctx context.Context, messages []core.Message) ([]cor
 // summary.
 func (c *Compactor) summarize(ctx context.Context, middle []core.Message) (string, error) {
 	var b strings.Builder
-	b.WriteString("Summarize the following conversation concisely, preserving key facts, decisions, and context. Output only the summary.\n\n")
+	// The summarization prompt carries the billion-context doctrine
+	// (idea-level extraction; github.com/ranxianglei/billion-context -
+	// their PROVENANCE framing marks the ideas license-clean, credit
+	// theirs): in their controlled evidence the doctrine + tags bundle
+	// delivered ~62% of the re-fetch reduction, more than the
+	// compression machinery itself. The summary is the only thing that
+	// survives a fold, so the classes below tell the model what must
+	// not be lost. No fill-percentage disclosure or question anywhere:
+	// a model told it is only part-way full refuses to compress.
+	b.WriteString("Summarize the conversation below for a context fold. " +
+		"The summary is the only thing that survives the fold; the first and last few messages around it are kept separately.\n" +
+		"\n" +
+		"KEEP VERBATIM: file paths with line numbers; function/type signatures and load-bearing code lines; " +
+		"exact error strings; decisions WITH their rationale; exact values (names, ids, versions, flags); " +
+		"references to earlier turns by their position so a later human can find the original.\n" +
+		"DROP: verbose tool output once its result is captured; duplicate reads of the same content; " +
+		"dead-end exploration - but keep the LESSON of the dead end (what was tried and why it failed).\n" +
+		"STRUCTURE: order the summary to match the conversation's chronology; " +
+		"no commentary about the summarization itself; output only the summary.\n\n")
 	for _, m := range middle {
 		b.WriteString("- [")
 		switch m.(type) {
