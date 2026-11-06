@@ -10,9 +10,9 @@ import (
 // hermes board grammar: triage todo scheduled ready running blocked
 // review done archived. Position is the card's order inside its
 // column - store-internal state, never serialized to the wire (the
-// GET /tasks list arrives in position order already).
-// position-order already). Assigned/started/completed stamps and
-// Position are store-owned fields too; Priority is the urgency
+// GET /tasks list arrives in position order already). Assigned/
+// started/completed stamps and Position are store-owned fields too;
+// Priority is the urgency
 // tiebreak (Hermes parity: higher = picked sooner, 0 = normal,
 // negative is refused at the door).
 type KanbanTask struct {
