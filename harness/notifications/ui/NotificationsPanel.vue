@@ -14,11 +14,21 @@
          the band renders before the .notif-list scrollport: scrolling
          the feed never moves it. -->
     <TabBand title="Notifications">
+      <!-- card t_9794272d: both band actions are ICON buttons now (Endo's
+           eyeball verdict on t_05ff5e35's text tools - they crowded the
+           band). The verbs moved to the native title tooltip + the
+           aria-label (both required - the accessibility gate); the glyphs
+           ride the iconset wrapper by semantic name (mail-open marks the
+           feed read, trash is the destructive delete). Behavior
+           unchanged: the t_05ff5e35 store wire + optimistic restore are
+           untouched, only the chrome restyled. -->
       <button
-        class="notif-clear-btn band-tool"
+        class="band-tool"
+        title="mark all read"
+        aria-label="mark all read"
         :disabled="notificationsUnread === 0"
         @click="markAll">
-        mark all read
+        <Icon name="mailOpen" />
       </button>
       <!-- the clear-all (card t_05ff5e35): the DELETE side of the
            surface - the feed GOES EMPTY, not just its read flags. Live
@@ -26,10 +36,12 @@
            non-empty feed; history deletion needs no rows confirmation
            (records are metadata only, retention prunes at 200). -->
       <button
-        class="notif-clear-btn band-tool"
+        class="band-tool"
+        title="clear all"
+        aria-label="clear all"
         :disabled="clearingAll || notificationsList.length === 0"
         @click="clearAllRecords">
-        clear all
+        <Icon name="trash" />
       </button>
     </TabBand>
     <ul
@@ -241,25 +253,10 @@
     height: 100%;
   }
   /* card t_308e6d9b: the head is the shared TabBand - the band's own
-     geometry replaced .notif-head/.notif-title; the mark-all-read
-     button keeps its text-button look (the band-tool font rules ride
-     it, its accent hover stays). */
-  .notif-clear-btn {
-    font: inherit;
-    font-size: 11px;
-    color: var(--text-dim);
-    background: 0 0;
-    border: none;
-    cursor: pointer;
-    padding: 2px 4px;
-  }
-  .notif-clear-btn:hover:not(:disabled) {
-    color: var(--accent);
-  }
-  .notif-clear-btn:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
+     geometry replaced .notif-head/.notif-title. Card t_9794272d: the
+     two actions are icon-only band-tools - no local look survives,
+     the shared .band-tool contract (hover, disabled, centering)
+     covers them at the shell defaults (14px / stroke 2). */
   .notif-list {
     list-style: none;
     margin: 0;
