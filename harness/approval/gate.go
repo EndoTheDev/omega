@@ -4,26 +4,30 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // The gate (design Q3/Q11/Q13): one gate, one policy text - agent
 // sessions AND cron workers consult the same object. The Gate is the
 // approval module's agent.ApprovalProvider implementation.
 type Gate struct {
-	cfg Config
+	// cfgMu guards cfg and policyFP: the host's settings hot-apply
+	// path replaces the config (SetConfig) while the loop gates tool
+	// calls in parallel. Every decision reads one consistent copy.
+	cfgMu sync.RWMutex
+	cfg   Config
 
 	// verdicts/notifications are the consumer-side faces (part 3 seam
 	// constitution): local interfaces with just what the gate calls,
 	// resolved live from the universal registry, nil-safe by the
 	// classic law. The owner capsules never know this gate exists.
-	verdicts      func() verdictHub         // read live: the service stays the source of truth
-	notifications func() finishedThings     // read live; nil-safe
+	verdicts      func() verdictHub     // read live: the service stays the source of truth
+	notifications func() finishedThings // read live; nil-safe
 	logger        agent.LoggerProvider
-	reviewer      Reviewer
 	audit         *Audit
 	cache         *Cache
 	questionsFP   string
@@ -63,23 +67,42 @@ const (
 // over the live Context (a seam rewire is visible at ask time); the
 // logger may be nil. Smart mode without a reviewer host/model still
 // mounts - every gated command then fails closed into escalation,
-// honest about a dead review rather than silently open.
+// honest about a dead review rather than silently open. The config is
+// the boot value; the host's hot-apply path (SetConfig) keeps it live
+// so a settings flip applies without a restart.
 func NewGate(cfg Config, verdicts func() verdictHub, notifications func() finishedThings, logger agent.LoggerProvider) *Gate {
 	return &Gate{
 		cfg:           cfg,
 		verdicts:      verdicts,
 		notifications: notifications,
 		logger:        logger,
-		reviewer: Reviewer{
-			Host:   cfg.HTTPHost,
-			APIKey: cfg.APIKey,
-			Model:  cfg.Model,
-		},
-		audit:       NewAudit(cfg.Home),
-		cache:       NewCache(),
-		questionsFP: questionsFingerprint(),
-		policyFP:    policyHash(cfg.SmartPolicy),
+		audit:         NewAudit(cfg.Home),
+		cache:         NewCache(),
+		questionsFP:   questionsFingerprint(),
+		policyFP:      policyHash(cfg.SmartPolicy),
 	}
+}
+
+// SetConfig replaces the gate's config at runtime (card t_34cd1921,
+// approvals goes live): the host's settings hot-apply path
+// (WatchConfig / settings save) calls this so a mode, policy or model
+// flip takes effect on the running agent without a restart. Every
+// decision re-reads the config (config(), mode(), the reviewer
+// request), so only this write needs coordination. The audit home is
+// wiring, not a knob, and rides the boot value.
+func (g *Gate) SetConfig(cfg Config) {
+	g.cfgMu.Lock()
+	defer g.cfgMu.Unlock()
+	g.cfg = cfg
+	g.policyFP = policyHash(cfg.SmartPolicy)
+}
+
+// config returns one consistent copy of the live config; callers read
+// fields off the copy, never off g.cfg directly.
+func (g *Gate) config() Config {
+	g.cfgMu.RLock()
+	defer g.cfgMu.RUnlock()
+	return g.cfg
 }
 
 // The gate-line vocabulary (card t_1b3e2a8b, fixed by the design
@@ -173,7 +196,8 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 		// hygiene; the parse failure is itself a risk reason
 		sanitized, redacted = sanitize(command)
 	}
-	key := g.cache.Key(sanitized, targets, g.cfg.SmartPolicy)
+	live := g.config()
+	key := g.cache.Key(sanitized, targets, live.SmartPolicy)
 	origin := core.RunOriginFromContext(ctx)
 	session := agent.SessionIDFromContext(ctx)
 	background := origin == originScheduled || origin == originSubagent
@@ -196,7 +220,10 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 		return rec.stamp, outcomeError(rec.outcome)
 	}
 
-	// The deciding pass.
+	// The deciding pass. The reviewer is clientless (one forward pass,
+	// no cached client), so it is rebuilt per decision from the live
+	// config - a settings flip to the mode, policy, or the model slot
+	// (host/key included) applies at ask time (card t_34cd1921).
 	var (
 		outcome   Outcome
 		answers   Answers
@@ -209,14 +236,15 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 		outcome = Outcome{VerdictEscalate, "manual_mode",
 			"manual approval: shell command flagged (" + strings.Join(risk.Reasons, ", ") + ")"}
 	case ModeSmart:
-		answers, reviewErr = g.reviewer.Review(ctx, sanitized,
-			strings.Join(risk.Reasons, ", "), g.cfg.SmartPolicy, g.cfg.SmartPolicy != "")
+		reviewer := Reviewer{Host: live.HTTPHost, APIKey: live.APIKey, Model: live.Model}
+		answers, reviewErr = reviewer.Review(ctx, sanitized,
+			strings.Join(risk.Reasons, ", "), live.SmartPolicy, live.SmartPolicy != "")
 		if reviewErr != nil {
 			// Q4/Q12: unreachable, timeout, malformed = fail-closed
 			outcome = Outcome{VerdictEscalate, "reviewer_failure",
 				fmt.Sprintf("reviewer unreachable (%v) - escalating, nothing runs on a dead review", reviewErr)}
 		} else {
-			answers.HasPolicy = g.cfg.SmartPolicy != ""
+			answers.HasPolicy = live.SmartPolicy != ""
 			outcome = Ladder(answers)
 		}
 	default: // defensively off - a mounted gate never answers here
@@ -291,13 +319,14 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 		// situational, never a standing verdict for the command. The
 		// stamp rides the record: the replay carries the decision's
 		// own line.
-		g.cache.Store(key, record{outcome: outcome, answers: answers, modelUsed: g.cfg.Model, stamp: stamp})
+		g.cache.Store(key, record{outcome: outcome, answers: answers, modelUsed: live.Model, stamp: stamp})
 	}
 	return stamp, outcomeError(outcome)
 }
 
-// mode returns the config's normalized mode.
-func (g *Gate) mode() string { return g.cfg.NormalizedMode() }
+// mode returns the live config's normalized mode (read-through: a
+// settings flip applies at the next decision, card t_34cd1921).
+func (g *Gate) mode() string { return g.config().NormalizedMode() }
 
 // outcomeError maps a resolution to the tool error (nil runs).
 func outcomeError(o Outcome) error {
@@ -413,12 +442,15 @@ type rowInput struct {
 }
 
 // row renders the audit record (Q6: parsed command, all six answers,
-// the step, policy hash, mode).
+// the step, policy hash, mode). The model and policy presence read the
+// LIVE config: the row is the receipt for the mode/model flips (card
+// t_34cd1921), not for the boot snapshot.
 func (g *Gate) row(in rowInput) AuditRow {
 	answers, rawVerdict, outcome := in.answers, in.rawVerdict, in.outcome
 	if in.cached {
 		answers, outcome = in.rec.answers, in.rec.outcome
 	}
+	live := g.config()
 	decidedBy := "reviewer"
 	switch {
 	case in.cached:
@@ -445,8 +477,8 @@ func (g *Gate) row(in rowInput) AuditRow {
 		SelfAdvocating: answers.SelfAdvocating,
 		ReadsSecrets:   answers.ReadsSecrets,
 		SendsOutbound:  answers.SendsOutbound,
-		Model:          g.cfg.Model,
-		HasPolicy:      g.cfg.SmartPolicy != "",
+		Model:          live.Model,
+		HasPolicy:      live.SmartPolicy != "",
 		PolicyHash:     g.policyFP,
 		DecidedBy:      decidedBy,
 		CacheKey:       in.key,

@@ -439,7 +439,7 @@ func TestCronEscalationNeverBlocks(t *testing.T) {
 
 func TestAuditRows(t *testing.T) {
 	g := newTestGate(t, ModeManual)
-	home := g.cfg.Home
+	home := g.config().Home
 	g.verdicts = func() verdictHub { return nil }
 	// The cron fire's session rides the run context (cody card
 	// t_e203c2f6): the row must name it - a background origin's
@@ -503,7 +503,7 @@ func TestEveryDecisionLandsARow(t *testing.T) {
 		t.Fatal("denied card must refuse execution")
 	}
 
-	raw, err := os.ReadFile(filepath.Join(g.cfg.Home, auditFileName))
+	raw, err := os.ReadFile(filepath.Join(g.config().Home, auditFileName))
 	if err != nil {
 		t.Fatalf("audit log missing: %v", err)
 	}
@@ -546,7 +546,7 @@ func TestBenignTrafficPaysNothing(t *testing.T) {
 	if g.cache.Len() != 0 {
 		t.Fatal("benign traffic must not touch the cache")
 	}
-	if raw, _ := os.ReadFile(filepath.Join(g.cfg.Home, auditFileName)); len(raw) != 0 {
+	if raw, _ := os.ReadFile(filepath.Join(g.config().Home, auditFileName)); len(raw) != 0 {
 		t.Fatal("benign traffic must not audit")
 	}
 }
@@ -820,4 +820,96 @@ func TestFollowUpGuidanceCapped(t *testing.T) {
 		t.Fatalf("stamp guidance over cap: %d", len(line))
 	}
 	_ = fv
+}
+
+// ---------------------------------------------------------------------------
+// Approvals goes live (card t_34cd1921): the gate re-reads its config
+// PER DECISION; the host's hot-apply path replaces it (SetConfig). A
+// mode, policy or model flip answers with the new behavior at the next
+// ask - no restart, no re-mount.
+// ---------------------------------------------------------------------------
+
+func TestSetConfigGoesLive(t *testing.T) {
+	var mu sync.Mutex
+	var requests []map[string]any // the reviewer's request bodies
+	answers := reviewAnswers("APPROVE", 0.9, 0.2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body map[string]any
+		json.NewDecoder(req.Body).Decode(&body)
+		mu.Lock()
+		requests = append(requests, body)
+		mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"answers": answers})
+	}))
+	defer srv.Close()
+
+	consultModels := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		models := make([]string, 0, len(requests))
+		for _, r := range requests {
+			model, _ := r["model"].(string)
+			models = append(models, model)
+		}
+		return models
+	}
+
+	g := NewGate(Config{
+		Mode: ModeManual, Model: "boot:model", HTTPHost: srv.URL, Home: t.TempDir(),
+	}, func() verdictHub { return nil }, func() finishedThings { return nil }, nil)
+	fv := &fakeVerdicts{answers: core.QuestionAnswer{OptionIndex: 1, Option: "approve"}}
+	g.verdicts = func() verdictHub { return fv }
+	ctx := context.Background()
+
+	// Boot mode: the ask is the human's own verdict - zero model calls.
+	if _, err := g.Gate(ctx, "shell.run", map[string]any{"command": "rm live.md"}); err != nil {
+		t.Fatalf("manual boot decision ran: %v", err)
+	}
+	if got := consultModels(); len(got) != 0 {
+		t.Fatalf("manual mode must not consult the reviewer: %d calls", len(got))
+	}
+
+	// Flip manual -> smart (THE test): the next decision consults the
+	// model at the flipped slot, no restart, no re-mount.
+	g.SetConfig(Config{Mode: ModeSmart, Model: "flip:a", HTTPHost: srv.URL, Home: g.config().Home})
+	line, err := g.Gate(ctx, "shell.run", map[string]any{"command": "rm live2.md"})
+	if err != nil || line != GateAutoApproved {
+		t.Fatalf("post-flip smart decision: stamp=%q err=%v", line, err)
+	}
+	if got := consultModels(); len(got) != 1 || got[0] != "flip:a" {
+		t.Fatalf("post-flip reviewer consults = %v, want one consult of flip:a", got)
+	}
+
+	// The settled approve replays from cache under the same config.
+	if _, err := g.Gate(ctx, "shell.run", map[string]any{"command": "rm live2.md"}); err != nil {
+		t.Fatalf("cache replay broken by SetConfig: %v", err)
+	}
+	if got := consultModels(); len(got) != 1 {
+		t.Fatalf("cache replay must not re-consult: %d calls", len(got))
+	}
+
+	// Flip the policy + the model slot: the cache key rides the policy
+	// (a policy edit re-asks, never replays a stale operator verdict)
+	// and the new consult carries the new operator_policy + model.
+	answers["policy_allows"] = map[string]any{"noul": 0.9}
+	mu.Lock()
+	requests = nil
+	mu.Unlock()
+	g.SetConfig(Config{Mode: ModeSmart, Model: "flip:b", SmartPolicy: "routine rm -rf inside the project dir",
+		HTTPHost: srv.URL, Home: g.config().Home})
+	line, err = g.Gate(ctx, "shell.run", map[string]any{"command": "rm live2.md"})
+	if err != nil || line != GateAutoApproved {
+		t.Fatalf("post-policy-flip smart decision: stamp=%q err=%v", line, err)
+	}
+	got := consultModels()
+	if len(got) != 1 || got[0] != "flip:b" {
+		t.Fatalf("post-policy-flip reviewer consults = %v, want one consult of flip:b on a fresh key", got)
+	}
+	mu.Lock()
+	body := requests[0]
+	mu.Unlock()
+	state, _ := body["state"].(map[string]any)
+	if state == nil || state["operator_policy"] != "routine rm -rf inside the project dir" {
+		t.Fatalf("post-flip consult must carry the live operator policy: %v", state)
+	}
 }

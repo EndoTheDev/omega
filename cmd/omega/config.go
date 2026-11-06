@@ -860,21 +860,7 @@ func (c Config) ConfigSection(name string) (any, bool) {
 		cont.Disabled = slices.Clone(c.Disabled.Agents) // v0.14.1: the disabled.agents fold rides the section
 		return cont, true
 	case "approvals":
-		// card t_c2b52cb5: mode/policy are Endo's knobs; host and home
-		// are wiring - the reviewer targets the provider host (the
-		// keypool mirror), the audit lands in the home. The decision
-		// model rides the provider settings slot (card t_fc0b2f2d):
-		// approvalSlot routes an "instance:model" prefix through the
-		// named provider instance.
-		host, key, model := approvalSlot(c)
-		return approval.Config{
-			Mode:        c.Approvals.Mode,
-			Model:       model,
-			SmartPolicy: c.Approvals.SmartPolicy,
-			HTTPHost:    host,
-			APIKey:      key,
-			Home:        omegaHome(),
-		}, true
+		return approvalSection(c), true
 	case "process":
 		// card t_5782d11e: zero knobs ride the module's constants -
 		// the section only carries explicit user overrides.
@@ -885,6 +871,27 @@ func (c Config) ConfigSection(name string) (any, bool) {
 		}, true
 	}
 	return nil, false
+}
+
+// approvalSection returns the approvals section (card t_c2b52cb5):
+// mode/policy are Endo's knobs; host and home are wiring - the
+// reviewer targets the provider host (the keypool mirror), the audit
+// lands in the home. The decision model rides the provider settings
+// slot (card t_fc0b2f2d): approvalSlot routes an "instance:model"
+// prefix through the named provider instance. One shape for BOTH
+// the boot wiring (RouteConfigs) and the hot-apply path (card
+// t_34cd1921: settings.go calls this on every save/reload so a flip
+// reaches the running gate without a restart).
+func approvalSection(c Config) approval.Config {
+	host, key, model := approvalSlot(c)
+	return approval.Config{
+		Mode:        c.Approvals.Mode,
+		Model:       model,
+		SmartPolicy: c.Approvals.SmartPolicy,
+		HTTPHost:    host,
+		APIKey:      key,
+		Home:        omegaHome(),
+	}
 }
 
 // webBaseURL returns the host the channel's web.search/web.fetch tools

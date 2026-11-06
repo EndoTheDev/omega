@@ -125,8 +125,8 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Value: cfg.SkillsModel,
 					Help:  "model the weekly skills curator consults for merge/distill proposals; instance:model rides a named provider instance (empty = the session provider model); applies on restart"},
 				{Key: "provider.approvals_model", Label: "approval decision model", Type: "model", Slot: true, Filter: "decision",
-					Value: cfg.ApprovalsModel,
-					Help:  "decision model the smart approval gate consults; instance:model routes the consult through a named provider instance (empty = fail-closed, every gated command escalates); applies on restart"},
+					Value: cfg.ApprovalsModel, Live: true,
+					Help: "decision model the smart approval gate consults; instance:model routes the consult through a named provider instance (empty = fail-closed, every gated command escalates); applies live"},
 			},
 		},
 		{
@@ -249,20 +249,23 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 		},
 		// The approval gate group (card t_c2b52cb5): mode off|manual|smart
 		// and the operator policy text. The decision model moved to
-		// provider settings (card t_fc0b2f2d). All restart-applied.
+		// provider settings (card t_fc0b2f2d). The gate goes live (card
+		// t_34cd1921): mode and policy hot-apply - a flip answers with the
+		// new behavior at the next decision, no restart. Mode off at BOOT
+		// still mounts nothing (Q10) - re-mounting stays a restart.
 		{
 			Key:   "approvals",
 			Label: "approvals",
 			Knobs: []core.SettingsKnob{
 				{Key: "approvals.mode", Label: "mode", Type: "select",
 					Options: []string{"off", "manual", "smart"},
-					Value:   cfg.Approvals.Mode,
-					Help:    "off = no gate at all; manual = flagged commands ask you (default); smart = a decision model reviews them first; applies on restart"},
+					Value:   cfg.Approvals.Mode, Live: true,
+					Help: "off = no gate at all; manual = flagged commands ask you (default); smart = a decision model reviews them first; applies live for mounted gates (off at boot keeps the gate unmounted)"},
 				// The decision model moved to provider settings (card
 				// t_fc0b2f2d): provider.approvals_model.
 				{Key: "approvals.smart_policy", Label: "operator policy", Type: "textarea",
-					Value: cfg.Approvals.SmartPolicy,
-					Help:  "trusted text the reviewer reads beside every command: describe routine operations that should not interrupt you; applies on restart"},
+					Value: cfg.Approvals.SmartPolicy, Live: true,
+					Help: "trusted text the reviewer reads beside every command: describe routine operations that should not interrupt you; applies live; a policy edit also re-keys the gate cache"},
 			},
 		},
 	}
@@ -744,11 +747,17 @@ func hotApply(cfg Config, pctx *agent.Context, setFilesWorkspace func(string), s
 		setChannelWorkspace(cfg.Server.DefaultWorkspace)
 	}
 	svc := pctx.Services().Resolve("compactor")
-	if svc == nil {
-		return
-	}
 	if c, ok := svc.(*compactor.Compactor); ok {
 		c.SetConfig(compactionSection(cfg))
+	}
+	// Approvals goes live (card t_34cd1921): the smart approval gate
+	// re-reads its config per decision, so the hot-apply path hands it
+	// a fresh section - the host resolves the slot/host/key knobs
+	// (approvalSlot) just like at boot; the gate swaps the value
+	// behind its lock. Not mounted (mode off at boot) = a nil
+	// resolve, no-op: re-mounting stays out of scope.
+	if a, ok := pctx.Services().Resolve("approvals").(*approval.Gate); ok {
+		a.SetConfig(approvalSection(cfg))
 	}
 }
 
