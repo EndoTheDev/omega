@@ -1920,8 +1920,8 @@ labels stopped short of the right edge. */
 /* ---- composer: floating card inside the chat pane ---- */
 .composer {
   position: relative; /* anchor for the expand button and the palette */
-  margin: 0 12px 12px; /* pre-modes geometry: full-width card (wide is the
-     unmodified base shape - the modifiers are mode-compact/mode-full) */
+  margin: 0 12px 12px; /* pre-modes geometry: full-width card (every mode
+     is a modifier - compact centers, full rows inline) */
   background: var(--z1-raised);
   border: 1px solid var(--stroke);
   border-radius: var(--r-card);
@@ -2012,30 +2012,56 @@ labels stopped short of the right edge. */
 .expand-btn:hover { color: var(--text); border-color: var(--text-dim); }
 .composer:focus-within { border-color: rgba(232, 131, 58, 0.55); }
 
-/* the composer's display modes (card t_5752861e, reshape t_f9fd3820):
-   wide is the DEFAULT shape above (pre-modes: full-width card, no cap,
-   12px inset, no class) - compact and full are the modifiers, holding
+/* the composer's display modes (card t_5752861e, reshape t_f9fd3820,
+   v4 t_d14c2d14 - the three-mode set is retired; exactly TWO modes):
+   compact (sketch C5 'footer-send') - the centered narrow card in TWO
+   rows: row 1 is plus-btn + input, row 2 is the chips left and the
+   send right (the base .send's margin-left: auto pins it right); a
+   hairline divides the rows. full (sketch W6 'segmented', the old
+   'wide' renamed) - ONE row spanning the pane width with the card's
+   12px inset and radius (padded inside the pane, never edge to edge):
+   input (flex, grows) | hairline | chips | hairline | send, everything
+   inline, no second row unless content physically forces it. Both hold
    only when NOT expanded (the fullscreen .expanded card is pinned by
    its own t_08ef793b ruling and ignores the modes). */
 .composer.mode-compact:not(.expanded) {
-  /* ONE row: plus-btn, input, chips, send all inline - the composer
-     flips to a horizontal flex, everything vertically centered */
-  flex-direction: row;
-  align-items: center;
   /* the centered reading card: capped, auto margins center it in the pane */
   max-width: 720px;
   margin: 0 auto 12px;
 }
-.composer.mode-compact:not(.expanded) .composer-row {
-  flex: 1; /* the row eats the leftover width; the input shrinks inside it */
-}
 .composer.mode-compact:not(.expanded) .toolbar {
-  flex-wrap: nowrap; /* the single-line law: chips never wrap to row two */
+  flex-wrap: nowrap; /* the bottom row's chips never wrap */
+  border-top: 1px solid var(--stroke); /* the C5 row hairline */
 }
 .composer.mode-full:not(.expanded) {
-  max-width: none; /* no cap: edge to edge */
-  margin: 0 0 12px; /* no side inset, no corner radius */
-  border-radius: 0;
+  flex-direction: row; /* ONE row: input | chips | send inline */
+  align-items: center;
+  /* no second row unless content physically forces it: the row wraps
+     only when an attach-strip/fork-chip lands above the bar */
+  flex-wrap: wrap;
+  /* no overrides: the base card's inset + radius = the W6 padding */
+}
+/* transient full-width strips (attachments, the fork anchor) force
+   their own line above the segmented bar; the bar itself stays one row */
+.composer.mode-full:not(.expanded) .attach-strip,
+.composer.mode-full:not(.expanded) .fork-chip {
+  flex-basis: 100%;
+}
+.composer.mode-full:not(.expanded) .composer-row {
+  flex: 1; /* the input's segment grows */
+}
+.composer.mode-full:not(.expanded) .toolbar {
+  flex-wrap: nowrap; /* the single-row law: no second row unless forced */
+  border-left: 1px solid var(--stroke); /* the input|chips hairline */
+}
+/* the W6 chips|send hairline segment (AppComposer renders the seg-div
+   element only in full - it is a real divider, not a button border,
+   so the hairline keeps its own gap from the accent send face) */
+.composer .seg-div {
+  flex: none;
+  width: 1px;
+  height: 26px; /* the sketch's divider height */
+  background: var(--stroke);
 }
 
 /* expanded/fullscreen (card t_08ef793b, Endo ruling 2026-11-02): a floating

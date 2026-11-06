@@ -402,10 +402,11 @@
         label: "composer display mode",
         type: "select",
         value: composerMode.value,
-        options: ["compact", "wide", "full"],
+        options: ["compact", "full"],
         help:
-          "compact is the card shape with side insets; wide tightens the " +
-          "insets so the composer grows wider; full spans the pane edge to edge",
+          "compact is the centered card - input on top, chips left and " +
+          "send right on a bottom row; full is one inline row spanning " +
+          "the pane (input | chips | send segments)",
       },
     ],
   }));
