@@ -1,6 +1,7 @@
-// omega webui: reference pills (card t_7f09bd0c). The /skill invocations
-// and @file attachments of the composer turn into clickable icon pills -
-// in the composer's strip AND in the sent message. The token model is
+// omega webui: reference pills. The /skill invocations
+// and @file attachments of the composer turn into inline chips that
+// REPLACE their token spans (card t_e67c372b); the sent message keeps
+// the pill shape. The token model is
 // pills.ts (pure, imported here directly); the components' wiring is
 // pinned at the source level (the served shape), as palette.test.ts
 // does. Run: node --test webui/test/ (node >= 23 runs TS natively)
@@ -25,7 +26,9 @@ const coreAtMention = read("../../core/atmention.go");
 const serverAtMention = read("../../agent/api/server_atmention.go");
 
 import {
+  chipFor,
   deleteTokenAt,
+  editorNodes,
   filterMentionRows,
   mentionDirOf,
   mentionLeafQuery,
@@ -114,9 +117,111 @@ describe("sent-message pill render (t_7f09bd0c)", () => {
   });
 });
 
+// --- the chip law (card t_e67c372b: chip replaces text) ---------------
+
+describe("chipFor - the chip rule per token", () => {
+  const tok = scanRefTokens("see @docs/readme.md now")[0]!;
+  const base = { paletteOpen: false, forced: new Set<string>(), dissolved: new Set<string>() };
+
+  it("a parked caret (outside the span) stands the chip", () => {
+    assert.equal(chipFor(tok, { ...base, caret: 20 }), true);
+    assert.equal(chipFor(tok, { ...base, caret: 4 }), true, "before the span");
+  });
+
+  it("the caret strictly inside the span: the token is being edited - raw", () => {
+    assert.equal(chipFor(tok, { ...base, caret: tok.start + 1 }), false);
+    assert.equal(chipFor(tok, { ...base, caret: tok.start + tok.token.length - 1 }), false);
+  });
+
+  it("the caret at the span end with the palette open: the query is running - raw", () => {
+    assert.equal(
+      chipFor(tok, { ...base, caret: tok.start + tok.token.length, paletteOpen: true }),
+      false,
+    );
+  });
+
+  it("the caret at the span end, palette closed: the chip forms (Esc finalizes)", () => {
+    assert.equal(chipFor(tok, { ...base, caret: tok.start + tok.token.length }), true);
+  });
+
+  it("forced chips regardless of the caret - the accept path's fresh swallow", () => {
+    assert.equal(chipFor(tok, { ...base, caret: tok.start, forced: new Set([tok.token]) }), true);
+  });
+
+  it("dissolved: raw while the caret works the span (end included), re-formed once it leaves", () => {
+    const dissolved = new Set([tok.token]);
+    const end = tok.start + tok.token.length;
+    assert.equal(chipFor(tok, { ...base, caret: end, dissolved }), false, "right at the reveal");
+    assert.equal(chipFor(tok, { ...base, caret: tok.start + 3, dissolved }), false, "editing inside");
+    assert.equal(chipFor(tok, { ...base, caret: 30, dissolved }), true, "caret moved away");
+    assert.equal(chipFor(tok, { ...base, caret: 0, dissolved }), true, "caret before the span");
+  });
+
+  it("the rule is per-token: a dissolved key leaves its identical twin alone", () => {
+    const text = "@a.md middle @a.md";
+    const [first, second] = scanRefTokens(text);
+    const end2 = second!.start + second!.token.length;
+    assert.equal(
+      chipFor(second!, { ...base, caret: end2, dissolved: new Set([second!.token]) }),
+      false,
+      "the dissolved one stays raw",
+    );
+    assert.equal(
+      chipFor(first!, { ...base, caret: end2, dissolved: new Set([second!.token]) }),
+      true,
+      "the twin keeps its chip",
+    );
+  });
+});
+
+describe("editorNodes - the editor's DOM plan", () => {
+  const pillable = (t: { kind: string; name: string }): boolean =>
+    t.kind === "file" || t.name === "greet";
+  const opts = (caret: number) => ({
+    caret,
+    paletteOpen: false,
+    forced: new Set<string>(),
+    dissolved: new Set<string>(),
+  });
+
+  it("a pill-able token becomes a chip node that carries exactly its raw token", () => {
+    const nodes = editorNodes("/greet hi", opts(10), pillable);
+    assert.deepEqual(
+      nodes.map((n) =>
+        n.type === "chip" ? "CHIP:" + n.token.token + "@" + n.token.start : "TEXT:" + n.text,
+      ),
+      ["CHIP:/greet@0", "TEXT: hi"],
+    );
+  });
+
+  it("the draft text is recoverable from the plan: chips carry their spans, text nodes carry the rest", () => {
+    const draft = "/greet see @docs/x.md, please";
+    const nodes = editorNodes(draft, opts(draft.length), pillable);
+    const read = nodes
+      .map((n) => (n.type === "chip" ? n.token.token : n.text))
+      .join("");
+    assert.equal(read, draft);
+  });
+
+  it("a non-pillable token (/theme, a shell verb) folds back into the text", () => {
+    const nodes = editorNodes("/theme hi", opts(9), pillable);
+    assert.deepEqual(
+      nodes.map((n) => (n.type === "chip" ? "CHIP" : "TEXT:" + n.text)),
+      ["TEXT:/theme hi"],
+    );
+  });
+
+  it("the running query stays raw (palette open at the span end)", () => {
+    const draft = "/greet args";
+    const nodes = editorNodes(draft, { ...opts(6), paletteOpen: true }, pillable);
+    assert.equal(nodes.length, 1);
+    assert.equal(nodes[0]!.type, "text");
+  });
+});
+
 // --- the backspace law ------------------------------------------------
 
-describe("token delete (backspace on a pill deletes it whole)", () => {
+describe("token delete (backspace on a chip dissolves it to its text)", () => {
   it("tokenBeforeCaret fires only at the token's end", () => {
     assert.equal(tokenBeforeCaret("/greet hi", 6)!.token, "/greet");
     assert.equal(tokenBeforeCaret("/greet hi", 9), null); // after "hi", no token behind
@@ -125,7 +230,7 @@ describe("token delete (backspace on a pill deletes it whole)", () => {
     assert.equal(tokenBeforeCaret("", 0), null);
   });
 
-  it("deleteTokenAt cuts the span and parks the caret at the cut", () => {
+  it("deleteTokenAt (the chip x's outright remove) cuts the span and parks the caret at the cut", () => {
     const tok = scanRefTokens("/greet rest")[0]!;
     const next = deleteTokenAt("/greet rest", tok);
     assert.equal(next.draft, " rest");
@@ -165,61 +270,132 @@ describe("@ autocomplete paths (dirs first, drill-in)", () => {
 
 // --- production-boundary wiring (the served shape) --------------------
 
-describe("composer pill wiring (source-pinned)", () => {
-  it("the strip renders the pill renderer with a remove affordance", () => {
-    assert.ok(composer.includes("<ReferencePill :pill=\"t\" @open=\"openRef(t)\" />"));
-    assert.ok(composer.includes('v-if="refPills.length"'), "the strip is conditional on pills");
-    assert.ok(composer.includes("removeToken(t)"), "the strip's x kills the token");
+describe("composer chip law wiring (source-pinned, card t_e67c372b)", () => {
+  it("the composer's editor is a contenteditable div with the placeholder", () => {
+    assert.ok(/ref="ta"\s*\n\s*class="composer-input"/.test(composer), "the editor div is the ta handle");
+    assert.ok(composer.includes('contenteditable="true"'), "the editor is editable");
+    assert.ok(composer.includes("data-placeholder"), "the placeholder rides the data attr");
+    assert.ok(composer.includes('role="textbox"'), "the editor is announced");
   });
 
-  it("the skill accept keeps the token and never sends", () => {
-    // the accept branch: the completed /<name> + rest stays in the draft,
-    // closePalette, no emit("send") - the branch ends where the shell
-    // branch takes over
-    const at = composer.indexOf("item.kind === \"skill\"");
-    assert.ok(at > -1, "the composer branches on a skill accept");
-    const end = composer.indexOf('item.kind === "shell"', at);
-    const block = composer.slice(at, end);
-    assert.ok(block.includes("closePalette()"), "the palette closes");
-    assert.ok(!block.includes('emit("send")'), "a skill accept must not submit");
-  });
-
-  it("shell and extension commands keep the old submit law", () => {
-    const at = composer.indexOf('item.kind === "shell" || item.kind === "extension"');
-    assert.ok(at > -1);
-    const block = composer.slice(at, at + 400);
-    assert.ok(block.includes('emit("send")'), "commands act locally on submit");
-  });
-
-  it("backspace kills a pill whole and does not hijack the palette's query", () => {
-    assert.ok(composer.includes("tokenBeforeCaret(props.draft, start)"));
+  it("the strip is gone - chips render inline in the flow", () => {
+    assert.doesNotMatch(composer, /ref-strip/);
+    assert.doesNotMatch(composer, /ref-pill-wrap/);
+    assert.ok(composer.includes('wrap.className = "ref-chip"'), "the non-editable chip wrapper");
     assert.ok(
-      composer.includes('e.key === "Backspace" && !paletteOpen.value'),
-      "the palette-open query edits char by char",
+      composer.includes('wrap.contentEditable = "false"'),
+      "the chip is non-editable",
+    );
+    assert.ok(
+      composer.includes("wrap.dataset.refchip"),
+      "the reader's marker: the chip is a draft span, not text",
+    );
+    assert.ok(
+      composer.includes("wrap.dataset.token = t.token"),
+      "chip data-token carries the raw span out",
     );
   });
 
-  it("click wiring: the composer opens the pill's target through the app's viewer", () => {
-    assert.ok(composer.includes("DOCK_VIEWER_OPEN_KEY"));
-    assert.ok(composer.includes("openViewerRef?.({ kind: t.kind, name: t.name })"));
+  it("ONE renderer, two surfaces - the chip mounts the same pill component", () => {
+    assert.ok(composer.includes('from "./ReferencePill.vue"'));
+    assert.ok(chatMessage.includes('from "./ReferencePill.vue"'));
+    assert.ok(composer.includes("h(ReferencePill"), "the chip mounts the renderer");
   });
-});
 
-describe("sent message pill wiring (source-pinned)", () => {
-  it("user bubbles render pills; the assistant markdown path is untouched", () => {
+  it("the chip keeps the open law + the outright-remove affordance", () => {
+    assert.ok(composer.includes("openViewerRef?.({ kind: t.kind, name: t.name })"));
+    assert.ok(composer.includes("onClick: () => removeToken(t)"), "the x removes the token");
+    assert.ok(chatMessage.includes("DOCK_VIEWER_OPEN_KEY"), "the message pill rides the same inject");
+  });
+
+  it("backspace behind a chip dissolves - the reveal, not the delete", () => {
+    assert.ok(composer.includes("function dissolveBehindCaret"), "the dissolve law");
+    assert.ok(
+      composer.includes('e.key === "Backspace" && !paletteOpen.value && dissolveBehindCaret()'),
+      "palette-open backspace edits the query char by char, dissolved spans delete a char",
+    );
+    assert.ok(
+      composer.includes("tokenBeforeCaret(props.draft, caret)"),
+      "the dissolve target is the token behind the caret",
+    );
+    assert.ok(
+      composer.includes("dissolvedChip.value = next") &&
+        composer.includes('next.add(tok.token)'),
+      "the reveal is suppressed while the caret works the span",
+    );
+  });
+
+  it("the accept path fresh-swallows: the completed token chips immediately", () => {
+    assert.ok(composer.includes("forced.add(item.name)"), "the skill accept");
+    assert.ok(composer.includes("forced.add(insertion)"), "the mention pick");
+    assert.ok(composer.includes("const forced = new Set(forcedChip.value);"),
+      "sets are replaced whole (the plan's computed re-runs)");
+  });
+
+  it("the editor sync rebuilds only on disagreement; typing never churns the caret", () => {
+    assert.ok(composer.includes("function syncEditor"), "the sync");
+    assert.ok(composer.includes("domText === props.draft"), "text parity guards the rebuild");
+    assert.ok(composer.includes("watch(editorPlan"), "the plan drives the chip layer");
+    assert.ok(composer.includes("placeCaretAt"), "the caret is restored at the same draft index");
+  });
+
+  it("the sent/transcript pill law is unchanged", () => {
     assert.ok(chatMessage.includes("<ReferencePill"), "the bubble mounts the pill renderer");
     assert.ok(chatMessage.includes('props.role === "user"'), "the scan is user-bubble only");
     assert.ok(chatMessage.includes("v-html=\"rendered\""), "the assistant render stays");
+    assert.ok(css.includes(".bubble .ref-pill { vertical-align: middle; }"));
   });
 
-  it("the message pill opens through the same viewer inject", () => {
-    assert.ok(chatMessage.includes("DOCK_VIEWER_OPEN_KEY"));
-    assert.ok(chatMessage.includes("openViewerRef?.({ kind: t.kind, name: t.name })"));
+  it("the canvas click law passes chip clicks through", () => {
+    assert.ok(composer.includes(".ref-chip, .model-select"), "the chip is a control seat");
   });
 
-  it("ONE renderer, two surfaces - both import the same component", () => {
-    assert.ok(chatMessage.includes('from "./ReferencePill.vue"'));
-    assert.ok(composer.includes('from "./ReferencePill.vue"'));
+  it("the sent draft carries the raw tokens to /chat (the expansion law intact)", () => {
+    assert.ok(coreAtMention.includes("ReferenceOnly bool"), "the core env carries the flag");
+    assert.ok(
+      coreAtMention.includes("if env.ReferenceOnly {\n\t\treturn token, nil, atLiteral, nil\n\t}"),
+      "file tokens ride through as references",
+    );
+    assert.ok(serverAtMention.includes("ReferenceOnly: true"), "the webui path sets it");
+    const skillBranch = coreAtMention.indexOf('strings.HasPrefix(path, "skill:")');
+    const refOnly = coreAtMention.indexOf("if env.ReferenceOnly {");
+    assert.ok(refOnly > skillBranch, "the file branches turn literal AFTER the injections");
+  });
+
+  it("the token grammar the server keeps literal equals the chips' grammar", () => {
+    assert.ok(coreAtMention.includes("card t_7f09bd0c"));
+  });
+});
+
+describe("the send + attach semantics (t_7f09bd0c)", () => {
+  it("a send ctx exists and ChatTab passes model/thinking/fork into the command", () => {
+    assert.ok(host.includes("export interface CommandSend"), "the host declares the send ctx");
+    assert.ok(chatTab.includes("model: modelValue.value"), "the send carries the model");
+    assert.ok(chatTab.includes("thinking: thinkingLevelWire(props.thinking)"));
+    assert.ok(chatTab.includes("fork: fork ?? undefined"), "the fork anchor rides");
+  });
+});
+
+describe("styles (the chip family law)", () => {
+  it("the chip + pill read the design tokens; no color literals", () => {
+    for (const sel of [".ref-chip", ".ref-pill", ".ref-pill.skill", ".ref-remove"]) {
+      assert.ok(css.includes(sel), "missing selector: " + sel);
+    }
+    assert.ok(css.includes("border: 1px solid var(--stroke)"), "the pill rides var(--stroke)");
+    assert.ok(!/\.ref-pill\b[^}]*#[0-9a-f]/i.test(css), "not a raw hex outside var(--)");
+  });
+
+  it("the sent bubble keeps the pill inline with the text flow", () => {
+    assert.ok(css.includes(".bubble .ref-pill { vertical-align: middle; }"));
+  });
+
+  it("the editor reads pre-wrap so text nodes carry their newlines; the placeholder is the :empty ::before", () => {
+    const input = css.slice(css.indexOf(".composer .composer-input {"));
+    assert.ok(input.includes("white-space: pre-wrap"), "text nodes carry newlines");
+    assert.ok(input.includes("line-height: 21px"), "the deterministic row math holds");
+    assert.ok(css.includes(".composer .composer-input:empty::before"), "the placeholder rule");
+    assert.ok(css.includes('content: attr(data-placeholder)'), "the placeholder reads the data attr");
+    assert.ok(css.includes("cursor: text"), "the editor is a text surface");
   });
 });
 
@@ -235,58 +411,6 @@ describe("pill component + iconset (source-pinned)", () => {
     assert.ok(pill.includes('"/" + props.pill.name'));
     assert.ok(pill.includes("props.pill.label"));
     assert.ok(pill.includes('(e: "open")'), "the pill offers its open event");
-  });
-});
-
-describe("the send + attach semantics (t_7f09bd0c)", () => {
-  it("a send ctx exists and ChatTab passes model/thinking/fork into the command", () => {
-    assert.ok(host.includes("export interface CommandSend"), "the host declares the send ctx");
-    assert.ok(chatTab.includes("model: modelValue.value"), "the send carries the model");
-    assert.ok(chatTab.includes("thinking: thinkingLevelWire(props.thinking)"));
-    assert.ok(chatTab.includes("fork: fork ?? undefined"), "the fork anchor rides");
-  });
-
-  it("a skill dispatch under a send arms AND posts the message", () => {
-    const at = host.indexOf("res.kind === \"skill\"");
-    assert.ok(at > -1);
-    const block = host.slice(at, at + 600);
-    assert.ok(block.includes("st.pendingSkill ="), "the content arms");
-    assert.ok(block.includes("await submit(key, text, send.model, send.thinking, send.fork)"),
-      "the token posts as a message");
-    assert.ok(block.includes(" armed - the next send carries it"),
-      "the arm-only law survives when no send ctx rides");
-  });
-
-  it("the webui submit path attaches PATHS: ReferenceOnly on /chat, the core law intact", () => {
-    assert.ok(coreAtMention.includes("ReferenceOnly bool"), "the core env carries the flag");
-    assert.ok(
-      coreAtMention.includes("if env.ReferenceOnly {\n\t\treturn token, nil, atLiteral, nil\n\t}"),
-      "file tokens ride through as references",
-    );
-    assert.ok(serverAtMention.includes("ReferenceOnly: true"), "the webui path sets it");
-    const skillBranch = coreAtMention.indexOf("strings.HasPrefix(path, \"skill:\")");
-    const refOnly = coreAtMention.indexOf("if env.ReferenceOnly {");
-    assert.ok(refOnly > skillBranch, "the file branches turn literal AFTER the injections");
-  });
-
-  it("the token grammar the server keeps literal equals the pills' grammar", () => {
-    // the reference law leaves a standalone @token as-is in the text -
-    // the exact shape the composer's file pill inserts
-    assert.ok(coreAtMention.includes("card t_7f09bd0c"));
-  });
-});
-
-describe("styles (the chip family law)", () => {
-  it("the strip and pill read the design tokens; no color literals", () => {
-    for (const sel of [".ref-strip", ".ref-pill", ".ref-pill.skill", ".ref-remove"]) {
-      assert.ok(css.includes(sel), "missing selector: " + sel);
-    }
-    assert.ok(css.includes("border: 1px solid var(--stroke)"), "the pill rides var(--stroke)");
-    assert.ok(!/\.ref-pill\b[^}]*#[0-9a-f]/i.test(css), "not a raw hex outside var(--)");
-  });
-
-  it("the sent bubble keeps the pill inline with the text flow", () => {
-    assert.ok(css.includes(".bubble .ref-pill { vertical-align: middle; }"));
   });
 });
 

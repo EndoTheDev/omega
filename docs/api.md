@@ -95,8 +95,8 @@ is not an error state.
 ## POST /chat
 
 Body: `{"messages": [...], "session_id": "...?", "model": "...?",
-"thinking_level": 0..9, "tools": ["name", ...], "retry": bool, "fork":
-"msg_id"}`.
+"provider": "...?", "thinking_level": 0..9, "tools": ["name", ...],
+"retry": bool, "fork": "msg_id"}`.
 
 - **`messages` is REQUIRED.** Each entry carries a `role` discriminator
   (`system`, `user`, `assistant`, or `tool`) plus its payload. A
@@ -121,6 +121,14 @@ Body: `{"messages": [...], "session_id": "...?", "model": "...?",
   pinned there (no messages); an assistant/tool target CONTINUES FROM
   it — it takes the fork's user message and runs. Mutually exclusive
   with `retry` (400).
+- **`provider`** (card t_7dcd4280): the named provider INSTANCE the run
+  serves through (a `providers:` config key; the webui provider picker
+  sends it). Empty = the default instance. An unknown name - the
+  instance was removed, or never existed - is a loud 400, NEVER a
+  silent fallback to the default. A wire name WINS and sticks on the
+  session like the model pin: the next send resolves the pinned name
+  with no wire field, so removing the pin's instance strands the
+  session (its next send 400s) until a new instance is selected.
 - **model**: per-run override via a provider copy — concurrent chats
   keep their own model, the default stays untouched.
 - **thinking_level**: indexes the shared thinking ladder (0 = none = no
@@ -320,14 +328,20 @@ window help reports what startup auto-probed).
   endpoint: a PATCH moves a card inside its board only, switching
   boards is a pointer operation, never a card op.
 
-- `GET /tasks` — list rows; `?status=` filters, the empty value lists
+- `GET /tasks` — list rows in board order (the column's drag order,
+  newest-first fallback); `?status=` filters, the empty value lists
   every status.
 - `POST /tasks` — create; `title` required, unspecified status defaults
-  to `triage` in the store.
+  to `triage` in the store. A fresh card lands on top of its column.
 - `GET /tasks/{id}` — the task plus its thread (comments + events).
 - `PATCH /tasks/{id}` — any legal status transition; PATCH pointer
   fields distinguish "set to this value (possibly empty)" from "leave
-  alone".
+  alone". An `after_id` body is the drag-order slot instead: the card
+  moves to `status` ("" keeps the column) and lands after that sibling
+  ("" = top), the target column resequencing to dense positions - the
+  order survives every reload. Requires the store to implement the
+  `Reorderer` capability (the kanban store does; without it the PATCH
+  answers 400 and the board refetches, the card snapping back).
 - `POST /tasks/{id}/comments` — add a comment; an ABSENT author is
   `"web"`, so the board can tell a human UI comment from an agent tool
   comment.
