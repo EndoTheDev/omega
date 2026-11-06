@@ -25,15 +25,24 @@ ab wait --load networkidle >/dev/null 2>&1 || true
 wait_js '!!(document.querySelector(".menubar") && document.querySelector(".menubar-wordmark"))' 15 \
   || die "the menubar or its center wordmark never rendered"
 
-# one eval returns the whole geometry verdict for the CURRENT width:
-# the wordmark centers on the MENUBAR's own box (the app bar), whatever
-# the viewport. 1 = green, anything else names the miss.
+# one eval returns a NUMBER verdict for the CURRENT width: 1 = green,
+# 0 = the miss (the reason re-eval only runs on red). Numbers serialize
+# unquoted through ab eval - strings arrive JSON-quoted and would break
+# the exact compare.
 probe_menubar() {
-  jsq '(()=>{const bar=document.querySelector(".menubar"),w=document.querySelector(".menubar-wordmark"),b=document.querySelector(".menubar .brand"),t=document.querySelector("button.edge-toggle");if(!bar||!w||!b||!t)return "missing element(s)";const br=bar.getBoundingClientRect(),wr=w.getBoundingClientRect();const c=br.left+br.width/2,wc=wr.left+wr.width/2;if(Math.abs(wc-c)>1.5)return "wordmark off center: "+wc.toFixed(2)+" vs "+c.toFixed(2);if(w.textContent!=="Omega")return "wordmark text ["+w.textContent+"]";if(wr.width===0)return "wordmark collapsed";const tr=t.getBoundingClientRect();if(tr.right<br.right-20)return "toggles not pinned right";if(b.getBoundingClientRect().right>wr.left)return "brand collides with wordmark";return "1"})()'
+  jsq '(()=>{const bar=document.querySelector(".menubar"),w=document.querySelector(".menubar-wordmark"),b=document.querySelector(".menubar .brand"),btns=[...bar.querySelectorAll("button.edge-toggle")],t=btns[btns.length-1];if(!bar||!w||!b||!t)return 0;const br=bar.getBoundingClientRect(),wr=w.getBoundingClientRect();const c=br.left+br.width/2,wc=wr.left+wr.width/2;if(Math.abs(wc-c)>1.5)return 0;if(w.textContent!=="Omega")return 0;if(wr.width===0)return 0;const tr=t.getBoundingClientRect();if(tr.right<br.right-20)return 0;if(b.getBoundingClientRect().right>wr.left)return 0;return 1})()'
 }
 
-v=$(probe_menubar)
-[ "$v" = "1" ] || die "wide probe (1280x800): $v"
+probe_reason() {
+  jsq '(()=>{const bar=document.querySelector(".menubar"),w=document.querySelector(".menubar-wordmark"),b=document.querySelector(".menubar .brand"),btns=[...bar.querySelectorAll("button.edge-toggle")],t=btns[btns.length-1];if(!bar||!w||!b||!t)return "missing element(s)";const br=bar.getBoundingClientRect(),wr=w.getBoundingClientRect();const c=br.left+br.width/2,wc=wr.left+wr.width/2;if(Math.abs(wc-c)>1.5)return "wordmark off center: "+wc.toFixed(2)+" vs "+c.toFixed(2);if(w.textContent!=="Omega")return "wordmark text ["+w.textContent+"]";if(wr.width===0)return "wordmark collapsed";const tr=t.getBoundingClientRect();if(tr.right<br.right-20)return "toggles not pinned right (last ends "+tr.right+" of "+br.right+")";if(b.getBoundingClientRect().right>wr.left)return "brand collides with wordmark";return "unknown"} )()'
+}
+
+check_menubar() {
+  v=$(probe_menubar)
+  [ "$v" = "1" ] || die "$1: $(probe_reason)"
+}
+
+check_menubar "wide probe (1280x800)"
 step "ok: 1280x800 - 'Omega' dead center, brand left, toggles right"
 
 bar_text=$(jsq 'document.querySelector(".menubar").textContent')
@@ -42,18 +51,19 @@ case "$bar_text" in
 esac
 # the wordmark itself carries no digits - the status bar owns the version
 wordmark=$(jsq 'document.querySelector(".menubar-wordmark").textContent')
-[ "$wordmark" = "Omega" ] || die "wordmark text [$wordmark], want [Omega]"
+case "${wordmark//\"/}" in
+  Omega) step "ok: wordmark is the plain text Omega" ;;
+  *) die "wordmark text [$wordmark], want [Omega]" ;;
+esac
 step "ok: no version text in the menubar"
 
-v=$(jsq '(()=>{const n=document.querySelector(".nav-cluster"),st=getComputedStyle(n);if(st.position==="absolute")return "cluster still absolutely centered";if(n.getBoundingClientRect().left>=document.querySelector(".menubar-wordmark").getBoundingClientRect().left)return "cluster not left of the wordmark";return "1"})()')
-[ "$v" = "1" ] || die "inline-after-brand probe: $v"
+v=$(jsq '(()=>{const n=document.querySelector(".nav-cluster");if(!n)return 0;if(getComputedStyle(n).position==="absolute")return 0;if(n.getBoundingClientRect().left>=document.querySelector(".menubar-wordmark").getBoundingClientRect().left)return 0;return 1})()')
+[ "$v" = "1" ] || die "inline-after-brand probe: cluster did not seat left of the wordmark"
 
 # --- the SAME shape at a second width (narrower, more left/right skew) ---
 ab set viewport 880 720 >/dev/null 2>&1
 sleep 0.3
-v=$(probe_menubar)
-[ "$v" = "1" ] || die "narrow probe (880x720): $v"
-step "ok: 880x720 - same shape; centering robust to the width change"
+check_menubar "narrow probe (880x720)"
 
 # restore desktop for the next recipe in the run
 ab set viewport 1280 800 >/dev/null 2>&1 || true
