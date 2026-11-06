@@ -3,6 +3,7 @@ package core
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -55,5 +56,17 @@ func TestResolveWorkspaceDir(t *testing.T) {
 	}
 	if _, err := ResolveWorkspaceDir(hidden); err != nil {
 		t.Errorf("hidden root refused: %v", err)
+	}
+
+	// Windows: user-supplied volume-less rooted paths stay refused -
+	// filepath.IsAbs("\\Users") and IsAbs("/") are both false there
+	// (card t_7dcdc98e). The volume awareness lives on the browse
+	// listing's emitted row paths, never on this validator.
+	if runtime.GOOS == "windows" {
+		for _, raw := range []string{"\\Users", "/Users"} {
+			if _, err := ResolveWorkspaceDir(raw); err == nil || !strings.Contains(err.Error(), "workspace must be an absolute path") {
+				t.Errorf("volume-less %q: err = %v, want the absolute-path refusal", raw, err)
+			}
+		}
 	}
 }

@@ -36,10 +36,15 @@ type workspaceDir struct {
 
 // handleWorkspacesBrowse serves GET /workspaces/browse?path=<abs>,
 // listing one directory's child folders. Empty or missing path lists
-// "/". Hidden entries (and every dot-prefixed name) are filtered, and
-// dot segments are rejected in the query path - no browsing into hidden
-// trees. The response carries the entries plus the parent path (""
-// when at the root - the UI hides the climb there).
+// the root - on windows the PROCESS volume's root (the "/" default
+// spelled volume-less is a row shape the sibling validator refuses
+// - filepath.IsAbs("\\Users") is false on windows - so the emitted
+// rows would be dead clicks the same endpoint rejected; see card
+// t_7dcdc98e). Linux keeps the "/" root. Hidden entries (and every
+// dot-prefixed name) are filtered, and dot segments are rejected in
+// the query path - no browsing into hidden trees. The response
+// carries the entries plus the parent path ("" when at the root -
+// the UI hides the climb there).
 func (rt *Routes) handleWorkspacesBrowse(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -53,6 +58,17 @@ func (rt *Routes) handleWorkspacesBrowse(w http.ResponseWriter, r *http.Request)
 		if err != nil {
 			fileError(w, http.StatusBadRequest, err.Error())
 			return
+		}
+	} else if filepath.VolumeName(abs) == "" {
+		// The empty-path root default: mount the listing on the
+		// process volume when the "/" spelling is volume-less
+		// (windows). Rows then carry volume-qualified paths that
+		// re-validate on click ("/Users" -> "C:\Users"); a non-windows
+		// volume name is "", so linux behavior is byte-identical.
+		if wd, err := os.Getwd(); err == nil {
+			if vol := filepath.VolumeName(wd); vol != "" {
+				abs = vol + string(filepath.Separator)
+			}
 		}
 	}
 	entries, err := os.ReadDir(abs)
@@ -72,8 +88,9 @@ func (rt *Routes) handleWorkspacesBrowse(w http.ResponseWriter, r *http.Request)
 	})
 	parent := ""
 	// "/" is the documented root default on every platform; on windows
-	// it never equals filepath.Separator, so both spellings are roots.
-	if root := string(filepath.Separator); abs != root && abs != "/" {
+	// the process volume's root ("C:\") is also a root - filepath.Dir
+	// of it is itself, and the climb must stay hidden there too.
+	if volRoot := filepath.VolumeName(abs) + string(filepath.Separator); abs != "/" && abs != volRoot {
 		parent = filepath.Dir(abs)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"path": abs, "parent": parent, "dirs": out})
