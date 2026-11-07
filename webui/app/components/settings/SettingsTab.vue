@@ -224,14 +224,6 @@
   // shared-signal shape - this tab's reads keep it fresh, the chat host
   // reads it when a new session's draft is born
   import { DEFAULT_WORKSPACE_KNOB, setDefaultWorkspace } from "~/composables/defaultWorkspace";
-  // card t_5752861e: the composer's display mode knob rides the shared
-  // signal shape (bottomWidth's pattern) - this tab writes it, the
-  // composer's class binding reads it
-  import {
-    setComposerMode,
-    useComposerMode,
-    type ComposerMode,
-  } from "~/composables/composerMode";
 
   const props = defineProps<{
     showThinking: boolean;
@@ -397,17 +389,6 @@
           "auto keeps thinking blocks collapsed behind their one-line " +
           "summary and a manual click pins one open; expanded/collapsed force one state",
       },
-      {
-        key: "chat.composer_mode",
-        label: "composer display mode",
-        type: "select",
-        value: composerMode.value,
-        options: ["compact", "full"],
-        help:
-          "compact is the centered card - input on top, chips left and " +
-          "send right on a bottom row; full is one inline row spanning " +
-          "the pane (input | chips | send segments)",
-      },
     ],
   }));
 
@@ -417,8 +398,6 @@
   // straight to the shared module ref (composables/bottomWidth.ts) - the
   // applier in app.vue re-measures on the same signal.
   const bottomWidthMode = useBottomWidthMode();
-  // card t_5752861e: the composer mode knob - same shared-signal shape
-  const composerMode = useComposerMode();
   const dockGroup = computed<SettingGroup>(() => ({
     key: "dock",
     label: "dock",
@@ -512,7 +491,6 @@
     if (knob.key === "chat.tool_display") return props.toolDisplay;
     if (knob.key === "chat.thinking_display") return props.thinkingDisplay;
     if (knob.key === "dock.bottom_width") return bottomWidthMode.value;
-    if (knob.key === "chat.composer_mode") return composerMode.value;
     if (knob.key === "chat.color_mode") return props.colorMode;
     return props.themeId;
   };
@@ -586,8 +564,6 @@
         emit("update:thinkingDisplay", value as ThinkingDisplay);
       else if (knob.key === "dock.bottom_width")
         setBottomWidthMode(value === "full" ? "full" : "aligned");
-      else if (knob.key === "chat.composer_mode")
-        setComposerMode(value as ComposerMode);
       return;
     }
     draft.value = { ...draft.value, [knob.key]: value };

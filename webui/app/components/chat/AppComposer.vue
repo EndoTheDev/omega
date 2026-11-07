@@ -1,7 +1,7 @@
 <template>
   <div
     class="composer"
-    :class="[composerModeClass, { expanded: expanded }]"
+    :class="{ expanded: expanded }"
     @click="onCanvasClick">
     <div
       v-if="attachments.length"
@@ -184,13 +184,6 @@
            are both empty, armed once there is something to send. The
            replay affordance renders in the newest response's action row
            (ChatMessage's msg-retry chip), never here. -->
-      <!-- the W6 chips|send hairline (t_d14c2d14): a real divider
-           element, rendered only in the full mode's one segmented row -
-           the input|chips divider is full's border-left on .toolbar -->
-      <div
-        v-if="!expanded && isFull"
-        class="seg-div"
-        aria-hidden="true"></div>
       <button
         class="send"
         :class="{ cancel: face === 'stop' }"
@@ -253,11 +246,10 @@
     RefToken,
   } from "../../composables/pills";
   import { DOCK_VIEWER_OPEN_KEY } from "../../composables/viewer";
-  // the composer's display mode (card t_5752861e, v4 t_d14c2d14):
-  // one shared signal - SettingsTab writes it, the class binding carries
-  // mode-compact (the two-row centered card) or mode-full (the one-row
-  // segmented bar); both modes carry their modifier class now
-  import { parseComposerMode, useComposerMode } from "../../composables/composerMode";
+  // ONE composer, no modes (card t_1750a9e3, ruling 2026-11-07): the
+  // composer is a single pane-wide shape - the display-mode signal, the
+  // settings knob and its composable all died with it. Only the
+  // fullscreen .expanded state keeps its own class.
   const props = defineProps<{
     draft: string;
     model: string;
@@ -282,10 +274,6 @@
     forkAnchor?: string | null;
   }>();
 
-  // the display mode's shared signal (card t_5752861e): module ref, no
-  // prop-drilling - the chat group's knob writes it straight
-  const composerMode = useComposerMode();
-
   const emit = defineEmits<{
     (e: "update:draft", value: string): void;
     (e: "update:model", value: string): void;
@@ -308,17 +296,6 @@
   const thinkingOptions = computed(() =>
     THINKING_UI_LEVELS.map((level) => ({ value: level, label: level })),
   );
-
-  // the display mode's class (card t_5752861e, v4 t_d14c2d14): exactly
-  // two modes, and BOTH carry their modifier class - mode-compact (C5,
-  // two rows) and mode-full (W6, one segmented row); parseComposerMode
-  // already folded the retired 'wide' into 'full'
-  const composerModeClass = computed(() => {
-    return `mode-${parseComposerMode(composerMode.value)}`;
-  });
-  // the W6 chips|send hairline segment: rendered only when the mode is
-  // full AND not expanded (the fullscreen card ignores the modes)
-  const isFull = computed(() => parseComposerMode(composerMode.value) === "full");
 
   // the morph (t_357cbe9c): busy -> stop, else send. The retry face left
   // with the affordance (t_95d2bc34) - the action row owns replay now.
