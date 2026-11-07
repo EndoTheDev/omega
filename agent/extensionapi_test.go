@@ -45,6 +45,7 @@ func (plugChannel) Stop() error                                            { ret
 type plugLogger struct{ hits []string }
 
 func (l *plugLogger) Printf(format string, args ...any) { l.hits = append(l.hits, "info") }
+func (l *plugLogger) Warnf(format string, args ...any)  { l.hits = append(l.hits, "warn") }
 func (l *plugLogger) Errorf(format string, args ...any) { l.hits = append(l.hits, "err") }
 func (l *plugLogger) Close() error                      { return nil }
 

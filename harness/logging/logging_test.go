@@ -56,6 +56,38 @@ func TestFileLoggerErrorf(t *testing.T) {
 	}
 }
 
+// TestFileLoggerWarnf pins the severity-marker convention (card
+// t_221dc498): Warnf writes "WARN: " and Errorf "ERROR: " right after
+// the log.LstdFlags timestamp. The logs tab's severity filter
+// (api/http_channel/ui/severity.ts) classifies on exactly these
+// shapes - this test is the Go-side half of that contract.
+func TestFileLoggerWarnf(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "warn.log")
+	l, err := NewFileLogger(path)
+	if err != nil {
+		t.Fatalf("NewFileLogger: %v", err)
+	}
+	defer l.Close()
+
+	l.Warnf("vision_model set but no caption sink")
+	l.Errorf("hard down")
+
+	data, _ := os.ReadFile(path)
+	s := string(data)
+	if !strings.Contains(s, "WARN: vision_model set but no caption sink") {
+		t.Errorf("log missing WARN marker, got: %s", s)
+	}
+	if !strings.Contains(s, "ERROR: hard down") {
+		t.Errorf("log missing ERROR marker, got: %s", s)
+	}
+}
+
+func TestNopLoggerWarnf(t *testing.T) {
+	l := NopLogger{}
+	l.Warnf("ignored")
+}
+
 func TestFileLoggerAppend(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "append.log")

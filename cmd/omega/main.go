@@ -720,7 +720,7 @@ func wireCaptioner(cfg Config, pctx *agent.Context) {
 	}
 	pctx.Captioner = provider.NewCaptioner(prov, cfg.VisionModel, sink, lg)
 	if sink == nil && lg != nil {
-		lg.Printf("omega: vision_model set but the store does not support captions - captions cache in-process only")
+		lg.Warnf("omega: vision_model set but the store does not support captions - captions cache in-process only")
 	}
 }
 

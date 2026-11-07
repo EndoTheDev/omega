@@ -232,6 +232,8 @@ type SessionContextStore interface {
 type LoggerProvider interface {
 	// Printf writes an info-level log entry.
 	Printf(format string, args ...any)
+	// Warnf writes a warning-level log entry.
+	Warnf(format string, args ...any)
 	// Errorf writes an error-level log entry.
 	Errorf(format string, args ...any)
 	// Close flushes and closes the log output.
