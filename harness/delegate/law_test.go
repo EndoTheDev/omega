@@ -130,7 +130,10 @@ func TestSpawnRefusedInsideSubagent(t *testing.T) {
 	if !strings.Contains(err.Error(), "subagent") {
 		t.Fatalf("refusal names the subagent origin, got %v", err)
 	}
-	if d.PendingCount("") != 0 {
+	d.mu.Lock()
+	count := len(d.tasks)
+	d.mu.Unlock()
+	if count != 0 {
 		t.Fatal("a refused spawn must not register a task")
 	}
 }
@@ -144,9 +147,6 @@ func TestSubagentChildMountsNoDelegateTools(t *testing.T) {
 	plugins := []agent.Plugin{loggingPlugin{}, NewPlugin()}
 	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("mount in subagent: %v", err)
-	}
-	if ctx.InjectedMessages == nil || ctx.PendingDelegations == nil {
-		t.Fatal("the inject seam must still mount in a child")
 	}
 	for _, tp := range ctx.ToolProviders {
 		for name := range tp.Tools() {
@@ -215,16 +215,10 @@ func TestChildSessionStoredAndPassed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runDelegateTask: %v (%s)", err, out)
 	}
-
-	// The result rides the spawning run's affinity queue: this test's
-	// ctx carries no affinity key, so drain the unaddressed "" queue.
-	msg, ok := d.Wait(ctx15(t), "")
-	if !ok {
-		t.Fatalf("no injected result: %s", out)
-	}
-	// the child saw the flag: its argv echo rides the summary
-	if !strings.Contains(msg.Text, "--session") {
-		t.Fatalf("child argv missing --session: %q", msg.Text)
+	// The report IS the tool result now (card t_0805d438): the child's
+	// own stdout returns to the caller.
+	if !strings.Contains(out, "--session") {
+		t.Fatalf("child argv missing --session: %q", out)
 	}
 
 	if len(store.created) != 1 {
@@ -241,8 +235,14 @@ func TestChildSessionStoredAndPassed(t *testing.T) {
 	if label != "delegate:task-1" {
 		t.Errorf("child session label = %q, want delegate:task-1", label)
 	}
-	if !strings.Contains(out, "(session "+id+")") {
-		t.Errorf("spawn confirmation missing the session handle: %q", out)
+	// The session reference rides the status surface (the ID-uniqueness
+	// shape: the id alone is unsafe to match on).
+	status, err := d.runDelegateStatus(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("runDelegateStatus: %v", err)
+	}
+	if !strings.Contains(status, "(session "+id+")") {
+		t.Errorf("status missing the session handle: %q", status)
 	}
 }
 
@@ -263,16 +263,13 @@ func TestSessionCreateFailureDegradesToPlainRun(t *testing.T) {
 	if strings.Contains(out, "(session ") {
 		t.Fatalf("degraded spawn leaked a session handle: %q", out)
 	}
-	// The degraded spawn has no affinity key either - drain "".
-	msg, ok := d.Wait(ctx15(t), "")
-	if !ok {
-		t.Fatalf("no injected result: %s", out)
+	// The report IS the tool result: the child's args echo rides it,
+	// and the degraded shape carries no --session.
+	if !strings.Contains(out, "args=") {
+		t.Fatalf("plain-run result missing: %q", out)
 	}
-	if !strings.Contains(msg.Text, "args=") {
-		t.Fatalf("plain-run result not injected: %q", msg.Text)
-	}
-	if strings.Contains(msg.Text, "--session") {
-		t.Fatalf("degraded spawn still carried --session: %q", msg.Text)
+	if strings.Contains(out, "--session") {
+		t.Fatalf("degraded spawn still carried --session: %q", out)
 	}
 }
 

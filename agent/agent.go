@@ -45,8 +45,6 @@ type Agent struct {
 	extensionInfos []core.ExtensionInfo
 	captioner      core.Captioner
 	userInput      chan string
-	injectedStream core.InjectedStream
-	pendingDeleg   func(affinity string) int
 	loop           LoopProvider
 	logger         LoggerProvider
 	// The yield harness (async agent loop phase 1, t_f3f953d0): the
@@ -366,20 +364,6 @@ func (a *Agent) SetUserInput(ch chan string) {
 	a.userInput = ch
 }
 
-// SetInjectedStream sets the run-affinity drain seam for subagent
-// result injection (t_f3fb7c52). The loop polls and waits through this
-// seam addressed by its OWN run affinity key, so concurrent runs never
-// drain each other's results.
-func (a *Agent) SetInjectedStream(stream core.InjectedStream) {
-	a.injectedStream = stream
-}
-
-// SetPendingDelegations sets the function that returns the count of
-// this run's running subagent tasks (per-run affinity, t_f3fb7c52).
-func (a *Agent) SetPendingDelegations(f func(affinity string) int) {
-	a.pendingDeleg = f
-}
-
 // SetYieldLedger installs the pending-calls table (async agent loop
 // phase 1, t_f3f953d0). Nil = the harness is off: yield-class tools
 // run loop-back (the degradation documented on LoopOptions.YieldLedger).
@@ -442,12 +426,6 @@ func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	// a host with no gate (mode off, no module) runs the loop ungated.
 	ag.SetApprovals(bindNeed[ApprovalProvider](ctx, "approvals"))
 	ag.SetTurnNudger(bindNeed[TurnNudger](ctx, "nudger"))
-	if ctx.InjectedMessages != nil {
-		ag.SetInjectedStream(ctx.InjectedMessages)
-	}
-	if ctx.PendingDelegations != nil {
-		ag.SetPendingDelegations(ctx.PendingDelegations)
-	}
 	if ctx.Captioner != nil {
 		ag.SetCaptioner(ctx.Captioner)
 	}
@@ -611,13 +589,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			PromptAppend:       a.promptAppend,
 			PromptContext:      runPromptContext,
 			Events:             inner,
-			// InjectedMessages is the run-affinity drain seam
-			// (t_f3fb7c52): the loop drains for its OWN run's affinity
-			// key (agent.RunAffinityFromContext), so a sibling
-			// run's queued results never drain into this Run.
-			InjectedMessages:   a.injectedStream,
 			UserInput:          a.userInput,
-			PendingDelegations: a.pendingDeleg,
 			Approvals:          approvals,
 			Nudge:              a.nudge,
 			Logger:             a.logger,

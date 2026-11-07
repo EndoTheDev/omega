@@ -1,7 +1,5 @@
 package core
 
-import "context"
-
 // Session is a persisted conversation with optional parent linking
 // for branching.
 type Session struct {
@@ -124,32 +122,4 @@ type SearchResult struct {
 	// summary rather than message content or label (SearchSessions).
 	// When set, Snippet holds the bracketed summary excerpt.
 	Summary bool `json:"summary"`
-}
-
-// InjectedMessage is a message injected by an extension (e.g. a
-// subagent result) that re-enters the conversation as a new user
-// message, triggering a new turn.
-type InjectedMessage struct {
-	Text   string // the message content
-	Source string // "delegate:<task_id>" - for display
-}
-
-// InjectedStream is the run-affinity drain seam for injected subagent
-// results (t_f3fb7c52). A plain channel drained by every loop let
-// concurrent runs steal each other's child results (the title turn is the
-// usual thief); a stream addressed by run affinity serves only the run
-// that spawned the delegation. The implementing capsule queues results
-// per affinity key; nothing here is shared state a foreign run can
-// drain. The delegate module's Delegate is the production
-// implementation; loop tests ride small stubs.
-type InjectedStream interface {
-	// Poll returns every result buffered for affinity (FIFO), without
-	// blocking, and removes them from the queue. Empty = nothing
-	// pending. Concurrent calls each see disjoint results.
-	Poll(affinity string) []InjectedMessage
-	// Wait blocks until one result addressed to affinity arrives, ctx
-	// ends, or the stream's queue stops being fed (module unmount).
-	// The bool is false on the cancellation cases; a false must never
-	// carry a message.
-	Wait(ctx context.Context, affinity string) (InjectedMessage, bool)
 }
