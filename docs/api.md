@@ -178,8 +178,8 @@ Response is `text/event-stream`; frames are `event: <name>\ndata:
 | `tool_call`       | name + arguments                                            |
 | `tool_result`     | the tool's result                                           |
 | `stream_end`      | `finish_reason` (`stop`, `tool_call`, provider string, `cancelled`, `error`), usage counts when reported |
-| `turn_end`        | turn complete                                               |
-| `agent_end`       | terminal state (`finish_reason`, incl. `cancelled` from a stop) |
+| `turn_end`        | turn complete (`pending_calls` names dispatched yield-class calls that ended the turn) |
+| `agent_end`       | terminal state (`finish_reason`, incl. `cancelled` from a stop and `yielded` - the run ended on a dispatched yield-class call; its result re-enters as a wake turn, see below) |
 | `assistant_message`| the assembled assistant message                            |
 | `view_model_delta`| one canvas panel descriptor (arc 3b): a module updated its panel state; dispatch on this frame, then merge the panel |
 | `error`           | the error text (failures are events, not Go errors)         |
@@ -490,6 +490,18 @@ Exact API patterns win over `/`. The catch-all serves real files, falls
 back to `index.html` for client routes (`/chat/<id>`), and still 404s
 asset-like misses (anything under `/_nuxt/` or a dotted path) — a bad
 asset URL is a bug a deep link must not mask.
+
+## Yielded turns (async agent loop)
+
+A yield-class tool call ends the run with `agent_end`
+`finish_reason: "yielded"` - the result re-enters when it settles as a
+wake run on the same session: every live subscriber sees TWO runs on
+one send (detach at the first `agent_end`; reattach via
+`/sessions/{id}/events` to ride the wake). The synthetic result
+persists with store role `yield_result` (render role tool), the same
+shape any future out-of-process executor writes. A home parked by the
+runaway guard (25 consecutive wake turns with no human input) carries
+a plain user-row note in the conversation.
 
 ## Provider quirks that leak onto the wire
 
