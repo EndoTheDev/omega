@@ -691,7 +691,7 @@ func storedHostIn(cfg *Config, host string) bool {
 // REMOVES (names not re-sent) that carry the submitted host. A rename
 // removes the old name, so its key is the source - one distinct key
 // inherits, none or several refuse at config.yaml.
-func renamedOffKey(cfg *Config, submitted map[string]bool, want string) (key string, distinct int) {
+func renamedOffKey(cfg *Config, submitted map[string]bool, want string) (string, int) {
 	keys := map[string]bool{}
 	for name, inst := range cfg.Providers {
 		if submitted[name] || inst.Host != want {
@@ -702,6 +702,7 @@ func renamedOffKey(cfg *Config, submitted map[string]bool, want string) (key str
 	if len(keys) != 1 {
 		return "", len(keys)
 	}
+	key := ""
 	for k := range keys {
 		key = k
 	}
