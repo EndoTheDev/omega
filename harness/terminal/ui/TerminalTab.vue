@@ -103,10 +103,24 @@
     }
   }
 
-  /** claim the pane's session (reattach-else-spawn server-side). */
+  /** claim the pane's session (reattach-else-spawn server-side).
+      A failure's body is the module's own error text - a platform gap
+      (no pty on this build, a 409 cap, a dead module) names itself,
+      and the pane repeats it verbatim instead of the generic line. */
   async function claim(): Promise<string | null> {
     const res = await fetch(CLAIM, { method: "POST" });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const raw = (await res.text()).trim();
+      let msg = raw || `HTTP ${res.status}`;
+      try {
+        const parsed = JSON.parse(raw) as { error?: string };
+        if (parsed.error) msg = parsed.error;
+      } catch {
+        // a non-JSON refusal rides the raw body
+      }
+      claimFail = msg;
+      return null;
+    }
     const body = (await res.json()) as { id?: string };
     return body.id ?? null;
   }
@@ -158,12 +172,16 @@
     await open();
   }
 
+  /** the claim's failure text (the module's error body, see claim()). */
+  let claimFail = "";
+
   async function open() {
     killed.value = false;
+    claimFail = "";
     const id = await claim();
     if (!id) {
       stateLine.value = "no terminal";
-      errorLine.value = "the terminal module did not answer the claim";
+      errorLine.value = claimFail || "the terminal module did not answer the claim";
       return;
     }
     sessionId.value = id;
