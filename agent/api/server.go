@@ -504,16 +504,41 @@ func (s *Server) SetChannelKnobs(runTimeout time.Duration, titleModel string) {
 // SetDefaultWorkspace applies the server.default_workspace knob (card
 // t_ccf74d88): the tools' fallback workdir for sessions without a
 // pinned workspace. Called by the wire (boot value) and the settings
-// hot apply (a live knob save). A path that no longer exists is
-// ignored - a broken knob must not root every tool call into a
-// tool-call failure.
+// hot apply (a live knob save). An empty value is the intentional
+// clear - the cwd fallback law stands. A stat failure refuses the
+// knob (card t_9825147c part 3): the previous value survives, so a
+// transient stat failure (network drive hiccup, AV lock) during an
+// unrelated save never silently re-roots workspace-less sessions'
+// tool runs at the process cwd - the refusal is logged with the
+// reason and the kept value.
 func (s *Server) SetDefaultWorkspace(dir string) {
-	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-		dir = ""
+	if dir != "" {
+		info, err := os.Stat(dir)
+		switch {
+		case err != nil:
+			s.refuseWorkspace(dir, "stat failed: "+err.Error())
+			return
+		case !info.IsDir():
+			s.refuseWorkspace(dir, "not a directory")
+			return
+		}
 	}
 	s.wsMu.Lock()
 	s.defaultWorkspace = dir
 	s.wsMu.Unlock()
+}
+
+// refuseWorkspace keeps the previous default workspace and logs why
+// the submitted one was refused (card t_9825147c part 3). The logger
+// seam may be nil (no logging capsule) - the value is intact either
+// way, the log line is the audit trail.
+func (s *Server) refuseWorkspace(dir, why string) {
+	s.wsMu.Lock()
+	prev := s.defaultWorkspace
+	s.wsMu.Unlock()
+	if l := s.Logger(); l != nil {
+		l.Errorf("api: server.default_workspace %q refused (%s) - keeping %q", dir, why, prev)
+	}
 }
 
 // SetAgentPrompt is the settings hot-apply hook for the live runtime
@@ -631,12 +656,62 @@ type ModelSection struct {
 	Error        string              `json:"error,omitempty"`
 }
 
+// modelSectionsTimeout caps one endpoint's listing inside the grouped
+// catalog (card t_9825147c part 1): the listings ride no context, so
+// the catalog collects with a deadline instead of wg.Wait - one
+// unreachable instance (VPN down, provider outage, typo'd host)
+// answers as its section's Error field in seconds while the live
+// sections list their models, instead of stalling every GET /models
+// behind it for up to the http_timeout default (300s). A var: tests
+// shorten it.
+var modelSectionsTimeout = 5 * time.Second
+
+// listOneSection fetches one endpoint's catalog into its section - it
+// never touches shared state, so a section fetched late or never
+// (missed deadline) is safe to serve without it.
+func listOneSection(name string, inst agent.Provider) ModelSection {
+	sec := ModelSection{Name: name, Models: []string{}}
+	// the same degradation agent.ListModelEntries applies: the
+	// capability upgrade answers entries when mounted, a name-only
+	// provider's ListModels is the floor
+	var entries []core.ModelEntry
+	var err error
+	if lp, ok := inst.(agent.ModelCapabilitiesProvider); ok {
+		entries, err = lp.ListModelEntries()
+	} else {
+		var names []string
+		names, err = inst.ListModels()
+		if err == nil {
+			entries = make([]core.ModelEntry, len(names))
+			for k, m := range names {
+				entries[k] = core.ModelEntry{Name: m}
+			}
+		}
+	}
+	if err != nil {
+		sec.Error = err.Error()
+		return sec
+	}
+	for _, e := range entries {
+		sec.Models = append(sec.Models, e.Name)
+		if len(e.Capabilities) > 0 {
+			if sec.Capabilities == nil {
+				sec.Capabilities = map[string][]string{}
+			}
+			sec.Capabilities[e.Name] = e.Capabilities
+		}
+	}
+	return sec
+}
+
 // modelSections builds the grouped catalog: the default instance,
 // then every named instance (sorted - a config map iterates
 // unordered). Each listing rides its own provider copy, so no shared
 // state mutates; a listing error lands IN the section (the picker
-// shows it), never a 500 of the whole payload. A picker Refresh
-// re-runs the whole GET - each section is a fresh per-provider fetch.
+// shows it), never a 500 of the whole payload. Sections collect under
+// a deadline (modelSectionsTimeout): a section whose endpoint misses
+// it answers as an Error section, and the picker's Refresh re-runs
+// the whole GET as a fresh per-provider fetch.
 func (s *Server) modelSections() []ModelSection {
 	prov := s.agent.Provider()
 	if prov == nil {
@@ -661,48 +736,39 @@ func (s *Server) modelSections() []ModelSection {
 			}
 		}
 	}
-	out := make([]ModelSection, len(jobs))
-	var wg sync.WaitGroup
+	// every fetch goroutine sends exactly once on a buffered channel,
+	// so a section that reaches the deadline never blocks the late
+	// sender - the goroutine is simply left behind it.
+	type listed struct {
+		idx int
+		sec ModelSection
+	}
+	results := make(chan listed, len(jobs))
 	for i, j := range jobs {
-		wg.Add(1)
-		go func(i int, j job) {
-			defer wg.Done()
-			sec := ModelSection{Name: j.name, Models: []string{}}
-			// the same degradation agent.ListModelEntries applies:
-			// the capability upgrade answers entries when mounted, a
-			// name-only provider's ListModels is the floor
-			var entries []core.ModelEntry
-			var err error
-			if lp, ok := j.inst.(agent.ModelCapabilitiesProvider); ok {
-				entries, err = lp.ListModelEntries()
-			} else {
-				var names []string
-				names, err = j.inst.ListModels()
-				if err == nil {
-					entries = make([]core.ModelEntry, len(names))
-					for k, name := range names {
-						entries[k] = core.ModelEntry{Name: name}
-					}
-				}
-			}
-			if err != nil {
-				sec.Error = err.Error()
-				out[i] = sec
-				return
-			}
-			for _, e := range entries {
-				sec.Models = append(sec.Models, e.Name)
-				if len(e.Capabilities) > 0 {
-					if sec.Capabilities == nil {
-						sec.Capabilities = map[string][]string{}
-					}
-					sec.Capabilities[e.Name] = e.Capabilities
-				}
-			}
-			out[i] = sec
+		go func(idx int, j job) {
+			results <- listed{idx: idx, sec: listOneSection(j.name, j.inst)}
 		}(i, j)
 	}
-	wg.Wait()
+	out := make([]ModelSection, len(jobs))
+	received := make([]bool, len(jobs))
+	timer := time.NewTimer(modelSectionsTimeout)
+	defer timer.Stop()
+	for done := 0; done < len(jobs); done++ {
+		select {
+		case r := <-results:
+			out[r.idx] = r.sec
+			received[r.idx] = true
+		case <-timer.C:
+			timeout := modelSectionsTimeout
+			for i := range jobs {
+				if !received[i] {
+					out[i] = ModelSection{Name: jobs[i].name, Models: []string{},
+						Error: fmt.Sprintf("listing did not answer within %s", timeout)}
+				}
+			}
+			return out
+		}
+	}
 	return out
 }
 

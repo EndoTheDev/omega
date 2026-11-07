@@ -823,8 +823,13 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		setAgents:  setAgents,
 		logger:     logger,
 	}
+	// The workspace hot-apply pushes only on a value change (card
+	// t_9825147c part 3): the watch tracks what the last reload saw,
+	// boot started with the boot config's value.
+	watchWorkspace := cfg.Server.DefaultWorkspace
 	WatchConfig(configFile, func(newCfg Config) {
-		hotApply(newCfg, pctx, setFilesWorkspace, setChannelWorkspace, setAgentConfig)
+		hotApply(newCfg, watchWorkspace, pctx, setFilesWorkspace, setChannelWorkspace, setAgentConfig)
+		watchWorkspace = newCfg.Server.DefaultWorkspace
 		registries.Sync(newCfg.Disabled) // hand edits follow the toggle path
 	})
 	// The serving agent's boot bake (card t_f78acfd6): the HTTP
