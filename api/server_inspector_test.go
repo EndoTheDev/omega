@@ -55,7 +55,8 @@ func (f *fakeSkillEntries) SkillsEntries() (map[string]string, map[string]string
 // fakePathLogger satisfies agent.LoggerProvider with a readable path.
 type fakePathLogger struct{ path string }
 
-func (l *fakePathLogger) Printf(string, ...any) {}
+func (l *fakePathLogger) Printf(string, ...any)  {}
+func (l *fakePathLogger) Warnf(string, ...any)  {}
 func (l *fakePathLogger) Errorf(string, ...any) {}
 func (*fakePathLogger) Close() error            { return nil }
 func (l *fakePathLogger) Path() string          { return l.path }
@@ -355,7 +356,8 @@ func TestLogsMissingFileIs404(t *testing.T) {
 // nopTestLogger mirrors harness/logging.NopLogger: LoggerProvider only.
 type nopTestLogger struct{}
 
-func (nopTestLogger) Printf(string, ...any) {}
+func (nopTestLogger) Printf(string, ...any)  {}
+func (nopTestLogger) Warnf(string, ...any)  {}
 func (nopTestLogger) Errorf(string, ...any) {}
 func (nopTestLogger) Close() error          { return nil }
 

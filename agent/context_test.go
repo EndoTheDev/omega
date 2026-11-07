@@ -36,6 +36,10 @@ func (s *stubLogger) Errorf(format string, args ...any) {
 	s.lines = append(s.lines, "error: "+format)
 }
 
+func (s *stubLogger) Warnf(format string, args ...any) {
+	s.lines = append(s.lines, "warn: "+format)
+}
+
 func (s *stubLogger) Close() error { return nil }
 
 // TestNewFromContextFull verifies that NewFromContext wires every field

@@ -144,6 +144,7 @@ func (l *logRecorder) Printf(format string, args ...any) {
 	defer l.mu.Unlock()
 	l.logs = append(l.logs, fmt.Sprintf(format, args...))
 }
+func (l *logRecorder) Warnf(format string, args ...any)  { l.Printf(format, args...) }
 func (l *logRecorder) Errorf(format string, args ...any) { l.Printf(format, args...) }
 func (l *logRecorder) Close() error                      { return nil }
 func (l *logRecorder) snapshot() []string {

@@ -61,6 +61,16 @@ func (l *FileLogger) Errorf(format string, args ...any) {
 	l.log.Printf("ERROR: "+format, args...)
 }
 
+// Warnf writes a warning-level log entry. The in-band "WARN: " marker
+// (the "ERROR: " convention's sibling, card t_221dc498) is what the
+// logs tab's severity filter classifies on - the marker IS the
+// severity metadata; harness/logging's test pins the exact shapes.
+func (l *FileLogger) Warnf(format string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.log.Printf("WARN: "+format, args...)
+}
+
 // Close flushes and closes the log file.
 func (l *FileLogger) Close() error {
 	l.mu.Lock()
@@ -74,6 +84,9 @@ type NopLogger struct{}
 
 // Printf is a no-op.
 func (NopLogger) Printf(format string, args ...any) {}
+
+// Warnf is a no-op.
+func (NopLogger) Warnf(format string, args ...any) {}
 
 // Errorf is a no-op.
 func (NopLogger) Errorf(format string, args ...any) {}
