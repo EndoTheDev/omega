@@ -346,8 +346,11 @@ window help reports what startup auto-probed).
   boards is a pointer operation, never a card op.
 
 - `GET /tasks` — list rows in board order (the column's drag order,
-  newest-first fallback); `?status=` filters, the empty value lists
-  every status.
+  newest-first fallback); `?status=` filters. The EMPTY value lists the
+  active board: every status but `archived` - the default list is not
+  an archive dump (t_02a8beea A2). `?status=archived` lists the
+  archive, `?status=all` lists everything. The board grid module UI
+  requests `all` deliberately (it renders the archived column).
 - `POST /tasks` — create; `title` required, unspecified status defaults
   to `triage` in the store. A fresh card lands on top of its column.
 - `GET /tasks/{id}` — the task plus its thread (comments + events).
@@ -366,6 +369,34 @@ window help reports what startup auto-probed).
 All registered by the capsule (`harness/kanban/rest.go`) and served
 from the live registry - absent module, unregistered path (the SPA
 catch-all answers it).
+
+#### The batch contract (the `kanban` tool's `operations` array)
+
+The batch is ATOMIC on the mounted store (card t_02a8beea): the whole
+`operations` array runs inside one SQLite transaction (the `Batcher`
+capability) - every operation applies or none does, and a failed batch
+rolls back the operations it already applied, so no create inside a
+failed batch survives to orphan on the board. The failure report reads
+`failed at operations[N]: ... (batch rolled back, M applied
+operations reverted)`. In-batch referencing rides the same machinery:
+an operation's `id` may be `LAST` (the task the most recent create in
+the batch made) or `#N` (1-based, the task created at
+`operations[N-1]`, matching the numbered result lines). References are
+validated BEFORE anything applies - a malformed or forward-pointing
+reference fails the whole batch at the door with zero side effects.
+Done-notifications flush only after the batch commits; a rolled-back
+batch emits none. A board whose provider lacks the `Batcher`
+capability keeps the fail-forward semantics honestly reported (applied
+ops stand, no rollback claim). Create-then-act in one call is the
+intended shape:
+
+```
+kanban {operations: [
+  {action: create, title: "ship it"},
+  {action: comment, id: "LAST", body: "opened by the pipeline"},
+  {action: complete, id: "LAST"}
+]}
+```
 
 ### Finished things (notifications)
 

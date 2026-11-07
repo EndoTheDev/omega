@@ -165,9 +165,12 @@ export function selectBoardFor(board: string): void {
 }
 
 // resolveTaskBoard scans the registry for the board holding `taskId`:
-// GET /boards, then a GET /tasks per board looking for the id. Any
-// failure (the seam absent, a 501, a broken registry) resolves null -
-// the click still focuses the pane, the board just stays where it is.
+// GET /boards, then a GET /tasks per board looking for the id. The
+// scan requests ?status=all explicitly - the default /tasks list hides
+// archived (t_02a8beea), and a notification for an archived card must
+// still resolve its board. Any failure (the seam absent, a 501, a
+// broken registry) resolves null - the click still focuses the pane,
+// the board just stays where it is.
 export async function resolveTaskBoard(taskId: string): Promise<string | null> {
   let lists: { board: string; tasks: { id: string }[] }[];
   try {
@@ -180,7 +183,7 @@ export async function resolveTaskBoard(taskId: string): Promise<string | null> {
     lists = [];
     for (const board of names) {
       try {
-        const rt = await fetch(`/tasks?board=${encodeURIComponent(board)}`);
+        const rt = await fetch(`/tasks?status=all&board=${encodeURIComponent(board)}`);
         if (!rt.ok) continue;
         const tb = await rt.json();
         lists.push({ board, tasks: (tb.tasks ?? []) as { id: string }[] });

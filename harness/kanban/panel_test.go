@@ -324,8 +324,8 @@ func TestToolRefreshPushes(t *testing.T) {
 		t.Fatalf("refreshed panel lost the created task: %s", raw)
 	}
 
-	// a failed batch op still refreshes (earlier ops applied): the
-	// batch is fail-forward, the failure rides the result string
+	// a failed batch op still refreshes (cheap catch-up: an atomic
+	// batch rolled itself back, a fail-forward one applied earlier ops)
 	before := len(*pushed)
 	out, err := p.tools.runTask(cctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "then break"},

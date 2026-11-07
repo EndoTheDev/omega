@@ -107,10 +107,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_boards_one_current ON boards(is_current) W
 // boardID resolves a board name to its row id: "" means the current
 // board (the is_current row), a name means that row - unknown or
 // illegal names error at the door, the registry never auto-creates.
+// Reads ride the statement surface (q), so a batch clone's board
+// resolution executes inside the batch transaction; the WRITE ops
+// below keep db directly (Begin/ATTACH cannot nest).
 func (s *Store) boardID(board string) (int64, error) {
+	bg := context.Background()
 	if board == "" {
 		var id int64
-		row := s.db.QueryRow(`SELECT id FROM boards WHERE is_current = 1 ORDER BY id LIMIT 1`)
+		row := s.q.QueryRowContext(bg, `SELECT id FROM boards WHERE is_current = 1 ORDER BY id LIMIT 1`)
 		if err := row.Scan(&id); err != nil {
 			return 0, fmt.Errorf("no current board row: %w", err)
 		}
@@ -120,7 +124,7 @@ func (s *Store) boardID(board string) (int64, error) {
 		return 0, fmt.Errorf("illegal board name %q", board)
 	}
 	var id int64
-	row := s.db.QueryRow(`SELECT id FROM boards WHERE name = ?`, board)
+	row := s.q.QueryRowContext(bg, `SELECT id FROM boards WHERE name = ?`, board)
 	if err := row.Scan(&id); err != nil {
 		if err == sql.ErrNoRows {
 			return 0, fmt.Errorf("no such board %q", board)
@@ -137,13 +141,13 @@ func (s *Store) BoardExists(name string) bool {
 		return false
 	}
 	var one int
-	return s.db.QueryRow(`SELECT 1 FROM boards WHERE name = ?`, name).Scan(&one) == nil
+	return s.q.QueryRowContext(context.Background(), `SELECT 1 FROM boards WHERE name = ?`, name).Scan(&one) == nil
 }
 
 // Boards implements BoardLister: the boards table, earliest created
 // first (main was seeded with position 0), the current board flagged.
 func (s *Store) Boards(ctx context.Context) ([]BoardInfo, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT name, is_current FROM boards ORDER BY position, id`)
+	rows, err := s.q.QueryContext(ctx, `SELECT name, is_current FROM boards ORDER BY position, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +170,7 @@ func (s *Store) Boards(ctx context.Context) ([]BoardInfo, error) {
 // the board must answer, a missing flag is not a boot failure.
 func (s *Store) CurrentBoard() (string, error) {
 	var name string
-	err := s.db.QueryRow(`SELECT name FROM boards WHERE is_current = 1 ORDER BY id LIMIT 1`).Scan(&name)
+	err := s.q.QueryRowContext(context.Background(), `SELECT name FROM boards WHERE is_current = 1 ORDER BY id LIMIT 1`).Scan(&name)
 	if err == sql.ErrNoRows {
 		return DefaultBoardName, nil
 	}

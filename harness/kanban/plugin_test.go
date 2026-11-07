@@ -139,7 +139,7 @@ func TestMountSeesCurrentBoard(t *testing.T) {
 	if cur, err := p2.store.CurrentBoard(); err != nil || cur != "alpha" {
 		t.Fatalf("current = %q err %v, want alpha", cur, err)
 	}
-	out, err := p2.tools.runTaskOp(context.Background(), map[string]any{"action": "create", "title": "alpha-born"})
+	out, _, err := p2.tools.runTaskOp(context.Background(), p2.tools.board, map[string]any{"action": "create", "title": "alpha-born"})
 	if err != nil || !strings.HasPrefix(out, "created t_") {
 		t.Fatalf("create on alpha: %q %v", out, err)
 	}
@@ -172,7 +172,7 @@ func TestBoardCommandSwitchesSessionBoard(t *testing.T) {
 	if got := p.sessionBoard(); got != "alpha" {
 		t.Fatalf("session board = %q", got)
 	}
-	out, err := p.tools.runTaskOp(context.Background(), map[string]any{
+	out, _, err := p.tools.runTaskOp(context.Background(), p.tools.board, map[string]any{
 		"action": "create", "title": "flows through",
 	})
 	if err != nil {
@@ -191,7 +191,7 @@ func TestBoardCommandSwitchesSessionBoard(t *testing.T) {
 	}
 
 	// explicit board arg overrides the session board
-	if _, err := p.tools.runTaskOp(context.Background(), map[string]any{
+	if _, _, err := p.tools.runTaskOp(context.Background(), p.tools.board, map[string]any{
 		"action": "create", "title": "explicit", "board": "main",
 	}); err != nil {
 		t.Fatal(err)

@@ -44,7 +44,9 @@ Flags:
   --board <name>   operate on a named board (omit: the current board;
                    'main' is the default board)
   --status <s>     card list filter (triage todo scheduled ready running
-                   blocked review done archived)
+                   blocked review done archived; default lists active
+                   cards only - archived with --status archived,
+                   everything with --status all)
 `
 
 // cliHome resolves the omega home for the CLI handlers. The binary
@@ -128,7 +130,7 @@ func cmdKanbanCards(sub string, args []string) error {
 
 	switch sub {
 	case "list":
-		if opts.status != "" && !IsStatus(opts.status) {
+		if opts.status != "" && !IsListStatus(opts.status) {
 			return fmt.Errorf("illegal status %q", opts.status)
 		}
 		tasks, err := opts.store.ListTasks(ctx, board, opts.status)

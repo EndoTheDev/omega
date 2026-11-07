@@ -252,3 +252,44 @@ func TestSessionLinkEvent(t *testing.T) {
 		t.Fatalf("events = %+v", events)
 	}
 }
+
+// TestListTasksArchivedDefault pins the t_02a8beea list default: an
+// empty status hides archived, an explicit "archived" status lists the
+// archive, and "all" lists everything including it.
+func TestListTasksArchivedDefault(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	active, err := s.CreateTask(ctx, "", KanbanTask{Title: "active"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived, err := s.CreateTask(ctx, "", KanbanTask{Title: "archived", Status: StatusArchived})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	def, err := s.ListTasks(ctx, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(def) != 1 || def[0].ID != active.ID {
+		t.Fatalf("default list = %+v, want the active card only", def)
+	}
+	arch, err := s.ListTasks(ctx, "", StatusArchived)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(arch) != 1 || arch[0].ID != archived.ID {
+		t.Fatalf("archived view = %+v", arch)
+	}
+	all, err := s.ListTasks(ctx, "", StatusAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("\"all\" = %+v, want both rows", all)
+	}
+	if _, err := s.ListTasks(ctx, "", "bogus"); err == nil {
+		t.Fatal("\"bogus\" accepted as a list filter")
+	}
+}

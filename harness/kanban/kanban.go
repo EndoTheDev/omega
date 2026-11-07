@@ -35,6 +35,18 @@ func IsStatus(s string) bool {
 	return slices.Contains(statuses, s)
 }
 
+// StatusAll is a list-only filter value, never a board status: the
+// explicit everything-scan that includes archived cards. The default
+// list (an empty status) shows the active board instead.
+const StatusAll = "all"
+
+// IsListStatus reports whether s is a legal list filter: the 9 board
+// statuses plus the list-only "all". Args validating a LIST use this;
+// args validating a task's own status keep IsStatus.
+func IsListStatus(s string) bool {
+	return s == StatusAll || IsStatus(s)
+}
+
 // IsSettled reports whether the status is a terminal resting state
 // (done, archived) - the board renders those columns dimmed.
 func IsSettled(s string) bool {

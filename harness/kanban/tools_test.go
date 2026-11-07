@@ -40,7 +40,7 @@ func TestToolsRegistryComplete(t *testing.T) {
 
 func TestTaskCreateAutoLinksSession(t *testing.T) {
 	p, _ := toolProvider(t)
-	out, err := p.runCreate(withSession(context.Background(), "sess_9"), "", map[string]any{
+	out, _, err := p.runCreate(withSession(context.Background(), "sess_9"), p.board, "", map[string]any{
 		"title": "wire the seam",
 		"body":  "spec body",
 	})
@@ -59,17 +59,17 @@ func TestTaskCreateAutoLinksSession(t *testing.T) {
 
 func TestTaskListFormatsAndFilters(t *testing.T) {
 	p, _ := toolProvider(t)
-	if _, err := p.runCreate(context.Background(), "", map[string]any{"title": "one"}); err != nil {
+	if _, _, err := p.runCreate(context.Background(), p.board, "", map[string]any{"title": "one"}); err != nil {
 		t.Fatal(err)
 	}
-	out, err := p.runList(context.Background(), "", nil)
+	out, err := p.runList(context.Background(), p.board, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out, "one") {
 		t.Fatalf("list = %q", out)
 	}
-	out, err = p.runList(context.Background(), "", map[string]any{"status": StatusDone})
+	out, err = p.runList(context.Background(), p.board, "", map[string]any{"status": StatusDone})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,11 +80,11 @@ func TestTaskListFormatsAndFilters(t *testing.T) {
 
 func TestTaskUpdateCompleteCommentLink(t *testing.T) {
 	p, _ := toolProvider(t)
-	out, _ := p.runCreate(context.Background(), "", map[string]any{"title": "flow"})
+	out, _, _ := p.runCreate(context.Background(), p.board, "", map[string]any{"title": "flow"})
 	id := strings.Fields(out)[1]
 
 	status := StatusDone
-	if _, err := p.runUpdate(context.Background(), "", map[string]any{"id": id, "status": status}); err != nil {
+	if _, err := p.runUpdate(context.Background(), p.board, "", map[string]any{"id": id, "status": status}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	task, _ := p.board.GetTask(context.Background(), "", id)
@@ -92,14 +92,14 @@ func TestTaskUpdateCompleteCommentLink(t *testing.T) {
 		t.Fatalf("task = %+v", task)
 	}
 
-	if out, err := p.runComplete(context.Background(), "", map[string]any{"id": id}); err != nil || !strings.Contains(out, "done") {
+	if out, err := p.runComplete(context.Background(), p.board, "", map[string]any{"id": id}); err != nil || !strings.Contains(out, "done") {
 		t.Fatalf("complete: %q %v", out, err)
 	}
 
-	if _, err := p.runComment(context.Background(), "", map[string]any{"id": "t_00000000", "body": "missing"}); err != ErrNotFound {
+	if _, err := p.runComment(context.Background(), p.board, "", map[string]any{"id": "t_00000000", "body": "missing"}); err != ErrNotFound {
 		t.Fatalf("comment on missing: %v", err)
 	}
-	if _, err := p.runComment(context.Background(), "", map[string]any{"id": id, "body": "note", "author": "endo"}); err != nil {
+	if _, err := p.runComment(context.Background(), p.board, "", map[string]any{"id": id, "body": "note", "author": "endo"}); err != nil {
 		t.Fatalf("comment: %v", err)
 	}
 	comments, _ := p.board.GetTaskComments(context.Background(), "", id)
@@ -110,10 +110,10 @@ func TestTaskUpdateCompleteCommentLink(t *testing.T) {
 
 func TestTaskUpdateEmptyAssigneeUnassigns(t *testing.T) {
 	p, _ := toolProvider(t)
-	out, _ := p.runCreate(context.Background(), "", map[string]any{"title": "assignme", "assignee": "cody"})
+	out, _, _ := p.runCreate(context.Background(), p.board, "", map[string]any{"title": "assignme", "assignee": "cody"})
 	id := strings.Fields(out)[1]
 	empty := ""
-	if _, err := p.runUpdate(context.Background(), "", map[string]any{"id": id, "assignee": empty}); err != nil {
+	if _, err := p.runUpdate(context.Background(), p.board, "", map[string]any{"id": id, "assignee": empty}); err != nil {
 		t.Fatalf("unassign: %v", err)
 	}
 	task, _ := p.board.GetTask(context.Background(), "", id)
@@ -210,19 +210,83 @@ func TestRunTaskBatch(t *testing.T) {
 	}
 }
 
-// TestRunTaskBatchFailForward pins the DB-surface batch semantics: the
-// batch stops at the first failure, reporting what already applied.
-func TestRunTaskBatchFailForward(t *testing.T) {
+// TestRunTaskBatchRollback pins the atomic batch contract: the batch
+// fails at the first bad op, everything earlier rolled back - the
+// board is exactly what it was before the call, and the result says
+// so (no orphaned creates).
+func TestRunTaskBatchRollback(t *testing.T) {
 	p, _ := toolProvider(t)
 	ctx := context.Background()
 
-	out, _ := p.runTask(ctx, map[string]any{"operations": []map[string]any{
-		{"action": "create", "title": "kept"},
-		{"action": "update", "id": "t_missing", "status": StatusDone},
-		{"action": "create", "title": "never created"},
+	out, _ := p.runTask(ctx, map[string]any{"operations": []any{
+		map[string]any{"action": "create", "title": "kept"},
+		map[string]any{"action": "update", "id": "t_missing", "status": StatusDone},
+		map[string]any{"action": "create", "title": "never created"},
+	}})
+	if !strings.Contains(out, "failed at operations[1]") {
+		t.Fatalf("expected the failure report, got %q", out)
+	}
+	if !strings.Contains(out, "batch rolled back") {
+		t.Fatalf("the rollback is not reported: %q", out)
+	}
+	tasks, _ := p.board.ListTasks(ctx, "", "")
+	if len(tasks) != 0 {
+		t.Fatalf("a failed atomic batch left rows behind: %+v", tasks)
+	}
+}
+
+// nonBatcher is a KanbanProvider without the Batcher capability: it
+// pins the honest fail-forward fallback for embedders the store's
+// transaction cannot cover.
+type nonBatcher struct{ inner *Store }
+
+func (b nonBatcher) CreateTask(ctx context.Context, board string, in KanbanTask) (KanbanTask, error) {
+	return b.inner.CreateTask(ctx, board, in)
+}
+func (b nonBatcher) ListTasks(ctx context.Context, board, status string) ([]KanbanTask, error) {
+	return b.inner.ListTasks(ctx, board, status)
+}
+func (b nonBatcher) GetTask(ctx context.Context, board, id string) (KanbanTask, error) {
+	return b.inner.GetTask(ctx, board, id)
+}
+func (b nonBatcher) GetTaskComments(ctx context.Context, board, taskID string) ([]KanbanComment, error) {
+	return b.inner.GetTaskComments(ctx, board, taskID)
+}
+func (b nonBatcher) GetTaskEvents(ctx context.Context, board, taskID string) ([]KanbanEvent, error) {
+	return b.inner.GetTaskEvents(ctx, board, taskID)
+}
+func (b nonBatcher) UpdateTask(ctx context.Context, board, taskID string, patch KanbanPatch) (KanbanTask, error) {
+	return b.inner.UpdateTask(ctx, board, taskID, patch)
+}
+func (b nonBatcher) AddComment(ctx context.Context, board, taskID, author, body string) (KanbanComment, error) {
+	return b.inner.AddComment(ctx, board, taskID, author, body)
+}
+func (b nonBatcher) Close() error { return nil }
+
+var _ KanbanProvider = nonBatcher{}
+
+// TestRunTaskBatchFailForward pins the no-Batcher fallback: the board
+// cannot roll back, so the batch stops at the first failure and the
+// applied prefix honestly stands.
+func TestRunTaskBatchFailForward(t *testing.T) {
+	s, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	p := &ToolProvider{board: nonBatcher{inner: s}}
+	ctx := context.Background()
+
+	out, _ := p.runTask(ctx, map[string]any{"operations": []any{
+		map[string]any{"action": "create", "title": "kept"},
+		map[string]any{"action": "update", "id": "t_missing", "status": StatusDone},
+		map[string]any{"action": "create", "title": "never created"},
 	}})
 	if !strings.Contains(out, "failed at operations[1]") {
 		t.Fatalf("expected fail-forward report, got %q", out)
+	}
+	if strings.Contains(out, "batch rolled back") {
+		t.Fatalf("the fail-forward board must not claim a rollback: %q", out)
 	}
 	if strings.Contains(out, "never created") && !strings.Contains(out, "kept") {
 		t.Fatalf("partial results lost: %q", out)
