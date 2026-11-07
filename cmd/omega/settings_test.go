@@ -425,7 +425,7 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	cfg.Server.DefaultWorkspace = "/tmp/lane"
 	cfg.SystemPrompt = "be terse"
 	cfg.MaxTurns = 33
-	hotApply(cfg, pctx, setFilesWorkspace, setChannelWorkspace, setAgentConfig)
+	hotApply(cfg, "", pctx, setFilesWorkspace, setChannelWorkspace, setAgentConfig)
 
 	if got := llm.HTTPClient().Timeout; got != 42*time.Second {
 		t.Errorf("http client timeout %v, want 42s", got)
@@ -450,11 +450,25 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 		t.Errorf("disabled compaction changed the message count")
 	}
 
+	// card t_9825147c part 3: the workspace hook push is gated on a
+	// value change - an unchanged knob is NOT re-pushed, a changed one
+	// rides both hooks
+	pushes := 0
+	countingHook := func(string) { pushes++ }
+	hotApply(cfg, cfg.Server.DefaultWorkspace, pctx, countingHook, countingHook, setAgentConfig)
+	if pushes != 0 {
+		t.Errorf("unchanged workspace re-pushed %d times, want 0", pushes)
+	}
+	hotApply(cfg, "/elsewhere", pctx, countingHook, countingHook, setAgentConfig)
+	if pushes != 2 {
+		t.Errorf("changed workspace pushed %d times, want 2 (files + channel hooks)", pushes)
+	}
+
 	// nil hook (no files capsule mounted) and nil context must not panic
-	hotApply(cfg, pctx, nil, nil, nil)
-	hotApply(cfg, nil, setFilesWorkspace, nil, nil)
-	hotApply(cfg, nil, nil, nil, setAgentConfig)
-	hotApply(cfg, nil, nil, nil, nil)
+	hotApply(cfg, "", pctx, nil, nil, nil)
+	hotApply(cfg, "", nil, setFilesWorkspace, nil, nil)
+	hotApply(cfg, "", nil, nil, nil, setAgentConfig)
+	hotApply(cfg, "", nil, nil, nil, nil)
 }
 
 func TestOmegaSettingsImplementsSeam(t *testing.T) {
@@ -643,5 +657,107 @@ providers:
 	}
 	if _, has := list[0]["model_name"]; has {
 		t.Fatalf("rows must carry no model column: %v", list[0])
+	}
+}
+
+// card t_9825147c part 2: a row's host and api_key are config.yaml's
+// property - the settings PUT may keep (masked round trip), rename,
+// retype or remove rows, never plant a host config.yaml does not
+// carry or set/wipe a secret. Every refusal names config.yaml.
+func TestApplyProviderInstancesGate(t *testing.T) {
+	row := func(name, host, key string) map[string]any {
+		return map[string]any{"name": name, "type": "openai", "host": host, "api_key": key}
+	}
+	stored := func() *Config {
+		cfg := DefaultConfig()
+		cfg.Providers = map[string]ProviderConfig{
+			"alpha": {Type: "openai", Host: "http://10.0.0.9:8080", APIKey: "sk-alpha"},
+			"beta":  {Type: "openai", Host: "http://10.0.0.9:8080", APIKey: "sk-beta"},
+		}
+		return &cfg
+	}
+	door := func(err error, t *testing.T) {
+		t.Helper()
+		if err == nil || !strings.Contains(err.Error(), "config.yaml is the only door") {
+			t.Fatalf("expected the config.yaml door refusal, got %v", err)
+		}
+	}
+	apply := func(t *testing.T, cfg *Config, rows ...map[string]any) error {
+		t.Helper()
+		list := make([]any, len(rows))
+		for i, r := range rows {
+			list[i] = r
+		}
+		return applySettingValues(cfg, map[string]any{"provider.instances": list})
+	}
+
+	// a changed host on a stored row: refused, config untouched
+	cfg := stored()
+	if err := apply(t, cfg, row("alpha", "http://evil:9999", maskedSecret)); err == nil {
+		t.Fatal("host change accepted")
+	} else {
+		door(err, t)
+	}
+	if cfg.Providers["alpha"].Host != "http://10.0.0.9:8080" || cfg.Providers["alpha"].APIKey != "sk-alpha" {
+		t.Fatalf("failed apply mutated the stored row: %+v", cfg.Providers["alpha"])
+	}
+
+	// a planted host on a new row: refused even keyless
+	if err := apply(t, stored(), row("plant", "http://169.254.1.1:8080", "")); err == nil {
+		t.Fatal("planted host accepted")
+	} else {
+		door(err, t)
+	}
+
+	// a secret set on a stored row (plain key): refused
+	if err := apply(t, stored(), row("alpha", "http://10.0.0.9:8080", "sk-new")); err == nil {
+		t.Fatal("plain key change accepted")
+	} else {
+		door(err, t)
+	}
+	// a secret wipe on a stored row: refused
+	if err := apply(t, stored(), row("alpha", "http://10.0.0.9:8080", "")); err == nil {
+		t.Fatal("key wipe accepted")
+	} else {
+		door(err, t)
+	}
+	// a secret on a NEW row: refused outright
+	if err := apply(t, stored(), row("plant", "http://10.0.0.9:8080", "sk-fresh")); err == nil {
+		t.Fatal("new-row plain key accepted")
+	} else {
+		door(err, t)
+	}
+
+	// the hot lane keeps working: masked round trip, plain echo,
+	// rename with key inheritance, retype, removal
+	cfg = stored()
+	if err := apply(t, cfg,
+		row("alpha", "http://10.0.0.9:8080", maskedSecret),  // keep
+		row("beta-r", "http://10.0.0.9:8080", maskedSecret), // rename, key inherits
+		row("gamma", "", ""), // keyless loopback row adds
+	); err != nil {
+		t.Fatalf("name-level edit refused: %v", err)
+	}
+	if cfg.Providers["alpha"].APIKey != "sk-alpha" {
+		t.Fatalf("masked round trip wiped the secret: %q", cfg.Providers["alpha"].APIKey)
+	}
+	// beta-r is beta's rename (beta left the list): its masked key
+	// inherits beta's secret even though alpha shares the host
+	if cfg.Providers["beta-r"].APIKey != "sk-beta" {
+		t.Fatalf("rename did not inherit the removed row's key: %q", cfg.Providers["beta-r"].APIKey)
+	}
+	if _, has := cfg.Providers["beta"]; has {
+		t.Fatal("old name beta should be gone after its rename")
+	}
+	if _, has := cfg.Providers["gamma"]; !has {
+		t.Fatal("keyless hostless row was not added")
+	}
+	// the plain echo of the stored key applies unchanged
+	cfg = stored()
+	if err := apply(t, cfg, row("alpha", "http://10.0.0.9:8080", "sk-alpha")); err != nil {
+		t.Fatalf("identical plain-key echo refused: %v", err)
+	}
+	if cfg.Providers["alpha"].APIKey != "sk-alpha" {
+		t.Fatalf("echo changed the secret: %q", cfg.Providers["alpha"].APIKey)
 	}
 }

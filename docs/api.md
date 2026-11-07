@@ -302,8 +302,11 @@ yaml keys exposed as `provider.vision_model` / `provider.title_model`,
 and the four per-subsystem model slots — compaction, summarizer,
 skills curator, approvals — are the same shape as
 `provider.*_model`);
-unknown keys are 400; `server.bind` and `provider.api_key` are gated —
-config.yaml is their only door. Knob help lines note which apply on
+unknown keys are 400; `server.bind`, `provider.api_key` and a
+`provider.instances` row's host / api_key are gated - config.yaml is
+their only door (instance rows stay renameable / removable in the
+pane; the endpoint and the secret are not settable over the API). Knob
+help lines note which apply on
 restart vs hot-apply live (http timeout + compaction hot-apply; context
 window help reports what startup auto-probed).
 

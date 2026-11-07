@@ -44,8 +44,11 @@ providers:
 (key = the id, must be lowercase letters/digits/`-`/`_`; `model_name`
 is required per instance; `default` is reserved). Instances apply on
 restart, like the rest of the provider section. The settings pane
-maintains them through the `provider.instances` list editor (add and
-remove rows; a row's name is the instance id). A session pinned to an
+maintains them through the `provider.instances` list editor (rows can
+be renamed, retyped and removed; a row's name is the instance id).
+A row's host and api_key are config.yaml-only - the pane keeps them
+round-tripped but refuses changes with the config.yaml pointer. A
+session pinned to an
 instance that is later removed fails its next send LOUDLY (400, "not
 configured") - it never falls back silently to the default; clearing
 the pin restores the default. Send a run through an instance with the

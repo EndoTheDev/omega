@@ -109,7 +109,7 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				// secret".
 				{Key: "provider.instances", Label: "provider instances", Type: "providers",
 					Value: providerInstancesKnob(cfg),
-					Help:  "named provider endpoints: the name is the instance id, so two accounts of one type are two rows; the provider section above stays the default; changes apply on restart"},
+					Help:  "named provider endpoints: the name is the instance id, so two accounts of one type are two rows; the provider section above stays the default; rows can be renamed, retyped and removed here, but a row's host and api key are config.yaml-only (changes apply on restart)"},
 				// card t_fc0b2f2d: the four per-subsystem model
 				// slots - provider settings assigns one named model
 				// per subsystem ("instance:model" or a bare model;
@@ -337,12 +337,15 @@ func providerInstancesKnob(cfg *Config) []map[string]any {
 
 // saveSettings applies values (dotted yaml path -> value), validates,
 // and writes config.yaml atomically, then hot-applies the live knobs to
-// the running context. Returns the refreshed schema payload.
+// the running context (the workspace hook only on a value change -
+// prevWorkspace is what the load saw before the values applied, card
+// t_9825147c part 3). Returns the refreshed schema payload.
 func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string), setAgentConfig func(string, int), values map[string]any) (*core.SettingsSchema, error) {
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		return nil, err
 	}
+	prevWorkspace := cfg.Server.DefaultWorkspace
 	if err := applySettingValues(&cfg, values); err != nil {
 		return nil, err
 	}
@@ -352,7 +355,7 @@ func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(strin
 	if err := writeConfigFile(path, &cfg); err != nil {
 		return nil, err
 	}
-	hotApply(cfg, pctx, setFilesWorkspace, setChannelWorkspace, setAgentConfig)
+	hotApply(cfg, prevWorkspace, pctx, setFilesWorkspace, setChannelWorkspace, setAgentConfig)
 	return &core.SettingsSchema{Groups: settingGroups(&cfg)}, nil
 }
 
@@ -538,20 +541,43 @@ func setStringField(cfg *Config, key string, raw any) error {
 func trim(s string) string { return strings.TrimSpace(s) }
 
 // applyProviderInstances applies the instances knob (card t_7dcd4280,
-// reshaped t_1914a8c9): the submitted list REPLACES cfg.Providers.
-// Each entry carries name, type, host and api_key - an instance is a
-// named endpoint only, a model_name field is a loud error (models
-// come from the instance's catalog through the model pickers). A
-// masked api_key keeps the entry's EXISTING secret ("****" means
+// reshaped t_1914a8c9; gated t_9825147c part 2). The submitted list
+// REPLACES cfg.Providers. Each entry carries name, type, host and
+// api_key - an instance is a named endpoint only, a model_name field
+// is a loud error (models come from the instance's catalog through
+// the model pickers). The stored rows are the trust anchor for the
+// two gated columns: a row may be RENAMED, RETYPED or REMOVED over
+// the API, but the endpoint (host) and the secret (api_key) are
+// config.yaml's property - a changed host on a stored row, a key
+// set or wiped on one, or a planted host config.yaml does not carry
+// all answer with the config.yaml door (the same law provider.api_key
+// and server.bind hold). Renames keep their secret via the masked
+// round trip: the masked key inherits from the one stored row that
+// carries the submitted host (ambiguous or missing matches refuse).
+// A masked api_key keeps the entry's EXISTING secret ("****" means
 // unchanged, not blank - the plain text never rides the wire, so the
-// round trip must not wipe it), and a masked key on a NEW instance is
-// an error. Unknown types, reserved names and duplicate ids fail
-// through apply + cfg.Validate() in saveSettings - the schema is the
-// contract and a typo must be loud, never silently dropped.
+// round trip must not wipe it). Unknown types, reserved names and
+// duplicate ids fail through apply + cfg.Validate() in saveSettings -
+// the schema is the contract and a typo must be loud, never silently
+// dropped.
 func applyProviderInstances(cfg *Config, key string, raw any) error {
 	list, ok := raw.([]any)
 	if !ok {
 		return fmt.Errorf("%s: expected a list of instance objects, got %T", key, raw)
+	}
+	instancesDoor := func(name, field string) error {
+		return fmt.Errorf("%s: %s.%s: config.yaml is the only door for instance %s - not settable over the API", key, name, field, field)
+	}
+	// the submitted names, pre-computed in full (the rename source
+	// below must know what the WHOLE list removes, not just the rows
+	// so far) - card t_9825147c part 2
+	sent := make(map[string]bool, len(list))
+	for _, item := range list {
+		if obj, ok := item.(map[string]any); ok {
+			if n, e := asTrimmedString(obj["name"]); e == nil && n != "" {
+				sent[n] = true
+			}
+		}
 	}
 	providers := make(map[string]ProviderConfig, len(list))
 	seen := make(map[string]bool, len(list))
@@ -588,12 +614,54 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 		if inst.APIKey, err = asTrimmedString(obj["api_key"]); err != nil {
 			return fmt.Errorf("%s: %s.api_key: %w", key, name, err)
 		}
-		if inst.APIKey == maskedSecret {
-			existing, has := cfg.Providers[name]
-			if !has || existing.APIKey == "" {
-				return fmt.Errorf("%s: %s.api_key is masked - set a real key", key, name)
+		// host gate (card t_9825147c part 2): a stored row keeps its
+		// endpoint; a new row is either hostless (the provider
+		// default, loopback) or carries a host config.yaml already
+		// serves - that is a rename of a stored row, never a planted
+		// endpoint reaching a fresh network target.
+		existing, has := cfg.Providers[name]
+		if has {
+			if inst.Host != existing.Host {
+				return instancesDoor(name, "host")
 			}
-			inst.APIKey = existing.APIKey
+		} else if inst.Host != "" {
+			if !storedHostIn(cfg, inst.Host) {
+				return instancesDoor(name, "host")
+			}
+		}
+		switch {
+		case inst.APIKey == maskedSecret:
+			// "****" = keep the EXISTING secret. On a known name that
+			// is the row's own key; on a rename it inherits the
+			// submitted host's stored key - exactly one source, else
+			// the secret is config.yaml's to name.
+			if has {
+				if existing.APIKey == "" {
+					return fmt.Errorf("%s: %s.api_key is masked but the stored instance has no key - set a real key in config.yaml", key, name)
+				}
+				inst.APIKey = existing.APIKey
+			} else {
+				key, n := renamedOffKey(cfg, sent, inst.Host)
+				switch {
+				case n == 0:
+					return fmt.Errorf("%s: %s.api_key is masked - no removed instance keeps a secret at that host; set a real key in config.yaml", key, name)
+				case n > 1:
+					return fmt.Errorf("%s: %s.api_key is masked and %d removed instances keep secrets at that host - the source is ambiguous; edit config.yaml", key, name, n)
+				default:
+					inst.APIKey = key
+				}
+			}
+		case inst.APIKey == "":
+			// clearing a stored secret is a credential change too
+			if has && existing.APIKey != "" {
+				return instancesDoor(name, "api_key")
+			}
+		default:
+			// a plain key: an identical echo of the stored secret is a
+			// no-op, anything else is a credential write - config.yaml
+			if !(has && existing.APIKey == inst.APIKey) {
+				return instancesDoor(name, "api_key")
+			}
 		}
 		providers[name] = inst
 	}
@@ -605,6 +673,39 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 	}
 	cfg.Providers = providers
 	return nil
+}
+
+// storedHostIn reports whether config already serves the host (the
+// rename path's anchor, card t_9825147c part 2).
+func storedHostIn(cfg *Config, host string) bool {
+	for _, inst := range cfg.Providers {
+		if inst.Host == host {
+			return true
+		}
+	}
+	return false
+}
+
+// renamedOffKey finds the secret a masked round-trip on a NEW name
+// inherits (card t_9825147c part 2): the stored rows this submission
+// REMOVES (names not re-sent) that carry the submitted host. A rename
+// removes the old name, so its key is the source - one distinct key
+// inherits, none or several refuse at config.yaml.
+func renamedOffKey(cfg *Config, submitted map[string]bool, want string) (key string, distinct int) {
+	keys := map[string]bool{}
+	for name, inst := range cfg.Providers {
+		if submitted[name] || inst.Host != want {
+			continue
+		}
+		keys[inst.APIKey] = true
+	}
+	if len(keys) != 1 {
+		return "", len(keys)
+	}
+	for k := range keys {
+		key = k
+	}
+	return key, 1
 }
 
 // asTrimmedString coerces a submitted JSON value into a trimmed string.
@@ -723,13 +824,15 @@ func writeConfigFile(path string, cfg *Config) error {
 // restart: the shared HTTP client timeout, the compactor's config
 // (Compact re-reads it on every call), the files surface's default
 // workspace - hot because the resolution law reads it per request, so
-// a settings-pane save re-roots the Files tab live - the hygiene and
+// a settings-pane save re-roots the Files tab live (but only on a
+// VALUE CHANGE, prevWorkspace is the knob as the load saw it before
+// this save/reload applied - card t_9825147c part 3) - the hygiene and
 // skills capsules' model slots (SetConfig, re-read per pass), and the
 // serving agents' system_prompt / max_turns through the boot-captured
 // agent hook (card t_f78acfd6). WatchConfig's on-disk reload goes
 // through the same path, so a hand edit and a settings-pane save
 // behave identically.
-func hotApply(cfg Config, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string), setAgentConfig func(string, int)) {
+func hotApply(cfg Config, prevWorkspace string, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string), setAgentConfig func(string, int)) {
 	llm.SetHTTPTimeout(cfg.HTTPTimeout)
 	if pctx == nil {
 		return
@@ -741,14 +844,16 @@ func hotApply(cfg Config, pctx *agent.Context, setFilesWorkspace func(string), s
 	// capsule's setAgents shape): nil means no files capsule is
 	// mounted and the knob stays where it was. No service-registry
 	// key - the offer namespaces stay closed at fourteen.
-	if setFilesWorkspace != nil {
-		setFilesWorkspace(cfg.Server.DefaultWorkspace)
-	}
-	// The same knob re-roots the tools' fallback workdir on the HTTP
-	// channel (card t_ccf74d88): a workspace-less session's tool runs
-	// follow the live save, not the boot copy.
-	if setChannelWorkspace != nil {
-		setChannelWorkspace(cfg.Server.DefaultWorkspace)
+	if cfg.Server.DefaultWorkspace != prevWorkspace {
+		if setFilesWorkspace != nil {
+			setFilesWorkspace(cfg.Server.DefaultWorkspace)
+		}
+		// The same knob re-roots the tools' fallback workdir on the
+		// HTTP channel (card t_ccf74d88): a workspace-less session's
+		// tool runs follow the live save, not the boot copy.
+		if setChannelWorkspace != nil {
+			setChannelWorkspace(cfg.Server.DefaultWorkspace)
+		}
 	}
 	svc := pctx.Services().Resolve("compactor")
 	if c, ok := svc.(*compactor.Compactor); ok {
@@ -803,8 +908,8 @@ type curatorSlotSetter interface {
 type omegaSettings struct {
 	path                string
 	pctx                *agent.Context
-	setFilesWorkspace   func(string) // the files capsule's hot knob, nil when it is not mounted
-	setChannelWorkspace func(string) // the HTTP channel's default-workspace hot knob, nil when unset
+	setFilesWorkspace   func(string)      // the files capsule's hot knob, nil when it is not mounted
+	setChannelWorkspace func(string)      // the HTTP channel's default-workspace hot knob, nil when unset
 	setAgentConfig      func(string, int) // the serving agents' runtime-knob hot hook (t_f78acfd6)
 }
 
