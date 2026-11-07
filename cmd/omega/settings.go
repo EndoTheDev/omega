@@ -641,12 +641,12 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 				}
 				inst.APIKey = existing.APIKey
 			} else {
-				inherited, n := renamedOffKey(cfg, sent, inst.Host)
+				inherited, distinct := renamedOffKey(cfg, sent, inst.Host)
 				switch {
-				case n == 0:
+				case distinct == 0:
 					return fmt.Errorf("%s: %s.api_key is masked - no removed instance keeps a secret at that host; set a real key in config.yaml", key, name)
-				case n > 1:
-					return fmt.Errorf("%s: %s.api_key is masked and %d removed instances keep secrets at that host - the source is ambiguous; edit config.yaml", key, name, n)
+				case distinct > 1:
+					return fmt.Errorf("%s: %s.api_key is masked and %d removed instances keep secrets at that host - the source is ambiguous; edit config.yaml", key, name, distinct)
 				default:
 					inst.APIKey = inherited
 				}
