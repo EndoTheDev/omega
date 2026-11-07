@@ -55,17 +55,29 @@ default=$(jsq 'document.querySelector(".model-select:not(.thinking-select) .mode
 jsq 'document.querySelector(".model-select:not(.thinking-select) .model-chip")?.click()' >/dev/null 2>&1
 wait_js '!!document.querySelector(".model-list li")' 10
 # pick the first option that differs from the chip's current model
-# target is read INSIDE js (cur comes from the DOM) - it exits as a
-# plain model name once deq'd, safe to interpolate into the li matcher
-target=$(jsq '(()=>{const cur = document.querySelector(".model-select:not(.thinking-select) .model-chip .chip-name")?.textContent ?? ""; const opts = Array.from(document.querySelectorAll(".model-list li")); const other = opts.find(li => (li.textContent || "").trim() && (li.textContent || "").trim() !== cur.trim()); return other ? (other.textContent || "").trim() : "";})()' 2>&1 | tail -1 | deq)
+# (bare-name compare: the chip may carry the slot grammar "default:m"
+# or a legacy bare name - the 8738c80c grouped picker writes QUALIFIED
+# pins, so the target is the slot-grammar value ("default:m" for the
+# default section, "section:m" for a named one) derived INSIDE js from
+# the li's own section, not the li's bare textContent)
+qualified_for() {
+  printf '%s' 'const q = (li) => { const m = (li.textContent || "").trim(); if (!m) return ""; const g = (li.closest(".model-section")?.querySelector(".sec-name")?.textContent ?? "default").trim(); return g === "default" ? "default:" + m : g + ":" + m; };'
+}
+QUA=$(qualified_for)
+target=$(jsq "(()=>{$QUA const bare = (v) => { const i = v.indexOf(\":\"); return i < 0 ? v : v.slice(i + 1); }; const cur = document.querySelector(\".model-select:not(.thinking-select) .model-chip .chip-name\")?.textContent ?? \"\"; const opts = Array.from(document.querySelectorAll(\".model-list li\")).filter(li => !li.classList.contains(\"model-none\")); const other = opts.find(li => { const v = q(li); return v && bare(v) !== bare(cur.trim()); }); return other ? q(other) : \"\";})()" 2>&1 | tail -1 | deq)
 if [ -z "$target" ]; then
   # one-model lane: the picker cannot move anything - the pin halves
   # below still prove the restore path over a wire-written pin
   step "lane serves one model - picker change skipped"
+  case "$default" in
+    *:*) pin=$default ;;                      # chip already slot grammar
+    *)   pin="default:$default" ;;            # bare chip: qualify per the pin grammar
+  esac
+  target=$pin
   curl -s -X PATCH "$JOURNEY_BASE_URL/sessions/$JRN_ID" \
-    -H 'Content-Type: application/json' -d "{\"model\": \"$default\"}" >/dev/null
+    -H 'Content-Type: application/json' -d "{\"model\": \"$pin\"}" >/dev/null
 else
-  jsq "(()=>{const li = Array.from(document.querySelectorAll(\".model-list li\")).find(li => (li.textContent || \"\").trim() === \"$target\"); if (!li) return 0; li.click(); return 1;})()" >/dev/null 2>&1
+  jsq "(()=>{$QUA const li = Array.from(document.querySelectorAll(\".model-list li\")).find(li => q(li) === \"$target\"); if (!li) return 0; li.click(); return 1;})()" >/dev/null 2>&1
   pinned=0
   for i in 1 2 3 4 5 6 7 8 9 10; do
     pinned=$(row_field "$JRN_ID" model)
