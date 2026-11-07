@@ -1,0 +1,399 @@
+package api
+
+// The wake-path tests (async agent loop phase 1, card t_f3f953d0):
+// the runaway guard's park-and-reset, the user-send reset, the
+// simulated restart (boot recovery over a REAL store table), and the
+// end-to-end slice - dispatch, turn end, re-entry wake - through the
+// real loop, the server's wake path and a scripted provider.
+
+import (
+	"context"
+	"fmt"
+	"net/http/httptest"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/agent/loop"
+	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/harness/store"
+	"github.com/EndoTheDev/omega/llm"
+)
+
+// TestWakeGuardParksAt25AndResets: unit - the cap counts launches, a
+// park refuses every further wake, a user reset re-arms.
+func TestWakeGuardParksAt25AndResets(t *testing.T) {
+	h := newWakeHub()
+	for i := 0; i < maxConsecutiveWakes; i++ {
+		if !h.allow("s1") {
+			t.Fatalf("wake %d refused, want %d admitted", i+1, maxConsecutiveWakes)
+		}
+	}
+	if h.allow("s1") {
+		t.Errorf("wake 26 admitted - the 25 cap leaked")
+	}
+	// The 26th was refused: park latches the refusal permanently.
+	if !h.park("s1") {
+		t.Fatal("park refused to latch")
+	}
+	if !h.parkedNow("s1") {
+		t.Fatal("parked flag lost")
+	}
+	// A user message reset re-arms fully: parked flag gone, counter at 0.
+	h.reset("s1")
+	if h.parkedNow("s1") {
+		t.Error("reset left the parked flag")
+	}
+	if !h.allow("s1") {
+		t.Error("post-reset admit refused")
+	}
+}
+
+// TestBootRecoveryInjectsTimeoutResults: the simulated restart. The
+// durable table (a real store) carries one pending call across
+// NewServer; the sweep settles it and injects the interrupted result
+// as a wake run.
+func TestBootRecoveryInjectsTimeoutResults(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	if err := st.CreateSession(context.Background(), "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := st.Register(agent.PendingCall{
+		SessionID: "s1", CallID: "cLost", ToolName: "probe",
+		Arguments: `{}`, DispatchedAt: core.NowISO(),
+	}); err != nil {
+		t.Fatalf("seed pending call: %v", err)
+	}
+
+	// The wake run's first turn: the recovered "interrupted" result is
+	// in its context; the script closes the stream and ends the run.
+	scripts := [][]core.ProviderStreamEvent{finalStep("recovering")}
+	prov := newWakeScripted("step", scripts)
+	a := agent.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(loop.Loop{})
+	s := NewServer(a, nil, st, nil, nil, nil)
+
+	// The sweep settled the entry...
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && len(s.yieldLedger.All()) != 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if left := s.yieldLedger.All(); len(left) != 0 {
+		t.Fatalf("boot sweep left entries: %+v", left)
+	}
+	// ...and launched the wake run (the session's slot went live).
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && !s.runs.active("s1") {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !s.runs.active("s1") {
+		t.Fatal("boot recovery never launched the wake run")
+	}
+	// The injected result persisted as a first-class yield_result row
+	// once the run lands it (the loop's input persist).
+	deadline = time.Now().Add(5 * time.Second)
+	seen := false
+	for time.Now().Before(deadline) && !seen {
+		msgs, err := st.GetMessages(context.Background(), "s1")
+		if err == nil {
+			for _, m := range msgs {
+				if y, ok := m.(core.YieldResult); ok && y.Timeout && y.ToolCallID == "cLost" {
+					seen = true
+				}
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !seen {
+		t.Error("the injected timeout result never persisted")
+	}
+	waitFor(t, "wake run finished", func() bool { return !s.runs.active("s1") })
+}
+
+// TestWakeSliceEndToEnd: the scripted slice (dispatch, turn end,
+// re-entry wake) through the REAL loop over the /chat wire. One user
+// send's completion calls a yield tool; the run ends yielded; the
+// settled result wakes the home - a second run answers it - and the
+// flush-before-result order holds in the store.
+func TestWakeSliceEndToEnd(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	prov := newWakeScripted("step", [][]core.ProviderStreamEvent{
+		// Run 1: one yield-class call - the turn ends yielded.
+		{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{
+				ID: "c1", Name: "probe", Arguments: map[string]any{"msg": "hi"},
+			}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		// Run 2 (the wake): answer and close.
+		finalStep("done"),
+	})
+	tools := map[string]core.Tool{"probe": {
+		Description: "probe (yield-class)",
+		Yield:       true,
+		Run: func(_ context.Context, args map[string]any) (string, error) {
+			msg, _ := args["msg"].(string)
+			return "async:" + msg, nil
+		},
+	}}
+	a := agent.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(loop.Loop{})
+	s := NewServer(a, tools, st, nil, nil, nil)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	createSession(t, ts, "s1")
+	muteTitles(t, st, "s1")
+
+	// Run 1: a scripted yield call; the agent_end must carry yielded.
+	resp, _, sc := postChatStream(t, ts, "s1")
+	lines := readFrames(t, sc, "agent_end", 1)
+	// The frame's data line trails its event line.
+	sc.Scan()
+	dataLine := sc.Text()
+	resp.Body.Close()
+	endEvent, endData := "", ""
+	for i := 0; i < len(lines)-1; i++ {
+		if lines[i] == "event: agent_end" {
+			endEvent, endData = lines[i], lines[i+1]
+		}
+	}
+	if endData == "" {
+		endData = dataLine
+	}
+	if !contains(endData, `"finish_reason":"yielded"`) {
+		t.Errorf("agent_end (%s / %s) carried no yielded finish_reason", endEvent, endData)
+	}
+
+	// The result re-enters: the wake run (a second run on the same
+	// home, through the same launchRun slot) lands the synthetic row.
+	deadline := time.Now().Add(5 * time.Second)
+	seen := false
+	for time.Now().Before(deadline) && !seen {
+		msgs, err := st.GetMessages(context.Background(), "s1")
+		if err == nil {
+			seen = hasYieldResult(msgs, "c1", core.YieldResult{Content: "async:hi"})
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !seen {
+		dumpSessionRows(t, st, "s1")
+		t.Fatal("the wake run never landed the probe result")
+	}
+	// Flush-before-result held: the assistant that carries the call is
+	// durable BEFORE the synthetic result row.
+	msgs, err := st.GetMessages(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("get messages: %v", err)
+	}
+	callIdx, resultIdx := -1, -1
+	for i, m := range msgs {
+		if as, ok := m.(core.Assistant); ok {
+			for _, c := range as.ToolCalls {
+				if c.ID == "c1" {
+					callIdx = i
+				}
+			}
+		}
+		if y, ok := m.(core.YieldResult); ok && y.ToolCallID == "c1" {
+			resultIdx = i
+		}
+	}
+	if callIdx == -1 || resultIdx == -1 || callIdx > resultIdx {
+		t.Errorf("order broken: assistant(call) index %d, yield_result index %d", callIdx, resultIdx)
+	}
+	// The slice ended in both runs - nothing parked, no live goroutine.
+	waitFor(t, "wake run finished", func() bool { return !s.runs.active("s1") })
+	if s.wakes.parkedNow("s1") {
+		t.Error("a 1-wake slice parked the home")
+	}
+}
+
+// TestWakeGuardUserSendResets: parkHome parks with a persisted visible
+// note; a plain user send through the /chat pipe resets the guard
+// (launchRun's non-wake reset) and runs to its own end. The session
+// carries no pending calls - a park on a dry home must not error.
+func TestWakeGuardUserSendResets(t *testing.T) {
+	// One batch ready: the reset run's script closes its own stream.
+	prov := newWakeScripted("step", [][]core.ProviderStreamEvent{finalStep("round trip")})
+	a := agent.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(loop.Loop{})
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	s := NewServer(a, nil, st, nil, nil, nil)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	createSession(t, ts, "s1")
+	muteTitles(t, st, "s1")
+
+	// Park through the real path: the note lands on the transcript and
+	// the parked state latches.
+	s.parkHome("s1")
+	if !s.wakes.parkedNow("s1") {
+		t.Fatal("parkHome left no parked flag")
+	}
+	msgs, err := st.GetMessages(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("get messages: %v", err)
+	}
+	note := false
+	for _, m := range msgs {
+		if u, ok := m.(core.User); ok && contains(u.Content, "pending calls parked") {
+			note = true
+		}
+	}
+	if !note {
+		t.Errorf("park note never persisted: %s", sessionRowDump(msgs))
+	}
+
+	// A user send through the wire: the run's launch resets the guard.
+	resp, cancel, sc := postChatStream(t, ts, "s1")
+	readFrames(t, sc, "agent_end", 1)
+	detachClient(cancel, resp)
+	waitFor(t, "run finished after user send", func() bool { return !s.runs.active("s1") })
+	waitFor(t, "guard reset after user send", func() bool { return !s.wakes.parkedNow("s1") })
+	if !s.wakes.allow("s1") {
+		t.Error("post-reset admit refused")
+	}
+}
+
+// wakeScripted streams ONE prewritten script per Stream call (runs sit
+// serially on the one-run-per-session slot) and closes the stream at
+// script end - the loop's stream range unwinds exactly like a real
+// provider's, so each run finishes on its own script. Unlike
+// stepProvider, several turns across several runs never race one
+// shared receive channel.
+type wakeScripted struct {
+	modelName string
+	mu        sync.Mutex
+	idx       int
+	scripts   [][]core.ProviderStreamEvent
+}
+
+func newWakeScripted(modelName string, scripts [][]core.ProviderStreamEvent) *wakeScripted {
+	return &wakeScripted{modelName: modelName, scripts: scripts}
+}
+
+func (p *wakeScripted) ModelName() string { return p.modelName }
+
+func (p *wakeScripted) SetThinkingLevel(level string) {}
+
+func (p *wakeScripted) WithThinkingLevel(level string) agent.Provider {
+	cp := *p
+	return &cp
+}
+
+func (p *wakeScripted) WithModel(model string) agent.Provider {
+	cp := *p
+	cp.modelName = model
+	return &cp
+}
+
+func (p *wakeScripted) ListModels() ([]string, error) {
+	return []string{p.modelName}, nil
+}
+
+func (p *wakeScripted) ModelInfo() (llm.ModelInfo, error) {
+	return llm.ModelInfo{}, nil
+}
+
+func (p *wakeScripted) Stream(_ context.Context, _ []core.Message, _ []llm.ToolSchema) <-chan core.ProviderStreamEvent {
+	p.mu.Lock()
+	i := p.idx
+	if i < len(p.scripts) {
+		p.idx++
+	}
+	p.mu.Unlock()
+	events := make(chan core.ProviderStreamEvent)
+	if i >= len(p.scripts) {
+		close(events)
+		return events
+	}
+	script := p.scripts[i]
+	go func() {
+		defer close(events)
+		for _, e := range script {
+			events <- e
+		}
+	}()
+	return events
+}
+
+// hasYieldResult reports whether one row is the named tool call's
+// settled result; the `want` value carries only the fields to match
+// (a zero field matches anything).
+func hasYieldResult(msgs []core.Message, callID string, want core.YieldResult) bool {
+	for _, m := range msgs {
+		y, ok := m.(core.YieldResult)
+		if !ok || y.ToolCallID != callID {
+			continue
+		}
+		if want.Timeout && !y.Timeout {
+			continue
+		}
+		if want.Content != "" && y.Content != want.Content {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// sessionRowDump renders persisted rows for a failure diagnosis.
+func sessionRowDump(msgs []core.Message) string {
+	out := ""
+	for i, m := range msgs {
+		out += fmt.Sprintf("\n  row %d: %T %q", i, m, contentOf(m))
+	}
+	return out
+}
+
+// contentOf reads the text of the message kinds the wake tests meet.
+func contentOf(m core.Message) string {
+	switch v := m.(type) {
+	case core.User:
+		return v.Content
+	case core.Assistant:
+		return v.Content
+	case core.YieldResult:
+		return v.Content
+	case core.ToolResult:
+		return v.Content
+	}
+	return ""
+}
+
+// dumpSessionRows prints the persisted rows of one session - the
+// failure diagnosis for a slice that never completes.
+func dumpSessionRows(t *testing.T, st *store.Store, id string) {
+	t.Helper()
+	msgs, err := st.GetMessages(context.Background(), id)
+	if err != nil {
+		t.Logf("dump failed: %v", err)
+		return
+	}
+	t.Logf("session %s rows:%s", id, sessionRowDump(msgs))
+}
+
+func contains(haystack, needle string) bool {
+	for i := 0; i+len(needle) <= len(haystack); i++ {
+		if haystack[i:i+len(needle)] == needle {
+			return true
+		}
+	}
+	return false
+}
+
+// waitFor is defined in server_runs_test.go; the tests in this file
+// reuse it.
