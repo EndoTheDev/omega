@@ -188,6 +188,10 @@ func (r *Runner) Start(ctx context.Context, deps runnerDeps) error {
 	}
 
 	r.loadCronState()
+	// The state GC rule (card t_a99ffcd7): sweep stale entries BEFORE
+	// catch-up reads them - a phantom catch-up for a removed actor is
+	// exactly the drift the sweep exists to kill.
+	r.sweepStaleState()
 	r.catchUp(ctx, r.now())
 	r.scheduleEnabled(ctx)
 	if r.sched != nil {
@@ -841,6 +845,58 @@ func (r *Runner) Jobs() []JobInfo {
 
 // --- state (cronstate.json) ---
 
+// sweepStaleState is the cronstate.json GC rule (card t_a99ffcd7): a
+// state entry whose key matches no job in the CURRENT declared set -
+// main's crons.yaml plus every agent home's - is a leftover pointing
+// at a removed runtime actor (a deleted roster agent's wake, a job
+// edited out of the file) and gets dropped, logged by name. The sweep
+// is conservative by construction: a job that still declares itself
+// keeps its state whatever its enablement ("never drop a job that
+// still declares itself"), and it only ever runs against a job set
+// that loaded clean (Start's config and applyReload's reload both
+// arrive post-validation; a failed reload keeps the previous jobs and
+// never reaches here). Runs at Start (before catch-up - a stale entry
+// must not drive a phantom catch-up) and on every hot reload (the
+// watcher's poll reaches this the moment an agent home disappears).
+func (r *Runner) sweepStaleState() {
+	r.mu.Lock()
+	declared := make(map[string]bool, len(r.jobs))
+	for _, j := range r.jobs {
+		declared[j.StateKey()] = true
+	}
+	var droppedFire, droppedLast []string
+	for k := range r.lastFire {
+		if !declared[k] {
+			droppedFire = append(droppedFire, k)
+		}
+	}
+	for k := range r.last {
+		if !declared[k] {
+			droppedLast = append(droppedLast, k)
+		}
+	}
+	if len(droppedFire) == 0 && len(droppedLast) == 0 {
+		r.mu.Unlock()
+		return
+	}
+	for _, k := range droppedFire {
+		delete(r.lastFire, k)
+	}
+	for _, k := range droppedLast {
+		delete(r.last, k)
+	}
+	r.mu.Unlock()
+	for _, k := range droppedFire {
+		r.logf("cronstate GC: dropped stale fire record %q (job not declared in any crons.yaml)", k)
+	}
+	for _, k := range droppedLast {
+		r.logf("cronstate GC: dropped stale fire outcome %q (job not declared in any crons.yaml)", k)
+	}
+	if err := r.saveCronState(); err != nil {
+		r.errorf("cronstate GC: save state: %v", err)
+	}
+}
+
 // loadCronState reads cronstate.json. A missing or corrupt file is a
 // fresh state - no catch-up, regular schedule unaffected. The Last map
 // is optional (older state files carry jobs only): absent outcomes
@@ -1027,6 +1083,13 @@ func (r *Runner) applyReload(ctx context.Context, cfg *Config) {
 			r.logf("reload: job removed: %s", j.StateKey())
 		}
 	}
+
+	// The state GC rule (card t_a99ffcd7): a reload means the declared
+	// set changed - the moment a removed actor's state becomes sweepable.
+	// The watcher's 5s poll makes an agent-home removal reach this path
+	// live (the journey recipe that rm -rf's the home never writes
+	// cronstate.json - the runner owns the file, the runner reaps it).
+	r.sweepStaleState()
 
 	r.stopScheduler()
 	r.scheduleEnabled(ctx)

@@ -7,8 +7,15 @@
 # Chromium), the assertion helpers, and the journey-session cleanup trap.
 #
 # Recipes never send real traffic against live customer sessions: each
-# write-journey creates its own throwaway session (id prefix `jrn-`,
-# label prefix `(journey)`) and lib.sh deletes it in a cleanup trap.
+# write-journey creates its own throwaway session (id prefix `jrn-`, label
+# prefix `(journey)`) and lib.sh deletes it in a cleanup trap.
+#
+# Residue contract (card t_a99ffcd7): a journey keeps its recipe and its
+# result files, and NOTHING else. Its runtime actors - sessions, board
+# tasks, roster agent homes - are reaped by cleanup_journey_residue at
+# every exit path (die, recipe EXIT traps, run.sh's pre-clean); wake
+# entries in cronstate.json are the serve's own state, swept by the cron
+# runner's GC once the declaring agent home is gone.
 #
 # Env:
 #   JOURNEY_BASE_URL    default http://127.0.0.1:8098 (the dev lane)
@@ -53,7 +60,7 @@ step() { printf '%s [journey] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
 die() {
   printf '%s [journey RED] %s\n' "$(date +%H:%M:%S)" "$*" >&2
   ab screenshot 2>/dev/null | tail -1 >&2
-  cleanup_journey_sessions || true
+  cleanup_journey_residue || true
   exit 1
 }
 
@@ -244,6 +251,52 @@ cleanup_journey_sessions() {
     curl -s -X DELETE "${JOURNEY_BASE_URL}/sessions/${sids}" >/dev/null 2>&1 || true
   done
   step "cleanup: journey sessions deleted"
+}
+
+# --- the residue contract (card t_a99ffcd7) -------------------------
+# A journey may leave behind its recipe (checked into the repo) and
+# its result files (run.sh's evidence dir, scratch under $TMPDIR). Its
+# RUNTIME ACTORS die with the run: sessions, board tasks, roster
+# agent homes. cronstate.json wake entries are the serve's own state
+# - no recipe ever writes that file; the cron runner's GC (harness/
+# cron sweepStaleState) drops them the moment the declaring agent home
+# is gone (the reload watcher polls every 5s).
+
+# cleanup_journey_residue: reap every jrn- artifact on all three
+# actor surfaces - sessions plus anything a crashed earlier run
+# leaked. Board tasks go via DELETE (archiving is a tombstone, not a
+# reap - an archived row is still a permanent board row); roster
+# agent homes under $OMEGA_HOME/agents go via rm -rf, guarded by the
+# jrn- prefix glob (a malformed dir is never rm'd blind). Absent
+# modules degrade silently: a lane without the kanban seam answers a
+# non-tasks payload and the task sweep reads zero rows.
+cleanup_journey_residue() {
+  local ids id d reaped=0
+  cleanup_journey_sessions
+  # board tasks: the FULL scan (the default list hides archived rows -
+  # the exact tombstone accumulation this reaper exists to kill), one
+  # status=all pass, DELETE per row
+  ids=$(curl -s "${JOURNEY_BASE_URL}/tasks?status=all" | python3 -c '
+import json,sys
+try:
+    rows = json.load(sys.stdin).get("tasks") or []
+except Exception:
+    sys.exit(0)
+print(" ".join(t["id"] for t in rows
+              if str(t.get("title") or "").startswith("jrn-")))' 2>/dev/null || true)
+  for id in $ids; do
+    curl -s -X DELETE "${JOURNEY_BASE_URL}/tasks/${id}" >/dev/null 2>&1 || true
+    reaped=$((reaped + 1))
+  done
+  # roster agent homes (only when the lane home is known)
+  if [ -n "${OMEGA_HOME:-}" ] && [ -d "${OMEGA_HOME}/agents" ]; then
+    for d in "${OMEGA_HOME}"/agents/jrn-*; do
+      case "$d" in
+        */agents/jrn-*) [ -d "$d" ] && { rm -rf "$d"; reaped=$((reaped + 1)); } ;;
+      esac
+    done
+  fi
+  [ "$reaped" = "0" ] || step "residue: reaped $reaped jrn- artifact(s)"
 }
 
 # send_journey_message <id> <text>: POST /chat on the lane (the same

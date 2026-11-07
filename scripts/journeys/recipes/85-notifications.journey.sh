@@ -15,9 +15,13 @@
 #   hygiene     - 501s only when the store is unmounted (covered in the
 #                 Go gates); here the seam is mounted by definition.
 #
-# Residue-free: the task it creates is archived in the cleanup trap
-# (jrn- title marker), no session is created.
+# Residue-free: the tasks it creates are DELETED in the cleanup trap
+# (jrn- title marker, card t_a99ffcd7 - an archived row is still a
+# permanent board row), no session is created. The trap rides
+# cleanup_journey_residue: its jrn- task sweep covers this run's
+# tasks AND any tombstone a crashed earlier run left behind.
 . "${JROOT:?run must export JROOT}/lib.sh"
+trap cleanup_journey_residue EXIT
 
 # --- lane alive; the seam answers (a foreign lane 200s with the SPA -
 # the payload check is what proves THIS lane has the seam) ---
@@ -39,7 +43,6 @@ tid1=$(printf '%s' "$created" | grep -oE '"id": ?"t_[a-f0-9]+"' | head -1 | sed 
 [ -n "$tid1" ] || die "task create failed: $created"
 done_move=$(curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${tid1}" -H 'Content-Type: application/json' -d '{"status":"done"}')
 printf '%s' "$done_move" | grep -Eq '"status": ?"done"' || die "done move failed: $done_move"
-trap 'curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${tid1}" -H "Content-Type: application/json" -d "{\"status\":\"archived\"}" >/dev/null 2>&1 || true' EXIT
 step "ok: worker completion path fired ($tid1 -> done)"
 
 # the record rides the list with the right shape
@@ -92,7 +95,6 @@ created2=$(curl -s -X POST "${JOURNEY_BASE_URL}/tasks" -H 'Content-Type: applica
   -d "{\"title\":\"${JRN_TASK}-2\"}")
 tid2=$(printf '%s' "$created2" | grep -oE '"id": ?"t_[a-f0-9]+"' | head -1 | sed 's/.*"\(t_[a-f0-9]*\)".*/\1/')
 [ -n "$tid2" ] || die "second task create failed: $created2"
-trap 'curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${tid1}" -H "Content-Type: application/json" -d "{\"status\":\"archived\"}" >/dev/null 2>&1; curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${tid2}" -H "Content-Type: application/json" -d "{\"status\":\"archived\"}" >/dev/null 2>&1 || true' EXIT
 
 ssecmd=$(mktemp "${TMPDIR:-/tmp}/jrn-sse-XXXXXX.log")
 curl -s -N "${JOURNEY_BASE_URL}/notifications/events" > "$ssecmd" 2>&1 &
@@ -135,7 +137,6 @@ created3=$(curl -s -X POST "${JOURNEY_BASE_URL}/tasks" -H 'Content-Type: applica
   -d "{\"title\":\"${JRN_TASK}-3\"}")
 tid3=$(printf '%s' "$created3" | grep -oE '"id": ?"t_[a-f0-9]+"' | head -1 | sed 's/.*"\(t_[a-f0-9]*\)".*/\1/')
 [ -n "$tid3" ] || die "third task create failed: $created3"
-trap 'curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${tid1}" -H "Content-Type: application/json" -d "{\"status\":\"archived\"}" >/dev/null 2>&1; curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${tid2}" -H "Content-Type: application/json" -d "{\"status\":\"archived\"}" >/dev/null 2>&1; curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${tid3}" -H "Content-Type: application/json" -d "{\"status\":\"archived\"}" >/dev/null 2>&1 || true' EXIT
 curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${tid3}" -H 'Content-Type: application/json' -d '{"status":"done"}' >/dev/null
 post_ok=$(curl -s "${JOURNEY_BASE_URL}/notifications" | python3 -c "
 import json,sys
