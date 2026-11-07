@@ -1,10 +1,6 @@
-// omega webui: THE ICONSET (card t_502b8e81). One name one meaning, one
-// import path: every icon in the webui flows through this map into the
-// Icon.vue wrapper. lucide-vue-next (thin monochrome line icons - the
-// shell's existing stroke style) is imported by NAME only, so the bundle
-// stays tree-shaken: no icon font, no hand-rolled SVG, no second library.
-// Registry entries (dockables.ts) carry the name string; this file is the
-// only place a lucide component is referenced.
+// omega webui: THE ICONSET - the icon law (only-lucide-reference,
+// one name one meaning, wrapper, throw-on-unknown) lives in
+// .agents/DESIGN.md (card t_502b8e81). This file is the vocabulary.
 import {
   Archive,
   ArchiveRestore,

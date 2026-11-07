@@ -246,10 +246,10 @@
     RefToken,
   } from "../../composables/pills";
   import { DOCK_VIEWER_OPEN_KEY } from "../../composables/viewer";
-  // ONE composer, no modes (card t_1750a9e3, ruling 2026-11-07): the
-  // composer is a single pane-wide shape - the display-mode signal, the
-  // settings knob and its composable all died with it. Only the
-  // fullscreen .expanded state keeps its own class.
+  // The composer law lives in .agents/DESIGN.md (card t_1750a9e3): a
+  // single pane-wide shape - the display-mode signal, the settings
+  // knob and its composable all died with it. Only the fullscreen
+  // .expanded state keeps its own class.
   const props = defineProps<{
     draft: string;
     model: string;
