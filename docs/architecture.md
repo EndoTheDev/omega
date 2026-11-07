@@ -176,6 +176,25 @@ rest degrade to nil-safe floors: no logging, no compaction (context
 overflow surfaces a friendly error), no system prompt, no nudger, no
 gate.
 
+### Yield-class calls (the async loop, card t_f3f953d0)
+
+A tool registered with `core.Tool.Yield = true` ends the turn instead
+of blocking it (opt-in at registration; the model is never told - the
+registry decides). The loop (agent/loop) flushes the assistant
+message + call, registers the call in the durable pending-calls table
+(`agent.YieldLedger`; the store capsule's `pending_calls` SQLite table
+backs it, `agent.NewMemYieldLedger` is the in-memory floor), dispatches
+it on a goroutine that outlives the run, and the run ends with
+`finish_reason: "yielded"` - no conversation goroutine parks. The
+settled result re-enters as a first-class `core.YieldResult` synthetic
+input message through the serving shell's wake path
+(`agent/api/wakes.go`): per-home FIFO, wake on each arrival, the
+runaway guard parks a home after 25 consecutive synthetic wakes (a
+user message resets). Boot recovery injects a synthetic interrupted
+result for every entry the restart carried. A turn with pending calls
+is never folded (the compactor's never-fold law). A host without the
+harness runs every tool loop-back: nil-safe by construction.
+
 ### The capsule-service namespace (the closed list, 7)
 
 `skills`, `memory`, `trust`, `cron`, `notifications`, `verdicts`,
