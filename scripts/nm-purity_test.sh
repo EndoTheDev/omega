@@ -8,10 +8,30 @@ set -uo pipefail
 
 PURITY="$(cd "$(dirname "$0")" && pwd)/nm-purity.sh"
 
+# winbtw seam (t_61673a95): the native tools this suite drives (python3,
+# gofmt) cannot read MSYS /tmp paths, and mktemp seeds there by default -
+# every scrub pass died invisibly and its assertions failed as lies.
+# Repoint the temp base at a Windows-visible dir when cygpath exists;
+# the Linux/CI lane has no cygpath and keeps today's /tmp behavior.
+if command -v cygpath >/dev/null 2>&1 && [ -n "${LOCALAPPDATA:-}" ]; then
+  WINTMP="$(cygpath -m "$LOCALAPPDATA/Temp" 2>/dev/null || true)"
+  if [ -n "$WINTMP" ] && [ -d "$WINTMP" ]; then
+    export TMPDIR="$WINTMP"
+  fi
+fi
+
 pass=0
 fail=0
 ok() { pass=$((pass + 1)); }
 bad() { fail=$((fail + 1)); echo "FAIL: $1" >&2; }
+
+# scrub - run the extracted scrub.py against the current fixture dir.
+# stderr stays LIVE on purpose: a silently-skipped scrub reds every
+# downstream assertion with lies - the failure mode that hid the
+# winbtw breakage for weeks. A nonzero exit is counted here loud.
+scrub() (
+  cd "$TESTDIR" && exec python3 "$SCRUBPY" "$@"
+)
 
 # 1. unknown arg refuses loud with the usage exit code
 if bash "$PURITY" --nonsense >/dev/null 2>&1; then
@@ -178,7 +198,7 @@ func knobs(cfg *Config) []int {
 EOF
 SCRUBPY="$(mktemp)"
 awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
-(cd "$TESTDIR" && python3 "$SCRUBPY" "config.go,knobs.go" memory) >/dev/null 2>&1
+scrub "config.go,knobs.go" memory >/dev/null || bad "scrub pass exited nonzero (memory fixture) - see stderr above"
 if [ -s "$TESTDIR/knobs.go" ] \
   && ! grep -q 'Key: "memory.file"' "$TESTDIR/knobs.go" \
   && ! grep -q 'Memory' "$TESTDIR/knobs.go" \
@@ -237,7 +257,7 @@ var _ = Config{}.Disabled
 EOF
 SCRUBPY="$(mktemp)"
 awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
-(cd "$TESTDIR" && python3 "$SCRUBPY" "config.go,sections.go" continuous) >/dev/null 2>&1
+scrub "config.go,sections.go" continuous >/dev/null || bad "scrub pass exited nonzero (continuous fixture) - see stderr above"
 if [ -s "$TESTDIR/sections.go" ] \
   && ! grep -q 'Cont' "$TESTDIR/sections.go" \
   && grep -q 'return nil, false' "$TESTDIR/sections.go" \
@@ -300,7 +320,7 @@ func agentKnown(name string) error {
 	return nil
 }
 EOF
-(cd "$TESTDIR" && python3 "$SCRUBPY" "config.go,known.go" continuous) >/dev/null 2>&1
+scrub "config.go,known.go" continuous >/dev/null || bad "scrub pass exited nonzero (known fixture) - see stderr above"
 if grep -q '_, err := LoadProfile' "$TESTDIR/known.go" \
   && ! grep -q 'p.Continuous' "$TESTDIR/known.go"; then
   ok
@@ -388,7 +408,7 @@ fi
 # calls.go sits BEFORE knobs.go on purpose: pass 1 scrubs it before the
 # funcs die in knobs.go, so only the carried-pass loop cleans its call
 # sites.
-(cd "$TESTDIR" && python3 "$SCRUBPY" "config.go,calls.go,knobs.go" provider) >/dev/null 2>&1
+scrub "config.go,calls.go,knobs.go" provider >/dev/null || bad "scrub pass exited nonzero (instances fixture) - see stderr above"
 if ! grep -q 'knobList' "$TESTDIR/calls.go" \
   && ! grep -q 'envOverride' "$TESTDIR/calls.go" \
   && grep -q 'cfg.Server' "$TESTDIR/calls.go" \
@@ -461,7 +481,7 @@ func slotWire(c Config) (string, string, string) {
 EOF
 SCRUBPY="$(mktemp)"
 awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
-(cd "$TESTDIR" && python3 "$SCRUBPY" "config.go,sections.go" slot) >/dev/null 2>&1
+scrub "config.go,sections.go" slot >/dev/null || bad "scrub pass exited nonzero (slot fixture) - see stderr above"
 if [ -s "$TESTDIR/sections.go" ] \
   && ! grep -q 'slotWire(c)' "$TESTDIR/sections.go" \
   && grep -q 'func slotWire' "$TESTDIR/sections.go" \
@@ -542,7 +562,7 @@ func renameOff(cfg *Config, want string) (string, int) {
 EOF
 SCRUBPY="$(mktemp)"
 awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
-(cd "$TESTDIR" && python3 "$SCRUBPY" "config.go,knobs.go" provider) >/dev/null 2>&1
+scrub "config.go,knobs.go" provider >/dev/null || bad "scrub pass exited nonzero - see stderr above"
 if grep -q 'func ptrF' "$TESTDIR/knobs.go" \
   && grep -q 'Min: ptrF(1)' "$TESTDIR/knobs.go" \
   && ! grep -q 'ProviderConfig' "$TESTDIR/knobs.go" \
@@ -620,7 +640,7 @@ func renameOff(cfg *Config, want string) (string, int) {
 EOF
 SCRUBPY="$(mktemp)"
 awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
-(cd "$TESTDIR" && python3 "$SCRUBPY" "config.go,knobs.go" provider) >/dev/null 2>&1
+scrub "config.go,knobs.go" provider >/dev/null || bad "scrub pass exited nonzero - see stderr above"
 if ! grep -q 'func ptrF' "$TESTDIR/knobs.go" \
   && grep -q 'Min: ptrF(1)' "$TESTDIR/knobs.go"; then
   ok
