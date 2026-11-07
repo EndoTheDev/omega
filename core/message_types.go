@@ -126,6 +126,46 @@ func NewToolResult(content, toolCallID string, isError bool) ToolResult {
 	}
 }
 
+// YieldResult is the synthetic re-entry message for a yield-class tool
+// call (async agent loop, design of record
+// Workshop/omega/async-agent-loop.md): the executor that ran the
+// dispatched call writes one through the home's input path when the
+// call settles, and it starts a new turn exactly like a user message
+// does. First-class and RAP-compatible from day one (ruling 3): an
+// out-of-process executor, a gateway webhook, or another omega machine
+// is just another writer of this shape - the loop never changes.
+// Timeout marks the synthetic recovery injections (boot recovery and a
+// runtime expiry): the agent sees an interrupted result and may retry.
+// Store role: "yield_result". Render role: "tool" - every transcript
+// surface treats it as its call's result row.
+type YieldResult struct {
+	ToolCallID string `json:"tool_call_id"`
+	ToolName   string `json:"tool_name,omitempty"`
+	Content    string `json:"content"`
+	IsError    bool   `json:"is_error,omitempty"`
+	// Timeout marks the synthetic "interrupted" injection - boot
+	// recovery and a dispatched call's runtime expiry - never a real
+	// tool's verdict.
+	Timeout   bool    `json:"timeout,omitempty"`
+	Gate      string  `json:"gate,omitempty"`
+	Timing    *Timing `json:"timing,omitempty"`
+	Timestamp string  `json:"timestamp,omitempty"`
+	ParentID  string  `json:"parent_id,omitempty"`
+}
+
+func (YieldResult) isMessage() {}
+
+// NewYieldResult creates a YieldResult with timestamp set.
+func NewYieldResult(content, toolCallID string, isError, timeout bool) YieldResult {
+	return YieldResult{
+		Content:    content,
+		ToolCallID: toolCallID,
+		IsError:    isError,
+		Timeout:    timeout,
+		Timestamp:  NowISO(),
+	}
+}
+
 // ModelChange is a session entry recording a model switch. It is
 // persisted to the store and replayed on resume to restore the model.
 type ModelChange struct {
@@ -208,14 +248,14 @@ func (v *QuestionOption) UnmarshalJSON(b []byte) error {
 // by every transcript surface that wants the audit trail. Roles on the
 // store row: "verdict_card".
 type QuestionCard struct {
-	CardID    string          `json:"card_id"`
-	Title     string          `json:"title"`
-	Body      string          `json:"body,omitempty"`
+	CardID    string           `json:"card_id"`
+	Title     string           `json:"title"`
+	Body      string           `json:"body,omitempty"`
 	Options   []QuestionOption `json:"options,omitempty"`
-	Multi     bool            `json:"multi,omitempty"`
-	AllowText bool            `json:"allow_text,omitempty"`
-	TimeoutS  int             `json:"timeout_s,omitempty"`
-	Timestamp string          `json:"timestamp,omitempty"`
+	Multi     bool             `json:"multi,omitempty"`
+	AllowText bool             `json:"allow_text,omitempty"`
+	TimeoutS  int              `json:"timeout_s,omitempty"`
+	Timestamp string           `json:"timestamp,omitempty"`
 }
 
 func (QuestionCard) isMessage() {}
@@ -292,7 +332,9 @@ func MessageRole(m Message) string {
 		return "user"
 	case Assistant:
 		return "assistant"
-	case ToolResult:
+	case ToolResult, YieldResult:
+		// The synthetic re-entry message renders as its call's tool
+		// result row on every transcript surface.
 		return "tool"
 	case QuestionCard:
 		return "verdict_card"
@@ -317,6 +359,8 @@ func EncodeMessage(msg Message) (string, []byte, error) {
 		role = "assistant"
 	case ToolResult:
 		role = "tool"
+	case YieldResult:
+		role = "yield_result"
 	case ModelChange:
 		role = "model_change"
 	case ThinkingLevelChange:
@@ -361,6 +405,12 @@ func DecodeMessage(role string, payload []byte) (Message, error) {
 		return m, nil
 	case "tool":
 		var m ToolResult
+		if err := json.Unmarshal(payload, &m); err != nil {
+			return nil, err
+		}
+		return m, nil
+	case "yield_result":
+		var m YieldResult
 		if err := json.Unmarshal(payload, &m); err != nil {
 			return nil, err
 		}

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -66,7 +67,23 @@ type LoopOptions struct {
 	// into the tool result (the command never executes).
 	Approvals ApprovalProvider
 	Nudge     TurnNudger     // learning-loop reminder seam (t_9972dfd0; nil = off)
-	Logger    LoggerProvider // optional logger; nil = no logging
+	Logger    LoggerProvider // optional logging; nil = no logging
+
+	// The yield harness (async agent loop phase 1, t_f3f953d0; design
+	// of record Workshop/omega/async-agent-loop.md). YieldLedger is
+	// the pending-calls table the loop registers a yield-class call
+	// into at dispatch; YieldWake injects the settled core.YieldResult
+	// through the home's input path (the wake). EITHER nil = the whole
+	// harness is off: a Yield tool degrades to loop-back (blocking
+	// inline execution - today's behavior), so one-shot hosts
+	// (omega run, the CLI loop until phase 2, tests) never dispatch
+	// what cannot re-enter. YieldTimeout is a dispatched call's
+	// wall-clock cap; <= 0 takes the loop's default. The session id
+	// rides the run ctx (agent.SessionIDFromContext) - a sessionless
+	// run has no home to wake, same degradation.
+	YieldLedger  YieldLedger
+	YieldWake    func(sessionID string, res core.YieldResult)
+	YieldTimeout time.Duration
 }
 
 // CompactionProvider handles context compaction when the token budget
