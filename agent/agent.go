@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -48,6 +49,13 @@ type Agent struct {
 	pendingDeleg   func(affinity string) int
 	loop           LoopProvider
 	logger         LoggerProvider
+	// The yield harness (async agent loop phase 1, t_f3f953d0): the
+	// pending-calls table, the wake injector and the dispatched call's
+	// wall-clock cap. All nil-safe - a host without the harness runs
+	// every tool loop-back (see LoopOptions.YieldLedger).
+	yieldLedger  YieldLedger
+	yieldWake    func(sessionID string, res core.YieldResult)
+	yieldTimeout time.Duration
 	// eventObserverSource reads the Context's spine subscriptions at
 	// each Run (card t_72ecca67, M3). Nil-safe: an Agent built without
 	// NewFromContext runs observer-free.
@@ -372,6 +380,25 @@ func (a *Agent) SetPendingDelegations(f func(affinity string) int) {
 	a.pendingDeleg = f
 }
 
+// SetYieldLedger installs the pending-calls table (async agent loop
+// phase 1, t_f3f953d0). Nil = the harness is off: yield-class tools
+// run loop-back (the degradation documented on LoopOptions.YieldLedger).
+func (a *Agent) SetYieldLedger(l YieldLedger) {
+	a.yieldLedger = l
+}
+
+// SetYieldWake installs the wake injector the dispatched executor
+// hands a settled core.YieldResult to. Nil = the harness is off.
+func (a *Agent) SetYieldWake(wake func(sessionID string, res core.YieldResult)) {
+	a.yieldWake = wake
+}
+
+// SetYieldTimeout sets a dispatched call's wall-clock cap; <= 0 keeps
+// the loop's default.
+func (a *Agent) SetYieldTimeout(d time.Duration) {
+	a.yieldTimeout = d
+}
+
 // SetLogger installs a logger for the agent loop. A nil value disables
 // logging. The logger is passed to the loop via LoopOptions.
 func (a *Agent) SetLogger(l LoggerProvider) {
@@ -565,6 +592,8 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 		// settings save writes them through, never racy.
 		maxTurns := a.maxTurns
 		promptCustom := a.promptCustom
+		yieldLedger := a.yieldLedger
+		yieldWake := a.yieldWake
 		a.tpMu.RUnlock()
 		a.loop.Run(ctx, LoopOptions{
 			Provider:           provider,
@@ -592,6 +621,9 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			Approvals:          approvals,
 			Nudge:              a.nudge,
 			Logger:             a.logger,
+			YieldLedger:        yieldLedger,
+			YieldWake:          yieldWake,
+			YieldTimeout:       a.yieldTimeout,
 		})
 	}()
 	return events

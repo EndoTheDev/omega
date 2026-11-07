@@ -78,6 +78,16 @@ type Server struct {
 	// restart. Default set here; the mount overrides it from config.
 	runTimeout time.Duration
 
+	// The yield harness (async agent loop phase 1, t_f3f953d0): the
+	// wake hub - the per-home FIFO of settled yield results and the
+	// runaway guard - plus the pending-calls table the loop dispatches
+	// against. bootCtx is the base context wake launches detach from
+	// (they carry no request).
+	wakes       *wakeHub
+	bootCtx     context.Context
+	bootStop    context.CancelFunc
+	yieldLedger agent.YieldLedger
+
 	// titleModel is the title_model knob: session-title calls route
 	// through this model when set, instead of the call's pinned
 	// provider (the main model). Empty = no override.
@@ -264,8 +274,33 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 	// panel even without the plugin's channel-start handoff.
 	s.chat = NewChatCapsule()
 	s.chat.srv.Store(s)
+	// The yield harness (async agent loop phase 1, t_f3f953d0): the
+	// pending-calls table is the store's when it carries the surface
+	// (durability across restarts), the in-memory floor otherwise; the
+	// wake injects through the same home input path a user send takes.
+	// A nil agent (some tests construct a bare Server) skips the
+	// harness entirely.
+	s.bootCtx, s.bootStop = context.WithCancel(context.Background())
+	s.wakes = newWakeHub()
+	if yl, ok := store.(agent.YieldLedger); ok {
+		s.yieldLedger = yl
+	} else {
+		s.yieldLedger = agent.NewMemYieldLedger()
+	}
+	if a != nil {
+		a.SetYieldLedger(s.yieldLedger)
+		a.SetYieldWake(s.wakeHome)
+		a.SetYieldTimeout(s.runTimeout)
+	}
 	s.registerRoutes(s.mux)
 	s.serve = http.HandlerFunc(s.serveModuleRescue)
+	if a != nil {
+		// Boot recovery (ruling 5): every entry the durable table
+		// carried across a restart injects its synthetic timeout
+		// result - the home wakes, the agent sees the interrupted
+		// result and may retry.
+		s.recoverPendingCalls()
+	}
 	return s
 }
 
@@ -719,10 +754,18 @@ type chatRequest struct {
 	// creation or not at all).
 	Workspace string `json:"workspace,omitempty"`
 	// branchParent pins the run head's parent when the channel computed
-	// it (retry/fork-of-user) - empty = derive (first assistant after a
-	// user is the head; continuations / tool results chain off the
-	// leaf). Unexported: never part of the request wire.
+	// it (retry/fork-of-user) - empty = derive. Unexported: never part
+	// of the request wire.
 	branchParent string
+	// wake marks a WAKE LAUNCH (async agent loop, agent/api/wakes.go):
+	// the detached executor of a yield-class call settled and the
+	// settled core.YieldResult re-enters as this request's input. A
+	// wake launch takes the same prepareRun pipe but never fires the
+	// title kick (it is agent-speech, not a conversation start) and
+	// never resets the runaway guard. Unexported: machine-internal
+	// only - no /chat wire field reaches it (a forged wake turn is
+	// just another run).
+	wake bool
 	// branchFloor is the session's max store row id observed at run
 	// start, set alongside branchParent: while a branch-pinned run
 	// streams, the panel renders the active path cut at the branch row
@@ -990,8 +1033,9 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	// row (no second GetSession), and the title call fires detached
 	// before any streaming, so the sidebar leaves the raw session id
 	// while the model is still thinking. maybeTitleSession re-reads
-	// the session and enforces the state machine before writing.
-	if sessionKnown && sess.TitleState == 0 {
+	// the session and enforces the state machine before writing. A WAKE
+	// launch never fires it (agent-speech, not a conversation start).
+	if sessionKnown && sess.TitleState == 0 && !req.wake {
 		go s.maybeTitleSession(context.WithoutCancel(ctx), prov, *req, "", false)
 	}
 

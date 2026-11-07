@@ -216,6 +216,25 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 				it.ElapsedMs = m.Timing.ElapsedMs
 			}
 			items = append(items, it)
+		case core.YieldResult:
+			// The synthetic re-entry message renders as its call's
+			// result row - the transcript of a yield-class call is
+			// the call (turn A) and this row (the wake turn).
+			if m.ToolCallID == "" {
+				continue
+			}
+			it := transcriptItem{
+				Kind:       "tool_result",
+				ID:         id,
+				ToolCallID: m.ToolCallID,
+				Content:    m.Content,
+				IsError:    m.IsError,
+				Gate:       m.Gate,
+			}
+			if m.Timing != nil {
+				it.ElapsedMs = m.Timing.ElapsedMs
+			}
+			items = append(items, it)
 		}
 	}
 	return items

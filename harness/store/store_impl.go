@@ -219,6 +219,19 @@ CREATE TABLE IF NOT EXISTS image_captions (
 	caption    TEXT NOT NULL,
 	created_at TEXT NOT NULL
 );
+-- The pending-calls table (async agent loop phase 1, card
+-- t_f3f953d0): yield-class tool calls dispatched and awaiting their
+-- result. Durable across restarts - the serve-start boot recovery
+-- sweep reads it (All) and injects a synthetic timeout result per
+-- entry. Rows are keyed (session, call id); Settle deletes.
+CREATE TABLE IF NOT EXISTS pending_calls (
+	session_id    TEXT NOT NULL,
+	call_id       TEXT NOT NULL,
+	tool_name     TEXT NOT NULL,
+	arguments     TEXT NOT NULL DEFAULT '',
+	dispatched_at TEXT NOT NULL,
+	PRIMARY KEY (session_id, call_id)
+);
 CREATE TRIGGER IF NOT EXISTS sessions_ai AFTER INSERT ON sessions BEGIN
 	INSERT INTO sessions_fts(session_id, label, summary)
 	VALUES (new.id, new.label, new.summary);

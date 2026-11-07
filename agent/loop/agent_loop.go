@@ -2,13 +2,14 @@ package loop
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/llm"
 )
 
@@ -132,6 +133,13 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		opts.Logger.Printf("agent loop starting, model=%s, turns=%d", start.ModelName, maxTurns)
 	}
 
+	// The yield harness reads the ledger off the run context for its
+	// downstream consumers (the compactor's never-fold law reads the
+	// same live table off ctx).
+	if opts.YieldLedger != nil {
+		ctx = agent.WithYieldLedger(ctx, opts.YieldLedger)
+	}
+
 	turns := 0
 	overflowRetries := 0
 
@@ -147,6 +155,13 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		affinity = agent.NewRunAffinity()
 		ctx = agent.WithRunAffinity(ctx, affinity)
 	}
+
+	// The run's home id (async agent loop, t_f3f953d0): yield-class
+	// calls dispatch only for a session-backed run - a sessionless run
+	// has no input path to re-enter through, so any Yield tool degrades
+	// to loop-back there (blocking beats a lost result).
+	sessionID := agent.SessionIDFromContext(ctx)
+	yieldReady := opts.YieldLedger != nil && opts.YieldWake != nil && sessionID != ""
 
 	// Turn-copy persistence (card t_471f6d4a): the run's new input
 	// persists here first, then one assistant + its tool results per
@@ -189,6 +204,18 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 				}
 			}
 			messages = compacted
+		}
+
+		// Still-pending sibling placeholders (async agent loop part 4,
+		// ruling 7): until a yield-class call's result re-enters, the
+		// provider context must not show its assistant call unanswered
+		// - strict wires reject the pairing. The placeholder is
+		// EPHEMERAL (never persisted, re-derived every turn; the
+		// durable pending state is the pending-calls table) and
+		// idempotent - an answered call id, placeholder or real result,
+		// never gets a second row.
+		if opts.YieldLedger != nil && sessionID != "" {
+			messages = appendPendingPlaceholders(messages, opts.YieldLedger.Pending(sessionID))
 		}
 
 		turns++
@@ -287,15 +314,79 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		assistantEvent := core.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
 		opts.Events <- assistantEvent
 
-		// Execute tool calls concurrently. Results are collected in
-		// order so the message history stays deterministic.
+		// Async agent loop (t_f3f953d0, phase 1): partition the
+		// completion's calls. Yield-class calls END the turn (ruling 1) -
+		// registered in the durable pending-calls table and dispatched on
+		// their own goroutines, they never block this run again. Loop-back
+		// calls execute inline exactly as before; mixed turns run the
+		// loop-back half inline and end with the pending half outstanding.
 		results := make([]core.ToolResult, len(toolCalls))
 		completed := make([]time.Time, len(toolCalls))
-		var wg sync.WaitGroup
+		var loopback []int // indexes into toolCalls that execute inline
+		type yieldItem struct {
+			call core.ToolCall
+			tool core.Tool
+		}
+		var pending []yieldItem
 		for i, call := range toolCalls {
 			tool, ok := tools[call.Name]
 			if !ok {
+				// Unknown tools keep today's loop-back error-inject:
+				// a hallucinated call costs one extra completion, never
+				// a stuck conversation.
 				results[i] = core.NewToolResult("unknown tool: "+call.Name, call.ID, true)
+				loopback = append(loopback, i)
+				continue
+			}
+			if tool.Yield {
+				if !yieldReady {
+					if opts.Logger != nil {
+						opts.Logger.Printf("tool %s is yield-class but the run has no wake harness - executing loop-back", call.Name)
+					}
+				} else {
+					pending = append(pending, yieldItem{call, tool})
+					continue
+				}
+			}
+			loopback = append(loopback, i)
+		}
+
+		// Register the pending calls in the durable table BEFORE the run
+		// can end: the call is durable in the table before any result can
+		// arrive (flush-before-result, ruling 3's derived law). A Register
+		// failure degrades that call back to loop-back - blocking beats a
+		// result with nowhere to go.
+		if len(pending) > 0 {
+			var registered []yieldItem
+			for _, item := range pending {
+				args, _ := json.Marshal(item.call.Arguments)
+				pc := agent.PendingCall{
+					SessionID:    sessionID,
+					CallID:       item.call.ID,
+					ToolName:     item.call.Name,
+					Arguments:    string(args),
+					DispatchedAt: core.NowISO(),
+				}
+				if err := opts.YieldLedger.Register(pc); err != nil {
+					if opts.Logger != nil {
+						opts.Logger.Errorf("pending-call table rejected %s (%s): %v - executing loop-back", item.call.Name, item.call.ID, err)
+					}
+					loopback = append(loopback, indexOfToolCall(toolCalls, item.call.ID))
+					continue
+				}
+				registered = append(registered, item)
+			}
+			pending = registered
+		}
+
+		// Execute loop-back calls concurrently. Results are collected in
+		// order so the message history stays deterministic. Unknown-tool
+		// rows never ran: their slot was filled above.
+		var wg sync.WaitGroup
+		for _, i := range loopback {
+			call := toolCalls[i]
+			tool, ok := tools[call.Name]
+			if !ok {
 				continue
 			}
 			wg.Add(1)
@@ -355,7 +446,8 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		wg.Wait()
 
 		executed := 0
-		for i, msg := range results {
+		for _, i := range loopback {
+			msg := results[i]
 			// Wall-clock the tool actually ran: dispatch (the call
 			// event) to completion. Unknown tools report none - they
 			// never ran.
@@ -369,7 +461,23 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			executed++
 		}
 
-		turnEnd := core.TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed}
+		// Dispatch the pending calls OUTSIDE the turn (ruling 2): each
+		// on its own goroutine, outliving this run - the turn ends
+		// below and every conversation goroutine goes home. The
+		// executor hands the settled core.YieldResult to the wake when
+		// it lands.
+		for _, item := range pending {
+			if item.call.ID == "" {
+				continue
+			}
+			yieldTimeout := opts.YieldTimeout
+			if yieldTimeout <= 0 {
+				yieldTimeout = defaultYieldTimeout
+			}
+			go dispatchYieldCall(ctx, item.call, item.tool, sessionID, yieldTimeout, opts)
+		}
+
+		turnEnd := core.TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed, PendingCalls: len(pending)}
 		opts.Events <- turnEnd
 
 		// Nudge delivery (t_9972dfd0): after the tool batch lands in
@@ -406,13 +514,16 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			}
 		}
 
-		if len(toolCalls) == 0 {
+		if len(loopback) == 0 {
 			// One-shot mode (UserInput == nil): block if subagents are
 			// still running. Interactive mode (UserInput != nil) never blocks.
 			// Run affinity (t_f3fb7c52): the wait is addressed to THIS
 			// run's key - another run's result never releases or
-			// enters this block.
-			if opts.InjectedMessages != nil && opts.UserInput == nil && opts.PendingDelegations != nil && opts.PendingDelegations(affinity) > 0 {
+			// enters this block. A turn whose calls were all
+			// yield-dispatched never waits here: nothing ran inline,
+			// the run ends now (ruling 1 - no conversation goroutine
+			// parks).
+			if pending == nil && opts.InjectedMessages != nil && opts.UserInput == nil && opts.PendingDelegations != nil && opts.PendingDelegations(affinity) > 0 {
 				msg, ok := opts.InjectedMessages.Wait(ctx, affinity)
 				if ok {
 					injected := core.NewUser(msg.Text)
@@ -430,6 +541,12 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 				// ever come - fall through to the run's own end.
 			}
 			end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
+			if len(pending) > 0 {
+				// The turn ended on dispatched yield-class calls (ruling
+				// 1): the results re-enter through the wake path as new
+				// input messages.
+				end.FinishReason = "yielded"
+			}
 			opts.Events <- end
 			if opts.Logger != nil {
 				if finishReason == "error" || finishReason == "cancelled" {
@@ -441,6 +558,122 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			return nil
 		}
 	}
+}
+
+// defaultYieldTimeout caps a dispatched yield-class call's wall clock
+// when the host carries no override - the same law the serving
+// channel's run cap holds over a run (a hung call must never outlive
+// the process's interest in it).
+const defaultYieldTimeout = 15 * time.Minute
+
+// pendingPlaceholderContent fills the still-pending sibling slot on
+// the provider wire (async agent loop, appendPendingPlaceholders).
+// Ephemeral by law: the durable pending state lives in the
+// pending-calls table; this row only keeps an outstanding call answered
+// in the context the turn assembled.
+const pendingPlaceholderContent = "[pending: dispatched, result re-enters when it settles]"
+
+// dispatchYieldCall runs ONE yield-class call outside any turn (async
+// agent loop, ruling 2): the loop already flushed the assistant
+// message and registered the call durably; this goroutine outlives the
+// run on purpose - its ctx is the run context with the cancellation
+// removed (a run end must not eat a dispatched call) plus the call's
+// own wall clock. On settling, the entry leaves the pending-calls
+// table FIRST, then the synthetic core.YieldResult enters the home's
+// input path (the wake) - settle-then-inject, so a crash between the
+// two steps errs toward losing a result's re-entry instead of a duplicate
+// injection on the next boot.
+func dispatchYieldCall(runCtx context.Context, call core.ToolCall, tool core.Tool, sessionID string, timeout time.Duration, opts agent.LoopOptions) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(runCtx), timeout)
+	defer cancel()
+	start := time.Now()
+
+	content, isErr, timedOut, gateLine := "", false, false, ""
+	if opts.Approvals != nil {
+		line, gerr := opts.Approvals.Gate(ctx, call.Name, call.Arguments)
+		gateLine = line
+		if gerr != nil {
+			content, isErr = gerr.Error(), true
+			if opts.Logger != nil {
+				opts.Logger.Errorf("yield tool %s gated: %v", call.Name, gerr)
+			}
+		}
+	}
+	if !isErr {
+		result, err := tool.Run(ctx, call.Arguments)
+		switch {
+		case err != nil && ctx.Err() == context.DeadlineExceeded:
+			timedOut, isErr = true, true
+			content = fmt.Sprintf("yield call timed out after %s: %v", timeout, err)
+		case err != nil:
+			content, isErr = err.Error(), true
+		default:
+			content = result
+			if opts.MaxToolOutput > 0 && len(result) > opts.MaxToolOutput {
+				content = result[:opts.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(result))
+			}
+		}
+		// The learning-loop seam counts every executed call as one
+		// iteration, loop-back or dispatched.
+		if opts.Nudge != nil {
+			opts.Nudge.ObserveToolRun(call.Name, call.Arguments, err)
+		}
+	}
+
+	res := core.YieldResult{
+		ToolCallID: call.ID,
+		ToolName:   call.Name,
+		Content:    content,
+		IsError:    isErr,
+		Timeout:    timedOut,
+		Gate:       gateLine,
+		Timing:     &core.Timing{ElapsedMs: time.Since(start).Milliseconds()},
+		Timestamp:  core.NowISO(),
+	}
+	if err := opts.YieldLedger.Settle(sessionID, call.ID); err != nil && opts.Logger != nil {
+		opts.Logger.Errorf("pending-call settle %s (%s): %v", call.Name, call.ID, err)
+	}
+	if opts.Logger != nil {
+		opts.Logger.Printf("yield result for %s (%s) re-enters session %s", call.Name, call.ID, sessionID)
+	}
+	opts.YieldWake(sessionID, res)
+}
+
+// pendingPlaceholders returns ephemeral tool-result rows for pending
+// calls the context still shows unanswered - a wake turn's
+// still-pending siblings (ruling 7: they render as pending in history).
+// Idempotent by answered-id scan, so it is safe to call every turn prep.
+func appendPendingPlaceholders(messages []core.Message, pending []agent.PendingCall) []core.Message {
+	if len(pending) == 0 {
+		return messages
+	}
+	answered := map[string]bool{}
+	for _, msg := range messages {
+		switch m := msg.(type) {
+		case core.ToolResult:
+			answered[m.ToolCallID] = true
+		case core.YieldResult:
+			answered[m.ToolCallID] = true
+		}
+	}
+	for _, pc := range pending {
+		if pc.CallID == "" || answered[pc.CallID] {
+			continue
+		}
+		messages = append(messages, core.NewToolResult(pendingPlaceholderContent, pc.CallID, false))
+	}
+	return messages
+}
+
+// indexOfToolCall finds a call's index by id (the Register-failure
+// degradation back to loop-back needs the original slot).
+func indexOfToolCall(calls []core.ToolCall, id string) int {
+	for i, c := range calls {
+		if c.ID == id {
+			return i
+		}
+	}
+	return -1
 }
 
 // isOverflowError reports whether a provider error indicates the context
