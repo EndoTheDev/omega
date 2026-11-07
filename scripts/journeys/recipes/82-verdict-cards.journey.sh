@@ -41,13 +41,24 @@ printf '%s' "$payload" | grep -qF '"cards"' || \
 step "ok: per-session pending listing wired"
 
 # --- answer surface: a ghost card is a hub-level 404, not a mux 404 ---
-code=$(curl -s -o "${EVID}/82-ghost-body" -w '%{http_code}' \
+# The body rides stdout, not curl -o: -o makes the NATIVE curl write
+# the file, and a native binary cannot open the MSYS /tmp path the
+# evidence dir lives on (winbtw) - the write fails silently, the exit
+# code goes unchecked, and the read-back dies on a file that never
+# existed (t_f22f0f22, the t_61673a95 /tmp seam class). stdout needs
+# no path, so the capture is identical on MSYS and POSIX hosts. The
+# evidence copy is a SHELL redirection - bash writes MSYS paths fine.
+resp=$(curl -s -w '\n%{http_code}' \
   -X POST "${JOURNEY_BASE_URL}/sessions/jrn-ghost/verdicts" \
   -H 'Content-Type: application/json' \
-  -d '{"card_id":"jrn-ghost-card","option_index":1}')
-[ "$code" = "404" ] || die "ghost-card answer status = $code, want 404: $(cat "${EVID}/82-ghost-body")"
-grep -q "no pending verdict card" "${EVID}/82-ghost-body" || \
-  die "ghost-card 404 body is not the hub's 'no pending verdict card' (route unwired?): $(cat "${EVID}/82-ghost-body")"
+  -d '{"card_id":"jrn-ghost-card","option_index":1}') \
+  || die "verdict answer route unreachable"
+code="${resp##*$'\n'}"
+body="${resp%$'\n'*}"
+printf '%s\n' "$body" > "${EVID}/82-ghost-body"
+[ "$code" = "404" ] || die "ghost-card answer status = $code, want 404: $body"
+printf '%s' "$body" | grep -q "no pending verdict card" || \
+  die "ghost-card 404 body is not the hub's 'no pending verdict card' (route unwired?): $body"
 step "ok: ghost-card answer is 404 with the hub reason"
 
 # --- hygiene: no-session POST 400, DELETE 405, malformed body 400 ---
