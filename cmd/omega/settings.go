@@ -641,12 +641,12 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 				}
 				inst.APIKey = existing.APIKey
 			} else {
-				inherited, n := renamedOffKey(cfg, sent, inst.Host)
+				inherited, distinct := renamedOffKey(cfg, sent, inst.Host)
 				switch {
-				case n == 0:
+				case distinct == 0:
 					return fmt.Errorf("%s: %s.api_key is masked - no removed instance keeps a secret at that host; set a real key in config.yaml", key, name)
-				case n > 1:
-					return fmt.Errorf("%s: %s.api_key is masked and %d removed instances keep secrets at that host - the source is ambiguous; edit config.yaml", key, name, n)
+				case distinct > 1:
+					return fmt.Errorf("%s: %s.api_key is masked and %d removed instances keep secrets at that host - the source is ambiguous; edit config.yaml", key, name, distinct)
 				default:
 					inst.APIKey = inherited
 				}
@@ -691,7 +691,7 @@ func storedHostIn(cfg *Config, host string) bool {
 // REMOVES (names not re-sent) that carry the submitted host. A rename
 // removes the old name, so its key is the source - one distinct key
 // inherits, none or several refuse at config.yaml.
-func renamedOffKey(cfg *Config, submitted map[string]bool, want string) (key string, distinct int) {
+func renamedOffKey(cfg *Config, submitted map[string]bool, want string) (string, int) {
 	keys := map[string]bool{}
 	for name, inst := range cfg.Providers {
 		if submitted[name] || inst.Host != want {
@@ -702,6 +702,7 @@ func renamedOffKey(cfg *Config, submitted map[string]bool, want string) (key str
 	if len(keys) != 1 {
 		return "", len(keys)
 	}
+	key := ""
 	for k := range keys {
 		key = k
 	}
