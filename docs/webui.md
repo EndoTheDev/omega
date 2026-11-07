@@ -394,7 +394,13 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   `.composer-input`, the t_e67c372b chip law: a reference chip
   REPLACES the token span it represents, inline in the flow, and
   Backspace behind a chip dissolves it back to the raw token text while
-  the chip's x removes outright; ONE morphing action button -
+  the chip's x removes outright; Shift+Enter writes the newline as a
+  text node (the editor claims every Enter - plain sends), and Chromium
+  hangs a block-final newline in pre-wrap, so every write settles one
+  draft-invisible sentinel `<br>` after it (AppComposer's capTail, card
+  t_eb07b315) that turns the break into a real line box and seats the
+  caret on the new line - pinned by the 102-composer-shift-enter
+  journey and `webui/test/composershiftnl.test.ts`; ONE morphing action button -
   send/stop, dimmed at idle with no draft, `+` opens the file picker,
   attach-strip with image thumbnails, paste + paperclip attach; the
   retry face is retired - the newest response's action row carries the

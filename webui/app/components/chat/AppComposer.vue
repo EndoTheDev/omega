@@ -727,6 +727,32 @@
     return out;
   }
 
+  // capTail: the trailing-newline sentinel (t_eb07b315). Chromium hangs
+  // a block-final newline in pre-wrap: the break "hello\n" carries is
+  // real in the draft but generates NO line box - one Shift+Enter leaves
+  // the caret glued to line 1 and the editor looks deaf until a second
+  // press. One sentinel <br> after the draft's final newline forces the
+  // line box AND moves the caret's paint seat onto the new line (a
+  // collapsed caret before a final <br> lands on the empty line - the
+  // classic trailing-br device, draft-safe here: a non-chip element
+  // contributes nothing to draftTextOf, caretFromDom or placeCaretAt,
+  // so the draft string never learns of the sentinel). <text> is the
+  // caller's fresh draft read (absorbWrite and syncEditor walk once).
+  function capTail(el: HTMLElement, text: string): void {
+    const brs: Node[] = [];
+    for (
+      let n = el.lastChild;
+      n instanceof Element && n.tagName === "BR";
+      n = n.previousSibling
+    ) {
+      brs.push(n);
+    }
+    const want = text.endsWith("\n") ? 1 : 0;
+    // surplus goes from the innermost outward; a missing one appends
+    for (let i = want; i < brs.length; i++) el.removeChild(brs[i]);
+    if (want === 1 && brs.length === 0) el.appendChild(document.createElement("br"));
+  }
+
   // caretFromDom maps the selection's collapsed caret to a draft index;
   // -1 means "no collapsed caret in the editor" (a ranged selection,
   // focus elsewhere) - callers fall back rather than guess.
@@ -872,7 +898,9 @@
       .map((p) => p.token.token);
     if (domText === props.draft && domChips.join("\u0000") === wantChips.join("\u0000")) {
       // parity: maybe resize anyway (heights follow plain text edits,
-      // whose own flush took the plan watch here)
+      // whose own flush took the plan watch here) - the newline cap
+      // settles the sentinel before the height reads it
+      capTail(el, domText);
       resize();
       return;
     }
@@ -888,6 +916,7 @@
       else el.appendChild(buildChip(p.token));
     }
     placeCaretAt(el, caretAt.value);
+    capTail(el, props.draft);
     resize();
   }
 
@@ -939,7 +968,8 @@
   // absorbWrite: the shared tail of every text write (typing, paste, the
   // newline insert) - read the text, clear a dismissed palette, sync the
   // caret, drop a browser-emptied editor's stray <br> artifact (it would
-  // rob :empty of the placeholder), emit the draft, size.
+  // rob :empty of the placeholder), emit the draft, settle the newline
+  // sentinel (capTail), size.
   function absorbWrite(el: HTMLElement): void {
     const text = draftTextOf(el);
     dismissed.value = false;
@@ -947,6 +977,7 @@
     if (at >= 0) caretAt.value = Math.min(at, text.length);
     if (text === "" && el.hasChildNodes()) el.replaceChildren();
     emit("update:draft", text);
+    capTail(el, text); // the newline sentinel rides every write's tail
     resize();
   }
 
@@ -954,7 +985,9 @@
   // runs the input path by hand (manual DOM writes fire no input event).
   // The contenteditable's own paste would insert markup and its own
   // newline would insert div nodes - neither is draft-readable; text
-  // nodes + pre-wrap carry both, the way native typing does.
+  // nodes + pre-wrap carry both, the way native typing does (a trailing
+  // newline also needs the capTail sentinel to render - absorbWrite's
+  // tail settles it).
   function insertAtCaret(text: string): void {
     const el = ta.value;
     if (!el || text === "") return;
