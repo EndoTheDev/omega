@@ -7,7 +7,12 @@
 // web.search + web.fetch) merge under their prefix as the parent row -
 // same visual, the prefix IS their domain. A lone dotted tool
 // (sessions.search, shell.run) stays its own top-level row: grouping a
-// one-member domain would only add a layer. Pure on purpose: no Vue,
+// one-member domain would only add a layer. Card t_7871a56a closes the
+// collision those two laws could produce: a dotless tool whose name
+// equals a dotted prefix (files + files.grep + files.glob - the tools
+// capsule ships the dotted pair in the files namespace) absorbs its
+// dotted siblings into the DOMAIN row instead of letting both laws
+// fire - one row per domain, always. Pure on purpose: no Vue,
 // no fetch - the node suite pins the grouping.
 
 export interface ToolActionWire {
@@ -61,16 +66,26 @@ export function domainOf(name: string): string {
 // one-liner - the same contract the t_73994e55 prompt renderer ships.
 // disabled = the fold names the row's own tool (parent rows that ARE
 // tools) or every merged member (group parents) - the toggle law
-// below in ToolsList.
+// below in ToolsList. Card t_7871a56a: a dotless domain tool that
+// shares its name with a dotted prefix ABSORBS the dotted siblings -
+// detail gains their full identities, they never group on their own,
+// and disabled goes group-style (every member off) because the toggle
+// fans out to all of them.
 export function toolRows(
   tools: readonly ToolWire[],
   fold: readonly string[],
 ): ToolRow[] {
   // member count per dotted domain: 2+ = groupable
   const members = new Map<string, string[]>();
+  // dotless tool names: a domain that names ITSELF absorbs any dotted
+  // siblings riding the same prefix (the files collision, t_7871a56a)
+  const domains = new Set<string>();
   for (const t of tools) {
     const d = domainOf(t.name);
-    if (!d) continue;
+    if (!d) {
+      domains.add(t.name);
+      continue;
+    }
     const list = members.get(d) ?? [];
     list.push(t.name);
     members.set(d, list);
@@ -82,6 +97,10 @@ export function toolRows(
   for (const t of tools) {
     if (consumed.has(t.name)) continue;
     const d = domainOf(t.name);
+    // a dotted tool whose prefix is a dotless domain tool is absorbed
+    // by that domain's row wherever it sits in the inventory - skip it
+    // here, the domain row consumes it (t_7871a56a)
+    if (d && domains.has(d)) continue;
     const group = d && (members.get(d)?.length ?? 0) >= 2;
     if (group) {
       // the group parent row: the prefix is the row, each member's
@@ -97,14 +116,24 @@ export function toolRows(
       continue;
     }
     // a tool that is its own domain (dotless): the actions are the
-    // dotted sub-rows
+    // dotted sub-rows, and dotted siblings from the same namespace
+    // (files.grep/files.glob under files, t_7871a56a) join them as
+    // merged members - one row per domain
+    const merged = tools.filter((s) => domainOf(s.name) === t.name);
+    for (const s of merged) consumed.add(s.name);
     rows.push({
       name: t.name,
       description: t.description,
-      detail: (t.actions ?? []).map(
-        (a) => `${t.name}.${a.name} - ${a.description}`,
-      ),
-      disabled: off.has(t.name),
+      detail: [
+        ...(t.actions ?? []).map(
+          (a) => `${t.name}.${a.name} - ${a.description}`,
+        ),
+        ...merged.map((s) => `${s.name} - ${s.description}`),
+      ],
+      disabled:
+        merged.length > 0
+          ? off.has(t.name) && merged.every((s) => off.has(s.name))
+          : off.has(t.name),
     });
   }
   return rows;
@@ -114,9 +143,20 @@ export function toolRows(
 // names the fold stores: an exact tool name toggles itself; a group
 // parent's name (the dotless prefix) is NOT a tool - the PUT goes to
 // each member (the config fold keeps exact names, the built-in-wins
-// law untouched). The webui-only fan-out is the deliberate copy: the
+// law untouched). Card t_7871a56a: a MERGED domain row (a dotless
+// tool that absorbed its dotted siblings, the files shape) is both at
+// once - its exact name is a real tool AND its siblings ride the
+// same prefix, so the toggle fans out to the domain tool and every
+// absorbed member. The webui-only fan-out is the deliberate copy: the
 // server stays name-exact.
 export function toggleTargets(rowName: string, tools: readonly ToolWire[]): string[] {
-  if (tools.some((t) => t.name === rowName)) return [rowName];
+  if (tools.some((t) => t.name === rowName)) {
+    return [
+      rowName,
+      ...tools
+        .filter((t) => t.name !== rowName && domainOf(t.name) === rowName)
+        .map((t) => t.name),
+    ];
+  }
   return tools.filter((t) => domainOf(t.name) === rowName).map((t) => t.name);
 }

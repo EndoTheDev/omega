@@ -59,6 +59,84 @@ test("toggleTargets: an exact tool toggles itself, a group parent fans out to it
   assert.deepEqual(toggleTargets("shell.run", tools), ["shell.run"]);
 });
 
+// --- t_7871a56a: the dotless/dotted collision (files + files.grep +
+// files.glob) - the domain row ABSORBS the dotted siblings; two rows
+// on one domain is a red shape that must stay impossible ---
+
+test("a dotless domain row absorbs its dotted siblings: ONE files row, actions + grep + glob nested (t_7871a56a)", () => {
+  const tools = [
+    { name: "files", description: "read write edit", actions: [
+      { name: "read", description: "read a file" },
+      { name: "write", description: "write a file" },
+    ] },
+    { name: "files.grep", description: "search file contents" },
+    { name: "files.glob", description: "list matching paths" },
+  ];
+  const rows = toolRows(tools, []);
+  // the red shape: exactly one row per domain, never two "files" rows
+  const filesRows = rows.filter((r) => r.name === "files");
+  assert.equal(filesRows.length, 1, "one row per domain - the duplicate-row collision stays dead");
+  assert.deepEqual(rows.filter((r) => r.name.startsWith("files.")).length, 0, "no orphan dotted rows under an absorbed prefix");
+  // actions first, then the absorbed siblings by inventory order, all
+  // under the same detail-line contract
+  assert.deepEqual(filesRows[0].detail, [
+    "files.read - read a file",
+    "files.write - write a file",
+    "files.grep - search file contents",
+    "files.glob - list matching paths",
+  ]);
+});
+
+test("absorption holds wherever the domain tool sits in the inventory (order law)", () => {
+  // dotted members BEFORE the dotless tool: the skip law must still
+  // deliver one merged row, seated at the domain tool's position
+  const tools = [
+    { name: "files.grep", description: "search file contents" },
+    { name: "files.glob", description: "list matching paths" },
+    { name: "files", description: "read write edit", actions: [
+      { name: "write", description: "write a file" },
+    ] },
+  ];
+  const rows = toolRows(tools, []);
+  assert.equal(rows.length, 1, "the absorbed members render no rows of their own");
+  assert.equal(rows[0].name, "files");
+  assert.deepEqual(rows[0].detail, [
+    "files.write - write a file",
+    "files.grep - search file contents",
+    "files.glob - list matching paths",
+  ]);
+});
+
+test("a merged domain row's disabled is group-style: off only when every member is off", () => {
+  const tools = [
+    { name: "files", description: "read write edit", actions: [{ name: "read", description: "read a file" }] },
+    { name: "files.grep", description: "search file contents" },
+    { name: "files.glob", description: "list matching paths" },
+  ];
+  const allOff = toolRows(tools, ["files", "files.grep", "files.glob"]);
+  assert.equal(allOff[0].disabled, true, "every member off = row off");
+  const partial = toolRows(tools, ["files.grep"]);
+  assert.equal(partial[0].disabled, false, "one member still on = row on");
+  const domainOnly = toolRows(tools, ["files"]);
+  assert.equal(domainOnly[0].disabled, false, "the domain tool off but siblings on = row on (the toggle fans to all)");
+});
+
+test("toggleTargets: a merged domain row fans out to the domain tool AND its absorbed siblings (t_7871a56a)", () => {
+  const tools = [
+    { name: "files", description: "read write edit", actions: [] },
+    { name: "files.grep", description: "search file contents" },
+    { name: "files.glob", description: "list matching paths" },
+    { name: "kanban", description: "the board" },
+  ];
+  assert.deepEqual(
+    toggleTargets("files", tools),
+    ["files", "files.grep", "files.glob"],
+    "the exact-name shortcut must not strand the absorbed members",
+  );
+  // a dotless tool with NO dotted siblings still toggles itself alone
+  assert.deepEqual(toggleTargets("kanban", tools), ["kanban"]);
+});
+
 test("arming a tool disable names the tool-list consequence; enable is silent", () => {
   assert.equal(registryNote("tools", "shell", false), "disable shell? absent from the agent tool list");
   assert.equal(registryNote("tools", "shell", true), "");
