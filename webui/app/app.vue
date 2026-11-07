@@ -540,6 +540,8 @@
     useThinkingDisplay,
     THINKING_DISPLAY_KEY,
   } from "./composables/thinkingDisplay";
+  // card t_a92450ea: the ONE copy path - insecure-context-proof
+  import { copyText } from "./composables/clipboard";
   import {
     createDock,
     findPane,
@@ -1081,7 +1083,11 @@
           note("copy: no assistant response to copy");
           return true;
         }
-        await navigator.clipboard.writeText(text2);
+        const ok = await copyText(text2);
+        if (!ok) {
+          note("copy: clipboard write failed (no secure context and no execCommand fallback)");
+          return true;
+        }
         note("copied the last response to the clipboard");
         return true;
       }
