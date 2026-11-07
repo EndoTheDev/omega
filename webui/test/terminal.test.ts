@@ -105,6 +105,24 @@ test("the kill affordance is the module's DELETE route", () => {
   assert.match(tabVue, /kill terminal/, "the button exists by aria-label");
 });
 
+test("a dead claim names itself: the module's error text, not a generic line", () => {
+  assert.match(
+    tabVue,
+    /claimFail/,
+    "the claim failure text is kept (the refusal body, not a generic string)",
+  );
+  assert.match(
+    tabVue,
+    /parsed\.error/,
+    "the refusal body's error field is parsed out",
+  );
+  assert.match(
+    tabVue,
+    /claimFail \|\| "the terminal module did not answer the claim"/,
+    "the generic line is the fallback, never the first answer",
+  );
+});
+
 test("the outlet unmount drops the SSE, never the shell", () => {
   const unmount = tabVue.slice(tabVue.indexOf("onBeforeUnmount"));
   assert.match(unmount, /closeStream\(\)/, "the SSE closes on unmount");
