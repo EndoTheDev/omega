@@ -121,6 +121,8 @@
   // (the only DOM-measuring part). Icon rides the shell's global
   // auto-import (components/ui/Icon.vue) - no shell import statement.
   import { isNarrowWidth } from "./narrow";
+  // card t_a92450ea: the ONE copy path - insecure-context-proof
+  import { copyText } from "~/composables/clipboard";
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
   const rootEl = ref<HTMLElement | null>(null);
@@ -330,12 +332,14 @@
 
   async function copyUrl() {
     if (address.value === "") return;
-    try {
-      await navigator.clipboard.writeText(address.value);
+    // card t_a92450ea: the ONE copy path - insecure-context-proof
+    const ok = await copyText(address.value);
+    if (ok) {
       copied.value = true;
       setTimeout(() => (copied.value = false), 1500);
-    } catch {
-      // clipboard denied: the URL is still visible in the bar
+    } else {
+      // honest failure: the URL is still visible in the bar
+      copied.value = false;
     }
   }
 

@@ -6,6 +6,9 @@
 // up wrappers. Collapse state is index-keyed and owned by the caller,
 // because v-html replacement tears the wrapped DOM down on each tick.
 
+// the ONE copy path (card t_a92450ea) - insecure-context-proof
+import { copyText } from "./clipboard.ts";
+
 // "language-go" / "hljs language-go" -> "go"; anything else -> "code".
 export function codeLang(className: string): string {
   const m = /language-([\w-]+)/.exec(className);
@@ -59,8 +62,12 @@ export function decorateCodeblocks(
     // any html:false fallout never reach the clipboard.
     copy.addEventListener("click", (ev) => {
       ev.stopPropagation();
-      void navigator.clipboard.writeText(code?.textContent ?? "");
-      copy.textContent = "copied";
+      // card t_a92450ea: the ONE copy path (composables/clipboard.ts) -
+      // the "copied" affordance is conditional on real success, never a
+      // voided rejection. Empty code still copies (a true no-op).
+      copyText(code?.textContent ?? "").then((ok) => {
+        copy.textContent = ok ? "copied" : "copy failed";
+      });
       window.setTimeout(() => {
         copy.textContent = "copy";
       }, 1200);

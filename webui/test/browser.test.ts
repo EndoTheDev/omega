@@ -149,7 +149,8 @@ describe("browserLogic: the refused-embed fallback", () => {
     );
     assert.ok(src.includes("refused.value = false"), "a late decision clears the fallback");
     assert.ok(src.includes("window.open"), "open in a new tab exists");
-    assert.ok(src.includes("clipboard.writeText"), "copy URL exists");
+    // card t_a92450ea: the ONE copy path - copyText, awaited
+    assert.ok(src.includes("copyText(address.value)"), "copy URL exists");
   });
 
   it("the honesty note lives in the logic file (probe: headers only, never content)", () => {

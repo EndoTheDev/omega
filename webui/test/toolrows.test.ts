@@ -78,7 +78,12 @@ test("ToolCallLine pins a manual toggle and recomputes around it", () => {
 
 test("ChatMessage copies the RAW message content, never rendered HTML", () => {
   const m = src("components/chat/ChatMessage.vue");
-  assert.match(m, /navigator\.clipboard\.writeText\(props\.content\)/);
+  // the ONE copy path (card t_a92450ea): the helper, awaited, verdict-
+  // branched - never a direct navigator.clipboard call that voids its
+  // rejection in insecure contexts
+  assert.match(m, /const raw = await copyText\(props\.content\)/);
+  assert.match(m, /if \(!raw\) \{/);
+  assert.doesNotMatch(m, /navigator\.clipboard/);
   // the copy glyph must not bubble into bubble-level handlers
   assert.match(m, /@click\.stop="copyMessage"/);
   // the payload is the source prop - if someone swaps in mdEl innerText,
