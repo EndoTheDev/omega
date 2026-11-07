@@ -5,10 +5,11 @@
 // golang.org/x/sys/unix (already a dependency): no cgo, no pty library.
 //
 // Build-tagged: the pty vocabulary is linux-only (/dev/ptmx + the Linux
-// pty ioctl set — darwin carries no equivalent constants, so its build
-// never reaches here). pty_other.go carries the !linux stub so the module
-// still compiles on every other platform - spawn returns an error, the
-// routes answer it.
+// pty ioctl set - darwin carries no equivalent constants, so its build
+// never reaches here). windows carries its own ConPTY door in
+// pty_windows.go; pty_other.go carries the stub for both remaining
+// platforms so the module still compiles everywhere - spawn returns
+// an error, the routes answer it.
 package terminal
 
 import (
