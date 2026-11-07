@@ -112,17 +112,37 @@ type StoredMessage struct {
 	CreatedAt string
 }
 
+// SearchMatch is one matched-term span inside a SearchResult.Snippet:
+// byte offsets into the verbatim snippet string. Matches ride
+// structured metadata, never in-band marker characters (t_1901ce48 -
+// the in-band [bracket] era corrupted the canary-verbatim checks).
+type SearchMatch struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
+}
+
 // SearchResult is a single search hit from SearchMessages.
 type SearchResult struct {
 	SessionID string `json:"session_id"`
-	Snippet   string `json:"snippet"`
+
+	// Snippet is a verbatim excerpt of the stored content: a
+	// contiguous substring, byte-for-byte what the store holds - no
+	// highlight markers are inserted. Where the matched terms sit
+	// inside the excerpt is the Matches field.
+	Snippet string `json:"snippet"`
+	// Matches carries the matched-term spans (byte offsets into
+	// Snippet) when any matched term lands in the window; nil when it
+	// does not (label hits) or when the excerpt window itself holds a
+	// marker-sentinel byte and the span parse would be ambiguous.
+	Matches []SearchMatch `json:"matches,omitempty"`
+
 	// Title marks a hit that matched the session's label rather than
 	// message content (SearchSessions). When set, Snippet holds the
 	// label itself.
 	Title bool `json:"title"`
 	// Summary marks a hit that matched the hygiene pass's session
 	// summary rather than message content or label (SearchSessions).
-	// When set, Snippet holds the bracketed summary excerpt.
+	// When set, Snippet holds a verbatim summary excerpt.
 	Summary bool `json:"summary"`
 }
 

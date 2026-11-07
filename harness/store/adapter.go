@@ -23,7 +23,7 @@ type searchToolProvider struct {
 func (p *searchToolProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"sessions.search": {
-			Description: "Search past session messages by keyword. Returns matching sessions with snippets of the matching content.",
+			Description: "Search past session messages by keyword. Returns matching sessions with snippets of the matching content. Snippets are verbatim stored-content excerpts - no highlight markers are inserted (match positions ride structured metadata: the /sessions/search REST shape's matches field, byte offsets) - so a snippet is safe to compare against stored content byte-for-byte.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
