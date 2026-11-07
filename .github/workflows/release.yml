@@ -87,7 +87,10 @@ jobs:
           cd dist && tar czf "omega-$VERSION-linux_arm64.tar.gz" "omega-$VERSION-linux_arm64/"
 
       - name: Generate checksums
-        run: cd dist && sha256sum omega-* | sed 's|dist/||' > checksums.txt
+        # both filename shapes: the full release filename for current
+        # updaters, plus bare platform-tag aliases so pre-Oct-16 binaries
+        # (<= v0.6.0, suffix matcher) can still self-update (t_3d123470)
+        run: scripts/release-checksums.sh dist
 
       - name: Generate release notes
         # deterministic counts + highlights from the round's commit log; the
