@@ -560,6 +560,75 @@ for f in "$TESTDIR/config.go" "$TESTDIR/knobs.go"; do
 done
 rm -rf "$TESTDIR" "$SCRUBPY"
 
+# 13. the teeth of 12 (gate law: a deliberately-broken shape stays red).
+# The same fixture with the BROKEN shape restored - the one-letter `n`
+# back on the dying cascade line - must RED: the anchored letter kills
+# the live helper's signature while its call sites survive, exactly the
+# undefined-symbol red that burned the provider proof. Without this
+# witness, softening the value rule goes silently green.
+TESTDIR="$(mktemp -d)"
+cat > "$TESTDIR/config.go" <<'EOF'
+package main
+
+type ProviderConfig struct {
+	Type      string
+	Host      string
+	APIKey    string
+}
+
+type Config struct {
+	Provider  ProviderConfig            `yaml:"provider"`
+	Providers map[string]ProviderConfig `yaml:"providers"`
+	Server    string                    `yaml:"server"`
+}
+EOF
+cat > "$TESTDIR/knobs.go" <<'EOF'
+package main
+
+func knobs(cfg *Config) []any {
+	return []any{
+		{Key: "server.port", Label: "port", Type: "number",
+			Min: ptrF(1), Step: ptrF(1)},
+		{Key: "server.bind", Label: "bind", Type: "text",
+			Value: cfg.Server},
+	}
+}
+
+func ptrF(n float64) *float64 { return &n }
+
+func applyInstances(cfg *Config) error {
+	inst := ProviderConfig{}
+	inst.Host = "h"
+	inherited, n := renameOff(cfg, inst.Host)
+	if n == 0 {
+		return nil
+	}
+	inst.APIKey = inherited
+	cfg.Providers = map[string]ProviderConfig{"x": inst}
+	return nil
+}
+
+func renameOff(cfg *Config, want string) (string, int) {
+	for name, inst := range cfg.Providers {
+		if inst.Host != want {
+			continue
+		}
+		return inst.APIKey, 1
+	}
+	return "", 0
+}
+EOF
+SCRUBPY="$(mktemp)"
+awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
+(cd "$TESTDIR" && python3 "$SCRUBPY" "config.go,knobs.go" provider) >/dev/null 2>&1
+if ! grep -q 'func ptrF' "$TESTDIR/knobs.go" \
+  && grep -q 'Min: ptrF(1)' "$TESTDIR/knobs.go"; then
+  ok
+else
+  bad "the deliberately-broken n-anchored shape no longer reds - the value rule was softened or the anchor law lost its teeth"
+fi
+rm -rf "$TESTDIR" "$SCRUBPY"
+
 if [ "$fail" -gt 0 ]; then
   echo "nm-purity_test: $pass ok, $fail FAIL" >&2
   exit 1
