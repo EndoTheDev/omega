@@ -277,13 +277,27 @@ named `<session id>.jsonl`.
 Unified FTS5 search over session labels, hygiene summaries AND message
 content, deduped to ONE hit per session (label hits ranked first, then
 summary hits, then content - each hit carries `title` or `summary` when
-it matched that index, with a bracketed excerpt otherwise). The term is
+it matched that index). The term is
 wrapped as the phrase-with-prefix
 `"term"*` per FTS5 string rules — progressive typing keeps hitting
 `"fib"` finds `"fibonacci"`). `200 []` on a missing/empty `q`; **400**
 when FTS5 rejects the query itself; 501 without a store. Archived
 sessions are excluded by default; `archived=include` keeps them (the
 same param the list takes).
+
+Each content/summary hit's `snippet` is a VERBATIM excerpt of the
+stored content - a contiguous substring, byte-for-byte what the store
+holds, with no highlight markers or synthetic `...` inserted (card
+t_1901ce48). Where the matched terms sit inside the excerpt rides
+structured metadata: each hit may carry `matches` - byte offsets
+(`{start, end}`) into the snippet. A verbatim consumer can therefore
+strip nothing and trust the string; a canary/echo check against an
+exact token compares the snippet (or `snippet[m.start:m.end]`) against
+stored content directly. The same contract holds for the agent-facing
+`sessions.search` tool: its output lines are a `[label]` prefix
+(presentation formatting) followed by the snippet text - literal
+stored content, brackets included only when the stored content really
+has them.
 
 ## Config and board surfaces
 
