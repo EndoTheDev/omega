@@ -95,14 +95,3 @@ func MessageText(m core.Message) string {
 	}
 	return ""
 }
-
-// BuildCompactedMessages assembles the compacted message list from a
-// pre-computed summary. Shared by the branch summary feature and the
-// compactor plugin.
-func BuildCompactedMessages(history []core.Message, summary string, keepFirst, keepLast int) []core.Message {
-	result := make([]core.Message, 0, keepFirst+keepLast+1)
-	result = append(result, history[:keepFirst]...)
-	result = append(result, core.NewSystem("[compacted: "+summary+"]"))
-	result = append(result, history[len(history)-keepLast:]...)
-	return result
-}

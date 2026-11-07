@@ -20,46 +20,10 @@ func TestEstimateTokens(t *testing.T) {
 	}
 }
 
-func TestBuildCompactedMessages(t *testing.T) {
-	history := []core.Message{
-		core.NewSystem("sys"),
-		core.NewUser("u1"),
-		core.NewUser("u2"),
-		core.NewUser("u3"),
-		core.NewUser("u4"),
-		core.NewUser("u5"),
-	}
-	got := BuildCompactedMessages(history, "summary text", 2, 2)
-	if len(got) != 5 {
-		t.Fatalf("len = %d, want 5 (2 first + 1 summary + 2 last)", len(got))
-	}
-	// First two preserved verbatim.
-	if got[0].(core.System).Content != "sys" || got[1].(core.User).Content != "u1" {
-		t.Fatalf("first messages not preserved: %+v", got[:2])
-	}
-	// Middle replaced with a system summary.
-	sys, ok := got[2].(core.System)
-	if !ok || !strings.Contains(sys.Content, "summary text") {
-		t.Fatalf("middle not replaced with summary: %+v", got[2])
-	}
-	// Last two preserved verbatim.
-	if got[3].(core.User).Content != "u4" || got[4].(core.User).Content != "u5" {
-		t.Fatalf("last messages not preserved: %+v", got[3:])
-	}
-}
-
-func TestBuildCompactedMessagesNoOpWhenNothingToCompact(t *testing.T) {
-	history := []core.Message{core.NewUser("a"), core.NewUser("b")}
-	got := BuildCompactedMessages(history, "summary", 1, 1)
-	if len(got) != 3 {
-		t.Fatalf("len = %d, want 3 (1 first + 1 summary + 1 last)", len(got))
-	}
-}
-
 // mockCompactionProvider is a minimal CompactionProvider for agent
 // loop tests. It streams a one-line summary from the fake provider
-// and wraps it with BuildCompactedMessages. Disabled or under-budget
-// = no-op.
+// and assembles the old fixed-tail shape (first/last kept verbatim,
+// a system summary row between). Disabled or under-budget = no-op.
 type mockCompactionProvider struct {
 	Provider Provider
 	Config   *CompactionConfig
@@ -176,5 +140,10 @@ func (m mockCompactionProvider) Compact(ctx context.Context, messages []core.Mes
 	if summary.Len() == 0 {
 		return nil, fmt.Errorf("summarize: empty summary")
 	}
-	return BuildCompactedMessages(messages, strings.TrimSpace(summary.String()), m.Config.KeepFirst, m.Config.KeepLast), nil
+	keepFirst, keepLast := m.Config.KeepFirst, m.Config.KeepLast
+	result := make([]core.Message, 0, keepFirst+keepLast+1)
+	result = append(result, messages[:keepFirst]...)
+	result = append(result, core.NewSystem("[compacted: "+strings.TrimSpace(summary.String())+"]"))
+	result = append(result, messages[len(messages)-keepLast:]...)
+	return result, nil
 }
