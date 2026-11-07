@@ -1932,8 +1932,10 @@ labels stopped short of the right edge. */
 /* ---- composer: floating card inside the chat pane ---- */
 .composer {
   position: relative; /* anchor for the expand button and the palette */
-  margin: 0 12px 12px; /* pre-modes geometry: full-width card (every mode
-     is a modifier - compact centers, full rows inline) */
+  /* ONE composer (t_1750a9e3): pane-wide with a 12px inset - sides and
+     floor (the top seats against the activity line), the same breathing
+     room the retired full mode used */
+  margin: 0 12px 12px;
   background: var(--z1-raised);
   border: 1px solid var(--stroke);
   border-radius: var(--r-card);
@@ -2024,56 +2026,19 @@ labels stopped short of the right edge. */
 .expand-btn:hover { color: var(--text); border-color: var(--text-dim); }
 .composer:focus-within { border-color: rgba(232, 131, 58, 0.55); }
 
-/* the composer's display modes (card t_5752861e, reshape t_f9fd3820,
-   v4 t_d14c2d14 - the three-mode set is retired; exactly TWO modes):
-   compact (sketch C5 'footer-send') - the centered narrow card in TWO
-   rows: row 1 is plus-btn + input, row 2 is the chips left and the
-   send right (the base .send's margin-left: auto pins it right); a
-   hairline divides the rows. full (sketch W6 'segmented', the old
-   'wide' renamed) - ONE row spanning the pane width with the card's
-   12px inset and radius (padded inside the pane, never edge to edge):
-   input (flex, grows) | hairline | chips | hairline | send, everything
-   inline, no second row unless content physically forces it. Both hold
-   only when NOT expanded (the fullscreen .expanded card is pinned by
-   its own t_08ef793b ruling and ignores the modes). */
-.composer.mode-compact:not(.expanded) {
-  /* the centered reading card: capped, auto margins center it in the pane */
-  max-width: 720px;
-  margin: 0 auto 12px;
-}
-.composer.mode-compact:not(.expanded) .toolbar {
+/* ONE composer, no modes (card t_1750a9e3, ruling 2026-11-07): the C5
+   arrangement is THE shape, stretched to the pane. The base card is
+   full-width in its pane (margin 12px inset left/right/bottom above),
+   borders + rounded corners all around - the floating card, not the
+   edge-to-edge take B. The retired mode modifier classes, their 720px
+   cap and the hairline segment divider all died; a stored
+   composer-mode value is an ignored orphan (never
+   read, never rewritten - no migration code exists). Holds only while
+   NOT expanded (the fullscreen .expanded card is pinned by its own
+   t_08ef793b ruling). */
+.composer:not(.expanded) .toolbar {
   flex-wrap: nowrap; /* the bottom row's chips never wrap */
   border-top: 1px solid var(--stroke); /* the C5 row hairline */
-}
-.composer.mode-full:not(.expanded) {
-  flex-direction: row; /* ONE row: input | chips | send inline */
-  align-items: center;
-  /* no second row unless content physically forces it: the row wraps
-     only when an attach-strip/fork-chip lands above the bar */
-  flex-wrap: wrap;
-  /* no overrides: the base card's inset + radius = the W6 padding */
-}
-/* transient full-width strips (attachments, the fork anchor) force
-   their own line above the segmented bar; the bar itself stays one row */
-.composer.mode-full:not(.expanded) .attach-strip,
-.composer.mode-full:not(.expanded) .fork-chip {
-  flex-basis: 100%;
-}
-.composer.mode-full:not(.expanded) .composer-row {
-  flex: 1; /* the input's segment grows */
-}
-.composer.mode-full:not(.expanded) .toolbar {
-  flex-wrap: nowrap; /* the single-row law: no second row unless forced */
-  border-left: 1px solid var(--stroke); /* the input|chips hairline */
-}
-/* the W6 chips|send hairline segment (AppComposer renders the seg-div
-   element only in full - it is a real divider, not a button border,
-   so the hairline keeps its own gap from the accent send face) */
-.composer .seg-div {
-  flex: none;
-  width: 1px;
-  height: 26px; /* the sketch's divider height */
-  background: var(--stroke);
 }
 
 /* expanded/fullscreen (card t_08ef793b, Endo ruling 2026-11-02): a floating
@@ -2084,7 +2049,6 @@ labels stopped short of the right edge. */
    right) pins to the card's bottom edge with the compact padding rhythm. */
 .composer.expanded {
   flex-grow: 1000; /* outgrow .messages (flex 1) almost entirely */
-  max-width: none; /* the fullscreen card ignores the mode caps */
   margin: 12px; /* card geometry: inset on all four sides, kept radius */
 }
 /* the focus ring is a compact-composer affordance: fullscreen keeps the
@@ -2873,7 +2837,7 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
   .messages { padding: 12px; }
   .bubble, .thinking, .toolcall { max-width: 88%; }
 
-  .composer { margin: 0 8px 8px; max-width: none; } /* full pane on mobile */
+  .composer { margin: 0 8px 8px; } /* full pane on mobile, tighter inset */
   .activity-line { margin: 0 8px 4px; }
   .model-chip { max-width: 140px; }
   .send { padding: 6px 14px; }

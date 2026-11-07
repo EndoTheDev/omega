@@ -405,20 +405,19 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   attach-strip with image thumbnails, paste + paperclip attach; the
   retry face is retired - the newest response's action row carries the
   msg-retry chip, card t_95d2bc34; `/` command palette + `@` mention
-  picker, see below; the DISPLAY MODES (card t_5752861e, v4
-  t_d14c2d14 - the three-mode set is retired, exactly two modes): the
-  settings' chat-group "composer display mode" select - compact /
-  full - writes the shared signal (`composables/composerMode.ts`,
-  `omega.composer-mode` in localStorage; a stored 'wide' migrates to
-  'full'). compact is the modifier `mode-compact`: the C5 'footer-send'
-  card - plus/input on top, chips left + send right on a bottom hairline
-  row, centered in the pane via auto margins with the 720px cap; full
-  is the modifier `mode-full`: the W6 'segmented' one-row bar (the old
-  'wide' renamed) - input | chips | send hairline segments across the
-  pane width with the card's 12px inset, no cap. The modes hold only
-  while the composer is not expanded, and
-  mobile resets the cap (full pane). Pinned by the
-  22-composer-modes journey and `webui/test/composermode.test.ts`,
+  picker, see below; ONE composer, NO modes (card t_1750a9e3, ruling
+  2026-11-07 - t_5752861e's mode system and t_d14c2d14's two-mode knob
+  are dead): the C5 'footer-send' arrangement is THE shape, stretched
+  to the pane width (take A of the v3 sketch) - plus/input on top,
+  chips left + send right on a bottom hairline row, as a full-width
+  floating card: the base 12px inset (sides + floor), border and
+  rounded corners all around, never edge-to-edge. There is no
+  "composer display mode" setting row; the mode classes
+  (`mode-compact`/`mode-full`), the 720px cap and the seg-div segments
+  are gone, and `composables/composerMode.ts` is deleted - a stored
+  `omega.composer-mode` localStorage value is an ignored orphan (never
+  read, never rewritten; leave it, do not write a migration). Pinned by
+  the 22-composer journey and `webui/test/composershape.test.ts`,
   `ModelSelect` + the shared `BandSelect` effort chip (the dedicated
   ThinkingSelect retired — the BandSelect owns the select grammar; the
   model+effort pair is one nowrap wrap unit), `ChatMessage`,
