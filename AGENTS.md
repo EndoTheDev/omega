@@ -245,7 +245,7 @@ card t_8abdbb15; full contract and templates in `docs/release-gate.md`):
 
 Read AGENTS.md, follow its pointers. One map, no hierarchy of maps.
 
-1. `.agents/COMMIT.md` - commit convention and voice.
+1. `.agents/COMMIT.md` - commit convention and voice, and `.agents/REVIEW.md` - the reviewer lens law (failure definitions, finding tags, the security lens). Workers and reviewers load both.
 2. This map for the layer you are editing - then its docs entry.
 
 ## Update after editing
@@ -282,6 +282,7 @@ go vet ./...      # no suspicious constructs
 - `docs/migrating-a-module.md` - the module migration recipe (universal mount)
 - `harness/README.md` - extension authoring guide
 - `.agents/COMMIT.md` - commit convention and voice
+- `.agents/REVIEW.md` - the reviewer lens law (the single authority): per-area failure definitions, finding tags, the security lens
 
 ## Style
 
