@@ -15,7 +15,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -152,18 +151,14 @@ func (p *ShellProvider) RunShell(ctx context.Context, args map[string]any) (stri
 		return "", err
 	}
 
-	var cmd *exec.Cmd
+	cmd := shellCommand(ctx, command)
 	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "cmd", "/C", command)
 		// Windows exec carries no process-group kill (the 09828e16
 		// law): the ctx kill takes cmd.exe, but a pipe child (sleep,
 		// a long compiler) outlives it and holds cmd.Wait() past any
 		// cap. WaitDelay closes the pipes a bounded grace after the
 		// shell dies - the cancelled run actually returns.
 		cmd.WaitDelay = 500 * time.Millisecond
-	} else {
-		cmd = exec.CommandContext(ctx, "sh", "-c", command)
-		shellKillSetup(cmd)
 	}
 	// A session-rooted run executes INSIDE its workspace (card
 	// t_9de5b009): relative commands (ls, grep, go test...) operate on

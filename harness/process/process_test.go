@@ -426,3 +426,77 @@ func findByName(entries []Entry, name string) (Entry, bool) {
 	}
 	return Entry{}, false
 }
+
+// The serializer's regression pins (card t_82107785): the exact
+// commands the dev-lane agents burned on, through the same cmd /C
+// door the runtime uses. Before the fix, Go's argv escaping re-wrapped
+// the embedded quotes into \" sequences the child parsed as literal
+// quote characters - PowerShell echoed `-Command` scripts as string
+// literals ($vars eaten with them) instead of running them.
+func TestBuildShellRawCommandLine(t *testing.T) {
+	command := `powershell -NoProfile -Command "$x=5; Write-Output $x"`
+	c := buildShell(command)
+	if runtime.GOOS == "windows" {
+		if c.SysProcAttr == nil || c.SysProcAttr.CmdLine != "cmd /C "+command {
+			t.Fatalf("the shell string must ride a raw command line verbatim, got CmdLine=%q", c.SysProcAttr.CmdLine)
+		}
+		if len(c.Args) != 1 {
+			t.Fatalf("argv must stay empty (nothing to escape), got %v", c.Args)
+		}
+		return
+	}
+	// unix: the argv contract is correct, sh -c takes the command verbatim.
+	if len(c.Args) != 3 || c.Args[0] != "sh" || c.Args[1] != "-c" || c.Args[2] != command {
+		t.Fatalf("unix shell shape drifted: %v", c.Args)
+	}
+}
+
+func TestBuildShellPowerShellQuotedScript(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("the mangling class is a windows cmd /C contract")
+	}
+	cases := []struct{ command, want, never string }{
+		{`powershell -NoProfile -Command "Write-Output hello-from-ps"`, "hello-from-ps", `"Write-Output`},
+		{`powershell -NoProfile -Command "$x=5; Write-Output $x"`, "5", "=5;"},
+	}
+	for _, tc := range cases {
+		c := buildShell(tc.command)
+		c.Dir = t.TempDir()
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: %v\nout: %q", tc.command, err, out)
+		}
+		got := string(out)
+		if !strings.Contains(got, tc.want) {
+			t.Fatalf("%s: the script did not execute (want %q inside output, got %q)", tc.command, tc.want, got)
+		}
+		if strings.Contains(got, tc.never) {
+			t.Fatalf("%s: the mangling class is back (the echoed literal leaked: %q)", tc.command, got)
+		}
+	}
+}
+
+// TestBuildShellChainRedirectTiming pins the `>` chain behavior with
+// its only honest witness: the wall clock. The delay segment must
+// actually run (the pre-fix report claimed the redirect segment died
+// instantly and silently).
+func TestBuildShellChainRedirectTiming(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("ping -n timing is the windows delay idiom")
+	}
+	start := time.Now()
+	c := buildShell("echo chain-done & ping -n 2 127.0.0.1 >nul")
+	c.Dir = t.TempDir()
+	out, err := c.CombinedOutput()
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("chain with redirect: %v\nout: %q", err, out)
+	}
+	if !strings.Contains(string(out), "chain-done") {
+		t.Fatalf("chain segments must all run, got %q", out)
+	}
+	// ping -n 2 waits ~1s; a dead redirect segment would return early.
+	if elapsed < 900*time.Millisecond {
+		t.Fatalf("the delay segment did not actually run (elapsed %v)", elapsed)
+	}
+}
