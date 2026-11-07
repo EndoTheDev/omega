@@ -30,7 +30,9 @@ sentB="JRN-AFFINITY-BETA-${runtag}"
 JRN_A=$(new_journey_session "affa-${runtag}")
 JRN_B=$(new_journey_session "affb-${runtag}")
 JRN_ID="${JRN_B}"   # cleanup deletes jrn-* leftovers by prefix; this pins the fast path
-trap cleanup_journey_sessions EXIT
+# residue-free: the jrn- sessions die in the trap (the residue reaper,
+# card t_a99ffcd7 - the broad sweep also covers crashed-run leftovers)
+trap cleanup_journey_residue EXIT
 step "sessions: ${JRN_A} / ${JRN_B}"
 
 # --- the two concurrent runs: each spawns a delegate child with a

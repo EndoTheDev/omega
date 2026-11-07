@@ -33,7 +33,14 @@
 #
 # Every write-journey creates a throwaway session (id prefix jrn-, label
 # prefix "(journey)") and deletes it on exit; the suite leaves no
-# residue in the live store.
+# residue in the live store. The residue contract (card t_a99ffcd7)
+# extends the same law to every runtime actor a journey touches:
+# board tasks (DELETE, not archive) and roster agent homes
+# ($OMEGA_HOME/agents/jrn-*) are reaped at suite start, at every
+# recipe exit and on every die; wake entries in cronstate.json are
+# the serve's own state - the cron runner's GC sweeps them once the
+# declaring agent home is gone. A journey keeps only its recipe and
+# its result files (this suite's evidence dir).
 #
 # Chrome-death contract (proven live 2026-10-27: 37 orphaned chromes
 # held a Pi 5 at load 10 and red-flaked every suite run):
@@ -403,8 +410,9 @@ green=0
 skipped=0
 failed=""
 
-# pre-clean: a crashed earlier run may have left journey sessions behind
-bash -c ". '$JROOT/lib.sh' && cleanup_journey_sessions" >/dev/null 2>&1 || true
+# pre-clean: a crashed earlier run may have left journey artifacts
+# behind - sessions, board tasks, roster agent homes (card t_a99ffcd7)
+bash -c ". '$JROOT/lib.sh' && cleanup_journey_residue" >/dev/null 2>&1 || true
 
 for recipe in $want; do
   name="$(basename "$recipe" .sh)"
@@ -422,7 +430,7 @@ for recipe in $want; do
   # fd 9 in watchdog sleeps + the resident agent-browser daemon held
   # the lock after a finished run; later suites refused).
   (
-    trap 'cleanup_journey_sessions' EXIT
+    trap 'cleanup_journey_residue' EXIT
     . "$JROOT/lib.sh"
     . "$recipe"
   ) > "$log" 2>&1 9>&- &

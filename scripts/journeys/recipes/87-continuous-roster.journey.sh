@@ -22,13 +22,17 @@
 # Residue-free: the seeded name carries the jrn- prefix and the EXIT
 # trap removes its home folder - ruling 2 makes folder presence the
 # registration, so removing the folder IS the uninstall (the canonical
-# store, crons.yaml and the schedule all live inside it).
+# store, crons.yaml and the schedule all live inside it). The trap
+# rides cleanup_journey_residue (card t_a99ffcd7), not just the
+# captured dir: a die before SEED_DIR lands still reaps the home (the
+# prefix glob), and the cron runner's GC sweeps the wake entry out of
+# cronstate.json once the home is gone.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 runtag=$(date +%d%H%M%S)
 printf '%s' "$runtag" > "${JRN_TAGFILE:-$JOURNEY_WORKTMP/omega-jrn-runtag}"
 CONT_NAME="jrn-${runtag}-roster"
-JRN_ID="$CONT_NAME" # cleanup_journey_sessions' fast path is a no-op; the trap below owns the home
+JRN_ID="$CONT_NAME" # cleanup_journey_residue's fast path is a no-op; the trap below owns the home
 
 # seeded_dir: capture the agent home's absolute dir from the roster row
 # (the lane's OMEGA_HOME is the caller's business) once into globals.
@@ -40,7 +44,7 @@ clean_seeded_agent() {
     esac
   fi
 }
-trap 'clean_seeded_agent; cleanup_journey_sessions' EXIT
+trap 'clean_seeded_agent; cleanup_journey_residue' EXIT
 
 # --- seed: the product's create flow ---
 resp=$(curl -s -X POST "${JOURNEY_BASE_URL}/continuous" \

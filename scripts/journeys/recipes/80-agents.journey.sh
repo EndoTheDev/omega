@@ -63,7 +63,9 @@ JRN_ID="jrn-${runtag}-agents"
 resp=$(curl -s -X POST "${JOURNEY_BASE_URL}/agents/default/sessions" \
        -H 'Content-Type: application/json' -d "{\"id\": \"${JRN_ID}\"}")
 printf '%s' "$resp" | grep -q "$JRN_ID" || die "POST /agents/default/sessions failed: $resp"
-trap cleanup_journey_sessions EXIT
+# residue-free: the jrn- session dies in the trap (the residue reaper,
+# card t_a99ffcd7 - the broad sweep also covers crashed-run leftovers)
+trap cleanup_journey_residue EXIT
 step "ok: created $JRN_ID as the default agent"
 
 # the row carries the binding agent=default
