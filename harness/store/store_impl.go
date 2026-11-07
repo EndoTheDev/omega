@@ -842,10 +842,11 @@ func quoteFTS(term string) string {
 
 // SearchMessages performs a full-text search across all session messages.
 // The term is matched literally (phrase-quoted); returns matching sessions
-// with a snippet of the matching content.
+// with a verbatim snippet of the matching content and the matched-term
+// spans as structured metadata (core.SearchResult.Matches).
 func (s *Store) SearchMessages(ctx context.Context, query string) ([]core.SearchResult, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT session_id, snippet(messages_fts, 1, '[', ']', '...', 20)
+		`SELECT session_id, `+snippetCols("messages_fts", 1)+`
 		 FROM messages_fts WHERE messages_fts MATCH ?
 		 ORDER BY rank`, quoteFTS(query))
 	if err != nil {
@@ -855,12 +856,77 @@ func (s *Store) SearchMessages(ctx context.Context, query string) ([]core.Search
 	var out []core.SearchResult
 	for rows.Next() {
 		var r core.SearchResult
-		if err := rows.Scan(&r.SessionID, &r.Snippet); err != nil {
+		var marked string
+		if err := rows.Scan(&r.SessionID, &marked, &r.Snippet); err != nil {
 			return nil, err
 		}
+		r.Snippet, r.Matches = resolveSnippet(marked, r.Snippet)
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// ftsMatchOpen and ftsMatchClose are the one-byte sentinel pair FTS5
+// snippet() wraps each matched term in. Control bytes, never part of
+// conversation content: the snippet must stay byte-for-byte stored
+// content (t_1901ce48 - the in-band [bracket] era corrupted the
+// verbatim canary checks), so match markers ride a character space
+// disjoint from content and are parsed into spans at read, never
+// shipped inside the string.
+const (
+	ftsMatchOpen  = "\x01"
+	ftsMatchClose = "\x02"
+	// ftsSentinels is both bytes together, for the contains check.
+	ftsSentinels = ftsMatchOpen + ftsMatchClose
+)
+
+// snippetCols builds the SELECT pair for one FTS column: the
+// sentinel-marked snippet and the same window as a plain verbatim
+// excerpt. The plain copy is the ambiguity referee - when the stored
+// content itself carries a sentinel byte inside the window, the marked
+// parse is unreliable and the row ships the plain excerpt with no
+// spans. The empty delimiter/ellipsis args keep both copies in-band
+// clean: no marker characters, no synthetic "...".
+func snippetCols(table string, col int) string {
+	return fmt.Sprintf(
+		"snippet(%s, %d, '%s', '%s', '', 20), snippet(%s, %d, '', '', '', 20)",
+		table, col, ftsMatchOpen, ftsMatchClose, table, col)
+}
+
+// resolveSnippet converts one marked+plain snippet row pair into the
+// verbatim snippet plus the matched-term spans (byte offsets). The
+// plain copy referees: equal strings mean no matched term landed in
+// the window; a sentinel byte inside the plain copy means the stored
+// content itself holds one and the marker parse would be ambiguous, so
+// the plain excerpt ships with no spans (exactness beats metadata).
+func resolveSnippet(marked, plain string) (string, []core.SearchMatch) {
+	if marked == plain {
+		return plain, nil
+	}
+	if strings.ContainsAny(plain, ftsSentinels) {
+		return plain, nil
+	}
+	var sb strings.Builder
+	sb.Grow(len(marked))
+	spans := []core.SearchMatch{}
+	open := -1
+	for i := 0; i < len(marked); i++ {
+		switch c := marked[i]; c {
+		case ftsMatchOpen[0]:
+			open = sb.Len()
+		case ftsMatchClose[0]:
+			if open >= 0 {
+				spans = append(spans, core.SearchMatch{Start: open, End: sb.Len()})
+				// The plain referee above proved the marked string
+				// holds exactly snippet's own balanced markers, so an
+				// open never stays dangling here.
+				open = -1
+			}
+		default:
+			sb.WriteByte(c)
+		}
+	}
+	return sb.String(), spans
 }
 
 // SearchSessions performs the unified search behind /sessions/search:
@@ -911,24 +977,26 @@ func (s *Store) SearchSessions(ctx context.Context, query string) ([]core.Search
 	trows.Close()
 
 	// Summary hits, best rank first. The snippet is the FTS excerpt of
-	// the summary text itself (column index 2).
+	// the summary text itself (column index 2), verbatim with match
+	// spans as metadata.
 	srows, err := s.db.QueryContext(ctx,
-		`SELECT session_id, snippet(sessions_fts, 2, '[', ']', '...', 20)
+		`SELECT session_id, `+snippetCols("sessions_fts", 2)+`
 		 FROM sessions_fts WHERE sessions_fts MATCH ? ORDER BY rank`, summaryScoped)
 	if err != nil {
 		return nil, err
 	}
 	for srows.Next() {
-		var id, snippet string
-		if err := srows.Scan(&id, &snippet); err != nil {
+		var id, snippet, marked string
+		if err := srows.Scan(&id, &marked, &snippet); err != nil {
 			srows.Close()
 			return nil, err
 		}
+		snippet, matchSpans := resolveSnippet(marked, snippet)
 		if seen[id] {
 			continue
 		}
 		seen[id] = true
-		out = append(out, core.SearchResult{SessionID: id, Snippet: snippet, Summary: true})
+		out = append(out, core.SearchResult{SessionID: id, Snippet: snippet, Matches: matchSpans, Summary: true})
 	}
 	if err := srows.Err(); err != nil {
 		srows.Close()
@@ -938,22 +1006,23 @@ func (s *Store) SearchSessions(ctx context.Context, query string) ([]core.Search
 
 	// Content hits, best rank first; label- or summary-matched sessions skip.
 	crows, err := s.db.QueryContext(ctx,
-		`SELECT session_id, snippet(messages_fts, 1, '[', ']', '...', 20)
+		`SELECT session_id, `+snippetCols("messages_fts", 1)+`
 		 FROM messages_fts WHERE messages_fts MATCH ? ORDER BY rank`, fts)
 	if err != nil {
 		return nil, err
 	}
 	defer crows.Close()
 	for crows.Next() {
-		var id, snippet string
-		if err := crows.Scan(&id, &snippet); err != nil {
+		var id, snippet, marked string
+		if err := crows.Scan(&id, &marked, &snippet); err != nil {
 			return nil, err
 		}
+		snippet, matchSpans := resolveSnippet(marked, snippet)
 		if seen[id] {
 			continue
 		}
 		seen[id] = true
-		out = append(out, core.SearchResult{SessionID: id, Snippet: snippet})
+		out = append(out, core.SearchResult{SessionID: id, Snippet: snippet, Matches: matchSpans})
 	}
 	return out, crows.Err()
 }
