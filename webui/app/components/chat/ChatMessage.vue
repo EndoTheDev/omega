@@ -69,8 +69,8 @@
         <button
           class="msg-copy"
           type="button"
-          :title="copied ? 'copied' : 'copy message'"
-          @click.stop="copyMessage">{{ copied ? "copied" : "copy" }}</button>
+          :title="copyFailed ? 'copy failed' : copied ? 'copied' : 'copy message'"
+          @click.stop="copyMessage">{{ copyFailed ? "failed" : copied ? "copied" : "copy" }}</button>
         <!-- retry affordance (t_95d2bc34): THE NEWEST assistant response
              carries it, and only when the run is idle (the owner passes
              the signal - this component does not know the transcript).
@@ -95,6 +95,8 @@
   import { computed, inject, nextTick, onUnmounted, ref, watch } from "vue";
 
   import { decorateCodeblocks } from "../../composables/codeblocks";
+  // card t_a92450ea: the ONE copy path - insecure-context-proof
+  import { copyText } from "../../composables/clipboard";
   import VariantSwitcher from "./VariantSwitcher.vue";
   import ReferencePill from "./ReferencePill.vue";
   import {
@@ -214,9 +216,20 @@
   // already handles its own raw source). Same 1.2s copied affordance as
   // the codeblock header button.
   const copied = ref(false);
+  const copyFailed = ref(false);
   let copyTimer: number | undefined;
-  function copyMessage() {
-    void navigator.clipboard.writeText(props.content);
+  async function copyMessage() {
+    // card t_a92450ea: the ONE copy path - the affordance reflects the
+    // real verdict, never a voided rejection.
+    const raw = await copyText(props.content);
+    if (!raw) {
+      copyFailed.value = true;
+      window.clearTimeout(copyTimer);
+      copyTimer = window.setTimeout(() => {
+        copyFailed.value = false;
+      }, 1200);
+      return;
+    }
     copied.value = true;
     window.clearTimeout(copyTimer);
     copyTimer = window.setTimeout(() => {
