@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sync"
 
 	"golang.org/x/sys/unix"
 )
@@ -107,11 +108,94 @@ type ptyProcess struct {
 	cmd    *exec.Cmd
 	done   chan struct{}
 	code   int
+
+	// The master close handshake (card t_5dba57a3): the session loops
+	// park in Read/Write on the master for the shell's whole life, and
+	// the kill path must never yank the fd out from under a parked op.
+	// On a pollable master (the normal /dev/ptmx) os.File's fdmu makes
+	// a concurrent Close race-clean today, but the fd is then loose in
+	// the open/close table while the syscall is still parked on it, and
+	// a master the runtime could NOT put in the poller (a blocking fd)
+	// turns the same close into the classic fd-reuse race: the parked
+	// read can come back with another file's bytes. So the close is
+	// owned, never raced: an op announces itself under mu before it
+	// touches the master and settles after; closeMaster marks the
+	// close and performs it only when the count is zero, otherwise the
+	// LAST op out closes the master itself. Kill still breaks a parked
+	// read the way it always did - the SIGKILL to the child's group
+	// hangs the pty up, the read returns EIO at once - so the deferred
+	// close lands on the parked op's heels, never under it.
+	mu       sync.Mutex
+	closed   bool
+	inFlight int
 }
 
-func (p *ptyProcess) Read(b []byte) (int, error)  { return p.master.Read(b) }
-func (p *ptyProcess) Write(b []byte) (int, error) { return p.master.Write(b) }
-func (p *ptyProcess) Close() error                { return p.master.Close() }
+// enter announces one op about to touch the master; false = closed.
+func (p *ptyProcess) enter() bool {
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return false
+	}
+	p.inFlight++
+	p.mu.Unlock()
+	return true
+}
+
+// leave settles one op; the last op out after a close request owns
+// the master's close.
+func (p *ptyProcess) leave() {
+	p.mu.Lock()
+	p.inFlight--
+	own := p.closed && p.inFlight == 0
+	p.mu.Unlock()
+	if own {
+		_ = p.master.Close()
+	}
+}
+
+func (p *ptyProcess) Read(b []byte) (int, error) {
+	if !p.enter() {
+		return 0, os.ErrClosed
+	}
+	defer p.leave()
+	return p.master.Read(b)
+}
+
+func (p *ptyProcess) Write(b []byte) (int, error) {
+	if !p.enter() {
+		return 0, os.ErrClosed
+	}
+	defer p.leave()
+	return p.master.Write(b)
+}
+
+// Close hands the master its close without ever overlapping a parked
+// op: idle closes now, else the last op out owns it. Idempotent.
+func (p *ptyProcess) Close() error {
+	return p.closeMaster()
+}
+
+// closeMaster marks the close and performs it only when no op is
+// parked on the master; a parked op (woken by the child's death)
+// finishes the close on its way out. The one lingering shape: a
+// descendant that escaped the child's process group and still holds
+// the slave keeps a parked read up (Linux's own pty semantics - the
+// session is gone either way); the close lands when it exits.
+func (p *ptyProcess) closeMaster() error {
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return nil
+	}
+	p.closed = true
+	idle := p.inFlight == 0
+	p.mu.Unlock()
+	if idle {
+		return p.master.Close()
+	}
+	return nil
+}
 
 // Done runs the watcher: reap the child, then close the done fence.
 // The session's watchLoop owns the exit broadcast, so the exit code
@@ -136,8 +220,11 @@ func (p *ptyProcess) Done() <-chan struct{} {
 }
 
 // Kill signals the child's process group (the child leads its own
-// session, so -pid is the whole tree) and closes the master, which
-// hangs the slave up.
+// session, so -pid is the whole tree) and hands the master its close.
+// The group's death hangs the pty up, so a parked read returns EIO at
+// once and the deferred close (if any) lands on its heels - the door
+// semantics stand: the reap rides Done's watcher, the exit watcher
+// fires.
 func (p *ptyProcess) Kill() error {
 	if p.cmd.Process == nil {
 		return nil
@@ -145,7 +232,7 @@ func (p *ptyProcess) Kill() error {
 	if err := unix.Kill(-p.cmd.Process.Pid, unix.SIGKILL); err != nil {
 		_ = p.cmd.Process.Kill()
 	}
-	return p.master.Close()
+	return p.closeMaster()
 }
 
 func (p *ptyProcess) ExitCode() int { return p.code }

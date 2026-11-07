@@ -38,13 +38,18 @@ type fakeProc struct {
 	closed  bool
 	code    int
 	kills   int
-	// readsInFlight announces a live Read: windows must never close
-	// an os.File behind a pending pipe Read (the Close waits in
-	// CancelIoEx/decref behind the interrupted op and hung a full
-	// suite run to the 10m alarm), so Kill closes the write end to
-	// break the reader and waits out the announced read before
-	// touching the read handle.
-	readsInFlight sync.WaitGroup
+	// inFlight counts ops announced on the pipes under mu - the read
+	// close handshake, the fake's mirror of ptyProcess.closeMaster. The
+	// FIRST shape here announced reads in a WaitGroup and Kill waited
+	// it out before closing the read handle; that was the linux -race
+	// red this card is about (the WaitGroup law: a positive Add at
+	// counter zero must happen BEFORE the Wait, and the readLoop's Add
+	// had no happens-before edge to Kill's Wait - the detector pairs
+	// Add's first-increment read of wg.sema against Wait's first-waiter
+	// write). The owned close has no announce/wait pair at all: the
+	// closer and the parked reader are ordered by the counter under
+	// mu, never by a WaitGroup.
+	inFlight int
 }
 
 func newFakeProc() *fakeProc {
@@ -55,22 +60,44 @@ func newFakeProc() *fakeProc {
 	return &fakeProc{read: r, write: w, done: make(chan struct{})}
 }
 
+// enter announces one op about to touch the pipes; false = closed.
+func (f *fakeProc) enter() bool {
+	f.mu.Lock()
+	if f.closed {
+		f.mu.Unlock()
+		return false
+	}
+	f.inFlight++
+	f.mu.Unlock()
+	return true
+}
+
+// leave settles one op; the last op out after a close request owns
+// the read handle's close.
+func (f *fakeProc) leave() {
+	f.mu.Lock()
+	f.inFlight--
+	own := f.closed && f.inFlight == 0
+	f.mu.Unlock()
+	if own {
+		_ = f.read.Close()
+	}
+}
+
 func (f *fakeProc) Read(b []byte) (int, error) {
-	f.readsInFlight.Add(1)
-	defer f.readsInFlight.Done()
+	if !f.enter() {
+		return 0, os.ErrClosed
+	}
+	defer f.leave()
 	return f.read.Read(b)
 }
-func (f *fakeProc) Write(b []byte) (int, error) { return f.write.Write(b) }
-func (f *fakeProc) Close() error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.closed {
-		return nil
+
+func (f *fakeProc) Write(b []byte) (int, error) {
+	if !f.enter() {
+		return 0, os.ErrClosed
 	}
-	f.closed = true
-	f.read.Close()
-	f.write.Close()
-	return nil
+	defer f.leave()
+	return f.write.Write(b)
 }
 
 func (f *fakeProc) Resize(rows, cols uint16) error {
@@ -82,31 +109,49 @@ func (f *fakeProc) Resize(rows, cols uint16) error {
 
 func (f *fakeProc) Done() <-chan struct{} { return f.done }
 
-// Kill takes the shell down with the REAL pty shape (pty_linux.go:145
-// closes the master inside Kill): the pipes close here, so an
-// outstanding readLoop Read breaks out BEFORE remove()'s Close. The
-// reap order is load-bearing on windows: write-first close breaks the
-// pending Read (eof/broken pipe), the in-flight read is waited out,
-// and only then does the read handle close - closing an os.File
-// behind a still-pending pipe Read hung a full-suite run there to
-// the 10m alarm (posix close-unblocks-reader; windows does not).
+// Kill takes the shell down with the REAL pty shape (pty_linux.go:
+// Kill routes the master's close through the handshake): the write
+// end closes now - its EOF is what breaks the parked read, so the
+// read handle NEVER closes behind a pending read (posix
+// close-unblocks-reader; windows does not - closing an os.File behind
+// a still-pending pipe Read hung a full-suite run there to the 10m
+// alarm). The read end closes now only when no op is parked on it,
+// else the last op out closes it on its way home.
 func (f *fakeProc) Kill() error {
 	f.kills++
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	select {
 	case <-f.done:
 	default:
 		f.code = -1
 		close(f.done)
 	}
-	if !f.closed {
-		f.closed = true
-		f.write.Close()
-		f.readsInFlight.Wait() // the announced Read leaves before its handle does
-		f.read.Close()
-	}
+	f.mu.Unlock()
+	f.closePipes()
 	return nil
+}
+
+func (f *fakeProc) Close() error {
+	f.closePipes()
+	return nil
+}
+
+// closePipes retires the pipe pair: the write end now, the read end
+// through the handshake (idle closes now, else the last op out owns
+// it). Idempotent.
+func (f *fakeProc) closePipes() {
+	f.mu.Lock()
+	if f.closed {
+		f.mu.Unlock()
+		return
+	}
+	f.closed = true
+	idle := f.inFlight == 0
+	f.mu.Unlock()
+	_ = f.write.Close() // now: the EOF that breaks a parked read
+	if idle {
+		_ = f.read.Close()
+	}
 }
 
 func (f *fakeProc) ExitCode() int { return f.code }
@@ -400,6 +445,44 @@ func TestStopIsIdempotent(t *testing.T) {
 	}
 	if err := st.Stop(); err != nil {
 		t.Fatalf("second stop: %v", err)
+	}
+}
+
+// TestKillHandshakeOwnsTheClose is the race pin (card t_5dba57a3):
+// the kill path (Session.remove -> Kill) and a parked readLoop must
+// retire the read handle through the close handshake, never an
+// announce/wait pair or a bare close under the parked read. This is
+// the exact shape that reded the linux -race suite: the report frames
+// named Session.remove's Kill call and readLoop's Read call, and the
+// racing memory was the WaitGroup the fake used to sequence them (the
+// WaitGroup law: a positive Add at counter zero must happen BEFORE the
+// Wait - the readLoop's Add had no happens-before edge to Kill's
+// Wait). Under -race this pin reds if the handshake regresses to that
+// shape; without -race it pins the post-kill contract regardless of
+// build.
+func TestKillHandshakeOwnsTheClose(t *testing.T) {
+	st, procs := newTestStore(t, nil)
+	s, _, err := st.Claim()
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond) // the readLoop parks on the read pipe
+	if !st.Drop(s.id) {
+		t.Fatal("drop: the session was unknown")
+	}
+	f := procs()[0]
+	if f.kills != 1 {
+		t.Fatalf("kill count: %d, want 1", f.kills)
+	}
+	// the handshake marked the door: a later op refuses at the threshold
+	if _, err := f.Read(make([]byte, 8)); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("post-kill read: %v, want os.ErrClosed", err)
+	}
+	// the exit fence still fires (the watchLoop's broadcast)
+	select {
+	case <-f.done:
+	default:
+		t.Fatal("the exit fence never fired")
 	}
 }
 
