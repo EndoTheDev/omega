@@ -166,7 +166,7 @@ test("pickBootBoard: current flagged row wins, first row is the fallback", () =>
 test("board view wires the switcher through every board call", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
   assert.match(boardVue, /<BandSelect/, "the switcher rides the shared themed listbox (card t_acad02ec)");
-  assert.match(boardVue, /fetch\(withBoard\("\/tasks", boardName\.value\)\)/, "list calls carry ?board=");
+  assert.match(boardVue, /fetch\(withBoard\("\/tasks\?status=all", boardName\.value\)\)/, "list calls carry ?board= (status=all: the board grid must see the archived column)");
   assert.match(boardVue, /fetchBoards\(\)/, "boot reads the registry");
   assert.match(boardVue, /selected\.value = null/, "the drawer resets on board switch");
   // every task fetch goes through withBoard - no raw /task path left behind

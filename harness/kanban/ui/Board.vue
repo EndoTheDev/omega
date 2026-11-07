@@ -376,7 +376,10 @@
   async function fetchBoard() {
     if (drag.value && drag.value.moved) return; // a live drag owns the list
     try {
-      const res = await fetch(withBoard("/tasks", boardName.value));
+      // status=all: the board grid carries the archived column (folded
+      // settled column), so it can never default to the active-only
+      // view the list tool shows (t_02a8beea)
+      const res = await fetch(withBoard("/tasks?status=all", boardName.value));
       if (!res.ok) throw new Error(`GET /tasks: ${res.status}`);
       const body = await res.json();
       tasks.value = body.tasks ?? [];

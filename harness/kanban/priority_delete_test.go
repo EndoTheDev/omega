@@ -210,7 +210,7 @@ func TestRestPriorityAndDelete(t *testing.T) {
 	}
 
 	// the tool rides the same store: delete on a missing id answers the error
-	if _, err := p.tools.runTaskOp(context.Background(), map[string]any{
+	if _, _, err := p.tools.runTaskOp(context.Background(), p.tools.board, map[string]any{
 		"action": "delete", "id": "nope-missing",
 	}); err == nil {
 		t.Fatal("tool delete on missing id accepted")
