@@ -20,7 +20,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -624,13 +623,11 @@ func exitCodeOf(err error) int {
 	return -1
 }
 
-// buildShell builds the detached shell command. Same shells as
-// shell.run: cmd /C on windows, sh -c elsewhere.
+// buildShell builds the detached shell command: cmd /C on windows,
+// sh -c elsewhere - the same shells shell.run uses (the serializer
+// lives in the GOOS-tagged shell_windows.go / shell_unix.go).
 func buildShell(command string) *exec.Cmd {
-	if runtime.GOOS == "windows" {
-		return exec.Command("cmd", "/C", command)
-	}
-	return exec.Command("sh", "-c", command)
+	return shellCommand(command)
 }
 
 // waitForDeath polls pid liveness until it drops or the budget ends.

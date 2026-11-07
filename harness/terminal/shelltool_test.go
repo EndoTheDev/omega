@@ -191,3 +191,57 @@ func TestGuardedShellAllowNormal(t *testing.T) {
 		t.Errorf("nil-guard RunShell: %v (got %q)", err, out)
 	}
 }
+
+// The serializer's regression pins (card t_82107785): the exact
+// commands the dev-lane agents burned on, driven through shell.run -
+// the door the agent-facing symptoms reported through. Before the
+// fix, Go's argv escaping re-wrapped the embedded quotes into \"
+// sequences the child parsed as literal quote characters: PowerShell
+// echoed `-Command` scripts as string literals ($vars eaten with
+// them) instead of running them.
+func TestRunShellQuotedPowerShell(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("the mangling class is a windows cmd /C contract")
+	}
+	p := &ShellProvider{}
+	ctx := context.Background()
+	cases := []struct{ command, want, never string }{
+		{`powershell -NoProfile -Command "Write-Output hello-from-ps"`, "hello-from-ps", `"Write-Output`},
+		{`powershell -NoProfile -Command "$x=5; Write-Output $x"`, "5", "=5;"},
+	}
+	for _, tc := range cases {
+		out, err := p.RunShell(ctx, map[string]any{"command": tc.command})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.command, err)
+		}
+		if !strings.Contains(out, tc.want) {
+			t.Fatalf("%s: the script did not execute (want %q inside output, got %q)", tc.command, tc.want, out)
+		}
+		if strings.Contains(out, tc.never) {
+			t.Fatalf("%s: the mangling class is back (the echoed literal leaked: %q)", tc.command, out)
+		}
+	}
+}
+
+// TestRunShellChainRedirectTiming pins the `>` chain behavior with its
+// only honest witness: the wall clock (visible output is identical
+// whether the chain ran or died - the report's own repro demand).
+func TestRunShellChainRedirectTiming(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("ping -n timing is the windows delay idiom")
+	}
+	p := &ShellProvider{}
+	start := time.Now()
+	out, err := p.RunShell(context.Background(), map[string]any{"command": "echo chain-done & ping -n 2 127.0.0.1 >nul"})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("chain with redirect: %v\nout: %q", err, out)
+	}
+	if !strings.Contains(out, "chain-done") {
+		t.Fatalf("chain segments must all run, got %q", out)
+	}
+	// ping -n 2 waits ~1s; a dead redirect segment would return early.
+	if elapsed < 900*time.Millisecond {
+		t.Fatalf("the delay segment did not actually run (elapsed %v)", elapsed)
+	}
+}
