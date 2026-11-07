@@ -2133,6 +2133,14 @@ labels stopped short of the right edge. */
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
+
+/* the trailing-newline sentinel (card t_eb07b315): the composer caps its
+   DOM with one trailing <br> whenever the draft ends in a newline
+   (AppComposer's capTail) - Chromium hangs a block-final newline in
+   pre-wrap (no line box, the caret stays glued to the old line) and the
+   sentinel is the draft-safe rendering device: it forces the line box
+   and gives the caret its seat on the new line, while the draft reader
+   and the caret arithmetic ignore it (a non-chip element weighs zero). */
 /* the placeholder: the contenteditable's :empty ::before ("message
    omega") - the browser's emptied-editor <br> artifact is swept by the
    composer's input path so :empty really is empty */
