@@ -133,6 +133,48 @@ func TestTasksEndpointsLifecycle(t *testing.T) {
 	_ = p
 }
 
+// TestTasksListArchivedByDefaultHidden (t_02a8beea A2): the REST list
+// carries the store's new default - archived rows hide from the empty
+// filter, an explicit ?status=archived lists the archive, ?status=all
+// lists everything.
+func TestTasksListArchivedByDefaultHidden(t *testing.T) {
+	_, ctx, _ := mountPlugin(t)
+	ts := serveRoutes(t, ctx)
+
+	for _, status := range []string{"triage", "archived"} {
+		res, err := http.Post(ts.URL+"/tasks", "application/json",
+			strings.NewReader(fmt.Sprintf(`{"title":"row %s","status":"%s"}`, status, status)))
+		if err != nil || res.StatusCode != http.StatusCreated {
+			t.Fatalf("post %s = %v %d", status, err, res.StatusCode)
+		}
+		res.Body.Close()
+	}
+
+	// count rows through the REST filter
+	list := func(q string) []KanbanTask {
+		res, _ := http.Get(ts.URL + "/tasks" + q)
+		var got struct {
+			Tasks []KanbanTask `json:"tasks"`
+		}
+		json.NewDecoder(res.Body).Decode(&got)
+		res.Body.Close()
+		return got.Tasks
+	}
+
+	defaults := list("")
+	if len(defaults) != 1 || defaults[0].Status != "triage" {
+		t.Fatalf("default list = %+v, archived must hide", defaults)
+	}
+	arch := list("?status=archived")
+	if len(arch) != 1 || arch[0].Status != "archived" {
+		t.Fatalf("archived view = %+v", arch)
+	}
+	every := list("?status=all")
+	if len(every) != 2 {
+		t.Fatalf("all view = %+v", every)
+	}
+}
+
 func TestTasksIllegalStatusFiltered400(t *testing.T) {
 	_, ctx, _ := mountPlugin(t)
 	ts := serveRoutes(t, ctx)
