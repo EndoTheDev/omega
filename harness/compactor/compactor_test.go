@@ -2,10 +2,11 @@ package compactor
 
 import (
 	"context"
+	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Compile-time interface checks.
@@ -86,6 +87,103 @@ func TestCompactSummarizes(t *testing.T) {
 	want := "[compacted: " + summary + "]"
 	if sys.Content != want {
 		t.Fatalf("expected %q, got %q", want, sys.Content)
+	}
+}
+
+// TestSummarizeDoctrinePrompt pins the billion-context KEEP/DROP doctrine
+// (card t_5e39d5ca) as the prompt the summarizer actually receives. The
+// doctrine is the deliverable - the controlled evidence credited it with
+// ~62% of the re-fetch reduction - so a rewrite that silently drops a
+// KEEP/DROP class or leaks the fill percentage must go red HERE, not in
+// production summaries. It pins the prompt shape handed to the provider;
+// the model output is irrelevant to this test.
+func TestSummarizeDoctrinePrompt(t *testing.T) {
+	provider := agent.NewFakeProvider("test",
+		core.ResponseChunk{Type: "response_chunk", Content: "folded."},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
+	c := &Compactor{
+		provider: provider,
+		config: agent.CompactionConfig{
+			Enabled:       true,
+			Threshold:     0.6,
+			ContextWindow: 10,
+			KeepFirst:     1,
+			KeepLast:      1,
+			ReserveTokens: 1,
+		},
+	}
+	msgs := []core.Message{
+		core.NewUser("first message long enough to exceed tiny budget"),
+		core.NewUser("middle alpha"),
+		core.NewUser("middle beta"),
+		core.NewUser("last message also long enough"),
+	}
+	if _, err := c.Compact(context.Background(), msgs); err != nil {
+		t.Fatal(err)
+	}
+
+	// summarize() sends the provider exactly one user message: the
+	// doctrine header, then the folded middle as tagged lines. The
+	// empty Model slot keeps ResolveModelSlot on the original fake, so
+	// LastMessages is the recording of what the summarizer received.
+	if len(provider.LastMessages) != 1 {
+		t.Fatalf("expected 1 message to the summarizer, got %d", len(provider.LastMessages))
+	}
+	user, ok := provider.LastMessages[0].(core.User)
+	if !ok {
+		t.Fatalf("expected user message to the summarizer, got %T", provider.LastMessages[0])
+	}
+	prompt := user.Content
+
+	idx := strings.Index(prompt, "- [user]")
+	if idx < 0 {
+		t.Fatalf("prompt carries no folded message lines: %q", prompt)
+	}
+	header := prompt[:idx]
+
+	// Every KEEP class and every DROP class of the doctrine.
+	for _, want := range []string{
+		"Summarize the conversation below for a context fold",
+		"the only thing that survives the fold",
+		"KEEP VERBATIM:",
+		"file paths with line numbers",
+		"signatures and load-bearing code lines",
+		"exact error strings",
+		"decisions WITH their rationale",
+		"exact values (names, ids, versions, flags)",
+		"references to earlier turns by their position",
+		"DROP:",
+		"verbose tool output once its result is captured",
+		"duplicate reads of the same content",
+		"dead-end exploration",
+		"LESSON of the dead end",
+		"STRUCTURE:",
+		"order the summary to match the conversation's chronology",
+		"output only the summary",
+	} {
+		if !strings.Contains(header, want) {
+			t.Errorf("doctrine prompt lost %q\nheader:\n%s", want, header)
+		}
+	}
+
+	// The no-fill-percentage rule: the prompt must never disclose how
+	// full the context window is - a model told it is only part-way
+	// full refuses to compress.
+	if strings.ContainsRune(header, '%') {
+		t.Errorf("doctrine prompt discloses a percentage\nheader:\n%s", header)
+	}
+	for _, banned := range []string{"fill", "context window", "tokens used"} {
+		if strings.Contains(strings.ToLower(header), banned) {
+			t.Errorf("doctrine prompt mentions %q\nheader:\n%s", banned, header)
+		}
+	}
+
+	// The folded middle rides along as tagged lines after the header.
+	for _, want := range []string{"- [user] middle alpha", "- [user] middle beta"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt lost folded line %q\nprompt:\n%s", want, prompt)
+		}
 	}
 }
 
