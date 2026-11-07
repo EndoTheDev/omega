@@ -28,6 +28,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/agent/loop"
@@ -120,9 +121,62 @@ func TestChatNoStoreRootsToolsAtDefaultWorkspace(t *testing.T) {
 	assertRanIn(t, res, ws, "no-store")
 }
 
+// chatYieldToolResult posts /chat with the given body and waits for the
+// shell.run call's result to land in the session store (async agent
+// loop phase 2, card t_0805d438 - shell.run is yield-class: the result
+// re-enters through the wake, so it persists as a YieldResult row, not
+// a tool_result frame of the caller's run).
+func chatYieldToolResult(t *testing.T, s *Server, st *store.Store, body []byte, dir string) core.YieldResult {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/chat", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		msgs, err := st.GetMessages(context.Background(), sessionIDFromBody(body))
+		if err == nil {
+			for _, m := range msgs {
+				if y, ok := m.(core.YieldResult); ok && y.ToolCallID == "c1" &&
+					strings.Contains(strings.ToLower(y.Content), strings.ToLower(dir)) {
+					return y
+				}
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("shell.run's re-entry never landed in the store (want its output rooted in %q)", dir)
+	return core.YieldResult{}
+}
+
+// sessionIDFromBody extracts the request's session_id (the tests own
+// the body shape).
+func sessionIDFromBody(body []byte) string {
+	var wire map[string]any
+	if err := json.Unmarshal(body, &wire); err != nil {
+		return ""
+	}
+	sid, _ := wire["session_id"].(string)
+	return sid
+}
+
+func assertRanInYield(t *testing.T, res core.YieldResult, dir string, label string) {
+	t.Helper()
+	if res.IsError {
+		t.Fatalf("%s: shell.run errored: %q", label, res.Content)
+	}
+	if !strings.Contains(strings.ToLower(res.Content), strings.ToLower(dir)) {
+		t.Fatalf("%s: shell.run ran outside %q: %q", label, dir, res.Content)
+	}
+}
+
 // TestChatStoredSessionRootsToolsAtDefaultWorkspace: a session row with
 // no pinned workspace takes the knob fallback through prepareRun
-// (server.go's sess.Workspace -> defaultWorkspace chain).
+// (server.go's sess.Workspace -> defaultWorkspace chain). The shell
+// call is yield-class (card t_0805d438): its result re-enters through
+// the wake and lands in the session as a YieldResult row.
 func TestChatStoredSessionRootsToolsAtDefaultWorkspace(t *testing.T) {
 	s, _, _ := newShellServer(t)
 	memStore, err := store.Open(":memory:")
@@ -147,8 +201,8 @@ func TestChatStoredSessionRootsToolsAtDefaultWorkspace(t *testing.T) {
 		"session_id": "s1",
 		"messages":   []map[string]any{{"role": "user", "content": "probe the cwd"}},
 	})
-	res := chatToolResults(t, s, body)[0]
-	assertRanIn(t, res, ws, "stored session")
+	res := chatYieldToolResult(t, s, memStore, body, ws)
+	assertRanInYield(t, res, ws, "stored session")
 }
 
 // TestChatPinnedWorkspaceWinsOverDefault: a session pinned to a folder
@@ -180,6 +234,6 @@ func TestChatPinnedWorkspaceWinsOverDefault(t *testing.T) {
 		"session_id": "s2",
 		"messages":   []map[string]any{{"role": "user", "content": "probe the cwd"}},
 	})
-	res := chatToolResults(t, s, body)[0]
-	assertRanIn(t, res, pin, "pinned session")
+	res := chatYieldToolResult(t, s, memStore, body, pin)
+	assertRanInYield(t, res, pin, "pinned session")
 }

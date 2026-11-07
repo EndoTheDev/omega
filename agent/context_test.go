@@ -3,9 +3,7 @@ package agent
 import (
 	"context"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -23,42 +21,6 @@ func (s *stubPromptBuilder) BuildPrompt(_ context.Context, _ core.PromptBuildOpt
 }
 
 func (s *stubPromptBuilder) Guidelines() []string { return s.guidelines }
-
-// stubStream satisfies core.InjectedStream for the wiring tests: it
-// queues everything under one key and answers Poll/Wait from that
-// key only.
-type stubStream struct {
-	mu   sync.Mutex
-	pend map[string][]core.InjectedMessage
-}
-
-func newStubStream(items ...core.InjectedMessage) *stubStream {
-	s := &stubStream{pend: map[string][]core.InjectedMessage{}}
-	s.pend[""] = append([]core.InjectedMessage(nil), items...)
-	return s
-}
-
-func (s *stubStream) Poll(affinity string) []core.InjectedMessage {
-	s.mu.Lock()
-	msgs := s.pend[affinity]
-	delete(s.pend, affinity)
-	s.mu.Unlock()
-	return msgs
-}
-
-func (s *stubStream) Wait(ctx context.Context, affinity string) (core.InjectedMessage, bool) {
-	for {
-		msgs := s.Poll(affinity)
-		if len(msgs) > 0 {
-			return msgs[0], true
-		}
-		select {
-		case <-time.After(5 * time.Millisecond):
-		case <-ctx.Done():
-			return core.InjectedMessage{}, false
-		}
-	}
-}
 
 // stubLogger satisfies LoggerProvider for testing. It records calls so
 // tests can assert the logger was wired through.
@@ -89,8 +51,6 @@ func TestNewFromContextFull(t *testing.T) {
 		Run:         func(_ context.Context, _ map[string]any) (string, error) { return "alpha-ok", nil },
 	}}}
 	infos := []core.ExtensionInfo{{Name: "ext-a", Tools: 1}}
-	injected := newStubStream(core.InjectedMessage{Text: "queued", Source: "test"})
-	pending := func(affinity string) int { return 3 }
 
 	ctx := &Context{}
 	ctx.ApplyOffer("provider", "test", prov)
@@ -100,8 +60,6 @@ func TestNewFromContextFull(t *testing.T) {
 	ctx.ApplyOffer("logger", "test", logger)
 	ctx.ToolProviders = []core.ToolProvider{tp}
 	ctx.Infos = infos
-	ctx.InjectedMessages = injected
-	ctx.PendingDelegations = pending
 
 	opts := AgentOptions{
 		MaxTurns:      5,
@@ -174,17 +132,7 @@ func TestNewFromContextFull(t *testing.T) {
 	// does not panic when logger is set (the test loop ignores it, but
 	// the field must be non-nil to prove wiring). We confirm via a fresh
 	// run that completes without error.
-	_ = logger // non-nil logger was set on ctx and thus on ag
-
-	// PendingDelegations wired — verify via a fresh context where the
-	// pending func is distinguishable; the agent stores it for the loop.
-	pendingCalled := false
-	ctx2 := &Context{PendingDelegations: func(affinity string) int { pendingCalled = true; return 7 }}
-	ctx2.ApplyOffer("provider", "test", prov)
-	ctx2.ApplyOffer("loop", "test", testLoop{})
-	ag3 := NewFromContext(ctx2, opts)
-	_ = ag3 // pendingDeleg is internal; the nil-safety test covers the path.
-	_ = pendingCalled
+	_ = logger
 }
 
 // TestNewFromContextMinimal verifies that NewFromContext with an empty
@@ -206,12 +154,12 @@ func TestNewFromContextMinimal(t *testing.T) {
 	}
 }
 
-// TestNewFromContextNilOptional verifies that NewFromContext does not
-// panic when Compactor, InjectedMessages, and PendingDelegations are nil
-// — the function has nil checks for these three before calling Set*.
+// TestNewFromContextNilOptional verifies that NewFromContext with an
+// empty Context and zero-value AgentOptions creates an Agent without
+// panicking.
 func TestNewFromContextNilOptional(t *testing.T) {
 	prov := &stubProvider{name: "nil-optional"}
-	ctx := &Context{} // InjectedMessages and PendingDelegations left nil.
+	ctx := &Context{}
 	ctx.ApplyOffer("provider", "test", prov)
 	ctx.ApplyOffer("loop", "test", testLoop{})
 	ag := NewFromContext(ctx, AgentOptions{})

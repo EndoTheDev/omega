@@ -37,10 +37,6 @@ type CensusSnapshot struct {
 	// a double-registered additive surface.
 	Panels []string
 
-	// Delegation pipe surfaces (nil or mounted).
-	InjectedMessages   bool
-	PendingDelegations bool
-
 	// Routes are the registered module REST route patterns, in
 	// registration order - the module surface the serving channels
 	// re-read live (E2). Sort-stable like Panels.
@@ -117,8 +113,6 @@ func Census(ctx *Context) CensusSnapshot {
 		}
 	}
 	slices.Sort(s.Panels)
-	s.InjectedMessages = ctx.InjectedMessages != nil
-	s.PendingDelegations = ctx.PendingDelegations != nil
 	if ctx.Lifecycle != nil {
 		for _, h := range ctx.Lifecycle.Snapshot() {
 			marker := "off"
@@ -142,8 +136,6 @@ func (s CensusSnapshot) Equal(o CensusSnapshot) bool {
 		s.PromptSectioners == o.PromptSectioners &&
 		s.PanelProviders == o.PanelProviders &&
 		slices.Equal(s.Panels, o.Panels) &&
-		s.InjectedMessages == o.InjectedMessages &&
-		s.PendingDelegations == o.PendingDelegations &&
 		slices.Equal(s.Handles, o.Handles)
 }
 
@@ -185,12 +177,6 @@ func (s CensusSnapshot) Diff(o CensusSnapshot) []string {
 	}
 	if s.PanelProviders != o.PanelProviders {
 		out = append(out, "panel_providers")
-	}
-	if s.InjectedMessages != o.InjectedMessages {
-		out = append(out, "injected_messages")
-	}
-	if s.PendingDelegations != o.PendingDelegations {
-		out = append(out, "pending_delegations")
 	}
 	return out
 }

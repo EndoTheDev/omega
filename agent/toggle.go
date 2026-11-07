@@ -315,12 +315,6 @@ func censusGrew(before, after core.CensusSnapshot) []string {
 	if after.PanelProviders > before.PanelProviders {
 		out = append(out, "panel_providers")
 	}
-	if after.InjectedMessages && !before.InjectedMessages {
-		out = append(out, "injected_messages")
-	}
-	if after.PendingDelegations && !before.PendingDelegations {
-		out = append(out, "pending_delegations")
-	}
 	sort.Strings(out)
 	return out
 }
@@ -346,12 +340,6 @@ func censusShrank(before, after core.CensusSnapshot) []string {
 	}
 	if after.PanelProviders < before.PanelProviders {
 		out = append(out, "panel_providers")
-	}
-	if !after.InjectedMessages && before.InjectedMessages {
-		out = append(out, "injected_messages")
-	}
-	if !after.PendingDelegations && before.PendingDelegations {
-		out = append(out, "pending_delegations")
 	}
 	sort.Strings(out)
 	return out

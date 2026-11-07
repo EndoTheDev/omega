@@ -45,10 +45,11 @@ func TestRunDelegateTaskMissingBinary(t *testing.T) {
 	}
 }
 
-// TestRunDelegateTaskExplicitBinary verifies the full spawn path with
-// OMEGA_BIN pointing at a stub that echoes output and exits 0. The
-// subagent=1 assertion pins the recursion guard: the host must set
-// OMEGA_SUBAGENT=1 on the child environment.
+// TestRunDelegateTaskExplicitBinary verifies the full spawn path: the
+// task's tool RESULT is the child's own final answer (async agent loop
+// phase 2, card t_0805d438) - the call returns what omega run printed,
+// and the user-shaped inject is gone. The subagent=1 assertion pins the
+// recursion guard: the host must set OMEGA_SUBAGENT=1 on the child env.
 func TestRunDelegateTaskExplicitBinary(t *testing.T) {
 	bin := writeStub(t, "stub-omega", "stub-result", 0)
 	t.Setenv("OMEGA_BIN", bin)
@@ -61,65 +62,94 @@ func TestRunDelegateTaskExplicitBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runDelegateTask: %v", err)
 	}
-	if !strings.Contains(out, "Subagent task-1 started") {
-		t.Fatalf("expected task start confirmation, got %q", out)
-	}
-
-	// Wait for the goroutine to finish and inject the result.
-	msg, ok := d.Wait(ctx15(t), "")
-	if !ok {
-		t.Fatal("timed out waiting for injected result")
-	}
 	// Normalize CRLF stub output to LF for assertion.
-	msgText := strings.ReplaceAll(msg.Text, "\r\n", "\n")
-	msgText = strings.TrimSpace(msgText)
-	if msgText != "stub-result\nsubagent=1" {
-		t.Fatalf("expected stub result with subagent=1 guard, got %q", msgText)
-	}
-	if msg.Source != "delegate:task-1" {
-		t.Fatalf("expected source delegate:task-1, got %q", msg.Source)
+	text := strings.ReplaceAll(out, "\r\n", "\n")
+	if got := strings.TrimSpace(text); got != "stub-result\nsubagent=1" {
+		t.Fatalf("tool result = %q, want the child's final answer", got)
 	}
 
-	// Task must now be marked done.
-	if d.PendingCount("") != 0 {
-		t.Fatal("expected 0 pending after completion")
-	}
+	// A done task: the status surface marks it done.
 	status, err := d.runDelegateStatus(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("runDelegateStatus: %v", err)
 	}
+	if !strings.Contains(status, "Running: 0, Done: 1") {
+		t.Fatalf("expected done counters, got %q", status)
+	}
 	if !strings.Contains(status, "[done]") {
 		t.Fatalf("expected done status, got %q", status)
 	}
+	if !strings.Contains(status, "answer: stub-result") {
+		t.Fatalf("done task must expose the final answer text, got %q", status)
+	}
 }
 
-// TestRunDelegateTaskFailingBinary verifies the ruling's failure
-// shape: a child that exits non-zero still delivers an injected turn,
-// but a SHORT failure line only - the child's output stays in its
-// session and the task record, never spammed into the caller's
-// context.
+// DELEGATE-STATUS SHAPE (scope addition A4, card t_0805d438): every row
+// carries id, status, the session reference and a prompt DIGEST - never
+// the full prompt - and a done row re-enters the task's final answer as
+// the queryable home.
+func TestDelegateStatusPayloadShape(t *testing.T) {
+	longPrompt := strings.Repeat("the very long prompt the model sent ", 20)
+	running := &delegateTask{id: "task-1", prompt: longPrompt, session: "sess-running"}
+	done := &delegateTask{id: "task-2", prompt: "short prompt", session: "sess-done", done: true,
+		result: "the final answer text"}
+	d := NewDelegate()
+	d.tasks["task-1"] = running
+	d.tasks["task-2"] = done
+	status, err := d.runDelegateStatus(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("runDelegateStatus: %v", err)
+	}
+	if !strings.Contains(status, "Running: 1, Done: 1") {
+		t.Fatalf("counters = %q", status)
+	}
+	if !strings.Contains(status, "- task-1 [running] (session sess-running) ") {
+		t.Fatalf("running row lost its identity triple: %q", status)
+	}
+	// The digest clip: the running row ends in the named cut, and the
+	// 120-rune digest never carries the full prompt.
+	rowStart := strings.Index(status, "- task-1 [running]")
+	rowEnd := strings.Index(status[rowStart:], "\n")
+	row := status[rowStart : rowStart+rowEnd]
+	if !strings.HasSuffix(row, "...") {
+		t.Fatalf("digest row never got clipped: %q", row)
+	}
+	digest := row[strings.LastIndex(row, ")")+2:]
+	if len(digest) > statusSummaryClip+3 {
+		t.Fatalf("digest row %d chars, want <= %d: %q", len(digest), statusSummaryClip+3, row)
+	}
+	if !strings.Contains(status, "- task-2 [done] (session sess-done) short prompt\n") {
+		t.Fatalf("done row shape: %q", status)
+	}
+	if !strings.Contains(status, "  answer: the final answer text\n") {
+		t.Fatalf("done row lost its answer line: %q", status)
+	}
+}
+
+// TestRunDelegateTaskFailingBinary verifies the failure shape: a child
+// that exits non-zero still delivers its tool result, but a SHORT
+// failure line only - the child's output stays in its session and the
+// task record, never spammed into the caller's context.
 func TestRunDelegateTaskFailingBinary(t *testing.T) {
 	bin := writeStub(t, "stub-fail", "boom", 3)
 	t.Setenv("OMEGA_BIN", bin)
 
 	d := NewDelegate()
-	if _, err := d.runDelegateTask(context.Background(), map[string]any{"prompt": "fail please"}); err != nil {
+	out, err := d.runDelegateTask(context.Background(), map[string]any{"prompt": "fail please"})
+	if err != nil {
 		t.Fatalf("runDelegateTask: %v", err)
 	}
-
-	msg, ok := d.Wait(ctx15(t), "")
-	if !ok {
-		t.Fatal("timed out waiting for injected failure result")
-	}
 	wanted := "error: delegate task task-1 failed: exit status 3"
-	if msg.Text != wanted {
-		t.Fatalf("expected short failure line %q, got %q", wanted, msg.Text)
+	if strings.ReplaceAll(out, "\r\n", "\n") != wanted {
+		t.Fatalf("expected short failure line %q, got %q", wanted, out)
 	}
-	if msg.Source != "delegate:task-1" {
-		t.Fatalf("expected source delegate:task-1, got %q", msg.Source)
+	if strings.Contains(out, "boom") {
+		t.Fatalf("failure line leaked child output: %q", out)
 	}
-	if strings.Contains(msg.Text, "boom") {
-		t.Fatalf("failure line leaked child output: %q", msg.Text)
+	// The status surface carries the failure report for a done task.
+	status, _ := d.runDelegateStatus(context.Background(), nil)
+	if !strings.Contains(status, "answer: error: delegate task task-1 failed") {
+		t.Fatalf("failed task's answer line wrong: %q", status)
 	}
 }
 

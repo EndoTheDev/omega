@@ -9,7 +9,9 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// TestCompile verifies the package compiles and the interfaces are satisfied.
+// TestCompile verifies the package compiles and the interfaces are
+// satisfied. The Delegate is a plain tool provider - the run-affinity
+// stream died with the phase-2 migration.
 func TestCompile(t *testing.T) {
 	// ToolProvider interface.
 	var _ core.ToolProvider = (*Delegate)(nil)
@@ -17,7 +19,9 @@ func TestCompile(t *testing.T) {
 	var _ agent.Plugin = (*Plugin)(nil)
 }
 
-// TestTools verifies both tools are registered with correct names.
+// TestTools verifies both tools are registered with correct names, and
+// that the task tool is yield-class (async agent loop phase 2, card
+// t_0805d438): the registration attribute is the whole migration.
 func TestTools(t *testing.T) {
 	d := NewDelegate()
 	tools := d.Tools()
@@ -30,6 +34,12 @@ func TestTools(t *testing.T) {
 	if tools["delegate.task"].Description == "" {
 		t.Fatal("delegate.task has empty description")
 	}
+	if !tools["delegate.task"].Yield {
+		t.Fatal("delegate.task must be yield-class - the report re-enters as the tool result")
+	}
+	if tools["delegate.status"].Yield {
+		t.Fatal("delegate.status is a read, never a yield")
+	}
 }
 
 // TestDelegateStatus verifies delegate.status returns correct output
@@ -40,19 +50,11 @@ func TestDelegateStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runDelegateStatus: %v", err)
 	}
-	if !strings.Contains(out, "Running: 0") {
+	if !strings.Contains(out, "Running: 0, Done: 0") {
 		t.Fatalf("expected 'Running: 0', got %q", out)
 	}
 	if !strings.Contains(out, "No tasks") {
 		t.Fatalf("expected 'No tasks', got %q", out)
-	}
-}
-
-// TestPendingCount verifies pending count is 0 with no tasks.
-func TestPendingCount(t *testing.T) {
-	d := NewDelegate()
-	if c := d.PendingCount(""); c != 0 {
-		t.Fatalf("expected 0 pending, got %d", c)
 	}
 }
 
@@ -77,7 +79,8 @@ func (stubLogger) Close() error                      { return nil }
 
 // TestPluginMount verifies the api mount populates Context correctly -
 // the ExtensionAPI path is delegate's only mount since the v0.12
-// phase-C2 migration.
+// phase-C2 migration. The inject seam retired with phase 2 (card
+// t_0805d438): a mount must not resurrect it.
 func TestPluginMount(t *testing.T) {
 	p := NewPlugin()
 	if p.Name() != "delegate" {
@@ -100,15 +103,6 @@ func TestPluginMount(t *testing.T) {
 	}
 	if _, ok := tools["delegate"]; ok {
 		t.Fatal("the unprefixed consolidated delegate tool must be retired")
-	}
-	if ctx.InjectedMessages == nil {
-		t.Fatal("InjectedMessages not set")
-	}
-	if ctx.PendingDelegations == nil {
-		t.Fatal("PendingDelegations not set")
-	}
-	if ctx.PendingDelegations("") != 0 {
-		t.Fatalf("expected 0 pending, got %d", ctx.PendingDelegations(""))
 	}
 	// the logger capture still happens at mount time (the logging edge)
 	if p.delegate.logger == nil {
