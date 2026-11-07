@@ -6,9 +6,11 @@ import (
 )
 
 // Plugin implements agent.Plugin. It wraps a Delegate and mounts it
-// into the agent Context as a ToolProvider plus the run-affinity
-// InjectedStream (ctx.InjectedMessages, t_f3fb7c52) and
-// PendingDelegations func.
+// into the agent Context as a ToolProvider. The inject seam retired
+// with the async agent loop phase 2 (card t_0805d438): delegate.task
+// is yield-class - the report re-enters as the call's tool result
+// through the loop's own wake machinery, and no delegate-owned
+// re-entry surface remains.
 type Plugin struct {
 	delegate *Delegate
 }
@@ -39,8 +41,7 @@ func (p *Plugin) Provides() []string { return []string{"tools"} }
 func (p *Plugin) Requires() []string { return []string{"logger"} }
 
 // MountWithAPI implements agent.APIPlugin. This registration is the
-// module's whole surface (arc 6 capsule, card t_47675b6a): the inject
-// seam (both Context fields ride one RegisterDelegation), the two
+// module's whole surface (arc 6 capsule, card t_47675b6a): the two
 // namespaced tools (delegate.task, delegate.status) and the
 // dispatched-run emitter capture ship from here, and the module ships
 // nothing else - no command, no REST route, no skills, no canvas panel
@@ -67,23 +68,13 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	}
 	// The recursion guard's mount face (THE delegation ruling, depth):
 	// inside a subagent child (OMEGA_SUBAGENT set) the delegate tools
-	// do not register at all - the child cannot spawn children. The
-	// inject seam still mounts (no ops ever drain it); the plugin
-	// census keeps counting the module.
+	// do not register at all - the child cannot spawn children.
 	if d.spawnable {
 		for name, tool := range d.Tools() {
 			if err := api.RegisterTool(name, tool); err != nil {
 				return err
 			}
 		}
-	}
-	// Mount the run-affinity drain seam (t_f3fb7c52): the Delegate
-	// itself is the InjectedStream - results are queued per spawning
-	// run and drained by the run's own affinity key. The channel bridge
-	// goroutine this replaces offered no affinity: any loop could drain
-	// any run's result.
-	if err := api.RegisterDelegation(d, d.PendingCount); err != nil {
-		return err
 	}
 	return nil
 }

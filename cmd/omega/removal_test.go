@@ -738,36 +738,30 @@ func TestMemoryRemovalProof(t *testing.T) {
 }
 
 // TestDelegateRemovalProof is the arc 6 delegate-capsule proof (card
-// t_47675b6a), the fifth worked proof in this file. Delegate is another
-// born-capsule, but the wired kind: the inject seam (ctx.InjectedMessages
-// + ctx.PendingDelegations), the consolidated delegate tool and its two
-// alias shims, and the finished-things emitter capture all ship from the
-// plugin's single Mount, and the module ships nothing else - no command,
-// no REST route, no skills, and no canvas panel (nothing rendered
-// delegate before the arc; adding one is a behavior change, not a
-// migration). The two mounts are the proof:
+// t_47675b6a), the fifth worked proof in this file, now under the async
+// agent loop's migration (card t_0805d438): the inject seam retired -
+// delegate.task is yield-class, its report re-enters as the tool
+// result through the loop's own wake machinery. Delegate ships only
+// the two namespaced tools and the finished-things emitter capture -
+// no command, no REST route, no skills, no canvas panel, and no
+// delegate-owned re-entry surface. The two mounts are the proof:
 //
-//  1. WITH delegate: the inject seam and pending count are mounted, the
-//     registry carries the delegate tool plus the task/status alias
-//     shims, a status call answers the live listing, and a real spawn
-//     (OMEGA_BIN -> /bin/echo: the child `run`s, echo just prints) pushes
-//     the result through the inject channel and emits one finished-things
-//     record through the notifications edge - the wiring the
-//     notifications proof exercises from the receive side.
-//  2. WITHOUT delegate: the inject seam and pending count are nil, no
-//     delegate-shaped tool is left, no delegate-qualified action or panel
-//     exists, and the notifications seam still mounts - the Requires edge
-//     points from delegate AT notifications, not the reverse, so the
-//     removal takes no dependents with it. Delegate keeps no disk state
-//     (its task map is in-memory), so data-is-not-code holds vacuously.
+//  1. WITH delegate: the registry carries the delegate tools, a status
+//     call answers the live listing, and a real spawn (OMEGA_BIN ->
+//     /bin/echo: the child `run`s, echo just prints) returns the
+//     child's own answer as the tool result and emits one
+//     finished-things record through the notifications edge.
+//  2. WITHOUT delegate: no delegate-shaped tool is left, no
+//     delegate-qualified action or panel exists, and the notifications
+//     seam still mounts - the Requires edge points from delegate AT
+//     notifications, not the reverse, so the removal takes no
+//     dependents with it. Delegate keeps no disk state (its task map
+//     is in-memory), so data-is-not-code holds vacuously.
 //
-// The core types stay (core/messages.go InjectedMessage, core/seams.go's
-// ctx.InjectedMessages / PendingDelegations fields) - the seam signature
-// references them and layers never import modules. Intentional residue,
-// documented: this test compiles them to prove it. The OMEGA_SUBAGENT
-// recursion guard lives inside the module twice over: the spawn writes
-// the var on the child's env, and the child's own mount (MountWithAPI)
-// refuses the delegate tools when the var is set.
+// The OMEGA_SUBAGENT recursion guard lives inside the module twice
+// over: the spawn writes the var on the child's env, and the child's
+// own mount (MountWithAPI) refuses the delegate tools when the var is
+// set.
 func TestDelegateRemovalProof(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	cfg := DefaultConfig()
@@ -792,16 +786,7 @@ func TestDelegateRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
-	if ctx.InjectedMessages == nil {
-		t.Fatal("FULL MOUNT: inject seam nil - the capsule did not mount")
-	}
-	if ctx.PendingDelegations == nil {
-		t.Fatal("FULL MOUNT: pending-delegations func nil - the capsule did not mount")
-	}
-	if n := ctx.PendingDelegations(""); n != 0 {
-		t.Fatalf("FULL MOUNT: pending delegations = %d, want 0 on a fresh mount", n)
-	}
-	t.Log("PROOF mount=full: inject seam mounted (ctx.InjectedMessages + ctx.PendingDelegations), pending count 0")
+	t.Log("PROOF mount=full: the capsule mounted; it ships no re-entry seam (the injected-user path retired with the phase-2 migration)")
 
 	// the tool face: the registry carries the two namespaced tools -
 	// the aliases promoted when the consolidated unprefixed primary
@@ -836,9 +821,10 @@ func TestDelegateRemovalProof(t *testing.T) {
 	}
 
 	// the spawn arm, end to end: OMEGA_BIN -> /bin/echo, the child
-	// `run`s, echo just prints the prompt back. The result must ride
-	// the inject channel and the finished-things edge must emit one
-	// chat record (echo exits 0, so verdict ok).
+	// `run`s, echo just prints the prompt back. The report IS the tool
+	// result now (card t_0805d438): the blocking Run returns the child's
+	// own answer, and the finished-things edge emits one chat record
+	// (echo exits 0, so verdict ok).
 	echo := "/bin/echo"
 	if _, err := os.Stat(echo); err != nil {
 		echo = "/usr/bin/echo"
@@ -848,28 +834,17 @@ func TestDelegateRemovalProof(t *testing.T) {
 	}
 	t.Setenv("OMEGA_BIN", echo)
 	res, runErr = delegateTool.Run(context.Background(), map[string]any{"action": "task", "prompt": "arc 6 proof"})
-	if runErr != nil || !strings.Contains(res, "task-1") {
+	if runErr != nil {
 		t.Fatalf("FULL MOUNT: delegate task spawn failed (res=%s err=%v)", res, runErr)
-	}
-	// The spawn ctx carries no run affinity, so the result queues under
-	// the unaddressed "" key - Wait on it (10s deadline).
-	drainCtx, drainCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer drainCancel()
-	m, ok := ctx.InjectedMessages.Wait(drainCtx, "")
-	if !ok {
-		t.Fatal("FULL MOUNT: the spawn result never landed on the inject stream")
-	}
-	if m.Source != "delegate:task-1" {
-		t.Fatalf("FULL MOUNT: injected message source = %q, want delegate:task-1", m.Source)
 	}
 	// the echo child's stdout is its argv (echo echoes the flag
 	// vector too); the pin is that the child's output - the prompt
-	// among it - rides the summary, trimmed, not lost.
-	if !strings.Contains(m.Text, "arc 6 proof") {
-		t.Fatalf("FULL MOUNT: injected result lost the child output: %.80q", m.Text)
+	// among it - rides the tool result, trimmed, not lost.
+	if !strings.Contains(res, "arc 6 proof") {
+		t.Fatalf("FULL MOUNT: tool result lost the child output: %.80q", res)
 	}
-	// finish() emits after it injects - the record may land a beat
-	// after the drain, so poll the store briefly
+	// The wait is inside Run now, so the finish record cannot lag the
+	// result - one poll suffices (poll stays honest to the async cap).
 	notifier2, _ := ctx.Services().Resolve("notifications").(proofNotifier)
 	sawFinish := false
 	for i := 0; i < 50 && !sawFinish; i++ {
@@ -890,7 +865,7 @@ func TestDelegateRemovalProof(t *testing.T) {
 		notes, _, _ := notifier2.List(context.Background(), false, 10, 0)
 		t.Fatalf("FULL MOUNT: no chat/task-1/ok finished-things record from the spawn: %+v", notes)
 	}
-	t.Log("PROOF spawn: the echo child's result rode the inject channel; one chat finished-things record emitted through the notifications edge")
+	t.Log("PROOF spawn: the echo child's answer returned as the tool result; one chat finished-things record emitted through the notifications edge")
 
 	// the action pipe: delegate ships no panel and no actions - even
 	// the full mount has nothing to route
@@ -927,12 +902,9 @@ func TestDelegateRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
-	if ctx2.InjectedMessages != nil {
-		t.Fatal("REMOVED MOUNT: inject seam still mounted")
-	}
-	if ctx2.PendingDelegations != nil {
-		t.Fatal("REMOVED MOUNT: pending-delegations func still mounted")
-	}
+	// the re-entry seam retired - the context carries no delegate field
+	// the removal could leave set (checked by construction: nothing in
+	// core.Context names delegate anymore)
 	for _, tp := range ctx2.ToolProviders {
 		for name := range tp.Tools() {
 			if strings.Contains(name, "delegate") {
@@ -963,10 +935,7 @@ func TestDelegateRemovalProof(t *testing.T) {
 	if _, err := noCanvas.Dispatch(core.ActionCall{Module: "delegate", Action: "status"}); !errors.Is(err, core.ErrUnknownModule) {
 		t.Fatalf("REMOVED MOUNT: dispatch answered %v, want ErrUnknownModule", err)
 	}
-	// core types remain - intentional (the seam signature references
-	// them; layers never import modules). Compile-time proof:
-	_ = core.InjectedMessage{Text: "proof", Source: "delegate:task-1"}
-	t.Log("PROOF removed: inject seam nil, no pending-delegations func, no delegate-shaped tools, no delegate panel or actions, notifications seam still mounted (the Requires edge points at it, not from it); delegate keeps no disk state (in-memory task map) - data is not code holds vacuously; core.InjectedMessage + the ctx seam fields remain - documented as intentional")
+	t.Log("PROOF removed: no re-entry seam in the context (retired with the phase-2 migration), no delegate-shaped tools, no delegate panel or actions, notifications seam still mounted (the Requires edge points at it, not from it); delegate keeps no disk state (in-memory task map) - data is not code holds vacuously")
 }
 
 // TestMCPRemovalProof is the arc 6 mcp-capsule proof (card

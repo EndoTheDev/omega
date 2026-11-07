@@ -29,8 +29,6 @@
 //	 Channels                      RegisterChannel
 //	 Commands + CommandHandler     RegisterCommand
 //	 CLI subcommands (phase D)     RegisterSubcommand
-//	 InjectedMessages              RegisterDelegation
-//	 PendingDelegations            RegisterDelegation
 //
 // Two families have no Context field of their own: routes
 // (RegisterRoute - module REST; the http channel consumes it with the
@@ -768,25 +766,6 @@ func (api *ExtensionAPI) RegisterCommand(name, description string, args []string
 			}
 		},
 		func(c *core.Context) { c.CommandHandler = prev },
-	)
-	return nil
-}
-
-// RegisterDelegation maps the delegation pipe (both fields of the
-// classic delegate seam in one registration). The injected side is the
-// run-affinity core.InjectedStream (t_f3fb7c52) - results are queued per run
-// and drained by the run's own affinity key; the pending side counts
-// THIS run's running tasks.
-func (api *ExtensionAPI) RegisterDelegation(injected core.InjectedStream, pending func(affinity string) int) error {
-	prevInj := api.ctx.InjectedMessages
-	api.writeSlot(
-		func(c *core.Context) { c.InjectedMessages = injected },
-		func(c *core.Context) { c.InjectedMessages = prevInj },
-	)
-	prevPending := api.ctx.PendingDelegations
-	api.writeSlot(
-		func(c *core.Context) { c.PendingDelegations = pending },
-		func(c *core.Context) { c.PendingDelegations = prevPending },
 	)
 	return nil
 }

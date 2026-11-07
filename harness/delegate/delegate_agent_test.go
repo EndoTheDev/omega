@@ -58,14 +58,10 @@ func TestDelegateAgentTargetEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("delegate to scout: %v (%s)", err, out)
 	}
-	// The result lands async, but the spawn must carry the env var.
-	// The stub result is injected; wait on the affinity queue.
-	msg, ok := d.Wait(ctx10(t), "")
-	if !ok {
-		t.Fatalf("no injected result in 10s: %s", out)
-	}
-	if !strings.Contains(msg.Text, "agent=scout") {
-		t.Errorf("child saw agent=%q... want agent=scout", extractAgent(msg.Text))
+	// The report IS the tool result now (card t_0805d438): the stub's
+	// env echo rides the report.
+	if !strings.Contains(out, "agent=scout") {
+		t.Errorf("child saw agent=%q... want agent=scout", extractAgent(out))
 	}
 }
 
