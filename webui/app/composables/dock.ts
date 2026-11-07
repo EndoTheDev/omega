@@ -1941,6 +1941,46 @@ export function firstDraftChatTab(tree: DockNode): ChatTabLocation | null {
   return null;
 }
 
+// card t_96844dcb (journey 98): the /board route owns its host pane's
+// FOREGROUND. The board view folds into the chat pane template, which
+// DockPane renders only while the pane's ACTIVE tab is chat - a persisted
+// content pane (the browser singleton) must not shadow the route, or
+// Board.vue never mounts on a /board reload.
+
+/** the first main (non-pinned) pane that hosts a chat tab, depth-first.
+    The /board route prefers a chat-hosting main pane over the first main
+    pane; null = every main pane is content-only (the caller falls back to
+    ensureMainPane and mints a draft). */
+export function firstChatMainPaneId(tree: DockNode): string | null {
+  for (const n of allNodes(tree)) {
+    if (!isPane(n) || isPinnedPane(n)) continue;
+    if (n.tabs.some((t) => t.component === "chat")) return n.id;
+  }
+  return null;
+}
+
+/** what the /board route's host pane needs for the board's outlet to
+    exist: chat is already the foreground ("none"), a chat tab sits
+    inactive in the pane ("focus", with its index), or the pane lost
+    every chat tab ("mint" - the caller mints the draft chat there).
+    An unknown pane id is a no-op. Pure: reading the plan, not the
+    mutation, is the caller's side. */
+export type ChatForegroundPlan = { mode: "none" | "focus" | "mint"; index: number };
+
+export function chatForegroundPlan(
+  tree: DockNode,
+  paneId: string,
+): ChatForegroundPlan {
+  const pane = findPane(tree, paneId);
+  if (!pane) return { mode: "none", index: -1 };
+  if (pane.tabs[pane.active]?.component === "chat") {
+    return { mode: "none", index: pane.active };
+  }
+  const index = pane.tabs.findIndex((t) => t.component === "chat");
+  if (index >= 0) return { mode: "focus", index };
+  return { mode: "mint", index: -1 };
+}
+
 /** write the session id back onto the chat tab that owns `key` - the
     unsaved ('+' / sidebar-new) tab's first send mints its real id and the
     tab's binding lands IN THE TREE, not in some side variable. */
