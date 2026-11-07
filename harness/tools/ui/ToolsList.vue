@@ -46,8 +46,10 @@
     </p>
     <!-- v0.14.1 registry-browser: the shared RegistryList (one pattern,
          three consumers). The toggle drives PUT /disabled/tools; a
-         disabled tool is absent from every tool union - the built-in-
-         wins merge law is untouched, the fold filters after it. -->
+         disabled tool is absent from the agent's executable registry
+         (the built-in-wins merge law is untouched, the fold filters
+         after it) but STAYS a dimmed row here - the fold-aware
+         inventory keeps the re-enable door open (t_5c9bb50a). -->
     <RegistryList
       v-else
       kind="tools"
@@ -72,17 +74,19 @@
   import { filterToolRows } from "./search";
 
   // Module-owned UI canary (t_d984b493), now the inspector's Tools tab
-  // content (card t_db430fea): the tool inventory, sourced from
-  // GET /tools and shipped by the tools module itself
-  // (harness/tools/ui/) through the module-UI composition, plus the
-  // per-tool enable/disable toggle (v0.14.1) against the /disabled
-  // fold. A domain tool's actions[] become the row's expandable
-  // detail: one metadata source feeds this panel, the system prompt,
-  // and the row detail. Self-contained fetch (module UI carries its
-  // own wiring, desktop / VS Code precedent) - the flag merge and the
-  // toggle PUT are small deliberate copies (the narrow.ts copy law);
-  // the SHARED thing is the RegistryList component.
-  // the wire shape GET /tools serves (types live in ./toolRows)
+  // content (card t_db430fea): the tool inventory, sourced from the
+  // fold-aware GET /tools?disabled=1 (card t_5c9bb50a - the
+  // management surface shows disabled tools as dimmed rows) and
+  // shipped by the tools module itself (harness/tools/ui/) through
+  // the module-UI composition, plus the per-tool enable/disable
+  // toggle (v0.14.1) against the /disabled fold. A domain tool's
+  // actions[] become the row's expandable detail: one metadata
+  // source feeds this panel, the system prompt, and the row detail.
+  // Self-contained fetch (module UI carries its own wiring, desktop
+  // / VS Code precedent) - the flag merge and the toggle PUT are
+  // small deliberate copies (the narrow.ts copy law); the SHARED
+  // thing is the RegistryList component.
+  // the wire shape the fold-aware read serves (types live in ./toolRows)
   interface ToolInfo extends ToolWire {}
   const tools = ref<ToolInfo[]>([]);
   const fold = ref<string[]>([]);
@@ -119,7 +123,13 @@
   const visibleRows = computed(() => filterToolRows(rows.value, query.value));
 
   async function load(): Promise<void> {
-    const res = await fetch("/tools");
+    // card t_5c9bb50a: the fold-aware management read - the union
+    // BEFORE the disabled fold filters it, so a disabled tool KEEPS
+    // its row (dimmed) and its toggle. The bare GET /tools stays the
+    // executable registry the chat loop consumes; this tab is the
+    // management surface and must show what is off, or a disable
+    // becomes a one-way door ("i disabled web, and now its so gone").
+    const res = await fetch("/tools?disabled=1");
     if (!res.ok) throw new Error(`GET /tools: ${res.status}`);
     // card t_c2da3379: MCP-origin tools never reach this tab - the
     // filter reads the origin field the wire carries, not any name

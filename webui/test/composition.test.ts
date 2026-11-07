@@ -149,7 +149,10 @@ test("scanModuleUIs yields null dockable for absent, malformed or wrong-shaped d
 
 test("the canary component lives in the tools module, not the shell", () => {
   const src = readFileSync(`${root}/../harness/tools/ui/ToolsList.vue`, "utf8");
-  assert.ok(src.includes('fetch("/tools")'), "self-contained GET /tools fetch");
+  // t_5c9bb50a: the fetch is self-contained AND fold-aware - the
+  // module carries its own wiring against the management read, whose
+  // inventory keeps disabled tools (the re-enable door)
+  assert.ok(src.includes('fetch("/tools?disabled=1")'), "self-contained fold-aware GET /tools fetch");
   // card t_73994e55 -> t_372b9e9a: a domain tool's actions[] renders as
   // the row's EXPANDABLE detail lines (memory.add - description), the
   // RegistryList contract; the list itself is the shared component

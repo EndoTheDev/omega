@@ -55,7 +55,7 @@ against localhost from the same host is unaffected.
 | `/files/browse`, `/files/read`       | GET        | read-only working-dir surface for the inspector; read carries `mime` |
 | `POST /files/write`, `POST /files/mkdir` | POST   | the toolbar's write half: add file / add folder (same root jail) |
 | `/files/raw`                         | GET        | raw bytes for `image/*` files ONLY, under the read surface's root jail |
-| `/tools`                             | GET        | tool inventory                                 |
+| `/tools`                             | GET        | tool inventory (bare = executable registry; `?disabled=1` = fold-aware management read) |
 | `/mcp/servers`                        | GET        | configured MCP servers (name, transport, connection state, recorded failure, server-qualified tools) over the live bridge |
 | `/mcp/reload`                         | POST       | re-read mcp.yaml/MCP_SERVERS, swap the live bridge (mcp.yaml edits go live on the MCP tab's refresh - no restart); returns the fresh server list |
 | `/mcp/toggle`                         | POST       | the live MCP toggle through the module seam     |
@@ -454,7 +454,13 @@ up edits without restart.
 
 ## Read-only inspector surfaces
 
-- `GET /tools` — the tool inventory (name + description).
+- `GET /tools` — the tool inventory (name + description). The bare
+  read is the agent's executable registry the chat loop consumes:
+  disabled tools are absent. `?disabled=1` is the fold-aware
+  management read the settings tab rides (t_5c9bb50a): the same union
+  before the fold filters it, each entry stamped with the fold's
+  verdict (`disabled: true`), so a disabled tool keeps its row and
+  its re-enable toggle.
 - `GET /cron/jobs` — the job definitions (name, kind, schedule or
   minutes, resolved deliver target, agent, model, file, enabled, next
   fire time), sorted by name; an empty list when cron is unmounted (a

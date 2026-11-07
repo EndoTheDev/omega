@@ -2204,6 +2204,12 @@ type toolListing struct {
 	// = MCP bridge, "" = native, omitted on the wire). The tools tab
 	// filters on this field - never on dotted-name shape.
 	Origin string `json:"origin,omitempty"`
+	// Disabled (card t_5c9bb50a): true only in the fold-aware read
+	// (GET /tools?disabled=1) - the tool the config fold switched off,
+	// kept in the inventory so the settings tab can re-enable it.
+	// omitempty keeps the bare /tools wire byte-identical (a disabled
+	// entry never appears there, and on-entries never carry the key).
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // handleTools serves GET /tools: the agent's executable tool registry
@@ -2218,12 +2224,26 @@ type toolListing struct {
 // win). The webui's module-owned tools panel
 // (harness/tools/ui/ToolsList.vue) renders this. Descriptions only -
 // parameter maps would only bloat the listing the UI shows.
+//
+// GET /tools?disabled=1 (card t_5c9bb50a) is the fold-aware
+// MANAGEMENT read of the same inventory: the union BEFORE the
+// disabled fold filters it (agent.ToolsWithDisabled), every entry
+// stamped with the fold's verdict. The settings tab rides this so a
+// disabled tool keeps its row and its re-enable toggle - the bare
+// read stays the executable registry the chat loop consumes, and its
+// response shape never changes.
 func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	inventory := s.agent.Tools()
+	var inventory map[string]core.Tool
+	fold := map[string]bool{}
+	if r.URL.Query().Get("disabled") == "1" {
+		inventory, fold = s.agent.ToolsWithDisabled()
+	} else {
+		inventory = s.agent.Tools()
+	}
 	if inventory == nil {
 		inventory = map[string]core.Tool{}
 	}
@@ -2243,7 +2263,7 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 		if t.AliasOf != "" {
 			continue // compat shim, not inventory
 		}
-		row := toolListing{Name: name, Description: t.Description, Origin: t.Origin}
+		row := toolListing{Name: name, Description: t.Description, Origin: t.Origin, Disabled: fold[name]}
 		for _, a := range t.Actions {
 			row.Actions = append(row.Actions, toolActionListing{Name: a.Name, Description: a.Description})
 		}
