@@ -10,6 +10,19 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
+// curatorHelp documents the curator subcommand (the module's own
+// help: `omega curator --help` prints it). Bare invocation stays a
+// run pass - the summary and /curator both document that.
+const curatorHelp = `omega curator - the weekly skills curator pass
+
+Usage:
+  omega curator                one full pass (same as "run")
+  omega curator run            one full pass
+  omega curator stale          list the stale skills
+  omega curator ledger         list the curator ledger
+  omega curator rollback <id>  roll back one ledger entry
+`
+
 // registerCLI claims the `omega curator` subcommand - the CLI face of
 // the learning loop (card t_9972dfd0). The argv mirrors the /curator
 // command: no verb or "run" = one full pass, plus stale | ledger |
@@ -20,6 +33,10 @@ import (
 func (p *Plugin) registerCLI(api *agent.ExtensionAPI, sp *SkillsProvider) error {
 	return api.RegisterSubcommand("curator", "run the weekly skills curator pass (verbs: run | stale | ledger | rollback <id>)",
 		func(argv []string) error {
+			if len(argv) > 0 && (argv[0] == "--help" || argv[0] == "-h") {
+				fmt.Print(curatorHelp)
+				return nil
+			}
 			if !filepath.IsAbs(sp.Dir) {
 				home := os.Getenv("OMEGA_HOME")
 				if home == "" {
