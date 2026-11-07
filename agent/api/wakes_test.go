@@ -289,15 +289,23 @@ func (p *wakeScripted) ModelName() string { return p.modelName }
 
 func (p *wakeScripted) SetThinkingLevel(level string) {}
 
+// Copies of a scripted provider share the script deck and the index
+// (one serial stream per slot makes runs strictly sequential), so a
+// new wakeScripted is built instead of a lock-carrying struct copy.
+func (p *wakeScripted) nextCopy() *wakeScripted {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return &wakeScripted{modelName: p.modelName, scripts: p.scripts, idx: p.idx}
+}
+
 func (p *wakeScripted) WithThinkingLevel(level string) agent.Provider {
-	cp := *p
-	return &cp
+	return p.nextCopy()
 }
 
 func (p *wakeScripted) WithModel(model string) agent.Provider {
-	cp := *p
-	cp.modelName = model
-	return &cp
+	c := p.nextCopy()
+	c.modelName = model
+	return c
 }
 
 func (p *wakeScripted) ListModels() ([]string, error) {
