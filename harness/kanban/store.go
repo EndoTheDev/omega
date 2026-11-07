@@ -28,10 +28,36 @@ var ErrNotFound = ErrTaskNotFound
 type Store struct {
 	db *sql.DB
 
+	// q is the statement surface every task read and write executes
+	// through: the *sql.DB handle itself on a plain store, the open
+	// batch transaction on a batch clone (BeginBatch). Registry ops
+	// (boards.go) stay on db directly - ATTACH/DETACH and Begin cannot
+	// run inside a transaction, and registry work never joins a batch.
+	q stmtDB
+
+	// tx is the open batch transaction this store executes inside
+	// (non-nil on a batch clone only). Write ops that would open their
+	// own transaction reuse it instead - the batch owns every commit.
+	tx *sql.Tx
+
+	// batchEmits buffers finished-things emissions while a batch is
+	// open: replayed to the notifier on commit, dropped on rollback.
+	// Nil on a plain store (emit at once). See emitDone.
+	batchEmits *[]string
+
 	// notifier is the finished-things seam (card t_5d9032d3), wired by
 	// the kanban plugin after MountAllAPI order places notifications
 	// first. Nil-safe: a store without the seam just doesn't notify.
 	notifier finishedThings
+}
+
+// stmtDB is the full statement face *sql.DB and *sql.Tx share:
+// everything the task surface (store.go) executes. The registry surface
+// (boards.go) needs Begin/Exec/ATTACH and stays on *sql.DB.
+type stmtDB interface {
+	ExecContexter
+	QueryRowContexter
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
 // finishedThings is the consumer-side face of the finished-things
@@ -51,7 +77,18 @@ func (s *Store) SetNotifier(n finishedThings) {
 // emitDone records one task notification when a task ENTERED done in
 // this update. Best-effort: a notification failure never fails the
 // board write (the caller swallows the error). Title is metadata only.
+// Inside a batch the emission buffers: replayed on commit, dropped on
+// rollback - a batch that reverts cannot leave a done-notice behind.
 func (s *Store) emitDone(taskID string) {
+	if s.batchEmits != nil {
+		*s.batchEmits = append(*s.batchEmits, taskID)
+		return
+	}
+	s.noticeDone(taskID)
+}
+
+// noticeDone emits through the notifier (nil-safe).
+func (s *Store) noticeDone(taskID string) {
 	if s.notifier == nil {
 		return
 	}
@@ -64,12 +101,13 @@ func (s *Store) emitDone(taskID string) {
 }
 
 // Compile-time assertions: *Store implements the kanban seam plus the
-// optional board-registry capability.
+// board-registry, delete and atomic-batch capabilities.
 var (
 	_ KanbanProvider = (*Store)(nil)
 	_ BoardLister    = (*Store)(nil)
 	_ Reorderer      = (*Store)(nil)
 	_ TaskDeleter    = (*Store)(nil)
+	_ Batcher        = (*Store)(nil)
 )
 
 // Open opens (creating if needed) the board database at dsn and
@@ -85,7 +123,7 @@ func Open(dsn string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{db: db}
+	s := &Store{db: db, q: db}
 	if err := s.migrate(db); err != nil {
 		db.Close()
 		return nil, err
@@ -295,12 +333,12 @@ func tableMissingColumn(db *sql.DB, table, column string) bool {
 	found := false
 	for rows.Next() {
 		var (
-			cid       int
-			name      string
-			ctype     string
-			notNull   int
-			dflt      any
-			pk        int
+			cid     int
+			name    string
+			ctype   string
+			notNull int
+			dflt    any
+			pk      int
 		)
 		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
 			return false
@@ -331,6 +369,63 @@ func topPosition(ctx context.Context, db QueryRowContexter, boardID int64, statu
 // share - topPosition accepts either.
 type QueryRowContexter interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// writeScope is one task-write transaction. A plain store opens a real
+// *sql.Tx and owns its own commit; a batch clone (Store.tx set) runs
+// inside the open batch transaction instead and its commits and
+// rollbacks are no-ops - the batch owns the outcome (BeginBatch).
+type writeScope struct {
+	tx     *sql.Tx
+	commit func() error
+	revert func()
+}
+
+// beginWrite opens the transaction one mutating task op needs: a fresh
+// tx on the plain store, the already-open batch tx on a batch clone.
+func (s *Store) beginWrite(ctx context.Context) (writeScope, error) {
+	if s.tx != nil {
+		return writeScope{tx: s.tx, commit: func() error { return nil }, revert: func() {}}, nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return writeScope{}, err
+	}
+	return writeScope{tx: tx, commit: tx.Commit, revert: func() { _ = tx.Rollback() }}, nil
+}
+
+// BeginBatch opens one SQLite transaction and returns a clone of the
+// store that executes every op inside it (the Batcher capability, the
+// atomic kanban batch). The commit function rolls the transaction
+// forward and then flushes the batch's buffered finished-things
+// emissions; cancel always rolls back - safe to call unconditionally
+// (a no-op once committed or already rolled back). A nested batch is
+// refused: there is exactly one open batch transaction per store.
+func (s *Store) BeginBatch(ctx context.Context) (KanbanProvider, func() error, func(), error) {
+	if s.tx != nil {
+		return nil, nil, nil, fmt.Errorf("a batch is already open")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	b := *s
+	b.q = tx
+	b.tx = tx
+	emits := []string{}
+	b.batchEmits = &emits
+	commit := func() error {
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		for _, id := range *b.batchEmits {
+			b.noticeDone(id)
+		}
+		*b.batchEmits = nil
+		return nil
+	}
+	cancel := func() { _ = tx.Rollback() }
+	return &b, commit, cancel, nil
 }
 
 // migrateTaskPriority adds the urgency column when it is missing (any
@@ -367,7 +462,7 @@ func (s *Store) CreateTask(ctx context.Context, board string, in KanbanTask) (Ka
 	if err != nil {
 		return KanbanTask{}, err
 	}
-	top, err := topPosition(ctx, s.db, bid, status)
+	top, err := topPosition(ctx, s.q, bid, status)
 	if err != nil {
 		return KanbanTask{}, err
 	}
@@ -376,7 +471,7 @@ func (s *Store) CreateTask(ctx context.Context, board string, in KanbanTask) (Ka
 		in.ID = newTaskID()
 		in.Status = status
 		in.CreatedAt = now()
-		_, err := s.db.ExecContext(ctx, `
+		_, err := s.q.ExecContext(ctx, `
 INSERT INTO tasks (id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, priority, board_id, position)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			in.ID, in.Title, in.Body, in.Assignee, in.Status,
@@ -387,7 +482,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			}
 			return KanbanTask{}, err
 		}
-		if err := recordEvent(ctx, s.db, bid, in.ID, "created", describeNew(in)); err != nil {
+		if err := recordEvent(ctx, s.q, bid, in.ID, "created", describeNew(in)); err != nil {
 			return KanbanTask{}, err
 		}
 		return in, nil
@@ -413,9 +508,11 @@ func describeNew(t KanbanTask) string {
 // ListTasks returns the board's tasks in board order: the explicit
 // position column when the column carries one (drag order), falling
 // back to newest first for tasks that share a position (legacy rows
-// and merged boards all sit at 0). Empty status lists every task. The
-// board filter is ALWAYS applied - the board_id column carries the
-// isolation the per-board files used to.
+// and merged boards all sit at 0). The empty status lists the ACTIVE
+// board - every status but archived (the default kanban list is not a
+// dump of the archive; an explicit `archived` status lists it, `all`
+// includes everything). The board filter is ALWAYS applied - the
+// board_id column carries the isolation the per-board files used to.
 func (s *Store) ListTasks(ctx context.Context, board, status string) ([]KanbanTask, error) {
 	bid, err := s.boardID(board)
 	if err != nil {
@@ -423,7 +520,14 @@ func (s *Store) ListTasks(ctx context.Context, board, status string) ([]KanbanTa
 	}
 	query := `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, priority, position FROM tasks WHERE board_id = ?`
 	args := []any{bid}
-	if status != "" {
+	switch status {
+	case "":
+		// the default view is the active board: archived hides
+		query += " AND status != ?"
+		args = append(args, StatusArchived)
+	case StatusAll:
+		// include archived too - the full scan is explicit
+	default:
 		if !IsStatus(status) {
 			return nil, fmt.Errorf("illegal status %q", status)
 		}
@@ -431,7 +535,7 @@ func (s *Store) ListTasks(ctx context.Context, board, status string) ([]KanbanTa
 		args = append(args, status)
 	}
 	query += " ORDER BY position ASC, created_at DESC, id DESC"
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -463,7 +567,7 @@ func (s *Store) GetTask(ctx context.Context, board, id string) (KanbanTask, erro
 	if err != nil {
 		return KanbanTask{}, err
 	}
-	row := s.db.QueryRowContext(ctx, `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, priority, position FROM tasks WHERE id = ? AND board_id = ?`, id, bid)
+	row := s.q.QueryRowContext(ctx, `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, priority, position FROM tasks WHERE id = ? AND board_id = ?`, id, bid)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return KanbanTask{}, ErrNotFound
@@ -480,7 +584,7 @@ func (s *Store) GetTaskComments(ctx context.Context, board, taskID string) ([]Ka
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.q.QueryContext(ctx, `
 SELECT id, task_id, author, body, created_at FROM task_comments WHERE task_id = ? AND board_id = ? ORDER BY id`, taskID, bid)
 	if err != nil {
 		return nil, err
@@ -503,7 +607,7 @@ func (s *Store) GetTaskEvents(ctx context.Context, board, taskID string) ([]Kanb
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.q.QueryContext(ctx, `
 SELECT id, task_id, kind, detail, created_at FROM task_events WHERE task_id = ? AND board_id = ? ORDER BY id`, taskID, bid)
 	if err != nil {
 		return nil, err
@@ -536,7 +640,7 @@ func (s *Store) AddComment(ctx context.Context, board, taskID, author, body stri
 	if _, err := s.GetTask(ctx, board, taskID); err != nil {
 		return KanbanComment{}, err
 	}
-	res, err := s.db.ExecContext(ctx, `
+	res, err := s.q.ExecContext(ctx, `
 INSERT INTO task_comments (task_id, author, body, created_at, board_id) VALUES (?, ?, ?, ?, ?)`,
 		taskID, author, body, now(), bid)
 	if err != nil {
@@ -547,7 +651,7 @@ INSERT INTO task_comments (task_id, author, body, created_at, board_id) VALUES (
 		return KanbanComment{}, err
 	}
 	c := KanbanComment{ID: id, TaskID: taskID, Author: author, Body: body, CreatedAt: now()}
-	err = recordEvent(ctx, s.db, bid, taskID, "comment", "author "+author)
+	err = recordEvent(ctx, s.q, bid, taskID, "comment", "author "+author)
 	return c, err
 }
 
@@ -561,11 +665,12 @@ func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch Kanb
 	if err != nil {
 		return KanbanTask{}, err
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	ws, err := s.beginWrite(ctx)
 	if err != nil {
 		return KanbanTask{}, err
 	}
-	defer tx.Rollback()
+	defer ws.revert()
+	tx := ws.tx
 
 	t, err := getTaskTx(ctx, tx, bid, taskID)
 	if err != nil {
@@ -660,7 +765,7 @@ UPDATE tasks SET title=?, body=?, assignee=?, status=?, session_id=?, source=?, 
 			return KanbanTask{}, err
 		}
 	}
-	if err := tx.Commit(); err != nil {
+	if err := ws.commit(); err != nil {
 		return KanbanTask{}, err
 	}
 	if enteredDone {
@@ -684,11 +789,12 @@ func (s *Store) DeleteTask(ctx context.Context, board, taskID string) error {
 	if _, err := s.GetTask(ctx, board, taskID); err != nil {
 		return err
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	ws, err := s.beginWrite(ctx)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer ws.revert()
+	tx := ws.tx
 	for _, q := range []string{
 		`DELETE FROM task_comments WHERE task_id = ? AND board_id = ?`,
 		`DELETE FROM task_events WHERE task_id = ? AND board_id = ?`,
@@ -698,7 +804,7 @@ func (s *Store) DeleteTask(ctx context.Context, board, taskID string) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	return ws.commit()
 }
 
 // ReorderTask places a task at an explicit slot on the named board:
@@ -735,11 +841,12 @@ func (s *Store) ReorderTask(ctx context.Context, board, taskID, status, afterID 
 	}
 
 	// the target column, in display order, with the moved card's slot
-	tx, err := s.db.BeginTx(ctx, nil)
+	ws, err := s.beginWrite(ctx)
 	if err != nil {
 		return KanbanTask{}, err
 	}
-	defer tx.Rollback()
+	defer ws.revert()
+	tx := ws.tx
 	rows, err := tx.QueryContext(ctx, `
 SELECT id FROM tasks WHERE board_id = ? AND status = ?
 ORDER BY position ASC, created_at DESC, id DESC`, bid, target)
@@ -792,7 +899,7 @@ ORDER BY position ASC, created_at DESC, id DESC`, bid, target)
 	// no resequencing, no audit event (the list above is already
 	// exactly the order the slot implies)
 	if at == oldIndex {
-		if err := tx.Commit(); err != nil {
+		if err := ws.commit(); err != nil {
 			return KanbanTask{}, err
 		}
 		return t, nil
@@ -817,7 +924,7 @@ ORDER BY position ASC, created_at DESC, id DESC`, bid, target)
 	if err := recordEvent(ctx, tx, bid, taskID, "reordered", detail); err != nil {
 		return KanbanTask{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := ws.commit(); err != nil {
 		return KanbanTask{}, err
 	}
 	return s.GetTask(ctx, board, taskID)

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
@@ -301,7 +301,7 @@ func taskActionNames() []string {
 // registry carries the one domain name (no backwards
 // compatibility - the alias shim era closed with the mount migration).
 func (p *ToolProvider) Tools() map[string]core.Tool {
-	statusDesc := "Board status: one of triage todo scheduled ready running blocked review done archived (create: initial status; update: new status; list: filter)."
+	statusDesc := "Board status: one of triage todo scheduled ready running blocked review done archived (create: initial status; update: new status; list: filter - omit = active only, archived hidden, 'archived' lists the archive, 'all' includes it)."
 	tools := map[string]core.Tool{
 		"kanban": {
 			Description: "One tool for the kanban board: create, list, update, complete, comment on, or delete tasks. Board: pass board to operate on a named board; omit to use the active board (/board). Batch: pass operations to run several in one call (create several tasks, or update + comment together).",
@@ -324,7 +324,7 @@ func (p *ToolProvider) Tools() map[string]core.Tool {
 					"author":   map[string]any{"type": "string", "description": "Comment author (comment, default agent)."},
 					"operations": map[string]any{
 						"type":        "array",
-						"description": "Batch: array of {action, ...args} operations, applied in order. If one fails, later operations are not attempted.",
+						"description": "Batch: array of {action, ...args} operations, applied in order inside one transaction - everything applies or everything reverts (a failed batch rolls back the operations it already applied; no orphaned creates). In-batch referencing: id \"LAST\" names the task the most recent create made, \"#N\" (1-based) names the task created at operations[N-1], matching the numbered result lines.",
 						"items": map[string]any{
 							"type": "object",
 							"properties": map[string]any{
@@ -370,31 +370,18 @@ func parseTaskOperations(raw any) ([]map[string]any, error) {
 }
 
 // runTask dispatches the consolidated task tool: a single operation or
-// a batch. The batch is fail-forward (the board is a DB, not a file
-// store - there is no snapshot to restore; ops stop at the first
-// failure and the result reports which ops already applied).
+// a batch. The batch is atomic on a Batcher board (one transaction,
+// create-then-act referenced in-batch; batch.go) and fail-forward,
+// honestly reported, where the board cannot provide one.
 func (p *ToolProvider) runTask(ctx context.Context, args map[string]any) (string, error) {
 	if opsRaw, ok := args["operations"]; ok && opsRaw != nil {
 		ops, err := parseTaskOperations(opsRaw)
 		if err != nil {
 			return "", err
 		}
-		var sb strings.Builder
-		for i, op := range ops {
-			res, err := p.runTaskOp(ctx, op)
-			if err != nil {
-				// earlier ops still applied: the panel refresh below
-				// is exactly the catch-up the partial batch needs
-				p.refreshCapsule()
-				return sb.String() + fmt.Sprintf("failed at operations[%d]: %v", i, err), nil
-			}
-			fmt.Fprintf(&sb, "%d: %s\n", i+1, res)
-		}
-		p.refreshCapsule()
-		fmt.Fprintf(&sb, "%d operations applied", len(ops))
-		return sb.String(), nil
+		return p.runTaskBatch(ctx, ops)
 	}
-	res, err := p.runTaskOp(ctx, args)
+	res, _, err := p.runTaskOp(ctx, p.board, args)
 	if err == nil {
 		p.refreshCapsule()
 	}
@@ -411,11 +398,14 @@ func (p *ToolProvider) refreshCapsule() {
 	p.capsule.refreshTasks()
 }
 
-// runTaskOp executes one task operation by its action. Every op
-// resolves its board the same way: explicit board arg, else the
-// session's active board, else "" (the default board). There is no
-// cross-board op by design - one op touches one board.
-func (p *ToolProvider) runTaskOp(ctx context.Context, args map[string]any) (string, error) {
+// runTaskOp executes one task operation by its action on the provider
+// b (the plain board for a single call, the batch transaction's clone
+// inside a batch). Every op resolves its board the same way: explicit
+// board arg, else the session's active board, else "" (the default
+// board). There is no cross-board op by design - one op touches one
+// board. The second return carries the created task's id on a create
+// (in-batch referencing reads it; empty elsewhere).
+func (p *ToolProvider) runTaskOp(ctx context.Context, b KanbanProvider, args map[string]any) (string, string, error) {
 	action, _ := args["action"].(string)
 	board := str(args["board"])
 	if board == "" {
@@ -423,23 +413,28 @@ func (p *ToolProvider) runTaskOp(ctx context.Context, args map[string]any) (stri
 	}
 	switch action {
 	case "create":
-		return p.runCreate(ctx, board, args)
+		return p.runCreate(ctx, b, board, args)
 	case "list":
-		return p.runList(ctx, board, args)
+		res, err := p.runList(ctx, b, board, args)
+		return res, "", err
 	case "update":
-		return p.runUpdate(ctx, board, args)
+		res, err := p.runUpdate(ctx, b, board, args)
+		return res, "", err
 	case "complete":
-		return p.runComplete(ctx, board, args)
+		res, err := p.runComplete(ctx, b, board, args)
+		return res, "", err
 	case "comment":
-		return p.runComment(ctx, board, args)
+		res, err := p.runComment(ctx, b, board, args)
+		return res, "", err
 	case "delete":
-		return p.runDelete(ctx, board, args)
+		res, err := p.runDelete(ctx, b, board, args)
+		return res, "", err
 	default:
-		return "", fmt.Errorf("action is required: one of %v, or pass operations for a batch", taskActionNames())
+		return "", "", fmt.Errorf("action is required: one of %v, or pass operations for a batch", taskActionNames())
 	}
 }
 
-func (p *ToolProvider) runCreate(ctx context.Context, board string, args map[string]any) (string, error) {
+func (p *ToolProvider) runCreate(ctx context.Context, b KanbanProvider, board string, args map[string]any) (string, string, error) {
 	in := KanbanTask{
 		Title:     str(args["title"]),
 		Body:      str(args["body"]),
@@ -449,15 +444,15 @@ func (p *ToolProvider) runCreate(ctx context.Context, board string, args map[str
 		Source:    str(args["source"]),
 		SessionID: agent.SessionIDFromContext(ctx),
 	}
-	out, err := p.board.CreateTask(ctx, board, in)
+	out, err := b.CreateTask(ctx, board, in)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return "created " + out.ID + " [" + out.Status + "] " + out.Title, nil
+	return "created " + out.ID + " [" + out.Status + "] " + out.Title, out.ID, nil
 }
 
-func (p *ToolProvider) runList(ctx context.Context, board string, args map[string]any) (string, error) {
-	tasks, err := p.board.ListTasks(ctx, board, str(args["status"]))
+func (p *ToolProvider) runList(ctx context.Context, b KanbanProvider, board string, args map[string]any) (string, error) {
+	tasks, err := b.ListTasks(ctx, board, str(args["status"]))
 	if err != nil {
 		return "", err
 	}
@@ -475,7 +470,7 @@ func (p *ToolProvider) runList(ctx context.Context, board string, args map[strin
 	return sb.String(), nil
 }
 
-func (p *ToolProvider) runUpdate(ctx context.Context, board string, args map[string]any) (string, error) {
+func (p *ToolProvider) runUpdate(ctx context.Context, b KanbanProvider, board string, args map[string]any) (string, error) {
 	id := str(args["id"])
 	patch := KanbanPatch{
 		Status:   str(args["status"]),
@@ -486,41 +481,41 @@ func (p *ToolProvider) runUpdate(ctx context.Context, board string, args map[str
 	if assignee, ok := args["assignee"]; ok {
 		patch.Assignee = optStr(assignee)
 	}
-	out, err := p.board.UpdateTask(ctx, board, id, patch)
+	out, err := b.UpdateTask(ctx, board, id, patch)
 	if err != nil {
 		return "", err
 	}
 	return "updated " + out.ID + " [" + out.Status + "] " + out.Title, nil
 }
 
-func (p *ToolProvider) runComment(ctx context.Context, board string, args map[string]any) (string, error) {
+func (p *ToolProvider) runComment(ctx context.Context, b KanbanProvider, board string, args map[string]any) (string, error) {
 	author := str(args["author"])
 	if author == "" {
 		author = "agent"
 	}
-	c, err := p.board.AddComment(ctx, board, str(args["id"]), author, str(args["body"]))
+	c, err := b.AddComment(ctx, board, str(args["id"]), author, str(args["body"]))
 	if err != nil {
 		return "", err
 	}
 	return "commented on " + c.TaskID, nil
 }
 
-func (p *ToolProvider) runComplete(ctx context.Context, board string, args map[string]any) (string, error) {
+func (p *ToolProvider) runComplete(ctx context.Context, b KanbanProvider, board string, args map[string]any) (string, error) {
 	id := str(args["id"])
-	out, err := p.board.UpdateTask(ctx, board, id, KanbanPatch{Status: StatusDone})
+	out, err := b.UpdateTask(ctx, board, id, KanbanPatch{Status: StatusDone})
 	if err != nil {
 		return "", err
 	}
 	return "done " + out.ID + ": " + out.Title, nil
 }
 
-func (p *ToolProvider) runDelete(ctx context.Context, board string, args map[string]any) (string, error) {
-	td, ok := p.board.(TaskDeleter)
+func (p *ToolProvider) runDelete(ctx context.Context, b KanbanProvider, board string, args map[string]any) (string, error) {
+	bd, ok := b.(TaskDeleter)
 	if !ok {
 		return "", fmt.Errorf("this board cannot delete tasks - archive instead (update status archived)")
 	}
 	id := str(args["id"])
-	if err := td.DeleteTask(ctx, board, id); err != nil {
+	if err := bd.DeleteTask(ctx, board, id); err != nil {
 		return "", err
 	}
 	return "deleted " + id, nil

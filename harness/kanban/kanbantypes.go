@@ -117,6 +117,21 @@ type TaskDeleter interface {
 	DeleteTask(ctx context.Context, board, taskID string) error
 }
 
+// Batcher is the optional atomic-batch capability on the kanban seam
+// (BoardLister's shape): the tool surface's `operations` array runs
+// entirely inside one transaction, so a failed operation rolls back
+// everything the batch already applied - a failed batch cannot orphan
+// its earlier creates. BeginBatch returns the provider executing
+// inside the open batch transaction, plus commit and cancel functions:
+// commit rolls the transaction forward (and flushes any side effects
+// the rollout deferred), cancel always rolls back. commit/cancel after
+// commit are safe. A provider without the capability keeps the
+// fail-forward tool semantics (applied ops stand, the failure rides
+// the result string); the kanban store does implement it.
+type Batcher interface {
+	BeginBatch(ctx context.Context) (batch KanbanProvider, commit func() error, cancel func(), err error)
+}
+
 // KanbanProvider is the board seam: task CRUD plus the comment and
 // event threads. Implemented by the kanban module; consumed by the
 // HTTP channel (routes) and the kanban tools.
@@ -126,8 +141,11 @@ type KanbanProvider interface {
 	// CreatedAt and the status default ("triage"), and writes the
 	// created event.
 	CreateTask(ctx context.Context, board string, in KanbanTask) (KanbanTask, error)
-	// ListTasks returns the board's tasks, newest first, filtered by
-	// status. Empty status lists every status.
+	// ListTasks returns the board's tasks in board order (drag order,
+	// newest-first fallback), filtered by status. The empty status
+	// lists every ACTIVE status - archived is hidden by default (the
+	// default list is not an archive dump). `archived` lists the
+	// archive, `all` lists everything explicitly.
 	ListTasks(ctx context.Context, board, status string) ([]KanbanTask, error)
 	// GetTask returns one task by id on the named board
 	// (store.ErrNotFound when missing).

@@ -236,6 +236,9 @@ test("resolveTaskBoard rides /boards then a /tasks scan per board", async () => 
         { status: 200, headers: { "content-type": "application/json" } },
       ));
     }
+    if (new URL(u, "http://x").searchParams.get("status") !== "all") {
+      throw new Error(`task scan must request status=all (archived cards resolve too), got ${u}`);
+    }
     const board = new URL(u, "http://x").searchParams.get("board") ?? "";
     const tasks = board === "omega" ? [{ id: "t_deep" }] : [{ id: "t_main" }];
     return Promise.resolve(new Response(
@@ -248,11 +251,11 @@ test("resolveTaskBoard rides /boards then a /tasks scan per board", async () => 
     assert.equal(await resolveTaskBoard("t_nope"), null);
     // every miss still walks the FULL registry (main then omega) - a
     // stale scan would dead-end the second click
-    assert.deepEqual(seen.filter((u) => u.startsWith("/tasks?board=")), [
-      "/tasks?board=main",
-      "/tasks?board=omega",
-      "/tasks?board=main",
-      "/tasks?board=omega",
+    assert.deepEqual(seen.filter((u) => u.startsWith("/tasks?status=all&board=")), [
+      "/tasks?status=all&board=main",
+      "/tasks?status=all&board=omega",
+      "/tasks?status=all&board=main",
+      "/tasks?status=all&board=omega",
     ]);
   } finally {
     globalThis.fetch = realFetch;
