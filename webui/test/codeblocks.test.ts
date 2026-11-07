@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 
 import { codeLang, codeLines } from "../app/composables/codeblocks.ts";
 import { renderMarkdown } from "../app/composables/omega.ts";
+import { readFileSync } from "node:fs";
 
 describe("codeLang", () => {
   it("extracts the language from markdown-it / hljs classes", () => {
@@ -29,6 +30,23 @@ describe("codeLines", () => {
   it("empty code is zero lines", () => {
     assert.equal(codeLines(""), 0);
     assert.equal(codeLines("\n"), 0);
+  });
+});
+
+describe("the codeblock copy button (card t_a92450ea)", () => {
+  const src = readFileSync(new URL("../app/composables/codeblocks.ts", import.meta.url), "utf8");
+
+  it("rides the ONE copy path and pins the copied affordance to its verdict", () => {
+    // the call and the import must be the same name - the pin came from a
+    // live catch on t_a92450ea: a renamed call + a fixed import builds
+    // clean (typeCheck:false) then reds in every browser with a bare
+    // ReferenceError inside the click handler
+    assert.match(src, /import \{ copyText \} from "\.\/clipboard\.ts"/);
+    assert.match(src, /copyText\(code\?\.textContent \?\? ""\)/);
+    assert.doesNotMatch(src, /copyTextToClipboard/);
+    assert.doesNotMatch(src, /navigator\.clipboard/);
+    // the affordance reflects the verdict, never a voided rejection
+    assert.match(src, /ok \? "copied" : "copy failed"/);
   });
 });
 

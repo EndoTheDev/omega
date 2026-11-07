@@ -65,7 +65,7 @@ export function decorateCodeblocks(
       // card t_a92450ea: the ONE copy path (composables/clipboard.ts) -
       // the "copied" affordance is conditional on real success, never a
       // voided rejection. Empty code still copies (a true no-op).
-      copyTextToClipboard(code?.textContent ?? "").then((ok) => {
+      copyText(code?.textContent ?? "").then((ok) => {
         copy.textContent = ok ? "copied" : "copy failed";
       });
       window.setTimeout(() => {
