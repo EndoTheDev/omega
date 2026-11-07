@@ -171,3 +171,45 @@ func TestHelpListsModuleSubcommands(t *testing.T) {
 		t.Fatal("static help hard-codes a module noun - the list must be registry introspection")
 	}
 }
+
+// TestModuleHelpFromRealArgv routes the subcommand argv through run -
+// the real parse main() feeds - not dispatchSubcommand direct: the
+// root flag scan used to swallow a --help AFTER a subcommand before
+// dispatch ever ran, so `omega kanban --help` printed the ROOT help
+// on the real argv path while the dispatch-level pin stayed green
+// (t_ed045792 - the old pin tested a layer the argv never reached).
+func TestModuleHelpFromRealArgv(t *testing.T) {
+	t.Setenv("OMEGA_HOME", t.TempDir())
+
+	// omega kanban --help == omega kanban: the module's own help, and
+	// never the root help.
+	moduleHelp := func(t *testing.T, args []string, marker string) {
+		t.Helper()
+		out, err := captureStdout(t, func() error { return run(args) })
+		if err != nil {
+			t.Fatalf("omega %v: %v", args, err)
+		}
+		if !strings.Contains(out, marker) {
+			t.Fatalf("omega %v did not print the module help (%s): %q", args, marker, out)
+		}
+		if strings.Contains(out, "omega - a Go event-stream agent") {
+			t.Fatalf("omega %v printed the ROOT help: %q", args, out)
+		}
+	}
+
+	moduleHelp(t, []string{"kanban", "--help"}, "omega kanban - the task board registry")
+	t.Log("PROOF argv: omega kanban --help printed the module's own help")
+
+	moduleHelp(t, []string{"curator", "--help"}, "omega curator - the weekly skills curator pass")
+	t.Log("PROOF argv: omega curator --help printed the module's own help")
+
+	// the root flags still answer at the root
+	out, err := captureStdout(t, func() error { return run([]string{"--help"}) })
+	if err != nil || !strings.Contains(out, "omega - a Go event-stream agent") {
+		t.Fatalf("omega --help: %q err %v", out, err)
+	}
+	out, err = captureStdout(t, func() error { return run([]string{"--version"}) })
+	if err != nil || !strings.HasPrefix(strings.TrimSpace(out), "omega ") {
+		t.Fatalf("omega --version: %q err %v", out, err)
+	}
+}

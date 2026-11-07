@@ -125,7 +125,27 @@ func run(args []string) error {
 	if exe, err := os.Executable(); err == nil {
 		os.Setenv("OMEGA_BIN", exe)
 	}
-	for _, a := range args {
+	// Root flags answer for the root's own argv: the flags BEFORE a
+	// subcommand, and the flags after a built-in subcommand (the root
+	// switch owns those argv too - `omega serve --help` has always
+	// printed the root help). A module subcommand owns its whole
+	// trailing argv (Q6): `omega kanban --help` reaches the module,
+	// not the root (t_ed045792 - the old whole-argv scan answered it
+	// with the root help, breaking the very promise the help text
+	// makes).
+	lead := args
+	for i, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			lead = args[:i]
+			break
+		}
+	}
+	sub, rest := splitSubcommand(args)
+	flagScope := args
+	if sub != "" && !isRootSubcommand(sub) {
+		flagScope = lead
+	}
+	for _, a := range flagScope {
 		switch a {
 		case "--help", "-h":
 			printHelp(args)
@@ -135,7 +155,6 @@ func run(args []string) error {
 			return nil
 		}
 	}
-	sub, rest := splitSubcommand(args)
 	appendPrompts := parseAppendPrompts(rest)
 	trust := parseTrustArgs(rest)
 	configPath := parseConfigFlag(rest)
@@ -190,6 +209,20 @@ func run(args []string) error {
 		}
 		return cmdLoop(parseConfigFlag(rest), appendPrompts, trust)
 	}
+}
+
+// isRootSubcommand reports whether sub is a built-in switch case in
+// run() (the root's own argv) rather than a module-registered or
+// project-path name. The list must stay in sync with run()'s switch:
+// a built-in keeps the root's flag short-circuit on its trailing
+// argv, while a module subcommand owns the whole tail (Q6).
+func isRootSubcommand(sub string) bool {
+	switch sub {
+	case "setup", "serve", "run", "health", "export", "insights",
+		"agents", "update", "rollback", "chat":
+		return true
+	}
+	return false
 }
 
 // printHelp prints the static help plus the module-owned subcommand
