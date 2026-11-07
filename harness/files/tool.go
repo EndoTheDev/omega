@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -118,10 +119,16 @@ func (p *FileProvider) Tools() map[string]core.Tool {
 	return tools
 }
 
-// fileAliasTools builds the legacy-name compat shims: each maps its old
-// tool name onto the folded files tool with the action pre-set. They
-// stay callable by the model until the v0.12 mount migration retires
-// them and are hidden from the prompt and /tools inventory by
+// fileAliasTools builds the legacy-name compat shims: each maps its
+// old tool name onto the folded files tool with the action pre-set.
+// Each shim declares its action's parameter schema (card
+// t_b9f74bea): a schema-less alias gives the model no type contract,
+// the model emits mistyped args (live repro 2026-11-07: the wire
+// carried "limit":"5" as a string and the rejection read as a lie),
+// and nothing validates the type before the handler refuses it. The
+// schemas are derived from the action names, so the two cannot drift.
+// They stay callable by the model until the v0.12 mount migration
+// retires them and are hidden from the prompt and /tools inventory by
 // the AliasOf marker.
 func (p *FileProvider) fileAliasTools() map[string]core.Tool {
 	out := make(map[string]core.Tool, len(filesActions))
@@ -133,6 +140,7 @@ func (p *FileProvider) fileAliasTools() map[string]core.Tool {
 		action := a.Name
 		out[legacy] = core.Tool{
 			Description: fmt.Sprintf("%s (alias for files with action %q)", a.Description, action),
+			Parameters:  fileAliasParams(action),
 			AliasOf:     "files",
 			Run: func(ctx context.Context, args map[string]any) (string, error) {
 				args["action"] = action
@@ -141,6 +149,41 @@ func (p *FileProvider) fileAliasTools() map[string]core.Tool {
 		}
 	}
 	return out
+}
+
+// fileAliasParams builds one alias shim's parameter schema for its
+// action: the params that action accepts (the folded tool's schema,
+// restricted to the action's verbs), with the action property pinned
+// to the shim's single verb - the shim overwrites it on dispatch.
+func fileAliasParams(action string) map[string]any {
+	props := map[string]any{
+		"action": map[string]any{
+			"type":        "string",
+			"enum":        []string{action},
+			"description": fmt.Sprintf("Preset by the alias; the shim sets the action to %q.", action),
+		},
+		"path": map[string]any{"type": "string", "description": "Path of the file."},
+	}
+	var required []string
+	switch action {
+	case "read":
+		props["offset"] = map[string]any{"type": "integer", "description": "1-based first line to read (default 1)."}
+		props["limit"] = map[string]any{"type": "integer", "description": "Max lines to read (default all)."}
+		required = []string{"path"}
+	case "write":
+		props["content"] = map[string]any{"type": "string", "description": "Full content to write."}
+		required = []string{"path", "content"}
+	case "edit":
+		props["old_string"] = map[string]any{"type": "string", "description": "Exact text to find; must occur exactly once."}
+		props["new_string"] = map[string]any{"type": "string", "description": "Replacement text."}
+		required = []string{"path", "old_string", "new_string"}
+	}
+	return map[string]any{
+		"type":                 "object",
+		"properties":           props,
+		"required":             required,
+		"additionalProperties": false,
+	}
 }
 
 // fileActionNames returns the action names from the metadata.
@@ -342,6 +385,44 @@ func argString(args map[string]any, key string) (string, error) {
 	return s, nil
 }
 
+// argOptionalInt reads an optional integer argument (absent or null =
+// not present). JSON numbers arrive as float64; a numeric string is
+// also accepted - the legacy alias shims went schema-less for a while
+// and models still emit stringified integers without a schema
+// (card t_b9f74bea, live repro 2026-11-07: the wire carried
+// "limit":"5"). A non-numeric token is an error, worded honestly.
+func argOptionalInt(args map[string]any, key string) (int, bool, error) {
+	v, ok := args[key]
+	if !ok || v == nil {
+		return 0, false, nil
+	}
+	f, isNum := v.(float64)
+	if !isNum {
+		// Internal Go callers pass int/int64; the tool wire passes
+		// float64; mistyped models pass strings. All of them parse.
+		switch n := v.(type) {
+		case int:
+			return n, true, nil
+		case int64:
+			return int(n), true, nil
+		default:
+			s, isStr := v.(string)
+			if !isStr {
+				return 0, false, fmt.Errorf("argument %q must be an integer", key)
+			}
+			parsed, parseErr := strconv.Atoi(strings.TrimSpace(s))
+			if parseErr != nil {
+				return 0, false, fmt.Errorf("argument %q must be an integer, got %q", key, s)
+			}
+			f = float64(parsed)
+		}
+	}
+	if f != float64(int(f)) {
+		return 0, false, fmt.Errorf("argument %q must be an integer", key)
+	}
+	return int(f), true, nil
+}
+
 // RunReadFile reads a file with line numbers, honoring offset/limit.
 func (p *FileProvider) RunReadFile(ctx context.Context, args map[string]any) (string, error) {
 	// Session workspace rooting (card t_9de5b009): the alias shims and
@@ -366,27 +447,22 @@ func (p *FileProvider) RunReadFile(ctx context.Context, args map[string]any) (st
 	mu.Lock()
 	defer mu.Unlock()
 
-	offset := 1
-	if v, ok := args["offset"]; ok {
-		f, ok := v.(float64)
-		if !ok {
-			return "", fmt.Errorf("argument %q must be an integer", "offset")
-		}
-		offset = int(f)
-		if offset < 1 {
-			return "", fmt.Errorf("offset must be >= 1")
-		}
+	offset, hasOffset, err0 := argOptionalInt(args, "offset")
+	if err0 != nil {
+		return "", err0
 	}
-	limit := 0
-	if v, ok := args["limit"]; ok {
-		f, ok := v.(float64)
-		if !ok {
-			return "", fmt.Errorf("argument %q must be an integer", "limit")
-		}
-		limit = int(f)
-		if limit < 0 {
-			return "", fmt.Errorf("limit must be >= 0")
-		}
+	if hasOffset && offset < 1 {
+		return "", fmt.Errorf("offset must be >= 1")
+	}
+	if !hasOffset {
+		offset = 1
+	}
+	limit, hasLimit, err1 := argOptionalInt(args, "limit")
+	if err1 != nil {
+		return "", err1
+	}
+	if hasLimit && limit < 0 {
+		return "", fmt.Errorf("limit must be >= 0")
 	}
 
 	file, err := os.Open(path)

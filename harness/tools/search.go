@@ -43,6 +43,30 @@ const (
 // it into a truncation note, never a tool error.
 var errSearchCapReached = errors.New("search result cap reached")
 
+// walkErrorDetailCap bounds the per-error detail lines; the rest ride
+// one honest "...and N more" tail.
+const walkErrorDetailCap = 10
+
+// walkDirFn is the directory walker the search tools run through; a
+// var so the walk-error regression test can inject a denied directory
+// (a genuinely ACL-denied dir is not reproducible portably inside a
+// temp tree). Tests swap and restore it; production never touches it.
+var walkDirFn = filepath.WalkDir
+
+// emitWalkErrors writes one detail line per captured walk error -
+// path + reason (card t_b9f74bea: a directory that failed the walk
+// used to vanish as "[skipped N walk errors]" with no name and no
+// cause), capped at walkErrorDetailCap lines.
+func emitWalkErrors(out *strings.Builder, walkErrs []string) {
+	for i, w := range walkErrs {
+		if i == walkErrorDetailCap {
+			fmt.Fprintf(out, "[...and %d more walk errors]\n", len(walkErrs)-walkErrorDetailCap)
+			break
+		}
+		fmt.Fprintf(out, "[walk error: %s]\n", w)
+	}
+}
+
 // SearchProvider serves the grep and glob tools. The guard refuses
 // paths that resolve into the instance database; nil is pass-through.
 type SearchProvider struct {
@@ -274,13 +298,14 @@ func (p *SearchProvider) RunGrep(ctx context.Context, args map[string]any) (stri
 	outLines := 0   // content-mode rows
 	truncated := false
 	skipped := map[string]int{} // reason -> count
+	walkErrs := []string{}      // walk failures, path + reason (emitted verbatim)
 
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+	err = walkDirFn(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if path == root {
 				return walkErr
 			}
-			skipped["walk errors"]++
+			walkErrs = append(walkErrs, fmt.Sprintf("%s: %v", path, walkErr))
 			return nil
 		}
 		if d.IsDir() {
@@ -303,7 +328,11 @@ func (p *SearchProvider) RunGrep(ctx context.Context, args map[string]any) (stri
 		truncated = true
 	}
 
+	emitWalkErrors(&out, walkErrs)
 	if matchFiles == 0 && outLines == 0 {
+		if s := strings.TrimSuffix(out.String(), "\n"); s != "" {
+			return s, nil
+		}
 		return "no matches", nil
 	}
 	if mode == "content" {
@@ -536,12 +565,13 @@ func (p *SearchProvider) RunGlob(ctx context.Context, args map[string]any) (stri
 	n := 0
 	truncated := false
 	skipped := map[string]int{}
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+	walkErrs := []string{} // walk failures, path + reason (emitted verbatim)
+	err = walkDirFn(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if path == root {
 				return walkErr
 			}
-			skipped["walk errors"]++
+			walkErrs = append(walkErrs, fmt.Sprintf("%s: %v", path, walkErr))
 			return nil
 		}
 		if path == root {
@@ -579,7 +609,11 @@ func (p *SearchProvider) RunGlob(ctx context.Context, args map[string]any) (stri
 	if err != nil && !errors.Is(err, errSearchCapReached) {
 		return "", fmt.Errorf("glob walk: %v", err)
 	}
+	emitWalkErrors(&out, walkErrs)
 	if n == 0 {
+		if s := strings.TrimSuffix(out.String(), "\n"); s != "" {
+			return s, nil
+		}
 		return "no matches", nil
 	}
 	if truncated {
