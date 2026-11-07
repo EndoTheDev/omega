@@ -30,6 +30,13 @@ export interface ToolWire {
   // heuristics. Native dotted tools stay; MCP-origin tools are
   // excluded and surface in the MCP tab alone.
   origin?: string;
+  // the fold's verdict on this tool (card t_5c9bb50a): present + true
+  // only in the fold-aware read (GET /tools?disabled=1), where a
+  // disabled tool STAYS in the inventory so the management surface
+  // can render and re-enable it. Documentation on the wire - the row
+  // model reads the fold LIST (/disabled) as the single source for
+  // row.disabled, never this stamp.
+  disabled?: boolean;
 }
 
 // Structural RegistryRow (module UI imports no shell code - the narrow
@@ -71,6 +78,11 @@ export function domainOf(name: string): string {
 // detail gains their full identities, they never group on their own,
 // and disabled goes group-style (every member off) because the toggle
 // fans out to all of them.
+// Card t_5c9bb50a: the caller feeds the FOLD-AWARE inventory (the
+// union before the disabled fold filters it) - a fold-disabled tool
+// stays in `tools` and lands in its row like any other member, never
+// a row of its own. The inventory shrinking on a disable is the red
+// shape (the one-way door: no row, no toggle, no re-enable).
 export function toolRows(
   tools: readonly ToolWire[],
   fold: readonly string[],

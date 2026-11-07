@@ -121,6 +121,72 @@ test("a merged domain row's disabled is group-style: off only when every member 
   assert.equal(domainOnly[0].disabled, false, "the domain tool off but siblings on = row on (the toggle fans to all)");
 });
 
+// --- t_5c9bb50a: the fold-aware management read (GET /tools?disabled=1)
+// - a disabled tool KEEPS its row (dimmed) and its re-enable path.
+// The inventory shrinking on a disable is the red shape: the one-way
+// door ("i disabled web, and now its so gone, i cant even re-enable
+// it") ---
+
+test("the fold-aware inventory keeps disabled web.* in their group row - dimmed, never gone", () => {
+  // the wire the fold-aware read serves: the web pair rides the
+  // inventory with disabled:true stamps, the fold names both
+  const tools = [
+    { name: "shell.run", description: "run a command" },
+    { name: "web.search", description: "search the web", disabled: true },
+    { name: "web.fetch", description: "fetch a page", disabled: true },
+  ];
+  const rows = toolRows(tools, ["web.search", "web.fetch"]);
+  const webRow = rows.find((r) => r.name === "web");
+  // the row exists - a vanished row has no toggle to flip back
+  assert.ok(webRow, "the disabled web group keeps its row");
+  assert.equal(webRow.disabled, true, "both members off = the group row dims");
+  assert.deepEqual(webRow.detail, [
+    "web.search - search the web",
+    "web.fetch - fetch a page",
+  ]);
+});
+
+test("red shape: disabling a tool can never remove its re-enable path (t_5c9bb50a)", () => {
+  const tools = [
+    { name: "shell.run", description: "run a command" },
+    { name: "web.search", description: "search the web", disabled: true },
+    { name: "web.fetch", description: "fetch a page", disabled: true },
+  ];
+  const fold = ["web.search", "web.fetch"];
+  const rows = toolRows(tools, fold);
+  // every fold-disabled tool still holds a row seat - its own row or
+  // a member line inside a domain/group row
+  for (const name of fold) {
+    const seated = rows.some(
+      (r) => r.name === name || r.detail.some((d) => d.startsWith(`${name} - `)),
+    );
+    assert.ok(seated, `${name} keeps a row seat after its disable`);
+  }
+  // and the row's toggle still fans out to the EXACT disabled names -
+  // the re-enable PUT has real targets, the door stays two-way
+  assert.deepEqual(toggleTargets("web", tools), ["web.search", "web.fetch"]);
+});
+
+test("a fold-disabled absorbed sibling stays a member of its domain row, not a standalone row (t_7871a56a law under the fold)", () => {
+  const tools = [
+    { name: "files", description: "read write edit", actions: [{ name: "read", description: "read a file" }] },
+    { name: "files.grep", description: "search file contents", disabled: true },
+    { name: "files.glob", description: "list matching paths" },
+  ];
+  const rows = toolRows(tools, ["files.grep"]);
+  assert.equal(rows.filter((r) => r.name === "files").length, 1, "one row per domain holds with a disabled member aboard");
+  assert.equal(rows.some((r) => r.name === "files.grep"), false, "a disabled absorbed sibling renders no standalone row");
+  assert.equal(rows[0].disabled, false, "one member still on = row on (the group-style law)");
+  assert.deepEqual(rows[0].detail, [
+    "files.read - read a file",
+    "files.grep - search file contents",
+    "files.glob - list matching paths",
+  ]);
+  // the re-enable target survives: the domain row's toggle still
+  // reaches the disabled member by its exact fold name
+  assert.deepEqual(toggleTargets("files", tools), ["files", "files.grep", "files.glob"]);
+});
+
 test("toggleTargets: a merged domain row fans out to the domain tool AND its absorbed siblings (t_7871a56a)", () => {
   const tools = [
     { name: "files", description: "read write edit", actions: [] },
@@ -146,7 +212,13 @@ test("ToolsList consumes the shared component and the fold wire", () => {
   const src = readFileSync(join(root, "harness", "tools", "ui", "ToolsList.vue"), "utf8");
   assert.ok(src.includes("<RegistryList"), "the shared component, not a bespoke list");
   assert.ok(src.includes('kind="tools"'), "the tools namespace rides to the note law");
-  assert.ok(src.includes('fetch("/tools")'), "self-contained inventory fetch");
+  // t_5c9bb50a: the tab's source is the FOLD-AWARE read - a disabled
+  // tool keeps its row. The bare GET /tools (the executable registry
+  // the chat loop consumes) must never be this tab's source: it
+  // shrinks on a disable and strands the tool with no re-enable
+  // toggle - the one-way door.
+  assert.ok(src.includes('fetch("/tools?disabled=1")'), "self-contained fold-aware inventory fetch");
+  assert.ok(!src.includes('fetch("/tools")'), "the bare executable-registry fetch is never the tab's source");
   assert.ok(src.includes("/disabled/tools"), "the toggle PUTs the tools namespace");
   assert.ok(src.includes('from "./toolRows"'), "the row model lives in the pure helper (t_e06b38bc grouping)");
   assert.ok(src.includes("toggleTargets"), "the group-parent toggle fans out to exact tool names");

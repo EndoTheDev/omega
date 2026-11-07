@@ -181,15 +181,15 @@ func (a *Agent) RefreshToolProviders(ctx *Context) {
 	a.toolProviders = providers
 }
 
-// Tools returns a snapshot of the agent's executable tool registry: the
-// explicit tools plus every core.ToolProvider's map - the union Run actually
-// loops with (see RunWithProvider / the loop's merge order). The copy is
-// defensive: callers (e.g. the HTTP channel's /tools listing) can never
-// mutate the agent's underlying maps.
-func (a *Agent) Tools() map[string]core.Tool {
+// toolUnion copies the registry union Run loops with: the explicit
+// tools plus every core.ToolProvider's map, existing entries winning
+// name conflicts (RunWithProvider's merge order). The copy is
+// defensive: callers can never mutate the agent's underlying maps.
+// The disabled fold is NOT applied here - the caller decides (Tools
+// filters, ToolsWithDisabled ships the fold alongside).
+func (a *Agent) toolUnion() map[string]core.Tool {
 	a.tpMu.RLock()
 	providers := a.toolProviders
-	disabled := a.disabledTools
 	a.tpMu.RUnlock()
 	size := len(a.tools)
 	for _, tp := range providers {
@@ -211,13 +211,40 @@ func (a *Agent) Tools() map[string]core.Tool {
 			}
 		}
 	}
-	// The disable filter is LAST in every union: the merge law above is
-	// untouched, a disabled name means absent (v0.14.1 registry-browser;
-	// the run loop applies the same final filter through LoopOptions).
+	return tools
+}
+
+// Tools returns a snapshot of the agent's executable tool registry:
+// the union minus every disabled name - what Run actually loops with
+// (the run loop applies the same final filter through LoopOptions).
+// The disable filter is LAST in every union: the merge law is
+// untouched, a disabled name means absent (v0.14.1 registry-browser).
+func (a *Agent) Tools() map[string]core.Tool {
+	tools, disabled := a.ToolsWithDisabled()
 	for n := range disabled {
 		delete(tools, n)
 	}
 	return tools
+}
+
+// ToolsWithDisabled is the fold-aware management read (card
+// t_5c9bb50a): the registry union BEFORE the disabled fold filters
+// it, plus the fold's name set. The settings tab's tools inventory
+// (GET /tools?disabled=1) rides this so a disabled tool keeps its
+// row - a disabled tool absent from the inventory has no toggle to
+// flip back (the one-way door). Tools() stays the executable
+// registry the loop and the bare GET /tools serve: the model must
+// not see disabled tools.
+func (a *Agent) ToolsWithDisabled() (tools map[string]core.Tool, disabled map[string]bool) {
+	a.tpMu.RLock()
+	fold := a.disabledTools
+	a.tpMu.RUnlock()
+	tools = a.toolUnion()
+	out := make(map[string]bool, len(fold))
+	for n := range fold {
+		out[n] = true
+	}
+	return tools, out
 }
 
 // SetDisabledTools installs the config.yaml disabled.tools opt-out
