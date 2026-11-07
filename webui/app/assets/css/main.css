@@ -2026,16 +2026,9 @@ labels stopped short of the right edge. */
 .expand-btn:hover { color: var(--text); border-color: var(--text-dim); }
 .composer:focus-within { border-color: rgba(232, 131, 58, 0.55); }
 
-/* ONE composer, no modes (card t_1750a9e3, ruling 2026-11-07): the C5
-   arrangement is THE shape, stretched to the pane. The base card is
-   full-width in its pane (margin 12px inset left/right/bottom above),
-   borders + rounded corners all around - the floating card, not the
-   edge-to-edge take B. The retired mode modifier classes, their 720px
-   cap and the hairline segment divider all died; a stored
-   composer-mode value is an ignored orphan (never
-   read, never rewritten - no migration code exists). Holds only while
-   NOT expanded (the fullscreen .expanded card is pinned by its own
-   t_08ef793b ruling). */
+/* The composer law lives in .agents/DESIGN.md (card t_1750a9e3). These
+   rules scope to the base card only - NOT expanded (the fullscreen
+   .expanded card is pinned by its own t_08ef793b ruling). */
 .composer:not(.expanded) .toolbar {
   flex-wrap: nowrap; /* the bottom row's chips never wrap */
   border-top: 1px solid var(--stroke); /* the C5 row hairline */

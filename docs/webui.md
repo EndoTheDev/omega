@@ -11,33 +11,35 @@ The two never touch each other.
 Source of truth: `webui/` (contracts below), `api/static/`
 (the committed built bundle), and the wire contract in [api.md](api.md).
 
+Design law lives in [`.agents/DESIGN.md`](../.agents/DESIGN.md) -
+iconset, icon sizes, theme tokens, the composer shape, UI families,
+a11y, the architecture bar. This file is the map: values, anatomy,
+mechanics. Laws are not restated here.
+
 ## Design tokens
 
-Tokens live in `assets/css/main.css` — no component invents colors.
+The token laws (the invention ban, unread-only `--unread`,
+dark-first/light-parity, recolor-only overrides, defaults for new
+tokens) live in [`.agents/DESIGN.md`](../.agents/DESIGN.md). The
+value map, `assets/css/main.css`:
 
 - Accent: `#E8833A` (the single accent).
-- `--unread` is an **unread-ONLY semantic color** — never reuse it for a
-  generic highlight.
 - Radii: 8px (panes) / 6px (cards) / 4px (chips).
 - Type: Public Sans (`--sans`) + JetBrains Mono (`--mono`) — tokens in
   main.css `:root`. Body/UI base is 15px and every size is px: there is
   no rem scale or hero heading style (UI text sits mostly at 12–13px,
   mono at 10.5–12px; sizes are per-component, not tokens).
-- Dark-first, light-parity: dark is the default identity; light is full
-  parity via the `html[data-theme='light']` block in main.css — the same
-  ladder inverted (`#ececec` z0 / `#f7f7f8` z1 / `#ededf0` z1-raised /
+- The light ladder (the `html[data-theme='light']` block in main.css):
+  `#ececec` z0 / `#f7f7f8` z1 / `#ededf0` z1-raised /
   `#ffffff` z2, stroke `#d5d5da`, text `#1a1a1d`, text-dim `#6a6a72`,
-  plus the light shadow overrides). Theme selection rides `auto |
+  plus the light shadow overrides. Theme selection rides `auto |
   light | dark` (`ThemeMode`, composables/omega.ts) plus `theme:<name>`
   custom themes from the picker.
 - Theme overrides: YAML files in `<home>/themes/` (one per theme,
   token overrides, `base:` + `name:`). Served by the HTTP channel
   (`GET /themes`, hot-reloaded from the folder poll), applied live from
-  the theme picker. Overrides are allowed on the color tokens + two
-  layer shadows only — radii and fonts are deliberately not
-  overridable (v1 is recoloring, not restyling, and tokens map 1:1 to
-  module components' styling, so overrides recolor modules for free).
-  New tokens must carry a sane default in main.css.
+  the theme picker — tokens map 1:1 to module components' styling, so
+  overrides recolor modules for free.
 
 ## Geometry contracts
 
@@ -113,28 +115,27 @@ pane-area contributes no connecting stroke. Desktop law only.
 
 ## Registry rows and the toggle pill
 
-**THE ROW LAW** (card t_561dc4e0): one registry-row anatomy for the
-registry-style tabs — LINE 1 the name (semibold, full opacity, ~13px),
-LINE 2 the subtitle (dim, smaller: the mono schedule, the description,
-transport + status, module counts), and exactly ONE control on the
-right, top-aligned with line 1. Expanded content renders below the
-row-head in its own indent, seated on the same paddings. The quiet
-list: hierarchy by typography weight and opacity, not borders or
-boxes — one hairline separator between rows. Shared definition in
+The UI-family laws live in [`.agents/DESIGN.md`](../.agents/DESIGN.md).
+The anatomy map:
+
+**The registry row** (card t_561dc4e0): LINE 1 the name (semibold,
+full opacity, ~13px), LINE 2 the subtitle (dim, smaller: the mono
+schedule, the description, transport + status, module counts), and
+exactly ONE control on the right, top-aligned with line 1. Expanded
+content renders below the row-head in its own indent, seated on the
+same paddings. Shared definition in
 `assets/css/registry-row.css`, five consumers (cron, tools, skills,
-mcp, modules); consumer stylesheets keep their row specifics and carry
-NO row-anatomy blocks. Status dots speak dot + word: green active, dim
+mcp, modules). Status dots speak dot + word: green active, dim
 sleeping (the agents roster's law); an enabled/disabled text label is
 dead — the control column rides the pill.
 
-**THE TOGGLE PILL** (card t_d93864e7): `components/ui/TogglePill.vue`
-is the one switch everywhere — the 26px rounded pill with the 11px
-state DOT inside (dot shifts, border goes `--ok` when on, transparent
-background). It is a BUTTON, never a checkbox: no `:checked` prop
-exists for Vue's prop diff to skip, so the stale-arm re-render trap is
-structurally dead for every host that adopts it. The pill owns the
-LOOK and the armed aria; the host owns the two-step arm/confirm — the
-first click ARMS (the confirm question becomes the aria/title, the
+**The toggle pill** (card t_d93864e7, `components/ui/TogglePill.vue`):
+the 26px rounded pill with the 11px state DOT inside (dot shifts,
+border goes `--ok` when on, transparent background). No `:checked`
+prop exists for Vue's prop diff to skip, so the stale-arm re-render
+trap is structurally dead for every host that adopts it. The pill owns
+the LOOK and the armed aria; the host owns the two-step arm/confirm —
+the first click ARMS (the confirm question becomes the aria/title, the
 confirm note seats under the row), the second commits — and the write
 path, re-rendering the row from the server's answer. Adopted across
 the registry tabs (skills, tools, agents, MCP, modules) and the
@@ -405,20 +406,10 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   attach-strip with image thumbnails, paste + paperclip attach; the
   retry face is retired - the newest response's action row carries the
   msg-retry chip, card t_95d2bc34; `/` command palette + `@` mention
-  picker, see below; ONE composer, NO modes (card t_1750a9e3, ruling
-  2026-11-07 - t_5752861e's mode system and t_d14c2d14's two-mode knob
-  are dead): the C5 'footer-send' arrangement is THE shape, stretched
-  to the pane width (take A of the v3 sketch) - plus/input on top,
-  chips left + send right on a bottom hairline row, as a full-width
-  floating card: the base 12px inset (sides + floor), border and
-  rounded corners all around, never edge-to-edge. There is no
-  "composer display mode" setting row; the mode classes
-  (`mode-compact`/`mode-full`), the 720px cap and the seg-div segments
-  are gone, and `composables/composerMode.ts` is deleted - a stored
-  `omega.composer-mode` localStorage value is an ignored orphan (never
-  read, never rewritten; leave it, do not write a migration). Pinned by
-  the 22-composer journey and `webui/test/composershape.test.ts`,
-  `ModelSelect` + the shared `BandSelect` effort chip (the dedicated
+  picker, see below; the composer shape law lives in
+  [`.agents/DESIGN.md`](../.agents/DESIGN.md) (card t_1750a9e3),
+  pinned by the 22-composer journey and
+  `webui/test/composershape.test.ts`; `ModelSelect` + the shared `BandSelect` effort chip (the dedicated
   ThinkingSelect retired — the BandSelect owns the select grammar; the
   model+effort pair is one nowrap wrap unit), `ChatMessage`,
   `ThinkingBlock`, `ToolCallLine` (running/done/error, expandable
