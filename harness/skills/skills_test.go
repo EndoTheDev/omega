@@ -183,6 +183,10 @@ func (c *captureLogger) Printf(format string, args ...any) {
 	c.msgs = append(c.msgs, fmt.Sprintf(format, args...))
 }
 
+func (c *captureLogger) Warnf(format string, args ...any) {
+	c.msgs = append(c.msgs, "WARN: "+fmt.Sprintf(format, args...))
+}
+
 func (c *captureLogger) Errorf(format string, args ...any) {
 	c.msgs = append(c.msgs, "ERROR: "+fmt.Sprintf(format, args...))
 }

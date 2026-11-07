@@ -10,15 +10,20 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// mockLogger records all Printf/Errorf calls so tests can assert on
+// mockLogger records all Printf/Warnf/Errorf calls so tests can assert on
 // the logging branches in Run().
 type mockLogger struct {
 	printfCalls []string
+	warnfCalls  []string
 	errorfCalls []string
 }
 
 func (m *mockLogger) Printf(format string, args ...any) {
 	m.printfCalls = append(m.printfCalls, fmt.Sprintf(format, args...))
+}
+
+func (m *mockLogger) Warnf(format string, args ...any) {
+	m.warnfCalls = append(m.warnfCalls, fmt.Sprintf(format, args...))
 }
 
 func (m *mockLogger) Errorf(format string, args ...any) {

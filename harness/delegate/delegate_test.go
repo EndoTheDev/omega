@@ -74,6 +74,7 @@ func (loggingPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) er
 type stubLogger struct{}
 
 func (stubLogger) Printf(format string, args ...any) {}
+func (stubLogger) Warnf(format string, args ...any)  {}
 func (stubLogger) Errorf(format string, args ...any) {}
 func (stubLogger) Close() error                      { return nil }
 
