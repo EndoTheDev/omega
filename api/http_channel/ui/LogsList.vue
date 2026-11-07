@@ -3,10 +3,25 @@
     ref="rootEl"
     class="logs-list"
     :class="{ narrow: narrow }">
-    <!-- card t_308e6d9b: the UNIVERSAL band - title-only (the Logs tab
-         owns no buttons), pinned before the .logs-body scrollport so
-         scrolling never moves it. -->
-    <TabBand title="Logs" />
+    <!-- card t_308e6d9b: the UNIVERSAL band. Card t_221dc498: the Logs
+         tab's first band actions - the severity filter (info/warning/
+         error toggle chips, the card's scope). One chip per severity,
+         aria-pressed carries the on/off state, the click toggles it;
+         all-on is the default (the full stream). The chips classify
+         the SAME raw tail the poll fetches - no server-side filter. -->
+    <TabBand title="Logs">
+      <button
+        v-for="sev in LOG_SEVERITIES"
+        :key="sev"
+        class="band-tool logs-sev-chip"
+        :class="{ off: !sevEnabled[sev] }"
+        type="button"
+        :aria-pressed="sevEnabled[sev]"
+        :aria-label="`toggle ${sev} lines`"
+        @click="toggleSev(sev)">
+        {{ sev }}
+      </button>
+    </TabBand>
     <p
       v-if="error"
       class="panel-status">
@@ -21,28 +36,41 @@
       <div
         ref="bodyEl"
         class="logs-body">
-        <template v-if="lines.length">
+        <template v-if="shown.length">
           <p
-            v-for="(line, i) in lines"
+            v-for="(entry, i) in shown"
             :key="i"
             class="logs-line">
-            {{ line }}
+            {{ entry.text }}
           </p>
         </template>
+        <p
+          v-else-if="lines.length"
+          class="panel-status">
+          no lines match the severity filter
+        </p>
         <p
           v-else
           class="panel-status">
           log file is empty
         </p>
       </div>
-      <p class="logs-meta">polling every {{ POLL_MS / 1000 }}s · {{ lines.length }} lines</p>
+      <p
+        class="logs-meta">
+        polling every {{ POLL_MS / 1000 }}s · {{ shown.length }} of {{ lines.length }} lines
+      </p>
     </template>
   </section>
 </template>
 
 <script setup lang="ts">
-  import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+  import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
   import { isNarrowWidth } from "./narrow";
+  import {
+    filterLogLines,
+    LOG_SEVERITIES,
+    type LogSeverity,
+  } from "./severity";
 
   // Transport-owned UI (card t_db430fea): the tail of the omega log
   // the channel's server itself writes, from GET /logs?lines=200, and
@@ -60,6 +88,21 @@
   const loaded = ref(false);
   const error = ref("");
   const bodyEl = ref<HTMLElement | null>(null);
+
+  // --- the severity filter (card t_221dc498): toggle chips classify
+  // the raw tail in-band (the "ERROR: "/"WARN: " markers after the
+  // timestamp - severity.ts, pinned with the node suite). All three on
+  // by default; the filter is view-only, the poll always fetches the
+  // full tail so a chip toggle is instant (no refetch round trip).
+  const sevEnabled = reactive<Record<LogSeverity, boolean>>({
+    info: true,
+    warning: true,
+    error: true,
+  });
+  function toggleSev(sev: LogSeverity) {
+    sevEnabled[sev] = !sevEnabled[sev];
+  }
+  const shown = computed(() => filterLogLines(lines.value, sevEnabled));
 
   // --- narrow adaptation, the module-UI recipe (card t_a2fdc630): this
   // root measures its OWN rendered container and flips the class; the
@@ -120,7 +163,9 @@
 
   // logs follow: the tail sticks to the bottom while the reader is at
   // the bottom; scrolled up (reading history), the update does not
-  // yank the viewport
+  // yank the viewport. Watching SHOWN (not lines) so a filter toggle
+  // re-runs the same law - a shrink while parked at the bottom keeps
+  // the bottom parked.
   async function follow() {
     const el = bodyEl.value;
     if (!el) return;
@@ -129,7 +174,7 @@
     if (atBottom) el.scrollTop = el.scrollHeight;
   }
 
-  watch(lines, follow, { flush: "post" });
+  watch(shown, follow, { flush: "post" });
 
   onMounted(() => {
     void poll();
@@ -174,6 +219,16 @@
     margin: 0;
     padding: 4px 12px 8px;
     font-size: 10px;
+    opacity: 0.45;
+  }
+  /* the severity chips (card t_221dc498): the band-tool look plus the
+     toggle state. aria-pressed carries it for the a11y tree; the eye
+     needs the dimming - an ON chip reads full text, an OFF chip reads
+     dimmed like a disabled band tool. */
+  .logs-list .logs-sev-chip[aria-pressed="true"] {
+    color: var(--text);
+  }
+  .logs-list .logs-sev-chip.off {
     opacity: 0.45;
   }
   /* narrow: the module-UI recipe (card t_a2fdc630) - the tail's mono
