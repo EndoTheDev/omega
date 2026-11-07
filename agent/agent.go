@@ -482,11 +482,9 @@ func (a *Agent) ListModelEntries() ([]core.ModelEntry, error) {
 // channel, so parallel runs are safe by construction; use RunWithProvider
 // to give a run its own model.
 //
-// Run affinity (t_f3fb7c52): injected subagent results are queued per
-// run and drained through the core.InjectedStream seam addressed by the
-// run's own affinity key, so concurrent runs can no longer drain each
-// other's delegate results (the ponytail note this replaces: the shared
-// channel drained into an arbitrary active run).
+// Run affinity (t_f3fb7c52): each run drains its own events channel;
+// loop state rides LoopOptions, so concurrent runs share no result
+// plumbing.
 func (a *Agent) Run(ctx context.Context, messages []core.Message, tools map[string]core.Tool) <-chan core.Event {
 	return a.RunWithProvider(ctx, a.provider, messages, tools)
 }
