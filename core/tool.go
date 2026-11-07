@@ -47,6 +47,16 @@ type Tool struct {
 	// name - native tools like sessions.search/shell.run are dotted
 	// too. Modules outside the mcp bridge never set it.
 	Origin string
+
+	// Yield declares a yield-class tool (async agent loop, design of
+	// record Workshop/omega/async-agent-loop.md): a call on it ENDS the
+	// turn instead of blocking it - the loop dispatches the call on its
+	// own goroutine, the turn ends, and the result re-enters later as a
+	// synthetic core.YieldResult input message. Opt-in at registration:
+	// the default stays loop-back. The model is never told - the
+	// registry decides silently (ruling 9); no prompt, schema, or
+	// description change of any kind.
+	Yield bool
 }
 
 // ToolOriginMCP is the Origin value an MCP-bridge-registered tool

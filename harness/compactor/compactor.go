@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Compactor implements agent.CompactionProvider. It holds a reference
@@ -51,6 +51,13 @@ func (c *Compactor) window() int {
 
 // Compact compacts the message history. If disabled or under budget,
 // returns the original messages unchanged.
+//
+// The never-fold law (ruling 11, async agent loop): a turn whose calls
+// are still pending is NEVER folded - the fold boundary skips past it.
+// The run context carries the pending-calls table (agent.WithYieldLedger,
+// threaded by the loop); the earliest pending call's assistant message
+// anchors the boundary, so middle never contains it and everything from
+// that turn on stays verbatim.
 func (c *Compactor) Compact(ctx context.Context, messages []core.Message) ([]core.Message, error) {
 	if !c.config.Enabled {
 		return messages, nil
@@ -66,13 +73,31 @@ func (c *Compactor) Compact(ctx context.Context, messages []core.Message) ([]cor
 		return messages, nil
 	}
 
-	middle := messages[keepFirst : len(messages)-keepLast]
+	// The fold boundary: where `middle` ends. The pending-turn law
+	// pulls it back so a pending call's assistant turn (and everything
+	// after it) stays out of the summary.
+	end := len(messages) - keepLast
+	if ledger := agent.YieldLedgerFromContext(ctx); ledger != nil {
+		if sid := agent.SessionIDFromContext(ctx); sid != "" {
+			if idx := agent.PendingAssistantIndex(messages, ledger.Pending(sid)); idx > keepFirst && idx < end {
+				end = idx
+			}
+		}
+	}
+	if end <= keepFirst {
+		return messages, nil
+	}
+	middle := messages[keepFirst:end]
 	summary, err := c.summarize(ctx, middle)
 	if err != nil {
 		return nil, fmt.Errorf("compactor: %w", err)
 	}
 
-	return agent.BuildCompactedMessages(messages, summary, keepFirst, keepLast), nil
+	result := make([]core.Message, 0, keepFirst+len(messages)-end+1)
+	result = append(result, messages[:keepFirst]...)
+	result = append(result, core.NewSystem("[compacted: "+summary+"]"))
+	result = append(result, messages[end:]...)
+	return result, nil
 }
 
 // summarize calls the provider to summarize a slice of messages. It
