@@ -1,14 +1,15 @@
 <template>
-  <!-- omega webui: THE TOGGLE PILL (card t_d93864e7). One switch
-       everywhere: the 26px rounded pill with the 11px state DOT inside -
+  <!-- omega webui: THE TOGGLE PILL (card t_d93864e7) - the family law
+       lives in .agents/DESIGN.md (one switch; button, not checkbox).
+       The 26px rounded pill with the 11px state DOT inside -
        dot shifts, border goes --ok when on, transparent background - the
        MCP tab's look (t_83f37525) extracted so the registry rows
        (skills/tools/agents) and the MCP rows speak the same toggle. The
        mechanics stay with the host: the arm/confirm two-step, the write
        path, the confirm note under the row. This owns the LOOK and the
-       armed aria only. It is a BUTTON, never a checkbox: no :checked
-       prop exists for Vue's prop diff to skip, so the t_87303e8f trap is
-       structurally dead for every host that adopts the pill. -->
+       armed aria only. No :checked prop exists for Vue's prop diff
+       to skip, so the t_87303e8f stale-arm trap is structurally dead
+       for every host that adopts the pill. -->
   <button
     type="button"
     class="toggle-pill"
