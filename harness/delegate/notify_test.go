@@ -29,50 +29,53 @@ func (r *recordingNotifier) Subscribe() (<-chan core.Notice, func()) {
 	return ch, func() {}
 }
 
-// registerTask seeds a tracked task (what runDelegateTask does before
-// the runner goroutine starts).
-func registerTask(d *Delegate, id string) *delegateTask {
-	task := &delegateTask{id: id}
-	d.mu.Lock()
-	d.tasks[id] = task
-	d.mu.Unlock()
-	return task
-}
-
 // card t_5d9032d3: a dispatched run's finish emits one chat record -
-// ok on a clean exit, failed on error, metadata-only title.
-func TestFinishEmitsNotification(t *testing.T) {
+// ok on a clean exit, failed on error, metadata-only title. The
+// emission rides the blocking wait now (card t_0805d438): the tool run
+// itself completes the task, then emits.
+func TestRunEmitsNotification(t *testing.T) {
+	bin := writeStub(t, "stub-notify-omega", "done output", 0)
+	t.Setenv("OMEGA_BIN", bin)
+
 	d := NewDelegate()
 	n := &recordingNotifier{}
 	d.notifier = n
-	registerTask(d, "task-7")
 
-	d.finish("task-7", nil)
+	if _, err := d.runDelegateTask(context.Background(), map[string]any{"prompt": "clean"}); err != nil {
+		t.Fatalf("runDelegateTask: %v", err)
+	}
 	if len(n.got) != 1 {
 		t.Fatalf("clean finish emitted %d records, want 1", len(n.got))
 	}
-	if n.got[0].Kind != "chat" || n.got[0].SourceID != "task-7" || n.got[0].Verdict != "ok" {
+	if n.got[0].Kind != "chat" || n.got[0].SourceID != "task-1" || n.got[0].Verdict != "ok" {
 		t.Fatalf("clean record wrong: %+v", n.got[0])
 	}
-	if n.got[0].Title != "chat task-7 finished" {
+	if n.got[0].Title != "chat task-1 finished" {
 		t.Fatalf("title leaked run content: %q", n.got[0].Title)
 	}
 
-	d.finish("task-8", context.DeadlineExceeded)
-	if len(n.got) != 2 || n.got[1].Verdict != "failed" {
+	bin = writeStub(t, "stub-notify-fail-omega", "boom", 2)
+	t.Setenv("OMEGA_BIN", bin)
+	d2 := NewDelegate()
+	d2.notifier = n
+	if _, err := d2.runDelegateTask(context.Background(), map[string]any{"prompt": "failing"}); err != nil {
+		t.Fatalf("runDelegateTask (failing): %v", err)
+	}
+	if len(n.got) != 2 || n.got[1].Verdict != "failed" || n.got[1].SourceID != "task-1" {
 		t.Fatalf("failed finish emitted %+v", n.got)
 	}
 }
 
-func TestFinishWithoutNotifierIsHarmless(t *testing.T) {
-	d := NewDelegate()
-	registerTask(d, "task-9")
-	d.finish("task-9", nil) // no panic, no emission
-	msgs := d.Poll("")
-	if len(msgs) == 0 {
-		t.Fatal("injection lost without the notifier")
+func TestRunWithoutNotifierIsHarmless(t *testing.T) {
+	bin := writeStub(t, "stub-noinfo-omega", "quiet", 0)
+	t.Setenv("OMEGA_BIN", bin)
+
+	d := NewDelegate() // no notifier: the emission path is nil-safe
+	out, err := d.runDelegateTask(context.Background(), map[string]any{"prompt": "no notify"})
+	if err != nil {
+		t.Fatalf("runDelegateTask: %v", err)
 	}
-	if msgs[0].Text == "" {
-		t.Fatalf("empty injection without the notifier")
+	if out == "" {
+		t.Fatal("empty tool result without the notifier")
 	}
 }

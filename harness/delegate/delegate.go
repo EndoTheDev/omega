@@ -1,8 +1,11 @@
 // Package delegate provides the delegate.task and delegate.status tools.
 // delegate.task spawns child omega processes (omega run) to work on
-// subtasks in the background. When a child finishes, the result is
-// injected into the host conversation as a new turn via InjectedMessages.
-// delegate.status returns the current state of all tasks.
+// subtasks in the background. The tool is yield-class (async agent loop
+// phase 2, card t_0805d438; design of record Workshop/omega/async-agent-loop.md):
+// the call ends the turn, the report re-enters as a tool result through
+// the phase-1 wake path, and no user-shaped delegate message is ever
+// written. delegate.status returns the current state of all tasks, and
+// for a done task the task's final answer text (the queryable home).
 //
 // Recursion guard: OMEGA_SUBAGENT=1 env var, two layers, both inside
 // the module. The spawn sets it on the child's env (spawn_test.go pins
@@ -35,9 +38,10 @@ type finishedThings interface {
 	Emit(n core.Notice) (core.Notice, error)
 }
 
-// Delegate manages background subagent tasks. It implements ToolProvider
-// and supplies InjectedMessages (the run-affinity InjectedStream) +
-// PendingDelegations to the agent Context.
+// Delegate manages background subagent tasks. It implements ToolProvider.
+// Its tools carry no seam beyond the registry: the report's re-entry is
+// the loop's own yield machinery (the tool's Yield registration), not a
+// delegate-owned surface.
 type Delegate struct {
 	mu          sync.Mutex
 	tasks       map[string]*delegateTask
@@ -56,66 +60,61 @@ type Delegate struct {
 	// inside a subagent child (OMEGA_SUBAGENT set) - delegate.task
 	// never registers there, so depth stays at one level.
 	spawnable bool
-
-	// The injected results (t_f3fb7c52, run affinity): a queue keyed by
-	// the spawning Run's affinity key, with per-key wake signals. Poll
-	// and Wait drain ONLY their key's results - a concurrent run (the
-	// title turn, a sibling /chat) can never take another run's result.
-	// qmu guards everything below, including the cap.
-	qmu     sync.Mutex
-	queues  map[string][]core.InjectedMessage
-	waiters map[string][]chan struct{}
-	qTotal  int
 }
 
 type delegateTask struct {
-	id            string
-	prompt        string
-	affinity      string // the spawning run's affinity key; "" = unaddressed (no-key runs)
-	session       string // child --session id ("" when no store seam) - the stored, searchable surface
-	cmd           *exec.Cmd
-	out           strings.Builder // child stdout only: the final answer, never stderr noise
-	errOut        strings.Builder // child stderr, kept on the task for status depth
-	mu            sync.Mutex
-	done          bool
+	id      string
+	prompt  string
+	session string // child --session id ("" when no store seam) - the stored, searchable surface
+	cmd     *exec.Cmd
+	out     strings.Builder // child stdout only: the final answer, never stderr noise
+	errOut  strings.Builder // child stderr, kept on the task for status depth
+	mu      sync.Mutex
+	done    bool
+	result  string // the report render (renderResult) a done task keeps for delegate.status
 }
 
-// NewDelegate creates a Delegate ready to mount. The affinity-keyed
-// result queues are created internally; the host reads them through the
-// InjectedStream seam (ctx.InjectedMessages).
+// NewDelegate creates a Delegate ready to mount.
 func NewDelegate() *Delegate {
 	return &Delegate{
 		tasks:     make(map[string]*delegateTask),
-		queues:    make(map[string][]core.InjectedMessage),
-		waiters:   make(map[string][]chan struct{}),
 		spawnable: os.Getenv("OMEGA_SUBAGENT") == "",
 	}
 }
 
-// The injected summary cap (ruling 2, summary-back): the caller's
-// context stays small however chatty the child ran. Head keeps the
-// answer's shape, tail keeps the closing verdict, the marker names the
-// cut so the turn never reads like a truncated sentence.
+// The result cap (the summary-back ruling): the caller's context stays
+// small however chatty the child ran. Head keeps the answer's shape,
+// tail keeps the closing verdict, the marker names the cut so the turn
+// never reads like a truncated sentence.
 const (
 	summaryCap  = 6000
 	summaryHead = 3500
 	summaryTail = 1500
-	// injectedCap bounds the TOTAL buffered injected results across
-	// every affinity queue (t_f3fb7c52) - the old shared channel's cap
-	// - so a dead run's undrained results cannot grow the buffer
-	// unboundedly. A full cap drops the newest result (dropResult).
-	injectedCap = 16
 )
 
 // Description constants for the delegate tools (the machine-facing
 // identities, Q10 namespace pairs since the v0.12 mount migration).
 const (
-	delegateTaskDesc   = "Spawn a subagent to work on a task in the background."
+	delegateTaskDesc   = "Spawn a subagent to work on a task in the background. The result re-enters as this call's tool result when the subagent finishes."
 	delegateStatusDesc = "Check the status of running and completed subagent tasks."
 )
 
+// taskIDShape (scope addition 4, card t_0805d438): task ids stay short
+// session-local names ("task-1", "task-2") with one counter per Delegate
+// instance, so an id alone is unsafe to match on. The chosen shape
+// carries the session reference beside the id: every status row renders
+// "task-N [status] (session <sid>)". The id shape itself never changed
+// (consumers match by it); the session is the disambiguator, in the
+// same payload.
+
+// statusSummaryClip bounds the prompt digest a status row carries
+// (scope addition A4): the FULL prompt never re-enters on a poll - a
+// prompt-sized line every poll is the payload bloat the finding names.
+// The digest exists to identify the task; the child's session carries
+// the prompt itself.
+const statusSummaryClip = 120
+
 func (d *Delegate) Tools() map[string]core.Tool {
-	// taskParams are the spawn parameters; status takes none.
 	taskParams := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -144,8 +143,13 @@ func (d *Delegate) Tools() map[string]core.Tool {
 		// delegate.task and delegate.status, each with its own
 		// parameters, both routed through the shared dispatcher the
 		// consolidated "delegate" primary used.
+		// Yield: async agent loop phase 2 - the call ends the turn and
+		// the report re-enters as this call's tool result. A wakeless
+		// host (the CLI loop, a bare run) runs it loop-back instead:
+		// the blocking wait the one-shot shape always had.
 		"delegate.task": {
 			Description: delegateTaskDesc,
+			Yield:       true,
 			Parameters:  taskParams,
 			Run: func(ctx context.Context, args map[string]any) (string, error) {
 				args["action"] = "task"
@@ -177,132 +181,6 @@ func (d *Delegate) runDelegate(ctx context.Context, args map[string]any) (string
 		return d.runDelegateStatus(ctx, args)
 	default:
 		return "", fmt.Errorf("action is required: one of task, status")
-	}
-}
-
-// PendingCount implements the pending-delegations seam per run
-// (t_f3fb7c52): the count includes only the running tasks the RUN named
-// by affinity spawned. A serve-wide count here would keep a run's
-// blocking drain parked on foreign children (and, with run affinity,
-// forever - results for foreign children can never enter this run's
-// queue). delegate.status's own listing stays serve-wide on purpose:
-// it is the user's read surface, not the drain's gate.
-func (d *Delegate) PendingCount(affinity string) int {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	count := 0
-	for _, t := range d.tasks {
-		t.mu.Lock()
-		if !t.done && t.affinity == affinity {
-			count++
-		}
-		t.mu.Unlock()
-	}
-	return count
-}
-
-// Poll implements core.InjectedStream (t_f3fb7c52): every result
-// queued for affinity comes back FIFO and the queue empties. A
-// different key's results are unreachable from this call - the drain
-// cannot cross runs.
-func (d *Delegate) Poll(affinity string) []core.InjectedMessage {
-	d.qmu.Lock()
-	defer d.qmu.Unlock()
-	msgs := d.queues[affinity]
-	delete(d.queues, affinity)
-	d.qTotal -= len(msgs)
-	return msgs
-}
-
-// takeOrArm pops the oldest queued result for affinity, leaving any
-// later results queued (Wait returns ONE result - a Poll here would
-// empty the queue and silently drop the siblings queued in the same
-// window). Nothing queued: it arms and returns a wake signal - the pop
-// check and the arming share ONE qmu hold, so no push can land between
-// them (that gap would strand a queued result behind a waiter that
-// never wakes).
-func (d *Delegate) takeOrArm(affinity string) (core.InjectedMessage, chan struct{}, bool) {
-	wake := make(chan struct{}, 1)
-	d.qmu.Lock()
-	defer d.qmu.Unlock()
-	msgs := d.queues[affinity]
-	if len(msgs) > 0 {
-		m := msgs[0]
-		if len(msgs) == 1 {
-			delete(d.queues, affinity)
-		} else {
-			d.queues[affinity] = msgs[1:]
-		}
-		d.qTotal--
-		return m, nil, true
-	}
-	d.waiters[affinity] = append(d.waiters[affinity], wake)
-	return core.InjectedMessage{}, wake, false
-}
-
-// Wait implements core.InjectedStream (t_f3fb7c52): blocks until one
-// result for affinity arrives or ctx ends.
-func (d *Delegate) Wait(ctx context.Context, affinity string) (core.InjectedMessage, bool) {
-	for {
-		m, wake, ok := d.takeOrArm(affinity)
-		if ok {
-			return m, true
-		}
-		select {
-		case <-wake:
-			// woken by a push (or a popped-empty wake a sibling
-			// waiter already took) - re-check and re-arm.
-			continue
-		case <-ctx.Done():
-			// deregister the wake slot so a later push does not leak it
-			d.qmu.Lock()
-			ws := d.waiters[affinity]
-			for i, w := range ws {
-				if w == wake {
-					d.waiters[affinity] = append(ws[:i], ws[i+1:]...)
-					break
-				}
-			}
-			if len(d.waiters[affinity]) == 0 {
-				delete(d.waiters, affinity)
-			}
-			d.qmu.Unlock()
-			return core.InjectedMessage{}, false
-		}
-	}
-}
-
-// pushResult adds one finished child's result to the affinity-keyed
-// queue and wakes its waiters. The buffer is still capped (the
-// injectedCap law, formerly the channel's cap): a full cap drops the
-// new result with the same logged shape as before.
-func (d *Delegate) pushResult(affinity, source, text string) {
-	d.qmu.Lock()
-	if d.qTotal >= injectedCap {
-		d.qmu.Unlock()
-		d.dropResult(source)
-		return
-	}
-	d.queues[affinity] = append(d.queues[affinity], core.InjectedMessage{Text: text, Source: source})
-	d.qTotal++
-	wake := d.waiters[affinity]
-	d.waiters[affinity] = nil
-	d.qmu.Unlock()
-	for _, w := range wake {
-		select {
-		case w <- struct{}{}:
-		default:
-		}
-	}
-}
-
-// dropResult logs (or stderrs) the cap-full drop - the classic
-// non-blocking send's overflow arm, keyless now.
-func (d *Delegate) dropResult(source string) {
-	if d.logger != nil {
-		d.logger.Errorf("delegate: injected queue full, dropping result for %s", source)
-	} else {
-		fmt.Fprintf(os.Stderr, "delegate: injected queue full, dropping result for %s\n", source)
 	}
 }
 
@@ -377,6 +255,14 @@ func fenceShimDir(omegaBin string) string {
 	return dir
 }
 
+// runDelegateTask spawns the child and waits it out. Under the yield
+// engine the call runs on the dispatched executor's goroutine - the
+// conversation is never parked: the turn (and run) end, the user
+// messages enter the home freely, and this return value re-enters as
+// the call's tool result. Loop-back (the wakeless CLI loop) blocks the
+// run here instead - the one-shot subagent shape `omega run` always
+// had. Either way the report is the tool result, and no user-shaped
+// delegate message is ever written.
 func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (string, error) {
 	if !d.spawnable {
 		return "", fmt.Errorf("delegate: spawn refused - this process is itself a subagent (OMEGA_SUBAGENT), depth stays at one level")
@@ -433,6 +319,7 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	childArgs = append(childArgs, prompt)
 
 	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
+	defer cancel()
 	cmd := exec.CommandContext(taskCtx, omegaBin, childArgs...)
 	cmd.Env = append(os.Environ(), childEnv(agentName, model)...)
 	cmd.Env = append(cmd.Env, workerStamp(taskID, omegaBin)...)
@@ -442,7 +329,7 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	// was created to fix).
 	agent.SetupProcessGroupKill(cmd)
 
-	task := &delegateTask{id: taskID, prompt: prompt, affinity: agent.RunAffinityFromContext(ctx), session: session, cmd: cmd}
+	task := &delegateTask{id: taskID, prompt: prompt, session: session, cmd: cmd}
 	cmd.Stdout = &task.out
 	cmd.Stderr = &task.errOut
 
@@ -450,62 +337,39 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	d.tasks[taskID] = task
 	d.mu.Unlock()
 
-	go func() {
-		defer cancel()
-		runErr := cmd.Run()
-		d.finish(taskID, runErr)
-	}()
+	// The wait IS the tool call: the dispatched executor (or the
+	// loop-back run) blocks here until the child exits or its timeout
+	// kills the process tree. The task's wall clock is its own; the
+	// run's cap above adds nothing.
+	runErr := cmd.Run()
+	task.mu.Lock()
+	task.done = true
+	task.result = task.renderResult(runErr)
+	task.mu.Unlock()
 
-	started := fmt.Sprintf("Subagent %s started. The result will appear automatically when it finishes. Use delegate.status to check progress.", taskID)
-	if session != "" {
-		started = fmt.Sprintf("%s (session %s)", started, session)
+	// The finished-things record (card t_5d9032d3): verdict ok on a
+	// clean exit, failed on error. The notification title is metadata
+	// only (the dispatch id); prompt and output never enter it.
+	if d.notifier != nil {
+		verdict := "ok"
+		if runErr != nil {
+			verdict = "failed"
+		}
+		_, _ = d.notifier.Emit(core.Notice{
+			Kind:     "chat",
+			SourceID: taskID,
+			Title:    "chat " + taskID + " finished",
+			Verdict:  verdict,
+		})
 	}
-	return started, nil
+
+	return task.result, nil
 }
 
-// finish records a dispatched run's completion (card t_5d9032d3): the
-// summary lands on the task, injects into the host conversation, and
-// one finished-things record emits - verdict ok on a clean exit,
-// failed on error. The notification title is metadata only (the
-// dispatch id); prompt and output never enter it.
-func (d *Delegate) finish(taskID string, runErr error) {
-	d.mu.Lock()
-	task := d.tasks[taskID]
-	var result string
-	if task != nil {
-		task.mu.Lock()
-		task.done = true
-		result = task.renderResult(runErr)
-		task.mu.Unlock()
-	}
-	d.mu.Unlock()
-
-	if task != nil {
-		// Queue the result for the spawning run's affinity key and wake
-		// its waiters (t_f3fb7c52). Non-blocking; if the global buffer
-		// is full, the result is logged and dropped.
-		d.pushResult(task.affinity, "delegate:"+taskID, result)
-	}
-
-	if d.notifier == nil {
-		return
-	}
-	verdict := "ok"
-	if runErr != nil {
-		verdict = "failed"
-	}
-	_, _ = d.notifier.Emit(core.Notice{
-		Kind:     "chat",
-		SourceID: taskID,
-		Title:    "chat " + taskID + " finished",
-		Verdict:  verdict,
-	})
-}
-
-// renderResult renders the summary-shaped inject (the ruling, ruling
-// 2): a clean exit produces the child's own final answer - what omega
-// run printed, trimmed to one summary turn; a failed exit produces a
-// SHORT failure line and nothing else (the details live in the child
+// renderResult renders the report-shaped tool result (ruling 2): a
+// clean exit produces the child's own final answer - what omega run
+// printed, trimmed to one summary turn; a failed exit produces a SHORT
+// failure line and nothing else (the details live in the child
 // session and the task record, never in the caller's context).
 func (t *delegateTask) renderResult(runErr error) string {
 	if runErr != nil {
@@ -535,6 +399,15 @@ func clipSummary(s string) string {
 		string(runes[len(runes)-summaryTail:])
 }
 
+// runDelegateStatus renders the task listing. Payload shape (scope
+// addition A4, card t_0805d438): every row is
+//
+//	- task-N [running|done] (session <sid>) <prompt digest, 120 runes>
+//
+// and a done row carries the task's final answer as its own indented
+// line - the queryable home the injected-user seam used to be the only
+// door for. The FULL prompt never enters the payload; the digest
+// identifies, the child session holds the prompt.
 func (d *Delegate) runDelegateStatus(ctx context.Context, args map[string]any) (string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -544,36 +417,53 @@ func (d *Delegate) runDelegateStatus(ctx context.Context, args map[string]any) (
 		prompt  string
 		session string
 		status  string
+		answer  string
 	}
 
 	var infos []taskInfo
-	running := 0
+	running, done := 0, 0
 	for _, t := range d.tasks {
 		t.mu.Lock()
 		status := "running"
 		if t.done {
 			status = "done"
+			done++
 		} else {
 			running++
 		}
-		infos = append(infos, taskInfo{id: t.id, prompt: t.prompt, session: t.session, status: status})
+		infos = append(infos, taskInfo{id: t.id, prompt: t.prompt, session: t.session, status: status, answer: t.result})
 		t.mu.Unlock()
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Running: %d\n", running)
+	fmt.Fprintf(&sb, "Running: %d, Done: %d\n", running, done)
 	if len(infos) == 0 {
 		sb.WriteString("No tasks.\n")
-	} else {
-		for _, t := range infos {
-			line := fmt.Sprintf("- %s [%s]: %s", t.id, t.status, t.prompt)
-			if t.session != "" {
-				line += fmt.Sprintf(" (session %s)", t.session)
-			}
-			sb.WriteString(line + "\n")
+		return sb.String(), nil
+	}
+	for _, t := range infos {
+		line := fmt.Sprintf("- %s [%s]", t.id, t.status)
+		if t.session != "" {
+			line += fmt.Sprintf(" (session %s)", t.session)
+		}
+		line += " " + taskSummary(t.prompt)
+		sb.WriteString(line + "\n")
+		if t.answer != "" {
+			sb.WriteString("  answer: " + t.answer + "\n")
 		}
 	}
 	return sb.String(), nil
+}
+
+// taskSummary renders the status row's prompt digest: the first
+// prompt line, clipped, whitespace-flattened to one compact strip.
+func taskSummary(prompt string) string {
+	line := strings.Join(strings.Fields(strings.TrimSpace(prompt)), " ")
+	runes := []rune(line)
+	if len(runes) > statusSummaryClip {
+		return string(runes[:statusSummaryClip]) + "..."
+	}
+	return line
 }
 
 func (d *Delegate) findOmegaBinary() string {
