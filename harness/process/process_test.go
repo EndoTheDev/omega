@@ -433,18 +433,17 @@ func findByName(entries []Entry, name string) (Entry, bool) {
 // the embedded quotes into \" sequences the child parsed as literal
 // quote characters - PowerShell echoed `-Command` scripts as string
 // literals ($vars eaten with them) instead of running them.
+//
+// The windows SysProcAttr.CmdLine pin lives in
+// process_windows_test.go behind a build tag (card t_590976b0): the
+// field exists only on windows, so a runtime guard cannot make the
+// read compile on linux.
 func TestBuildShellRawCommandLine(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the raw command-line pin is a windows contract (process_windows_test.go)")
+	}
 	command := `powershell -NoProfile -Command "$x=5; Write-Output $x"`
 	c := buildShell(command)
-	if runtime.GOOS == "windows" {
-		if c.SysProcAttr == nil || c.SysProcAttr.CmdLine != "cmd /C "+command {
-			t.Fatalf("the shell string must ride a raw command line verbatim, got CmdLine=%q", c.SysProcAttr.CmdLine)
-		}
-		if len(c.Args) != 1 {
-			t.Fatalf("argv must stay empty (nothing to escape), got %v", c.Args)
-		}
-		return
-	}
 	// unix: the argv contract is correct, sh -c takes the command verbatim.
 	if len(c.Args) != 3 || c.Args[0] != "sh" || c.Args[1] != "-c" || c.Args[2] != command {
 		t.Fatalf("unix shell shape drifted: %v", c.Args)
