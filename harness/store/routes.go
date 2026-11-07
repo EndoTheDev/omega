@@ -192,13 +192,15 @@ func (rt *Routes) handleSessionsList(w http.ResponseWriter, r *http.Request) {
 }
 
 // searchHit is one /sessions/search row: the matching session id plus
-// the hit (a title hit carries the label with titleMatch set; a
-// content hit carries a snippet stub - a later card renders the
-// context).
+// the hit (a title hit carries the label with titleMatch set). Snippet
+// is a verbatim stored-content excerpt; matches carries the
+// matched-term spans (byte offsets, t_1901ce48) when the matched term
+// landed in the window.
 type searchHit struct {
-	ID         string `json:"id"`
-	Snippet    string `json:"snippet,omitempty"`
-	TitleMatch bool   `json:"titleMatch,omitempty"`
+	ID         string              `json:"id"`
+	Snippet    string              `json:"snippet,omitempty"`
+	Matches    []core.SearchMatch  `json:"matches,omitempty"`
+	TitleMatch bool                `json:"titleMatch,omitempty"`
 }
 
 // handleSessionSearch serves GET /sessions/search?q=<term>: the store's
@@ -244,7 +246,7 @@ func (rt *Routes) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]searchHit, 0, len(results))
 	for _, res := range results {
-		out = append(out, searchHit{ID: res.SessionID, Snippet: res.Snippet, TitleMatch: res.Title})
+		out = append(out, searchHit{ID: res.SessionID, Snippet: res.Snippet, Matches: res.Matches, TitleMatch: res.Title})
 	}
 	rt.writeJSON(w, http.StatusOK, out)
 }

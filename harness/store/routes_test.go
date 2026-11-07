@@ -188,6 +188,22 @@ func TestSessionsSearchCapsule(t *testing.T) {
 	if hits[0].ID != "hit" || !hits[0].TitleMatch {
 		t.Fatalf("first hit = %+v, want the title hit ranked first", hits[0])
 	}
+	// the content hit's snippet is a verbatim excerpt with the
+	// matched-term spans as structured metadata (t_1901ce48); short
+	// content returns the whole stored envelope, unedited
+	contentHit := hits[1]
+	if !strings.Contains(contentHit.Snippet, "needle in the body") {
+		t.Fatalf("content snippet = %q, want the verbatim body text", contentHit.Snippet)
+	}
+	if len(contentHit.Matches) != 1 {
+		t.Fatalf("content matches = %+v, want one span", contentHit.Matches)
+	}
+	if m := contentHit.Matches[0]; contentHit.Snippet[m.Start:m.End] != "needle" {
+		t.Fatalf("span [%d,%d] = %q, want needle", m.Start, m.End, contentHit.Snippet[m.Start:m.End])
+	}
+	if contentHit.TitleMatch {
+		t.Fatalf("content hit carries the titleMatch flag: %+v", contentHit)
+	}
 
 	// a missing/empty q is 200 [] - nothing to search
 	rec = serve(t, mux, http.MethodGet, "/sessions/search", "")
