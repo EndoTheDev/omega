@@ -334,11 +334,19 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 	// stuck in the 409 "not started" window.
 	s.runs.registerCancel(run, cancel)
 	go func() {
+		// Wake drain (async agent loop, agent/api/wakes.go): declared
+		// FIRST so it runs LAST - the drain must see the slot the hub
+		// finish already released, and this entry (a plain send) is
+		// what resets the runaway guard.
+		defer s.drainWakes(req.SessionID)
 		defer s.runs.finish(run)
-		// The chat panel's exit hook runs BEFORE the hub releases the
+		// Chat panel's exit hook runs BEFORE the hub releases the
 		// slot: the ephemeral final rows still read the live tail.
 		defer s.chat.endRun(req.SessionID)
 		defer cancel()
+		if !req.wake {
+			s.wakes.reset(req.SessionID)
+		}
 		// detached runs carry the session id too: task tools in the detached
 		// loop link to the same conversation the request started
 		ctx = agent.WithSessionID(ctx, req.SessionID)

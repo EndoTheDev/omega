@@ -28,10 +28,14 @@ type TurnStart struct {
 func (TurnStart) isEvent() {}
 
 // TurnEnd is emitted after a turn completes, including tool execution.
+// PendingCalls counts the turn's yield-class calls that were DISPATCHED
+// and did not execute in this turn - the host's wake path owns their
+// re-entry (async agent loop phase 1). Loop-back turns always carry 0.
 type TurnEnd struct {
-	Type      string `json:"type"`
-	Turn      int    `json:"turn"`
-	ToolCalls int    `json:"tool_calls"`
+	Type         string `json:"type"`
+	Turn         int    `json:"turn"`
+	ToolCalls    int    `json:"tool_calls"`
+	PendingCalls int    `json:"pending_calls,omitempty"`
 }
 
 func (TurnEnd) isEvent() {}

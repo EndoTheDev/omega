@@ -45,7 +45,7 @@ type ActiveView struct {
 // system entries) are outside the conversation.
 func isConversation(msg Message) bool {
 	switch msg.(type) {
-	case User, Assistant, ToolResult:
+	case User, Assistant, ToolResult, YieldResult:
 		return true
 	}
 	return false
@@ -60,6 +60,8 @@ func parentIDOf(msg Message) string {
 	case Assistant:
 		return m.ParentID
 	case ToolResult:
+		return m.ParentID
+	case YieldResult:
 		return m.ParentID
 	}
 	return ""
@@ -94,6 +96,9 @@ func setParentNode(msg Message, parent string) Message {
 		m.ParentID = parent
 		return m
 	case ToolResult:
+		m.ParentID = parent
+		return m
+	case YieldResult:
 		m.ParentID = parent
 		return m
 	}
