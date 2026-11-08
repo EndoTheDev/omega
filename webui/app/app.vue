@@ -140,7 +140,8 @@
           <component
             :is="terminalTabView"
             v-if="terminalTabView && !isMobile"
-            class="pane" />
+            class="pane"
+            :focused-session="focusedSessionId" />
         </template>
         <!-- card t_95c91f9c: the general web browser tab - the main-pane
              content tab (like chat/viewer), the URL bar + iframe embed
