@@ -1734,7 +1734,7 @@ func TestTerminalRemovalProof(t *testing.T) {
 	if _, err := os.Stat("/dev/ptmx"); err == nil {
 		st := termPlugin.Store()
 		for range 2 {
-			if _, _, err := st.Claim(); err != nil {
+			if _, _, err := st.Claim(""); err != nil {
 				t.Fatalf("FULL MOUNT: claim for the fence proof: %v", err)
 			}
 		}

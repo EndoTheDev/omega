@@ -261,7 +261,7 @@ func sseWithCancel(t *testing.T, mux *http.ServeMux, id string, d time.Duration)
 
 func TestClaimReattachOneShellPerPane(t *testing.T) {
 	st, procs := newTestStore(t, nil)
-	s1, claimed, err := st.Claim()
+	s1, claimed, err := st.Claim("")
 	if err != nil || claimed {
 		t.Fatalf("first claim: claimed=%v err=%v", claimed, err)
 	}
@@ -272,13 +272,13 @@ func TestClaimReattachOneShellPerPane(t *testing.T) {
 	}
 	// an ATTACHED session is no longer claimable - the next pane gets
 	// a fresh shell (one terminal per pane)
-	s2, claimed, err := st.Claim()
+	s2, claimed, err := st.Claim("")
 	if err != nil || claimed || s2 == s1 {
 		t.Fatalf("second claim while s1 attached: claimed=%v err=%v", claimed, err)
 	}
 	// detach (the SSE drop): the shell idles server-side
 	s1.unsubscribe(sub)
-	s3, claimed, err := st.Claim()
+	s3, claimed, err := st.Claim("")
 	if err != nil || !claimed || s3 != s1 {
 		t.Fatalf("third claim after detach: want reattach of %s, got reattach=%v err=%v", s1.id, claimed, err)
 	}
@@ -293,20 +293,20 @@ func TestClaimReattachOneShellPerPane(t *testing.T) {
 // later detach/reattach takes the same shell back.
 func TestUnadoptedClaimBlocksReattach(t *testing.T) {
 	st, _ := newTestStore(t, nil)
-	s1, claimed, err := st.Claim()
+	s1, claimed, err := st.Claim("")
 	if err != nil || claimed {
 		t.Fatalf("first claim: claimed=%v err=%v", claimed, err)
 	}
 	// a second claim while the first pane has claimed but not streamed:
 	// a FRESH shell, never the taken one
-	s2, claimed, err := st.Claim()
+	s2, claimed, err := st.Claim("")
 	if err != nil || claimed || s2 == s1 {
 		t.Fatalf("second unadopted claim: claimed=%v err=%v (want a fresh spawn)", claimed, err)
 	}
 	// the adopt unblocks the reattach: subscribe clears the mark
 	sub, _, _ := s1.subscribe()
 	s1.unsubscribe(sub)
-	s3, claimed, err := st.Claim()
+	s3, claimed, err := st.Claim("")
 	if err != nil || !claimed || s3 != s1 {
 		t.Fatalf("post-adopt claim: want reattach of %s, got reattach=%v err=%v", s1.id, claimed, err)
 	}
@@ -324,7 +324,7 @@ func TestRacingClaimsSpawnDistinctShells(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s, claimed, err := st.Claim()
+			s, claimed, err := st.Claim("")
 			if err != nil || claimed {
 				t.Errorf("racing claim: claimed=%v err=%v", claimed, err)
 				return
@@ -356,7 +356,7 @@ func TestCapLawReapsThenRefuses(t *testing.T) {
 	// fresh shell because the previous one is already attached
 	first := ""
 	for i := range maxSessions {
-		s, _, err := st.Claim()
+		s, _, err := st.Claim("")
 		if err != nil {
 			t.Fatalf("claim %d: %v", i+1, err)
 		}
@@ -365,7 +365,7 @@ func TestCapLawReapsThenRefuses(t *testing.T) {
 		}
 		s.subscribe()
 	}
-	_, _, err := st.Claim()
+	_, _, err := st.Claim("")
 	if err == nil {
 		t.Fatal("claim 5: want the cap refusal")
 	}
@@ -377,7 +377,7 @@ func TestCapLawReapsThenRefuses(t *testing.T) {
 	all := procs()
 	all[0].exit(3)
 	waitExited(t, st.Get(first))
-	s, _, err := st.Claim()
+	s, _, err := st.Claim("")
 	if err != nil || s.id == first {
 		t.Fatalf("post-cap claim: err=%v id=%s (wanted a new shell)", err, s.id)
 	}
@@ -394,7 +394,7 @@ func TestOrphanPrune(t *testing.T) {
 	clock := time.Now()
 	frozen := func() time.Time { return clock }
 	st, procs := newTestStore(t, frozen)
-	s, _, err := st.Claim()
+	s, _, err := st.Claim("")
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
@@ -408,7 +408,7 @@ func TestOrphanPrune(t *testing.T) {
 		t.Fatal("prune: the orphan's shell not killed")
 	}
 	// an ATTACHED session is no orphan regardless of its age
-	s2, _, _ := st.Claim()
+	s2, _, _ := st.Claim("")
 	sub, _, _ := s2.subscribe()
 	clock = clock.Add(2 * noOrphanTTL)
 	st.prune()
@@ -421,7 +421,7 @@ func TestOrphanPrune(t *testing.T) {
 func TestLifecycleStopKillsEveryShell(t *testing.T) {
 	st, procs := newTestStore(t, nil)
 	for range 2 {
-		if _, _, err := st.Claim(); err != nil {
+		if _, _, err := st.Claim(""); err != nil {
 			t.Fatalf("claim: %v", err)
 		}
 	}
@@ -462,7 +462,7 @@ func TestStopIsIdempotent(t *testing.T) {
 // build.
 func TestKillHandshakeOwnsTheClose(t *testing.T) {
 	st, procs := newTestStore(t, nil)
-	s, _, err := st.Claim()
+	s, _, err := st.Claim("")
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
@@ -634,7 +634,7 @@ func TestClaimCapAtTheWire(t *testing.T) {
 	st, _ := newTestStore(t, nil)
 	attacher := make([]*fakeProc, 0, maxSessions)
 	for range maxSessions {
-		s, _, err := st.Claim()
+		s, _, err := st.Claim("")
 		if err != nil {
 			t.Fatalf("claim: %v", err)
 		}

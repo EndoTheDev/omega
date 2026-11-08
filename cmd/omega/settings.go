@@ -340,7 +340,7 @@ func providerInstancesKnob(cfg *Config) []map[string]any {
 // the running context (the workspace hook only on a value change -
 // prevWorkspace is what the load saw before the values applied, card
 // t_9825147c part 3). Returns the refreshed schema payload.
-func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string), setAgentConfig func(string, int), values map[string]any) (*core.SettingsSchema, error) {
+func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string), setTerminalWorkspace func(string), setAgentConfig func(string, int), values map[string]any) (*core.SettingsSchema, error) {
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		return nil, err
@@ -355,7 +355,7 @@ func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(strin
 	if err := writeConfigFile(path, &cfg); err != nil {
 		return nil, err
 	}
-	hotApply(cfg, prevWorkspace, pctx, setFilesWorkspace, setChannelWorkspace, setAgentConfig)
+	hotApply(cfg, prevWorkspace, pctx, setFilesWorkspace, setChannelWorkspace, setTerminalWorkspace, setAgentConfig)
 	return &core.SettingsSchema{Groups: settingGroups(&cfg)}, nil
 }
 
@@ -833,7 +833,7 @@ func writeConfigFile(path string, cfg *Config) error {
 // agent hook (card t_f78acfd6). WatchConfig's on-disk reload goes
 // through the same path, so a hand edit and a settings-pane save
 // behave identically.
-func hotApply(cfg Config, prevWorkspace string, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string), setAgentConfig func(string, int)) {
+func hotApply(cfg Config, prevWorkspace string, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string), setTerminalWorkspace func(string), setAgentConfig func(string, int)) {
 	llm.SetHTTPTimeout(cfg.HTTPTimeout)
 	if pctx == nil {
 		return
@@ -854,6 +854,12 @@ func hotApply(cfg Config, prevWorkspace string, pctx *agent.Context, setFilesWor
 		// tool runs follow the live save, not the boot copy.
 		if setChannelWorkspace != nil {
 			setChannelWorkspace(cfg.Server.DefaultWorkspace)
+		}
+		// The terminal capsule rides the same knob (card t_62d72028):
+		// the pane's spawn workspace chain reads it per claim, so the
+		// next spawned shell lands in the freshly saved workspace.
+		if setTerminalWorkspace != nil {
+			setTerminalWorkspace(cfg.Server.DefaultWorkspace)
 		}
 	}
 	svc := pctx.Services().Resolve("compactor")
@@ -907,11 +913,12 @@ type curatorSlotSetter interface {
 // omegaSettings implements core.Settings for the serve host: the webui
 // settings pane rides the http_channel through this.
 type omegaSettings struct {
-	path                string
-	pctx                *agent.Context
-	setFilesWorkspace   func(string)      // the files capsule's hot knob, nil when it is not mounted
-	setChannelWorkspace func(string)      // the HTTP channel's default-workspace hot knob, nil when unset
-	setAgentConfig      func(string, int) // the serving agents' runtime-knob hot hook (t_f78acfd6)
+	path                 string
+	pctx                 *agent.Context
+	setFilesWorkspace    func(string)      // the files capsule's hot knob, nil when it is not mounted
+	setChannelWorkspace  func(string)      // the HTTP channel's default-workspace hot knob, nil when unset
+	setTerminalWorkspace func(string)      // the terminal capsule's default-workspace hot knob (t_62d72028), nil when unset
+	setAgentConfig       func(string, int) // the serving agents' runtime-knob hot hook (t_f78acfd6)
 }
 
 func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
@@ -943,7 +950,7 @@ func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
 }
 
 func (s *omegaSettings) Save(values map[string]any) (*core.SettingsSchema, error) {
-	return saveSettings(s.path, s.pctx, s.setFilesWorkspace, s.setChannelWorkspace, s.setAgentConfig, values)
+	return saveSettings(s.path, s.pctx, s.setFilesWorkspace, s.setChannelWorkspace, s.setTerminalWorkspace, s.setAgentConfig, values)
 }
 
 // Compile-time assertion that omegaSettings implements core.Settings.

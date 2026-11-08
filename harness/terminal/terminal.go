@@ -421,7 +421,16 @@ func (st *Store) Stop() error {
 // never take the same shell, even though subscribe happens after the
 // lock comes off. The bool is the claim report: false = freshly
 // spawned, true = reattached.
-func (st *Store) Claim() (*Session, bool, error) {
+//
+// workdir is the SPAWN workspace (card t_62d72028): the claim's
+// caller resolves it (session workspace, else the default_workspace
+// knob, else "" - the construction fallback, omega's process cwd).
+// A reattach ignores it: the shell already lives, its cwd is the
+// user's state, never rewritten under them.
+func (st *Store) Claim(workdir string) (*Session, bool, error) {
+	if workdir == "" {
+		workdir = st.workdir
+	}
 	st.mu.Lock()
 	// reattach: newest live session with zero subscribers and no
 	// standing claim
@@ -461,7 +470,7 @@ func (st *Store) Claim() (*Session, bool, error) {
 		st.mu.Unlock()
 		return nil, false, err
 	}
-	proc, err := st.spawn(st.workdir)
+	proc, err := st.spawn(workdir)
 	if err != nil {
 		st.mu.Unlock()
 		return nil, false, err
