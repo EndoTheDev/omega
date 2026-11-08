@@ -64,6 +64,15 @@ func TestSummarizerWritesRowAndFTS(t *testing.T) {
 		t.Fatal(err)
 	}
 	ageSession(t, s, "s1", 2) // two days idle: past the 24h floor
+	// The baseline is the stamp AS WRITTEN, read back once. Recomputing
+	// the backdate at compare time reds on a wall-clock second boundary
+	// inside this test: RFC3339 truncates to seconds, so the recomputed
+	// stamp drifts a second while the row never moved (the once-in-six
+	// full-suite flake, t_288d7f0c).
+	base, err := s.GetSession(ctx, "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
 	rep, err := s.RunSummarizer(ctx, fakeSummary("The user asked for fibonacci numbers and got 1..55."), "", 24)
 	if err != nil {
 		t.Fatalf("RunSummarizer: %v", err)
@@ -81,8 +90,8 @@ func TestSummarizerWritesRowAndFTS(t *testing.T) {
 		t.Errorf("row summary: %q", sess.Summary)
 	}
 	// A summary is not activity: updated_at stayed backdated.
-	if sess.UpdatedAt != timeAgo(2) {
-		t.Errorf("updated_at %q moved by the summary write", sess.UpdatedAt)
+	if sess.UpdatedAt != base.UpdatedAt {
+		t.Errorf("updated_at %q moved by the summary write (was %q)", sess.UpdatedAt, base.UpdatedAt)
 	}
 
 	// ...and the FTS index answers for the SUMMARY text (content never
