@@ -81,6 +81,11 @@ func TestTranscriptItemsWireOrder(t *testing.T) {
 	if items[4].ElapsedMs != 3000 || items[4].ToolCallID != "tc1" || items[4].Content != "PASS" {
 		t.Fatalf("tool_result = %+v", items[4])
 	}
+	// the response-return window rides the result beside the call's
+	// elapsed (card t_e27c8347): segment B's response span
+	if items[4].AnswerMs != 500 {
+		t.Fatalf("tool_result answer_ms = %d, want 500 (segment B's response span)", items[4].AnswerMs)
+	}
 	// tool meta: same nested shape the live tool_call frame carries
 	tc := items[3].ToolCall
 	if tc == nil || tc.ID != "tc1" || tc.Name != "go_test" || tc.Arguments["pkg"] != "./..." {
@@ -188,6 +193,82 @@ func TestTranscriptItemsTimeFallback(t *testing.T) {
 	items = buildTranscriptItems(msgs)
 	if items[0].Time != "t-store" {
 		t.Fatalf("time = %q, want the store time", items[0].Time)
+	}
+}
+
+// TestTranscriptItemsAnswerWindow (card t_e27c8347): the tool_result's
+// answer_ms is the response span of the answer segment the result
+// unlocked - and only then. Parallel results share the one answer; a
+// contentless next segment (another call) and a user turn (the run
+// ended) carry no second number.
+func TestTranscriptItemsAnswerWindow(t *testing.T) {
+	// answer assistant with a measured response span
+	answer := core.NewAssistant("here is the answer")
+	answer.Timing = &core.Timing{ResponseMs: 4200}
+	// a) the common shape: result -> answer assistant
+	msgs := []core.StoredMessage{
+		{Message: core.NewToolResult("out", "tc1", false), CreatedAt: "t0"},
+		{Message: answer, CreatedAt: "t1"},
+	}
+	items := buildTranscriptItems(msgs)
+	if len(items) != 2 || items[0].AnswerMs != 4200 {
+		t.Fatalf("answer window lost: %+v", items)
+	}
+	// b) parallel results share the one answer
+	msgs = []core.StoredMessage{
+		{Message: core.NewToolResult("a", "tc1", false), CreatedAt: "t0"},
+		{Message: core.NewToolResult("b", "tc2", false), CreatedAt: "t1"},
+		{Message: answer, CreatedAt: "t2"},
+	}
+	for _, it := range buildTranscriptItems(msgs) {
+		if it.Kind != "tool_result" {
+			continue
+		}
+		if it.AnswerMs != 4200 {
+			t.Fatalf("parallel result %s answer_ms = %d, want 4200", it.ToolCallID, it.AnswerMs)
+		}
+	}
+	// c) the next segment called another tool instead of answering
+	chained := core.NewAssistant("")
+	chained.ToolCalls = []core.ToolCall{{ID: "tc9", Name: "go_test"}}
+	msgs = []core.StoredMessage{
+		{Message: core.NewToolResult("out", "tc1", false), CreatedAt: "t0"},
+		{Message: chained, CreatedAt: "t1"},
+		{Message: core.NewToolResult("out2", "tc9", false), CreatedAt: "t2"},
+		{Message: answer, CreatedAt: "t3"},
+	}
+	for _, it := range buildTranscriptItems(msgs) {
+		if it.Kind != "tool_result" {
+			continue
+		}
+		if it.ToolCallID == "tc1" && it.AnswerMs != 0 {
+			t.Fatalf("chained call's result carries an answer window: %+v", it)
+		}
+		if it.ToolCallID == "tc9" && it.AnswerMs != 4200 {
+			t.Fatalf("the answered call's result lost its window: %+v", it)
+		}
+	}
+	// d) the run ended at the result (yield, error): a user turn
+	// follows - no answer to measure
+	msgs = []core.StoredMessage{
+		{Message: core.NewToolResult("out", "tc1", false), CreatedAt: "t0"},
+		{Message: core.NewUser("next turn"), CreatedAt: "t1"},
+		{Message: answer, CreatedAt: "t2"},
+	}
+	for _, it := range buildTranscriptItems(msgs) {
+		if it.Kind == "tool_result" && it.AnswerMs != 0 {
+			t.Fatalf("result before a user turn carries an answer window: %+v", it)
+		}
+	}
+	// e) an unmeasured answer (no timing record) stays zero, and a
+	// tail result with no follow-up at all stays zero too
+	items = buildTranscriptItems([]core.StoredMessage{
+		{Message: core.NewToolResult("out", "tc1", false), CreatedAt: "t0"},
+		{Message: core.NewAssistant("no timing"), CreatedAt: "t1"},
+		{Message: core.NewToolResult("tail", "tc2", false), CreatedAt: "t2"},
+	})
+	if items[0].AnswerMs != 0 || items[2].AnswerMs != 0 {
+		t.Fatalf("unmeasured/tail answers stamped: %+v", items)
 	}
 }
 

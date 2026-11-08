@@ -200,4 +200,39 @@ func TestChatTimingPostToolSegments(t *testing.T) {
 			t.Errorf("tool message %d elapsed_ms = %d, want in [%d, 2000]", i, got, floor)
 		}
 	}
+
+	// The reloaded transcript's tool_result items carry the
+	// response-return window beside the call's elapsed (card
+	// t_e27c8347): both results unlocked a paced answer segment, so
+	// answer_ms must reflect real wall clock, never zero.
+	tresp, terr := ts.Client().Get(ts.URL + "/sessions/s1/transcript")
+	if terr != nil {
+		t.Fatalf("get transcript: %v", terr)
+	}
+	defer tresp.Body.Close()
+	if tresp.StatusCode != http.StatusOK {
+		t.Fatalf("transcript status = %d, want 200", tresp.StatusCode)
+	}
+	var tbody struct {
+		Items []transcriptItem `json:"items"`
+	}
+	if err := json.NewDecoder(tresp.Body).Decode(&tbody); err != nil {
+		t.Fatalf("decode transcript: %v", err)
+	}
+	results := 0
+	for _, it := range tbody.Items {
+		if it.Kind != "tool_result" {
+			continue
+		}
+		results++
+		if it.ElapsedMs == 0 {
+			t.Errorf("transcript tool_result %s elapsed_ms = 0", it.ToolCallID)
+		}
+		if got := it.AnswerMs; got < int64(eventDelay/(2*time.Millisecond)) {
+			t.Errorf("transcript tool_result %s answer_ms = %d, want >= %d", it.ToolCallID, got, eventDelay/(2*time.Millisecond))
+		}
+	}
+	if results != 2 {
+		t.Fatalf("transcript tool_result count = %d, want 2", results)
+	}
 }

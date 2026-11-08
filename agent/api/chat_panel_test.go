@@ -97,7 +97,7 @@ func TestChatRowsMapTheTranscriptVocabulary(t *testing.T) {
 		{Kind: "thinking", ID: "a1", Content: "hmm", Running: true},
 		{Kind: "message", ID: "a2", Content: "answer"},
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}, Running: true, ElapsedMs: 5},
-		{Kind: "tool_result", ID: "r1", ToolCallID: "tcl", Content: "out", IsError: true, ElapsedMs: 7},
+		{Kind: "tool_result", ID: "r1", ToolCallID: "tcl", Content: "out", IsError: true, ElapsedMs: 7, AnswerMs: 9},
 	})
 	if len(rows) != 5 {
 		t.Fatalf("rows = %d, want 5", len(rows))
@@ -122,6 +122,11 @@ func TestChatRowsMapTheTranscriptVocabulary(t *testing.T) {
 	}
 	if rows[4].Role != core.ChatRoleTool || rows[4].Blocks[0].ToolCallID != "tcl" || !rows[4].Blocks[0].IsError {
 		t.Fatalf("tool_result row = %+v", rows[4])
+	}
+	// the response-return window rides the result block beside the
+	// call's elapsed (card t_e27c8347)
+	if rows[4].Blocks[0].AnswerMs != 9 {
+		t.Fatalf("tool_result block answer_ms = %d, want 9", rows[4].Blocks[0].AnswerMs)
 	}
 }
 

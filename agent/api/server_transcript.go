@@ -19,9 +19,9 @@ import (
 //	tool_call   - tool meta (tool_call: {id, name, arguments}) - the same
 //	              nested shape the live SSE tool_call frame carries
 //	tool_result - the outcome of a call: tool_call_id + content + is_error +
-//	              gate + elapsed_ms, delivered where history placed it
-//	              (after the calls) so the caller merges it like a live
-//	              tool_result frame
+//	              gate + elapsed_ms + answer_ms, delivered where history
+//	              placed it (after the calls) so the caller merges it like a
+//	              live tool_result frame
 //
 // The shape is the client transcript's component contract: items restore
 // and live stream render through the same components. ID (t_17365247)
@@ -42,9 +42,18 @@ type transcriptItem struct {
 	// t_1b3e2a8b): the verdict line the gate stamped on the call's
 	// result, rendered on the call's own row. Empty = no machine
 	// decision - no transcript line.
-	Gate      string              `json:"gate,omitempty"`
-	ElapsedMs int64               `json:"elapsed_ms,omitempty"`
-	Images    []core.ImageContent `json:"images,omitempty"` // user: core.User.Images rides the restore
+	Gate      string `json:"gate,omitempty"`
+	ElapsedMs int64  `json:"elapsed_ms,omitempty"`
+	// AnswerMs is the response-return duration (card t_e27c8347): the
+	// wall clock from this call's result to the answer segment's
+	// completion - the following assistant message's response span,
+	// which the loop opens at the last tool result (the wait from
+	// result to the model's next token is generation latency). Zero =
+	// no answer followed this result in history: the next segment
+	// called another tool, or the run ended here - the row shows the
+	// call duration alone.
+	AnswerMs int64               `json:"answer_ms,omitempty"`
+	Images   []core.ImageContent `json:"images,omitempty"` // user: core.User.Images rides the restore
 	// running marks the LIVE tail's in-flight items (the transcript-refs
 	// merge): an open thinking/response block streams from the restored
 	// item, and a tool call without its result yet renders as the
@@ -153,7 +162,7 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 // nothing.
 func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 	items := make([]transcriptItem, 0, len(msgs))
-	for _, sm := range msgs {
+	for i, sm := range msgs {
 		id := core.MsgID(sm.ID)
 		switch m := sm.Message.(type) {
 		case core.User:
@@ -215,6 +224,7 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 			if m.Timing != nil {
 				it.ElapsedMs = m.Timing.ElapsedMs
 			}
+			it.AnswerMs = answerWindowMs(msgs, i+1)
 			items = append(items, it)
 		case core.YieldResult:
 			// The synthetic re-entry message renders as its call's
@@ -234,10 +244,36 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 			if m.Timing != nil {
 				it.ElapsedMs = m.Timing.ElapsedMs
 			}
+			it.AnswerMs = answerWindowMs(msgs, i+1)
 			items = append(items, it)
 		}
 	}
 	return items
+}
+
+// answerWindowMs looks ahead from a tool result's position for the
+// answer segment the result unlocked: the next assistant message's
+// response span, the wall clock the loop bills from the last tool
+// result to the answer's completion (card t_e27c8347 - the row's
+// second number). Consecutive results (parallel calls) share the one
+// answer; anything that renders nothing (results, system rows) is
+// skipped. A user turn (the run ended - yield, error, stop) or a
+// contentless assistant (the model called another tool instead of
+// answering) yields zero: nothing answered at that point in history.
+// Pure.
+func answerWindowMs(msgs []core.StoredMessage, from int) int64 {
+	for _, sm := range msgs[from:] {
+		switch m := sm.Message.(type) {
+		case core.User:
+			return 0
+		case core.Assistant:
+			if m.Content != "" && m.Timing != nil {
+				return m.Timing.ResponseMs
+			}
+			return 0
+		}
+	}
+	return 0
 }
 
 // transcriptTime picks the display timestamp: the store-level write time

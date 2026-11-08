@@ -197,15 +197,18 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
       session: "s1",
       rows: [
         { role: "assistant", status: "complete", blocks: [{ type: "tool_call", tool_call: { id: "tc1", name: "shell.run" } }] },
-        { role: "tool", status: "complete", blocks: [{ type: "tool_result", tool_call_id: "tc1", content: "1..30" }] },
+        { role: "tool", status: "complete", blocks: [{ type: "tool_result", tool_call_id: "tc1", content: "1..30", answer_ms: 1200 }] },
         { role: "assistant", status: "complete", blocks: [{ type: "text", content: "done text", running: false }] },
       ],
     } as never);
     assert.equal(done[0], second[0], "the result row merges onto the kept call item");
-    const settled = done[0] as { status: string; result?: string; elapsedMs?: number };
+    const settled = done[0] as { status: string; result?: string; elapsedMs?: number; answerMs?: number };
     assert.equal(settled.status, "done");
     assert.equal(settled.result, "1..30");
     assert.equal(settled.elapsedMs, undefined, "the meter spends when the call closes");
+    // the response-return window rides the result block beside the
+    // call duration (card t_e27c8347) - the row's second number
+    assert.equal(settled.answerMs, 1200, "the result's answer_ms lands on the row");
   });
 
   it("a user turn rides the panel and keeps identity once persisted forms it", () => {

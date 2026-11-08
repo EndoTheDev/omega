@@ -14,7 +14,7 @@ describe("renderTranscriptItems", () => {
       { kind: "user", content: "run tests", time: "t0" },
       { kind: "thinking", content: "let me check the file", thinking_ms: 1500 },
       { kind: "tool_call", tool_call: { id: "tc1", name: "go_test", arguments: { pkg: "./..." } } },
-      { kind: "tool_result", tool_call_id: "tc1", content: "PASS", elapsed_ms: 3000 },
+      { kind: "tool_result", tool_call_id: "tc1", content: "PASS", elapsed_ms: 3000, answer_ms: 500 },
       { kind: "message", content: "all green", time: "t3", response_ms: 500 },
     ];
     const items = renderTranscriptItems(wire);
@@ -39,6 +39,29 @@ describe("renderTranscriptItems", () => {
     assert.equal(think.kind, "thinking");
     if (think.kind !== "thinking") return;
     assert.equal(think.finalMs, 1500);
+  });
+
+  it("a tool row carries BOTH durations: the call and the response return (card t_e27c8347)", () => {
+    const items = renderTranscriptItems([
+      { kind: "tool_call", tool_call: { id: "tcA", name: "go_test", arguments: {} } },
+      { kind: "tool_result", tool_call_id: "tcA", content: "PASS", elapsed_ms: 2100, answer_ms: 14300 },
+      { kind: "message", content: "all green", response_ms: 14300 },
+    ]);
+    const tool = items[0];
+    assert.ok(tool.kind === "tool");
+    if (tool.kind !== "tool") return;
+    assert.equal(tool.finalMs, 2100, "the call window (dispatch -> result)");
+    assert.equal(tool.answerMs, 14300, "the response-return window (result -> answer complete)");
+  });
+
+  it("a result with no answer window leaves answerMs absent (the answer never came)", () => {
+    const items = renderTranscriptItems([
+      { kind: "tool_call", tool_call: { id: "tcB", name: "shell.run", arguments: {} } },
+      { kind: "tool_result", tool_call_id: "tcB", content: "out", elapsed_ms: 25 },
+    ]);
+    if (items[0].kind !== "tool") return;
+    assert.equal(items[0].finalMs, 25);
+    assert.equal(items[0].answerMs, undefined);
   });
 
   it("tool_result merges onto the call like a live frame", () => {
