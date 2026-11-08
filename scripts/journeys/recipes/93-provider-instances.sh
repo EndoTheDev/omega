@@ -8,9 +8,35 @@
 # default. No model needed: both stranded sends die at instance
 # resolution, before any provider I/O.
 #
+# THE api_key DOOR (354ef12f; the Nov 8 nightly red was this recipe
+# exercising the refused shape as a green): config.yaml is the only
+# door for an instance api_key. Over the API a row may be added,
+# renamed, retyped or removed - but a plain-text key (on a new row or
+# a stored one) and a clear of a stored key are REFUSED with the door
+# error. The journey therefore:
+#   - adds its instance WITHOUT an api_key (empty is the one legal
+#     keyless shape on a new row - a real key only ever enters
+#     through config.yaml), and
+#   - PINS the refusal: a plain-key PUT on a new row, a plain-key PUT
+#     on the stored row, a clear of a keyed lane row when the lane
+#     carries one (the nightly CI lane is zero-provider - that face
+#     stays pinned by cmd/omega settings_test.go
+#     TestApplyProviderInstancesGate), and the same refusal surfaced
+#     IN THE PANE. A future door-removal turns this journey red
+#     instead of silently reopening the API.
+#
 # Wire truth: GET /settings (the provider.instances knob value) is
 # the config truth, GET /sessions (the row's provider field) is the
 # pin truth. The pane is presentation truth.
+#
+# Selector law: every data-instance probe compares through
+# getAttribute in a BACKSLASH-FREE expression - the old
+# [data-instance=\"name\"] shape is a CSS value with literal quote
+# characters under agent-browser 0.26.0 (the winbtw shim passes the
+# eval raw) while CI's 0.41.x unescapes once, so the quoted-attr
+# form reds on one CLI and greens on the other (the CLI split,
+# proven live on this recipe). A backslash-free expr is a fixed
+# point of any unescape pass - it agrees on every CLI.
 #
 # Lane note: the strand section pins a NEVER-configured instance name
 # - it works on every lane (with or without a pre-existing providers:
@@ -24,10 +50,12 @@ SIDTAG=$(date +%H%M%S)
 ITAG=$(date +%d%b%H%M%S | tr 'A-Z' 'a-z')
 PROV_NAME="jrn-inst-$ITAG"     # the instance the editor adds + removes
 GHOST_NAME="jrn-ghost-$ITAG"   # the never-configured name the strand pins
+PLAIN_KEY="jrn-key-$ITAG"      # the plain key every door pin tries to plant
 
 # state this recipe owns on the lane: the original provider.instances
 # list (restored by the trap) and the seed session (deleted by the trap).
 INST_BEFORE_FILE="$JOURNEY_WORKTMP/omega-93-inst-before.json"
+PIN_BODY="$JOURNEY_WORKTMP/omega-93-pin-body"
 
 cleanup() {
   restore_providers || true
@@ -37,7 +65,9 @@ trap cleanup EXIT
 
 # restore_providers: PUT the original provider.instances list back.
 # Empty snapshot = the lane carried none: an empty list replaces the
-# map with nothing (the same wire the pane's save fires).
+# map with nothing (the same wire the pane's save fires). Keyed lane
+# rows ride masked in the snapshot - the masked round trip keeps
+# their secrets (the door allows it).
 restore_providers() {
   [ -f "$INST_BEFORE_FILE" ] || return 0
   curl -s -X PUT "${JOURNEY_BASE_URL}/settings" \
@@ -84,6 +114,84 @@ print("has" if sys.argv[1] in names else "no")
 ' "$1"
 }
 
+# keyed_row: the name of the first wire row carrying a MASKED key (""
+# when the lane has none - the nightly CI lane is zero-provider).
+keyed_row() {
+  read_instances | python3 -c '
+import sys, json
+try:
+    sys.stdout.reconfigure(newline="\n")
+except Exception:
+    pass
+name = ""
+for r in json.load(sys.stdin):
+    if r.get("api_key") == "****":
+        name = r.get("name", "")
+        break
+print(name)
+'
+}
+
+# pin_new_list <name> <key>: the wire list + one NEW row carrying a
+# plain key - the exact shape this journey used to save as green
+# before the door landed (the Nov 8 nightly red).
+pin_new_list() {
+  read_instances | python3 -c '
+import sys, json
+try:
+    sys.stdout.reconfigure(newline="\n")
+except Exception:
+    pass
+rows = json.load(sys.stdin)
+rows.append({"name": sys.argv[1], "type": "openai", "host": "", "api_key": sys.argv[2]})
+print(json.dumps(rows))
+' "$1" "$2"
+}
+
+# pin_key_list <name> <key>: the wire list with the named row's
+# api_key replaced - a plain plant on a stored row, or "" = a clear
+# attempt on a stored key.
+pin_key_list() {
+  read_instances | python3 -c '
+import sys, json
+try:
+    sys.stdout.reconfigure(newline="\n")
+except Exception:
+    pass
+rows = json.load(sys.stdin)
+hit = False
+for r in rows:
+    if r.get("name") == sys.argv[1]:
+        r["api_key"] = sys.argv[2]
+        hit = True
+if not hit:
+    sys.exit(1)
+print(json.dumps(rows))
+' "$1" "$2"
+}
+
+# put_instances <json>: PUT the list over the settings API; prints the
+# HTTP status, the body lands in $PIN_BODY (a refused apply answers
+# 400 + the raw error text).
+put_instances() {
+  curl -s -o "$PIN_BODY" -w '%{http_code}' -X PUT "$JOURNEY_BASE_URL/settings" \
+    -H 'Content-Type: application/json' \
+    -d "{\"values\": {\"provider.instances\": $1}}"
+}
+
+# door_refused <label> <json>: the PUT must answer 400 naming the
+# config.yaml door. A 200 here means the door came off its hinge -
+# the hardening silently reopened the API (the pin this journey
+# exists for).
+door_refused() {
+  assert_eq "$(put_instances "$2")" "400" "$1: the settings PUT refuses (400)"
+  case "$(cat "$PIN_BODY")" in
+    *"config.yaml is the only door"*)
+      step "ok: $1 answers the config.yaml door error" ;;
+    *) die "$1 does not name the door: $(cat "$PIN_BODY")" ;;
+  esac
+}
+
 # row_field: one field of the /sessions row (the 83 shape: provider is
 # the pin the wire wrote).
 row_field() {
@@ -105,6 +213,28 @@ for r in rows:
 # aria-label. Vue rides the input event; value alone does nothing.
 fill_row() {
   jsq "(()=>{const rows=[...document.querySelectorAll('.providers-editor .provider-row')];const r=rows[rows.length-1];if(!r) return false;const i=[...r.querySelectorAll('input')].find(x=>(x.getAttribute('aria-label')||'')===\"$1\");if(!i) return false;i.value=\"$2\";i.dispatchEvent(new Event('input',{bubbles:true}));return true;})()" >/dev/null 2>&1
+}
+
+# row_present_js <name>: a boolean probe - the named row is rendered.
+row_present_js() {
+  printf '%s' '(()=>{return [...document.querySelectorAll(".providers-editor .provider-row")].some(x=>x.getAttribute("data-instance")==="'$1'")})()'
+}
+
+# row_key_js <name>: the named row's api-key input value ("" when the
+# row or its input is missing).
+row_key_js() {
+  printf '%s' '(()=>{const r=[...document.querySelectorAll(".providers-editor .provider-row")].find(x=>x.getAttribute("data-instance")==="'$1'");return r?(r.querySelector("input[type=password]")||{}).value||"":"";})()'
+}
+
+# fill_row_key <name> <text>: set the NAMED row's api-key input (the
+# input-event law: value alone does nothing).
+fill_row_key() {
+  jsq '(()=>{const r=[...document.querySelectorAll(".providers-editor .provider-row")].find(x=>x.getAttribute("data-instance")==="'$1'");if(!r) return false;const i=r.querySelector("input[type=password]");if(!i) return false;i.value="'$2'";i.dispatchEvent(new Event("input",{bubbles:true}));return true;})()' >/dev/null 2>&1
+}
+
+# remove_row <name>: click the named row's remove control.
+remove_row() {
+  jsq '(()=>{const r=[...document.querySelectorAll(".providers-editor .provider-row")].find(x=>x.getAttribute("data-instance")==="'$1'");if(!r) return false;const b=r.querySelector(".provider-remove");if(!b) return false;b.click();return true;})()' >/dev/null 2>&1
 }
 
 open_settings() {
@@ -154,14 +284,14 @@ step "ok: add instance appended a row"
 
 # fill the NEW row (last): name is the instance id (the id law:
 # lowercase alnum/-/_, no 'default'); type stays the row default
-# (openai); the model + key are required - a masked key on a NEW
-# instance is a save error, so the fresh row carries its own.
+# (openai) and there is no model column (t_1914a8c9 - an instance is
+# a named endpoint). NO api_key: the door (354ef12f) refuses a plain
+# key on a new row - empty is the one legal keyless shape over the
+# API, a real key only ever enters through config.yaml.
 fill_row "instance $((wire_rows + 1)) name" "$PROV_NAME"
-fill_row "instance $((wire_rows + 1)) model" "jrn-model"
-fill_row "instance $((wire_rows + 1)) api key" "jrn-key-$ITAG"
 
 if ! wait_js '!!document.querySelector(".settings-save")' 8; then
-  die "save row never appeared after editing the new instance (nothing marked dirty)"
+  die "save row never appeared after naming the new instance (nothing marked dirty)"
 fi
 jsq 'document.querySelector(".settings-save").click()' >/dev/null 2>&1
 # the save row unmounts when the diff lands (the refresh payload clears
@@ -170,7 +300,7 @@ if ! poll_js '!document.querySelector(".settings-save")' 20; then
   err=$(jsq '(document.querySelector(".settings-error")||{}).textContent||""' 2>&1 | tail -1 | deq)
   die "instance save never cleared the save row (error: $err)"
 fi
-step "ok: new instance $PROV_NAME saved"
+step "ok: new instance $PROV_NAME saved (keyless - the door's one legal add shape)"
 
 assert_eq "$(inst_has "$PROV_NAME")" "has" "saved instance is on the wire (provider.instances)"
 
@@ -178,20 +308,75 @@ assert_eq "$(inst_has "$PROV_NAME")" "has" "saved instance is on the wire (provi
 open_settings
 # pane reload + poll: the editor re-renders the saved row (config round
 # trip); an immediate query would race the reload's fetch (the 60 law)
-if ! poll_js '(()=>{return !!document.querySelector(".providers-editor .provider-row[data-instance=\"'$PROV_NAME'\"]")})()' 10; then
+if ! poll_js "$(row_present_js "$PROV_NAME")" 10; then
   die "the added instance never re-rendered after a pane reload (did not persist)"
 fi
 step "ok: the added instance re-renders after a pane reload (persists)"
-# the key must ride MASKED on the reload - the plain never touches the pane
-masked=$(jsq '(document.querySelector(".providers-editor .provider-row[data-instance=\"'$PROV_NAME'\"] input[type=password]")||{}).value||""' 2>&1 | tail -1 | deq)
-stars=$(printf '%s' "$masked" | sed 's/\*//g')
-[ -n "$masked" ] && [ -z "$stars" ] && step "ok: saved key renders masked" \
-  || die "saved key renders EMPTY (masked round trip lost) or PLAIN ($masked)"
+# the stored row carries NO key: the key input must render EMPTY
+# (maskSecret keeps an empty key empty - a mask would imply a key
+# exists), so the plain never touches the pane
+keyval=$(jsq "$(row_key_js "$PROV_NAME")" 2>&1 | tail -1 | deq)
+assert_eq "$keyval" "" "the keyless instance renders an empty key input (no mask without a stored key)"
+
+# --- 1b. the door pins: an instance api_key never crosses the API -----
+# (354ef12f: config.yaml is the only door. Each pin PUTs the wire list
+# with one door-refused mutation; a green 200 here means the door came
+# off its hinge and the journey reds - that is the point.)
+WIRE_AT_PINS=$(read_instances)
+
+door_refused "a plain api_key on a NEW row" \
+  "$(pin_new_list "jrn-plant-$ITAG" "$PLAIN_KEY")"
+door_refused "a plain api_key on the stored row $PROV_NAME" \
+  "$(pin_key_list "$PROV_NAME" "$PLAIN_KEY")"
+
+KEYED=$(keyed_row)
+if [ -n "$KEYED" ]; then
+  door_refused "clearing the stored key on $KEYED" "$(pin_key_list "$KEYED" "")"
+else
+  step "SKIP: the lane carries no keyed instance - the clear face stays pinned by cmd/omega settings_test.go (TestApplyProviderInstancesGate)"
+fi
+
+# every refused PUT mutated nothing: the wire is byte-identical
+assert_eq "$(read_instances)" "$WIRE_AT_PINS" "the refused door PUTs changed nothing (wire unchanged)"
+
+# --- 1c. the door pin in the pane -------------------------------------
+# The refusal must be VISIBLE where the operator edits (the Nov 8
+# nightly red surfaced exactly here): a plain key typed into the
+# saved row's key input dies on save with the door error, the dirty
+# save row stays (the config never moved), and a pane reload shows
+# the key input EMPTY again - the refused write left no residue.
+if ! poll_js "$(row_present_js "$PROV_NAME")" 8; then
+  die "the saved instance row never rendered (pane pin)"
+fi
+fill_row_key "$PROV_NAME" "$PLAIN_KEY"
+if ! wait_js '!!document.querySelector(".settings-save")' 8; then
+  die "the plain-key edit never marked the pane dirty (save row missing)"
+fi
+jsq 'document.querySelector(".settings-save").click()' >/dev/null 2>&1
+door_in_pane='(()=>{const e=document.querySelector(".settings-error");return !!e && (e.textContent||"").indexOf("config.yaml is the only door") !== -1;})()'
+if ! poll_js "$door_in_pane" 15; then
+  err=$(jsq '(document.querySelector(".settings-error")||{}).textContent||""' 2>&1 | tail -1 | deq)
+  die "pane save with a plain key was not refused with the door error (error: $err)"
+fi
+step "ok: pane save with a plain api_key surfaces the door error"
+# the refusal keeps the dirty row - the config never moved
+assert_eq "$(jsq '!!document.querySelector(".settings-save")' 2>&1 | tail -1 | deq)" "true" \
+  "the refused pane save keeps the dirty save row"
+
+# reload: the refused write left no residue - the row persists, its
+# key input empty again
+open_settings
+if ! poll_js "$(row_present_js "$PROV_NAME")" 10; then
+  die "the instance row never re-rendered after the refused save (did it persist?)"
+fi
+residue=$(jsq "$(row_key_js "$PROV_NAME")" 2>&1 | tail -1 | deq)
+assert_eq "$residue" "" "the refused plain key left no residue (key input empty after reload)"
 
 # --- 2. remove the row, save: the instance leaves --------------------
-jsq '(()=>{const r=document.querySelector(".providers-editor .provider-row[data-instance=\"'$PROV_NAME'\"] .provider-remove"); if(!r) return false; r.click(); return true})()' >/dev/null 2>&1
-wait_js '!document.querySelector(".providers-editor .provider-row[data-instance=\"'$PROV_NAME'\"]")' 8 \
-  || die "remove never dropped the row"
+remove_row "$PROV_NAME"
+if ! wait_js "!($(row_present_js "$PROV_NAME"))" 8; then
+  die "remove never dropped the row"
+fi
 if ! wait_js '!!document.querySelector(".settings-save")' 8; then
   die "save row never appeared after removing the instance"
 fi
