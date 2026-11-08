@@ -431,7 +431,10 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   color mode and the custom theme, t_a94b1cda; model slots ride
   `ModelField`, the BandSelect listbox with capability filters).
   Terminal view: `harness/terminal/ui/TerminalTab` (the bottom-host PTY
-  over the terminal module's routes). Browser view:
+  over the terminal module's routes; a fresh spawn lands in the
+  resolved workspace - the focused chat session's pinned root rides
+  the claim as `?session=<id>`, the server resolves it against the
+  `server.default_workspace` knob and the process cwd, t_62d72028). Browser view:
   `harness/browser/ui/BrowserTab` (URL bar + iframe over
   GET/PUT /browser/last; X-Frame-Options refusals render the fallback
   panel, never a silent blank frame). Both are tab capsules - their

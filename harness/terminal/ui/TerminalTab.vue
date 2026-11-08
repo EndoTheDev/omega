@@ -45,6 +45,13 @@
   import { FitAddon } from "@xterm/addon-fit";
   import type { ITheme } from "@xterm/xterm";
 
+  // The shell's spawn workspace follows the focused chat session (card
+  // t_62d72028): the shell starts where the workspace is defined -
+  // the session's pinned folder, else the server's default_workspace,
+  // else the process cwd. The SHELL ONLY reads it at claim time; a
+  // later focus change never re-roots a living shell.
+  const props = defineProps<{ focusedSession?: string | null }>();
+
   // the module routes (harness/terminal): claim, stream, input, resize,
   // kill. The ids are server-minted hex - encodeURIComponent is the
   // honest form even for them.
@@ -108,7 +115,13 @@
       (no pty on this build, a 409 cap, a dead module) names itself,
       and the pane repeats it verbatim instead of the generic line. */
   async function claim(): Promise<string | null> {
-    const res = await fetch(CLAIM, { method: "POST" });
+    // the focused session id rides the claim (never a root!) - the
+    // server resolves the spawn cwd from the session row, the
+    // default_workspace knob, or its own cwd (card t_62d72028).
+    const url = props.focusedSession
+      ? `${CLAIM}?session=${encodeURIComponent(props.focusedSession)}`
+      : CLAIM;
+    const res = await fetch(url, { method: "POST" });
     if (!res.ok) {
       const raw = (await res.text()).trim();
       let msg = raw || `HTTP ${res.status}`;

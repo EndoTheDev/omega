@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
@@ -28,6 +30,8 @@ import (
 //
 //	GET    /terminal/sessions     - the store snapshot (claim is POST)
 //	POST   /terminal/sessions     - claim-else-spawn one session
+//	                               (?session=<id>: the focused chat row
+//	                               roots the spawn's cwd - t_62d72028)
 //	GET    /terminal/{id}/stream  - the output SSE (replays the tail)
 //	POST   /terminal/{id}/input   - keystrokes/paste into the shell
 //	POST   /terminal/{id}/resize  - the pane's rows/cols (SIGWINCH)
@@ -36,12 +40,34 @@ import (
 // Removal proof: TestTerminalRemovalProof (cmd/omega/removal_test.go).
 type Plugin struct {
 	store *Store
+	// storeFn resolves the workspace-pin face LIVE per claim (the seam
+	// resolve per request - a toggle swaps the offer under the
+	// handlers' feet, exactly the Files tab's law). nil = the chain
+	// falls through to the knob and the cwd.
+	storeFn func() sessionStores
+	// defaultWorkspace is the `default_workspace` knob (card
+	// t_62d72028): the spawn workspace chain's step 2. Written by
+	// SetDefaultWorkspace (boot + the settings seam's hot-apply)
+	// while claims read it concurrently, so it rides an atomic
+	// value - never a bare field.
+	defaultWorkspace atomic.Value
 }
 
-// NewPlugin builds the terminal plugin. workdir is the shell's cwd
-// (omega's working directory).
-func NewPlugin(workdir string) *Plugin {
-	return &Plugin{store: NewStore(spawnProcess, workdir, nil)}
+// NewPlugin builds the terminal plugin. workdir is the spawn fallback
+// (omega's process working directory); defaultWorkspace is the
+// server.default_workspace knob's boot value ("" = unset).
+func NewPlugin(workdir, defaultWorkspace string) *Plugin {
+	p := &Plugin{store: NewStore(spawnProcess, workdir, nil)}
+	p.defaultWorkspace.Store(defaultWorkspace)
+	return p
+}
+
+// SetDefaultWorkspace is the host's hot-apply hook (card t_62d72028):
+// the settings pane (and the config watcher) push a changed
+// default_workspace so the NEXT spawn follows it live, no restart -
+// the files capsule's knob, same discipline.
+func (p *Plugin) SetDefaultWorkspace(ws string) {
+	p.defaultWorkspace.Store(ws)
 }
 
 // NewPluginWithStore is the test constructor (the store's spawn seam
@@ -86,6 +112,9 @@ func (p *Plugin) Toggleable() bool { return true }
 // The claim is the module name: /terminal here, cross-tenant claims
 // of the same route patterns are the registry's refusal.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
+	// the workspace-pin face resolves LIVE per claim (card t_62d72028):
+	// nil-safe absence rides - the chain falls through to the knob
+	p.storeFn = func() sessionStores { return seam[sessionStores](ctx, "store") }
 	if err := api.RegisterRoute("GET /terminal/sessions", p.handleList); err != nil {
 		return err
 	}
@@ -125,9 +154,14 @@ type claimReply struct {
 // handleClaim claims-else-spawns one session (the pane's open). The
 // reattach scan, the spawn and the claim mark ride one lock in
 // Store.Claim; the stream's subscribe below clears the mark - the
-// claim/attach gap cannot hand the shell to a second pane.
+// claim/attach gap cannot hand the shell to a second pane. The spawn
+// lands in the RESOLVED workspace (card t_62d72028): the focused
+// session's pinned root (?session=), else the default_workspace knob,
+// else omega's process cwd - the same chain the Files tab and the
+// shell tool resolve, so a freshly spawned shell starts at pwd ==
+// the workspace the pane sits on.
 func (p *Plugin) handleClaim(w http.ResponseWriter, r *http.Request) {
-	s, claimed, err := p.store.Claim()
+	s, claimed, err := p.store.Claim(p.resolveSpawnDir(r))
 	if err != nil {
 		var capErr *capError
 		if errors.As(err, &capErr) {
@@ -138,6 +172,32 @@ func (p *Plugin) handleClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, claimReply{ID: s.id, Existed: claimed})
+}
+
+// resolveSpawnDir is the spawn workspace law (card t_62d72028), the
+// Files tab's resolution chain wearing the terminal's face:
+//  1. the focused session's pinned workspace (the store row), live:
+//     every claim re-reads it, so a re-pin lands on the next spawn;
+//  2. else the configured default workspace (the hot knob);
+//  3. else "" - Store.Claim's fallback, the process cwd (the shape
+//     the pre-law spawn always used).
+//
+// A session id the store does not know (a draft, an unknown id, a
+// no-store lane) simply falls through the chain - resolution never
+// fails on it. The pane sends the ID, never a root.
+func (p *Plugin) resolveSpawnDir(r *http.Request) string {
+	if id := strings.TrimSpace(r.URL.Query().Get("session")); id != "" && p.storeFn != nil {
+		if sess := p.storeFn(); sess != nil {
+			if s, err := sess.GetSession(r.Context(), id); err == nil &&
+				strings.TrimSpace(s.Workspace) != "" {
+				return s.Workspace
+			}
+		}
+	}
+	if ws, _ := p.defaultWorkspace.Load().(string); strings.TrimSpace(ws) != "" {
+		return ws
+	}
+	return ""
 }
 
 // handleList answers the store snapshot, oldest first.
