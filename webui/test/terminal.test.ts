@@ -77,13 +77,42 @@ test("app.vue hosts the terminal outlet - any pane slot by union membership", ()
 test("the pane claims (reattach-else-spawn) and never gates", () => {
   assert.match(
     tabVue,
-    /POST["'` ]+["'`]?\(?\/terminal\/sessions/,
+    /POST["'` ]+["'`]?\/terminal\/sessions/,
     "the claim rides POST /terminal/sessions",
   );
   assert.doesNotMatch(
     tabVue,
     /confirm|disabled[^-]|opt-in/i,
     "NO confirm-gate, NO opt-in - the owner's ruling",
+  );
+});
+
+// card t_62d72028: the shell spawns in the RESOLVED workspace - the
+// focused session's pinned root rides the claim as an ID (never a
+// root), the server resolves the chain (session row, default knob,
+// cwd).
+test("the claim carries the focused session id (the spawn workspace law)", () => {
+  assert.match(
+    tabVue,
+    /focusedSession\?: string \| null/,
+    "the pane declares the focused-session prop",
+  );
+  assert.match(
+    tabVue,
+    /\?session=\$\{encodeURIComponent\(props\.focusedSession\)\}/,
+    "the claim URL carries the session id, encoded",
+  );
+  assert.match(
+    appVue,
+    /:focused-session="focusedSessionId"/,
+    "app.vue passes the focused chat tab's session id to the pane",
+  );
+  // the shell reads the id at CLAIM time only - a focus change never
+  // re-roots a living shell (the pane never re-claims on prop change)
+  assert.doesNotMatch(
+    tabVue,
+    /watch\(/,
+    "no watcher re-claims when the focused session changes",
   );
 });
 
