@@ -47,16 +47,34 @@ func readState(t *testing.T, home string) cronState {
 }
 
 // waitForState polls until cronstate.json satisfies keep, or fails.
+// A transient read failure is a retry, not a verdict (card t_e9965bc6):
+// on Windows the runner's atomic save (saveCronState: tmp + os.Rename)
+// opens cronstate.json with DELETE access and no read-share for the
+// length of the rename, and a poll stepping into that window gets
+// ERROR_SHARING_VIOLATION from os.ReadFile. The poll deadline stays
+// the only failure clock; readState keeps failing loudly for the
+// tests that read the file with no concurrent writer.
 func waitForState(t *testing.T, home string, keep func(cronState) bool) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if keep(readState(t, home)) {
-			return
+		if data, err := os.ReadFile(filepath.Join(home, cronStateFileName)); err == nil {
+			var st cronState
+			if json.Unmarshal(data, &st) == nil && keep(st) {
+				return
+			}
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("cronstate.json never reached the swept shape: %+v", readState(t, home))
+	data, err := os.ReadFile(filepath.Join(home, cronStateFileName))
+	if err != nil {
+		t.Fatalf("cronstate.json never reached the swept shape; last read: %v", err)
+	}
+	var st cronState
+	if err := json.Unmarshal(data, &st); err != nil {
+		t.Fatalf("cronstate.json never reached the swept shape; %v", err)
+	}
+	t.Fatalf("cronstate.json never reached the swept shape: %+v", st)
 }
 
 // The observed drift, replayed: crons.yaml declares jobs: [], the
