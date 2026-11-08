@@ -250,7 +250,7 @@ test("ChatItem rides the gate card on the tool call row, ChatTab binds it", () =
   assert.match(chatItem, /item\.kind === 'tool' && gateCard/, "only a tool row hosts the card");
   const chatTab = read("app/components/ChatTab.vue");
   assert.match(chatTab, /bindGateQuestions/, "ChatTab binds pending cards onto the transcript");
-  assert.match(chatTab, /:gate-card="gateCardForItem\(item\)"/, "the binding arrives per rendered row");
+  assert.match(chatTab, /:gate-card="gateCardForItem\(entry\)"/, "the binding arrives per rendered row");
   assert.match(chatTab, /sessionGateBinding\.standalone/, "cards with no running row render standalone at the tail");
   assert.match(chatTab, /refreshNotifications/, "the chat surface refreshes the shared pending-card truth");
 });
