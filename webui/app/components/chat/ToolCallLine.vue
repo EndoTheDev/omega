@@ -20,8 +20,10 @@
         class="tool-gate">{{ gate }}</span
       >
       <span
-        v-if="elapsedLabel"
-        class="tool-elapsed">{{ elapsedLabel }}</span
+        v-if="elapsedLabel || answerLabel"
+        class="tool-elapsed"
+        :title="answerLabel ? 'call duration + response return' : undefined"
+        >{{ elapsedLabel }}<template v-if="answerLabel"> + {{ answerLabel }}</template></span
       >
     </summary>
     <div
@@ -52,11 +54,12 @@
 </template>
 
 <script setup lang="ts">
-  import { nextTick, onMounted, ref, watch } from "vue";
+  import { computed, nextTick, onMounted, ref, watch } from "vue";
 
   // card t_502b8e81: the iconset wrapper - wrench on the tool call line
   import Icon from "../ui/Icon.vue";
   import { toolRowWantOpen, useToolDisplay } from "../../composables/toolDisplay";
+  import { formatDurationMs } from "../../composables/omega";
   import { useElapsed } from "../../composables/useElapsed";
   import VariantSwitcher from "./VariantSwitcher.vue";
   import type { VariantBlock } from "../../composables/omega";
@@ -69,6 +72,12 @@
     // server-measured duration from restored history - wins over the
     // live meter (restored items mount final and never start one)
     finalMs?: number;
+    // response-return duration (card t_e27c8347): the server-measured
+    // wall clock from this call's result to the answer's completion -
+    // the row's second number beside the call's own elapsed. No live
+    // meter: it appears once the answer segment is persisted, absent
+    // while it streams and when no answer followed the call.
+    answerMs?: number;
     // the smart gate's decision record (card t_1b3e2a8b): the verdict
     // line stamped on the guarded call's result, rendered verbatim.
     // Absent for every ungated/manual/undecided call - no line.
@@ -93,6 +102,13 @@
     // a restored STILL-RUNNING call counts on from the server's
     // elapsed-so-far (live-run merge) - not from the mount moment
     () => props.elapsedMs,
+  );
+
+  // the response-return half (card t_e27c8347): server-measured, never
+  // metered - the number lands with the restored payload once the
+  // answer segment completed, formatted with the same ruler.
+  const answerLabel = computed(() =>
+    props.answerMs != null ? formatDurationMs(props.answerMs) : "",
   );
 
   // --- auto open/close (/tools auto parity, card t_868633b3) ---

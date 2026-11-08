@@ -29,6 +29,7 @@
     :name="item.name"
     :status="item.status"
     :final-ms="item.finalMs"
+    :answer-ms="item.answerMs"
     :output="item.output"
     :result="item.result"
     :gate="item.gate"

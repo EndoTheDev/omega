@@ -136,6 +136,11 @@ type ChatBlock struct {
 	// the call's own row. Empty = no machine decision.
 	Gate      string `json:"gate,omitempty"`
 	ElapsedMs int64  `json:"elapsed_ms,omitempty"`
+	// AnswerMs rides a tool_result block (card t_e27c8347): the
+	// response-return duration - the wall clock from the call's
+	// result to the answer segment's completion, stamped beside
+	// the call's own elapsed on the row.
+	AnswerMs int64 `json:"answer_ms,omitempty"`
 }
 
 // ChatRow is one message row of a chat panel: role, its content

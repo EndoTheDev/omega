@@ -1043,6 +1043,9 @@ export function createCanvasTranscript(): CanvasTranscript {
         // the call settled: the running meter's offset is spent
         if (!blockRunning) target.elapsedMs = undefined;
         target.finalMs = block.elapsed_ms;
+        // the response-return window rides the result beside the call
+        // duration (card t_e27c8347) - the row's second number
+        target.answerMs = block.answer_ms;
         return target;
       }
       if (target?.kind === "verdict") {
@@ -1063,6 +1066,7 @@ export function createCanvasTranscript(): CanvasTranscript {
       it.result = block.content ?? "";
       if (block.gate) it.gate = block.gate;
       it.finalMs = block.elapsed_ms;
+      it.answerMs = block.answer_ms;
       cache.set(`result:${index}:${sig}`, it);
       return it;
     }

@@ -575,7 +575,7 @@ func chatRows(items []transcriptItem) []core.ChatRow {
 			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockToolCall, Running: it.Running, ToolCall: it.ToolCall, ElapsedMs: it.ElapsedMs}}
 		case "tool_result":
 			row.Role = core.ChatRoleTool
-			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockToolResult, Content: it.Content, ToolCallID: it.ToolCallID, IsError: it.IsError, Gate: it.Gate, ElapsedMs: it.ElapsedMs}}
+			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockToolResult, Content: it.Content, ToolCallID: it.ToolCallID, IsError: it.IsError, Gate: it.Gate, ElapsedMs: it.ElapsedMs, AnswerMs: it.AnswerMs}}
 		default:
 			continue
 		}

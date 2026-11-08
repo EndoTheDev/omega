@@ -183,6 +183,12 @@ export interface ToolItem {
   gate?: string;
   // server-measured duration from the matched result (restored)
   finalMs?: number;
+  // response-return duration (card t_e27c8347): the wall clock from
+  // this call's result to the answer segment's completion - the row's
+  // second number beside the call's own finalMs. Server-measured only
+  // (no live meter): absent while the answer streams and when no
+  // answer followed the call in history.
+  answerMs?: number;
   // elapsed already consumed by a STILL-RUNNING restored call (the
   // transcript's live-run merge): the meter counts on from here
   elapsedMs?: number;
@@ -264,6 +270,9 @@ export type TranscriptWireItem =
       // result onto the call row it settles
       gate?: string;
       elapsed_ms?: number;
+      // response-return duration (card t_e27c8347) - rides the result
+      // beside the call's elapsed: the answer segment's response span
+      answer_ms?: number;
     };
 
 // renderTranscriptItems maps a transcript payload into the components'
@@ -370,6 +379,9 @@ export function renderTranscriptItems(
         // the gate's decision record rides the result onto the call row
         t.gate = it.gate;
         t.finalMs = it.elapsed_ms;
+        // the response-return window rides the result beside the call
+        // duration (card t_e27c8347) - the row's second number
+        t.answerMs = it.answer_ms;
         // the call settled: the running meter's offset is spent
         t.elapsedMs = undefined;
         break;
@@ -400,6 +412,7 @@ export interface ChatBlockWire {
   is_error?: boolean;
   gate?: string; // the smart gate's decision record (card t_1b3e2a8b)
   elapsed_ms?: number;
+  answer_ms?: number; // response-return duration (card t_e27c8347)
 }
 
 // ChatRowWire mirrors core.ChatRow: one message row (role + its blocks
