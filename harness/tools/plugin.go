@@ -126,34 +126,51 @@ func handleToolsCommand(ctx *core.Context, name, args string) (core.CommandResul
 	}
 }
 
-// listTools formats the tool list from ctx.Infos as text.
+// listTools formats the tool list from ctx.Infos as text. The registry
+// entry's enable flag is stamped from the live fold (card t_441deb04):
+// the disabled.tools fold at ctx.DisabledTools, so a live toggle shows
+// without a remount. A disabled tool keeps its row - the listing is the
+// management surface, and a row that vanished would leave no way to
+// find the name to turn back on - but the line says so.
 func listTools(ctx *core.Context) core.CommandResult {
 	var sb strings.Builder
 	sb.WriteString("\n")
 
+	infos := core.StampDisabledTools(ctx.Infos, ctx.DisabledTools)
 	nameWidth := 0
-	for _, ext := range ctx.Infos {
+	disabled := 0
+	for _, ext := range infos {
 		for _, t := range ext.ToolList {
 			if len(t.Name) > nameWidth {
 				nameWidth = len(t.Name)
 			}
+			if t.Disabled {
+				disabled++
+			}
 		}
 	}
 
-	for _, ext := range ctx.Infos {
+	for _, ext := range infos {
 		if len(ext.ToolList) == 0 {
 			continue
 		}
 		sb.WriteString(ext.Name)
 		sb.WriteString("\n")
 		for _, t := range ext.ToolList {
-			fmt.Fprintf(&sb, "  %-*s  %s\n", nameWidth, t.Name, firstLineOfDesc(t.Description))
+			line := fmt.Sprintf("  %-*s  %s", nameWidth, t.Name, firstLineOfDesc(t.Description))
+			if t.Disabled {
+				line = strings.TrimRight(line, " ") + "  [disabled]"
+			}
+			sb.WriteString(line)
+			sb.WriteString("\n")
 		}
 		sb.WriteString("\n")
 	}
 
 	if nameWidth == 0 {
 		sb.WriteString("[no tools available]\n")
+	} else if disabled > 0 {
+		fmt.Fprintf(&sb, "[%d disabled: /tools stays the listing, omega tools enable <name> turns one back on]\n", disabled)
 	}
 
 	return core.CommandResult{Text: sb.String()}

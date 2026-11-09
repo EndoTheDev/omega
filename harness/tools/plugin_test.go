@@ -347,3 +347,43 @@ func TestHandleToolsCommandWhitespaceTrimmed(t *testing.T) {
 		t.Fatalf("trimmed 'list' should call listTools; got %q", res.Text)
 	}
 }
+
+// TestListToolsShowsDisabledState pins the listing surface (card
+// t_441deb04): a tool the fold switched off keeps its row - that row IS
+// the way back, since a vanished name leaves nothing to re-enable - and
+// the row says it is off.
+func TestListToolsShowsDisabledState(t *testing.T) {
+	ctx := &core.Context{
+		DisabledTools: []string{"files.write"},
+		Infos: []core.ExtensionInfo{
+			{
+				Name: "files",
+				ToolList: []core.ToolInfo{
+					{Name: "files.read", Description: "read a file"},
+					{Name: "files.write", Description: "write a file"},
+				},
+			},
+		},
+	}
+	res := listTools(ctx)
+	if !strings.Contains(res.Text, "files.read") || !strings.Contains(res.Text, "files.write") {
+		t.Fatalf("both rows must stay listed, got %q", res.Text)
+	}
+	var writeLine string
+	for _, line := range strings.Split(res.Text, "\n") {
+		if strings.Contains(line, "files.write") {
+			writeLine = line
+		}
+	}
+	if !strings.Contains(writeLine, "[disabled]") {
+		t.Fatalf("disabled row carries no state: %q", writeLine)
+	}
+	for _, line := range strings.Split(res.Text, "\n") {
+		if strings.Contains(line, "files.read") && strings.Contains(line, "[disabled]") {
+			t.Fatalf("enabled row stamped disabled: %q", line)
+		}
+	}
+	if !strings.Contains(res.Text, "omega tools enable <name>") {
+		t.Fatalf("no hint pointing at the CLI toggle: %q", res.Text)
+	}
+}

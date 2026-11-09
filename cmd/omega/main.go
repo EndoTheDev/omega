@@ -73,6 +73,7 @@ Usage:
   omega export <id|label>  export a session as JSONL
   omega insights [--days N]  show session usage analytics (default: 30 days)
   omega agents         list agents; ` + "`omega agents create <name>`" + ` scaffolds one
+  omega tools          list wire tools; ` + "`omega tools disable <name>`" + ` takes one off the model
   omega update              report N versions behind + prompt y/N; nothing
                             installs without an explicit y (or --yes)
   omega update --yes        install the latest stable release without a prompt
@@ -179,6 +180,11 @@ func run(args []string) error {
 		return cmdInsights(parseConfigFlag(rest), rest)
 	case "agents":
 		return cmdAgents(rest)
+	case "tools":
+		// `omega tools` owns its own argv, `--help` included: it is the
+		// crons grammar's sibling (list/enable/disable) and behaves like
+		// a module subcommand at the flag level - see isRootSubcommand.
+		return cmdTools(rest)
 	case "update":
 		return cmdUpdate(rest)
 	case "rollback":
@@ -216,6 +222,13 @@ func run(args []string) error {
 // project-path name. The list must stay in sync with run()'s switch:
 // a built-in keeps the root's flag short-circuit on its trailing
 // argv, while a module subcommand owns the whole tail (Q6).
+//
+// `tools` is a built-in that is deliberately ABSENT here: it carries a
+// module subcommand's flag contract (its own `--help`, its own argv
+// parse) while living in cmd/omega, where the one config.yaml writer
+// (writeDisabled) already sits. Listing it would make `omega tools
+// --help` print the root help and break the grammar it shares with
+// `omega crons`.
 func isRootSubcommand(sub string) bool {
 	switch sub {
 	case "setup", "serve", "run", "health", "export", "insights",
@@ -277,6 +290,10 @@ func mountRegistry(cfg Config) (*agent.Registry, *agent.Context, error) {
 	pctx := &agent.Context{
 		CWD:     cwd(),
 		Configs: agent.RouteConfigs(plugins, cfg),
+		// The disabled.tools fold rides the borrowed mount exactly as it
+		// rides the serve boot (newAgent): a CLI read of the registry
+		// shows the state the next boot will honor.
+		DisabledTools: cfg.Disabled.Tools,
 	}
 	reg, err := agent.MountAllAPI(plugins, pctx, nil, cfg.Disabled.Modules)
 	if err != nil {
