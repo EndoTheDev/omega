@@ -29,19 +29,20 @@ import (
 // the census pin: production file -> its verdict (the chat/canvas/
 // settings face it serves). Mirrored in docs/architecture.md.
 var censusPin = map[string]string{
-	"chat_panel.go":        "chat - the composer panel + the /chat turn handling",
-	"runs.go":              "chat - the live run: the RunHub, detached runs, the SSE run frames + the store floor guards",
-	"server.go":            "chat - the chat floor: /models, /chat, the session-existence floor (POST /sessions, /sessions/{id}), /tools, the command palette, canvas wiring",
-	"server_atmention.go":  "chat - the @-mention expansion on the submit path (the browser never expands; /chat does)",
-	"server_canvas.go":     "canvas - the transport: GET /ui/canvas snapshot + POST /ui/actions, deltas fan out on the run streams",
-	"server_commands.go":   "chat - the command palette's server surface (GET /commands + POST /commands/dispatch, the composer's slash-command face over the universal registration seam)",
-	"server_ephemeral.go":  "chat - ephemeral sessions: the no-persist chat mode of /chat (in-memory, eph- ids, gone at restart)",
-	"server_images.go":     "chat - image serving + /attach-image (chat renders images)",
-	"server_settings.go":   "settings - the third shell-ring face (GET/PUT /settings)",
-	"server_transcript.go": "chat - the transcript serving (live + store-backed restore)",
-	"server_variants.go":   "chat - message variants on the live run (regenerate/branch selection)",
-	"wakes.go":             "chat - the yield harness's wake path (async agent loop t_f3f953d0): settled re-entry launches through the home input path, the per-home FIFO drain, the runaway guard and boot recovery",
-	"web_tools.go":         "chat - the web.search/web.fetch tool pair: built-in shell vocabulary since v0.13 (shell law 1), always mounted",
+	"chat_panel.go":         "chat - the composer panel + the /chat turn handling",
+	"runs.go":               "chat - the live run: the RunHub, detached runs, the SSE run frames + the store floor guards",
+	"server.go":             "chat - the chat floor: /models, /chat, the session-existence floor (POST /sessions, /sessions/{id}), /tools, the command palette, canvas wiring",
+	"server_atmention.go":   "chat - the @-mention expansion on the submit path (the browser never expands; /chat does)",
+	"server_attachments.go": "chat - the composer attach surface for non-image files: /attach-file writes into the session upload dir and /chat carries the typed reference (kind, name, size, path)",
+	"server_canvas.go":      "canvas - the transport: GET /ui/canvas snapshot + POST /ui/actions, deltas fan out on the run streams",
+	"server_commands.go":    "chat - the command palette's server surface (GET /commands + POST /commands/dispatch, the composer's slash-command face over the universal registration seam)",
+	"server_ephemeral.go":   "chat - ephemeral sessions: the no-persist chat mode of /chat (in-memory, eph- ids, gone at restart)",
+	"server_images.go":      "chat - image serving + /attach-image (chat renders images)",
+	"server_settings.go":    "settings - the third shell-ring face (GET/PUT /settings)",
+	"server_transcript.go":  "chat - the transcript serving (live + store-backed restore)",
+	"server_variants.go":    "chat - message variants on the live run (regenerate/branch selection)",
+	"wakes.go":              "chat - the yield harness's wake path (async agent loop t_f3f953d0): settled re-entry launches through the home input path, the per-home FIFO drain, the runaway guard and boot recovery",
+	"web_tools.go":          "chat - the web.search/web.fetch tool pair: built-in shell vocabulary since v0.13 (shell law 1), always mounted",
 }
 
 // the cross-cutting test files: they guard the ring or package-wide

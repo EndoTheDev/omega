@@ -397,6 +397,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/models", s.handleModels)
 	mux.HandleFunc("/chat", s.handleChat)
 	mux.HandleFunc("/attach-image", s.handleAttachImage)
+	// The non-image sibling of the image attach lane (card t_1ffd07de):
+	// the composer's strip uploads any other file type here; the bytes
+	// land in the session's upload dir and the message carries a typed
+	// reference (server_attachments.go).
+	mux.HandleFunc("/attach-file", s.handleAttachFile)
 	// card t_08d822bb: (the raw-bytes image route was the file explorer's
 	// - it rode /files/* and moved with the file capsule, the shell-ring
 	// shrink wave 1. The workspaces routes also rode out with wave 3.
@@ -1197,6 +1202,15 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "image too large: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	// Non-image attachment references (card t_1ffd07de): validated BEFORE
+	// any session row is written, so a bad reference never leaves an empty
+	// auto-created session behind. A staged draft upload (no session id at
+	// attach time) is relocated by the second pass below, once the id
+	// exists.
+	if err := resolveAttachments(messages, ""); err != nil {
+		http.Error(w, "attachment: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	// Replay guards run BEFORE auto-create: both re-play an EXISTING
 	// session's persisted tree - a sessionless replay has nothing to
@@ -1271,6 +1285,16 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 		req.SessionID = id
 		autoCreated = true
+	}
+
+	// The non-image attachment relocation (card t_1ffd07de) runs HERE:
+	// the session id is final now (explicit, minted, or auto-created), so
+	// a file staged by a draft upload moves into the session's own upload
+	// dir and the reference path is rewritten before prepareRun loads and
+	// persists the turn - the stored message names the session's dir.
+	if err := resolveAttachments(messages, req.SessionID); err != nil {
+		http.Error(w, "attachment: "+err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	// The legacy no-store path runs inline AFTER the SSE headers (the

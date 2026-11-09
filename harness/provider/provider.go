@@ -272,6 +272,12 @@ func messagesToJSON(messages []core.Message, stringArgs bool) []map[string]any {
 		// never provider wire - a parent_id in a chat payload 400s on
 		// strict wire validators and is noise on lenient ones.
 		delete(m, "parent_id")
+		// Non-image attachment references (card t_1ffd07de) are local
+		// disk paths: strict wire validators reject unknown fields and a
+		// path means nothing to a remote model. The agent side surfaces
+		// the reference in its own context (card t_2eb2d274) - the
+		// provider wire never carries it.
+		delete(m, "attachments")
 		msgJSON[i] = m
 	}
 	return msgJSON
