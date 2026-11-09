@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -138,6 +139,34 @@ func createUniqueUpload(dir, name string) (*os.File, error) {
 	}
 }
 
+// pendingTTL is how long a staged draft upload survives without being
+// moved into a session. A pending file that outlives it is abandoned -
+// the composer was closed (or the app died) before the send - so the
+// next attach reclaims it.
+const pendingTTL = 24 * time.Hour
+
+// sweepPending removes staging token dirs older than pendingTTL. Best
+// effort: a failure leaves the entry for the next sweep, never an error
+// on the attach itself.
+func sweepPending(root string) {
+	dir := filepath.Join(root, pendingDirName)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-pendingTTL)
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+		_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+	}
+}
+
 // handleAttachFile serves POST /attach-file (multipart/form-data): one
 // "file" part plus an optional "session_id" text part. The bytes land in
 // the session's upload directory - or in the _pending staging dir when
@@ -155,6 +184,7 @@ func (s *Server) handleAttachFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "attachments need an omega home (set OMEGA_HOME)", http.StatusNotImplemented)
 		return
 	}
+	sweepPending(root)
 	mr, err := r.MultipartReader()
 	if err != nil {
 		http.Error(w, "invalid request: multipart/form-data required", http.StatusBadRequest)

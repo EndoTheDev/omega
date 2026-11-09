@@ -563,7 +563,7 @@ func chatRows(items []transcriptItem) []core.ChatRow {
 		switch it.Kind {
 		case "user":
 			row.Role = core.ChatRoleUser
-			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockText, Content: it.Content, Images: it.Images}}
+			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockText, Content: it.Content, Images: it.Images, Attachments: it.Attachments}}
 		case "message":
 			row.Role = core.ChatRoleAssistant
 			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockText, Content: it.Content}}

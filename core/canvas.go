@@ -124,13 +124,17 @@ const (
 // appending to until a later delta closes the row; persisted rows
 // never carry it.
 type ChatBlock struct {
-	Type       string         `json:"type"`
-	Content    string         `json:"content,omitempty"`
-	Images     []ImageContent `json:"images,omitempty"`
-	Running    bool           `json:"running,omitempty"`
-	ToolCall   *ToolCall      `json:"tool_call,omitempty"`
-	ToolCallID string         `json:"tool_call_id,omitempty"`
-	IsError    bool           `json:"is_error,omitempty"`
+	Type    string         `json:"type"`
+	Content string         `json:"content,omitempty"`
+	Images  []ImageContent `json:"images,omitempty"`
+	// Attachments rides a user text block: the non-image file
+	// references the composer attached (card t_1ffd07de). Same shape
+	// the message persisted - references, never content.
+	Attachments []Attachment `json:"attachments,omitempty"`
+	Running     bool         `json:"running,omitempty"`
+	ToolCall    *ToolCall    `json:"tool_call,omitempty"`
+	ToolCallID  string       `json:"tool_call_id,omitempty"`
+	IsError     bool         `json:"is_error,omitempty"`
 	// Gate rides a tool_result block: the smart-approval gate's
 	// decision record (card t_1b3e2a8b) - the verdict line rendered on
 	// the call's own row. Empty = no machine decision.
