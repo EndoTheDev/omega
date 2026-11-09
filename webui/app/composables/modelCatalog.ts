@@ -73,6 +73,27 @@ export function filterModelEntries(
   return entries;
 }
 
+// --- the auxiliary "default" entry (card t_df46c8cf) ---
+
+// AUX_DEFAULT_VALUE is the sentinel an auxiliary model knob persists for
+// "follow the chat's model". It is a WORD, not a model name: the server
+// resolves it per call (the composer's chip at caption time), so a main
+// model switch carries the aux lane along with no config write.
+export const AUX_DEFAULT_VALUE = "default";
+
+// withAuxDefault prepends the "default" entry to a model picker's option
+// list for the aux knobs the server marks default_option. The entry
+// rides FIRST - the "leave it to the chat" choice reads before any named
+// model - and it is the one option that survives an empty catalog.
+export function withAuxDefault(
+  options: { value: string; label: string }[],
+  enabled: boolean,
+  label = "default (the chat's model)",
+): { value: string; label: string }[] {
+  if (!enabled) return options;
+  return [{ value: AUX_DEFAULT_VALUE, label }, ...options];
+}
+
 // --- the shared catalog state (one fetch per settings open) ---
 
 export interface ModelCatalogState {

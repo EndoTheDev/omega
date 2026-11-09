@@ -38,6 +38,7 @@
   import {
     filterModelEntries,
     useModelCatalog,
+    withAuxDefault,
     type ModelFilter,
     type ModelEntry,
   } from "~/composables/modelCatalog";
@@ -80,13 +81,21 @@
       });
   });
 
-  const options = computed(() => [
-    ...instanceOptions.value,
-    ...filterModelEntries(catalog.value.entries ?? [], filter).map((e) => ({
-      value: e.name,
-      label: e.name,
-    })),
-  ]);
+  const options = computed(() =>
+    withAuxDefault(
+      [
+        ...instanceOptions.value,
+        ...filterModelEntries(catalog.value.entries ?? [], filter).map((e) => ({
+          value: e.name,
+          label: e.name,
+        })),
+      ],
+      // card t_df46c8cf: an aux knob marked default_option offers the
+      // "default" entry FIRST - the aux lane then follows the model the
+      // chat runs, resolved server-side per call.
+      props.knob.defaultOption === true,
+    ),
+  );
 
   type Mode = "list" | "fallback";
   // list = the dropdown renders: while the catalog is in flight
@@ -106,7 +115,9 @@
 
   const hint = computed(() => {
     if (catalog.value.error !== null)
-      return `provider model list unavailable (${catalog.value.error}) - type the model name`;
+      return props.knob.defaultOption === true
+        ? `provider model list unavailable (${catalog.value.error}) - type "default" to follow the chat's model, or type a model name`
+        : `provider model list unavailable (${catalog.value.error}) - type the model name`;
     if (catalog.value.loading) return "loading the provider's models…";
     if (options.value.length === 0)
       return filter === "decision"

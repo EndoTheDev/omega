@@ -24,6 +24,13 @@ const captionPrompt = "Describe this image factually and completely, plain text.
 // inside the run's wall clock).
 const captionTimeout = 2 * time.Minute
 
+// DefaultAuxModel is the vision_model sentinel (card t_df46c8cf): the
+// auxiliary caption lane runs on whatever model the CURRENT run serves
+// (the composer's chip), resolved per caption call. The word persists in
+// config.yaml exactly as chosen - never resolved and frozen at save
+// time, so a later main-model switch carries the aux lane with it.
+const DefaultAuxModel = "default"
+
 // Captioner describes image content with the vision_model. It is the
 // core.Captioner implementation for the vision-model knob: one pinned
 // provider copy serves the vision model, the process-wide memo plus the
@@ -31,27 +38,59 @@ const captionTimeout = 2 * time.Minute
 // image a cache hit - the caption is computed ONCE per image and
 // persisted, never re-run for old images.
 type Captioner struct {
-	prov  agent.Provider // pinned copy serving the vision model
-	sink  agent.CaptionStore
-	cache sync.Map // image id -> caption string
-	log   agent.LoggerProvider
+	base agent.Provider // the mounted base provider (WithModel source)
+	prov agent.Provider // pinned copy serving the vision model
+	// followMain marks the DefaultAuxModel lane: no pinned model, the
+	// call resolves the run's main model (agent.CaptionModel) instead.
+	followMain bool
+	sink       agent.CaptionStore
+	cache      sync.Map // image id -> caption string
+	log        agent.LoggerProvider
 }
 
 // NewCaptioner builds the captioner from the BASE provider: a WithModel
 // copy pinned at construction serves the vision model, so /model
 // switches (which mutate the base) and per-request copies never bleed
-// into caption calls. model empty makes Caption fail loudly - but the
-// host only wires the captioner when vision_model is set, so that is a
-// misconfiguration guard, not a mode.
+// into caption calls. model == DefaultAuxModel pins NOTHING - the copy
+// is derived per call from the run's main model, falling back to the
+// base provider's own model for a captioner invoked outside a run.
+// model empty serves the base as-is - but the host only wires the
+// captioner when vision_model is set, so that is a misconfiguration
+// guard, not a mode.
 func NewCaptioner(base agent.Provider, model string, sink agent.CaptionStore, log agent.LoggerProvider) *Captioner {
 	if base == nil {
 		return &Captioner{sink: sink, log: log}
 	}
-	prov := base
-	if model != "" {
-		prov = base.WithModel(model)
+	c := &Captioner{base: base, prov: base, sink: sink, log: log}
+	switch model {
+	case "", DefaultAuxModel:
+		c.followMain = model == DefaultAuxModel
+	default:
+		c.prov = base.WithModel(model)
 	}
-	return &Captioner{prov: prov, sink: sink, log: log}
+	return c
+}
+
+// providerFor resolves the provider one caption call streams through:
+// the pinned vision copy, or (the "default" lane) the provider the run
+// itself serves - the composer's chip model, and its named instance, at
+// call time.
+func (c *Captioner) providerFor(ctx context.Context) (agent.Provider, error) {
+	if c.followMain {
+		if run := agent.CaptionProvider(ctx); run != nil {
+			return run, nil
+		}
+		// Outside a run there is no chip to follow: the base provider's
+		// own model is the only main model there is.
+		if c.base == nil {
+			return nil, fmt.Errorf("no vision model configured")
+		}
+		return c.base, nil
+	}
+	if c.prov == nil {
+		return nil, fmt.Errorf("no vision model configured")
+	}
+	return c.prov, nil
 }
 
 // Caption returns the caption for one image: process memo -> store ->
@@ -70,11 +109,12 @@ func (c *Captioner) Caption(ctx context.Context, img core.ImageContent) (string,
 			return caption, nil
 		}
 	}
-	if c.prov == nil {
-		return "", fmt.Errorf("no vision model configured")
+	prov, err := c.providerFor(ctx)
+	if err != nil {
+		return "", err
 	}
 	start := time.Now()
-	caption, err := c.describe(ctx, img)
+	caption, err := c.describe(ctx, prov, img)
 	if err != nil {
 		return "", err
 	}
@@ -91,14 +131,15 @@ func (c *Captioner) Caption(ctx context.Context, img core.ImageContent) (string,
 		}
 	}
 	if c.log != nil {
-		c.logf("captioned %s with %s in %s", shortID(id), c.prov.ModelName(), time.Since(start).Round(time.Millisecond))
+		c.logf("captioned %s with %s in %s", shortID(id), prov.ModelName(), time.Since(start).Round(time.Millisecond))
 	}
 	return caption, nil
 }
 
 // describe runs ONE vision-model call for one image and collects the
-// streamed response.
-func (c *Captioner) describe(ctx context.Context, img core.ImageContent) (string, error) {
+// streamed response. prov is the resolved lane provider (the pinned
+// vision copy, or the run's main model under the "default" sentinel).
+func (c *Captioner) describe(ctx context.Context, prov agent.Provider, img core.ImageContent) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, captionTimeout)
 	defer cancel()
 	user := core.User{
@@ -107,19 +148,19 @@ func (c *Captioner) describe(ctx context.Context, img core.ImageContent) (string
 		Timestamp: core.NowISO(),
 	}
 	var sb strings.Builder
-	for event := range c.prov.Stream(ctx, []core.Message{user}, nil) {
+	for event := range prov.Stream(ctx, []core.Message{user}, nil) {
 		switch e := event.(type) {
 		case core.ResponseChunk:
 			sb.WriteString(e.Content)
 		case core.StreamEnd:
 			if e.Error != "" {
-				return "", fmt.Errorf("vision model %s: %s", c.prov.ModelName(), e.Error)
+				return "", fmt.Errorf("vision model %s: %s", prov.ModelName(), e.Error)
 			}
 		}
 	}
 	caption := strings.TrimSpace(sb.String())
 	if caption == "" {
-		return "", fmt.Errorf("vision model %s returned an empty caption", c.prov.ModelName())
+		return "", fmt.Errorf("vision model %s returned an empty caption", prov.ModelName())
 	}
 	return caption, nil
 }

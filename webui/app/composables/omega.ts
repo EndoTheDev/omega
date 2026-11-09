@@ -2286,6 +2286,11 @@ export interface SettingKnob {
   // "instance:model" values the server resolves (prefix names the
   // instance, the rest the model). Non-model knobs leave it empty.
   slot?: boolean;
+  // defaultOption marks an AUXILIARY model knob whose picker offers the
+  // "default" entry: the aux lane then follows the model the current
+  // chat runs (the composer's chip), resolved at call time. The choice
+  // persists as the literal word "default", never a frozen model name.
+  defaultOption?: boolean;
   min?: number;
   max?: number;
   step?: number;
@@ -2349,6 +2354,7 @@ export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
               ? kn.filter
               : undefined,
           slot: kn.slot === true ? true : undefined,
+          defaultOption: kn.default_option === true ? true : undefined,
           min: typeof kn.min === "number" ? kn.min : undefined,
           max: typeof kn.max === "number" ? kn.max : undefined,
           step: typeof kn.step === "number" ? kn.step : undefined,

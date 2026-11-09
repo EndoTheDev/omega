@@ -49,9 +49,12 @@ type Config struct {
 	SystemPrompt string                    `yaml:"system_prompt"`
 	// VisionModel is the auxiliary captioner (vision_model knob): when
 	// set, image-carrying user messages are described once with this
-	// model and the main model sees the caption as text. Empty keeps
-	// today's behavior - images ride to the main provider and a model
-	// that cannot see them fails loudly.
+	// model and the main model sees the caption as text. The special
+	// value "default" (provider.DefaultAuxModel) follows whichever
+	// model the current run serves - the composer's chip at caption
+	// time - and persists as the literal word, never a frozen model
+	// name. Empty keeps today's behavior - images ride to the main
+	// provider and a model that cannot see them fails loudly.
 	VisionModel string `yaml:"vision_model"`
 	// TitleModel is the auxiliary title generator (title_model knob):
 	// maybeTitleSession's cheap calls (provisional + final) route
