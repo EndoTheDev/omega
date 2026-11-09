@@ -74,10 +74,46 @@ type CmdAction struct {
 // system prompt and /tools listing. Actions carries the sub-action
 // metadata of a domain tool so renderers can show the split
 // (domain line + labeled sub-actions) without re-parsing schemas.
+// Disabled is the registry entry's enable flag (card t_441deb04):
+// false is ON, so the zero value keeps every existing entry enabled
+// and a home needs no config change to stay where it is. The flag is
+// stamped where the fold is known (StampDisabledTools), never stored
+// on the mount inventory - a live toggle changes it without a remount.
 type ToolInfo struct {
 	Name        string
 	Description string
 	Actions     []ToolAction
+	Disabled    bool
+}
+
+// StampDisabledTools returns infos with every ToolInfo's Disabled flag
+// set from the disabled name list (the config.yaml disabled.tools fold,
+// or the live Context copy of it). Entries not named keep Disabled
+// false. The input is never mutated: callers hold the mount inventory
+// across live toggles, so the fold rides a copy stamped per read.
+func StampDisabledTools(infos []ExtensionInfo, disabled []string) []ExtensionInfo {
+	if len(disabled) == 0 || len(infos) == 0 {
+		return infos
+	}
+	fold := make(map[string]bool, len(disabled))
+	for _, name := range disabled {
+		fold[name] = true
+	}
+	out := make([]ExtensionInfo, len(infos))
+	for i, info := range infos {
+		if len(info.ToolList) == 0 {
+			out[i] = info
+			continue
+		}
+		list := make([]ToolInfo, len(info.ToolList))
+		copy(list, info.ToolList)
+		for j := range list {
+			list[j].Disabled = fold[list[j].Name]
+		}
+		info.ToolList = list
+		out[i] = info
+	}
+	return out
 }
 
 // ExtensionInfo is metadata about a loaded extension, for display.

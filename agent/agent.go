@@ -606,7 +606,10 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			DisabledTools:      disabledToolList(disabledTools),
 			CompactionProvider: a.compactor,
 			PromptBuilder:      a.promptBuilder,
-			ExtensionInfos:     a.extensionInfos,
+			// The registry entry's disable flag rides the prompt build
+			// (card t_441deb04): the Tools section lists what the model
+			// can actually call, never a tool the fold switched off.
+			ExtensionInfos: core.StampDisabledTools(a.extensionInfos, disabledToolList(disabledTools)),
 			MaxTurns:           maxTurns,
 			MaxToolOutput:      a.maxToolOutput,
 			CWD:                runCWD,
