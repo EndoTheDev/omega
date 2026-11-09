@@ -148,7 +148,10 @@ plus that agent's own `crons.yaml` - the agent has no tool
 that touches it, ruling 15; only the webui toggle writes the per-job
 `enabled:` flag (POST /cron/toggle), `data/` (its own session, notification,
 board, and evidence-ledger stores), `skills/`, `user.md`, `memory.md`,
-and `<name>.log`. Schedules ride the cron module's WHEN; the wake
+and `<name>.log`. Data isolation re-points an unset store at the agent's
+own `data/omega.db`; an env-set `OMEGA_DB_PATH` is caller intent and is
+never re-pointed (the delegate child's store pin, see `docs/cli.md`
+`omega run --session`). Schedules ride the cron module's WHEN; the wake
 subprocess and the report shape live in the continuous module. The
 webui roster pane + detail strip (ruling 18) ride the module's REST
 face: `GET /continuous/roster`, `GET|POST /continuous/{name}/chat`,

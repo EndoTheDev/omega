@@ -23,6 +23,54 @@ func agentLayerBase() Config {
 	return cfg
 }
 
+// TestAgentLayerStorePinSurvives pins the delegate child's store pin
+// (card t_93b4e521). The agent layer's data isolation re-points a store
+// that still reads as the home default at <home>/agents/<name>/data/
+// omega.db - correct for an agent's own sessions, fatal for a delegated
+// child whose caller pre-created its session in the CALLER's store:
+// `run --session <id>` answered "session not found" and every prod
+// delegate child died at startup. An env-set OMEGA_DB_PATH is caller
+// intent and survives the layer; with no pin, the agent's own store
+// stands.
+func TestAgentLayerStorePinSurvives(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+	if err := agent.ScaffoldAgent(home, "coder", "probe duty"); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := agentLayerBase()
+	if err := resolveHomePaths(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	callerDB := cfg.Store.DBPath // the home store the caller opened
+	t.Setenv("OMEGA_DB_PATH", callerDB)
+	if err := ApplyAgentLayer(&cfg, home, "coder"); err != nil {
+		t.Fatalf("apply layer: %v", err)
+	}
+	if cfg.Store.DBPath == callerDB {
+		t.Fatalf("premise broken: the layer no longer re-points the home store (%q)", cfg.Store.DBPath)
+	}
+	applyDBPathEnvOverride(&cfg)
+	if want := canonPath(callerDB); cfg.Store.DBPath != want {
+		t.Fatalf("store pin after the agent layer = %q, want the caller's %q", cfg.Store.DBPath, want)
+	}
+
+	// No pin in the env: the agent's own data dir stands (isolation).
+	t.Setenv("OMEGA_DB_PATH", "")
+	unpinned := agentLayerBase()
+	if err := resolveHomePaths(&unpinned); err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplyAgentLayer(&unpinned, home, "coder"); err != nil {
+		t.Fatalf("apply layer: %v", err)
+	}
+	applyDBPathEnvOverride(&unpinned)
+	if want := canonPath(filepath.Join(agent.AgentDir(home, "coder"), "data", "omega.db")); unpinned.Store.DBPath != want {
+		t.Fatalf("unpinned store = %q, want the agent's own %q", unpinned.Store.DBPath, want)
+	}
+}
+
 func TestApplyAgentLayerOverridesModel(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)

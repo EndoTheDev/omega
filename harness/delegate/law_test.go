@@ -47,19 +47,29 @@ func TestDefaultingLawModel(t *testing.T) {
 }
 
 // TestChildEnvDefaultingLaw pins the spawn deltas: the recursion guard
-// always, OMEGA_AGENT only off-default, OMEGA_MODEL only explicit.
+// always, OMEGA_AGENT only off-default, OMEGA_MODEL only explicit, and
+// the caller's store path only when the host routed one (card
+// t_93b4e521 - the pin is what keeps `run --session <id>` on the
+// database the host pre-created the child session in).
 func TestChildEnvDefaultingLaw(t *testing.T) {
 	onlyGuard := []string{"OMEGA_SUBAGENT=1"}
-	if got := childEnv("", ""); got[0] != "OMEGA_SUBAGENT=1" || len(got) != 1 {
-		t.Errorf("childEnv(\"\",\"\") = %v, want exactly %v", got, onlyGuard)
+	if got := childEnv("", "", ""); got[0] != "OMEGA_SUBAGENT=1" || len(got) != 1 {
+		t.Errorf("childEnv(\"\",\"\",\"\") = %v, want exactly %v", got, onlyGuard)
 	}
-	deltas := strings.Join(childEnv("default", ""), ",")
+	deltas := strings.Join(childEnv("default", "", ""), ",")
 	if strings.Contains(deltas, "OMEGA_AGENT") || strings.Contains(deltas, "OMEGA_MODEL") {
 		t.Errorf("default agent + empty model leaked env deltas: %v", deltas)
 	}
-	deltas = strings.Join(childEnv("scout", " glm-5.2 "), ",")
+	deltas = strings.Join(childEnv("scout", " glm-5.2 ", ""), ",")
 	if !strings.Contains(deltas, "OMEGA_AGENT=scout") || !strings.Contains(deltas, "OMEGA_MODEL=glm-5.2") {
 		t.Errorf("childEnv(scout, glm-5.2) missing overrides: %v", deltas)
+	}
+	if strings.Contains(deltas, "OMEGA_DB_PATH") {
+		t.Errorf("no store path given, yet OMEGA_DB_PATH appeared: %v", deltas)
+	}
+	deltas = strings.Join(childEnv("scout", "", "/home/e/.omega/data/omega.db"), ",")
+	if !strings.Contains(deltas, "OMEGA_DB_PATH=/home/e/.omega/data/omega.db") {
+		t.Errorf("childEnv lost the caller's store pin: %v", deltas)
 	}
 }
 

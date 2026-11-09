@@ -2,7 +2,9 @@ package delegate
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -150,6 +152,147 @@ func TestRunDelegateTaskFailingBinary(t *testing.T) {
 	status, _ := d.runDelegateStatus(context.Background(), nil)
 	if !strings.Contains(status, "answer: error: delegate task task-1 failed") {
 		t.Fatalf("failed task's answer line wrong: %q", status)
+	}
+}
+
+// writeEnvStub echoes the child env pin + argv marker: the spawn-shape
+// witness for the caller-store pin (card t_93b4e521).
+func writeEnvStub(t *testing.T, name string) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), name)
+	var body string
+	if runtime.GOOS == "windows" {
+		bin += ".bat"
+		body = "@echo off\r\necho db=%OMEGA_DB_PATH%\r\necho args=%*\r\nexit /b 0\r\n"
+	} else {
+		bin += ".sh"
+		body = "#!/bin/sh\necho \"db=$OMEGA_DB_PATH\"\necho args=\"$*\"\nexit 0\n"
+	}
+	if err := os.WriteFile(bin, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return bin
+}
+
+// TestSpawnPinsCallerStore pins the spawn env shape (card t_93b4e521):
+// with a store mounted, the child carries OMEGA_DB_PATH = the caller's
+// store file, so its `run --session <id>` opens the database the host
+// pre-created the session in. A delegate with no store path pins
+// nothing (the pre-fix shape).
+func TestSpawnPinsCallerStore(t *testing.T) {
+	bin := writeEnvStub(t, "stub-env-omega")
+	t.Setenv("OMEGA_BIN", bin)
+	callerDB := filepath.Join(t.TempDir(), "data", "omega.db")
+
+	d := NewDelegate()
+	d.store = &stubStore{}
+	d.storeDBPath = callerDB
+	out, err := d.runDelegateTask(context.Background(), map[string]any{"prompt": "do a thing", "timeout": 30})
+	if err != nil {
+		t.Fatalf("runDelegateTask: %v", err)
+	}
+	text := strings.ReplaceAll(out, "\r\n", "\n")
+	if !strings.Contains(text, "db="+callerDB) {
+		t.Fatalf("child did not receive the caller's store pin: %q", text)
+	}
+	if !strings.Contains(text, "--session") {
+		t.Fatalf("child argv lost --session: %q", text)
+	}
+
+	// No store path routed (a host without a store section): no pin.
+	d2 := NewDelegate()
+	out2, err := d2.runDelegateTask(context.Background(), map[string]any{"prompt": "do a thing", "timeout": 30})
+	if err != nil {
+		t.Fatalf("runDelegateTask (no pin): %v", err)
+	}
+	text2 := strings.ReplaceAll(out2, "\r\n", "\n")
+	if !strings.Contains(text2, "db=\n") && !strings.Contains(text2, "db=args=") && !strings.HasPrefix(strings.TrimSpace(text2), "db=") {
+		t.Fatalf("stub did not echo an empty db pin: %q", text2)
+	}
+	if strings.Contains(text2, callerDB) {
+		t.Fatalf("unpinned spawn carried a stale store path: %q", text2)
+	}
+}
+
+// writeStderrStub writes the given lines to STDERR and exits with code.
+func writeStderrStub(t *testing.T, name string, lines []string, code int) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), name)
+	var b strings.Builder
+	if runtime.GOOS == "windows" {
+		bin += ".bat"
+		b.WriteString("@echo off\r\n")
+		for _, l := range lines {
+			b.WriteString("echo " + l + " 1>&2\r\n")
+		}
+		b.WriteString("exit /b " + strconv.Itoa(code) + "\r\n")
+	} else {
+		bin += ".sh"
+		b.WriteString("#!/bin/sh\n")
+		for _, l := range lines {
+			b.WriteString("echo \"" + l + "\" 1>&2\n")
+		}
+		b.WriteString("exit " + strconv.Itoa(code) + "\n")
+	}
+	if err := os.WriteFile(bin, []byte(b.String()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return bin
+}
+
+// TestFailureResultCarriesStderrTail pins the fail-loud law (card
+// t_93b4e521): a child that dies at startup leaves its reason on
+// stderr, and that tail IS the tool result. "exit status 1" alone made
+// the prod failure undiagnosable; the child's stdout still stays out
+// (the answer lane, never the diagnostic lane).
+func TestFailureResultCarriesStderrTail(t *testing.T) {
+	diag := "omega: run: --session abc123: session not found"
+	bin := writeStderrStub(t, "stub-stderr-omega", []string{diag}, 1)
+	t.Setenv("OMEGA_BIN", bin)
+
+	d := NewDelegate()
+	out, err := d.runDelegateTask(context.Background(), map[string]any{"prompt": "explode"})
+	if err != nil {
+		t.Fatalf("runDelegateTask: %v", err)
+	}
+	text := strings.ReplaceAll(out, "\r\n", "\n")
+	if !strings.Contains(text, "error: delegate task task-1 failed: exit status 1") {
+		t.Fatalf("failure line lost its verdict: %q", text)
+	}
+	if !strings.Contains(text, "stderr:") || !strings.Contains(text, diag) {
+		t.Fatalf("child stderr never reached the result: %q", text)
+	}
+}
+
+// TestFailureStderrTailTruncates pins the tail bound: an over-long
+// stderr keeps its LAST 2000 bytes (the failing lines) behind a named
+// cut, never the head.
+func TestFailureStderrTailTruncates(t *testing.T) {
+	lines := []string{"FIRST-LINE-SHOULD-BE-CUT"}
+	for i := 0; i < 300; i++ {
+		lines = append(lines, fmt.Sprintf("filler-%03d-aaaaaaaaaaaaaaaaaaaa", i))
+	}
+	lines = append(lines, "LAST-LINE-KEPT")
+	bin := writeStderrStub(t, "stub-stderr-long-omega", lines, 1)
+	t.Setenv("OMEGA_BIN", bin)
+
+	d := NewDelegate()
+	out, err := d.runDelegateTask(context.Background(), map[string]any{"prompt": "explode"})
+	if err != nil {
+		t.Fatalf("runDelegateTask: %v", err)
+	}
+	text := strings.ReplaceAll(out, "\r\n", "\n")
+	if !strings.Contains(text, "LAST-LINE-KEPT") {
+		t.Fatalf("the stderr tail (the failing lines) was cut: %q", text[len(text)-200:])
+	}
+	if strings.Contains(text, "FIRST-LINE-SHOULD-BE-CUT") {
+		t.Fatalf("stderr head survived the cap: the result must keep the tail")
+	}
+	if !strings.Contains(text, "stderr cut to the last") {
+		t.Fatalf("a cut must be named, not silent: %q", text[:200])
+	}
+	if tail := text[strings.Index(text, "stderr:"):]; len(tail) > stderrTailCap+200 {
+		t.Fatalf("stderr block = %d bytes, want <= %d", len(tail), stderrTailCap+200)
 	}
 }
 

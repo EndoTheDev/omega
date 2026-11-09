@@ -1017,6 +1017,10 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 		// clobber it - re-assert the env. Empty env = inherit (the
 		// defaulting law): the layer's model IS the session model.
 		applyModelEnvOverride(&cfg)
+		// The store pin is caller intent too (the delegate child):
+		// the layer's data isolation would otherwise re-point it at
+		// the agent's own database and orphan --session (t_93b4e521).
+		applyDBPathEnvOverride(&cfg)
 	}
 	llm.SetHTTPTimeout(cfg.HTTPTimeout)
 	ag, store, logger, _, _, _, _, _, _, _, err := newAgent(cfg, appendPrompts, trust)

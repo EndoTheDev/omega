@@ -1,8 +1,8 @@
 package delegate
 
 import (
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin implements agent.Plugin. It wraps a Delegate and mounts it
@@ -56,6 +56,18 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// not toggleable, but an edge naming delegate from here would be
 	// the removal recipe's stop signal in the other direction. Nil-safe.
 	p.delegate.store = seam[agent.StoreProvider](ctx, "store")
+	// The caller's store file (card t_93b4e521): the child is spawned
+	// AS an agent, and the agent layer points an unset store at the
+	// agent's own data dir - a different database than the one this
+	// host pre-creates the child session in, which is exactly how
+	// `run --session <id>` died "session not found" at startup. The
+	// path rides the child env as OMEGA_DB_PATH (childEnv), so the
+	// spawned run opens the store its caller owns. Consumer-owned
+	// local interface: the store capsule never learns its consumers.
+	// A store without the accessor pins nothing (the pre-fix shape).
+	if pth, ok := p.delegate.store.(interface{ DBPath() string }); ok {
+		p.delegate.storeDBPath = pth.DBPath()
+	}
 	// card t_5d9032d3: dispatched runs report to the finished-things
 	// store. The hook receives the mounted notifications seam at mount
 	// end, nil when the module is absent (nil is legal - the emitter
