@@ -111,7 +111,16 @@ func (sp *SkillsProvider) SaveSkill(name, description, body string) ([]Skill, er
 // gone. The merge-winner rule picks the folder, the same file the
 // reader resolves. An unknown name is the loud not-found error (a
 // no-op delete must be visible - the silent-persist law in reverse).
+// This is the tab editor's door; the ledger names the writer.
 func (sp *SkillsProvider) DeleteSkill(name string) ([]Skill, error) {
+	return sp.DeleteSkillAs(name, ActorWebui, "removed from the skills tab")
+}
+
+// DeleteSkillAs is the same removal with the caller's ledger
+// attribution: one removal implementation, and the audit row names
+// the surface that asked (the tab, the CLI) instead of claiming one
+// writer for both.
+func (sp *SkillsProvider) DeleteSkillAs(name, actor, reason string) ([]Skill, error) {
 	name = strings.TrimSpace(name)
 	if !validSkillName(name) {
 		return nil, fmt.Errorf("delete: invalid skill name %q", name)
@@ -128,7 +137,7 @@ func (sp *SkillsProvider) DeleteSkill(name string) ([]Skill, error) {
 	if _, err := sp.backupFrom(srcDir, root, name, "delete"); err != nil {
 		return nil, err
 	}
-	if _, err := sp.AppendLedger(ActorWebui, LedgerRemove, name, "removed from the skills tab",
+	if _, err := sp.AppendLedger(actor, LedgerRemove, name, reason,
 		[]LedgerFile{{Path: filepath.ToSlash(skillFile)}}, nil); err != nil {
 		return nil, err
 	}
@@ -142,6 +151,11 @@ func (sp *SkillsProvider) DeleteSkill(name string) ([]Skill, error) {
 // writes: the audit trail names its writer, and this one is not the
 // curator.
 const ActorWebui = "webui"
+
+// ActorCLI is the ledger actor class for the terminal face: an
+// `omega skills` write or delete is a different writer than the tab,
+// and the audit row says so.
+const ActorCLI = "cli"
 
 // SkillsEditor is the write face the tab's editor rides, separate from
 // the reader seam and the toggle (the CronJobs editor's cronSaver
