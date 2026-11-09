@@ -7,8 +7,8 @@ the slash commands, the canvas panels and their actions are
 all registered from that one function. Delete the module's
 registration and every face vanishes by construction - nothing outside
 the module holds a reference. Kanban is the worked example below (arc
-5, the flagship: the biggest module - six tools folded into one, two
-commands, two panels, the REST surface).
+5, the flagship: the biggest module - seven dotted kanban.* tools,
+two commands, two panels, the REST surface).
 
 This doc is the whole-module recipe. The mount-style migration recipe
 (v0.12 phase C, moving a capsule onto the universal `Register*`
@@ -49,7 +49,8 @@ surface) is its sibling: `docs/migrating-a-module.md`.
    ```bash
    grep -rn '"kanban"' cmd modules core docs --include='*.go'
    grep -rn 'Module: "kanban"' modules            # module-qualified action ids
-   grep -rn '"kanban"' harness/kanban             # the tool registry (the bare domain tool, the one-domain law)
+   grep -rn '"kanban"' harness/kanban             # the tool registry (the seven dotted kanban.* tools)
+   grep -rn '"kanban' cmd modules                 # every kanban.* tool name the wire carries
    grep -rn '"/board"' cmd modules                # the /board, /boards commands
    grep -rn 'kanban' docs                         # route tables, command docs, layer table
    ```
@@ -57,8 +58,9 @@ surface) is its sibling: `docs/migrating-a-module.md`.
    Expect hits in: the seam claim (the module's Provides() list),
    the route table (`harness/kanban/rest.go` registering the
    patterns through `api.RegisterRoute`), the tool registry
-   (the bare domain `kanban` tool - the legacy `kanban.task`
-   namespaced name retired by the one-domain tool law, t_e06b38bc),
+   (the seven dotted `kanban.*` tools - the flat action-protocol
+   `kanban` tool retired with the registry unification B ruling,
+   t_f616ed78),
    the command chain
    (`/board`, `/boards` registered through `api.RegisterCommand`), the
    canvas panels (`harness/kanban/panel.go`,
@@ -81,7 +83,7 @@ surface) is its sibling: `docs/migrating-a-module.md`.
    ```
 
    That is: seam absent (routes 404), canvas panels absent, tool
-   registry without the domain tool AND its alias shims, commands
+   registry without the kanban.* tools, commands
    unregistered, the other modules mounted - the CLI loop and webui
    stay alive, the canvas snapshot simply misses the module.
 
