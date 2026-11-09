@@ -18,6 +18,7 @@ omega serve           start the HTTP server (SSE streaming)
 omega export <id|label> [output]   export a session as JSONL
 omega insights [--days N]          session usage analytics (default: 30 days)
 omega agents                       list registered agents; `omega agents create <name>` scaffolds one
+omega tools                        list wire tools; `omega tools disable <name>` takes one off the model
 omega update              report N versions behind + prompt y/N
 omega update --yes        install the latest stable without a prompt
 omega update --rollback   swap back to omega.bak + health-verify
@@ -140,6 +141,33 @@ first use. Wake schedules live in the agent's own `config/crons.yaml`.
 omega agents
 omega agents create scout "fast probe agent"
 omega agents create                    # fails: name required
+```
+
+### `omega tools`
+
+The wire tool registry with its enable flag. Bare `omega tools` and
+`omega tools list` print every registered tool with its state, the
+extension that owns it, and its one-line description. `disable <name>`
+takes a tool off the wire: it leaves every tool union the loop builds,
+so the model is never offered it, and the system prompt's tool section
+stops advertising it. `enable <name>` puts it back. A disabled tool
+keeps its listing row - the row is how the name is found again - and
+carries `[disabled]` (the `/tools` command in the loop shows the same
+shape).
+
+State lives in `config.yaml`'s `disabled.tools` fold, written by the
+same writer the settings tab's tools toggle (`PUT /disabled/tools`)
+uses: a CLI toggle and a tab toggle land on one key, and a running
+server picks the CLI's change up through its config watch within a few
+seconds. Disabling an unknown name is refused loudly and writes
+nothing; re-enabling never validates, so a name whose tool has left the
+registry can still be cleaned out of the fold.
+
+```bash
+omega tools                            # tool table, name-sorted
+omega tools disable files.write        # off the wire; absent from the model's tool list
+omega tools enable files.write         # back on
+omega tools disable no.such.tool       # refused: no such tool in the registry
 ```
 
 ### `omega update`
