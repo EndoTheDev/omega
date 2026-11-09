@@ -295,7 +295,7 @@ const defaultAgentConfigTemplate = `# omega continuous agent: %s
 # touches it.
 #
 # provider:
-#   type: ollama        # ollama, openai, or anthropic
+#   type: ollama        # ollama, openai, anthropic, or mock (deterministic, no network)
 #   model_name: glm-5.3
 #   host: http://localhost:11434
 #   api_key: ""

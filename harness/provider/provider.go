@@ -1,5 +1,5 @@
 // Package provider implements the provider seam for omega.
-// It contains the Ollama, OpenAI, and Anthropic provider
+// It contains the Ollama, OpenAI, Anthropic, and mock provider
 // implementations. The Provider struct implements agent.Provider directly.
 package provider
 
@@ -20,7 +20,7 @@ import (
 
 // Provider implements agent.Provider for Ollama, OpenAI, and Anthropic.
 type Provider struct {
-	typ           string // "ollama", "openai", "anthropic"
+	typ           string // "ollama", "openai", "anthropic", "mock"
 	modelName     string
 	baseURL       string
 	apiKey        string
@@ -137,6 +137,8 @@ func (p *Provider) Stream(ctx context.Context, messages []core.Message, tools []
 			end = p.streamOpenAI(ctx, events, msgJSON, toolJSON)
 		case "anthropic":
 			end = p.streamAnthropic(ctx, events, msgJSON, toolJSON)
+		case "mock":
+			end = p.streamMock(ctx, events, msgJSON, toolJSON)
 		default:
 			end = core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("unknown provider type: %s", p.typ)}
 		}
@@ -393,6 +395,11 @@ func (p *Provider) buildListModelsRequest() (*http.Request, error) {
 // with capability flags. The same wire shape ListModels always
 // consumed, plus the ollama "capabilities" array.
 func (p *Provider) listModelEntries() ([]core.ModelEntry, error) {
+	// The mock serves its model list directly - no request, no
+	// network, exactly the configured model name.
+	if p.typ == "mock" {
+		return mockModelEntries(p.modelName), nil
+	}
 	req, err := p.buildListModelsRequest()
 	if err != nil {
 		return nil, err
@@ -447,6 +454,10 @@ func (p *Provider) listModelEntries() ([]core.ModelEntry, error) {
 // model listing APIs).
 func (p *Provider) modelInfo() (int, error) {
 	switch p.typ {
+	case "mock":
+		// The mock exposes no context window; callers fall back to
+		// the config / core.DefaultContextWindow ladder.
+		return 0, nil
 	case "ollama":
 		body, _ := json.Marshal(map[string]any{"model": p.modelName})
 		req, err := http.NewRequest("POST", p.baseURL+"/api/show", bytes.NewReader(body))
