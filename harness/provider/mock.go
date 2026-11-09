@@ -151,8 +151,8 @@ func mockReply(seed, prompt string, fromTool bool) string {
 		body = "(empty)"
 	}
 	const max = 160
-	if len(body) > max {
-		body = body[:max]
+	if runes := []rune(body); len(runes) > max {
+		body = string(runes[:max])
 	}
 	var who string
 	if fromTool {
