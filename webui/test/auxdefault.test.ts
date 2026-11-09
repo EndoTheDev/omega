@@ -11,6 +11,7 @@ import { normalizeSettingsPayload } from "../app/composables/omega.ts";
 import {
   AUX_DEFAULT_VALUE,
   filterModelEntries,
+  pickerNeedsFreeText,
   withAuxDefault,
 } from "../app/composables/modelCatalog.ts";
 
@@ -51,12 +52,50 @@ test("the default entry survives an empty catalog - the one live choice", () => 
   assert.equal(options[0].value, "default");
 });
 
+test("an aux knob still degrades to free text when no NAMED model matched", () => {
+  // the sentinel is a rendering entry, never a model: a vision-filtered
+  // catalog of openai/anthropic ids matches nothing, and the operator
+  // must keep the typed escape hatch (the file's contract: never a
+  // silent dead dropdown) - the prepended "default" must not mask it
+  const named = filterModelEntries(
+    [{ name: "gpt-4o", capabilities: [] }],
+    "vision",
+  );
+  assert.equal(named.length, 0);
+  const options = withAuxDefault(
+    named.map((e) => ({ value: e.name, label: e.name })),
+    true,
+  );
+  assert.equal(options.length, 1, "the sentinel is still offered for rendering");
+  assert.equal(
+    pickerNeedsFreeText(named.length, false, null),
+    true,
+    "no named model -> free text, sentinel or not",
+  );
+});
+
+test("pickerNeedsFreeText: the listbox renders only with named models (or mid-flight)", () => {
+  // landed, named models present -> the listbox
+  assert.equal(pickerNeedsFreeText(2, false, null), false);
+  // landed, nothing matched -> free text (with or without a sentinel)
+  assert.equal(pickerNeedsFreeText(0, false, null), true);
+  // a failed fetch -> free text, named entries or not
+  assert.equal(pickerNeedsFreeText(3, false, "boom"), true);
+  // in flight -> the listbox shows the loading hint rather than flashing
+  // the fallback input
+  assert.equal(pickerNeedsFreeText(0, true, null), false);
+});
+
 test("a persisted 'default' value renders as the chip text", () => {
   // BandSelect falls back to the raw value when no option matches; the
   // prepended entry is what turns the stored word into the label
-  const options = withAuxDefault([], true);
+  const options = withAuxDefault(
+    [{ value: "gemma4:31b", label: "gemma4:31b" }],
+    true,
+  );
   const current = options.find((o) => o.value === "default")?.label;
   assert.equal(current, "default (the chat's model)");
+  assert.notEqual(current, options[1].label, "the label is not just the value echoed back");
 });
 
 test("normalizeSettingsPayload carries default_option through", () => {
