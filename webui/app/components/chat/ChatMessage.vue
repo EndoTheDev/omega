@@ -34,6 +34,23 @@
           :alt="'attached image ' + (i + 1)"
           @click="openImage(img)" />
       </div>
+      <!-- non-image references (card t_8a569163): type glyph + name +
+           size - never a thumbnail, the bytes stayed server-side -->
+      <div
+        v-if="attachments?.length"
+        class="msg-files">
+        <span
+          v-for="(f, i) in attachments"
+          :key="'file-' + i"
+          class="msg-file"
+          :title="f.name + ' - ' + attachmentSizeLabel(f.size)">
+          <Icon
+            :name="attachmentIcon(f.kind)"
+            :size="14" />
+          <span class="msg-file-name">{{ f.name }}</span>
+          <span class="msg-file-size">{{ attachmentSizeLabel(f.size) }}</span>
+        </span>
+      </div>
       <!-- Endo's comment (2026-10-26): fork / copy / duration live on ONE
            line at the bubble's bottom - the duration rides the action
            row's right end. ASSISTANT responses only: user bubbles carry
@@ -99,16 +116,22 @@
   import { copyText } from "../../composables/clipboard";
   import VariantSwitcher from "./VariantSwitcher.vue";
   import ReferencePill from "./ReferencePill.vue";
+  import Icon from "../ui/Icon.vue";
   import {
     splitRefSegments,
     type RefToken,
   } from "../../composables/pills";
+  import {
+    attachmentIcon,
+    attachmentSizeLabel,
+  } from "../../composables/attachments";
   import { DOCK_VIEWER_OPEN_KEY } from "../../composables/viewer";
   import {
     createRenderScheduler,
     dataUrl,
     formatMsgTime,
     renderMarkdown,
+    type OmegaAttachment,
     type OmegaImage,
     type VariantBlock,
   } from "../../composables/omega";
@@ -127,6 +150,9 @@
     time?: string;
     // image attachments (user messages; restored history carries them)
     images?: OmegaImage[];
+    // non-image references (user messages, card t_8a569163): rendered as
+    // type-glyph chips with name + size - never thumbnailed
+    attachments?: OmegaAttachment[];
     // server-measured duration from restored history - wins over the
     // live meter (restored items mount final and never start one)
     finalMs?: number;

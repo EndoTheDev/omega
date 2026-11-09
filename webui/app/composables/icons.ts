@@ -19,9 +19,12 @@ import {
   Database,
   Download,
   File,
+  FileArchive,
   FileCode,
   FilePlus,
+  FileSpreadsheet,
   FileText,
+  FileType,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -116,6 +119,12 @@ export const ICONS = {
   "file-config": Braces,
   "file-script": SquareTerminal,
   "file-db": Database,
+  // card t_8a569163: the attachment chips' classes the tree never needed
+  // - a pdf, a spreadsheet, an archive. The tree's own table
+  // (harness/files/ui/rowicon.ts) names the rest.
+  "file-pdf": FileType,
+  "file-sheet": FileSpreadsheet,
+  "file-archive": FileArchive,
   "folder-open": FolderOpen,
   // the Files tab toolbar (card t_a4504a25): create, reload, fold
   "file-plus": FilePlus,
