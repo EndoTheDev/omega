@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
 // TestWorkspaceFilesRoot pins the session-workspace rooting (card
@@ -83,5 +84,41 @@ func TestWorkspaceFilesRoot(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Clean(ws + "/definitely")); !os.IsNotExist(statErr) {
 		t.Fatalf("plain run touched the workspace dir: %v", statErr)
+	}
+}
+
+// TestUploadsTreeReachable pins the card t_2eb2d274 finding: an
+// attachment under <home>/uploads/<session>/ is readable through
+// files.read with NO new code - absolute paths pass through the
+// workspace rooting untouched, and the only path wall on the tool is
+// the instance-db guard, which names the store's own file. The uploads
+// tree therefore needs no allow-list, no new tool and no new seam.
+// A run rooted at a DIFFERENT workspace (the normal case: the agent
+// works in a project folder while uploads live in the home) reaches it
+// the same way.
+func TestUploadsTreeReachable(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "uploads", "s1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "report.csv")
+	if err := os.WriteFile(path, []byte("a,b\n1,2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A realistic guard: the instance db lives beside the uploads dir.
+	p := &FileProvider{guard: datadir.NewGuard(filepath.Join(home, "omega.db"))}
+
+	for _, ctx := range []context.Context{
+		context.Background(),
+		core.WithRunWorkspace(context.Background(), t.TempDir(), ""),
+	} {
+		out, err := p.RunReadFile(ctx, map[string]any{"path": path})
+		if err != nil {
+			t.Fatalf("files.read on an upload: %v", err)
+		}
+		if !strings.Contains(out, "1|a,b") {
+			t.Fatalf("files.read returned %q, want the csv with line numbers", out)
+		}
 	}
 }

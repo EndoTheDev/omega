@@ -234,7 +234,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			return nil
 		}
 
-		for event := range opts.Provider.Stream(ctx, messages, toolSchemas(tools)) {
+		for event := range opts.Provider.Stream(ctx, AttachmentContext(messages), toolSchemas(tools)) {
 			switch e := event.(type) {
 			case core.ResponseChunk:
 				meter.response(time.Now())

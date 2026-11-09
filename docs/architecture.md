@@ -37,6 +37,8 @@ llm/               Shared provider infra (SSE client, retry, think-level
 agent/            Multi-turn loop machinery + the loop's need-face
                   declarations (agent/seams.go), Plugin system, TurnSink
                   seam, canvas runtime, insights/caption/compaction helpers
+                  (agent/loop/attachments.go renders non-image attachment
+                  references into the model-facing turn context)
 harness/          In-process module packages (21 packages: 20 plugins +
                   datadir, an imported leaf; every capsule removable -
                   compiled into omega)
@@ -276,7 +278,7 @@ into a new package).
 | `runs.go` | chat - the live run: the RunHub, detached runs, the SSE run frames + the store floor guards |
 | `server.go` | chat - the chat floor: /models, /chat, the session-existence floor (POST /sessions, /sessions/{id}), /tools, the command palette, canvas wiring |
 | `server_atmention.go` | chat - the @-mention expansion on the submit path (the browser never expands; /chat does) |
-| `server_attachments.go` | chat - the composer attach surface for non-image files: /attach-file writes into the session upload dir and /chat carries the typed reference (kind, name, size, path) |
+| `server_attachments.go` | chat - the composer attach surface for non-image files: /attach-file writes into the session upload dir and /chat carries the typed reference (kind, name, size, path); the model-facing render lives in `agent/loop/attachments.go` |
 | `server_canvas.go` | canvas - the transport: GET /ui/canvas snapshot + POST /ui/actions, deltas fan out on the run streams |
 | `server_commands.go` | chat - the command palette's server surface (GET /commands + POST /commands/dispatch, the composer's slash-command face over the universal registration seam) |
 | `server_ephemeral.go` | chat - ephemeral sessions: the no-persist chat mode of /chat (in-memory, eph- ids, gone at restart) |
