@@ -298,8 +298,9 @@ func (r *Routes) handleFilesBrowse(w http.ResponseWriter, req *http.Request) {
 // returning up to 64 KiB of a file's content under the RESOLVED root
 // (the resolution law, same chain as browse). Non-UTF-8 bytes come back
 // as binary=true with empty content - the content is not previewed here;
-// the mime field tells the viewer whether the file is an image it can
-// pull from /files/raw (card t_08d822bb) or a binary it announces.
+// the mime field tells the viewer whether the file is an image or a pdf
+// it can pull from /files/raw (cards t_08d822bb, t_42c8aced) or a binary
+// it announces, and the size field is the full size on disk.
 func (r *Routes) handleFilesRead(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -367,6 +368,9 @@ func (r *Routes) handleFilesRead(w http.ResponseWriter, req *http.Request) {
 		"truncated": truncated,
 		"binary":    binary,
 		"mime":      detectFileMime(data[:min(512, len(data))], rel),
+		// the full size on disk (t_42c8aced): the binary no-preview state
+		// announces the name + size; the read cap never hides it
+		"size": info.Size(),
 	})
 }
 
@@ -388,14 +392,18 @@ func detectFileMime(head []byte, rel string) string {
 }
 
 // handleFilesRaw serves GET /files/raw?path=<rel>&session=<id>: the raw
-// bytes behind the viewer tab's image branch (card t_08d822bb). The
-// containment is the EXACT chain /files/read runs - validateRelPath,
-// resolveFilesRoot, resolveUnderRoot, ensureUnderRoot, never a copy -
-// and one extra gate the read surface does not have: the sniffed mime
-// must be image/*, anything else refuses with 400 (the card's v1 scope
-// is images only - no pdf/audio/video surface). The file streams with
-// the sniffed Content-Type plus nosniff, so a mislabelled payload can
-// never render as something it is not.
+// bytes behind the viewer tab's preview branches (card t_08d822bb: the
+// image <img>; card t_42c8aced: the pdf <iframe> on the browser's native
+// viewer). The containment is the EXACT chain /files/read runs -
+// validateRelPath, resolveFilesRoot, resolveUnderRoot, ensureUnderRoot,
+// never a copy - and one gate the read surface does not have: the
+// sniffed mime must be image/* or application/pdf, anything else refuses
+// with 400 (renderable previews only - no audio/video surface).
+// download=1 is the second lane: any sniffed mime serves, but the bytes
+// ride Content-Disposition: attachment (never rendered as a document),
+// the binary no-preview state's download affordance. Every byte lane
+// streams with the sniffed Content-Type plus nosniff, so a mislabelled
+// payload can never render as something it is not.
 func (r *Routes) handleFilesRaw(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -447,8 +455,10 @@ func (r *Routes) handleFilesRaw(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	mime := detectFileMime(head[:n], rel)
-	if !strings.HasPrefix(mime, "image/") {
-		fileError(w, http.StatusBadRequest, "not an image - the raw route serves image/* only")
+	renderable := strings.HasPrefix(mime, "image/") || mime == "application/pdf"
+	downloading := req.URL.Query().Get("download") == "1"
+	if !renderable && !downloading {
+		fileError(w, http.StatusBadRequest, "not renderable - the raw route serves image/* and pdf only; the download lane is ?download=1")
 		return
 	}
 	if _, serr := f.Seek(0, io.SeekStart); serr != nil {
@@ -457,6 +467,11 @@ func (r *Routes) handleFilesRaw(w http.ResponseWriter, req *http.Request) {
 	}
 	w.Header().Set("Content-Type", mime)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// the download lane never renders: attachment keeps every mime out of
+	// the browser's document surfaces, whatever the sniff said
+	if downloading {
+		w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(filepath.Base(rel)))
+	}
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	if _, cerr := io.Copy(w, f); cerr != nil {
 		// the response already started; nothing structured left to send
