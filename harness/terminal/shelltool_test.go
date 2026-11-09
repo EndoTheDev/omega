@@ -37,6 +37,19 @@ func TestRunShellContextKill(t *testing.T) {
 	}
 }
 
+// TestShellRunEscalationEligible (card t_1501cb04): shell.run carries
+// NO static Yield flag - the fast path runs inline in the turn (zero
+// overhead; previously EVERY shell.run paid the yield round trip)
+// and only a call that runs past the loop's inline budget escalates
+// to the wake path. The latency property is structural: inline IS the
+// fast path now.
+func TestShellRunEscalationEligible(t *testing.T) {
+	tools := (&ShellProvider{}).Tools()
+	if tools["shell.run"].Yield {
+		t.Fatal("shell.run must not be immediate-yield - the static Yield class is superseded by budget escalation (t_1501cb04)")
+	}
+}
+
 func TestShellRun(t *testing.T) {
 	p := &ShellProvider{}
 	ctx := context.Background()

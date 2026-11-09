@@ -8,7 +8,10 @@ package loop
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -414,7 +417,7 @@ func TestLoopPendingPlaceholders(t *testing.T) {
 	if len(out) != 2 {
 		t.Fatalf("placeholders = %d appended, want 1 (2 messages total)", len(out))
 	}
-	if tr, ok := out[1].(core.ToolResult); !ok || tr.ToolCallID != "c2" || tr.Content != pendingPlaceholderContent {
+	if tr, ok := out[1].(core.ToolResult); !ok || tr.ToolCallID != "c2" || tr.Content != pendingPlaceholderContent("echo") {
 		t.Errorf("placeholder = %+v", out[1])
 	}
 	out2 := appendPendingPlaceholders(out, pending)
@@ -425,5 +428,315 @@ func TestLoopPendingPlaceholders(t *testing.T) {
 	out4 := appendPendingPlaceholders(out3, pending)
 	if len(out4) != 2 {
 		t.Errorf("placeholder appended beside the real result (%d messages)", len(out4))
+	}
+}
+
+// shrinkBudget points the loop's inline budget at a test-sized window
+// (the production value is 2s - the var exists only for this) and
+// restores it on cleanup.
+func shrinkBudget(t *testing.T, d time.Duration) {
+	t.Helper()
+	old := inlineToolBudget
+	inlineToolBudget = d
+	t.Cleanup(func() { inlineToolBudget = old })
+}
+
+// slowEcho returns after d - past any test budget, well inside the
+// yield timeout - and counts its executions (the ran-ONCE pin).
+func slowEcho(d time.Duration, runs *int32) core.Tool {
+	return core.Tool{
+		Description: "Echo slowly",
+		Run: func(_ context.Context, args map[string]any) (string, error) {
+			msg, _ := args["msg"].(string)
+			time.Sleep(d)
+			if runs != nil {
+				atomic.AddInt32(runs, 1)
+			}
+			return "slow:" + msg, nil
+		},
+	}
+}
+
+// TestLoopEscalationConvertsRunningCall (card t_1501cb04): a tool
+// call that runs past the inline budget escalates - the RUNNING call
+// converts to a pending dispatch mid-flight (never restarted, never
+// duplicated: the execution count stays 1), the turn ends, one
+// yield_result re-enters through the wake, and the ledger is empty
+// after the settle-then-inject.
+func TestLoopEscalationConvertsRunningCall(t *testing.T) {
+	shrinkBudget(t, 20*time.Millisecond)
+	provider := agent.NewFakeProviderScripts("test",
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "slow", Arguments: map[string]any{"msg": "hi"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "never"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+	ledger := agent.NewMemYieldLedger()
+	rec := &wakeRecorder{}
+	var runs int32
+	opts := yieldOpts(provider,
+		map[string]core.Tool{"slow": slowEcho(150*time.Millisecond, &runs)},
+		ledger,
+		rec.add)
+	opts.Messages = []core.Message{core.NewUser("go")}
+
+	_, end := runLoop(t, agent.WithSessionID(context.Background(), "s1"), opts)
+
+	if end.finish != "yielded" {
+		t.Errorf("finish = %q, want yielded", end.finish)
+	}
+	if end.turns != 1 {
+		t.Errorf("turns = %d, want 1 (the turn ended on the escalation)", end.turns)
+	}
+	if end.pending != 1 {
+		t.Errorf("TurnEnd pending = %d, want 1", end.pending)
+	}
+	if provider.Calls() != 1 {
+		t.Errorf("provider calls = %d, want 1 - the run ended on the escalated call", provider.Calls())
+	}
+	waitForWakes(t, rec, 1)
+	if res := rec.snapshot()[0]; res.ToolCallID != "c1" || res.Content != "slow:hi" || res.IsError || res.Timeout {
+		t.Errorf("wake = %+v", res)
+	}
+	if runs != 1 {
+		t.Errorf("executions = %d, want 1 - the conversion must not restart or duplicate the call", runs)
+	}
+	if left := ledger.All(); len(left) != 0 {
+		t.Errorf("ledger still holds %d entries after settle-then-inject: %+v", len(left), left)
+	}
+}
+
+// TestLoopFastToolRunsInlineZeroOverhead (card t_1501cb04): a call
+// that finishes inside the budget is exactly today's fast path - the
+// result lands in-turn, the second script plays, zero pending rows,
+// zero re-entries.
+func TestLoopFastToolRunsInlineZeroOverhead(t *testing.T) {
+	shrinkBudget(t, 20*time.Millisecond)
+	provider := agent.NewFakeProviderScripts("test",
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "fast", Name: "fast", Arguments: map[string]any{"msg": "now"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+	ledger := agent.NewMemYieldLedger()
+	rec := &wakeRecorder{}
+	var runs int32
+	opts := yieldOpts(provider,
+		map[string]core.Tool{"fast": slowEcho(time.Millisecond, &runs)},
+		ledger,
+		rec.add)
+	opts.Messages = []core.Message{core.NewUser("go")}
+
+	_, end := runLoop(t, agent.WithSessionID(context.Background(), "s1"), opts)
+
+	if end.finish != "stop" || end.turns != 2 {
+		t.Errorf("end = %+v, want stop after 2 turns (the fast call ran inline)", end)
+	}
+	if end.pending != 0 {
+		t.Errorf("TurnEnd pending = %d, want 0", end.pending)
+	}
+	if rec.lenSync() != 0 {
+		t.Errorf("wakes = %d, want 0 - a fast call never re-enters", rec.lenSync())
+	}
+	if left := ledger.All(); len(left) != 0 {
+		t.Errorf("ledger holds %d entries, want 0 - nothing escalated", len(left))
+	}
+	if runs != 1 {
+		t.Errorf("executions = %d, want 1", runs)
+	}
+}
+
+// TestLoopEscalatedPendingMarkerWording (card t_1501cb04): the
+// marker the model sees on a still-pending call is unmistakable - a
+// scripted-provider pin that the next turn's context carries the
+// do-not-work-around instruction for the escalated call (the old
+// "dispatched" wording sent a live agent to spawn a duplicate,
+// session bf0fa2a2).
+func TestLoopEscalatedPendingMarkerWording(t *testing.T) {
+	shrinkBudget(t, 20*time.Millisecond)
+	provider := agent.NewFakeProviderScripts("test",
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "fast", Name: "fast", Arguments: map[string]any{"msg": "now"}}},
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "slow", Name: "slow", Arguments: map[string]any{"msg": "later"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "final"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+	ledger := agent.NewMemYieldLedger()
+	rec := &wakeRecorder{}
+	opts := yieldOpts(provider,
+		map[string]core.Tool{
+			"fast": loopbackEcho(),
+			"slow": slowEcho(150*time.Millisecond, nil),
+		},
+		ledger,
+		rec.add)
+	opts.Messages = []core.Message{core.NewUser("go")}
+
+	_, end := runLoop(t, agent.WithSessionID(context.Background(), "s1"), opts)
+
+	if end.finish != "stop" || end.turns != 2 {
+		t.Errorf("end = %+v, want stop after 2 turns (the inline half continued)", end)
+	}
+	waitForWakes(t, rec, 1)
+	if res := rec.snapshot()[0]; res.ToolCallID != "slow" || res.Content != "slow:later" {
+		t.Errorf("wake = %+v, want exactly the escalated call's result", res)
+	}
+	// The provider context of the turn that followed the mixed batch
+	// carries the inline result AND the pending marker for the
+	// escalated sibling.
+	marker, inline := "", false
+	for _, m := range provider.LastMessages {
+		switch v := m.(type) {
+		case core.ToolResult:
+			if v.ToolCallID == "slow" {
+				marker = v.Content
+			}
+			if v.ToolCallID == "fast" && v.Content == "now" {
+				inline = true
+			}
+		}
+	}
+	if marker != pendingPlaceholderContent("slow") {
+		t.Errorf("pending marker = %q, want %q", marker, pendingPlaceholderContent("slow"))
+	}
+	if !strings.Contains(marker, "Do NOT re-run, re-dispatch, or work around it") {
+		t.Errorf("marker lost the do-not-work-around instruction: %q", marker)
+	}
+	if !inline {
+		t.Errorf("the fast call's inline result missing from the provider context: %+v", provider.LastMessages)
+	}
+}
+
+// TestLoopStopCancelsStillInlineCall (card t_1501cb04): a run stop
+// inside the inline window still kills the running call - the
+// budgeted per-call ctx is detached from the run's cancellation, so
+// the watcher re-forwards the stop; the result lands inline as a
+// context error, nothing escalates, nothing wakes.
+func TestLoopStopCancelsStillInlineCall(t *testing.T) {
+	shrinkBudget(t, 100*time.Millisecond)
+	provider := agent.NewFakeProviderScripts("test",
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "slow", Arguments: map[string]any{"msg": "hi"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "never"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+	ledger := agent.NewMemYieldLedger()
+	rec := &wakeRecorder{}
+	opts := yieldOpts(provider,
+		map[string]core.Tool{"slow": {
+			Description: "Echo slowly, ctx-aware",
+			Run: func(ctx context.Context, _ map[string]any) (string, error) {
+				select {
+				case <-ctx.Done():
+					return "", ctx.Err()
+				case <-time.After(500 * time.Millisecond):
+					return "slow:hi", nil
+				}
+			},
+		}},
+		ledger,
+		rec.add)
+	opts.Messages = []core.Message{core.NewUser("go")}
+
+	ctx, cancel := context.WithCancel(agent.WithSessionID(context.Background(), "s1"))
+	defer cancel()
+	time.AfterFunc(20*time.Millisecond, cancel)
+	sawInlineErr := false
+	events := make(chan core.Event, 256)
+	opts.Events = events
+	go func() {
+		defer close(events)
+		Loop{}.Run(ctx, opts)
+	}()
+	finish := ""
+	for e := range events {
+		if tr, ok := e.(core.ToolResultEvent); ok && tr.Message.ToolCallID == "c1" {
+			if !tr.Message.IsError || !strings.Contains(tr.Message.Content, "context canceled") {
+				t.Errorf("inline result = %+v, want the ctx error", tr.Message)
+			}
+			sawInlineErr = true
+		}
+		if v, ok := e.(core.AgentEnd); ok {
+			finish = v.FinishReason
+		}
+	}
+	if !sawInlineErr {
+		t.Error("the stopped call never completed inline")
+	}
+	if finish != "cancelled" {
+		t.Errorf("finish = %q, want cancelled", finish)
+	}
+	if rec.lenSync() != 0 {
+		t.Errorf("wakes = %d, want 0 - a stopped call never escalates", rec.lenSync())
+	}
+	if left := ledger.All(); len(left) != 0 {
+		t.Errorf("ledger holds %d entries, want 0", len(left))
+	}
+}
+
+// failingRegisterLedger wraps the in-memory floor with a Register that
+// always fails - the conversion's degradation pin.
+type failingRegisterLedger struct {
+	agent.YieldLedger
+}
+
+func (f failingRegisterLedger) Register(_ agent.PendingCall) error {
+	return fmt.Errorf("table full")
+}
+
+// TestLoopEscalationRegisterFailureStaysInline (card t_1501cb04): a
+// conversion whose ledger registration fails stays inline - blocking
+// beats a result with nowhere to go. The turn waits past the budget
+// and the result lands in-turn; nothing wakes.
+func TestLoopEscalationRegisterFailureStaysInline(t *testing.T) {
+	shrinkBudget(t, 20*time.Millisecond)
+	provider := agent.NewFakeProviderScripts("test",
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "slow", Arguments: map[string]any{"msg": "hi"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+	ledger := failingRegisterLedger{agent.NewMemYieldLedger()}
+	rec := &wakeRecorder{}
+	var runs int32
+	opts := yieldOpts(provider,
+		map[string]core.Tool{"slow": slowEcho(80*time.Millisecond, &runs)},
+		ledger,
+		rec.add)
+	opts.Messages = []core.Message{core.NewUser("go")}
+
+	_, end := runLoop(t, agent.WithSessionID(context.Background(), "s1"), opts)
+
+	if end.finish != "stop" || end.turns != 2 {
+		t.Errorf("end = %+v, want stop after 2 turns (the call blocked inline)", end)
+	}
+	if end.pending != 0 {
+		t.Errorf("TurnEnd pending = %d, want 0 - the conversion was rejected", end.pending)
+	}
+	if rec.lenSync() != 0 {
+		t.Errorf("wakes = %d, want 0", rec.lenSync())
+	}
+	if runs != 1 {
+		t.Errorf("executions = %d, want 1", runs)
 	}
 }
