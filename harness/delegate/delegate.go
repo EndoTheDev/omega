@@ -26,8 +26,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // finishedThings is the consumer-side face of the finished-things
@@ -297,10 +297,11 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 
 	// The child session (the stored+searchable ruling): the host
 	// pre-creates the session through the store seam - label
-	// delegate:<task>, parent link = the calling session when the run
-	// context carries one - and the child inherits it via run
-	// --session, which makes the child persist its prompt, report and
-	// tool results into the store (the --session persist contract).
+	// delegate:<task>, lineage = the calling session when the run
+	// context carries one (delegate_parent, never the fork parent_id -
+	// t_6c4ab302) - and the child inherits it via run --session, which
+	// makes the child persist its prompt, report and tool results into
+	// the store (the --session persist contract).
 	// Nil store or a failed create degrades to the old shape: a plain
 	// run child, nothing persisted. Bonus, never a hard dependency.
 	childArgs := []string{"run"}
@@ -308,11 +309,23 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	if d.store != nil {
 		if sid, err := agent.NewSessionID(); err == nil {
 			label := "delegate:" + taskID
-			if err := d.store.CreateSession(ctx, sid, agent.SessionIDFromContext(ctx), label); err == nil {
+			// Fresh context is the ruling (card t_6c4ab302): the child's
+			// lineage rides delegate_parent, NEVER parent_id - a parent
+			// link would make the store's ancestor merge feed this
+			// session's whole history to the child on every spawn. A
+			// store without the delegate surface gets an unlinked child
+			// (a root) rather than the context-inheriting fallback.
+			var createErr error
+			if ds, ok := d.store.(agent.DelegateSessionStore); ok {
+				createErr = ds.CreateDelegateSession(ctx, sid, agent.SessionIDFromContext(ctx), label)
+			} else {
+				createErr = d.store.CreateSession(ctx, sid, "", label)
+			}
+			if createErr == nil {
 				childArgs = append(childArgs, "--session", sid)
 				session = sid
 			} else if d.logger != nil {
-				d.logger.Errorf("delegate: create child session for %s: %v - degrading to a non-persisted run", taskID, err)
+				d.logger.Errorf("delegate: create child session for %s: %v - degrading to a non-persisted run", taskID, createErr)
 			}
 		}
 	}
@@ -402,7 +415,7 @@ func clipSummary(s string) string {
 // runDelegateStatus renders the task listing. Payload shape (scope
 // addition A4, card t_0805d438): every row is
 //
-//	- task-N [running|done] (session <sid>) <prompt digest, 120 runes>
+//   - task-N [running|done] (session <sid>) <prompt digest, 120 runes>
 //
 // and a done row carries the task's final answer as its own indented
 // line - the queryable home the injected-user seam used to be the only

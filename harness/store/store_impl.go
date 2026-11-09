@@ -154,6 +154,7 @@ func (s *Store) migrate() error {
 CREATE TABLE IF NOT EXISTS sessions (
 	id         TEXT PRIMARY KEY,
 	parent_id  TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+	delegate_parent TEXT REFERENCES sessions(id) ON DELETE CASCADE,
 	label      TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL,
@@ -269,6 +270,7 @@ END;
 	// the "duplicate column" error and ignore it.
 	for _, stmt := range []string{
 		`ALTER TABLE sessions ADD COLUMN parent_id TEXT REFERENCES sessions(id) ON DELETE CASCADE`,
+		`ALTER TABLE sessions ADD COLUMN delegate_parent TEXT REFERENCES sessions(id) ON DELETE CASCADE`,
 		`ALTER TABLE sessions ADD COLUMN label TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN prompt_tokens INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0`,
@@ -369,21 +371,42 @@ func (s *Store) CreateSession(ctx context.Context, id, parentID, label string) e
 	return err
 }
 
-// scanSession scans one session row into s, tolerating a NULL parent_id
-// (which is how roots are stored).
+// CreateDelegateSession creates a session carrying DELEGATE lineage
+// (card t_6c4ab302): delegateParent records the session that spawned it
+// for display, while parent_id stays NULL. That split is the ruling -
+// loadViewRows merges ancestor rows over parent_id only, so a delegate
+// child renders and assembles its OWN rows alone (fresh context), while
+// a fork child created through CreateSession keeps full inheritance.
+// Empty delegateParent is stored as NULL (a delegate spawn with no
+// calling session is just a root).
+func (s *Store) CreateDelegateSession(ctx context.Context, id, delegateParent, label string) error {
+	now := core.NowISO()
+	var parent any
+	if delegateParent != "" {
+		parent = delegateParent
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO sessions (id, delegate_parent, label, created_at, updated_at, last_read_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		id, parent, label, now, now, now)
+	return err
+}
+
+// scanSession scans one session row into s, tolerating NULL parent_id /
+// delegate_parent (how roots are stored).
 func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) {
 	var sess core.Session
-	var parent sql.NullString
+	var parent, delegate sql.NullString
 	var pinned int
 	var archived int
 	var lastRun string
-	if err := scanner.Scan(&sess.ID, &parent, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt,
+	if err := scanner.Scan(&sess.ID, &parent, &delegate, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt,
 		&sess.PromptTokens, &sess.CompletionTokens, &pinned, &archived,
 		&sess.TitleState, &sess.LastReadAt, &sess.Agent, &lastRun, &sess.Model, &sess.ProviderName, &sess.Workspace,
 		&sess.Summary); err != nil {
 		return core.Session{}, err
 	}
 	sess.ParentID = parent.String
+	sess.DelegateParent = delegate.String
 	sess.Pinned = pinned != 0
 	sess.Archived = archived != 0
 	// Normalize: the row default is 'default', but a session written
@@ -404,7 +427,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) 
 }
 
 // sessionColumns is the projection shared by GetSession and ListSessions.
-const sessionColumns = "id, parent_id, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, agent, last_run, model, provider, workspace, summary"
+const sessionColumns = "id, parent_id, delegate_parent, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, agent, last_run, model, provider, workspace, summary"
 
 // SetSessionLastRun writes the last-run stats block (JSON) on the
 // session's row, or clears it when stats is nil. It is a telemetry

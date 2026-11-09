@@ -229,6 +229,19 @@ type SessionContextStore interface {
 	SetSessionWorkspace(ctx context.Context, sessionID, workspace string) error
 }
 
+// DelegateSessionStore is the optional delegate-lineage surface (card
+// t_6c4ab302). Delegate children NEVER inherit their caller's context:
+// the ruling splits the two lineage kinds, so a delegate child's row
+// records its spawner in delegate_parent while parent_id stays NULL
+// (parent_id is the FORK lineage - the ancestor merge reads only that).
+// The store's default surface stays untouched so every fake keeps
+// resolving: implementers opt in by type-asserting to this interface.
+type DelegateSessionStore interface {
+	// CreateDelegateSession creates a session whose delegate_parent is
+	// the calling session - display metadata, no context inheritance.
+	CreateDelegateSession(ctx context.Context, id, delegateParent, label string) error
+}
+
 // LoggerProvider is the logging seam. Extensions call it to write
 // log entries. The default implementation writes to a file in
 // OMEGA_HOME; a no-op implementation is used when logging is disabled.

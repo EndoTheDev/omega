@@ -478,7 +478,7 @@ func TestChatUnknownRole(t *testing.T) {
 }
 
 func TestSessionsCRUD(t *testing.T) {
-	s, _ := newTestServerWithStore(t)
+	s, st := newTestServerWithStore(t)
 	h := s.Handler()
 
 	// POST /sessions creates a session.
@@ -517,6 +517,29 @@ func TestSessionsCRUD(t *testing.T) {
 	}
 	if detail.Session.ID != "s1" || len(detail.Messages) != 0 {
 		t.Fatalf("detail = %+v, want s1 with no messages", detail)
+	}
+
+	// Delegate lineage rides the detail wire (t_6c4ab302): the webui
+	// reads delegate_parent there, and parent_id stays empty so the
+	// child's transcript is its own.
+	if err := st.CreateDelegateSession(context.Background(), "kid", "s1", "delegate:task-1"); err != nil {
+		t.Fatalf("create delegate child: %v", err)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/sessions/kid", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get delegate child status = %d, want 200", rec.Code)
+	}
+	var kid struct {
+		Session core.Session `json:"session"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &kid); err != nil {
+		t.Fatalf("decode delegate child: %v", err)
+	}
+	if kid.Session.DelegateParent != "s1" || kid.Session.ParentID != "" {
+		t.Fatalf("delegate child wire = parent_id %q, delegate_parent %q; want \"\" and s1",
+			kid.Session.ParentID, kid.Session.DelegateParent)
 	}
 
 	// DELETE /sessions/s1 removes it.
