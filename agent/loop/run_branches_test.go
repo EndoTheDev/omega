@@ -278,8 +278,16 @@ func TestRunMaxToolOutputTruncation(t *testing.T) {
 	if !strings.Contains(toolResult.Content, "... [truncated") {
 		t.Errorf("tool result = %q, want it to contain truncation suffix", toolResult.Content)
 	}
-	if !strings.Contains(toolResult.Content, fmt.Sprintf("%d bytes total", len(longOutput))) {
-		t.Errorf("tool result = %q, want it to contain byte count %d", toolResult.Content, len(longOutput))
+	// The note names BOTH numbers (card t_a54ef2ce): the kept prefix
+	// and the real total. A bare total left the model unable to tell a
+	// 36-byte tail from a 36 KB one.
+	for _, want := range []string{
+		fmt.Sprintf("kept the first %d bytes", 10),
+		fmt.Sprintf("of %d", len(longOutput)),
+	} {
+		if !strings.Contains(toolResult.Content, want) {
+			t.Errorf("tool result = %q, want it to contain %q", toolResult.Content, want)
+		}
 	}
 	if toolResult.IsError {
 		t.Error("tool result should not be an error")
