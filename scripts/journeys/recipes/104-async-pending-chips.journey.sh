@@ -80,8 +80,11 @@ wait_js \
 step "ok: history renders the pending chip after reload"
 
 # --- 4: the wake re-enters the same pane, the chip fills in ---------
+# textContent, not innerText: a settled row AUTO-COLLAPSES (auto mode,
+# card t_868633b3) and innerText drops the hidden result pre - the
+# chip's own collapse would red an honest fill-in
 wait_js \
-  "(()=>{return [...document.querySelectorAll('.toolcall')].some(d=>{const ic=d.querySelector('.tool-ic');return ic&&ic.classList.contains('done')&&(d.innerText||'').includes('$TAG')})?1:0})()" \
+  "(()=>{return [...document.querySelectorAll('.toolcall')].some(d=>{const ic=d.querySelector('.tool-ic');return ic&&ic.classList.contains('done')&&(d.textContent||'').includes('$TAG')})?1:0})()" \
   150
 step "ok: the chip filled in - the result re-entered as a wake turn"
 
