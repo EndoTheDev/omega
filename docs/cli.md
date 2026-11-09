@@ -18,6 +18,8 @@ omega serve           start the HTTP server (SSE streaming)
 omega export <id|label> [output]   export a session as JSONL
 omega insights [--days N]          session usage analytics (default: 30 days)
 omega agents                       list registered agents; `omega agents create <name>` scaffolds one
+omega settings [get [<key>]]       config knobs: all, or one dotted key
+omega settings set <key> <value>   write one knob (the webui's own validation)
 omega update              report N versions behind + prompt y/N
 omega update --yes        install the latest stable without a prompt
 omega update --rollback   swap back to omega.bak + health-verify
@@ -140,6 +142,35 @@ first use. Wake schedules live in the agent's own `config/crons.yaml`.
 omega agents
 omega agents create scout "fast probe agent"
 omega agents create                    # fails: name required
+```
+
+### `omega settings`
+
+The terminal face of the webui's Settings pane. Reads and writes ride
+the same host seam the pane uses - the same schema (`settingsSchema`),
+the same setter and validator (`saveSettings` -> `cfg.Validate`), the
+same config.yaml writer - so a CLI write and a pane save land
+identically, and every refusal is the seam's own sentence, never a
+second validator.
+
+Keys are the dotted paths the pane shows (`provider.model_name`,
+`server.port`, `compaction.enabled`, ...), including the non-literal
+aliases (`provider.vision_model` / `provider.title_model` and the four
+`provider.*_model` subsystem slots). Values coerce to the knob's type:
+`yes/no`, `on/off`, `true/false` for a toggle, a decimal for a number,
+a JSON array for `provider.instances`, text otherwise. The `api_key`
+reads masked (`****`) like the pane; `provider.api_key` and
+`server.bind` stay config.yaml's door and a write is refused. A
+refusal writes nothing. A live host (`omega serve`) picks the change
+up through its config watch; every other process reads it at boot.
+
+```bash
+omega settings                                  # every knob, grouped
+omega settings get provider.model_name          # one value, unquoted
+omega settings set server.port 18432
+omega settings set compaction.enabled off
+omega settings set provider.instances '[]'      # empty the instance list
+omega settings set provider.api_key sk-x        # fails: config.yaml only
 ```
 
 ### `omega update`

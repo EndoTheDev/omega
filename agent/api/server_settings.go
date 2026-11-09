@@ -11,8 +11,8 @@ import (
 // (nil settings) answers 501 so the pane can fall back to its
 // client-side settings only.
 
-// handleSettings dispatches GET (read the schema + values) and PUT
-// (apply a values map, re-serve the refreshed schema).
+// handleSettings dispatches GET (read the schema + values, or one knob
+// by ?key=) and PUT (apply a values map, re-serve the refreshed schema).
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -23,6 +23,20 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		payload, err := s.settings.Schema()
 		if err != nil {
 			http.Error(w, "load settings: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// One-knob read (card t_013b4643): ?key=<dotted path> answers
+		// the knob object exactly as it rides inside its group, so a
+		// script client reads a single value without the group walk.
+		// An unknown key is a 404 naming it - answering the full
+		// payload would make a typo look like a successful read.
+		if key := r.URL.Query().Get("key"); key != "" {
+			knob, ok := payload.Knob(key)
+			if !ok {
+				http.Error(w, "unknown setting: "+key, http.StatusNotFound)
+				return
+			}
+			writeSettingsJSON(w, knob)
 			return
 		}
 		writeSettingsJSON(w, payload)

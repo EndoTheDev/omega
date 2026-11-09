@@ -1,11 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
@@ -955,3 +958,249 @@ func (s *omegaSettings) Save(values map[string]any) (*core.SettingsSchema, error
 
 // Compile-time assertion that omegaSettings implements core.Settings.
 var _ core.Settings = (*omegaSettings)(nil)
+
+// --- omega settings: the terminal face of the settings pane ---------
+//
+// Card t_013b4643: the settings surface outside the webui. Reads call
+// settingsSchema (the same function the pane's GET rides) and writes
+// call saveSettings (the same function the pane's PUT rides) - one
+// schema, one setter, one validator, one writer, so a CLI save and a
+// pane save land byte-identically in config.yaml and every refusal
+// (unknown knob, out-of-range value, a config.yaml-only door) is the
+// seam's own sentence. The CLI's only job is argv: pick the knob,
+// coerce the operator's text into the wire-typed value the pane would
+// have sent, hand it to the seam.
+
+// settingsUsage is the verb grammar, printed on a bad verb.
+const settingsUsage = `omega settings - read and write config knobs
+
+Usage:
+  omega settings                    every knob, grouped, as key = value
+  omega settings get [<key>]        every knob, or one knob's value
+  omega settings set <key> <value>  write one knob through the settings seam
+
+Keys are the dotted yaml paths the webui settings pane uses
+(provider.model_name, server.port, compaction.enabled, ...).
+
+Values: true/false (yes/no, on/off) for a toggle, a number for a
+number, a JSON array for provider.instances, text otherwise. A write
+validates exactly like a pane save; provider.api_key and server.bind
+stay config.yaml's door, and a refusal writes nothing.
+`
+
+// cmdSettings dispatches the settings verbs. configPath is the --config
+// flag (empty = the home's config), rest is the argv after the
+// subcommand - the root owns the settings argv, so --config still
+// works before or after the verb.
+func cmdSettings(configPath string, rest []string) error {
+	args := settingsArgs(rest)
+	if len(args) == 0 {
+		return settingsList(configPath)
+	}
+	switch args[0] {
+	case "get":
+		if len(args) > 2 {
+			return fmt.Errorf("usage: omega settings get [<key>]")
+		}
+		if len(args) == 2 {
+			return settingsGet(configPath, args[1], os.Stdout)
+		}
+		return settingsList(configPath)
+	case "set":
+		if len(args) != 3 {
+			return fmt.Errorf("usage: omega settings set <key> <value>")
+		}
+		return settingsSet(configPath, args[1], args[2], os.Stdout)
+	case "--help", "-h", "help":
+		fmt.Print(settingsUsage)
+		return nil
+	default:
+		fmt.Fprint(os.Stderr, settingsUsage)
+		return fmt.Errorf("unknown settings subcommand %q", args[0])
+	}
+}
+
+// settingsArgs drops the --config pair (the file selector, already
+// parsed by the caller) from the verb argv. Every other token stays
+// positional: a value is arbitrary text and may itself start with a
+// dash only in string values, which the verb handlers guard.
+func settingsArgs(rest []string) []string {
+	out := make([]string, 0, len(rest))
+	for i := 0; i < len(rest); i++ {
+		a := rest[i]
+		switch {
+		case a == "--config":
+			i++ // skip the value
+		case strings.HasPrefix(a, "--config="):
+			// selector only
+		default:
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// settingsConfigPath resolves the file both verbs read and write. The
+// bare home without a config is the setup gate's refusal - a write
+// against no file would have to invent one, and the seam never
+// creates config from nothing.
+func settingsConfigPath(flagPath string) (string, error) {
+	path := resolveConfigPath(flagPath)
+	if path == "" {
+		return "", fmt.Errorf("no config found in %s - run `omega setup` first", omegaHome())
+	}
+	return path, nil
+}
+
+// settingsList prints every knob group: the group key as a header, one
+// `key = value` line per knob. Strings are quoted so an empty value is
+// visible; secrets ride masked exactly as the pane's GET masks them.
+func settingsList(configPath string) error {
+	path, err := settingsConfigPath(configPath)
+	if err != nil {
+		return err
+	}
+	schema, err := settingsSchema(path)
+	if err != nil {
+		return err
+	}
+	for i, g := range schema.Groups {
+		if i > 0 {
+			fmt.Fprintln(os.Stdout)
+		}
+		fmt.Fprintln(os.Stdout, g.Key)
+		for _, k := range g.Knobs {
+			fmt.Fprintf(os.Stdout, "  %s = %s\n", k.Key, settingsValueText(k))
+		}
+	}
+	return nil
+}
+
+// settingsGet prints one knob's value, unquoted so a script reads it
+// straight: `omega settings get provider.model_name`. An unknown key is
+// loud - a silent empty line would look like an empty setting.
+func settingsGet(configPath, key string, w io.Writer) error {
+	if strings.HasPrefix(key, "-") {
+		return fmt.Errorf("usage: omega settings get [<key>]")
+	}
+	path, err := settingsConfigPath(configPath)
+	if err != nil {
+		return err
+	}
+	schema, err := settingsSchema(path)
+	if err != nil {
+		return err
+	}
+	knob, ok := schema.Knob(key)
+	if !ok {
+		return fmt.Errorf("unknown setting: %s", key)
+	}
+	fmt.Fprintln(w, settingsRawText(*knob))
+	return nil
+}
+
+// settingsSet writes one knob through the seam the pane's PUT rides.
+// The refreshed schema the seam returns is the receipt: the value is
+// printed as it landed, not as it was typed.
+func settingsSet(configPath, key, raw string, w io.Writer) error {
+	if strings.HasPrefix(key, "-") {
+		return fmt.Errorf("usage: omega settings set <key> <value>")
+	}
+	path, err := settingsConfigPath(configPath)
+	if err != nil {
+		return err
+	}
+	schema, err := settingsSchema(path)
+	if err != nil {
+		return err
+	}
+	knob, ok := schema.Knob(key)
+	if !ok {
+		return fmt.Errorf("unknown setting: %s", key)
+	}
+	value, err := coerceSettingValue(*knob, raw)
+	if err != nil {
+		return err
+	}
+	refreshed, err := saveSettings(path, nil, nil, nil, nil, nil, map[string]any{key: value})
+	if err != nil {
+		return err
+	}
+	applied, ok := refreshed.Knob(key)
+	if !ok {
+		return fmt.Errorf("%s: saved, but the refreshed schema does not carry the knob", key)
+	}
+	fmt.Fprintf(w, "%s = %s\n", key, settingsValueText(*applied))
+	return nil
+}
+
+// coerceSettingValue turns the operator's text into the JSON-shaped
+// value the webui would submit for this knob: a toggle becomes a bool,
+// a number a float64 (the wire's only number type), the instances list
+// the JSON array the pane posts, everything else the string as typed.
+//
+// This is an input adapter, never a second validator: ranges, enum
+// membership, absolute-path checks, the config.yaml-only doors and
+// every cross-field rule stay behind saveSettings (applySettingValues +
+// cfg.Validate), so the CLI can never accept what the pane refuses or
+// refuse what the pane accepts. The one guard added here is finiteness:
+// JSON cannot carry NaN/Inf, so the pane can never submit them while
+// the CLI text can - and the seam's range test would let NaN through.
+func coerceSettingValue(k core.SettingsKnob, raw string) (any, error) {
+	switch k.Type {
+	case "toggle":
+		switch strings.ToLower(strings.TrimSpace(raw)) {
+		case "true", "1", "yes", "on":
+			return true, nil
+		case "false", "0", "no", "off":
+			return false, nil
+		}
+		return nil, fmt.Errorf("%s: expected true or false, got %q", k.Key, raw)
+	case "number":
+		v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+		if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
+			return nil, fmt.Errorf("%s: expected a finite number, got %q", k.Key, raw)
+		}
+		return v, nil
+	case "providers":
+		var list []any
+		if err := json.Unmarshal([]byte(raw), &list); err != nil {
+			return nil, fmt.Errorf("%s: expected a JSON array of instances, got %q", k.Key, raw)
+		}
+		return list, nil
+	default:
+		return raw, nil
+	}
+}
+
+// settingsValueText renders a knob value for the list and the set
+// receipt: strings quoted (an empty value stays visible), numbers in
+// plain decimal, everything structured as JSON.
+func settingsValueText(k core.SettingsKnob) string {
+	switch v := k.Value.(type) {
+	case string:
+		return strconv.Quote(v)
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(v)
+	case int:
+		return strconv.Itoa(v)
+	case nil:
+		return `""`
+	}
+	if b, err := json.Marshal(k.Value); err == nil {
+		return string(b)
+	}
+	return fmt.Sprintf("%v", k.Value)
+}
+
+// settingsRawText renders a single knob's value for script consumption:
+// a string comes back bare, everything else as settingsValueText prints
+// it.
+func settingsRawText(k core.SettingsKnob) string {
+	if s, ok := k.Value.(string); ok {
+		return s
+	}
+	return settingsValueText(k)
+}
