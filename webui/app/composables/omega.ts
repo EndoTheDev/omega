@@ -1397,17 +1397,54 @@ export interface FilesReadPayload {
   // leading bytes, card t_08d822bb); absent on a pre-law server - the
   // viewer treats a missing/unknown mime as its old text-or-notice path
   mime?: string;
+  // the full size on disk (t_42c8aced): the binary no-preview state
+  // announces name + size + download; absent on a pre-law server
+  size?: number;
 }
 
-// filesRawUrl builds the raw-byte route for the viewer's image branch
-// (card t_08d822bb): GET /files/raw streams image/* bytes under the SAME
-// resolution law the read rides, so the session id (never a root) rides
-// here too. Encoding keeps the same hygiene fetchFilesRead applies.
-export function filesRawUrl(path: string, session?: string): string {
+// filesRawUrl builds the raw-byte route for the viewer's preview branches
+// (card t_08d822bb: the image <img>; t_42c8aced: the pdf iframe + the
+// download lane): GET /files/raw streams renderable bytes (image/*, pdf)
+// under the SAME resolution law the read rides, so the session id (never
+// a root) rides here too. opts.download rides ?download=1 - the any-mime
+// attachment lane the binary no-preview state's affordance pulls. Encoding
+// keeps the same hygiene fetchFilesRead applies.
+export function filesRawUrl(
+  path: string,
+  session?: string,
+  opts?: { download?: boolean },
+): string {
   const q = new URLSearchParams();
   q.set("path", path);
   if (session) q.set("session", session);
+  if (opts?.download) q.set("download", "1");
   return `/files/raw?${q.toString()}`;
+}
+
+// FileViewKind is ONE viewer body per content class (t_42c8aced): the
+// mime decides pdf/image (sniffed bytes, never the extension), binary
+// rides the no-preview state, .md/.markdown text renders as markdown,
+// everything else keeps the line-numbered monospace body.
+export type FileViewKind = "markdown" | "pdf" | "image" | "code" | "binary";
+
+export function fileViewKind(name: string, mime: string, binary: boolean): FileViewKind {
+  if (mime === "application/pdf") return "pdf";
+  if (mime.startsWith("image/")) return "image";
+  if (binary) return "binary";
+  const dot = name.lastIndexOf(".");
+  const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
+  if (ext === "md" || ext === "markdown") return "markdown";
+  return "code";
+}
+
+// bytesLabel renders a byte count the no-preview state announces: 512 B,
+// 2 KiB, 1.5 MiB; absent (a pre-law server) is an empty string.
+export function bytesLabel(n?: number): string {
+  if (n === undefined || n === null) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 ** 2) return `${Math.round((n / 1024) * 10) / 10} KiB`;
+  if (n < 1024 ** 3) return `${Math.round((n / 1024 ** 2) * 10) / 10} MiB`;
+  return `${Math.round((n / 1024 ** 3) * 10) / 10} GiB`;
 }
 
 // cleanRelPath mirrors the server's path rules so the UI never sends a

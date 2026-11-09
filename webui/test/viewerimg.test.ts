@@ -28,16 +28,20 @@ const filesPlugin = readRepo("harness/files/plugin.go");
 
 describe("ViewerTab's image branch (t_08d822bb)", () => {
   it("binds the <img> to GET /files/raw, gated on the sniffed mime", () => {
-    assert.match(viewer, /v-if="isImage"/, "an image mime renders its own branch");
+    assert.match(viewer, /v-if="view === 'image'"/, "an image mime renders its own branch");
     assert.match(viewer, /class="viewer-img"/, "the <img> element exists");
     assert.match(viewer, /:src="rawSrc"/, "the img rides the computed raw url");
     assert.match(viewer, /filesRawUrl\(/, "the raw url comes from the omega seam");
-    assert.match(viewer, /mime\.value\.startsWith\("image\/"\)/, "mime, not extension, decides");
+    assert.match(
+      viewer,
+      /fileViewKind\(props\.viewer\.name, mime\.value, binary\.value\)/,
+      "mime, not extension, decides the branch",
+    );
   });
 
   it("the honest binary notice stays for every NON-image binary", () => {
     assert.match(viewer, /binary file - no preview/, "the notice survives");
-    assert.match(viewer, /isImage\.value\) return ""/, "images render; the notice would lie");
+    assert.match(viewer, /view\.value !== "code"/, "binary files never line-split");
   });
 
   it("the image fits the pane, scrollable when larger", () => {
@@ -64,9 +68,9 @@ describe("GET /files/raw (t_08d822bb)", () => {
     assert.match(
       serverFiles,
       /strings\.HasPrefix\(mime, "image\/"\)/,
-      "the raw route serves image/* only",
+      "the raw route serves image/* (and pdf, t_42c8aced)",
     );
-    assert.match(serverFiles, /not an image/, "non-images refuse loudly");
+    assert.match(serverFiles, /not renderable/, "non-renderable mimes refuse loudly");
   });
 
   it("rides the EXACT read surface's root jail, never a copy", () => {

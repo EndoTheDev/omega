@@ -54,7 +54,7 @@ against localhost from the same host is unaffected.
 | `/notifications/events`              | GET        | SSE record stream (the public API surface; the webui's toasts ride the canvas) |
 | `/files/browse`, `/files/read`       | GET        | read-only working-dir surface for the inspector; read carries `mime` |
 | `POST /files/write`, `POST /files/mkdir` | POST   | the toolbar's write half: add file / add folder (same root jail) |
-| `/files/raw`                         | GET        | raw bytes for `image/*` files ONLY, under the read surface's root jail |
+| `/files/raw`                         | GET        | raw bytes under the read surface's root jail: `image/*` + `application/pdf` render (t_42c8aced), `?download=1` serves ANY file as a `Content-Disposition: attachment` never rendered |
 | `/tools`                             | GET        | tool inventory (bare = executable registry; `?disabled=1` = fold-aware management read) |
 | `/mcp/servers`                        | GET        | configured MCP servers (name, transport, connection state, recorded failure, server-qualified tools) over the live bridge |
 | `/mcp/reload`                         | POST       | re-read mcp.yaml/MCP_SERVERS, swap the live bridge (mcp.yaml edits go live on the MCP tab's refresh - no restart); returns the fresh server list |
@@ -476,10 +476,15 @@ up edits without restart.
   paths, empty segments and only `.` / `..` rejected — dotfiles list
   and read like everything else; t_ccd4a000) plus
   symlink-containment. `/files/read` carries `mime` for every file
-  (sniffed from the bytes); the viewer branches on it.
-- `GET /files/raw` (t_08d822bb) — the mime's byte face: raw bytes for
-  `image/*` files ONLY, under the read surface's exact root jail.
-  Non-image or binary requests answer 400, missing files 404; the
+  (sniffed from the bytes) and `size` (the full size on disk,
+  t_42c8aced); the viewer branches on the mime: `image/*` -> `<img>`,
+  `application/pdf` -> the browser's native viewer in an iframe,
+  otherwise text, with a binary flag keeping the no-preview state.
+- `GET /files/raw` (t_08d822bb, t_42c8aced) — the mime's byte face: raw
+  bytes for `image/*` + `application/pdf`, under the read surface's
+  exact root jail. `?download=1` is the download lane: any file serves
+  as `Content-Disposition: attachment` (never rendered as a document).
+  Anything still renderable-unfit answers 400, missing files 404; the
   response is `Content-Type: <mime>`, `nosniff`, byte-identical body.
 - `POST /files/write` + `POST /files/mkdir` — the Files tab toolbar's
   write half (add file / add folder), same root jail and guard,
