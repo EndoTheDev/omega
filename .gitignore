@@ -8,11 +8,16 @@ bin/*
 !bin/config.yaml.example
 !bin/mcp.yaml.example
 !bin/skills/
-!bin/skills/**
-# lane-home runtime seeding (regenerates, never committed) - only the residue dirs;
-# bin/skills/learn-skill IS product code shipped by the repo and stays tracked
-bin/skills/.curator/
-bin/skills/delegate-token-echo/
+# bin/skills/ is the dev/lane home's live skills dir: ONE shipped skill is
+# tracked product (learn-skill, with its scripts/), everything else in it is
+# runtime state - agent-created skills, .curator/ (usage.json, ledger.jsonl,
+# backups/), .archive/, and the delegate workaround dirs. Whitelist polarity:
+# ignore every child, re-include the shipped product by name, so a dev
+# checkout shows ZERO untracked skills noise without a blanket ignore that
+# would hide the tracked skill (finding C2, t_a48be895).
+bin/skills/*
+!bin/skills/.gitkeep
+!bin/skills/learn-skill/
 # the git fence shim is product code shipped by the repo (t_8b32a09a)
 !bin/shims/
 !bin/shims/**

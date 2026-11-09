@@ -187,7 +187,7 @@ func TestDeleteSkillBacksUpReceiptsAndRemoves(t *testing.T) {
 		t.Fatalf("the folder must be gone: %v", err)
 	}
 	// the backup keeps the whole tree
-	backupRoot := filepath.Join(dir, ".curator_backups")
+	backupRoot := filepath.Join(dir, ".curator", "backups")
 	backupNames, _ := os.ReadDir(backupRoot)
 	if len(backupNames) != 1 {
 		t.Fatalf("backups = %v", backupNames)
@@ -197,7 +197,7 @@ func TestDeleteSkillBacksUpReceiptsAndRemoves(t *testing.T) {
 		t.Fatalf("multi-file skill backup missing the tree: %v / %q", err, backupData)
 	}
 	// the ledger carries the receipt (actor webui, action remove)
-	ledgerRaw, err := os.ReadFile(filepath.Join(dir, ".curator_ledger.jsonl"))
+	ledgerRaw, err := os.ReadFile(filepath.Join(dir, ".curator", "ledger.jsonl"))
 	if err != nil {
 		t.Fatalf("ledger: %v", err)
 	}
