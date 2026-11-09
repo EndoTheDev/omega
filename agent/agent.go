@@ -565,7 +565,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 		// the loop, the caller's messages stay original. A captioning
 		// failure ends the run before any streaming - loud, not a
 		// provider 400 about unseen pixels.
-		messages, err := a.applyCaptions(ctx, messages)
+		messages, err := a.applyCaptions(ctx, provider, messages)
 		if err != nil {
 			inner <- core.AgentEnd{Type: "agent_end", FinishReason: "error", Error: err.Error()}
 			return

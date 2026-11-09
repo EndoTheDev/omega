@@ -8,18 +8,57 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
+// visionCapability is the registry flag a model carries when it accepts
+// image input (the ollama-family /api/tags "capabilities" array, passed
+// through by the keypool mirror: ["completion","tools","thinking",
+// "vision","decision"]).
+const visionCapability = "vision"
+
+// modelSeesImages reports whether the run's SELECTED model declares the
+// vision capability in its provider's model registry
+// (agent.ModelCapabilitiesProvider). The upgrade is probed at runtime:
+// a name-only provider (openai/anthropic id lists), a model missing
+// from the listing, and a listing failure all answer false - the aux
+// hop stays, which is the pre-existing behavior.
+func modelSeesImages(p Provider) bool {
+	lp, ok := p.(ModelCapabilitiesProvider)
+	if !ok {
+		return false
+	}
+	entries, err := lp.ListModelEntries()
+	if err != nil {
+		return false
+	}
+	name := p.ModelName()
+	for _, e := range entries {
+		if e.Name != name {
+			continue
+		}
+		for _, c := range e.Capabilities {
+			if c == visionCapability {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
 // applyCaptions rewrites image-carrying user messages for the MAIN
 // model: each image is described once (the Captioner owns the cache)
 // and the loop-visible copy carries the caption as a text block with
 // the binary stripped, so a caption-only main model never receives
-// image content. The input slice and its messages are left untouched -
+// image content. A main model the registry marks vision-capable is
+// left alone - the pixels ride to it directly and the auxiliary hop is
+// skipped (no duplicate image processing).
+// The input slice and its messages are left untouched -
 // channels persist and re-render the originals.
 //
 // A captioning failure is loud and attributed: the run ends with an
 // error naming the captioner, not a provider 400 masquerading as a
 // model refusal. Moved with the Agent machinery (part 3, wave 2) - the
 // agent consumes the captioner; core keeps the face (core.Captioner).
-func (a *Agent) applyCaptions(ctx context.Context, messages []core.Message) ([]core.Message, error) {
+func (a *Agent) applyCaptions(ctx context.Context, provider Provider, messages []core.Message) ([]core.Message, error) {
 	if a.captioner == nil {
 		return messages, nil
 	}
@@ -31,6 +70,16 @@ func (a *Agent) applyCaptions(ctx context.Context, messages []core.Message) ([]c
 		}
 	}
 	if !hasImages {
+		return messages, nil
+	}
+	// The aux hop exists for a BLIND main model. When the selected model
+	// declares vision in its registry, the pixels go to it directly:
+	// captioning would duplicate the image work (two provider calls, two
+	// image passes) for a model that can already see.
+	if modelSeesImages(provider) {
+		if a.logger != nil {
+			a.logger.Printf("captioner: %s sees images - auxiliary vision hop skipped", provider.ModelName())
+		}
 		return messages, nil
 	}
 	out := make([]core.Message, len(messages))
