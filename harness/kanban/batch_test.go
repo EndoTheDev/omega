@@ -11,15 +11,22 @@ import (
 	"testing"
 )
 
+// batchRun returns the kanban.batch tool's Run: every batch test
+// drives the real wire surface, not the internal engine.
+func batchRun(p *ToolProvider) func(context.Context, map[string]any) (string, error) {
+	return p.Tools()["kanban.batch"].Run
+}
+
 // TestRunTaskBatchInBatchRefs covers create-then-act inside one atomic
 // batch: LAST tracks the most recent create, "#N" the create at
 // operations[N-1] (1-based, matching the result lines).
 func TestRunTaskBatchInBatchRefs(t *testing.T) {
 	p, board := toolProvider(t)
+	batch := batchRun(p)
 	ctx := withSession(context.Background(), "sess_refs")
 
 	// the card's exact shape, now passing: comment/update/complete via LAST
-	out, err := p.runTask(ctx, map[string]any{"operations": []any{
+	out, err := batch(ctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "referred"},
 		map[string]any{"action": "comment", "id": "LAST", "body": "via LAST"},
 		map[string]any{"action": "update", "id": "LAST", "status": StatusRunning},
@@ -45,7 +52,7 @@ func TestRunTaskBatchInBatchRefs(t *testing.T) {
 	}
 
 	// positional: two creates, a comment on #1, a complete on #2
-	out, err = p.runTask(ctx, map[string]any{"operations": []any{
+	out, err = batch(ctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "alpha"},
 		map[string]any{"action": "create", "title": "beta"},
 		map[string]any{"action": "comment", "id": "#1", "body": "to alpha"},
@@ -83,11 +90,12 @@ func extractCreatedID(t *testing.T, out string, n int) string {
 // op - rolls back fully instead of orphaning the create.
 func TestRunTaskBatchRollbackRefCoversTheRepro(t *testing.T) {
 	p, board := toolProvider(t)
+	batch := batchRun(p)
 	ctx := context.Background()
 
 	// a valid prefix that would have applied: create + comment LAST,
 	// then an update on an id that does not exist -> failure -> rollback
-	out, _ := p.runTask(ctx, map[string]any{"operations": []any{
+	out, _ := batch(ctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "orphan probe"},
 		map[string]any{"action": "comment", "id": "LAST", "body": "resolved"},
 		map[string]any{"action": "update", "id": "t_none_such", "status": StatusRunning},
@@ -110,6 +118,7 @@ func TestRunTaskBatchRollbackRefCoversTheRepro(t *testing.T) {
 // effects, and the result is a tool error (not a rolled-back report).
 func TestRunTaskBatchPreflightRefusesBadRefs(t *testing.T) {
 	p, board := toolProvider(t)
+	batch := batchRun(p)
 	ctx := context.Background()
 
 	for _, probe := range []struct {
@@ -131,7 +140,7 @@ func TestRunTaskBatchPreflightRefusesBadRefs(t *testing.T) {
 			map[string]any{"action": "comment", "id": "#99", "body": "x"},
 		}, "#99"},
 	} {
-		_, err := p.runTask(ctx, map[string]any{"operations": probe.ops})
+		_, err := batch(ctx, map[string]any{"operations": probe.ops})
 		if err == nil || !strings.Contains(err.Error(), probe.ref) {
 			t.Fatalf("%s: err = %v, want a %q refusal", probe.name, err, probe.ref)
 		}
@@ -147,12 +156,13 @@ func TestRunTaskBatchPreflightRefusesBadRefs(t *testing.T) {
 // batch emits nothing at all.
 func TestRunTaskBatchDoneEmitsOnlyOnCommit(t *testing.T) {
 	p, _ := toolProvider(t)
+	batch := batchRun(p)
 	n := &fakeNotifier{}
 	p.board.(*Store).SetNotifier(n)
 	ctx := context.Background()
 
 	// commit path: one emit for the completed create
-	if _, err := p.runTask(ctx, map[string]any{"operations": []any{
+	if _, err := batch(ctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "done in batch"},
 		map[string]any{"action": "complete", "id": "LAST"},
 	}}); err != nil {
@@ -166,7 +176,7 @@ func TestRunTaskBatchDoneEmitsOnlyOnCommit(t *testing.T) {
 	n.mu.Unlock()
 
 	// rollback path: no emit survives
-	p.runTask(ctx, map[string]any{"operations": []any{
+	batch(ctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "never done"},
 		map[string]any{"action": "complete", "id": "LAST"},
 		map[string]any{"action": "update", "id": "t_none_such", "status": StatusRunning},

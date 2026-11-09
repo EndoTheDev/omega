@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 
@@ -75,9 +76,9 @@ func (p *Plugin) Dismount(ctx *core.Context) error {
 
 // MountWithAPI implements agent.APIPlugin. The store opens here (the
 // one database, legacy per-board dirs folded in - MountRegistry); every
-// face registers through the api: the kanban seam, the folded task
-// tool, the live panel capsule, the /board and /boards commands, and
-// the finished-things emitter. A mount failure (bad dsn, unreadable
+// face registers through the api: the kanban seam, the dotted kanban.*
+// task tools, the live panel capsule, the /board and /boards commands,
+// and the finished-things emitter. A mount failure (bad dsn, unreadable
 // path, a migration that failed its count verification) is a startup
 // error - a board that silently does not exist is worse than a crash.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
@@ -270,76 +271,122 @@ func (p *ToolProvider) sessionBoard() string {
 	return p.active
 }
 
-// taskActions is the structured sub-action metadata for the
-// consolidated kanban domain tool: one source of truth for the schema
-// enum, the prompt, and the /tools inventory (the one-domain tool law,
-// t_e06b38bc - the domain tool names ITSELF; the session-link verb is
-// retired: a task is born with its session in create).
-var taskActions = []core.ToolAction{
-	{Name: "create", Description: "Create a board task (title is the short name, body carries the full spec; priority higher = more urgent, 0 = normal)."},
-	{Name: "list", Description: "List board tasks, optionally filtered by status."},
-	{Name: "update", Description: "Update a task: move status (any legal transition), set assignee, retitle, rewrite the body, or set priority."},
-	{Name: "complete", Description: "Mark a task done (moves it to the done column and stamps completion)."},
-	{Name: "comment", Description: "Add a comment to a task's thread."},
-	{Name: "delete", Description: "Permanently remove a task from the board (its comments and events go with it). Archive is the reversible path - prefer it unless the card must vanish."},
-}
+// taskVerbs is the kanban verb set: the batch contract's per-op action
+// enum derives from this one list. The registry unification B ruling
+// (t_f616ed78) split the flat action-protocol tool into kanban.<verb>
+// wire tools - dotted names are the norm on this registry (process.*,
+// delegate.*, web.*); kanban.batch keeps the per-op action contract
+// for the operations array.
+var taskVerbs = []string{"create", "list", "update", "complete", "comment", "delete"}
 
-// taskActionNames returns the action names from the metadata.
-func taskActionNames() []string {
-	names := make([]string, len(taskActions))
-	for i, a := range taskActions {
-		names[i] = a.Name
-	}
-	return names
-}
-
-// Tools returns the board tool. The six dotted verbs were
-// consolidated into one domain tool named for the domain (the
-// one-domain tool law, t_e06b38bc - formerly the module.verb pair, the
-// middle tier is gone) with an action enum
-// (derived from taskActions) plus a batch operations array; the
-// registry carries the one domain name (no backwards
-// compatibility - the alias shim era closed with the mount migration).
+// Tools returns the kanban wire: seven dotted tools, one per verb
+// (the registry unification B ruling, t_f616ed78 - the flat
+// action-protocol `kanban` tool is gone; 14 of 19 wire tools were
+// already dotted, the action protocol was the minority shape). Each
+// schema carries ONLY its own args: kanban.comment does not know
+// title, kanban.create does not know operations, and no tool carries
+// an action property - the verb IS the name. Deletability holds:
+// removing harness/kanban removes every kanban.* tool with it, zero
+// flat-tool residue.
 func (p *ToolProvider) Tools() map[string]core.Tool {
-	statusDesc := "Board status: one of triage todo scheduled ready running blocked review done archived (create: initial status; update: new status; list: filter - omit = active only, archived hidden, 'archived' lists the archive, 'all' includes it)."
-	tools := map[string]core.Tool{
-		"kanban": {
-			Description: "One tool for the kanban board: create, list, update, complete, comment on, or delete tasks. Board: pass board to operate on a named board; omit to use the active board (/board). Batch: pass operations to run several in one call (create several tasks, or update + comment together).",
-			Actions:     taskActions,
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"action": map[string]any{
-						"type":        "string",
-						"description": "Which board operation to run.",
-					},
-					"board":    map[string]any{"type": "string", "description": "Board name to operate on (omit = the active board; 'main' is the default board)."},
-					"id":       map[string]any{"type": "string", "description": "Task id (update, complete, comment, delete; batch ops carry their own)."},
-					"title":    map[string]any{"type": "string", "description": "Short title (create); new title (update)."},
-					"body":     map[string]any{"type": "string", "description": "Full spec / body (create); new body (update); comment body (comment, required)."},
-					"assignee": map[string]any{"type": "string", "description": "Who the task is for (create); new assignee, empty string unassigns (update)."},
-					"priority": map[string]any{"type": "number", "description": "Urgency tiebreak, 0 = normal (default), higher = more urgent; negative refused (create; update)."},
-					"status":   map[string]any{"type": "string", "description": statusDesc},
-					"source":   map[string]any{"type": "string", "description": "Provenance tag, e.g. an automator's name (create)."},
-					"author":   map[string]any{"type": "string", "description": "Comment author (comment, default agent)."},
-					"operations": map[string]any{
-						"type":        "array",
-						"description": "Batch: array of {action, ...args} operations, applied in order inside one transaction - everything applies or everything reverts (a failed batch rolls back the operations it already applied; no orphaned creates). In-batch referencing: id \"LAST\" names the task the most recent create made, \"#N\" (1-based) names the task created at operations[N-1], matching the numbered result lines.",
-						"items": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"action": map[string]any{"type": "string", "enum": taskActionNames()},
-							},
-							"required": []string{"action"},
+	board := prop("string", "Board name to operate on (omit = the active board; 'main' is the default board).")
+	return map[string]core.Tool{
+		"kanban.list": {
+			Description: "List board tasks, optionally filtered by status. An empty call lists the active board's tasks.",
+			Parameters: object(map[string]any{
+				"board":  board,
+				"status": prop("string", "Filter by status: omit = active only (archived hidden), 'archived' lists the archive, 'all' includes it."),
+			}),
+			Run: p.verbRunner("list"),
+		},
+		"kanban.create": {
+			Description: "Create a board task (title is the short name, body carries the full spec; priority higher = more urgent, 0 = normal).",
+			Parameters: object(map[string]any{
+				"title":    prop("string", "Short title for the task."),
+				"body":     prop("string", "Full spec / body."),
+				"assignee": prop("string", "Who the task is for."),
+				"priority": prop("number", "Urgency tiebreak, 0 = normal (default), higher = more urgent; negative refused."),
+				"status":   prop("string", "Initial board status; omit for triage (the store default)."),
+				"source":   prop("string", "Provenance tag, e.g. an automator's name."),
+				"board":    board,
+			}, "title"),
+			Run: p.verbRunner("create"),
+		},
+		"kanban.update": {
+			Description: "Update a task: move status (any legal transition), set assignee, retitle, rewrite the body, or set priority.",
+			Parameters: object(map[string]any{
+				"id":       prop("string", "Task id."),
+				"title":    prop("string", "New title."),
+				"body":     prop("string", "New body."),
+				"assignee": prop("string", "New assignee; empty string unassigns."),
+				"priority": prop("number", "New priority (0 = normal; negative refused)."),
+				"status":   prop("string", "New board status (any legal transition): triage todo scheduled ready running blocked review done archived."),
+				"board":    board,
+			}, "id"),
+			Run: p.verbRunner("update"),
+		},
+		"kanban.complete": {
+			Description: "Mark a task done (moves it to the done column and stamps completion).",
+			Parameters: object(map[string]any{
+				"id":    prop("string", "Task id."),
+				"board": board,
+			}, "id"),
+			Run: p.verbRunner("complete"),
+		},
+		"kanban.comment": {
+			Description: "Add a comment to a task's thread.",
+			Parameters: object(map[string]any{
+				"id":     prop("string", "Task id."),
+				"body":   prop("string", "Comment body."),
+				"author": prop("string", "Comment author (default agent)."),
+				"board":  board,
+			}, "id", "body"),
+			Run: p.verbRunner("comment"),
+		},
+		"kanban.delete": {
+			Description: "Permanently remove a task from the board (its comments and events go with it). Archive is the reversible path - prefer it unless the card must vanish.",
+			Parameters: object(map[string]any{
+				"id":    prop("string", "Task id."),
+				"board": board,
+			}, "id"),
+			Run: p.verbRunner("delete"),
+		},
+		"kanban.batch": {
+			Description: "Run several board operations in one call (create several tasks, or update + comment together). On the mounted store the whole array is atomic: everything applies or everything reverts.",
+			Parameters: object(map[string]any{
+				"operations": map[string]any{
+					"type":        "array",
+					"description": "Array of {action, ...args} operations, applied in order inside one transaction - everything applies or everything reverts (a failed batch rolls back the operations it already applied; no orphaned creates). In-batch referencing: id \"LAST\" names the task the most recent create made, \"#N\" (1-based) names the task created at operations[N-1], matching the numbered result lines. Each operation resolves its own board; omit = the active board.",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"action": map[string]any{"type": "string", "enum": taskVerbs},
 						},
+						"required": []string{"action"},
 					},
 				},
-				"required": []string{"action"},
-			},
-			Run: p.runTask,
+			}, "operations"),
+			Run: p.runBatchTool,
 		},
 	}
-	return tools
+}
+
+// prop assembles one typed schema property.
+func prop(typ, desc string) map[string]any {
+	return map[string]any{"type": typ, "description": desc}
+}
+
+// object assembles the tool's JSON object schema. required names the
+// args THIS verb cannot run without - its own list, never another
+// verb's (comment requires body, create requires title); a verb with
+// no required args (list - the empty call by construction) omits the
+// key entirely.
+func object(props map[string]any, required ...string) map[string]any {
+	schema := map[string]any{"type": "object", "properties": props}
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+	return schema
 }
 
 // parseTaskOperations converts the raw interface{} from tool args into
@@ -356,36 +403,49 @@ func parseTaskOperations(raw any) ([]map[string]any, error) {
 	if len(ops) == 0 {
 		return nil, fmt.Errorf("operations array is empty")
 	}
-	legal := make(map[string]bool, len(taskActions))
-	for _, a := range taskActions {
-		legal[a.Name] = true
+	legal := make(map[string]bool, len(taskVerbs))
+	for _, v := range taskVerbs {
+		legal[v] = true
 	}
 	for i, op := range ops {
 		act, _ := op["action"].(string)
 		if !legal[act] {
-			return nil, fmt.Errorf("operations[%d]: action must be one of %v, got %q", i, taskActionNames(), act)
+			return nil, fmt.Errorf("operations[%d]: action must be one of %v, got %q", i, taskVerbs, act)
 		}
 	}
 	return ops, nil
 }
 
-// runTask dispatches the consolidated task tool: a single operation or
-// a batch. The batch is atomic on a Batcher board (one transaction,
+// runBatchTool is kanban.batch's Run: parse the operations array
+// (its own per-op action contract), then hand it to the batch engine.
+// The batch is atomic on a Batcher board (one transaction,
 // create-then-act referenced in-batch; batch.go) and fail-forward,
 // honestly reported, where the board cannot provide one.
-func (p *ToolProvider) runTask(ctx context.Context, args map[string]any) (string, error) {
-	if opsRaw, ok := args["operations"]; ok && opsRaw != nil {
-		ops, err := parseTaskOperations(opsRaw)
-		if err != nil {
-			return "", err
+func (p *ToolProvider) runBatchTool(ctx context.Context, args map[string]any) (string, error) {
+	ops, err := parseTaskOperations(args["operations"])
+	if err != nil {
+		return "", err
+	}
+	return p.runTaskBatch(ctx, ops)
+}
+
+// verbRunner binds one verb of the dotted surface: the tool's Run
+// routes the wire args through the shared op machinery with the
+// action pre-seeded - the call carries no action field anymore, the
+// verb IS the tool name.
+func (p *ToolProvider) verbRunner(action string) func(context.Context, map[string]any) (string, error) {
+	return func(ctx context.Context, args map[string]any) (string, error) {
+		a := maps.Clone(args)
+		if a == nil {
+			a = map[string]any{}
 		}
-		return p.runTaskBatch(ctx, ops)
+		a["action"] = action
+		res, _, err := p.runTaskOp(ctx, p.board, a)
+		if err == nil {
+			p.refreshCapsule()
+		}
+		return res, err
 	}
-	res, _, err := p.runTaskOp(ctx, p.board, args)
-	if err == nil {
-		p.refreshCapsule()
-	}
-	return res, err
 }
 
 // refreshCapsule pushes the task panel through the module's canvas
@@ -430,7 +490,7 @@ func (p *ToolProvider) runTaskOp(ctx context.Context, b KanbanProvider, args map
 		res, err := p.runDelete(ctx, b, board, args)
 		return res, "", err
 	default:
-		return "", "", fmt.Errorf("action is required: one of %v, or pass operations for a batch", taskActionNames())
+		return "", "", fmt.Errorf("unknown task action %q (one of %v)", action, taskVerbs)
 	}
 }
 

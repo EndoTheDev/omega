@@ -415,11 +415,11 @@ func (api *ExtensionAPI) claim(name string) error {
 }
 
 // RegisterTool adds one tool (ToolProviders, additive). The name is
-// the model-facing identity. The one-domain tool law (t_e06b38bc,
-// extending the t_73994e55 action protocol): a multi-action domain
-// names ITSELF - a module capsule (Toggleable) registers its bare
-// domain name ("kanban", "memory", the one tool whose Actions carry
-// the verbs) or module.verb pairs ("delegate.task"); a built-in
+// the model-facing identity. Dotted wire tools are the norm (the
+// registry unification B ruling, t_f616ed78): a module capsule
+// (Toggleable) registers its module.verb pairs ("kanban.list",
+// "delegate.task") or keeps a flat domain tool where one name plus an
+// action enum already stands ("memory"); a built-in
 // capsule (provider, store, tools, the loop - machine-critical, in
 // the machine's vocabulary) registers its natural name ("shell.run",
 // "sessions.search"). Both land on the same one-tenant ledger; a

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 func toolProvider(t *testing.T) (*ToolProvider, KanbanProvider) {
@@ -23,18 +24,124 @@ func withSession(ctx context.Context, id string) context.Context {
 	return agent.WithSessionID(ctx, id)
 }
 
-func TestToolsRegistryComplete(t *testing.T) {
+// dottedToolNames is the full split wire (the B ruling, t_f616ed78):
+// exactly these seven, and no flat kanban tool.
+var dottedToolNames = []string{
+	"kanban.list",
+	"kanban.create",
+	"kanban.update",
+	"kanban.complete",
+	"kanban.comment",
+	"kanban.delete",
+	"kanban.batch",
+}
+
+func TestToolsRegistryCarriesSevenDottedTools(t *testing.T) {
 	p, _ := toolProvider(t)
 	tools := p.Tools()
-	tool, ok := tools["kanban"]
+	if len(tools) != len(dottedToolNames) {
+		t.Fatalf("the registry carries the seven dotted kanban tools; got %d entries: %v", len(tools), tools)
+	}
+	for _, name := range dottedToolNames {
+		tool, ok := tools[name]
+		if !ok {
+			t.Fatalf("missing tool %q (have %v)", name, tools)
+		}
+		if tool.Run == nil || tool.Description == "" || tool.Parameters == nil {
+			t.Fatalf("%s: broken registration", name)
+		}
+	}
+	if _, ok := tools["kanban"]; ok {
+		t.Fatal(`the flat "kanban" tool must be gone - the B ruling split it`)
+	}
+}
+
+// TestDottedToolSchemasCarryOnlyTheirOwnArgs pins the split's schema
+// win (the card's acceptance): each tool's property set is exactly its
+// own verb's args and its required list is exactly its own - comment
+// carries no title, create carries no operations, list carries no
+// required key at all, and no tool knows the retired action property.
+func TestDottedToolSchemasCarryOnlyTheirOwnArgs(t *testing.T) {
+	p, _ := toolProvider(t)
+	tools := p.Tools()
+
+	for name, tool := range tools {
+		if tool.Actions != nil {
+			t.Fatalf("%s carries Actions metadata - the dotted tools carry no action enum", name)
+		}
+		if _, ok := schemaProps(t, tool)["action"]; ok {
+			t.Fatalf("%s schema still declares the action property - the verb IS the name", name)
+		}
+	}
+
+	comment := tools["kanban.comment"]
+	for _, arg := range []string{"id", "body", "author", "board"} {
+		if _, ok := schemaProps(t, comment)[arg]; !ok {
+			t.Fatalf("kanban.comment lost its own arg %q", arg)
+		}
+	}
+	for _, foreign := range []string{"title", "priority", "status", "assignee", "source", "operations"} {
+		if _, ok := schemaProps(t, comment)[foreign]; ok {
+			t.Fatalf("kanban.comment schema carries %q - comment requires body, not another verb's args", foreign)
+		}
+	}
+	assertRequired(t, comment, "id", "body")
+
+	create := tools["kanban.create"]
+	assertRequired(t, create, "title")
+	for _, foreign := range []string{"id", "author", "operations"} {
+		if _, ok := schemaProps(t, create)[foreign]; ok {
+			t.Fatalf("kanban.create schema carries %q", foreign)
+		}
+	}
+
+	list := tools["kanban.list"]
+	if _, ok := list.Parameters["required"]; ok {
+		t.Fatalf("kanban.list declares required args - the empty call is the default read")
+	}
+	props := schemaProps(t, list)
+	if len(props) != 2 {
+		t.Fatalf("kanban.list properties = %v, want exactly board + status", props)
+	}
+
+	assertRequired(t, tools["kanban.update"], "id")
+	assertRequired(t, tools["kanban.complete"], "id")
+	assertRequired(t, tools["kanban.delete"], "id")
+
+	batch := tools["kanban.batch"]
+	assertRequired(t, batch, "operations")
+	batchProps := schemaProps(t, batch)
+	if len(batchProps) != 1 {
+		t.Fatalf("kanban.batch properties = %v, want exactly operations", batchProps)
+	}
+	items, _ := batchProps["operations"].(map[string]any)["items"].(map[string]any)
+	enum, _ := items["properties"].(map[string]any)["action"].(map[string]any)["enum"].([]string)
+	if len(enum) != len(taskVerbs) {
+		t.Fatalf("batch op action enum = %v, want %v", enum, taskVerbs)
+	}
+}
+
+// schemaProps reads a tool schema's property table.
+func schemaProps(t *testing.T, tool core.Tool) map[string]any {
+	t.Helper()
+	props, ok := tool.Parameters["properties"].(map[string]any)
 	if !ok {
-		t.Fatal(`missing tool "kanban"`)
+		t.Fatalf("schema properties missing: %+v", tool.Parameters)
 	}
-	if tool.Run == nil || tool.Description == "" {
-		t.Fatal("broken registration")
+	return props
+}
+
+// assertRequired pins the schema's exact required list.
+func assertRequired(t *testing.T, tool core.Tool, want ...string) {
+	t.Helper()
+	got, ok := tool.Parameters["required"].([]string)
+	if !ok || len(got) != len(want) {
+		t.Fatalf("required = %v, want %v", tool.Parameters["required"], want)
 	}
-	if len(tools) != 1 {
-		t.Fatalf("the registry carries the one folded domain tool; got %d entries", len(tools))
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("required = %v, want %v", got, want)
+		}
 	}
 }
 
@@ -122,34 +229,41 @@ func TestTaskUpdateEmptyAssigneeUnassigns(t *testing.T) {
 	}
 }
 
-// TestRunTaskActionEnumCoversAllVerbs is the consolidation gate: every
-// pre-fold verb's behavior is reachable through the folded task tool's
-// action enum.
-func TestRunTaskActionEnumCoversAllVerbs(t *testing.T) {
+// TestDottedToolsCoverAllVerbs is the split's behavior gate: every
+// pre-split verb's behavior is reachable through its own dotted tool,
+// driven through the real Run (the wire surface the loop calls).
+func TestDottedToolsCoverAllVerbs(t *testing.T) {
 	p, board := toolProvider(t)
-	ctx := withSession(context.Background(), "sess_fold")
+	tools := p.Tools()
+	ctx := withSession(context.Background(), "sess_split")
+
+	// the empty call is a legal list: no args at all
+	out, err := tools["kanban.list"].Run(ctx, nil)
+	if err != nil || out != "no tasks" {
+		t.Fatalf("empty list: %q %v", out, err)
+	}
 
 	// create
-	out, err := p.runTask(ctx, map[string]any{"action": "create", "title": "folded flow", "body": "spec"})
+	out, err = tools["kanban.create"].Run(ctx, map[string]any{"title": "split flow", "body": "spec"})
 	if err != nil || !strings.Contains(out, "created t_") {
 		t.Fatalf("create: %q %v", out, err)
 	}
 	id := strings.Fields(out)[1]
 
 	// list
-	out, err = p.runTask(ctx, map[string]any{"action": "list"})
-	if err != nil || !strings.Contains(out, "folded flow") {
+	out, err = tools["kanban.list"].Run(ctx, map[string]any{})
+	if err != nil || !strings.Contains(out, "split flow") {
 		t.Fatalf("list: %q %v", out, err)
 	}
 
 	// update
-	out, err = p.runTask(ctx, map[string]any{"action": "update", "id": id, "status": StatusRunning})
+	out, err = tools["kanban.update"].Run(ctx, map[string]any{"id": id, "status": StatusRunning})
 	if err != nil || !strings.Contains(out, id) {
 		t.Fatalf("update: %q %v", out, err)
 	}
 
 	// comment
-	out, err = p.runTask(ctx, map[string]any{"action": "comment", "id": id, "body": "hello"})
+	out, err = tools["kanban.comment"].Run(ctx, map[string]any{"id": id, "body": "hello"})
 	if err != nil || !strings.Contains(out, "commented on") {
 		t.Fatalf("comment: %q %v", out, err)
 	}
@@ -159,7 +273,7 @@ func TestRunTaskActionEnumCoversAllVerbs(t *testing.T) {
 	}
 
 	// complete
-	out, err = p.runTask(ctx, map[string]any{"action": "complete", "id": id})
+	out, err = tools["kanban.complete"].Run(ctx, map[string]any{"id": id})
 	if err != nil || !strings.Contains(out, "done") {
 		t.Fatalf("complete: %q %v", out, err)
 	}
@@ -168,9 +282,13 @@ func TestRunTaskActionEnumCoversAllVerbs(t *testing.T) {
 		t.Fatalf("task = %+v", task)
 	}
 
-	// unknown / empty action
-	if _, err := p.runTask(ctx, map[string]any{}); err == nil || !strings.Contains(err.Error(), "action is required") {
-		t.Fatalf("empty action: %v", err)
+	// delete
+	out, err = tools["kanban.delete"].Run(ctx, map[string]any{"id": id})
+	if err != nil || !strings.Contains(out, "deleted") {
+		t.Fatalf("delete: %q %v", out, err)
+	}
+	if _, err := board.GetTask(context.Background(), "", id); err == nil {
+		t.Fatal("the deleted task is still on the board")
 	}
 }
 
@@ -178,9 +296,10 @@ func TestRunTaskActionEnumCoversAllVerbs(t *testing.T) {
 // call, and update+comment together.
 func TestRunTaskBatch(t *testing.T) {
 	p, board := toolProvider(t)
+	batch := p.Tools()["kanban.batch"]
 	ctx := withSession(context.Background(), "sess_batch")
 
-	out, err := p.runTask(ctx, map[string]any{"operations": []map[string]any{
+	out, err := batch.Run(ctx, map[string]any{"operations": []map[string]any{
 		{"action": "create", "title": "batch one"},
 		{"action": "create", "title": "batch two"},
 	}})
@@ -193,7 +312,7 @@ func TestRunTaskBatch(t *testing.T) {
 	}
 	id1 := strings.Fields(strings.TrimPrefix(lines[0], "1: "))[1]
 
-	out, err = p.runTask(ctx, map[string]any{"operations": []map[string]any{
+	out, err = batch.Run(ctx, map[string]any{"operations": []map[string]any{
 		{"action": "update", "id": id1, "status": StatusBlocked},
 		{"action": "comment", "id": id1, "body": "blocked for a reason"},
 	}})
@@ -216,9 +335,10 @@ func TestRunTaskBatch(t *testing.T) {
 // so (no orphaned creates).
 func TestRunTaskBatchRollback(t *testing.T) {
 	p, _ := toolProvider(t)
+	batch := p.Tools()["kanban.batch"]
 	ctx := context.Background()
 
-	out, _ := p.runTask(ctx, map[string]any{"operations": []any{
+	out, _ := batch.Run(ctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "kept"},
 		map[string]any{"action": "update", "id": "t_missing", "status": StatusDone},
 		map[string]any{"action": "create", "title": "never created"},
@@ -275,9 +395,10 @@ func TestRunTaskBatchFailForward(t *testing.T) {
 	}
 	t.Cleanup(func() { s.Close() })
 	p := &ToolProvider{board: nonBatcher{inner: s}}
+	batch := p.Tools()["kanban.batch"]
 	ctx := context.Background()
 
-	out, _ := p.runTask(ctx, map[string]any{"operations": []any{
+	out, _ := batch.Run(ctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "kept"},
 		map[string]any{"action": "update", "id": "t_missing", "status": StatusDone},
 		map[string]any{"action": "create", "title": "never created"},
@@ -297,15 +418,14 @@ func TestRunTaskBatchFailForward(t *testing.T) {
 	}
 }
 
-// TestTaskAliasesRetired pins the v0.12 phase-C1 retirement: the
-// machine-facing identity is the module.verb namespace pair, so the
-// legacy dotted alias shims no longer register at all. The folded
-// dispatcher keeps the same action vocabulary.
+// TestTaskAliasesRetired pins the v0.12 phase-C1 retirement plus the
+// B ruling (t_f616ed78): the wire is exactly the seven dotted names -
+// the legacy alias shims and the flat domain tool never register.
 func TestTaskAliasesRetired(t *testing.T) {
 	p, _ := toolProvider(t)
 	tools := p.Tools()
-	if len(tools) != 1 {
-		t.Fatalf("alias shims must not return: %d entries", len(tools))
+	if len(tools) != len(dottedToolNames) {
+		t.Fatalf("the wire must carry exactly the seven dotted tools: %d entries", len(tools))
 	}
 	for name, tool := range tools {
 		if tool.AliasOf != "" {
