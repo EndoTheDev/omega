@@ -48,14 +48,17 @@ type Tool struct {
 	// too. Modules outside the mcp bridge never set it.
 	Origin string
 
-	// Yield declares a yield-class tool (async agent loop, design of
-	// record Workshop/omega/async-agent-loop.md): a call on it ENDS the
-	// turn instead of blocking it - the loop dispatches the call on its
-	// own goroutine, the turn ends, and the result re-enters later as a
-	// synthetic core.YieldResult input message. Opt-in at registration:
-	// the default stays loop-back. The model is never told - the
-	// registry decides silently (ruling 9); no prompt, schema, or
-	// description change of any kind.
+	// Yield declares an IMMEDIATE-yield tool (async agent loop, design
+	// of record Workshop/omega/async-agent-loop.md; amended by card
+	// t_1501cb04): a call on it ENDS the turn without any inline
+	// attempt - the loop dispatches the call on its own goroutine,
+	// the turn ends, and the result re-enters later as a synthetic
+	// core.YieldResult input message. Reserved for calls that are
+	// minutes by nature (delegate.task); everything else runs inline
+	// under the loop's inline budget and only ESCALATES to the same
+	// re-entry path by running past it. Opt-in at registration. The
+	// model is never told - the registry decides silently (ruling 9);
+	// no prompt, schema, or description change of any kind.
 	Yield bool
 }
 
