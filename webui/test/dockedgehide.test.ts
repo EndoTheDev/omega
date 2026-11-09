@@ -387,7 +387,9 @@ describe("createDock: the closed window keeps its composition (card t_9ed6cad7)"
       INSPECTOR_TAB_COMPONENTS.map((c) => c as string),
     );
     assert.equal(countTab(dock.tree.value, "files"), 1);
-    assert.equal(countTab(dock.tree.value, "settings"), 1);
+    // card t_00e4a784: settings is not a seated inspector tab any more -
+    // the stow/restore never mints one
+    assert.equal(countTab(dock.tree.value, "settings"), 0);
   });
 
   it("undo of a HIDE restores the pre-hide state, the stow cleared; the next hide re-stows", async () => {

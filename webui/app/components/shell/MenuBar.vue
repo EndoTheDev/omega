@@ -82,9 +82,21 @@
         name="panel-right-open"
         :size="16" />
     </button>
-    <!-- the settings gear is GONE (card t_47b776ad): settings is a
-         dock-tab singleton opened from the pane '+' menu, not the window
-         chrome. -->
+    <!-- card t_00e4a784 (Endo ruling 2026-11-09): the settings gear is
+         BACK - a menubar button seated right beside the secondary
+         sidebar's toggle, opening settings AS a tab (VSCode's read: a
+         normal closable main tab, not shell chrome and no longer a
+         pinned inspector view). The button is global, so settings stays
+         reachable from every pane context. -->
+    <button
+      class="icon-btn edge-toggle"
+      aria-label="Open settings"
+      title="Settings"
+      @click="$emit('open-settings')">
+      <Icon
+        name="settings"
+        :size="16" />
+    </button>
     <!-- card t_180db2cb (Endo ruling 2026-10-29): the bell is GONE -
          the durable feed is the notifications dock tab; its unread
          badge rides the dockable's icon chip. What the menubar keeps
@@ -127,6 +139,7 @@
     (e: "back"): void;
     (e: "forward"): void;
     (e: "open-palette"): void;
+    (e: "open-settings"): void;
     (e: "open-notification", n: unknown): void;
   }>();
 </script>
