@@ -3,6 +3,7 @@ package process
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -396,6 +397,13 @@ func TestToolFace(t *testing.T) {
 	if got, err := prov.run(context.Background(), map[string]any{"action": "kill", "name": "toolled"}); err != nil || !strings.Contains(got, "stopped") {
 		t.Fatalf("kill tool: %s err=%v", got, err)
 	}
+	// the removal path (card t_304afb4e): the now-exited handle leaves
+	if got, err := prov.run(context.Background(), map[string]any{"action": "remove", "name": "toolled"}); err != nil || !strings.Contains(got, "removed") {
+		t.Fatalf("remove tool: %s err=%v", got, err)
+	}
+	if _, ok := prov.reg.Find("toolled"); ok {
+		t.Fatal("the removed handle is still listed")
+	}
 	if _, err := prov.run(context.Background(), map[string]any{"action": "bogus"}); err == nil {
 		t.Fatal("unknown action must error")
 	}
@@ -497,5 +505,181 @@ func TestBuildShellChainRedirectTiming(t *testing.T) {
 	// ping -n 2 waits ~1s; a dead redirect segment would return early.
 	if elapsed < 900*time.Millisecond {
 		t.Fatalf("the delay segment did not actually run (elapsed %v)", elapsed)
+	}
+}
+
+// TestPostMortemRead (card t_304afb4e): the log survives the process.
+// Before the fix the reaper rotated <name>.log to <name>.log.1 at
+// exit, so the post-mortem read - arguably the main reason to read a
+// log - answered "no log yet". The acceptance receipt: spawn a short
+// process, wait for exit, read the log.
+func TestPostMortemRead(t *testing.T) {
+	r := testRegistry(t)
+	if _, err := r.Spawn(context.Background(), "echo post-mortem-ok", "gone", ""); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	got, err := r.Wait(context.Background(), "gone", 10)
+	if err != nil || !strings.Contains(got, "exited") {
+		t.Fatalf("wait: %s err=%v", got, err)
+	}
+	// the finished log is still at its recorded path - no exit-time rotation
+	e := stateEntry(t, r, "gone")
+	if _, err := os.Stat(e.LogPath); err != nil {
+		t.Fatalf("the finished log vanished: %v", err)
+	}
+	tail, _, _, err := r.Read("gone", 100)
+	if err != nil || !strings.Contains(tail, "post-mortem-ok") {
+		t.Fatalf("post-mortem read: %q err=%v", tail, err)
+	}
+}
+
+// TestReadRotatedGenerationFallback: an entry rotated by a pre-fix
+// registry (its .log gone, the .1 surviving) still reads - the
+// legacy state the retention contract must not orphan.
+func TestReadRotatedGenerationFallback(t *testing.T) {
+	r := testRegistry(t)
+	e := Entry{
+		Name:       "legacy",
+		Command:    "echo x",
+		PID:        1,
+		StartedAt:  time.Now().Add(-time.Minute).Unix(),
+		FinishedAt: time.Now().Unix(),
+		Exited:     true,
+		LogPath:    filepath.Join(r.logsDir(), "legacy.log"),
+	}
+	if err := os.MkdirAll(r.logsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(e.LogPath+".1", []byte("generation-one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seedState(t, r.statePath(), []Entry{e})
+	tail, _, _, err := r.Read("legacy", 10)
+	if err != nil || !strings.Contains(tail, "generation-one") {
+		t.Fatalf("rotated-generation read: %q err=%v", tail, err)
+	}
+}
+
+// TestCapExitedLog (card t_304afb4e): process.log_max_bytes is
+// enforced at exit - an oversized finished log is trimmed to the cap,
+// the TAIL kept (read serves the tail), a small log untouched.
+func TestCapExitedLog(t *testing.T) {
+	r := testRegistry(t)
+	r.cfg.LogMaxBytes = 4096
+	var sb strings.Builder
+	for i := 0; i < 1000; i++ {
+		fmt.Fprintf(&sb, "line-%04d\n", i) // 10 KB total
+	}
+	logPath := filepath.Join(r.logsDir(), "fat.log")
+	if err := os.MkdirAll(r.logsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(logPath, []byte(sb.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r.capExited(&Entry{Name: "fat", LogPath: logPath, Exited: true})
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) != 4096 {
+		t.Fatalf("capped size = %d, want 4096", len(data))
+	}
+	if !strings.Contains(string(data), "line-0999") {
+		t.Fatal("the cap must keep the TAIL (the last line survived the trim?)")
+	}
+	if strings.Contains(string(data), "line-0000") {
+		t.Fatal("the cap must drop the head (the first line is still there)")
+	}
+	small := filepath.Join(r.logsDir(), "thin.log")
+	if err := os.WriteFile(small, []byte("tiny"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r.capExited(&Entry{Name: "thin", LogPath: small, Exited: true})
+	if data, err := os.ReadFile(small); err != nil || len(data) != 4 {
+		t.Fatalf("a sub-cap log must be untouched: %q err=%v", data, err)
+	}
+}
+
+// TestRemoveExitedEntry (card t_304afb4e): the removal path - a
+// RUNNING handle is refused, an exited one leaves with its log
+// generations, an unknown name errors.
+func TestRemoveExitedEntry(t *testing.T) {
+	r := testRegistry(t)
+	sleeper := "sleep 300"
+	if runtime.GOOS == "windows" {
+		sleeper = "ping -n 300 127.0.0.1 > nul"
+	}
+	if _, err := r.Spawn(context.Background(), sleeper, "hold", ""); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	if _, err := r.Remove("hold"); err == nil {
+		t.Fatal("removing a RUNNING name must be refused")
+	}
+	if _, err := r.Kill("hold"); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	waitFor(t, 10*time.Second, "the kill to land", func() bool {
+		e, ok := r.Find("hold")
+		return ok && e.Exited
+	})
+	note, err := r.Remove("hold")
+	if err != nil || !strings.Contains(note, "removed") {
+		t.Fatalf("remove: %s err=%v", note, err)
+	}
+	if _, ok := r.Find("hold"); ok {
+		t.Fatal("the entry survived removal")
+	}
+	// state file agrees
+	fresh := NewRegistry(Config{Home: r.cfg.Home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
+	if _, ok := fresh.Find("hold"); ok {
+		t.Fatal("the removed entry survived a registry reload")
+	}
+	if _, err := r.Remove("hold"); err == nil {
+		t.Fatal("removing an unknown name must error")
+	}
+}
+
+// TestRetainSweepGC (card t_304afb4e): the registry GC - an exited
+// entry older than the retention window (and its log files) is swept
+// at load; a recent one stays.
+func TestRetainSweepGC(t *testing.T) {
+	home := t.TempDir()
+	r := NewRegistry(Config{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
+	week := 7 * 24 * time.Hour
+	mk := func(name string, age time.Duration) Entry {
+		return Entry{
+			Name:       name,
+			Command:    "echo " + name,
+			PID:        1,
+			StartedAt:  time.Now().Add(-age - time.Minute).Unix(),
+			FinishedAt: time.Now().Add(-age).Unix(),
+			Exited:     true,
+			ExitCode:   new(int),
+			LogPath:    filepath.Join(r.logsDir(), name+".log"),
+		}
+	}
+	ancient, fresh := mk("ancient", week+24*time.Hour), mk("fresh", time.Hour)
+	if err := os.MkdirAll(r.logsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range []Entry{ancient, fresh} {
+		if err := os.WriteFile(e.LogPath, []byte("log-"+e.Name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seedState(t, r.statePath(), []Entry{ancient, fresh})
+	list := r.List() // load + sweep
+	if _, ok := findByName(list, "ancient"); ok {
+		t.Fatal("an entry a week past exit must be swept")
+	}
+	if _, ok := findByName(list, "fresh"); !ok {
+		t.Fatal("a recent exited entry must survive the sweep")
+	}
+	if _, err := os.Stat(ancient.LogPath); !os.IsNotExist(err) {
+		t.Fatal("the swept entry's log survived")
+	}
+	if _, err := os.Stat(fresh.LogPath); err != nil {
+		t.Fatalf("the surviving entry's log vanished: %v", err)
 	}
 }
