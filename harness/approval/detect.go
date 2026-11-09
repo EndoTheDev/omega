@@ -373,22 +373,51 @@ func secretMaterialHit(seg Segment) bool {
 	return false
 }
 
-// writesThrough reports redirect writes in parsed form: a standalone
-// > or >> word, a word starting with them (2>>x keeps its fd prefix),
-// or tee (which writes whatever flows through it).
+// writesThrough reports redirect writes in parsed form. Redirect
+// forms live both spaced (the operator is its own word: `2> f.txt`)
+// and fused (2>err.log, &>all.log) - the tokenizer emits one redirect
+// token either way, so this reads whole words: strip the fd prefix
+// (2>, 21>, 2>>x keeps its fd prefix) and classify what remains. The
+// descriptor-dup forms (2>&1, >&2) copy a descriptor and write no
+// file - the one redirect shape that is not a write (t_2919b7a3.2).
+// tee writes whatever flows through it.
 func writesThrough(seg Segment) bool {
 	for _, w := range seg.Words {
-		switch w {
-		case ">", ">>", "<>", "tee":
+		if w == "tee" {
 			return true
 		}
-		for _, p := range []string{">>", ">", "&>", "&>>", "<>"} {
-			if strings.HasPrefix(w, p) && len(w) > len(p) {
-				return true
+		body := strings.TrimLeft(w, "0123456789") // fd prefix
+		switch {
+		case body == ">" || body == ">>":
+			// the operator stands alone; its file operand rides
+			// as the next word (spaced form) - a write either way
+			return true
+		case strings.HasPrefix(body, ">&"):
+			if isFDOperand(body[2:]) {
+				continue // 2>&1: descriptor duplication, no file
 			}
+			// >&f, >&f.log, or >& still waiting on the next word
+			return true
+		case strings.HasPrefix(body, "&>"),
+			strings.HasPrefix(body, "<>"), strings.HasPrefix(body, ">"),
+			strings.HasPrefix(body, "&"):
+			return true
 		}
 	}
 	return false
+}
+
+// isFDOperand reports an all-digit fd operand (>&1, 2>&12).
+func isFDOperand(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // hasScriptExtension reports whether a word names a script by
