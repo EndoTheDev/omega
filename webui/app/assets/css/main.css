@@ -1617,6 +1617,38 @@ labels stopped short of the right edge. */
   display: block;
 }
 
+/* non-image attachment chips in a sent bubble (card t_8a569163): the
+   same glyph + name + size the composer strip showed. No thumbnail -
+   a reference is a path, not bytes. */
+.msg-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.msg-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 280px;
+  padding: 3px 9px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-dim);
+  background: var(--z2);
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+}
+.msg-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.msg-file-size {
+  flex: none;
+  opacity: 0.8;
+}
+
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -2226,6 +2258,44 @@ labels stopped short of the right edge. */
   cursor: pointer;
 }
 .attach-remove:hover { color: var(--accent); }
+
+/* non-image attachment chips in the strip (card t_8a569163): type glyph
+   + name + size. There is nothing to thumbnail - the bytes went to the
+   server's upload dir and only the reference came back. */
+.attach-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 260px;
+  padding: 4px 22px 4px 9px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text);
+  background: var(--z2);
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+}
+.attach-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attach-file-size {
+  flex: none;
+  color: var(--text-dim);
+}
+/* the chip is wider than the thumb, not taller: the shared corner
+   button turns into an inline edge button */
+.attach-file .attach-remove {
+  top: 50%;
+  right: 3px;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  line-height: 14px;
+  border-radius: var(--r-chip);
+  background: transparent;
+}
 
 .toolbar {
   display: flex;
