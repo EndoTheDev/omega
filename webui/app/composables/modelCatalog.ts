@@ -94,6 +94,23 @@ export function withAuxDefault(
   return [{ value: AUX_DEFAULT_VALUE, label }, ...options];
 }
 
+// --- when a picker must fall back to free text ---
+
+// pickerNeedsFreeText: the ONE rule that decides whether a model picker
+// renders the listbox or the degraded free-text input + hint. Count only
+// the NAMED models: the aux "default" sentinel is a rendering entry, not
+// a model, so a knob that offers it must still degrade to free text when
+// the filtered catalog matched nothing - otherwise the escape hatch
+// (type a model name) disappears behind a one-item dead dropdown.
+export function pickerNeedsFreeText(
+  namedCount: number,
+  loading: boolean,
+  error: string | null,
+): boolean {
+  if (error !== null) return true;
+  return !loading && namedCount === 0;
+}
+
 // --- the shared catalog state (one fetch per settings open) ---
 
 export interface ModelCatalogState {
