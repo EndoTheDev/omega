@@ -8,10 +8,13 @@ package skills
 //	                (card t_05d06973, the terminal face of the skills
 //	                tab's CRUD round)
 //
-// Every `omega skills` verb rides the SAME provider faces the HTTP
-// routes call (ListSkills / SkillRead / SaveSkill / DeleteSkill), so a
-// CLI write and an editor save compose the identical SKILL.md and a
-// CLI delete takes the same backup + ledger path. The CLI adds no
+// Every `omega skills` verb rides this capsule's own faces, never a
+// second implementation: list renders the /skills command's table
+// (handleSkillsCommand, the same renderer the loop's slash command
+// prints), read calls ReadSkill (the seam behind GET /skills/content),
+// write rides SaveSkill (the tab's one writer) and delete rides
+// DeleteSkillAs (the same removal law DeleteSkill delegates to, with
+// the ledger's actor naming `cli` instead of the tab). The CLI adds no
 // second writer.
 
 import (
@@ -155,13 +158,24 @@ func stripCLIConfigFlag(argv []string) []string {
 
 // runSkillsCLI is the argv dispatch (name-first grammar, the crons
 // CLI's shape). Bare invocation = list; a per-verb --help answers the
-// module help instead of being read as a skill name.
+// module help instead of being read as a skill name, and a trailing
+// argument after --help is a usage error rather than a silent drop.
 func runSkillsCLI(sp *SkillsProvider, args []string, stdout io.Writer, stdin io.Reader) error {
 	if len(args) == 0 {
 		return skillsList(sp, stdout)
 	}
 	sub, rest := args[0], args[1:]
-	if len(rest) > 0 && (rest[0] == "--help" || rest[0] == "-h") {
+	if isHelpToken(sub) {
+		if len(rest) != 0 {
+			return fmt.Errorf("skills --help: unexpected argument %q (help takes none)", rest[0])
+		}
+		fmt.Fprint(stdout, skillsHelp)
+		return nil
+	}
+	if len(rest) > 0 && isHelpToken(rest[0]) {
+		if len(rest) > 1 {
+			return fmt.Errorf("skills %s --help: unexpected argument %q (help takes none)", sub, rest[1])
+		}
 		fmt.Fprint(stdout, skillsHelp)
 		return nil
 	}
@@ -177,13 +191,15 @@ func runSkillsCLI(sp *SkillsProvider, args []string, stdout io.Writer, stdin io.
 		return skillsWrite(sp, stdout, stdin, rest)
 	case "delete":
 		return skillsDelete(sp, stdout, rest)
-	case "--help", "-h", "help":
-		fmt.Fprint(stdout, skillsHelp)
-		return nil
 	default:
 		fmt.Fprint(os.Stderr, skillsHelp)
 		return fmt.Errorf("unknown skills subcommand %q", sub)
 	}
+}
+
+// isHelpToken reports the three spellings of the module help.
+func isHelpToken(arg string) bool {
+	return arg == "--help" || arg == "-h" || arg == "help"
 }
 
 // skillName peels the one positional a skill verb needs. The name
@@ -191,6 +207,14 @@ func runSkillsCLI(sp *SkillsProvider, args []string, stdout io.Writer, stdin io.
 // package stops parsing at the first non-flag argument, so a trailing
 // name would swallow every flag after it. A leading dash is a usage
 // error, never a guess.
+//
+// The name law is enforced HERE, for every verb: validSkillName is the
+// same single-folder-component rule SaveSkill, DeleteSkill and the
+// HTTP handlers apply. Validating at the one door the verbs share
+// means a name like "shared/../alpha" is refused by `read` too -
+// ReadSkill resolves <dir>/<name>/SKILL.md verbatim, so an unvalidated
+// read would happily print a SKILL.md-shaped file from outside the
+// skills inventory.
 func skillName(verb string, args []string) (string, []string, error) {
 	withFlags := ""
 	if verb == "write" {
@@ -201,6 +225,9 @@ func skillName(verb string, args []string) (string, []string, error) {
 	}
 	if strings.HasPrefix(args[0], "-") {
 		return "", nil, fmt.Errorf("usage: omega skills %s <name>%s - the skill name comes first", verb, withFlags)
+	}
+	if !validSkillName(args[0]) {
+		return "", nil, fmt.Errorf("omega skills %s: name must be a single folder component (no separators, no leading dot), got %q", verb, args[0])
 	}
 	return args[0], args[1:], nil
 }
