@@ -1893,14 +1893,14 @@ func TestApprovalRemovalProof(t *testing.T) {
 }
 
 // TestProcessRemovalProof is the background-process-registry proof
-// (card t_5782d11e). Process is the tool-face born-capsule: the five
-// process.* verbs are the whole surface - no command, no REST route,
-// no prompt section, no canvas panel, no webui surface. The two mounts
-// are the proof:
+// (card t_5782d11e). Process is the tool-face born-capsule: the four
+// process.* verbs (the daemon registry) are the whole surface - no
+// command, no REST route, no prompt section, no canvas panel, no webui
+// surface. The two mounts are the proof:
 //
 //  1. WITH process: buildPlugins carries the toggleable capsule and
-//     the five verbs register through the additive tools seam; a real
-//     spawn→read→wait round-trip answers through the tool face.
+//     the four verbs register through the additive tools seam; a real
+//     spawn→read→kill round-trip answers through the tool face.
 //  2. WITHOUT process: the module is out of buildPlugins - no verb
 //     survives anywhere in the mounted tool set, nothing Requires it,
 //     and removing harness/process takes the registry, the state file
@@ -1938,16 +1938,27 @@ func TestProcessRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
-	wantVerbs := []string{"process.spawn", "process.list", "process.read", "process.kill", "process.wait", "process.remove"}
+	wantVerbs := []string{"process.spawn", "process.list", "process.read", "process.kill"}
+	surface := map[string]bool{}
+	for _, tp := range ctx.ToolProviders {
+		for name := range tp.Tools() {
+			if strings.HasPrefix(name, "process.") {
+				surface[name] = true
+			}
+		}
+	}
+	if len(surface) != len(wantVerbs) {
+		t.Fatalf("FULL MOUNT: process tool surface = %v, want exactly %v", surface, wantVerbs)
+	}
 	for _, verb := range wantVerbs {
 		if _, err := pluginTool(ctx, verb); err != nil {
 			t.Fatalf("FULL MOUNT: %s missing (%v)", verb, err)
 		}
 	}
 	// a real round-trip: spawn a sleeper through the tool face, read
-	// the log, wait the timeout, kill it. The sleeper must STAY alive
-	// until the read (the echo may land a beat after spawn returns) -
-	// the portable pause is ping -n on windows, sleep elsewhere.
+	// the log, kill it. The sleeper must STAY alive until the read (the
+	// echo may land a beat after spawn returns) - the portable pause is
+	// ping -n on windows, sleep elsewhere.
 	spawnCmd := "echo proof-round-trip; sleep 300"
 	if runtime.GOOS == "windows" {
 		spawnCmd = "echo proof-round-trip && ping -n 300 127.0.0.1 > nul"
@@ -1975,7 +1986,7 @@ func TestProcessRemovalProof(t *testing.T) {
 	if runErr != nil || !strings.Contains(killRes, "stopped") {
 		t.Fatalf("FULL MOUNT: process.kill round-trip failed (res=%s err=%v)", killRes, runErr)
 	}
-	t.Log("PROOF mount=full: the five verbs registered through the additive tools seam; a live spawn/read/kill cycle answered through the tool face")
+	t.Log("PROOF mount=full: the four verbs registered through the additive tools seam; a live spawn/read/kill cycle answered through the tool face")
 
 	// --- mount 2: the capsule removed ---
 	var removed []agent.Plugin
