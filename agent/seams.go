@@ -61,17 +61,20 @@ type LoopOptions struct {
 	Logger    LoggerProvider // optional logging; nil = no logging
 
 	// The yield harness (async agent loop phase 1, t_f3f953d0; design
-	// of record Workshop/omega/async-agent-loop.md). YieldLedger is
-	// the pending-calls table the loop registers a yield-class call
-	// into at dispatch; YieldWake injects the settled core.YieldResult
-	// through the home's input path (the wake). EITHER nil = the whole
-	// harness is off: a Yield tool degrades to loop-back (blocking
-	// inline execution - today's behavior), so one-shot hosts
-	// (omega run, the CLI loop until phase 2, tests) never dispatch
-	// what cannot re-enter. YieldTimeout is a dispatched call's
-	// wall-clock cap; <= 0 takes the loop's default. The session id
-	// rides the run ctx (agent.SessionIDFromContext) - a sessionless
-	// run has no home to wake, same degradation.
+	// of record Workshop/omega/async-agent-loop.md, amended by card
+	// t_1501cb04). YieldLedger is the pending-calls table the loop
+	// registers an immediate-yield call into at dispatch and an
+	// inline-budget ESCALATION into at conversion (a call that runs
+	// past the budget converts mid-flight - same executor, same
+	// table); YieldWake injects the settled core.YieldResult through
+	// the home's input path (the wake). EITHER nil = the whole
+	// harness is off: every tool blocks to completion inline
+	// (today's degradation), so one-shot hosts (omega run, the CLI
+	// loop, tests) never dispatch what cannot re-enter. YieldTimeout
+	// is a dispatched (or converted) call's wall-clock cap; <= 0
+	// takes the loop's default. The session id rides the run ctx
+	// (agent.SessionIDFromContext) - a sessionless run has no home to
+	// wake, same degradation.
 	YieldLedger  YieldLedger
 	YieldWake    func(sessionID string, res core.YieldResult)
 	YieldTimeout time.Duration

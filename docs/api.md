@@ -180,8 +180,8 @@ Response is `text/event-stream`; frames are `event: <name>\ndata:
 | `tool_call`       | name + arguments                                            |
 | `tool_result`     | the tool's result                                           |
 | `stream_end`      | `finish_reason` (`stop`, `tool_call`, provider string, `cancelled`, `error`), usage counts when reported |
-| `turn_end`        | turn complete (`pending_calls` names dispatched yield-class calls that ended the turn) |
-| `agent_end`       | terminal state (`finish_reason`, incl. `cancelled` from a stop and `yielded` - the run ended on a dispatched yield-class call; its result re-enters as a wake turn, see below) |
+| `turn_end`        | turn complete (`pending_calls` counts outstanding calls - immediate-yield dispatches and inline-budget escalations - that ended the turn) |
+| `agent_end`       | terminal state (`finish_reason`, incl. `cancelled` from a stop and `yielded` - the run ended on an outstanding call (immediate-yield or escalated past the inline budget); its result re-enters as a wake turn, see below) |
 | `assistant_message`| the assembled assistant message                            |
 | `view_model_delta`| one canvas panel descriptor (arc 3b): a module updated its panel state; dispatch on this frame, then merge the panel |
 | `error`           | the error text (failures are events, not Go errors)         |
@@ -549,8 +549,10 @@ asset URL is a bug a deep link must not mask.
 
 ## Yielded turns (async agent loop)
 
-A yield-class tool call ends the run with `agent_end`
-`finish_reason: "yielded"` - the result re-enters when it settles as a
+An outstanding tool call - an immediate-yield dispatch
+(`delegate.task`) or a call that ran past the loop's inline budget and
+escalated (card t_1501cb04) - ends the run with `agent_end`
+`finish_reason: "yielded"`: the result re-enters when it settles as a
 wake run on the same session: every live subscriber sees TWO runs on
 one send (detach at the first `agent_end`; reattach via
 `/sessions/{id}/events` to ride the wake). The synthetic result
