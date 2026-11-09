@@ -76,8 +76,13 @@
   // --- aggregate state: one wrench color for the whole run ---
   const anyError = computed(() => props.items.some((it) => it.status === "error"));
   const anyRunning = computed(() => props.items.some((it) => it.status === "running"));
+  // async agent loop phase 3: a still-pending child keeps the group's
+  // wrench at the active color - the run is not over, its call's result
+  // re-enters as a later wake turn
+  const anyPending = computed(() => props.items.some((it) => it.status === "pending"));
+  const anyActive = computed(() => anyRunning.value || anyPending.value);
   const state = computed(() =>
-    anyError.value ? "error" : anyRunning.value ? "" : "done",
+    anyError.value ? "error" : anyActive.value ? "" : "done",
   );
 
   // --- auto open/close (the row/block state machine, card t_868633b3
@@ -90,13 +95,13 @@
 
   function applyAuto() {
     if (pinned.value !== null || !el.value) return;
-    el.value.open = toolGroupWantOpen(anyRunning.value, props.live ?? false, display.value);
+    el.value.open = toolGroupWantOpen(anyActive.value, props.live ?? false, display.value);
   }
 
   // nextTick: child statuses, the live gate and the mode flip land in
   // render passes - apply after the DOM settles.
   watch(
-    [anyRunning, () => props.live, display],
+    [anyActive, () => props.live, display],
     () => void nextTick(applyAuto),
   );
   onMounted(applyAuto);

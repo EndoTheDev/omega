@@ -281,11 +281,25 @@ export type TranscriptWireItem =
 // tool_call_id, exactly like a live tool_result frame) fills the
 // result, error state and elapsed onto it. Thin items (empty content)
 // render nothing. Pure.
+//
+// Async agent loop phase 3 (pending chips, ruling 6): a call whose
+// result row is ABSENT from the transcript renders as the PENDING
+// status, not a completed line with no output. The backend only
+// persists a call without its result when the call is yield-class
+// (dispatched out-of-band, its result re-enters as a later wake turn)
+// - and its result row, once it settles, lands right after the call's
+// turn in wire order, so a call visible in the window always sees its
+// settled result in the same window. Two passes: result ids first
+// (a result may sit anywhere after its call), then the mapping.
 export function renderTranscriptItems(
   items: TranscriptWireItem[] | null | undefined,
 ): TranscriptItem[] {
   const out: TranscriptItem[] = [];
   if (!items) return out;
+  const resultIds = new Set<string>();
+  for (const it of items) {
+    if (it.kind === "tool_result" && it.tool_call_id) resultIds.add(it.tool_call_id);
+  }
   const toolById = new Map<string, ToolItem>();
   const verdictById = new Map<string, VerdictItem>();
   for (const it of items) {
@@ -325,14 +339,21 @@ export function renderTranscriptItems(
           });
         break;
       case "tool_call": {
+        const cid = it.tool_call?.id || "";
+        // a settled call has its result somewhere in the transcript
+        // (wire order: the result lands right after the call's turn);
+        // an ABSENT result on an idle session is the yield-class
+        // pending shape (async agent loop phase 3) - the chip, not an
+        // orphaned done line. The live tail's running bit outranks
+        // both (the run still owns the call); an id-less call keeps
+        // today's done shape (nothing to match a result against).
         const t: ToolItem = {
           kind: "tool",
           name: it.tool_call?.name || "tool",
-          // running = the call the results have not answered yet (the
-          // live-run merge): renders as the running line with its
-          // elapsed meter counting on from elapsed_ms, result attaches
-          // when the stream delivers it
-          status: it.running ? "running" : "done",
+          status:
+            it.running ? "running"
+            : cid && !resultIds.has(cid) ? "pending"
+            : "done",
           output:
             it.tool_call?.arguments ?
               JSON.stringify(it.tool_call.arguments, null, 2)
@@ -389,6 +410,15 @@ export function renderTranscriptItems(
     }
   }
   return out;
+}
+
+// transcriptHasPending: does this rendered transcript carry at least
+// one pending chip (async agent loop phase 3)? The chat host's pending
+// watcher arms on it - a restored session whose calls still await
+// their wake re-attaches to the events stream so the chips fill in
+// live. Pure.
+export function transcriptHasPending(items: readonly TranscriptItem[]): boolean {
+  return items.some((it) => it?.kind === "tool" && it.status === "pending");
 }
 
 // --- the chat panel's wire vocabulary (chat-last 2a) --------------------
@@ -1006,6 +1036,12 @@ export interface StreamHandlers {
     completionTokens: number;
     cachedTokens: number;
   }) => void;
+  /** the run's TERMINAL finish_reason (the agent_end frame, async
+      agent loop phase 3): "yielded" names a run that ended on a
+      dispatched yield-class call - its result re-enters as a later
+      wake run on the same session (the chat host's pending watcher
+      arms on it and rides the wake through /sessions/{id}/events) */
+  onRunEnd?: (finishReason: string) => void;
   /** the server auto-created this chat's session - bind the id (the
       tab learns /chat/<id>, the binding lands in the dock tree) */
   onSession?: (sessionId: string) => void;
@@ -1066,6 +1102,11 @@ export function handlePayload(
       // A reader that finishes without it means the connection dropped
       // mid-run (server death, proxy cut) - streamChat flags that.
       state.sawEnd = true;
+      // the finish_reason reaches the transport's consumer FIRST (async
+      // agent loop phase 3): "yielded" is not an error shape - it names
+      // a run that handed its last call to the wake path, and the chat
+      // host arms its pending watcher on exactly this frame.
+      handlers.onRunEnd?.(String(p.finish_reason || ""));
       // A run cancelled through the stop affordance unwinds through the
       // loop's NORMAL ctx path and lands HERE with finish_reason
       // "cancelled" and error "context canceled" - for EVERY subscriber,
@@ -3115,6 +3156,28 @@ export async function attachSession(
   if (!resp.ok || !resp.body) return false;
   await consumeSSE(resp, handlers);
   return true;
+}
+
+// runActive probes whether a session holds a LIVE run right now
+// (async agent loop phase 3): the pending watcher asks before
+// committing to a full attach, because GET /sessions/{id}/events 404s
+// "session not active" the moment no run holds the slot - exactly the
+// home-sleeps window between a yielded turn's end and its wake launch.
+// A true answer ABORTS the probe stream: the watcher re-fetches for
+// the real ride (the race between probe and attach is benign - a run
+// that ends in the gap turns the attach into a 404 and the loop
+// probes again). Never throws: a probe is a question, not transport.
+export async function runActive(sessionId: string): Promise<boolean> {
+  try {
+    const resp = await fetch(`/sessions/${encodeURIComponent(sessionId)}/events`);
+    if (resp.ok) {
+      await resp.body?.cancel().catch(() => {});
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 // --- registry-browser: the disabled fold surface (v0.14.1) ---

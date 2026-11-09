@@ -25,6 +25,13 @@
         :title="answerLabel ? 'call duration + response return' : undefined"
         >{{ elapsedLabel }}<template v-if="answerLabel"> + {{ answerLabel }}</template></span
       >
+      <!-- async agent loop phase 3 (ruling 6): the pending chip's word.
+           The result re-enters as a later wake turn on the same
+           session - this row fills in when it settles. -->
+      <span
+        v-if="status === 'pending'"
+        class="tool-elapsed">pending</span
+      >
     </summary>
     <div
       v-if="output"
@@ -95,10 +102,13 @@
   // the call is running, freezes at the final value once the result
   // lands - the finished line keeps showing how long the call took.
   // Restored history arrives already-final and renders nothing. It stays
-  // honest: dot and status keep saying running.
+  // honest: dot and status keep saying running. A PENDING chip ticks too
+  // (async agent loop phase 3): the call is genuinely in flight - its
+  // result re-enters as a later wake turn - and the meter freezes the
+  // same way when that result lands.
   const elapsedLabel = useElapsed(
     () => props.finalMs,
-    () => props.status === "running",
+    () => props.status === "running" || props.status === "pending",
     // a restored STILL-RUNNING call counts on from the server's
     // elapsed-so-far (live-run merge) - not from the mount moment
     () => props.elapsedMs,
