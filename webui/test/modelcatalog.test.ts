@@ -212,11 +212,30 @@ test("the model knob renders ModelField, not a text input or a new select", () =
   assert.doesNotMatch(modelField, /<select[\s>]/);
 });
 
+test("the degrade path is decided by the NAMED entries, never the aux sentinel", () => {
+  // the wiring pin for the helper above (no component mounter in this
+  // suite): mode feeds off the named list, while `options` keeps the
+  // prepended "default" for rendering only
+  assert.match(
+    modelField,
+    /pickerNeedsFreeText\(\s*namedOptions\.value\.length/,
+    "mode must count NAMED models - the sentinel is not a model",
+  );
+  assert.match(modelField, /withAuxDefault\(\s*namedOptions\.value/);
+  assert.doesNotMatch(
+    modelField,
+    /options\.value\.length > 0/,
+    "the sentinel-inflated options list must not gate the listbox",
+  );
+});
+
 test("the degrade path: fetch failure or empty filtered list yields text + hint", () => {
   // the fallback branch is a real input with the hint spelled out
   assert.match(modelField, /setting-model-hint/);
   assert.match(modelField, /provider model list unavailable/);
   assert.match(modelField, /type the model name/);
+  // an aux knob says the word out loud in the empty-list hint too
+  assert.match(modelField, /type "default" to follow the chat's model/);
   // the pane refreshes the shared catalog (one request per settings open)
   assert.equal(typeof refreshModelCatalog, "function");
 });

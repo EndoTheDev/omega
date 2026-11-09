@@ -44,6 +44,32 @@ func modelSeesImages(p Provider) bool {
 	return false
 }
 
+// captionProviderKey is the context key carrying the provider the run
+// itself streams through. An auxiliary lane stored under the "default"
+// sentinel reads it per call, so the choice never freezes to whatever
+// model (or provider instance) happened to be selected when the knob was
+// saved.
+type captionProviderKey struct{}
+
+// WithCaptionProvider stamps the run's provider onto the context for the
+// auxiliary caption hop. Called by applyCaptions with the provider THIS
+// run uses - the per-request copy the channel built from the composer's
+// chip - so the "default" vision lane follows a model switch (or a named
+// provider instance) without any config write.
+func WithCaptionProvider(ctx context.Context, provider Provider) context.Context {
+	if provider == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, captionProviderKey{}, provider)
+}
+
+// CaptionProvider returns the run provider WithCaptionProvider recorded
+// (nil for a captioner invoked outside a run).
+func CaptionProvider(ctx context.Context) Provider {
+	provider, _ := ctx.Value(captionProviderKey{}).(Provider)
+	return provider
+}
+
 // applyCaptions rewrites image-carrying user messages for the MAIN
 // model: each image is described once (the Captioner owns the cache)
 // and the loop-visible copy carries the caption as a text block with
@@ -82,6 +108,11 @@ func (a *Agent) applyCaptions(ctx context.Context, provider Provider, messages [
 		}
 		return messages, nil
 	}
+	// The default-sentinel aux lane resolves its provider per call: stamp
+	// the provider THIS run streams through (the composer's chip model on
+	// the channel, the host default elsewhere) so a captioner stored as
+	// "default" follows a main-model switch with no config write.
+	ctx = WithCaptionProvider(ctx, provider)
 	out := make([]core.Message, len(messages))
 	copy(out, messages)
 	for i, m := range out {
