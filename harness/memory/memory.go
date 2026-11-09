@@ -1,6 +1,6 @@
 // Package memory provides the persistent memory seam (core.MemoryProvider)
 // backed by two markdown files (memory.md + user.md), plus the memory tool
-// that lets the agent add, replace, and remove entries.
+// set (memory.add/replace/remove/batch) that lets the agent manage entries.
 //
 // Seam: memory (exclusive), tools (additive).
 //
@@ -386,81 +386,96 @@ type memoryToolProvider struct {
 	mem *FileMemory
 }
 
-// memoryActions is the structured sub-action metadata: the one source
-// of truth the schema enum, the prompt, and /tools all derive from.
-var memoryActions = []core.ToolAction{
-	{Name: "add", Description: "Append a new entry (content required)."},
-	{Name: "replace", Description: "Find the entry matching old_text (unique substring) and replace it with content."},
-	{Name: "remove", Description: "Find the entry matching old_text (unique substring) and delete it."},
-}
+// memoryVerbs is the memory verb set: the batch contract's per-op
+// action enum derives from this one list. The registry unification B
+// ruling (t_d8fbad57) split the flat action-protocol `memory` tool
+// into memory.<verb> wire tools - dotted names are the norm on this
+// registry (the kanban split, t_f616ed78, set the shape).
+var memoryVerbs = []string{"add", "replace", "remove"}
 
-// memoryActionNames returns the action names from the metadata.
-func memoryActionNames() []string {
-	names := make([]string, len(memoryActions))
-	for i, a := range memoryActions {
-		names[i] = a.Name
+// buildMemoryTools assembles the dotted memory wire: one tool per
+// verb, each schema carrying ONLY its own args (required lists are
+// exactly its own), plus memory.batch for the atomic operations
+// array. No action property anywhere - the verb IS the tool name.
+// Stateless - called per Tools().
+func (p *memoryToolProvider) buildMemoryTools() map[string]core.Tool {
+	target := map[string]any{
+		"type":        "string",
+		"enum":        []string{"memory", "user"},
+		"description": "Which store: 'memory' (agent notes) or 'user' (user profile).",
 	}
-	return names
-}
-
-// buildMemoryTool assembles the single memory domain tool: the
-// description is the domain context (targets, batch contract); actions
-// carry the verbs. The top-level action enum derives via
-// Tool.SchemaParameters from Actions; the operations array's per-item
-// enum shares the same names list. Stateless - called per Tools().
-func (p *memoryToolProvider) buildMemoryTool() core.Tool {
-	return core.Tool{
-		Description: "Persistent memory that survives across sessions and is injected into the system prompt every session. Targets: 'memory' (agent notes) and 'user' (user profile). Batch: pass operations for an atomic multi-change - any failure rolls the whole batch back.",
-		Actions:     memoryActions,
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"action": map[string]any{
-					"type":        "string",
-					"description": "What to do: add, replace, or remove an entry.",
-				},
-				"target": map[string]any{
-					"type":        "string",
-					"enum":        []string{"memory", "user"},
-					"description": "Which store: 'memory' (agent notes) or 'user' (user profile).",
-				},
-				"content": map[string]any{
-					"type":        "string",
-					"description": "The entry text (required for add and replace).",
-				},
-				"old_text": map[string]any{
-					"type":        "string",
-					"description": "Unique substring identifying the entry to replace or remove (required for replace and remove).",
-				},
+	store := "Persistent memory that survives across sessions and is injected into the system prompt every session."
+	return map[string]core.Tool{
+		"memory.add": {
+			Description: "Append a new entry to persistent memory. " + store + " Targets: 'memory' (agent notes) and 'user' (user profile).",
+			Parameters: object(map[string]any{
+				"target":  target,
+				"content": prop("string", "The entry text."),
+			}, "target", "content"),
+			Run: p.verbRunner("add"),
+		},
+		"memory.replace": {
+			Description: "Find the entry matching old_text (unique substring) and replace it with content. " + store,
+			Parameters: object(map[string]any{
+				"target":   target,
+				"content":  prop("string", "The replacement entry text."),
+				"old_text": prop("string", "Unique substring identifying the entry to replace."),
+			}, "target", "content", "old_text"),
+			Run: p.verbRunner("replace"),
+		},
+		"memory.remove": {
+			Description: "Find the entry matching old_text (unique substring) and delete it. " + store,
+			Parameters: object(map[string]any{
+				"target":   target,
+				"old_text": prop("string", "Unique substring identifying the entry to remove."),
+			}, "target", "old_text"),
+			Run: p.verbRunner("remove"),
+		},
+		"memory.batch": {
+			Description: "Atomic multi-change: array of {action, target, content?, old_text?} operations against persistent memory. Char limit checked on final result only; any failure rolls the whole batch back.",
+			Parameters: object(map[string]any{
 				"operations": map[string]any{
 					"type":        "array",
-					"description": "Batch operations: array of {action, target, content?, old_text?}. Applied atomically - char limit checked on final result only, any failure rolls the whole batch back.",
+					"description": "Array of {action, target, content?, old_text?} operations, applied atomically - any failure rolls the whole batch back.",
 					"items": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
-							"action":   map[string]any{"type": "string", "enum": memoryActionNames()},
-							"target":   map[string]any{"type": "string", "enum": []string{"memory", "user"}},
-							"content":  map[string]any{"type": "string"},
+							"action":   map[string]any{"type": "string", "enum": memoryVerbs},
+							"target":  map[string]any{"type": "string", "enum": []string{"memory", "user"}},
+							"content": map[string]any{"type": "string"},
 							"old_text": map[string]any{"type": "string"},
 						},
 						"required": []string{"action", "target"},
 					},
 				},
-			},
-			"required": []string{"action", "target"},
+			}, "operations"),
+			Run: p.runBatchTool,
 		},
-		Run: p.runMemory,
 	}
 }
 
-// Tools returns the memory tool definition. The one-domain tool law
-// (t_e06b38bc): the domain tool names ITSELF - formerly the Q10
-// module.verb pair, the middle tier is gone and the Actions
-// carry the verbs.
-func (p *memoryToolProvider) Tools() map[string]core.Tool {
-	return map[string]core.Tool{
-		"memory": p.buildMemoryTool(),
+// prop assembles one typed schema property.
+func prop(typ, desc string) map[string]any {
+	return map[string]any{"type": typ, "description": desc}
+}
+
+// object assembles the tool's JSON object schema. required names the
+// args THIS verb cannot run without - its own list, never another
+// verb's.
+func object(props map[string]any, required ...string) map[string]any {
+	schema := map[string]any{"type": "object", "properties": props}
+	if len(required) > 0 {
+		schema["required"] = required
 	}
+	return schema
+}
+
+// Tools returns the dotted memory wire tools (the registry
+// unification B ruling, t_d8fbad57 - the flat `memory` tool with its
+// action enum is gone; removing harness/memory removes every
+// memory.* tool with it, zero flat-tool residue).
+func (p *memoryToolProvider) Tools() map[string]core.Tool {
+	return p.buildMemoryTools()
 }
 
 // memoryOp is one operation in a batch.
@@ -480,27 +495,32 @@ type memoryResult struct {
 	CurrentEntries []string `json:"current_entries,omitempty"`
 }
 
-// runMemory executes the memory tool.
-func (p *memoryToolProvider) runMemory(ctx context.Context, args map[string]any) (string, error) {
-	// Batch operations.
-	if opsRaw, ok := args["operations"]; ok {
-		ops, err := parseOperations(opsRaw)
-		if err != nil {
-			return marshalResult(memoryResult{Success: false, Error: err.Error()}), nil
+// verbRunner binds one verb of the dotted surface: the tool's Run
+// routes the wire args into the shared op machinery - the call
+// carries no action field anymore, the verb IS the tool name.
+// Results stay the tool's JSON contract (success/error shapes ride
+// the payload, not Go errors).
+func (p *memoryToolProvider) verbRunner(action string) func(context.Context, map[string]any) (string, error) {
+	return func(ctx context.Context, args map[string]any) (string, error) {
+		target, _ := args["target"].(string)
+		if target == "" {
+			return marshalResult(memoryResult{Success: false, Error: "target is required: 'memory' (agent notes) or 'user' (user profile)"}), nil
 		}
-		return p.runBatch(ops), nil
+		content, _ := args["content"].(string)
+		oldText, _ := args["old_text"].(string)
+		return p.runSingle(action, target, content, oldText), nil
 	}
+}
 
-	action, _ := args["action"].(string)
-	target, _ := args["target"].(string)
-	content, _ := args["content"].(string)
-	oldText, _ := args["old_text"].(string)
-
-	if action == "" || target == "" {
-		return marshalResult(memoryResult{Success: false, Error: "action and target are required"}), nil
+// runBatchTool is memory.batch's Run: parse the operations array (its
+// own per-op action contract), then hand it to the atomic batch
+// engine.
+func (p *memoryToolProvider) runBatchTool(ctx context.Context, args map[string]any) (string, error) {
+	ops, err := parseOperations(args["operations"])
+	if err != nil {
+		return marshalResult(memoryResult{Success: false, Error: err.Error()}), nil
 	}
-
-	return p.runSingle(action, target, content, oldText), nil
+	return p.runBatch(ops), nil
 }
 
 // runSingle executes one memory operation.

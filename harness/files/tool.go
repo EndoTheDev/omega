@@ -1,13 +1,13 @@
 // Package files owns the file domain, all of it (the shell-ring shrink
-// wave 1, ADR Workshop/omega-shell-ring-shrink.md): the consolidated
-// file tool (read/write/edit sub-actions under one action protocol,
-// with an atomic batch operations array; the legacy files.read /
-// files.write / files.edit names remain registered as alias shims) and
-// the webui explorer's REST face (/files/browse, /files/read, /files/raw,
+// wave 1, ADR Workshop/omega-shell-ring-shrink.md): the dotted file
+// wire tools (files.read / files.write / files.edit, plus files.batch
+// for the atomic multi-file change - the registry unification B
+// ruling, t_d8fbad57, which closed the files-vs-files.* collision
+// class by retiring the flat action-protocol tool and its alias shims;
+// files.grep + files.glob ride the tools capsule) and the webui
+// explorer's REST face (/files/browse, /files/read, /files/raw,
 // /files/write, /files/mkdir - the root-resolution law rides the same
-// capsule). The legacy alias shims stay callable by the model until the
-// v0.12 mount migration retires them and are hidden from the prompt and
-// the /tools inventory by the AliasOf marker.
+// capsule).
 //
 // The instance-database deny law (ENDO'S LAW 2026-10-18) is the db
 // family's own (harness/datadir's Guard); the file tool's paths and
@@ -31,7 +31,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// FileProvider serves the consolidated files tool as an additive
+// FileProvider serves the dotted files tools as an additive
 // tools-seam contributor. It holds per-path file locks so concurrent
 // tool calls on the same file are serialized, and the db-door guard
 // every file path must pass.
@@ -48,151 +48,91 @@ type FileProvider struct {
 	guard *datadir.Guard
 }
 
-// filesActions is the structured sub-action metadata for the consolidated
-// files tool: one source of truth for the schema enum, the prompt, and
-// the /tools inventory.
-var filesActions = []core.ToolAction{
-	{Name: "read", Description: "Read a file, returning its contents with line numbers."},
-	{Name: "write", Description: "Write content to a file, creating parent directories as needed."},
-	{Name: "edit", Description: "Apply a targeted find-and-replace patch to a file."},
-}
-
-// filesLegacyName maps a read/write/edit-style action to its legacy
-// tool name (the alias shim set registered alongside the folded tool).
-func filesLegacyName(action string) string {
-	switch action {
-	case "read":
-		return "files.read"
-	case "write":
-		return "files.write"
-	case "edit":
-		return "files.edit"
-	}
-	return ""
-}
-
-// Tools returns the tool map keyed by tool name. The file tools are
-// consolidated into one "files" domain tool (the one-domain law,
-// t_e06b38bc): the domain description carries the contract (targets,
-// atomic batch), Actions carries the verbs, and the legacy
-// files.read/files.write/files.edit names stay registered as alias
-// shims until the v0.12 mount migration retires them.
+// Tools returns the dotted file wire: one tool per verb plus
+// files.batch for the atomic multi-file change (the registry
+// unification B ruling, t_d8fbad57 - the flat action-protocol `files`
+// tool and its alias shims are gone; the names files.read/write/edit
+// survive as REAL tools, each schema carrying ONLY its own args, no
+// action property anywhere). files.grep + files.glob already ride the
+// tools capsule as dotted tools - this closes the files-vs-files.*
+// collision class permanently.
 func (p *FileProvider) Tools() map[string]core.Tool {
-	tools := map[string]core.Tool{
-		"files": {
-			Description: "Read, write, and edit files on disk. Writes create parent directories as needed. Batch: pass operations (write and edit ops across multiple files) for an atomic multi-file change - any failure rolls the whole batch back.",
-			Actions:     filesActions,
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"action": map[string]any{
-						"type":        "string",
-						"description": "What to do: read, write, or edit.",
-					},
-					"path":       map[string]any{"type": "string", "description": "Path of the file (all actions; batch ops carry their own)."},
-					"offset":     map[string]any{"type": "integer", "description": "1-based first line to read (default 1)."},
-					"limit":      map[string]any{"type": "integer", "description": "Max lines to read (default all)."},
-					"content":    map[string]any{"type": "string", "description": "Full content to write (required for write)."},
-					"old_string": map[string]any{"type": "string", "description": "Exact text to find; must occur exactly once (required for edit)."},
-					"new_string": map[string]any{"type": "string", "description": "Replacement text (required for edit)."},
-					"operations": map[string]any{
-						"type":        "array",
-						"description": "Atomic batch: array of {action, path, content?} write ops (or edit ops with old_string/new_string). Any failure rolls the whole batch back.",
-						"items": map[string]any{
-							"type":                 "object",
-							"properties":           map[string]any{"action": map[string]any{"type": "string", "enum": fileActionNames()}, "path": map[string]any{"type": "string"}, "content": map[string]any{"type": "string"}, "old_string": map[string]any{"type": "string"}, "new_string": map[string]any{"type": "string"}},
-							"required":             []string{"action", "path"},
-							"additionalProperties": false,
-						},
+	return map[string]core.Tool{
+		"files.read": {
+			Description: "Read a file, returning its contents with line numbers.",
+			Parameters: object(map[string]any{
+				"path":   prop("string", "Path of the file."),
+				"offset": prop("integer", "1-based first line to read (default 1)."),
+				"limit":  prop("integer", "Max lines to read (default all)."),
+			}, "path"),
+			Run: p.RunReadFile,
+		},
+		"files.write": {
+			Description: "Write content to a file, creating parent directories as needed.",
+			Parameters: object(map[string]any{
+				"path":    prop("string", "Path of the file."),
+				"content": prop("string", "Full content to write."),
+			}, "path", "content"),
+			Run: p.RunWriteFile,
+		},
+		"files.edit": {
+			Description: "Apply a targeted find-and-replace patch to a file.",
+			Parameters: object(map[string]any{
+				"path":       prop("string", "Path of the file."),
+				"old_string": prop("string", "Exact text to find; must occur exactly once."),
+				"new_string": prop("string", "Replacement text."),
+			}, "path", "old_string", "new_string"),
+			Run: p.RunEdit,
+		},
+		"files.batch": {
+			Description: "Atomic multi-file change: array of {action, path, content?} write ops (or edit ops with old_string/new_string). Any failure rolls the whole batch back - no half-applied change.",
+			Parameters: object(map[string]any{
+				"operations": map[string]any{
+					"type":        "array",
+					"description": "Array of {action, path, content?} write ops (or edit ops with old_string/new_string). Any failure rolls the whole batch back.",
+					"items": map[string]any{
+						"type":                 "object",
+						"properties":           map[string]any{"action": map[string]any{"type": "string", "enum": fileBatchVerbs}, "path": map[string]any{"type": "string"}, "content": map[string]any{"type": "string"}, "old_string": map[string]any{"type": "string"}, "new_string": map[string]any{"type": "string"}},
+						"required":             []string{"action", "path"},
+						"additionalProperties": false,
 					},
 				},
-				"required": []string{"action"},
-			},
-			Run: p.RunFiles,
+			}, "operations"),
+			Run: p.runBatchTool,
 		},
 	}
-	for name, alias := range p.fileAliasTools() {
-		if _, exists := tools[name]; !exists {
-			tools[name] = alias
-		}
-	}
-	return tools
 }
 
-// fileAliasTools builds the legacy-name compat shims: each maps its
-// old tool name onto the folded files tool with the action pre-set.
-// Each shim declares its action's parameter schema (card
-// t_b9f74bea): a schema-less alias gives the model no type contract,
-// the model emits mistyped args (live repro 2026-11-07: the wire
-// carried "limit":"5" as a string and the rejection read as a lie),
-// and nothing validates the type before the handler refuses it. The
-// schemas are derived from the action names, so the two cannot drift.
-// They stay callable by the model until the v0.12 mount migration
-// retires them and are hidden from the prompt and /tools inventory by
-// the AliasOf marker.
-func (p *FileProvider) fileAliasTools() map[string]core.Tool {
-	out := make(map[string]core.Tool, len(filesActions))
-	for _, a := range filesActions {
-		legacy := filesLegacyName(a.Name)
-		if legacy == "" {
-			continue
-		}
-		action := a.Name
-		out[legacy] = core.Tool{
-			Description: fmt.Sprintf("%s (alias for files with action %q)", a.Description, action),
-			Parameters:  fileAliasParams(action),
-			AliasOf:     "files",
-			Run: func(ctx context.Context, args map[string]any) (string, error) {
-				args["action"] = action
-				return p.RunFiles(ctx, args)
-			},
-		}
-	}
-	return out
+// fileBatchVerbs is the batch contract's per-op action enum: the
+// operations array admits write and edit (a read op inside a batch
+// is not a change - the flat tool refused it and so does the batch).
+var fileBatchVerbs = []string{"write", "edit"}
+
+// prop assembles one typed schema property.
+func prop(typ, desc string) map[string]any {
+	return map[string]any{"type": typ, "description": desc}
 }
 
-// fileAliasParams builds one alias shim's parameter schema for its
-// action: the params that action accepts (the folded tool's schema,
-// restricted to the action's verbs), with the action property pinned
-// to the shim's single verb - the shim overwrites it on dispatch.
-func fileAliasParams(action string) map[string]any {
-	props := map[string]any{
-		"action": map[string]any{
-			"type":        "string",
-			"enum":        []string{action},
-			"description": fmt.Sprintf("Preset by the alias; the shim sets the action to %q.", action),
-		},
-		"path": map[string]any{"type": "string", "description": "Path of the file."},
+// object assembles the tool's JSON object schema. required names the
+// args THIS verb cannot run without - its own list, never another
+// verb's.
+func object(props map[string]any, required ...string) map[string]any {
+	schema := map[string]any{"type": "object", "properties": props}
+	if len(required) > 0 {
+		schema["required"] = required
 	}
-	var required []string
-	switch action {
-	case "read":
-		props["offset"] = map[string]any{"type": "integer", "description": "1-based first line to read (default 1)."}
-		props["limit"] = map[string]any{"type": "integer", "description": "Max lines to read (default all)."}
-		required = []string{"path"}
-	case "write":
-		props["content"] = map[string]any{"type": "string", "description": "Full content to write."}
-		required = []string{"path", "content"}
-	case "edit":
-		props["old_string"] = map[string]any{"type": "string", "description": "Exact text to find; must occur exactly once."}
-		props["new_string"] = map[string]any{"type": "string", "description": "Replacement text."}
-		required = []string{"path", "old_string", "new_string"}
-	}
-	return map[string]any{
-		"type":                 "object",
-		"properties":           props,
-		"required":             required,
-		"additionalProperties": false,
-	}
+	return schema
 }
 
-// fileActionNames returns the action names from the metadata.
-func fileActionNames() []string {
-	names := make([]string, len(filesActions))
-	for i, a := range filesActions {
-		names[i] = a.Name
+// runBatchTool is files.batch's Run: parse the operations array (its
+// own per-op action contract), then hand it to the atomic batch
+// engine.
+func (p *FileProvider) runBatchTool(ctx context.Context, args map[string]any) (string, error) {
+	ops, err := parseFileOperations(args["operations"])
+	if err != nil {
+		return "", err
 	}
-	return names
+	return p.runFileBatch(ctx, ops)
 }
 
 // resolveToolPath roots a tool path argument at the run's session
@@ -206,36 +146,6 @@ func resolveToolPath(ctx context.Context, path string) string {
 		return path
 	}
 	return filepath.Join(dir, path)
-}
-
-// RunFiles dispatches the consolidated files tool: a single operation
-// (action read/write/edit) or an atomic batch via operations. The
-// action enum itself is derived server-side from filesActions (see
-// Tool.SchemaParameters); here we only route.
-func (p *FileProvider) RunFiles(ctx context.Context, args map[string]any) (string, error) {
-	if opsRaw, ok := args["operations"]; ok && opsRaw != nil {
-		ops, err := parseFileOperations(opsRaw)
-		if err != nil {
-			return "", err
-		}
-		return p.runFileBatch(ctx, ops)
-	}
-	if v, ok := args["path"].(string); ok {
-		args["path"] = resolveToolPath(ctx, v)
-	}
-	action, _ := args["action"].(string)
-	switch action {
-	case "read":
-		return p.RunReadFile(ctx, args)
-	case "write":
-		return p.RunWriteFile(ctx, args)
-	case "edit":
-		return p.RunEdit(ctx, args)
-	case "":
-		return "", fmt.Errorf("action is required: one of read, write, edit, or pass operations for an atomic batch")
-	default:
-		return "", fmt.Errorf("unknown action %q; must be one of read, write, edit", action)
-	}
 }
 
 // fileOp is one operation in a files batch.

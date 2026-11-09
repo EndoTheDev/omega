@@ -214,7 +214,7 @@ func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.Pr
 		return nil
 	}
 	var sb strings.Builder
-	sb.WriteString("Call the skills tool (action read) with a skill name to read its full content; actions write and update create and patch skills.\n")
+	sb.WriteString("Call skills.read with a skill name to load its full content; skills.write creates a new skill and skills.update patches an existing one.\n")
 	for _, s := range skills {
 		fmt.Fprintf(&sb, "- %s: %s\n", s.Name, s.Description)
 	}
@@ -223,68 +223,71 @@ func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.Pr
 	}
 }
 
-// skillsActions is the structured sub-action metadata for the skills
-// domain tool (one source of truth for the schema enum, the prompt,
-// and the /tools inventory - the one-domain tool law, t_e06b38bc).
-var skillsActions = []core.ToolAction{
-	{Name: "read", Description: "Load a skill's full content by name. Returns the skill's markdown body and the directory path where its files (scripts, references, templates) live."},
-	{Name: "write", Description: "Create a new skill: a <dir>/<name>/SKILL.md folder with YAML frontmatter (description, author: agent) over the body. The frontmatter shape must parse exactly the way the loader parses it."},
-	{Name: "update", Description: "Patch an existing skill: find it by name, replace one exact occurrence in its SKILL.md."},
-	{Name: "curate", Description: "Run one learning-loop curator pass: the deterministic staleness pass (stale at 14d, archive at 30d) plus LLM-proposed merges/distills applied with backup and audit ledger. Returns the report and ledger ids."},
+// skillsVerbs is the skills verb set, the one list the batch-shaped
+// consumers (the ledger, the nudge) read. The registry unification B
+// ruling (t_d8fbad57) split the flat action-protocol `skills` tool
+// into skills.<verb> wire tools.
+var skillsVerbs = []string{"read", "write", "update", "curate"}
+
+// prop assembles one typed schema property.
+func prop(typ, desc string) map[string]any {
+	return map[string]any{"type": typ, "description": desc}
 }
 
-// skillsActionNames returns the action names from the metadata.
-func skillsActionNames() []string {
-	names := make([]string, len(skillsActions))
-	for i, a := range skillsActions {
-		names[i] = a.Name
+// object assembles the tool's JSON object schema. required names the
+// args THIS verb cannot run without - its own list, never another
+// verb's; a verb with no required args (curate - the bare call is
+// the default pass) omits the key entirely.
+func object(props map[string]any, required ...string) map[string]any {
+	schema := map[string]any{"type": "object", "properties": props}
+	if len(required) > 0 {
+		schema["required"] = required
 	}
-	return names
+	return schema
 }
 
-// Tools returns the skills domain tool. The one-domain tool law
-// (t_e06b38bc): the domain tool names ITSELF (formerly the flat
-// read tool) and the actions list carries read/write/update.
+// Tools returns the dotted skills wire: one tool per verb (the
+// registry unification B ruling, t_d8fbad57 - the flat action-protocol
+// `skills` tool is gone). Each schema carries ONLY its own args; no
+// action property anywhere, the verb IS the tool name.
 func (sp *SkillsProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
-		"skills": {
-			Description: "Skills (one SKILL.md folder per skill) the agent loads on demand: read a skill's full content, create a new skill, or patch an existing one. The prompt's Available Skills list is the name + description inventory.",
-			Actions:     skillsActions,
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"action":      map[string]any{"type": "string", "description": "read, write, update, or curate."},
-					"name":        map[string]any{"type": "string", "description": "The skill name (read); the new skill's folder name (write); the skill to patch (update)."},
-					"description": map[string]any{"type": "string", "description": "One-line frontmatter description (write; becomes the Available Skills line)."},
-					"body":        map[string]any{"type": "string", "description": "Full markdown body under the frontmatter (write; do not repeat the --- fences)."},
-					"old_text":    map[string]any{"type": "string", "description": "Exact text to find in SKILL.md, occurring exactly once (update)."},
-					"new_text":    map[string]any{"type": "string", "description": "Replacement text (update)."},
-					"verb":        map[string]any{"type": "string", "description": "curate sub-verb: run (default), rollback <ledger-id>, stale, ledger (recent rows)."},
-				},
-				"required": []string{"action", "name"},
-			},
-			Run: sp.runTool,
+		"skills.read": {
+			Description: "Load a skill's full content by name. Returns the skill's markdown body and the directory path where its files (scripts, references, templates) live. The prompt's Available Skills list is the name + description inventory.",
+			Parameters: object(map[string]any{
+				"name": prop("string", "The skill name to load."),
+			}, "name"),
+			Run: sp.runRead,
+		},
+		"skills.write": {
+			Description: "Create a new skill: a <dir>/<name>/SKILL.md folder with YAML frontmatter (description, author: agent) over the body. The frontmatter shape must parse exactly the way the loader parses it.",
+			Parameters: object(map[string]any{
+				"name":        prop("string", "The new skill's folder name (the skill name)."),
+				"description": prop("string", "One-line frontmatter description (becomes the Available Skills line)."),
+				"body":        prop("string", "Full markdown body under the frontmatter (do not repeat the --- fences)."),
+			}, "name", "description", "body"),
+			Run: sp.runWrite,
+		},
+		"skills.update": {
+			Description: "Patch an existing skill: find it by name, replace one exact occurrence in its SKILL.md.",
+			Parameters: object(map[string]any{
+				"name":     prop("string", "The skill to patch."),
+				"old_text": prop("string", "Exact text to find in SKILL.md, occurring exactly once."),
+				"new_text": prop("string", "Replacement text."),
+			}, "name", "old_text", "new_text"),
+			Run: sp.runUpdate,
+		},
+		"skills.curate": {
+			Description: "Run one learning-loop curator pass: the deterministic staleness pass (stale at 14d, archive at 30d) plus LLM-proposed merges/distills applied with backup and audit ledger. Returns the report and ledger ids.",
+			Parameters: object(map[string]any{
+				"verb": prop("string", "Sub-verb: run (default), rollback <ledger-id>, stale, ledger (recent rows)."),
+			}),
+			Run: sp.runCurate,
 		},
 	}
 }
 
-// runTool dispatches the skills domain tool's actions.
-func (sp *SkillsProvider) runTool(ctx context.Context, args map[string]any) (string, error) {
-	switch action, _ := args["action"].(string); action {
-	case "read":
-		return sp.runRead(ctx, args)
-	case "write":
-		return sp.runWrite(ctx, args)
-	case "update":
-		return sp.runUpdate(ctx, args)
-	case "curate":
-		return sp.runCurate(ctx, args)
-	default:
-		return "", fmt.Errorf("action is required: one of %v", skillsActionNames())
-	}
-}
-
-// runCurate is the curate-action handler: one full pass plus a
+// runCurate is skills.curate's Run: one full pass plus a
 // rollback/report sub-verb over the same audit ledger.
 func (sp *SkillsProvider) runCurate(ctx context.Context, args map[string]any) (string, error) {
 	out, err := sp.HandleCommand(ctx, "/curator", strArg(args["verb"]))

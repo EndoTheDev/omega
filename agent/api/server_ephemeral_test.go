@@ -246,27 +246,45 @@ func TestEphemeralInvisibleToStoreSurfaces(t *testing.T) {
 	}
 }
 
-func TestWithoutMemory(t *testing.T) {
+func TestWithoutMemoryTools(t *testing.T) {
 	s := newTestServer()
-	// the registry carries a stub memory tool like the real mount does
+	// the registry carries the dotted memory wire like the real mount does
 	s.tools = map[string]core.Tool{
-		"memory": stubTool(),
-		"files":  stubTool(),
+		"memory.add":     stubTool(),
+		"memory.replace": stubTool(),
+		"memory.remove":  stubTool(),
+		"memory.batch":   stubTool(),
+		"files.read":     stubTool(),
 	}
-	out := withoutMemory(s.tools)
-	if _, has := out["memory"]; has {
-		t.Fatalf("memory survived the withoutMemory copy")
+	out := withoutMemoryTools(s.tools)
+	if _, has := out["memory.add"]; has {
+		t.Fatalf("memory.add survived the withoutMemoryTools copy")
 	}
-	if _, has := out["files"]; !has {
-		t.Fatalf("files vanished from the copy")
+	for _, name := range []string{"memory.replace", "memory.remove", "memory.batch"} {
+		if _, has := out[name]; has {
+			t.Fatalf("%s survived the withoutMemoryTools copy", name)
+		}
+	}
+	if _, has := out["files.read"]; !has {
+		t.Fatalf("files.read vanished from the copy")
 	}
 	// the caller's map is untouched (the run gets a copy)
-	if _, has := s.tools["memory"]; !has {
-		t.Fatalf("withoutMemory mutated the caller's registry")
+	if _, has := s.tools["memory.add"]; !has {
+		t.Fatalf("withoutMemoryTools mutated the caller's registry")
+	}
+	// a stray flat `memory` name (an extension re-adding the old
+	// identity) strips too - the whole domain is the no-persist line
+	s.tools = map[string]core.Tool{"memory": stubTool(), "files.read": stubTool()}
+	out = withoutMemoryTools(s.tools)
+	if _, has := out["memory"]; has {
+		t.Fatalf("the flat memory name survived the withoutMemoryTools copy")
+	}
+	if _, has := out["files.read"]; !has {
+		t.Fatalf("files.read vanished from the copy")
 	}
 	// no memory in the registry: same map back, no allocation churn
-	s.tools = map[string]core.Tool{"files": stubTool()}
-	if got := withoutMemory(s.tools); got == nil {
-		t.Fatalf("withoutMemory returned nil for a memory-free registry")
+	s.tools = map[string]core.Tool{"files.read": stubTool()}
+	if got := withoutMemoryTools(s.tools); got == nil {
+		t.Fatalf("withoutMemoryTools returned nil for a memory-free registry")
 	}
 }

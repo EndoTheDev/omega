@@ -126,20 +126,22 @@ func TestHandleExtensionsRealRegistry(t *testing.T) {
 			t.Errorf("%s: command_names %v, want %d names", row.Name, row.CommandNames, row.Commands)
 		}
 	}
-	// Skill inventory names ride verbatim: find the skills row's provider
-	// tool, and the /skills slash command in its command_names.
+	// Skill inventory names ride verbatim: find the skills row's dotted
+	// provider tools, and the /skills slash command in its command_names.
 	for _, row := range got {
 		if row.Name != "skills" {
 			continue
 		}
-		found := false
-		for _, n := range row.ToolNames {
-			if n == "skills" {
-				found = true
+		for _, want := range []string{"skills.read", "skills.write", "skills.update", "skills.curate"} {
+			found := false
+			for _, n := range row.ToolNames {
+				if n == want {
+					found = true
+				}
 			}
-		}
-		if !found {
-			t.Errorf("skills: tool_names %v does not name the skills provider tool", row.ToolNames)
+			if !found {
+				t.Errorf("skills: tool_names %v does not name %s", row.ToolNames, want)
+			}
 		}
 		if len(row.CommandNames) != 2 || row.CommandNames[0] != "/skills" || row.CommandNames[1] != "/curator" {
 			t.Errorf("skills: command_names %v, want [\"/skills\", \"/curator\"]", row.CommandNames)

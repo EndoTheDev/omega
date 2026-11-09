@@ -67,8 +67,8 @@ func TestMountWithAPIShape(t *testing.T) {
 			names[name]++
 		}
 	}
-	if len(names) != 1 || names["verdict"] != 1 {
-		t.Fatalf("tool registry = %v, want {verdict: 1}", names)
+	if len(names) != 1 || names["verdict.request"] != 1 {
+		t.Fatalf("tool registry = %v, want {verdict.request: 1}", names)
 	}
 	if len(ctx.PromptSectioners) != 1 {
 		t.Fatalf("prompt sectioners = %d, want the Verdict Cards contributor", len(ctx.PromptSectioners))

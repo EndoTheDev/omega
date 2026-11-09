@@ -25,11 +25,11 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
 
 - Machine-facing names - tool names, panel action ids - are
   owner-claimed at registration. Dotted wire tools are the norm
-  (process.*, delegate.*, web.*, and the kanban split,
-  t_f616ed78: one tool per verb, each schema carrying only its own
-  args); a capsule that packs several verbs behind one flat name
-  with an action enum keeps that shape where it already stands
-  (memory, files); panel action ids stay namespace pairs.
+  (process.*, delegate.*, web.*, the kanban split t_f616ed78, and
+  the phase-2 split t_d8fbad57: one tool per verb, each schema
+  carrying only its own args - files, memory, skills and verdict
+  are all dotted now, no flat domain tool remains); panel action
+  ids stay namespace pairs.
   User-facing names - slash commands, route patterns -
   keep their natural shape and are owner-recorded.
 - One name, one tenant. A cross-tenant claim fails the boot (loud).
@@ -67,10 +67,9 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
 
 3. **Name the machine-facing identities for their domain.** Dotted
    wire tools are the norm: a multi-verb capsule registers one
-   `module.verb` pair per verb (`kanban.list`, `kanban.create`,
-   `delegate.task` - the registry unification B ruling, t_f616ed78);
-   a capsule that keeps one flat domain tool with an action enum
-   registers its bare domain name (`memory`); panel action ids
+   `module.verb` pair per verb (`kanban.list`, `memory.add`,
+   `skills.curate` - the registry unification B ruling, t_f616ed78
+   + t_d8fbad57; no flat domain tool survives); panel action ids
    stay namespace pairs (`kanban.complete_task`).
 
    This is not a rename of convenience - the
