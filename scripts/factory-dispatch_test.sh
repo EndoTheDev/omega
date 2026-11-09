@@ -6,6 +6,14 @@ set -uo pipefail
 # T1 pins the empty-RUNNING kill: the class-law RC loop must survive a zero
 # running board under set -euo pipefail (proven live 2026-10-24: the guard
 # died silently, exit 1, no verdicts, whenever no card was running).
+# Every seed board carries the FULL tasks shape the guard reads today
+# (worker_pid + last_heartbeat_at, guard bug #14's running-snapshot mirror
+# rule): a narrower fixture table made every DB read die 'no such column'
+# and red 26 checks that had nothing to do with the change under test.
+# T16 pins the dry-run's PAIR VERDICT - the head set's pairing law, stated
+# outright so the tick's --max decision is mechanical (go+go at running=0 is
+# the live miss it was written for).
+#
 # T2 is a live dry-run smoke against the REAL resolved board (local only:
 # skipped when the resolution refuses - no board DB at all, e.g. CI runners;
 # that refusal itself must be loud and nonzero).
@@ -195,10 +203,11 @@ mkdir -p "$FDHOME/kanban/boards/project-omega" "$FDHOME/bin"
 printf 'project-omega\n' >"$FDHOME/kanban/current"
 FDB_N="$FDHOME_N/kanban/boards/project-omega/kanban.db"
 sqlex "$FDB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
-  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT);
-INSERT INTO tasks VALUES('t_move','running','engine ring move','engine ring move: webui/ -> engine/webui/','pibtw:1',NULL,0,'2026-10-28T01:00');
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER);
+INSERT INTO tasks VALUES('t_move','running','engine ring move','engine ring move: webui/ -> engine/webui/','pibtw:1',NULL,0,'2026-10-28T01:00',NULL,NULL);
 INSERT INTO tasks VALUES('t_cand','ready','engine ring move implement','FILES: engine/webui/
-engine ring move: webui/ -> engine/webui/',NULL,0,5,'2026-10-28T02:00');"
+engine ring move: webui/ -> engine/webui/',NULL,0,5,'2026-10-28T02:00',NULL,NULL);"
 cat >"$FDHOME/bin/hermes" <<'EOF'
 #!/usr/bin/env bash
 py=$(command -v python3 || command -v python)
@@ -209,10 +218,10 @@ import sqlite3, sys
 con = sqlite3.connect(sys.argv[1], timeout=10)
 for s in (
     "UPDATE tasks SET status='ready', claim_lock=NULL WHERE id='t_move';",
-    "INSERT INTO tasks VALUES('t_new1','running','x','',NULL,NULL,0,'2026-10-28T03:00');",
-    "INSERT INTO tasks VALUES('t_new2','running','x','',NULL,NULL,0,'2026-10-28T03:01');",
-    "INSERT INTO tasks VALUES('t_new3','running','x','',NULL,NULL,0,'2026-10-28T03:02');",
-    "INSERT INTO tasks VALUES('t_new4','running','x','',NULL,NULL,0,'2026-10-28T03:03');",
+    "INSERT INTO tasks VALUES('t_new1','running','x','',NULL,NULL,0,'2026-10-28T03:00',NULL,NULL);",
+    "INSERT INTO tasks VALUES('t_new2','running','x','',NULL,NULL,0,'2026-10-28T03:01',NULL,NULL);",
+    "INSERT INTO tasks VALUES('t_new3','running','x','',NULL,NULL,0,'2026-10-28T03:02',NULL,NULL);",
+    "INSERT INTO tasks VALUES('t_new4','running','x','',NULL,NULL,0,'2026-10-28T03:03',NULL,NULL);",
 ):
     con.execute(s)
 con.commit()
@@ -245,9 +254,10 @@ mkdir -p "$FDHOME/kanban/boards/project-omega" "$FDHOME/bin"
 printf 'project-omega\n' >"$FDHOME/kanban/current"
 FDB_N="$FDHOME_N/kanban/boards/project-omega/kanban.db"
 sqlex "$FDB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
-  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT);
-INSERT INTO tasks VALUES('t_go','running','nm purity','FILES: scripts/nm-purity.sh','pibtw:1',NULL,0,'2026-10-28T01:00');
-INSERT INTO tasks VALUES('t_web','ready','webui fix','FILES: engine/webui/',NULL,0,5,'2026-10-28T02:00');"
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER);
+INSERT INTO tasks VALUES('t_go','running','nm purity','FILES: scripts/nm-purity.sh','pibtw:1',NULL,0,'2026-10-28T01:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_web','ready','webui fix','FILES: engine/webui/',NULL,0,5,'2026-10-28T02:00',NULL,NULL);"
 cat >"$FDHOME/bin/hermes" <<'EOF'
 #!/usr/bin/env bash
 echo "Spawned: 1 (t_web)"
@@ -275,12 +285,13 @@ mkdir -p "$FDHOME/kanban/boards/project-omega" "$FDHOME/bin"
 printf 'project-omega\n' >"$FDHOME/kanban/current"
 FDB_N="$FDHOME_N/kanban/boards/project-omega/kanban.db"
 sqlex "$FDB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
-  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT);
-INSERT INTO tasks VALUES('t_run','running','go bits','pure go bits','pibtw:1',NULL,0,'2026-10-30T01:00');
-INSERT INTO tasks VALUES('t_cand','ready','webui candidate','FILES: engine/webui/app/',NULL,NULL,0,'2026-10-30T02:00');
-INSERT INTO tasks VALUES('t_hold','blocked','terminal module hold','design gate','pibtw:v0.14.0-hold',NULL,0,'2026-10-29T01:00');
-INSERT INTO tasks VALUES('t_hold2','blocked','browser module hold','design gate','pibtw:design-hold',NULL,0,'2026-10-29T01:01');
-INSERT INTO tasks VALUES('t_pid','blocked','stale-shape card','x','pibtw:4242',NULL,0,'2026-10-29T01:02');"
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER);
+INSERT INTO tasks VALUES('t_run','running','go bits','pure go bits','pibtw:1',NULL,0,'2026-10-30T01:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_cand','ready','webui candidate','FILES: engine/webui/app/',NULL,NULL,0,'2026-10-30T02:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_hold','blocked','terminal module hold','design gate','pibtw:v0.14.0-hold',NULL,0,'2026-10-29T01:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_hold2','blocked','browser module hold','design gate','pibtw:design-hold',NULL,0,'2026-10-29T01:01',NULL,NULL);
+INSERT INTO tasks VALUES('t_pid','blocked','stale-shape card','x','pibtw:4242',NULL,0,'2026-10-29T01:02',NULL,NULL);"
 cat >"$FDHOME/bin/hermes" <<'EOF'
 #!/usr/bin/env bash
 py=$(command -v python3 || command -v python)
@@ -325,7 +336,8 @@ mkdir -p "$CFHOME/kanban/boards/project-omega" "$CFHOME/bin"
 printf 'project-omega\n' >"$CFHOME/kanban/current"
 CFB_N="$CFHOME_N/kanban/boards/project-omega/kanban.db"
 sqlex "$CFB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
-  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT);"
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER);"
 out=$(HOME="$CFHOME" HERMES_HOME= HERMES_KANBAN_HOME="$CFHOME_N" HERMES_KANBAN_DB= PATH="$CFHOME/bin:$PATH" bash "$GUARD" --dry-run 2>&1)
 printf "%s" "$out" | grep -q "cap=2" && ok || bad "T12: no config file -> cap must fall back to 2 (out: $out)"
 printf 'kanban:\n  max_in_progress_per_profile: 4\n' >"$CFHOME/config.yaml"
@@ -351,11 +363,12 @@ mkdir -p "$FDHOME/kanban/boards/project-omega" "$FDHOME/bin"
 printf 'project-omega\n' >"$FDHOME/kanban/current"
 DRB_N="$FDHOME_N/kanban/boards/project-omega/kanban.db"
 sqlex "$DRB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
-  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT);
-INSERT INTO tasks VALUES('t_drun','running','go bits','pure go bits','pibtw:1',NULL,0,'2026-10-31T01:00');
-INSERT INTO tasks VALUES('t_dready','ready','legal filler','filler','' ,NULL,0,'2026-10-30T00:30');
-INSERT INTO tasks VALUES('t_drift14','ready','terminal module hold','design gate','pibtw:v0.14.0-hold',NULL,0,'2026-10-30T01:00');
-INSERT INTO tasks VALUES('t_driftde','ready','browser module hold','design gate','pibtw:design-hold',NULL,0,'2026-10-30T01:01');"
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER);
+INSERT INTO tasks VALUES('t_drun','running','go bits','pure go bits','pibtw:1',NULL,0,'2026-10-31T01:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_dready','ready','legal filler','filler','' ,NULL,0,'2026-10-30T00:30',NULL,NULL);
+INSERT INTO tasks VALUES('t_drift14','ready','terminal module hold','design gate','pibtw:v0.14.0-hold',NULL,0,'2026-10-30T01:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_driftde','ready','browser module hold','design gate','pibtw:design-hold',NULL,0,'2026-10-30T01:01',NULL,NULL);"
 cat >"$FDHOME/bin/hermes" <<'EOF'
 #!/usr/bin/env bash
 py=$(command -v python3 || command -v python)
@@ -404,8 +417,9 @@ mkdir -p "$FDHOME/kanban/boards/project-omega" "$FDHOME/bin"
 printf 'project-omega\n' >"$FDHOME/kanban/current"
 AVB_N="$FDHOME_N/kanban/boards/project-omega/kanban.db"
 sqlex "$AVB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
-  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT);
-INSERT INTO tasks VALUES('t_cand','ready','webui fix','FILES: engine/webui/',NULL,0,0,'2026-11-01T01:00');"
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER);
+INSERT INTO tasks VALUES('t_cand','ready','webui fix','FILES: engine/webui/',NULL,0,0,'2026-11-01T01:00',NULL,NULL);"
 cat >"$FDHOME/bin/hermes" <<'EOF'
 #!/usr/bin/env bash
 echo "[STUB CALLED] $*" >>"${HERMES_STUB_LOG:?}"   # ANY invocation = side effect
@@ -461,13 +475,15 @@ mkdir -p "$FDHOME/rooth/hermes/kanban/boards/project-omega" \
          "$FDHOME/rooth/hermes/profiles/w1"   # a profile-shaped HERMES_HOME
 ADB_N="$FDHOME_N/app/hermes/kanban/boards/project-omega/kanban.db"
 sqlex "$ADB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
-  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT);
-INSERT INTO tasks VALUES('t_pop','ready','populated candidate','FILES: engine/webui/',NULL,0,0,'2026-11-05T01:00');"
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER);
+INSERT INTO tasks VALUES('t_pop','ready','populated candidate','FILES: engine/webui/',NULL,0,0,'2026-11-05T01:00',NULL,NULL);"
 printf 'project-omega\n' >"$FDHOME/app/hermes/kanban/current"
 PDB_N="$FDHOME_N/rooth/hermes/kanban/boards/project-omega/kanban.db"
 sqlex "$PDB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
-  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT);
-INSERT INTO tasks VALUES('t_prof','ready','profile-root candidate','FILES: engine/webui/',NULL,0,0,'2026-11-05T01:00');"
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER);
+INSERT INTO tasks VALUES('t_prof','ready','profile-root candidate','FILES: engine/webui/',NULL,0,0,'2026-11-05T01:00',NULL,NULL);"
 printf 'project-omega\n' >"$FDHOME/rooth/hermes/kanban/current"
 
 # T15a: POSIX home empty + LOCALAPPDATA home populated -> picks the populated one
@@ -490,6 +506,108 @@ rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T15c: profile-shaped HERMES_HOME dry-run exited $rc (out: $out)"
 printf "%s" "$out" | grep -q "legal: t_prof" && ok || bad "T15c: profile-shaped HERMES_HOME did not resolve to its ROOT board (out: $out)"
 rm -rf "$FDHOME"
+
+# T16 (local + CI): the PAIR VERDICT - the dry-run states the pairing law for
+# the would-spawn head set (first SLOTS ready/unclaimed cards in dispatch
+# order, SLOTS = cap - running). The live miss this pins (tick 2026-11-07
+# 15:36): running=0, TWO go head cards, `--max 2` - every candidate read
+# legal against the empty running set, the pass spawned a Go+Go pair the law
+# forbids. Per-candidate verdicts can never answer the --max question; the
+# pair line must. Shapes pinned: forbidden go+go at running=0 (the exact
+# miss, cap-derived and --max paths), sanctioned go+webui and webui+webui
+# with disjoint FILES, forbidden same-file, single candidate, empty board,
+# and the class-list containment law over a multi-element running class list
+# (docs,go,webui) - the go candidate must hold even though the running go
+# card exposes NO surface tokens (the unconditional class leg).
+PAIRRUN() {  # $1 = seed SQL, rest = extra guard args; prints the dry-run
+  local seed="$1" home db out
+  shift
+  home=$(mktemp -d)
+  mkdir -p "$home/kanban/boards/project-omega"
+  printf 'project-omega\n' >"$home/kanban/current"
+  db="$(mixpath "$home")/kanban/boards/project-omega/kanban.db"
+  sqlex "$db" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER);
+$seed"
+  out=$(HOME="$home" HERMES_HOME= HERMES_KANBAN_HOME="$(mixpath "$home")" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
+    bash "$GUARD" --dry-run "$@" 2>&1)
+  rm -rf "$home"
+  printf '%s' "$out"
+}
+GO1="INSERT INTO tasks VALUES('t_go1','ready','go one','FILES: scripts/factory-dispatch.sh',NULL,NULL,5,'2026-11-07T15:00',NULL,NULL);"
+GO2="INSERT INTO tasks VALUES('t_go2','ready','go two','FILES: harness/cron/runner.go',NULL,NULL,5,'2026-11-07T15:01',NULL,NULL);"
+WEB="INSERT INTO tasks VALUES('t_web','ready','webui one','FILES: engine/webui/app/pages/x.vue',NULL,NULL,5,'2026-11-07T15:02',NULL,NULL);"
+
+# T16a: the exact live miss - running=0, go+go at the head, cap 2.
+out=$(PAIRRUN "$GO1
+$GO2")
+printf "%s" "$out" | grep -qF 'pair: forbidden (t_go1 t_go2, go+go' \
+	&& ok || bad "T16a: go+go head at running=0 not forbidden (out: $out)"
+printf "%s" "$out" | grep -q "^hold: t_go2" \
+	&& ok || bad "T16a: the same-pass class leg did not hold t_go2 (out: $out)"
+printf "%s" "$out" | grep -q "^legal: t_go1" \
+	&& ok || bad "T16a: t_go1 should stay legal (out: $out)"
+
+# T16b: sanctioned go+webui (the only sanctioned mixed pair), disjoint FILES.
+out=$(PAIRRUN "$GO1
+$WEB")
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1 t_web, classes go+webui, FILES disjoint)' \
+	&& ok || bad "T16b: go+webui head not sanctioned (out: $out)"
+
+# T16c: sanctioned webui+webui, disjoint FILES (class must not forbid it).
+out=$(PAIRRUN "INSERT INTO tasks VALUES('t_w1','ready','webui one','FILES: engine/webui/app/pages/a.vue',NULL,NULL,5,'2026-11-07T15:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_w2','ready','webui two','FILES: engine/webui/test/b.test.ts',NULL,NULL,5,'2026-11-07T15:01',NULL,NULL);")
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_w1 t_w2, classes webui+webui, FILES disjoint)' \
+	&& ok || bad "T16c: webui+webui with disjoint FILES not sanctioned (out: $out)"
+
+# T16d: forbidden same-file - two webui head cards naming the same file.
+out=$(PAIRRUN "INSERT INTO tasks VALUES('t_d1','ready','webui one','FILES: engine/webui/app/components/dock.vue',NULL,NULL,5,'2026-11-07T15:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_d2','ready','webui two','FILES: engine/webui/app/components/dock.vue',NULL,NULL,5,'2026-11-07T15:01',NULL,NULL);")
+printf "%s" "$out" | grep -qF 'pair: forbidden (t_d1 t_d2, same-file: webui/app/components/dock.vue' \
+	&& ok || bad "T16d: same-file head pair not forbidden (out: $out)"
+
+# T16e: a single head slot forms no pair - sanctioned, and it names the card.
+out=$(PAIRRUN "$GO1")
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1, single would-spawn candidate)' \
+	&& ok || bad "T16e: single-candidate head not sanctioned (out: $out)"
+
+# T16f: --max 1 -> SLOTS 1 -> one head slot, so the same two go cards are not
+# a pair this pass (the --max decision is what the line exists to inform).
+out=$(PAIRRUN "$GO1
+$GO2" --max 1)
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1, single would-spawn candidate)' \
+	&& ok || bad "T16f: --max 1 head must be a single slot (out: $out)"
+printf "%s" "$out" | grep -q "cap=1" && ok || bad "T16f: --max did not set the cap (out: $out)"
+
+# T16g: --max 2 on the SAME board reaches two slots -> forbidden again (the
+# explicit path must run the same slot math as the cap path).
+out=$(PAIRRUN "$GO1
+$GO2" --max 2)
+printf "%s" "$out" | grep -qF 'pair: forbidden (t_go1 t_go2, go+go' \
+	&& ok || bad "T16g: --max 2 go+go head not forbidden (out: $out)"
+
+# T16h: empty board - the line still prints, never a silent absence (an
+# empty verdict section must be distinguishable from a blind computation).
+out=$(PAIRRUN "SELECT 1;")
+printf "%s" "$out" | grep -qF 'pair: sanctioned (none, empty would-spawn set)' \
+	&& ok || bad "T16h: empty board printed no pair verdict (out: $out)"
+
+# T16i: class-list containment + the unconditional class leg. Three running
+# cards (docs, go, webui) make RC='docs,go,webui,': the go candidate must
+# hold even though the running go card exposes NO surface tokens (the gate
+# that read it legal live, tick 2026-11-07 18:36). SLOTS = 2 - 3 < 0 -> 0.
+out=$(PAIRRUN "INSERT INTO tasks VALUES('t_rdoc','running','doc bits','FILES: docs/cli.md','pibtw:1',NULL,5,'2026-11-07T14:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_rgo','running','go bits','pure go bits','pibtw:2',NULL,5,'2026-11-07T14:01',NULL,NULL);
+INSERT INTO tasks VALUES('t_rweb','running','webui bits','FILES: engine/webui/app/','pibtw:3',NULL,5,'2026-11-07T14:02',NULL,NULL);
+INSERT INTO tasks VALUES('t_cgo','ready','go candidate','FILES: cmd/omega/loop.go',NULL,NULL,5,'2026-11-07T15:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_cdoc','ready','doc candidate','FILES: docs/other.md',NULL,NULL,5,'2026-11-07T15:01',NULL,NULL);")
+printf "%s" "$out" | grep -qF 'hold: t_cgo  (go-class beside go: running=[docs,go,webui,]' \
+	&& ok || bad "T16i: go candidate beside a token-less running go card not held (out: $out)"
+printf "%s" "$out" | grep -q "^legal: t_cdoc" \
+	&& ok || bad "T16i: doc candidate should stay legal - a FILES: docs/ card must class docs, not go (out: $out)"
+printf "%s" "$out" | grep -qF 'pair: sanctioned (none, empty would-spawn set)' \
+	&& ok || bad "T16i: running > cap must give zero head slots (out: $out)"
 
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
