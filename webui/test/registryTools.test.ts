@@ -47,6 +47,49 @@ test("tool rows group by domain: actions as dotted detail, siblings merged, lone
   assert.equal(shellRow.disabled, true, "the fold flags by exact tool name");
 });
 
+test("the kanban split groups under one kanban row: seven dotted tools, one parent (t_f616ed78)", () => {
+  // the real post-split wire: the flat action-protocol tool is gone,
+  // the seven dotted siblings are the domain
+  const tools = [
+    { name: "shell.run", description: "run a command" },
+    { name: "kanban.list", description: "list board tasks" },
+    { name: "kanban.create", description: "create a board task" },
+    { name: "kanban.update", description: "update a task" },
+    { name: "kanban.complete", description: "mark a task done" },
+    { name: "kanban.comment", description: "add a comment" },
+    { name: "kanban.delete", description: "remove a task" },
+    { name: "kanban.batch", description: "run several operations atomically" },
+  ];
+  const rows = toolRows(tools, []);
+  const kanbanRows = rows.filter((r) => r.name === "kanban");
+  assert.equal(kanbanRows.length, 1, "the seven dotted tools merge into ONE kanban row");
+  assert.deepEqual(
+    kanbanRows[0].detail,
+    [
+      "kanban.list - list board tasks",
+      "kanban.create - create a board task",
+      "kanban.update - update a task",
+      "kanban.complete - mark a task done",
+      "kanban.comment - add a comment",
+      "kanban.delete - remove a task",
+      "kanban.batch - run several operations atomically",
+    ],
+    "each member keeps its full dotted identity as a detail line",
+  );
+  assert.equal(rows.some((r) => r.name.startsWith("kanban.")), false, "no orphan kanban.* rows");
+  // the group parent is not a tool name - the toggle fans out to the
+  // exact members (the fold keeps real names)
+  assert.deepEqual(toggleTargets("kanban", tools), [
+    "kanban.list",
+    "kanban.create",
+    "kanban.update",
+    "kanban.complete",
+    "kanban.comment",
+    "kanban.delete",
+    "kanban.batch",
+  ]);
+});
+
 test("toggleTargets: an exact tool toggles itself, a group parent fans out to its members", () => {
   const tools = [
     { name: "kanban", description: "the board" },

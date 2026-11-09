@@ -45,10 +45,10 @@ func mountPlugin(t *testing.T) (*Plugin, *core.Context, string) {
 }
 
 // TestMountWithAPIShape pins the migrated mount's registrations: the
-// REST routes land on ctx.ModuleRoutes, the one namespaced tool
-// registers, the commands take their table order with a chain that
-// falls through to the miss error, and the live panel provider lands
-// with module-qualified, namespaced action ids.
+// REST routes land on ctx.ModuleRoutes, the seven dotted kanban.*
+// tools register, the commands take their table order with a chain
+// that falls through to the miss error, and the live panel provider
+// lands with module-qualified, namespaced action ids.
 func TestMountWithAPIShape(t *testing.T) {
 	_, ctx, _ := mountPlugin(t)
 	patterns := map[string]bool{}
@@ -63,15 +63,20 @@ func TestMountWithAPIShape(t *testing.T) {
 			t.Fatalf("route %q not registered: %v", want, patterns)
 		}
 	}
-	// the tool registry: exactly the folded namespaced tool
+	// the tool registry: exactly the seven dotted kanban.* tools
 	names := map[string]int{}
 	for _, tp := range ctx.ToolProviders {
 		for name := range tp.Tools() {
 			names[name]++
 		}
 	}
-	if len(names) != 1 || names["kanban"] != 1 {
-		t.Fatalf("tool registry = %v, want {kanban: 1}", names)
+	if len(names) != len(dottedToolNames) {
+		t.Fatalf("tool registry = %v, want the seven dotted kanban.* tools", names)
+	}
+	for _, want := range dottedToolNames {
+		if names[want] != 1 {
+			t.Fatalf("tool %q registered %d times, want exactly once (registry %v)", want, names[want], names)
+		}
 	}
 	// the command table and the chain
 	var cmds []string
