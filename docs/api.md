@@ -448,14 +448,41 @@ rewrites the reference before the turn is persisted. The answer is the
 reference record `{kind, name, size, path}` (kind = the lowercased
 extension without its dot, `file` when the name has none); the client
 echoes it back in the user message's `attachments` array, which is what
-the store persists and what the agent sees.
+the store persists.
 
 One file per request, 10 MB per file (the same class as the image cap;
 413 past it). No content is sniffed, extracted, inlined or parsed on
-this lane - a reference is a path the agent opens with its own tools.
+this lane - the answer is a reference, a path the agent opens with its
+own tools.
 Path rule on `/chat`: every `attachments[].path` must resolve to a
 regular file inside `<home>/uploads/` (symlinks resolved, traversal and
 anything outside the tree refused with 400).
+
+What the agent sees (`agent/loop/attachments.go`): the reference rides
+the message untouched through the store, the transcript and the
+provider wire, and is rendered into the model-facing content of that
+user message at each provider call - one block per attachment:
+
+```
+--- attached file ---
+name: report.csv
+type: csv
+size: 220 bytes
+path: <home>/uploads/<session>/report.csv
+content:
+a,b
+1,2
+--- end attached file content ---
+```
+
+`name`/`type`/`size`/`path` mirror `core.Attachment`. The `content:`
+section is the ONE inlining exception: `.md`, `.txt`, `.csv` and
+`.json` under 8 KB are inlined so the agent answers without a tool
+round trip; every other file (pdf, archives, oversize or non-UTF-8
+text) closes the block after `path:` with `content: not inlined - read
+it with files.read`, and no path allow-list is needed - the uploads
+tree is reachable by `files.read` with an absolute path. The rendered
+copy is per call and never persisted.
 
 ### POST /attach-image
 
