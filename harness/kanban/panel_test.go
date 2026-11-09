@@ -313,7 +313,7 @@ func TestToolRefreshPushes(t *testing.T) {
 	cctx := context.Background()
 	pushed := capture(t, p.capsule)
 
-	if _, err := p.tools.runTask(cctx, map[string]any{"action": "create", "title": "push me"}); err != nil {
+	if _, err := p.tools.Tools()["kanban.create"].Run(cctx, map[string]any{"title": "push me"}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if len(*pushed) != 1 || (*pushed)[0].ID != listPanelID {
@@ -327,7 +327,7 @@ func TestToolRefreshPushes(t *testing.T) {
 	// a failed batch op still refreshes (cheap catch-up: an atomic
 	// batch rolled itself back, a fail-forward one applied earlier ops)
 	before := len(*pushed)
-	out, err := p.tools.runTask(cctx, map[string]any{"operations": []any{
+	out, err := p.tools.Tools()["kanban.batch"].Run(cctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "then break"},
 		map[string]any{"action": "complete", "id": "t_nope"},
 	}})
