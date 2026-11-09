@@ -22,11 +22,13 @@ export function parseToolDisplay(v: unknown): ToolDisplay {
 // toolRowWantOpen: the pure mode+status -> open mapping for a row the
 // user has NOT pinned. Auto: a running call is open
 // (you watch it work), a settled one is closed (the result collapses).
-// Pure.
+// A PENDING chip stays open too (async agent loop phase 3): the chip
+// is the contract's visible half - its result re-enters as a later
+// wake turn and the row fills in when it lands. Pure.
 export function toolRowWantOpen(status: string, mode: ToolDisplay): boolean {
   if (mode === "expanded") return true;
   if (mode === "collapsed") return false;
-  return status === "running";
+  return status === "running" || status === "pending";
 }
 
 // Module-scoped mode ref: ToolCallLine rows live under ChatItem in every

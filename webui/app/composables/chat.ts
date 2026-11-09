@@ -49,6 +49,8 @@ import {
   SessionBusyError,
   StreamInterruptedError,
   fetchTranscript,
+  runActive,
+  transcriptHasPending,
   type OmegaMessage,
 } from "./omega.ts";
 import { SHELL_COMMAND_NAMES, dispatchCommand } from "./commands.ts";
@@ -108,6 +110,12 @@ export interface ChatState {
   // transcript); replay semantics (a user-turn target reruns the turn
   // immediately) ride the same state.
   forkFrom: string | null;
+  // the run that just ended (or is ending) on this state, and WHY it
+  // ended - the agent_end frame's finish_reason (async agent loop
+  // phase 3): "yielded" names a run whose last call went out-of-band,
+  // and the pending watcher arms on exactly that. Cleared at every
+  // stream start (each run states its own reason).
+  lastFinishReason: string;
   // ephemeral chat (card t_d96a5cd5): this tab's session is a
   // NO-PERSIST `eph-` session - server memory only, gone at restart,
   // no sidebar row, the memory tool denied server-side. Close deletes
@@ -154,6 +162,7 @@ export const DEFAULT_CHAT_STATE: ChatState = {
   lastChunksPerSecond: 0,
   variants: [],
   forkFrom: null,
+  lastFinishReason: "",
   pendingSkill: null,
   workspaceIntent: "",
 };
@@ -458,6 +467,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         variants: [],
         forkFrom: null,
         ephemeral: !!ephemeral,
+        lastFinishReason: "",
         // card t_30137f67: a new session is born with the configured
         // default workspace - the chip + intent carry it exactly as if
         // the user had picked it (plain sticky). Only an unbound,
@@ -503,6 +513,10 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     st.liveDeltasPerSecond = 0;
     st.lastDeltasPerSecond = 0;
     st.lastChunksPerSecond = 0;
+    // each run states its own ending (async agent loop phase 3): the
+    // yielded flag from a PREVIOUS run must not arm the pending
+    // watcher off this one's streams
+    st.lastFinishReason = "";
     // the delta rate meter: arrival times of the panel repaints (the
     // canvas cadence, batched server-side) make the statusbar a visible
     // proof that the frontend receives the stream as it comes
@@ -530,24 +544,122 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       onViewModelDelta: (panel) => { deps.canvasDelta?.(panel);
         if (panel.kind === "chat") meter(normalizeChatPayload(panel.payload));
       },
+      onRunEnd: (finishReason) => {
+        st.lastFinishReason = finishReason;
+      },
     };
   }
 
   // refreshVariants pulls the session's branch block again - a run that
   // just forged a sibling (retry, fork, cancel partial) needs no manual
   // reload for the switcher. Id-ful rows + the rendered items the
-  // variantOf resolution needs come from the same fetch.
-  async function refreshVariants(st: ChatState): Promise<void> {
+  // variantOf resolution needs come from the same fetch. Returns
+  // whether the fresh transcript still carries PENDING chips (async
+  // agent loop phase 3): a run that ended on settled calls while older
+  // yield-class siblings still await their wake keeps the pending
+  // watcher armed. False when unknown (ephemeral, live run, fetch
+  // fault) - the caller's own yielded flag decides arming then.
+  async function refreshVariants(st: ChatState): Promise<boolean> {
     const sessionId = st.sessionId;
-    if (!sessionId || st.ephemeral) return;
+    if (!sessionId || st.ephemeral) return false;
     try {
       const detail = await fetchTranscript(sessionId);
-      if (detail.running) return;
+      if (detail.running) return false;
       st.variants = detail.variants ?? [];
       st.forkFrom = null; // stale anchors retire: resolved against the view
+      return transcriptHasPending(renderTranscriptItems(detail.items));
     } catch {
       // transient fetch failure keeps the previous block
+      return false;
     }
+  }
+
+  // --- the pending watcher (async agent loop phase 3, rulings 6/7) ---
+  //
+  // A yielded run ENDED - its dispatch went out-of-band and the home
+  // sleeps until the result settles, when the server re-enters it as a
+  // WAKE RUN on the same session (the same pipe a user send takes; the
+  // panel repaints it). The origin /chat stream is over, so without a
+  // subscriber the wake's view_model_delta frames land on nobody and
+  // the pending chip never fills. The watcher closes that gap: poll
+  // the run slot until the wake launches, then ATTACH and ride it
+  // (the same reattach flow load() uses) - the wake streams into the
+  // same pane, the chip resolves in place. A wake that yields again
+  // (the model delegated twice) re-arms on its own ending; still-
+  // pending siblings keep the watch alive across every ride.
+  const PENDING_POLL_MS = 2000;
+  const PENDING_RECHECK_EVERY = 5; // transcript truth recheck interval, in misses
+  const PENDING_WATCH_MS = 30 * 60 * 1000; // cap: the server's run timeout budget
+
+  const pendingWatchers = new Set<string>();
+
+  const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // pendingInTranscript reads the REST truth once: are any chips still
+  // pending? A fetch fault answers true - a transient blip must not
+  // disarm the watch (the next recheck re-decides).
+  async function pendingInTranscript(sessionId: string): Promise<boolean> {
+    try {
+      const detail = await fetchTranscript(sessionId);
+      if (detail.running) return true; // a run holds the slot: the loop attaches
+      return transcriptHasPending(renderTranscriptItems(detail.items));
+    } catch {
+      return true;
+    }
+  }
+
+  // watchPending arms ONE watcher per state key: poll the slot, ride
+  // each wake run through the transport, stop when the transcript
+  // carries no pending chip anymore (settled, or parked by the runaway
+  // guard - its note is a user row, the chips stay by design) or the
+  // watch budget dies. Never touches busy state while merely polling:
+  // the slot is FREE while the call runs out-of-band, and a send from
+  // this tab is exactly how the user resets the guard.
+  function watchPending(st: ChatState) {
+    const sid = st.sessionId;
+    if (!sid || pendingWatchers.has(st.key)) return;
+    pendingWatchers.add(st.key);
+    void (async () => {
+      const deadline = Date.now() + PENDING_WATCH_MS;
+      let misses = 0;
+      try {
+        while (Date.now() < deadline) {
+          const cur = states.get(st.key);
+          if (!cur || cur.sessionId !== sid) return; // state gone or rebound
+          if (busyKeys.value.has(st.key) || cur.attached) {
+            // a stream owns the tab (the user sent, another watcher
+            // rode): its own end re-arms through runStream's hook
+            await sleepMs(PENDING_POLL_MS);
+            continue;
+          }
+          if (await runActive(sid)) {
+            // the wake is live: attach and ride it to its end. Its
+            // agent_end arms the next loop turn (yielded = again, or
+            // the post-ride recheck decides below)
+            misses = 0;
+            cur.attached = true;
+            await runStream(cur, (handlers) => attachSession(sid, handlers));
+            continue;
+          }
+          misses++;
+          if (misses % PENDING_RECHECK_EVERY === 0) {
+            if (!(await pendingInTranscript(sid))) {
+              // the truth says nothing is pending anymore (settled
+              // while we slept, or the guard parked the home): repaint
+              // the panel from the snapshot and stand down
+              await deps.canvasRefresh?.();
+              return;
+            }
+          }
+          await sleepMs(PENDING_POLL_MS);
+        }
+      } catch {
+        // a transport fault ends the watch; the chips stay rendered
+        // and the next load re-arms if the truth still shows pending
+      } finally {
+        pendingWatchers.delete(st.key);
+      }
+    })();
   }
 
   // runStream drives one transport interaction (the send's POST /chat
@@ -608,8 +720,17 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       }
       // variants may have moved (a retry's fresh sibling, a fork's new
       // sub-branch, a cancel's partial) - one fetch, switcher without
-      // a manual reload
-      await refreshVariants(st);
+      // a manual reload. The same fetch answers the async question:
+      // do yield-class chips still await their wake?
+      const pendingStill = await refreshVariants(st);
+      // async agent loop phase 3: a run that ended yielded - or ended
+      // settled while older yield-class siblings still pend - hands
+      // this tab to the pending watcher, so the wake run that
+      // re-enters the session streams into the same pane and the
+      // chips fill in place. No-op when one already watches.
+      if (!st.orphan && (st.lastFinishReason === "yielded" || pendingStill)) {
+        watchPending(st);
+      }
       if (st.orphan) {
         states.delete(st.key);
         dropEphemeralServerRecord(st.sessionId, st.key);
@@ -647,6 +768,15 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       if (detail.running && !busyKeys.value.has(key)) {
         st.attached = true;
         await runStream(st, (handlers) => attachSession(sessionId, handlers));
+      }
+      // async agent loop phase 3: a restored session whose chips still
+      // pend (a reload inside the home-sleeps window) arms the pending
+      // watcher right here - the wake run that resolves them streams
+      // into this pane and the chips fill in place. A running session
+      // needs no arm: the reattach above rides, and the stream's own
+      // end re-arms on the truth.
+      if (!detail.running && transcriptHasPending(st.restored)) {
+        watchPending(st);
       }
     } catch {
       // empty or missing session: keep this tab's previous view rather
@@ -996,7 +1126,7 @@ export function createCanvasTranscript(): CanvasTranscript {
   // ticks once, settled by the result row's later delta)
   const issuedAt = new Map<string, number>();
 
-  function item(row: ChatRowWire, index: number, panelRunning: boolean): TranscriptItem | null {
+  function item(row: ChatRowWire, index: number, panelRunning: boolean, resultIds: ReadonlySet<string>): TranscriptItem | null {
     const block = row.blocks?.[0];
     if (!block) return null;
     const running = row.status === "streaming";
@@ -1111,7 +1241,18 @@ export function createCanvasTranscript(): CanvasTranscript {
         block.tool_call?.arguments != null ?
           JSON.stringify(block.tool_call.arguments, null, 2)
         : undefined;
-      it.status = blockRunning ? "running" : "done";
+      // async agent loop phase 3 (ruling 6): an unanswered call is
+      // the PENDING chip, never a completed line with no output. The
+      // live tail's running bit outranks it (the block is streaming);
+      // a call with its result row anywhere in the payload (wire
+      // order: right after the call's turn) is settled. An id-less
+      // call keeps the done shape - nothing to match a result
+      // against, and the elapsed offset survives the running ->
+      // pending flip so the meter never restarts mid-call.
+      it.status =
+        blockRunning ? "running"
+        : callId && !resultIds.has(callId) ? "pending"
+        : "done";
       // elapsed already consumed by a STILL-RUNNING restored call (the
       // persisted history's live-run merge): the meter counts on
       if (blockRunning) it.elapsedMs = block.elapsed_ms ?? 0;
@@ -1143,6 +1284,17 @@ export function createCanvasTranscript(): CanvasTranscript {
     // twice and hand the keyed v-for a duplicate key (t_0df4efd8)
     const pushed = new Set<TranscriptItem>();
     const rows = payload.rows ?? [];
+    // async agent loop phase 3: the settled-call index - every result
+    // row's call id, collected FIRST so a call row anywhere in the
+    // payload knows whether its result landed (the pending-chip
+    // derivation reads it)
+    const resultIds = new Set<string>();
+    for (const r of rows) {
+      if (r?.role !== "tool") continue;
+      for (const b of r.blocks ?? []) {
+        if (b?.type === "tool_result" && b.tool_call_id) resultIds.add(b.tool_call_id);
+      }
+    }
     if ((payload.session ?? "") !== session) {
       // another conversation took the panel over: identities are
       // worthless across sessions - the cache resets
@@ -1151,7 +1303,7 @@ export function createCanvasTranscript(): CanvasTranscript {
       issuedAt.clear();
     }
     for (let i = 0; i < rows.length; i++) {
-      const it = item(rows[i]!, i, !!payload.running);
+      const it = item(rows[i]!, i, !!payload.running, resultIds);
       if (it && !pushed.has(it)) {
         out.push(it);
         pushed.add(it);

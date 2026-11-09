@@ -139,9 +139,12 @@ test("ToolGroup mirrors the row/block fold: shared mode, pin click, child passth
   assert.match(g, /@click="onSummaryClick"/);
   assert.match(g, /pinned\.value = !el\.value\.open/);
   assert.match(g, /applyAuto\(\) \{\s*\n\s*if \(pinned\.value !== null \|\| !el\.value\) return/);
-  // the state machine rides the SHARED composable, not a private copy
+  // the state machine rides the SHARED composable, not a private copy;
+  // the combined active flag (running OR pending - async agent loop
+  // phase 3) keeps a chip-holding group open
   assert.match(g, /useToolDisplay\(\)/);
-  assert.match(g, /toolGroupWantOpen\(anyRunning\.value, props\.live \?\? false, display\.value\)/);
+  assert.match(g, /toolGroupWantOpen\(anyActive\.value, props\.live \?\? false, display\.value\)/);
+  assert.match(g, /anyPending/);
   // children render EXACTLY the ChatItem tool-branch markup: rows keep
   // their own fold + gate card, a group is a container not a re-render
   assert.match(g, /<ToolCallLine/);
