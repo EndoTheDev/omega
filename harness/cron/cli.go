@@ -68,6 +68,9 @@ func cmdCrons(p *Plugin) func([]string) error {
 		sub, rest := args[0], args[1:]
 		switch sub {
 		case "list":
+			if len(rest) != 0 {
+				return fmt.Errorf("crons list: unexpected argument %q (list takes none, omega crons --help lists them)", rest[0])
+			}
 			return cronsList(p, os.Stdout)
 		case "add":
 			return cronsAdd(p, rest)
@@ -223,7 +226,7 @@ func cronsAdd(p *Plugin, args []string) error {
 	if err != nil {
 		return fmt.Errorf("crons add %s: %w", name, err)
 	}
-	printCronsSaved(jobs, name, "saved")
+	printCronsSaved(jobs, name)
 	return nil
 }
 
@@ -296,7 +299,7 @@ func cronsEdit(p *Plugin, args []string) error {
 	if err != nil {
 		return fmt.Errorf("crons edit %s: %w", name, err)
 	}
-	printCronsSaved(jobs, name, "saved")
+	printCronsSaved(jobs, name)
 	return nil
 }
 
@@ -307,11 +310,13 @@ func cronsDelete(p *Plugin, args []string) error {
 	if err != nil {
 		return err
 	}
-	pos := args
-	if len(pos) != 1 {
-		return fmt.Errorf("usage: omega crons delete <name>")
+	name, rest, err := jobName("delete", args)
+	if err != nil {
+		return err
 	}
-	name := pos[0]
+	if len(rest) != 0 {
+		return fmt.Errorf("crons delete: unexpected argument %q (only the name is positional)", rest[0])
+	}
 	jobs, err := r.DeleteJob(name)
 	if err != nil {
 		return fmt.Errorf("crons delete %s: %w", name, err)
@@ -322,16 +327,16 @@ func cronsDelete(p *Plugin, args []string) error {
 
 // printCronsSaved reports the landed row (the same truth the HTTP route
 // answers): the job's cadence, enablement and next fire.
-func printCronsSaved(jobs []JobInfo, name, verb string) {
+func printCronsSaved(jobs []JobInfo, name string) {
 	for _, j := range jobs {
 		if j.Name != name {
 			continue
 		}
-		fmt.Printf("%s job %q: %s, deliver=%s, enabled=%v\n", verb, j.Name, cadenceText(j), j.Deliver, j.Enabled)
+		fmt.Printf("saved job %q: %s, deliver=%s, enabled=%v\n", j.Name, cadenceText(j), j.Deliver, j.Enabled)
 		if j.Next != "" {
 			fmt.Printf("next fire: %s\n", j.Next)
 		}
 		return
 	}
-	fmt.Printf("%s job %q\n", verb, name)
+	fmt.Printf("saved job %q\n", name)
 }
