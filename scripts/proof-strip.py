@@ -18,6 +18,13 @@ types, and the agent need faces (trustFlags/trustGate,
 agent.StoreProvider). The build is the arbiter; the fixup loop in
 removal-proof.sh mops any strand the build still reports.
 
+The loud unknown-wire gate: after every file's asserted edits, a
+capsule-qual sweep (strings and comments blanked) reds on any dot-qual
+on a capsule package the strip list does not name. The build fixup
+must never mop a wire the strip does not know about - an unlisted call
+site reds HERE (the next arc cannot silently run through the fixup's
+`undefined:` catch-all and eat its own wire).
+
 Run INSIDE the staged tree (cwd = the tree root):
     python3 proof-strip.py
 """
@@ -30,6 +37,11 @@ MODULES = ["approval", "browser", "compactor", "continuous", "cron",
            "notifications", "process", "prompt", "provider", "skills",
            "store", "terminal", "tools", "trust", "verdict"]
 KEEP = ["datadir"]
+
+# the loud unknown-wire gate's pattern: any dot-qual on a capsule
+# package whose import was stripped. Built once, right after MODULES.
+QUALS_RE = re.compile(
+    r"\b(?<![\w.])(" + "|".join(m for m in MODULES if m not in KEEP) + r")\.")
 
 IMPORT_RE = re.compile(
     r'^\t(?:[A-Za-z_][A-Za-z0-9_]*\s+)?"github\.com/EndoTheDev/omega/harness/(\w+)"\s*(?://.*)?$')
@@ -135,6 +147,67 @@ class Host:
                   and m.group(1) not in KEEP]
         if leaked:
             raise Stale(f"strip leak ({desc}): {leaked[:4]}")
+
+    @staticmethod
+    def blank_strings_comments(text):
+        """blank string bodies, rune bodies and comments (spaces keep
+        offsets) so the capsule-qual scan sees only real code tokens"""
+        out, i, n = [], 0, len(text)
+        while i < n:
+            c = text[i]
+            if c == '"' or c == "'":
+                q, i = c, i + 1
+                while i < n:
+                    if text[i] == "\\":
+                        out.append("  ")
+                        i += 2
+                        continue
+                    if text[i] == q or text[i] == "\n":
+                        break
+                    i += 1
+                out.append(" ")
+                i += 1
+            elif c == "`":
+                j = text.find("`", i + 1)
+                if j < 0:
+                    out.append(c)
+                    i += 1
+                    continue
+                out.append(" " * (j - i + 1))
+                i = j + 1
+            elif text.startswith("//", i):
+                j = text.find("\n", i)
+                j = n if j < 0 else j
+                out.append(" " * (j - i))
+                i = j
+            elif text.startswith("/*", i):
+                j = text.find("*/", i + 2)
+                j = n if j < 0 else j + 2
+                out.append(" " * (j - i))
+                i = j
+            else:
+                out.append(c)
+                i += 1
+        return "".join(out)
+
+    def assert_no_capsule_quals(self, desc):
+        """The loud unknown-wire gate: red on any capsule package
+        qualifier the strip list does not name (a new arc's call site in
+        a Host file). The build arbiter alone is NOT loud enough - the
+        proof's build fixup eats `undefined: x` lines silently, so an
+        uncovered wire MUST red here, before the build ever runs. The
+        qual must not ride a selector (lo.store. is a host field, not
+        the package); main.go and loop.go are exempt - they carry host
+        LOCALS named like capsules (store, cron) by design."""
+        pat = globals()["QUALS_RE"]
+        if self.path in ("cmd/omega/main.go", "cmd/omega/loop.go"):
+            return
+        text = self.blank_strings_comments("\n".join(self.lines))
+        hits = [(i + 1, ln.strip()[:100]) for i, ln in enumerate(text.split("\n"))
+                if pat.search(ln)]
+        if hits:
+            raise Stale(f"strip stale ({desc}): uncovered capsule wire "
+                        f"(dot-qual on a capsule package): {hits[:4]}")
 
     def prune_unused_imports(self, desc):
         """drop every import whose package name the body no longer
@@ -265,6 +338,25 @@ def strip_host():
     ], "config: ConfigSection (+ modeValid)")
     f.replace_line("if !approval.ValidMode(c.Approvals.Mode) {",
                    "if !modeValid(c.Approvals.Mode) {", "config: approvals.mode validation")
+    # the registry arc (ruling B, card t_7dcd4280): ConfigSection's
+    # capsule sections moved into per-capsule helper funcs. The shell
+    # helpers stay (compactionSection, webBaseURL, approvalSlot are
+    # host-only); the capsule section helpers ride their capsules out.
+    f.replace_func("func approvalSection(", [
+        "// the every-capsule-removed host: the approvals section rides",
+        "// the approval capsule out (approvalSlot stays - it is host-only",
+        "// wiring: c.Provider/c.Providers and the agent slot parser).",
+    ], "config: approvalSection rides the capsule out")
+    f.replace_func("func sessionsSection(", [
+        "// the every-capsule-removed host: the store capsule's hygiene",
+        "// section rides it out (the hygiene pass is the store capsule's",
+        "// opinion; the host's in-memory proof supply keeps no hygiene).",
+    ], "config: sessionsSection rides the capsule out")
+    f.replace_func("func skillsSection(", [
+        "// the every-capsule-removed host: the skills capsule's section",
+        "// rides it out (the curator consult slot is capsule wiring).",
+    ], "config: skillsSection rides the capsule out")
+    f.assert_no_capsule_quals("config")
     f.assert_pure("config")
     f.save()
 
@@ -279,6 +371,17 @@ def strip_host():
                              "settings: the schema's compactor hint")
     f.replace_line("if !approval.ValidMode(m) {",
                    "if !modeValid(m) {", "settings: approvals.mode validation")
+    # the registry arc's hot-apply tails: the approvals/store/skills
+    # resolve blocks type-assert capsule types - they ride their
+    # capsules out. In the every-capsule-removed build Resolve is nil
+    # for every seam, so the honest shape is the block absent.
+    f.del_block('pctx.Services().Resolve("approvals").(*approval.Gate)',
+                "settings: hotApply's approvals tail")
+    f.del_block('pctx.Services().Resolve("store").(*store.Store)',
+                "settings: hotApply's store tail")
+    f.del_block('pctx.Services().Resolve("skills").(curatorSlotSetter)',
+                "settings: hotApply's skills tail (skillsSection rode the capsule out)")
+    f.assert_no_capsule_quals("settings")
     f.assert_pure("settings")
     f.save()
 
@@ -288,6 +391,7 @@ def strip_host():
     f.del_block("if err := migrateAgentStores(home); err != nil {",
                 "agents: the store migration call")
     f.replace_func("func migrateAgentStores(", [], "agents: migrateAgentStores")
+    f.assert_no_capsule_quals("agents")
     f.assert_pure("agents")
     f.save()
 
@@ -307,6 +411,7 @@ def strip_host():
         "}",
     ], "export: cmdExport")
     f.prune_unused_imports("export")
+    f.assert_no_capsule_quals("export")
     f.assert_pure("export")
     f.save()
 
@@ -322,6 +427,7 @@ def strip_host():
         "}",
     ], "insights: cmdInsights")
     f.prune_unused_imports("insights")
+    f.assert_no_capsule_quals("insights")
     f.assert_pure("insights")
     f.save()
 
@@ -334,6 +440,7 @@ def strip_host():
         "\t// this build - the inline answer rides it out",
         "\treturn false",
     ], "loop: the inline verdict answer")
+    f.assert_no_capsule_quals("loop")
     f.assert_pure("loop")
     f.save()
 
@@ -346,6 +453,7 @@ def strip_host():
         "\t// wizard's live model list reports unavailable (nil lister)",
         "\treturn prov",
     ], "setup: the provider hook")
+    f.assert_no_capsule_quals("setup")
     f.assert_pure("setup")
     f.save()
 
@@ -354,6 +462,7 @@ def strip_host():
     f.drop_imports("home imports")
     f.replace_span("// Upgrade path: a legacy home-root trust.yaml",
                    "trust.Bootstrap(home)", [], "home: the trust bootstrap")
+    f.assert_no_capsule_quals("home")
     f.assert_pure("home")
     f.save()
 
@@ -590,11 +699,19 @@ func (p *proofSupply) SessionModels(context.Context) (map[string]string, error) 
 	return map[string]string{}, nil
 }
 
-// SetSessionModel / SetSessionWorkspace are the optional context seam
-// (agent.SessionContextStore): the proof supply implements it, so the
-// model-picker and the draft's workspace intent answer too.
+// SetSessionModel / SetSessionProvider / SetSessionWorkspace are the
+// optional context seam (agent.SessionContextStore): the proof supply
+// implements it, so the model-picker, the provider-instance pin and
+// the draft's workspace intent answer too. The provider-instance pin
+// (card t_7dcd4280) resolves per run against the live config - the
+// proof build carries no provider capsule, the pin stores a name
+// datum like any real store does.
 func (p *proofSupply) SetSessionModel(_ context.Context, sessionID, model string) error {
 	return p.mutate(sessionID, func(s *core.Session) { s.Model = model })
+}
+
+func (p *proofSupply) SetSessionProvider(_ context.Context, sessionID, provider string) error {
+	return p.mutate(sessionID, func(s *core.Session) { s.ProviderName = provider })
 }
 
 func (p *proofSupply) SetSessionWorkspace(_ context.Context, sessionID, dir string) error {
