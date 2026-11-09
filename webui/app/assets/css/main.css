@@ -1629,19 +1629,25 @@ labels stopped short of the right edge. */
    hljs token spans, colored below - strictly from the palette above,
    accent keywords, ok strings, dim comments/structure, err deletions.
    No new tokens, no imported hljs theme. */
-.bubble .md { white-space: normal; }
-.bubble .md > :first-child { margin-top: 0; }
-.bubble .md > :last-child { margin-bottom: 0; }
+.bubble .md, .content-viewer .md { white-space: normal; }
+.bubble .md > :first-child, .content-viewer .md > :first-child { margin-top: 0; }
+.bubble .md > :last-child, .content-viewer .md > :last-child { margin-bottom: 0; }
 .bubble .md p,
+.content-viewer .md p,
 .bubble .md ul,
-.bubble .md ol { margin: 0.4em 0; }
+.content-viewer .md ul,
+.bubble .md ol, .content-viewer .md ol { margin: 0.4em 0; }
 .bubble .md ul,
-.bubble .md ol { padding-left: 1.4em; }
+.content-viewer .md ul,
+.bubble .md ol, .content-viewer .md ol { padding-left: 1.4em; }
 .bubble .md h1,
+.content-viewer .md h1,
 .bubble .md h2,
+.content-viewer .md h2,
 .bubble .md h3,
-.bubble .md h4 { margin: 0.6em 0 0.3em; font-size: 1em; }
-.bubble .md pre {
+.content-viewer .md h3,
+.bubble .md h4, .content-viewer .md h4 { margin: 0.6em 0 0.3em; font-size: 1em; }
+.bubble .md pre, .content-viewer .md pre {
   background: var(--z2);
   border: 1px solid var(--stroke);
   border-radius: var(--r-chip);
@@ -1649,29 +1655,30 @@ labels stopped short of the right edge. */
   margin: 0.4em 0;
   overflow-x: auto;
 }
-.bubble .md code {
+.bubble .md code, .content-viewer .md code {
   font-family: var(--mono);
   font-size: 12px;
 }
 .bubble .md p code,
-.bubble .md li code {
+.content-viewer .md p code,
+.bubble .md li code, .content-viewer .md li code {
   background: var(--z2);
   border: 1px solid var(--stroke);
   border-radius: var(--r-chip);
   padding: 1px 4px;
 }
-.bubble .md pre code { background: none; border: none; padding: 0; }
+.bubble .md pre code, .content-viewer .md pre code { background: none; border: none; padding: 0; }
 
 /* Codeblock UX: header bar (lang + line count + copy), 60vh cap with
    internal scroll, collapse. The .codeblock wrapper is added post-render
    (composables/codeblocks.ts), never emitted by the markdown renderer. */
-.bubble .md .codeblock {
+.bubble .md .codeblock, .content-viewer .md .codeblock {
   background: var(--z2);
   border: 1px solid var(--stroke);
   border-radius: var(--r-chip);
   margin: 0.4em 0;
 }
-.bubble .md .codeblock pre {
+.bubble .md .codeblock pre, .content-viewer .md .codeblock pre {
   background: none;
   border: none;
   border-radius: 0;
@@ -1717,38 +1724,49 @@ labels stopped short of the right edge. */
    stays default text. Scoped to bubbles: unstyled fences elsewhere
    (thinking blocks, tool output) are untouched. */
 .bubble .md pre .hljs-comment,
+.content-viewer .md pre .hljs-comment,
 .bubble .md pre .hljs-quote,
+.content-viewer .md pre .hljs-quote,
 .bubble .md pre .hljs-punctuation,
-.bubble .md pre .hljs-operator { color: var(--text-dim); }
+.content-viewer .md pre .hljs-punctuation,
+.bubble .md pre .hljs-operator, .content-viewer .md pre .hljs-operator { color: var(--text-dim); }
 .bubble .md pre .hljs-keyword,
+.content-viewer .md pre .hljs-keyword,
 .bubble .md pre .hljs-built_in,
+.content-viewer .md pre .hljs-built_in,
 .bubble .md pre .hljs-type,
+.content-viewer .md pre .hljs-type,
 .bubble .md pre .hljs-selector-tag,
+.content-viewer .md pre .hljs-selector-tag,
 .bubble .md pre .hljs-tag,
-.bubble .md pre .hljs-meta { color: var(--accent); }
+.content-viewer .md pre .hljs-tag,
+.bubble .md pre .hljs-meta, .content-viewer .md pre .hljs-meta { color: var(--accent); }
 .bubble .md pre .hljs-string,
+.content-viewer .md pre .hljs-string,
 .bubble .md pre .hljs-regexp,
-.bubble .md pre .hljs-addition { color: var(--ok); }
-.bubble .md pre .hljs-deletion { color: var(--err); }
-.bubble .md table {
+.content-viewer .md pre .hljs-regexp,
+.bubble .md pre .hljs-addition, .content-viewer .md pre .hljs-addition { color: var(--ok); }
+.bubble .md pre .hljs-deletion, .content-viewer .md pre .hljs-deletion { color: var(--err); }
+.bubble .md table, .content-viewer .md table {
   border-collapse: collapse;
   margin: 0.4em 0;
 }
 .bubble .md th,
-.bubble .md td {
+.content-viewer .md th,
+.bubble .md td, .content-viewer .md td {
   border: 1px solid var(--stroke);
   padding: 3px 8px;
   text-align: left;
 }
-.bubble .md th { background: var(--z2); }
-.bubble .md blockquote {
+.bubble .md th, .content-viewer .md th { background: var(--z2); }
+.bubble .md blockquote, .content-viewer .md blockquote {
   margin: 0.4em 0;
   padding: 0 10px;
   border-left: 3px solid var(--accent);
   color: var(--text-dim);
 }
-.bubble .md a { color: var(--accent); }
-.bubble .md hr { border: none; border-top: 1px solid var(--stroke); }
+.bubble .md a, .content-viewer .md a { color: var(--accent); }
+.bubble .md hr, .content-viewer .md hr { border: none; border-top: 1px solid var(--stroke); }
 
 /* thinking block */
 .thinking {

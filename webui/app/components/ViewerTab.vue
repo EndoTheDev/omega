@@ -31,18 +31,53 @@
           v-if="notice"
           class="viewer-status">{{ notice }}</p>
         <p
-          v-if="!binary && skillDesc"
+          v-if="skillDesc"
           class="viewer-skill-desc">{{ skillDesc }}</p>
+        <!-- ONE body per content class (t_42c8aced): the sniffed mime
+             decides pdf/image, an .md/.markdown file or the skill body
+             renders markdown, a non-UTF-8 file keeps the honest
+             no-preview state (name + size + download), everything else
+             stays the line-numbered monospace body. -->
         <div
-          v-if="isImage"
+          v-if="view === 'image'"
           class="viewer-imgwrap">
           <img
             class="viewer-img"
             :src="rawSrc"
             :alt="viewer.name">
         </div>
+        <!-- pdf rides the browser's native viewer on the raw route - no
+             renderer dependency, the bytes are same-origin -->
+        <iframe
+          v-else-if="view === 'pdf'"
+          class="viewer-pdf"
+          :src="rawSrc"
+          :title="viewer.name"></iframe>
         <div
-          v-else-if="!binary"
+          v-else-if="view === 'binary'"
+          class="viewer-binstate">
+          <p class="viewer-status">binary file - no preview</p>
+          <p class="viewer-binmeta">
+            <span
+              v-if="sizeLabel"
+              class="viewer-dl-size">{{ sizeLabel }} - </span>
+            <a
+              class="viewer-dl"
+              :href="downloadUrl"
+              :download="leafName">download</a>
+          </p>
+        </div>
+        <!-- the markdown body: the CHAT renderer (same grammar, same
+             sanitizer) + the codeblock decoration pass -->
+        <div
+          v-else-if="view === 'markdown'"
+          ref="mdEl"
+          class="viewer-md md"
+          role="document"
+          aria-label="markdown preview"
+          v-html="renderedMd"></div>
+        <div
+          v-else
           class="viewer-body"
           role="document"
           :aria-label="viewer.name">
@@ -63,20 +98,30 @@
   // The content viewer (card t_36ceb99b): ONE tab shape for the two
   // content kinds. A FILE tab reads GET /files/read (the same surface the
   // retired inline preview fetched); a SKILL tab reads GET /skills/content
-  // (the loader's own parse: frontmatter description + body). Both render
-  // line-numbered monospace text; truncated/binary rides the notice line,
-  // and an image mime (card t_08d822bb) swaps the text body for an <img>
-  // bound to GET /files/raw - the raw route serves image/* bytes only,
-  // under the same root jail the read rides.
+  // (the loader's own parse: frontmatter description + body). The body
+  // switches on ONE view class per content type (t_42c8aced):
+  // markdown -> the chat renderMarkdown grammar + codeblock decoration,
+  // pdf -> the browser's native viewer on GET /files/raw,
+  // image -> an <img> on the raw route (card t_08d822bb),
+  // binary -> the honest no-preview state (name + size + download lane),
+  // everything else -> line-numbered monospace text.
   // Fetch-on-mount: a persisted viewer tab opened later re-fetches -
   // content views refresh, nothing caches stale bytes.
-  import { computed, inject, onMounted, ref, watch } from "vue";
+  import { computed, inject, nextTick, onMounted, ref, watch } from "vue";
   import type { ViewerRef } from "../composables/dockables";
   import {
     FOCUSED_SESSION_KEY,
     fetchSkillContent,
   } from "../composables/viewer";
-  import { fetchFilesRead, filesRawUrl } from "../composables/omega";
+  import { decorateCodeblocks } from "../composables/codeblocks";
+  import {
+    bytesLabel,
+    fetchFilesRead,
+    fileViewKind,
+    filesRawUrl,
+    renderMarkdown,
+    type FileViewKind,
+  } from "../composables/omega";
   import Icon from "./ui/Icon.vue";
   import { useNarrow } from "~/composables/narrow";
   import { glyphKindFor, glyphIcon } from "../../../harness/files/ui/rowicon";
@@ -96,6 +141,7 @@
   const truncated = ref(false);
   const binary = ref(false);
   const mime = ref("");
+  const size = ref<number | undefined>(undefined);
   const skillDesc = ref("");
   // a refetch when the same tab instance is handed a DIFFERENT viewer
   // (the outlet reuses the component; only the remount fetches fresh)
@@ -112,6 +158,7 @@
     truncated.value = false;
     binary.value = false;
     mime.value = "";
+    size.value = undefined;
     skillDesc.value = "";
     try {
       if (props.viewer.kind === "skill") {
@@ -129,6 +176,7 @@
         truncated.value = data.truncated;
         binary.value = data.binary;
         mime.value = data.mime ?? "";
+        size.value = data.size;
       }
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e);
@@ -139,14 +187,43 @@
 
   onMounted(() => void load());
 
+  // ONE view class per content kind. A skill's body IS markdown (the
+  // loader hands the parsed body); files decide by the sniffed mime and
+  // the extension (fileViewKind, t_42c8aced).
+  const view = computed<FileViewKind>(() => {
+    if (!props.viewer) return "code";
+    if (props.viewer.kind === "skill") return "markdown";
+    return fileViewKind(props.viewer.name, mime.value, binary.value);
+  });
+
   // a trailing newline is structural, not a line: drop the empty tail so
-  // the gutter's last number is the file's last line
+  // the gutter's last number is the file's last line (code view only -
+  // binary/pdf/markdown never line-split)
   const lines = computed(() => {
-    if (binary.value) return [];
+    if (view.value !== "code") return [];
+    if (!content.value) return [];
     const all = content.value.split("\n");
     if (all.length > 1 && all[all.length - 1] === "") all.pop();
     return all;
   });
+
+  // the markdown branch renders through the CHAT grammar (markdown-it,
+  // html:false sanitizer), then the shared codeblock decoration wraps
+  // fences with the header bar - the same pass ChatMessage runs, the
+  // v-html replacement tears the wrapper down so decorate re-adds it.
+  const renderedMd = ref("");
+  const mdEl = ref<HTMLElement | null>(null);
+  const collapsed = new Set<number>();
+  watch(
+    [content, view],
+    () => {
+      renderedMd.value = view.value === "markdown" ? renderMarkdown(content.value) : "";
+      if (view.value === "markdown") {
+        void nextTick(() => decorateCodeblocks(mdEl.value, collapsed));
+      }
+    },
+    { immediate: true },
+  );
 
   const headIcon = computed(() =>
     !props.viewer
@@ -156,22 +233,29 @@
         : glyphIcon(glyphKindFor(props.viewer.name)),
   );
   const kindLabel = computed(() => (props.viewer?.kind === "skill" ? "skill" : ""));
-  // the image branch (card t_08d822bb): the read's sniffed mime decides -
-  // png/jpeg/gif/webp/svg render as an <img> on the raw route, everything
-  // else keeps the old binary notice (now honest). A pre-law server's
-  // absent mime takes the old path too; no image, no raw request.
-  const isImage = computed(() => mime.value.startsWith("image/"));
   const rawSrc = computed(() =>
     props.viewer && props.viewer.kind === "file"
       ? filesRawUrl(props.viewer.name, focusedSession?.value ?? undefined)
       : "",
   );
+  // the no-preview state's affordance (t_42c8aced): the download lane
+  // serves any mime as an attachment, and the leaf name lands on the
+  // anchor so the browser's save dialog pre-fills it
+  const downloadUrl = computed(() =>
+    props.viewer && props.viewer.kind === "file"
+      ? filesRawUrl(props.viewer.name, focusedSession?.value ?? undefined, { download: true })
+      : "",
+  );
+  const leafName = computed(() => {
+    const name = props.viewer?.name ?? "";
+    const slash = name.lastIndexOf("/");
+    return slash >= 0 ? name.slice(slash + 1) : name;
+  });
+  const sizeLabel = computed(() => (view.value === "binary" ? bytesLabel(size.value) : ""));
   const notice = computed(() => {
-    if (isImage.value) return ""; // the image renders; the notice would lie
-    const parts: string[] = [];
-    if (binary.value) parts.push("binary file - no preview");
-    if (truncated.value) parts.push("truncated at 64 KiB");
-    return parts.join(" - ");
+    if (view.value === "binary") return ""; // the binary state announces itself below
+    if (truncated.value) return "truncated at 64 KiB";
+    return "";
   });
 </script>
 
@@ -243,6 +327,49 @@
     display: block;
     max-width: 100%;
     object-fit: contain;
+  }
+  /* the pdf body (t_42c8aced): the browser's native viewer owns the
+     frame; the pane bounds the chrome */
+  .viewer-pdf {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    border: none;
+    background: var(--z1-raised);
+  }
+  /* the no-preview state (t_42c8aced): name + size + the download lane */
+  .viewer-binstate {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 8px 12px;
+  }
+  .viewer-binmeta {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 12px;
+    font-size: 11px;
+    opacity: 0.8;
+  }
+  .viewer-dl {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .viewer-dl:hover {
+    text-decoration: underline;
+  }
+  /* the markdown body rides the bubble's .md grammar (main.css); this
+     container only sets the scroll + padding frame */
+  .viewer-md {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 6px 12px 12px;
+    font-size: 12px;
+  }
+  .viewer-md :deep(a) {
+    color: var(--accent);
   }
   .viewer-line {
     display: flex;

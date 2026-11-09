@@ -329,12 +329,19 @@ resolution mirror the one command law every surface follows:
   (`.git`, `.worktrees`, ...) list and read like everything else.
   Listed rows carry no error state; a failed read is a one-line
   notice, not a phantom row.
-- **The viewer renders images** (t_08d822bb): `GET /files/read`
-  carries a `mime` field; on an `image/*` mime the viewer tab swaps
-  the text body for an `<img>` served by `GET /files/raw` (raw bytes
-  under the read surface's exact root jail). Every other binary keeps
-  the honest "binary file - no preview" notice. The raw route serves
-  image/* ONLY — non-image and binary reads answer 400.
+- **The viewer renders ONE body per content class** (t_08d822bb,
+  t_42c8aced): `GET /files/read` carries the sniffed `mime` (+ `size`)
+  field; the viewer tab branches on it - `image/*` -> an `<img>` and
+  `application/pdf` -> the browser's native viewer in an `<iframe>`,
+  both served by `GET /files/raw` (raw bytes under the read surface's
+  exact root jail); `.md`/`.markdown` files and skill bodies render
+  through the chat's markdown grammar (same markdown-it + hljs fence
+  path, same codeblock decoration); a non-UTF-8 file keeps the honest
+  "binary file - no preview" state with the size and a download link
+  (the raw route's `?download=1` attachment lane); everything else
+  stays the line-numbered monospace text body. The raw route serves
+  image/* + pdf only - other mimes answer 400 outside the download
+  lane.
 
 ## The Agents tab
 
