@@ -1,6 +1,6 @@
 // Package memory provides the persistent memory seam (core.MemoryProvider)
 // backed by two markdown files (memory.md + user.md), plus the memory tool
-// that lets the agent add, replace, and remove entries.
+// set (memory.add/replace/remove/batch) that lets the agent manage entries.
 //
 // Seam: memory (exclusive), tools (additive).
 //
