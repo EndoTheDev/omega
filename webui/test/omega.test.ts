@@ -11,6 +11,8 @@ import {
   parseFrame,
   normalizeCanvasPanel,
   normalizeChatPayload,
+  normalizeAttachments,
+  renderTranscriptItems,
   chatPanelContent,
   chatPanelMessageCount,
   chatPanelOf,
@@ -161,6 +163,48 @@ describe("normalizeChatPayload: the chat panel payload's wire guard", () => {
     assert.equal(chatPanelOf([]), null);
     const p = { id: "x", title: "x", kind: "chat", payload: null, actions: [] };
     assert.equal(chatPanelOf([p]), p);
+  });
+});
+
+describe("attachment references on the render wire (card t_8a569163)", () => {
+  const ref = { kind: "pdf", name: "paper.pdf", size: 2048, path: "/h/uploads/s9/paper.pdf" };
+
+  it("normalizeAttachments keeps well-formed records, drops the rest", () => {
+    assert.deepEqual(normalizeAttachments([ref]), [ref]);
+    assert.equal(normalizeAttachments(undefined), undefined);
+    assert.equal(normalizeAttachments("nope"), undefined);
+    // no name / no numeric size / junk rows drop; an empty result is undefined
+    assert.equal(normalizeAttachments([{ kind: "pdf", size: 2 }]), undefined);
+    assert.equal(normalizeAttachments([{ kind: "pdf", name: "a.pdf", size: "2" }]), undefined);
+    assert.deepEqual(
+      normalizeAttachments([{ kind: "md", name: "n.md", size: 1 }, 7, { junk: true }]),
+      [{ kind: "md", name: "n.md", size: 1, path: "" }],
+      "a missing path degrades to an empty string, not a dropped chip",
+    );
+  });
+
+  it("normalizeChatPayload carries a user block's attachments", () => {
+    const payload = normalizeChatPayload({
+      rows: [
+        { role: "user", status: "complete", blocks: [{ type: "text", content: "see attached", attachments: [ref] }] },
+        { role: "user", status: "complete", blocks: [{ type: "text", content: "", attachments: [{ junk: 1 }] }] },
+      ],
+    })!;
+    assert.deepEqual(payload.rows?.[0]?.blocks?.[0]?.attachments, [ref]);
+    assert.equal(payload.rows?.[1]?.blocks?.[0]?.attachments, undefined, "malformed refs never render half-built");
+  });
+
+  it("renderTranscriptItems keeps a turn whose only payload is attachments", () => {
+    const items = renderTranscriptItems([
+      { kind: "user", id: "1", content: "", attachments: [ref] },
+      { kind: "user", id: "2", content: "", images: [{ media_type: "image/png", base64: "x" }] },
+      { kind: "user", id: "3", content: "" }, // genuinely empty: still dropped
+      { kind: "message", content: "ok" },
+    ]);
+    assert.equal(items.length, 3);
+    assert.equal(items[0]?.kind, "message");
+    assert.deepEqual((items[0] as { attachments?: unknown }).attachments, [ref]);
+    assert.equal(items[2]?.kind, "message", "the empty user turn is dropped");
   });
 });
 

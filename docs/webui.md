@@ -384,11 +384,15 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   focus-existing), URL sync (`/chat/<id>` vs `/`), scroll pinning,
   stacked-mode layout, live telemetry, tab-title spinner.
 - `composables/chat.ts` — the stream driver (per-tab state incl. image
-  attach). `composables/omega.ts` — typed API client: SSE
+  and file attachments: `attachments` = the base64 image lane,
+  `files` = the /attach-file reference records).
+  `composables/omega.ts` — typed API client: SSE
   `parseFrame`/`handlePayload`, `streamChat` (throws
   `StreamInterruptedError` when the reader errors or ends without
   `agent_end`), sessions CRUD + pinned/read PATCH + archive/unarchive,
-  search, transcript fetch, files browse/read, image attach,
+  search, transcript fetch, files browse/read, image attach
+  (`attachImageUrl`), non-image attach (`uploadAttachment` — the
+  multipart POST /attach-file, part order `session_id` then `file`),
   `renderMarkdown` (markdown-it, `html: false` — the lib's default
   escaping is the sanitizer), `createRenderScheduler`.
 - Shell: `MenuBar` (brand, nav cluster after the brand, the plain
@@ -412,7 +416,10 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   caret on the new line - pinned by the 102-composer-shift-enter
   journey and `webui/test/composershiftnl.test.ts`; ONE morphing action button -
   send/stop, dimmed at idle with no draft, `+` opens the file picker,
-  attach-strip with image thumbnails, paste + paperclip attach; the
+  attach-strip (image thumbnails + non-image reference chips: type
+  glyph + name + size, never thumbnailed - the reference lane,
+  composables/attachments.ts owns the glyph/size helpers), paste +
+  paperclip attach; the
   retry face is retired - the newest response's action row carries the
   msg-retry chip, card t_95d2bc34; `/` command palette + `@` mention
   picker, see below; the composer shape law lives in

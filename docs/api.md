@@ -437,7 +437,10 @@ panels, the toast events and this surface together.
 ### POST /attach-file
 
 `multipart/form-data`: one `file` part plus an optional `session_id` text
-part. The bytes are written into the session's upload directory
+part. PART ORDER IS LOAD-BEARING: the handler reads the parts in wire
+order, so `session_id` must precede `file` - reversed, the bytes stage
+under `_pending` and only `/chat`'s relocation moves them into the
+session dir. The bytes are written into the session's upload directory
 (`<home>/uploads/<session_id>/`), or - when no session id is supplied, as
 on a draft chat - into `<home>/uploads/_pending/<token>/`; `/chat` moves
 a staged file into the session's directory as soon as the id exists and

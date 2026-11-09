@@ -8,6 +8,7 @@
     :role="item.role"
     :content="item.content"
     :images="item.images"
+    :attachments="item.attachments"
     :time="item.time"
     :item-id="item.id"
     :variant="item.role === 'assistant' ? variant : null"
