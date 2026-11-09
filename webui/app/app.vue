@@ -12,6 +12,7 @@
       @toggle-bottom="toggleBottomPanel"
       @toggle-inspector="toggleInspector"
       @open-palette="openPalette"
+      @open-settings="openSettingsTab"
       @open-notification="openNotification" />
 
     <!-- drawer scrim: sibling of pane-area, NOT nested inside it - the
@@ -181,14 +182,17 @@
             class="pane" />
         </template>
 
-        <!-- card t_49d0b308: settings is an INSPECTOR tab - no other entry
-             point exists (the '+' menu no longer lists it); the tab lives
-             pinned in the inspector pane. The mount loads on activation
-             (the component's onMounted), the mobile drawer shares the
-             same open flag as the module panels. -->
+        <!-- card t_00e4a784 (Endo ruling 2026-11-09): settings is an
+             ON-DEMAND main-area tab now - the menubar gear opens it
+             (VSCode's settings tab), it closes like any tab, and the
+             pane renders here wherever the tab lives (mobile included:
+             the main pane is the one surface that never collapses).
+             The mount loads on activation (the component's onMounted),
+             so no `open` overlay flag rides the desktop tab; the mobile
+             drawers below keep their own copy for a free-content drag
+             of the tab into an edge shell. -->
         <template #pane-settings>
           <SettingsTab
-            v-if="!isMobile"
             class="pane"
             v-model:show-thinking="showThinking"
             v-model:appearance="appearance"
@@ -197,7 +201,6 @@
             :color-mode="colorMode"
             :theme-id="themeId"
             :user-themes="userThemes"
-            :open="inspectorOpen"
             @set-color-mode="setColorMode"
             @set-theme="setTheme" />
         </template>
@@ -1346,7 +1349,7 @@
   // clicks carry the pane focus: the document-level listener reads the
   // dock-pane id (DnD moves, menus and composer clicks all bubble here)
   // and remembers the LAST FOCUSED pane - the gear's settings tab opens
-  // into that pane (card 5's "focused main pane" target).
+  // into that pane (VSCode's active-editor-group read, card t_00e4a784).
   const lastPaneId = ref<string | null>(null);
   function onDocClick(e: MouseEvent) {
     const el = e.target instanceof Element ?
@@ -1765,6 +1768,23 @@
     dock.openSingleton(paneId, id);
   }
 
+  // card t_00e4a784 (Endo ruling 2026-11-09): the menubar gear's opener -
+  // settings is an on-demand MAIN tab (VSCode's settings tab). A live
+  // instance focuses in place (never a duplicate); otherwise the tab opens
+  // in the LAST FOCUSED main pane - VSCode's active-editor-group read, the
+  // same focus memory "close current tab" uses - and falls back to the
+  // first main pane (minted when the tree holds none).
+  function openSettingsTab() {
+    const found = findComponentTab(dock.tree.value, "settings");
+    if (found) {
+      dock.focus(found.paneId, found.index);
+      return;
+    }
+    const focused = lastPaneId.value ? findPane(dock.tree.value, lastPaneId.value) : null;
+    const paneId = focused && !focused.edge ? focused.id : dock.ensureMainPane();
+    dock.openSingleton(paneId, "settings");
+  }
+
   // "Switch to recent session" - the newest non-archived row, or the
   // sessions pane when the store is empty.
   function openRecentSessionTab() {
@@ -2025,11 +2045,10 @@
     { deep: true },
   );
 
-  // the gear is gone (card t_47b776ad): settings now opens from the
-  // pane '+' menu / the dock. The refetch-on-open survives the gear's
-  // death - this watch catches every absent -> present transition of
-  // the settings singleton, however it was opened (the drawer-era
-  // settingsOpen watch got the same job in the dock era).
+  // the gear is BACK (card t_00e4a784): settings opens from the menubar
+  // button as an on-demand main tab. The refetch-on-open rides the open
+  // transition of the settings singleton, however it was opened (the
+  // palette's "Open Settings" is the second door).
   watch(
     () => dock.has("settings"),
     (present, was) => {

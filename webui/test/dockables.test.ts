@@ -34,6 +34,7 @@ import {
   nextNodeId,
   openSingleton,
   moveTab,
+  findComponentTab,
   serialize,
   deserializeLayout,
   treeShapesMatch,
@@ -190,55 +191,64 @@ describe("the dockable registry", () => {
       // card t_36ceb99b: chat AND viewer are the closable multi class.
       // card t_95c91f9c: browser joins the closable class - a general
       // browser is closable like the content tabs, just singleton.
+      // card t_00e4a784: settings joins too - the menubar gear opens it
+      // as a closable main tab (VSCode's settings tab).
       assert.equal(
         isClosableTab(d.id),
-        d.id === "chat" || d.id === "viewer" || d.id === "browser",
-        `${d.id}: closable == chat|viewer|browser`,
+        d.id === "chat" || d.id === "viewer" || d.id === "browser" || d.id === "settings",
+        `${d.id}: closable == chat|viewer|browser|settings`,
       );
     }
   });
 
-  it("policy split: chat + viewer multi (t_36ceb99b: the viewer mints per opened content); the closable class adds browser singleton (t_95c91f9c)", () => {
+  it("policy split: chat + viewer multi (t_36ceb99b: the viewer mints per opened content); the closable class adds browser + settings singletons (t_95c91f9c, t_00e4a784)", () => {
     const multi = DOCKABLES.filter((d) => d.policy === "multi").map((d) => d.id);
     assert.deepEqual(multi, ["chat", "viewer"]);
     const closable = DOCKABLES.filter((d) => isClosableTab(d.id)).map((d) => d.id);
-    assert.deepEqual([...closable].sort(), ["browser", "chat", "viewer"]);
+    assert.deepEqual([...closable].sort(), ["browser", "chat", "settings", "viewer"]);
   });
 
-  it("the fixed sidebars: sidebar pinned left, the inspector TWELVE pinned right (t_49d0b308 + t_14f73742 + t_d7fd3ad3 + arc 3c canvas + t_c7136c50 mcp + t_180db2cb notifications)", () => {
+  it("the fixed sidebars: sidebar pinned left, the inspector TEN pinned right (t_49d0b308 + t_14f73742 + t_d7fd3ad3 + arc 3c canvas + t_c7136c50 mcp + t_180db2cb notifications; t_00e4a784 retired settings)", () => {
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "left").map((d) => d.id),
       ["sidebar"],
     );
     // the default order is the ruling's: files, cron, logs, skills,
-    // tools, settings, kanban, extensions, insights, mcp (logs = the
+    // tools, kanban, extensions, insights, mcp (logs = the
     // http_channel module id; extensions joined last at t_14f73742;
     // insights joined the right shell at t_d7fd3ad3; mcp joined last
-    // at t_c7136c50; notifications joined last at t_180db2cb)
+    // at t_c7136c50; notifications joined last at t_180db2cb; settings
+    // left for the on-demand main tab at t_00e4a784)
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "right").map((d) => d.id),
-      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
     );
     // the inspector tab inventory IS the right-area set, in one place
     assert.deepEqual(
       [...INSPECTOR_TAB_COMPONENTS],
-      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
     );
     assert.ok(
       INSPECTOR_TAB_COMPONENTS.every((c) => !isClosableTab(c)),
-      "no X on any of the twelve",
+      "no X on any of the ten",
     );
   });
 
-  it("settings has NO other entry point (t_49d0b308): the '+' inventory excludes it", () => {
-    // settings has no menu path (ruling, t_d6b657a7): persistence and the
-    // default-arrangement fallback are its only entry. MAIN_DOCKABLES (the
-    // main-area list) and MENU_DOCKABLES (the refill inventory) both
-    // exclude it. card t_d7fd3ad3: insights LEFT the main area (its home
-    // is the right shell). card t_36ceb99b: viewer joins the MAIN class
-    // (multi, row-click opened) but not the MENUS - an empty viewer tab
-    // is meaningless, content IS the tab.
-    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "viewer", "browser"]);
+  it("settings: NO inspector seat, NO '+' entry - the menubar gear is the entry point (t_00e4a784)", () => {
+    // the ruling's three facts on the registry: main area, closable,
+    // absent from both the fixed inspector set and the refill inventory.
+    const settings = DOCKABLES.find((d) => d.id === "settings")!;
+    assert.equal(settings.area, "main", "settings is a main-area tab");
+    assert.equal(settings.closable, true, "and closes like any tab");
+    assert.equal(settings.policy, "singleton", "one settings tab, ever");
+    assert.ok(!INSPECTOR_TAB_COMPONENTS.includes("settings"), "never a pinned inspector view");
+    // MAIN_DOCKABLES (the main-area list) carries it; MENU_DOCKABLES (the
+    // '+' refill inventory) does not - the menubar button is the door.
+    // card t_d7fd3ad3: insights LEFT the main area (its home is the right
+    // shell). card t_36ceb99b: viewer joins the MAIN class (multi,
+    // row-click opened) but not the MENUS - an empty viewer tab is
+    // meaningless, content IS the tab.
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "viewer", "settings", "browser"]);
     // card t_95c91f9c: the browser joins the main class. It IS
     // menu-fillable: the empty-pane '+' menu is a real entry point
     // (a browser tab is meaningful with no site yet - the bar IS the
@@ -249,8 +259,7 @@ describe("the dockable registry", () => {
     assert.ok(!MENU_DOCKABLES.includes("sidebar"), "sessions never opens by menu");
     assert.ok(MENU_DOCKABLES.includes("kanban"), "kanban IS refillable");
     // card t_14f73742: extensions IS refillable - the '+' menu is a real
-    // entry point for the inventory tab (unlike settings, it has a
-    // routeable panel body over GET /extensions)
+    // entry point for the inventory tab
     assert.ok(MENU_DOCKABLES.includes("extensions"), "extensions IS refillable");
     // card t_d7fd3ad3: insights stays menu-fillable - the singleton
     // opener FOCUSES its inspector instance (clean coexistence with the
@@ -301,14 +310,14 @@ describe("the dockable registry", () => {
       { ...COMPONENT_TITLES },
     );
     // the pinned sidebars have no menu-open path (card t_4ae27e0d);
-    // settings left the main class (card t_49d0b308) and insights left
-    // with it (card t_d7fd3ad3: its home is the right shell).
-    // card t_36ceb99b: the viewer joins the main class.
+    // insights left the main class (card t_d7fd3ad3: its home is the
+    // right shell). card t_36ceb99b: the viewer joins the main class.
     // card t_95c91f9c: the browser joins the main class (singleton, the
-    // '+' menu opener focuses it like every singleton).
+    // '+' menu opener focuses it like every singleton). card t_00e4a784:
+    // settings is BACK in the main class (the menubar gear's tab).
     const ids = DOCKABLES.map((d) => d.id);
     assert.ok(MAIN_DOCKABLES.every((c) => ids.includes(c)));
-    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "viewer", "browser"]);
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "viewer", "settings", "browser"]);
     // card t_d7fd3ad3 items 1+3: the two header voices go capital -
     // "Sessions" (primary) and "Insights" (secondary); the module-tab
     // and inspector-voice titles stay lowercase by Endo's call
@@ -423,11 +432,17 @@ describe("openSingleton", () => {
       assert.equal(res.action, "noop", `${c} opens nowhere`);
       assert.equal(res.tree, t);
     }
-    // ...but settings/kanban/files DO (they open wherever the user aims)
-    for (const c of ["settings", "kanban"] as const) {
+    // ...but kanban/files DO (they open wherever the user aims); settings
+    // no longer lives in the tree (card t_00e4a784) - the opener CREATES
+    // its tab on first click, the focus arm covers the second
+    for (const c of ["kanban"] as const) {
       const res = openSingleton(t, firstMainPaneId(t)!, c);
       assert.equal(res.action, "focused", `${c} already lives - focus wins`);
     }
+    const fresh = openSingleton(t, firstMainPaneId(t)!, "settings");
+    assert.equal(fresh.action, "created", "settings opens on demand");
+    const again = openSingleton(fresh.tree, firstMainPaneId(t)!, "settings");
+    assert.equal(again.action, "focused", "a second click focuses the one tab");
   });
 });
 
@@ -451,7 +466,7 @@ describe("dock store: the pane-model reset", () => {
     });
   });
 
-  it("a loaded pre-reset tree modernizes: the inspector tab expands, settings+kanban join (t_49d0b308)", async () => {
+  it("a loaded pre-reset tree modernizes: the inspector tab expands, settings+kanban join (t_49d0b308; settings retired again by t_00e4a784)", async () => {
     const legacy: DockNode = {
       kind: "split",
       id: "n1",
@@ -476,9 +491,12 @@ describe("dock store: the pane-model reset", () => {
       // insights AFTER the restored set - the modernized v1 strip ends
       // [extensions, mcp, insights]. The fresh-tree default stays
       // canonical (dock.test.ts).
-      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "mcp", "notifications", "insights"],
-      "the chip strip's tabs are real now, and the two new views are in",
+      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "mcp", "notifications", "insights"],
+      "the chip strip's tabs are real now, and the new views are in",
     );
+    // card t_00e4a784: settings is NOT re-seated by the modernizer - the
+    // menubar gear owns it as an on-demand main tab
+    assert.equal(findComponentTab(tree, "settings"), null);
     // persisted at once so the next boot never re-modernizes; the record
     // shape is v:3 (px shares): the same RENDER, but fixed children's
     // fractions re-derive from their px, so compare through the shape law
@@ -486,7 +504,7 @@ describe("dock store: the pane-model reset", () => {
     assert.ok(back && treeShapesMatch(back.tree, tree), "the modern tree persisted on boot (same render)");
   });
 
-  it("a five-tab-era inspector gains settings + kanban in the canonical order (t_49d0b308)", async () => {
+  it("a five-tab-era inspector gains kanban + friends in the canonical order, settings stays out (t_49d0b308, t_00e4a784)", async () => {
     const oldFive: DockNode = {
       kind: "split",
       id: "n1",
@@ -513,15 +531,15 @@ describe("dock store: the pane-model reset", () => {
     const insp = paneById(dock.tree.value, "n4");
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
     );
     assert.equal(insp.active, 2, "the user's active view stays put");
   });
 
-  it("a v1-era tree with settings parked in a MAIN pane strips it back to the era law", async () => {
-    // the t_49d0b308 era: settings lived in the inspector only. A v1
-    // persisted literal still gets that migration (openTab would refuse
-    // building it today, so the literal is constructed by hand)
+  it("a v1-era tree with settings parked in a MAIN pane KEEPS it - the main class is its home now (t_00e4a784)", async () => {
+    // the t_49d0b308 era stripped this seat; the 2026-11-09 ruling
+    // REVERSED it - settings opens as a main tab, so a persisted
+    // main-pane copy is the user's own tab and survives the load
     const t0: DockNode = {
       kind: "split",
       id: "n1",
@@ -552,35 +570,32 @@ describe("dock store: the pane-model reset", () => {
     const dock = createDock(mem as unknown as Storage);
     await flush();
     const tree = dock.tree.value;
-    // the chat pane is back to chat-only; the inspector pane holds the
-    // ONE settings tab (pinned), in the canonical order
     const row = mainRowOf(tree); // t_67fc1905: the column root holds the row + the bottom shell
     const chatPane = paneById(tree, row.children[1].id);
     assert.deepEqual(
       chatPane.tabs.map((x) => x.component),
-      ["chat"],
-      "the stray settings tab left the main pane",
+      ["chat", "settings"],
+      "the main-pane settings tab is the new law's normal home",
     );
     const insp = paneById(tree, row.children[2].id);
     assert.equal(
       insp.tabs.filter((t) => t.component === "settings").length,
-      1,
-      "exactly one settings tab, in the inspector",
+      0,
+      "never a second, pinned copy in the inspector",
     );
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
       // same lift-and-reseat shape as the pre-reset modernize above: the
-      // parked-settings era tree loses the main-pane insights copy and
-      // restoreInspectorSet re-seats it after the restored mcp
-      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "mcp", "notifications", "insights"],
+      // insights copy lifts back to the right shell
+      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "mcp", "notifications", "insights"],
     );
   });
 
-  it("a v2 tree with settings dragged into a main pane KEEPS it (free content)", async () => {
+  it("a v2 tree with a right-area tab dragged into a main pane KEEPS it (free content)", async () => {
     let t: DockNode = defaultTree();
-    // settings is tab 5 of the inspector bar (continuous folded away,
-    // t_c7222095; logs left the strip - Endo's 2026-10-26): drag it
-    // into the main pane
+    // kanban is tab 5 of the inspector bar (settings left the strip -
+    // t_00e4a784; continuous folded away - t_c7222095): drag it into the
+    // main pane
     t = moveTab(t, asSplit(t).children[2].id, 5, asSplit(t).children[1].id, 0);
     const mem = new MemoryStorage();
     mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
@@ -590,13 +605,13 @@ describe("dock store: the pane-model reset", () => {
     const main = paneById(tree, mainRowOf(tree).children[1].id);
     assert.deepEqual(
       main.tabs.slice(0, 2).map((x) => x.component),
-      ["settings", "chat"],
+      ["kanban", "chat"],
       "the user's drag survives the reload verbatim",
     );
-    // no second settings: the fallback only re-adds MISSING singletons
+    // no second kanban: the fallback only re-adds MISSING singletons
     assert.equal(
       [...allNodes(tree)].reduce(
-        (n, p) => n + (p.kind === "pane" ? p.tabs.filter((x) => x.component === "settings").length : 0),
+        (n, p) => n + (p.kind === "pane" ? p.tabs.filter((x) => x.component === "kanban").length : 0),
         0,
       ),
       1,
@@ -723,7 +738,7 @@ describe("dock store: the pane-model reset", () => {
     await flush();
     assert.equal(
       paneById(dock.tree.value, files.id).tabs.map((x) => x.component as string).join(","),
-      "files,cron,skills,tools,agents,settings,kanban,extensions,insights,mcp,notifications",
+      "files,cron,skills,tools,agents,kanban,extensions,insights,mcp,notifications",
       "none of them may close (logs left the strip - Endo's comment 2026-10-26)",
     );
     // the main class still closes through the store on ANY census read
@@ -733,6 +748,26 @@ describe("dock store: the pane-model reset", () => {
     dock.closeTab(chatPane.id, 0);
     await flush();
     assert.equal(paneById(dock.tree.value, chatPane.id).tabs.length, 0);
+  });
+
+  it("a settings tab closes through the store like chat (t_00e4a784)", async () => {
+    const mem = new MemoryStorage();
+    mem.setItem(DOCK_LAYOUT_KEY, serialize(defaultTree()));
+    const dock = createDock(mem as unknown as Storage);
+    await flush();
+    const paneId = dock.ensureMainPane();
+    assert.equal(dock.openSingleton(paneId, "settings"), "created", "the gear's open mints the tab");
+    await flush();
+    let pane = paneById(dock.tree.value, paneId);
+    assert.ok(pane.tabs.some((t) => t.component === "settings"), "settings opened into the main pane");
+    const idx = pane.tabs.findIndex((t) => t.component === "settings");
+    dock.closeTab(paneId, idx);
+    await flush();
+    pane = paneById(dock.tree.value, paneId);
+    assert.equal(pane.tabs.some((t) => t.component === "settings"), false, "closes like any tab");
+    // and the gear's opener brings it back, never a duplicate
+    assert.equal(dock.openSingleton(paneId, "settings"), "created", "re-opens after a close");
+    assert.equal(dock.openSingleton(paneId, "settings"), "focused", "the second click focuses");
   });
 });
 

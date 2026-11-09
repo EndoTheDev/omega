@@ -178,6 +178,43 @@ func (tz *tokenizer) run(input string) error {
 			}
 			i++
 		case mode == modeNormal && (r == '|' || r == ';' || r == '&'):
+			// fd-prefixed redirect forms (2>, 2>>, 2>&1, &>) are
+			// classified BEFORE control operators (t_2919b7a3.1):
+			// '&' inside a redirect is never a background operator.
+			if r == '&' {
+				switch {
+				case isRedirectOpForm(cur.text):
+					// descriptor-dup continuation: 2>&1, 1>&2,
+					// >&3. The digit operand rides immediately;
+					// anything else (2>&log.txt) is a file-dup
+					// write and continues into the word below.
+					cur.text += "&"
+					i++
+					for i < len(rs) && rs[i] >= '0' && rs[i] <= '9' {
+						cur.text += string(rs[i])
+						i++
+					}
+					continue
+				case cur.text == "" && i+1 < len(rs) && rs[i+1] == '>':
+					// stream-both redirect token at a word start
+					// (&>, &>>); the file operand is the next
+					// word (spaced) or rides in fused
+					cur.text = "&>"
+					i += 2
+					if i < len(rs) && rs[i] == '>' {
+						cur.text = "&>>"
+						i++
+					}
+					continue
+				}
+			}
+			if isRedirectOpForm(cur.text) || isDupAwaiting(cur.text) {
+				// Fail visible (t_2919b7a3.3): a control operator
+				// arriving while a redirect token still awaits its
+				// operand (2>, >>, 2>&) cannot be classified -
+				// never fold or reshape it silently.
+				return fmt.Errorf("unclassified redirect shape near %q", cur.text)
+			}
 			// doubled forms first: && || ; | &
 			if i+1 < len(rs) && rs[i+1] == r && (r == '|' || r == '&') {
 				if err := emitOp(string(r) + string(rs[i+1])); err != nil {
@@ -191,6 +228,10 @@ func (tz *tokenizer) run(input string) error {
 			}
 			i++
 		case mode == modeNormal && (r == '(' || r == ')'):
+			if isRedirectOpForm(cur.text) || isDupAwaiting(cur.text) {
+				// same fail-visible law as the control operators
+				return fmt.Errorf("unclassified redirect shape near %q", cur.text)
+			}
 			if err := emitOp(string(r)); err != nil {
 				return err
 			}
@@ -299,6 +340,27 @@ func (tz *tokenizer) run(input string) error {
 	consumeWord()
 	tz.out = append(tz.out, words...)
 	return nil
+}
+
+// isRedirectOpForm reports whether a word is exactly an fd-prefixed
+// redirect operator still waiting for its shape: >, >>, 2>, 21>>, <.
+// One fd number may prefix the operator; nothing else may ride it.
+func isRedirectOpForm(w string) bool {
+	switch strings.TrimLeft(w, "0123456789") {
+	case ">", ">>", "<":
+		return true
+	}
+	return false
+}
+
+// isDupAwaiting reports an fd-dup redirect whose '&' was consumed but
+// whose operand never arrived (2>&, <&) - the dup form still open.
+func isDupAwaiting(w string) bool {
+	switch strings.TrimLeft(w, "0123456789") {
+	case ">&", "<&":
+		return true
+	}
+	return false
 }
 
 func isUserWord(r rune) bool {

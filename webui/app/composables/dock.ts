@@ -630,8 +630,9 @@ export function rehomeLogsTab(tree: DockNode): DockNode {
     of the two (a pre-marker tree) gets it re-inserted at its edge, and the
     loader's rulings are re-asserted: sessions ALWAYS sits in the left
     shell's bar, and inspector-area singletons missing from the whole tree
-    return to the right shell (the default arrangement fallback - settings
-    has no menu path). EXCEPTION (card t_aa9dbada): a shell in `closed`
+    return to the right shell (the default arrangement fallback - a seat
+    that only lives on demand, like settings behind the menubar gear, is
+    never in that set). EXCEPTION (card t_aa9dbada): a shell in `closed`
     (the user left it closed - the record persists that) stays out. Pure;
     fully-satisfied tree returns unchanged. */
 export function ensurePinnedEdges(
@@ -737,9 +738,9 @@ export function forceSessionsLeft(tree: DockNode): DockNode {
 }
 
 /** the default-arrangement fallback (t_d6b657a7): any inspector-area
-    singleton absent from the WHOLE tree (settings has no menu entry;
-    unclosable tabs only die with their pane) is restored INTO the right
-    shell, appended in the registry's canonical order. Pure. */
+    singleton absent from the WHOLE tree (unclosable tabs only die with
+    their pane) is restored INTO the right shell, appended in the
+    registry's canonical order. Pure. */
 export function restoreInspectorSet(
   tree: DockNode,
   /** card t_9ed6cad7: components a CLOSED shell's stow records - never
@@ -836,25 +837,23 @@ export function expandInspectorTabs(tree: DockNode): DockNode {
     the main-pane class and the kanban board joined it. Trees persisted
     while the inspector held five tabs get them back: every pane hosting
     a right-area tab gains the missing right-area tabs, in the registry's
-    canonical order, and a "settings" tab that survived in a MAIN pane
-    (its pre-move home) is removed - its only home is the inspector pane
-    now. No-op returns the SAME tree. Pure. */
+    canonical order. card t_00e4a784: settings LEFT the set again (the
+    menubar gear opens it as a main tab) - this pass never touches a
+    settings tab, and since "settings" is absent from the rank map a
+    pane holding only settings no longer reads as an inspector host
+    (retireInspectorSettings owns that seat on every load). No-op
+    returns the SAME tree. Pure. */
 export function upgradeInspectorTabs(tree: DockNode): DockNode {
   const rank = new Map(INSPECTOR_TAB_COMPONENTS.map((c, i) => [c, i]));
-  // "settings" alone does NOT make a pane the inspector pane: the
-  // pre-move shell parked it in main panes, so a real inspector pane is
-  // one hosting any OTHER right-area id
-  const isInspectorTab = (c: DockComponentName) =>
-    rank.has(c) && c !== "settings";
+  // a pane is the pre-marker inspector host when it carries a right-area
+  // id; the pre-move main-pane settings seat never makes one
+  const isInspectorTab = (c: DockComponentName) => rank.has(c);
   let done = false;
   const copy = clone(tree);
   for (const n of allNodes(copy)) {
     if (!isPane(n)) continue;
     const hosts = n.tabs.some((t) => isInspectorTab(t.component));
     const next = n.tabs
-      // strip the pre-move settings tab from panes that are NOT the
-      // inspector pane; the inspector pane's own copy survives
-      .filter((t) => hosts || t.component !== "settings")
       // missing right-area tabs join the pane (the inspector group's
       // tab list is fixed chrome - every held pane holds them all)
       .concat(
@@ -876,6 +875,42 @@ export function upgradeInspectorTabs(tree: DockNode): DockNode {
     }
   }
   return done ? copy : tree;
+}
+
+/** card t_00e4a784 (Endo ruling 2026-11-09): settings left the inspector
+    - the menubar gear opens it as a closable MAIN tab (VSCode's settings
+    tab). Trees persisted while it was a pinned inspector view still hold
+    that seat, so this retires it: every settings tab living in the RIGHT
+    shell (the pane itself or a leaf of a grown right root) is dropped and
+    the active index clamps along. A pre-marker pane hosting other
+    right-area ids reads as that shell too. A settings tab the user parked
+    in ANOTHER pane stays - free content, and the main class is its home
+    now. Pure; no-op returns the SAME tree. */
+export function retireInspectorSettings(tree: DockNode): DockNode {
+  const inInspector = (n: DockNode): n is DockPane =>
+    isPane(n) &&
+    (n.edge === "right" ||
+      rootPaneOf(tree, n.id)?.edge === "right" ||
+      // legacy pre-marker trees: content fingerprint (the
+      // upgradeInspectorTabs read)
+      (!n.edge &&
+        n.tabs.some((t) =>
+          (INSPECTOR_TAB_COMPONENTS as readonly string[]).includes(t.component))));
+  let seated = false;
+  for (const n of allNodes(tree)) {
+    if (inInspector(n) && isPane(n) && n.tabs.some((t) => t.component === "settings")) {
+      seated = true;
+      break;
+    }
+  }
+  if (!seated) return tree;
+  return cloneTreeWith(tree, (n) => {
+    if (!inInspector(n)) return;
+    const idx = n.tabs.findIndex((t) => t.component === "settings");
+    if (idx < 0) return;
+    n.tabs = n.tabs.filter((t) => t.component !== "settings");
+    n.active = clamp(idx < n.active ? n.active - 1 : n.active, 0, n.tabs.length - 1);
+  });
 }
 
 // --- the singleton opener (card t_30ee04fb) ---------------------------------
@@ -3017,9 +3052,10 @@ const EDGE_DEFAULT_PX: Record<"sidebar" | "inspector", number> = {
 export function createDock(store: Storage): DockApi {
   // card t_d6b657a7: the persisted VERSION rides the load - v1 trees go
   // through the era migration (legacy "inspector" ids expand, the
-  // five-tab-era inspector regains settings+kanban), then all loads pass
-  // the same modernization: markers derived, shells re-asserted, sessions
-  // forced into the left bar, missing inspector singletons restored.
+  // five-tab-era inspector regains kanban and friends), then all loads
+  // pass the same modernization: markers derived, shells re-asserted,
+  // sessions forced into the left bar, missing inspector singletons
+  // restored, a legacy settings seat retired (card t_00e4a784).
   const stored = store.getItem(DOCK_LAYOUT_KEY);
   const loaded = parseAnyLayout(stored, () => migrateLegacy((k) => store.getItem(k)));
   // card t_aa9dbada: the closed-edge set rides the record - the reload
@@ -3048,6 +3084,10 @@ export function createDock(store: Storage): DockApi {
     for (const comp of Object.keys(loaded.hiddenEdges) as DockEdgeComponent[]) {
       const pane = loaded.hiddenEdges[comp];
       if (pane) {
+        // card t_00e4a784: a stow recorded while settings was a pinned
+        // inspector view carries that seat - retire it here too, or the
+        // shell's reveal would restore a settings tab the ruling removed
+        pane.tabs = pane.tabs.filter((t) => t.component !== "settings");
         hiddenState[comp] = pane;
         syncTabKeySeed(pane);
       }
@@ -3072,6 +3112,11 @@ export function createDock(store: Storage): DockApi {
   // main-pane strand lifts before the shell repair so restoreInspectorSet
   // seats it in the right pane on the same boot.
   initial = rehomeInsightsTab(initial);
+  // card t_00e4a784: settings' home moved the OTHER way (the inspector ->
+  // an on-demand main tab behind the menubar gear). A persisted pinned
+  // seat retires before the shell repair - restoreInspectorSet no longer
+  // names settings, so nothing re-seats it.
+  initial = retireInspectorSettings(initial);
   // the CLOSED shells' stows count as the tree's composition while they sit
   // hidden (t_9ed6cad7): the missing-set repair never re-seats them
   const stowedComponents = Object.keys(hiddenState) as DockEdgeComponent[];
