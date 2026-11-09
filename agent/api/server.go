@@ -87,6 +87,17 @@ type Server struct {
 	bootCtx     context.Context
 	bootStop    context.CancelFunc
 	yieldLedger agent.YieldLedger
+	// ephLedger is the `eph-` lane of the pending-calls table (card
+	// t_61d3def9, session-type parity): the in-memory backing beside
+	// the ephRegistry, wired into yieldLedger through
+	// sessionTypedLedger when the store carries the durable surface.
+	// RESTART EATS ITS PENDING RESULTS - the eph mode's own contract
+	// (the session dies with the process; a pending result cannot
+	// outlive its home), documented at sessionTypedLedger. It doubles
+	// as the whole table's floor when no store carries the surface -
+	// then every session is memory-backed, the documented store-less
+	// degradation.
+	ephLedger *agent.MemYieldLedger
 
 	// titleModel is the title_model knob: session-title calls route
 	// through this model when set, instead of the call's pinned
@@ -275,17 +286,26 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 	s.chat = NewChatCapsule()
 	s.chat.srv.Store(s)
 	// The yield harness (async agent loop phase 1, t_f3f953d0): the
-	// pending-calls table is the store's when it carries the surface
-	// (durability across restarts), the in-memory floor otherwise; the
-	// wake injects through the same home input path a user send takes.
-	// A nil agent (some tests construct a bare Server) skips the
-	// harness entirely.
+	// pending-calls table is session-typed (card t_61d3def9) - the
+	// store's surface for durable sessions when it carries it, the
+	// in-memory eph lane for `eph-` homes always; the wake injects
+	// through the same home input path a user send takes. A nil agent
+	// (some tests construct a bare Server) skips the harness
+	// entirely.
 	s.bootCtx, s.bootStop = context.WithCancel(context.Background())
 	s.wakes = newWakeHub()
+	// Session-typed pending-calls table (card t_61d3def9): the `eph-`
+	// lane lives in memory beside the ephRegistry - an ephemeral
+	// session's rows are process-local (restart eats its pending
+	// results: the mode's own contract, see sessionTypedLedger), and
+	// nothing it owns may land in the store. Durable sessions keep
+	// the store's table when the store carries the surface; a store
+	// without it keeps the one in-memory floor for every session.
+	s.ephLedger = agent.NewMemYieldLedger()
 	if yl, ok := store.(agent.YieldLedger); ok {
-		s.yieldLedger = yl
+		s.yieldLedger = sessionTypedLedger{durable: yl, ephemeral: s.ephLedger}
 	} else {
-		s.yieldLedger = agent.NewMemYieldLedger()
+		s.yieldLedger = s.ephLedger
 	}
 	if a != nil {
 		a.SetYieldLedger(s.yieldLedger)
