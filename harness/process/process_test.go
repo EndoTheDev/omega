@@ -64,9 +64,9 @@ func stateEntry(t *testing.T, r *Registry, name string) Entry {
 	return e
 }
 
-// TestSpawnReadWaitKill is the happy path: spawn, the log carries the
+// TestSpawnReadKill is the happy path: spawn, the log carries the
 // output, the process is live, kill stops it, the state is exited.
-func TestSpawnReadWaitKill(t *testing.T) {
+func TestSpawnReadKill(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
 	e, err := r.Spawn(context.Background(), "echo out-line; sleep 120", "worker", "")
@@ -108,24 +108,24 @@ func TestExitCodeRecorded(t *testing.T) {
 	if _, err := r.Spawn(context.Background(), "sleep 0.3; exit 7", "boom", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	got, err := r.Wait(context.Background(), "boom", 0)
-	if err != nil {
-		t.Fatalf("wait: %v", err)
-	}
-	if !strings.Contains(got, "code=7") {
-		t.Fatalf("wait reply missing exit code 7: %s", got)
-	}
+	waitFor(t, 5*time.Second, "boom to exit", func() bool {
+		e, ok := r.Find("boom")
+		return ok && e.Exited
+	})
 	e := stateEntry(t, r, "boom")
-	if !e.Exited || e.ExitCode == nil || *e.ExitCode != 7 || e.FinishedAt == 0 {
+	if !strings.Contains(stateOf(&e), "code=7") {
+		t.Fatalf("exit state missing code 7: %s", stateOf(&e))
+	}
+	if e.ExitCode == nil || *e.ExitCode != 7 || e.FinishedAt == 0 {
 		t.Fatalf("exit record incomplete: %+v", e)
 	}
 	if _, err := r.Spawn(context.Background(), "sleep 0.2; exit 0", "quiet", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	got, err = r.Wait(context.Background(), "quiet", 0)
-	if err != nil || !strings.Contains(got, "code=0") {
-		t.Fatalf("zero-exit wait: %s err=%v", got, err)
-	}
+	waitFor(t, 5*time.Second, "quiet to exit", func() bool {
+		e, ok := r.Find("quiet")
+		return ok && e.Exited
+	})
 	if e := stateEntry(t, r, "quiet"); e.ExitCode == nil || *e.ExitCode != 0 {
 		t.Fatalf("zero exit stored as non-zero: %+v", e)
 	}
@@ -222,9 +222,10 @@ func TestReplaceExitedRotatesLog(t *testing.T) {
 	if _, err := r.Spawn(context.Background(), "echo gen-one", "rot", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	if _, err := r.Wait(context.Background(), "rot", 5); err != nil {
-		t.Fatalf("wait: %v", err)
-	}
+	waitFor(t, 5*time.Second, "rot to exit", func() bool {
+		e, ok := r.Find("rot")
+		return ok && e.Exited
+	})
 	if _, err := r.Spawn(context.Background(), "echo gen-two; sleep 0.3", "rot", ""); err != nil {
 		t.Fatalf("re-spawn: %v", err)
 	}
@@ -353,7 +354,7 @@ func TestCorruptStateIgnored(t *testing.T) {
 	}
 }
 
-// TestToolFace drives the five verbs through the dispatcher the tool
+// TestToolFace drives the four verbs through the dispatcher the tool
 // Runs route through (the args exactly as the merged tool call carries
 // them).
 func TestToolFace(t *testing.T) {
@@ -391,18 +392,14 @@ func TestToolFace(t *testing.T) {
 	if err != nil || !strings.Contains(capped, "truncated") {
 		t.Fatalf("capped read tool: %s err=%v", capped, err)
 	}
-	if got, err := prov.run(context.Background(), map[string]any{"action": "wait", "name": "toolled", "timeout_seconds": 1}); err != nil || !strings.Contains(got, "still running") {
-		t.Fatalf("wait tool: %s err=%v", got, err)
-	}
 	if got, err := prov.run(context.Background(), map[string]any{"action": "kill", "name": "toolled"}); err != nil || !strings.Contains(got, "stopped") {
 		t.Fatalf("kill tool: %s err=%v", got, err)
 	}
-	// the removal path (card t_304afb4e): the now-exited handle leaves
-	if got, err := prov.run(context.Background(), map[string]any{"action": "remove", "name": "toolled"}); err != nil || !strings.Contains(got, "removed") {
-		t.Fatalf("remove tool: %s err=%v", got, err)
-	}
-	if _, ok := prov.reg.Find("toolled"); ok {
-		t.Fatal("the removed handle is still listed")
+	// the retention contract: the exited handle stays in the registry
+	// (and its log on disk) until the sweep - that post-mortem read is
+	// the point of keeping a log at all.
+	if e, ok := prov.reg.Find("toolled"); !ok || !e.Exited {
+		t.Fatalf("the exited handle must stay listed: %+v ok=%v", e, ok)
 	}
 	if _, err := prov.run(context.Background(), map[string]any{"action": "bogus"}); err == nil {
 		t.Fatal("unknown action must error")
@@ -518,10 +515,10 @@ func TestPostMortemRead(t *testing.T) {
 	if _, err := r.Spawn(context.Background(), "echo post-mortem-ok", "gone", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	got, err := r.Wait(context.Background(), "gone", 10)
-	if err != nil || !strings.Contains(got, "exited") {
-		t.Fatalf("wait: %s err=%v", got, err)
-	}
+	waitFor(t, 10*time.Second, "gone to exit", func() bool {
+		ee, ok := r.Find("gone")
+		return ok && ee.Exited
+	})
 	// the finished log is still at its recorded path - no exit-time rotation
 	e := stateEntry(t, r, "gone")
 	if _, err := os.Stat(e.LogPath); err != nil {
@@ -598,45 +595,6 @@ func TestCapExitedLog(t *testing.T) {
 	r.capExited(&Entry{Name: "thin", LogPath: small, Exited: true})
 	if data, err := os.ReadFile(small); err != nil || len(data) != 4 {
 		t.Fatalf("a sub-cap log must be untouched: %q err=%v", data, err)
-	}
-}
-
-// TestRemoveExitedEntry (card t_304afb4e): the removal path - a
-// RUNNING handle is refused, an exited one leaves with its log
-// generations, an unknown name errors.
-func TestRemoveExitedEntry(t *testing.T) {
-	r := testRegistry(t)
-	sleeper := "sleep 300"
-	if runtime.GOOS == "windows" {
-		sleeper = "ping -n 300 127.0.0.1 > nul"
-	}
-	if _, err := r.Spawn(context.Background(), sleeper, "hold", ""); err != nil {
-		t.Fatalf("spawn: %v", err)
-	}
-	if _, err := r.Remove("hold"); err == nil {
-		t.Fatal("removing a RUNNING name must be refused")
-	}
-	if _, err := r.Kill("hold"); err != nil {
-		t.Fatalf("kill: %v", err)
-	}
-	waitFor(t, 10*time.Second, "the kill to land", func() bool {
-		e, ok := r.Find("hold")
-		return ok && e.Exited
-	})
-	note, err := r.Remove("hold")
-	if err != nil || !strings.Contains(note, "removed") {
-		t.Fatalf("remove: %s err=%v", note, err)
-	}
-	if _, ok := r.Find("hold"); ok {
-		t.Fatal("the entry survived removal")
-	}
-	// state file agrees
-	fresh := NewRegistry(Config{Home: r.cfg.Home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
-	if _, ok := fresh.Find("hold"); ok {
-		t.Fatal("the removed entry survived a registry reload")
-	}
-	if _, err := r.Remove("hold"); err == nil {
-		t.Fatal("removing an unknown name must error")
 	}
 }
 
