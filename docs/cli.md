@@ -24,6 +24,7 @@ omega update --rollback   swap back to omega.bak + health-verify
 omega rollback            alias for omega update --rollback
 omega health          check the server at the configured port
 omega kanban          the task board registry (see: omega kanban --help)
+omega mcp             MCP server entries: list, add, edit, delete (see: omega mcp --help)
 ```
 
 ## Subcommands
@@ -202,6 +203,41 @@ whatever is on 8098.
 ```bash
 OMEGA_HEALTH_HOST=127.0.0.1 omega health
 ```
+
+### `omega mcp` (MCP server entries)
+
+`omega mcp list|add|edit|delete` is the terminal face of the MCP dock
+tab's editor. Entries live in the `mcp.yaml` the loader reads
+(`<home>/mcp.yaml` legacy location first, then `<home>/config/mcp.yaml`)
+- the file is the store, and every write is the same law the wire
+rides: validate, splice the one entry at the `yaml.Node` level
+(comments and keys survive), write atomically, then swap the live
+bridge. No restart, and a removed or disabled server's connections
+close in the swap.
+
+```bash
+omega mcp                                      # same as `omega mcp list`
+omega mcp list                                 # name, transport, enabled, state, tools, error
+omega mcp add docs --url http://127.0.0.1:27123/mcp/ --header "Authorization:Bearer x"
+omega mcp add fs --command npx --arg -y --arg @modelcontextprotocol/server-filesystem --arg /home/me
+omega mcp edit docs --enabled=false            # only the flags you pass are applied
+omega mcp delete fs
+```
+
+Entry flags: `--command` (stdio) and `--url` (Streamable HTTP) are
+exclusive; `--arg`, `--env KEY=VALUE` belong to stdio and `--header
+KEY:VALUE` to http; `--arg`/`--env`/`--header` repeat. On `edit`,
+`--arg` replaces the whole argument list while `--env`/`--header` merge
+key by key. `--enabled=false` keeps the entry listed but unconnected.
+
+A home with no `mcp.yaml` gets `<home>/config/mcp.yaml` on the first
+add; deleting the last entry from such an auto-created file removes the
+file again. Legacy sources stay read-only: with `MCP_SERVERS` set, or
+when the config came from `mcp.json`, every write is refused with the
+reason (edit that source directly). The HTTP face is
+`GET /mcp/servers`, `POST /mcp/save`, `POST /mcp/delete`, `POST
+/mcp/toggle`, `POST /mcp/reload` - each write answers the fresh server
+listing, so one response carries the state it landed.
 
 ## Global flags
 
