@@ -185,3 +185,47 @@ func TestLoopSurfacesAttachmentsToProvider(t *testing.T) {
 		t.Errorf("caller message mutated: %q", msgs[0].(core.User).Content)
 	}
 }
+
+// TestLoopAttachmentsRenderOnceAcrossTurns: the render is per provider
+// call on a copy, so a multi-turn run (tool call, then answer) hands
+// the provider the block exactly once per turn - a decoration applied
+// once to the loop's own history would double it on turn two.
+func TestLoopAttachmentsRenderOnceAcrossTurns(t *testing.T) {
+	att := attachmentFixture(t, "notes.md", []byte("# hi\n"))
+	provider := agent.NewFakeProviderScripts("test",
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"msg": "hi"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "done"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+	tools := map[string]core.Tool{"echo": {
+		Description: "Echo back",
+		Parameters:  map[string]any{"type": "object", "properties": map[string]any{"msg": map[string]any{"type": "string"}}},
+		Run: func(_ context.Context, args map[string]any) (string, error) {
+			msg, _ := args["msg"].(string)
+			return msg, nil
+		},
+	}}
+
+	events := make(chan core.Event, 64)
+	go func() {
+		defer close(events)
+		Loop{}.Run(context.Background(), agent.LoopOptions{
+			Provider: provider,
+			Messages: []core.Message{core.User{Content: "look", Attachments: []core.Attachment{att}}},
+			Tools:    tools,
+			Events:   events,
+		})
+	}()
+	for range events {
+	}
+
+	// LastMessages is the SECOND call's input (one turn later).
+	if n := strings.Count(provider.LastMessages[0].(core.User).Content, "--- attached file ---"); n != 1 {
+		t.Fatalf("attachment block rendered %d times on turn 2, want 1:\n%s", n, provider.LastMessages[0].(core.User).Content)
+	}
+}
