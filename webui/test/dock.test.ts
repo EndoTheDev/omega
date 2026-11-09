@@ -49,6 +49,7 @@ import {
   insertMainPane,
   expandInspectorTabs,
   rehomeInsightsTab,
+  retireInspectorSettings,
   ensurePinnedEdges,
   bottomShellPane,
   forceSessionsLeft,
@@ -171,7 +172,7 @@ describe("tree construction", () => {
     const insp = asSplit(t).children[2];
     assert.deepEqual(
       asPane(insp).tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
     );
     assert.equal(asPane(insp).active, 0);
   });
@@ -470,7 +471,7 @@ describe("tab ops", () => {
       const movedBack = moveTab(movedOut, chat.id, 0, files.id, 0);
       assert.deepEqual(
         tabComps(movedBack, files.id),
-        ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp", "notifications"],
+        ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
         "the moved tab rejoins the inspector bar at the caret",
       );
       assert.deepEqual(tabComps(t, chat.id), ["chat"], "refusals leave the tree untouched");
@@ -493,8 +494,8 @@ describe("tab ops", () => {
     });
   });
 
-  it("MAIN_DOCKABLES: the MAIN-area inventory (card t_4ae27e0d; settings left, t_49d0b308; insights left too, t_d7fd3ad3; the viewer joined, t_36ceb99b; the browser joined, t_95c91f9c)", () => {
-    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "viewer", "browser"]);
+  it("MAIN_DOCKABLES: the MAIN-area inventory (card t_4ae27e0d; insights left, t_d7fd3ad3; the viewer joined, t_36ceb99b; the browser joined, t_95c91f9c; settings rejoined on demand, t_00e4a784)", () => {
+    assert.deepEqual([...MAIN_DOCKABLES], ["chat", "viewer", "settings", "browser"]);
   });
 });
 
@@ -645,7 +646,7 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     assert.equal(root.children.length, 2, "main row + bottom shell");
     return asSplit(root.children[0]);
   }
-  it("always four panes: sidebar(240), chat, inspector-8(240 default), bottom(200, logs)", () => {
+  it("always four panes: sidebar(240), chat, inspector-10(240 default), bottom(200, logs)", () => {
     const t = migrateLegacy(() => null);
     const row = mainRow(t);
     assert.equal(row.children.length, 3);
@@ -656,7 +657,7 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     assert.equal(asPane(row.children[2]).fixed, 240);
     assert.deepEqual(
       asPane(row.children[2]).tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
     );
     const bottom = asPane(asSplit(t).children[1]);
     assert.equal(bottom.edge, "bottom");
@@ -704,7 +705,7 @@ describe("pane-model reset", () => {
     const out = expandInspectorTabs(legacy);
     assert.deepEqual(
       (out as DockPane).tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
     );
     assert.equal((out as DockPane).active, 0);
   });
@@ -728,7 +729,7 @@ describe("pane-model reset", () => {
     const right = asPane(out.children[2]); // [sidebar, chat, inspector]
     assert.deepEqual(
       right.tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
     );
     assert.equal(right.fixed, 240);
   });
@@ -887,7 +888,7 @@ describe("edge toggle (card t_47b776ad)", () => {
     );
     assert.deepEqual(
       insp.tabs.map((x): string => x.component),
-      ["files", "cron", "skills", "tools", "agents", "settings", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
     );
   });
 
@@ -1465,20 +1466,44 @@ describe("tab DnD everywhere (t_d6b657a7)", () => {
 
   it("restoreInspectorSet re-adds an inspector singleton that died with its pane", () => {
     let t: DockNode = defaultTree();
-    // settings can only die via a pane prune: move it to the main pane,
+    // kanban can only die via a pane prune: move it to the main pane,
     // then close the main pane. Endo ruling 2026-10-25: that pane is the
-    // LAST MAIN pane, so a split must mint a second main pane first
+    // LAST MAIN pane, so a split must mint a second main pane first.
+    // card t_00e4a784: settings is NOT in this class any more - it left
+    // the inspector for the on-demand main tab (see the retire test).
     const insp = paneByComponent(t, "files");
-    t = moveTab(t, insp.id, 5, paneByComponent(t, "chat").id, 0); // settings out (continuous folded away - t_c7222095; settings now at 5)
-    const settingsPane = findComponentPane(t, "settings")!;
-    t = splitPane(t, settingsPane.id, "row", "after");
-    t = removePane(t, settingsPane.id);
-    assert.equal(findComponentTab(t, "settings"), null, "settings is gone");
+    t = moveTab(t, insp.id, 5, paneByComponent(t, "chat").id, 0); // kanban out (settings left the strip - t_00e4a784)
+    const kanbanPane = findComponentPane(t, "kanban")!;
+    t = splitPane(t, kanbanPane.id, "row", "after");
+    t = removePane(t, kanbanPane.id);
+    assert.equal(findComponentTab(t, "kanban"), null, "kanban is gone");
     const out = restoreInspectorSet(t);
-    const loc = findComponentTab(out, "settings")!;
-    assert.equal(loc.paneId, paneByComponent(out, "files").id, "settings returns to the right shell");
+    const loc = findComponentTab(out, "kanban")!;
+    assert.equal(loc.paneId, paneByComponent(out, "files").id, "kanban returns to the right shell");
     // idempotent once everything is present
     assert.equal(restoreInspectorSet(out), out);
+  });
+
+  it("retireInspectorSettings drops a persisted inspector seat, keeps a main-pane one (t_00e4a784)", () => {
+    // the pre-rule record: settings is pinned in the inspector bar
+    let t: DockNode = defaultTree();
+    assert.equal(findComponentTab(t, "settings"), null, "a fresh tree never seats settings");
+    // build the legacy seat by hand (the ruling removed every opener)
+    const insp = paneByComponent(t, "files");
+    t = openTab(t, insp.id, { component: "settings" });
+    assert.equal(findComponentTab(t, "settings")!.paneId, insp.id);
+    const out = retireInspectorSettings(t);
+    assert.equal(findComponentTab(out, "settings"), null, "the pinned seat retires on load");
+    assert.deepEqual(
+      paneByComponent(out, "files").tabs.map((x) => x.component),
+      INSPECTOR_TAB_COMPONENTS.map((c) => c as string),
+      "the rest of the strip is untouched",
+    );
+    // a settings tab parked in a MAIN pane is the new home - it survives
+    const chatPane = paneByComponent(t, "chat");
+    const moved = moveTab(t, insp.id, INSPECTOR_TAB_COMPONENTS.length, chatPane.id, 1);
+    assert.equal(findComponentTab(moved, "settings")!.paneId, chatPane.id);
+    assert.equal(retireInspectorSettings(moved), moved, "no-op returns the SAME tree");
   });
 
   it("deriveEdgeMarkers fingerprints pre-marker trees and never grabs marked sides", () => {
@@ -1565,9 +1590,9 @@ describe("v1 layout migration (t_d6b657a7)", () => {
       "the bar refills with insights - its home, never main",
     );
     assert.equal(isPinnedPane(shell), true, "the marker survived");
-    const loc = findComponentTab(tree, "settings")!;
-    assert.equal(loc.tab.component, "settings");
-    assert.equal(findPane(tree, loc.paneId)!.id, chatPane.id, "settings still lives in the main pane");
+    // card t_00e4a784: settings is NOT part of the arrangement any more -
+    // it opens on demand from the menubar gear, so the reload seats none
+    assert.equal(findComponentTab(tree, "settings"), null, "no settings seat on boot");
   });
 });
 

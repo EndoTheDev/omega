@@ -52,14 +52,11 @@ aligned=$(jsq '(()=>{const b=document.querySelector(".dock-pane.edge-bottom");
  return Math.abs(r.left-L)<=1&&Math.abs(r.right-R)<=1?1:0})()')
 assert_eq "$aligned" "1" "bottom panel aligned to the main panes (default mode)"
 
-# item 6 (default): the dock setting flips full -> aligned. Settings is a
-# pinned inspector tab (no menu entry): click it, flip the select,
-# re-measure. The right edge renders ICON-ONLY chips (t_502b8e81) - the
-# chip's name rides aria-label.
-open=$(jsq '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
- const t=[...document.querySelectorAll(".dock-tab")].find((t)=>name(t)==="Settings");
- if(!t) return 0; t.click(); return 1})()')
-assert_eq "$open" "1" "settings tab opens"
+# item 6 (default): the dock setting flips full -> aligned. card t_00e4a784:
+# settings is an on-demand MAIN tab behind the menubar gear (the inspector
+# chip is gone) - click the gear, flip the select, re-measure.
+open=$(jsq '(()=>{const b=document.querySelector("header.menubar button[aria-label=\"Open settings\"]"); if(!b) return 0; b.click(); return 1})()')
+assert_eq "$open" "1" "settings gear opens the tab"
 wait_text "bottom panel width" 10
 # card t_acad02ec: the knob select rides the BandSelect listbox - open
 # the pop (chip aria-label = the knob label), pick the option
@@ -102,6 +99,11 @@ done
 [ "$ok" = "1" ] || die "aligned mode never restored (last: [$got])"
 step "ok: aligned mode restored"
 
+# card t_00e4a784: settings is a normal closable tab - close it again so the
+# main pane is back on chat (the reload checks below read the composer).
+jsq '(()=>{const t=[...document.querySelectorAll(".dock-tab")].find(x=>x.title==="Settings"); const c=t&&t.querySelector(".dock-tab-close"); if(!c) return 0; c.click(); return 1})()' >/dev/null 2>&1 || true
+sleep 0.6
+
 # --- card t_aa9dbada: pane visibility persists WITH the layout -----------
 # Close BOTH sidebars via the menubar toggles, reload: the panes stay
 # closed (the record's closed-edge set restores the visibility the user
@@ -117,9 +119,11 @@ closed_left=$(jsq 'document.querySelector(".sessions .session-list")?0:1')
 assert_eq "$closed_left" "1" "RELOAD: the closed sessions sidebar STAYS closed"
 # the right edge no longer carries an edge-right class (t_d6b657a7 pane
 # chrome) - the closed inspector asserts by its SURFACE: no pinned
-# non-bottom pane hosts the Settings chip anymore.
+# non-bottom pane hosts the Files chip anymore. (card t_00e4a784: Files
+# is the inspector's own shell panel - settings left the strip for the
+# menubar gear, so it can no longer mark the surface.)
 closed_right=$(jsq '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
- return [...document.querySelectorAll(".dock-pane.pinned:not(.edge-bottom)")].some((p)=>[...p.querySelectorAll(".dock-tab")].some((t)=>name(t)==="Settings"))?0:1})()')
+ return [...document.querySelectorAll(".dock-pane.pinned:not(.edge-bottom)")].some((p)=>[...p.querySelectorAll(".dock-tab")].some((t)=>name(t)==="Files"))?0:1})()')
 assert_eq "$closed_right" "1" "RELOAD: the closed inspector sidebar STAYS closed"
 alive=$(jsq 'document.querySelector(".composer")?1:0')
 assert_eq "$alive" "1" "the main pane still renders under both closed sidebars"
