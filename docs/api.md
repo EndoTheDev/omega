@@ -74,7 +74,7 @@ against localhost from the same host is unaffected.
 | `/commands`                          | GET        | extension command registry (palette rows)      |
 | `/commands/dispatch`                 | POST       | run one command/skill locally — never the agent |
 | `/logs?lines=N`                      | GET        | omega.log tail (default 200, clamped 1..2000)  |
-| `/settings`                          | GET, PUT   | config knobs schema / diff-only save           |
+| `/settings`                          | GET, PUT   | config knobs schema / diff-only save (`GET ?key=<dotted path>` = one knob, 404 on a miss) |
 | `/themes`                            | GET        | user theme tokens (`<home>/themes/*.yaml`)     |
 | `/`                                  | GET        | embedded SPA catch-all (history-mode fallback) |
 
@@ -312,6 +312,14 @@ logging, approvals — the same surface the settings pane renders;
 model slots ride typed pickers, approvals.mode is a select; no-store
 cache headers). `provider.api_key` is MASKED (`****`) and never
 round-trips.
+
+`GET /settings?key=<dotted path>` answers ONE knob - the same knob
+object as it rides inside its group - so a script client reads a
+single value without decoding the group envelope. An unknown key is
+404 `unknown setting: <key>`; an empty `key` param is ignored (the
+full payload answers). The one-knob read is the same masked schema
+the full read serves (`provider.api_key` still rides `****`).
+
 PUT applies a **diff-only** values map keyed by the schema's dotted
 knob paths (`provider.api_key`, `compaction.keep_first`, ...) — note
 these are not all literal yaml paths (the vision/title models are root

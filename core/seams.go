@@ -106,6 +106,27 @@ type SettingsSchema struct {
 	Groups []SettingsGroup `json:"groups"`
 }
 
+// Knob looks one knob up by its dotted key. The schema is the contract,
+// so every one-knob reader locates its knob here instead of walking the
+// groups itself: the channel's `?key=` read and the CLI's
+// `omega settings get` address the same knob through this method, and
+// an unknown key is one answer, not two. The returned pointer aliases
+// the schema's own knob - readers must not mutate it.
+func (s *SettingsSchema) Knob(key string) (*SettingsKnob, bool) {
+	if s == nil {
+		return nil, false
+	}
+	for gi := range s.Groups {
+		knobs := s.Groups[gi].Knobs
+		for ki := range knobs {
+			if knobs[ki].Key == key {
+				return &knobs[ki], true
+			}
+		}
+	}
+	return nil, false
+}
+
 // Settings is the runtime config knobs seam. Channels that host a UI
 // (the webui settings pane lives behind the HTTP channel's /settings)
 // use it to read the host's config knobs and save changes - the host
