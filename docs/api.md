@@ -23,6 +23,7 @@ against localhost from the same host is unaffected.
 | `/models`                            | GET        | model list + context window                    |
 | `/chat`                              | POST       | SSE streaming chat                             |
 | `/attach-image`                      | POST       | server-side URL fetch -> chat image            |
+| `/attach-file`                       | POST       | multipart file upload -> session upload dir reference |
 | `/sessions`                          | GET, POST  | list / create                                  |
 | `/sessions/search?q=`                | GET        | FTS5 content+label search                      |
 | `/sessions/{id}`                     | GET, PATCH, DELETE | detail / flags / remove                |
@@ -432,6 +433,26 @@ a toast delta, and row mark-read actions dispatch through
 the canvas, not from this SSE route. All answer 501 when the
 notifications seam is not mounted - removing the module removes the
 panels, the toast events and this surface together.
+
+### POST /attach-file
+
+`multipart/form-data`: one `file` part plus an optional `session_id` text
+part. The bytes are written into the session's upload directory
+(`<home>/uploads/<session_id>/`), or - when no session id is supplied, as
+on a draft chat - into `<home>/uploads/_pending/<token>/`; `/chat` moves
+a staged file into the session's directory as soon as the id exists and
+rewrites the reference before the turn is persisted. The answer is the
+reference record `{kind, name, size, path}` (kind = the lowercased
+extension without its dot, `file` when the name has none); the client
+echoes it back in the user message's `attachments` array, which is what
+the store persists and what the agent sees.
+
+One file per request, 10 MB per file (the same class as the image cap;
+413 past it). No content is sniffed, extracted, inlined or parsed on
+this lane - a reference is a path the agent opens with its own tools.
+Path rule on `/chat`: every `attachments[].path` must resolve to a
+regular file inside `<home>/uploads/` (symlinks resolved, traversal and
+anything outside the tree refused with 400).
 
 ### POST /attach-image
 

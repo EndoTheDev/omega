@@ -39,18 +39,36 @@ type ImageContent struct {
 	Base64    string `json:"base64"`     // base64-encoded image data (no data: prefix)
 }
 
+// Attachment is a typed reference to a non-image file the user attached
+// to a message (card t_1ffd07de). The bytes live on disk in the
+// session's upload directory; the wire - and the persisted message -
+// carry only this reference. Nothing here extracts, inlines or parses
+// the content: Kind is a LABEL of the media class the filename declares
+// (the lowercased extension without its dot, "file" when it has none),
+// Path is the absolute file the agent can open with its own tools, and
+// Size is the byte count on disk.
+type Attachment struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+	Path string `json:"path"`
+}
+
 // User is a user chat message. Images is optional; when empty the
 // message is text-only and providers send content as a plain string.
+// Attachments is the non-image sibling of Images (card t_1ffd07de):
+// references only, never bytes.
 // ParentID is the message tree pointer (branching, t_17365247): the
 // store-row id of the message this one follows on the conversation
 // tree. Empty = legacy message (no pointers) or the session's first
 // message. Providers strip it from wire payloads; it only ever
 // matters to store-side tree derivation.
 type User struct {
-	Content   string         `json:"content"`
-	Images    []ImageContent `json:"images,omitempty"`
-	Timestamp string         `json:"timestamp,omitempty"`
-	ParentID  string         `json:"parent_id,omitempty"`
+	Content     string         `json:"content"`
+	Images      []ImageContent `json:"images,omitempty"`
+	Attachments []Attachment   `json:"attachments,omitempty"`
+	Timestamp   string         `json:"timestamp,omitempty"`
+	ParentID    string         `json:"parent_id,omitempty"`
 }
 
 func (User) isMessage() {}
