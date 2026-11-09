@@ -20,7 +20,7 @@ for AGENTS.md project context and tool file operations.
 
 ```yaml
 provider:
-  type: ollama # ollama, openai, or anthropic
+  type: ollama # ollama, openai, anthropic, or mock (deterministic, no network - tests and journeys)
   model_name: # required - e.g. llama3, gpt-4o, claude-sonnet-4-20250514
   host: http://localhost:11434 # use https://ollama.com for Ollama Cloud
   api_key: # required for Ollama Cloud, OpenAI, and Anthropic
@@ -79,7 +79,7 @@ naming it.
 | Key                           | Env var                            | Default                  | Description                                                                                                                                                                                                                                               |
 | ----------------------------- | ---------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
 | -                             | `OMEGA_HOME`                       | Binary directory         | Omega home: config, db, skills, modules live here                                                                                                                                                                                                         |
-| `provider.type`               | `OMEGA_PROVIDER`                   | `ollama`                 | Provider: `ollama`, `openai`, `anthropic`                                                                                                                                                                                                                 |
+| `provider.type`               | `OMEGA_PROVIDER`                   | `ollama`                 | Provider: `ollama`, `openai`, `anthropic`, `mock`                                                                                                                                         |                                                                                                                                                                                                                 |
 | `provider.model_name`         | `OMEGA_MODEL`                      | (required)               | Model name                                                                                                                                                                                                                                                |
 | `provider.host`               | `OMEGA_HOST`                       | `http://localhost:11434` | Provider base URL                                                                                                                                                                                                                                         |
 | `provider.api_key`            | `OMEGA_API_KEY`                    |                          | API key (Ollama Cloud, OpenAI, Anthropic). Falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`                                                                                                                                                           |
