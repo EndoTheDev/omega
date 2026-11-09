@@ -384,7 +384,7 @@ All registered by the capsule (`harness/kanban/rest.go`) and served
 from the live registry - absent module, unregistered path (the SPA
 catch-all answers it).
 
-#### The batch contract (the `kanban` tool's `operations` array)
+#### The batch contract (the `kanban.batch` tool's `operations` array)
 
 The batch is ATOMIC on the mounted store (card t_02a8beea): the whole
 `operations` array runs inside one SQLite transaction (the `Batcher`
@@ -405,7 +405,7 @@ ops stand, no rollback claim). Create-then-act in one call is the
 intended shape:
 
 ```
-kanban {operations: [
+kanban.batch {operations: [
   {action: create, title: "ship it"},
   {action: comment, id: "LAST", body: "opened by the pipeline"},
   {action: complete, id: "LAST"}

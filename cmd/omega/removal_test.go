@@ -288,12 +288,12 @@ func TestKanbanRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("canvas 2: %v", err)
 	}
-	taskRun, err := pluginTool(ctx, "kanban")
+	taskRun, err := pluginTool(ctx, "kanban.create")
 	if err != nil {
 		t.Fatalf("task tool: %v", err)
 	}
 	cctx := context.Background()
-	out, err := taskRun(cctx, map[string]any{"action": "create", "title": "removal proof task"})
+	out, err := taskRun(cctx, map[string]any{"title": "removal proof task"})
 	if err != nil {
 		t.Fatalf("task create: %v", err)
 	}
