@@ -191,9 +191,11 @@ Everything else animates through `transition`, not keyframes.
   the registry — the continuous roster folded into the Agents tab, the
   canvas renderer into the Modules tab (`composables/canvas.ts` stays
   as the shared view-model store — snapshot GET /ui/canvas, delta
-  merge, the action pipe, the toast funnel). Settings has no entry
-  point: the menubar gear and the `+`-menu entry are gone; persistence
-  and the default arrangement are its only paths.
+  merge, the action pipe, the toast funnel). Settings is an ON-DEMAND
+  main tab (t_00e4a784): the menubar gear beside the right-sidebar
+  toggle opens it, it closes like any tab, and the boot retires a
+  persisted inspector seat (`retireInspectorSettings`). The `+` menu
+  still carries no settings entry — the gear is the entry point.
 - **Closing an edge pane HIDES state, never deletes it** (t_9ed6cad7):
   a sidebar/bottom pane's collapse removes the host from the tree but
   keeps the domain's state (search text, selected tab, scroll) so the

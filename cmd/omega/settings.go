@@ -74,9 +74,9 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			Label: "provider",
 			Knobs: []core.SettingsKnob{
 				{Key: "provider.type", Label: "type", Type: "select",
-					Options: []string{"ollama", "openai", "anthropic"},
+					Options: []string{"ollama", "openai", "anthropic", "mock"},
 					Value:   strings.ToLower(cfg.Provider.Type),
-					Help:    "provider flavor; empty defaults to ollama"},
+					Help:    "provider flavor; empty defaults to ollama; mock answers deterministically with no network (tests, journeys)"},
 				// Card t_1914a8c9: the provider group is ordered CONNECTION
 				// FIRST (type, base url, api key), then the model knobs,
 				// then the instance list and the slots - the fields render

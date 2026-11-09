@@ -302,7 +302,22 @@ overlaps() {  # candidate tokens, running tokens -> hit if any token pair overla
 # here; the gate, the surface holds and the slot math all read the same
 # post-reclaim set. A zombie the inner somehow keeps stays bounded -
 # DISPATCH_MAX is a hard cap either way.
-RUNNING_RAW=$(dbq "SELECT id FROM tasks WHERE status='running' AND (claim_expires IS NULL OR claim_expires > strftime('%s','now')) ORDER BY created_at;")
+# guard bug #14 (2026-11-09, proven live 3x as 'silent Spawned-0'): that
+# drop rule was WRONG for one shape - a claim-expired row whose worker is
+# alive with a fresh heartbeat. The inner does not reclaim those: it
+# EXTENDS the claim (kanban_db.py release_stale_claims, ttl_expired path -
+# live _worker_alive + heartbeat newer than
+# DEFAULT_CLAIM_HEARTBEAT_MAX_STALE_SECONDS = 3600) and the card STAYS
+# running, still consuming the very budget this snapshot just freed.
+# Snapshot 0 running, inner counts 1-2, cap 2: the whole budget evaporates
+# and the pass prints 'Spawned: 0' with every counter empty - twice in one
+# tick 2026-11-09 (t_00e4a784 worker + vera review continuation, both
+# claim-expired-but-live). Self-healed only when the cards completed.
+# The mirror rule: keep an expired row ONLY when the inner would extend
+# it - worker_pid registered AND last_heartbeat_at within 3600s. Rows
+# without a worker pid, or with a stale/no heartbeat, are reclaimed by
+# the inner's heartbeat-stale backstop and stay dropped, as before.
+RUNNING_RAW=$(dbq "SELECT id FROM tasks WHERE status='running' AND (claim_expires IS NULL OR claim_expires > strftime('%s','now') OR (worker_pid IS NOT NULL AND last_heartbeat_at IS NOT NULL AND last_heartbeat_at > strftime('%s','now') - 3600)) ORDER BY created_at;")
 RUNNING=()
 [ -n "$RUNNING_RAW" ] && mapfile -t RUNNING <<<"$RUNNING_RAW"
 SURF=/tmp/fd_running_surface.$$; : >"$SURF"

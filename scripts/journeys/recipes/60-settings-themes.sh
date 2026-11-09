@@ -25,21 +25,16 @@ trap cleanup EXIT
 
 open_app
 
-# settings opens as the pinned inspector dock-tab (not a menubar gear).
-# card t_502b8e81: the right edge renders ICON-ONLY chips - find the
-# chip by its aria-label (there is no "Settings" text node to find).
-# A FRESH chrome profile boots with the inspector edge closed, so the
-# chip is absent until the edge is revealed: probe first, toggle the
-# right sidebar on a miss, then the poll (card t_31aa2542: poll, never
-# the immediate zero-wait query - the 2026-10-31 nightly red).
-CHIP_POLL='(()=>{const t=[...document.querySelectorAll(".dock-pane.pinned .dock-tab")].find(b=>((b.getAttribute("aria-label")||"")||b.title).trim()==="Settings");if(!t) return false;t.click();return true})()'
-if ! poll_js "$CHIP_POLL" 4; then
-  jsq '(()=>{const b=document.querySelector("button[aria-label=\"Toggle right sidebar\"]"); if(!b) return false; b.click(); return true})()' >/dev/null 2>&1 || true
-  if ! poll_js "$CHIP_POLL" 10; then
-    die "Settings dock-tab chip never rendered"
-  fi
+# card t_00e4a784 (Endo ruling 2026-11-09): settings opens from the
+# MENUBAR gear (beside the right-sidebar toggle) as a closable main tab -
+# no inspector chip exists any more. A fresh chrome profile boots with
+# the inspector edge closed, which also no longer matters: the gear is
+# global chrome. Poll the button, then click it.
+GEAR_POLL='(()=>{const b=document.querySelector("header.menubar button[aria-label=\"Open settings\"]");if(!b) return false;b.click();return true})()'
+if ! poll_js "$GEAR_POLL" 10; then
+  die "settings menubar gear never rendered"
 fi
-step "ok: Settings dock-tab opens by its chip name"
+step "ok: Settings tab opens from the menubar gear"
 
 # the SPLIT knobs (task t_a94b1cda): two selects in the chat group,
 # one per chip aria-label: color mode (auto/dark/light) and theme
@@ -114,14 +109,11 @@ curl -s "$JOURNEY_BASE_URL/themes" | grep -q "$tid" || die "watcher never listed
 step "ok: /themes lists the seeded file ($tid) without a restart"
 
 # reopen settings (the open-time refetch re-reads the list) and pick
-# the seeded file's label
+# the seeded file's label. card t_00e4a784: the gear focuses the live tab
+# (or opens it when a reload dropped it) - either way the panel is up.
 open_app
-CHIP_POLL2='(()=>{const t=[...document.querySelectorAll(".dock-pane.pinned .dock-tab")].find(b=>((b.getAttribute("aria-label")||"")||b.title).trim()==="Settings");if(!t) return false;t.click();return true})()'
-if ! poll_js "$CHIP_POLL2" 4; then
-  jsq '(()=>{const b=document.querySelector("button[aria-label=\"Toggle right sidebar\"]"); if(!b) return false; b.click(); return true})()' >/dev/null 2>&1 || true
-  if ! poll_js "$CHIP_POLL2" 10; then
-    die "Settings dock-tab never re-rendered"
-  fi
+if ! poll_js "$GEAR_POLL" 10; then
+  die "settings menubar gear never re-rendered"
 fi
 if ! poll_js '(()=>{const c=[...document.querySelectorAll(".setting-select .model-chip")].find(b=>b.getAttribute("aria-label")==="theme"); if(!c) return false; c.click(); return true})()' 10; then
   die "theme chip never rendered on the reload pass"
@@ -161,5 +153,11 @@ if ! wait_js '(()=>{return !![...document.querySelectorAll(".setting-select .mod
 else
   jsq '(()=>{const o=[...document.querySelectorAll(".setting-select .model-list li")].find(l=>(l.textContent||"").trim()==="default"); if(o) o.click(); return !!o})()' >/dev/null 2>&1 || true
 fi
+
+# card t_00e4a784: leave the shell as the suite found it - settings closes
+# like any tab (the X on its chip, closable by the component's policy), so
+# the main pane returns to chat for the recipes that follow.
+jsq '(()=>{const t=[...document.querySelectorAll(".dock-tab")].find(x=>x.title==="Settings"); const c=t&&t.querySelector(".dock-tab-close"); if(!c) return 0; c.click(); return 1})()' >/dev/null 2>&1 || true
+sleep 1
 
 assert_no_console_errors
