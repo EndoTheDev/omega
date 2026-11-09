@@ -239,6 +239,57 @@ func TestSkillsCLIHelpAnswersWithoutTheNameLaws(t *testing.T) {
 	}
 }
 
+func TestSkillsCLIReadRefusesTraversalNames(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "skills")
+	writeSkill(t, dir, "alpha", "the alpha skill")
+	// A SKILL.md-shaped file OUTSIDE the skills inventory: read resolves
+	// <dir>/<name>/SKILL.md verbatim, so an unvalidated traversal name
+	// would print this body.
+	outside := filepath.Join(root, "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "SKILL.md"), []byte("---\ndescription: leaked\n---\nSECRET BODY\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sp := NewSkillsProvider(dir)
+	for _, name := range []string{"../outside", `..\outside`, "shared/../alpha", ".", "..", "alpha/beta"} {
+		out, err := runCLI(t, sp, []string{"read", name}, "")
+		if err == nil {
+			t.Errorf("read %q must refuse, got %q", name, out)
+			continue
+		}
+		if !strings.Contains(err.Error(), "single folder component") {
+			t.Errorf("read %q error = %v, want the folder-name law", name, err)
+		}
+		if out != "" {
+			t.Errorf("read %q printed a body before refusing: %q", name, out)
+		}
+	}
+	// the same law guards write and delete at the shared door
+	if _, err := runCLI(t, sp, []string{"write", "../outside", "--description", "x", "--content", "y"}, ""); err == nil || !strings.Contains(err.Error(), "single folder component") {
+		t.Errorf("write traversal error = %v", err)
+	}
+	if _, err := runCLI(t, sp, []string{"delete", "../outside"}, ""); err == nil || !strings.Contains(err.Error(), "single folder component") {
+		t.Errorf("delete traversal error = %v", err)
+	}
+}
+
+func TestSkillsCLIHelpRefusesTrailingArguments(t *testing.T) {
+	sp := NewSkillsProvider(t.TempDir())
+	for _, args := range [][]string{{"--help", "list"}, {"read", "--help", "alpha"}, {"help", "write"}} {
+		out, err := runCLI(t, sp, args, "")
+		if err == nil {
+			t.Errorf("%v: trailing argument after help must error, got %q", args, out)
+			continue
+		}
+		if !strings.Contains(err.Error(), "unexpected argument") {
+			t.Errorf("%v: error = %v", args, err)
+		}
+	}
+}
+
 func TestResolveSkillsDirsReRootsAgainstOmegaHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
