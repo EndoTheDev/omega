@@ -49,13 +49,12 @@ func (n *TurnNudger) ObserveToolRun(name string, args map[string]any, _ error) {
 }
 
 // skillsPersistedLesson reports whether one executed tool call was a
-// skills write or update - the two actions that persist a lesson.
-func skillsPersistedLesson(name string, args map[string]any) bool {
-	if name != "skills" {
-		return false
-	}
-	switch a, _ := args["action"].(string); a {
-	case "write", "update":
+// skills write or update - the two tools that persist a lesson (the
+// dotted skills wire, t_d8fbad57: no action arg to inspect, the
+// verb IS the tool name).
+func skillsPersistedLesson(name string, _ map[string]any) bool {
+	switch name {
+	case "skills.write", "skills.update":
 		return true
 	}
 	return false

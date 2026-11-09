@@ -1127,11 +1127,11 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 
 	tools := s.tools
 	if req.Ephemeral {
-		// No-persist contract: the memory tool never runs in an
-		// ephemeral session (nothing it writes outlives the session).
+		// No-persist contract: the memory tools never run in an
+		// ephemeral session (nothing they write outlives the session).
 		// The run context carries the deny too, so extension-merged
-		// providers cannot reintroduce it (the loop filters post-merge).
-		tools = withoutMemory(tools)
+		// providers cannot reintroduce them (the loop filters post-merge).
+		tools = withoutMemoryTools(tools)
 	}
 	return &chatPrepare{run: run, prov: prov, messages: messages, tools: tools}, nil
 }

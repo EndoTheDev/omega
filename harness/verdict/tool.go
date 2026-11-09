@@ -9,49 +9,36 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// verdictActions is the structured sub-action metadata for the verdict
-// domain tool (one source of truth for the schema enum, the prompt,
-// and the /tools inventory - same shape the delegate tool uses).
-var verdictActions = []core.ToolAction{
-	{Name: "request", Description: "Issue a choice card and block until the user answers (click or type), the card expires (default 20 minutes), or the turn is cancelled. Ask when you cannot proceed without the user: approval, a pick between options, or free text. Returns the verdict as JSON: {verdict:\"answer\",option,option_index} | {verdict:\"answer\",options,option_indexes} when multi | {verdict:\"skip\"} | {verdict:\"expired\"}."},
-}
-
-// verdictToolProvider contributes the verdict domain tool. The tool is
-// the card issuance point and the hard pause: the request sub-action
+// verdictToolProvider contributes the verdict wire tool. The tool is
+// the card issuance point and the hard pause: verdict.request
 // blocks on the hub until the user answers, the card expires, or the
 // run's context dies.
 type verdictToolProvider struct {
 	hub cardHub
 }
 
-// Tools implements core.ToolProvider. The one-domain tool law
-// (t_e06b38bc): the domain tool names ITSELF (formerly the Q10
-// module.verb pair - the middle tier is gone) and the request
-// action (the module's own prompt vocabulary) rides the Actions list.
+// Tools implements core.ToolProvider. The registry unification B
+// ruling (t_f616ed78's phase-2 continuation, t_d8fbad57): the flat
+// action-protocol `verdict` tool is gone, the one verb rides its own
+// dotted wire tool - verdict.request IS the card issuance point and
+// the hard pause (it blocks on the hub until the user answers, the
+// card expires, or the run's context dies). No action property: the
+// verb is the name.
 func (p *verdictToolProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
-		"verdict": {
-			Description: "Pause the conversation and present a choice card when a decision materially affects the user - ask when the decision needs human input and you cannot proceed without them. Never call this from a cron or delegated run; it only works in interactive turns.",
-			Actions:     verdictActions,
+		"verdict.request": {
+			Description: "Pause the conversation and present a choice card when a decision materially affects the user - ask when you cannot proceed without them. Never call this from a cron or delegated run; it only works in interactive turns. Returns the verdict as JSON: {verdict:\"answer\",option,option_index} | {verdict:\"answer\",options,option_indexes} when multi | {verdict:\"skip\"} | {verdict:\"expired\"}.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"action": map[string]any{"type": "string", "description": "request (issue a card and block for the answer)."},
-					"title":  map[string]any{"type": "string", "description": "Short question header, one line (required for action request)."},
-					"body":   map[string]any{"type": "string", "description": "Optional context: one or two lines explaining what the answer decides."},
-					"options": map[string]any{"type": "array", "items": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"label":       map[string]any{"type": "string", "description": "The row's pick label."},
-							"description": map[string]any{"type": "string", "description": "Optional one-line explanation, rendered under the label."},
-						},
-						"required": []string{"label"},
-					}, "description": "Labeled pick list, one row per option. Empty (with allow_text) for an open question. Approval is the 2-option case."},
+					"title":      map[string]any{"type": "string", "description": "Short question header, one line (required)."},
+					"body":       map[string]any{"type": "string", "description": "Optional context: one or two lines explaining what the answer decides."},
+					"options":    map[string]any{"type": "array", "items": map[string]any{"type": "object", "properties": map[string]any{"label": map[string]any{"type": "string", "description": "The row's pick label."}, "description": map[string]any{"type": "string", "description": "Optional one-line explanation, rendered under the label."}}, "required": []string{"label"}}, "description": "Labeled pick list, one row per option. Empty (with allow_text) for an open question. Approval is the 2-option case."},
 					"multi":      map[string]any{"type": "boolean", "description": "Allow selecting several options; every selected index comes back in the answer. Defaults false."},
 					"allow_text": map[string]any{"type": "boolean", "description": "Also offer a type-your-own-answer row. Accepts a typed answer on top of the options, or alone for an open question. Defaults false."},
 					"timeout_s":  map[string]any{"type": "integer", "description": "Per-card override of the 20-minute default. The safe answer (deny / no pick) fires on expiry and the run is told the card expired."},
 				},
-				"required": []string{"action", "title"},
+				"required": []string{"title"},
 			},
 			Run: p.run,
 		},
@@ -62,18 +49,13 @@ func (p *verdictToolProvider) Tools() map[string]core.Tool {
 // does not instantly expire a card the user never saw.
 const minTimeout = 5
 
-// run executes the verdict domain tool. The only sub-action today is
-// request: validate origin, parse args, ask the hub, and return the
-// verdict as the tool result string. A block here pauses the whole
-// agent turn - the webui stream idles until the user answers, exactly
-// the design's hard pause.
+// run executes verdict.request: validate origin, parse args, ask the
+// hub, and return the verdict as the tool result string. A block here
+// pauses the whole agent turn - the webui stream idles until the user
+// answers, exactly the design's hard pause.
 func (p *verdictToolProvider) run(ctx context.Context, args map[string]any) (string, error) {
 	if p.hub == nil {
 		return "", fmt.Errorf("verdict: the verdicts seam is not mounted on this host")
-	}
-	action, _ := args["action"].(string)
-	if action != "request" {
-		return "", fmt.Errorf("action is required: one of request")
 	}
 	return p.runRequest(ctx, args)
 }

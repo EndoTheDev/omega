@@ -7,101 +7,82 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/EndoTheDev/omega/core"
 )
 
-// TestFilesToolRegisteredAsDomainTool pins the consolidation: the
-// provider serves one "files" domain tool with Actions metadata; the
-// legacy names survive only as AliasOf-marked shims.
-func TestFilesToolRegisteredAsDomainTool(t *testing.T) {
+// TestDottedWirePin pins the split's registry shape (t_d8fbad57):
+// exactly the four dotted files tools, the flat `files` tool and its
+// alias shims gone, each required list its own and no action property
+// anywhere - the verb IS the tool name.
+func TestDottedWirePin(t *testing.T) {
 	p := &FileProvider{}
 	tools := p.Tools()
-
-	files, ok := tools["files"]
-	if !ok {
-		t.Fatal("files domain tool not registered")
+	want := []string{"files.read", "files.write", "files.edit", "files.batch"}
+	if len(tools) != len(want) {
+		t.Fatalf("provider ships %d tools, want %v: %v", len(tools), want, tools)
 	}
-	want := fileActionNames()
-	if want[0] != "read" || want[1] != "write" || want[2] != "edit" {
-		t.Fatalf("actions metadata wrong: %+v", files.Actions)
-	}
-	domainNames := core.Tool{Actions: files.Actions}.ActionNames()
-	if !reflect.DeepEqual(domainNames, fileActionNames()) {
-		t.Fatalf("action names %v != metadata names %v", domainNames, fileActionNames())
-	}
-	// The schema enum derives from the metadata.
-	enum := files.SchemaParameters()["properties"].(map[string]any)["action"].(map[string]any)["enum"].([]string)
-	if !reflect.DeepEqual(enum, fileActionNames()) {
-		t.Fatalf("schema enum %v not derived from Actions", enum)
-	}
-
-	for _, legacy := range []string{"files.read", "files.write", "files.edit"} {
-		alias, ok := tools[legacy]
+	for _, name := range want {
+		tl, ok := tools[name]
 		if !ok {
-			t.Fatalf("legacy alias %s missing", legacy)
+			t.Fatalf("%s missing from the provider map", name)
 		}
-		if alias.AliasOf != "files" {
-			t.Fatalf("%s not marked AliasOf=files: %q", legacy, alias.AliasOf)
+		if len(tl.Actions) != 0 {
+			t.Fatalf("%s carries Actions %v - the verb is the name, no action protocol", name, tl.Actions)
 		}
+		if tl.AliasOf != "" {
+			t.Fatalf("%s is still an AliasOf=%q shim - the split made it a real tool", name, tl.AliasOf)
+		}
+		props := tl.Parameters["properties"].(map[string]any)
+		if _, has := props["action"]; has {
+			t.Fatalf("%s schema carries an action property - the verb IS the name", name)
+		}
+	}
+	if _, has := tools["files"]; has {
+		t.Fatal("the flat `files` tool must be gone (registry unification phase 2)")
+	}
+	// each verb's required list is exactly its own
+	req := func(name string) []string {
+		r, _ := tools[name].Parameters["required"].([]string)
+		return r
+	}
+	if !reflect.DeepEqual(req("files.read"), []string{"path"}) {
+		t.Fatalf("files.read required = %v, want [path]", req("files.read"))
+	}
+	if !reflect.DeepEqual(req("files.write"), []string{"path", "content"}) {
+		t.Fatalf("files.write required = %v, want [path content]", req("files.write"))
+	}
+	if !reflect.DeepEqual(req("files.edit"), []string{"path", "old_string", "new_string"}) {
+		t.Fatalf("files.edit required = %v, want [path old_string new_string]", req("files.edit"))
+	}
+	if !reflect.DeepEqual(req("files.batch"), []string{"operations"}) {
+		t.Fatalf("files.batch required = %v, want [operations]", req("files.batch"))
 	}
 }
 
-// TestRunFilesActionEnumCoversAllVerbs is the consolidation gate: every
-// pre-fold verb's behavior is reachable through the folded tool's
-// action enum.
-func TestRunFilesActionEnumCoversAllVerbs(t *testing.T) {
+// TestDottedVerbsCoverAllBehaviors is the reachability gate: every
+// pre-split verb's behavior is reachable through its own dotted tool.
+func TestDottedVerbsCoverAllBehaviors(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f.txt")
 
 	p := &FileProvider{}
+	tools := p.Tools()
 
 	// write
-	_, err := p.RunFiles(context.Background(), map[string]any{"action": "write", "path": path, "content": "alpha\nbeta\n"})
-	if err != nil {
+	if _, err := tools["files.write"].Run(context.Background(), map[string]any{"path": path, "content": "alpha\nbeta\n"}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	// read
-	out, err := p.RunFiles(context.Background(), map[string]any{"action": "read", "path": path})
+	out, err := tools["files.read"].Run(context.Background(), map[string]any{"path": path})
 	if err != nil || !strings.Contains(out, "1|alpha") {
 		t.Fatalf("read: %q %v", out, err)
 	}
 	// edit
-	_, err = p.RunFiles(context.Background(), map[string]any{"action": "edit", "path": path, "old_string": "beta", "new_string": "gamma"})
-	if err != nil {
+	if _, err := tools["files.edit"].Run(context.Background(), map[string]any{"path": path, "old_string": "beta", "new_string": "gamma"}); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	out, err = p.RunFiles(context.Background(), map[string]any{"action": "read", "path": path})
+	out, err = tools["files.read"].Run(context.Background(), map[string]any{"path": path})
 	if err != nil || !strings.Contains(out, "gamma") {
 		t.Fatalf("read after edit: %q %v", out, err)
-	}
-	// unknown / empty
-	if _, err := p.RunFiles(context.Background(), map[string]any{}); err == nil || !strings.Contains(err.Error(), "action is required") {
-		t.Fatalf("empty action: %v", err)
-	}
-	if _, err := p.RunFiles(context.Background(), map[string]any{"action": "delete"}); err == nil || !strings.Contains(err.Error(), "unknown action") {
-		t.Fatalf("unknown action: %v", err)
-	}
-}
-
-// TestRunFilesAliasesCallDomainTool is the compat gate: the old tool
-// names still work for the model, routed through the folded handler.
-func TestRunFilesAliasesCallDomainTool(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "f.txt")
-
-	p := &FileProvider{}
-	tools := p.Tools()
-
-	if _, err := tools["files.write"].Run(context.Background(), map[string]any{"path": path, "content": "hello\n"}); err != nil {
-		t.Fatalf("files.write alias: %v", err)
-	}
-	out, err := tools["files.read"].Run(context.Background(), map[string]any{"path": path})
-	if err != nil || !strings.Contains(out, "hello") {
-		t.Fatalf("files.read alias: %q %v", out, err)
-	}
-	if _, err := tools["files.edit"].Run(context.Background(), map[string]any{"path": path, "old_string": "hello", "new_string": "goodbye"}); err != nil {
-		t.Fatalf("files.edit alias: %v", err)
 	}
 }
 
@@ -122,7 +103,7 @@ func TestRunFilesBatchAtomicRollback(t *testing.T) {
 		// Second op fails on its own terms: edit old_string not found.
 		{"action": "edit", "path": existing, "old_string": "nope", "new_string": "x"},
 	}
-	_, err := p.RunFiles(context.Background(), map[string]any{"operations": ops})
+	_, err := p.Tools()["files.batch"].Run(context.Background(), map[string]any{"operations": ops})
 	if err == nil || !strings.Contains(err.Error(), "rolled back") {
 		t.Fatalf("expected rollback error, got %v", err)
 	}
@@ -145,7 +126,7 @@ func TestRunFilesBatchSuccess(t *testing.T) {
 	b := filepath.Join(dir, "b.txt")
 
 	p := &FileProvider{}
-	out, err := p.RunFiles(context.Background(), map[string]any{"operations": []map[string]any{
+	out, err := p.Tools()["files.batch"].Run(context.Background(), map[string]any{"operations": []map[string]any{
 		{"action": "write", "path": a, "content": "A\n"},
 		{"action": "write", "path": b, "content": "B\n"},
 	}})
@@ -165,16 +146,17 @@ func TestRunFilesBatchSuccess(t *testing.T) {
 // TestRunFilesBatchValidation covers op-shape errors before any write.
 func TestRunFilesBatchValidation(t *testing.T) {
 	p := &FileProvider{}
-	_, err := p.RunFiles(context.Background(), map[string]any{"operations": []map[string]any{}})
-	if err == nil {
+	batch := func(args map[string]any) error {
+		_, err := p.Tools()["files.batch"].Run(context.Background(), args)
+		return err
+	}
+	if err := batch(map[string]any{"operations": []map[string]any{}}); err == nil {
 		t.Fatal("empty operations accepted")
 	}
-	_, err = p.RunFiles(context.Background(), map[string]any{"operations": []map[string]any{{"action": "read", "path": "/tmp/x"}}})
-	if err == nil || !strings.Contains(err.Error(), "batch actions are write and edit") {
+	if err := batch(map[string]any{"operations": []map[string]any{{"action": "read", "path": "/tmp/x"}}}); err == nil || !strings.Contains(err.Error(), "batch actions are write and edit") {
 		t.Fatalf("read op accepted into batch: %v", err)
 	}
-	_, err = p.RunFiles(context.Background(), map[string]any{"operations": []map[string]any{{"action": "write"}}})
-	if err == nil || !strings.Contains(err.Error(), "path is required") {
+	if err := batch(map[string]any{"operations": []map[string]any{{"action": "write"}}}); err == nil || !strings.Contains(err.Error(), "path is required") {
 		t.Fatalf("missing path accepted: %v", err)
 	}
 }
