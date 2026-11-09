@@ -93,3 +93,44 @@ func TestBackoff(t *testing.T) {
 		})
 	}
 }
+
+// TestLoadBackoff pins the cold-load retry pacing (t_163d1e87): a
+// "load" verdict waits on LOAD-scale timescales - 5s/15s/45s - so a
+// default 3-retry budget spans ~65s and outlasts a real upstream model
+// load, unlike the 1s/2s/4s 429 pacing that ended the window before a
+// cold remote model (~1 minute observed) ever finished loading.
+func TestLoadBackoff(t *testing.T) {
+	cases := []struct {
+		attempt int
+		base    time.Duration // minimum (no jitter)
+	}{
+		{0, 5 * time.Second},
+		{1, 15 * time.Second},
+		{2, 45 * time.Second},
+		{3, 45 * time.Second}, // capped: a load either finishes or the budget dies
+	}
+
+	for _, tc := range cases {
+		t.Run("attempt_"+strconv.Itoa(tc.attempt), func(t *testing.T) {
+			got := loadBackoff(tc.attempt)
+			if got < tc.base {
+				t.Errorf("loadBackoff(%d) = %v, want >= %v", tc.attempt, got, tc.base)
+			}
+			upper := tc.base + tc.base/4
+			if got >= upper {
+				t.Errorf("loadBackoff(%d) = %v, want < %v (jitter cap)", tc.attempt, got, upper)
+			}
+		})
+	}
+
+	// the full default window: 3 retries wait at least 65s in total -
+	// the observed cold-load latency fits inside the budget instead of
+	// outliving it
+	var total time.Duration
+	for attempt := 0; attempt < 3; attempt++ {
+		total += loadBackoff(attempt)
+	}
+	if total < 65*time.Second {
+		t.Errorf("3-retry load window = %v, want >= 65s (outlast a ~1min cold load)", total)
+	}
+}
