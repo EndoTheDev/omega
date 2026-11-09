@@ -12,10 +12,10 @@ import (
 )
 
 // Plugin adapts Registry into the agent.Plugin interface. The process
-// capsule is an additive tools-seam born-capsule: the six
-// process.* tools are the whole surface - no command, no REST route,
-// no prompt section, no webui panel. Removal proof:
-// TestProcessRemovalProof (cmd/omega/removal_test.go).
+// capsule is an additive tools-seam born-capsule: the four
+// process.* tools (the daemon registry) are the whole surface - no
+// command, no REST route, no prompt section, no webui panel. Removal
+// proof: TestProcessRemovalProof (cmd/omega/removal_test.go).
 type Plugin struct{}
 
 // NewPlugin creates the module plugin.
@@ -26,7 +26,7 @@ func (p *Plugin) Name() string { return "process" }
 
 // Description implements agent.Describer.
 func (p *Plugin) Description() string {
-	return "background process registry: detached long-running commands (spawn/list/read/kill/wait)"
+	return "daemon registry: detached long-running commands (spawn/list/read/kill)"
 }
 
 // ConfigKey names the config section this plugin reads from
@@ -68,7 +68,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 
 // processProvider adapts Registry to core.Tool values. The
 // machine-facing identities are the module.verb pairs (Q10, the v0.12
-// mount migration): six verbs, one shared dispatcher - each Run stamps
+// mount migration): four verbs, one shared dispatcher - each Run stamps
 // its action and falls through.
 type processProvider struct {
 	reg *Registry
@@ -77,15 +77,13 @@ type processProvider struct {
 // description constants (the first line is the prompt's one-liner,
 // the firstLine law of the tools module).
 const (
-	descriptionSpawn = "Spawn a command detached; it survives agent restarts and its output goes to a log, not the context.\nUse shell.run for anything expected to finish in seconds - process.spawn is for LONG ops only (builds, transfers, servers) whose output would block the turn and flood the context."
+	descriptionSpawn = "Spawn a DAEMON detached: a server, a watcher, anything that must keep running past this call and outlive it (agent restarts included). Its output goes to a log, not the context.\nAnything that finishes - builds, transfers, one-shot scripts - belongs to shell.run: a long command pends past the inline budget and re-enters as the call's result."
 	descriptionList  = "List background processes: state (running/exited with exit code), started, log size."
 	descriptionRead  = "Tail the last N lines of a background process's log - the tail, never the whole log (context law).\nThe log survives the process: reading after it exits is the post-mortem path."
 	descriptionKill  = "Stop a background process: SIGTERM first, escalating to SIGKILL after the grace period."
-	descriptionWait  = "Wait for a background process to exit and report its exit code."
-	descriptionRemove = "Remove an EXITED background process from the registry and delete its log files. Running processes are refused (kill first)."
 )
 
-// Tools returns the six process.* verbs.
+// Tools returns the four process.* verbs.
 func (p processProvider) Tools() map[string]core.Tool {
 	verb := func(params map[string]any, action, description string) core.Tool {
 		return core.Tool{
@@ -102,11 +100,11 @@ func (p processProvider) Tools() map[string]core.Tool {
 		"properties": map[string]any{
 			"command": map[string]any{
 				"type":        "string",
-				"description": "Full shell command line (required). LONG ops only.",
+				"description": "Full shell command line (required). DAEMONS only - it must outlive this call.",
 			},
 			"name": map[string]any{
 				"type":        "string",
-				"description": "Handle for the later read/kill/wait calls. Generated (p-<timestamp>) when omitted.",
+				"description": "Handle for the later read/kill calls. Generated (p-<timestamp>) when omitted.",
 			},
 			"dir": map[string]any{
 				"type":        "string",
@@ -146,22 +144,15 @@ func (p processProvider) Tools() map[string]core.Tool {
 			"required": []string{"name"},
 		}
 	}
-	waitParams := nameOnlyParams()
-	waitParams["properties"].(map[string]any)["timeout_seconds"] = map[string]any{
-		"type":        "integer",
-		"description": "Max seconds to block (0 or omitted: until the run budget).",
-	}
 	return map[string]core.Tool{
-		"process.spawn":  verb(spawnParams, "spawn", descriptionSpawn),
-		"process.list":   verb(listParams, "list", descriptionList),
-		"process.read":   verb(readParams, "read", descriptionRead),
-		"process.kill":   verb(nameOnlyParams(), "kill", descriptionKill),
-		"process.wait":   verb(waitParams, "wait", descriptionWait),
-		"process.remove": verb(nameOnlyParams(), "remove", descriptionRemove),
+		"process.spawn": verb(spawnParams, "spawn", descriptionSpawn),
+		"process.list":  verb(listParams, "list", descriptionList),
+		"process.read":  verb(readParams, "read", descriptionRead),
+		"process.kill":  verb(nameOnlyParams(), "kill", descriptionKill),
 	}
 }
 
-// run is the shared dispatcher behind the five verbs.
+// run is the shared dispatcher behind the four verbs.
 func (p processProvider) run(ctx context.Context, args map[string]any) (string, error) {
 	switch action, _ := args["action"].(string); action {
 	case "spawn":
@@ -210,22 +201,6 @@ func (p processProvider) run(ctx context.Context, args map[string]any) (string, 
 			return "", err
 		}
 		return p.reg.Kill(name)
-	case "remove":
-		name, err := argString(args, "name")
-		if err != nil {
-			return "", err
-		}
-		return p.reg.Remove(name)
-	case "wait":
-		name, err := argString(args, "name")
-		if err != nil {
-			return "", err
-		}
-		timeout, err := argInt(args, "timeout_seconds")
-		if err != nil {
-			return "", err
-		}
-		return p.reg.Wait(ctx, name, timeout)
 	default:
 		return "", fmt.Errorf("unknown process action %q", action)
 	}

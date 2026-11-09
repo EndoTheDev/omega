@@ -1,9 +1,11 @@
-// Package process owns the background process registry (card
-// t_5782d11e): long-running shell commands - builds, transfers, tail
-// servers - started detached, state-persisted, and managed from the
-// agent. The synchronous shell (the tools module) stays the tool for
-// anything expected to finish in seconds; this registry exists because
-// long ops used to block the turn and eat the whole context window.
+// Package process owns the daemon registry (card t_5782d11e): shell
+// commands that must keep running past the call that started them -
+// servers, watchers, anything that must outlive the turn - started
+// detached, state-persisted, and managed from the agent. Anything that
+// finishes belongs to shell.run (a long command pends past the inline
+// budget and re-enters as the call's result); the registry exists for
+// daemons, whose output goes to a log instead of the context and whose
+// handle must survive the call, the session and omega itself.
 //
 // Processes are detached by design: they are started in their own
 // process group, never tied to omega's lifetime, and outlive omega
@@ -18,8 +20,9 @@
 // tail). The name is the history unit: re-spawning an exited name
 // rotates its log to <name>.log.1 (one generation back) and starts a
 // fresh file. The registry itself is capped too: an exited entry and
-// its logs are swept a week after the process finished, and
-// process.remove deletes one on demand.
+// its logs are swept a week after the process finished - the sweep is
+// the registry's ONLY garbage collection (the removal verb died with
+// the async arc, card t_d733b258).
 package process
 
 import (
@@ -550,30 +553,6 @@ func (r *Registry) Read(name string, lines int) (string, int64, bool, error) {
 	return out, int64(len(data)), cut > 0, nil
 }
 
-// Remove deletes an EXITED entry and its log generations from the
-// registry - the on-demand removal path of the retention law (card
-// t_304afb4e): process.list must not be a museum, and a handle that
-// outlived its usefulness should leave on request. A RUNNING name is
-// refused (kill it first).
-func (r *Registry) Remove(name string) (string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.load()
-	e, ok := r.entries[name]
-	if !ok {
-		return "", fmt.Errorf("no process named %q (see process.list)", name)
-	}
-	r.reconcileLocked(e)
-	if !e.Exited {
-		return "", fmt.Errorf("process %q (pid %d) is still running - kill it first", name, e.PID)
-	}
-	delete(r.entries, name)
-	_ = os.Remove(e.LogPath)
-	_ = os.Remove(e.LogPath + ".1")
-	r.saveNote()
-	return fmt.Sprintf("removed %q (%s) and its log generations", name, stateOf(e)), nil
-}
-
 // Kill stops a process: TERM first, KILL after the grace. A process
 // spawned this lifetime is reaped by its watcher goroutine (real exit
 // code); an orphan (spawned by a previous omega, or merely known to
@@ -654,81 +633,6 @@ func (r *Registry) Kill(name string) (string, error) {
 		r.saveNote()
 	}
 	return fmt.Sprintf("%q (pid %d) stopped (%s)", name, current.PID, stateOf(current)), nil
-}
-
-// Wait reports a process's terminal state, blocking or polling: with
-// timeoutSeconds <= 0 it waits until the process exits or ctx cancels
-// (the run's own wall-clock cap still applies); otherwise it polls at
-// most that long.
-func (r *Registry) Wait(ctx context.Context, name string, timeoutSeconds int) (string, error) {
-	e, ok := r.Find(name)
-	if !ok {
-		return "", fmt.Errorf("no process named %q (see process.list)", name)
-	}
-	if e.Exited {
-		return fmt.Sprintf("%q exited (%s)", name, stateOf(&e)), nil
-	}
-	done := r.watchDone(name)
-	if done != nil {
-		// Owned: block on the reaper, which carries the real exit code.
-		var timeout <-chan time.Time
-		if timeoutSeconds > 0 {
-			timeout = time.After(time.Duration(timeoutSeconds) * time.Second)
-		}
-		select {
-		case <-done:
-			if e, ok := r.Find(name); ok {
-				return fmt.Sprintf("%q exited (%s)", name, stateOf(&e)), nil
-			}
-			return fmt.Sprintf("%q exited", name), nil
-		case <-timeout:
-			if e, ok := r.Find(name); ok {
-				return fmt.Sprintf("%q still running (timeout %ds: pid %d)", name, timeoutSeconds, e.PID), nil
-			}
-			return fmt.Sprintf("%q still running (timeout %ds)", name, timeoutSeconds), nil
-		case <-ctx.Done():
-			if e, ok := r.Find(name); ok {
-				return fmt.Sprintf("%q still running (wait cancelled: pid %d)", name, e.PID), nil
-			}
-			return fmt.Sprintf("%q still running (wait cancelled)", name), nil
-		}
-	}
-	// Orphan: poll pid liveness until the deadline.
-	deadline := time.Now().Add(24 * time.Hour) // no timeout: ctx rules
-	if timeoutSeconds > 0 {
-		deadline = time.Now().Add(time.Duration(timeoutSeconds) * time.Second)
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Sprintf("%q still running (wait cancelled: pid %d)", name, e.PID), nil
-		default:
-		}
-		if cur, ok := r.Find(name); !ok {
-			return "", fmt.Errorf("no process named %q (see process.list)", name)
-		} else if cur.Exited {
-			return fmt.Sprintf("%q exited (%s)", name, stateOf(&cur)), nil
-		} else if !time.Now().Before(deadline) {
-			return fmt.Sprintf("%q still running (timeout %ds: pid %d)", name, timeoutSeconds, cur.PID), nil
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-}
-
-// watchDone returns the reaper's done channel for a name, or nil when
-// the named process is not owned by this lifetime. The reaper closes
-// the channel without holding r.mu; callers must never lock around a
-// receive on it.
-func (r *Registry) watchDone(name string) chan struct{} {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.load()
-	if e, ok := r.entries[name]; ok && !e.Exited {
-		if watcher, owned := r.reapers[e.PID]; owned {
-			return watcher.done
-		}
-	}
-	return nil
 }
 
 // stateOf renders a state line.
