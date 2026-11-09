@@ -245,7 +245,7 @@ card t_8abdbb15; full contract and templates in `docs/release-gate.md`):
 
 Read AGENTS.md, follow its pointers. One map, no hierarchy of maps.
 
-1. `.agents/COMMIT.md` - commit convention and voice, and `.agents/REVIEW.md` - the reviewer lens law (failure definitions, finding tags, the security lens). Workers and reviewers load both.
+1. `.agents/COMMIT.md` - commit convention and voice, `.agents/REVIEW.md` - the reviewer lens law (failure definitions, finding tags, the security lens), and `.agents/DESIGN.md` - the design laws home (iconset, icon sizes, theme tokens, composer, UI families, a11y, the architecture bar). Workers and reviewers load all three.
 2. This map for the layer you are editing - then its docs entry.
 
 ## Update after editing
