@@ -54,6 +54,10 @@ type transcriptItem struct {
 	// call duration alone.
 	AnswerMs int64               `json:"answer_ms,omitempty"`
 	Images   []core.ImageContent `json:"images,omitempty"` // user: core.User.Images rides the restore
+	// Attachments is the non-image sibling (card t_1ffd07de): the typed
+	// reference records the user message attached - kind, name, size,
+	// path. References only; the restore path renders them as chips.
+	Attachments []core.Attachment `json:"attachments,omitempty"`
 	// running marks the LIVE tail's in-flight items (the transcript-refs
 	// merge): an open thinking/response block streams from the restored
 	// item, and a tool call without its result yet renders as the
@@ -166,7 +170,7 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 		id := core.MsgID(sm.ID)
 		switch m := sm.Message.(type) {
 		case core.User:
-			if m.Content == "" && len(m.Images) == 0 {
+			if m.Content == "" && len(m.Images) == 0 && len(m.Attachments) == 0 {
 				continue
 			}
 			items = append(items, transcriptItem{
@@ -179,6 +183,10 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 				// renders the thumbnails - without this the attach
 				// pipeline's image messages come back as text-only
 				Images: m.Images,
+				// the non-image references ride the same way (card
+				// t_1ffd07de): a reloaded session shows the attachment
+				// chips the live send showed
+				Attachments: m.Attachments,
 			})
 		case core.Assistant:
 			if m.Thinking != nil && *m.Thinking != "" {

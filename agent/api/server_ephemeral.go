@@ -127,6 +127,9 @@ func (r *ephRegistry) appendUser(id string, messages []core.Message, now time.Ti
 			if len(u.Images) > 0 {
 				item.Images = u.Images
 			}
+			if len(u.Attachments) > 0 {
+				item.Attachments = u.Attachments
+			}
 			s.items = append(s.items, item)
 		}
 	}

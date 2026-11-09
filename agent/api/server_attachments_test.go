@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -155,6 +156,36 @@ func TestAttachFileDraftUploadLandsInSessionDir(t *testing.T) {
 			t.Fatalf("attachment %d size = %d, want the on-disk byte count", i, got.Size)
 		}
 	}
+
+	// The render wire carries the same records: the restore path sees the
+	// references the live send carried.
+	trec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(trec, httptest.NewRequest(http.MethodGet, "/sessions/s1/transcript", nil))
+	if trec.Code != http.StatusOK {
+		t.Fatalf("transcript status = %d, want 200 (%s)", trec.Code, trec.Body.String())
+	}
+	var transcript struct {
+		Items []struct {
+			Kind        string            `json:"kind"`
+			Attachments []core.Attachment `json:"attachments"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(trec.Body.Bytes(), &transcript); err != nil {
+		t.Fatalf("decode transcript: %v", err)
+	}
+	seen := false
+	for _, item := range transcript.Items {
+		if item.Kind != "user" {
+			continue
+		}
+		if len(item.Attachments) != 2 {
+			t.Fatalf("transcript user item attachments = %d, want 2", len(item.Attachments))
+		}
+		seen = true
+	}
+	if !seen {
+		t.Fatal("transcript carries no user item")
+	}
 }
 
 // TestAttachFileRejectsOversize pins the cap: one byte past
@@ -209,6 +240,40 @@ func TestAttachFileRejectsForeignPath(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "outside the uploads directory") {
 		t.Fatalf("body = %q, want the outside-the-uploads refusal", rec.Body.String())
+	}
+}
+
+// TestAttachFileSweepsStaleStaging pins the reclaim: an abandoned draft
+// upload (a staging dir older than pendingTTL) is removed by the next
+// attach, and a fresh one survives.
+func TestAttachFileSweepsStaleStaging(t *testing.T) {
+	uploads := t.TempDir()
+	t.Setenv("OMEGA_UPLOADS_DIR", uploads)
+	s := newTestServer()
+
+	pending := filepath.Join(uploads, pendingDirName)
+	stale := filepath.Join(pending, "stale-token")
+	fresh := filepath.Join(pending, "fresh-token")
+	for _, dir := range []string{stale, fresh} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "old.md"), []byte("old"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", dir, err)
+		}
+	}
+	old := time.Now().Add(-2 * pendingTTL)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatalf("age staging dir: %v", err)
+	}
+
+	attachFile(t, s, "", "new.md", []byte("new"))
+
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale staging dir survived the sweep (stat err = %v)", err)
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Fatalf("fresh staging dir was swept: %v", err)
 	}
 }
 
