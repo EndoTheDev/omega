@@ -11,19 +11,18 @@ set -euo pipefail
 # without an annotation falls back to counts + highlights only. Nothing
 # unapproved is ever generated at post time; the tag IS the approval moment.
 #
-# Highlight pick (mechanical, max 5, no ranking cleverness):
-#   1. feat subjects first - newest first, one per scope (topic = scope),
-#      max 3,
-#   2. refactor subjects next - newest first, one per scope,
-#   3. informative card-merge subjects ("merge: <story>") next - newest
-#      first, max 2, deduped by story substring,
-#   4. fixes fill the remaining slots - newest first, one per scope.
+# Highlight pick (per-class cap, no ranking cleverness - Endo ruling
+# 2026-11-09, card t_dd6278c4): the classes run feat -> refactor -> fix ->
+# tune -> docs, and within a class the subjects run newest first. feat and
+# refactor are the headline classes and list complete; fix, tune and docs
+# take the newest 5 each (a busy cycle lands around 19 bullets, inside the
+# house law's "under ~20" ceiling). The old total cap of 5 and the per-scope
+# dedupe are both gone.
 #   Internal tooling never highlights: test:/chore: subjects, and
-#   journeys/test-scoped fixes or refactors (a user does not care that a
-#   journey recipe brace was dropped). docs subjects count but never
-#   highlight; wip/style/embed-lane noise and bare "Merge branch" lines
-#   never highlight or count. The full changelog keeps every commit -
-#   the bullets are a selection, the changelog is the record.
+#   journeys/test-scoped fixes, refactors or docs (a user does not care that
+#   a journey recipe brace was dropped). wip/style/embed-lane noise and bare
+#   "Merge branch" lines never highlight or count. The full changelog keeps
+#   every commit - the bullets are a selection, the changelog is the record.
 #   The counts line lists the reader-meaningful classes - features,
 #   refactors, fixes, tunes, doc updates - then merges and distinct
 #   scopes; tests and chores stay folded (never a segment). Empty
@@ -86,21 +85,11 @@ re_docs='^docs(\(|:| )'
 re_scope='^[a-z]+\(([^)]+)\):'
 
 n_feat=0 n_refactor=0 n_fix=0 n_tune=0 n_docs=0 n_merge=0
-fc_disp=() fc_scope=()
-rf_disp=() rf_scope=()
-fx_disp=() fx_scope=()
-mg_disp=() mg_norm=()
+fc_disp=() rf_disp=() fx_disp=() tn_disp=() dc_disp=()
 scopes=() scope_seen=""
 
 strip_id() { # a trailing "(t_xxxx)" card pointer is noise in a public line
   printf '%s' "$1" | sed -E 's/ ?\(t_[0-9a-f]+\)$//'
-}
-
-merge_story() { # "merge: t_xxx - the story (t_xxx)" -> "the story"
-  printf '%s' "$1" | sed -E \
-    -e 's/^[Mm]erge:[[:space:]]*//' \
-    -e 's/^t_[0-9a-f]+[[:space:]]*(-[[:space:]]*)?//' \
-    -e 's/ ?\(t_[0-9a-f]+\)$//'
 }
 
 hl_excluded() { # internal-tooling scopes never highlight (fix(journeys), fix(test), the like); comma parts match exactly
@@ -118,12 +107,6 @@ while IFS= read -r -d $'\x1e' rec; do
   low="${subj,,}"
   if [[ "$par" == *\ * ]]; then
     n_merge=$((n_merge + 1))
-    # informative card merges only; bare "Merge branch 'x' into y" stays a count
-    if [[ "$low" == merge:* ]]; then
-      story="$(merge_story "$subj")"
-      mg_disp+=("$(strip_id "$story")")
-      mg_norm+=("$(printf '%s' "$story" | tr '[:upper:]' '[:lower:]')")
-    fi
     continue
   fi
   scope=""
@@ -132,23 +115,23 @@ while IFS= read -r -d $'\x1e' rec; do
     scope="${scope,,}"
   fi
   disp="$(strip_id "$subj")"
+  keep=0
+  if ! hl_excluded "$scope"; then keep=1; fi
   if [[ "$low" =~ $re_feat ]]; then
     n_feat=$((n_feat + 1))
-    fc_disp+=("$disp"); fc_scope+=("$scope")
+    [ "$keep" -eq 1 ] && fc_disp+=("$disp")
   elif [[ "$low" =~ $re_refactor ]]; then
     n_refactor=$((n_refactor + 1))
-    if ! hl_excluded "$scope"; then
-      rf_disp+=("$disp"); rf_scope+=("$scope")
-    fi
+    [ "$keep" -eq 1 ] && rf_disp+=("$disp")
   elif [[ "$low" =~ $re_fix ]]; then
     n_fix=$((n_fix + 1))
-    if ! hl_excluded "$scope"; then
-      fx_disp+=("$disp"); fx_scope+=("$scope")
-    fi
+    [ "$keep" -eq 1 ] && fx_disp+=("$disp")
   elif [[ "$low" =~ $re_tune ]]; then
     n_tune=$((n_tune + 1))
+    [ "$keep" -eq 1 ] && tn_disp+=("$disp")
   elif [[ "$low" =~ $re_docs ]]; then
     n_docs=$((n_docs + 1))
+    [ "$keep" -eq 1 ] && dc_disp+=("$disp")
   fi
   # tests, chores and the rest stay folded: the changelog is the record
   if [ -n "$scope" ] && [[ ";$scope_seen;" != *";$scope;"* ]]; then
@@ -158,71 +141,27 @@ while IFS= read -r -d $'\x1e' rec; do
 done < <(git log --format='%h%x1f%p%x1f%s%x1e' "${BASE}..HEAD")
 
 # --- the pick ---------------------------------------------------------------
-FEATS_CAP=3
-MERGES_CAP=2
-MAX_HL=5
+# Ordered classes, each newest-first. feat and refactor are the headline
+# classes: the range's story, listed complete. fix, tune and docs are the
+# tail: the newest CLASS_CAP subjects each. No per-scope dedupe - a class
+# shows what shipped, not one line per topic.
+CLASS_CAP=5
 hl=()
 
-# feats: newest-first, one per scope (scopeless topic = the subject itself)
-declare -A seen=()
-i=0
-while [ "$i" -lt "${#fc_disp[@]}" ] && [ "${#hl[@]}" -lt "$FEATS_CAP" ]; do
-  key="${fc_scope[$i]}"
-  [ -n "$key" ] || key="subj:${fc_disp[$i]}"
-  if [ -z "${seen[$key]:-}" ]; then
-    seen[$key]=1
-    hl+=("${fc_disp[$i]}")
-  fi
-  i=$((i + 1))
-done
+# headline classes: complete
+for disp in "${fc_disp[@]}"; do hl+=("$disp"); done
+for disp in "${rf_disp[@]}"; do hl+=("$disp"); done
 
-# refactors: newest-first, one per scope
-declare -A rseen=()
-i=0
-while [ "$i" -lt "${#rf_disp[@]}" ] && [ "${#hl[@]}" -lt "$MAX_HL" ]; do
-  key="${rf_scope[$i]}"
-  [ -n "$key" ] || key="subj:${rf_disp[$i]}"
-  if [ -z "${rseen[$key]:-}" ]; then
-    rseen[$key]=1
-    hl+=("${rf_disp[$i]}")
-  fi
-  i=$((i + 1))
-done
-
-# card merges: newest-first, max 2, deduped by story substring
-picked_norms=()
-n=0
-i=0
-while [ "$i" -lt "${#mg_disp[@]}" ] && [ "$n" -lt "$MERGES_CAP" ] && [ "${#hl[@]}" -lt "$MAX_HL" ]; do
-  norm="${mg_norm[$i]}"
-  dup=0
-  if [ "${#picked_norms[@]}" -gt 0 ]; then
-    for have in "${picked_norms[@]}"; do
-      if [[ "$norm" == *"$have"* || "$have" == *"$norm"* ]]; then
-        dup=1
-        break
-      fi
-    done
-  fi
-  if [ "$dup" -eq 0 ]; then
-    picked_norms+=("$norm")
-    hl+=("${mg_disp[$i]}")
+# tail classes: newest-first, capped
+for class in fx_disp tn_disp dc_disp; do
+  declare -n box="$class"
+  n=0
+  for disp in "${box[@]}"; do
+    [ "$n" -lt "$CLASS_CAP" ] || break
+    hl+=("$disp")
     n=$((n + 1))
-  fi
-  i=$((i + 1))
-done
-
-# fixes fill what is left
-declare -A fseen=()
-i=0
-while [ "$i" -lt "${#fx_disp[@]}" ] && [ "${#hl[@]}" -lt "$MAX_HL" ]; do
-  key="${fx_scope[$i]}"
-  [ -n "$key" ] || key="subj:${fx_disp[$i]}"
-  if [ -z "${fseen[$key]:-}" ]; then
-    fseen[$key]=1
-    hl+=("${fx_disp[$i]}")
-  fi
-  i=$((i + 1))
+  done
+  unset -n box
 done
 
 # --- assembly ----------------------------------------------------------------
