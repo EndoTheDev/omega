@@ -1938,7 +1938,7 @@ func TestProcessRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
-	wantVerbs := []string{"process.spawn", "process.list", "process.read", "process.kill", "process.wait"}
+	wantVerbs := []string{"process.spawn", "process.list", "process.read", "process.kill", "process.wait", "process.remove"}
 	for _, verb := range wantVerbs {
 		if _, err := pluginTool(ctx, verb); err != nil {
 			t.Fatalf("FULL MOUNT: %s missing (%v)", verb, err)
@@ -1946,9 +1946,8 @@ func TestProcessRemovalProof(t *testing.T) {
 	}
 	// a real round-trip: spawn a sleeper through the tool face, read
 	// the log, wait the timeout, kill it. The sleeper must STAY alive
-	// until the kill (a reaper that sees a dead child rotates the log
-	// away and process.read answers "no log yet") - the portable
-	// pause is ping -n on windows, sleep elsewhere.
+	// until the read (the echo may land a beat after spawn returns) -
+	// the portable pause is ping -n on windows, sleep elsewhere.
 	spawnCmd := "echo proof-round-trip; sleep 300"
 	if runtime.GOOS == "windows" {
 		spawnCmd = "echo proof-round-trip && ping -n 300 127.0.0.1 > nul"

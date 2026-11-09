@@ -325,7 +325,13 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 // settings flip applies at the next decision, card t_34cd1921).
 func (g *Gate) mode() string { return g.config().NormalizedMode() }
 
-// outcomeError maps a resolution to the tool error (nil runs).
+// outcomeError maps a resolution to the tool error (nil runs). The
+// card_expired shape is deliberately DISTINCT (card t_304afb4e): the
+// QA pass read every escalation as one flat "approval escalated"
+// prefix, so an expired card - a fail-closed non-decision the agent
+// can act on by simply running the command again - drowned in the
+// same vocabulary as refusals. The prefix names the expiry, the
+// fail-closed law, and the act-on-it path.
 func outcomeError(o Outcome) error {
 	switch o.Verdict {
 	case VerdictApprove:
@@ -333,6 +339,9 @@ func outcomeError(o Outcome) error {
 	case VerdictDeny:
 		return fmt.Errorf("approval denied, command not executed (%s): %s", o.Step, o.Reason)
 	default:
+		if o.Step == "card_expired" {
+			return fmt.Errorf("approval card expired - command not executed (fail-closed, nothing ran): re-run the command to raise a fresh approval card")
+		}
 		return fmt.Errorf("approval escalated, command not executed (%s): %s", o.Step, o.Reason)
 	}
 }

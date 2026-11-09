@@ -14,10 +14,10 @@ import (
 
 // TestSpawnDirOverride pins the process.spawn working-directory
 // override (card t_ccf74d88): an explicit dir (absolute or
-// workspace-relative) roots the spawned command. The probe keeps the
-// shell ALIVE for a beat: the reaper rotates a finished entry's log
-// away (rotateExited), so the cwd assertion must ride the log while
-// the entry is running, the same shape TestSpawnReadWaitKill uses.
+// workspace-relative) roots the spawned command. The probe lingers
+// ~2s so the cwd assertion rides the log without racing the child's
+// exit (post-t_304afb4e the finished log stays put, but the read
+// while ALIVE is still the no-race shape).
 func TestSpawnDirOverride(t *testing.T) {
 	ws := t.TempDir()
 	sub := filepath.Join(ws, "sub")

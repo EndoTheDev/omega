@@ -51,7 +51,7 @@ func (p *ShellProvider) Tools() map[string]core.Tool {
 				"type": "object",
 				"properties": map[string]any{
 					"command": map[string]any{"type": "string", "description": "The command to run."},
-					"dir":     map[string]any{"type": "string", "description": "Optional working directory for this call: absolute, or relative to the session workspace. Overrides the run's default directory (card t_ccf74d88)."},
+					"dir":     map[string]any{"type": "string", "description": "Optional working directory for this call: absolute, or relative to the session workspace. Overrides the run's default directory."},
 				},
 				"required": []string{"command"},
 			},
@@ -114,7 +114,14 @@ func argString(args map[string]any, key string) (string, error) {
 const shellOutputCap = 1 << 20 // 1 MB
 
 // cappedBuffer accepts all writes but keeps at most shellOutputCap
-// bytes, counting the overflow for an honest truncation note.
+// bytes (the head), counting only the DROPPED tail in over for an
+// honest truncation note. The pre-fix shape counted every written
+// byte in over (card t_304afb4e): over was total-written, not
+// overflow, so the marker fired on ANY output and the reported total
+// double-counted the kept bytes - an 8-byte echo read as a
+// truncation, and a 2096-byte `omega --help` reported "4192 bytes
+// total". The condition (over > 0) was honest; the accumulator
+// underneath it lied.
 type cappedBuffer struct {
 	mu   sync.Mutex
 	buf  bytes.Buffer
@@ -124,14 +131,17 @@ type cappedBuffer struct {
 func (b *cappedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if room := shellOutputCap - b.buf.Len(); room > 0 {
+	room := shellOutputCap - b.buf.Len()
+	if room > 0 {
 		if len(p) <= room {
 			b.buf.Write(p) //nolint:errcheck // bytes.Buffer never errors
 		} else {
 			b.buf.Write(p[:room]) //nolint:errcheck // bytes.Buffer never errors
+			b.over += int64(len(p) - room)
 		}
+	} else {
+		b.over += int64(len(p))
 	}
-	b.over += int64(len(p))
 	return len(p), nil
 }
 
@@ -189,11 +199,16 @@ func (p *ShellProvider) RunShell(ctx context.Context, args map[string]any) (stri
 }
 
 // shellOutput renders a capped buffer: the kept bytes plus an honest
-// total-count note when output was dropped.
+// note when output was actually dropped. The cap keeps the HEAD (the
+// first shellOutputCap bytes) and drops the tail; the note names both
+// and the retrieval path (process.spawn persists the full log to
+// disk, readable after the process exits - truncation here is a
+// display choice, not the only copy).
 func shellOutput(b *cappedBuffer) string {
 	out := b.buf.String()
 	if b.over > 0 {
-		out += fmt.Sprintf("\n... [output truncated, %d bytes total]", b.over+int64(b.buf.Len()))
+		out += fmt.Sprintf("\n... [output truncated: kept the first %d bytes of %d - rerun via process.spawn to keep the full log on disk]",
+			b.buf.Len(), b.over+int64(b.buf.Len()))
 	}
 	return out
 }
