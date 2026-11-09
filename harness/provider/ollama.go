@@ -20,7 +20,10 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- core.Provider
 	// done_reason "load" rides a 200 OK stream and produces nothing, so
 	// RetryHTTP never sees it: the failure happens after the HTTP retry
 	// layer has already succeeded. Retry it here with the same budget
-	// and backoff RetryHTTP applies to 429/5xx.
+	// (OMEGA_MAX_RETRIES) as RetryHTTP, but LOAD-scale pacing: the load
+	// verdict means the upstream is loading the model and canceled this
+	// request, so the next attempt is worth firing only once that load
+	// has had time to finish (t_163d1e87).
 	for attempt := 0; retriable; attempt++ {
 		if attempt >= llm.MaxRetries() {
 			return core.StreamEnd{
@@ -33,7 +36,9 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- core.Provider
 		select {
 		case <-ctx.Done():
 			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: ctx.Err().Error()}
-		case <-time.After(llm.Backoff(attempt)):
+		// load-scale pacing (t_163d1e87): a "load" verdict survives on
+		// waits that outlast the upstream's load, not 429-scale ones
+		case <-time.After(llm.LoadBackoff(attempt)):
 		}
 		end, retriable = p.streamOllamaAttempt(ctx, events, messages, tools)
 	}
