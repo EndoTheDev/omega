@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -237,21 +238,25 @@ func (r *ephRegistry) snapshotItems(id string) []transcriptItem {
 	return out
 }
 
-// withoutMemory copies the tool registry minus the memory tool - the
-// ephemeral session's run sees every tool but memory (the bare domain
-// tool, the one-domain law t_e06b38bc; the deny line names the tool,
-// and it rides the run context too; this copy is the registry the
-// /chat loop passes in, so the two layers agree even before the loop
-// filter). The name matches harness/memory's registered tool.
-func withoutMemory(tools map[string]core.Tool) map[string]core.Tool {
-	if _, has := tools["memory"]; !has {
-		return tools
-	}
-	out := make(map[string]core.Tool, len(tools)-1)
+// withoutMemoryTools copies the tool registry minus the memory
+// domain - the ephemeral session's run sees every tool but memory
+// (the dotted memory.* wire, the registry unification B ruling
+// t_d8fbad57; the deny line names the tools, and it rides the run
+// context too; this copy is the registry the /chat loop passes in,
+// so the two layers agree even before the loop filter). The names
+// match harness/memory's registered tools.
+func withoutMemoryTools(tools map[string]core.Tool) map[string]core.Tool {
+	out := make(map[string]core.Tool, len(tools))
+	stripped := false
 	for name, t := range tools {
-		if name != "memory" {
-			out[name] = t
+		if name == "memory" || strings.HasPrefix(name, "memory.") {
+			stripped = true
+			continue
 		}
+		out[name] = t
+	}
+	if !stripped {
+		return tools
 	}
 	return out
 }

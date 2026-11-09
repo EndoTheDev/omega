@@ -53,7 +53,7 @@ func TestWorkspaceFilesRoot(t *testing.T) {
 
 	// Atomic batch rooted: both ops of operations[].path resolve in
 	// the workspace.
-	if _, err := p.RunFiles(ctx, map[string]any{"operations": []map[string]any{
+	if _, err := p.Tools()["files.batch"].Run(ctx, map[string]any{"operations": []map[string]any{
 		{"action": "write", "path": "a.txt", "content": "A"},
 		{"action": "write", "path": "b.txt", "content": "B"},
 	}}); err != nil {

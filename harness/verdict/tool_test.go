@@ -3,6 +3,7 @@ package verdict
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -16,7 +17,7 @@ func toolRun(t *testing.T, p *verdictToolProvider, ctx context.Context, args map
 	t.Helper()
 	ch := make(chan toolResult, 1)
 	go func() {
-		s, err := p.Tools()["verdict"].Run(ctx, args)
+		s, err := p.Tools()["verdict.request"].Run(ctx, args)
 		ch <- toolResult{s: s, err: err}
 	}()
 	return ch
@@ -47,14 +48,42 @@ func interactiveCtx(session string) context.Context {
 	return ctx
 }
 
-// requestArgs is a valid verdict args map with the extras
-// merged in.
+// requestArgs is a valid verdict.request args map with the extras
+// merged in. No action field - the verb IS the tool name.
 func requestArgs(extra map[string]any) map[string]any {
-	args := map[string]any{"action": "request", "title": "q"}
+	args := map[string]any{"title": "q"}
 	for k, v := range extra {
 		args[k] = v
 	}
 	return args
+}
+
+// TestDottedWirePin pins the split's registry shape (t_d8fbad57):
+// exactly one dotted verdict tool, the flat `verdict` name gone, the
+// required list its own (title alone - no action property anywhere).
+func TestDottedWirePin(t *testing.T) {
+	p := &verdictToolProvider{hub: NewHub(nil, nil)}
+	tools := p.Tools()
+	if len(tools) != 1 {
+		t.Fatalf("provider ships %d tools, want exactly verdict.request: %v", len(tools), tools)
+	}
+	tl, ok := tools["verdict.request"]
+	if !ok {
+		t.Fatal("verdict.request missing from the provider map")
+	}
+	if _, has := tools["verdict"]; has {
+		t.Fatal("the flat `verdict` tool must be gone (registry unification phase 2)")
+	}
+	if len(tl.Actions) != 0 {
+		t.Fatalf("verdict.request carries Actions %v - the verb is the name, no action protocol", tl.Actions)
+	}
+	if !reflect.DeepEqual(tl.Parameters["required"], []string{"title"}) {
+		t.Fatalf("required = %v, want [title] and nothing else", tl.Parameters["required"])
+	}
+	props := tl.Parameters["properties"].(map[string]any)
+	if _, has := props["action"]; has {
+		t.Fatal("verdict.request schema carries an action property - the verb IS the name")
+	}
 }
 
 func TestToolRefusesBackgroundOrigins(t *testing.T) {
@@ -64,23 +93,9 @@ func TestToolRefusesBackgroundOrigins(t *testing.T) {
 
 	for _, origin := range []string{"cron", "delegate"} {
 		ctx := core.WithRunOrigin(context.Background(), origin)
-		_, err := p.Tools()["verdict"].Run(ctx, args)
+		_, err := p.Tools()["verdict.request"].Run(ctx, args)
 		if err == nil {
 			t.Fatalf("origin %q must refuse the verdict tool", origin)
-		}
-	}
-}
-
-func TestToolRequiresAction(t *testing.T) {
-	h := NewHub(nil, nil)
-	p := &verdictToolProvider{hub: h}
-	for name, args := range map[string]map[string]any{
-		"no action":      {"title": "q"},
-		"unknown action": {"action": "status", "title": "q"},
-	} {
-		_, err := p.Tools()["verdict"].Run(interactiveCtx("s1"), args)
-		if err == nil || !containsStr(err.Error(), "action is required") {
-			t.Fatalf("%s: err = %v, want 'action is required'", name, err)
 		}
 	}
 }
@@ -94,13 +109,13 @@ func TestToolRequiresTitleAndShape(t *testing.T) {
 		args map[string]any
 		want string
 	}{
-		{"no title", map[string]any{"action": "request", "options": []any{"y"}}, "title is required"},
+		{"no title", map[string]any{"options": []any{"y"}}, "title is required"},
 		{"blank title", requestArgs(map[string]any{"title": "   ", "options": []any{"y"}}), "title is required"},
 		{"no options no allowtext", requestArgs(nil), "at least one option or allow_text"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := p.Tools()["verdict"].Run(interactiveCtx("s1"), tc.args)
+			_, err := p.Tools()["verdict.request"].Run(interactiveCtx("s1"), tc.args)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -218,7 +233,7 @@ func TestToolAllowTextOnlyCard(t *testing.T) {
 
 func TestToolRefusesWithoutSeam(t *testing.T) {
 	p := &verdictToolProvider{hub: nil}
-	_, err := p.Tools()["verdict"].Run(interactiveCtx("s1"), requestArgs(map[string]any{"options": []any{"y"}}))
+	_, err := p.Tools()["verdict.request"].Run(interactiveCtx("s1"), requestArgs(map[string]any{"options": []any{"y"}}))
 	if err == nil {
 		t.Fatal("tool must refuse when the seam is not mounted")
 	}

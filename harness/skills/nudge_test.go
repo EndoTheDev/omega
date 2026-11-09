@@ -45,7 +45,7 @@ func nudgeLinePrefix() string { return "Learning loop:" }
 func TestNudgeResetsOnSkillsWrite(t *testing.T) {
 	n := NewTurnNudger(15)
 	nudgeObs(n, 14)
-	n.ObserveToolRun("skills", map[string]any{"action": "write"}, nil)
+	n.ObserveToolRun("skills.write", map[string]any{"name": "s"}, nil)
 	nudgeObs(n, 14)
 	if line := n.NudgeLine(); line != "" {
 		t.Fatalf("nudge survived the skills write: %q", line)
@@ -55,10 +55,10 @@ func TestNudgeResetsOnSkillsWrite(t *testing.T) {
 	if line := n.NudgeLine(); line == "" {
 		t.Fatal("nudge did not fire a full interval after the write")
 	}
-	// An update resets too, and so does a failed write.
+	// An update resets too, and so does a failed write. Reads do not.
 	n.ObserveToolRun("terminal", map[string]any{}, nil)
-	n.ObserveToolRun("skills", map[string]any{"action": "update"}, nil)
-	n.ObserveToolRun("skills", map[string]any{"action": "write"}, errFake{})
+	n.ObserveToolRun("skills.update", map[string]any{"name": "s"}, nil)
+	n.ObserveToolRun("skills.write", map[string]any{"name": "s"}, errFake{})
 	nudgeObs(n, 14)
 	if line := n.NudgeLine(); line != "" {
 		t.Fatalf("update/failed-write did not reset the counter: %q", line)
