@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -126,6 +127,66 @@ func (h *wakeHub) park(sessionID string) bool {
 	return true
 }
 
+// sessionTypedLedger is the session-type-aware pending-calls table
+// (card t_61d3def9, the session-type parity ruling): one
+// agent.YieldLedger surface split by session namespace, so every
+// session type gets the same async yield shape over its own backing.
+// Durable sessions keep the store's table - their pending calls
+// survive restarts and the boot recovery sweep re-enters them. The
+// `eph-` lane is memory-backed beside the ephRegistry: an ephemeral
+// session is process-local by law (nothing it owns may land in the
+// store - the same nothing-on-disk wall the verdict hub holds, card
+// t_860033e3), so RESTART EATS ITS PENDING RESULTS. That loss is the
+// mode's own contract, not a new loss class: the whole session dies
+// at restart anyway, and a pending result cannot outlive a home
+// that no longer exists. No durability is added for the lane.
+type sessionTypedLedger struct {
+	// durable serves store-backed session ids (the store's table).
+	durable agent.YieldLedger
+	// ephemeral serves the `eph-` namespace (server memory only).
+	ephemeral agent.YieldLedger
+}
+
+// lane picks the backing by session id namespace.
+func (l sessionTypedLedger) lane(sessionID string) agent.YieldLedger {
+	if isEphemeralID(sessionID) {
+		return l.ephemeral
+	}
+	return l.durable
+}
+
+// Register records one dispatched call in its lane (YieldLedger).
+func (l sessionTypedLedger) Register(pc agent.PendingCall) error {
+	return l.lane(pc.SessionID).Register(pc)
+}
+
+// Settle removes the entry from its lane (YieldLedger). Both lanes
+// are cleared - the id lives in exactly one by construction, the
+// other lane's settle is the contract's no-op, and boot-recovery
+// residue (an eph row that predates the lane split) settles through
+// the same call without the sweep guessing lanes.
+func (l sessionTypedLedger) Settle(sessionID, callID string) error {
+	if err := l.durable.Settle(sessionID, callID); err != nil {
+		return err
+	}
+	return l.ephemeral.Settle(sessionID, callID)
+}
+
+// Pending lists the home's still-settling calls from its lane
+// (YieldLedger).
+func (l sessionTypedLedger) Pending(sessionID string) []agent.PendingCall {
+	return l.lane(sessionID).Pending(sessionID)
+}
+
+// All lists every unsettled call across both lanes, durable lane
+// first (YieldLedger). At serve start the eph lane is empty by
+// construction - it is process-local - so the boot sweep reads
+// durable rows plus any upgrade residue (see recoverPendingCalls).
+func (l sessionTypedLedger) All() []agent.PendingCall {
+	out := append([]agent.PendingCall(nil), l.durable.All()...)
+	return append(out, l.ephemeral.All()...)
+}
+
 // wakeHome takes one settled yield result (called by the loop's
 // dispatched executor through agent.SetYieldWake) and tries to drain
 // the home.
@@ -166,6 +227,19 @@ func (s *Server) drainWakes(sessionID string) {
 		}
 		launchCtx := context.WithoutCancel(s.bootCtx)
 		if _, err := s.launchWake(sessionID, res, launchCtx); err != nil {
+			if isEphemeralID(sessionID) && s.eph.get(sessionID) == nil {
+				// The eph home closed or expired before the result
+				// settled (card t_61d3def9). The re-entry contract
+				// died with the home - restart-loss is the eph
+				// mode's own law - so the result is DROPPED, never
+				// re-queued: a launch against the gone registry
+				// would fail identically on every retry and pin
+				// the FIFO forever. The registry probe (not the
+				// launch error) decides: a live home's transient
+				// launch failure still re-queues below.
+				s.wakes.rollback(sessionID)
+				continue
+			}
 			// The slot was taken between pop and start (or the home
 			// has no live backing): re-queue and wait for the next
 			// finish hook. The tentative admit rolls back - the cap
@@ -247,6 +321,23 @@ func (s *Server) recoverPendingCalls() {
 	}
 	lgr := s.Logger()
 	for _, pc := range l.All() {
+		if isEphemeralID(pc.SessionID) {
+			// Restart-loss contract (card t_61d3def9): the eph lane
+			// is memory-backed, so a fresh boot holds none of its
+			// entries - an `eph-` row that reached the durable
+			// surface can only be upgrade residue from a build
+			// before the lane split. Its home died with the restart
+			// (the registry is gone), so the sweep settles the row
+			// and never wakes it: a launch against the gone home
+			// would re-queue forever.
+			if lgr != nil {
+				lgr.Printf("boot recovery: pending call %s (%s) belongs to the ephemeral namespace - settled, dropped (restart ate its home)", pc.ToolName, pc.CallID)
+			}
+			if err := l.Settle(pc.SessionID, pc.CallID); err != nil && lgr != nil {
+				lgr.Errorf("boot settle %s (%s): %v", pc.ToolName, pc.CallID, err)
+			}
+			continue
+		}
 		if lgr != nil {
 			lgr.Printf("boot recovery: pending call %s (%s, session %s) injects a timeout result", pc.ToolName, pc.CallID, pc.SessionID)
 		}

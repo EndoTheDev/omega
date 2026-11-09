@@ -144,9 +144,16 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	overflowRetries := 0
 
 	// The run's home id (async agent loop, t_f3f953d0): yield-class
-	// calls dispatch only for a session-backed run - a sessionless run
-	// has no input path to re-enter through, so any Yield tool degrades
-	// to loop-back there (blocking beats a lost result).
+	// calls dispatch only for a run with a HOME - a session id to
+	// re-enter through. Every session type is a home with the same
+	// async shape (the session-type parity ruling, card t_61d3def9):
+	// store-backed sessions re-enter through the durable table,
+	// `eph-` homes through the serving shell's memory-backed lane
+	// (restart eats their pending results - the eph mode's own
+	// contract), agent homes through their own wake machinery. A
+	// sessionless run (empty id - no home anywhere) still degrades
+	// every Yield tool to loop-back: blocking beats a result with
+	// nowhere to go.
 	sessionID := agent.SessionIDFromContext(ctx)
 	yieldReady := opts.YieldLedger != nil && opts.YieldWake != nil && sessionID != ""
 

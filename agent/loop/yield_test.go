@@ -358,6 +358,50 @@ func TestLoopYieldWithoutHarnessRunsLoopBack(t *testing.T) {
 	}
 }
 
+// TestLoopYieldDispatchesForEphemeralHome: the session-type parity
+// pin (card t_61d3def9) - an `eph-` session id is a HOME like any
+// other. The loop's dispatch gate reads the home id, not the
+// backing, so an ephemeral chat's yield call ends the turn yielded
+// (never the loop-back degrade) and the settled result wakes
+// re-entry through whatever home input path the host owns. A long
+// shell.run in an ephemeral chat yields and re-enters.
+func TestLoopYieldDispatchesForEphemeralHome(t *testing.T) {
+	provider := agent.NewFakeProviderScripts("test",
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"msg": "hi"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "never"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+	ledger := agent.NewMemYieldLedger()
+	rec := &wakeRecorder{}
+	opts := yieldOpts(provider,
+		map[string]core.Tool{"echo": yieldEcho()},
+		ledger,
+		rec.add,
+	)
+	opts.Messages = []core.Message{core.NewUser("go")}
+
+	_, end := runLoop(t, agent.WithSessionID(context.Background(), "eph-1a2b3c"), opts)
+
+	if end.finish != "yielded" {
+		t.Errorf("finish = %q, want yielded - an eph home must not degrade to loop-back", end.finish)
+	}
+	if end.pending != 1 {
+		t.Errorf("TurnEnd pending = %d, want 1", end.pending)
+	}
+	waitForWakes(t, rec, 1)
+	if res := rec.snapshot()[0]; res.ToolCallID != "c1" || res.Content != "async:hi" {
+		t.Errorf("wake = %+v", res)
+	}
+	if left := ledger.All(); len(left) != 0 {
+		t.Errorf("ledger still holds %d entries after settle-then-inject: %+v", len(left), left)
+	}
+}
+
 // TestLoopPendingPlaceholders: the still-pending sibling placeholder
 // (ruling 7's engine half) answers exactly the unanswered pending
 // calls, once per call, and never duplicates - the answered-id scan
