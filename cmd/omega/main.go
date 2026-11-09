@@ -74,6 +74,8 @@ Usage:
   omega insights [--days N]  show session usage analytics (default: 30 days)
   omega agents         list agents; ` + "`omega agents create <name>`" + ` scaffolds one
   omega tools          list wire tools; ` + "`omega tools disable <name>`" + ` takes one off the model
+  omega settings [get [<key>]]   read config knobs (all, or one dotted key)
+  omega settings set <key> <value>   write one knob (the webui's own validation)
   omega update              report N versions behind + prompt y/N; nothing
                             installs without an explicit y (or --yes)
   omega update --yes        install the latest stable release without a prompt
@@ -185,6 +187,8 @@ func run(args []string) error {
 		// crons grammar's sibling (list/enable/disable) and behaves like
 		// a module subcommand at the flag level - see isRootSubcommand.
 		return cmdTools(rest)
+	case "settings":
+		return cmdSettings(parseConfigFlag(rest), rest)
 	case "update":
 		return cmdUpdate(rest)
 	case "rollback":
@@ -232,7 +236,7 @@ func run(args []string) error {
 func isRootSubcommand(sub string) bool {
 	switch sub {
 	case "setup", "serve", "run", "health", "export", "insights",
-		"agents", "update", "rollback", "chat":
+		"agents", "settings", "update", "rollback", "chat":
 		return true
 	}
 	return false

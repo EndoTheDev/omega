@@ -109,6 +109,65 @@ func TestSettingsGET(t *testing.T) {
 	}
 }
 
+// TestSettingsGETOneKey pins the one-knob read (card t_013b4643): the
+// ?key= form answers the knob object as it rides inside its group, so a
+// script client reads a single value without the group walk.
+func TestSettingsGETOneKey(t *testing.T) {
+	ts := settingsServer(&fakeSettings{defaultValue: true})
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/settings?key=compaction.enabled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if cc := resp.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("cache-control %q, want no-store", cc)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var knob struct {
+		Key   string   `json:"key"`
+		Label string   `json:"label"`
+		Type  string   `json:"type"`
+		Value any      `json:"value"`
+		Min   *float64 `json:"min"`
+	}
+	if err := json.Unmarshal(body, &knob); err != nil {
+		t.Fatalf("decode knob %q: %v", body, err)
+	}
+	if knob.Key != "compaction.enabled" || knob.Type != "toggle" || knob.Value != true {
+		t.Errorf("knob = %+v, want the compaction.enabled toggle true", knob)
+	}
+	// the one-knob answer is the knob, not a group envelope
+	if strings.Contains(string(body), `"groups"`) {
+		t.Errorf("?key= answered the full payload: %s", body)
+	}
+}
+
+// TestSettingsGETUnknownKey: a typo is a 404 naming the key - never a
+// full payload that reads as a successful fetch.
+func TestSettingsGETUnknownKey(t *testing.T) {
+	ts := settingsServer(&fakeSettings{defaultValue: true})
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/settings?key=nope.nope")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status %d, want 404", resp.StatusCode)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(b), "unknown setting: nope.nope") {
+		t.Errorf("body %q omits the key", string(b))
+	}
+}
+
 func TestSettingsPUTRoundTripsAndRefreshes(t *testing.T) {
 	fake := &fakeSettings{defaultValue: true}
 	ts := settingsServer(fake)
