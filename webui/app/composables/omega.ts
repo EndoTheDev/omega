@@ -46,6 +46,23 @@ export interface OmegaImage {
   base64: string;
 }
 
+// OmegaAttachment mirrors core.Attachment (card t_1ffd07de): the
+// non-image lane's reference record. The bytes live in the server's
+// upload dir; the client carries kind (lowercased extension, "file"
+// when none), name, size and the absolute path the agent opens.
+export interface OmegaAttachment {
+  kind: string;
+  name: string;
+  size: number;
+  path: string;
+}
+
+// MAX_CHAT_FILE_BYTES mirrors the backend's per-file cap
+// (maxChatFileBytes = maxChatImageBytes, 10 MB): the client refuses the
+// same number the server would, so an oversize pick never leaves the
+// browser.
+export const MAX_CHAT_FILE_BYTES = 10 * 1024 * 1024;
+
 export interface OmegaMessage {
   // "system" rides the skill-command arm (t_07aed3f9): the dispatch
   // surface returns a skill's content and the next send carries it as
@@ -56,6 +73,10 @@ export interface OmegaMessage {
   // image attachments (paste / picker / drag-drop / server-fetched URL),
   // the same shape ai.User.Images round-trips through the backend
   images?: OmegaImage[];
+  // non-image file references (card t_8a569163): the /attach-file
+  // answer echoed back - the store persists them, the agent reads the
+  // files through its own tools, providers never see them
+  attachments?: OmegaAttachment[];
 }
 
 export interface Session {
@@ -149,6 +170,10 @@ export interface MessageItem {
   // image attachments on user messages (ai.User.Images) - rendered as
   // thumbnails inside the bubble, click opens the raw data URL
   images?: OmegaImage[];
+  // non-image references on user messages (core.Attachment, card
+  // t_8a569163) - rendered as type-icon chips (name + size), never
+  // thumbnailed: there are no bytes client-side
+  attachments?: OmegaAttachment[];
   // client-side timestamp for live messages, backend created_at for
   // restored history (ChatMessage renders it as a hover title)
   time?: string;
@@ -252,7 +277,7 @@ export type TranscriptItem =
 // thinking/response block streams from the restored item, and the
 // running tool line carries its elapsed-so-far in elapsed_ms.
 export type TranscriptWireItem =
-  | { kind: "user"; id?: string; content: string; time?: string; images?: OmegaImage[] }
+  | { kind: "user"; id?: string; content: string; time?: string; images?: OmegaImage[]; attachments?: OmegaAttachment[] }
   | { kind: "message"; id?: string; content: string; time?: string; response_ms?: number; running?: boolean }
   | { kind: "thinking"; content: string; thinking_ms?: number; running?: boolean }
   | {
@@ -305,13 +330,16 @@ export function renderTranscriptItems(
   for (const it of items) {
     switch (it.kind) {
       case "user":
-        if (it.content)
+        // a user turn whose ONLY payload is attachments still renders
+        // (card t_8a569163): the reference chips are the message
+        if (it.content || it.images?.length || it.attachments?.length)
           out.push({
             kind: "message",
             role: "user",
             content: it.content,
             time: it.time,
             images: it.images,
+            attachments: it.attachments,
             id: it.id,
           });
         break;
@@ -436,6 +464,9 @@ export interface ChatBlockWire {
   type: string; // text | thinking | tool_call | tool_result
   content?: string;
   images?: OmegaImage[];
+  // the non-image references a user text block carries (card
+  // t_8a569163) - core.ChatBlock.Attachments verbatim
+  attachments?: OmegaAttachment[];
   running?: boolean; // the in-flight block of a live stream
   tool_call?: { id?: string; name?: string; arguments?: unknown };
   tool_call_id?: string;
@@ -462,6 +493,29 @@ export interface ChatPayloadWire {
   session?: string;
   running?: boolean;
   rows?: ChatRowWire[];
+}
+
+// normalizeAttachments guards a wire attachments array (core.Attachment,
+// card t_8a569163): rows must carry a string kind + name and a numeric
+// size; the path stays a string. Malformed rows drop, an all-malformed
+// (or absent) array degrades to undefined - a reference record is never
+// half-built (a chip with no name would render a blank).
+export function normalizeAttachments(raw: unknown): OmegaAttachment[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: OmegaAttachment[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const r = item as Record<string, unknown>;
+    if (typeof r.kind !== "string" || typeof r.name !== "string" || !r.name) continue;
+    if (typeof r.size !== "number") continue;
+    out.push({
+      kind: r.kind,
+      name: r.name,
+      size: r.size,
+      path: typeof r.path === "string" ? r.path : "",
+    });
+  }
+  return out.length ? out : undefined;
 }
 
 // normalizeChatPayload guards one chat-kind panel's payload: wrong
@@ -492,6 +546,7 @@ export function normalizeChatPayload(payload: unknown): ChatPayloadWire | null {
             type: b.type,
             content: typeof b.content === "string" ? b.content : undefined,
             images: Array.isArray(b.images) ? (b.images as OmegaImage[]) : undefined,
+            attachments: normalizeAttachments(b.attachments),
             running: b.running === true ? true : undefined,
             tool_call:
               b.tool_call && typeof b.tool_call === "object"
@@ -2796,6 +2851,37 @@ export async function attachImageUrl(url: string): Promise<OmegaImage> {
     throw new Error(`attach-url: ${r.status}${text ? `: ${text}` : ""}`);
   }
   return (await r.json()) as OmegaImage;
+}
+
+// uploadAttachment posts one picked File to POST /attach-file
+// (multipart/form-data, card t_1ffd07de's wire) and answers the
+// reference record the message then carries. The cap is checked here
+// too - the same number (MAX_CHAT_FILE_BYTES) the composer checks, so a
+// caller that skipped the picker's gate still never ships an oversize
+// file past the browser.
+//
+// PART ORDER IS LOAD-BEARING: the handler reads parts in wire order, so
+// session_id must precede the file part - reversed, the file stages
+// under <uploads>/_pending and only /chat's relocation rescues it into
+// the session dir (the parent card's named nit).
+export async function uploadAttachment(
+  file: File,
+  sessionId?: string | null,
+): Promise<OmegaAttachment> {
+  if (file.size > MAX_CHAT_FILE_BYTES) {
+    throw new Error(
+      `${file.name || "file"} too large: ${(file.size / 1048576).toFixed(1)} MB (max ${MAX_CHAT_FILE_BYTES / 1048576} MB)`,
+    );
+  }
+  const form = new FormData();
+  if (sessionId) form.append("session_id", sessionId);
+  form.append("file", file, file.name || "file");
+  const r = await fetch("/attach-file", { method: "POST", body: form });
+  if (!r.ok) {
+    const text = await r.text();
+    throw new Error(`attach-file: ${r.status}${text ? `: ${text.trim()}` : ""}`);
+  }
+  return (await r.json()) as OmegaAttachment;
 }
 
 // markSessionRead stamps the session's last-read time (PATCH {"read":

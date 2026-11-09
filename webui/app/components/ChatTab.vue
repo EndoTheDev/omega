@@ -165,6 +165,7 @@
       :thinking="thinking"
       :workspace="workspaceValue"
       :attachments="state.attachments"
+      :files="state.files"
       :fork-anchor="forkAnchor"
       @clear-fork="host.setFork(stateKey, null)"
       @update:model="onModelChange"
@@ -174,7 +175,9 @@
       @send="onSend"
       @cancel="host.cancel(stateKey)"
       @attach-files="(imgs: never[]) => host.attachFiles(stateKey, imgs)"
+      @attach-file-refs="(files: File[]) => host.attachFileRefs(stateKey, files)"
       @remove-attachment="(i: number) => host.removeAttachment(stateKey, i)"
+      @remove-file-attachment="(i: number) => host.removeFileAttachment(stateKey, i)"
       @attach-url="(u: string) => host.attachUrl(stateKey, u)" />
   </main>
 </template>

@@ -4,11 +4,11 @@
     :class="{ expanded: expanded }"
     @click="onCanvasClick">
     <div
-      v-if="attachments.length"
+      v-if="attachments.length || files.length"
       class="attach-strip">
       <div
         v-for="(img, i) in attachments"
-        :key="i"
+        :key="'img-' + i"
         class="attach-thumb"
         :title="'attached image ' + (i + 1)">
         <img :src="dataUrl(img)" alt="" />
@@ -17,6 +17,26 @@
           type="button"
           title="remove attachment"
           @click="$emit('remove-attachment', i)">&times;</button>
+      </div>
+      <!-- non-image references (card t_8a569163): the bytes never reach
+           the browser, so there is nothing to thumbnail - the chip is the
+           type glyph + name + size, the same shape the sent bubble shows -->
+      <div
+        v-for="(f, i) in files"
+        :key="'file-' + i"
+        class="attach-file"
+        :title="f.name + ' - ' + attachmentSizeLabel(f.size)">
+        <Icon
+          :name="attachmentIcon(f.kind)"
+          :size="14" />
+        <span class="attach-file-name">{{ f.name }}</span>
+        <span class="attach-file-size">{{ attachmentSizeLabel(f.size) }}</span>
+        <button
+          class="attach-remove attach-file-remove"
+          type="button"
+          :title="'remove ' + f.name"
+          :aria-label="'remove ' + f.name"
+          @click="$emit('remove-file-attachment', i)">&times;</button>
       </div>
     </div>
     <!-- the fork anchor (t_a62eeb43): a visible affordance while the
@@ -45,8 +65,8 @@
         v-if="!expanded"
         class="plus-btn"
         type="button"
-        title="attach images"
-        aria-label="attach images"
+        title="attach files"
+        aria-label="attach files"
         @click="fileInput?.click()">+</button>
       <!-- THE EDITOR (card t_e67c372b): a contenteditable div, not a
            textarea - chips must render inline in the text flow. The
@@ -118,7 +138,6 @@
     <input
       ref="fileInput"
       type="file"
-      accept="image/*"
       multiple
       style="display: none"
       @change="onFilesPicked" />
@@ -141,8 +160,8 @@
         v-if="expanded"
         class="plus-btn"
         type="button"
-        title="attach images"
-        aria-label="attach images"
+        title="attach files"
+        aria-label="attach files"
         @click="fileInput?.click()">+</button>
       <!-- control row order (v0.14.3, user ruling): workspace FIRST,
            then the model name, then the effort pill - the folder the
@@ -202,6 +221,7 @@
   import ModelSelect from "./ModelSelect.vue";
   import WorkspaceSelect from "./WorkspaceSelect.vue";
   import BandSelect from "../ui/BandSelect.vue";
+  import Icon from "../ui/Icon.vue";
   import ReferencePill from "./ReferencePill.vue";
   import { computed, getCurrentInstance, h, render } from "vue";
   import {
@@ -210,10 +230,17 @@
     fetchFilesBrowse,
     fetchSessions,
     fetchWorkspaceFiles,
+    MAX_CHAT_FILE_BYTES,
     THINKING_UI_LEVELS,
     type FileEntry,
+    type OmegaAttachment,
     type OmegaImage,
   } from "../../composables/omega";
+  import {
+    attachmentIcon,
+    attachmentSizeLabel,
+    isImageFile,
+  } from "../../composables/attachments";
   import { composerFace } from "../../composables/chat";
   import {
     paletteCommands,
@@ -270,6 +297,10 @@
     // pending image attachments - owned by the app: the transcript
     // bubble and the interrupted retry both need them
     attachments: OmegaImage[];
+    // pending NON-IMAGE references (card t_8a569163): the /attach-file
+    // records the app uploaded. The strip renders the type glyph + name
+    // + size; the bytes stay server-side.
+    files: OmegaAttachment[];
     // set while the next send is chained onto a historical message
     // (the fork affordance on the response block) - shows the chip
     forkAnchor?: string | null;
@@ -284,13 +315,20 @@
     (e: "cancel"): void;
     (e: "refresh-models"): void;
     (e: "attach-files", images: OmegaImage[]): void;
+    // the picked NON-image files, pre-upload: the host posts them to
+    // /attach-file and parks the answers in the tab's pending list
+    (e: "attach-file-refs", files: File[]): void;
     (e: "remove-attachment", index: number): void;
+    (e: "remove-file-attachment", index: number): void;
     (e: "attach-url", url: string): void;
     (e: "clear-fork"): void;
   }>();
 
-  // send needs text OR an attachment - image-only messages are valid
-  const canSend = computed(() => !!props.draft.trim() || props.attachments.length > 0);
+  // send needs text OR an attachment - image-only and file-only messages
+  // are valid (card t_8a569163 widens the old image-only rule)
+  const canSend = computed(
+    () => !!props.draft.trim() || props.attachments.length > 0 || props.files.length > 0,
+  );
 
   // the effort chip's option ladder: same value for value + label (the
   // UI level IS the label - the wire mapping lives in omega.ts)
@@ -320,8 +358,6 @@
   // Explicit 21px line-height in CSS makes the row math deterministic:
   // 4 rows = 84px of content height.
   const COMPOSER_MAX = 84;
-
-  const MAX_ATTACH_BYTES = 10 * 1024 * 1024; // mirrors the backend's cap
 
   const ta = ref<HTMLElement | null>(null);
   const fileInput = ref<HTMLInputElement | null>(null);
@@ -382,17 +418,13 @@
 
   // fileToImage reads one File into the ai.ImageContent shape: base64
   // (data: prefix stripped) plus a magic-sniffed media type. Returns
-  // {img: null, reason} for oversize or non-image files - handleFiles
-  // reports the first reason instead of silently dropping.
+  // {img: null, reason} for unsniffable content - handleFiles reports
+  // the first reason instead of silently dropping. The size cap is the
+  // caller's gate (handleFiles, one cap for BOTH lanes, card
+  // t_8a569163).
   async function fileToImage(
     file: File,
   ): Promise<{ img: OmegaImage | null; reason?: string }> {
-    if (file.size > MAX_ATTACH_BYTES) {
-      return {
-        img: null,
-        reason: `${file.name || "pasted image"} too large: ${(file.size / 1048576).toFixed(1)} MB (max 10 MB)`,
-      };
-    }
     const text = await new Promise<string>((resolve, reject) => {
       const r = new FileReader();
       r.onload = () => resolve(String(r.result));
@@ -411,15 +443,33 @@
     return { img: { media_type: magic, base64 } };
   }
 
+  // handleFiles routes one pick into the two lanes (card t_8a569163):
+  // images ride the base64 lane (dataUrl thumbnails, the transcript's
+  // img chips), everything else the upload-reference lane (the host
+  // POSTs each file to /attach-file and the strip shows a type glyph).
+  // ONE cap for both - MAX_CHAT_FILE_BYTES, the server's own number - so
+  // an oversize pick never leaves the browser.
   async function handleFiles(files: FileList | File[]) {
     const images: OmegaImage[] = [];
+    const refs: File[] = [];
     let firstReason = "";
     for (const file of Array.from(files)) {
+      if (file.size > MAX_CHAT_FILE_BYTES) {
+        if (!firstReason) {
+          firstReason = `${file.name || "file"} too large: ${(file.size / 1048576).toFixed(1)} MB (max ${MAX_CHAT_FILE_BYTES / 1048576} MB)`;
+        }
+        continue;
+      }
+      if (!isImageFile(file)) {
+        refs.push(file);
+        continue;
+      }
       const { img, reason } = await fileToImage(file);
       if (img) images.push(img);
       else if (!firstReason && reason) firstReason = reason;
     }
     if (images.length) emit("attach-files", images);
+    if (refs.length) emit("attach-file-refs", refs);
     if (firstReason) window.alert(firstReason);
   }
 

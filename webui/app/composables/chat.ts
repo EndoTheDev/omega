@@ -32,11 +32,13 @@ import {
   verdictFromResultText,
   withBusy,
   attachImageUrl,
+  uploadAttachment,
   deleteSession,
   type BusyMap,
   type CanvasPanel,
   type ChatPayloadWire,
   type ChatRowWire,
+  type OmegaAttachment,
   type OmegaImage,
   type Session,
   type StreamHandlers,
@@ -76,6 +78,11 @@ export interface ChatState {
   // pending image attachments, per tab like the draft: paste/picker/
   // url-attach collect here and the next send carries them
   attachments: OmegaImage[];
+  // pending NON-IMAGE references (card t_8a569163): the /attach-file
+  // records the composer picked. The bytes already sit in the session's
+  // upload dir; the send echoes the records on the message and the agent
+  // reads the files with its own tools. Per tab, like the draft.
+  files: OmegaAttachment[];
   // the non-activity line above the composer: interrupted runs, pipe
   // failures, attach failures. Phase narration is derived (activityPhase).
   statusLine: string;
@@ -154,6 +161,7 @@ export const DEFAULT_CHAT_STATE: ChatState = {
   restored: [],
   draft: "",
   attachments: [],
+  files: [],
   statusLine: "",
   tokens: 0,
   tokensPerSecond: 0,
@@ -252,8 +260,14 @@ export interface ChatHost {
   ): Promise<boolean>;
   /** add picked/pasted images to this tab's pending attachments */
   attachFiles(key: string, images: OmegaImage[]): void;
+  /** upload picked NON-IMAGE files to /attach-file and park the returned
+      references in this tab's pending list (card t_8a569163). A failure
+      lands in statusLine, never a throw. */
+  attachFileRefs(key: string, files: File[]): Promise<void>;
   /** remove one pending attachment by index */
   removeAttachment(key: string, index: number): void;
+  /** remove one pending file reference by index */
+  removeFileAttachment(key: string, index: number): void;
   /** server-side fetch of an image URL into this tab's attachments */
   attachUrl(key: string, url: string): Promise<void>;
   /** set / clear the composer's FORK anchor (the view resolved the
@@ -458,6 +472,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         restored: [],
         draft: "",
         attachments: [],
+        files: [],
         statusLine: "",
         tokens: 0,
         tokensPerSecond: 0,
@@ -792,7 +807,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     fork?: string,
   ): Promise<boolean> {
     const st = ensureState(key);
-    if (!text && !st.attachments.length) return false;
+    if (!text && !st.attachments.length && !st.files.length) return false;
     // per-session gate: the run slot is per session - a live run on the
     // SAME session anywhere (either of this page's tabs, the server's
     // active set) blocks a second send locally; the runHub 409 is the
@@ -807,9 +822,21 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     // takes the panel over and the user turn rides the first delta).
     const images = st.attachments.slice();
     st.attachments = [];
+    // the pending file references ride the SAME user turn (card
+    // t_8a569163): the server persists the records, relocates a staged
+    // draft upload into the session dir, and validates every path
+    const files = st.files.slice();
+    st.files = [];
     // the armed skill (t_07aed3f9) rides THIS send as a system
     // preamble; one send consumes it
-    const messages: OmegaMessage[] = [{ role: "user", content: text, images: images.length ? images : undefined }];
+    const messages: OmegaMessage[] = [
+      {
+        role: "user",
+        content: text,
+        images: images.length ? images : undefined,
+        attachments: files.length ? files : undefined,
+      },
+    ];
     if (st.pendingSkill?.content) {
       messages.unshift({ role: "system", content: st.pendingSkill.content });
       st.statusLine = `[skill: ${st.pendingSkill.name}] carried with this send`;
@@ -886,6 +913,27 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
   function attachFiles(key: string, images: OmegaImage[]): void {
     const st = ensureState(key);
     st.attachments = st.attachments.concat(images);
+  }
+
+  // attachFileRefs uploads each picked non-image file to /attach-file
+  // (card t_8a569163) and parks the returned reference in the tab's
+  // pending list. ONE file per request is the route's law, so the loop
+  // is sequential and the strip keeps the picker's order. A failed file
+  // lands in statusLine; the rest still upload.
+  async function attachFileRefs(key: string, files: File[]): Promise<void> {
+    const st = ensureState(key);
+    for (const file of files) {
+      try {
+        st.files.push(await uploadAttachment(file, st.sessionId));
+      } catch (e) {
+        st.statusLine = `attach failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    }
+  }
+
+  function removeFileAttachment(key: string, index: number): void {
+    const st = ensureState(key);
+    st.files = st.files.filter((_, i) => i !== index);
   }
   // command runs a "/" draft (t_07aed3f9). Shell commands go to the
   // app's local handler (deps.runCommand - theme, panes, fork, retry,
@@ -1076,7 +1124,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     submit,
     command,
     attachFiles,
+    attachFileRefs,
     removeAttachment,
+    removeFileAttachment,
     attachUrl,
     setFork,
     replayFork,
@@ -1140,6 +1190,9 @@ export function createCanvasTranscript(): CanvasTranscript {
       it.role = "user";
       it.content = block.content ?? "";
       it.images = block.images;
+      // the non-image references ride the row's text block (card
+      // t_8a569163) - the live turn renders the same chips the restore does
+      it.attachments = block.attachments;
       it.id = row.id;
       cache.set(sig, it);
       return it;
