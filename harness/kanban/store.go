@@ -111,8 +111,11 @@ var (
 )
 
 // Open opens (creating if needed) the board database at dsn and
-// ensures the schema exists. ":memory:" works for tests. A dsn inside
-// a data/ directory gets the boot-time data-dir migration first
+// ensures the schema exists. ":memory:" works for SEQUENTIAL tests
+// only - the loop executes tool calls concurrently, and every fresh
+// pooled connection to a :memory: dsn is its own empty database
+// (use a file dsn under concurrency). A dsn inside a
+// data/ directory gets the boot-time data-dir migration first
 // (legacy home-root databases move into data/ before the handle is
 // opened - see harness/datadir).
 func Open(dsn string) (*Store, error) {

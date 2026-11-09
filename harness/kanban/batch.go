@@ -112,7 +112,7 @@ func resolveRef(op map[string]any, last string, created map[int]string, total in
 }
 
 // runTaskBatch runs the operations array on the tool provider's board
-// (the consolidated task tool's batch lane). On a Batcher board the
+// (the kanban.batch tool's lane). On a Batcher board the
 // whole batch is one transaction: the first failure rolls back the
 // operations that already applied and the result says so; on success
 // everything commits at once (done-notifications flush after the
