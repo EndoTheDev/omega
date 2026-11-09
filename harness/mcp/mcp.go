@@ -488,6 +488,17 @@ func loadConfig() (*mcpConfig, string, error) {
 	return cfg, name, err
 }
 
+// mcpHome resolves the omega home the mcp config lookup starts from
+// (OMEGA_HOME, falling back to the legacy ~/.omega). One rule for the
+// loader, the toggle write and the entry CRUD bootstrap.
+func mcpHome() string {
+	home := os.Getenv("OMEGA_HOME")
+	if home == "" {
+		home = filepath.Join(os.Getenv("HOME"), ".omega")
+	}
+	return home
+}
+
 // configFile resolves the config file the loader reads, walking the
 // IDENTICAL lookup order (mcp.yaml/mcp.json per dir, home root first,
 // then config/). Returns ok=false when no config file exists - the
@@ -495,10 +506,7 @@ func loadConfig() (*mcpConfig, string, error) {
 // ever written: the flag lives on the per-server entry (card
 // t_83f37525) and mcp.json entries stay hand-edited.
 func configFile() (path string, name string, ok bool) {
-	home := os.Getenv("OMEGA_HOME")
-	if home == "" {
-		home = filepath.Join(os.Getenv("HOME"), ".omega")
-	}
+	home := mcpHome()
 	cfgDir := filepath.Join(home, "config")
 	for _, name := range []string{"mcp.yaml", "mcp.json"} {
 		for _, dir := range []string{home, cfgDir} {
