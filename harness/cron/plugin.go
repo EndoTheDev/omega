@@ -111,6 +111,13 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err := api.RegisterCommand("/cron", "list cron jobs (read-only)", []string{}, cronHandler(p)); err != nil {
 		return err
 	}
+	// The crons subcommand (card t_aca45258): the terminal face of the
+	// same editor the Cron tab writes through. The module owns its argv
+	// (v0.12 phase D Q6); every write rides SaveJob/DeleteJob above, so
+	// `omega crons add` and a tab save land byte-identically.
+	if err := api.RegisterSubcommand("crons", cronsSummary, cmdCrons(p)); err != nil {
+		return err
+	}
 	// The per-job toggle route (card t_561dc4e0) rides the mcp toggle
 	// route's reasoning (harness/mcp/plugin.go): it persists the
 	// `enabled:` flag into the owning crons.yaml at the yaml.Node level

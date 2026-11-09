@@ -24,6 +24,7 @@ omega update --rollback   swap back to omega.bak + health-verify
 omega rollback            alias for omega update --rollback
 omega health          check the server at the configured port
 omega kanban          the task board registry (see: omega kanban --help)
+omega crons           scheduled prompts: list, add, edit, delete (see: omega crons --help)
 ```
 
 ## Subcommands
@@ -141,6 +142,37 @@ omega agents
 omega agents create scout "fast probe agent"
 omega agents create                    # fails: name required
 ```
+
+### `omega crons`
+
+The terminal face of the webui's Cron tab, on the same job set and the
+same writer: every verb below rides `Runner.SaveJob` /
+`Runner.DeleteJob`, the functions `POST /cron/save` and
+`POST /cron/delete` call. An `omega crons add` and an editor save land
+identically in the main home's `crons.yaml` (yaml.Node splice: file
+comments and untouched siblings survive; a replaced entry re-marshals
+clean). Validation is the loader's own schema law - a missing prompt,
+a malformed schedule, a schedule on an interval job are refused before
+anything reaches the disk. An agent home's wake job belongs to
+`<home>/agents/<name>/config/crons.yaml` and is refused here, naming
+that file.
+
+The job name is the one positional and it comes FIRST; leftover
+positionals are a usage error, never a guess.
+
+```bash
+omega crons                                   # same as `omega crons list`
+omega crons list                              # name, cadence, agent, last fire, next fire
+omega crons add nightly-ship --schedule "0 3 * * *" --prompt "ship the release"
+omega crons add pulse --kind interval --minutes 15 --prompt "tick"
+omega crons edit nightly-ship --enabled=false  # only the flags you pass apply
+omega crons delete pulse
+```
+
+Flags (add/edit): `--schedule`, `--kind`, `--minutes`, `--prompt`,
+`--deliver`, `--file`, `--agent`, `--model`, `--skills`, `--enabled`.
+`edit` applies only the flags actually passed, so a one-scalar flip
+never rewrites the prompt or the schedule.
 
 ### `omega update`
 
