@@ -347,6 +347,7 @@ PARKED=(); LEGAL=0
 # stay unparked: the ready lane cannot touch them (CAS), the review
 # lane must see them.
 PASS_SURF=$(mktemp); : >"$PASS_SURF"   # surfaces of candidates already marked legal THIS pass (pairwise)
+PASS_CLASS=""   # classes of candidates already marked legal THIS pass
 for c in "${CAND[@]:-}"; do
   [ -z "$c" ] && continue
   # ponytail: no early break at 2 legal - the dispatcher may skip a legal
@@ -363,11 +364,16 @@ for c in "${CAND[@]:-}"; do
   # class law FIRST and unconditionally: a go-class candidate never spawns
   # beside a running go card, no matter what tokens it carries (proven:
   # t_7bd3dc06 spawned beside running t_c5b98609 because token-bearing
-  # candidates skipped the class check entirely).
+  # candidates skipped the class check entirely). SAME-PASS leg added
+  # 2026-11-09 (guard bug #12, proven live: t_2919b7a3 + t_150ce9fc
+  # co-spawned as a go+go pair in ONE pass with an empty running set -
+  # the running-set check never fired; the same-pass guard below covered
+  # files only, not class).
   RC=$(for r in "${RUNNING[@]:-}"; do [ -n "$r" ] && class_of "$r" || true; done | sort -u | tr '\n' ',')
   CC=$(class_of "$c")
-  if [ "$RUN_HAS_SURFACE" = 1 ] && [ "$CC" = go ] && [[ ",$RC," == *,go,* ]]; then
-    HOLD=1; WHY="go-class beside running go: $RC (sanctioned pairs are go+webui only)"
+  if { [ "$RUN_HAS_SURFACE" = 1 ] && [ "$CC" = go ] && [[ ",$RC," == *,go,* ]]; } \
+     || { [ "$CC" = go ] && [[ ",$PASS_CLASS," == *,go,* ]]; }; then
+    HOLD=1; WHY="go-class beside go: running=[$RC] same-pass=[$PASS_CLASS] (sanctioned pairs are go+webui only)"
   elif grep -q . "$CTOK"; then
     if [ "$RUN_HAS_SURFACE" = 1 ] && overlaps "$CTOK" "$SURF"; then
       HOLD=1; MATCHF="$SURF"
@@ -388,6 +394,7 @@ for c in "${CAND[@]:-}"; do
   else
     echo "legal: $c"
     LEGAL=$((LEGAL+1))
+    PASS_CLASS="$PASS_CLASS,$CC"
     { git diff --name-only dev..."wt/$c" 2>/dev/null || true   # resumed candidates carry real writes
       candidate_tokens "$c"
     } >>"$PASS_SURF"
