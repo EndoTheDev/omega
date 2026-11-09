@@ -1,6 +1,7 @@
 #!/bin/bash
 # 70-dock-panes-dnd - the dock surface: panes render, the tab strip
-# shows the seven fixed inspector tabs, and the session lock holds - a
+# shows the inspector's fixed tabs (settings left the strip for the
+# menubar gear, t_00e4a784), and the session lock holds - a
 # synthetic HTML5 drag attempt must not break the shell or relocate the
 # pinned sessions singleton. (Positive drag reordering needs two
 # panes; it rides the dockdnd arc once pane splitting is journeyed.)
@@ -22,7 +23,7 @@ step "ok: panes render ($panes panes, $tabs dock tabs)"
 # Insights - the strip IS the registry list the drawer derives from.
 # card t_c7222095: "Continuous" left the strip - the roster folded into
 # Agents, and its ABSENCE is asserted here (deletability: no hidden tab).
-missing=$(jsq '["Files","Cron","Skills","Tools","Agents","Settings","Kanban","Modules","Insights"].filter(t => ![...document.querySelectorAll(".dock-pane.pinned .dock-tab")].some(b => ((b.getAttribute("aria-label")||"")||b.title).trim() === t)).length' 2>&1)
+missing=$(jsq '["Files","Cron","Skills","Tools","Agents","Kanban","Modules","Insights"].filter(t => ![...document.querySelectorAll(".dock-pane.pinned .dock-tab")].some(b => ((b.getAttribute("aria-label")||"")||b.title).trim() === t)).length' 2>&1)
 assert_eq "$missing" "0" "every registry inspector tab renders with its name"
 ghost=$(jsq '[...document.querySelectorAll(".dock-pane.pinned .dock-tab")].filter(b => ((b.getAttribute("aria-label")||"")||b.title).trim() === "Continuous").length' 2>&1)
 assert_eq "$ghost" "0" "the merged-away Continuous tab renders nowhere"
@@ -66,7 +67,7 @@ split=$(jsq '(() => {
   if (!tab) return "no-files-tab";
   const dt=new DataTransfer();
   tab.dispatchEvent(new DragEvent("dragstart",{dataTransfer:dt,bubbles:true}));
-  const main=[...document.querySelectorAll(".dock-pane")].find(p=>p.querySelector(".composer"));
+  const main=[...document.querySelectorAll(".dock-pane")].find(p=>!p.classList.contains("pinned"));
   if (!main) return "no-main";
   const r=main.getBoundingClientRect();
   const cx=r.left+r.width*0.15, cy=r.top+r.height*0.6;

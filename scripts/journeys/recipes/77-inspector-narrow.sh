@@ -49,6 +49,41 @@ inspJS='(()=>{const ps=[...document.querySelectorAll(".dock-pane")];
 found=$(jsq "$inspJS")
 assert_eq "$found" "1" "inspector pane found by its tab set"
 
+# card t_00e4a784 (Endo ruling 2026-11-09): settings left the inspector -
+# the menubar gear opens it as an on-demand MAIN tab. The narrow law still
+# applies to it (useNarrow measures its OWN container), so the journey
+# opens it from the gear and DRAGS its chip into the inspector bar (tabs
+# are free content): the inspector's 240px is the narrow host the phase-1
+# assert needs. Real gesture semantics, synthetic HTML5 drag events (the
+# same shape recipe 70 uses - the app reads dataTransfer, and the pane
+# handlers drive moveTab from it).
+geared=$(jsq '(()=>{const b=document.querySelector("header.menubar button[aria-label=\"Open settings\"]"); if(!b) return 0; b.click(); return 1})()')
+assert_eq "$geared" "1" "settings gear rendered in the menubar"
+sleep 2
+moved=$(jsq '(() => {
+  const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
+  const panes=[...document.querySelectorAll(".dock-pane")];
+  const src=panes.find(p=>[...p.querySelectorAll(".dock-tab")].some(t=>/settings/i.test(name(t))));
+  const dst=panes.find(p=>p!==src && [...p.querySelectorAll(".dock-tab")].some(t=>/files/i.test(name(t))));
+  if(!src||!dst) return 0;
+  const chip=[...src.querySelectorAll(".dock-tab")].find(t=>/settings/i.test(name(t)));
+  const bar=dst.querySelector(".dock-tabbar");
+  if(!chip||!bar) return 0;
+  const dt=new DataTransfer();
+  chip.dispatchEvent(new DragEvent("dragstart",{dataTransfer:dt,bubbles:true}));
+  const r=bar.getBoundingClientRect();
+  const cx=Math.round(r.right-20), cy=Math.round(r.y+10);
+  bar.dispatchEvent(new DragEvent("dragover",{dataTransfer:dt,bubbles:true,clientX:cx,clientY:cy}));
+  bar.dispatchEvent(new DragEvent("drop",{dataTransfer:dt,bubbles:true,clientX:cx,clientY:cy}));
+  return 1;
+})()')
+assert_eq "$moved" "1" "settings chip dragged into the inspector bar"
+sleep 1
+hosted=$(jsq '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
+ const p=[...document.querySelectorAll(".dock-pane.pinned")].find(x=>[...x.querySelectorAll(".dock-tab")].some(t=>/settings/i.test(name(t))));
+ return p?1:0})()')
+assert_eq "$hosted" "1" "the inspector bar hosts the dragged settings tab"
+
 # TABS: title-regex, panel-root selector, narrow computed-style check.
 # The style checks pin the STACKED/CONDENSED shapes of the recipe's
 # scoped narrow rules - if a refactor drops the rule while keeping the
