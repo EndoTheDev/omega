@@ -220,13 +220,15 @@ settings (the `approvals_model` slot, above):
 
 ## The process registry
 
-The process capsule (`harness/process/`) runs detached, long-running
-shell commands (builds, transfers, servers) and manages them by
-handle. The synchronous shell stays the tool for anything expected to
-finish in seconds; `process.*` exists so long ops never block a turn
-or flood the context. State: `<home>/data/process.json`; log: one
-`<name>.log` per process at `<home>/logs/process/`; a pid gone at
-boot = exited.
+The process capsule (`harness/process/`) is the daemon registry: it
+runs detached shell commands that must keep running past the call -
+servers, watchers, anything that must outlive the turn - and manages
+them by handle. Anything that finishes belongs to `shell.run`: a long
+command pends past the inline budget and re-enters as the call's
+result. `process.spawn` / `list` / `read` / `kill` exist for daemons,
+whose output must go to a log instead of the context.
+State: `<home>/data/process.json`; log: one `<name>.log` per process at
+`<home>/logs/process/`; a pid gone at boot = exited.
 
 Log retention (stated loud, card t_304afb4e): the log SURVIVES the
 process - `process.read` works after exit (the post-mortem path, the
@@ -235,8 +237,8 @@ main reason to read a log). A finished log is trimmed to
 the tail). Re-spawning an exited name rotates its log to
 `<name>.log.1` (one generation back) and starts a fresh file. An
 exited entry and its logs are dropped automatically a week after the
-process finished, and `process.remove` deletes one on demand (running
-handles are refused - kill first).
+process finished - that sweep is the registry's only GC (there is no
+removal verb; deleting a cron is not vocabulary a tool needs).
 
 Two config.yaml knobs (absent section = the defaults; `0` or unset
 means the DEFAULT, never "disabled" - the same zero semantics as
