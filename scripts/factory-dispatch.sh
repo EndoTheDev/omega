@@ -33,7 +33,11 @@ Applies the same-file law at dispatch time: computes each running card's
 write surface, holds every ready candidate whose surface collides, then
 dispatches the legal remainder through the fence-stamped inner dispatcher
 (OMEGA_WORKER=1, repo git shims on PATH). Legal/hold verdicts print per
-candidate; the pass ends with a handoff report (wanted/after/over-run).
+candidate, followed by the PAIR verdict for the would-spawn head set
+(cap minus running, in dispatch order) - `pair: sanctioned|forbidden
+(<ids>, <why>)` - so the --max decision reads off the log instead of
+judgment. A forbidden pair means at most one of those cards may run: pass
+--max 1. The pass ends with a handoff report (wanted/after/over-run).
 
 Flags:
   --dry-run   evaluate and print verdicts only; no dispatch, no writes
@@ -263,7 +267,11 @@ class_of() {  # id -> webui | go | docs  (FILES: line is the truth; body text
   files=$(grep -o 'files:.*' <<<"$t" | head -1)
   if [ -n "$files" ]; then
     if grep -q "webui\|\.ts\|\.vue\|nuxt" <<<"$files"; then echo webui
-    elif grep -oE '[^ ]+' <<<"$files" | sed 's/^files://' | grep -qv '^docs/'; then echo go
+    # Strip the 'files:' label BEFORE tokenizing: the old sed ran per token and
+    # left an EMPTY token behind, which `grep -qv '^docs/'` counted as a
+    # non-docs hit - a docs-only FILES line ('FILES: docs/cli.md') classed as
+    # go, holding that card (and every later go candidate behind it).
+    elif grep -oE '[^ ]+' <<<"${files#files:}" | grep -qv '^docs/'; then echo go
     else echo docs; fi
   elif grep -q "docs/\|documentation" <<<"$t" && ! grep -q "webui" <<<"$t"; then echo docs
   elif grep -q "webui\|webui\|nuxt\|spa" <<<"$t"; then echo webui
@@ -327,6 +335,22 @@ for r in "${RUNNING[@]:-}"; do
 done
 RUN_HAS_SURFACE=$(grep -q . "$SURF" && echo 1 || echo 0)
 
+# -- slot math: ONE number, shared by the pair verdict and the dispatch call --
+# SLOTS is this pass's add-capacity in the guard's own accounting: the cap
+# minus the post-reclaim running snapshot (bug #8's snapshot side). The
+# dry-run's pair verdict reads it, and the dispatch call below budgets from
+# it - a pair verdict computed against a different cap than the pass would
+# use is worse than no verdict at all. Explicit --max N bounds TRUE
+# concurrency (N total, not N new), so it subtracts the running set the same
+# way; without --max the pass never adds more than 2 (the pairing law).
+if [ "$MAXARG" -gt 0 ]; then
+  SLOTS=$(( MAXARG - ${#RUNNING[@]} ))
+else
+  SLOTS=$(( CAP - ${#RUNNING[@]} ))
+  [ "$SLOTS" -gt 2 ] && SLOTS=2   # deliberate pairing: max 2 spawns per pass
+fi
+[ "$SLOTS" -lt 0 ] && SLOTS=0
+
 # -- candidates, PRIORITY FIRST then oldest: guard bug #5 (2026-10-26) --
 # the sort was pure creation order, so an urgent bug card could never
 # jump a queued refactor chain. Higher priority number = more urgent
@@ -363,6 +387,9 @@ PARKED=(); LEGAL=0
 # lane must see them.
 PASS_SURF=$(mktemp); : >"$PASS_SURF"   # surfaces of candidates already marked legal THIS pass (pairwise)
 PASS_CLASS=""   # classes of candidates already marked legal THIS pass
+# The would-spawn head set (pair verdict, below): the first SLOTS candidates
+# in DISPATCH ORDER, their classes, and their candidate-side token files.
+HEAD=(); HEADCLS=(); HEADHELD=(); HEADDIR=$(mktemp -d)
 for c in "${CAND[@]:-}"; do
   [ -z "$c" ] && continue
   # ponytail: no early break at 2 legal - the dispatcher may skip a legal
@@ -386,8 +413,15 @@ for c in "${CAND[@]:-}"; do
   # files only, not class).
   RC=$(for r in "${RUNNING[@]:-}"; do [ -n "$r" ] && class_of "$r" || true; done | sort -u | tr '\n' ',')
   CC=$(class_of "$c")
-  if { [ "$RUN_HAS_SURFACE" = 1 ] && [ "$CC" = go ] && [[ ",$RC," == *,go,* ]]; } \
-     || { [ "$CC" = go ] && [[ ",$PASS_CLASS," == *,go,* ]]; }; then
+  # The class leg is UNCONDITIONAL - it needs no surface tokens (a class is
+  # read from FILES/body text), so gating it on RUN_HAS_SURFACE made a go
+  # candidate legal beside a running go card that exposed no tokens (the
+  # second blind spot, tick 2026-11-07 18:36: 'legal: t_ed045792' beside
+  # running go t_3360a8b0). Class-list containment: RC arrives as
+  # 'docs,go,webui,' and the comma-wrapped compare keeps 'go' from matching
+  # inside another word.
+  if [ "$CC" = go ] \
+     && { [[ ",$RC," == *,go,* ]] || [[ ",$PASS_CLASS," == *,go,* ]]; }; then
     HOLD=1; WHY="go-class beside go: running=[$RC] same-pass=[$PASS_CLASS] (sanctioned pairs are go+webui only)"
   elif grep -q . "$CTOK"; then
     if [ "$RUN_HAS_SURFACE" = 1 ] && overlaps "$CTOK" "$SURF"; then
@@ -401,6 +435,10 @@ for c in "${CAND[@]:-}"; do
         [ -n "$MATCHF" ] && grep -qE "^${ct}(/|$)" "$MATCHF" && { WHY="same-file: $ct"; break; }
       done <"$CTOK"
     fi
+  fi
+  if [ "${#HEAD[@]}" -lt "$SLOTS" ]; then
+    HEAD+=("$c"); HEADCLS+=("$CC"); HEADHELD+=("$HOLD")
+    cp "$CTOK" "$HEADDIR/${#HEAD[@]}"   # 1-based: HEADDIR/N pairs with HEAD[N-1]
   fi
   rm -f "$CTOK"
   if [ "$HOLD" = 1 ]; then
@@ -416,6 +454,71 @@ for c in "${CAND[@]:-}"; do
   fi
 done
 rm -f "$SURF" "$PASS_SURF"
+
+# ---- pair verdict: the pairing law over the would-spawn head set -----------
+# THE incident this card cites (tick 2026-11-07 15:36): running=0, two go
+# head cards, `--max 2` - every candidate read legal because each was
+# compared against the EMPTY running set only, and the pass spawned a Go+Go
+# pair the pairing law forbids. Per-candidate verdicts cannot answer the
+# question the --max decision actually asks ("is the PAIR at the head
+# legal?"), so the run states it outright:
+#
+#   pair: sanctioned|forbidden (<ids>, <why>)
+#
+# HEAD is the RAW dispatch-order head - the first SLOTS ready, unclaimed
+# cards, exactly what the inner dispatcher's lane takes in order - and it is
+# deliberately NOT filtered by this pass's own hold verdicts. The holds are
+# the machinery under audit; every hole in them (same-pass class, bug #12;
+# claim-expired-but-live zombies, bug #14; the running-set class gap) let a
+# forbidden pair through while every per-candidate line read legal or hold.
+# Reading the raw head keeps this line a second opinion instead of an echo.
+# The verdict errs on the safe side: a forbidden head pair means at most ONE
+# of those cards may run, so the tick's mechanical reply is --max 1 (SLOTS
+# 1); a sanctioned pair may pass --max 2.
+PAIRV=sanctioned; PAIRWHY=""; PAIRIDS=""
+if [ "${#HEAD[@]}" -eq 0 ]; then
+  PAIRIDS="none"; PAIRWHY="empty would-spawn set"
+elif [ "${#HEAD[@]}" -eq 1 ]; then
+  PAIRIDS="${HEAD[0]}"; PAIRWHY="single would-spawn candidate"
+else
+  PAIRIDS="${HEAD[*]}"
+  PAIRCLS=$(printf '%s+' "${HEADCLS[@]}"); PAIRCLS="${PAIRCLS%+}"
+  PAIRWHY="classes $PAIRCLS, FILES disjoint"
+  for ((pi = 0; pi < ${#HEAD[@]}; pi++)); do
+    for ((pj = pi + 1; pj < ${#HEAD[@]}; pj++)); do
+      # class law BEFORE the token check for EVERY pair (fixed twice
+      # 2026-10-24): a go+go head is forbidden on class alone - disjoint
+      # FILES never sanction it.
+      if [ "${HEADCLS[pi]}" = go ] && [ "${HEADCLS[pj]}" = go ]; then
+        PAIRV=forbidden; PAIRWHY="go+go - sanctioned pairs are go+webui only"
+        break 2
+      fi
+      if overlaps "$HEADDIR/$((pi + 1))" "$HEADDIR/$((pj + 1))"; then
+        PAIRV=forbidden; PAIRWHY="same-file"
+        while read -r ptok; do
+          [ -n "$ptok" ] || continue
+          ptok="${ptok%/}"
+          if grep -qE "^${ptok}(/|$)" "$HEADDIR/$((pj + 1))"; then
+            PAIRWHY="same-file: $ptok"; break
+          fi
+        done <"$HEADDIR/$((pi + 1))"
+        break 2
+      fi
+    done
+  done
+fi
+# A forbidden head pair names the members this pass already holds: those
+# cannot co-spawn, so the honest reading is "at most the rest may run". The
+# verdict stays forbidden either way - the holds are what this line audits.
+if [ "$PAIRV" = forbidden ] && [ "${#HEAD[@]}" -gt 1 ]; then
+  PAIRHELD=""
+  for ((hi = 0; hi < ${#HEAD[@]}; hi++)); do
+    [ "${HEADHELD[hi]}" = 1 ] && PAIRHELD="$PAIRHELD ${HEAD[hi]}"
+  done
+  [ -n "$PAIRHELD" ] && PAIRWHY="$PAIRWHY; held this pass:$PAIRHELD"
+fi
+echo "pair: $PAIRV ($PAIRIDS, $PAIRWHY)"
+rm -rf "$HEADDIR"
 
 [ "$DRY" = 1 ] && { echo "cap=$CAP"; echo "(dry-run: no dispatch)"; exit 0; }
 
@@ -476,10 +579,7 @@ if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(dbq "SELECT COUNT(*) FROM tasks WHERE
     # 2 zombie-running made B below zero, SLOTS kept its cap-derived 2, the
     # inner got --max 4 on a reclaim-emptied pool and spawned 4.
     DISPATCH_MAX="$MAXARG"
-    SLOTS="$(( MAXARG - ${#RUNNING[@]} ))"
   else
-    SLOTS=$(( CAP - ${#RUNNING[@]} ))
-    [ "$SLOTS" -gt 2 ] && SLOTS=2   # deliberate pairing: max 2 spawns per pass
     DISPATCH_MAX=$(( ${#RUNNING[@]} + SLOTS ))
   fi
   # FENCE STAMP (card t_8b32a09a, Endo ruling 2026-11-02 "bake + fence"):
