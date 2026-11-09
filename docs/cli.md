@@ -26,6 +26,7 @@ omega rollback            alias for omega update --rollback
 omega health          check the server at the configured port
 omega kanban          the task board registry (see: omega kanban --help)
 omega crons           scheduled prompts: list, add, edit, delete (see: omega crons --help)
+omega skills          the skills registry: list, read, write, delete (see: omega skills --help)
 ```
 
 ## Subcommands
@@ -209,6 +210,50 @@ omega tools disable files.write        # off the wire; absent from the model's t
 omega tools enable files.write         # back on
 omega tools disable no.such.tool       # refused: no such tool in the registry
 ```
+
+### `omega skills`
+
+The terminal face of the webui's Skills tab, on the same folders and
+the same writer: `list` renders the `/skills` command's own table, and
+the verbs ride this capsule's provider faces rather than a second
+implementation - `read` calls `ReadSkill` (the seam behind
+`GET /skills/content`), `write` rides `SaveSkill` (the tab's one
+writer, `POST /skills/save`) and `delete` rides the same removal law
+`DeleteSkill` delegates to (`POST /skills/delete`), with the ledger's
+actor naming `cli`. An `omega skills write` and a tab
+save compose the identical `SKILL.md` (the description in the
+frontmatter fence, the markdown body under it; an update rewrites the
+body and the description line and leaves every other frontmatter key
+byte-true). A delete backs the whole folder up into
+`.curator_backups` with a ledger row before removing it - a removal is
+receipted, never a silent `rm`.
+
+The skill name is the one positional and it comes FIRST; leftover
+positionals are a usage error, never a guess. Every verb enforces the
+loader's name law - one folder component, no separators, no leading
+dot - so a traversal-shaped name is refused by `read` exactly as it is
+by `write`, `delete` and the HTTP handlers.
+
+```bash
+omega skills                              # same as `omega skills list`
+omega skills list                         # NAME / DESCRIPTION table
+omega skills read deploy                  # one SKILL.md body (no frontmatter)
+omega skills write deploy --description "ship it" --file deploy.md
+omega skills write deploy                 # body on stdin; description kept
+omega skills delete deploy
+```
+
+Flags (`write`): `--description`, `--file` (`-` = stdin), `--content`.
+With neither `--file` nor `--content` the body is read from stdin. A
+name present in both the shared and the agent's own skills directory
+resolves to the shared copy - the same winner the tab edits.
+
+`omega skills` is a module subcommand: the name comes from the skills
+capsule's mount registration, so it vanishes from `omega --help` (and
+stops dispatching) when the module is disabled. An existing `skills/`
+directory in the current directory still wins as a project path - the
+dispatch checks directories before the module table, so run the
+subcommand from outside your omega home.
 
 ### `omega update`
 
