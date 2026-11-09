@@ -23,7 +23,11 @@ capsule-qual sweep (strings and comments blanked) reds on any dot-qual
 on a capsule package the strip list does not name. The build fixup
 must never mop a wire the strip does not know about - an unlisted call
 site reds HERE (the next arc cannot silently run through the fixup's
-`undefined:` catch-all and eat its own wire).
+`undefined:` catch-all and eat its own wire). The sweep runs on EVERY
+host file: main.go and loop.go carry host LOCALS named like capsules
+(store, cron, logger), so there the gate exempts only the curated
+KNOWN_LOCAL_QUALS spellings (qual.method on the local - lexically
+identical to a package call); any other capsule qual reds.
 
 Run INSIDE the staged tree (cwd = the tree root):
     python3 proof-strip.py
@@ -38,10 +42,29 @@ MODULES = ["approval", "browser", "compactor", "continuous", "cron",
            "store", "terminal", "tools", "trust", "verdict"]
 KEEP = ["datadir"]
 
-# the loud unknown-wire gate's pattern: any dot-qual on a capsule
-# package whose import was stripped. Built once, right after MODULES.
-QUALS_RE = re.compile(
-    r"\b(?<![\w.])(" + "|".join(m for m in MODULES if m not in KEEP) + r")\.")
+# The loud unknown-wire gate's two patterns: any dot-qual on a capsule
+# package whose import was stripped (the bare scan), and the same qual
+# with its method name (the allowlist-aware scan for the two files
+# that carry capsule-named host locals). Built once, after MODULES.
+_QUAL_ALTS = "|".join(m for m in MODULES if m not in KEEP)
+QUALS_RE = re.compile(r"\b(?<![\w.])(" + _QUAL_ALTS + r")\.")
+QUAL_FULL_RE = re.compile(r"\b(?<![\w.])(" + _QUAL_ALTS + r")\.(\w+)")
+
+# main.go and loop.go carry host LOCALS named like capsules (store,
+# cron, logger): a method call on the local - `store.Close()` - is
+# lexically identical to a package call, so per file the gate exempts
+# exactly these qual.method spellings on the local value (store.Close
+# and store.GetSession are the newAgent local's agent.StoreProvider
+# calls; cron.Stop and logger.* are the host's own cleanup calls; the
+# tag's loop.go carries only store.Close). A stale
+# entry is harmless (the code no longer matches it); a new local named
+# like a capsule reds loudly and joins this list - a loud false
+# positive is this gate's designed failure mode.
+KNOWN_LOCAL_QUALS = {
+    "cmd/omega/main.go": {"store.Close", "logger.Close",
+                          "logger.Printf", "cron.Stop", "store.GetSession"},
+    "cmd/omega/loop.go": {"store.Close"},
+}
 
 IMPORT_RE = re.compile(
     r'^\t(?:[A-Za-z_][A-Za-z0-9_]*\s+)?"github\.com/EndoTheDev/omega/harness/(\w+)"\s*(?://.*)?$')
@@ -150,30 +173,43 @@ class Host:
 
     @staticmethod
     def blank_strings_comments(text):
-        """blank string bodies, rune bodies and comments (spaces keep
-        offsets) so the capsule-qual scan sees only real code tokens"""
+        """blank string bodies, rune bodies and comments with spaces so
+        the capsule-qual scan sees only real code tokens. Every consumed
+        char emits exactly one space - except newlines, which ride
+        through inside raw strings too - so line AND column offsets hold
+        exactly (including inside string bodies); an unterminated
+        quote leaves its newline to the next loop pass (no line merge -
+        and unreachable on a compiling tree anyway)."""
         out, i, n = [], 0, len(text)
         while i < n:
             c = text[i]
             if c == '"' or c == "'":
                 q, i = c, i + 1
+                out.append(" ")  # the opening quote
                 while i < n:
-                    if text[i] == "\\":
-                        out.append("  ")
+                    if text[i] == "\\" and i + 1 < n:
+                        out.extend((" ", " "))  # the escape pair
                         i += 2
                         continue
                     if text[i] == q or text[i] == "\n":
                         break
+                    out.append(" ")  # one space per interior char
                     i += 1
-                out.append(" ")
-                i += 1
+                if i < n and text[i] == q:
+                    out.append(" ")  # the closing quote
+                    i += 1
+                # unterminated (text[i] is the newline or EOF): the
+                # byte is not consumed here - the newline rides the
+                # next loop iteration, so lines never merge.
             elif c == "`":
                 j = text.find("`", i + 1)
                 if j < 0:
                     out.append(c)
                     i += 1
                     continue
-                out.append(" " * (j - i + 1))
+                # one space per char - except newlines ride through, so
+                # the gate's LINE numbers hold across raw strings too
+                out.extend(ch if ch == "\n" else " " for ch in text[i:j + 1])
                 i = j + 1
             elif text.startswith("//", i):
                 j = text.find("\n", i)
@@ -197,14 +233,17 @@ class Host:
         proof's build fixup eats `undefined: x` lines silently, so an
         uncovered wire MUST red here, before the build ever runs. The
         qual must not ride a selector (lo.store. is a host field, not
-        the package); main.go and loop.go are exempt - they carry host
-        LOCALS named like capsules (store, cron) by design."""
-        pat = globals()["QUALS_RE"]
-        if self.path in ("cmd/omega/main.go", "cmd/omega/loop.go"):
-            return
+        the package). The gate runs on EVERY host file; main.go and
+        loop.go carry capsule-named LOCALS, so there only the curated
+        KNOWN_LOCAL_QUALS spellings (qual.method on the local value)
+        are exempt - anything else reds."""
+        allowed = KNOWN_LOCAL_QUALS.get(self.path, ())
         text = self.blank_strings_comments("\n".join(self.lines))
         hits = [(i + 1, ln.strip()[:100]) for i, ln in enumerate(text.split("\n"))
-                if pat.search(ln)]
+                if QUALS_RE.search(ln)
+                and not all(m in allowed for m in
+                            (mm.group(1) + "." + mm.group(2)
+                             for mm in QUAL_FULL_RE.finditer(ln)))]
         if hits:
             raise Stale(f"strip stale ({desc}): uncovered capsule wire "
                         f"(dot-qual on a capsule package): {hits[:4]}")
@@ -295,6 +334,11 @@ def strip_host():
         "	}",
     ], "main: the provider stub offer")
 
+    # the loud unknown-wire gate runs here too: newAgent's store/logger
+    # locals and cron.Stop() are the curated KNOWN_LOCAL_QUALS
+    # exemptions; any other capsule qual (e.g. a new arc's call site in
+    # buildPlugins or newAgent) reds before the fixup can mop it.
+    f.assert_no_capsule_quals("main")
     f.assert_pure("main")
     f.save()
 
