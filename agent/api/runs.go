@@ -365,13 +365,13 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		// same wiring as the inline path.
 		ctx = agent.WithTurnSink(ctx, s.turnSinkFor(req))
 		ctx = agent.WithPersistInput(ctx, req.persistInput)
-		// Ephemeral (card t_d96a5cd5): the loop filters the denied name
+		// Ephemeral (card t_d96a5cd5): the loop filters the denied names
 		// AFTER every provider merge, so a tool an extension re-adds
 		// under the same name never runs in a no-persist session.
-		// The denied name is harness/memory's registered identity
-		// (the bare domain "memory", the one-domain tool law t_e06b38bc).
+		// The denied names are harness/memory's registered identities
+		// (the dotted memory.* wire, t_d8fbad57).
 		if req.Ephemeral {
-			ctx = agent.WithDeniedTools(ctx, "memory")
+			ctx = agent.WithDeniedTools(ctx, "memory", "memory.add", "memory.replace", "memory.remove", "memory.batch")
 		}
 		var recs []assistantRecord
 		var rec assistantRecord

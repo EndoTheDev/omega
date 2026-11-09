@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -384,8 +385,7 @@ func TestMemoryToolAdd(t *testing.T) {
 	fm := newTestMemory(t)
 	tp := &memoryToolProvider{mem: fm}
 
-	result, _ := tp.runMemory(context.Background(), map[string]any{
-		"action":  "add",
+	result, _ := tp.Tools()["memory.add"].Run(context.Background(), map[string]any{
 		"target":  "memory",
 		"content": "Test via tool",
 	})
@@ -413,8 +413,7 @@ func TestMemoryToolRemove(t *testing.T) {
 	fm.Add(targetMemory, "Keep me")
 	tp := &memoryToolProvider{mem: fm}
 
-	result, _ := tp.runMemory(context.Background(), map[string]any{
-		"action":   "remove",
+	result, _ := tp.Tools()["memory.remove"].Run(context.Background(), map[string]any{
 		"target":   "memory",
 		"old_text": "Remove",
 	})
@@ -438,8 +437,7 @@ func TestMemoryToolReplace(t *testing.T) {
 	fm.Add(targetMemory, "Old value")
 	tp := &memoryToolProvider{mem: fm}
 
-	result, _ := tp.runMemory(context.Background(), map[string]any{
-		"action":   "replace",
+	result, _ := tp.Tools()["memory.replace"].Run(context.Background(), map[string]any{
 		"target":   "memory",
 		"old_text": "Old",
 		"content":  "New value",
@@ -463,7 +461,7 @@ func TestMemoryToolBatch(t *testing.T) {
 	fm := newTestMemory(t)
 	tp := &memoryToolProvider{mem: fm}
 
-	result, _ := tp.runMemory(context.Background(), map[string]any{
+	result, _ := tp.Tools()["memory.batch"].Run(context.Background(), map[string]any{
 		"operations": []any{
 			map[string]any{"action": "add", "target": "memory", "content": "First"},
 			map[string]any{"action": "add", "target": "memory", "content": "Second"},
@@ -485,12 +483,12 @@ func TestMemoryToolBatch(t *testing.T) {
 	}
 }
 
-func TestMemoryToolMissingAction(t *testing.T) {
+func TestMemoryToolMissingTarget(t *testing.T) {
 	fm := newTestMemory(t)
 	tp := &memoryToolProvider{mem: fm}
 
-	result, _ := tp.runMemory(context.Background(), map[string]any{
-		"target": "memory",
+	result, _ := tp.Tools()["memory.add"].Run(context.Background(), map[string]any{
+		"content": "orphan",
 	})
 
 	var res memoryResult
@@ -498,7 +496,52 @@ func TestMemoryToolMissingAction(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if res.Success {
-		t.Error("expected failure with missing action")
+		t.Error("expected failure with missing target")
+	}
+}
+
+// TestDottedWirePin pins the split's registry shape (t_d8fbad57):
+// exactly the four dotted memory tools, the flat `memory` name gone,
+// each required list its own and no action property anywhere.
+func TestDottedWirePin(t *testing.T) {
+	tp := &memoryToolProvider{mem: newTestMemory(t)}
+	tools := tp.Tools()
+	want := []string{"memory.add", "memory.replace", "memory.remove", "memory.batch"}
+	if len(tools) != len(want) {
+		t.Fatalf("provider ships %d tools, want %v: %v", len(tools), want, tools)
+	}
+	for _, name := range want {
+		tl, ok := tools[name]
+		if !ok {
+			t.Fatalf("%s missing from the provider map", name)
+		}
+		if len(tl.Actions) != 0 {
+			t.Fatalf("%s carries Actions %v - the verb is the name, no action protocol", name, tl.Actions)
+		}
+		props := tl.Parameters["properties"].(map[string]any)
+		if _, has := props["action"]; has {
+			t.Fatalf("%s schema carries an action property - the verb IS the name", name)
+		}
+	}
+	if _, has := tools["memory"]; has {
+		t.Fatal("the flat `memory` tool must be gone (registry unification phase 2)")
+	}
+	// each verb's required list is exactly its own
+	req := func(name string) []string {
+		r, _ := tools[name].Parameters["required"].([]string)
+		return r
+	}
+	if !reflect.DeepEqual(req("memory.add"), []string{"target", "content"}) {
+		t.Fatalf("memory.add required = %v, want [target content]", req("memory.add"))
+	}
+	if !reflect.DeepEqual(req("memory.replace"), []string{"target", "content", "old_text"}) {
+		t.Fatalf("memory.replace required = %v, want [target content old_text]", req("memory.replace"))
+	}
+	if !reflect.DeepEqual(req("memory.remove"), []string{"target", "old_text"}) {
+		t.Fatalf("memory.remove required = %v, want [target old_text]", req("memory.remove"))
+	}
+	if !reflect.DeepEqual(req("memory.batch"), []string{"operations"}) {
+		t.Fatalf("memory.batch required = %v, want [operations]", req("memory.batch"))
 	}
 }
 
@@ -658,14 +701,19 @@ func TestPluginMount(t *testing.T) {
 		t.Fatal("the memory offer is nil after Mount")
 	}
 
-	// Verify the bare-domain memory tool is registered.
+	// Verify the dotted memory tools are registered.
 	tps := ctx.ToolProviders
 	if len(tps) != 1 {
 		t.Fatalf("expected 1 tool provider, got %d", len(tps))
 	}
 	tools := tps[0].Tools()
-	if _, ok := tools["memory"]; !ok {
-		t.Fatal("memory tool not registered")
+	for _, name := range []string{"memory.add", "memory.replace", "memory.remove", "memory.batch"} {
+		if _, ok := tools[name]; !ok {
+			t.Fatalf("%s not registered", name)
+		}
+	}
+	if _, ok := tools["memory"]; ok {
+		t.Fatal("the flat `memory` tool must be gone after the split")
 	}
 }
 

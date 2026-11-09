@@ -617,34 +617,45 @@ func TestMemoryRemovalProof(t *testing.T) {
 	proofResolve(t, ctx, "memory")
 	t.Log("PROOF mount=full: seam mounted (the memory offer), tool + prompt section from the same Mount")
 
-	// the tool face: the registry carries the memory tool and a real
-	// add lands in the store
-	var memTool core.Tool
-	foundTool := false
+	// the tool face: the registry carries the dotted memory tools and
+	// a real add lands in the store
+	var memAdd, memRemove func(context.Context, map[string]any) (string, error)
+	foundAdd, foundRemove := false, false
 	for _, tp := range ctx.ToolProviders {
 		for name, tool := range tp.Tools() {
-			if name == "memory" {
-				memTool, foundTool = tool, true
+			switch name {
+			case "memory.add":
+				memAdd, foundAdd = tool.Run, true
+			case "memory.remove":
+				memRemove, foundRemove = tool.Run, true
 			}
 		}
 	}
-	if !foundTool {
-		t.Fatal("FULL MOUNT: the memory tool is missing from the registry")
+	if !foundAdd || !foundRemove {
+		t.Fatal("FULL MOUNT: the dotted memory tools are missing from the registry")
 	}
-	res, runErr := memTool.Run(context.Background(), map[string]any{
-		"action": "add", "target": "memory", "content": "arc 6 proof entry",
+	res, runErr := memAdd(context.Background(), map[string]any{
+		"target": "memory", "content": "arc 6 proof entry",
 	})
 	if runErr != nil || !strings.Contains(res, `"success":true`) {
-		t.Fatalf("FULL MOUNT: memory tool add failed (res=%s err=%v)", res, runErr)
+		t.Fatalf("FULL MOUNT: memory add failed (res=%s err=%v)", res, runErr)
 	}
 	t.Log("PROOF tool wiring: memory add pushed the entry into the store - " + res)
 
 	// the user target is the same tool's second store
-	res, runErr = memTool.Run(context.Background(), map[string]any{
-		"action": "add", "target": "user", "content": "proof user row",
+	res, runErr = memAdd(context.Background(), map[string]any{
+		"target": "user", "content": "proof user row",
 	})
 	if runErr != nil || !strings.Contains(res, `"success":true`) {
 		t.Fatalf("FULL MOUNT: memory tool user add failed (res=%s err=%v)", res, runErr)
+	}
+	// and the remove verb rides the same store (the dotted wire's
+	// third tool): the user row goes back out
+	res, runErr = memRemove(context.Background(), map[string]any{
+		"target": "user", "old_text": "proof user row",
+	})
+	if runErr != nil || !strings.Contains(res, `"success":true`) {
+		t.Fatalf("FULL MOUNT: memory tool user remove failed (res=%s err=%v)", res, runErr)
 	}
 
 	// the prompt-section face: the same store renders as the snapshot
@@ -1234,26 +1245,13 @@ func TestVerdictRemovalProof(t *testing.T) {
 		t.Fatal("FULL MOUNT: the Verdict Cards prompt section is missing")
 	}
 
-	// the tool face: the registry carries the verdict tool with its
-	// one sub-action, and a real verdict tool call hard-pauses the turn
-	// until an answer lands through the seam - the path the /verdicts
-	// POST and the /verdict command share
-	verdictTool, err := pluginTool(ctx, "verdict")
+	// the tool face: the registry carries the dotted verdict.request
+	// tool and a real call hard-pauses the turn until an answer lands
+	// through the seam - the path the /verdicts POST and the /verdict
+	// command share
+	verdictTool, err := pluginTool(ctx, "verdict.request")
 	if err != nil {
-		t.Fatalf("FULL MOUNT: the verdict tool is missing from the registry: %v", err)
-	}
-	for _, tp := range ctx.ToolProviders {
-		if tool, ok := tp.Tools()["verdict"]; ok {
-			foundRequest := false
-			for _, a := range tool.Actions {
-				if a.Name == "request" {
-					foundRequest = true
-				}
-			}
-			if !foundRequest {
-				t.Fatalf("FULL MOUNT: the verdict tool lost its request sub-action: %+v", tool.Actions)
-			}
-		}
+		t.Fatalf("FULL MOUNT: the verdict.request tool is missing from the registry: %v", err)
 	}
 	type toolResult struct {
 		res string
@@ -1262,7 +1260,6 @@ func TestVerdictRemovalProof(t *testing.T) {
 	resCh := make(chan toolResult, 1)
 	go func() {
 		res, err := verdictTool(context.Background(), map[string]any{
-			"action":  "request",
 			"title":   "arc 6 proof: which wire?",
 			"options": []any{"left", "right"},
 		})

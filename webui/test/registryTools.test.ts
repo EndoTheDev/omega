@@ -90,6 +90,52 @@ test("the kanban split groups under one kanban row: seven dotted tools, one pare
   ]);
 });
 
+test("the phase-2 split renders pure-dotted domains as one group row each (t_d8fbad57)", () => {
+  // the real post-split wire: files/memory/skills/verdict carry no
+  // dotless domain tool - every member is a dotted sibling, so each
+  // domain is a group parent row like kanban's
+  const tools = [
+    { name: "shell.run", description: "run a command" },
+    { name: "files.read", description: "read a file" },
+    { name: "files.write", description: "write a file" },
+    { name: "files.edit", description: "patch a file" },
+    { name: "files.batch", description: "atomic multi-file change" },
+    { name: "files.grep", description: "search contents" },
+    { name: "files.glob", description: "list matching paths" },
+    { name: "memory.add", description: "append an entry" },
+    { name: "memory.replace", description: "replace an entry" },
+    { name: "memory.remove", description: "remove an entry" },
+    { name: "memory.batch", description: "atomic multi-change" },
+    { name: "skills.read", description: "load a skill" },
+    { name: "skills.write", description: "create a skill" },
+    { name: "skills.update", description: "patch a skill" },
+    { name: "skills.curate", description: "curator pass" },
+    { name: "verdict.request", description: "issue a choice card" },
+  ];
+  const rows = toolRows(tools, []);
+  for (const domain of ["files", "memory", "skills"]) {
+    const groupRows = rows.filter((r) => r.name === domain);
+    assert.equal(groupRows.length, 1, `the dotted ${domain}.* tools merge into ONE ${domain} row`);
+    assert.equal(
+      rows.some((r) => r.name.startsWith(`${domain}.`)),
+      false,
+      `no orphan ${domain}.* rows`,
+    );
+    assert.deepEqual(
+      toggleTargets(domain, tools),
+      tools.filter((t) => t.name.startsWith(`${domain}.`)).map((t) => t.name),
+      `the ${domain} group toggle fans out to its exact members`,
+    );
+  }
+  // verdict.request is a ONE-member domain: no group parent, its own row
+  assert.equal(rows.some((r) => r.name === "verdict"), false, "a one-member domain never groups");
+  const verdictRow = rows.find((r) => r.name === "verdict.request");
+  if (!verdictRow) {
+    throw new Error("verdict.request stays its own top-level row");
+  }
+  assert.deepEqual(verdictRow.detail, []);
+});
+
 test("toggleTargets: an exact tool toggles itself, a group parent fans out to its members", () => {
   const tools = [
     { name: "kanban", description: "the board" },

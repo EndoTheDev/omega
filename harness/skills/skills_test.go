@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -197,10 +198,10 @@ func TestToolsRead(t *testing.T) {
 	dir := makeSkillDir(t)
 	sp := NewSkillsProvider(dir)
 	tools := sp.Tools()
-	if _, ok := tools["skills"]; !ok {
-		t.Fatal("expected skills tool")
+	if _, ok := tools["skills.read"]; !ok {
+		t.Fatal("expected skills.read")
 	}
-	out, err := tools["skills"].Run(context.Background(), map[string]any{"action": "read", "name": "test-skill"})
+	out, err := tools["skills.read"].Run(context.Background(), map[string]any{"name": "test-skill"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -212,7 +213,7 @@ func TestToolsRead(t *testing.T) {
 func TestToolsReadMissingName(t *testing.T) {
 	sp := NewSkillsProvider(t.TempDir())
 	tools := sp.Tools()
-	_, err := tools["skills"].Run(context.Background(), map[string]any{"action": "read", "name": ""})
+	_, err := tools["skills.read"].Run(context.Background(), map[string]any{"name": ""})
 	if err == nil {
 		t.Fatal("expected error for missing name")
 	}
@@ -281,7 +282,7 @@ func TestPluginMountWithConfig(t *testing.T) {
 func TestRunReadDirNotConfigured(t *testing.T) {
 	sp := &SkillsProvider{Dir: ""}
 	tools := sp.Tools()
-	_, err := tools["skills"].Run(context.Background(), map[string]any{"action": "read", "name": "whatever"})
+	_, err := tools["skills.read"].Run(context.Background(), map[string]any{"name": "whatever"})
 	if err == nil {
 		t.Fatal("expected error when skills directory not configured")
 	}
@@ -296,7 +297,7 @@ func TestRunReadSkillNotFound(t *testing.T) {
 	dir := makeSkillDir(t)
 	sp := NewSkillsProvider(dir)
 	tools := sp.Tools()
-	_, err := tools["skills"].Run(context.Background(), map[string]any{"action": "read", "name": "nonexistent"})
+	_, err := tools["skills.read"].Run(context.Background(), map[string]any{"name": "nonexistent"})
 	if err == nil {
 		t.Fatal("expected error for nonexistent skill")
 	}
@@ -315,7 +316,7 @@ func TestRunReadSkillNotFoundEmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
 	tools := sp.Tools()
-	_, err := tools["skills"].Run(context.Background(), map[string]any{"action": "read", "name": "nonexistent"})
+	_, err := tools["skills.read"].Run(context.Background(), map[string]any{"name": "nonexistent"})
 	if err == nil {
 		t.Fatal("expected error for nonexistent skill")
 	}
@@ -357,7 +358,7 @@ func TestRunReadNonNotExistError(t *testing.T) {
 
 	sp := NewSkillsProvider(dir)
 	tools := sp.Tools()
-	_, err := tools["skills"].Run(context.Background(), map[string]any{"action": "read", "name": skillName})
+	_, err := tools["skills.read"].Run(context.Background(), map[string]any{"name": skillName})
 	if err == nil {
 		t.Fatal("expected error for non-NotExist loadSkill failure")
 	}
@@ -520,7 +521,7 @@ func TestPromptSections(t *testing.T) {
 	if s.Order != promptSectionOrder {
 		t.Errorf("Order = %d, want %d", s.Order, promptSectionOrder)
 	}
-	want := "Call the skills tool (action read) with a skill name to read its full content; actions write and update create and patch skills.\n- test-skill: A test skill\n"
+	want := "Call skills.read with a skill name to load its full content; skills.write creates a new skill and skills.update patches an existing one.\n- test-skill: A test skill\n"
 	if s.Body != want {
 		t.Errorf("Body = %q, want %q", s.Body, want)
 	}
@@ -583,8 +584,7 @@ func TestToolsWriteCreatesSkill(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
 	tools := sp.Tools()
-	out, err := tools["skills"].Run(context.Background(), map[string]any{
-		"action":      "write",
+	out, err := tools["skills.write"].Run(context.Background(), map[string]any{
 		"name":        "fresh-skill",
 		"description": "A fresh skill",
 		"body":        "# fresh\n\nDo the thing.\n",
@@ -618,11 +618,11 @@ func TestToolsWriteRefusals(t *testing.T) {
 	sp := NewSkillsProvider(dir)
 	tools := sp.Tools()
 	write := func(args map[string]any) error {
-		full := map[string]any{"action": "write", "name": "s", "description": "d", "body": "b"}
+		full := map[string]any{"name": "s", "description": "d", "body": "b"}
 		for k, v := range args {
 			full[k] = v
 		}
-		_, err := tools["skills"].Run(context.Background(), full)
+		_, err := tools["skills.write"].Run(context.Background(), full)
 		return err
 	}
 	if err := write(map[string]any{"name": "a/b"}); err == nil || !strings.Contains(err.Error(), "single folder component") {
@@ -659,9 +659,8 @@ func TestToolsUpdateReplacesOnce(t *testing.T) {
 	dir := makeSkillDir(t)
 	sp := NewSkillsProvider(dir)
 	tools := sp.Tools()
-	out, err := tools["skills"].Run(context.Background(), map[string]any{
-		"action": "update", "name": "test-skill",
-		"old_text": "This is the body.", "new_text": "This is the NEW body.",
+	out, err := tools["skills.update"].Run(context.Background(), map[string]any{
+		"name": "test-skill", "old_text": "This is the body.", "new_text": "This is the NEW body.",
 	})
 	if err != nil {
 		t.Fatalf("update: %v", err)
@@ -685,11 +684,11 @@ func TestToolsUpdateFailurePaths(t *testing.T) {
 	sp := NewSkillsProvider(dir)
 	tools := sp.Tools()
 	update := func(args map[string]any) error {
-		full := map[string]any{"action": "update", "name": "test-skill", "old_text": "x", "new_text": "y"}
+		full := map[string]any{"name": "test-skill", "old_text": "x", "new_text": "y"}
 		for k, v := range args {
 			full[k] = v
 		}
-		_, err := tools["skills"].Run(context.Background(), full)
+		_, err := tools["skills.update"].Run(context.Background(), full)
 		return err
 	}
 	if err := update(map[string]any{"old_text": ""}); err == nil || !strings.Contains(err.Error(), `are required`) {
@@ -741,8 +740,8 @@ func TestToolsUpdatePatchesSharedWinner(t *testing.T) {
 	}
 	sp := &SkillsProvider{Dir: own, SharedDir: shared}
 	tools := sp.Tools()
-	out, err := tools["skills"].Run(context.Background(), map[string]any{
-		"action": "update", "name": "dup-skill", "old_text": "shared body", "new_text": "patched",
+	out, err := tools["skills.update"].Run(context.Background(), map[string]any{
+		"name": "dup-skill", "old_text": "shared body", "new_text": "patched",
 	})
 	if err != nil {
 		t.Fatalf("update: %v", err)
@@ -760,12 +759,48 @@ func TestToolsUpdatePatchesSharedWinner(t *testing.T) {
 	}
 }
 
-func TestToolsUnknownAction(t *testing.T) {
+// TestDottedWirePin pins the split's registry shape (t_d8fbad57):
+// exactly the four dotted skills tools, the flat `skills` name gone,
+// each required list its own and no action property anywhere.
+func TestDottedWirePin(t *testing.T) {
 	sp := NewSkillsProvider(t.TempDir())
 	tools := sp.Tools()
-	_, err := tools["skills"].Run(context.Background(), map[string]any{"action": "delete", "name": "x"})
-	if err == nil || !strings.Contains(err.Error(), "action is required") {
-		t.Fatalf("unknown action: %v", err)
+	want := []string{"skills.read", "skills.write", "skills.update", "skills.curate"}
+	if len(tools) != len(want) {
+		t.Fatalf("provider ships %d tools, want %v: %v", len(tools), want, tools)
+	}
+	for _, name := range want {
+		tl, ok := tools[name]
+		if !ok {
+			t.Fatalf("%s missing from the provider map", name)
+		}
+		if len(tl.Actions) != 0 {
+			t.Fatalf("%s carries Actions %v - the verb is the name, no action protocol", name, tl.Actions)
+		}
+		props := tl.Parameters["properties"].(map[string]any)
+		if _, has := props["action"]; has {
+			t.Fatalf("%s schema carries an action property - the verb IS the name", name)
+		}
+	}
+	if _, has := tools["skills"]; has {
+		t.Fatal("the flat `skills` tool must be gone (registry unification phase 2)")
+	}
+	// each verb's required list is exactly its own
+	req := func(name string) []string {
+		r, _ := tools[name].Parameters["required"].([]string)
+		return r
+	}
+	if !reflect.DeepEqual(req("skills.read"), []string{"name"}) {
+		t.Fatalf("skills.read required = %v, want [name]", req("skills.read"))
+	}
+	if !reflect.DeepEqual(req("skills.write"), []string{"name", "description", "body"}) {
+		t.Fatalf("skills.write required = %v", req("skills.write"))
+	}
+	if !reflect.DeepEqual(req("skills.update"), []string{"name", "old_text", "new_text"}) {
+		t.Fatalf("skills.update required = %v", req("skills.update"))
+	}
+	if r := req("skills.curate"); r != nil {
+		t.Fatalf("skills.curate required = %v, want none (the bare call is the default pass)", r)
 	}
 }
 
