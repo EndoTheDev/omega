@@ -10,6 +10,16 @@
 // restarts. The registry state lives in <home>/data/process.json, each
 // process's combined stdout+stderr in <home>/logs/process/<name>.log.
 // A process whose pid is gone when the registry next looks = exited.
+//
+// The log retention contract (card t_304afb4e): the log SURVIVES the
+// process - post-mortem reads are the point of a log, so a finished
+// log stays at <name>.log (readable through process.read), trimmed
+// to at most log_max_bytes (the tail is kept - read serves the
+// tail). The name is the history unit: re-spawning an exited name
+// rotates its log to <name>.log.1 (one generation back) and starts a
+// fresh file. The registry itself is capped too: an exited entry and
+// its logs are swept a week after the process finished, and
+// process.remove deletes one on demand.
 package process
 
 import (
@@ -17,6 +27,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +46,12 @@ const DefaultLogMaxBytes = 5 * 1024 * 1024
 
 // DefaultKillGraceSeconds is the TERM-to-KILL escalation grace (10 s).
 const DefaultKillGraceSeconds = 10
+
+// retainExited is how long an exited entry (and its log generations)
+// survive after the process finished: one week, then the load sweep
+// drops them - the registry GC, so process.list must not accumulate
+// every command the instance ever spawned (card t_304afb4e).
+const retainExited = 7 * 24 * time.Hour
 
 // MaxTailLines caps a single read regardless of the requested count -
 // the context-cost law: the agent reads the tail, never the whole log.
@@ -155,6 +172,26 @@ func (r *Registry) load() {
 	for i := range entries {
 		r.entries[entries[i].Name] = &entries[i]
 	}
+	r.sweepLocked()
+}
+
+// sweepLocked drops exited entries older than the retention window,
+// log generations included. Callers hold mu; only load() calls it -
+// once per registry lifetime, the same laziness as the load itself.
+func (r *Registry) sweepLocked() {
+	cutoff := time.Now().Add(-retainExited).Unix()
+	changed := false
+	for name, e := range r.entries {
+		if e.Exited && e.FinishedAt > 0 && e.FinishedAt < cutoff {
+			delete(r.entries, name)
+			_ = os.Remove(e.LogPath)
+			_ = os.Remove(e.LogPath + ".1")
+			changed = true
+		}
+	}
+	if changed {
+		r.saveNote()
+	}
 }
 
 // save writes the registry atomically. Callers hold mu.
@@ -204,10 +241,15 @@ func (r *Registry) reconcileLocked(e *Entry) {
 // rotateExited renames a finished entry's live log to <name>.log.1 so a
 // replaced (re-spawned) name starts a fresh file and one generation of
 // history survives. Only an existing, non-empty live file rotates - a
-// reaper already rotated this entry (the .log is gone) is a no-op, and
-// a re-spawn must never drop the rotated generation. A RUNNING
+// re-spawn of a name whose log is already gone is a no-op. A RUNNING
 // process's file is never touched mid-flight - the child's fd would
 // keep appending to the renamed inode and the tail read would go stale.
+//
+// Rotation happens ONLY at re-spawn (card t_304afb4e): the pre-fix
+// shape also rotated at exit, which zeroed every post-mortem read -
+// process.read answered "no log yet" for a log sitting renamed beside
+// it. The finished log now stays at <name>.log (the retention
+// contract) and the size cap is enforced by capExited at exit.
 func rotateExited(e *Entry) {
 	info, err := os.Stat(e.LogPath)
 	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
@@ -216,6 +258,70 @@ func rotateExited(e *Entry) {
 	log1 := e.LogPath + ".1"
 	_ = os.Remove(log1)
 	_ = os.Rename(e.LogPath, log1)
+}
+
+// capExited trims a finished entry's log to at most LogMaxBytes,
+// keeping the TAIL - process.read serves the tail, so the head is
+// the cheaper side to lose. Memory-bounded: a chunked copy of the
+// last cap bytes into a temp file, then a rename. This is the
+// enforcement point of process.log_max_bytes (the knob was
+// documented but never enforced before this card). Best-effort: a
+// failed trim leaves the full log on disk, never a half-written one.
+func (r *Registry) capExited(e *Entry) {
+	if err := trimLogTail(e.LogPath, r.cfg.LogMaxBytes); err != nil {
+		fmt.Fprintf(os.Stderr, "omega process: log trim %s: %v\n", e.LogPath, err)
+	}
+}
+
+// trimLogTail rewrites path to its last keep bytes (no-op when the
+// file is already within the cap). The source closes BEFORE the
+// rename: windows refuses to replace a file with an open handle.
+func trimLogTail(path string, keep int64) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Size() <= keep {
+		return nil
+	}
+	src, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer src.Close() // double Close is harmless; the rename path closes first
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".cap-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	abort := func(cause error) error {
+		tmp.Close()
+		os.Remove(tmpName)
+		return cause
+	}
+	buf := make([]byte, 64*1024)
+	pos := info.Size() - keep
+	for {
+		n, rerr := src.ReadAt(buf, pos)
+		if n > 0 {
+			if _, werr := tmp.Write(buf[:n]); werr != nil {
+				return abort(werr)
+			}
+			pos += int64(n)
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return abort(rerr)
+		}
+	}
+	src.Close()
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // spawnName sanitizes a handle name or generates one: [A-Za-z0-9._-],
@@ -307,17 +413,17 @@ func (r *Registry) Spawn(ctx context.Context, command, name, dir string) (*Entry
 	watcher := &reaper{done: make(chan struct{}), tree: tree}
 	r.reapers[e.PID] = watcher
 	r.entries[name] = e
-	// A size-capped log: rotation runs only once the child is dead,
-	// so the cap is enforced across generations (one fresh file per
-	// spawn), never mid-flight. Reads never exceed the tail cap
-	// regardless - a runaway log cannot flood the context through
-	// process.read, only grow on disk.
+	// The log contract: the file survives the process (post-mortem
+	// reads), rotates only when THIS name is re-spawned (above), and
+	// is trimmed to log_max_bytes once at exit - the cap never binds
+	// mid-flight, and reads never exceed the tail cap regardless: a
+	// runaway log cannot flood the context through process.read.
 	r.saveNote()
 	go func() {
 		waitErr := cmd.Wait()
 		// Release the tree guard before the entry lands: the job
 		// close (windows) kills the grandchildren the shell left
-		// behind, so the log rename below never races a live handle.
+		// behind, so the log trim below never races a live handle.
 		tree.close()
 		r.mu.Lock()
 		// The reaper owns the entry only while it still holds the
@@ -328,7 +434,9 @@ func (r *Registry) Spawn(ctx context.Context, command, name, dir string) (*Entry
 			e.Exited = true
 			e.ExitCode = &code
 			e.FinishedAt = time.Now().Unix()
-			rotateExited(e)
+			// The log STAYS at <name>.log: post-mortem reads are the
+			// point (card t_304afb4e). Only the size cap runs here.
+			r.capExited(e)
 			r.saveNote()
 		}
 		close(watcher.done)
@@ -412,6 +520,12 @@ func (r *Registry) Read(name string, lines int) (string, int64, bool, error) {
 		return "", 0, false, fmt.Errorf("no process named %q (see process.list)", name)
 	}
 	data, err := os.ReadFile(e.LogPath)
+	if os.IsNotExist(err) && e.Exited {
+		// Legacy state (pre-t_304afb4e): a reaper-era registry rotated
+		// a finished log to <name>.log.1 at exit; the surviving
+		// generation is still the post-mortem read.
+		data, err = os.ReadFile(e.LogPath + ".1")
+	}
 	if os.IsNotExist(err) {
 		return fmt.Sprintf("no log yet for %q", name), 0, false, nil
 	}
@@ -434,6 +548,30 @@ func (r *Registry) Read(name string, lines int) (string, int64, bool, error) {
 		cut = 1
 	}
 	return out, int64(len(data)), cut > 0, nil
+}
+
+// Remove deletes an EXITED entry and its log generations from the
+// registry - the on-demand removal path of the retention law (card
+// t_304afb4e): process.list must not be a museum, and a handle that
+// outlived its usefulness should leave on request. A RUNNING name is
+// refused (kill it first).
+func (r *Registry) Remove(name string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.load()
+	e, ok := r.entries[name]
+	if !ok {
+		return "", fmt.Errorf("no process named %q (see process.list)", name)
+	}
+	r.reconcileLocked(e)
+	if !e.Exited {
+		return "", fmt.Errorf("process %q (pid %d) is still running - kill it first", name, e.PID)
+	}
+	delete(r.entries, name)
+	_ = os.Remove(e.LogPath)
+	_ = os.Remove(e.LogPath + ".1")
+	r.saveNote()
+	return fmt.Sprintf("removed %q (%s) and its log generations", name, stateOf(e)), nil
 }
 
 // Kill stops a process: TERM first, KILL after the grace. A process

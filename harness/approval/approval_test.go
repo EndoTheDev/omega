@@ -913,3 +913,27 @@ func TestSetConfigGoesLive(t *testing.T) {
 		t.Fatalf("post-flip consult must carry the live operator policy: %v", state)
 	}
 }
+
+// TestOutcomeErrorExpiredDistinct (card t_304afb4e): an expired
+// approval card surfaces with its OWN prefix - "approval card
+// expired", fail-closed named, re-run guidance included - instead of
+// drowning in the flat "approval escalated" vocabulary. Fail-closed
+// is unchanged; only the note's visibility changes.
+func TestOutcomeErrorExpiredDistinct(t *testing.T) {
+	err := outcomeError(Outcome{Verdict: VerdictEscalate, Step: "card_expired", Reason: "the approval card expired - fail-closed, nothing ran"})
+	if err == nil {
+		t.Fatal("an expired card must be a refusal, not a pass")
+	}
+	got := err.Error()
+	if !strings.HasPrefix(got, "approval card expired") {
+		t.Fatalf("the expiry note must carry its own prefix, got %q", got)
+	}
+	if !strings.Contains(got, "fail-closed") || !strings.Contains(got, "re-run the command") {
+		t.Fatalf("the expiry note must name the law and the act-on-it path, got %q", got)
+	}
+	// the rest of the escalate family keeps the generic shape
+	other := outcomeError(Outcome{Verdict: VerdictEscalate, Step: "review_refused", Reason: "the reviewer refused"})
+	if other == nil || !strings.HasPrefix(other.Error(), "approval escalated") {
+		t.Fatalf("non-expiry escalations keep the generic prefix, got %v", other)
+	}
+}

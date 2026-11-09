@@ -222,13 +222,26 @@ shell commands (builds, transfers, servers) and manages them by
 handle. The synchronous shell stays the tool for anything expected to
 finish in seconds; `process.*` exists so long ops never block a turn
 or flood the context. State: `<home>/data/process.json`; log: one
-`<name>.log` per process at `<home>/logs/process/` (rotation drops one
-generation to `<name>.log.1` when a name spawns again); a pid gone at
-boot = exited. Two config.yaml knobs (absent section = the defaults):
+`<name>.log` per process at `<home>/logs/process/`; a pid gone at
+boot = exited.
+
+Log retention (stated loud, card t_304afb4e): the log SURVIVES the
+process - `process.read` works after exit (the post-mortem path, the
+main reason to read a log). A finished log is trimmed to
+`process.log_max_bytes` once at exit (the TAIL is kept - read serves
+the tail). Re-spawning an exited name rotates its log to
+`<name>.log.1` (one generation back) and starts a fresh file. An
+exited entry and its logs are dropped automatically a week after the
+process finished, and `process.remove` deletes one on demand (running
+handles are refused - kill first).
+
+Two config.yaml knobs (absent section = the defaults; `0` or unset
+means the DEFAULT, never "disabled" - the same zero semantics as
+`compaction.context_window: 0 = auto`):
 
 | Key                     | Default   | Meaning                                                     |
 | ----------------------- | --------- | ----------------------------------------------------------- |
-| `process.log_max_bytes` | `5242880` | Log rotation cap across generations (5 MB)                  |
+| `process.log_max_bytes` | `5242880` | Size cap for one finished log (5 MB), enforced at exit - the tail is kept |
 | `process.kill_grace_seconds` | `10` | How long a SIGTERM kill waits before escalating to SIGKILL  |
 
 ## Providers

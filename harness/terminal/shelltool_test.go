@@ -1,7 +1,9 @@
 package terminal
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -256,5 +258,57 @@ func TestRunShellChainRedirectTiming(t *testing.T) {
 	// ping -n 2 waits ~1s; a dead redirect segment would return early.
 	if elapsed < 900*time.Millisecond {
 		t.Fatalf("the delay segment did not actually run (elapsed %v)", elapsed)
+	}
+}
+
+// TestShellSmallOutputNoMarker (card t_304afb4e): the truncation
+// marker fires ONLY when bytes were actually dropped. The pre-fix
+// cappedBuffer counted every written byte in over (over was
+// total-written, not overflow), so an 8-byte echo read as a
+// truncation and the reported total double-counted the kept bytes -
+// the exact QA receipt ("[output truncated, 8 bytes total]" on a
+// visible "A"). The condition over > 0 was honest; the accumulator
+// lied.
+func TestShellSmallOutputNoMarker(t *testing.T) {
+	p := &ShellProvider{}
+	out, err := p.RunShell(context.Background(), map[string]any{"command": "echo A"})
+	if err != nil {
+		t.Fatalf("RunShell: %v", err)
+	}
+	if strings.Contains(out, "truncated") {
+		t.Fatalf("marker on a small output (the QA receipt is back): %q", out)
+	}
+	if !strings.Contains(strings.TrimSpace(out), "A") {
+		t.Fatalf("shell output = %q, want the echo", out)
+	}
+}
+
+// TestShellOversizeOutputHonestMarker (card t_304afb4e): past the 1 MB
+// cap the marker is honest - kept-first size, real total, and the
+// retrieval path named (process.spawn persists the full log).
+func TestShellOversizeOutputHonestMarker(t *testing.T) {
+	big := filepath.Join(t.TempDir(), "big.txt")
+	payload := bytes.Repeat([]byte("xxxxxxxxxx\n"), 160000) // 1,760,000 bytes
+	if err := os.WriteFile(big, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cat := "cat " + big
+	if runtime.GOOS == "windows" {
+		cat = "type " + big
+	}
+	p := &ShellProvider{}
+	out, err := p.RunShell(context.Background(), map[string]any{"command": cat})
+	if err != nil {
+		t.Fatalf("RunShell: %v", err)
+	}
+	if !strings.HasPrefix(out, "xxxxxxxxxx") {
+		t.Fatalf("the cap must keep the HEAD of the output: %q...", out[:40])
+	}
+	want := fmt.Sprintf("kept the first %d bytes of %d", shellOutputCap, len(payload))
+	if !strings.Contains(out, want) {
+		t.Fatalf("marker missing or dishonest (want %q): tail of out = %q", want, out[len(out)-120:])
+	}
+	if !strings.Contains(out, "process.spawn") {
+		t.Fatalf("the marker must name the full-output retrieval path: %q", out[len(out)-120:])
 	}
 }
