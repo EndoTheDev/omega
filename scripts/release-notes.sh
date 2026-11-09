@@ -14,13 +14,22 @@ set -euo pipefail
 # Highlight pick (mechanical, max 5, no ranking cleverness):
 #   1. feat subjects first - newest first, one per scope (topic = scope),
 #      max 3,
-#   2. informative card-merge subjects ("merge: <story>") next - newest
+#   2. refactor subjects next - newest first, one per scope,
+#   3. informative card-merge subjects ("merge: <story>") next - newest
 #      first, max 2, deduped by story substring,
-#   3. fixes fill the remaining slots - newest first, one per scope.
-#   wip/style/chore/docs/test/embed-lane noise and bare "Merge branch"
-#   lines never highlight; they still count in the tallies (other/merges).
-#   The counts line lists distinct scopes, newest touched first, capped
-#   at 6 so it stays one line a human reads.
+#   4. fixes fill the remaining slots - newest first, one per scope.
+#   Internal tooling never highlights: test:/chore: subjects, and
+#   journeys/test-scoped fixes or refactors (a user does not care that a
+#   journey recipe brace was dropped). docs subjects count but never
+#   highlight; wip/style/embed-lane noise and bare "Merge branch" lines
+#   never highlight or count. The full changelog keeps every commit -
+#   the bullets are a selection, the changelog is the record.
+#   The counts line lists the reader-meaningful classes - features,
+#   refactors, fixes, tunes, doc updates - then merges and distinct
+#   scopes; tests and chores stay folded (never a segment). Empty
+#   segments still print so the line's shape holds between releases;
+#   scopes stay newest-touched first, capped at 6 so it stays one
+#   line a human reads.
 #
 # Usage:
 #   scripts/release-notes.sh [base-ref] [version-tag]
@@ -72,10 +81,13 @@ fi
 re_feat='^feat(\(|:| )'
 re_fix='^fix(\(|:| )'
 re_tune='^tune(\(|:| )'
+re_refactor='^refactor(\(|:| )'
+re_docs='^docs(\(|:| )'
 re_scope='^[a-z]+\(([^)]+)\):'
 
-n_feat=0 n_fix=0 n_tune=0 n_other=0 n_merge=0
+n_feat=0 n_refactor=0 n_fix=0 n_tune=0 n_docs=0 n_merge=0
 fc_disp=() fc_scope=()
+rf_disp=() rf_scope=()
 fx_disp=() fx_scope=()
 mg_disp=() mg_norm=()
 scopes=() scope_seen=""
@@ -89,6 +101,11 @@ merge_story() { # "merge: t_xxx - the story (t_xxx)" -> "the story"
     -e 's/^[Mm]erge:[[:space:]]*//' \
     -e 's/^t_[0-9a-f]+[[:space:]]*(-[[:space:]]*)?//' \
     -e 's/ ?\(t_[0-9a-f]+\)$//'
+}
+
+hl_excluded() { # internal-tooling scopes never highlight (fix(journeys), fix(test), the like); comma parts match exactly
+  local sc=";${1//,/;};"
+  [[ "$sc" == *';journeys;'* || "$sc" == *';test;'* ]]
 }
 
 while IFS= read -r -d $'\x1e' rec; do
@@ -118,14 +135,22 @@ while IFS= read -r -d $'\x1e' rec; do
   if [[ "$low" =~ $re_feat ]]; then
     n_feat=$((n_feat + 1))
     fc_disp+=("$disp"); fc_scope+=("$scope")
+  elif [[ "$low" =~ $re_refactor ]]; then
+    n_refactor=$((n_refactor + 1))
+    if ! hl_excluded "$scope"; then
+      rf_disp+=("$disp"); rf_scope+=("$scope")
+    fi
   elif [[ "$low" =~ $re_fix ]]; then
     n_fix=$((n_fix + 1))
-    fx_disp+=("$disp"); fx_scope+=("$scope")
+    if ! hl_excluded "$scope"; then
+      fx_disp+=("$disp"); fx_scope+=("$scope")
+    fi
   elif [[ "$low" =~ $re_tune ]]; then
     n_tune=$((n_tune + 1))
-  else
-    n_other=$((n_other + 1))
+  elif [[ "$low" =~ $re_docs ]]; then
+    n_docs=$((n_docs + 1))
   fi
+  # tests, chores and the rest stay folded: the changelog is the record
   if [ -n "$scope" ] && [[ ";$scope_seen;" != *";$scope;"* ]]; then
     scopes+=("$scope")
     scope_seen="$scope_seen;$scope"
@@ -147,6 +172,19 @@ while [ "$i" -lt "${#fc_disp[@]}" ] && [ "${#hl[@]}" -lt "$FEATS_CAP" ]; do
   if [ -z "${seen[$key]:-}" ]; then
     seen[$key]=1
     hl+=("${fc_disp[$i]}")
+  fi
+  i=$((i + 1))
+done
+
+# refactors: newest-first, one per scope
+declare -A rseen=()
+i=0
+while [ "$i" -lt "${#rf_disp[@]}" ] && [ "${#hl[@]}" -lt "$MAX_HL" ]; do
+  key="${rf_scope[$i]}"
+  [ -n "$key" ] || key="subj:${rf_disp[$i]}"
+  if [ -z "${rseen[$key]:-}" ]; then
+    rseen[$key]=1
+    hl+=("${rf_disp[$i]}")
   fi
   i=$((i + 1))
 done
@@ -191,8 +229,7 @@ done
 plural() { if [ "$1" -eq 1 ]; then echo ""; else echo "s"; fi; }
 plural_fix() { if [ "$1" -eq 1 ]; then echo ""; else echo "es"; fi; } # fx -> fixes
 
-counts="$n_feat feature$(plural "$n_feat"), $n_fix fix$(plural_fix "$n_fix"), $n_tune tune$(plural "$n_tune")"
-if [ "$n_other" -gt 0 ]; then counts="$counts, $n_other other"; fi
+counts="$n_feat feature$(plural "$n_feat"), $n_refactor refactor$(plural "$n_refactor"), $n_fix fix$(plural_fix "$n_fix"), $n_tune tune$(plural "$n_tune"), $n_docs doc update$(plural "$n_docs")"
 if [ "$n_merge" -gt 0 ]; then counts="$counts, $n_merge merge$(plural "$n_merge")"; fi
 if [ "${#scopes[@]}" -gt 0 ]; then
   SCOPE_CAP=6
