@@ -416,19 +416,72 @@
     ],
   }));
 
-  const isClient = (group: SettingGroup) =>
-    group.key === "chat" || group.key === "dock";
+  // Client knobs write props/emits, server knobs write the draft map.
+  // Card t_6bebff18: the Commonly Used group renders BOTH origins side
+  // by side, so the routing is per KNOB (the key prefix names its
+  // owner), never per group alone - a curated theme row read through
+  // serverValue would render empty and swallow its edit into a
+  // PUT /settings the server never accepts.
+  const CLIENT_KNOB_PREFIXES = ["chat.", "dock."];
+  const isClientKnob = (knob: SettingKnob) =>
+    CLIENT_KNOB_PREFIXES.some((prefix) => knob.key.startsWith(prefix));
+  const isClient = (group: SettingGroup, knob?: SettingKnob) =>
+    group.key === "chat" ||
+    group.key === "dock" ||
+    (knob !== undefined && isClientKnob(knob));
 
   // t_a5f9d185: the path knob (default workspace) renders input + the
   // workspace browse chip; every other text knob keeps the plain input.
   const isPathKnob = (knob: SettingKnob) =>
     knob.key === "server.default_workspace";
 
-  const allGroups = computed<SettingGroup[]>(() => [
-    chatGroup.value,
-    dockGroup.value,
-    ...groups.value,
-  ]);
+  // --- the curated first group (card t_6bebff18) ---
+  // Membership is DATA, one line to change: every model knob (the main
+  // model plus the decision / vision / title / per-subsystem slots) and
+  // the appearance pair (theme, colour mode). Each entry is picked BY
+  // KEY out of the already-loaded registry - the SAME knob objects, no
+  // clone and no second fetch - so an edit here writes the draft map /
+  // emits the client event exactly as the origin row does.
+  const COMMONLY_USED_KEYS = [
+    "provider.model_name",
+    "provider.vision_model",
+    "provider.title_model",
+    "provider.approvals_model",
+    "provider.compaction_model",
+    "provider.summarizer_model",
+    "provider.skills_model",
+    "chat.theme",
+    "chat.color_mode",
+  ];
+
+  const commonlyUsedGroup = computed<SettingGroup | null>(() => {
+    // the chat group's knobs are rebuilt per render, so the lookup map
+    // is built from the live groups every time - never a stale copy
+    const byKey = new Map<string, SettingKnob>();
+    for (const group of [chatGroup.value, dockGroup.value, ...groups.value])
+      for (const knob of group.knobs) byKey.set(knob.key, knob);
+    const knobs = COMMONLY_USED_KEYS.map((key) => byKey.get(key)).filter(
+      (knob): knob is SettingKnob => knob !== undefined,
+    );
+    // a registry that carries none of the keys (an older server, a 501
+    // seam) renders no empty section
+    if (knobs.length === 0) return null;
+    return { key: "common", label: "Commonly Used", knobs };
+  });
+
+  const allGroups = computed<SettingGroup[]>(() => {
+    // the curated group pins FIRST and rests there; a live search drops
+    // it, because the surviving registry rows already carry the same
+    // knobs - search replaces the resting sections, it never lists one
+    // knob twice
+    const curated = query.value.trim() === "" ? commonlyUsedGroup.value : null;
+    return [
+      ...(curated ? [curated] : []),
+      chatGroup.value,
+      dockGroup.value,
+      ...groups.value,
+    ];
+  });
 
   // instanceRows was the model pickers' instance feed (card t_fc0b2f2d)
   // - card t_1914a8c9 moved the options to the grouped /models catalog
@@ -534,17 +587,17 @@
   };
 
   function toggleValue(group: SettingGroup, knob: SettingKnob): boolean {
-    if (isClient(group)) return clientValue(knob) === true;
+    if (isClient(group, knob)) return clientValue(knob) === true;
     return serverValue(knob) === true;
   }
 
   function selectValue(group: SettingGroup, knob: SettingKnob): string {
-    const v = isClient(group) ? clientValue(knob) : serverValue(knob);
+    const v = isClient(group, knob) ? clientValue(knob) : serverValue(knob);
     return typeof v === "string" ? v : String(v);
   }
 
   function setToggle(group: SettingGroup, knob: SettingKnob, on: boolean) {
-    if (isClient(group)) {
+    if (isClient(group, knob)) {
       if (knob.key === "chat.show_thinking") emit("update:showThinking", on);
       return;
     }
@@ -552,7 +605,7 @@
   }
 
   function setSelect(group: SettingGroup, knob: SettingKnob, value: string) {
-    if (isClient(group)) {
+    if (isClient(group, knob)) {
       if (knob.key === "chat.color_mode")
         emit("set-color-mode", value as ColorMode);
       else if (knob.key === "chat.theme") emit("set-theme", value);
