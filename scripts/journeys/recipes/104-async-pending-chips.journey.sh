@@ -58,8 +58,10 @@ ab press Enter
 step "sent (tag ${TAG})"
 
 # --- 1+2: the pending chip, on an ENDED run --------------------------
+# boolean-return shape (the wait_js law: jsq must answer "true" - a
+# ?1:0 ternary answers a number and reds even when the chip pends)
 wait_js \
-  "(()=>{return [...document.querySelectorAll('.toolcall')].some(d=>{const ic=d.querySelector('.tool-ic');return ic&&ic.classList.contains('pending')})?1:0})()" \
+  "(()=>{return [...document.querySelectorAll('.toolcall')].some(d=>{const ic=d.querySelector('.tool-ic');return !!(ic&&ic.classList.contains('pending'))})()}" \
   90
 step "ok: the yielded turn's call renders as a PENDING chip"
 
@@ -74,8 +76,9 @@ step "ok: the run ended while the chip pends (home sleeps)"
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
 open_journey_row "$LABEL"
+# boolean-return shape (the wait_js law: jsq must answer "true")
 wait_js \
-  "(()=>{return [...document.querySelectorAll('.toolcall')].some(d=>{const ic=d.querySelector('.tool-ic');return ic&&ic.classList.contains('pending')})?1:0})()" \
+  "(()=>{return [...document.querySelectorAll('.toolcall')].some(d=>{const ic=d.querySelector('.tool-ic');return !!(ic&&ic.classList.contains('pending'))})()}" \
   30
 step "ok: history renders the pending chip after reload"
 
@@ -84,7 +87,7 @@ step "ok: history renders the pending chip after reload"
 # card t_868633b3) and innerText drops the hidden result pre - the
 # chip's own collapse would red an honest fill-in
 wait_js \
-  "(()=>{return [...document.querySelectorAll('.toolcall')].some(d=>{const ic=d.querySelector('.tool-ic');return ic&&ic.classList.contains('done')&&(d.textContent||'').includes('$TAG')})?1:0})()" \
+  "(()=>{return [...document.querySelectorAll('.toolcall')].some(d=>{const ic=d.querySelector('.tool-ic');return !!(ic&&ic.classList.contains('done')&&(d.textContent||'').includes('$TAG'))})()}" \
   150
 step "ok: the chip filled in - the result re-entered as a wake turn"
 
