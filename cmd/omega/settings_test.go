@@ -766,3 +766,51 @@ func TestApplyProviderInstancesGate(t *testing.T) {
 		t.Fatalf("echo changed the secret: %q", cfg.Providers["alpha"].APIKey)
 	}
 }
+
+// TestVisionModelDefaultOption pins the auxiliary "default" entry (card
+// t_df46c8cf): the vision knob advertises default_option so the picker
+// offers the word, and no other knob does (the main model name and the
+// title/compaction slots are not aux lanes that follow a run).
+func TestVisionModelDefaultOption(t *testing.T) {
+	cfg := DefaultConfig()
+	for _, g := range settingGroups(&cfg) {
+		for _, k := range g.Knobs {
+			want := k.Key == "provider.vision_model"
+			if k.DefaultOption != want {
+				t.Errorf("%s default_option = %v, want %v", k.Key, k.DefaultOption, want)
+			}
+		}
+	}
+}
+
+// The "default" choice persists as the WORD: saving it writes
+// vision_model: default to config.yaml (never resolved against whatever
+// main model happened to be selected), and the refreshed schema reads it
+// back verbatim.
+func TestVisionModelDefaultPersistsVerbatim(t *testing.T) {
+	path := writeTestConfig(t, testConfigYAML)
+	payload, err := saveSettings(path, nil, nil, nil, nil, nil, map[string]any{
+		"provider.vision_model": "default",
+	})
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved Config
+	if err := yaml.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.VisionModel != "default" {
+		t.Fatalf("persisted vision_model = %q, want the literal \"default\"", saved.VisionModel)
+	}
+	knob, ok := payload.Knob("provider.vision_model")
+	if !ok {
+		t.Fatal("refreshed schema lost the vision knob")
+	}
+	if knob.Value != "default" {
+		t.Fatalf("refreshed knob value = %v, want default", knob.Value)
+	}
+}

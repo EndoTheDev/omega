@@ -252,3 +252,85 @@ func TestImageIDIsContentAddressed(t *testing.T) {
 		t.Fatal("different media types must hash apart")
 	}
 }
+
+// imageCallModels names the model behind every Stream call whose
+// messages carried an image - i.e. the caption calls, by shape (the
+// main-model turn sees the captioned copy with the binary stripped).
+func (p *countingProvider) imageCallModels() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var out []string
+	for i, msgs := range p.seen.messages {
+		for _, m := range msgs {
+			if u, ok := m.(core.User); ok && len(u.Images) > 0 {
+				out = append(out, p.seen.models[i])
+				break
+			}
+		}
+	}
+	return out
+}
+
+// secondImage is a different payload: the caption memo is keyed by image
+// content, so a follow-the-main test needs a fresh image per run or the
+// second caption would be a cache hit and never reach a provider.
+func secondImage() core.ImageContent {
+	return core.ImageContent{MediaType: "image/png", Base64: tinyPNG + "A"}
+}
+
+// The "default" aux lane (card t_df46c8cf) follows the model the RUN
+// serves: set vision_model to "default", run with model A, switch the
+// main model to B, and the next caption goes through B - no config write,
+// no resolved-and-frozen value. The composer's chip reaches the run as a
+// per-request provider copy, which is exactly RunWithProvider's seam.
+func TestCaptionDefaultFollowsMainModel(t *testing.T) {
+	main := newCountingProvider("model-a", captionScript...)
+	ag := agent.NewAgent(main, nil, 0)
+	ag.SetLoopProvider(captionTestLoop{})
+	ag.SetCaptioner(NewCaptioner(main, DefaultAuxModel, nil, nil))
+
+	first := core.NewUserWithImages("a", []core.ImageContent{testImage()})
+	for range ag.Run(context.Background(), []core.Message{first}, nil) {
+	}
+	// The chip moves to model B: the channel derives the per-request copy.
+	second := core.NewUserWithImages("b", []core.ImageContent{secondImage()})
+	for range ag.RunWithProvider(context.Background(), main.WithModel("model-b"), []core.Message{second}, nil) {
+	}
+
+	if got := main.imageCallModels(); len(got) != 2 || got[0] != "model-a" || got[1] != "model-b" {
+		t.Fatalf("caption models = %v, want [model-a model-b] (the aux lane follows the run's model)", got)
+	}
+}
+
+// Outside a run there is no main model to follow: the "default" lane
+// falls back to the base provider's own model rather than failing.
+func TestCaptionDefaultOutsideRunUsesBaseModel(t *testing.T) {
+	base := newCountingProvider("host-default", captionScript...)
+	c := NewCaptioner(base, DefaultAuxModel, nil, nil)
+	caption, err := c.Caption(context.Background(), testImage())
+	if err != nil || caption != "Red." {
+		t.Fatalf("caption = %q, %v", caption, err)
+	}
+	if got := base.imageCallModels(); len(got) != 1 || got[0] != "host-default" {
+		t.Fatalf("caption models = %v, want [host-default]", got)
+	}
+}
+
+// A pinned vision_model keeps its pin: the run's own provider never leaks
+// into a lane the operator named explicitly.
+func TestCaptionPinnedModelIgnoresRunModel(t *testing.T) {
+	main := newCountingProvider("model-a", captionScript...)
+	vision := newCountingProvider("vision-pinned", captionScript...)
+	c := NewCaptioner(vision, "vision-pinned", nil, nil)
+
+	ctx := agent.WithCaptionProvider(context.Background(), main.WithModel("model-b"))
+	if _, err := c.Caption(ctx, testImage()); err != nil {
+		t.Fatalf("caption: %v", err)
+	}
+	if got := vision.imageCallModels(); len(got) != 1 || got[0] != "vision-pinned" {
+		t.Fatalf("caption models = %v, want [vision-pinned]", got)
+	}
+	if got := main.imageCallModels(); len(got) != 0 {
+		t.Fatalf("the main provider served captions: %v", got)
+	}
+}
