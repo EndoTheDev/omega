@@ -28,7 +28,7 @@
         aria-label="mark all read"
         :disabled="notificationsUnread === 0"
         @click="markAll">
-        <Icon name="mailOpen" />
+        <Icon name="mailOpen" :size="13" />
       </button>
       <!-- the clear-all (card t_05ff5e35): the DELETE side of the
            surface - the feed GOES EMPTY, not just its read flags. Live
@@ -41,7 +41,7 @@
         aria-label="clear all"
         :disabled="clearingAll || notificationsList.length === 0"
         @click="clearAllRecords">
-        <Icon name="trash" />
+        <Icon name="trash" :size="13" />
       </button>
     </TabBand>
     <ul
@@ -256,7 +256,7 @@
      geometry replaced .notif-head/.notif-title. Card t_9794272d: the
      two actions are icon-only band-tools - no local look survives,
      the shared .band-tool contract (hover, disabled, centering)
-     covers them at the shell defaults (14px / stroke 2). */
+     covers them; the icons pin their size at the call site. */
   .notif-list {
     list-style: none;
     margin: 0;
