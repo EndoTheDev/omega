@@ -25,6 +25,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
@@ -56,6 +57,15 @@ type Delegate struct {
 	// mounts before delegate (slice-order tiebreak: no Requires edge -
 	// one naming delegate is the removal recipe's stop signal).
 	store agent.StoreProvider
+	// storeDBPath is the caller's store file (the mount Context's
+	// "store" config section, card t_93b4e521), pinned onto the child
+	// env as OMEGA_DB_PATH. The child runs AS an agent, and the agent
+	// layer re-points an unset store at <home>/agents/<name>/data/
+	// omega.db - a DIFFERENT database than the one the host just
+	// pre-created the child session in, so `run --session <id>` died
+	// "session not found" before the loop ever started. Empty = no pin
+	// (a host that routes no store section).
+	storeDBPath string
 	// spawnable reports the recursion guard's mount verdict: false
 	// inside a subagent child (OMEGA_SUBAGENT set) - delegate.task
 	// never registers there, so depth stays at one level.
@@ -91,6 +101,12 @@ const (
 	summaryHead = 3500
 	summaryTail = 1500
 )
+
+// stderrTailCap bounds the child stderr a FAILED result carries (card
+// t_93b4e521): the last 2000 bytes are the fail-loud receipt, and the
+// tail is the half that names the failing line - a startup refusal
+// prints one line at the end.
+const stderrTailCap = 2000
 
 // Description constants for the delegate tools (the machine-facing
 // identities, Q10 namespace pairs since the v0.12 mount migration).
@@ -212,13 +228,22 @@ func resolveModel(field string) string {
 // (datadir collapses "default" to unset anyway - the default agent's
 // config IS the home config); the model only when explicitly asked -
 // the defaulting law's empty = inherit is the ABSENCE of the var.
-func childEnv(agentName, model string) []string {
+// The dbPath delta carries the CALLER's store into the child (card
+// t_93b4e521): the child runs AS the target agent, so its own config
+// resolution would point the store at the agent's data dir and the
+// `--session <id>` row the host just created would be invisible to it.
+// Pinning the path makes the spawned run and a manual run in the
+// caller's own store the same run.
+func childEnv(agentName, model, dbPath string) []string {
 	env := []string{"OMEGA_SUBAGENT=1"}
 	if name := resolveAgent(agentName); name != agent.DefaultAgentName {
 		env = append(env, "OMEGA_AGENT="+name)
 	}
 	if model := resolveModel(model); model != "" {
 		env = append(env, "OMEGA_MODEL="+model)
+	}
+	if dbPath != "" {
+		env = append(env, "OMEGA_DB_PATH="+dbPath)
 	}
 	return env
 }
@@ -334,7 +359,7 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(taskCtx, omegaBin, childArgs...)
-	cmd.Env = append(os.Environ(), childEnv(agentName, model)...)
+	cmd.Env = append(os.Environ(), childEnv(agentName, model, d.storeDBPath)...)
 	cmd.Env = append(cmd.Env, workerStamp(taskID, omegaBin)...)
 	// Process-group kill, same as the shell tool: without it the
 	// timeout kills only the omega child while shells it spawned
@@ -381,12 +406,15 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 
 // renderResult renders the report-shaped tool result (ruling 2): a
 // clean exit produces the child's own final answer - what omega run
-// printed, trimmed to one summary turn; a failed exit produces a SHORT
-// failure line and nothing else (the details live in the child
-// session and the task record, never in the caller's context).
+// printed, trimmed to one summary turn; a failed exit produces the
+// failure line PLUS the child's stderr tail (card t_93b4e521): the
+// child dies before the loop on a startup refusal, so its stderr is
+// the only account of why, and a bare "exit status 1" is not a
+// diagnosable result. The child's stdout stays out of the failure
+// (it is the answer lane, never the diagnostic lane).
 func (t *delegateTask) renderResult(runErr error) string {
 	if runErr != nil {
-		return fmt.Sprintf("error: delegate task %s failed: %v", t.id, runErr)
+		return fmt.Sprintf("error: delegate task %s failed: %v%s", t.id, runErr, stderrReport(t.errOut.String()))
 	}
 	out := strings.TrimSpace(t.out.String())
 	if out == "" {
@@ -395,6 +423,25 @@ func (t *delegateTask) renderResult(runErr error) string {
 		return fmt.Sprintf("delegate %s: finished without output", t.id)
 	}
 	return clipSummary(out)
+}
+
+// stderrReport renders the child's stderr as the failure detail block.
+// Empty stderr yields NOTHING (a dangling header is noise); an
+// overshoot keeps the tail and names the cut from the front - the last
+// lines are the failing ones. A cut never splits a UTF-8 sequence.
+func stderrReport(stderr string) string {
+	s := strings.TrimSpace(stderr)
+	if s == "" {
+		return ""
+	}
+	if len(s) > stderrTailCap {
+		cut := len(s) - stderrTailCap
+		for cut < len(s) && !utf8.RuneStart(s[cut]) {
+			cut++
+		}
+		s = fmt.Sprintf("...[delegate: stderr cut to the last %d bytes]...\n", stderrTailCap) + s[cut:]
+	}
+	return "\nstderr:\n" + s
 }
 
 // clipSummary bounds an injected result at summaryCap runes, cutting

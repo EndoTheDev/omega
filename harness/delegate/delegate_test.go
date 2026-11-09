@@ -2,11 +2,12 @@ package delegate
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // TestCompile verifies the package compiles and the interfaces are
@@ -108,6 +109,58 @@ func TestPluginMount(t *testing.T) {
 	// the logger capture still happens at mount time (the logging edge)
 	if p.delegate.logger == nil {
 		t.Fatal("mount did not capture the logger")
+	}
+}
+
+// pathStore is the minimal store seam a mount test offers: it answers the
+// caller-store accessor the delegate reads through its own local
+// interface (card t_93b4e521) - no shared config type crosses the
+// capsule boundary.
+type pathStore struct {
+	agent.StoreProvider
+	path string
+}
+
+func (s pathStore) DBPath() string { return s.path }
+
+// plainStore is a store seam WITHOUT the accessor: the pre-fix shape.
+type plainStore struct{ agent.StoreProvider }
+
+// stubStorePlugin offers a store seam so a mount can deliver it.
+type stubStorePlugin struct {
+	svc any
+}
+
+func (stubStorePlugin) Name() string       { return "store" }
+func (stubStorePlugin) Provides() []string { return []string{"store"} }
+func (stubStorePlugin) Requires() []string { return nil }
+func (p stubStorePlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
+	ctx.ApplyOffer("store", "store", p.svc)
+	return nil
+}
+
+// TestMountCapturesCallerStorePath pins the plugin-side capture (card
+// t_93b4e521): the mounted store's own file path is what every spawned
+// child gets pinned as OMEGA_DB_PATH; a store that answers no path pins
+// nothing and keeps the pre-fix behaviour.
+func TestMountCapturesCallerStorePath(t *testing.T) {
+	callerDB := filepath.Join("tmp", "caller", "omega.db")
+	p := NewPlugin()
+	plugins := []agent.Plugin{loggingPlugin{}, stubStorePlugin{svc: pathStore{path: callerDB}}, p}
+	if _, err := agent.MountAllAPI(plugins, &core.Context{}, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
+	}
+	if got := p.delegate.storeDBPath; got != callerDB {
+		t.Fatalf("storeDBPath = %q, want the mounted store's %q", got, callerDB)
+	}
+
+	bare := NewPlugin()
+	plugins = []agent.Plugin{loggingPlugin{}, stubStorePlugin{svc: plainStore{}}, bare}
+	if _, err := agent.MountAllAPI(plugins, &core.Context{}, nil, nil); err != nil {
+		t.Fatalf("api mount (no accessor): %v", err)
+	}
+	if got := bare.delegate.storeDBPath; got != "" {
+		t.Fatalf("storeDBPath = %q, want no pin from a store without the accessor", got)
 	}
 }
 

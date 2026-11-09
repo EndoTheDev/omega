@@ -42,6 +42,20 @@ func applyModelEnvOverride(cfg *Config) {
 	}
 }
 
+// applyDBPathEnvOverride re-asserts the OMEGA_DB_PATH env table entry on
+// a config that an agent layer just laid over (card t_93b4e521). The
+// layer's data isolation re-points a store that still reads as the
+// home default at <home>/agents/<name>/data/omega.db; but an env-set
+// path is CALLER INTENT - a delegate child must open the store its
+// parent pre-created its session in, or `run --session <id>` answers
+// "session not found" and the child dies before the loop. Same law as
+// applyModelEnvOverride above: the env table wins over the layer.
+func applyDBPathEnvOverride(cfg *Config) {
+	if p := strings.TrimSpace(os.Getenv("OMEGA_DB_PATH")); p != "" {
+		cfg.Store.DBPath = canonPath(p)
+	}
+}
+
 // ApplyAgentLayer overlays agents/<name>/config/config.yaml onto cfg
 // and resolves agent-scoped paths for everything that is not shared
 // infrastructure. The main agent (default) layers nothing: the home

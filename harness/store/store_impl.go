@@ -148,6 +148,14 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// DBPath reports the dsn this store opened with - the session database
+// file a child process must open to see the rows this store wrote
+// (card t_93b4e521). The consumer declares the interface it needs; no
+// shared type crosses the capsule boundary.
+func (s *Store) DBPath() string {
+	return s.dbPath
+}
+
 // migrate creates the schema if it does not exist.
 func (s *Store) migrate() error {
 	_, err := s.db.Exec(`

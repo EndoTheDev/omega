@@ -100,6 +100,14 @@ fetch of that URL; the verifier's cheap check stays the file stat),
 and the runtime evidence tail closes the report. Any
 run outside a wake child persists through the sink untouched.
 
+A `--session` run spawned by `delegate.task` also carries `OMEGA_DB_PATH`
+pointing at the CALLER's store. The child runs as an agent profile, and
+the agent layer's data isolation would otherwise open that agent's own
+`data/omega.db` - a different database than the one the caller
+pre-created the child session in - so the run died `run: --session <id>:
+session not found` (exit 1) before the loop. An env-set `OMEGA_DB_PATH`
+is caller intent and survives the agent layer.
+
 ```bash
 omega run --session canonical "check the deploy queue"   # the wake child's shape
 ```
