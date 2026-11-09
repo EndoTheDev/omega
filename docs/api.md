@@ -60,6 +60,8 @@ against localhost from the same host is unaffected.
 | `/mcp/servers`                        | GET        | configured MCP servers (name, transport, connection state, recorded failure, server-qualified tools) over the live bridge |
 | `/mcp/reload`                         | POST       | re-read mcp.yaml/MCP_SERVERS, swap the live bridge (mcp.yaml edits go live on the MCP tab's refresh - no restart); returns the fresh server list |
 | `/mcp/toggle`                         | POST       | the live MCP toggle through the module seam     |
+| `/mcp/save`                          | POST       | upsert one full MCP server entry into mcp.yaml (schema-validated, node-spliced, atomic), swap the live bridge; returns the fresh server list |
+| `/mcp/delete`                        | POST       | remove one MCP server entry from mcp.yaml and swap the bridge (the removed entry's connections close in the swap); unknown name 404 |
 | `/cron/jobs`                         | GET        | cron job list (empty when unmounted — not 501); rows carry the authored `prompt`, the fire-pinned `skills` and the last fire's `status` + `last` + `status_note` |
 | `/cron/save`                         | POST       | upsert one full job definition into the main crons.yaml (schema-validated, hot-reloaded); returns the fresh job set |
 | `/cron/delete`                       | POST       | remove one job from the main crons.yaml; unknown name 404 |

@@ -122,6 +122,26 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err := api.RegisterRoute("POST /mcp/toggle", p.handleToggle); err != nil {
 		return err
 	}
+	// The entry CRUD routes (card t_2a649d87): POST /mcp/save upserts
+	// one full server entry into mcp.yaml at the node level and swaps
+	// the bridge; POST /mcp/delete removes one (its connections close
+	// in the swap). Both answer the fresh StatusReport - the one-
+	// response contract the toggle carries. They mount even on a nil
+	// bridge: the first add wakes an idle module, exactly like the
+	// reload route.
+	if err := api.RegisterRoute("POST /mcp/save", p.handleSaveServer); err != nil {
+		return err
+	}
+	if err := api.RegisterRoute("POST /mcp/delete", p.handleDeleteServer); err != nil {
+		return err
+	}
+	// The mcp subcommand (card t_2a649d87): the terminal face of the
+	// same entry CRUD. The module owns its argv (v0.12 phase D Q6);
+	// every write rides saveServerAndReload/deleteServerAndReload, so
+	// `omega mcp add` and a wire save land byte-identically.
+	if err := api.RegisterSubcommand("mcp", mcpSummary, cmdMCP(p)); err != nil {
+		return err
+	}
 	// The tool provider registers even on a nil bridge (the reload
 	// cycle): Tools() follows the live bridge per call - the provider
 	// itself never changes after mount, only the bridge swaps beneath

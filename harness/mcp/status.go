@@ -355,21 +355,27 @@ func enabledValue(enabled bool) string {
 }
 
 // writeYAML marshals the whole document node and replaces the file -
-// comments and style survive because they rode the node tree. The
+// comments and keys survive because they rode the node tree (the yaml
+// encoder normalizes indentation, as the cron writeJobsYAML does). The
 // write is atomic (the same tmp+rename class writeDisabled/saveCronState
 // run, v0.14.1 audit): a crash mid-write previously truncated the live
 // mcp.yaml and silently dropped every configured server - now the tmp
 // dies alone and the old file survives the rename miss. Same-directory
-// tmp keeps the rename same-filesystem. The write is the caller's
-// responsibility to surface: a parse or lookup failure never reaches
-// this point (the file stays untouched).
+// tmp keeps the rename same-filesystem; an existing file keeps its
+// mode (the config files are operator-owned). The write is the
+// caller's responsibility to surface: a parse or lookup failure never
+// reaches this point (the file stays untouched).
 func writeYAML(path string, doc *yaml.Node) error {
 	out, err := yaml.Marshal(doc)
 	if err != nil {
 		return fmt.Errorf("marshal %s: %w", path, err)
 	}
+	mode := os.FileMode(0o644)
+	if fi, statErr := os.Stat(path); statErr == nil {
+		mode = fi.Mode()
+	}
 	tmp := path + ".omega-toggle.tmp"
-	if err := os.WriteFile(tmp, out, 0o644); err != nil {
+	if err := os.WriteFile(tmp, out, mode); err != nil {
 		return fmt.Errorf("write %s: %w", tmp, err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
