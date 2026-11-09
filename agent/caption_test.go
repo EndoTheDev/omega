@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -45,6 +46,28 @@ func (l *recordingLoop) Run(ctx context.Context, opts LoopOptions) error {
 	}
 	opts.Events <- core.AgentEnd{Type: "agent_end", FinishReason: finish, Error: streamErr}
 	return nil
+}
+
+// capsFakeProvider is a FakeProvider that also answers the capability
+// upgrade (ModelCapabilitiesProvider) - the shape harness/provider
+// implements against the ollama /api/tags "capabilities" array.
+type capsFakeProvider struct {
+	*FakeProvider
+	entries []core.ModelEntry
+	err     error
+}
+
+func (p *capsFakeProvider) ListModelEntries() ([]core.ModelEntry, error) {
+	return p.entries, p.err
+}
+
+// WithModel keeps the capability upgrade on the derived copy: the
+// production provider copies its whole struct through WithModel and
+// the shell hands that per-run copy to RunWithProvider.
+func (p *capsFakeProvider) WithModel(model string) Provider {
+	cp := *p
+	cp.FakeProvider = p.FakeProvider.WithModel(model).(*FakeProvider)
+	return &cp
 }
 
 // imageUserMessage mirrors the webui shape: user text plus one image.
@@ -162,5 +185,121 @@ func TestRunNoCaptionerKeepsImages(t *testing.T) {
 	}
 	if !strings.Contains(end.Error, "400") {
 		t.Fatalf("error = %q, want the loud provider refusal", end.Error)
+	}
+}
+
+// visionRegistry builds a capability-carrying provider whose listing
+// marks the named model vision-capable - the shape the keypool mirror
+// answers for an ollama-family catalog.
+func visionRegistry(model string, vision bool) *capsFakeProvider {
+	caps := []string{"completion", "tools", "thinking"}
+	if vision {
+		caps = append(caps, "vision")
+	}
+	return &capsFakeProvider{
+		FakeProvider: NewFakeProvider(model,
+			core.ResponseChunk{Type: "response_chunk", Content: "ok"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"}),
+		entries: []core.ModelEntry{
+			{Name: "blind-model", Capabilities: []string{"completion", "tools"}},
+			{Name: model, Capabilities: caps},
+		},
+	}
+}
+
+// runOnceOn drives one RunWithProvider on the given provider to
+// completion - the shape the shell uses when it hands the per-run
+// model copy to the agent.
+func runOnceOn(t *testing.T, ag *Agent, p Provider, messages []core.Message) (core.AgentEnd, *recordingLoop) {
+	t.Helper()
+	loop := &recordingLoop{}
+	ag.SetLoopProvider(loop)
+	var end core.AgentEnd
+	for event := range ag.RunWithProvider(context.Background(), p, messages, nil) {
+		if e, ok := event.(core.AgentEnd); ok {
+			end = e
+		}
+	}
+	return end, loop
+}
+
+// The gate: a vision-capable SELECTED main model receives the pixels
+// itself - the auxiliary caption hop never runs, so the image is
+// processed once (one provider stream, zero captioner calls), not
+// twice. The per-run copy is derived through WithModel exactly as the
+// shell derives it.
+func TestRunVisionMainModelSkipsCaptionHop(t *testing.T) {
+	ag := NewAgent(NewFakeProvider("blind-model"), nil, 0)
+	captioner := &countingCaptioner{caption: "unused"}
+	ag.SetCaptioner(captioner)
+
+	reg := visionRegistry("vision-main", true)
+	runProvider := reg.WithModel("vision-main")
+	original := imageUserMessage("what is this?")
+	end, loop := runOnceOn(t, ag, runProvider, []core.Message{original})
+	if end.Error != "" {
+		t.Fatalf("run ended with error: %s", end.Error)
+	}
+	if captioner.calls != 0 {
+		t.Fatalf("captioner calls = %d, want 0 (vision main model skips the aux hop)", captioner.calls)
+	}
+	if !loop.streamCall {
+		t.Fatal("the main model never streamed")
+	}
+	// Count on the per-run copy: WithModel copies the struct, so the
+	// shared parent's counter never moves.
+	if calls := runProvider.(*capsFakeProvider).Calls(); calls != 1 {
+		t.Fatalf("main provider stream calls = %d, want 1 (one image pass, not two)", calls)
+	}
+	u, ok := loop.messages[0].(core.User)
+	if !ok || len(u.Images) != 1 {
+		t.Fatalf("vision main model must receive the pixels, got %#v", loop.messages[0])
+	}
+	if u.Content != "what is this?" {
+		t.Fatalf("loop-visible content = %q, want the original text", u.Content)
+	}
+}
+
+// Regression: a main model the registry does NOT mark vision-capable
+// keeps today's aux behavior - one caption per image, the loop sees
+// the description and no binary.
+func TestRunBlindMainModelKeepsCaptionHop(t *testing.T) {
+	ag := NewAgent(NewFakeProvider("blind-model"), nil, 0)
+	captioner := &countingCaptioner{caption: "an 8x8 solid red square"}
+	ag.SetCaptioner(captioner)
+
+	reg := visionRegistry("blind-model", false)
+	end, loop := runOnceOn(t, ag, reg.WithModel("blind-model"), []core.Message{imageUserMessage("what is this?")})
+	if end.Error != "" {
+		t.Fatalf("run ended with error: %s", end.Error)
+	}
+	if captioner.calls != 1 {
+		t.Fatalf("captioner calls = %d, want 1 (the aux hop still serves a blind main model)", captioner.calls)
+	}
+	u, ok := loop.messages[0].(core.User)
+	if !ok || len(u.Images) != 0 {
+		t.Fatalf("blind main model must not receive pixels, got %#v", loop.messages[0])
+	}
+	if u.Content != "what is this?\n[image: an 8x8 solid red square]" {
+		t.Fatalf("loop-visible content = %q", u.Content)
+	}
+}
+
+// A capability listing that fails leaves the aux hop in place - the
+// pre-existing behavior, never an image turn that silently skips the
+// caption for a blind model.
+func TestRunCapabilityListingFailureKeepsCaptionHop(t *testing.T) {
+	ag := NewAgent(NewFakeProvider("blind-model"), nil, 0)
+	captioner := &countingCaptioner{caption: "described"}
+	ag.SetCaptioner(captioner)
+
+	reg := visionRegistry("blind-model", false)
+	reg.err = errors.New("registry unreachable")
+	end, _ := runOnceOn(t, ag, reg.WithModel("blind-model"), []core.Message{imageUserMessage("look")})
+	if end.Error != "" {
+		t.Fatalf("run ended with error: %s", end.Error)
+	}
+	if captioner.calls != 1 {
+		t.Fatalf("captioner calls = %d, want 1 (listing failure keeps the aux hop)", captioner.calls)
 	}
 }
