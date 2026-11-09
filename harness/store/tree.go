@@ -50,6 +50,12 @@ func (s *Store) loadRows(ctx context.Context, sessionID string) ([]core.StoredMe
 // load just their own rows, unchanged. A missing ancestor (orphan chain
 // after a hard delete) ends the walk - the visible part reads, matching
 // SessionTree's orphan-root handling.
+//
+// The walk reads parent_id, which is the FORK lineage ONLY (t_6c4ab302):
+// a delegate child records its spawner in delegate_parent and keeps
+// parent_id NULL, so a delegate child loads its own rows alone - fresh
+// context by ruling. Pre-split delegate children still carry parent_id
+// and keep rendering merged (historical rows, never rewritten).
 func (s *Store) loadViewRows(ctx context.Context, sessionID string) ([]core.StoredMessage, error) {
 	own, err := s.loadRows(ctx, sessionID)
 	if err != nil {

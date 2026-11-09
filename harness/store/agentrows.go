@@ -61,8 +61,11 @@ func MigrateAgentRows(mainDSN string, agentDSNs map[string]string) error {
 // sessionInsertCols / sessionSelectCols share one column order. The
 // SELECT keeps the row's own parent_id when the parent moves to the
 // same agent store and NULLs a stale reference into the main store -
-// an FK violation on insert would otherwise abort the whole move.
-const sessionInsertCols = `id, parent_id, label, created_at, updated_at,
+// an FK violation on insert would otherwise abort the whole move. The
+// delegate_parent link gets the same treatment (t_6c4ab302): delegate
+// lineage is display metadata, never context, so a NULLed stale link
+// costs nothing.
+const sessionInsertCols = `id, parent_id, delegate_parent, label, created_at, updated_at,
 	prompt_tokens, completion_tokens,
 	pinned, archived, title_state, last_read_at,
 	agent, last_run, model, workspace, summary`
@@ -70,6 +73,8 @@ const sessionInsertCols = `id, parent_id, label, created_at, updated_at,
 const sessionSelectCols = `id,
 	CASE WHEN parent_id IS NULL OR parent_id IN (SELECT id FROM maindb.sessions WHERE agent = ?1)
 	     THEN parent_id ELSE NULL END,
+	CASE WHEN delegate_parent IS NULL OR delegate_parent IN (SELECT id FROM maindb.sessions WHERE agent = ?1)
+	     THEN delegate_parent ELSE NULL END,
 	label, created_at, updated_at,
 	prompt_tokens, completion_tokens,
 	pinned, archived, title_state, last_read_at,
