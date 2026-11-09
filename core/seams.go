@@ -90,6 +90,12 @@ type SettingsKnob struct {
 	// "instance:model" values the call sites resolve
 	// (agent.ParseModelSlot). Non-model knobs leave it empty.
 	Slot bool `json:"slot,omitempty"`
+	// DefaultOption marks an AUXILIARY model knob whose picker offers
+	// the "default" entry: the aux lane then follows whatever model
+	// the current run serves (the composer's chip), resolved at call
+	// time - the choice persists as the literal word, never frozen to
+	// a model name. Non-model knobs leave it empty.
+	DefaultOption bool `json:"default_option,omitempty"`
 }
 
 // SettingsGroup is one config section: a labeled set of knobs.

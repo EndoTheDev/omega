@@ -303,3 +303,46 @@ func TestRunCapabilityListingFailureKeepsCaptionHop(t *testing.T) {
 		t.Fatalf("captioner calls = %d, want 1 (listing failure keeps the aux hop)", captioner.calls)
 	}
 }
+
+// modelRecordingCaptioner records the model of the run provider each
+// caption call saw on the context - the stamp the "default" aux lane
+// resolves against.
+type modelRecordingCaptioner struct{ models []string }
+
+func (c *modelRecordingCaptioner) Caption(ctx context.Context, img core.ImageContent) (string, error) {
+	name := ""
+	if p := CaptionProvider(ctx); p != nil {
+		name = p.ModelName()
+	}
+	c.models = append(c.models, name)
+	return "described", nil
+}
+
+// The run stamps the model it serves for the auxiliary lane (card
+// t_df46c8cf): Run carries the agent's own model, RunWithProvider the
+// per-request copy the channel derived from the composer's chip. The
+// "default" vision lane follows exactly that stamp - no config write, no
+// value frozen at save time.
+func TestRunStampsMainModelForAuxLanes(t *testing.T) {
+	ag := NewAgent(NewFakeProvider("model-a"), nil, 0)
+	captioner := &modelRecordingCaptioner{}
+	ag.SetCaptioner(captioner)
+
+	if end, _ := runOnce(t, ag, []core.Message{imageUserMessage("one")}); end.Error != "" {
+		t.Fatalf("first run ended with error: %s", end.Error)
+	}
+	// The chip switched to model B: the channel hands the run a copy.
+	if end, _ := runOnceOn(t, ag, ag.Provider().WithModel("model-b"), []core.Message{imageUserMessage("two")}); end.Error != "" {
+		t.Fatalf("second run ended with error: %s", end.Error)
+	}
+
+	want := []string{"model-a", "model-b"}
+	if len(captioner.models) != len(want) {
+		t.Fatalf("caption stamps = %v, want %v", captioner.models, want)
+	}
+	for i := range want {
+		if captioner.models[i] != want[i] {
+			t.Fatalf("caption stamps = %v, want %v", captioner.models, want)
+		}
+	}
+}

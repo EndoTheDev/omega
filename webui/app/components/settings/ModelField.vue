@@ -37,7 +37,9 @@
   import type { SettingKnob } from "~/composables/omega";
   import {
     filterModelEntries,
+    pickerNeedsFreeText,
     useModelCatalog,
+    withAuxDefault,
     type ModelFilter,
     type ModelEntry,
   } from "~/composables/modelCatalog";
@@ -80,7 +82,12 @@
       });
   });
 
-  const options = computed(() => [
+  // The NAMED entries only (instances + default catalog, filtered). The
+  // aux "default" sentinel is added for RENDERING below - it is never a
+  // model, so it must not decide whether the listbox may render (see
+  // pickerNeedsFreeText: a filtered list that matched nothing has to
+  // keep the free-text escape hatch).
+  const namedOptions = computed(() => [
     ...instanceOptions.value,
     ...filterModelEntries(catalog.value.entries ?? [], filter).map((e) => ({
       value: e.name,
@@ -88,32 +95,51 @@
     })),
   ]);
 
+  const options = computed(() =>
+    withAuxDefault(
+      namedOptions.value,
+      // card t_df46c8cf: an aux knob marked default_option offers the
+      // "default" entry FIRST - the aux lane then follows the model the
+      // chat runs, resolved server-side per call.
+      props.knob.defaultOption === true,
+    ),
+  );
+
   type Mode = "list" | "fallback";
   // list = the dropdown renders: while the catalog is in flight
   // (brief round trip, the hint says loading) and once it landed with
-  // a non-empty filtered list. A listing that answered but matched
-  // nothing in a filtered slot degrades the same way a failed fetch
-  // does (the empty pop would be a dead dropdown with no escape) -
-  // except a slot knob that already carries instance entries.
-  const mode = computed<Mode>(() => {
-    if (
-      catalog.value.error === null &&
-      (catalog.value.loading || options.value.length > 0)
+  // a non-empty filtered list of NAMED models. A listing that answered
+  // but matched nothing in a filtered slot degrades the same way a
+  // failed fetch does (the empty pop would be a dead dropdown with no
+  // escape) - including an aux knob, whose prepended "default" entry
+  // must never be the only thing left to pick.
+  const mode = computed<Mode>(() =>
+    pickerNeedsFreeText(
+      namedOptions.value.length,
+      catalog.value.loading,
+      catalog.value.error,
     )
-      return "list";
-    return "fallback";
-  });
+      ? "fallback"
+      : "list",
+  );
 
   const hint = computed(() => {
     if (catalog.value.error !== null)
-      return `provider model list unavailable (${catalog.value.error}) - type the model name`;
+      return props.knob.defaultOption === true
+        ? `provider model list unavailable (${catalog.value.error}) - type "default" to follow the chat's model, or type a model name`
+        : `provider model list unavailable (${catalog.value.error}) - type the model name`;
     if (catalog.value.loading) return "loading the provider's models…";
-    if (options.value.length === 0)
-      return filter === "decision"
-        ? "no decision models in the provider's list - type the model name"
-        : filter === "vision"
-          ? "no vision models in the provider's list - type the model name"
-          : "the provider's model list came back empty - type the model name";
+    if (namedOptions.value.length === 0) {
+      const lead =
+        filter === "decision"
+          ? "no decision models in the provider's list"
+          : filter === "vision"
+            ? "no vision models in the provider's list"
+            : "the provider's model list came back empty";
+      return props.knob.defaultOption === true
+        ? `${lead} - type "default" to follow the chat's model, or type a model name`
+        : `${lead} - type the model name`;
+    }
     return "";
   });
 </script>
