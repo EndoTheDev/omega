@@ -181,6 +181,11 @@ func TestCronsCLIRefusals(t *testing.T) {
 		{"edit unknown", []string{"edit", "ghost", "--prompt", "p"}, "no job \"ghost\""},
 		{"edit with no flags", []string{"edit", "daily-journal"}, "nothing to change"},
 		{"delete unknown", []string{"delete", "ghost"}, "no job \"ghost\""},
+		// delete refuses a leading-dash name through the same jobName
+		// guard add/edit use (review round 1 nit fix)
+		{"delete leading dash", []string{"delete", "--help"}, "the job name comes first"},
+		{"delete trailing junk", []string{"delete", "daily-journal", "junk"}, "only the name is positional"},
+		{"list trailing junk", []string{"list", "junk"}, "list takes none"},
 		{"unknown verb", []string{"frobnicate"}, "unknown crons subcommand"},
 	}
 	for _, tc := range cases {
