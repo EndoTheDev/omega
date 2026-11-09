@@ -76,6 +76,9 @@ func TestFilesReadCarriesMime(t *testing.T) {
 	if mime, _ := body["mime"].(string); mime != "image/png" {
 		t.Errorf("read(shot.png).mime = %q; want image/png", mime)
 	}
+	if size, _ := body["size"].(float64); size != float64(len(pngFixture)) {
+		t.Errorf("read(shot.png).size = %v; want %d", body["size"], len(pngFixture))
+	}
 	_, body = filesGet(t, "/files/read?path=main.go")
 	if mime, _ := body["mime"].(string); mime != "text/plain; charset=utf-8" {
 		t.Errorf("read(main.go).mime = %q; want text/plain; charset=utf-8", mime)
@@ -145,7 +148,78 @@ func TestFilesRawRefusesNonImage(t *testing.T) {
 	for _, rel := range []string{"notes.txt", "omega.bin"} {
 		res, _ := rawGet(t, "/files/raw?path="+rel)
 		if res.StatusCode != http.StatusBadRequest {
-			t.Errorf("raw(%q) = %d; want 400 (images only)", rel, res.StatusCode)
+			t.Errorf("raw(%q) = %d; want 400 (renderable only)", rel, res.StatusCode)
+		}
+		res.Body.Close()
+	}
+}
+
+func TestFilesRawServesPdf(t *testing.T) {
+	chdirToWorkdir(t)
+	// a minimal pdf: DetectContentType sniffs the %PDF- magic to
+	// application/pdf, the browser's native viewer needs nothing more
+	pdf := append([]byte("%PDF-1.7\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>"), make([]byte, 32)...)
+	if err := os.WriteFile("doc.pdf", pdf, 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	// a text file with a .pdf name sniffs text/plain - no magic, no pdf
+	if err := os.WriteFile("fake.pdf", []byte("plain text"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	res, raw := rawGet(t, "/files/raw?path=doc.pdf")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("raw(doc.pdf) = %d; want 200 (body %s)", res.StatusCode, raw)
+	}
+	if ct := res.Header.Get("Content-Type"); ct != "application/pdf" {
+		t.Errorf("raw(doc.pdf) Content-Type = %q; want application/pdf", ct)
+	}
+	if ct := res.Header.Get("X-Content-Type-Options"); ct != "nosniff" {
+		t.Errorf("raw(doc.pdf) missing nosniff guard")
+	}
+	res.Body.Close()
+	if len(raw) != len(pdf) {
+		t.Errorf("raw(doc.pdf) served %d bytes; want %d", len(raw), len(pdf))
+	}
+	// the sniff is the gate, not the extension: a text-named-pdf refuses
+	res, _ = rawGet(t, "/files/raw?path=fake.pdf")
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("raw(fake.pdf) = %d; want 400 (sniff, not extension, decides)", res.StatusCode)
+	}
+	res.Body.Close()
+}
+
+func TestFilesRawDownloadLane(t *testing.T) {
+	chdirToWorkdir(t)
+	bin := append([]byte{0x7F, 'E', 'L', 'F', 0x02, 0x01, 0x01, 0x00}, make([]byte, 64)...)
+	if err := os.WriteFile("omega.bin", bin, 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	if err := os.WriteFile("notes.txt", []byte("plain text"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	// download=1 is the second lane: ANY mime serves, but always as an
+	// attachment - never rendered as a document
+	for _, rel := range []string{"omega.bin", "notes.txt"} {
+		res, raw := rawGet(t, "/files/raw?path="+rel+"&download=1")
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("raw(%q, download) = %d; want 200", rel, res.StatusCode)
+		}
+		if cd := res.Header.Get("Content-Disposition"); cd != `attachment; filename="`+rel+`"` {
+			t.Errorf("raw(%q, download) Content-Disposition = %q; want attachment", rel, cd)
+		}
+		if ct := res.Header.Get("X-Content-Type-Options"); ct != "nosniff" {
+			t.Errorf("raw(%q, download) missing nosniff guard", rel)
+		}
+		res.Body.Close()
+		if len(raw) == 0 {
+			t.Errorf("raw(%q, download) served no bytes", rel)
+		}
+	}
+	// the render lane still refuses the unrenderable pair
+	for _, rel := range []string{"omega.bin", "notes.txt"} {
+		res, _ := rawGet(t, "/files/raw?path="+rel)
+		if res.StatusCode != http.StatusBadRequest {
+			t.Errorf("raw(%q) = %d; want 400 (mime gate survives beside the download lane)", rel, res.StatusCode)
 		}
 		res.Body.Close()
 	}
