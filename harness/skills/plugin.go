@@ -84,10 +84,12 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		// capsule-less host answers 404 at the module mux for both.
 		func() error { return api.RegisterRoute("POST /skills/save", p.routes.handleSkillsSave) },
 		func() error { return api.RegisterRoute("POST /skills/delete", p.routes.handleSkillsDelete) },
-		// The CLI face of the curator pass (t_9972dfd0): the
-		// subcommand dies with the module - the registry table is
-		// the only mount path (CLI homecoming, scrub-safe).
-		func() error { return p.registerCLI(api, sp) },
+		// The CLI face of the curator pass (t_9972dfd0) and of the
+		// registry editor (t_05d06973): the subcommands die with the
+		// module - the registry table is the only mount path (CLI
+		// homecoming, scrub-safe).
+		func() error { return p.registerCuratorCLI(api, sp) },
+		func() error { return p.registerSkillsCLI(api, sp) },
 		// The learning-loop reminder seam (t_9972dfd0): the loop
 		// injects one line per elapsed interval; 0 = off.
 		func() error { return api.Offer("nudger", NewTurnNudger(interval)) },
