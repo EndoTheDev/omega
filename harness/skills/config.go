@@ -16,7 +16,10 @@ type Config struct {
 	// NudgeInterval is the learning-loop reminder cadence (card
 	// t_9972dfd0): after this many executed tool calls without a
 	// persisted lesson (skills write/update), the next turn prep
-	// carries one reminder line. 0 = nudging off.
+	// carries one reminder line. 0 = nudging off. The reminder only
+	// arms on write-class tool calls (card t_d5d4d586, QA finding
+	// A5): a pass that only reads, greps, searches or runs shell
+	// commands gets no nudges, so a probe pass stays quiet.
 	NudgeInterval int `yaml:"nudge_interval"`
 	// CuratorModel carries the model slot the weekly curator pass
 	// consults for its merge/distill proposals: "instance:model" (a
