@@ -396,3 +396,224 @@ func TestGrepScanErrorNotesTheFile(t *testing.T) {
 }
 
 func itoa(n int) string { return fmt.Sprintf("%d", n) }
+
+// resultRows strips the note lines ("[...]") off a search result, so a
+// test can assert on the served rows without the honest notes matching
+// the same words.
+func resultRows(out string) []string {
+	var rows []string
+	for _, line := range strings.Split(out, "\n") {
+		if line == "" || strings.HasPrefix(line, "[") {
+			continue
+		}
+		rows = append(rows, line)
+	}
+	return rows
+}
+
+// seedNoisyTree writes the shape the prod defect came from (card
+// t_d5d092be): a walk-lexically-early pile of ignored trees that all
+// contain the needle, plus the file the caller actually wanted.
+// gitObjects fills .git/objects with matching entries (more than the
+// grep file cap for the cap-spending proof; 0 for the plain fixtures).
+func seedNoisyTree(t *testing.T, gitObjects int) string {
+	t.Helper()
+	root := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("seed dirs: %v", err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatalf("seed %s: %v", rel, err)
+		}
+	}
+	write(".cache/typescript/accelerometer.js", "needle\n")
+	write(".git/config", "needle\n")
+	write(".git/objects/pack/pack-abc.pack", "needle\x00pack bytes")
+	write(".nuxt/build.js", "needle\n")
+	write("dist/bundle.js", "needle\n")
+	write("node_modules/x/y.js", "needle\n")
+	write("node_modules/x/blob.node", "needle\x00native bytes")
+	write("notes/real.md", "needle\n")
+	write("app/main.js", "needle\n")
+	for i := 0; i < gitObjects; i++ {
+		write(fmt.Sprintf(".git/objects/pack/obj%d", i), "needle\n")
+	}
+	return root
+}
+
+// TestGrepPrunesIgnoredDirectories: the default skip set keeps the
+// walk out of the noise trees entirely - the real hit arrives well
+// inside the file cap, and the note names what was not searched.
+func TestGrepPrunesIgnoredDirectories(t *testing.T) {
+	root := seedNoisyTree(t, grepMaxFiles+5)
+	got, err := provider().RunGrep(context.Background(), map[string]any{
+		"pattern": "needle",
+		"path":    root,
+	})
+	if err != nil {
+		t.Fatalf("RunGrep: %v", err)
+	}
+	rows := resultRows(got)
+	if len(rows) != 2 {
+		t.Fatalf("rows = %v, want the two real files only:\n%s", rows, got)
+	}
+	for _, want := range []string{"notes/real.md", "app/main.js"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the real hit %q was lost:\n%s", want, got)
+		}
+	}
+	for _, noise := range []string{".git/", "node_modules/", "dist/", ".cache/", ".nuxt/"} {
+		for _, row := range rows {
+			if strings.Contains(row, noise) {
+				t.Errorf("ignored tree leaked into the rows (%s):\n%s", noise, got)
+			}
+		}
+	}
+	if !strings.Contains(got, "[skipped 5 ignored directories") {
+		t.Errorf("the prune note must count the ignored trees:\n%s", got)
+	}
+	for _, name := range []string{".git", ".cache", "node_modules", "dist", ".nuxt"} {
+		if !strings.Contains(got, name) {
+			t.Errorf("the prune note must name %s:\n%s", name, got)
+		}
+	}
+	// Pruned at the directory entry: nothing under the noise trees was
+	// opened, so no per-file skip was counted (the 276398-binary-skips
+	// cost in the prod incident).
+	if strings.Contains(got, "binary") || strings.Contains(got, "size cap") {
+		t.Errorf("ignored trees were walked file-by-file, not pruned:\n%s", got)
+	}
+	if strings.Contains(got, "result cap") {
+		t.Errorf("the file cap was spent before the real hits:\n%s", got)
+	}
+}
+
+// TestGrepIncludeIgnoredSearchesTheTrees: the skip set is a default,
+// and include_ignored is the promised way back in.
+func TestGrepIncludeIgnoredSearchesTheTrees(t *testing.T) {
+	root := seedNoisyTree(t, 0)
+	got, err := provider().RunGrep(context.Background(), map[string]any{
+		"pattern":         "needle",
+		"path":            root,
+		"include_ignored": true,
+	})
+	if err != nil {
+		t.Fatalf("RunGrep: %v", err)
+	}
+	for _, want := range []string{"node_modules/x/y.js", "dist/bundle.js", ".cache/typescript/accelerometer.js", ".nuxt/build.js", ".git/config", "notes/real.md"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("include_ignored lost %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "ignored directories") {
+		t.Errorf("nothing was pruned, so no prune note belongs here:\n%s", got)
+	}
+	// The other half of the prune test's claim: unpruned, the binary
+	// noise trees ARE read and counted. This is the 276398-skip cost.
+	if !strings.Contains(got, "[skipped 2 binary]") {
+		t.Errorf("the unpruned walk must read the ignored binaries:\n%s", got)
+	}
+}
+
+// TestGlobPrunesIgnoredDirectories: the same skip set on the name
+// search, same note.
+func TestGlobPrunesIgnoredDirectories(t *testing.T) {
+	root := seedNoisyTree(t, 0)
+	got, err := provider().RunGlob(context.Background(), map[string]any{
+		"pattern": "**/*.js",
+		"path":    root,
+	})
+	if err != nil {
+		t.Fatalf("RunGlob: %v", err)
+	}
+	rows := resultRows(got)
+	if len(rows) != 1 || rows[0] != "app/main.js" {
+		t.Fatalf("rows = %v, want [app/main.js]:\n%s", rows, got)
+	}
+	if !strings.Contains(got, "[skipped 5 ignored directories") || !strings.Contains(got, "node_modules") {
+		t.Errorf("glob prune note wrong:\n%s", got)
+	}
+
+	got, err = provider().RunGlob(context.Background(), map[string]any{
+		"pattern":         "**/*.js",
+		"path":            root,
+		"include_ignored": true,
+	})
+	if err != nil {
+		t.Fatalf("RunGlob: %v", err)
+	}
+	for _, want := range []string{"node_modules/x/y.js", "dist/bundle.js", ".cache/typescript/accelerometer.js", ".nuxt/build.js"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("include_ignored glob lost %q:\n%s", want, got)
+		}
+	}
+}
+
+// TestIgnoreNeverPrunesAnExplicitRoot: naming an ignored tree as the
+// root is a request to search it - the skip set applies below the
+// root only.
+func TestIgnoreNeverPrunesAnExplicitRoot(t *testing.T) {
+	root := seedNoisyTree(t, 0)
+	got, err := provider().RunGrep(context.Background(), map[string]any{
+		"pattern":     "needle",
+		"path":        filepath.Join(root, ".git"),
+		"output_mode": "content",
+	})
+	if err != nil {
+		t.Fatalf("RunGrep: %v", err)
+	}
+	if !strings.Contains(got, "config:1: needle") {
+		t.Errorf("an explicit .git root must be searched:\n%s", got)
+	}
+	if got, err = provider().RunGlob(context.Background(), map[string]any{
+		"pattern": "**/*.js",
+		"path":    filepath.Join(root, "node_modules"),
+	}); err != nil {
+		t.Fatalf("RunGlob: %v", err)
+	} else if !strings.Contains(got, "x/y.js") {
+		t.Errorf("an explicit node_modules root must be listed:\n%s", got)
+	}
+}
+
+// TestPrunedDirNoteCap: the note names at most ignoredDirNoteCap
+// directories, with an honest tail - a home root has many
+// node_modules trees and the note must not become the result.
+func TestPrunedDirNoteCap(t *testing.T) {
+	root := t.TempDir()
+	want := ignoredDirNoteCap + 3
+	for i := 0; i < want; i++ {
+		dir := filepath.Join(root, "p"+itoa(i), "node_modules")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	got, err := provider().RunGlob(context.Background(), map[string]any{"pattern": "*.zzz", "path": root})
+	if err != nil {
+		t.Fatalf("RunGlob: %v", err)
+	}
+	if !strings.Contains(got, fmt.Sprintf("[skipped %d ignored directories", want)) {
+		t.Errorf("the note must count every pruned dir:\n%s", got)
+	}
+	if !strings.Contains(got, "...and 3 more") {
+		t.Errorf("the note must cap the names with an honest tail:\n%s", got)
+	}
+}
+
+// TestGrepBadIncludeIgnored: a non-boolean include_ignored is a loud
+// argument error, never a silent default.
+func TestGrepBadIncludeIgnored(t *testing.T) {
+	root := seedTree(t)
+	if _, err := provider().RunGrep(context.Background(), map[string]any{
+		"pattern": "x", "path": root, "include_ignored": "yes",
+	}); err == nil {
+		t.Error("grep: non-boolean include_ignored must error")
+	}
+	if _, err := provider().RunGlob(context.Background(), map[string]any{
+		"pattern": "*", "path": root, "include_ignored": "yes",
+	}); err == nil {
+		t.Error("glob: non-boolean include_ignored must error")
+	}
+}
