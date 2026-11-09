@@ -308,15 +308,25 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		assistantEvent := core.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
 		opts.Events <- assistantEvent
 
-		// Async agent loop (t_f3f953d0, phase 1): partition the
-		// completion's calls. Yield-class calls END the turn (ruling 1) -
-		// registered in the durable pending-calls table and dispatched on
-		// their own goroutines, they never block this run again. Loop-back
-		// calls execute inline exactly as before; mixed turns run the
-		// loop-back half inline and end with the pending half outstanding.
+		// Async agent loop (t_f3f953d0, phase 1; escalation card
+		// t_1501cb04): partition the completion's calls.
+		// Immediate-yield calls (Yield: true - delegate.task, minutes
+		// by nature) END the turn (ruling 1) - registered in the
+		// durable pending-calls table and dispatched on their own
+		// goroutines, they never block this run again. Every other
+		// call executes INLINE under the inline budget (Endo ruling
+		// 2026-11-08): finishes in budget -> the result lands in-turn
+		// exactly as the fast path always did, zero overhead; over
+		// budget -> the RUNNING call converts to a pending dispatch
+		// (the executor keeps executing out-of-band, the turn ends,
+		// the result re-enters on settle) - the conversion never
+		// restarts or duplicates the call.
 		results := make([]core.ToolResult, len(toolCalls))
 		completed := make([]time.Time, len(toolCalls))
-		var loopback []int // indexes into toolCalls that execute inline
+		// lane per call: 0 = executing, 1 = resolved inline, 2 =
+		// outstanding (immediate-yield dispatch or escalated).
+		lane := make([]int8, len(toolCalls))
+		var inlineExecs []*inlineExec
 		type yieldItem struct {
 			call core.ToolCall
 			tool core.Tool
@@ -329,7 +339,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 				// a hallucinated call costs one extra completion, never
 				// a stuck conversation.
 				results[i] = core.NewToolResult("unknown tool: "+call.Name, call.ID, true)
-				loopback = append(loopback, i)
+				lane[i] = 1
 				continue
 			}
 			if tool.Yield {
@@ -339,10 +349,22 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 					}
 				} else {
 					pending = append(pending, yieldItem{call, tool})
+					lane[i] = 2
 					continue
 				}
 			}
-			loopback = append(loopback, i)
+			ex := &inlineExec{
+				idx:       i,
+				call:      call,
+				tool:      tool,
+				opts:      opts,
+				sessionID: sessionID,
+				done:      make(chan bool, 1),
+			}
+			if yieldReady {
+				ex.budget = inlineToolBudget
+			}
+			inlineExecs = append(inlineExecs, ex)
 		}
 
 		// Register the pending calls in the durable table BEFORE the run
@@ -365,7 +387,18 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 					if opts.Logger != nil {
 						opts.Logger.Errorf("pending-call table rejected %s (%s): %v - executing loop-back", item.call.Name, item.call.ID, err)
 					}
-					loopback = append(loopback, indexOfToolCall(toolCalls, item.call.ID))
+					ex := &inlineExec{
+						idx:       indexOfToolCall(toolCalls, item.call.ID),
+						call:      item.call,
+						tool:      item.tool,
+						opts:      opts,
+						sessionID: sessionID,
+						done:      make(chan bool, 1),
+					}
+					if yieldReady {
+						ex.budget = inlineToolBudget
+					}
+					inlineExecs = append(inlineExecs, ex)
 					continue
 				}
 				registered = append(registered, item)
@@ -373,71 +406,69 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			pending = registered
 		}
 
-		// Execute loop-back calls concurrently. Results are collected in
-		// order so the message history stays deterministic. Unknown-tool
-		// rows never ran: their slot was filled above.
-		var wg sync.WaitGroup
-		for _, i := range loopback {
-			call := toolCalls[i]
-			tool, ok := tools[call.Name]
-			if !ok {
+		// Execute the inline half. Without the yield harness the call
+		// blocks to completion exactly as before (the documented
+		// degradation - no budget, no conversion). With the harness
+		// the call runs under the inline budget: the per-call ctx is
+		// detached from the run's cancellation and capped by the
+		// yield timeout (a converted call must outlive the run - the
+		// dispatched law), while a run stop still cancels every
+		// STILL-INLINE call through the watcher - today's stop
+		// semantics inside the inline window. Converted calls are
+		// dispatched law from their conversion on: a run end must not
+		// eat them.
+		var watchDone chan struct{}
+		for _, ex := range inlineExecs {
+			if yieldReady {
+				yieldTimeout := opts.YieldTimeout
+				if yieldTimeout <= 0 {
+					yieldTimeout = defaultYieldTimeout
+				}
+				ex.ctx, ex.cancel = context.WithTimeout(context.WithoutCancel(ctx), yieldTimeout)
+				ex.yieldTimeout = yieldTimeout
+			} else {
+				ex.ctx = ctx
+			}
+			go ex.run()
+		}
+		if yieldReady && len(inlineExecs) > 0 {
+			watchDone = make(chan struct{})
+			go func() {
+				select {
+				case <-ctx.Done():
+					for _, ex := range inlineExecs {
+						ex.stopInline()
+					}
+				case <-watchDone:
+				}
+			}()
+		}
+
+		// Collect one resolution per inline call: true = the result
+		// landed inline (this turn), false = the budget converted the
+		// RUNNING call to a pending dispatch (out-of-band from here;
+		// the wake carries its result). Loop-back rows stay in call
+		// order so the message history stays deterministic.
+		escalated := 0
+		for _, ex := range inlineExecs {
+			if inline := <-ex.done; !inline {
+				escalated++
+				lane[ex.idx] = 2
 				continue
 			}
-			wg.Add(1)
-			go func(idx int, c core.ToolCall, t core.Tool) {
-				defer wg.Done()
-				// The smart-approval gate (card t_c2b52cb5): a mounted seam
-				// decides before the command runs - approve passes through,
-				// anything else becomes the tool result and the command never
-				// executed. Gate runs INSIDE the call's goroutine, same ctx: a
-				// run stop cancels a mid-gate block like it cancels a command.
-				// The returned line is the gate's transcript record (card
-				// t_1b3e2a8b): stamped onto this call's tool result so the
-				// decision renders on the call's own row - live and restored.
-				// No seam, no stamp: the tool result carries the execution's
-				// own truth alone.
-				var gateLine string
-				if opts.Approvals != nil {
-					line, gerr := opts.Approvals.Gate(ctx, c.Name, c.Arguments)
-					if gerr != nil {
-						res := core.NewToolResult(gerr.Error(), c.ID, true)
-						res.Gate = line
-						results[idx] = res
-						completed[idx] = time.Now()
-						if opts.Logger != nil {
-							opts.Logger.Errorf("tool %s gated: %v", c.Name, gerr)
-						}
-						return
-					}
-					gateLine = line
-				}
-				result, err := t.Run(ctx, c.Arguments)
-				completed[idx] = time.Now()
-				// The learning-loop seam (t_9972dfd0): every executed
-				// tool call is one iteration; a skills write/update is
-				// the persisted lesson. Concurrent-safe by contract; a
-				// nil seam is the off case.
-				if opts.Nudge != nil {
-					opts.Nudge.ObserveToolRun(c.Name, c.Arguments, err)
-				}
-				if err != nil {
-					res := core.NewToolResult(err.Error(), c.ID, true)
-					res.Gate = gateLine
-					results[idx] = res
-					if opts.Logger != nil {
-						opts.Logger.Errorf("tool %s error: %v", c.Name, err)
-					}
-					return
-				}
-				if opts.MaxToolOutput > 0 && len(result) > opts.MaxToolOutput {
-					result = result[:opts.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(result))
-				}
-				res := core.NewToolResult(result, c.ID, false)
-				res.Gate = gateLine
-				results[idx] = res
-			}(i, call, tool)
+			lane[ex.idx] = 1
+			results[ex.idx] = ex.result
+			completed[ex.idx] = ex.finishedAt
 		}
-		wg.Wait()
+		if watchDone != nil {
+			close(watchDone)
+		}
+		var loopback []int
+		for i := range toolCalls {
+			if lane[i] == 1 {
+				loopback = append(loopback, i)
+			}
+		}
 
 		executed := 0
 		for _, i := range loopback {
@@ -471,7 +502,8 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			go dispatchYieldCall(ctx, item.call, item.tool, sessionID, yieldTimeout, opts)
 		}
 
-		turnEnd := core.TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed, PendingCalls: len(pending)}
+		outstanding := len(pending) + escalated
+		turnEnd := core.TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed, PendingCalls: outstanding}
 		opts.Events <- turnEnd
 
 		// Nudge delivery (t_9972dfd0): after the tool batch lands in
@@ -488,10 +520,11 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 
 		if len(loopback) == 0 {
 			end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
-			if len(pending) > 0 {
-				// The turn ended on dispatched yield-class calls (ruling
-				// 1): the results re-enter through the wake path as new
-				// input messages.
+			if outstanding > 0 {
+				// The turn ended on outstanding calls (ruling 1;
+				// immediate-yield dispatches and budget escalations
+				// alike): the results re-enter through the wake path
+				// as new input messages.
 				end.FinishReason = "yielded"
 			}
 			opts.Events <- end
@@ -513,12 +546,214 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 // the process's interest in it).
 const defaultYieldTimeout = 15 * time.Minute
 
+// inlineToolBudget is the inline window every tool call gets before
+// the RUNNING call converts to a pending dispatch (card t_1501cb04,
+// Endo ruling 2026-11-08): finish inside it and the result lands
+// in-turn - today's fast path, zero overhead (no extra completion, no
+// re-entry); run past it and the call is already executing out-of-band
+// - the turn ends, the result re-enters through the wake. A named
+// value, deliberately NOT a config knob (nobody asked for one); the
+// var indirection exists so this package's tests can shrink the
+// window.
+var inlineToolBudget = 2 * time.Second
+
+// inlineExec is one tool call executing inline under the inline
+// budget (card t_1501cb04). The run goroutine executes the gate and
+// the tool; the budget timer (armed when execution starts, so a
+// gate's human deliberation never escalates) may convert the RUNNING
+// call mid-flight. The mutex is the conversion boundary: registration
+// into the pending-calls ledger happens under it and the executor
+// takes it on completion - a converted call is durable in the table
+// before any result can arrive (the flush-before-result law), and the
+// conversion never restarts or duplicates the call: the already
+// running goroutine IS the dispatched executor from that point on.
+type inlineExec struct {
+	idx          int
+	call         core.ToolCall
+	tool         core.Tool
+	opts         agent.LoopOptions
+	sessionID    string
+	budget       time.Duration // 0 = degraded run: block to completion, no conversion
+	yieldTimeout time.Duration // the converted call's wall-clock cap
+	ctx          context.Context
+	cancel       context.CancelFunc
+	start        time.Time
+
+	mu         sync.Mutex
+	finished   bool // the result landed inline
+	converted  bool // the budget converted the call to a pending dispatch
+	result     core.ToolResult
+	finishedAt time.Time
+
+	// done receives exactly one resolution: true = inline result,
+	// false = converted to a pending dispatch (the wake carries the
+	// result later).
+	done chan bool
+}
+
+// run executes the call: the smart-approval gate (card t_c2b52cb5 -
+// the gate's line is the transcript record on the result row, card
+// t_1b3e2a8b), then the tool under the per-call ctx. On completion
+// the mutex decides the lane: inline, or the dispatched
+// settle-then-inject (a converted call keeps executing here; its
+// completion rides out-of-band).
+func (ex *inlineExec) run() {
+	var gateLine string
+	if ex.opts.Approvals != nil {
+		line, gerr := ex.opts.Approvals.Gate(ex.ctx, ex.call.Name, ex.call.Arguments)
+		if gerr != nil {
+			res := core.NewToolResult(gerr.Error(), ex.call.ID, true)
+			res.Gate = line
+			ex.commitInline(res)
+			if ex.opts.Logger != nil {
+				ex.opts.Logger.Errorf("tool %s gated: %v", ex.call.Name, gerr)
+			}
+			return
+		}
+		gateLine = line
+	}
+	if ex.budget > 0 {
+		time.AfterFunc(ex.budget, ex.convert)
+	}
+	ex.start = time.Now()
+	result, err := ex.tool.Run(ex.ctx, ex.call.Arguments)
+	// The learning-loop seam (t_9972dfd0): every executed call is one
+	// iteration, inline or converted.
+	if ex.opts.Nudge != nil {
+		ex.opts.Nudge.ObserveToolRun(ex.call.Name, ex.call.Arguments, err)
+	}
+
+	content, isErr := result, false
+	if err != nil {
+		content, isErr = err.Error(), true
+		if ex.opts.Logger != nil {
+			ex.opts.Logger.Errorf("tool %s error: %v", ex.call.Name, err)
+		}
+	} else if ex.opts.MaxToolOutput > 0 && len(content) > ex.opts.MaxToolOutput {
+		content = content[:ex.opts.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(content))
+	}
+	res := core.NewToolResult(content, ex.call.ID, isErr)
+	res.Gate = gateLine
+
+	ex.mu.Lock()
+	if ex.converted {
+		ex.mu.Unlock()
+		ex.settleOut(result, err, gateLine)
+		return
+	}
+	ex.finished = true
+	ex.result = res
+	ex.finishedAt = time.Now()
+	ex.mu.Unlock()
+	ex.done <- true
+}
+
+// convert is the budget's expiry edge: the RUNNING call becomes a
+// pending dispatch. Registration into the pending-calls ledger happens
+// under the mutex the executor takes on completion, so the row is
+// durable before any result can arrive (flush-before-result); a
+// Register failure leaves the call inline - blocking beats a result
+// with nowhere to go.
+func (ex *inlineExec) convert() {
+	ex.mu.Lock()
+	if ex.finished {
+		ex.mu.Unlock()
+		return
+	}
+	args, _ := json.Marshal(ex.call.Arguments)
+	pc := agent.PendingCall{
+		SessionID:    ex.sessionID,
+		CallID:       ex.call.ID,
+		ToolName:     ex.call.Name,
+		Arguments:    string(args),
+		DispatchedAt: core.NowISO(),
+	}
+	if err := ex.opts.YieldLedger.Register(pc); err != nil {
+		ex.mu.Unlock()
+		if ex.opts.Logger != nil {
+			ex.opts.Logger.Errorf("pending-call table rejected %s (%s): %v - staying inline", ex.call.Name, ex.call.ID, err)
+		}
+		return
+	}
+	ex.converted = true
+	ex.mu.Unlock()
+	if ex.opts.Logger != nil {
+		ex.opts.Logger.Printf("tool %s (%s) ran past the inline budget - converted to a pending dispatch", ex.call.Name, ex.call.ID)
+	}
+	ex.done <- false
+}
+
+// settleOut delivers a converted call's completion through the
+// dispatched executor's settle-then-inject path (phase-1 machinery,
+// reused - no second executor): the ledger row the conversion
+// registered leaves FIRST, then the wake injects the result - a
+// crash between the two errs toward losing one re-entry, never a
+// duplicate injection on the next boot.
+func (ex *inlineExec) settleOut(result string, err error, gateLine string) {
+	content, isErr, timedOut := result, false, false
+	switch {
+	case err != nil && ex.ctx.Err() == context.DeadlineExceeded:
+		timedOut, isErr = true, true
+		content = fmt.Sprintf("yield call timed out after %s: %v", ex.yieldTimeout, err)
+	case err != nil:
+		content, isErr = err.Error(), true
+	default:
+		if ex.opts.MaxToolOutput > 0 && len(content) > ex.opts.MaxToolOutput {
+			content = content[:ex.opts.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(content))
+		}
+	}
+	res := core.YieldResult{
+		ToolCallID: ex.call.ID,
+		ToolName:   ex.call.Name,
+		Content:    content,
+		IsError:    isErr,
+		Timeout:    timedOut,
+		Gate:       gateLine,
+		Timing:     &core.Timing{ElapsedMs: time.Since(ex.start).Milliseconds()},
+		Timestamp:  core.NowISO(),
+	}
+	deliverYieldResult(ex.opts, ex.sessionID, res)
+}
+
+// commitInline lands a completed call's result in this turn (the
+// gate-error path - the budget is not armed yet, no conversion race).
+func (ex *inlineExec) commitInline(res core.ToolResult) {
+	ex.mu.Lock()
+	ex.finished = true
+	ex.result = res
+	ex.finishedAt = time.Now()
+	ex.mu.Unlock()
+	ex.done <- true
+}
+
+// stopInline forwards a run stop to a still-inline call (the budgeted
+// per-call ctx is detached from the run's cancellation): the tool
+// unwinds with a context error and completes inline - today's stop
+// semantics inside the inline window. Converted calls are dispatched
+// law - a run end must not eat them.
+func (ex *inlineExec) stopInline() {
+	ex.mu.Lock()
+	defer ex.mu.Unlock()
+	if !ex.finished && !ex.converted && ex.cancel != nil {
+		ex.cancel()
+	}
+}
+
 // pendingPlaceholderContent fills the still-pending sibling slot on
 // the provider wire (async agent loop, appendPendingPlaceholders).
 // Ephemeral by law: the durable pending state lives in the
 // pending-calls table; this row only keeps an outstanding call answered
-// in the context the turn assembled.
-const pendingPlaceholderContent = "[pending: dispatched, result re-enters when it settles]"
+// in the context the turn assembled. The wording is unmistakable by
+// ruling (card t_1501cb04, session bf0fa2a2): the old "dispatched,
+// result re-enters" line got a live agent to consult a skill and
+// MANUALLY SPAWN A DUPLICATE of a call that was already running - the
+// marker now names the tool and forbids the workaround in plain words.
+func pendingPlaceholderContent(tool string) string {
+	if tool == "" {
+		tool = "the tool"
+	}
+	return "[pending: " + tool + " is already running. Do NOT re-run, re-dispatch, or work around it. The result arrives as a new message. End your turn or do other work.]"
+}
 
 // dispatchYieldCall runs ONE yield-class call outside any turn (async
 // agent loop, ruling 2): the loop already flushed the assistant
@@ -577,11 +812,22 @@ func dispatchYieldCall(runCtx context.Context, call core.ToolCall, tool core.Too
 		Timing:     &core.Timing{ElapsedMs: time.Since(start).Milliseconds()},
 		Timestamp:  core.NowISO(),
 	}
-	if err := opts.YieldLedger.Settle(sessionID, call.ID); err != nil && opts.Logger != nil {
-		opts.Logger.Errorf("pending-call settle %s (%s): %v", call.Name, call.ID, err)
+	deliverYieldResult(opts, sessionID, res)
+}
+
+// deliverYieldResult hands one settled out-of-band call's result to
+// the wake: the pending-calls ledger row leaves FIRST, then the wake
+// injects the result - a crash between the two errs toward losing one
+// re-entry, never a duplicate injection on the next boot. The one
+// delivery path for dispatched calls (immediate-yield) and converted
+// calls (budget escalation, card t_1501cb04) alike - phase-1
+// machinery, reused, never a second executor.
+func deliverYieldResult(opts agent.LoopOptions, sessionID string, res core.YieldResult) {
+	if err := opts.YieldLedger.Settle(sessionID, res.ToolCallID); err != nil && opts.Logger != nil {
+		opts.Logger.Errorf("pending-call settle %s (%s): %v", res.ToolName, res.ToolCallID, err)
 	}
 	if opts.Logger != nil {
-		opts.Logger.Printf("yield result for %s (%s) re-enters session %s", call.Name, call.ID, sessionID)
+		opts.Logger.Printf("yield result for %s (%s) re-enters session %s", res.ToolName, res.ToolCallID, sessionID)
 	}
 	opts.YieldWake(sessionID, res)
 }
@@ -607,7 +853,7 @@ func appendPendingPlaceholders(messages []core.Message, pending []agent.PendingC
 		if pc.CallID == "" || answered[pc.CallID] {
 			continue
 		}
-		messages = append(messages, core.NewToolResult(pendingPlaceholderContent, pc.CallID, false))
+		messages = append(messages, core.NewToolResult(pendingPlaceholderContent(pc.ToolName), pc.CallID, false))
 	}
 	return messages
 }

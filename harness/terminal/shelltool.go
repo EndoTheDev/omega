@@ -39,15 +39,14 @@ func (p *ShellProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"shell.run": {
 			Description: "Run a shell command and return its stdout and stderr.",
-			// Yield (async agent loop phase 2, card t_0805d438; the
-			// design of record's ruling 4): the call ends the turn and
-			// the command's output re-enters as the call's tool result
-			// through the wake path - a long command no longer parks the
-			// conversation goroutine, and the per-call timeout still
-			// injects its result on expiry (the dispatched executor's
-			// wall clock). A wakeless host runs it loop-back (blocking,
-			// today's shape).
-			Yield: true,
+			// Escalation-eligible (card t_1501cb04, Endo ruling
+			// 2026-11-08 - the static Yield class is superseded): a
+			// fast command runs INLINE in the turn (zero overhead -
+			// previously EVERY shell.run paid the yield round trip),
+			// a long one converts at the loop's inline budget and
+			// its output re-enters as the call's tool result through
+			// the wake path. A wakeless host blocks to completion
+			// (the documented degradation).
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{

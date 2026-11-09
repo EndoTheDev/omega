@@ -176,14 +176,24 @@ rest degrade to nil-safe floors: no logging, no compaction (context
 overflow surfaces a friendly error), no system prompt, no nudger, no
 gate.
 
-### Yield-class calls (the async loop, card t_f3f953d0)
+### Yield-class calls (the async loop, card t_f3f953d0; escalation, t_1501cb04)
 
-A tool registered with `core.Tool.Yield = true` ends the turn instead
-of blocking it (opt-in at registration; the model is never told - the
-registry decides). The loop (agent/loop) flushes the assistant
-message + call, registers the call in the pending-calls table
-(`agent.YieldLedger`), dispatches
-it on a goroutine that outlives the run, and the run ends with
+A tool registered with `core.Tool.Yield = true` is IMMEDIATE-yield
+(reserved for calls that are minutes by nature - `delegate.task`): the
+call ends the turn without any inline attempt. The model is never
+told - the registry decides silently. Every OTHER tool call executes
+inline under the loop's inline budget (2s, a named value in
+`agent/loop`, not a config knob): finish inside it and the result
+lands in-turn exactly as the fast path always did (zero overhead -
+previously EVERY `shell.run` paid the yield round trip); run past it
+and the RUNNING call converts to a pending dispatch mid-flight - the
+executor keeps executing out-of-band (never restarted, never
+duplicated), the turn ends, and the settled result re-enters on
+settle. The loop (agent/loop) flushes the assistant message + call
+and registers the call in the durable pending-calls table
+(`agent.YieldLedger`; the store capsule's `pending_calls` SQLite table
+backs it, `agent.NewMemYieldLedger` is the in-memory floor) before any
+result can arrive, and the run ends with
 `finish_reason: "yielded"` - no conversation goroutine parks. The
 table is session-typed (card t_61d3def9): the store capsule's
 `pending_calls` SQLite table backs durable sessions, the `eph-`
@@ -202,8 +212,10 @@ interrupted result for every entry the restart carried (eph residue
 from a pre-split build settles and drops - its home died with the
 restart). A turn with pending calls
 is never folded (the compactor's never-fold law). A host without the
-harness - or a sessionless run with no home id to re-enter through -
-runs every tool loop-back: nil-safe by construction.
+harness runs every tool loop-back: nil-safe by construction. The
+pending marker the model sees on a still-pending call is unmistakable
+(card t_1501cb04, session bf0fa2a2): it names the tool and forbids
+re-running, re-dispatching, or working around it.
 
 ### The capsule-service namespace (the closed list, 7)
 
