@@ -41,7 +41,7 @@ test("a call without its result row renders as the pending chip", () => {
     { kind: "user", content: "run it" },
     { kind: "tool_call", tool_call: { id: "c1", name: "shell.run", arguments: { command: "sleep 3" } } },
   ];
-  const [t] = renderTranscriptItems(items) as { kind: string; status: string }[];
+  const t = renderTranscriptItems(items).find((i) => i.kind === "tool") as { status: string };
   assert.ok(t, "the tool item renders");
   assert.equal(t.status, "pending", "no result row -> pending, never a done orphan");
 });
@@ -52,7 +52,7 @@ test("a settled call renders done - its result row lands in the same transcript"
     { kind: "tool_call", tool_call: { id: "c1", name: "shell.run", arguments: {} } },
     { kind: "tool_result", tool_call_id: "c1", content: "ok" },
   ];
-  const [t] = renderTranscriptItems(items) as { status: string }[];
+  const t = renderTranscriptItems(items).find((i) => i.kind === "tool") as { status: string };
   assert.equal(t.status, "done");
 });
 

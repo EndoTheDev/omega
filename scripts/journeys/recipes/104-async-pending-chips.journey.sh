@@ -38,7 +38,7 @@ step "ok: opened the journey session"
 
 # --- pane-scoped composer drive (the t_7adf2e7f law, recipe 20 shape) ---
 panejs() {
-  jsq "(()=>{const panes=[...document.querySelectorAll('.dock-pane')];const p=panes.find(x=>[...x.querySelectorAll('.dock-tab')].some(d=>d.getAttribute('aria-selected')==='true' && (d.querySelector('.dock-tab-title')||{textContent:''}).textContent.includes('$LABEL'));if(!p)return 'NO_PANE';return ''+($1);})()" 2>&1 | tail -1 | sed -e 's/^"//' -e 's/"$//'
+  jsq "(()=>{const panes=[...document.querySelectorAll('.dock-pane')];const p=panes.find(x=>[...x.querySelectorAll('.dock-tab')].some(d=>d.getAttribute('aria-selected')==='true' && (d.querySelector('.dock-tab-title')||{textContent:''}).textContent.includes('$LABEL')));if(!p)return 'NO_PANE';return ''+($1);})()" 2>&1 | tail -1 | sed -e 's/^"//' -e 's/"$//'
 }
 for i in 1 2 3 4 5 6 7 8 9 10; do
   focus=$(panejs '(p.querySelector(".composer .composer-input")||{}).focus ? 1 : 0')
