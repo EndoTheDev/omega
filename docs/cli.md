@@ -228,8 +228,11 @@ save compose the identical `SKILL.md` (the description in the
 frontmatter fence, the markdown body under it; an update rewrites the
 body and the description line and leaves every other frontmatter key
 byte-true). A delete backs the whole folder up into
-`.curator_backups` with a ledger row before removing it - a removal is
-receipted, never a silent `rm`.
+`.curator/backups` with a ledger row before removing it - a removal is
+receipted, never a silent `rm`. Every file the curator owns (usage
+state, ledger, backups) lives inside the one `.curator/` dir beside the
+skills, so a dev checkout whose home is the repo's `bin/` shows no
+untracked skills noise.
 
 The skill name is the one positional and it comes FIRST; leftover
 positionals are a usage error, never a guess. Every verb enforces the

@@ -16,7 +16,7 @@ package skills
 //           editor owns the markdown, never the whole frontmatter.
 //           The merge-winner rule picks the file (shared first), the
 //           same file the reader tool and the runUpdate action patch.
-//   Delete  backs the folder up into .curator_backups, ledger row
+//   Delete  backs the folder up into .curator/backups, ledger row
 //           attached, and removes it - a removal is receipted, never
 //           a silent rm.
 

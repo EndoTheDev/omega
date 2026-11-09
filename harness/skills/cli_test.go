@@ -182,12 +182,12 @@ func TestSkillsCLIDeleteBacksUpAndRemoves(t *testing.T) {
 	if _, serr := os.Stat(filepath.Join(dir, "alpha")); !os.IsNotExist(serr) {
 		t.Errorf("the folder must be gone: %v", serr)
 	}
-	backups, err := os.ReadDir(filepath.Join(dir, ".curator_backups"))
+	backups, err := os.ReadDir(filepath.Join(dir, ".curator", "backups"))
 	if err != nil || len(backups) != 1 {
 		t.Errorf("a delete is backed up: %v / %v", backups, err)
 	}
 	// the ledger row names the CLI as the writer, not the tab
-	ledgerRaw, err := os.ReadFile(filepath.Join(dir, ".curator_ledger.jsonl"))
+	ledgerRaw, err := os.ReadFile(filepath.Join(dir, ".curator", "ledger.jsonl"))
 	if err != nil {
 		t.Fatalf("ledger: %v", err)
 	}

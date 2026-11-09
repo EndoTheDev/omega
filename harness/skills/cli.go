@@ -66,7 +66,7 @@ Write flags:
 
 Writes ride the same provider faces the webui skills tab calls: an
 editor save and an "omega skills write" compose the identical
-SKILL.md, and a delete backs the folder up into .curator_backups with
+SKILL.md, and a delete backs the folder up into .curator/backups with
 a ledger row before removing it. A name present in both the shared
 and the agent's own directory resolves to the shared copy - the same
 winner the tab edits.
@@ -357,7 +357,7 @@ func skillBody(f *skillsWriteFlags, stdin io.Reader) (string, error) {
 }
 
 // skillsDelete removes one skill through the tab's own removal law
-// (backup into .curator_backups, ledger row, folder gone) with the
+// (backup into .curator/backups, ledger row, folder gone) with the
 // CLI as the ledger's named writer. The returned listing is the
 // landed truth; the confirmation counts what remains.
 func skillsDelete(sp *SkillsProvider, stdout io.Writer, args []string) error {

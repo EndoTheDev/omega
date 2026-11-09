@@ -18,8 +18,10 @@ import (
 // the before/after of the primary artifact (SKILL.md content), so a
 // single row is a single-edit revert. Full-folder copies ride the
 // sidecar backups (keep 5) - the ledger stays small, the restores stay
-// byte-exact. Rows are JSON lines at <skillsdir>/.curator_ledger.jsonl
-// (the Hermes path shape, inside the skills home).
+// byte-exact. Rows are JSON lines at <skillsdir>/.curator/ledger.jsonl:
+// every non-skill file the curator owns (usage.json, ledger.jsonl,
+// backups/) lives under the one ignored .curator dir, so a dev
+// checkout sees no untracked skills noise (finding C2, t_a48be895).
 
 // Ledger actions.
 const (
@@ -58,12 +60,67 @@ const (
 	backupKeep       = 5
 )
 
-// ledgerFile returns the ledger path for the provider's write home.
-func (sp *SkillsProvider) ledgerFile() (string, error) {
+// Curator state paths, all under <skillsdir>/.curator (the one ignored
+// directory beside the skills themselves). The legacy names are the
+// pre-t_a48be895 layout, which sat BESIDE .curator and leaked untracked
+// files around its own ignore rule.
+const (
+	curatorDirName    = ".curator"
+	ledgerFileName    = "ledger.jsonl"
+	backupsDirName    = "backups"
+	legacyLedgerName  = ".curator_ledger.jsonl"
+	legacyBackupsName = ".curator_backups"
+)
+
+// curatorRoot returns the curator's state root (<skillsdir>/.curator)
+// and creates it. Creating it is deliberate: the ledger and the backup
+// root both need the parent, the migration below needs a rename
+// target, and an empty dot dir is invisible to the scanner (dot dirs
+// are skipped), so nothing about discovery changes.
+func (sp *SkillsProvider) curatorRoot() (string, error) {
 	if sp.Dir == "" {
 		return "", fmt.Errorf("skills directory not configured")
 	}
-	return filepath.Join(sp.Dir, ".curator_ledger.jsonl"), nil
+	root := filepath.Join(sp.Dir, curatorDirName)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return "", fmt.Errorf("create curator dir: %w", err)
+	}
+	migrateLegacyCuratorState(sp.Dir, root)
+	return root, nil
+}
+
+// migrateLegacyCuratorState adopts the pre-t_a48be895 layout: the
+// ledger and the backup root used to sit beside .curator
+// (<dir>/.curator_ledger.jsonl, <dir>/.curator_backups). Both are
+// renamed in on first touch, so an existing audit history keeps its
+// rollback ids and the keep-5 backup window survives the move.
+//
+// The call is best-effort and idempotent. A home that already holds
+// the new path keeps it and the stale legacy path is LEFT on disk -
+// nothing is merged, because the on-disk copy is the record; a rename
+// that fails (permissions, a lock) never blocks the ledger write.
+func migrateLegacyCuratorState(dir, root string) {
+	move := func(old, dst string) {
+		if _, err := os.Stat(dst); err == nil {
+			return // the new home is populated: never overwrite it
+		}
+		if _, err := os.Stat(old); err != nil {
+			return // nothing to adopt
+		}
+		_ = os.Rename(old, dst)
+	}
+	move(filepath.Join(dir, legacyLedgerName), filepath.Join(root, ledgerFileName))
+	move(filepath.Join(dir, legacyBackupsName), filepath.Join(root, backupsDirName))
+}
+
+// ledgerFile returns the ledger path for the provider's write home:
+// <skillsdir>/.curator/ledger.jsonl.
+func (sp *SkillsProvider) ledgerFile() (string, error) {
+	root, err := sp.curatorRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, ledgerFileName), nil
 }
 
 // ledgerMu serializes ledger appends and rollbacks - the file is the
@@ -152,12 +209,14 @@ func writeLedger(sp *SkillsProvider, entries []LedgerEntry) error {
 	return os.WriteFile(path, []byte(sb.String()), 0o644)
 }
 
-// backupDir returns the sidecar backup root: <skillsdir>/.curator_backups.
+// backupDir returns the sidecar backup root:
+// <skillsdir>/.curator/backups (inside the ignored curator dir).
 func (sp *SkillsProvider) backupDir() (string, error) {
-	if sp.Dir == "" {
-		return "", fmt.Errorf("skills directory not configured")
+	root, err := sp.curatorRoot()
+	if err != nil {
+		return "", err
 	}
-	return filepath.Join(sp.Dir, ".curator_backups"), nil
+	return filepath.Join(root, backupsDirName), nil
 }
 
 // archiveDir returns the retired-skills root: <skillsdir>/.archive
@@ -170,7 +229,7 @@ func (sp *SkillsProvider) archiveDir() (string, error) {
 	return filepath.Join(sp.Dir, ".archive"), nil
 }
 
-// BackupSkill copies a skill folder into .curator_backups by NAME in
+// BackupSkill copies a skill folder into .curator/backups by NAME in
 // the own skills dir (the curator's callers; the editor's delete backs
 // up from the merge-winner's folder via backupFrom). Returns the
 // backup path.

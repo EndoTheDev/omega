@@ -513,3 +513,92 @@ func TestSetCuratorModelGoesLive(t *testing.T) {
 		t.Errorf("post-flip consult = %v, want one WithModel(\"curator-flip\") derivation", spy.saw)
 	}
 }
+
+// TestCuratorStateLivesUnderDotCurator pins the ONE state dir
+// (finding C2, card t_a48be895): the ledger and the backup root both
+// live inside <skillsdir>/.curator, the single dir the repo's ignore
+// rule covers. A drift back to the bare <dir>/.curator_ledger.jsonl /
+// <dir>/.curator_backups shape leaks untracked files into git status
+// in every dev checkout whose home is the repo's bin/.
+func TestCuratorStateLivesUnderDotCurator(t *testing.T) {
+	dir := t.TempDir()
+	writeAgentSkill(t, dir, "alpha", "body")
+	sp := NewSkillsProvider(dir)
+	if _, err := sp.DeleteSkill("alpha"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	for _, p := range []string{
+		filepath.Join(dir, ".curator", "ledger.jsonl"),
+		filepath.Join(dir, ".curator", "backups"),
+	} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("curator state must live under .curator: %s: %v", p, err)
+		}
+	}
+	for _, p := range []string{".curator_ledger.jsonl", ".curator_backups"} {
+		if _, err := os.Stat(filepath.Join(dir, p)); !os.IsNotExist(err) {
+			t.Errorf("%s must not be written beside .curator any more (stat err = %v)", p, err)
+		}
+	}
+}
+
+// TestLegacyCuratorStateMigratesIntoDotCurator: a pre-t_a48be895 home
+// (ledger + backup root sitting BESIDE .curator) is adopted on first
+// touch - the audit history keeps its row ids, so a rollback id
+// written before the move still resolves, and the keep-5 backup window
+// moves with it. A home that already holds the new path keeps it: the
+// stale legacy copy is left on disk, never merged and never
+// overwritten.
+func TestLegacyCuratorStateMigratesIntoDotCurator(t *testing.T) {
+	dir := t.TempDir()
+	legacyRow := `{"id":"deadbeef","ts":"2026-11-01T00:00:00Z","actor":"curator","action":"remove","skill":"old","files":[]}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, ".curator_ledger.jsonl"), []byte(legacyRow), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	legacyBackup := filepath.Join(dir, ".curator_backups", "20260101-000000-delete-old")
+	if err := os.MkdirAll(legacyBackup, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyBackup, "SKILL.md"), []byte("old body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sp := NewSkillsProvider(dir)
+
+	entries, err := sp.readLedger()
+	if err != nil {
+		t.Fatalf("readLedger: %v", err)
+	}
+	if len(entries) != 1 || entries[0].ID != "deadbeef" {
+		t.Fatalf("legacy history not adopted: %+v", entries)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".curator", "ledger.jsonl")); err != nil {
+		t.Errorf("ledger must land at .curator/ledger.jsonl: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".curator_backups")); !os.IsNotExist(err) {
+		t.Errorf("the legacy backup root must MOVE, not be copied (stat err = %v)", err)
+	}
+	backups, err := os.ReadDir(filepath.Join(dir, ".curator", "backups"))
+	if err != nil || len(backups) != 1 {
+		t.Fatalf("backup window must survive the move: %v / %v", backups, err)
+	}
+	kept, err := os.ReadFile(filepath.Join(dir, ".curator", "backups", backups[0].Name(), "SKILL.md"))
+	if err != nil || string(kept) != "old body\n" {
+		t.Fatalf("backup payload must move byte-exact: %q / %v", kept, err)
+	}
+
+	// A second touch is idempotent, and a live new-path ledger is never
+	// clobbered by a stale legacy file reappearing beside it.
+	if _, err := sp.AppendLedger("curator", LedgerRemove, "newer", "second writer", nil, nil); err != nil {
+		t.Fatalf("AppendLedger: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".curator_ledger.jsonl"), []byte(legacyRow), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entries, err = sp.readLedger()
+	if err != nil {
+		t.Fatalf("readLedger after second touch: %v", err)
+	}
+	if len(entries) != 2 || entries[1].Skill != "newer" {
+		t.Errorf("the populated ledger must win: %+v", entries)
+	}
+}

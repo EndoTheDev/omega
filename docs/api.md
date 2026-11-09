@@ -69,7 +69,7 @@ against localhost from the same host is unaffected.
 | `/skills`                            | GET        | loaded skills (name + description only)        |
 | `/skills/content`                    | GET        | one skill's SKILL.md body for the viewer tab (64 KiB cap) |
 | `/skills/save`                       | POST       | the skills tab editor's upsert: a new name composes `<dir>/<name>/SKILL.md` (frontmatter composed, loader-parsed), an existing name rewrites the body under the fence while the operator's other frontmatter keys stay byte-true; answers the fresh listing |
-| `/skills/delete`                     | POST       | remove one skill: backed up to `.curator_backups`, ledger row attached (`actor: webui`), folder removed; unknown name 404 |
+| `/skills/delete`                     | POST       | remove one skill: backed up to `.curator/backups`, ledger row at `.curator/ledger.jsonl` (`actor: webui`), folder removed; unknown name 404 |
 | `/browser/last`, `/browser/frameable`| GET, PUT   | module REST (browser capsule): the resume URL + the embed-permission probe |
 | `/commands`                          | GET        | extension command registry (palette rows)      |
 | `/commands/dispatch`                 | POST       | run one command/skill locally — never the agent |
