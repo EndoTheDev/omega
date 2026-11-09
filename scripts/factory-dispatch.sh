@@ -334,17 +334,18 @@ echo "running: ${RUNNING[*]:-none} (surface tokens: $(grep -c . "$SURF" || true)
 echo "candidates: ${#CAND[@]} ready, unclaimed"
 PARKED=(); LEGAL=0
 
-# guard bug #4 (2026-10-25): hermes kanban dispatch once claimed a card
-# that had flipped ready -> review mid-pass (t_bc321318 got a zombie
-# worker spawned onto already-merged work). The review pass and this
-# dispatch call race on status; park review-state cards for the
-# duration of the dispatch call - the EXIT trap unparks them.
-# Ceiling: if the daemon ever mis-claims todo/blocked cards the same
-# way, widen this status list.
-REVIEWCAND=$(dbq "SELECT id FROM tasks WHERE status='review' AND (claim_lock IS NULL OR claim_lock='');")
-REVIEWCARDS=()
-[ -n "$REVIEWCAND" ] && mapfile -t REVIEWCARDS <<<"$REVIEWCAND"
-PARKED+=("${REVIEWCARDS[@]:-}")
+# guard bug #4 (2026-10-25) is RETIRED (2026-11-09): hermes kanban
+# dispatch once claimed a card that had flipped ready -> review mid-pass
+# (t_bc321318, zombie worker on merged work). Today's dispatcher makes
+# that impossible: the ready lane claims through an atomic
+# ready->running CAS (`_claim_and_open_run(..., "ready", ...)`) so a
+# card that flips to review mid-pass simply fails the claim. The park
+# built against the old race parked EVERY review-state card for the
+# whole dispatch call - blinding the dispatcher's own review lane for
+# the same window and starving the reviewer on every guard-driven pass
+# (vera's structural starvation, root-caused 2026-11-09). Review cards
+# stay unparked: the ready lane cannot touch them (CAS), the review
+# lane must see them.
 PASS_SURF=$(mktemp); : >"$PASS_SURF"   # surfaces of candidates already marked legal THIS pass (pairwise)
 for c in "${CAND[@]:-}"; do
   [ -z "$c" ] && continue
