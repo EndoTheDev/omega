@@ -630,7 +630,7 @@ func (ex *inlineExec) run() {
 			ex.opts.Logger.Errorf("tool %s error: %v", ex.call.Name, err)
 		}
 	} else if ex.opts.MaxToolOutput > 0 && len(content) > ex.opts.MaxToolOutput {
-		content = content[:ex.opts.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(content))
+		content = truncateToolOutput(content, ex.opts.MaxToolOutput)
 	}
 	res := core.NewToolResult(content, ex.call.ID, isErr)
 	res.Gate = gateLine
@@ -699,7 +699,7 @@ func (ex *inlineExec) settleOut(result string, err error, gateLine string) {
 		content, isErr = err.Error(), true
 	default:
 		if ex.opts.MaxToolOutput > 0 && len(content) > ex.opts.MaxToolOutput {
-			content = content[:ex.opts.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(content))
+			content = truncateToolOutput(content, ex.opts.MaxToolOutput)
 		}
 	}
 	res := core.YieldResult{
@@ -792,7 +792,7 @@ func dispatchYieldCall(runCtx context.Context, call core.ToolCall, tool core.Too
 		default:
 			content = result
 			if opts.MaxToolOutput > 0 && len(result) > opts.MaxToolOutput {
-				content = result[:opts.MaxToolOutput] + fmt.Sprintf("\n... [truncated, %d bytes total]", len(result))
+				content = truncateToolOutput(result, opts.MaxToolOutput)
 			}
 		}
 		// The learning-loop seam counts every executed call as one
