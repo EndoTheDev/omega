@@ -25,8 +25,9 @@
 // sidebar-pinned pane. The module ids mirror the shipped module names
 // verbatim (cron / http_channel / skills / tools / kanban) so the app's
 // outlet templates and the composition lookup agree without an alias map.
-// card t_49d0b308: settings left the main-pane tab class for the
-// inspector, and the kanban board joined it as the seventh tab.
+// card t_49d0b308: settings moved into the inspector; card t_00e4a784
+// (Endo ruling 2026-11-09) MOVED IT BACK OUT - settings is an on-demand
+// main-area tab now, opened by the menubar gear.
 // card t_617c2ad0 (the capsule-ui migration): the TAB capsules - the
 // modules whose dockable is ONE tab view, not an inspector panel body.
 // The shell keeps the composition decision (which modules the dock
@@ -170,7 +171,9 @@ export interface DockableComponent {
 // (singleton, pinned left, unclosable); the inspector group = sidebar-
 // pinned right with every view tab unclosable. card t_49d0b308: chat is
 // the only closable component left - settings moved into the inspector
-// group and the kanban board is born there.
+// group and the kanban board is born there. card t_00e4a784: settings
+// LEFT the inspector again (the menubar gear opens it as a closable
+// main tab), so the closable class is chat + viewer + browser + settings.
 export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] = [
   {
     id: "sidebar",
@@ -266,12 +269,19 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     closable: false,
   },
   {
+    // card t_00e4a784 (Endo ruling 2026-11-09): settings is an ON-DEMAND
+    // main-area tab - the menubar gear (seated beside the right-sidebar
+    // toggle) opens it, closable like chat: VSCode's settings tab. It is
+    // NOT a permanent inspector tab anymore; the inspector strip and its
+    // boot repair never seat it (retireInspectorSettings drops a legacy
+    // seat on load), which is the whole point of the ruling. The '+'
+    // menu still carries no entry - the gear is the entry point.
     id: "settings",
     title: "Settings",
     icon: "settings",
     policy: "singleton",
-    area: "right",
-    closable: false,
+    area: "main",
+    closable: true,
   },
   {
     id: "kanban",
@@ -496,8 +506,8 @@ export function isLockedTab(id: DockComponentName): boolean {
   return d === null ? true : d.id === "sidebar";
 }
 
-/** tab-bar X policy: closable components only (chat, settings). Unknown
-    ids get no X. */
+/** tab-bar X policy: closable components only (chat, viewer, browser,
+    settings). Unknown ids get no X. */
 export function isClosableTab(id: DockComponentName): boolean {
   const d = safeEntry(id);
   return d !== null && d.closable;
@@ -521,8 +531,9 @@ export const MAIN_DOCKABLES: readonly DockComponentName[] =
 /** card t_d6b657a7: the '+' / empty-pane MENU inventory - the refill
     source for ANY pane, pinned or main (free content). Sessions is
     excluded: locked (the loader owns it, it can never be menu-opened).
-    Settings is excluded by ruling - it has NO entry point; persistence
-    and the default arrangement fallback are its only paths. */
+    Settings is excluded too, but NOT for lack of an entry point: card
+    t_00e4a784 gave it the menubar gear (the VSCode read), so the '+'
+    inventory keeps its quiet main-tab voice. */
 export const MENU_DOCKABLES: readonly DockComponentName[] = DOCKABLES
   .filter(
     // viewer joins the exclusions (t_36ceb99b): an empty viewer tab is

@@ -239,14 +239,12 @@ remove_row() {
 
 open_settings() {
   open_app
-  # the settings doc-tab chip: find by name (60's probe, poll, never
-  # the immediate query), fallback toggles the edge the chip lives on
-  CHIP='(()=>{const t=[...document.querySelectorAll(".dock-pane.pinned .dock-tab")].find(b=>((b.getAttribute("aria-label")||"")||b.title).trim()==="Settings");if(!t) return false;t.click();return true})()'
-  if ! poll_js "$CHIP" 4; then
-    jsq '(()=>{const b=document.querySelector("button[aria-label=\"Toggle right sidebar\"]"); if(!b) return false; b.click(); return true})()' >/dev/null 2>&1 || true
-    if ! poll_js "$CHIP" 10; then
-      die "Settings dock-tab chip never rendered"
-    fi
+  # card t_00e4a784: settings opens from the MENUBAR gear as an on-demand
+  # main tab (the pinned inspector chip is gone). Poll the button, then
+  # click it - a re-click focuses the live tab, never a duplicate.
+  GEAR='(()=>{const b=document.querySelector("header.menubar button[aria-label=\"Open settings\"]");if(!b) return false;b.click();return true})()'
+  if ! poll_js "$GEAR" 10; then
+    die "settings menubar gear never rendered"
   fi
   wait_js '!!document.querySelector(".providers-editor .provider-add")' 15 \
     || die "providers editor never rendered after opening"

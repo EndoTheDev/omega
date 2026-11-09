@@ -130,12 +130,28 @@ assert_eq "$active" "Skills" "REPRO 2: clicking Skills activates it"
 skills=$(jsq 'document.querySelector(".mobile-drawer.right .module-panels")?1:0')
 assert_eq "$skills" "1" "REPRO 2: Skills tab renders the module panel (content switched)"
 
-# switch to Settings -> the settings panel renders (not a module panel)
-js 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).find(t=>(t.getAttribute("aria-label")||"").trim()==="Settings").click()' >/dev/null 2>&1
-sleep 0.5
-settings=$(jsq 'document.querySelector(".mobile-drawer.right .pane.settings")?1:0')
-assert_eq "$settings" "1" "REPRO 2: Settings tab renders the settings panel"
-step "ok: REPRO 2 - drawer tab bar switches content (Files -> Skills -> Settings)"
+# switch to Modules -> the module panel renders (content swapped again)
+js 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).find(t=>(t.getAttribute("aria-label")||"").trim()==="Modules").click()' >/dev/null 2>&1
+sleep 0.6
+active=$(jsq 'document.querySelector(".mobile-drawer.right .mobile-drawer-tab.active")?.getAttribute("aria-label")?.trim()')
+active=${active#\"}; active=${active%\"}
+assert_eq "$active" "Modules" "REPRO 2: clicking Modules activates it"
+modules=$(jsq 'document.querySelector(".mobile-drawer.right .inspector-extensions")?1:0')
+assert_eq "$modules" "1" "REPRO 2: Modules tab renders the extensions panel (content switched)"
+step "ok: REPRO 2 - drawer tab bar switches content (Files -> Skills -> Modules)"
+
+# card t_00e4a784: the settings gear is GLOBAL chrome - below the
+# breakpoint it opens settings as a MAIN tab (the one surface that never
+# collapses to a drawer), never as an inspector drawer tab.
+js 'document.querySelector(".scrim")?.click()' >/dev/null 2>&1
+sleep 0.4
+js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Open settings").click()' >/dev/null 2>&1
+sleep 1.2
+gtab=$(jsq '[...document.querySelectorAll(".dock-tab")].filter(t=>t.title==="Settings").length')
+assert_eq "$gtab" "1" "REPRO 2b: the menubar gear opens a settings TAB on mobile"
+gpanel=$(jsq 'document.querySelector(".settings")?1:0')
+assert_eq "$gpanel" "1" "REPRO 2b: the mobile settings tab renders the knob panel"
+step "ok: REPRO 2b - the gear reaches settings from every pane context on mobile"
 
 # --- REPRO 3 (card t_4bf1d5b7, report 1): the menubar BOTTOM toggle ---
 # below the breakpoint the zero-collapse CSS takes the .edge-bottom cell

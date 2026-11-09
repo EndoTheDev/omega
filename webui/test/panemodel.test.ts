@@ -107,7 +107,8 @@ describe("gate: sidebar tabs unclosable", () => {
     assert.match(pane, /v-if="!pinned"/);
     assert.match(pane, /v-if="api\.canRemovePane\(node\.id\)"/);
     // the menus ride the MENU inventory now - the refill source for any
-    // pane (sessions excluded: locked; settings: no entry point)
+    // pane (sessions excluded: locked; settings: the menubar gear opens it,
+    // not the '+' menu - t_00e4a784)
     assert.match(pane, /MENU_DOCKABLES\.map\(dockableOf\)/);
     assert.doesNotMatch(pane, /v-for="d in DOCKABLES"/);
     assert.doesNotMatch(pane, /MAIN_DOCKABLES/);
@@ -146,19 +147,31 @@ describe("gate: fixed shape chrome", () => {
     assert.doesNotMatch(bar, /drawer-btn/, "no second (drawer-handle) icon set");
     assert.doesNotMatch(css, /\.icon-btn\.drawer-btn/, "no breakpoint hiding rules");
     assert.doesNotMatch(css, /\.icon-btn\.edge-toggle/, "the toggles never hide below 768px");
-    // the settings gear died: settings opens from the pane '+' menu
-    assert.doesNotMatch(bar, /aria-label="Settings"/);
-    assert.doesNotMatch(bar, /\$emit\("settings"\)/);
+    // card t_00e4a784 (Endo ruling 2026-11-09): the settings gear is BACK -
+    // a menubar button seated beside the right-sidebar toggle, opening
+    // settings as a closable main tab (VSCode's settings tab). It sits
+    // AFTER the toggle trio (the last seat in the cluster) and is global:
+    // one icon, every breakpoint, no drawer-only copy.
+    assert.match(bar, /aria-label="Open settings"/);
+    assert.match(bar, /title="Settings"/);
+    assert.match(bar, /@click="\$emit\('open-settings'\)"/);
+    assert.ok(
+      bar.indexOf('aria-label="Open settings"') > bar.indexOf('aria-label="Toggle right sidebar"'),
+      "the gear seats beside the secondary sidebar toggle, after it",
+    );
   });
-  it("app.vue wires the reset: desktop toggles drive toggleEdge, the gear's opener is gone", () => {
+  it("app.vue wires the reset: desktop toggles drive toggleEdge, the gear's opener rides the shared dock opener", () => {
     const appVue = src("app/app.vue");
     // the toggles route through the dock's toggleEdge
     assert.match(appVue, /toggleEdge/);
     // ensureMainPane still guards the main-pane routing
     assert.match(appVue, /ensureMainPane/);
-    // openSettings died with the gear; the '+'-menu path is untouched
-    assert.doesNotMatch(appVue, /openSettings/);
-    assert.doesNotMatch(appVue, /@settings/);
+    // t_00e4a784: the gear's click lands on a dedicated opener - a live
+    // instance focuses, else the tab opens in the last focused main pane
+    // (VSCode's active-group read), never a second duplicate
+    assert.match(appVue, /@open-settings="openSettingsTab"/);
+    assert.match(appVue, /function openSettingsTab\(\)\s*\{[\s\S]{0,400}?findComponentTab\(dock\.tree\.value, "settings"\)/);
+    assert.match(appVue, /dock\.openSingleton\(paneId, "settings"\)/);
     // the inspector chip strip dissolved into real dock tabs
     assert.match(appVue, /#pane-files/);
     assert.match(appVue, /#pane-http_channel/);
