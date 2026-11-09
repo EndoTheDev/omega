@@ -10,6 +10,13 @@ package tools
 // (file/line caps with an honest truncation note), binary files are
 // refused, and every path passes the instance-database deny guard the
 // file tools use (ENDO'S LAW 2026-10-18, harness/datadir).
+//
+// Two rules keep a broad root sane. Ignored trees (.git, node_modules,
+// .cache, dist, ...) are pruned at the directory entry, never walked
+// entry by entry - a home-root grep that read every .git object cost
+// 567s and spent the file cap on path noise (card t_d5d092be);
+// include_ignored: true opts back in, and an explicitly named root is
+// never pruned.
 
 import (
 	"bufio"
@@ -47,6 +54,75 @@ var errSearchCapReached = errors.New("search result cap reached")
 // one honest "...and N more" tail.
 const walkErrorDetailCap = 10
 
+// ignoredDirNoteCap bounds the pruned-directory names in the note; the
+// rest ride one honest "...and N more" tail.
+const ignoredDirNoteCap = 10
+
+// defaultIgnoreDirs is the directory-name skip set both search tools
+// prune at the directory entry (card t_d5d092be). A home-root grep
+// used to read every .git object and every node_modules/.cache file:
+// 567s of wall clock, the 200-file cap spent on path noise, and not
+// one row about the thing that was asked for. These trees are never
+// what a content search means.
+//
+// Pruning happens on the entry (fs.SkipDir), so nothing under an
+// ignored tree is opened, stat'ed or counted - that difference is the
+// whole cost fix, not the exclusion itself.
+//
+// The escape hatch is include_ignored: true on the tool args. The skip
+// set is a default, not a wall, and an explicitly named root always
+// wins (searching path=/repo/.git searches .git).
+var defaultIgnoreDirs = map[string]struct{}{
+	".git":         {},
+	".hg":          {},
+	".svn":         {},
+	"node_modules": {},
+	".venv":        {},
+	"venv":         {},
+	"__pycache__":  {},
+	".cache":       {},
+	".nuxt":        {},
+	"dist":         {},
+	".stversions":  {},
+}
+
+// isIgnoredDir reports whether a directory name is in the default skip
+// set (exact match - these names are tool/VCS-produced, not user-named).
+func isIgnoredDir(name string) bool {
+	_, ok := defaultIgnoreDirs[name]
+	return ok
+}
+
+// emitPrunedDirs names the directories the walk refused to enter, so
+// the ignore is never a silent blind spot: the result says what was
+// not searched and how to search it anyway.
+func emitPrunedDirs(out *strings.Builder, pruned []string) {
+	if len(pruned) == 0 {
+		return
+	}
+	shown, more := pruned, 0
+	if len(shown) > ignoredDirNoteCap {
+		more = len(shown) - ignoredDirNoteCap
+		shown = shown[:ignoredDirNoteCap]
+	}
+	fmt.Fprintf(out, "[skipped %d ignored directories (include_ignored: true searches them): %s",
+		len(pruned), strings.Join(shown, ", "))
+	if more > 0 {
+		fmt.Fprintf(out, ", ...and %d more", more)
+	}
+	out.WriteString("]\n")
+}
+
+// relSlash is an entry's path relative to the search root, slash
+// separated (the note spelling everywhere in this file).
+func relSlash(root, path string) string {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return filepath.ToSlash(path)
+	}
+	return filepath.ToSlash(rel)
+}
+
 // walkDirFn is the directory walker the search tools run through; a
 // var so the walk-error regression test can inject a denied directory
 // (a genuinely ACL-denied dir is not reproducible portably inside a
@@ -77,28 +153,30 @@ type SearchProvider struct {
 func (p *SearchProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"files.grep": {
-			Description: "Search file contents with a regular expression across a directory tree. Returns matching files, lines, or counts. Binary files are skipped and output is capped.",
+			Description: "Search file contents with a regular expression across a directory tree. Returns matching files, lines, or counts. Binary files are skipped and output is capped. VCS metadata, dependency and build dirs (.git, node_modules, .cache, dist, ...) are pruned by default; set include_ignored to search inside them.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"pattern":     map[string]any{"type": "string", "description": "Regular expression to search for (Go regexp syntax)."},
-					"path":        map[string]any{"type": "string", "description": "Root directory (or single file) to search. Relative paths root at the session workspace; default is the workspace."},
-					"glob":        map[string]any{"type": "string", "description": "Optional file-name filter, e.g. \"*.go\" or \"**/*.md\" (a * never crosses a directory boundary; ** does)."},
-					"output_mode": map[string]any{"type": "string", "enum": []string{"files_with_matches", "content", "count"}, "description": "files_with_matches (default), content (lines with path:line: text), or count (per-file match counts)."},
-					"context":     map[string]any{"type": "integer", "description": "Lines of context around each match (content mode only)."},
+					"pattern":         map[string]any{"type": "string", "description": "Regular expression to search for (Go regexp syntax)."},
+					"path":            map[string]any{"type": "string", "description": "Root directory (or single file) to search. Relative paths root at the session workspace; default is the workspace."},
+					"glob":            map[string]any{"type": "string", "description": "Optional file-name filter, e.g. \"*.go\" or \"**/*.md\" (a * never crosses a directory boundary; ** does)."},
+					"output_mode":     map[string]any{"type": "string", "enum": []string{"files_with_matches", "content", "count"}, "description": "files_with_matches (default), content (lines with path:line: text), or count (per-file match counts)."},
+					"context":         map[string]any{"type": "integer", "description": "Lines of context around each match (content mode only)."},
+					"include_ignored": map[string]any{"type": "boolean", "description": "Descend into the ignored trees (.git, node_modules, .cache, dist, ...) too instead of pruning them."},
 				},
 				"required": []string{"pattern"},
 			},
 			Run: p.RunGrep,
 		},
 		"files.glob": {
-			Description: "List paths matching a name pattern under a directory. The pattern matches the path relative to the root; * stays within one directory level, ** crosses levels, ? matches one character.",
+			Description: "List paths matching a name pattern under a directory. The pattern matches the path relative to the root; * stays within one directory level, ** crosses levels, ? matches one character. VCS metadata, dependency and build dirs (.git, node_modules, .cache, dist, ...) are pruned by default; set include_ignored to search inside them.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"pattern": map[string]any{"type": "string", "description": "Name pattern relative to the root, e.g. \"*.go\", \"sub/*.md\", \"**/*.yaml\"."},
-					"path":    map[string]any{"type": "string", "description": "Root directory. Relative paths root at the session workspace; default is the workspace."},
-					"type":    map[string]any{"type": "string", "enum": []string{"files", "dirs"}, "description": "Restrict to files or directories; empty means both."},
+					"pattern":         map[string]any{"type": "string", "description": "Name pattern relative to the root, e.g. \"*.go\", \"sub/*.md\", \"**/*.yaml\"."},
+					"path":            map[string]any{"type": "string", "description": "Root directory. Relative paths root at the session workspace; default is the workspace."},
+					"type":            map[string]any{"type": "string", "enum": []string{"files", "dirs"}, "description": "Restrict to files or directories; empty means both."},
+					"include_ignored": map[string]any{"type": "boolean", "description": "Descend into the ignored trees (.git, node_modules, .cache, dist, ...) too instead of pruning them."},
 				},
 				"required": []string{"pattern"},
 			},
@@ -135,6 +213,19 @@ func argInt(args map[string]any, key string) (int, bool, error) {
 		return 0, false, fmt.Errorf("argument %q must be a non-negative integer", key)
 	}
 	return int(f), true, nil
+}
+
+// argBool extracts an optional boolean argument (absent = false).
+func argBool(args map[string]any, key string) (bool, error) {
+	v, ok := args[key]
+	if !ok || v == nil {
+		return false, nil
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return false, fmt.Errorf("argument %q must be a boolean, got %T", key, v)
+	}
+	return b, nil
 }
 
 // searchRoot resolves the root-path argument: empty means the run's
@@ -292,6 +383,10 @@ func (p *SearchProvider) RunGrep(ctx context.Context, args map[string]any) (stri
 	if err != nil {
 		return "", err
 	}
+	includeIgnored, err := argBool(args, "include_ignored")
+	if err != nil {
+		return "", err
+	}
 
 	var out strings.Builder
 	matchFiles := 0 // files_with_matches rows (and per-file blocks below)
@@ -299,6 +394,7 @@ func (p *SearchProvider) RunGrep(ctx context.Context, args map[string]any) (stri
 	truncated := false
 	skipped := map[string]int{} // reason -> count
 	walkErrs := []string{}      // walk failures, path + reason (emitted verbatim)
+	pruned := []string{}        // ignored directories the walk refused to enter
 
 	err = walkDirFn(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -309,6 +405,14 @@ func (p *SearchProvider) RunGrep(ctx context.Context, args map[string]any) (stri
 			return nil
 		}
 		if d.IsDir() {
+			// Prune the ignored trees at the entry: nothing under them
+			// is opened, stat'ed or counted (the 276398-binary-skips
+			// cost, card t_d5d092be). An explicitly named root is never
+			// pruned - the caller asked for that tree by name.
+			if path != root && !includeIgnored && isIgnoredDir(d.Name()) {
+				pruned = append(pruned, relSlash(root, path))
+				return fs.SkipDir
+			}
 			return nil // symlinked dirs are never followed by WalkDir
 		}
 		if fi, statErr := d.Info(); statErr != nil || !fi.Mode().IsRegular() {
@@ -329,6 +433,7 @@ func (p *SearchProvider) RunGrep(ctx context.Context, args map[string]any) (stri
 	}
 
 	emitWalkErrors(&out, walkErrs)
+	emitPrunedDirs(&out, pruned)
 	if matchFiles == 0 && outLines == 0 {
 		if s := strings.TrimSuffix(out.String(), "\n"); s != "" {
 			return s, nil
@@ -560,12 +665,17 @@ func (p *SearchProvider) RunGlob(ctx context.Context, args map[string]any) (stri
 	default:
 		return "", fmt.Errorf("type must be files or dirs, got %q", kind)
 	}
+	includeIgnored, err := argBool(args, "include_ignored")
+	if err != nil {
+		return "", err
+	}
 
 	var out strings.Builder
 	n := 0
 	truncated := false
 	skipped := map[string]int{}
 	walkErrs := []string{} // walk failures, path + reason (emitted verbatim)
+	pruned := []string{}   // ignored directories the walk refused to enter
 	err = walkDirFn(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if path == root {
@@ -576,6 +686,13 @@ func (p *SearchProvider) RunGlob(ctx context.Context, args map[string]any) (stri
 		}
 		if path == root {
 			return nil
+		}
+		// The default skip set is the same one grep prunes (card
+		// t_d5d092be): a name search under a home root drowns in
+		// .git/node_modules rows exactly like a content search does.
+		if d.IsDir() && !includeIgnored && isIgnoredDir(d.Name()) {
+			pruned = append(pruned, relSlash(root, path))
+			return fs.SkipDir
 		}
 		isDir := d.IsDir()
 		if kind == "files" && isDir {
@@ -610,6 +727,7 @@ func (p *SearchProvider) RunGlob(ctx context.Context, args map[string]any) (stri
 		return "", fmt.Errorf("glob walk: %v", err)
 	}
 	emitWalkErrors(&out, walkErrs)
+	emitPrunedDirs(&out, pruned)
 	if n == 0 {
 		if s := strings.TrimSuffix(out.String(), "\n"); s != "" {
 			return s, nil

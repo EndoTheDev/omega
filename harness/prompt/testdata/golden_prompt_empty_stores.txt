@@ -28,8 +28,8 @@ Project rules live here.
 - skills.write: Create a new skill: a <dir>/<name>/SKILL.md folder with YAML frontmatter (description, author: agent) over the body. The frontmatter shape must parse exactly the way the loader parses it.
 
 ### tools
-- files.glob: List paths matching a name pattern under a directory. The pattern matches the path relative to the root; * stays within one directory level, ** crosses levels, ? matches one character.
-- files.grep: Search file contents with a regular expression across a directory tree. Returns matching files, lines, or counts. Binary files are skipped and output is capped.
+- files.glob: List paths matching a name pattern under a directory. The pattern matches the path relative to the root; * stays within one directory level, ** crosses levels, ? matches one character. VCS metadata, dependency and build dirs (.git, node_modules, .cache, dist, ...) are pruned by default; set include_ignored to search inside them.
+- files.grep: Search file contents with a regular expression across a directory tree. Returns matching files, lines, or counts. Binary files are skipped and output is capped. VCS metadata, dependency and build dirs (.git, node_modules, .cache, dist, ...) are pruned by default; set include_ignored to search inside them.
 
 ### files
 - files.batch: Atomic multi-file change: array of {action, path, content?} write ops (or edit ops with old_string/new_string). Any failure rolls the whole batch back - no half-applied change.
