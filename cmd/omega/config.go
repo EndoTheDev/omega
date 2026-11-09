@@ -728,9 +728,9 @@ func (c Config) Validate() error {
 	}
 	if c.Provider.Type != "" {
 		switch strings.ToLower(c.Provider.Type) {
-		case "ollama", "openai", "anthropic":
+		case "ollama", "openai", "anthropic", "mock":
 		default:
-			return fmt.Errorf("config: provider.type %q is not recognized (want ollama, openai, or anthropic)", c.Provider.Type)
+			return fmt.Errorf("config: provider.type %q is not recognized (want ollama, openai, anthropic, or mock)", c.Provider.Type)
 		}
 	}
 	// Named instances (card t_7dcd4280): the key IS the instance id.
@@ -738,7 +738,7 @@ func (c Config) Validate() error {
 	// pins, model-selection slots), so the id space is conservative
 	// and "default" stays reserved for the provider: section.
 	providerTypes := map[string]string{
-		"ollama": "ollama", "openai": "openai", "anthropic": "anthropic",
+		"ollama": "ollama", "openai": "openai", "anthropic": "anthropic", "mock": "mock",
 	}
 	for name, inst := range c.Providers {
 		if name == "default" {

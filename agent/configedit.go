@@ -39,7 +39,7 @@ func (e *AgentConfigScaffoldError) Error() string { return e.Message }
 // template names (defaultAgentConfigTemplate's comment line). An edit
 // outside it is refused loudly - a typo'd type would half-break the
 // next wake only, which is the worst kind of failure.
-var ScaffoldProviderTypes = []string{"ollama", "openai", "anthropic"}
+var ScaffoldProviderTypes = []string{"ollama", "openai", "anthropic", "mock"}
 
 // AgentConfigUpdates is the PUT /agents/{name} write set. A nil field
 // is untouched - the endpoint writes only what the request carries;
