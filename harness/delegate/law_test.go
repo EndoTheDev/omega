@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // TestDefaultingLawAgent pins the law's agent half: empty (or the
@@ -157,12 +157,15 @@ func TestSubagentChildMountsNoDelegateTools(t *testing.T) {
 	}
 }
 
-// stubStore is the minimal store seam for the session pins. Only
-// CreateSession is reachable - everything else rides the nil embedded
-// interface (calling it panics, and nothing does).
+// stubStore is the minimal store seam for the session pins. Only the
+// create paths are reachable - everything else rides the nil embedded
+// interface (calling it panics, and nothing does). The two create
+// surfaces are recorded apart so a test can prove which lineage kind a
+// spawn used (t_6c4ab302: delegate lineage must never ride parent_id).
 type stubStore struct {
 	agent.StoreProvider
-	created  []string // "id|parent|label" rows, in call order
+	created  []string // "id|delegate_parent|label" rows, in call order
+	forked   []string // CreateSession rows - must stay empty for delegate
 	failWith error
 }
 
@@ -170,7 +173,15 @@ func (s *stubStore) CreateSession(ctx context.Context, id, parentID, label strin
 	if s.failWith != nil {
 		return s.failWith
 	}
-	s.created = append(s.created, id+"|"+parentID+"|"+label)
+	s.forked = append(s.forked, id+"|"+parentID+"|"+label)
+	return nil
+}
+
+func (s *stubStore) CreateDelegateSession(ctx context.Context, id, delegateParent, label string) error {
+	if s.failWith != nil {
+		return s.failWith
+	}
+	s.created = append(s.created, id+"|"+delegateParent+"|"+label)
 	return nil
 }
 
@@ -199,10 +210,12 @@ func writeStubArgs(t *testing.T, name string) string {
 
 // TestChildSessionStoredAndPassed pins the stored+searchable ruling:
 // with the store seam mounted, the host pre-creates the child's
-// session (label delegate:<task>, parent = the calling session when
+// session (label delegate:<task>, lineage = the calling session when
 // the context carries one) and the child inherits it via run
 // --session - the --session persist contract makes the child's prompt,
-// report and tool results land in the sessions list.
+// report and tool results land in the sessions list. Lineage rides
+// delegate_parent by ruling (t_6c4ab302): the fork parent_id stays
+// empty so the child never inherits the caller's context.
 func TestChildSessionStoredAndPassed(t *testing.T) {
 	bin := writeStubArgs(t, "stub-args-omega")
 	t.Setenv("OMEGA_BIN", bin)
@@ -222,15 +235,18 @@ func TestChildSessionStoredAndPassed(t *testing.T) {
 	}
 
 	if len(store.created) != 1 {
-		t.Fatalf("CreateSession calls = %d, want 1", len(store.created))
+		t.Fatalf("delegate session creates = %d, want 1", len(store.created))
+	}
+	if len(store.forked) != 0 {
+		t.Fatalf("delegate spawn used the FORK create path: %v - delegate lineage must never ride parent_id", store.forked)
 	}
 	parts := strings.Split(store.created[0], "|")
-	id, parent, label := parts[0], parts[1], parts[2]
+	id, delegateParent, label := parts[0], parts[1], parts[2]
 	if id == "" {
 		t.Fatalf("malformed created row %q", store.created[0])
 	}
-	if parent != "caller-session-99" {
-		t.Errorf("child session parent = %q, want caller-session-99", parent)
+	if delegateParent != "caller-session-99" {
+		t.Errorf("child session delegate_parent = %q, want caller-session-99", delegateParent)
 	}
 	if label != "delegate:task-1" {
 		t.Errorf("child session label = %q, want delegate:task-1", label)
@@ -243,6 +259,45 @@ func TestChildSessionStoredAndPassed(t *testing.T) {
 	}
 	if !strings.Contains(status, "(session "+id+")") {
 		t.Errorf("status missing the session handle: %q", status)
+	}
+}
+
+// forkOnlyStore is a store seam that predates the delegate surface (no
+// CreateDelegateSession). The spawn must degrade to an UNLINKED root -
+// a store without the split cannot express delegate lineage, and the
+// context-inheriting parent link is never an acceptable fallback.
+type forkOnlyStore struct {
+	agent.StoreProvider
+	created []string
+}
+
+func (s *forkOnlyStore) CreateSession(ctx context.Context, id, parentID, label string) error {
+	s.created = append(s.created, id+"|"+parentID+"|"+label)
+	return nil
+}
+
+// TestLegacyStoreGetsUnlinkedChild pins the fallback: a store without
+// the delegate surface cannot inherit the caller's history.
+func TestLegacyStoreGetsUnlinkedChild(t *testing.T) {
+	bin := writeStubArgs(t, "stub-forkonly-omega")
+	t.Setenv("OMEGA_BIN", bin)
+	st := &forkOnlyStore{}
+	ctx := agent.WithSessionID(context.Background(), "caller-session-99")
+
+	d := NewDelegate()
+	d.store = st
+	out, err := d.runDelegateTask(ctx, map[string]any{"prompt": "fresh context please"})
+	if err != nil {
+		t.Fatalf("runDelegateTask: %v (%s)", err, out)
+	}
+	if !strings.Contains(out, "--session") {
+		t.Fatalf("child argv missing --session: %q", out)
+	}
+	if len(st.created) != 1 {
+		t.Fatalf("creates = %d, want 1", len(st.created))
+	}
+	if parts := strings.Split(st.created[0], "|"); parts[1] != "" {
+		t.Fatalf("legacy-store child parent = %q, want empty (fresh context)", parts[1])
 	}
 }
 
@@ -312,4 +367,3 @@ func TestRenderResultTrimWhitespace(t *testing.T) {
 		t.Fatalf("trimmed summary = %q", got)
 	}
 }
-

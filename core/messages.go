@@ -3,11 +3,19 @@ package core
 // Session is a persisted conversation with optional parent linking
 // for branching.
 type Session struct {
-	ID        string `json:"id"`
-	ParentID  string `json:"parent_id,omitempty"`
-	Label     string `json:"label,omitempty"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID string `json:"id"`
+	// ParentID is the FORK lineage (t_17365247): a branch child renders
+	// and assembles its ancestor chain as a prefix. Empty on roots.
+	ParentID string `json:"parent_id,omitempty"`
+	// DelegateParent is the DELEGATE lineage (t_6c4ab302): the session
+	// that spawned this one through the delegate tool. It is metadata
+	// for lineage display only - a delegate child never inherits its
+	// parent's history (the ruling: children get a fresh context).
+	// Empty on sessions that were not delegate-spawned.
+	DelegateParent string `json:"delegate_parent,omitempty"`
+	Label          string `json:"label,omitempty"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
 
 	// Real provider-reported usage accumulated per session. Sessions
 	// saved before this data was recorded keep 0 totals.
