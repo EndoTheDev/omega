@@ -172,6 +172,7 @@
         <BandSelect
           class="thinking-select"
           label="Reasoning effort"
+          drop="up"
           :options="thinkingOptions"
           :model-value="thinking"
           @update:model-value="$emit('update:thinking', $event)" />
