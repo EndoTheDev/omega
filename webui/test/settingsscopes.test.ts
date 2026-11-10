@@ -18,8 +18,10 @@ import { fileURLToPath } from "node:url";
 import {
   AGENT_KNOB_FIELDS,
   agentConfigUpdate,
+  filterSettingGroups,
   normalizeSettingsPayload,
   scopeConfigDiff,
+  scopeKnobDiffersFromMain,
 } from "../app/composables/omega.ts";
 
 const SETTINGS_TAB = readFileSync(
@@ -221,6 +223,68 @@ test("scopeConfigDiff surfaces a bad max_turns before the round-trip", () => {
   const out = scopeConfigDiff({ max_turns: 42 }, { max_turns: "12abc" }, [], new Set());
   assert.match(out.invalid ?? "", /max turns/);
   assert.deepEqual(out.body, {});
+});
+
+// --- scopeKnobDiffersFromMain: the agent tab's dot predicate (seam ruling) ---
+
+test("an agent tab's dot means differs-from-MAIN, and an override always lights it", () => {
+  // one override set (the layer names the key): dot, whatever the values say
+  assert.equal(scopeKnobDiffersFromMain("provider.model_name", "llama", "llama", true, []), true);
+  // a masked secret: the structural flag is the ONLY honest answer
+  assert.equal(scopeKnobDiffersFromMain("provider.api_key", "****", "****", true, []), true);
+  // the inherited knob (no override, effective value IS main's): no dot
+  assert.equal(scopeKnobDiffersFromMain("provider.host", "http://a", "http://a", false, []), false);
+  // empty and unset fold into one value - an untouched blank row never lights
+  assert.equal(scopeKnobDiffersFromMain("system_prompt", "", undefined, false, []), false);
+  assert.equal(scopeKnobDiffersFromMain("system_prompt", undefined, "", false, []), false);
+  // a draft edit departs from main before it is saved: the row will override
+  assert.equal(scopeKnobDiffersFromMain("max_turns", 7, 42, false, []), true);
+  // a QUEUED removal is on its way back to main: the star marks it, the dot goes out
+  assert.equal(scopeKnobDiffersFromMain("max_turns", 42, 42, true, ["max_turns"]), false);
+});
+
+test("R7: an agent tab's search can only ever return the scope's four groups", () => {
+  const scope = normalizeSettingsPayload({
+    groups: [],
+    scopes: [scopePayload({ "provider.model_name": true })],
+  }).scopes[0];
+  // the pane maps each scope knob onto a row (labels come from the main
+  // registry / SCOPE_GROUP_LABELS); the GROUP set is the payload's own
+  const ROW_LABELS: Record<string, string> = {
+    "provider.type": "type",
+    "provider.model_name": "model name",
+    "provider.host": "base url",
+    "provider.api_key": "api key",
+    system_prompt: "system prompt",
+    description: "description",
+    max_turns: "max turns",
+  };
+  const groups = scope.groups.map((g) => ({
+    key: g.key,
+    label: g.key,
+    knobs: g.knobs.map((k) => ({
+      key: k.key,
+      label: ROW_LABELS[k.key] ?? k.key,
+      type: "text" as const,
+      value: k.value,
+      default: "",
+    })),
+  }));
+  assert.deepEqual(groups.map((g) => g.key), ["provider", "system_prompt", "description", "max_turns"]);
+  const hits = filterSettingGroups(groups, "model");
+  assert.deepEqual(hits.map((g) => g.key), ["provider"]);
+  assert.deepEqual(hits[0].knobs.map((k) => k.key), ["provider.model_name"]);
+  // a main-registry-only knob can never surface on an agent tab: it is not
+  // in the payload (the pane renders scopeGroups, never groups.value)
+  for (const g of filterSettingGroups(groups, "")) {
+    for (const k of g.knobs) {
+      assert.ok(
+        ["provider.type", "provider.model_name", "provider.host", "provider.api_key", "system_prompt", "description", "max_turns"].includes(k.key),
+        `unexpected agent-tab row ${k.key}`,
+      );
+    }
+  }
+  assert.equal(filterSettingGroups(groups, "vision").length, 0);
 });
 
 // --- SettingsTab.vue wiring: strip, tab source, search, one write path ---

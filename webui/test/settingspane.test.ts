@@ -62,7 +62,11 @@ test("normalize drops non-object entries and unnamed groups", () => {
 
 test("normalize tolerates junk root payloads", () => {
   for (const junk of [null, 42, "x", {}, { groups: "nope" }, { groups: [5] }]) {
-    assert.deepEqual(normalizeSettingsPayload(junk), { groups: [] });
+    const out = normalizeSettingsPayload(junk);
+    assert.deepEqual(out.groups, []);
+    // settings tier 3b: scopes is part of the payload and is ALWAYS an
+    // array - a junk root answers the R8 empty world, never undefined
+    assert.deepEqual(out.scopes, []);
   }
 });
 
