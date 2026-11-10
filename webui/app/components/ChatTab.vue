@@ -190,7 +190,7 @@
   // and the SSE-composed live view are gone; the state keeps the
   // composer transport side (draft, attach chips, the REST restore's
   // fallback for sessions the single panel does not cover, variants).
-  import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+  import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
   import {
     CHAT_HOST_KEY,
     EPHEMERAL_DRAFT_REF,
@@ -362,11 +362,24 @@
   );
   const canvasItems = computed(() => {
     if (!(panelMatches.value && panelPayload.value)) return null;
-    const items = canvasTranscript.apply(panelPayload.value);
-    // the live chip tail (card t_896cf5a8): a pending call's streamed
-    // output rides the row whose call id matches. The store is reactive,
-    // so a landed chunk repaints exactly these rows; the tail renders
-    // only while the row has no settled result.
+    return canvasTranscript.apply(panelPayload.value);
+  });
+  // the live chip tail (card t_896cf5a8): a running call's streamed
+  // output rides the row whose tool call id matches. The store is
+  // reactive, so a landed chunk repaints exactly these rows; the merge
+  // runs over the FINAL transcript, so both render sources (the canvas
+  // panel and the REST restore fallback) show the live half. Restore
+  // items are wrapped in reactive proxies: the mutation lands on the
+  // child's own prop read (the t_078a2c35 mechanism the canvas items
+  // already ride), and identity is kept - the elapsed meter never
+  // restarts on a chunk.
+  const restoreItems = computed(() =>
+    (state.value?.restored ?? []).map((it) =>
+      it.kind === "tool" ? (reactive(it) as TranscriptItem) : it,
+    ),
+  );
+  const transcript = computed(() => {
+    const items = canvasItems.value ?? restoreItems.value;
     for (const it of items) {
       if (it.kind !== "tool") continue;
       const chip = chipOf(it.callId);
@@ -375,7 +388,6 @@
     }
     return items;
   });
-  const transcript = computed(() => canvasItems.value ?? state.value?.restored ?? []);
   const statusLine = computed(() => state.value?.statusLine ?? "");
   const itemKey = createItemKeySource();
   // stacked layout (card t_84e4653c): the transcript cut at user
