@@ -125,8 +125,8 @@ describe("the bottom shell's place in the tree", () => {
     assert.equal(bottom.fixed, BOTTOM_DEFAULT_PX, "fresh height = default rung 200");
     assert.deepEqual(
       bottom.tabs.map((t) => t.component),
-      ["http_channel", "terminal"],
-      "logs + terminal are the bottom host's default tabs (card t_55a3fc4b)",
+      ["http_channel", "terminal", "observability"],
+      "logs + terminal + observability are the bottom host's default tabs (card t_55a3fc4b, t_e703180e)",
     );
   });
 
@@ -351,7 +351,16 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
   const shellOf = (tree: DockNode): DockPane => findEdgePane(tree, "bottom")!;
   const stripOf = (tree: DockNode): string[] =>
     shellOf(tree).tabs.map((t) => t.component);
-  const terminal = bottomDefaults[bottomDefaults.length - 1]!;
+  // the strip's named residents: the surgery tests below strip or park
+  // ONE default and expect the sync to bring it back (card t_e703180e
+  // added a third bottom home, so the "last default" read is gone -
+  // names are stable where an index into a growing list is not).
+  const terminal = "terminal";
+  const observability = "observability";
+  // what the sync appends: every default the strip lacks, in registry
+  // order, at the END
+  const appended = (tabs: DockTab[]): string[] =>
+    bottomDefaults.filter((d) => !tabs.some((t) => t.component === d));
 
   it("a persisted pre-terminal strip gains the missing bottom homes", () => {
     checkStripSync([{ component: "http_channel" }], 0, 0);
@@ -370,8 +379,8 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
     const out = syncBottomHostTabs(tree);
     assert.deepEqual(
       stripOf(out),
-      [...tabs.map((t) => t.component), terminal],
-      "the user strip is untouched; the missing default appended at END",
+      [...tabs.map((t) => t.component), ...appended(tabs)],
+      "the user strip is untouched; the missing defaults appended at END",
     );
     assert.equal(shellOf(out).active, activeAfter, "active index preserved");
     // idempotent: the second run changes NOTHING (same reference)
@@ -386,10 +395,10 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
     assert.equal(shellOf(out).active, 0, "an empty strip focuses the first");
   });
 
-  it("a strip that already carries terminal is byte-identical (no-op)", () => {
+  it("a strip that already carries every bottom home is byte-identical (no-op)", () => {
     const tree = rootWithBottomStrip(
-      [{ component: "http_channel" }, { component: terminal }],
-      1,
+      bottomDefaults.map((c) => ({ component: c })),
+      bottomDefaults.length - 1,
     );
     assert.deepEqual(stripOf(tree), bottomDefaults);
     assert.strictEqual(syncBottomHostTabs(tree), tree, "same reference");
@@ -397,16 +406,16 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
 
   it("a default parked ELSEWHERE (a main pane) is never duplicated", () => {
     // the whole-tree read (the restoreInspectorSet precedent): the
-    // singleton lives in a main pane, the strip sync adds nothing -
+    // singleton lives in a main pane, the strip seats the REST -
     // strip-only membership would clone the singleton onto the shell
     const main = makePane(null);
     main.tabs = [{ component: terminal }];
     const shell = makePane(null, null, "bottom");
-    shell.tabs = [{ component: "http_channel" }];
+    shell.tabs = [{ component: "http_channel" }, { component: observability }];
     const tree = makeSplit("column", [main, shell]);
     const out = syncBottomHostTabs(tree);
     assert.strictEqual(out, tree, "no-op: the default is seated");
-    assert.equal(shellOf(out).tabs.length, 1, "the strip gained nothing");
+    assert.equal(shellOf(out).tabs.length, 2, "the strip gained nothing");
     assert.equal(findComponentTab(out, terminal)!.paneId, main.id,
       "the singleton stays in the main pane");
   });
@@ -424,7 +433,7 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
       if (isPane(n) && n.tabs.some((t) => t.component === "http_channel")) {
         assert.deepEqual(
           n.tabs.map((t) => t.component),
-          ["http_channel", terminal],
+          bottomDefaults,
           "the leaf hosting the bottom-home tabs took the strip",
         );
         return;
@@ -456,10 +465,13 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
     const raw = JSON.stringify(rec);
     store.setItem(DOCK_LAYOUT_KEY, raw);
     const healed = createDock(store);
+    // card t_e703180e: the strip now seats three homes - the healed
+    // strip is compared as a SET, because the sync APPENDS at the end
+    // (order is the strip-sync tests' business, membership is this one's)
     assert.deepEqual(
-      bottomOf(healed.tree.value)?.tabs.map((t) => t.component),
-      ["http_channel", terminal],
-      "the terminal tab is back, without any storage wipe",
+      [...(bottomOf(healed.tree.value)?.tabs.map((t) => t.component) ?? [])].sort(),
+      [...bottomDefaults].sort(),
+      "every bottom home is back, without any storage wipe",
     );
     assert.ok(
       healed.tree.value === undefined ||
@@ -479,16 +491,16 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
           }
         }
         return [];
-      })(),
-      ["http_channel", terminal],
+      })().sort(),
+      [...bottomDefaults].sort(),
       "the healed strip persisted",
     );
     store.setItem(DOCK_LAYOUT_KEY, JSON.stringify(after));
     const stable = createDock(store);
     assert.deepEqual(
-      bottomOf(stable.tree.value)?.tabs.map((t) => t.component),
-      ["http_channel", terminal],
-      "reload: strip still [logs, terminal]",
+      [...(bottomOf(stable.tree.value)?.tabs.map((t) => t.component) ?? [])].sort(),
+      [...bottomDefaults].sort(),
+      "reload: the strip is the registry's bottom-home strip",
     );
     // and the loaded healed tree is repair-idempotent (same reference)
     assert.strictEqual(syncBottomHostTabs(stable.tree.value), stable.tree.value);
@@ -627,7 +639,8 @@ describe("persistence round-trip", () => {
 describe("the registry's home rulings", () => {
   it("logs' default home is the bottom host", () => {
     // card t_55a3fc4b: terminal joins the fresh bottom strip (logs first)
-    assert.deepEqual(defaultHostTabs("bottom"), ["http_channel", "terminal"]);
+    // card t_e703180e: the observability tab is the third bottom home
+    assert.deepEqual(defaultHostTabs("bottom"), ["http_channel", "terminal", "observability"]);
   });
 
   it("logs reports its bottom home; every other component single-hosts", () => {

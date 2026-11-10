@@ -2,6 +2,7 @@
 // one name one meaning, wrapper, throw-on-unknown) lives in
 // .agents/DESIGN.md (card t_502b8e81). This file is the vocabulary.
 import {
+  Activity,
   Archive,
   ArchiveRestore,
   // card t_6215474b: the nav cluster + command palette chrome
@@ -84,6 +85,11 @@ export const ICONS = {
   // integrated shell; the SquareTerminal lucide glyph - "file-script"
   // carries the same shape deliberately: the script-class file glyph
   // IS terminal semantics)
+  // card t_e703180e: the observability tab - the live run-event stream.
+  // Its own glyph, not the logs scroll: "one name one meaning" - the
+  // scroll is the raw file tail (the Logs strip), the pulse is the
+  // structured stream of what the process is doing.
+  activity: Activity,
   browser: Globe, // the general web browser tab (card t_95c91f9c)
   // default glyph for modules that declare no icon of their own
   module: Box,
