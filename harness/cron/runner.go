@@ -991,8 +991,11 @@ func (r *Runner) cronFiles() map[string]string {
 // watchJobsFile polls every crons.yaml (main + agent homes, ruling 12)
 // for mtime changes and reloads the full job set without restart,
 // logging the diff. Mirrors cmd/omega's WatchConfig pattern (poll, not
-// fsnotify). A reload that fails to parse keeps the previous job set
-// in effect. Returns when the context is cancelled or Stop is called.
+// fsnotify). Two laws keep the previous job set in effect: a reload
+// that fails to parse, and a reload that reads an empty file
+// (loadAllConfigsForReload - a truncated write must never apply as an
+// empty job set, card t_8be45d55). Returns when the context is cancelled
+// or Stop is called.
 func (r *Runner) watchJobsFile(ctx context.Context) {
 	// The signature is path -> mtime; a new agent home or a new agent
 	// file changes the set, the mtime change changes the value.
@@ -1022,7 +1025,7 @@ func (r *Runner) watchJobsFile(ctx context.Context) {
 			continue
 		}
 		last = nowSig
-		cfg, err := LoadAllConfigs(r.home)
+		cfg, err := loadAllConfigsForReload(r.home)
 		if err != nil {
 			r.errorf("crons reload failed (keeping previous jobs): %v", err)
 			continue
