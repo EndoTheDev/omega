@@ -14,6 +14,9 @@
 # allowed) and relies on the worker-side onboarding same-file check. If a
 # running card exposes NO surface at all, hold everything (conservative).
 # Upgrade path: card bodies grow a FILES: line the script reads first.
+# A FILES-less card keeps that prose fallback for a SINGLE dispatch, but the
+# prose can never authorize a PAIR: an absent FILES: line is UNPROVABLE, not
+# precise (card t_2d0d48ac, 2026-11-11 - the absence used to read as proof).
 #
 # Usage: scripts/factory-dispatch.sh [--dry-run] [--max N]
 set -euo pipefail
@@ -37,7 +40,9 @@ candidate, followed by the PAIR verdict for the would-spawn head set
 (cap minus running, in dispatch order) - `pair: sanctioned|forbidden
 (<ids>, <why>)` - so the --max decision reads off the log instead of
 judgment. A forbidden pair means at most one of those cards may run: pass
---max 1. The pass ends with a handoff report (wanted/after/over-run).
+--max 1. A card with NO `FILES:` line is UNPROVABLE for a pair (its prose
+tokens still make it legal for a single dispatch) - the verdict names it.
+The pass ends with a handoff report (wanted/after/over-run).
 
 Flags:
   --dry-run   evaluate and print verdicts only; no dispatch, no writes
@@ -247,16 +252,37 @@ candidate_tokens() {  # id -> WRITE-surface tokens: curated FILES: lines win ove
   fi
 }
 
-imprecise_surface() {  # id -> 0 (true) when the FILES line names a BARE directory
+files_line_absent() {  # id -> 0 (true) when the card declares NO usable FILES: line
+  # Distinguishes the two unprovable shapes for the VERDICT TEXT: "absent"
+  # names the missing line, "bare dir" names the sloppy token. A FILES: line
+  # that carries no value ("FILES:") declares no surface either, so it counts
+  # as absent - an empty declaration is not a proof.
+  local files
+  files=$(dbq "SELECT body FROM tasks WHERE id='$1';" | grep -i '^FILES:' | head -1 | cut -d: -f2- || true)
+  [ -z "$files" ]
+}
+
+imprecise_surface() {  # id -> 0 (true) when the surface is UNPROVABLE: no FILES:
+                       # line at all, or a FILES line naming a BARE directory
   # A bare token ('agent', 'harness', 'core') is a directory name whose real
   # coverage the tokenizer cannot pin: it can swallow every path under it, or
   # nothing. Two go cards sanctioned on those tokens is exactly the false-green
   # shape, so the go+go disjointness proof treats such a surface as UNPROVABLE.
   # The fix is on the card, not the guard: name paths ('agent/api/', '.go' files).
+  # ABSENT FILES line = UNPROVABLE (card t_2d0d48ac, 2026-11-11). The old leg
+  # said "absent is handled by the empty-token leg" - it is not: candidate_tokens
+  # falls back to the WHOLE body prose, so a card that declares no surface at all
+  # still carries prose tokens, and this function inspected the FILES line only,
+  # found nothing bare, and answered "precise". Net: no FILES line -> prose tokens
+  # -> precise -> the pair sanctioned. The card with the LEAST surface discipline
+  # got the EASIEST pairing (proven live 2026-11-11: t_cfc2aa58, no FILES line,
+  # spawned beside the webui card t_b5784de3 as "FILES disjoint" on a surface
+  # nobody proved). The prose fallback stays legal for a SINGLE dispatch; it must
+  # never authorize a PAIR.
   local body files tok
   body=$(dbq "SELECT body FROM tasks WHERE id='$1';")
   files=$(grep -i '^FILES:' <<<"$body" | head -1 | cut -d: -f2- || true)
-  [ -n "$files" ] || return 1        # absent FILES is handled by the empty-token leg
+  [ -n "$files" ] || return 0        # no declared surface: nothing to prove with
   for tok in $files; do
     case "$tok" in
       */*|*.*) : ;;                  # path-shaped: precise enough
@@ -354,13 +380,16 @@ SURF=/tmp/fd_running_surface.$$; : >"$SURF"
 # go one token-less, the candidate read legal). The proof needs the go cards
 # counted and tokenised individually.
 RUNGO_SURF=/tmp/fd_rungo_surface.$$; : >"$RUNGO_SURF"
-RUNGO_CARDS=0; RUNGO_TOKENED=0; RUNGO_IMPRECISE=0
+RUNGO_CARDS=0; RUNGO_TOKENED=0; RUNGO_IMPRECISE=0; RUNGO_NOFILES=""
 for r in "${RUNNING[@]:-}"; do
   [ -z "$r" ] && continue
   surface_of_card "$r" >>"$SURF"
   if [ "$(class_of "$r")" = go ]; then
     RUNGO_CARDS=$((RUNGO_CARDS + 1))
     imprecise_surface "$r" && RUNGO_IMPRECISE=$((RUNGO_IMPRECISE + 1))
+    # named in the hold verdict: an absent FILES line is the reason the pair is
+    # unprovable, and the log must say which card to fix
+    files_line_absent "$r" && RUNGO_NOFILES="$RUNGO_NOFILES $r"
     rgo=$(surface_of_card "$r")
     if [ -n "$rgo" ]; then
       RUNGO_TOKENED=$((RUNGO_TOKENED + 1))
@@ -422,7 +451,7 @@ PARKED=(); LEGAL=0
 # lane must see them.
 PASS_SURF=$(mktemp); : >"$PASS_SURF"   # surfaces of candidates already marked legal THIS pass (pairwise)
 PASSGO_SURF=$(mktemp); : >"$PASSGO_SURF"   # go-class legal candidates only - the same-pass disjointness proof
-PASSGO_CARDS=0; PASSGO_TOKENED=0; PASSGO_IMPRECISE=0
+PASSGO_CARDS=0; PASSGO_TOKENED=0; PASSGO_IMPRECISE=0; PASSGO_NOFILES=""
 PASS_CLASS=""   # classes of candidates already marked legal THIS pass
 # The would-spawn head set (pair verdict, below): the first SLOTS candidates
 # in DISPATCH ORDER that this pass did NOT hold - the cards the inner
@@ -492,6 +521,16 @@ for c in "${CAND[@]:-}"; do
     fi
     if [ "$GODISJ" = 0 ]; then
       HOLD=1; WHY="go-class beside go with unproven surface: running=[$RC] same-pass=[$PASS_CLASS] (disjoint go pairs are sanctioned since 2026-11-10; overlapping or unprovable surfaces stay forbidden)"
+      # Name the offending card: an ABSENT `FILES:` line is its own failure (the
+      # card declares no surface at all), distinct from a bare-dir token, and the
+      # log is the only place the worker learns which card to fix. An empty
+      # declaration is named too. No absent line anywhere -> the message above
+      # stands unchanged (the bare-dir / token-less shapes).
+      NFHITS=""
+      files_line_absent "$c" && NFHITS="$NFHITS candidate $c"
+      [ -n "$RUNGO_NOFILES" ] && NFHITS="$NFHITS running$RUNGO_NOFILES"
+      [ -n "$PASSGO_NOFILES" ] && NFHITS="$NFHITS same-pass$PASSGO_NOFILES"
+      [ -n "$NFHITS" ] && WHY="$WHY [absent FILES: line is unprovable, never precise:$NFHITS]"
     fi
   fi
   if [ "$HOLD" = 0 ] && grep -q . "$CTOK"; then
@@ -522,6 +561,7 @@ for c in "${CAND[@]:-}"; do
     if [ "$CC" = go ]; then   # same-pass disjointness proof for the NEXT go candidate
       PASSGO_CARDS=$((PASSGO_CARDS + 1))
       imprecise_surface "$c" && PASSGO_IMPRECISE=$((PASSGO_IMPRECISE + 1))
+      files_line_absent "$c" && PASSGO_NOFILES="$PASSGO_NOFILES $c"
       PASSGO_TOK=$(candidate_tokens "$c")
       if [ -n "$PASSGO_TOK" ]; then
         PASSGO_TOKENED=$((PASSGO_TOKENED + 1))
@@ -574,6 +614,24 @@ else
   PAIRWHY="classes $PAIRCLS, FILES disjoint"
   for ((pi = 0; pi < ${#HEAD[@]}; pi++)); do
     for ((pj = pi + 1; pj < ${#HEAD[@]}; pj++)); do
+      # ABSENT-FILES rule (card t_2d0d48ac, 2026-11-11): a card with no usable
+      # `FILES:` line declares NO write surface. The prose fallback may still
+      # make that card legal on its own (single dispatch), but prose tokens
+      # never authorize a PAIR - the surface is unproven, so the pair is
+      # forbidden and the verdict names the card that must grow a FILES line.
+      # This leg runs BEFORE the class laws and covers EVERY class pair, which
+      # is the incident shape: t_cfc2aa58 (no FILES line at all) beside the
+      # webui card t_b5784de3 read `sanctioned ... FILES disjoint` because the
+      # absence was mistaken for proof. The bare-directory rule above is
+      # untouched - a bare token stays a go+go-only blocker.
+      if files_line_absent "${HEAD[pi]}"; then
+        PAIRV=forbidden; PAIRWHY="no FILES: line on ${HEAD[pi]} - unprovable surface, never a pair"
+        break 2
+      fi
+      if files_line_absent "${HEAD[pj]}"; then
+        PAIRV=forbidden; PAIRWHY="no FILES: line on ${HEAD[pj]} - unprovable surface, never a pair"
+        break 2
+      fi
       # class law BEFORE the token check for EVERY pair: a go+go head is
       # forbidden unless the surfaces are provably disjoint (2026-11-10
       # ruling - before it, class alone forbade the pair).
