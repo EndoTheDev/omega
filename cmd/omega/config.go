@@ -21,7 +21,7 @@ import (
 	kanbanModule "github.com/EndoTheDev/omega/harness/kanban"
 	"github.com/EndoTheDev/omega/harness/logging"
 	"github.com/EndoTheDev/omega/harness/memory"
-	"github.com/EndoTheDev/omega/harness/process"
+	"github.com/EndoTheDev/omega/harness/terminal"
 	"github.com/EndoTheDev/omega/harness/provider"
 	"github.com/EndoTheDev/omega/harness/skills"
 	"github.com/EndoTheDev/omega/harness/store"
@@ -857,9 +857,12 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "approvals":
 		return approvalSection(c), true
 	case "process":
-		// card t_5782d11e: zero knobs ride the module's constants -
-		// the section only carries explicit user overrides.
-		return process.Config{
+		// The shell registry's knobs (card t_5a49790b folded the
+		// process registry into the one shell domain under
+		// harness/terminal; the section name stays for the config.yaml
+		// contract). Zero knobs ride the registry's constants - the
+		// section only carries explicit user overrides.
+		return terminal.RegistryConfig{
 			Home:             omegaHome(),
 			LogMaxBytes:      c.Process.LogMaxBytes,
 			KillGraceSeconds: c.Process.KillGraceSeconds,
