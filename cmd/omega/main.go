@@ -910,7 +910,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		deps := core.ChannelDeps{
 			Ctx:        pctx,
 			Store:      store,
-			Settings:   &omegaSettings{path: configFile, pctx: pctx, setFilesWorkspace: setFilesWorkspace, setChannelWorkspace: setChannelWorkspace, setTerminalWorkspace: setTerminalWorkspace, setAgentConfig: setAgentConfig},
+			Settings:   &omegaSettings{path: configFile, pctx: pctx, setFilesWorkspace: setFilesWorkspace, setChannelWorkspace: setChannelWorkspace, setTerminalWorkspace: setTerminalWorkspace, setAgentConfig: setAgentConfig, maxTurns: ag.MaxTurns},
 			Modules:    mods,
 			Registries: registries,
 			Version:    omegaVersion,
