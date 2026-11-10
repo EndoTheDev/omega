@@ -266,7 +266,7 @@ printf '%s' "$OUT" | grep -qF "7 fixes" && ok || bad "N10: counts must still car
 
 # --- N11: fat cycle -> the ladder trims the oldest docs, notes stay whole ----
 # 21 pick bullets (12 feat / 4 tune / 5 docs) at pad 78 = 2208 chars, so the
-# tail must lose 3 docs to land at 1932. The markdown keeps all 21 - GitHub
+# tail must lose 3 docs to land at 1928. The markdown keeps all 21 - GitHub
 # gets the full story; only the Discord payload shrinks.
 fx=$(new_fixture)
 for i in 1 2 3 4 5 6 7 8 9 10 11 12; do c "$fx" "feat(core): feature $i $(pad 78)"; done
