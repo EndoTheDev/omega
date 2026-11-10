@@ -80,25 +80,23 @@ func TestBootRecoveryInjectsTimeoutResults(t *testing.T) {
 	a.SetLoopProvider(loop.Loop{})
 	s := NewServer(a, nil, st, nil, nil, nil)
 
-	// The sweep settled the entry...
-	deadline := time.Now().Add(testWaitTimeout)
-	for time.Now().Before(deadline) && len(s.yieldLedger.All()) != 0 {
-		time.Sleep(10 * time.Millisecond)
-	}
+	// The sweep runs synchronously inside NewServer: by the time it
+	// returns, every pending row is settled and the launch has been
+	// admitted or rolled back. Both facts are read as RECORDS, never
+	// polled - the wake run's live slot measures 2-4ms, shorter than any
+	// poll interval, so a poll for s.runs.active misses the run whole
+	// whenever the test goroutine is descheduled here and the wait
+	// deadline, not the launch, would decide the verdict (t_32c3fce2).
 	if left := s.yieldLedger.All(); len(left) != 0 {
 		t.Fatalf("boot sweep left entries: %+v", left)
 	}
-	// ...and launched the wake run (the session's slot went live).
-	deadline = time.Now().Add(testWaitTimeout)
-	for time.Now().Before(deadline) && !s.runs.active("s1") {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if !s.runs.active("s1") {
-		t.Fatal("boot recovery never launched the wake run")
+	if n := s.wakeLaunchCount("s1"); n != 1 {
+		t.Fatalf("boot recovery launched %d wake runs, want 1 - the wake launch never happened", n)
 	}
 	// The injected result persisted as a first-class yield_result row
-	// once the run lands it (the loop's input persist).
-	deadline = time.Now().Add(testWaitTimeout)
+	// once the run lands it (the loop's input persist). A row is durable,
+	// so this poll is a latch, not a sampled state.
+	deadline := time.Now().Add(testWaitTimeout)
 	seen := false
 	for time.Now().Before(deadline) && !seen {
 		msgs, err := st.GetMessages(context.Background(), "s1")

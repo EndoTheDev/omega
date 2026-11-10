@@ -93,6 +93,17 @@ type Server struct {
 	bootCtx     context.Context
 	bootStop    context.CancelFunc
 	yieldLedger agent.YieldLedger
+	// wakeMu guards wakeLaunches: the per-home count of wake runs this
+	// server's run slot admitted. It is a monotone RECORD of an event
+	// that happened, not a sampled run state - a wake run's live slot
+	// lasts a couple of milliseconds (the boot recovery run measures
+	// 2-4ms under load), shorter than any test's poll interval, so
+	// s.runs.active sampled from outside decides nothing about whether
+	// a launch happened. Tests read this through wakeLaunchCount
+	// (card t_32c3fce2: the boot-recovery wait's 30s deadline, not the
+	// launch, was deciding the verdict).
+	wakeMu       sync.Mutex
+	wakeLaunches map[string]int
 	// ephLedger is the `eph-` lane of the pending-calls table (card
 	// t_61d3def9, session-type parity): the in-memory backing beside
 	// the ephRegistry, wired into yieldLedger through
@@ -1156,7 +1167,35 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 		// providers cannot reintroduce them (the loop filters post-merge).
 		tools = withoutMemoryTools(tools)
 	}
+	if req.wake {
+		// Launch record (card t_32c3fce2): the slot is taken, the run is
+		// prepared, and launchWake's launchRun is the only statement
+		// left - this wake IS launching. Recorded as a monotone count
+		// because the run's live slot outlives no poll interval; a test
+		// that samples s.runs.active for it reads a transient that has
+		// already passed (see wakeLaunchCount).
+		s.wakeMu.Lock()
+		if s.wakeLaunches == nil {
+			s.wakeLaunches = map[string]int{}
+		}
+		s.wakeLaunches[req.SessionID]++
+		s.wakeMu.Unlock()
+	}
 	return &chatPrepare{run: run, prov: prov, messages: messages, tools: tools}, nil
+}
+
+// wakeLaunchCount reports how many wake runs this server has launched for
+// the home - an event record, never a sampled state. A wake run's live slot
+// on the boot-recovery path measures 2-4ms (100 boots, loaded machine),
+// shorter than the 10ms poll interval the tests used to use and far shorter
+// than the 30s bound the wait had: polling s.runs.active for the launch
+// therefore missed the run entirely whenever the test goroutine was
+// descheduled after NewServer returned, and the deadline - not the launch -
+// decided the verdict (card t_32c3fce2).
+func (s *Server) wakeLaunchCount(sessionID string) int {
+	s.wakeMu.Lock()
+	defer s.wakeMu.Unlock()
+	return s.wakeLaunches[sessionID]
 }
 
 // runMeter tallies the chunks and streaming wall clock one run
