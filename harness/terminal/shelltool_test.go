@@ -358,6 +358,18 @@ func longSleeper() string {
 	return "sleep 300"
 }
 
+// echoThenSleeper composes an echo and a sleeper in one command.
+// The separator matters: cmd.exe has no `;`, and a redirect anywhere on
+// the line binds to the whole command - `echo X; ping ... > nul` sends
+// the ECHO to nul and the shell exits with an empty log. `&&` binds the
+// redirect to the ping alone on windows; sh takes `;`.
+func echoThenSleeper(word string) string {
+	if runtime.GOOS == "windows" {
+		return "echo " + word + " && " + longSleeper()
+	}
+	return "echo " + word + "; " + longSleeper()
+}
+
 // shellIDFromText pulls the shell id out of a "<...> id=<id>" phrase.
 func shellIDFromText(t *testing.T, text string) string {
 	t.Helper()
@@ -382,7 +394,7 @@ func TestShellVerbRoundTrip(t *testing.T) {
 	p := testShellProvider(t)
 	ctx := context.Background()
 
-	if _, err := p.registry().Spawn(ctx, "echo round-trip; "+longSleeper(), "rt", ""); err != nil {
+	if _, err := p.registry().Spawn(ctx, echoThenSleeper("round-trip"), "rt", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	// The echo may land a beat after Spawn returns.
