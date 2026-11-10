@@ -52,6 +52,14 @@ export const TAB_MODULES = [
   // the durable feed/history in the inspector; the transient toasts
   // are the shell's own (they serve ANY emitter, components/shell/).
   "notifications",
+  // card t_e703180e (the observability arc's face half): the logging
+  // tab - the structured run-event stream (primary) over the raw log
+  // tail (secondary, behind a chip), session-scoped, errors-only
+  // filter. The view is the observability capsule's own
+  // (harness/observability/ui/ObservabilityTab.vue); disabling the
+  // capsule leaves the tab rendering its 404 sentence, and deleting it
+  // drops this manifest entry (the deletability proof).
+  "observability",
 ] as const;
 export const DOCK_COMPONENTS = [
   "sidebar",
@@ -363,6 +371,23 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     closable: false,
   },
   {
+    // card t_e703180e (the observability arc's face half): the logging
+    // tab - the STRUCTURED run-event stream as the primary view, the
+    // raw log tail as a secondary view inside the same tab (Endo's
+    // ruling 1: the tail is not a peer tab), session scope defaulting
+    // to the open session, an errors-only chip, no free-text search in
+    // v1. Home is the bottom panel - the logs home it succeeds, where a
+    // wide, short stream reads best - seated by the same default-home
+    // mapping the logs strip and the terminal ride. Unclosable (the
+    // pinned-bottom shape): the tab is the capsule's whole face.
+    id: "observability",
+    title: "Observability",
+    icon: "activity",
+    policy: "singleton",
+    area: "bottom",
+    closable: false,
+  },
+  {
     // card t_95c91f9c: the general web browser - a MAIN-pane content tab
     // like chat and the viewer. Singleton (one browser in the shell: the
     // menu opener FOCUSES it - two live iframes are two sites one pane
@@ -424,6 +449,7 @@ const DOCKABLE_MIN_PX: Record<DockComponentName, number> = {
   browser: MIN_PANE_PX,
   notifications: MIN_PANE_PX,
   terminal: MIN_PANE_PX,
+  observability: MIN_PANE_PX,
 };
 
 // THE registry, floors attached (card t_ae9ac5cf): every entry carries its
