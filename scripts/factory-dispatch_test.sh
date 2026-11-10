@@ -551,14 +551,28 @@ printf "%s" "$out" | grep -q "^legal: t_go2" \
 printf "%s" "$out" | grep -q "^legal: t_go1" \
 	&& ok || bad "T16a: t_go1 should stay legal (out: $out)"
 
-# T16a2: go+go sharing a file stays FORBIDDEN - the disjointness proof is the
-# sanction, a collision reds it. This is the shape the old blanket ban covered.
+# T16a2: go+go sharing a file - the same-pass leg HOLDS the second card, so the
+# pair line (legal head only) reports the single card that will actually spawn.
+# The class law itself is asserted above by T16a; here the hold is the proof.
 out=$(PAIRRUN "$GO1
 INSERT INTO tasks VALUES('t_go3','ready','go three','FILES: scripts/factory-dispatch.sh',NULL,NULL,5,'2026-11-07T15:01',NULL,NULL);")
-printf "%s" "$out" | grep -qF 'pair: forbidden (t_go1 t_go3' \
-	&& ok || bad "T16a2: colliding go+go head not forbidden (out: $out)"
 printf "%s" "$out" | grep -q "^hold: t_go3" \
 	&& ok || bad "T16a2: the same-pass leg did not hold t_go3 (out: $out)"
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1, single would-spawn candidate)' \
+	&& ok || bad "T16a2: held card leaked into the pair verdict (out: $out)"
+
+# T16a3: a HELD candidate must not poison the pair verdict. Dispatch order puts
+# t_go1 (legal) then t_go3 (held, collides with t_go1) then t_web (legal): two
+# slots are free and both legal cards can spawn, so the pair line must name
+# them, not the card the pass already held. Live shape 2026-11-10: the old raw
+# head read `forbidden` here and the tick dispatched ONE worker instead of two.
+out=$(PAIRRUN "$GO1
+INSERT INTO tasks VALUES('t_go3','ready','go three','FILES: scripts/factory-dispatch.sh',NULL,NULL,5,'2026-11-07T15:01',NULL,NULL);
+$WEB")
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1 t_web, classes go+webui, FILES disjoint)' \
+	&& ok || bad "T16a3: held candidate poisoned the legal pair (out: $out)"
+printf "%s" "$out" | grep -q "held this pass" \
+	&& bad "T16a3: held-this-pass caveat must be dead (out: $out)" || ok
 
 # T16b: sanctioned go+webui (the only sanctioned mixed pair), disjoint FILES.
 out=$(PAIRRUN "$GO1
@@ -572,11 +586,15 @@ INSERT INTO tasks VALUES('t_w2','ready','webui two','FILES: engine/webui/test/b.
 printf "%s" "$out" | grep -qF 'pair: sanctioned (t_w1 t_w2, classes webui+webui, FILES disjoint)' \
 	&& ok || bad "T16c: webui+webui with disjoint FILES not sanctioned (out: $out)"
 
-# T16d: forbidden same-file - two webui head cards naming the same file.
+# T16d: same-file collision - two webui candidates naming the same file. The
+# per-candidate leg holds t_d2, so only t_d1 can spawn and the pair line (legal
+# head) names one card. The collision law is proven by the hold itself.
 out=$(PAIRRUN "INSERT INTO tasks VALUES('t_d1','ready','webui one','FILES: engine/webui/app/components/dock.vue',NULL,NULL,5,'2026-11-07T15:00',NULL,NULL);
 INSERT INTO tasks VALUES('t_d2','ready','webui two','FILES: engine/webui/app/components/dock.vue',NULL,NULL,5,'2026-11-07T15:01',NULL,NULL);")
-printf "%s" "$out" | grep -qF 'pair: forbidden (t_d1 t_d2, same-file: webui/app/components/dock.vue' \
-	&& ok || bad "T16d: same-file head pair not forbidden (out: $out)"
+printf "%s" "$out" | grep -q "^hold: t_d2  (same-file: webui/app/components/dock.vue" \
+	&& ok || bad "T16d: same-file collision did not hold t_d2 (out: $out)"
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_d1, single would-spawn candidate)' \
+	&& ok || bad "T16d: held card leaked into the pair verdict (out: $out)"
 
 # T16e: a single head slot forms no pair - sanctioned, and it names the card.
 out=$(PAIRRUN "$GO1")
