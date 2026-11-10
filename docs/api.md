@@ -532,6 +532,9 @@ future concern, deliberately out of v1).
   is the newest N matches, returned oldest-first). The body also
   carries `returned`, `buffered` and `capacity`, so a client can tell
   "nothing yet" from "the ring rolled over while you were away".
+  Sessionless runs (title generation runs detached from the
+  conversation, a one-shot CLI run) carry no session and appear only in
+  the unfiltered view - the session filter never has to guess.
   Durations are DERIVED, never measured: a turn's start→end span and a
   tool call's call→result span, both paired in-process (`duration_ms`
   is absent when nothing could be paired). Levels are derived too:
