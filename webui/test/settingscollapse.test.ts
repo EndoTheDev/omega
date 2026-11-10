@@ -1,8 +1,12 @@
-// omega webui: unit tests for the settings-group collapse persistence
-// helpers (parseCollapsedKeys/serializeCollapsedKeys in
-// composables/omega.ts) and the SHARED search-input contract
-// (SearchInput.vue consumed by AppSidebar AND SettingsTab - only the
-// look is shared; filter/union behaviors stay with the consumers).
+// omega webui: unit tests for the SHARED collapse-persistence helpers
+// (parseCollapsedKeys/serializeCollapsedKeys in composables/omega.ts) and
+// the SHARED search-input contract (SearchInput.vue consumed by
+// AppSidebar AND SettingsTab - only the look is shared; filter/union
+// behaviors stay with the consumers).
+// Card t_af7e1150: the settings pane no longer collapses anything (it is
+// master-detail - a category nav, not an accordion), so the helper pair's
+// remaining consumer is the sidebar's day buckets. The tests stay here:
+// the helpers are shared code, and their tolerance is still a contract.
 // The component tests are structural (source assertions): the unit suite
 // has no DOM, so what is pinned is the wiring, not the paint.
 // Run: node --test webui/test/ (node >= 23 runs TS natively)
