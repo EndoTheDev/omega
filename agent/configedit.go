@@ -116,6 +116,100 @@ func UpdateAgentConfigLayer(home, name string, u AgentConfigUpdates) error {
 	return WriteFileAtomic(path, out, 0o644)
 }
 
+// --- the read half (settings tier 3a, card t_22a5f70a) ---------------
+//
+// The settings agent-scope payload needs the same field set the upsert
+// lane writes, WITH presence: which keys the layer file actually names.
+// Profile (profiles.go) cannot answer that - its fields are omitempty
+// strings, so "unset" and "set to empty" carry the same value - and
+// presence is exactly the payload's override flag. So this read lives
+// beside the write it mirrors, so one field added to the scaffold set
+// is one place, not two.
+
+// LayerValue is one string knob as the layer file gives it: the value
+// and whether the file names the key at all. An explicitly empty value
+// is a real override ("the agent set it empty" is not "inherit").
+type LayerValue struct {
+	Value string
+	Set   bool
+}
+
+// AgentConfigLayer is the presence-aware read of one agent's layer
+// file: the scaffold-supported knobs (UpdateAgentConfigLayer's set)
+// plus max_turns, the runtime knob a layer may also carry. A knob the
+// file leaves commented out or absent reads Set=false - the scaffold
+// template comments every knob, so an unedited agent overrides nothing.
+// MaxTurns is nil when the layer does not set it.
+type AgentConfigLayer struct {
+	Description  LayerValue
+	SystemPrompt LayerValue
+	ProviderType LayerValue
+	ModelName    LayerValue
+	Host         LayerValue
+	APIKey       LayerValue
+	MaxTurns     *int
+}
+
+// ReadAgentConfigLayer reads one agent's layer with presence. A missing
+// (or empty) file is the empty layer - a scaffolded agent whose config
+// was deleted still reads, it simply inherits everything. A file that
+// will not parse is a loud error: reporting half-parsed values would
+// make every override flag a guess.
+//
+// The DEFAULT agent refuses here: its "layer" is the home config, so
+// reading it would report the daemon's own knobs as agent overrides.
+// It is not a scope (its home is the home root, ruling R5).
+func ReadAgentConfigLayer(home, name string) (AgentConfigLayer, error) {
+	var lay AgentConfigLayer
+	if name == DefaultAgentName {
+		return lay, fmt.Errorf("read agent config: %q is the main agent - its config is the home config, not an agent scope", name)
+	}
+	data, err := os.ReadFile(AgentConfigPath(home, name))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return lay, nil
+		}
+		return lay, fmt.Errorf("read agent config %s: %w", name, err)
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return lay, nil
+	}
+	// Pointers carry presence: nil = the key is absent, a pointer to ""
+	// = the file explicitly set the knob empty.
+	var raw struct {
+		Description  *string `yaml:"description"`
+		SystemPrompt *string `yaml:"system_prompt"`
+		MaxTurns     *int    `yaml:"max_turns"`
+		Provider     *struct {
+			Type      *string `yaml:"type"`
+			ModelName *string `yaml:"model_name"`
+			Host      *string `yaml:"host"`
+			APIKey    *string `yaml:"api_key"`
+		} `yaml:"provider"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return lay, fmt.Errorf("parse agent config %s: %w", name, err)
+	}
+	// The write lane trims every value (upsertScalar), so the read
+	// trims too: the payload must show what the write path would store.
+	set := func(dst *LayerValue, v *string) {
+		if v == nil {
+			return
+		}
+		dst.Value, dst.Set = strings.TrimSpace(*v), true
+	}
+	set(&lay.Description, raw.Description)
+	set(&lay.SystemPrompt, raw.SystemPrompt)
+	if raw.Provider != nil {
+		set(&lay.ProviderType, raw.Provider.Type)
+		set(&lay.ModelName, raw.Provider.ModelName)
+		set(&lay.Host, raw.Provider.Host)
+		set(&lay.APIKey, raw.Provider.APIKey)
+	}
+	lay.MaxTurns = raw.MaxTurns
+	return lay, nil
+}
+
 // rootMapping resolves the working yamlnode mapping under a parsed
 // document (or the parsed root itself when a plain mapping).
 func rootMapping(root *yaml.Node) *yaml.Node {
