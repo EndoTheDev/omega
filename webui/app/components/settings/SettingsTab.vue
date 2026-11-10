@@ -63,20 +63,65 @@
       </button>
       <template v-if="!isCollapsed(group.key)">
         <template v-for="knob in group.knobs" :key="knob.key">
-        <!-- toggle -->
-        <label v-if="knob.type === 'toggle'" class="setting-row">
-          <input
-            type="checkbox"
-            :checked="toggleValue(group, knob)"
-            @change="
-              setToggle(group, knob, ($event.target as HTMLInputElement).checked)
-            " />
-          <span>{{ knob.label }}</span>
-        </label>
+        <!-- toggle (card t_c04c959e: the row is the label's wrapper now, so
+             the modified dot + reset affordance can share the line
+             without a click on them flipping the checkbox) -->
+        <div v-if="knob.type === 'toggle'" class="setting-row setting-toggle">
+          <label class="setting-toggle-main">
+            <input
+              type="checkbox"
+              :checked="toggleValue(group, knob)"
+              @change="
+                setToggle(group, knob, ($event.target as HTMLInputElement).checked)
+              " />
+            <span>{{ knob.label }}</span>
+          </label>
+          <span class="setting-badges">
+            <span
+              v-if="isModified(group, knob)"
+              class="setting-dot"
+              role="img"
+              aria-label="differs from default"
+              title="differs from default" />
+            <!-- the draft star keeps its pre-existing seat (the non-toggle
+                 head below): toggle rows never carried it, and this card
+                 does not move it (card t_c04c959e step 3) -->
+            <button
+              v-if="isModified(group, knob)"
+              class="setting-reset"
+              type="button"
+              title="reset to default"
+              @click.stop.prevent="resetKnob(group, knob)">
+              reset
+            </button>
+          </span>
+        </div>
         <div v-else class="setting-item">
           <div class="setting-head">
             <span>{{ knob.label }}</span>
-            <span v-if="serverKnobDirty(knob)" class="setting-dirty">*</span>
+            <!-- card t_c04c959e: two DIFFERENT markers coexist - the dot
+                 means "differs from the knob default" (persistent state),
+                 the star means "edited in the draft, not saved yet". -->
+            <span class="setting-badges">
+              <span
+                v-if="isModified(group, knob)"
+                class="setting-dot"
+                role="img"
+                aria-label="differs from default"
+                title="differs from default" />
+              <span
+                v-if="serverKnobDirty(knob)"
+                class="setting-dirty"
+                title="edited, not saved">*</span>
+              <button
+                v-if="isModified(group, knob)"
+                class="setting-reset"
+                type="button"
+                title="reset to default"
+                @click.stop.prevent="resetKnob(group, knob)">
+                reset
+              </button>
+            </span>
           </div>
           <!-- select (card t_acad02ec, audit M1: the themed listbox - a
                native select popup is OS chrome over the pane) -->
@@ -185,8 +230,11 @@
     ref,
   } from "vue";
   import {
+    DEFAULT_THEME_ID,
     fetchSettings,
     filterSettingGroups,
+    knobDiffersFromDefault,
+    knobHasDefault,
     saveSettings,
     settingsDiff,
     valuesEqual,
@@ -209,14 +257,15 @@
   // card t_7dcd4280: the named provider instances list editor
   import ProvidersField from "./ProvidersField.vue";
   import { useNarrow } from "~/composables/narrow";
-  import type { ToolDisplay } from "~/composables/toolDisplay";
-  import type { ThinkingDisplay } from "~/composables/thinkingDisplay";
+  import { DEFAULT_TOOL_DISPLAY, type ToolDisplay } from "~/composables/toolDisplay";
+  import { DEFAULT_THINKING_DISPLAY, type ThinkingDisplay } from "~/composables/thinkingDisplay";
   // card t_502b8e81: the iconset wrapper - the group collapser chevron
   import Icon from "../ui/Icon.vue";
   import WorkspaceSelect from "../chat/WorkspaceSelect.vue";
   // card t_d7fd3ad3 item 6: the dock group's client knob rides the shared
   // bottom-width mode ref (the applier in app.vue reads the same signal)
   import {
+    DEFAULT_BOTTOM_WIDTH_MODE,
     setBottomWidthMode,
     useBottomWidthMode,
   } from "~/composables/bottomWidth";
@@ -333,6 +382,11 @@
     }));
   }
 
+  // Card t_c04c959e: the client knobs carry their OWN defaults - no server
+  // schema is involved, so the default lives beside the knob definition and
+  // matches the value app.vue (or the shared composable) starts from. The
+  // reset affordance writes it back through the same emit path the control
+  // uses.
   const chatGroup = computed<SettingGroup>(() => ({
     key: "chat",
     label: "chat",
@@ -342,12 +396,14 @@
         label: "show thinking blocks in chat",
         type: "toggle",
         value: props.showThinking,
+        default: true,
       },
       {
         key: "chat.color_mode",
         label: "color mode",
         type: "select",
         value: props.colorMode,
+        default: "auto",
         options: [...colorModeOptions],
         help: "interface colour palette; auto follows the system preference live",
       },
@@ -356,6 +412,7 @@
         label: "theme",
         type: "select",
         value: props.themeId,
+        default: DEFAULT_THEME_ID,
         options: themeOptions.value,
         help: "colour theme; default is the built-in palette, the rest are the server's themes/ folder files",
       },
@@ -364,6 +421,7 @@
         label: "chat appearance",
         type: "select",
         value: props.appearance,
+        default: "chat",
         options: ["chat", "stacked"],
         help:
           "stacked renders each turn as one block and pins it to the top " +
@@ -374,6 +432,7 @@
         label: "tool result display",
         type: "select",
         value: props.toolDisplay,
+        default: DEFAULT_TOOL_DISPLAY,
         options: ["auto", "expanded", "collapsed"],
         help:
           "auto expands tool rows while a call runs and collapses them " +
@@ -384,6 +443,7 @@
         label: "thinking display",
         type: "select",
         value: props.thinkingDisplay,
+        default: DEFAULT_THINKING_DISPLAY,
         options: ["auto", "expanded", "collapsed"],
         help:
           "auto keeps thinking blocks collapsed behind their one-line " +
@@ -407,6 +467,7 @@
         label: "bottom panel width",
         type: "select",
         value: bottomWidthMode.value,
+        default: DEFAULT_BOTTOM_WIDTH_MODE,
         options: ["aligned", "full"],
         help:
           "aligned matches the bottom panel to the main pane's width " +
@@ -581,6 +642,36 @@
     draft.value = { ...draft.value, [knob.key]: value };
   }
 
+  // knobValue is the value the row is SHOWING right now: draft-first for
+  // server knobs, the live client state for the chat/dock groups.
+  const knobValue = (group: SettingGroup, knob: SettingKnob): unknown =>
+    isClient(group) ? clientValue(knob) : serverValue(knob);
+
+  // isModified: the VS Code modified marker (card t_c04c959e) - the row's
+  // current value differs from the knob's default. Distinct from the draft
+  // star below: a row can be modified-but-saved (dot, no star) or
+  // edited-back-to-default-then-unsaved-elsewhere (star, no dot). A knob the
+  // server knows no default for (default: null - provider.model_name) never
+  // shows the dot.
+  const isModified = (group: SettingGroup, knob: SettingKnob): boolean =>
+    knobDiffersFromDefault(knobValue(group, knob), knob.default);
+
+  // resetKnob (card t_c04c959e): writes the knob default down the control's
+  // OWN set path - the draft map for server knobs (so the normal diff-only
+  // save ships it, and the star clears when the default is what was loaded)
+  // and the client emit/ref for the chat and dock groups. A no-default knob
+  // has no button, but guard anyway: the reset never invents a value.
+  function resetKnob(group: SettingGroup, knob: SettingKnob) {
+    if (!knobHasDefault(knob.default)) return;
+    const def = knob.default;
+    if (isClient(group)) {
+      if (knob.type === "toggle") setToggle(group, knob, def === true);
+      else setSelect(group, knob, String(def));
+      return;
+    }
+    draft.value = { ...draft.value, [knob.key]: def };
+  }
+
   const serverKnobDirty = (knob: SettingKnob): boolean =>
     !valuesEqual(draft.value[knob.key], loaded.value[knob.key]);
 
@@ -615,5 +706,54 @@
      composer's listbox pattern), never wider than its row */
   .setting-select {
     max-width: 100%;
+  }
+
+  /* card t_c04c959e: the modified marker cluster. The dot is the VS Code
+     "differs from the default" state (persistent, survives reload); the
+     star (main.css .setting-dirty) is the unsaved draft edit - two
+     different meanings, so they never share a shape: accent filled dot
+     vs. accent asterisk. The reset button exists only on modified rows. */
+  .setting-badges {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+  }
+  .setting-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: inline-block;
+  }
+  .setting-reset {
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.2;
+    color: var(--text-dim);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .setting-reset:hover,
+  .setting-reset:focus-visible {
+    color: var(--accent);
+  }
+  /* the toggle row keeps its full-row click target on the label; the
+     badges sit outside it so a reset click never flips the checkbox */
+  .setting-toggle {
+    cursor: default;
+    gap: 8px;
+  }
+  .setting-toggle-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
   }
 </style>

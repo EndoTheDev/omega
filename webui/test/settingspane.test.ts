@@ -6,6 +6,8 @@ import assert from "node:assert/strict";
 
 import {
   filterSettingGroups,
+  knobDiffersFromDefault,
+  knobHasDefault,
   normalizeSettingsPayload,
   settingsDiff,
   valuesEqual,
@@ -142,7 +144,54 @@ test("diff lists only keys whose draft differs from loaded", () => {
 test("identical draft and loaded diff to an empty map", () => {
   assert.deepEqual(settingsDiff({ a: 1 }, { a: 1 }), {});
 });
-// --- card t_7dcd4280: the named provider instances list knob ---
+// --- card t_c04c959e: the modified dot + reset-to-default pure helpers ---
+
+test("normalize carries the knob default through, null included", () => {
+  const out = normalizeSettingsPayload({
+    groups: [{
+      key: "g",
+      label: "g",
+      knobs: [
+        { key: "a", label: "a", type: "number", value: 3, default: 7 },
+        { key: "b", label: "b", type: "text", value: "x", default: "" },
+        { key: "c", label: "c", type: "text", value: "m", default: null },
+        { key: "d", label: "d", type: "text", value: "s" },
+      ],
+    }],
+  });
+  const knobs = out.groups[0].knobs;
+  assert.equal(knobs[0].default, 7);
+  assert.equal(knobs[1].default, ""); // an empty default is a REAL default
+  assert.equal(knobs[2].default, null); // the server's no-default sentinel
+  assert.equal(knobs[3].default, undefined); // an older server sends no field
+});
+
+test("knobDiffersFromDefault: identity, the empty/unset pair, structural content", () => {
+  assert.equal(knobDiffersFromDefault(3, 3), false);
+  assert.equal(knobDiffersFromDefault(3, 7), true);
+  assert.equal(knobDiffersFromDefault(false, false), false);
+  assert.equal(knobDiffersFromDefault(true, false), true);
+  // "" default vs an unset/absent value is ONE state: no dot
+  assert.equal(knobDiffersFromDefault("", ""), false);
+  assert.equal(knobDiffersFromDefault(undefined, ""), false);
+  assert.equal(knobDiffersFromDefault(null, ""), false);
+  assert.equal(knobDiffersFromDefault("x", ""), true);
+  // structural values (the providers list) compare by content
+  assert.equal(knobDiffersFromDefault([], []), false);
+  assert.equal(knobDiffersFromDefault([{ name: "a" }], [{ name: "a" }]), false);
+  assert.equal(knobDiffersFromDefault([{ name: "a" }], []), true);
+});
+
+test("a knob with no known default is never modified (no dot, no reset)", () => {
+  assert.equal(knobHasDefault(null), false);
+  assert.equal(knobHasDefault(undefined), false);
+  // the falsy defaults are REAL defaults, never the sentinel
+  assert.equal(knobHasDefault(0), true);
+  assert.equal(knobHasDefault(""), true);
+  assert.equal(knobHasDefault(false), true);
+  assert.equal(knobDiffersFromDefault("glm-5.3", null), false);
+  assert.equal(knobDiffersFromDefault("glm-5.3", undefined), false);
+});
 
 test("normalize keeps the providers knob type", () => {
   const knob = {
