@@ -35,6 +35,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/mcp"
 	"github.com/EndoTheDev/omega/harness/memory"
 	"github.com/EndoTheDev/omega/harness/notifications"
+	"github.com/EndoTheDev/omega/harness/observability"
 	"github.com/EndoTheDev/omega/harness/process"
 	"github.com/EndoTheDev/omega/harness/prompt"
 	"github.com/EndoTheDev/omega/harness/provider"
@@ -604,6 +605,11 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		// default_workspace knob rides the constructor and the
 		// hot-apply hook (card t_62d72028).
 		terminal.NewPlugin(cwd(), cfg.Server.DefaultWorkspace),
+		// The observability capsule (card t_8de82cff): the structured
+		// run-event ring + the omega.log tail behind the webui logging
+		// tab. No seam, no tool, no config - two read-only GETs, and a
+		// spine subscription the capsule owns.
+		observability.NewPlugin(),
 	}, nil
 }
 
