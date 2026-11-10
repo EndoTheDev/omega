@@ -425,8 +425,9 @@ PASSGO_SURF=$(mktemp); : >"$PASSGO_SURF"   # go-class legal candidates only - th
 PASSGO_CARDS=0; PASSGO_TOKENED=0; PASSGO_IMPRECISE=0
 PASS_CLASS=""   # classes of candidates already marked legal THIS pass
 # The would-spawn head set (pair verdict, below): the first SLOTS candidates
-# in DISPATCH ORDER, their classes, and their candidate-side token files.
-HEAD=(); HEADCLS=(); HEADHELD=(); HEADDIR=$(mktemp -d)
+# in DISPATCH ORDER that this pass did NOT hold - the cards the inner
+# dispatcher can actually take - their classes and their token files.
+HEAD=(); HEADCLS=(); HEADDIR=$(mktemp -d)
 for c in "${CAND[@]:-}"; do
   [ -z "$c" ] && continue
   # ponytail: no early break at 2 legal - the dispatcher may skip a legal
@@ -506,8 +507,8 @@ for c in "${CAND[@]:-}"; do
       done <"$CTOK"
     fi
   fi
-  if [ "${#HEAD[@]}" -lt "$SLOTS" ]; then
-    HEAD+=("$c"); HEADCLS+=("$CC"); HEADHELD+=("$HOLD")
+  if [ "$HOLD" = 0 ] && [ "${#HEAD[@]}" -lt "$SLOTS" ]; then
+    HEAD+=("$c"); HEADCLS+=("$CC")
     cp "$CTOK" "$HEADDIR/${#HEAD[@]}"   # 1-based: HEADDIR/N pairs with HEAD[N-1]
   fi
   rm -f "$CTOK"
@@ -544,13 +545,21 @@ rm -f "$SURF" "$PASS_SURF"
 #
 #   pair: sanctioned|forbidden (<ids>, <why>)
 #
-# HEAD is the RAW dispatch-order head - the first SLOTS ready, unclaimed
-# cards, exactly what the inner dispatcher's lane takes in order - and it is
-# deliberately NOT filtered by this pass's own hold verdicts. The holds are
-# the machinery under audit; every hole in them (same-pass class, bug #12;
-# claim-expired-but-live zombies, bug #14; the running-set class gap) let a
-# forbidden pair through while every per-candidate line read legal or hold.
-# Reading the raw head keeps this line a second opinion instead of an echo.
+# HEAD is the head of the LEGAL set - the first SLOTS candidates this pass did
+# NOT hold, which is exactly what the inner dispatcher takes once the held
+# candidates are parked as todo. Collecting the raw dispatch order instead made
+# this line name cards the same pass had already held, so a board with two
+# legal cards behind one held card read `forbidden` and the tick passed
+# --max 1 with both slots free (proven live 2026-11-10: t_7624bab1 legal,
+# t_5a49790b held, t_8fd38f88 legal - pair named the held card, one worker
+# spawned). The line answers the --max question, so it may only name cards
+# that can actually spawn.
+#
+# It is still not an echo of the per-candidate verdicts: those compare against
+# the running set and an AGGREGATED same-pass surface, while this compares the
+# head cards' exact token files against each other - the check that caught the
+# aggregate-surface bug (T16i). A hole in the same-pass accounting still reds
+# here.
 # The verdict errs on the safe side: a forbidden head pair means at most ONE
 # of those cards may run, so the tick's mechanical reply is --max 1 (SLOTS
 # 1); a sanctioned pair may pass --max 2.
@@ -596,16 +605,8 @@ else
     done
   done
 fi
-# A forbidden head pair names the members this pass already holds: those
-# cannot co-spawn, so the honest reading is "at most the rest may run". The
-# verdict stays forbidden either way - the holds are what this line audits.
-if [ "$PAIRV" = forbidden ] && [ "${#HEAD[@]}" -gt 1 ]; then
-  PAIRHELD=""
-  for ((hi = 0; hi < ${#HEAD[@]}; hi++)); do
-    [ "${HEADHELD[hi]}" = 1 ] && PAIRHELD="$PAIRHELD ${HEAD[hi]}"
-  done
-  [ -n "$PAIRHELD" ] && PAIRWHY="$PAIRWHY; held this pass:$PAIRHELD"
-fi
+# HEAD carries no held cards (they are filtered at collection), so no "held
+# this pass" caveat can arise - the members named above are all spawnable.
 echo "pair: $PAIRV ($PAIRIDS, $PAIRWHY)"
 rm -rf "$HEADDIR"
 
