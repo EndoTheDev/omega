@@ -193,8 +193,9 @@ The wire tool registry with its enable flag. Bare `omega tools` and
 `omega tools list` print every registered tool with its state, the
 extension that owns it, and its one-line description. `disable <name>`
 takes a tool off the wire: it leaves every tool union the loop builds,
-so the model is never offered it, and the system prompt's tool section
-stops advertising it. `enable <name>` puts it back. A disabled tool
+so the model is never offered it, and the system prompt's sub-verb
+section (the only tool prose the prompt carries - plain tools ride the
+JSON schema) drops it too. `enable <name>` puts it back. A disabled tool
 keeps its listing row - the row is how the name is found again - and
 carries `[disabled]` (the `/tools` command in the loop shows the same
 shape).

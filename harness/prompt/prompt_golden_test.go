@@ -219,8 +219,11 @@ func TestPromptGoldenEmptyStores(t *testing.T) {
 	if strings.Contains(prompt, "## Available Skills") {
 		t.Error("prompt has Available Skills section with empty skills dir")
 	}
-	if !strings.Contains(prompt, "## Tools") {
-		t.Error("prompt missing Tools section")
+	// Card t_4f2c7b2e: the Tools section renders the sub-verb delta only,
+	// so the wired set (no tool declares Actions) contributes nothing -
+	// the plain tool descriptions ride the JSON schema, not the prompt.
+	if strings.Contains(prompt, "## Tools") {
+		t.Error("prompt carries a Tools section although no wired tool declares Actions")
 	}
 	compareGolden(t, "golden_prompt_empty_stores", prompt)
 }

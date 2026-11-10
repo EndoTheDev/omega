@@ -12,40 +12,42 @@ import (
 const promptSectionOrder = 30
 
 // PromptSections renders the "## Tools" section: one "### <extension>"
-// block per extension that has tools. Each tool renders as a domain
-// line; a tool with structured Actions renders the split - the domain
-// context once, then each action labeled with its one-liner. The old
-// blob-style multi-sentence description is gone in both renderers
-// (prompt + webui) because both draw from the same metadata. Owned
-// here because the firstLine policy for tool descriptions is
-// tools-seam knowledge - the full descriptions already reach the LLM
-// via the provider's JSON tool schemas.
+// block per extension that owns at least one action-bearing tool. The
+// section renders the DELTA only - a plain tool (no structured Actions)
+// contributes nothing, because its name and full description already
+// reach the model in the provider's JSON tool schema. A tool with
+// structured Actions still renders the split: the domain line once,
+// then each action labeled with its one-liner, the one thing a schema
+// enum cannot carry (card t_4f2c7b2e, measured: the pre-trim section
+// restated the schema descriptions verbatim - 33/33 first lines were
+// verbatim schema-description prefixes, 5,799 of the 7,943 prompt
+// bytes - and carried zero production action annotations, since no
+// shipped tool declared Actions).
 //
 // A disabled entry (ToolInfo.Disabled, the registry's enable flag,
-// card t_441deb04) never renders: the section is the model's tool list,
-// and advertising a tool the wire does not carry is a lie the model
-// acts on. An extension whose every tool is off disappears entirely,
-// and a home with no tools left contributes no section at all.
+// card t_441deb04) never renders: the section is the model's tool
+// list, and advertising a tool the wire does not carry is a lie the
+// model acts on. An extension whose every tool is off disappears
+// entirely, and a home with no action-bearing tools left contributes
+// no section at all.
 func (p *Plugin) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
 	var sb strings.Builder
 	for _, ext := range opts.Extensions {
-		enabled := make([]core.ToolInfo, 0, len(ext.ToolList))
+		var block strings.Builder
 		for _, t := range ext.ToolList {
-			if t.Disabled {
+			if t.Disabled || len(t.Actions) == 0 {
 				continue
 			}
-			enabled = append(enabled, t)
+			fmt.Fprintf(&block, "- %s: %s\n", t.Name, firstLine(t.Description))
+			for _, a := range t.Actions {
+				fmt.Fprintf(&block, "  .%s: %s\n", a.Name, a.Description)
+			}
 		}
-		if len(enabled) == 0 {
+		if block.Len() == 0 {
 			continue
 		}
 		fmt.Fprintf(&sb, "### %s\n", ext.Name)
-		for _, t := range enabled {
-			fmt.Fprintf(&sb, "- %s: %s\n", t.Name, firstLine(t.Description))
-			for _, a := range t.Actions {
-				fmt.Fprintf(&sb, "  .%s: %s\n", a.Name, a.Description)
-			}
-		}
+		sb.WriteString(block.String())
 		sb.WriteString("\n")
 	}
 	if sb.Len() == 0 {
