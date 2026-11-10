@@ -70,10 +70,19 @@ type Channel interface {
 // model). Live marks knobs the hot-apply path applies without a
 // restart.
 type SettingsKnob struct {
-	Key     string   `json:"key"`
-	Label   string   `json:"label"`
-	Type    string   `json:"type"`
-	Value   any      `json:"value"`
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	Type  string `json:"type"`
+	Value any    `json:"value"`
+	// Default is the knob's effective default: the value it takes when
+	// config.yaml names no key (the built-in defaults with the OMEGA_*
+	// env overrides applied - the layer beneath the file). It rides
+	// EVERY knob with NO omitempty, because the settings pane must tell
+	// "no default known" apart from default=false / "" / 0; a knob with
+	// no locatable default therefore answers JSON null. Card
+	// t_d13c7264 (settings tier 2a); the pane's modified-dot and
+	// reset-to-default (tier 2b) compare against exactly this field.
+	Default any      `json:"default"`
 	Options []string `json:"options,omitempty"`
 	Min     *float64 `json:"min,omitempty"`
 	Max     *float64 `json:"max,omitempty"`
