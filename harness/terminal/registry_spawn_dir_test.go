@@ -65,7 +65,7 @@ func TestSpawnDirOverride(t *testing.T) {
 	// The impossible dir is a spawn-side refusal (the shell.run door
 	// resolves the dir through the same override helper).
 	p := &ShellProvider{reg: r}
-	if _, err := p.registry().Spawn(ctx, probe, "dead-dir", "/omega-definitely-not-here"); err == nil {
+	if _, err := p.reg.Spawn(ctx, probe, "dead-dir", "/omega-definitely-not-here"); err == nil {
 		t.Fatal("missing dir: want the spawn to be refused")
 	}
 	if _, err := p.RunShell(ctx, map[string]any{

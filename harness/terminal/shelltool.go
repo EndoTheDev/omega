@@ -22,12 +22,12 @@ package terminal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
@@ -43,21 +43,28 @@ import (
 type ShellProvider struct {
 	guard *datadir.Guard
 	// reg is the shell registry: the process registry machinery under
-	// its one remaining name. A zero provider (tests) lazily builds one
-	// on the host home.
-	reg    *Registry
-	regOne sync.Once
+	// its one remaining name. It is REQUIRED and always explicit -
+	// MountWithAPI builds it from the process: section, and a host or
+	// test mounting the family itself builds one over a home it names.
+	// There is deliberately no lazy default: a default would resolve
+	// datadir.Home() and write registry state into the installed
+	// instance (~/.omega) from whatever happened to call a verb.
+	reg *Registry
 }
 
-// registry returns the provider's registry, building the default one
-// on first use for a zero-value provider (tests). Mount always sets it.
-func (p *ShellProvider) registry() *Registry {
-	p.regOne.Do(func() {
-		if p.reg == nil {
-			p.reg = NewRegistry(RegistryConfig{})
-		}
-	})
-	return p.reg
+// errNoRegistry is the loud answer for an unmounted provider. It is a
+// wiring bug, never a runtime condition: MountWithAPI always sets the
+// registry, so a nil one names itself instead of quietly writing into
+// some home nobody chose.
+var errNoRegistry = errors.New("shell provider has no registry: the shell plugin mounts it (MountWithAPI) or NewShellProvider supplies one")
+
+// NewShellProvider builds the shell tool face over an explicit registry
+// and guard. MountWithAPI is the production door (it derives both from
+// the config sections); a host or test that mounts the family itself
+// passes a registry rooted at a home it owns. A nil guard is
+// pass-through (datadir.Guard's nil receiver never denies).
+func NewShellProvider(guard *datadir.Guard, reg *Registry) *ShellProvider {
+	return &ShellProvider{guard: guard, reg: reg}
 }
 
 // Tools returns the shell verb family (the capsule's whole tool face).
@@ -272,7 +279,11 @@ func (p *ShellProvider) RunShell(ctx context.Context, args map[string]any) (stri
 	if err != nil {
 		return "", err
 	}
-	e, err := p.registry().Spawn(ctx, command, "", workdir)
+	reg := p.reg
+	if reg == nil {
+		return "", errNoRegistry
+	}
+	e, err := reg.Spawn(ctx, command, "", workdir)
 	if err != nil {
 		return "", err
 	}
@@ -309,8 +320,11 @@ func (p *ShellProvider) RunShell(ctx context.Context, args map[string]any) (stri
 // the retention window, but it is not listed: the id from the call's
 // own result is the post-mortem handle.
 func (p *ShellProvider) List(_ context.Context, _ map[string]any) (string, error) {
+	if p.reg == nil {
+		return "", errNoRegistry
+	}
 	var running []Entry
-	for _, e := range p.registry().List() {
+	for _, e := range p.reg.List() {
 		if !e.Exited {
 			running = append(running, e)
 		}
@@ -345,7 +359,10 @@ func (p *ShellProvider) Read(_ context.Context, args map[string]any) (string, er
 	if err != nil {
 		return "", err
 	}
-	text, _, cut, err := p.registry().Read(id, lines)
+	if p.reg == nil {
+		return "", errNoRegistry
+	}
+	text, _, cut, err := p.reg.Read(id, lines)
 	if err != nil {
 		return "", err
 	}
@@ -361,7 +378,10 @@ func (p *ShellProvider) Kill(_ context.Context, args map[string]any) (string, er
 	if err != nil {
 		return "", err
 	}
-	return p.registry().Kill(id)
+	if p.reg == nil {
+		return "", errNoRegistry
+	}
+	return p.reg.Kill(id)
 }
 
 // readLogHead reads at most shellOutputCap bytes from the head of a
@@ -464,7 +484,7 @@ func (p *ShellPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) e
 	if c, ok := ctx.Configs["process"].(RegistryConfig); ok {
 		cfg = c
 	}
-	p.provider = &ShellProvider{guard: guard, reg: NewRegistry(cfg)}
+	p.provider = NewShellProvider(guard, NewRegistry(cfg))
 	for name, t := range p.provider.Tools() {
 		if err := api.RegisterTool(name, t); err != nil {
 			return err
