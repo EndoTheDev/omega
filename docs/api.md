@@ -724,13 +724,25 @@ surface stays untouched - the panel is additive for canvas renderers.
 One websocket per browser connection, and every live update is a typed
 topic on it (card t_7624bab1, design of record
 `Workshop/omega/websocket-channel.md`). The socket replaces the webui's
-polling: nothing polls beside it.
+polling: no shell or module view polls a GET route on a cadence beside it
+(the kanban board's 5s `GET /tasks` died with card t_b5784de3, the logs
+pane's tail with t_0e7bc0bb).
 
 **Events are hints, state is truth.** Nothing is buffered or replayed
 server-side. On close the client reconnects with backoff, does one
 `GET /health`, and refetches the visible panes through the ordinary GET
 routes - which stay complete and authoritative. The socket is never the
 only way to read a fact.
+
+A module pane may render beyond a panel's view-model (the kanban board
+carries bodies, priorities and drag positions the `tasks` panel does
+not), so the canvas topic has a window seam of its own: every applied
+panel delta is republished as `omega-canvas-delta` from
+`webui/app/composables/canvas.ts`, and the reconnect catch-up fires the
+same event with the reset id so such a pane re-reads its own REST route.
+A delta that landed while the socket was down is never replayed, so
+without that pulse the pane would stay stale until some later mutation
+happened to fire (card t_b5784de3).
 
 The client half (card t_896cf5a8, `webui/app/composables/socket.ts`)
 owns one connection per page load: it subscribes to the five live topics,

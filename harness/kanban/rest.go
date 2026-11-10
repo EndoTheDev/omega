@@ -318,19 +318,75 @@ type restProvider interface {
 	AddComment(ctx context.Context, board, taskID, author, body string) (KanbanComment, error)
 }
 
+// pushTasks and pushAll are the refresh hooks the REST wrapper rides.
+// Nil-safe: a plugin mounted without a canvas registration pushes
+// nothing, and the frontend's snapshot read is the catch-up.
+func (p *Plugin) pushTasks() {
+	if p.capsule != nil {
+		p.capsule.refreshTasks()
+	}
+}
+
+func (p *Plugin) pushAll() {
+	if p.capsule != nil {
+		p.capsule.refreshAll()
+	}
+}
+
+// statusRecorder remembers the status a handler answered, so the push
+// wrapper can tell a mutation from a refusal. The handlers keep writing
+// through the embedded writer - every route here is JSON only.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	s.status = code
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Write(b []byte) (int, error) {
+	if s.status == 0 {
+		s.status = http.StatusOK
+	}
+	return s.ResponseWriter.Write(b)
+}
+
+// pushAfterMutation wraps one mutating REST handler (card t_b5784de3): a
+// 2xx answer refreshes the module's canvas panels, so a task edited
+// through the HTTP API - a sibling agent, a curl, another tab - reaches
+// every live frontend as a ViewModelDelta. That is what lets the board
+// drop its 5s poll: it renders from its own REST view and re-reads it on
+// the announced delta. A failed mutation pushes nothing (the error text
+// is the answer); GET routes are never wrapped.
+func (p *Plugin) pushAfterMutation(refresh func(), h func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rec := &statusRecorder{ResponseWriter: w}
+		h(rec, r)
+		if rec.status < 200 || rec.status >= 300 {
+			return
+		}
+		refresh()
+	}
+}
+
 // registerRoutes hands the capsule's REST routes to the registry
 // (RegisterRoute, the phase-D vocabulary): the served surface rides
-// ctx.ModuleRoutes from here on.
+// ctx.ModuleRoutes from here on. Every mutating route answers through
+// pushAfterMutation (the canvas delta the frontends render from);
+// comments push nothing - the tasks panel carries no thread and the
+// drawer that posted re-reads its own detail.
 func (p *Plugin) registerRoutes(api *agent.ExtensionAPI) error {
 	rows := []struct {
 		pattern string
 		handler func(http.ResponseWriter, *http.Request)
 	}{
 		{"GET /tasks", tasksHandler(p.store)},
-		{"POST /tasks", tasksHandler(p.store)},
+		{"POST /tasks", p.pushAfterMutation(p.pushTasks, tasksHandler(p.store))},
 		{"GET /tasks/{id}", taskByIDHandler(p.store)},
-		{"PATCH /tasks/{id}", taskByIDHandler(p.store)},
-		{"DELETE /tasks/{id}", taskByIDHandler(p.store)},
+		{"PATCH /tasks/{id}", p.pushAfterMutation(p.pushTasks, taskByIDHandler(p.store))},
+		{"DELETE /tasks/{id}", p.pushAfterMutation(p.pushTasks, taskByIDHandler(p.store))},
 		{"POST /tasks/{id}/comments", taskCommentsHandler(p.store)},
 	}
 	if b, ok := any(p.store).(BoardLister); ok {
@@ -342,11 +398,11 @@ func (p *Plugin) registerRoutes(api *agent.ExtensionAPI) error {
 			rows = append(rows, struct {
 				pattern string
 				handler func(http.ResponseWriter, *http.Request)
-			}{"POST /boards", boardCreateHandler(reg)})
+			}{"POST /boards", p.pushAfterMutation(p.pushAll, boardCreateHandler(reg))})
 			rows = append(rows, struct {
 				pattern string
 				handler func(http.ResponseWriter, *http.Request)
-			}{"DELETE /boards/{name}", boardDeleteHandler(reg)})
+			}{"DELETE /boards/{name}", p.pushAfterMutation(p.pushAll, boardDeleteHandler(reg))})
 		}
 	}
 	for _, row := range rows {
