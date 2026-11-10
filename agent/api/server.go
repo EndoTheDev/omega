@@ -1939,7 +1939,7 @@ func (s *Server) maybeTitleSession(ctx context.Context, prov agent.Provider, req
 	// and the title model SPAWNED REAL subagents (delegate:task-3/6),
 	// one parentless - the title ctx carries no WithSessionID. A run
 	// marked toolless (agent.WithToolless) drops the whole merged
-	// registry - delegate.task, process.spawn, shell, verdict, all of
+	// registry - delegate.task, shell, verdict, all of
 	// it, present or future: no schema reaches the model, no dispatch
 	// entry survives the merge, and a stray call is an error result.
 	// The run-scoped mechanism mirrors WithDeniedTools (t_e06b38bc,

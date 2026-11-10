@@ -265,7 +265,7 @@ func (r *Registry) reconcileLocked(e *Entry) {
 //
 // Rotation happens ONLY at re-spawn (card t_304afb4e): the pre-fix
 // shape also rotated at exit, which zeroed every post-mortem read -
-// process.read answered "no log yet" for a log sitting renamed beside
+// shell.read answered "no log yet" for a log sitting renamed beside
 // it. The finished log now stays at <name>.log (the retention
 // contract) and the size cap is enforced by capExited at exit.
 func rotateExited(e *Entry) {
@@ -279,10 +279,10 @@ func rotateExited(e *Entry) {
 }
 
 // capExited trims a finished entry's log to at most LogMaxBytes,
-// keeping the TAIL - process.read serves the tail, so the head is
+// keeping the TAIL - shell.read serves the tail, so the head is
 // the cheaper side to lose. Memory-bounded: a chunked copy of the
 // last cap bytes into a temp file, then a rename. This is the
-// enforcement point of process.log_max_bytes (the knob was
+// enforcement point of the log_max_bytes knob (it was
 // documented but never enforced before this card). Best-effort: a
 // failed trim leaves the full log on disk, never a half-written one.
 func (r *Registry) capExited(e *Entry) {

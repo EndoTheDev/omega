@@ -12,7 +12,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestSpawnDirOverride pins the process.spawn working-directory
+// TestSpawnDirOverride pins the shell.run working-directory
 // override (card t_ccf74d88): an explicit dir (absolute or
 // workspace-relative) roots the spawned command. The probe lingers
 // ~2s so the cwd assertion rides the log without racing the child's
