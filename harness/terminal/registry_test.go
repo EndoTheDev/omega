@@ -1,4 +1,4 @@
-package process
+package terminal
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func skipOnWindows(t *testing.T) {
 // t_de398140 cleanup race.
 func testRegistry(t *testing.T) *Registry {
 	t.Helper()
-	r := NewRegistry(Config{Home: t.TempDir(), KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
+	r := NewRegistry(RegistryConfig{Home: t.TempDir(), KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
 	t.Cleanup(r.Close)
 	return r
 }
@@ -73,7 +73,7 @@ func TestSpawnReadKill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	if e.Name != "worker" || e.Exited {
+	if e.ID != "worker" || e.Exited {
 		t.Fatalf("spawn entry: %+v", e)
 	}
 	waitFor(t, 5*time.Second, "log line", func() bool {
@@ -196,7 +196,7 @@ func TestSpawnNameRules(t *testing.T) {
 		t.Fatalf("spawn: %v", err)
 	}
 	e := stateEntry(t, r, "bdname") // spaces dropped, junk chars dropped
-	if e.Name != "bdname" {
+	if e.ID != "bdname" {
 		t.Fatalf("sanitized handle: %+v", e)
 	}
 	if _, err := r.Spawn(context.Background(), "", "empty", ""); err == nil {
@@ -209,7 +209,7 @@ func TestSpawnNameRules(t *testing.T) {
 		t.Fatal("reusing a RUNNING name must be refused")
 	}
 	generated, err := r.Spawn(context.Background(), "sleep 0.5; echo done", "", "")
-	if err != nil || generated.Name == "" {
+	if err != nil || generated.ID == "" {
 		t.Fatalf("generated name: %+v err=%v", generated, err)
 	}
 }
@@ -246,13 +246,13 @@ func TestReplaceExitedRotatesLog(t *testing.T) {
 func TestRestartPidRecheck(t *testing.T) {
 	skipOnWindows(t)
 	home := t.TempDir()
-	r1 := NewRegistry(Config{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
+	r1 := NewRegistry(RegistryConfig{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
 	t.Cleanup(r1.Close) // joins the sleep 300 reaper before the TempDir teardown
 	if _, err := r1.Spawn(context.Background(), "sleep 300", "longop", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	// --- the reboot: a fresh registry instance over the same home ---
-	r2 := NewRegistry(Config{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
+	r2 := NewRegistry(RegistryConfig{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
 	list := r2.List()
 	found, ok := findByName(list, "longop")
 	if !ok || found.Exited {
@@ -268,7 +268,7 @@ func TestRestartPidRecheck(t *testing.T) {
 	// --- a pid that is simply gone: exited, code unknown ---
 	// A liveness-verified dead pid: a spawn whose process already
 	// exited in THIS process (the reaper recorded it).
-	probe := NewRegistry(Config{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
+	probe := NewRegistry(RegistryConfig{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
 	t.Cleanup(probe.Close) // the fast-exit spawn's reaper must not outlive the TempDir
 	if _, err := probe.Spawn(context.Background(), "exit 0", "dead-pid-source", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
@@ -278,15 +278,15 @@ func TestRestartPidRecheck(t *testing.T) {
 		return e.Exited
 	})
 	ghost := stateEntry(t, probe, "dead-pid-source")
-	ghost.Name = "ghost"
+	ghost.ID = "ghost"
 	ghost.Command = "echo ghost"
 	ghost.Exited = false
 	ghost.ExitCode = nil
 	ghost.FinishedAt = 0
 	seedState(t, filepath.Join(home, "data", "process.json"), []Entry{ghost})
-	r3 := NewRegistry(Config{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
+	r3 := NewRegistry(RegistryConfig{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
 	for _, e := range r3.List() {
-		if e.Name == "ghost" && (!e.Exited || e.ExitCode != nil || e.FinishedAt == 0) {
+		if e.ID == "ghost" && (!e.Exited || e.ExitCode != nil || e.FinishedAt == 0) {
 			t.Fatalf("a gone pid must reconcile to exited-unknown: %+v", e)
 		}
 	}
@@ -354,58 +354,6 @@ func TestCorruptStateIgnored(t *testing.T) {
 	}
 }
 
-// TestToolFace drives the four verbs through the dispatcher the tool
-// Runs route through (the args exactly as the merged tool call carries
-// them).
-func TestToolFace(t *testing.T) {
-	skipOnWindows(t)
-	r := testRegistry(t)
-	prov := processProvider{reg: r}
-
-	if _, err := prov.run(context.Background(), map[string]any{"action": "spawn", "command": "echo hi; sleep 120", "name": "toolled"}); err != nil {
-		t.Fatalf("spawn tool: %v", err)
-	}
-	waitFor(t, 5*time.Second, "toolled log", func() bool {
-		tail, _, _, err := prov.reg.Read("toolled", 100)
-		return err == nil && strings.Contains(tail, "hi")
-	})
-	list, err := prov.run(context.Background(), map[string]any{"action": "list"})
-	if err != nil || !strings.Contains(list, "toolled") || !strings.Contains(list, "running") {
-		t.Fatalf("list tool: %s err=%v", list, err)
-	}
-	read, err := prov.run(context.Background(), map[string]any{"action": "read", "name": "toolled"})
-	if err != nil || !strings.Contains(read, "hi") {
-		t.Fatalf("read tool: %s err=%v", read, err)
-	}
-	// a lines cap inside the tool dispatcher truncates with a note
-	seedLog := ""
-	for i := 0; i < 50; i++ {
-		seedLog += "filler\n"
-	}
-	seedLog += "last-line"
-	if err := os.WriteFile(r.logsDir()+"/toolled.log", []byte(seedLog), 0o644); err != nil {
-		// the running process may have appended between reads; re-seed
-		// through the file the handle names
-		t.Skipf("log rewrite raced the live writer: %v", err)
-	}
-	capped, err := prov.run(context.Background(), map[string]any{"action": "read", "name": "toolled", "lines": 10})
-	if err != nil || !strings.Contains(capped, "truncated") {
-		t.Fatalf("capped read tool: %s err=%v", capped, err)
-	}
-	if got, err := prov.run(context.Background(), map[string]any{"action": "kill", "name": "toolled"}); err != nil || !strings.Contains(got, "stopped") {
-		t.Fatalf("kill tool: %s err=%v", got, err)
-	}
-	// the retention contract: the exited handle stays in the registry
-	// (and its log on disk) until the sweep - that post-mortem read is
-	// the point of keeping a log at all.
-	if e, ok := prov.reg.Find("toolled"); !ok || !e.Exited {
-		t.Fatalf("the exited handle must stay listed: %+v ok=%v", e, ok)
-	}
-	if _, err := prov.run(context.Background(), map[string]any{"action": "bogus"}); err == nil {
-		t.Fatal("unknown action must error")
-	}
-}
-
 // seedState writes a hand-made state file (the reboot simulator's
 // input).
 func seedState(t *testing.T, path string, entries []Entry) {
@@ -425,7 +373,7 @@ func seedState(t *testing.T, path string, entries []Entry) {
 // findByName finds one list row by name.
 func findByName(entries []Entry, name string) (Entry, bool) {
 	for _, e := range entries {
-		if e.Name == name {
+		if e.ID == name {
 			return e, true
 		}
 	}
@@ -448,7 +396,7 @@ func TestBuildShellRawCommandLine(t *testing.T) {
 		t.Skip("the raw command-line pin is a windows contract (process_windows_test.go)")
 	}
 	command := `powershell -NoProfile -Command "$x=5; Write-Output $x"`
-	c := buildShell(command)
+	c := detachedShellCommand(command)
 	// unix: the argv contract is correct, sh -c takes the command verbatim.
 	if len(c.Args) != 3 || c.Args[0] != "sh" || c.Args[1] != "-c" || c.Args[2] != command {
 		t.Fatalf("unix shell shape drifted: %v", c.Args)
@@ -464,7 +412,7 @@ func TestBuildShellPowerShellQuotedScript(t *testing.T) {
 		{`powershell -NoProfile -Command "$x=5; Write-Output $x"`, "5", "=5;"},
 	}
 	for _, tc := range cases {
-		c := buildShell(tc.command)
+		c := detachedShellCommand(tc.command)
 		c.Dir = t.TempDir()
 		out, err := c.CombinedOutput()
 		if err != nil {
@@ -489,7 +437,7 @@ func TestBuildShellChainRedirectTiming(t *testing.T) {
 		t.Skip("ping -n timing is the windows delay idiom")
 	}
 	start := time.Now()
-	c := buildShell("echo chain-done & ping -n 2 127.0.0.1 >nul")
+	c := detachedShellCommand("echo chain-done & ping -n 2 127.0.0.1 >nul")
 	c.Dir = t.TempDir()
 	out, err := c.CombinedOutput()
 	elapsed := time.Since(start)
@@ -536,7 +484,7 @@ func TestPostMortemRead(t *testing.T) {
 func TestReadRotatedGenerationFallback(t *testing.T) {
 	r := testRegistry(t)
 	e := Entry{
-		Name:       "legacy",
+		ID:       "legacy",
 		Command:    "echo x",
 		PID:        1,
 		StartedAt:  time.Now().Add(-time.Minute).Unix(),
@@ -574,7 +522,7 @@ func TestCapExitedLog(t *testing.T) {
 	if err := os.WriteFile(logPath, []byte(sb.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r.capExited(&Entry{Name: "fat", LogPath: logPath, Exited: true})
+	r.capExited(&Entry{ID: "fat", LogPath: logPath, Exited: true})
 	data, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatal(err)
@@ -592,7 +540,7 @@ func TestCapExitedLog(t *testing.T) {
 	if err := os.WriteFile(small, []byte("tiny"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r.capExited(&Entry{Name: "thin", LogPath: small, Exited: true})
+	r.capExited(&Entry{ID: "thin", LogPath: small, Exited: true})
 	if data, err := os.ReadFile(small); err != nil || len(data) != 4 {
 		t.Fatalf("a sub-cap log must be untouched: %q err=%v", data, err)
 	}
@@ -603,11 +551,11 @@ func TestCapExitedLog(t *testing.T) {
 // at load; a recent one stays.
 func TestRetainSweepGC(t *testing.T) {
 	home := t.TempDir()
-	r := NewRegistry(Config{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
+	r := NewRegistry(RegistryConfig{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
 	week := 7 * 24 * time.Hour
 	mk := func(name string, age time.Duration) Entry {
 		return Entry{
-			Name:       name,
+			ID:       name,
 			Command:    "echo " + name,
 			PID:        1,
 			StartedAt:  time.Now().Add(-age - time.Minute).Unix(),
@@ -622,7 +570,7 @@ func TestRetainSweepGC(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range []Entry{ancient, fresh} {
-		if err := os.WriteFile(e.LogPath, []byte("log-"+e.Name), 0o644); err != nil {
+		if err := os.WriteFile(e.LogPath, []byte("log-"+e.ID), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

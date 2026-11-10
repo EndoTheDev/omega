@@ -19,7 +19,7 @@ import (
 // Plugin adapts the terminal capsule into omega's plugin system. It
 // provides no seams of its own - no commands, no panels: the module's
 // whole surface is its REST routes (the pane streams those) plus the
-// lifecycle fence that owns the shells. (The model's shell.run tool
+// lifecycle fence that owns the shells. (The model's shell verb family
 // rides the same package through the separate builtin shell plugin -
 // shelltool.go.) Mounts through the
 // ExtensionAPI exclusively; the trust-model ruling (the package
@@ -89,8 +89,9 @@ func (p *Plugin) Description() string {
 }
 
 // Provides lists the seams this plugin mounts: none. The terminal is
-// a pure route capsule - no tools (shell.run stays the tools module's
-// face), no commands, no panels.
+// a pure route capsule - no tools (the shell.run/list/read/kill family
+// rides the same package through the separate builtin shell plugin -
+// shelltool.go), no commands, no panels.
 func (p *Plugin) Provides() []string { return nil }
 
 // Requires lists seams that must mount before this plugin.

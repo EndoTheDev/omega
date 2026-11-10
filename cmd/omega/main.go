@@ -36,7 +36,6 @@ import (
 	"github.com/EndoTheDev/omega/harness/memory"
 	"github.com/EndoTheDev/omega/harness/notifications"
 	"github.com/EndoTheDev/omega/harness/observability"
-	"github.com/EndoTheDev/omega/harness/process"
 	"github.com/EndoTheDev/omega/harness/prompt"
 	"github.com/EndoTheDev/omega/harness/provider"
 	"github.com/EndoTheDev/omega/harness/skills"
@@ -568,10 +567,10 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		// contribute the same additive tools rail the registry owns.
 		files.NewPlugin(),
 		terminal.NewShellPlugin(),
-		// card t_5782d11e: the background process registry - the five
-		// process.* verbs over the detached state (long ops only; the
-		// synchronous shell stays where it is).
-		process.NewPlugin(),
+		// The process registry does not exist as its own module any
+		// more (card t_5a49790b): the registry machinery lives in
+		// harness/terminal underneath the one shell domain
+		// (shell.run/list/read/kill).
 		// card t_2ecf9c51: verdict cards - verdict tool, the
 		// verdicts seam, and the /verdict command. Requires store
 		// (the hub captures it at Mount to persist card + verdict rows);

@@ -219,31 +219,47 @@ settings (the `approvals_model` slot, above):
 | `approvals.mode`     | `manual`  | `off` \| `manual` \| `smart`. Empty = manual                                                  |
 | `approvals.smart_policy` | -     | The operator policy text the reviewer sees (never command text)                              |
 
-## The process registry
+## The shell registry
 
-The process capsule (`harness/process/`) is the daemon registry: it
-runs detached shell commands that must keep running past the call -
-servers, watchers, anything that must outlive the turn - and manages
-them by handle. Anything that finishes belongs to `shell.run`: a long
-command pends past the inline budget and re-enters as the call's
-result. `process.spawn` / `list` / `read` / `kill` exist for daemons,
-whose output must go to a log instead of the context.
-State: `<home>/data/process.json`; log: one `<name>.log` per process at
-`<home>/logs/process/`; a pid gone at boot = exited.
+There is ONE shell domain (card t_5a49790b): `shell.run` starts a
+command DETACHED under the shell registry (the machinery the retired
+process capsule was built on), so a call that runs past the loop's
+inline budget converts to a pending call and the child keeps running -
+it survives the turn, and it survives an omega restart. There are no
+modes and no background flag: everything is `shell.run`.
+
+Addressing is by id, and `shell.list` is the list that makes ids cheap:
+
+| Verb         | What it answers                                                     |
+| ------------ | ------------------------------------------------------------------- |
+| `shell.run`  | Start a command (optional `dir`); its output returns as the result  |
+| `shell.list` | Running shells: id, command, age, log path                          |
+| `shell.read` | Tail one shell's log by id - live, and after it exits               |
+| `shell.kill` | Stop one shell by id: SIGTERM, then SIGKILL after the grace         |
+
+A forever-server is just a call that never settles - permanently
+pending, listed, readable, killable. Anything that finishes in the
+inline window returns inline with zero overhead.
+
+State: `<home>/data/process.json`; log: one `<id>.log` per shell at
+`<home>/logs/process/` (both names are historical - the files carry the
+pre-unification spelling so logs and state survive the change); a pid
+gone at boot = exited.
 
 Log retention (stated loud, card t_304afb4e): the log SURVIVES the
-process - `process.read` works after exit (the post-mortem path, the
-main reason to read a log). A finished log is trimmed to
+shell - `shell.read` works after the kill or the exit (the post-mortem
+path, the main reason to read a log). A finished log is trimmed to
 `process.log_max_bytes` once at exit (the TAIL is kept - read serves
-the tail). Re-spawning an exited name rotates its log to
-`<name>.log.1` (one generation back) and starts a fresh file. An
-exited entry and its logs are dropped automatically a week after the
-process finished - that sweep is the registry's only GC (there is no
-removal verb; deleting a cron is not vocabulary a tool needs).
+the tail). Re-using an exited id rotates its log to `<id>.log.1` (one
+generation back) and starts a fresh file. An exited entry and its logs
+are dropped automatically a week after the shell finished - that sweep
+is the registry's only GC (there is no removal verb; deleting a cron is
+not vocabulary a tool needs).
 
 Two config.yaml knobs (absent section = the defaults; `0` or unset
 means the DEFAULT, never "disabled" - the same zero semantics as
-`compaction.context_window: 0 = auto`):
+`compaction.context_window: 0 = auto`). The section keeps its historical
+name `process:` because it is the shell registry's knob row:
 
 | Key                     | Default   | Meaning                                                     |
 | ----------------------- | --------- | ----------------------------------------------------------- |

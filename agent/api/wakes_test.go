@@ -10,6 +10,8 @@ import (
 	"context"
 	"fmt"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -112,6 +114,76 @@ func TestBootRecoveryInjectsTimeoutResults(t *testing.T) {
 	if !seen {
 		t.Error("the injected timeout result never persisted")
 	}
+	waitFor(t, "wake run finished", func() bool { return !s.runs.active("s1") })
+}
+
+// TestBootRecoveryDoesNotReattachPendingShell is the shell-unification
+// probe pin (card t_5a49790b): a pending shell.run call whose row
+// survives a restart is NOT re-attached. The row is durable (a real
+// file-backed pending_calls table, re-read by a fresh store handle =
+// the restart), and boot recovery SETTLES it and injects the
+// interrupted result - the wake path never rejoins the call.
+//
+// That is the accepted degradation the card names: the detached child
+// keeps running and its log stays readable through the shell registry
+// (shell.list / shell.read), and the model learns the call was cut by
+// the restart from the injected result, then re-reads the shell by id.
+func TestBootRecoveryDoesNotReattachPendingShell(t *testing.T) {
+	dsn := filepath.Join(t.TempDir(), "omega.db")
+	st, err := store.Open(dsn)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if err := st.CreateSession(context.Background(), "s1", "", ""); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := st.Register(agent.PendingCall{
+		SessionID: "s1", CallID: "cShell", ToolName: "shell.run",
+		Arguments: `{"command":"sleep 300"}`, DispatchedAt: core.NowISO(),
+	}); err != nil {
+		t.Fatalf("seed pending call: %v", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("close store (the omega exit): %v", err)
+	}
+
+	// The restart: a fresh handle over the same file. The pending row
+	// is still there - that is the half the card asked us to probe.
+	st2, err := store.Open(dsn)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	t.Cleanup(func() { st2.Close() })
+	if rows := st2.All(); len(rows) != 1 || rows[0].ToolName != "shell.run" {
+		t.Fatalf("pending_calls across the restart = %+v, want the one shell.run row", rows)
+	}
+
+	prov := newWakeScripted("step", [][]core.ProviderStreamEvent{finalStep("recovering")})
+	a := agent.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(loop.Loop{})
+	s := NewServer(a, nil, st2, nil, nil, nil)
+
+	// The sweep settles the row: no re-attach, the call is not re-run.
+	waitFor(t, "boot sweep settles the pending shell call", func() bool {
+		return len(s.yieldLedger.All()) == 0
+	})
+	// ... and what re-enters is the interrupted TIMEOUT result, not the
+	// shell's live output - the wake path cannot reach the call again.
+	waitFor(t, "the interrupted result persists", func() bool {
+		msgs, err := st2.GetMessages(context.Background(), "s1")
+		if err != nil {
+			return false
+		}
+		for _, m := range msgs {
+			if y, ok := m.(core.YieldResult); ok && y.ToolCallID == "cShell" {
+				if !y.Timeout || !strings.Contains(y.Content, "interrupted") {
+					t.Errorf("recovered result = %+v, want the interrupted timeout shape (no re-attach)", y)
+				}
+				return true
+			}
+		}
+		return false
+	})
 	waitFor(t, "wake run finished", func() bool { return !s.runs.active("s1") })
 }
 
