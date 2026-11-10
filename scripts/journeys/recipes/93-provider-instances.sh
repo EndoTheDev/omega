@@ -246,6 +246,12 @@ open_settings() {
   if ! poll_js "$GEAR" 10; then
     die "settings menubar gear never rendered"
   fi
+  # t_af7e1150: settings is master-detail now - it lands on Commonly Used,
+  # and the instances editor lives under the provider category. Navigate.
+  if ! wait_js '!!document.querySelector(".settings-nav button[data-category=\"provider\"]")' 10; then
+    die "settings category nav never rendered"
+  fi
+  jsq '(()=>{const b=document.querySelector(".settings-nav button[data-category=\"provider\"]");if(!b) return false;b.click();return true})()' >/dev/null 2>&1
   wait_js '!!document.querySelector(".providers-editor .provider-add")' 15 \
     || die "providers editor never rendered after opening"
 }
