@@ -539,15 +539,26 @@ GO1="INSERT INTO tasks VALUES('t_go1','ready','go one','FILES: scripts/factory-d
 GO2="INSERT INTO tasks VALUES('t_go2','ready','go two','FILES: harness/cron/runner.go',NULL,NULL,5,'2026-11-07T15:01',NULL,NULL);"
 WEB="INSERT INTO tasks VALUES('t_web','ready','webui one','FILES: engine/webui/app/pages/x.vue',NULL,NULL,5,'2026-11-07T15:02',NULL,NULL);"
 
-# T16a: the exact live miss - running=0, go+go at the head, cap 2.
+# T16a: running=0, go+go at the head, cap 2 - SANCTIONED since the 2026-11-10
+# ruling when the surfaces are provably disjoint (go1 and go2 name unrelated
+# files, so both go legal and the pair is sanctioned).
 out=$(PAIRRUN "$GO1
 $GO2")
-printf "%s" "$out" | grep -qF 'pair: forbidden (t_go1 t_go2, go+go' \
-	&& ok || bad "T16a: go+go head at running=0 not forbidden (out: $out)"
-printf "%s" "$out" | grep -q "^hold: t_go2" \
-	&& ok || bad "T16a: the same-pass class leg did not hold t_go2 (out: $out)"
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1 t_go2, classes go+go, FILES disjoint)' \
+	&& ok || bad "T16a: disjoint go+go head not sanctioned (out: $out)"
+printf "%s" "$out" | grep -q "^legal: t_go2" \
+	&& ok || bad "T16a: disjoint go+go - t_go2 should be legal (out: $out)"
 printf "%s" "$out" | grep -q "^legal: t_go1" \
 	&& ok || bad "T16a: t_go1 should stay legal (out: $out)"
+
+# T16a2: go+go sharing a file stays FORBIDDEN - the disjointness proof is the
+# sanction, a collision reds it. This is the shape the old blanket ban covered.
+out=$(PAIRRUN "$GO1
+INSERT INTO tasks VALUES('t_go3','ready','go three','FILES: scripts/factory-dispatch.sh',NULL,NULL,5,'2026-11-07T15:01',NULL,NULL);")
+printf "%s" "$out" | grep -qF 'pair: forbidden (t_go1 t_go3' \
+	&& ok || bad "T16a2: colliding go+go head not forbidden (out: $out)"
+printf "%s" "$out" | grep -q "^hold: t_go3" \
+	&& ok || bad "T16a2: the same-pass leg did not hold t_go3 (out: $out)"
 
 # T16b: sanctioned go+webui (the only sanctioned mixed pair), disjoint FILES.
 out=$(PAIRRUN "$GO1
@@ -580,12 +591,13 @@ printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1, single would-spawn candi
 	&& ok || bad "T16f: --max 1 head must be a single slot (out: $out)"
 printf "%s" "$out" | grep -q "cap=1" && ok || bad "T16f: --max did not set the cap (out: $out)"
 
-# T16g: --max 2 on the SAME board reaches two slots -> forbidden again (the
-# explicit path must run the same slot math as the cap path).
+# T16g: --max 2 on the SAME board reaches two slots - the explicit path must
+# run the same slot math as the cap path. Disjoint go+go is sanctioned since
+# the 2026-11-10 ruling, so the verdict is sanctioned on BOTH paths.
 out=$(PAIRRUN "$GO1
 $GO2" --max 2)
-printf "%s" "$out" | grep -qF 'pair: forbidden (t_go1 t_go2, go+go' \
-	&& ok || bad "T16g: --max 2 go+go head not forbidden (out: $out)"
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1 t_go2, classes go+go, FILES disjoint)' \
+	&& ok || bad "T16g: --max 2 disjoint go+go head not sanctioned (out: $out)"
 
 # T16h: empty board - the line still prints, never a silent absence (an
 # empty verdict section must be distinguishable from a blind computation).
@@ -602,7 +614,7 @@ INSERT INTO tasks VALUES('t_rgo','running','go bits','pure go bits','pibtw:2',NU
 INSERT INTO tasks VALUES('t_rweb','running','webui bits','FILES: engine/webui/app/','pibtw:3',NULL,5,'2026-11-07T14:02',NULL,NULL);
 INSERT INTO tasks VALUES('t_cgo','ready','go candidate','FILES: cmd/omega/loop.go',NULL,NULL,5,'2026-11-07T15:00',NULL,NULL);
 INSERT INTO tasks VALUES('t_cdoc','ready','doc candidate','FILES: docs/other.md',NULL,NULL,5,'2026-11-07T15:01',NULL,NULL);")
-printf "%s" "$out" | grep -qF 'hold: t_cgo  (go-class beside go: running=[docs,go,webui,]' \
+printf "%s" "$out" | grep -qF 'hold: t_cgo  (go-class beside go with unproven surface: running=[docs,go,webui,]' \
 	&& ok || bad "T16i: go candidate beside a token-less running go card not held (out: $out)"
 printf "%s" "$out" | grep -q "^legal: t_cdoc" \
 	&& ok || bad "T16i: doc candidate should stay legal - a FILES: docs/ card must class docs, not go (out: $out)"

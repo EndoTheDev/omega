@@ -247,6 +247,25 @@ candidate_tokens() {  # id -> WRITE-surface tokens: curated FILES: lines win ove
   fi
 }
 
+imprecise_surface() {  # id -> 0 (true) when the FILES line names a BARE directory
+  # A bare token ('agent', 'harness', 'core') is a directory name whose real
+  # coverage the tokenizer cannot pin: it can swallow every path under it, or
+  # nothing. Two go cards sanctioned on those tokens is exactly the false-green
+  # shape, so the go+go disjointness proof treats such a surface as UNPROVABLE.
+  # The fix is on the card, not the guard: name paths ('agent/api/', '.go' files).
+  local body files tok
+  body=$(dbq "SELECT body FROM tasks WHERE id='$1';")
+  files=$(grep -i '^FILES:' <<<"$body" | head -1 | cut -d: -f2- || true)
+  [ -n "$files" ] || return 1        # absent FILES is handled by the empty-token leg
+  for tok in $files; do
+    case "$tok" in
+      */*|*.*) : ;;                  # path-shaped: precise enough
+      *) return 0 ;;                 # bare word: unprovable
+    esac
+  done
+  return 1
+}
+
 surface_of_card() {  # id -> file tokens: worktree diff against dev + body
   local id="$1"
   local wt=".worktrees/$id"
@@ -329,9 +348,25 @@ RUNNING_RAW=$(dbq "SELECT id FROM tasks WHERE status='running' AND (claim_expire
 RUNNING=()
 [ -n "$RUNNING_RAW" ] && mapfile -t RUNNING <<<"$RUNNING_RAW"
 SURF=/tmp/fd_running_surface.$$; : >"$SURF"
+# PER-CARD go surfaces (2026-11-10 ruling): the aggregate SURF cannot prove a
+# go pair disjoint - a running go card with no tokens hides behind the doc or
+# webui cards that do carry tokens (the T16i shape: three running cards, the
+# go one token-less, the candidate read legal). The proof needs the go cards
+# counted and tokenised individually.
+RUNGO_SURF=/tmp/fd_rungo_surface.$$; : >"$RUNGO_SURF"
+RUNGO_CARDS=0; RUNGO_TOKENED=0; RUNGO_IMPRECISE=0
 for r in "${RUNNING[@]:-}"; do
   [ -z "$r" ] && continue
   surface_of_card "$r" >>"$SURF"
+  if [ "$(class_of "$r")" = go ]; then
+    RUNGO_CARDS=$((RUNGO_CARDS + 1))
+    imprecise_surface "$r" && RUNGO_IMPRECISE=$((RUNGO_IMPRECISE + 1))
+    rgo=$(surface_of_card "$r")
+    if [ -n "$rgo" ]; then
+      RUNGO_TOKENED=$((RUNGO_TOKENED + 1))
+      printf '%s\n' "$rgo" >>"$RUNGO_SURF"
+    fi
+  fi
 done
 RUN_HAS_SURFACE=$(grep -q . "$SURF" && echo 1 || echo 0)
 
@@ -386,6 +421,8 @@ PARKED=(); LEGAL=0
 # stay unparked: the ready lane cannot touch them (CAS), the review
 # lane must see them.
 PASS_SURF=$(mktemp); : >"$PASS_SURF"   # surfaces of candidates already marked legal THIS pass (pairwise)
+PASSGO_SURF=$(mktemp); : >"$PASSGO_SURF"   # go-class legal candidates only - the same-pass disjointness proof
+PASSGO_CARDS=0; PASSGO_TOKENED=0; PASSGO_IMPRECISE=0
 PASS_CLASS=""   # classes of candidates already marked legal THIS pass
 # The would-spawn head set (pair verdict, below): the first SLOTS candidates
 # in DISPATCH ORDER, their classes, and their candidate-side token files.
@@ -422,8 +459,41 @@ for c in "${CAND[@]:-}"; do
   # inside another word.
   if [ "$CC" = go ] \
      && { [[ ",$RC," == *,go,* ]] || [[ ",$PASS_CLASS," == *,go,* ]]; }; then
-    HOLD=1; WHY="go-class beside go: running=[$RC] same-pass=[$PASS_CLASS] (sanctioned pairs are go+webui only)"
-  elif grep -q . "$CTOK"; then
+    # go+go SANCTIONED 2026-11-10 (Endo ruling): two Go cards may run together
+    # when their file surfaces are PROVABLY disjoint - both sides carry tokens
+    # and no token overlaps. The proof is REQUIRED, never assumed: an unknown
+    # surface on either side keeps the pair forbidden (a blind go pair is the
+    # shape of guard bug #12, where two go cards co-spawned unexamined).
+    # Same-pass and running legs are proven separately - a candidate can be
+    # disjoint from the running go card yet collide with a same-pass one.
+    GODISJ=1
+    [ -s "$CTOK" ] || GODISJ=0
+    imprecise_surface "$c" && GODISJ=0   # bare-dir FILES line: unprovable, hold
+    if [[ ",$RC," == *,go,* ]]; then
+      # EVERY running go card must have exposed tokens AND a precise surface -
+      # one token-less or bare-dir go card makes the pair unprovable, and the
+      # aggregate SURF hid exactly that behind the doc/webui cards that do
+      # carry tokens.
+      if [ "$RUNGO_CARDS" -gt 0 ] && [ "$RUNGO_TOKENED" -eq "$RUNGO_CARDS" ] \
+         && [ "$RUNGO_IMPRECISE" -eq 0 ] && [ -s "$RUNGO_SURF" ]; then
+        overlaps "$CTOK" "$RUNGO_SURF" && GODISJ=0
+      else
+        GODISJ=0
+      fi
+    fi
+    if [[ ",$PASS_CLASS," == *,go,* ]]; then
+      if [ "$PASSGO_CARDS" -gt 0 ] && [ "$PASSGO_TOKENED" -eq "$PASSGO_CARDS" ] \
+         && [ "$PASSGO_IMPRECISE" -eq 0 ] && [ -s "$PASSGO_SURF" ]; then
+        overlaps "$CTOK" "$PASSGO_SURF" && GODISJ=0
+      else
+        GODISJ=0
+      fi
+    fi
+    if [ "$GODISJ" = 0 ]; then
+      HOLD=1; WHY="go-class beside go with unproven surface: running=[$RC] same-pass=[$PASS_CLASS] (disjoint go pairs are sanctioned since 2026-11-10; overlapping or unprovable surfaces stay forbidden)"
+    fi
+  fi
+  if [ "$HOLD" = 0 ] && grep -q . "$CTOK"; then
     if [ "$RUN_HAS_SURFACE" = 1 ] && overlaps "$CTOK" "$SURF"; then
       HOLD=1; MATCHF="$SURF"
     elif grep -q . "$PASS_SURF" && overlaps "$CTOK" "$PASS_SURF"; then
@@ -448,6 +518,15 @@ for c in "${CAND[@]:-}"; do
     echo "legal: $c"
     LEGAL=$((LEGAL+1))
     PASS_CLASS="$PASS_CLASS,$CC"
+    if [ "$CC" = go ]; then   # same-pass disjointness proof for the NEXT go candidate
+      PASSGO_CARDS=$((PASSGO_CARDS + 1))
+      imprecise_surface "$c" && PASSGO_IMPRECISE=$((PASSGO_IMPRECISE + 1))
+      PASSGO_TOK=$(candidate_tokens "$c")
+      if [ -n "$PASSGO_TOK" ]; then
+        PASSGO_TOKENED=$((PASSGO_TOKENED + 1))
+        printf '%s\n' "$PASSGO_TOK" >>"$PASSGO_SURF"
+      fi
+    fi
     { git diff --name-only dev..."wt/$c" 2>/dev/null || true   # resumed candidates carry real writes
       candidate_tokens "$c"
     } >>"$PASS_SURF"
@@ -486,12 +565,22 @@ else
   PAIRWHY="classes $PAIRCLS, FILES disjoint"
   for ((pi = 0; pi < ${#HEAD[@]}; pi++)); do
     for ((pj = pi + 1; pj < ${#HEAD[@]}; pj++)); do
-      # class law BEFORE the token check for EVERY pair (fixed twice
-      # 2026-10-24): a go+go head is forbidden on class alone - disjoint
-      # FILES never sanction it.
+      # class law BEFORE the token check for EVERY pair: a go+go head is
+      # forbidden unless the surfaces are provably disjoint (2026-11-10
+      # ruling - before it, class alone forbade the pair).
       if [ "${HEADCLS[pi]}" = go ] && [ "${HEADCLS[pj]}" = go ]; then
-        PAIRV=forbidden; PAIRWHY="go+go - sanctioned pairs are go+webui only"
-        break 2
+        # go+go SANCTIONED 2026-11-10 (Endo ruling) when both head cards carry
+        # tokens and none overlap; an unprovable surface keeps the pair
+        # forbidden. The same-file check below still runs for a sanctioned
+        # pair, so a shared file reds it anyway.
+        if [ -s "$HEADDIR/$((pi + 1))" ] && [ -s "$HEADDIR/$((pj + 1))" ] \
+           && ! imprecise_surface "${HEAD[pi]}" && ! imprecise_surface "${HEAD[pj]}" \
+           && ! overlaps "$HEADDIR/$((pi + 1))" "$HEADDIR/$((pj + 1))"; then
+          :   # provably disjoint go pair - fall through to the token check
+        else
+          PAIRV=forbidden; PAIRWHY="go+go with unproven surface (disjoint go pairs are sanctioned since 2026-11-10)"
+          break 2
+        fi
       fi
       if overlaps "$HEADDIR/$((pi + 1))" "$HEADDIR/$((pj + 1))"; then
         PAIRV=forbidden; PAIRWHY="same-file"
