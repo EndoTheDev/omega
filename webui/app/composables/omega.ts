@@ -459,6 +459,16 @@ export function transcriptHasPending(items: readonly TranscriptItem[]): boolean 
   return items.some((it) => it?.kind === "tool" && it.status === "pending");
 }
 
+// transcriptPendingCount is the status bar's `N pending` segment over a
+// rendered transcript (card t_8fd38f88): the OPEN session's still-pending
+// calls, never a machine-wide number. Same derivation as
+// transcriptHasPending, counted. Pure.
+export function transcriptPendingCount(items: readonly TranscriptItem[]): number {
+  let n = 0;
+  for (const it of items) if (it?.kind === "tool" && it.status === "pending") n++;
+  return n;
+}
+
 // --- the chat panel's wire vocabulary (chat-last 2a) --------------------
 //
 // The conversation itself rides the canvas (card t_ec45b670): one chat
@@ -618,6 +628,31 @@ export function chatPanelMessageCount(payload: ChatPayloadWire): number {
     if (row.role === "user") total++;
     else if (row.role === "assistant" && row.blocks?.[0]?.type === "text") total++;
   }
+  return total;
+}
+
+// chatPanelPendingCount counts the panel payload's still-pending tool
+// calls - the status bar's `N pending` segment (card t_8fd38f88). The
+// count is the OPEN session's: the payload names the session it covers,
+// so the caller only reads it while `payload.session === the focused
+// session` (the same gate chatPanelMessageCount rides). The rule is
+// renderTranscriptItems' pending derivation, counted without building
+// the items: a call with an id and no matching result is pending; the
+// live tail's running bit outranks it, and an id-less call has nothing
+// to match a result against. Pure.
+export function chatPanelPendingCount(payload: ChatPayloadWire): number {
+  const settled = new Set<string>();
+  for (const row of payload.rows ?? [])
+    for (const b of row.blocks ?? [])
+      if (b.type === "tool_result" && b.tool_call_id) settled.add(b.tool_call_id);
+  let total = 0;
+  for (const row of payload.rows ?? [])
+    for (const b of row.blocks ?? []) {
+      if (b.type !== "tool_call") continue;
+      const id = b.tool_call?.id;
+      if (!id || b.running === true) continue;
+      if (!settled.has(id)) total++;
+    }
   return total;
 }
 

@@ -61,20 +61,25 @@ describe("composer model+effort wrap group (t_641c2870)", () => {
     assert.doesNotMatch(
       group[0],
       /WorkspaceSelect/,
-      ".model-group must not swallow the workspace chip - it may sit alone on a row",
+      ".model-group must not swallow the workspace picker - it is not a composer chip at all any more (card t_8fd38f88 moved it to the status bar)",
     );
     assert.doesNotMatch(
       group[0],
       /class="send"/,
       ".model-group must not swallow the send button - it keeps its own row anchor",
     );
-    // Endo's ask is specifically the model+effort pair: workspace FIRST
-    // (v0.14.3 ruling), the group after it, the button after that.
-    const wsAt = src.indexOf("<WorkspaceSelect");
+    // card t_8fd38f88: the workdir selector LEFT the composer entirely -
+    // the composer keeps the model + reasoning chips, and the bar echoes
+    // neither. The status bar is the picker's only home now.
+    assert.doesNotMatch(
+      src,
+      /<WorkspaceSelect/,
+      "the composer must not render the workdir picker (the status bar owns it)",
+    );
     const groupAt = src.indexOf('<div class="model-group">');
     const sendAt = src.indexOf('class="send"');
-    assert.ok(wsAt !== -1 && wsAt < groupAt && groupAt < sendAt,
-      "toolbar order must stay workspace -> .model-group -> send");
+    assert.ok(groupAt !== -1 && groupAt < sendAt,
+      "toolbar order stays .model-group -> send");
   });
 
   it("main.css makes the group a nowrap flex unit the toolbar cannot split", () => {
