@@ -46,12 +46,21 @@ const (
 	// TopicHealth carries the server heartbeat - the fact the SPA used
 	// to poll GET /health for.
 	TopicHealth = "health"
+	// TopicLogs carries the log tail's DELTA: only the lines appended to
+	// the server's own log file since the previous frame on this topic,
+	// never the 200-line snapshot (the pane's first read stays
+	// GET /logs; the socket carries what comes after it). Subscription-
+	// gated by design - a log tail is high-frequency, so a connection
+	// that did not ask for `logs` receives nothing (card t_0e7bc0bb,
+	// ruling: overloading `runs`/`canvas` would make the vocabulary
+	// lie).
+	TopicLogs = "logs"
 )
 
 // Topics is the closed topic set, in wire order. A subscriber starts
 // subscribed to all of them and may narrow the set; an unknown name is
 // ignored, never invented.
-var Topics = []string{TopicChat, TopicChips, TopicCanvas, TopicRuns, TopicHealth}
+var Topics = []string{TopicChat, TopicChips, TopicCanvas, TopicRuns, TopicHealth, TopicLogs}
 
 // SocketMessage is one pushed frame. The envelope is topic-typed: Topic
 // says what it is, Event carries the chat topic's SSE event name (empty
@@ -92,6 +101,15 @@ type ChipFrame struct {
 // RunState is the runs topic's payload: one session's live-run truth.
 type RunState struct {
 	Active bool `json:"active"`
+}
+
+// LogLines is the logs topic's payload: the lines the log file gained
+// since the previous frame on the topic - a delta, never the tail. Each
+// element is one raw line exactly as the file holds it (timestamp
+// included), so a pushed line and the same line read back through
+// GET /logs are byte-identical.
+type LogLines struct {
+	Lines []string `json:"lines"`
 }
 
 // HealthState is the health topic's payload - the same body GET /health
@@ -222,6 +240,12 @@ func (h *SocketHub) wanted(topic string) bool {
 	}
 	return false
 }
+
+// Wants reports whether any live subscriber holds the topic. It is the
+// read a publisher whose payload comes from OUTSIDE the hub uses to
+// skip the work entirely - the log follower (api/server_inspector.go)
+// only reads the file when a pane actually asked for `logs`.
+func (h *SocketHub) Wants(topic string) bool { return h.wanted(topic) }
 
 // SubscriberCount is the number of attached connections - the read the
 // reconnect test and any future "is anyone listening" inspection needs.

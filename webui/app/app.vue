@@ -623,7 +623,14 @@
   // hardcoded list (Q5a).
   import { createCanvasStore, emitLocalToast } from "./composables/canvas";
   import { normalizeCanvasPanel } from "./composables/omega";
-  import { createSocketClient, type SocketClient, type SocketStatus } from "./composables/socket";
+  import {
+    createSocketClient,
+    DEFAULT_SOCKET_TOPICS,
+    LOG_STREAM_EVENT,
+    LOG_SUBSCRIBE_EVENT,
+    type SocketClient,
+    type SocketStatus,
+  } from "./composables/socket";
   import { ingestChipFrame } from "./composables/chips";
   import { refreshNotifications } from "./components/shell/notificationFeed";
   import ChatTab from "./components/ChatTab.vue";
@@ -1631,6 +1638,40 @@
   // template-readable from before the client exists (card t_8fd38f88).
   const socketStatus = ref<SocketStatus>("idle");
 
+  // --- the logs pane's socket gate (card t_0e7bc0bb) ----------------------
+  //
+  // `logs` is the one subscription-gated topic: a log tail is
+  // high-frequency, so the shell asks for it only while a logs pane is
+  // mounted and drops it when the last one goes away (the server's hub
+  // filters by subscription, so a page that never asked receives no log
+  // frames at all). The pane is module UI - it imports no shell code -
+  // so the two directions are window CustomEvents, the same seam the
+  // kanban board uses for omega-select-board.
+  let logsPanes = 0;
+
+  function applyLogsGate(): void {
+    if (!socket) return; // the count is applied right after connect
+    socket.subscribe(logsPanes > 0 ? [...DEFAULT_SOCKET_TOPICS, "logs"] : [...DEFAULT_SOCKET_TOPICS]);
+  }
+
+  function onLogsSubscribe(e: Event): void {
+    const on = (e as CustomEvent<{ on?: boolean }>).detail?.on === true;
+    const next = Math.max(0, logsPanes + (on ? 1 : -1));
+    if (next === logsPanes) return;
+    logsPanes = next;
+    applyLogsGate();
+  }
+
+  function pushLogStream(detail: { lines?: string[]; reset?: boolean }): void {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new CustomEvent(LOG_STREAM_EVENT, { detail }));
+  }
+
+  // registered at SETUP, not in onMounted: a child's mounted hook runs
+  // BEFORE the parent's, so a pane's subscribe would otherwise land
+  // before anyone was listening
+  if (typeof window !== "undefined") window.addEventListener(LOG_SUBSCRIBE_EVENT, onLogsSubscribe);
+
   // hintNotifications pulls the finished-things + pending-verdict truth
   // on an event hint, debounced: the verdict hub has no topic of its own
   // (issuance and the answer ride chat), and a burst of run frames must
@@ -2306,6 +2347,7 @@
         if (panel) canvas.applyDelta(panel);
       },
       chips: (_session, frame) => ingestChipFrame(frame),
+      logs: (lines) => pushLogStream({ lines }),
       chat: (session, event, payload) => {
         host.noteSocketChat(session, event, payload);
         // the verdict gap (t_896cf5a8): issuance and the answer ride the
@@ -2323,10 +2365,15 @@
         if (!reconnect) return;
         // nothing replayed server-side: one health read, then the
         // visible panes - the same GET routes a cold load uses
+        // (the logs pane re-reads its snapshot on the same signal)
+        pushLogStream({ reset: true });
         void catchUp();
       },
     });
     socket.connect();
+    // a logs pane may have mounted before this hook ran (a child's
+    // mounted fires first) - apply the gate it already asked for
+    applyLogsGate();
     // the popover's socket line follows the client's own state ref
     watch(socket.status, (v) => (socketStatus.value = v), { immediate: true });
     // boot liveness: the dot + the sidebar render before the first
@@ -2424,6 +2471,7 @@
     window.removeEventListener("resize", onWinResize);
     areaObserver?.disconnect();
     window.removeEventListener("popstate", onPop);
+    window.removeEventListener(LOG_SUBSCRIBE_EVENT, onLogsSubscribe);
     if (socket) {
       socket.close();
       socket = null;
