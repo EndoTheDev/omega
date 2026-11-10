@@ -1,0 +1,4 @@
+# Go sources are LF in the blob and in the working tree. Without this a
+# CRLF blob can enter and survive, turning any formatter run into a
+# full-file rewrite.
+*.go text eol=lf
