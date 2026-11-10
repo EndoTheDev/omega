@@ -172,6 +172,32 @@ esac
 bases=$(jsq '(()=>{const d=[...document.querySelectorAll(".setting-dot")].map(e=>e.getAttribute("aria-label"));return d.every(x=>x==="differs from main")?"main-base":"wrong-base"})()' 2>&1 | tr -d '"')
 assert_eq "$bases" "main-base" "every dot names MAIN as the base on an agent tab"
 
+# --- R4: ONE write path - a pane edit lands through the agents endpoint ---
+set_desc=$(jsq '(()=>{const r=[...document.querySelectorAll(".setting-item")].find(x=>((x.querySelector(".setting-head span")?.textContent||"").trim())==="description");if(!r) return 0;const i=r.querySelector("input");if(!i) return 0;i.focus();i.value="journey edited description";i.dispatchEvent(new Event("input",{bubbles:true}));return 1})()' 2>&1 | tr -d '"')
+assert_eq "$set_desc" "1" "the description row accepts an edit"
+if ! wait_js '(()=>{const b=document.querySelector(".settings-save");return !!b&&(b.textContent||"").trim()==="save 1 change"})()' 10; then
+  die "the save row never counted the edit"
+fi
+step "ok: the dirty edit surfaces one save (no second write path)"
+saved=$(jsq '(()=>{const b=document.querySelector(".settings-save");if(!b) return 0;b.click();return 1})()' 2>&1 | tr -d '"')
+assert_eq "$saved" "1" "the save button is clickable"
+if ! wait_js '(()=>{return !document.querySelector(".settings-save-row")})()' 20; then
+  die "the save row never cleared after the write (refused or stuck)"
+fi
+step "ok: the save landed and the pane re-read the scope"
+onfile=$(cat "$SEED_DIR/config/config.yaml" 2>/dev/null)
+case "$onfile" in
+  *"journey edited description"*) step "ok: the edit reached the agent's own layer file (the endpoint, not the pane, wrote it)" ;;
+  *) die "the edit never reached $SEED_DIR/config/config.yaml: $onfile" ;;
+esac
+case "$onfile" in
+  *"jrn-model-7b"*) step "ok: the untouched provider override survived the write" ;;
+  *) die "the write clobbered the neighbouring override: $onfile" ;;
+esac
+# and the pane still names main as the base - no 409 lock, no error line
+locked=$(jsq '(()=>{return document.querySelector(".settings-error")?"locked":"open"})()' 2>&1 | tr -d '"')
+assert_eq "$locked" "open" "the write did not lock the tab"
+
 # --- R7: the search on an agent tab filters its four groups only ---
 ab fill '.settings-filterbar input' "model" >/dev/null 2>&1 || die "search input never accepted text"
 if ! wait_js "(()=>{const g=[...document.querySelectorAll('.settings-group-head .settings-group-title')];return g.length===1&&(g[0].textContent||'').trim()==='provider'})()" 10; then

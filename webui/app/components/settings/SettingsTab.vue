@@ -1134,9 +1134,16 @@
       saving.value = false;
       return;
     }
-    // the layer file just changed: drop the local draft so the refresh
-    // re-seeds from disk (a kept draft would shadow the saved truth)
-    delete scopeStates[name];
+    // the save landed: adopt the draft as the local truth FIRST, so the
+    // markers clear even when the refresh below cannot reach the host -
+    // and no queued removal survives a save that already deleted the key
+    // (a reset whose value happened to equal main's would otherwise stay
+    // queued forever)
+    const state = scopeStates[name];
+    if (state) {
+      state.loaded = { ...state.draft };
+      state.unset = [];
+    }
     try {
       applyScopes((await fetchSettings()).scopes);
     } catch (err) {

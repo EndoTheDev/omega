@@ -326,6 +326,13 @@ test("R4: agent writes ride the existing agents edit endpoint, one call per save
   assert.match(SETTINGS_TAB, /await updateAgentConfig\(name, diff\.body\)/);
   // the count and the wire are the same derivation
   assert.match(SETTINGS_TAB, /const diff = scopeConfigDiff\(/);
+  // a landed save adopts the draft BEFORE the refresh: a refresh that
+  // cannot reach the host never blanks the tab, and no queued removal
+  // outlives the key it just deleted
+  assert.match(
+    SETTINGS_TAB,
+    /state\.loaded = \{ \.\.\.state\.draft \};[\s\S]{0,200}?applyScopes\(\(await fetchSettings\(\)\)\.scopes\)/,
+  );
   // a refusal pins the endpoint's words and renders the tab read-only
   assert.match(SETTINGS_TAB, /scopeLocks\[name\] = err instanceof Error \? err\.message : String\(err\)/);
   assert.match(SETTINGS_TAB, /v-if="scopeMessage"/);
