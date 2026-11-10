@@ -169,6 +169,10 @@ func (s *Server) Serve(ctx context.Context, addr string) error {
 	// the push channel's heartbeat: started here, after the listener is
 	// up (the goroutine fence - mount never starts background work).
 	go s.pushHealth(ctx)
+	// the logs topic's delta follower (card t_0e7bc0bb): the same fence,
+	// the same start point - the file the logger writes is followed only
+	// while its topic has a subscriber.
+	go s.followLogs(ctx)
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- s.httpSrv.ListenAndServe()

@@ -1,14 +1,17 @@
 package api
 
 import (
-	"github.com/EndoTheDev/omega/agent"
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/EndoTheDev/omega/agent"
+	agentapi "github.com/EndoTheDev/omega/agent/api"
 )
 
 // The inspector HTTP surface (card t_db430fea, read-only v1):
@@ -269,4 +272,105 @@ func tailLines(path string, n int) ([]string, error) {
 // splitLines splits on '\n' with no empty trailing entry.
 func splitLines(s string) []string {
 	return strings.Split(strings.TrimSuffix(s, "\n"), "\n")
+}
+
+// logPushInterval is the logs topic's cadence. The follower reads only
+// the bytes the file gained since the last tick (one stat, at most one
+// read), and it reads nothing at all while no pane holds the topic.
+const logPushInterval = time.Second
+
+// logPushWindow bounds one tick's read: a log that grew past this in a
+// second is caught up over the following ticks rather than read in one
+// allocation.
+const logPushWindow = 256 << 10
+
+// followLogs pushes log lines onto the logs topic (the delta, never the
+// snapshot) until the server context ends. Started by Serve, after the
+// listener is up - the goroutine fence's law (mount never starts
+// background work; the host does).
+//
+// THE HOOK POINT. Omega's only log-write site is harness/logging's
+// FileLogger (logging.go: Printf/Errorf/Warnf -> log.Logger -> the
+// file handle), and the module tier cannot reach this hub - a module
+// importing the shell ring (api/, agent/api/) is the module-imports-
+// shell violation. So the seam is the FILE: this follower reads the
+// path GET /logs already tails (logPathOf), by offset. A write lands
+// there once, and both readers - the REST tail and this push - read the
+// same bytes, so the REST snapshot and the pushed lines can never
+// disagree about what the log says.
+//
+// Subscription-gating is the hub's: while nobody holds the topic the
+// offset still advances but no bytes are read and nothing is published,
+// so a pane that mounts later starts from its own GET /logs snapshot
+// and receives only what is appended after it - the tail never replays
+// boot history at a new subscriber.
+func (s *Server) followLogs(ctx context.Context) {
+	path := logPathOf(s.Logger())
+	if path == "" {
+		return // logging disabled (NopLogger): there is no file to tail
+	}
+	offset := int64(-1) // -1: no baseline yet, seed to the file's end
+	carry := ""
+	ticker := time.NewTicker(logPushInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			offset, carry = s.pushLogDelta(path, offset, carry)
+		}
+	}
+}
+
+// pushLogDelta publishes the complete lines appended to path since
+// offset and returns the new offset plus the incomplete trailing line (a
+// write can land mid-line; the fragment is emitted on the tick that
+// completes it, so a pushed line is always whole).
+//
+// A first call, or a file that shrank (truncated, rotated), resyncs the
+// offset to the end: history belongs to GET /logs, never to this topic.
+func (s *Server) pushLogDelta(path string, offset int64, carry string) (int64, string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return offset, carry // transient: the next tick retries
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return offset, carry
+	}
+	size := st.Size()
+	if offset < 0 || size < offset {
+		return size, ""
+	}
+	if size == offset {
+		return offset, carry
+	}
+	if !s.Sockets().Wants(agentapi.TopicLogs) {
+		// nobody asked: skip the bytes, keep the offset at the end so a
+		// later subscriber is not handed a backlog
+		return size, ""
+	}
+	n := size - offset
+	if n > logPushWindow {
+		n = logPushWindow
+	}
+	buf := make([]byte, n)
+	read, _ := f.ReadAt(buf, offset)
+	if read <= 0 {
+		return offset, carry
+	}
+	offset += int64(read)
+	text := carry + string(buf[:read])
+	// the last element is either "" (the chunk ended on a newline) or the
+	// incomplete tail of a line still being written
+	parts := strings.Split(text, "\n")
+	carry = parts[len(parts)-1]
+	lines := parts[:len(parts)-1]
+	if len(lines) == 0 {
+		return offset, carry
+	}
+	s.Sockets().Publish(agentapi.TopicLogs, "", agentapi.LogLines{Lines: lines})
+	return offset, carry
 }

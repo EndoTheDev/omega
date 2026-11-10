@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/EndoTheDev/omega/agent"
+	"context"
 	"encoding/json"
 	"net/http"
 	httptest "net/http/httptest"
@@ -12,7 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/EndoTheDev/omega/agent"
+	agentapi "github.com/EndoTheDev/omega/agent/api"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/harness/logging"
 )
 
 // The inspector endpoint surface (card t_db430fea, read-only v1):
@@ -55,7 +58,7 @@ func (f *fakeSkillEntries) SkillsEntries() (map[string]string, map[string]string
 // fakePathLogger satisfies agent.LoggerProvider with a readable path.
 type fakePathLogger struct{ path string }
 
-func (l *fakePathLogger) Printf(string, ...any)  {}
+func (l *fakePathLogger) Printf(string, ...any) {}
 func (l *fakePathLogger) Warnf(string, ...any)  {}
 func (l *fakePathLogger) Errorf(string, ...any) {}
 func (*fakePathLogger) Close() error            { return nil }
@@ -356,7 +359,7 @@ func TestLogsMissingFileIs404(t *testing.T) {
 // nopTestLogger mirrors harness/logging.NopLogger: LoggerProvider only.
 type nopTestLogger struct{}
 
-func (nopTestLogger) Printf(string, ...any)  {}
+func (nopTestLogger) Printf(string, ...any) {}
 func (nopTestLogger) Warnf(string, ...any)  {}
 func (nopTestLogger) Errorf(string, ...any) {}
 func (nopTestLogger) Close() error          { return nil }
@@ -395,4 +398,166 @@ func mustJSON(t *testing.T, v any) string {
 
 func itoa(i int) string {
 	return strconv.Itoa(i)
+}
+
+// --- the logs topic's delta follower (card t_0e7bc0bb) ---
+
+// readLogFrame reads one pushed frame off a hub subscriber, failing on
+// timeout. The logs topic is the only one under test here.
+func readLogFrame(t *testing.T, sub *agentapi.SocketSub) agentapi.SocketMessage {
+	t.Helper()
+	select {
+	case raw, ok := <-sub.Messages():
+		if !ok {
+			t.Fatal("subscriber channel closed, want a logs frame")
+		}
+		var msg agentapi.SocketMessage
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			t.Fatalf("decode frame: %v", err)
+		}
+		return msg
+	case <-time.After(2 * time.Second):
+		t.Fatal("no logs frame within 2s")
+		return agentapi.SocketMessage{}
+	}
+}
+
+// appendLog appends raw bytes to the followed file (the logger's own
+// write shape: whole lines, newline-terminated).
+func appendLog(t *testing.T, path, text string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatalf("open log: %v", err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(text); err != nil {
+		t.Fatalf("append log: %v", err)
+	}
+}
+
+// TestPushLogDelta: the follower publishes ONLY the bytes appended since
+// the last offset, as whole lines - the snapshot half stays GET /logs.
+// It also pins the two skip laws: no subscriber means no read (the
+// offset advances anyway), and a partial write is carried to the tick
+// that completes the line.
+func TestPushLogDelta(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "omega.log")
+	if err := os.WriteFile(path, []byte("boot line\n"), 0o644); err != nil {
+		t.Fatalf("seed log: %v", err)
+	}
+	s := newTestServer()
+
+	// nobody holds the topic: the offset walks to the end, nothing is
+	// published and no bytes are read
+	off, carry := s.pushLogDelta(path, 0, "")
+	if off != int64(len("boot line\n")) || carry != "" {
+		t.Fatalf("no-subscriber tick = (%d, %q), want (%d, \"\")", off, carry, len("boot line\n"))
+	}
+	if s.Sockets().Wants(agentapi.TopicLogs) {
+		t.Fatal("a bare hub reports the logs topic as wanted")
+	}
+
+	sub := s.Sockets().Attach()
+	defer sub.Close()
+	if !s.Sockets().Wants(agentapi.TopicLogs) {
+		t.Fatal("an attached subscriber (subscribed to every topic) is not wanted on logs")
+	}
+
+	// a write that lands mid-line is held, not published
+	appendLog(t, path, "second line\nhalf a li")
+	off, carry = s.pushLogDelta(path, off, carry)
+	if carry != "half a li" {
+		t.Fatalf("carry = %q, want the incomplete tail", carry)
+	}
+	msg := readLogFrame(t, sub)
+	if msg.Topic != agentapi.TopicLogs || msg.Session != "" {
+		t.Fatalf("frame = %+v, want a session-less logs frame", msg)
+	}
+	var delta agentapi.LogLines
+	if err := json.Unmarshal(msg.Data, &delta); err != nil {
+		t.Fatalf("decode logs payload: %v", err)
+	}
+	if len(delta.Lines) != 1 || delta.Lines[0] != "second line" {
+		t.Fatalf("delta = %v, want exactly [second line]", delta.Lines)
+	}
+
+	// the completing write emits the whole line, carry cleared
+	appendLog(t, path, "ne\n")
+	off, carry = s.pushLogDelta(path, off, carry)
+	if carry != "" {
+		t.Fatalf("carry after the completing write = %q, want empty", carry)
+	}
+	if err := json.Unmarshal(readLogFrame(t, sub).Data, &delta); err != nil {
+		t.Fatalf("decode second delta: %v", err)
+	}
+	if len(delta.Lines) != 1 || delta.Lines[0] != "half a line" {
+		t.Fatalf("delta = %v, want exactly [half a line]", delta.Lines)
+	}
+
+	// no new bytes: no frame (the follower is silent, never repetitive)
+	off, carry = s.pushLogDelta(path, off, carry)
+	select {
+	case raw := <-sub.Messages():
+		t.Fatalf("frame with no appended bytes: %s", raw)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// truncation/rotation resyncs to the end instead of replaying
+	if err := os.WriteFile(path, []byte("rotated\n"), 0o644); err != nil {
+		t.Fatalf("rotate log: %v", err)
+	}
+	off, carry = s.pushLogDelta(path, off, carry)
+	if off != int64(len("rotated\n")) || carry != "" {
+		t.Fatalf("post-truncation tick = (%d, %q), want the new file size and no carry", off, carry)
+	}
+}
+
+// TestFollowLogsPublishesAppends: the follower goroutine wires the file
+// to the topic end to end - a line appended while a subscriber holds the
+// topic arrives without any REST read in between, and it stops when the
+// server context ends.
+func TestFollowLogsPublishesAppends(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "omega.log")
+	if err := os.WriteFile(path, []byte("boot line\n"), 0o644); err != nil {
+		t.Fatalf("seed log: %v", err)
+	}
+	logger, err := logging.NewFileLogger(path)
+	if err != nil {
+		t.Fatalf("logger: %v", err)
+	}
+	t.Cleanup(func() { _ = logger.Close() })
+	s := newTestServer()
+	s.BindInspectSeams(logger)
+
+	sub := s.Sockets().Attach()
+	defer sub.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.followLogs(ctx)
+	}()
+	// the first tick seeds the offset to the current end (the socket
+	// never replays history) - let it pass before appending the line
+	// this test expects to be pushed
+	time.Sleep(logPushInterval + 200*time.Millisecond)
+
+	appendLog(t, path, "pushed line\n")
+	msg := readLogFrame(t, sub)
+	var delta agentapi.LogLines
+	if err := json.Unmarshal(msg.Data, &delta); err != nil {
+		t.Fatalf("decode logs payload: %v", err)
+	}
+	if len(delta.Lines) != 1 || delta.Lines[0] != "pushed line" {
+		t.Fatalf("delta = %v, want [pushed line]", delta.Lines)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(testWaitTimeout):
+		t.Fatal("followLogs did not exit on context cancellation")
+	}
 }
