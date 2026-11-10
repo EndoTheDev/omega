@@ -7,10 +7,12 @@
 // label beside the BandSelect chip). The node suite has no DOM, so the
 // convergence is pinned structurally on the source - the same
 // contract style tabband.test.ts / sidebar-order.test.ts use:
-//   - settings: card t_529628d5 SUPERSEDED the own-row shape - the
-//     filter seats IN the band again, the LEGAL way (the shared
-//     compact .band-search seat that holds the 22px row); the old
-//     filter row is gone;
+//   - settings: card t_529628d5 superseded the own-row shape with an
+//     in-band seat, then card t_6bebff18 (Endo ruling 2026-11-10,
+//     option B) moved the filter OUT of the band to a pane-top
+//     full-width bar (the VSCode shape) - settings leaves the
+//     band-search roster, which now scopes to the four module tabs
+//     (pinned in bandsearch.test.ts);
 //   - tools: the Skills refresh band-tool pattern in the band;
 //   - insights: ONE window control, no duplicate period label.
 // Run: node --test test/band-breaks.test.ts
@@ -29,21 +31,29 @@ const skills = src("../harness/skills/ui/SkillsList.vue");
 const tabband = src("app/components/ui/TabBand.vue");
 const maincss = src("app/assets/css/main.css");
 
-describe("settings: the filter seats IN the band (card t_529628d5)", () => {
-  it("the band carries the filter - the shared compact seat, title + input on one row", () => {
+describe("settings: the filter heads the pane, OUTSIDE the band (card t_6bebff18)", () => {
+  it("the band is a plain title band - no in-band search seat", () => {
     const bandStart = settings.indexOf('<TabBand title="Settings">');
     const bandEnd = settings.indexOf("</TabBand>", bandStart);
     assert.ok(bandStart >= 0, "the band renders");
     assert.ok(bandEnd > bandStart, "the band closes");
     const chunk = settings.slice(bandStart, bandEnd);
-    assert.match(chunk, /class="band-search"/, "the filter rides the shared seat");
-    assert.match(chunk, /<SearchInput/, "the filter's input seats inside the band");
-    assert.match(chunk, /placeholder="filter settings"/, "same voice, same filter");
+    assert.doesNotMatch(chunk, /class="band-search"/, "the shared seat left with the roster");
+    assert.doesNotMatch(chunk, /<SearchInput/, "no input inside the band");
   });
 
-  it("the old filter row below the band is GONE - source and shared sheet", () => {
+  it("the full-width bar sits between the band and the scrollport", () => {
+    const closeAt = settings.indexOf("</TabBand>");
+    const barAt = settings.indexOf('class="settings-filterbar"');
+    const bodyAt = settings.indexOf('class="settings-body"');
+    assert.ok(closeAt < barAt, "the bar renders BELOW the closed band");
+    assert.ok(barAt < bodyAt, "the bar heads the body, never inside the scrollport");
+  });
+
+  it("the old filter rows are GONE - source and shared sheet", () => {
     assert.ok(!settings.includes('class="settings-filter"'), "no settings-filter row in the SFC");
     assert.ok(!maincss.includes(".settings-filter"), "no settings-filter rule in main.css");
+    assert.ok(!maincss.includes(".settings-search"), "no settings-search rule in main.css");
   });
 
   it("no flush seating remains - the band rides the shared 22/14 contract", () => {
@@ -69,6 +79,7 @@ describe("settings: the filter seats IN the band (card t_529628d5)", () => {
 
   it("the shared SearchInput still carries the behavior via v-model", () => {
     assert.match(settings, /<SearchInput[^>]*v-model="query"/);
+    assert.equal((settings.match(/<SearchInput/g) ?? []).length, 1, "ONE input, moved - not a second");
   });
 });
 

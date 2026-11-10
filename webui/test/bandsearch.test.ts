@@ -1,10 +1,12 @@
 // omega webui: the in-band search across the registry tabs (card
-// t_529628d5, Endo's band-search ruling 2026-11-01): EVERY registry tab
-// - cron, skills, tools, mcp, settings - carries a compact search input
-// in the band's band-tool slot (the sessions sidebar's t_7ee0a673 seat,
-// promoted into TabBand's shared vocabulary), cron's band carries a
-// refresh tool, and the settings filter MOVED inside the band (its old
-// own-row seat died with the ruling). The node suite has no DOM, so:
+// t_529628d5, Endo's band-search ruling 2026-11-01): the FOUR module
+// registry tabs - cron, skills, tools, mcp - carry a compact search
+// input in the band's band-tool slot (the sessions sidebar's
+// t_7ee0a673 seat, promoted into TabBand's shared vocabulary), and
+// cron's band carries a refresh tool. card t_6bebff18 (Endo ruling
+// 2026-11-10, option B) NARROWED that roster: the settings filter LEFT
+// the band and became the pane-top full-width bar (the VSCode shape,
+// pinned below and in band-breaks.test.ts). The node suite has no DOM, so:
 //   - the shared SEAT is pinned on TabBand's source (the geometry laws);
 //   - the per-tab SEATS are structurally pinned: the .band-search
 //     wrapper + the shared SearchInput live INSIDE the band's chunk,
@@ -20,14 +22,14 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 
-// the shared component + the five SFC seats (paths root-relative; the
-// modules' paths leave webui/ - the repo-relative convention)
-const TABS: Array<{ file: string; placeholder: string }> = [
-  { file: "../harness/cron/ui/CronJobs.vue", placeholder: "Search cron jobs" },
-  { file: "../harness/skills/ui/SkillsList.vue", placeholder: "Search skills" },
-  { file: "../harness/tools/ui/ToolsList.vue", placeholder: "Search tools" },
-  { file: "../harness/mcp/ui/McpServers.vue", placeholder: "Search MCP servers" },
-  { file: "app/components/settings/SettingsTab.vue", placeholder: "filter settings" },
+// the shared component + the four SFC seats (paths root-relative; the
+// modules' paths leave webui/ - the repo-relative convention). settings
+// left the roster in card t_6bebff18 - its seat is the pane-top bar.
+const TABS: Array<{ file: string; placeholder: string; scrollClass: string }> = [
+  { file: "../harness/cron/ui/CronJobs.vue", placeholder: "Search cron jobs", scrollClass: "cron-body" },
+  { file: "../harness/skills/ui/SkillsList.vue", placeholder: "Search skills", scrollClass: "skills-body" },
+  { file: "../harness/tools/ui/ToolsList.vue", placeholder: "Search tools", scrollClass: "tools-body" },
+  { file: "../harness/mcp/ui/McpServers.vue", placeholder: "Search MCP servers", scrollClass: "mcp-body" },
 ];
 
 // the shared seat's one definition lives in TabBand's scoped stylesheet
@@ -74,7 +76,7 @@ describe("TabBand: the shared compact search seat (card t_529628d5)", () => {
   });
 });
 
-describe("every registry tab seats its search in the band", () => {
+describe("every module registry tab seats its search in the band", () => {
   for (const t of TABS) {
     it(`${t.file}: the compact seat rides the band, before the scrollport`, () => {
       const src = read(t.file);
@@ -85,22 +87,43 @@ describe("every registry tab seats its search in the band", () => {
       assert.match(chunk, new RegExp(`placeholder="${t.placeholder}"`), "the tab's own search voice");
       // the seat is NOT an own row below the band (the move law): the
       // band chunk closes BEFORE the scrollport
-      const scrollClass = t.file.endsWith("CronJobs.vue")
-        ? "cron-body"
-        : t.file.endsWith("SkillsList.vue")
-          ? "skills-body"
-          : t.file.endsWith("ToolsList.vue")
-            ? "tools-body"
-            : t.file.endsWith("McpServers.vue")
-              ? "mcp-body"
-              : "settings-body";
       const closeAt = src.indexOf("</TabBand>");
-      const searchClassAt = src.indexOf(`class="${scrollClass}"`);
+      const searchClassAt = src.indexOf(`class="${t.scrollClass}"`);
       assert.ok(closeAt < searchClassAt, "the band (with the seat) closes BEFORE the scrollport");
       // the filter's own row is dead in every tab that had one
       assert.doesNotMatch(src, /class="settings-filter"/, "no filter row below the band");
     });
   }
+});
+
+describe("settings: the filter LEFT the band roster (card t_6bebff18)", () => {
+  const settings = read("app/components/settings/SettingsTab.vue");
+
+  it("the band carries NO search seat - it is a plain title band again", () => {
+    const chunk = bandChunk(settings);
+    assert.doesNotMatch(chunk, /band-search/, "no .band-search wrapper inside the band");
+    assert.doesNotMatch(chunk, /<SearchInput/, "no in-band input");
+  });
+
+  it("the pane-top bar sits between the band and the scrollport", () => {
+    const closeAt = settings.indexOf("</TabBand>");
+    const barAt = settings.indexOf('class="settings-filterbar"');
+    const bodyAt = settings.indexOf('class="settings-body"');
+    assert.ok(closeAt > 0, "the band renders");
+    assert.ok(closeAt < barAt, "the bar is BELOW the band, outside it");
+    assert.ok(barAt < bodyAt, "the bar heads the body, before the scrollport");
+  });
+
+  it("the bar IS the shared SearchInput bound to the same query ref", () => {
+    const bar = settings.slice(
+      settings.indexOf('class="settings-filterbar"'),
+      settings.indexOf('class="settings-body"'),
+    );
+    assert.match(bar, /<SearchInput/, "the shared component");
+    assert.match(bar, /v-model="query"/, "same query ref, same filter");
+    assert.match(bar, /placeholder="filter settings"/, "same voice");
+    assert.equal((settings.match(/<SearchInput/g) ?? []).length, 1, "exactly ONE input");
+  });
 });
 
 // --- the pure filters (the node suite runs them without compiling SFCs)
