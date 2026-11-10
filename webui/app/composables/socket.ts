@@ -18,8 +18,28 @@
 import { ref, type Ref } from "vue";
 
 // SOCKET_TOPICS is the closed server-side topic set, in wire order.
-export const SOCKET_TOPICS = ["chat", "chips", "canvas", "runs", "health"] as const;
+export const SOCKET_TOPICS = ["chat", "chips", "canvas", "runs", "health", "logs"] as const;
 export type SocketTopic = (typeof SOCKET_TOPICS)[number];
+
+// DEFAULT_SOCKET_TOPICS is what a page asks for on connect. `logs` is
+// deliberately absent: the log tail is high-frequency and only a mounted
+// logs pane wants it, so the shell adds the topic when such a pane
+// mounts and drops it when the last one unmounts (card t_0e7bc0bb). The
+// server gates on the subscription itself, so a page that never asked
+// receives no log frames at all.
+export const DEFAULT_SOCKET_TOPICS = ["chat", "chips", "canvas", "runs", "health"] as const;
+
+// The logs pane's two window seams (module UI imports no shell code, so
+// the pane and this client meet on CustomEvents - the same seam the
+// kanban board uses for omega-select-board):
+//
+//   pane -> shell: LOG_SUBSCRIBE_EVENT, detail {on: boolean} - a logs
+//                  pane mounted or went away
+//   shell -> pane: LOG_STREAM_EVENT, detail {lines: string[]} to append,
+//                  or {reset: true} after a reconnect (the pane re-reads
+//                  its GET /logs snapshot; nothing is replayed)
+export const LOG_SUBSCRIBE_EVENT = "omega-logs-subscribe";
+export const LOG_STREAM_EVENT = "omega-log-stream";
 
 export type SocketStatus = "idle" | "connecting" | "open" | "reconnecting" | "closed";
 
@@ -56,6 +76,13 @@ export interface HealthPush {
   version?: string;
 }
 
+// LogLinesPush is the logs topic's payload: the lines appended to the
+// server's log file since the previous frame - a delta, never the tail
+// (the pane's first read stays GET /logs).
+export interface LogLinesPush {
+  lines?: string[];
+}
+
 export interface SocketHandlers {
   health?(health: HealthPush): void;
   /** one session's live-run truth moved (the runs topic) */
@@ -66,6 +93,8 @@ export interface SocketHandlers {
   canvas?(event: string, payload: unknown): void;
   /** one chat frame - the run's SSE event verbatim, session-scoped */
   chat?(session: string, event: string, payload: unknown): void;
+  /** the log lines appended since the last frame (never a snapshot) */
+  logs?(lines: string[]): void;
   /** the connection opened; reconnect is true iff it was open before */
   open?(info: { reconnect: boolean }): void;
   close?(): void;
@@ -175,6 +204,16 @@ export function dispatchFrame(env: SocketEnvelope, handlers: SocketHandlers): vo
       handlers.chat?.(env.session ?? "", event, env.data);
       return;
     }
+    case "logs": {
+      // the delta: an array of raw lines appended to the log file. A
+      // frame with no usable lines is a no-op, never a crash.
+      const data = env.data as LogLinesPush | undefined;
+      const lines = Array.isArray(data?.lines)
+        ? data.lines.filter((l): l is string => typeof l === "string")
+        : [];
+      if (lines.length) handlers.logs?.(lines);
+      return;
+    }
     default:
       return;
   }
@@ -222,7 +261,7 @@ export function createSocketClient(
   const status = ref<SocketStatus>("idle");
   const rand = opts.rand ?? Math.random;
   const budget = () => opts.livenessMs ?? SOCKET_LIVENESS_MS;
-  let topics: SocketTopic[] = [...SOCKET_TOPICS];
+  let topics: SocketTopic[] = [...DEFAULT_SOCKET_TOPICS];
   let ws: WebSocket | null = null;
   let attempt = 0;
   let retry: ReturnType<typeof setTimeout> | null = null;

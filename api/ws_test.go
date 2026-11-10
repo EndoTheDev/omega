@@ -178,3 +178,69 @@ func TestSocketRequiresUpgrade(t *testing.T) {
 		t.Fatalf("plain GET /ws status = %d, want 400 (no upgrade headers)", resp.StatusCode)
 	}
 }
+
+// waitWants polls the hub until its wanted() answer for the topic equals
+// want (subscribe messages are processed on the read loop's goroutine).
+func waitWants(t *testing.T, s *Server, topic string, want bool) bool {
+	t.Helper()
+	deadline := time.Now().Add(testWaitTimeout)
+	for time.Now().Before(deadline) {
+		if s.Sockets().Wants(topic) == want {
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return false
+}
+
+// TestSocketLogsTopicGated: `logs` is the sixth topic and the ONLY
+// subscription-gated one - a connection that never asked for it gets
+// nothing when a log delta is published, and a connection that asked
+// gets the typed delta. The gate is what keeps a high-frequency tail
+// from fanning out to every open pane.
+func TestSocketLogsTopicGated(t *testing.T) {
+	s := newTestServer()
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	// the silent half: narrowed to health, so a logs publish must not
+	// reach it
+	quiet := dialSocket(t, ts)
+	if err := quiet.WriteJSON(map[string]any{"type": "subscribe", "topics": []string{"health"}}); err != nil {
+		t.Fatalf("subscribe health: %v", err)
+	}
+	if !waitWants(t, s, agentapi.TopicLogs, false) {
+		t.Fatal("the health-only connection still holds the logs topic")
+	}
+
+	// the listening half: asks for logs explicitly
+	live := dialSocket(t, ts)
+	if err := live.WriteJSON(map[string]any{"type": "subscribe", "topics": []string{"logs"}}); err != nil {
+		t.Fatalf("subscribe logs: %v", err)
+	}
+	if !waitWants(t, s, agentapi.TopicLogs, true) {
+		t.Fatal("the logs connection never took the topic")
+	}
+
+	s.Sockets().Publish(agentapi.TopicLogs, "", agentapi.LogLines{Lines: []string{"2026/11/11 10:00:00 hello", "2026/11/11 10:00:01 world"}})
+
+	msg := readFrame(t, live)
+	if msg.Topic != agentapi.TopicLogs || msg.Session != "" || msg.Event != "" {
+		t.Fatalf("frame = %+v, want a session-less, event-less logs frame", msg)
+	}
+	var delta agentapi.LogLines
+	if err := json.Unmarshal(msg.Data, &delta); err != nil {
+		t.Fatalf("decode logs payload: %v", err)
+	}
+	if len(delta.Lines) != 2 || delta.Lines[0] != "2026/11/11 10:00:00 hello" {
+		t.Fatalf("delta = %v, want the two appended lines verbatim", delta.Lines)
+	}
+
+	// the quiet connection saw none of it (a read error is the ONLY
+	// correct outcome: gorilla marks a connection failed after a read
+	// timeout, so this is the last thing asked of it)
+	_ = quiet.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+	if _, raw, err := quiet.ReadMessage(); err == nil {
+		t.Fatalf("a health-only connection received a logs frame: %s", raw)
+	}
+}

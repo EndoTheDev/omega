@@ -733,7 +733,7 @@ routes - which stay complete and authoritative. The socket is never the
 only way to read a fact.
 
 The client half (card t_896cf5a8, `webui/app/composables/socket.ts`)
-owns one connection per page load: it subscribes to the five topics,
+owns one connection per page load: it subscribes to the five live topics,
 reconnects on an exponential ladder (0.5s doubling, 15s cap, jitter),
 and runs a quiet-wire check - 15s without a frame while the health topic
 beats every 5s means a half-open socket that will never fire `close`
@@ -746,6 +746,16 @@ the panel store and the toast funnel; the verdict list has no topic of
 its own and is refetched on chat call/turn edges, run edges and
 reconnect.
 
+The sixth topic, `logs`, is **subscription-gated** (card t_0e7bc0bb):
+the shell adds it to that one connection only while a logs pane is
+mounted and drops it when the last one unmounts, so a page with no logs
+pane receives no log frames at all. It carries only the lines appended
+to the log file since the previous frame - the snapshot half stays
+`GET /logs` (200 lines), and the pane appends the deltas onto it. The
+pane is module UI, so the two directions ride window `CustomEvent`s
+(`omega-logs-subscribe` out, `omega-log-stream` in) rather than an
+import - the same seam the kanban board uses for `omega-select-board`.
+
 ### Frame envelope
 
 Every pushed frame is one JSON text message:
@@ -754,9 +764,9 @@ Every pushed frame is one JSON text message:
 {"topic": "chat", "session": "s-1", "event": "response_chunk", "seq": 42, "data": {...}}
 ```
 
-- `topic` - one of the five below (the closed set).
+- `topic` - one of the six below (the closed set).
 - `session` - the conversation the frame scopes to; absent on the
-  global topics (`canvas`, `health`).
+  global topics (`canvas`, `health`, `logs`).
 - `event` - the chat topic's SSE event name (`response_chunk`,
   `tool_call`, `tool_result`, `turn_end`, `agent_end`, `error`,
   `view_model_delta`...). Absent elsewhere: the topic is the type and
@@ -779,6 +789,7 @@ Every pushed frame is one JSON text message:
 | `canvas` | one `view_model_delta` panel descriptor | `CanvasEmit` - every mounted capsule's panel state, notifications toasts and board changes included. Panel state names itself in the payload, so the shell carries no capsule noun |
 | `runs` | `{active}` | the run slot: taken in `prepareRun`, released when the run's finish hook fires. This is the live-run truth `GET /sessions` used to be polled for |
 | `health` | `{status, uptime_seconds, version}` | the server heartbeat, every 5s. The same body `GET /health` serves |
+| `logs` | `{lines: string[]}` | the log follower (`api/server_inspector.go`): the lines appended to the log file since the previous frame, read by offset from the same path `GET /logs` tails (the write site is `harness/logging`'s `FileLogger`). A DELTA, never the tail - the pane's snapshot is `GET /logs`. Subscription-gated: nothing is read or published while no connection holds the topic, and a subscriber that did not ask receives nothing |
 
 The `chips` topic is the one **lossy** topic: a consumer that falls
 behind drops frames rather than losing the wire (the tool result and
@@ -794,7 +805,7 @@ The only message is a subscription:
 ```
 
 It **replaces** the connection's topic set (a connection starts
-subscribed to all five). Unknown names are dropped; an empty list keeps
+subscribed to all six). Unknown names are dropped; an empty list keeps
 the current set. Any other `type` is ignored.
 
 ### Refusals
