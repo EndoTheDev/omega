@@ -40,11 +40,17 @@ type Server struct {
 	// invisibility journey 30 caught. NewServer wires a private hub so
 	// directly constructed Servers (tests, embedding) stay self-contained.
 	runs *RunHub // detached /chat runs by session id (reattach surface)
+	// sockets is the push channel's fan-out (card t_7624bab1): ONE hub,
+	// every typed topic - chat deltas, chip tails and fills, canvas
+	// deltas, live-run truth, health. Per-server like the run hub's
+	// private default, so a directly constructed Server (tests,
+	// embedding) stays self-contained; the shell attaches connections.
 	// eph is the no-persist (ephemeral) session registry: `eph-` ids
 	// live here, never in the store - invisible to every store-derived
 	// surface, gone at restart (card t_d96a5cd5).
 	eph      ephRegistry
 	store    agent.StoreProvider
+	sockets  *SocketHub
 	settings core.Settings
 	// modules is the optional module-toggle seam (v0.12 E2): the
 	// /modules endpoints serve registry introspection + live toggles
@@ -279,7 +285,7 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 	if tools == nil {
 		tools = map[string]core.Tool{}
 	}
-	s := &Server{agent: a, tools: tools, store: store, settings: settings, modules: modules, registries: registries, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, runs: &RunHub{}, mux: http.NewServeMux()}
+	s := &Server{agent: a, tools: tools, store: store, settings: settings, modules: modules, registries: registries, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, runs: &RunHub{}, sockets: NewSocketHub(), mux: http.NewServeMux()}
 	// Chat panel capsule (chat-last 1/3): default-wired so a directly
 	// constructed Server (tests, embedding) has the push hooks and the
 	// panel even without the plugin's channel-start handoff.
@@ -508,6 +514,11 @@ func (s *Server) BindInspectSeams(logger agent.LoggerProvider) {
 
 // BindRunHub swaps the per-process run registry in (HTTPChannel.wire).
 func (s *Server) BindRunHub(h *RunHub) { s.runs = h }
+
+// Sockets exposes the push channel's hub: the serving shell attaches
+// websocket connections here and pushes the health heartbeat (the
+// transport lives in the shell, the fan-out lives with the loop).
+func (s *Server) Sockets() *SocketHub { return s.sockets }
 
 // BindChatCapsule binds the plugin's registered chat capsule.
 func (s *Server) BindChatCapsule(c *ChatCapsule) { s.chat = c }
@@ -1009,6 +1020,11 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	if !live {
 		return nil, &runError{http.StatusConflict, "session already running"}
 	}
+	// Live-run truth on the push channel (card t_7624bab1): the slot was
+	// just taken - human sends and wake launches (launchWake calls
+	// prepareRun too) both land here, so the runs topic's "active" edge
+	// has exactly one source. The release edge is launchRun's finish hook.
+	s.publishRunState(req.SessionID, true)
 
 	// One session row up front (card t_9de5b009): the model pin, the
 	// workspace scope and the title kick all resolve from the same
@@ -1051,6 +1067,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	messages, err := s.sessionHistory(ctx, req, incoming)
 	if err != nil {
 		s.runs.finish(run)
+		s.publishRunState(req.SessionID, false)
 		return nil, err
 	}
 
@@ -1117,6 +1134,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	prov, pinErr := s.pinProvider(req)
 	if pinErr != nil {
 		s.runs.finish(run)
+		s.publishRunState(req.SessionID, false)
 		return nil, pinErr
 	}
 
@@ -1324,6 +1342,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := setupSSE(w)
 		if !ok {
 			s.runs.finish(cr.run)
+			s.publishRunState(cr.run.id, false)
 			return
 		}
 		// Tell the client its session id before any run frames: the

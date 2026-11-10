@@ -410,6 +410,75 @@ func WithRunWorkspace(ctx context.Context, dir, promptContext string) context.Co
 	return context.WithValue(ctx, runScopeKey{}, runScope{CWD: dir, PromptContext: promptContext})
 }
 
+// --- the run output tap (push channel, card t_7624bab1) ------------------
+//
+// A tool that produces output OVER TIME (the shell) publishes the bytes
+// it has written so far through this ctx-carried sink while the call is
+// still running - the pending chip's streaming source. Nothing buffers
+// here: the sink belongs to the serving channel, which fans the chunks
+// out or drops them. A chunk is a HINT, the tool result is truth (the
+// same law the socket topics follow), so a lost chunk costs nothing.
+// Unset = no streaming, exactly the pre-tap behavior.
+type ToolOutputChunk struct {
+	// CallID and Tool identify the running call. The loop stamps them
+	// on the per-call ctx (WithToolCall); a tool never sets them.
+	CallID string
+	Tool   string
+	// Text is the newly written bytes this chunk carries.
+	Text string
+	// Truncated reports that the producer's own cap dropped bytes from
+	// this write (the truncation-marker law: the streaming path says so
+	// instead of pretending the output ended).
+	Truncated bool
+}
+
+// RunOutputTap receives one live output chunk. Implementations must not
+// block (the producer writes under its own buffer lock).
+type RunOutputTap func(ToolOutputChunk)
+
+type runOutputTapKey struct{}
+
+type toolCallScope struct {
+	CallID string
+	Tool   string
+}
+
+type toolCallKey struct{}
+
+// WithRunOutputTap returns a child context carrying the run's output
+// tap. Values are run-scoped: each Run caller wraps its own context, so
+// parallel runs never share a sink.
+func WithRunOutputTap(ctx context.Context, tap RunOutputTap) context.Context {
+	if tap == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, runOutputTapKey{}, tap)
+}
+
+// WithToolCall tags a tool's per-call context with the call identity the
+// loop knows and the tool cannot (the tap payload's routing keys).
+func WithToolCall(ctx context.Context, callID, tool string) context.Context {
+	if callID == "" && tool == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, toolCallKey{}, toolCallScope{CallID: callID, Tool: tool})
+}
+
+// EmitToolOutput hands one live output chunk to the run's tap. A context
+// without a tap (the CLI loop, tests) is a silent no-op - the tool never
+// needs to know whether anyone is streaming.
+func EmitToolOutput(ctx context.Context, text string, truncated bool) {
+	tap, _ := ctx.Value(runOutputTapKey{}).(RunOutputTap)
+	if tap == nil {
+		return
+	}
+	if text == "" && !truncated {
+		return
+	}
+	call, _ := ctx.Value(toolCallKey{}).(toolCallScope)
+	tap(ToolOutputChunk{CallID: call.CallID, Tool: call.Tool, Text: text, Truncated: truncated})
+}
+
 // The trust capsule's own consumer surfaces (the serving surface's
 // workspace prompt-context resolution, the approval gate, the CLI
 // loop) declare their private read faces; core carries none.

@@ -191,6 +191,12 @@ func (l sessionTypedLedger) All() []agent.PendingCall {
 // dispatched executor through agent.SetYieldWake) and tries to drain
 // the home.
 func (s *Server) wakeHome(sessionID string, res core.YieldResult) {
+	// The pending chip fills on the push channel (card t_7624bab1): every
+	// settled out-of-band call passes here (immediate-yield dispatches and
+	// budget escalations alike), so the chips topic's fill needs no second
+	// hook. Published BEFORE the drain - the chip settles the moment the
+	// result is in hand, not when the wake turn gets the slot.
+	s.publishChipFill(sessionID, res)
 	s.wakes.enqueue(sessionID, res)
 	s.drainWakes(sessionID)
 }
