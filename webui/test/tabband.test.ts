@@ -36,10 +36,11 @@ const TABS: Array<{
   { file: "app/components/shell/ExtensionsTab.vue", title: "Modules", scrollClass: "inspector-extensions", actions: [] },
   { file: "../harness/continuous/ui/AgentsPanel.vue", title: "Agents", scrollClass: "agents-body", actions: ["scaffold a new agent directory"] },
   { file: "../harness/store/ui/InsightsTab.vue", title: "Insights", scrollClass: "insights-scroll", actions: ["window in days, 0 = all time"] },
-  { file: "app/components/settings/SettingsTab.vue", title: "Settings", scrollClass: "settings-body", actions: ["filter settings"] },
-  // card t_529628d5 (Endo's band-search ruling, 2026-11-01): the EXISTING
-  // settings filter SEATED IN the band - card t_f1a034dc's own filter row
-  // below it died with the ruling (band-breaks.test.ts pins the move).
+  // card t_6bebff18 (Endo ruling 2026-11-10, option B): settings LEFT the
+  // band-search roster - the filter is the pane-top full-width bar, so the
+  // band carries the title alone (bandsearch.test.ts + band-breaks.test.ts
+  // pin the bar). The band itself still rides the shared contract.
+  { file: "app/components/settings/SettingsTab.vue", title: "Settings", scrollClass: "settings-body", actions: [] },
   // card t_9794272d (Endo's de-crowd ruling, 2026-11-06): the two actions
   // are ICON-only band tools now - the verbs live on the title/aria-label
   // attrs, which the action probe below matches (the tooltip string is
