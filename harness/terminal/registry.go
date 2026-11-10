@@ -1,29 +1,29 @@
-// Package process owns the daemon registry (card t_5782d11e): shell
-// commands that must keep running past the call that started them -
-// servers, watchers, anything that must outlive the turn - started
-// detached, state-persisted, and managed from the agent. Anything that
-// finishes belongs to shell.run (a long command pends past the inline
-// budget and re-enters as the call's result); the registry exists for
-// daemons, whose output goes to a log instead of the context and whose
-// handle must survive the call, the session and omega itself.
+// The shell registry (born as the process capsule, card t_5782d11e;
+// folded into the ONE shell domain, card t_5a49790b): every shell.run
+// call starts its command DETACHED - its own process group, a state
+// row here, and a per-shell log file - so a call that is still running
+// when the turn ends keeps running, survives an omega restart, and
+// stays readable and killable by id through shell.list / shell.read /
+// shell.kill. There is no second tool family: the registry is the
+// machinery underneath the one shell verb set.
 //
-// Processes are detached by design: they are started in their own
-// process group, never tied to omega's lifetime, and outlive omega
-// restarts. The registry state lives in <home>/data/process.json, each
-// process's combined stdout+stderr in <home>/logs/process/<name>.log.
-// A process whose pid is gone when the registry next looks = exited.
+// Detachment is the design: the child is never tied to omega's
+// lifetime. State lives in <home>/data/process.json (the file keeps
+// its historical name); each shell's combined stdout+stderr in
+// <home>/logs/process/<id>.log. A shell whose pid is gone when the
+// registry next looks = exited.
 //
 // The log retention contract (card t_304afb4e): the log SURVIVES the
-// process - post-mortem reads are the point of a log, so a finished
-// log stays at <name>.log (readable through process.read), trimmed
-// to at most log_max_bytes (the tail is kept - read serves the
-// tail). The name is the history unit: re-spawning an exited name
-// rotates its log to <name>.log.1 (one generation back) and starts a
-// fresh file. The registry itself is capped too: an exited entry and
-// its logs are swept a week after the process finished - the sweep is
-// the registry's ONLY garbage collection (the removal verb died with
-// the async arc, card t_d733b258).
-package process
+// shell - post-mortem reads are the point of a log, so a finished log
+// stays at <id>.log (readable through shell.read), trimmed to at most
+// log_max_bytes (the tail is kept - read serves the tail). The id is
+// the history unit: re-using an exited id rotates its log to
+// <id>.log.1 (one generation back) and starts a fresh file. The
+// registry itself is capped too: an exited entry and its logs are
+// swept a week after the shell finished - the sweep is the registry's
+// ONLY garbage collection (the removal verb died with the async arc,
+// card t_d733b258).
+package terminal
 
 import (
 	"context"
@@ -37,6 +37,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
@@ -52,7 +53,7 @@ const DefaultKillGraceSeconds = 10
 
 // retainExited is how long an exited entry (and its log generations)
 // survive after the process finished: one week, then the load sweep
-// drops them - the registry GC, so process.list must not accumulate
+// drops them - the registry GC, so shell.list must not accumulate
 // every command the instance ever spawned (card t_304afb4e).
 const retainExited = 7 * 24 * time.Hour
 
@@ -67,12 +68,12 @@ const DefaultTailLines = 100
 // must not re-flood the context the line cap was there to save).
 const maxTailBytes = 128 * 1024
 
-// nameMaxLen caps a handle name.
-const nameMaxLen = 64
+// idMaxLen caps a handle name.
+const idMaxLen = 64
 
-// Config carries the module's knobs. Defaults are applied by
-// WithDefaults, so a zero Config (no process: section) still works.
-type Config struct {
+// RegistryConfig carries the module's knobs. Defaults are applied by
+// WithDefaults, so a zero RegistryConfig (no process: section) still works.
+type RegistryConfig struct {
 	// Home is the omega home (host wiring, not a yaml knob).
 	Home string
 	// LogMaxBytes caps one process log across a rotation.
@@ -82,7 +83,7 @@ type Config struct {
 }
 
 // WithDefaults fills zero values with the module constants.
-func (c Config) WithDefaults() Config {
+func (c RegistryConfig) WithDefaults() RegistryConfig {
 	if c.Home == "" {
 		c.Home = datadir.Home()
 	}
@@ -95,19 +96,27 @@ func (c Config) WithDefaults() Config {
 	return c
 }
 
-// Entry is one registry row: identity plus terminal state.
+// Entry is one registry row: the shell's id plus its terminal state.
+// The id is the addressing handle (shell.list prints it, shell.read
+// and shell.kill take it) - there is no second "name" concept.
 type Entry struct {
-	Name       string `json:"name"`
+	ID         string `json:"id"`
 	Command    string `json:"command"`
 	PID        int    `json:"pid"`
 	StartedAt  int64  `json:"started_at"`  // unix seconds
 	FinishedAt int64  `json:"finished_at"` // unix seconds, 0 while running
 	LogPath    string `json:"log_path"`
 	Exited     bool   `json:"exited"`
-	// ExitCode is nil for an exited-unknown process (it died while
+	// ExitCode is nil for an exited-unknown shell (it died while
 	// omega was down, so nothing could reap it) and -1 for a signal
 	// death (Go's convention: ProcessState.ExitCode is -1 on signal).
 	ExitCode *int `json:"exit_code"`
+
+	// done closes when this lifetime's reaper has recorded the exit.
+	// Never serialized: an entry loaded from disk belongs to a previous
+	// omega, so nobody here can wait for it (liveness is the pid
+	// recheck). shell.run waits on it to return the call's output.
+	done chan struct{}
 }
 
 // reaper watches one process spawned this omega lifetime. Its done
@@ -124,7 +133,7 @@ type reaper struct {
 // omega process on the same home shares the state file on disk and
 // reconciles pid liveness on read (the restart-proof path).
 type Registry struct {
-	cfg     Config
+	cfg     RegistryConfig
 	mu      sync.Mutex
 	entries map[string]*Entry
 	reapers map[int]*reaper
@@ -135,7 +144,7 @@ type Registry struct {
 // on the first operation - Mount never touches the filesystem (the
 // goroutine fence: mounting starts no background work; reapers and all
 // writes belong to tool calls).
-func NewRegistry(cfg Config) *Registry {
+func NewRegistry(cfg RegistryConfig) *Registry {
 	return &Registry{
 		cfg:     cfg.WithDefaults(),
 		entries: map[string]*Entry{},
@@ -169,11 +178,17 @@ func (r *Registry) load() {
 	if err := json.Unmarshal(data, &entries); err != nil {
 		// A corrupt registry must not brick the tools: start empty and
 		// let the next save overwrite the bad file.
-		fmt.Fprintf(os.Stderr, "omega process: corrupt %s ignored: %v\n", r.statePath(), err)
+		fmt.Fprintf(os.Stderr, "omega shell: corrupt %s ignored: %v\n", r.statePath(), err)
 		return
 	}
 	for i := range entries {
-		r.entries[entries[i].Name] = &entries[i]
+		if entries[i].ID == "" {
+			// Pre-unification rows carried "name" instead of "id": they
+			// are not addressable by any live verb, so they load as
+			// nothing and the next save drops them.
+			continue
+		}
+		r.entries[entries[i].ID] = &entries[i]
 	}
 	r.sweepLocked()
 }
@@ -223,7 +238,7 @@ func (r *Registry) save() error {
 // next reconcile).
 func (r *Registry) saveNote() {
 	if err := r.save(); err != nil {
-		fmt.Fprintf(os.Stderr, "omega process: save: %v\n", err)
+		fmt.Fprintf(os.Stderr, "omega shell: save: %v\n", err)
 	}
 }
 
@@ -250,7 +265,7 @@ func (r *Registry) reconcileLocked(e *Entry) {
 //
 // Rotation happens ONLY at re-spawn (card t_304afb4e): the pre-fix
 // shape also rotated at exit, which zeroed every post-mortem read -
-// process.read answered "no log yet" for a log sitting renamed beside
+// shell.read answered "no log yet" for a log sitting renamed beside
 // it. The finished log now stays at <name>.log (the retention
 // contract) and the size cap is enforced by capExited at exit.
 func rotateExited(e *Entry) {
@@ -264,15 +279,15 @@ func rotateExited(e *Entry) {
 }
 
 // capExited trims a finished entry's log to at most LogMaxBytes,
-// keeping the TAIL - process.read serves the tail, so the head is
+// keeping the TAIL - shell.read serves the tail, so the head is
 // the cheaper side to lose. Memory-bounded: a chunked copy of the
 // last cap bytes into a temp file, then a rename. This is the
-// enforcement point of process.log_max_bytes (the knob was
+// enforcement point of the log_max_bytes knob (it was
 // documented but never enforced before this card). Best-effort: a
 // failed trim leaves the full log on disk, never a half-written one.
 func (r *Registry) capExited(e *Entry) {
 	if err := trimLogTail(e.LogPath, r.cfg.LogMaxBytes); err != nil {
-		fmt.Fprintf(os.Stderr, "omega process: log trim %s: %v\n", e.LogPath, err)
+		fmt.Fprintf(os.Stderr, "omega shell: log trim %s: %v\n", e.LogPath, err)
 	}
 }
 
@@ -327,60 +342,66 @@ func trimLogTail(path string, keep int64) error {
 	return os.Rename(tmpName, path)
 }
 
-// spawnName sanitizes a handle name or generates one: [A-Za-z0-9._-],
-// 64 chars, empty = p-<millis>.
-func spawnName(name string) string {
+// shellSeq makes generated ids unique within one omega: a turn can
+// dispatch several shell.run calls in the same millisecond (the loop
+// runs the inline batch concurrently), and a colliding id would be
+// refused as "already in use".
+var shellSeq atomic.Uint64
+
+// shellID sanitizes an explicit id or generates one: [A-Za-z0-9._-],
+// 64 chars, empty = sh-<millis>-<seq>.
+func shellID(id string) string {
 	var clean strings.Builder
-	for _, ch := range strings.TrimSpace(name) {
+	for _, ch := range strings.TrimSpace(id) {
 		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
 			(ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '-' {
 			clean.WriteRune(ch)
 		}
-		if clean.Len() >= nameMaxLen {
+		if clean.Len() >= idMaxLen {
 			break
 		}
 	}
 	if clean.Len() == 0 {
-		return fmt.Sprintf("p-%d", time.Now().UnixMilli())
+		return fmt.Sprintf("sh-%d-%d", time.Now().UnixMilli(), shellSeq.Add(1))
 	}
-	if clean.Len() < len(name) {
-		fmt.Fprintf(os.Stderr, "omega process: sanitized spawn name %q -> %q\n", name, clean.String())
+	if clean.Len() < len(id) {
+		fmt.Fprintf(os.Stderr, "omega shell: sanitized id %q -> %q\n", id, clean.String())
 	}
 	return clean.String()
 }
 
-// Spawn starts a command detached and records it. The command runs in
-// its own process group (survives omega dying) under the run's
-// workspace like shell.run, or under dir when the call carries an
-// explicit working-directory override (card t_ccf74d88). The handle
-// name is the key: reusing an exited name rotates the old log;
-// reusing a RUNNING name is refused.
-func (r *Registry) Spawn(ctx context.Context, command, name, dir string) (*Entry, error) {
+// Spawn starts a command detached and records it under id (generated
+// when empty). The command runs in its own process group (survives
+// omega dying) under the run's workspace, or under dir when the call
+// carries an explicit working-directory override (card t_ccf74d88).
+// The id is the key: re-using an exited id rotates the old log;
+// re-using a RUNNING id is refused.
+func (r *Registry) Spawn(ctx context.Context, command, id, dir string) (*Entry, error) {
 	if strings.TrimSpace(command) == "" {
 		return nil, fmt.Errorf("command must not be empty")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.load()
-	name = spawnName(name)
-	if e, ok := r.entries[name]; ok {
+	id = shellID(id)
+	if e, ok := r.entries[id]; ok {
 		r.reconcileLocked(e)
 		if !e.Exited {
-			return nil, fmt.Errorf("process name %q is already in use by pid %d (still running); kill it or pick another name", name, e.PID)
+			return nil, fmt.Errorf("shell id %q is already in use by pid %d (still running); kill it or pick another id", id, e.PID)
 		}
 		rotateExited(e)
 	}
 
-	logPath := filepath.Join(r.logsDir(), name+".log")
+	logPath := filepath.Join(r.logsDir(), id+".log")
 	if err := os.MkdirAll(r.logsDir(), 0o755); err != nil {
 		return nil, fmt.Errorf("create log dir: %w", err)
 	}
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_TRUNC, 0o644)
 	if err != nil {
-		return nil, fmt.Errorf("open process log: %w", err)
+		return nil, fmt.Errorf("open shell log: %w", err)
 	}
 
-	cmd := buildShell(command)
+	cmd := detachedShellCommand(command)
 	tree := detachChild(cmd)
 	cmd.Dir = core.RunWorkspace(ctx)
 	if dir != "" {
@@ -407,20 +428,21 @@ func (r *Registry) Spawn(ctx context.Context, command, name, dir string) (*Entry
 	logFile.Close() // the child holds its own copy of the fd
 
 	e := &Entry{
-		Name:      name,
+		ID:        id,
 		Command:   command,
 		PID:       cmd.Process.Pid,
 		StartedAt: time.Now().Unix(),
 		LogPath:   logPath,
+		done:      make(chan struct{}),
 	}
-	watcher := &reaper{done: make(chan struct{}), tree: tree}
+	watcher := &reaper{done: e.done, tree: tree}
 	r.reapers[e.PID] = watcher
-	r.entries[name] = e
-	// The log contract: the file survives the process (post-mortem
-	// reads), rotates only when THIS name is re-spawned (above), and
-	// is trimmed to log_max_bytes once at exit - the cap never binds
+	r.entries[id] = e
+	// The log contract: the file survives the shell (post-mortem
+	// reads), rotates only when THIS id is re-used (above), and is
+	// trimmed to log_max_bytes once at exit - the cap never binds
 	// mid-flight, and reads never exceed the tail cap regardless: a
-	// runaway log cannot flood the context through process.read.
+	// runaway log cannot flood the context through shell.read.
 	r.saveNote()
 	go func() {
 		waitErr := cmd.Wait()
@@ -430,14 +452,14 @@ func (r *Registry) Spawn(ctx context.Context, command, name, dir string) (*Entry
 		tree.close()
 		r.mu.Lock()
 		// The reaper owns the entry only while it still holds the
-		// name - a replaced name's old entry is out of the map already.
-		live, ok := r.entries[name]
+		// id - a replaced id's old entry is out of the map already.
+		live, ok := r.entries[id]
 		if ok && live == e {
 			code := exitCodeOf(waitErr)
 			e.Exited = true
 			e.ExitCode = &code
 			e.FinishedAt = time.Now().Unix()
-			// The log STAYS at <name>.log: post-mortem reads are the
+			// The log STAYS at <id>.log: post-mortem reads are the
 			// point (card t_304afb4e). Only the size cap runs here.
 			r.capExited(e)
 			r.saveNote()
@@ -469,26 +491,26 @@ func (r *Registry) Close() {
 		select {
 		case <-watcher.done:
 		case <-deadline:
-			fmt.Fprintf(os.Stderr, "omega process: close: %d reaper(s) not joined within the cap\n", len(live))
+			fmt.Fprintf(os.Stderr, "omega shell: close: %d reaper(s) not joined within the cap\n", len(live))
 			return
 		}
 	}
 }
 
 // List resolves every liveness question and returns a snapshot sorted
-// by name.
+// by id.
 func (r *Registry) List() []Entry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.load()
-	names := make([]string, 0, len(r.entries))
-	for name := range r.entries {
-		names = append(names, name)
+	ids := make([]string, 0, len(r.entries))
+	for id := range r.entries {
+		ids = append(ids, id)
 	}
-	sort.Strings(names)
-	out := make([]Entry, 0, len(names))
-	for _, name := range names {
-		e := r.entries[name]
+	sort.Strings(ids)
+	out := make([]Entry, 0, len(ids))
+	for _, id := range ids {
+		e := r.entries[id]
 		r.reconcileLocked(e)
 		out = append(out, *e)
 	}
@@ -496,11 +518,11 @@ func (r *Registry) List() []Entry {
 }
 
 // Find returns a live snapshot of one entry, reconciled.
-func (r *Registry) Find(name string) (Entry, bool) {
+func (r *Registry) Find(id string) (Entry, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.load()
-	e, ok := r.entries[name]
+	e, ok := r.entries[id]
 	if !ok {
 		return Entry{}, false
 	}
@@ -508,29 +530,31 @@ func (r *Registry) Find(name string) (Entry, bool) {
 	return *e, true
 }
 
-// Read tails a process log: at most lines lines (default 100, capped
+// Read tails one shell's log: at most lines lines (default 100, capped
 // at MaxTailLines) and at most maxTailBytes. Returns the tail text,
-// the file size, and whether older lines were cut.
-func (r *Registry) Read(name string, lines int) (string, int64, bool, error) {
+// the file size, and whether older lines were cut. The read is live:
+// each call re-reads the file, so a running shell's newest output is
+// there, and a finished shell's log is there too (post-mortem).
+func (r *Registry) Read(id string, lines int) (string, int64, bool, error) {
 	if lines <= 0 {
 		lines = DefaultTailLines
 	}
 	if lines > MaxTailLines {
 		lines = MaxTailLines
 	}
-	e, ok := r.Find(name)
+	e, ok := r.Find(id)
 	if !ok {
-		return "", 0, false, fmt.Errorf("no process named %q (see process.list)", name)
+		return "", 0, false, fmt.Errorf("no shell with id %q (see shell.list)", id)
 	}
 	data, err := os.ReadFile(e.LogPath)
 	if os.IsNotExist(err) && e.Exited {
 		// Legacy state (pre-t_304afb4e): a reaper-era registry rotated
-		// a finished log to <name>.log.1 at exit; the surviving
+		// a finished log to <id>.log.1 at exit; the surviving
 		// generation is still the post-mortem read.
 		data, err = os.ReadFile(e.LogPath + ".1")
 	}
 	if os.IsNotExist(err) {
-		return fmt.Sprintf("no log yet for %q", name), 0, false, nil
+		return fmt.Sprintf("no log yet for shell %q", id), 0, false, nil
 	}
 	if err != nil {
 		return "", 0, false, fmt.Errorf("read log: %w", err)
@@ -553,7 +577,7 @@ func (r *Registry) Read(name string, lines int) (string, int64, bool, error) {
 	return out, int64(len(data)), cut > 0, nil
 }
 
-// Kill stops a process: TERM first, KILL after the grace. A process
+// Kill stops one shell by id: TERM first, KILL after the grace. A process
 // spawned this lifetime is reaped by its watcher goroutine (real exit
 // code); an orphan (spawned by a previous omega, or merely known to
 // the state file) is confirmed dead by pid liveness and recorded as
@@ -563,18 +587,18 @@ func (r *Registry) Read(name string, lines int) (string, int64, bool, error) {
 // record its exit before it closes its done channel, and a registry
 // held hostage for the whole grace would block every list/read behind
 // a dying process. The re-finalize under the lock is a fresh lookup.
-func (r *Registry) Kill(name string) (string, error) {
+func (r *Registry) Kill(id string) (string, error) {
 	r.mu.Lock()
 	r.load()
-	e, ok := r.entries[name]
+	e, ok := r.entries[id]
 	if !ok {
 		r.mu.Unlock()
-		return "", fmt.Errorf("no process named %q (see process.list)", name)
+		return "", fmt.Errorf("no shell with id %q (see shell.list)", id)
 	}
 	r.reconcileLocked(e)
 	if e.Exited {
 		r.mu.Unlock()
-		return fmt.Sprintf("%q already exited (%s)", name, stateOf(e)), nil
+		return fmt.Sprintf("shell %q already exited (%s)", id, stateOf(e)), nil
 	}
 	pid := e.PID
 	watcher, owned := r.reapers[pid]
@@ -589,8 +613,8 @@ func (r *Registry) Kill(name string) (string, error) {
 	if termErr != nil {
 		r.mu.Unlock()
 		// The process died between the liveness check and the signal.
-		if cur, ok := r.Find(name); ok && cur.Exited {
-			return fmt.Sprintf("%q already exited before the TERM landed (%s)", name, stateOf(&cur)), nil
+		if cur, ok := r.Find(id); ok && cur.Exited {
+			return fmt.Sprintf("shell %q already exited before the TERM landed (%s)", id, stateOf(&cur)), nil
 		}
 		return "", fmt.Errorf("TERM pid %d: %w", pid, termErr)
 	}
@@ -621,9 +645,9 @@ func (r *Registry) Kill(name string) (string, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	current, ok := r.entries[name]
+	current, ok := r.entries[id]
 	if !ok || current != e {
-		return fmt.Sprintf("%q (pid %d) killed; the handle was replaced meanwhile", name, pid), nil
+		return fmt.Sprintf("%q (pid %d) killed; the id was replaced meanwhile", id, pid), nil
 	}
 	if !current.Exited {
 		// Orphan: nobody could reap it, the exit code is unknown.
@@ -632,7 +656,7 @@ func (r *Registry) Kill(name string) (string, error) {
 		current.FinishedAt = time.Now().Unix()
 		r.saveNote()
 	}
-	return fmt.Sprintf("%q (pid %d) stopped (%s)", name, current.PID, stateOf(current)), nil
+	return fmt.Sprintf("%q (pid %d) stopped (%s)", id, current.PID, stateOf(current)), nil
 }
 
 // stateOf renders a state line.
@@ -663,13 +687,6 @@ func exitCodeOf(err error) int {
 		return ee.ExitCode()
 	}
 	return -1
-}
-
-// buildShell builds the detached shell command: cmd /C on windows,
-// sh -c elsewhere - the same shells shell.run uses (the serializer
-// lives in the GOOS-tagged shell_windows.go / shell_unix.go).
-func buildShell(command string) *exec.Cmd {
-	return shellCommand(command)
 }
 
 // waitForDeath polls pid liveness until it drops or the budget ends.

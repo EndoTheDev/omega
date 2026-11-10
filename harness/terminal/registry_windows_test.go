@@ -1,6 +1,6 @@
 //go:build windows
 
-package process
+package terminal
 
 import "testing"
 
@@ -13,7 +13,7 @@ import "testing"
 // (nightly 42410701275).
 func TestBuildShellRawCommandLineWindows(t *testing.T) {
 	command := `powershell -NoProfile -Command "$x=5; Write-Output $x"`
-	c := buildShell(command)
+	c := detachedShellCommand(command)
 	if c.SysProcAttr == nil || c.SysProcAttr.CmdLine != "cmd /C "+command {
 		t.Fatalf("the shell string must ride a raw command line verbatim, got CmdLine=%q", c.SysProcAttr.CmdLine)
 	}

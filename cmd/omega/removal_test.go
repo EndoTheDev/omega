@@ -18,7 +18,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/kanban"
-	"github.com/EndoTheDev/omega/harness/process"
 	"github.com/EndoTheDev/omega/harness/terminal"
 )
 
@@ -1892,127 +1891,124 @@ func TestApprovalRemovalProof(t *testing.T) {
 	t.Log("PROOF removed: the seam is the whole feature - taking the module out takes detection, ladder, cache and audit file with it")
 }
 
-// TestProcessRemovalProof is the background-process-registry proof
-// (card t_5782d11e). Process is the tool-face born-capsule: the four
-// process.* verbs (the daemon registry) are the whole surface - no
-// command, no REST route, no prompt section, no canvas panel, no webui
-// surface. The two mounts are the proof:
+// TestShellDomainIsTheOnlyCommandSurface is the shell-unification
+// proof (card t_5a49790b). The process capsule is deleted outright: the
+// registry machinery it was built on now sits under the terminal
+// capsule, and one shell verb set answers every command.
 //
-//  1. WITH process: buildPlugins carries the toggleable capsule and
-//     the four verbs register through the additive tools seam; a real
-//     spawn→read→kill round-trip answers through the tool face.
-//  2. WITHOUT process: the module is out of buildPlugins - no verb
-//     survives anywhere in the mounted tool set, nothing Requires it,
-//     and removing harness/process takes the registry, the state file
-//     and the log directory whole (the capsule law).
-func TestProcessRemovalProof(t *testing.T) {
+//  1. No process.* tool name survives anywhere in the mounted surface,
+//     and harness/process is gone from the tree (the deletion proof).
+//  2. shell.run/list/read/kill register through the additive tools
+//     seam and answer a real round-trip: run a sleeper, address it from
+//     the list, tail its live log, kill it by id, and read the log
+//     AFTER the exit - post-mortem retention, card t_304afb4e.
+func TestShellDomainIsTheOnlyCommandSurface(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	cfg := DefaultConfig()
-
-	// --- mount 1: the capsule mounted ---
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
 		t.Fatalf("buildPlugins: %v", err)
 	}
-	var procPlugin any
-	for _, p := range plugins {
-		if p.Name() == "process" {
-			procPlugin = p
-		}
-		for _, req := range p.Requires() {
-			if req == "process" {
-				t.Fatalf("FULL MOUNT precondition: %q requires process - the removal takes a dependent", p.Name())
-			}
-		}
-	}
-	if procPlugin == nil {
-		t.Fatal("FULL MOUNT: the process capsule is absent from buildPlugins")
-	}
-	plug, ok := procPlugin.(*process.Plugin)
-	if !ok || !plug.Toggleable() {
-		t.Fatalf("FULL MOUNT: the process capsule is not toggleable")
+	if _, err := os.Stat(filepath.Join("..", "..", "harness", "process")); err == nil {
+		t.Fatal("DELETION PROOF: harness/process still exists on disk")
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
-	reg22, err := agent.MountAllAPI(plugins, ctx, nil, nil)
-	dismountCleanup(t, reg22, ctx)
+	reg, err := agent.MountAllAPI(plugins, ctx, nil, nil)
+	dismountCleanup(t, reg, ctx)
 	if err != nil {
 		t.Fatalf("mount all: %v", err)
 	}
-	wantVerbs := []string{"process.spawn", "process.list", "process.read", "process.kill"}
-	surface := map[string]bool{}
 	for _, tp := range ctx.ToolProviders {
 		for name := range tp.Tools() {
 			if strings.HasPrefix(name, "process.") {
-				surface[name] = true
+				t.Fatalf("DELETION PROOF: %q is still registered - the process verb family was supposed to die", name)
 			}
 		}
 	}
-	if len(surface) != len(wantVerbs) {
-		t.Fatalf("FULL MOUNT: process tool surface = %v, want exactly %v", surface, wantVerbs)
-	}
-	for _, verb := range wantVerbs {
+	for _, verb := range []string{"shell.run", "shell.list", "shell.read", "shell.kill"} {
 		if _, err := pluginTool(ctx, verb); err != nil {
-			t.Fatalf("FULL MOUNT: %s missing (%v)", verb, err)
+			t.Fatalf("shell domain: %s missing (%v)", verb, err)
 		}
 	}
-	// a real round-trip: spawn a sleeper through the tool face, read
-	// the log, kill it. The sleeper must STAY alive until the read (the
-	// echo may land a beat after spawn returns) - the portable pause is
-	// ping -n on windows, sleep elsewhere.
-	spawnCmd := "echo proof-round-trip; sleep 300"
+
+	// The round-trip: a shell that outlives the call's inline window.
+	command := "echo proof-round-trip; sleep 300"
 	if runtime.GOOS == "windows" {
-		spawnCmd = "echo proof-round-trip && ping -n 300 127.0.0.1 > nul"
+		command = "echo proof-round-trip && ping -n 300 127.0.0.1 > nul"
 	}
-	spawnTool, _ := pluginTool(ctx, "process.spawn")
-	res, runErr := spawnTool(context.Background(), map[string]any{"command": spawnCmd, "name": "proof"})
-	if runErr != nil || !strings.Contains(res, "spawned") {
-		t.Fatalf("FULL MOUNT: process.spawn round-trip failed (res=%s err=%v)", res, runErr)
+	runTool, _ := pluginTool(ctx, "shell.run")
+	callDone := make(chan string, 1)
+	go func() {
+		res, runErr := runTool(context.Background(), map[string]any{"command": command})
+		if runErr != nil {
+			res = runErr.Error()
+		}
+		callDone <- res
+	}()
+
+	// shell.list is the addressing surface: the id comes from the list.
+	listTool, _ := pluginTool(ctx, "shell.list")
+	var id string
+	for i := 0; i < 100 && id == ""; i++ {
+		list, listErr := listTool(context.Background(), map[string]any{})
+		if listErr != nil {
+			t.Fatalf("shell.list: %v", listErr)
+		}
+		for _, line := range strings.Split(list, "\n") {
+			if strings.Contains(line, "proof-round-trip") {
+				id = strings.Fields(line)[0]
+			}
+		}
+		if id == "" {
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
-	readTool, _ := pluginTool(ctx, "process.read")
+	if id == "" {
+		t.Fatal("shell.list never showed the running shell")
+	}
+
+	// shell.read tails the LIVE log - the echo may land a beat after the
+	// spawn returns, so poll like a real tail.
+	readTool, _ := pluginTool(ctx, "shell.read")
 	var readRes string
-	var readErr error
-	for i := 0; i < 60; i++ { // the echo may land a beat after spawn returns
-		readRes, readErr = readTool(context.Background(), map[string]any{"name": "proof", "lines": 10})
-		if readErr == nil && strings.Contains(readRes, "proof-round-trip") {
+	for i := 0; i < 100; i++ {
+		readRes, err = readTool(context.Background(), map[string]any{"id": id, "lines": 10})
+		if err == nil && strings.Contains(readRes, "proof-round-trip") {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	if readErr != nil || !strings.Contains(readRes, "proof-round-trip") {
-		t.Fatalf("FULL MOUNT: process.read round-trip failed (res=%s err=%v)", readRes, readErr)
+	if err != nil || !strings.Contains(readRes, "proof-round-trip") {
+		t.Fatalf("shell.read did not tail the live log (res=%q err=%v)", readRes, err)
 	}
-	killTool, _ := pluginTool(ctx, "process.kill")
-	killRes, runErr := killTool(context.Background(), map[string]any{"name": "proof"})
-	if runErr != nil || !strings.Contains(killRes, "stopped") {
-		t.Fatalf("FULL MOUNT: process.kill round-trip failed (res=%s err=%v)", killRes, runErr)
-	}
-	t.Log("PROOF mount=full: the four verbs registered through the additive tools seam; a live spawn/read/kill cycle answered through the tool face")
 
-	// --- mount 2: the capsule removed ---
-	var removed []agent.Plugin
-	for _, p := range plugins {
-		if p.Name() == "process" {
-			continue
-		}
-		removed = append(removed, p)
+	killTool, _ := pluginTool(ctx, "shell.kill")
+	killRes, killErr := killTool(context.Background(), map[string]any{"id": id})
+	if killErr != nil || !strings.Contains(killRes, "stopped") {
+		t.Fatalf("shell.kill by id %s failed (res=%q err=%v)", id, killRes, killErr)
 	}
-	for _, p := range removed {
-		for _, req := range p.Requires() {
-			if req == "process" {
-				t.Fatalf("REMOVED MOUNT precondition: %q requires process", p.Name())
-			}
-		}
+	select {
+	case <-callDone:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the shell.run call never returned after the kill")
 	}
-	ctxRm := &core.Context{Configs: agent.RouteConfigs(removed, cfg)}
-	reg23, err := agent.MountAllAPI(removed, ctxRm, nil, nil)
-	dismountCleanup(t, reg23, ctxRm)
+
+	// Post-mortem: the log outlives the shell.
+	postRes, postErr := readTool(context.Background(), map[string]any{"id": id, "lines": 10})
+	if postErr != nil || !strings.Contains(postRes, "proof-round-trip") {
+		t.Fatalf("post-mortem shell.read lost the log (res=%q err=%v)", postRes, postErr)
+	}
+
+	// The list no longer names it: an exited shell is post-mortem only.
+	list, err := listTool(context.Background(), map[string]any{})
 	if err != nil {
-		t.Fatalf("mount removed set: %v", err)
+		t.Fatalf("shell.list after the kill: %v", err)
 	}
-	for _, verb := range wantVerbs {
-		if _, err := pluginTool(ctxRm, verb); err == nil {
-			t.Fatalf("REMOVED MOUNT: %s survived the removal", verb)
-		}
+	if strings.Contains(list, "proof-round-trip") {
+		t.Fatalf("shell.list still shows the killed shell: %q", list)
 	}
-	t.Log("PROOF removed: zero process.* verbs in the mounted tool set - removing harness/process takes the registry, the state file and the log dir whole")
+	if _, unknownErr := readTool(context.Background(), map[string]any{"id": "no-such-shell"}); unknownErr == nil {
+		t.Fatal("shell.read answered an unknown id instead of failing")
+	}
+	t.Logf("PROOF shell domain: no process.* verb registered; run/list/read/kill round-tripped (id=%s) and the log survived the kill", id)
 }
