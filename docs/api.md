@@ -313,6 +313,15 @@ model slots ride typed pickers, approvals.mode is a select; no-store
 cache headers). `provider.api_key` is MASKED (`****`) and never
 round-trips.
 
+Every knob also carries `default`: the value it takes when config.yaml
+names no key - the built-in defaults with the `OMEGA_*` environment
+overrides applied (the file itself is not consulted: a settings save
+materializes every key, so a file-derived value would never differ from
+the current one). The field is always present; `null` means no default is
+known, which today is only `provider.model_name` (config requires it).
+The settings pane's modified-dot and reset-to-default compare against
+this field (settings tier 2a/2b).
+
 `GET /settings?key=<dotted path>` answers ONE knob - the same knob
 object as it rides inside its group - so a script client reads a
 single value without decoding the group envelope. An unknown key is

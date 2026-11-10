@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -812,5 +814,106 @@ func TestVisionModelDefaultPersistsVerbatim(t *testing.T) {
 	}
 	if knob.Value != "default" {
 		t.Fatalf("refreshed knob value = %v, want default", knob.Value)
+	}
+}
+
+// --- settings tier 2a (card t_d13c7264): machine-readable Default ------
+
+// knobWire renders the schema as the /settings GET really carries it and
+// returns knob key -> the decoded knob object. The defaults are asserted
+// HERE, not on the Go struct, because the pane reads the JSON.
+func knobWire(t *testing.T, payload *core.SettingsSchema) map[string]map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal schema: %v", err)
+	}
+	var wire struct {
+		Groups []struct {
+			Knobs []map[string]any `json:"knobs"`
+		} `json:"groups"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatalf("unmarshal schema: %v", err)
+	}
+	out := map[string]map[string]any{}
+	for _, g := range wire.Groups {
+		for _, k := range g.Knobs {
+			key, _ := k["key"].(string)
+			out[key] = k
+		}
+	}
+	return out
+}
+
+// TestSchemaKnobDefaultRidesTheGET pins three representative knobs on the
+// wire: a text default, a numeric knob whose help prose calls 0 "the
+// default" (the pseudo-default case), and a live knob. tier 2b's
+// modified-dot compares against exactly this field.
+func TestSchemaKnobDefaultRidesTheGET(t *testing.T) {
+	path := writeTestConfig(t, testConfigYAML)
+	payload, err := settingsSchema(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	knobs := knobWire(t, payload)
+	for _, want := range []struct {
+		key  string
+		def  any
+		live bool
+	}{
+		{"store.db_path", "omega.db", false},                  // text default
+		{"sessions.summarize_after_hours", float64(24), true}, // "0 = the default (24h)"
+		{"compaction.threshold", 0.6, true},                   // live knob
+	} {
+		knob, ok := knobs[want.key]
+		if !ok {
+			t.Fatalf("no %s knob on the wire", want.key)
+		}
+		def, present := knob["default"]
+		if !present {
+			t.Fatalf("%s: no default key on the wire (omitempty must not ride this field)", want.key)
+		}
+		if !reflect.DeepEqual(def, want.def) {
+			t.Errorf("%s default = %v (%T), want %v", want.key, def, def, want.def)
+		}
+		if live, _ := knob["live"].(bool); live != want.live {
+			t.Errorf("%s live = %v, want %v", want.key, live, want.live)
+		}
+	}
+}
+
+// TestSchemaDefaultsAreTheFreshConfigLayer is the whole-table pin: a
+// config.yaml naming only the required model_name leaves every knob at
+// its default, so Value must equal Default for all 40 - and the single
+// documented omission (provider.model_name, required by Validate) must
+// answer JSON null rather than being absent. This fails the moment a
+// Default drifts from the config layer it claims to describe.
+func TestSchemaDefaultsAreTheFreshConfigLayer(t *testing.T) {
+	path := writeTestConfig(t, testConfigYAML)
+	payload, err := settingsSchema(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	knobs := knobWire(t, payload)
+	if len(knobs) != len(settingsKnobKeys(t)) {
+		t.Fatalf("schema carries %d knobs, inventory says %d", len(knobs), len(settingsKnobKeys(t)))
+	}
+	omitted := []string{}
+	for key, knob := range knobs {
+		def, present := knob["default"]
+		if !present {
+			t.Fatalf("%s: default key missing from the wire", key)
+		}
+		if def == nil {
+			omitted = append(omitted, key)
+			continue
+		}
+		if !reflect.DeepEqual(knob["value"], def) {
+			t.Errorf("%s: value %v != default %v on a config naming no key", key, knob["value"], def)
+		}
+	}
+	if len(omitted) != 1 || omitted[0] != "provider.model_name" {
+		t.Errorf("knobs without a default = %v, want exactly [provider.model_name]", omitted)
 	}
 }
