@@ -275,3 +275,163 @@ func TestHelpMentionsAgents(t *testing.T) {
 		t.Errorf("help text lost the agents command")
 	}
 }
+
+// testStrPtr is the one-line *string helper for the write-lane calls
+// below (cmd/omega's tests have no shared pointer helper).
+func testStrPtr(s string) *string { return &s }
+
+// TestAgentConfigLayerTier3bRoundTrip is the write lane's end-to-end
+// witness (settings tier 3b prerequisite, card t_53523d5b): the two
+// additive PUT fields are exercised through the real write lane and read
+// back by BOTH consumers - the wake's layer overlay (ApplyAgentLayer) and
+// the settings scope payload (settingsScopes) - because a write nobody
+// reads is not a write lane.
+//
+// The reset half is the reason the lane grew a delete verb at all: the
+// scope payload's overridden flag is STRUCTURAL (the file names the
+// key), so "reset to main" must REMOVE the key, never write main's value
+// down (which would leave a permanent phantom override, and for
+// provider.api_key would persist the read mask as the agent's secret).
+func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
+	// The agent package cannot import this package's mask constant
+	// (layer law), so its mirror must be pinned equal here or the
+	// refusal lane guards a different string than the read lane emits.
+	if agent.MaskedSecretPlaceholder != maskedSecret {
+		t.Fatalf("agent.MaskedSecretPlaceholder = %q, maskedSecret = %q - the mask mirror drifted",
+			agent.MaskedSecretPlaceholder, maskedSecret)
+	}
+
+	home := scopeHome(t, scopeMainConfig, map[string]string{"alpha": scopeAlphaConfig})
+	mainConfigPath := filepath.Join(home, "config", "config.yaml")
+
+	// --- max_turns: write -> layer overlay --------------------------
+	turns := 42
+	if err := agent.UpdateAgentConfigLayer(home, "alpha", agent.AgentConfigUpdates{MaxTurns: &turns}); err != nil {
+		t.Fatalf("write max_turns: %v", err)
+	}
+	lay, err := agent.ReadAgentConfigLayer(home, "alpha")
+	if err != nil {
+		t.Fatalf("read layer: %v", err)
+	}
+	if lay.MaxTurns == nil || *lay.MaxTurns != 42 {
+		t.Fatalf("layer max_turns = %v, want 42", lay.MaxTurns)
+	}
+
+	// The wake's own overlay: the layer's int lands on cfg.
+	cfg := agentLayerBase()
+	cfg.MaxTurns = 11 // main's value, which the layer must win over
+	if err := ApplyAgentLayer(&cfg, home, "alpha"); err != nil {
+		t.Fatalf("apply layer: %v", err)
+	}
+	if cfg.MaxTurns != 42 {
+		t.Fatalf("cfg.MaxTurns after the layer = %d, want 42 (the layer's int)", cfg.MaxTurns)
+	}
+
+	// --- the settings scope payload: 42 is the agent's own -----------
+	schema, err := settingsSchema(mainConfigPath)
+	if err != nil {
+		t.Fatalf("settingsSchema: %v", err)
+	}
+	alpha := scopeByName(t, schema, "alpha")
+	if k := scopeKnob(t, alpha, "max_turns"); k.Value != 42 || !k.Overridden {
+		t.Fatalf("alpha max_turns = %+v, want the written 42, overridden", k)
+	}
+
+	// --- reset: the key goes, main's value comes back ---------------
+	if err := agent.UpdateAgentConfigLayer(home, "alpha", agent.AgentConfigUpdates{
+		Unset: []string{"system_prompt", "max_turns"},
+	}); err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+	lay, err = agent.ReadAgentConfigLayer(home, "alpha")
+	if err != nil {
+		t.Fatalf("read layer after unset: %v", err)
+	}
+	if lay.MaxTurns != nil || lay.SystemPrompt.Set {
+		t.Fatalf("after the reset the layer still overrides: %+v", lay)
+	}
+
+	// The wake inherits main again.
+	cfg = agentLayerBase()
+	cfg.MaxTurns = 11
+	cfg.SystemPrompt = "main prompt"
+	if err := ApplyAgentLayer(&cfg, home, "alpha"); err != nil {
+		t.Fatalf("apply layer after unset: %v", err)
+	}
+	if cfg.MaxTurns != 11 {
+		t.Errorf("cfg.MaxTurns after the reset = %d, want main's 11", cfg.MaxTurns)
+	}
+	if cfg.SystemPrompt != "main prompt" {
+		t.Errorf("cfg.SystemPrompt after the reset = %q, want main's", cfg.SystemPrompt)
+	}
+
+	// The scope payload says "inherited", not "overridden with main's
+	// value" - asserted against the payload's OWN main knob, so the two
+	// surfaces cannot drift.
+	schema, err = settingsSchema(mainConfigPath)
+	if err != nil {
+		t.Fatalf("settingsSchema after unset: %v", err)
+	}
+	alpha = scopeByName(t, schema, "alpha")
+	if k := scopeKnob(t, alpha, "max_turns"); k.Overridden || k.Value != mainKnob(t, schema, "max_turns").Value {
+		t.Errorf("alpha max_turns = %+v, want inherited main value + overridden=false", k)
+	}
+	if k := scopeKnob(t, alpha, "system_prompt"); k.Overridden || k.Value != mainKnob(t, schema, "system_prompt").Value {
+		t.Errorf("alpha system_prompt = %+v, want inherited main value + overridden=false", k)
+	}
+	// The knobs the reset did not name keep their overrides.
+	if k := scopeKnob(t, alpha, "provider.type"); !k.Overridden {
+		t.Errorf("provider.type = %+v, want the untouched override", k)
+	}
+	if k := scopeKnob(t, alpha, "provider.api_key"); !k.Overridden || k.Value != maskedSecret {
+		t.Errorf("provider.api_key = %+v, want the mask + overridden", k)
+	}
+
+	// --- a provider sub-key reset falls back for THAT knob only -----
+	if err := agent.UpdateAgentConfigLayer(home, "alpha", agent.AgentConfigUpdates{
+		ModelName: testStrPtr("scout-model"),
+	}); err != nil {
+		t.Fatalf("set model_name: %v", err)
+	}
+	if err := agent.UpdateAgentConfigLayer(home, "alpha", agent.AgentConfigUpdates{
+		Unset: []string{"provider.model_name"},
+	}); err != nil {
+		t.Fatalf("unset model_name: %v", err)
+	}
+	cfg = agentLayerBase()
+	cfg.Provider.ModelName = "main-model"
+	if err := ApplyAgentLayer(&cfg, home, "alpha"); err != nil {
+		t.Fatalf("apply layer after model_name reset: %v", err)
+	}
+	if cfg.Provider.ModelName != "main-model" {
+		t.Errorf("model_name after the reset = %q, want main's main-model", cfg.Provider.ModelName)
+	}
+	if cfg.Provider.Type != "openai" {
+		t.Errorf("provider.type after the model_name reset = %q, want the layer's openai", cfg.Provider.Type)
+	}
+	schema, err = settingsSchema(mainConfigPath)
+	if err != nil {
+		t.Fatalf("settingsSchema after model_name reset: %v", err)
+	}
+	alpha = scopeByName(t, schema, "alpha")
+	if k := scopeKnob(t, alpha, "provider.model_name"); k.Overridden {
+		t.Errorf("provider.model_name = %+v, want inherited after its reset", k)
+	}
+	if k := scopeKnob(t, alpha, "provider.type"); !k.Overridden || k.Value != "openai" {
+		t.Errorf("provider.type = %+v, want the untouched openai override", k)
+	}
+
+	// --- no path ever persists the read mask as the secret ----------
+	if err := agent.UpdateAgentConfigLayer(home, "alpha", agent.AgentConfigUpdates{
+		APIKey: testStrPtr(agent.MaskedSecretPlaceholder),
+	}); err == nil {
+		t.Error("the write lane accepted the read mask as an api_key")
+	}
+	raw, err := os.ReadFile(agent.AgentConfigPath(home, "alpha"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), maskedSecret) {
+		t.Errorf("the layer carries the read mask:\n%s", raw)
+	}
+}

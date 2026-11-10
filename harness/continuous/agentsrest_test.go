@@ -20,6 +20,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
@@ -291,5 +292,122 @@ func TestAgentUpdateEndpoint(t *testing.T) {
 	// unscaffolded provider type: the 400 lane.
 	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{"provider_type": "gemini"}); res != http.StatusBadRequest {
 		t.Errorf("bad provider status = %d (%s), want 400", res, body)
+	}
+}
+
+// TestAgentUpdateEndpointMaxTurns pins the wire shape of the first
+// additive field (settings tier 3b, card t_53523d5b): max_turns arrives
+// as a JSON NUMBER and lands as a yaml int the wake can parse, 0 is a
+// real value, and every malformed shape is the 400 lane.
+func TestAgentUpdateEndpointMaxTurns(t *testing.T) {
+	srv, _, home := newAgentsFixture(t)
+
+	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{"max_turns": 42}); res != http.StatusOK {
+		t.Fatalf("max_turns update status = %d (%s)", res, body)
+	}
+	lay, err := agent.ReadAgentConfigLayer(home, "scout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lay.MaxTurns == nil || *lay.MaxTurns != 42 {
+		t.Fatalf("layer max_turns = %v, want 42", lay.MaxTurns)
+	}
+	// The file itself carries the int, not a quoted string.
+	body, err := os.ReadFile(agent.AgentConfigPath(home, "scout"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "max_turns: 42") {
+		t.Fatalf("layer file:\n%s", body)
+	}
+
+	// 0 = no cap, a real value.
+	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{"max_turns": 0}); res != http.StatusOK {
+		t.Fatalf("max_turns 0 status = %d (%s)", res, body)
+	}
+	lay, err = agent.ReadAgentConfigLayer(home, "scout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lay.MaxTurns == nil || *lay.MaxTurns != 0 {
+		t.Fatalf("layer max_turns = %v, want the explicit 0", lay.MaxTurns)
+	}
+
+	// Refusals: negative (config.go's floor) and a string (the wire
+	// says JSON number - "42" must never reach the layer).
+	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{"max_turns": -1}); res != http.StatusBadRequest {
+		t.Errorf("negative max_turns status = %d (%s), want 400", res, body)
+	}
+	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{"max_turns": "42"}); res != http.StatusBadRequest {
+		t.Errorf("string max_turns status = %d (%s), want 400", res, body)
+	}
+}
+
+// TestAgentUpdateEndpointUnset pins the second additive field: the
+// dotted reset vocabulary deletes the layer's key pairs (the fallback to
+// main), and the refusals - unknown name, group name, set+unset in one
+// request, the read mask as a secret - are all 400.
+func TestAgentUpdateEndpointUnset(t *testing.T) {
+	srv, _, home := newAgentsFixture(t)
+
+	// Seed overrides through the same endpoint (the one write path).
+	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{
+		"system_prompt": "be terse",
+		"max_turns":     42,
+		"model_name":    "claude-4",
+		"provider_type": "ollama",
+	}); res != http.StatusOK {
+		t.Fatalf("seed update status = %d (%s)", res, body)
+	}
+
+	// The reset: both keys leave the file, the provider knob stays.
+	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{
+		"unset": []string{"system_prompt", "max_turns"},
+	}); res != http.StatusOK {
+		t.Fatalf("unset status = %d (%s)", res, body)
+	}
+	lay, err := agent.ReadAgentConfigLayer(home, "scout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lay.SystemPrompt.Set || lay.MaxTurns != nil {
+		t.Fatalf("after unset the layer still overrides: %+v", lay)
+	}
+	if !lay.ModelName.Set || lay.ModelName.Value != "claude-4" {
+		t.Fatalf("provider.model_name was not left alone: %+v", lay.ModelName)
+	}
+
+	// A sub-key reset falls back for that knob only.
+	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{
+		"unset": []string{"provider.model_name"},
+	}); res != http.StatusOK {
+		t.Fatalf("unset model_name status = %d (%s)", res, body)
+	}
+	lay, err = agent.ReadAgentConfigLayer(home, "scout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lay.ModelName.Set {
+		t.Fatalf("model_name still overridden after its unset: %+v", lay.ModelName)
+	}
+	if !lay.ProviderType.Set {
+		t.Fatalf("provider.type was collateral damage: %+v", lay.ProviderType)
+	}
+
+	// Refusal lanes.
+	for name, payload := range map[string]map[string]any{
+		"unknown unset name":           {"unset": []string{"provider.model"}},
+		"group name is not a knob":     {"unset": []string{"provider"}},
+		"set and unset in one request": {"system_prompt": "x", "unset": []string{"system_prompt"}},
+		"masked api_key":               {"api_key": agent.MaskedSecretPlaceholder},
+	} {
+		if res, body := putAny(t, srv.URL+"/agents/scout", payload); res != http.StatusBadRequest {
+			t.Errorf("%s: status = %d (%s), want 400", name, res, body)
+		}
+	}
+
+	// The DEFAULT agent still answers 409 first, whatever the body.
+	if res, body := putAny(t, srv.URL+"/agents/default", map[string]any{"unset": []string{"max_turns"}}); res != http.StatusConflict {
+		t.Errorf("default agent unset status = %d (%s), want 409", res, body)
 	}
 }

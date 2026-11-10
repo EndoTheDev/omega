@@ -389,9 +389,32 @@ window help reports what startup auto-probed).
   t_2d8deb8c) and leaves config.yaml untouched.
 - `PUT /agents/{name}` — the node-preserving agent config layer
   editor: description, the provider layer (type, model_name, host,
-  api_key), system_prompt. Absent/nil fields leave the layer untouched;
-  the default agent answers 409 (`ErrAgentConfigLocked`). Sits beside
-  the Agents tab's expansion editor.
+  api_key), system_prompt, max_turns. Absent/nil fields leave the layer
+  untouched; the default agent answers 409 (`ErrAgentConfigLocked`). Sits
+  beside the Agents tab's expansion editor.
+
+  Settings tier 3b (t_53523d5b) added the two fields the scope tabs
+  need, both additive — an old body is unchanged in meaning:
+
+  - `max_turns` (JSON **number**, not a string): written as a yaml int,
+    because a wake unmarshals the layer straight into the runtime's int
+    knob. `0` is a real value ("no cap"); omitting the field is what
+    means unset. Negative answers **400** (`max_turns must be >= 0`,
+    the same floor `config.yaml` validation applies).
+  - `unset` (array of dotted knob paths: `description`,
+    `system_prompt`, `provider.type`, `provider.model_name`,
+    `provider.host`, `provider.api_key`, `max_turns`): the RESET verb.
+    Each named key pair is deleted from the layer file, every other key,
+    comment and style stays byte-intact, and a `provider` block left with
+    no sub-keys is removed with them. Deleting is what makes a scope fall
+    back to main — the settings payload's `overridden` flag is structural
+    (the file names the key), so writing main's value down would leave a
+    permanent phantom override, and for `provider.api_key` would persist
+    the read mask as the agent's secret. Unknown names, a group name
+    (`provider` alone), and a key both set and unset in one request
+    answer **400**. Sending the read mask (`****`) as `api_key` is
+    **400** too: the reset verb for the secret is
+    `unset: ["provider.api_key"]`.
 
 ### /boards (multi-board registry)
 
