@@ -105,7 +105,7 @@ func TestWriteClass(t *testing.T) {
 	write := []string{
 		"files.write", "files.edit", "files.batch", "skills.write",
 		"skills.update", "skills.curate", "memory.add", "memory.remove",
-		"kanban.create", "kanban.comment", "process.remove",
+		"kanban.create", "kanban.comment", "kanban.delete",
 		"mcp__fs__write_file", "mcp__github__create_issue",
 	}
 	for _, name := range write {
@@ -116,7 +116,7 @@ func TestWriteClass(t *testing.T) {
 	read := []string{
 		"files.read", "files.grep", "files.glob", "skills.read",
 		"shell.run", "search", "web.fetch", "delegate.task",
-		"delegate.status", "process.list", "process.read", "browser.goto",
+		"delegate.status", "shell.list", "shell.read", "shell.kill", "browser.goto",
 		"", "terminal",
 	}
 	for _, name := range read {

@@ -29,9 +29,12 @@ func TestBuildPlugins(t *testing.T) {
 	// +files + the builtin shell plugin (t_48eeb015, the shell-ring
 	// shrink wave 1: the file domain leaves the tools capsule, the
 	// shell.run tool rides the terminal capsule's package) = 24.
+	// -process (t_5a49790b, the ONE shell domain: the process capsule
+	// dissolves into the terminal capsule's shell registry - its four
+	// verbs retired, the machinery stayed) = 23.
 	// +observability (t_8de82cff, the observability arc's engine half:
-	// the event ring + the log tail capsule) = 25.
-	const want = 25
+	// the event ring + the log tail capsule) = 24.
+	const want = 24
 	if len(plugins) != want {
 		t.Fatalf("buildPlugins returned %d plugins, want %d", len(plugins), want)
 	}

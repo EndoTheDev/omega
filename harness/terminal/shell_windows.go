@@ -27,3 +27,13 @@ func shellCommand(ctx context.Context, command string) *exec.Cmd {
 	c.SysProcAttr = &syscall.SysProcAttr{CmdLine: "cmd /C " + command}
 	return c
 }
+
+// detachedShellCommand builds the registry's shell child: no ctx, so a
+// run cancellation never kills it; the caller's detachChild adds the
+// process-group flag and the job-object guard. The command rides the
+// same raw command line as shellCommand above (card t_82107785).
+func detachedShellCommand(command string) *exec.Cmd {
+	c := exec.Command("cmd")
+	c.SysProcAttr = &syscall.SysProcAttr{CmdLine: "cmd /C " + command}
+	return c
+}
