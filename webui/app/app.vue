@@ -645,7 +645,7 @@
   // snapshot lands at boot; the deltas ride the run streams through the
   // host's canvasDelta dep. Panel presence lives in the store, never a
   // hardcoded list (Q5a).
-  import { createCanvasStore, emitLocalToast } from "./composables/canvas";
+  import { announceCanvasReset, createCanvasStore, emitLocalToast } from "./composables/canvas";
   import { normalizeCanvasPanel } from "./composables/omega";
   import {
     createSocketClient,
@@ -1756,6 +1756,13 @@
     void canvas.refresh();
     void refreshNotifications();
     void host.reconnectCatchUp();
+    // the canvas snapshot above refreshes the SHELL's panels; a module
+    // view that renders from its own REST route (the kanban board) reads
+    // none of them, and the delta it missed while the socket was down is
+    // gone (nothing is replayed). Re-announce on the same canvas event so
+    // that pane re-reads its own GET route - the logs pane's reset rides
+    // the reconnect hook for the same reason (card t_b5784de3).
+    announceCanvasReset();
   }
 
   // --- the session's remembered context (card t_9de5b009) ---

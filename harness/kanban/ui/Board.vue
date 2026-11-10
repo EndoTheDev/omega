@@ -377,17 +377,50 @@
   // event is a pulse: it says "task state moved", the board answers with
   // the same GET its mount fetch runs. Nothing here repeats on a cadence.
   const CANVAS_DELTA_EVENT = "omega-canvas-delta";
+  // The same event also carries a RESET pulse (id "reconnect"): the shell
+  // fires it from its reconnect catch-up, because a delta that landed
+  // while this page's socket was down is never replayed - without the
+  // pulse the board would stay stale until some later mutation happened
+  // to fire. The literal is duplicated from composables/canvas.ts
+  // (CANVAS_RESET_ID) on purpose: module UI imports no shell code.
+  const CANVAS_RESET_ID = "reconnect";
   interface CanvasDeltaPanel {
     id?: string;
+  }
+  // A burst of deltas coalesces into ONE list read: a sibling agent
+  // touching N tasks must not fan N full-list GETs. The first event
+  // queues the read, the rest of the burst ride it.
+  const DELTA_COALESCE_MS = 120;
+  let deltaTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleBoardRefetch() {
+    if (deltaTimer !== null) return; // a read is already queued
+    deltaTimer = setTimeout(() => {
+      deltaTimer = null;
+      void fetchBoard();
+    }, DELTA_COALESCE_MS);
   }
   function onCanvasDelta(ev: Event) {
     const detail = (ev as CustomEvent<CanvasDeltaPanel>).detail;
     if (!detail || typeof detail !== "object") return;
+    if (detail.id === CANVAS_RESET_ID) {
+      // a reconnect: the registry AND the list may have moved while the
+      // socket was down, and no delta survives it - re-read the pane.
+      void reloadAll();
+      return;
+    }
     if (detail.id === "tasks") {
-      void fetchBoard();
+      scheduleBoardRefetch();
       return;
     }
     if (detail.id === "boards") void refreshRegistry();
+  }
+
+  // reloadAll is the reset path: the registry first (the selected board
+  // may have vanished), then the list - fetchBoard never runs on a stale
+  // boardName.
+  async function reloadAll() {
+    await refreshRegistry();
+    await fetchBoard();
   }
 
   // a boards-panel delta: the registry grew or shrank elsewhere. Re-read
@@ -798,6 +831,10 @@
   });
   onUnmounted(() => {
     window.removeEventListener(CANVAS_DELTA_EVENT, onCanvasDelta);
+    if (deltaTimer !== null) {
+      clearTimeout(deltaTimer); // a queued read must not fire into a dead component
+      deltaTimer = null;
+    }
   });
 </script>
 
