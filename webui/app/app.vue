@@ -77,7 +77,6 @@
               :appearance="appearance"
               @update:model="onChatModel(tab, $event)"
               @update:thinking="selectedThinking = $event"
-              @update:workspace="onChatWorkspace(tab, $event)"
               @refresh-models="refreshModels().catch(() => {})" />
           </div>
           <div
@@ -464,7 +463,13 @@
       :live-deltas-per-second="liveDeltasPerSecond"
       :last-chunks-per-second="lastChunksPerSecond"
       :version="healthVersion"
-      :up-seconds="upSeconds" />
+      :up-seconds="upSeconds"
+      :workdir="barWorkdir"
+      :workdir-target="barWorkdirTarget"
+      :pending="pendingCount"
+      :socket="socketStatus"
+      @update:workdir="onBarWorkdir"
+      @focus-pending="focusPendingCalls" />
   </div>
 </template>
 
@@ -511,6 +516,8 @@
     pillVisible,
     lastUserText,
     chatPanelMessageCount,
+    chatPanelPendingCount,
+    transcriptPendingCount,
     chatPanelOf,
     normalizeChatPayload,
     persistedTelemetry,
@@ -595,6 +602,7 @@
   import {
     DEFAULT_WORKSPACE_KNOB,
     defaultWorkspaceNow,
+    effectiveWorkdir,
     setDefaultWorkspace,
   } from "./composables/defaultWorkspace";
   import {
@@ -615,7 +623,7 @@
   // hardcoded list (Q5a).
   import { createCanvasStore, emitLocalToast } from "./composables/canvas";
   import { normalizeCanvasPanel } from "./composables/omega";
-  import { createSocketClient, type SocketClient } from "./composables/socket";
+  import { createSocketClient, type SocketClient, type SocketStatus } from "./composables/socket";
   import { ingestChipFrame } from "./composables/chips";
   import { refreshNotifications } from "./components/shell/notificationFeed";
   import ChatTab from "./components/ChatTab.vue";
@@ -1315,6 +1323,63 @@
   const anyBusyNow = host.anyBusyNow;
   const busyAll = host.busyAll;
 
+  // --- the status bar's two zones (card t_8fd38f88) -----------------------
+  //
+  // LEFT = work context. The workdir selector moved here from the composer
+  // (the chip died with it) and renders the SAME value the chip did: the
+  // never-blank law lives in composables/defaultWorkspace.ts.
+  // RIGHT = live metrics + build; the pending count is the OPEN session's
+  // own transcript (the panel payload when it covers the focused session,
+  // the REST restore otherwise - the messageCount precedent).
+  const focusedChatTab = computed(() =>
+    focusedKey.value ? dock.findChatTab(focusedKey.value) : null,
+  );
+  const barWorkdir = computed(() => {
+    const loc = focusedChatTab.value;
+    // no chat tab focused: the configured default IS the work context (a
+    // new session starts there) and the picker has nothing to write.
+    if (!loc) return defaultWorkspaceNow();
+    const st = host.states.get(loc.tab.key ?? "");
+    return effectiveWorkdir(
+      !!st?.sessionId,
+      chatSession(loc.tab)?.workspace,
+      st?.workspaceIntent,
+    );
+  });
+  const barWorkdirTarget = computed(() => focusedChatTab.value !== null);
+
+  // the write half, byte for byte the composer chip's old two targets: a
+  // bound tab pins the session row (the app PATCHes), an unbound tab holds
+  // the draft intent the first send consumes.
+  function onBarWorkdir(v: string) {
+    const loc = focusedChatTab.value;
+    if (!loc) return;
+    if (loc.tab.sessionRef && loc.tab.sessionRef !== EPHEMERAL_DRAFT_REF) {
+      onChatWorkspace(loc.tab, v);
+      return;
+    }
+    const st = host.states.get(loc.tab.key ?? "");
+    if (st) st.workspaceIntent = v;
+  }
+
+  const pendingCount = computed(() => {
+    const payload = chatPanelPayload.value;
+    if (payload && payload.session === focusedSessionId.value)
+      return chatPanelPendingCount(payload);
+    return transcriptPendingCount(focusedChatState.value.restored);
+  });
+
+  // the pending segment's click: jump to the pane that hosts the open
+  // session (a board view gives the chat outlet back first - the chip
+  // lives inside the chat pane's transcript).
+  function focusPendingCalls() {
+    const loc = focusedChatTab.value;
+    if (!loc) return;
+    mainView.value = "chat";
+    dock.focus(loc.paneId, loc.index);
+    activeChatPaneId.value = loc.paneId;
+  }
+
   function refocusFrom(paneId: string | null) {
     const tree = dock.tree.value;
     if (paneId) {
@@ -1561,6 +1626,10 @@
   // closed in onUnmounted; every fact the old timers fetched arrives as
   // a frame instead (health, runs, canvas, chips, chat).
   let socket: SocketClient | null = null;
+  // the health popover reads the push channel's state ("socket open" vs
+  // reconnecting) - the client owns it as a ref, this mirror makes it
+  // template-readable from before the client exists (card t_8fd38f88).
+  const socketStatus = ref<SocketStatus>("idle");
 
   // hintNotifications pulls the finished-things + pending-verdict truth
   // on an event hint, debounced: the verdict hub has no topic of its own
@@ -2258,6 +2327,8 @@
       },
     });
     socket.connect();
+    // the popover's socket line follows the client's own state ref
+    watch(socket.status, (v) => (socketStatus.value = v), { immediate: true });
     // boot liveness: the dot + the sidebar render before the first
     // pushed frame (up to 5s of health cadence)
     const h = await fetchHealthInfo();
