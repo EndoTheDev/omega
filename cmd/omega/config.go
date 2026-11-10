@@ -404,7 +404,7 @@ func LoadConfig(path string) (Config, error) {
 	if path != "" {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return Config{}, fmt.Errorf("read config: %w", err)
+			return Config{}, configReadError(path, err)
 		}
 		if err := yaml.Unmarshal(data, &cfg); err != nil {
 			return Config{}, fmt.Errorf("parse config: %w", err)
@@ -438,7 +438,7 @@ func LoadConfig(path string) (Config, error) {
 	if path != "" {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return Config{}, fmt.Errorf("read config: %w", err)
+			return Config{}, configReadError(path, err)
 		}
 		if err := yaml.Unmarshal(data, &cfg); err != nil {
 			return Config{}, fmt.Errorf("parse config: %w", err)
@@ -451,6 +451,38 @@ func LoadConfig(path string) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// configReadError wraps a failed config read. When the read hit the
+// pre-v0.8 home-root location, the relocation hint rides along: a
+// first user pointing --config at <home>/config.yaml used to see only
+// the raw OS message ("The system cannot find the file specified") and
+// no sign the file had moved.
+func configReadError(path string, err error) error {
+	if !os.IsNotExist(err) {
+		return fmt.Errorf("read config: %w", err)
+	}
+	return fmt.Errorf("read config: %w%s", err, legacyConfigHint(path))
+}
+
+// legacyConfigHint is the C1 relocation hint. It fires only for a
+// missing <home>/config.yaml - the config/ layout (Endo 2026-10-18)
+// moved the live file to <home>/config/config.yaml, and the error
+// should name it. Every other missing path keeps the plain read error:
+// an arbitrary bad --config value has no relocation to advertise.
+func legacyConfigHint(path string) string {
+	if filepath.Base(path) != "config.yaml" {
+		return ""
+	}
+	home := omegaHome()
+	if !strings.EqualFold(canonPath(filepath.Dir(path)), home) {
+		return ""
+	}
+	moved := home + "/config/config.yaml"
+	if _, err := os.Stat(moved); err == nil {
+		return fmt.Sprintf(" - the config moved to %s (v0.8 layout); pass --config %s", moved, moved)
+	}
+	return fmt.Sprintf(" - config.yaml lives at %s now (v0.8 layout); run `omega setup` to write one", moved)
 }
 
 // foldOmegaJSON migrates the v0.12 omega.json module toggle list into
