@@ -2570,30 +2570,11 @@ labels stopped short of the right edge. */
   flex: 1;
 }
 
-/* group headers: full-row clickable, same interaction feel as the sidebar
-   day groups (.bucket-chevron rotation comes from the shared chevron rule
-   up top) */
-button.settings-group-head {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: var(--text-dim);
-  text-align: left;
-  padding: 2px 0;
-  margin: 0 0 8px;
-}
-button.settings-group-head:hover { color: var(--text); }
-button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
-.settings-group-title {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: inherit;
-}
+/* card t_af7e1150 (settings tier 4): the group-head rules are GONE with
+   the accordion itself. Settings is master-detail now - a category nav
+   on the left, one category in the content pane - so no collapsing
+   section head exists to style. The nav's rules live in the pane's own
+   scoped block (components/settings/SettingsTab.vue). */
 
 .setting-row {
   display: flex;
@@ -2777,9 +2758,9 @@ button.settings-group-head:focus-visible { outline: 1px solid var(--accent); }
 .settings.narrow .setting-help { font-size: 10.5px; }
 
 /* ---- v0.12 E2: the module toggle list (registry introspection) ----
-   card t_8ac225f1: the head is a button.settings-group-head now (it
-   rides the shared group-head rules - chevron, hover, focus-visible);
-   nothing modules-specific is left in the head styles. */
+   card t_af7e1150: the settings group head is gone (settings is master-
+   detail now), so the extensions tab keeps its own row head - the rules
+   above are the pane's, and nothing modules-specific is left here. */
 .module-note {
   flex-basis: 100%;
   margin-left: 24px;

@@ -2348,6 +2348,13 @@ export interface SettingKnob {
   step?: number;
   help?: string;
   live?: boolean;
+  // subgroup is the settings NAV's nesting declaration (card t_af7e1150,
+  // ruling 2): the indented child this knob sits under inside its
+  // domain. The pane stamps it from ONE data table
+  // (components/settings/settingsNav.ts KNOB_SUBGROUPS) - the server
+  // never sends it, because the chat.* and dock.* knobs have no server
+  // schema row at all. Absent = the implicit "general" child.
+  subgroup?: string;
 }
 
 // ProviderInstanceRow is one providers-knob row (card t_7dcd4280,
@@ -2454,6 +2461,9 @@ export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
           step: typeof kn.step === "number" ? kn.step : undefined,
           help: typeof kn.help === "string" ? kn.help : undefined,
           live: kn.live === true,
+          // card t_af7e1150: the nav's nesting field when a host ever
+          // sends it (the pane's own table stamps the rest)
+          subgroup: typeof kn.subgroup === "string" && kn.subgroup !== "" ? kn.subgroup : undefined,
         });
       }
       groups.push({ key: gr.key, label: gr.label, knobs });
