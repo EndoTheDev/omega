@@ -164,9 +164,13 @@ func (ar *agentRoutes) handleAgent(w http.ResponseWriter, r *http.Request) {
 // ruling 3: the agents tab's expansion carries an edit affordance).
 // The write set is the scaffold's field set: description,
 // provider.type / provider.model_name / provider.host /
-// provider.api_key, system_prompt. A nil field is untouched. The
-// DEFAULT agent answers 409: its config IS the home config (the
-// daemon's brain) and the agents tab renders it read-only.
+// provider.api_key, system_prompt - plus settings tier 3b's two
+// additive fields (card t_53523d5b): max_turns (a yaml int node) and
+// unset (the dotted reset vocabulary, which DELETES the named keys so
+// the scope falls back to main instead of pinning a phantom
+// override). A nil field is untouched. The DEFAULT agent answers 409:
+// its config IS the home config (the daemon's brain) and the agents
+// tab renders it read-only.
 func (ar *agentRoutes) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		ar.httpError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -182,12 +186,14 @@ func (ar *agentRoutes) handleAgentUpdate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req struct {
-		Description  *string `json:"description"`
-		ProviderType *string `json:"provider_type"`
-		ModelName    *string `json:"model_name"`
-		Host         *string `json:"host"`
-		APIKey       *string `json:"api_key"`
-		SystemPrompt *string `json:"system_prompt"`
+		Description  *string  `json:"description"`
+		ProviderType *string  `json:"provider_type"`
+		ModelName    *string  `json:"model_name"`
+		Host         *string  `json:"host"`
+		APIKey       *string  `json:"api_key"`
+		SystemPrompt *string  `json:"system_prompt"`
+		MaxTurns     *int     `json:"max_turns"`
+		Unset        []string `json:"unset"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		ar.httpError(w, http.StatusBadRequest, "invalid request: %v", err)
@@ -200,6 +206,8 @@ func (ar *agentRoutes) handleAgentUpdate(w http.ResponseWriter, r *http.Request)
 		Host:         req.Host,
 		APIKey:       req.APIKey,
 		SystemPrompt: req.SystemPrompt,
+		MaxTurns:     req.MaxTurns,
+		Unset:        req.Unset,
 	}
 	if err := agent.UpdateAgentConfigLayer(ar.home, name, updates); err != nil {
 		// A scaffold-law refusal (unknown provider type, the locked

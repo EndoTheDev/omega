@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -46,6 +47,21 @@ var ScaffoldProviderTypes = []string{"ollama", "openai", "anthropic", "mock"}
 // absent facts (the layer's host/api_key are not in the profile
 // payload) can never be blanked by a UI round-trip that did not
 // receive them.
+//
+// MaxTurns and Unset are the settings tier 3b additions (card
+// t_53523d5b). MaxTurns writes the runtime knob as a yaml INT node -
+// the layer's max_turns is unmarshalled straight into Config.MaxTurns
+// int at the next wake, so a quoted "42" would be a boot error, and 0
+// ("no cap") is a real value: nil is what means unset.
+//
+// Unset is the reset verb: each entry names a knob in the SAME dotted
+// vocabulary the settings scope payload uses, and its key pair is
+// DELETED from the layer file instead of being written down with main's
+// value. That difference is the whole point - the scope payload flags a
+// knob "overridden" structurally (the file names the key), so a
+// reset-by-write would leave a permanent phantom override, and for
+// provider.api_key it would persist the literal mask "****" as the
+// agent's secret. Deleting is the only reset that falls back to main.
 type AgentConfigUpdates struct {
 	Description  *string
 	ProviderType *string
@@ -53,6 +69,86 @@ type AgentConfigUpdates struct {
 	Host         *string
 	APIKey       *string
 	SystemPrompt *string
+	MaxTurns     *int
+	Unset        []string
+}
+
+// MaskedSecretPlaceholder is the mask the read lanes put in place of a
+// stored provider.api_key (cmd/omega's maskedSecret, the settings
+// payload's secret knob). It is NOT a secret, so the write lane refuses
+// it: a UI echoing the mask back must never persist "****" as the
+// agent's key. The reset verb for the secret is
+// unset: ["provider.api_key"]. The agent package cannot import the
+// host's constant (layer law), so the literal is mirrored here and a
+// cmd/omega test pins the two strings equal.
+const MaskedSecretPlaceholder = "****"
+
+// ScaffoldUnsetKeys is the dotted vocabulary `unset` accepts: exactly
+// the scaffold's knob set (the upsert lane's fields) plus max_turns,
+// spelled the way the settings scope payload spells them
+// (cmd/omega/settings.go scopeGroups). An entry outside it is refused -
+// the wire names a real layer key, never a guess at one.
+var ScaffoldUnsetKeys = []string{
+	"description",
+	"system_prompt",
+	"provider.type",
+	"provider.model_name",
+	"provider.host",
+	"provider.api_key",
+	"max_turns",
+}
+
+// updatesSetKey reports whether this request also SETS the dotted key -
+// the set/unset conflict check. A key both written and deleted in one
+// request has two answers and no ordering that is obviously right, so
+// it is refused loudly rather than resolved silently.
+func updatesSetKey(u AgentConfigUpdates, key string) bool {
+	switch key {
+	case "description":
+		return u.Description != nil
+	case "system_prompt":
+		return u.SystemPrompt != nil
+	case "provider.type":
+		return u.ProviderType != nil
+	case "provider.model_name":
+		return u.ModelName != nil
+	case "provider.host":
+		return u.Host != nil
+	case "provider.api_key":
+		return u.APIKey != nil
+	case "max_turns":
+		return u.MaxTurns != nil
+	}
+	return false
+}
+
+// validateAgentUpdates is the refusal lane: every caller's-mistake field
+// answers AgentConfigScaffoldError (the endpoint's 400), never a half
+// write. The max_turns floor matches config.go's own
+// "max_turns must be >= 0" rule, so a negative can never reach a wake
+// and fail the agent's boot instead of this request.
+func validateAgentUpdates(u AgentConfigUpdates) error {
+	if u.ProviderType != nil {
+		pt := strings.TrimSpace(*u.ProviderType)
+		if pt != "" && !slices.Contains(ScaffoldProviderTypes, pt) {
+			return &AgentConfigScaffoldError{Message: fmt.Sprintf("provider type %q is not scaffolded (want one of: %s)", pt, strings.Join(ScaffoldProviderTypes, ", "))}
+		}
+	}
+	if u.MaxTurns != nil && *u.MaxTurns < 0 {
+		return &AgentConfigScaffoldError{Message: fmt.Sprintf("max_turns %d is negative (want >= 0; 0 means no cap, omit the knob to inherit)", *u.MaxTurns)}
+	}
+	if u.APIKey != nil && strings.TrimSpace(*u.APIKey) == MaskedSecretPlaceholder {
+		return &AgentConfigScaffoldError{Message: fmt.Sprintf("api_key %q is the read mask, not a secret - use unset: [\"provider.api_key\"] to clear the agent's key", MaskedSecretPlaceholder)}
+	}
+	for _, key := range u.Unset {
+		if !slices.Contains(ScaffoldUnsetKeys, key) {
+			return &AgentConfigScaffoldError{Message: fmt.Sprintf("unknown unset key %q (want one of: %s)", key, strings.Join(ScaffoldUnsetKeys, ", "))}
+		}
+		if updatesSetKey(u, key) {
+			return &AgentConfigScaffoldError{Message: fmt.Sprintf("%q is both set and unset in one request", key)}
+		}
+	}
+	return nil
 }
 
 // UpdateAgentConfigLayer upserts the scaffold-supported fields into
@@ -64,11 +160,8 @@ func UpdateAgentConfigLayer(home, name string, u AgentConfigUpdates) error {
 	if name == DefaultAgentName {
 		return ErrAgentConfigLocked
 	}
-	if u.ProviderType != nil {
-		pt := strings.TrimSpace(*u.ProviderType)
-		if pt != "" && !slices.Contains(ScaffoldProviderTypes, pt) {
-			return &AgentConfigScaffoldError{Message: fmt.Sprintf("provider type %q is not scaffolded (want one of: %s)", pt, strings.Join(ScaffoldProviderTypes, ", "))}
-		}
+	if err := validateAgentUpdates(u); err != nil {
+		return err
 	}
 
 	path := AgentConfigPath(home, name)
@@ -107,6 +200,18 @@ func UpdateAgentConfigLayer(home, name string, u AgentConfigUpdates) error {
 				upsertScalar(prov, sub.key, strings.TrimSpace(*sub.value))
 			}
 		}
+	}
+	if u.MaxTurns != nil {
+		// An INT node, never a string: ApplyAgentLayer unmarshals this
+		// key straight into Config.MaxTurns int, so `max_turns: "42"`
+		// would be the next wake's boot error.
+		upsertInt(mapping, "max_turns", *u.MaxTurns)
+	}
+	// The reset verb, applied after the upserts: no key can be both set
+	// and unset (validateAgentUpdates refuses it), so the order is a
+	// readability choice, not a semantic one.
+	for _, key := range u.Unset {
+		unsetLayerKey(mapping, key)
 	}
 
 	out, err := yaml.Marshal(root)
@@ -239,20 +344,100 @@ func mappingNode() *yaml.Node { return &yaml.Node{Kind: yaml.MappingNode} }
 // upsertScalar sets (or appends) a scalar string value under key,
 // mutating the mapping's Content in place (yaml.v3 stores mapping
 // pairs as key/value node pairs inside one Content slice).
-func upsertScalar(m *yaml.Node, key, value string) {
+func upsertScalar(m *yaml.Node, key, value string) { upsertTagged(m, key, "!!str", value) }
+
+// upsertInt sets (or appends) an INT value under key. The tag is what
+// makes the rendered node `max_turns: 42` rather than `max_turns: "42"`
+// - the value's quoting style is cleared too, since a hand-quoted
+// string sitting where the int belongs must not survive the write.
+func upsertInt(m *yaml.Node, key string, value int) {
+	upsertTagged(m, key, "!!int", strconv.Itoa(value))
+	if in := findScalar(m, key); in != nil {
+		in.Style = 0
+	}
+}
+
+// upsertTagged is the shared upsert: an existing scalar value is
+// retagged in place (comments and quoting survive the assignment), a
+// missing key is appended as a fresh pair. A hand-edited value node of
+// the wrong KIND (a sequence where the int belongs, say) is replaced -
+// leaving it would make the write silently do nothing and the wake's
+// own parse fail at the next boot.
+func upsertTagged(m *yaml.Node, key, tag, value string) {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		k, v := m.Content[i], m.Content[i+1]
 		if k.Kind == yaml.ScalarNode && k.Value == key {
 			if v.Kind == yaml.ScalarNode {
 				v.Value = value
-				v.Tag = "!!str"
+				v.Tag = tag
+				return
 			}
+			v.Kind = yaml.ScalarNode
+			v.Content = nil
+			v.Style = 0
+			v.Value = value
+			v.Tag = tag
 			return
 		}
 	}
 	m.Content = append(m.Content,
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value})
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: value})
+}
+
+// findScalar returns the value node stored under key (nil when the key
+// is absent or its value is not a scalar).
+func findScalar(m *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		k, v := m.Content[i], m.Content[i+1]
+		if k.Kind == yaml.ScalarNode && k.Value == key && v.Kind == yaml.ScalarNode {
+			return v
+		}
+	}
+	return nil
+}
+
+// deleteKey removes key's key/value pair from mapping m, reporting
+// whether the key was there. Every other pair - and its comments and
+// quoting - stays byte-identical: the reset verb deletes, it never
+// rewrites the neighbours.
+func deleteKey(m *yaml.Node, key string) bool {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if k := m.Content[i]; k.Kind == yaml.ScalarNode && k.Value == key {
+			m.Content = append(m.Content[:i], m.Content[i+2:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// unsetLayerKey removes one dotted knob from the layer mapping. A
+// sub-key removal prunes its parent mapping when the last sub-key goes:
+// the layer must never carry an empty `provider:` block into the next
+// wake (an empty mapping would override the home provider with
+// nothing). An absent key is a no-op - resetting an untouched knob is
+// the common case, not an error.
+func unsetLayerKey(mapping *yaml.Node, key string) {
+	parent, leaf, dotted := strings.Cut(key, ".")
+	if !dotted {
+		deleteKey(mapping, key)
+		return
+	}
+	var sub *yaml.Node
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		k, v := mapping.Content[i], mapping.Content[i+1]
+		if k.Kind == yaml.ScalarNode && k.Value == parent && v.Kind == yaml.MappingNode {
+			sub = v
+			break
+		}
+	}
+	if sub == nil {
+		return
+	}
+	deleteKey(sub, leaf)
+	if len(sub.Content) == 0 {
+		deleteKey(mapping, parent)
+	}
 }
 
 // ensureMapping returns the mapping under key, creating it (plain
