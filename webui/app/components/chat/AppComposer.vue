@@ -163,21 +163,16 @@
         title="attach files"
         aria-label="attach files"
         @click="fileInput?.click()">+</button>
-      <!-- control row order (v0.14.3, user ruling): workspace FIRST,
-           then the model name, then the effort pill - the folder the
-           session runs in is the row's first citizen -->
-      <!-- the workspace chip (t_9de5b009, draft intent t_ea7e6a58):
-           enabled pre-session too - unbound, it holds the draft's
-           folder intent; bound, it rides the session row -->
-      <WorkspaceSelect
-        :workspace="workspace"
-        @update:workspace="$emit('update:workspace', $event)" />
+      <!-- control row order: the model name, then the effort pill (the
+           workspace chip lived here until card t_8fd38f88 moved the
+           workdir selector into the status bar's left zone - the composer
+           keeps the model + reasoning chips and echoes neither in the
+           bar). model + effort are ONE wrap unit (t_641c2870): the
+           toolbar wraps wherever it runs out of room, but the model chip
+           must never strand the effort chip on a second row - as one flex
+           item (.model-group, nowrap) the pair crosses any wrap boundary
+           together or not at all. -->
       <div class="model-group">
-        <!-- model + effort are ONE wrap unit (t_641c2870, Endo
-             2026-10-29): the toolbar wraps wherever it runs out of room,
-             but the model chip must never strand the effort chip on a
-             second row - as one flex item (.model-group, nowrap) the
-             pair crosses any wrap boundary together or not at all -->
         <ModelSelect
           :model="model"
           :models="models"
@@ -196,8 +191,6 @@
           :model-value="thinking"
           @update:model-value="$emit('update:thinking', $event)" />
       </div>
-      <!-- the workspace chip's note lives in WorkspaceSelect.vue (card
-           t_9de5b009); this row orders workspace, model, effort -->
       <!-- ONE morphing button (t_357cbe9c; retry left in t_95d2bc34):
            while a run streams this is the stop control; idle it is send
            always - dimmed (disabled) when a draft and the attachments
@@ -219,7 +212,6 @@
 
 <script setup lang="ts">
   import ModelSelect from "./ModelSelect.vue";
-  import WorkspaceSelect from "./WorkspaceSelect.vue";
   import BandSelect from "../ui/BandSelect.vue";
   import Icon from "../ui/Icon.vue";
   import ReferencePill from "./ReferencePill.vue";
@@ -289,11 +281,8 @@
     // THIS session's run is streaming: the send button is CANCEL now
     busy: boolean;
     thinking: string;
-    // the working folder the chip shows: a bound session's pinned row
-    // folder, or - while the tab is unbound - the draft's workspace
-    // intent (t_ea7e6a58). Picking a new one emits update:workspace
-    // with either meaning; the parent stores it.
-    workspace?: string;
+    // the working folder is NOT a composer concern any more (card
+    // t_8fd38f88): the status bar's left zone owns the workdir selector.
     // pending image attachments - owned by the app: the transcript
     // bubble and the interrupted retry both need them
     attachments: OmegaImage[];
@@ -310,7 +299,6 @@
     (e: "update:draft", value: string): void;
     (e: "update:model", value: string): void;
     (e: "update:thinking", value: string): void;
-    (e: "update:workspace", value: string): void;
     (e: "send"): void;
     (e: "cancel"): void;
     (e: "refresh-models"): void;
