@@ -139,7 +139,11 @@ Terse operational rules. Layer references live in `docs/` (map below);
   `webui/scripts/build.sh` with the committed `static/` output in
   the same change (`scripts/embed-lane.sh` owns `static/` commits at
   merge time). A rebuilt `server.go` needs a serve restart - the
-  binary is a snapshot of its build time.
+  binary is a snapshot of its build time. A non-image attachment
+  reference is rendered into the model-facing turn content at each
+  provider call (name/type/size/path, small `.md`/`.txt`/`.csv`/
+  `.json` inlined under 8 KB); the row, transcript and wire stay
+  reference-only.
 - **webui.** The product reference is `docs/webui.md` (geometry
   contracts, design tokens, dock model, test law, embed lane,
   poisoned-bundle diagnosis). Verify served content, never source
