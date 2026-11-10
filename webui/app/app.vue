@@ -187,9 +187,10 @@
 
         <!-- card t_7e2b7002: the agents panel - profile inventory with
              scaffold (own fetch, inspector family). card t_2d8deb8c:
-             the tab renders DETAILS + EDIT on expand - the session
-             rows and the open-session opener (t_1ba868bb's openChatTab
-             wiring) are gone with ruling 3; the API keeps both. -->
+             the tab renders DETAILS + EDIT on expand. card t_81109e1c:
+             a row name click opens the agent's most-recent session in a
+             chat tab (window event -> openChatTab below); the per-agent
+             session LIST still never renders here. -->
         <template #pane-agents>
           <AgentsPanel
             v-if="!isMobile"
@@ -638,6 +639,7 @@
   } from "./composables/defaultWorkspace";
   import {
     CHAT_HOST_KEY,
+    CHAT_SESSION_OPEN_EVENT,
     DEFAULT_CHAT_STATE,
     EPHEMERAL_DRAFT_REF,
     createChatHost,
@@ -1311,7 +1313,11 @@
       }
       if (!tab.sessionRef) return "new chat";
       const s = sessions.value.find((x) => x.id === tab.sessionRef);
-      return s?.label || "chat";
+      // card t_81109e1c: a session the SIDEBAR list does not carry (an
+      // agent home's session - the only door to those is the Agents
+      // roster) has no label to read; the id prefix names the tab, so
+      // two agent chats never render as two identical "chat" chips.
+      return s?.label || `${tab.sessionRef.slice(0, 8)}...`;
     }
     // card t_36ceb99b: the viewer tab is named by its CONTENT (the file
     // base name / the skill name) - the payload rides the tab
@@ -1347,6 +1353,20 @@
   window.addEventListener(VIEWER_OPEN_EVENT, onViewerOpenEvent);
   onUnmounted(() =>
     window.removeEventListener(VIEWER_OPEN_EVENT, onViewerOpenEvent),
+  );
+
+  // card t_81109e1c: the Agents tab's row click - the CAPSULE hands the
+  // agent's most-recent session id over (module UI imports no shell
+  // code; the viewer seam's shape). The open is the ORDINARY chat
+  // opener, so a session already in a tab is focused wherever it lives
+  // and only an unbound one mints - never two tabs on one session.
+  function onChatSessionOpenEvent(e: Event) {
+    const id = (e as CustomEvent).detail;
+    if (typeof id === "string" && id !== "") openChatTab(id);
+  }
+  window.addEventListener(CHAT_SESSION_OPEN_EVENT, onChatSessionOpenEvent);
+  onUnmounted(() =>
+    window.removeEventListener(CHAT_SESSION_OPEN_EVENT, onChatSessionOpenEvent),
   );
 
   // --- focus + URL (card t_4f0e88f2 rulings) ---
