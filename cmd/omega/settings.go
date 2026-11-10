@@ -59,12 +59,147 @@ func num(min, max, step float64) (*float64, *float64, *float64) {
 // with (file + env overrides + defaults), so the pane always shows the
 // effective values.
 func settingsSchema(path string) (*core.SettingsSchema, error) {
+	return settingsPayload(path, nil)
+}
+
+// settingsPayload renders the whole GET payload: the knob groups plus
+// the agent scopes (settings tier 3a, card t_22a5f70a). runtimeMaxTurns
+// is the serving agents' LIVE turn cap (agent.Agent.MaxTurns, card
+// t_f78acfd6); nil means no serving agent (the CLI, a save refresh) and
+// the loaded config's own value stands in - after a save the hot-apply
+// has just pushed exactly that value, so the two lanes agree there by
+// construction.
+func settingsPayload(path string, runtimeMaxTurns func() int) (*core.SettingsSchema, error) {
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		return nil, err
 	}
 	// the whole payload is headed for the unauthenticated /settings GET
-	return &core.SettingsSchema{Groups: settingGroups(&cfg)}, nil
+	return &core.SettingsSchema{
+		Groups: settingGroups(&cfg),
+		Scopes: settingsScopes(settingsScopeHome(path), &cfg, runtimeMaxTurns),
+	}, nil
+}
+
+// settingsScopeHome anchors the agent-scope scan to the config file:
+// the settled home layout keeps it at <home>/config/config.yaml, the
+// legacy layout at <home>/config.yaml (the two locations
+// resolveConfigPath probes). Reading the anchor off the file - not the
+// process environment - keeps a `--config <file>` run and every test
+// honest about WHICH home the scopes describe.
+func settingsScopeHome(configPath string) string {
+	dir := filepath.Dir(configPath)
+	if filepath.Base(dir) == "config" {
+		return filepath.Dir(dir)
+	}
+	return dir
+}
+
+// scopeGroupKeys is the R2 vocabulary in render order: the four
+// overridable knob groups an agent tab shows (R3), and the dotted keys
+// each carries. The keys are the SAME paths the main payload's knobs
+// use wherever the two surfaces name the same knob, so the pane reads a
+// knob's inherited base straight out of groups (dot = differs from
+// main, the seam ruling) with no second copy of the values.
+var scopeGroupKeys = []string{"provider", "system_prompt", "description", "max_turns"}
+
+// settingsScopes renders one scope per agent home under <home>/agents/.
+// The scope NAMES come from agent.LoadProfiles - the roster scan the
+// agents tab already reads, so the two surfaces can never disagree on
+// which dirs are agents (main's home is the root, so it is never a
+// scope; dot/underscore and malformed dirs are skipped there and here).
+// The VALUES come from the layer read because Profile carries no
+// presence information (see agent.AgentConfigLayer).
+//
+// R8 empty world: no agent dirs = an empty, non-nil list. The pane
+// renders no scope strip at all.
+func settingsScopes(home string, cfg *Config, runtimeMaxTurns func() int) []core.SettingsScope {
+	scopes := []core.SettingsScope{}
+	if home == "" || cfg == nil {
+		return scopes
+	}
+	inheritedTurns := cfg.MaxTurns
+	if runtimeMaxTurns != nil {
+		inheritedTurns = runtimeMaxTurns()
+	}
+	for _, p := range agent.LoadProfiles(home) {
+		if p.Name == agent.DefaultAgentName {
+			continue // main's home is the home root - not a scope (R5)
+		}
+		lay, err := agent.ReadAgentConfigLayer(home, p.Name)
+		scope := core.SettingsScope{
+			Name:   p.Name,
+			Groups: scopeGroups(cfg, lay, inheritedTurns),
+		}
+		if err != nil {
+			// The dir IS a scope (R8: no special-casing), so it rides
+			// with inherited values and no override flags - but the
+			// error field says so, because those flags are then not the
+			// file's truth. The write endpoint refuses the same layer.
+			scope.Error = err.Error()
+		}
+		scopes = append(scopes, scope)
+	}
+	return scopes
+}
+
+// scopeGroups renders the four groups for one scope. A knob whose layer
+// entry is absent inherits the main value and answers overridden=false;
+// a knob the layer NAMES - even with an empty value - answers the
+// layer's value and overridden=true (the write lane stores an empty
+// string as an override, so the flag must agree with it).
+func scopeGroups(cfg *Config, lay agent.AgentConfigLayer, inheritedTurns int) []core.SettingsScopeGroup {
+	value := func(key string, own agent.LayerValue, inherited string) core.SettingsScopeKnob {
+		if own.Set {
+			return core.SettingsScopeKnob{Key: key, Value: own.Value, Overridden: true}
+		}
+		return core.SettingsScopeKnob{Key: key, Value: inherited}
+	}
+	provider := []core.SettingsScopeKnob{
+		value("provider.type", lay.ProviderType, strings.ToLower(cfg.Provider.Type)),
+		value("provider.model_name", lay.ModelName, cfg.Provider.ModelName),
+		value("provider.host", lay.Host, cfg.Provider.Host),
+		// the secret is masked on the way out exactly like the main
+		// payload (maskSecret lives here: the host decides what the
+		// unauthenticated API may see)
+		{Key: "provider.api_key", Value: maskSecret(layerSecret(lay.APIKey, cfg.Provider.APIKey)), Overridden: lay.APIKey.Set},
+	}
+	turns := core.SettingsScopeKnob{Key: "max_turns", Value: inheritedTurns}
+	if lay.MaxTurns != nil {
+		turns = core.SettingsScopeKnob{Key: "max_turns", Value: *lay.MaxTurns, Overridden: true}
+	}
+	return []core.SettingsScopeGroup{
+		{Key: scopeGroupKeys[0], Overridden: anyOverridden(provider), Knobs: provider},
+		{Key: scopeGroupKeys[1], Overridden: lay.SystemPrompt.Set, Knobs: []core.SettingsScopeKnob{
+			value("system_prompt", lay.SystemPrompt, cfg.SystemPrompt),
+		}},
+		// main carries no description knob (the home config has no such
+		// field), so the inherited base is the empty string
+		{Key: scopeGroupKeys[2], Overridden: lay.Description.Set, Knobs: []core.SettingsScopeKnob{
+			value("description", lay.Description, ""),
+		}},
+		{Key: scopeGroupKeys[3], Overridden: turns.Overridden, Knobs: []core.SettingsScopeKnob{turns}},
+	}
+}
+
+// layerSecret picks the secret a scope shows: the layer's own when it
+// names the key, main's otherwise.
+func layerSecret(own agent.LayerValue, inherited string) string {
+	if own.Set {
+		return own.Value
+	}
+	return inherited
+}
+
+// anyOverridden is the group roll-up: one overridden knob makes the
+// group the agent's own.
+func anyOverridden(knobs []core.SettingsScopeKnob) bool {
+	for _, k := range knobs {
+		if k.Overridden {
+			return true
+		}
+	}
+	return false
 }
 
 // defaultConfig returns the config layer BENEATH the file: the built-in
@@ -459,7 +594,14 @@ func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(strin
 		return nil, err
 	}
 	hotApply(cfg, prevWorkspace, pctx, setFilesWorkspace, setChannelWorkspace, setTerminalWorkspace, setAgentConfig)
-	return &core.SettingsSchema{Groups: settingGroups(&cfg)}, nil
+	// the refreshed payload carries the scopes too, or the pane would
+	// lose its agent tabs after every save. nil runtime getter: the
+	// hot-apply above just pushed cfg.MaxTurns onto the serving agents,
+	// so the file lane IS the runtime lane for this response.
+	return &core.SettingsSchema{
+		Groups: settingGroups(&cfg),
+		Scopes: settingsScopes(settingsScopeHome(path), &cfg, nil),
+	}, nil
 }
 
 // applySettingValues routes each submitted value into the Config by
@@ -1022,10 +1164,11 @@ type omegaSettings struct {
 	setChannelWorkspace  func(string)      // the HTTP channel's default-workspace hot knob, nil when unset
 	setTerminalWorkspace func(string)      // the terminal capsule's default-workspace hot knob (t_62d72028), nil when unset
 	setAgentConfig       func(string, int) // the serving agents' runtime-knob hot hook (t_f78acfd6)
+	maxTurns             func() int        // the serving agents' LIVE turn cap (t_f78acfd6 GETTER), the agent scopes' inherited max_turns
 }
 
 func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
-	schema, err := settingsSchema(s.path)
+	schema, err := settingsPayload(s.path, s.maxTurns)
 	if err != nil {
 		return nil, err
 	}

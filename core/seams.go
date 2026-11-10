@@ -119,6 +119,55 @@ type SettingsGroup struct {
 // webui settings pane already consumes.
 type SettingsSchema struct {
 	Groups []SettingsGroup `json:"groups"`
+	// Scopes lists the per-agent settings scopes (settings tier 3a,
+	// card t_22a5f70a): one entry per agent home under <home>/agents/,
+	// carrying the scaffold-set knob groups an agent tab renders and
+	// the flags that say which values are the agent's own. The field
+	// always rides the wire and is never null - an empty list is the
+	// R8 empty world (no agent dirs), where the pane renders no scope
+	// strip at all. Read-only: every write still lands on the agents
+	// REST edit endpoint (R4), never on this payload.
+	Scopes []SettingsScope `json:"scopes"`
+}
+
+// SettingsScope is one agent scope in the settings payload: an agent
+// home under <home>/agents/. The main agent is NOT a scope - its home
+// is the home root itself and its config stays locked (settings tier
+// 3a, ruling R5).
+type SettingsScope struct {
+	Name   string               `json:"name"`
+	Groups []SettingsScopeGroup `json:"groups"`
+	// Error names a layer file that could not be read or parsed: the
+	// scope still rides (R8 - every agent dir is a scope, a broken one
+	// must not vanish from the strip) with inherited values and no
+	// override flags, and this field is what tells the pane the flags
+	// are not the file's truth. Empty on a healthy scope.
+	Error string `json:"error,omitempty"`
+}
+
+// SettingsScopeGroup is one overridable knob group inside a scope - the
+// four R2 groups, in render order: provider, system_prompt,
+// description, max_turns. Overridden is the group roll-up: true when
+// the agent's layer file names ANY knob of the group.
+type SettingsScopeGroup struct {
+	Key        string              `json:"key"`
+	Overridden bool                `json:"overridden"`
+	Knobs      []SettingsScopeKnob `json:"knobs"`
+}
+
+// SettingsScopeKnob is one knob inside a scope. Key is the SAME dotted
+// path the main payload's knob carries where the two surfaces name the
+// same knob (provider.type, system_prompt, max_turns...), so a scope
+// row and its main row share one vocabulary and the inherited base is
+// the main group's knob with that key. Value is the EFFECTIVE value:
+// the layer's own when the layer names the key, main's otherwise.
+// Overridden is structural - the layer file names the key (a
+// commented-out scaffold line parses as absent and is not an override).
+// Secrets ride masked exactly like the main payload.
+type SettingsScopeKnob struct {
+	Key        string `json:"key"`
+	Value      any    `json:"value"`
+	Overridden bool   `json:"overridden"`
 }
 
 // Knob looks one knob up by its dotted key. The schema is the contract,
