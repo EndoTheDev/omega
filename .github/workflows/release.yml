@@ -93,9 +93,16 @@ jobs:
         run: scripts/release-checksums.sh dist
 
       - name: Generate release notes
-        # deterministic counts + highlights from the round's commit log; the
-        # one prose line rides the ANNOTATED tag message (empty annotation =
-        # counts + highlights only - loud is nice, blocking on prose is not)
+        # deterministic counts + FIVE highlights from the round's commit log;
+        # the prose paragraph and the optional highlight override ride the
+        # ANNOTATED tag message (empty annotation = five default highlights +
+        # counts, never a blank paragraph).
+        #
+        # A post over the 2000-char Discord cap means a broken annotation:
+        # release-notes.sh writes no payload and exits 1, so the job goes red
+        # before anything is published - the release does not announce text
+        # nobody can read. There is no trimmer behind the cap (t_878b1b7c):
+        # the post is a release note, the full changelog lives in the body.
         run: scripts/release-notes.sh "" "${{ steps.version.outputs.VERSION }}"
 
       - name: Compose release body
@@ -142,8 +149,11 @@ jobs:
       - name: Post to Discord
         # the word is the marketing moment: nightlies soak quietly, only
         # stable releases announce. The payload file is generated in the
-        # notes step - curl -d @file, never an inline -d string.
-        if: success() && steps.version.outputs.PRERELEASE == 'false'
+        # notes step - curl -d @file, never an inline -d string. No payload
+        # file means the notes step broke the cap guard and the job is
+        # already red; success() + the hashFiles gate keep the webhook silent
+        # so a failed release can never announce itself.
+        if: ${{ success() && steps.version.outputs.PRERELEASE == 'false' && hashFiles('dist/discord-release.json') != '' }}
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
