@@ -224,6 +224,7 @@
     type ModelProviderSection,
   } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
+  import { chipDisplay, chipOf } from "../composables/chips";
   import { defaultWorkspaceNow } from "../composables/defaultWorkspace";
   // card t_e4280de7: consecutive tool rows collapse into ONE group
   // block (render-site view, the transcript itself stays flat)
@@ -359,9 +360,21 @@
   const panelMatches = computed(
     () => !!panelPayload.value && panelPayload.value.session === sessionId.value,
   );
-  const canvasItems = computed(() =>
-    panelMatches.value && panelPayload.value ? canvasTranscript.apply(panelPayload.value) : null,
-  );
+  const canvasItems = computed(() => {
+    if (!(panelMatches.value && panelPayload.value)) return null;
+    const items = canvasTranscript.apply(panelPayload.value);
+    // the live chip tail (card t_896cf5a8): a pending call's streamed
+    // output rides the row whose call id matches. The store is reactive,
+    // so a landed chunk repaints exactly these rows; the tail renders
+    // only while the row has no settled result.
+    for (const it of items) {
+      if (it.kind !== "tool") continue;
+      const chip = chipOf(it.callId);
+      it.liveText = chipDisplay(chip) || undefined;
+      it.liveSettled = chip?.settled === true;
+    }
+    return items;
+  });
   const transcript = computed(() => canvasItems.value ?? state.value?.restored ?? []);
   const statusLine = computed(() => state.value?.statusLine ?? "");
   const itemKey = createItemKeySource();
@@ -460,23 +473,11 @@
     return gateByItem.value.get(item) ?? null;
   }
 
-  // the freeze cadence: the feed's 15s poll is a badge cadence. While
-  // a pending question rides this session, refresh the shared store
-  // every 5s (and once on a run start - the card exists by the time
-  // the tool row renders only if a poll saw it).
-  let gatePoll: ReturnType<typeof setInterval> | null = null;
-  watch(
-    () => sessionGateBinding.value.assigned.length + sessionGateBinding.value.standalone.length,
-    (n) => {
-      if (n > 0 && gatePoll === null) {
-        gatePoll = setInterval(() => void refreshNotifications(), 5000);
-      } else if (n === 0 && gatePoll !== null) {
-        clearInterval(gatePoll);
-        gatePoll = null;
-      }
-    },
-    { immediate: true },
-  );
+  // the freeze cadence: the feed is pulled on EVENT HINTS since the push
+  // channel landed (card t_896cf5a8) - a run start, and every chat
+  // frame's call/turn edge at the shell level. The 5s freeze poll is
+  // gone: a pending question's issuance and answer both ride the chat
+  // topic, so the pull is edge-driven.
   watch(busy, (live) => {
     if (live) void refreshNotifications();
   });
@@ -487,12 +488,6 @@
     () => sessionGateBinding.value.standalone.length,
     () => nextTick(resizeContentRO),
   );
-  onBeforeUnmount(() => {
-    if (gatePoll) {
-      clearInterval(gatePoll);
-      gatePoll = null;
-    }
-  });
 
   // --- the activity line (card t_e9baac4b): the phase is a pure
   // derivation of the rendered items + the session's busy gate (no new

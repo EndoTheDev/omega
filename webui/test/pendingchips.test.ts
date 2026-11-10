@@ -4,9 +4,10 @@
 // canvas transcript's pending chip + identity-preserving fill, the
 // agent_end finish_reason reaching the transport (the watcher's
 // arming signal), and the open-state laws that keep a chip visible.
-// The watcher's live poll-attach loop and the browser-level wake
-// witness are pinned by recipe 104 (scripts/journeys) - the browser
-// is the honest witness there, the node suite pins the shapes here.
+// The watcher's arming/wake laws and the browser-level wake witness are
+// pinned by the node suite here and by the push-channel journey
+// (scripts/journeys/recipes/111-socket-push.journey.sh) - the browser
+// is the honest witness for the socket, the node suite pins the shapes.
 // Run: node --test webui/test/ (node >= 23)
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -272,5 +273,20 @@ test("the chat host arms its pending watcher off yielded runs and restored pendi
     ts.includes("transcriptHasPending(st.restored)"),
     "a restored pending chip arms the watch on load",
   );
-  assert.ok(ts.includes("runActive("), "the run-slot probe rides the attach decision");
+  assert.ok(ts.includes("runActive("), "the run-slot probe rides the arming decision");
+});
+
+test("the wake is a runs-topic edge - the 2s slot poll is gone (card t_896cf5a8)", () => {
+  const ts = src("composables/chat.ts");
+  assert.ok(!ts.includes("PENDING_POLL_MS"), "no poll interval constant remains");
+  assert.ok(!ts.includes("sleepMs("), "no sleep-loop remains");
+  assert.ok(ts.includes("function wakePending("), "the edge wakes the waiter");
+  assert.ok(ts.includes("function ridePending("), "the wake attaches and rides");
+  assert.ok(
+    /noteRunState\(session: string, active: boolean\)[\s\S]{0,400}if \(active\) wakePending\(session\)/.test(ts),
+    "the runs topic's active edge is the wake signal",
+  );
+  assert.ok(ts.includes("disarmPending(key)"), "a closed state drops its waiter");
+  const app = src("app.vue");
+  assert.ok(app.includes("host.noteRunState(session, active)"), "the shell feeds the edge into the host");
 });

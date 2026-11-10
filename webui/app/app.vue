@@ -614,6 +614,10 @@
   // host's canvasDelta dep. Panel presence lives in the store, never a
   // hardcoded list (Q5a).
   import { createCanvasStore, emitLocalToast } from "./composables/canvas";
+  import { normalizeCanvasPanel } from "./composables/omega";
+  import { createSocketClient, type SocketClient } from "./composables/socket";
+  import { ingestChipFrame } from "./composables/chips";
+  import { refreshNotifications } from "./components/shell/notificationFeed";
   import ChatTab from "./components/ChatTab.vue";
   // card t_6215474b: the command palette overlay (Ctrl+K) + the nav
   // history composable + its command registry
@@ -674,31 +678,14 @@
   const notificationsPanelView = moduleTabs.find(
     (t) => t.module === "notifications",
   )?.component;
-  // /health durability payload: server build tag + uptime (polled, the
-  // bar's version + up seg - and the health dot gets a periodic check)
+  // /health durability payload: server build tag + uptime (the bar's
+  // version + up seg). PUSHED since card t_896cf5a8: the health topic
+  // carries the /health body every 5s - the 30s poll is gone. The boot
+  // read below still runs once (the dot is honest before the first
+  // frame), and a reconnect does one GET /health before trusting the
+  // socket again.
   const healthVersion = ref("");
   const upSeconds = ref(0);
-  const HEALTH_POLL_MS = 30000;
-  let healthTimer: ReturnType<typeof setInterval> | null = null;
-  // running-state poll: the /sessions row's running flag is the single
-  // truth for "is this session streaming", so the webui polls it - that
-  // is what lets a tab that never held the SSE (every other tab, every
-  // future tab) reconcile its pulse instead of owning stream state.
-  // A hidden tab skips its ticks; an in-flight poll never overlaps.
-  const RUNNING_POLL_MS = 2000;
-  let runningTimer: ReturnType<typeof setInterval> | null = null;
-  // canvas snapshot poll: the between-runs catch-up (arc 4b toast law)
-  const CANVAS_POLL_MS = 15_000;
-  let canvasTimer: ReturnType<typeof setInterval> | null = null;
-  let runningPollInFlight = false;
-  function tickRunningPoll() {
-    if (typeof document !== "undefined" && document.hidden) return;
-    if (runningPollInFlight) return;
-    runningPollInFlight = true;
-    refreshSessions().finally(() => {
-      runningPollInFlight = false;
-    });
-  }
   const models = ref<string[]>([]);
   const selectedModel = ref("");
   // the GROUPED catalog (card t_1914a8c9): one section per provider -
@@ -1568,6 +1555,72 @@
     }
   }
 
+  // --- the push channel's shell half (card t_896cf5a8) -------------------
+  //
+  // socket is the page's ONE connection. It is created in onMounted and
+  // closed in onUnmounted; every fact the old timers fetched arrives as
+  // a frame instead (health, runs, canvas, chips, chat).
+  let socket: SocketClient | null = null;
+
+  // hintNotifications pulls the finished-things + pending-verdict truth
+  // on an event hint, debounced: the verdict hub has no topic of its own
+  // (issuance and the answer ride chat), and a burst of run frames must
+  // not stampede the REST routes. One pull per 1.5s window is plenty for
+  // a human-paced question.
+  let notificationsHint: ReturnType<typeof setTimeout> | null = null;
+  function hintNotifications() {
+    if (notificationsHint !== null) return;
+    notificationsHint = setTimeout(() => {
+      notificationsHint = null;
+      void refreshNotifications();
+    }, 1500);
+  }
+
+  // onRunEdge folds one runs-topic edge into the shell: the host's busy
+  // set (the composer's stop face + the tab title spinner), the sidebar
+  // row's running flag, and the session LIST. A session this page has
+  // never seen is a row created elsewhere (cron, delegate) - the list has
+  // no push of its own, so an unknown id refetches it; a run END refetches
+  // it for the persisted telemetry and the generated label.
+  let sessionsHint: ReturnType<typeof setTimeout> | null = null;
+  function hintSessions() {
+    if (sessionsHint !== null) return;
+    sessionsHint = setTimeout(() => {
+      sessionsHint = null;
+      void refreshSessions();
+    }, 300);
+  }
+  function onRunEdge(session: string, active: boolean) {
+    if (!session) return;
+    host.noteRunState(session, active);
+    const row = sessions.value.find((s) => s.id === session);
+    if (row) row.running = active;
+    if (!row || !active) hintSessions();
+    // a run edge may issue or settle a verdict card while nothing streams
+    // (the pending-list truth rides the REST read, not the edge)
+    hintNotifications();
+  }
+
+  // catchUp runs on every RECONNECT (never replayed server-side): one
+  // health read, then the visible panes through the ordinary GET routes.
+  // Events are hints, state is truth.
+  async function catchUp() {
+    try {
+      const h = await fetchHealthInfo();
+      healthy.value = h !== null;
+      if (h) {
+        healthVersion.value = h.version ?? "";
+        upSeconds.value = h.uptime_seconds ?? 0;
+      }
+    } catch {
+      // a failed health read leaves the dot red until the next frame
+    }
+    void refreshSessions();
+    void canvas.refresh();
+    void refreshNotifications();
+    void host.reconnectCatchUp();
+  }
+
   // --- the session's remembered context (card t_9de5b009) ---
   //
   // chatSession resolves a tab's binding to its row (the ChatTab props
@@ -2166,23 +2219,55 @@
     // history wiring: popstate re-targets via the URL's session id
     window.addEventListener("popstate", onPop);
 
+    // --- the push channel (card t_896cf5a8): ONE websocket per page
+    // load carries every live fact the pollers used to fetch. Events
+    // are hints, state is truth: a frame updates the view, and a
+    // reconnect refetches the visible panes through the GET routes.
+    socket = createSocketClient({
+      health: (s) => {
+        healthy.value = (s.status ?? "ok") === "ok";
+        if (typeof s.version === "string") healthVersion.value = s.version;
+        if (typeof s.uptime_seconds === "number") upSeconds.value = s.uptime_seconds;
+      },
+      runs: (session, active) => onRunEdge(session, active),
+      canvas: (_event, payload) => {
+        const frame = payload as { type?: string; panel?: unknown } | null;
+        if (!frame || typeof frame !== "object" || frame.type !== "view_model_delta") return;
+        const panel = normalizeCanvasPanel(frame.panel);
+        if (panel) canvas.applyDelta(panel);
+      },
+      chips: (_session, frame) => ingestChipFrame(frame),
+      chat: (session, event, payload) => {
+        host.noteSocketChat(session, event, payload);
+        // the verdict gap (t_896cf5a8): issuance and the answer ride the
+        // chat topic's structural frames - a chatty token delta is not a
+        // signal, so only the call/turn edges pull the pending list
+        if (
+          event === "tool_call" ||
+          event === "tool_result" ||
+          event === "turn_end" ||
+          event === "agent_end"
+        )
+          hintNotifications();
+      },
+      open: ({ reconnect }) => {
+        if (!reconnect) return;
+        // nothing replayed server-side: one health read, then the
+        // visible panes - the same GET routes a cold load uses
+        void catchUp();
+      },
+    });
+    socket.connect();
+    // boot liveness: the dot + the sidebar render before the first
+    // pushed frame (up to 5s of health cadence)
     const h = await fetchHealthInfo();
     healthy.value = h !== null;
     if (h) {
       healthVersion.value = h.version ?? "";
       upSeconds.value = h.uptime_seconds ?? 0;
     }
-    // the health poll keeps the status dot honest and ticks the uptime
-    healthTimer = setInterval(async () => {
-      const h = await fetchHealthInfo();
-      if (h) {
-        healthy.value = true;
-        healthVersion.value = h.version ?? "";
-        upSeconds.value = h.uptime_seconds ?? 0;
-      } else {
-        healthy.value = false;
-      }
-    }, HEALTH_POLL_MS);
+    // the health interval is GONE (card t_896cf5a8): the health topic
+    // pushes the same body every 5s, and a reconnect does one plain read
     // the models fetch does NOT block boot: a slow or stalled provider
     // /models round-trip (shared keypool stall) used to hold the whole
     // sidebar hostage. Fire it off and let the picker fill in when it
@@ -2210,17 +2295,15 @@
         // no settings seam or unreachable server: no default known
       });
     refreshSessions();
-    // running-state poller: every tab reconciles against the rows
-    runningTimer = setInterval(tickRunningPoll, RUNNING_POLL_MS);
+    // the running-state poll is GONE (card t_896cf5a8): the runs topic
+    // pushes one session's live-run truth on every run-slot edge, and
+    // onRunEdge folds it into the pulse + the sidebar row
     // the canvas snapshot: the load-time catch-up (settled Q3b) - the
     // panels mounted before this page loaded arrive here; everything
-    // later rides the run-stream deltas. Deltas only flow while a run
-    // is live, so a modest snapshot poll is the canvas' between-runs
-    // catch-up too (arc 4b: a toast emitted while nothing runs arrives
-    // here, fingerprint-deduped) - the same poll shape the dock keeps
-    // for its REST list.
+    // later rides the canvas topic's deltas, so the 15s between-runs
+    // poll is gone too (a toast or a board change now reaches an idle
+    // page). The snapshot stays the cold-load read.
     void canvas.refresh();
-    canvasTimer = setInterval(() => { void canvas.refresh(); }, CANVAS_POLL_MS);
 
     // boot focus: the URL's session owns it ("reload lands on the
     // focused session") - an existing chat tab bound to that id is
@@ -2270,9 +2353,12 @@
     window.removeEventListener("resize", onWinResize);
     areaObserver?.disconnect();
     window.removeEventListener("popstate", onPop);
-    if (healthTimer) clearInterval(healthTimer);
-    if (runningTimer) clearInterval(runningTimer);
-    if (canvasTimer) clearInterval(canvasTimer);
+    if (socket) {
+      socket.close();
+      socket = null;
+    }
+    if (notificationsHint !== null) clearTimeout(notificationsHint);
+    if (sessionsHint !== null) clearTimeout(sessionsHint);
     if (spinnerTimer) clearInterval(spinnerTimer);
     if (typeof document !== "undefined" && savedTitle !== null)
       document.title = savedTitle;
