@@ -143,6 +143,21 @@
             class="pane"
             :focused-session="focusedSessionId" />
         </template>
+        <!-- card t_e703180e: the observability tab - the structured
+             run-event stream (primary) over the observability capsule's
+             own two reads, the raw log tail parked behind a chip in the
+             same band (ruling 1: not a peer tab). The view is the
+             capsule's own (harness/observability/ui/, the tabs
+             manifest); its default scope is the FOCUSED session, and it
+             reads on mount - the dock unmounts an inactive outlet, so a
+             background tab costs nothing. -->
+        <template #pane-observability>
+          <component
+            :is="observabilityTabView"
+            v-if="observabilityTabView && !isMobile"
+            class="pane"
+            :session="focusedSessionId" />
+        </template>
         <!-- card t_95c91f9c: the general web browser tab - the main-pane
              content tab (like chat/viewer), the URL bar + iframe embed
              over harness/browser's /browser/last. Singleton: the opener
@@ -406,6 +421,15 @@
         :open="bottomDrawerOpen"
         @set-color-mode="setColorMode"
         @set-theme="setTheme" />
+      <!-- card t_e703180e: a TAB capsule in the bottom drawer rides its
+           manifest view. The generic InspectorPanel catch-all below
+           resolves the PANEL manifest, where a tab capsule has no entry -
+           it would render "module not loaded" for a tab that is loaded. -->
+      <component
+        :is="observabilityTabView"
+        v-else-if="bottomDrawerActiveId === 'observability' && observabilityTabView"
+        class="pane"
+        :session="focusedSessionId" />
       <InspectorPanel
         v-else-if="bottomDrawerActiveId"
         class="pane"
@@ -682,6 +706,9 @@
   // template then hosts nothing, exactly like a panel capsule's
   // InspectorPanel body after a removal.
   const terminalTabView = moduleTabs.find((t) => t.module === "terminal")?.component;
+  const observabilityTabView = moduleTabs.find(
+    (t) => t.module === "observability",
+  )?.component;
   const browserTabView = moduleTabs.find((t) => t.module === "browser")?.component;
   const notificationsPanelView = moduleTabs.find(
     (t) => t.module === "notifications",
