@@ -33,7 +33,7 @@ BTAG="j98"
 OMEGA_BIN="${OMEGA_BIN:-$JROOT/../../bin/omega}"
 BOARD="$BTAG-drag"
 TAG="$(date +%s%N | cut -c1-13)"
-A=""; B=""; C=""; D=""
+A=""; B=""; C=""; D=""; E=""
 
 # ensure_board <name>: the pinned board exists on every run after the
 # first - create only when genuinely missing (recipe 78's shape).
@@ -193,7 +193,7 @@ C=$(card_id triage c)
 B=$(card_id triage b)
 A=$(card_id triage a)
 D=$(card_id todo d)
-trap 'archive_cards "$A" "$B" "$C" "$D"' EXIT
+trap 'archive_cards "$A" "$B" "$C" "$D" "$E"' EXIT
 [ -n "$A" ] && [ -n "$B" ] && [ -n "$C" ] && [ -n "$D" ] || die "card seeding failed"
 
 # ---- boot ----------------------------------------------------------------
@@ -284,5 +284,37 @@ got_t="$(col_ids triage)"; got_d="$(col_ids todo)"
 [ "$got_d" = "$D $B" ] || die "off-board release changed the server todo order (got [$got_d])"
 step "ok: off-board release reverts, server order unchanged"
 
+# ---- d: the push shape (card t_b5784de3) -----------------------------------
+# The 5s GET /tasks poll is GONE: the board renders from its mount fetch and
+# re-reads its own REST view when the shell announces a canvas delta. The
+# chain: a REST mutation pushes the module's tasks panel (rest.go
+# pushAfterMutation) -> the canvas emit fans a ViewModelDelta onto the ws
+# canvas topic (agent/api/server_canvas.go) -> the SPA's canvas store
+# applies it and publishes window "omega-canvas-delta" (composables/
+# canvas.ts) -> Board.vue listens and refetches. Prove it end to end: mark
+# the page (a reload wipes the mark), edit through the API, watch the idle
+# board absorb it.
+js '(()=>{window.__j98NoReload=1;return 1})()' >/dev/null
+curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${A}?board=${BOARD}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"title\": \"${BTAG}-drag ${TAG} a-pushed\"}" | grep -q "\"id\":\"$A\"" || \
+  die "PATCH title $A failed"
+poll_js "$(printf '(()=>{return [...document.querySelectorAll(".card")].some(c=>c.dataset.id==="%s"&&(c.textContent||"").includes("a-pushed"))})()' "$A")" 10 || \
+  die "an API edit never reached the idle board - the canvas delta event did not refresh it (card t_b5784de3)"
+marker=$(jsq 'window.__j98NoReload===1?1:0' 2>&1 | tail -1)
+[ "$marker" = "1" ] || die "the board picked the API edit up by RELOADING - the push shape is fake"
+step "ok: an API edit lands on the idle board by push (no reload, no poll)"
+
+# a create rides the same seam: the panel delta follows the POST
+E=$(card_id review e)
+[ -n "$E" ] || die "pushed-card seeding failed"
+poll_js "$(printf '(()=>{const col=[...document.querySelectorAll(".board-col")].find(c=>c.dataset.status==="%s");if(!col) return false;return [...col.querySelectorAll(".card")].some(c=>c.dataset.id==="%s")})()' review "$E")" 10 || \
+  die "an API-created card ($E) never reached the idle board - the push shape is dead for creates"
+marker=$(jsq 'window.__j98NoReload===1?1:0' 2>&1 | tail -1)
+[ "$marker" = "1" ] || die "a create only showed after a reload - the push shape is fake"
+step "ok: an API create lands on the idle board by push (no reload, no poll)"
+
 assert_no_console_errors
 step "98-kanban-drag-reorder GREEN"
+
+
