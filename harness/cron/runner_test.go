@@ -44,6 +44,40 @@ func (f *fakeMemory) Replace(target, oldText, content string) (string, error) { 
 func (f *fakeMemory) Remove(target, oldText string) (string, error)           { return "", nil }
 func (f *fakeMemory) List(target string) ([]string, error)                    { return nil, nil }
 
+// recordingLogger captures cron's log lines so a reload test can wait
+// for the reload EVENT itself instead of sleeping a fixed duration (the
+// waitFor law: a bounded wait catches a hang, never correctness).
+type recordingLogger struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (l *recordingLogger) add(format string, args ...any) {
+	l.mu.Lock()
+	l.lines = append(l.lines, fmt.Sprintf(format, args...))
+	l.mu.Unlock()
+}
+
+func (l *recordingLogger) Printf(format string, args ...any) { l.add(format, args...) }
+func (l *recordingLogger) Warnf(format string, args ...any)  { l.add(format, args...) }
+func (l *recordingLogger) Errorf(format string, args ...any) { l.add(format, args...) }
+func (l *recordingLogger) Close() error                      { return nil }
+
+// has reports whether any captured line contains substr.
+func (l *recordingLogger) has(substr string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, line := range l.lines {
+		if strings.Contains(line, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+// noop is the waitFor trigger for a wait that only observes.
+func noop() error { return nil }
+
 // --- guard (single instance per job) ---
 
 func TestFireGuardSkipsConcurrentSameJobOthersStillRun(t *testing.T) {
@@ -408,6 +442,8 @@ func TestDeliverSkipsEmptyFinal(t *testing.T) {
 func TestHotReloadAddsAndDisablesWithoutRestart(t *testing.T) {
 	home := t.TempDir()
 	r := newTestRunner(t, home, Job{Name: "starter", Schedule: "0 5 1 * *", Prompt: "p"})
+	log := &recordingLogger{}
+	r.logger = log
 	cfgPath := filepath.Join(home, "crons.yaml")
 	if err := os.WriteFile(cfgPath, []byte("jobs:\n  - name: starter\n    schedule: \"0 5 1 * *\"\n    prompt: p\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -438,7 +474,7 @@ jobs:
     schedule: "0 6 1 * *"
     prompt: p
 `
-	waitFor(t, 3*time.Second, func() bool {
+	waitFor(t, testWaitTimeout, func() bool {
 		return contains(r.scheduledNames(), "added") && !contains(r.scheduledNames(), "starter")
 	}, func() error {
 		if err := os.WriteFile(cfgPath, []byte(updated), 0o644); err != nil {
@@ -452,16 +488,162 @@ jobs:
 		t.Fatalf("scheduled = %v, want [added]", names)
 	}
 
-	// Invalid yaml keeps the previous job set.
-	if err := os.WriteFile(cfgPath, []byte("jobs:\n  - name: broken\n    schedule: \"oops\"\n    prompt: p\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(150 * time.Millisecond)
+	// Invalid yaml keeps the previous job set. Wait for the rejection
+	// itself: a fixed sleep expires mid-reload on a loaded machine and
+	// reads the set the broken write was still racing (the CI red of
+	// 2026-11-10).
+	broken := []byte("jobs:\n  - name: broken\n    schedule: \"oops\"\n    prompt: p\n")
+	waitFor(t, testWaitTimeout, func() bool {
+		return log.has("crons reload failed (keeping previous jobs)")
+	}, func() error {
+		return os.WriteFile(cfgPath, broken, 0o644)
+	})
 	if got := r.scheduledNames(); len(got) != 1 || got[0] != "added" {
 		t.Fatalf("failed reload dropped previous jobs: %v", got)
 	}
 	if jobs := r.jobsSnapshot(); len(jobs) != 2 || jobs[0].Name != "starter" {
 		t.Fatalf("internal job set wrongly replaced: %v", jobNames(jobs))
+	}
+}
+
+// TestHotReloadShortReadKeepsPreviousJobs pins the truncated-write law
+// (card t_8be45d55, the CI red this card fixes): a non-atomic save
+// shortens crons.yaml before it writes, and a poll landing in that
+// window reads a zero-byte file. Empty content parses as a valid
+// EMPTY config, so nothing errors - the reload must refuse it anyway,
+// because applying it drops every live job. "Delete every job" stays
+// expressible as `jobs: []` and applies normally (next test).
+func TestHotReloadShortReadKeepsPreviousJobs(t *testing.T) {
+	home := t.TempDir()
+	r := newTestRunner(t, home, Job{Name: "starter", Schedule: "0 5 1 * *", Prompt: "p"})
+	log := &recordingLogger{}
+	r.logger = log
+	cfgPath := filepath.Join(home, "crons.yaml")
+	initial := "jobs:\n  - name: starter\n    schedule: \"0 5 1 * *\"\n    prompt: p\n"
+	if err := os.WriteFile(cfgPath, []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// 1ms poll: the truncate window below is ~20ms, so the poll is
+	// essentially certain to land inside it.
+	r.pollInterval = time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var watcher sync.WaitGroup
+	watcher.Add(1)
+	go func() {
+		defer watcher.Done()
+		r.watchJobsFile(ctx)
+	}()
+	defer func() {
+		cancel()
+		watcher.Wait()
+	}()
+
+	// Land a clean reload first, so the live set is provably non-empty
+	// and the empty read has something to destroy.
+	waitFor(t, testWaitTimeout, func() bool {
+		return contains(r.scheduledNames(), "starter")
+	}, func() error {
+		return os.WriteFile(cfgPath, []byte(initial), 0o644)
+	})
+
+	// The non-atomic save: shorten the file, let a poll read the
+	// window, then write the real content.
+	if err := os.Truncate(cfgPath, 0); err != nil {
+		t.Fatal(err)
+	}
+	// The window was SEEN by the watcher: prove it changed nothing. The
+	// wait latches on either outcome, so a regression reds fast with the
+	// applied-empty-set verdict instead of timing out.
+	waitFor(t, testWaitTimeout, func() bool {
+		return log.has("empty content") || len(r.jobsSnapshot()) == 0
+	}, noop)
+	if !log.has("empty content") {
+		t.Fatalf("a zero-byte read applied as an empty job set: %v", r.scheduledNames())
+	}
+	if got := r.scheduledNames(); len(got) != 1 || got[0] != "starter" {
+		t.Fatalf("short read emptied the schedule: %v", got)
+	}
+	if log.has("reload: job removed: starter") {
+		t.Fatal("a zero-byte read applied as an empty job set")
+	}
+
+	// The completing write applies normally.
+	updated := "jobs:\n  - name: starter\n    schedule: \"0 5 1 * *\"\n    prompt: p\n  - name: added\n    schedule: \"0 6 1 * *\"\n    prompt: p\n"
+	waitFor(t, testWaitTimeout, func() bool {
+		return contains(r.scheduledNames(), "added") && contains(r.scheduledNames(), "starter")
+	}, func() error {
+		return os.WriteFile(cfgPath, []byte(updated), 0o644)
+	})
+}
+
+// TestHotReloadAppliesJobsEmpty pins the other half of the law: an
+// operator who removes every job writes `jobs: []` (or a comment-only
+// file), and that EMPTY PARSED SET applies - only a zero-byte /
+// whitespace-only read is refused.
+func TestHotReloadAppliesJobsEmpty(t *testing.T) {
+	home := t.TempDir()
+	r := newTestRunner(t, home, Job{Name: "starter", Schedule: "0 5 1 * *", Prompt: "p"})
+	cfgPath := filepath.Join(home, "crons.yaml")
+	if err := os.WriteFile(cfgPath, []byte("jobs:\n  - name: starter\n    schedule: \"0 5 1 * *\"\n    prompt: p\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r.pollInterval = time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var watcher sync.WaitGroup
+	watcher.Add(1)
+	go func() {
+		defer watcher.Done()
+		r.watchJobsFile(ctx)
+	}()
+	defer func() {
+		cancel()
+		watcher.Wait()
+	}()
+
+	waitFor(t, testWaitTimeout, func() bool {
+		return contains(r.scheduledNames(), "starter")
+	}, func() error {
+		return os.WriteFile(cfgPath, []byte("jobs:\n  - name: starter\n    schedule: \"0 5 1 * *\"\n    prompt: p\n"), 0o644)
+	})
+
+	waitFor(t, testWaitTimeout, func() bool {
+		return len(r.jobsSnapshot()) == 0 && len(r.scheduledNames()) == 0
+	}, func() error {
+		return os.WriteFile(cfgPath, []byte("jobs: []\n"), 0o644)
+	})
+}
+
+// TestReloadRefusesEmptyContent pins the loader half of
+// the truncated-write law directly: empty content is a RELOAD error, a
+// missing file and `jobs: []` still mean "no jobs" and apply, and the
+// lenient boot read is untouched.
+func TestReloadRefusesEmptyContent(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "crons.yaml")
+	if err := os.WriteFile(path, []byte("  \n\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadAllConfigsForReload(home); err == nil {
+		t.Fatal("reload accepted a whitespace-only crons.yaml as an empty job set")
+	} else if !strings.Contains(err.Error(), "empty content") {
+		t.Fatalf("reload error missing the empty-content verdict: %v", err)
+	}
+	if cfg, err := LoadAllConfigs(home); err != nil || len(cfg.Jobs) != 0 {
+		t.Fatalf("lenient load of a whitespace-only crons.yaml = %v, %v", cfg, err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err := loadAllConfigsForReload(home); err != nil || len(cfg.Jobs) != 0 {
+		t.Fatalf("reload of a deleted crons.yaml = %v, %v (deleting the file means no jobs)", cfg, err)
+	}
+	if err := os.WriteFile(path, []byte("jobs: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err := loadAllConfigsForReload(home); err != nil || len(cfg.Jobs) != 0 {
+		t.Fatalf("reload of jobs: [] = %v, %v (removing every job must apply)", cfg, err)
 	}
 }
 
