@@ -164,7 +164,7 @@ jobs:
         # notes step - curl -d @file, never an inline -d string. No payload
         # file means an overflow skip: do not post (the report step above
         # already said why), and keep the rest of the job green.
-        if: ${{ !cancelled() && steps.version.outputs.PRERELEASE == 'false' && hashFiles('dist/discord-release.json') != '' }}
+        if: ${{ success() && steps.version.outputs.PRERELEASE == 'false' && hashFiles('dist/discord-release.json') != '' }}
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
