@@ -1,4 +1,4 @@
-package process
+package terminal
 
 import (
 	"context"
@@ -62,9 +62,14 @@ func TestSpawnDirOverride(t *testing.T) {
 		return err == nil && strings.Contains(log, filepath.Clean(ws))
 	})
 
-	// The impossible dir is a spawn-side refusal.
-	if _, err := p2(r).run(context.Background(), map[string]any{
-		"action": "spawn", "command": probe, "name": "dead-dir", "dir": "/omega-definitely-not-here",
+	// The impossible dir is a spawn-side refusal (the shell.run door
+	// resolves the dir through the same override helper).
+	p := &ShellProvider{reg: r}
+	if _, err := p.registry().Spawn(ctx, probe, "dead-dir", "/omega-definitely-not-here"); err == nil {
+		t.Fatal("missing dir: want the spawn to be refused")
+	}
+	if _, err := p.RunShell(ctx, map[string]any{
+		"command": probe, "dir": "/omega-definitely-not-here",
 	}); err == nil || !strings.Contains(err.Error(), "omega-definitely-not-here") {
 		t.Fatalf("missing dir: err = %v, want a dir-named error", err)
 	}
@@ -100,6 +105,3 @@ func TestDirOverrideValidation(t *testing.T) {
 	}
 }
 
-// p2 is the test-side provider plumbing: the verbs' shared dispatcher
-// run() is a method on processProvider.
-func p2(reg *Registry) processProvider { return processProvider{reg: reg} }
