@@ -18,6 +18,13 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
+// testWaitTimeout bounds every poll-until-true wait in this package's tests.
+// It exists to catch a HANG, not to time correctness: a healthy condition can
+// take seconds when the full suite runs packages in parallel and starves the
+// goroutine under test. Bounding it tightly (2-5s) made load-sensitive tests
+// red on a loaded machine and green in isolation - the worst kind of flake.
+const testWaitTimeout = 30 * time.Second
+
 // toggleCapsule is the E1 test capsule: it mounts a tool, a command,
 // a route and a fence handle - surfaces the census and the journal
 // must unwind.
@@ -381,7 +388,7 @@ func TestToggleChurnFlatGoroutines(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) {
 		if got := runtime.NumGoroutine(); got <= before+2 {
 			break

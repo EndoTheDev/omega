@@ -136,7 +136,7 @@ func chatStoredToolResult(t *testing.T, s *Server, st *store.Store, body []byte,
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) {
 		msgs, err := st.GetMessages(context.Background(), sessionIDFromBody(body))
 		if err == nil {

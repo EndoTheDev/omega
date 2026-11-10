@@ -98,7 +98,7 @@ type askResult struct {
 // session ("" counts every session) and returns the pending list.
 func waitForPending(t *testing.T, h *Hub, session string, n int) []core.QuestionPrompt {
 	t.Helper()
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) {
 		if cards := h.Pending(session); len(cards) >= n {
 			return cards

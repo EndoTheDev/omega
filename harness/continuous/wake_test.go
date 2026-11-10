@@ -20,6 +20,13 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
+// testWaitTimeout bounds every poll-until-true wait in this package's tests.
+// It exists to catch a HANG, not to time correctness: a healthy condition can
+// take seconds when the full suite runs packages in parallel and starves the
+// goroutine under test. Bounding it tightly (2-5s) made load-sensitive tests
+// red on a loaded machine and green in isolation - the worst kind of flake.
+const testWaitTimeout = 30 * time.Second
+
 // stubExeScript writes an executable child script that records its
 // argv, cwd, and the OMEGA_ env deltas into outPath, then sleeps long
 // enough for the guards to be observed. It runs as the wake child's
@@ -57,7 +64,7 @@ sleep 30
 // spawn is asynchronous by contract).
 func waitFile(t *testing.T, outPath string, pred func(string) bool) string {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	var data string
 	for time.Now().Before(deadline) {
 		if b, err := os.ReadFile(outPath); err == nil {

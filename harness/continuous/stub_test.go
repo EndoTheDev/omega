@@ -94,7 +94,7 @@ func TestMain(m *testing.M) {
 func wakeSleep(t *testing.T, m *Machine, name string) {
 	t.Helper()
 	m.Sleep(name)
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) && m.LiveWake(name) {
 		time.Sleep(50 * time.Millisecond)
 	}

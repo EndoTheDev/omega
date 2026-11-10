@@ -19,6 +19,13 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
+// testWaitTimeout bounds every poll-until-true wait in this package's tests.
+// It exists to catch a HANG, not to time correctness: a healthy condition can
+// take seconds when the full suite runs packages in parallel and starves the
+// goroutine under test. Bounding it tightly (2-5s) made load-sensitive tests
+// red on a loaded machine and green in isolation - the worst kind of flake.
+const testWaitTimeout = 30 * time.Second
+
 // yieldEcho is the reference yield-class tool: registration declares
 // the class; the run itself is plain.
 func yieldEcho() core.Tool {
@@ -104,7 +111,7 @@ func (w *wakeRecorder) snapshot() []core.YieldResult {
 // lapses (the dispatched executors land asynchronously).
 func waitForWakes(t *testing.T, rec *wakeRecorder, n int) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) && rec.lenSync() < n {
 		time.Sleep(5 * time.Millisecond)
 	}

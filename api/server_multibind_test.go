@@ -166,7 +166,7 @@ func TestMultiBindServesOneCanvas(t *testing.T) {
 // channel's listener is live once Serve accepts.
 func waitMirrorHealthy(t *testing.T, base string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) {
 		res, err := http.Get(base + "/health")
 		if err == nil {

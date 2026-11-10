@@ -110,7 +110,7 @@ func TestAgentJobInertWithoutContinuous(t *testing.T) {
 	// Off = wakes go inert, schedules stay (ruling 14): the fire is a
 	// no-op that still records its occurrence - no panic, no spawn.
 	r.fire(context.Background(), r.jobsSnapshot()[0], r.now())
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) {
 		if v, _ := r.lastFireOf("scout/wake"); v != 0 {
 			break
