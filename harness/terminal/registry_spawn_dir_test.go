@@ -104,4 +104,3 @@ func TestDirOverrideValidation(t *testing.T) {
 		t.Fatalf("file dir: err = %v, want not-a-directory", err)
 	}
 }
-
