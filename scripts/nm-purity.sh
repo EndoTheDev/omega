@@ -307,6 +307,30 @@ def scrub(text, modules, carried=None):
         return None
 
     def scrub_chunk(chunk):
+        # Anchored short-decl names are FUNCTION-scoped, not file
+        # vocabulary (card t_f77dd67d). collect_anchors files every :=
+        # name of a dying wire line into dead_ids, and dead_ids is the
+        # file-wide set - so a local anchored in a dying capsule func
+        # leaked into every later chunk of the file and killed a LIVE
+        # sibling that happened to declare the same spelling. The
+        # provider proof died this way: providerInstancesKnob anchored
+        # `out` (its `out := make(..., len(names))` read the anchored
+        # `names`), and settingsArgs - a pure argv helper with no
+        # capsule wire at all - lost `out :=`, its append and
+        # `return out` to the value rule, leaving "missing return".
+        # Go gives a := name the scope of its block, so an anchor never
+        # outlives its own function: chunks ARE functions, and the
+        # package-level vocabulary (module name, host config types,
+        # deleted func names) stays in dead_ids across chunks. Snapshot
+        # and restore, so the cascade inside the chunk is unchanged.
+        base_dead = set(dead_ids)
+        try:
+            return scrub_chunk_inner(chunk)
+        finally:
+            dead_ids.clear()
+            dead_ids.update(base_dead)
+
+    def scrub_chunk_inner(chunk):
         removed = set()
         # a chunk untouched by the module keeps every line
         if not any(dead_word(ln) or mark_word(ln) for ln in chunk):
