@@ -639,6 +639,55 @@ printf "%s" "$out" | grep -q "^legal: t_cdoc" \
 printf "%s" "$out" | grep -qF 'pair: sanctioned (none, empty would-spawn set)' \
 	&& ok || bad "T16i: running > cap must give zero head slots (out: $out)"
 
+# T17 (local + CI): a card with NO `FILES:` line is UNPROVABLE, not precise
+# (card t_2d0d48ac, live 2026-11-11). The old guard read the ABSENCE as proof:
+# candidate_tokens() fell back to the whole body prose, imprecise_surface()
+# inspected the FILES line only, found nothing bare and answered "precise", so
+# a card that declares no write surface at all got the EASIEST pairing -
+# t_cfc2aa58 (no FILES line, BLOCKED) was spawned beside the webui card
+# t_b5784de3 as `pair: sanctioned ... FILES disjoint` on a surface nobody
+# proved. Pinned shapes: (T17a) the incident - a no-FILES card beside a legal
+# card reads forbidden and the reason NAMES the missing line, while the
+# no-FILES card stays legal on its own (the prose fallback still serves a
+# SINGLE dispatch); (T17b) the go+go leg holds the pair and names the card
+# that must grow a FILES line; (T17c) the boundary - `FILES:` with no value
+# declares nothing either; (T17d) the CONTROL - the same fixture with a real
+# FILES line still pairs, so the rule is the absent line, never a blanket
+# pair ban (the sanctioned shapes stay green: T16a/T16b/T16c/T16d/T16g).
+NF_WEB="INSERT INTO tasks VALUES('t_nofiles','ready','webui tweak','the fix lands in webui/app/pages/y.vue and its test',NULL,NULL,5,'2026-11-07T14:00',NULL,NULL);"
+NF_GO="INSERT INTO tasks VALUES('t_nfgo','ready','cron wake entry','the cron runner in harness/cron/runner.go drops its wake entry',NULL,NULL,5,'2026-11-07T14:00',NULL,NULL);"
+
+# T17a: no FILES line beside a legal webui card -> forbidden pair, named reason.
+out=$(PAIRRUN "$NF_WEB
+$WEB")
+printf "%s" "$out" | grep -q "^legal: t_nofiles" \
+	&& ok || bad "T17a: a no-FILES card must stay legal alone - the prose fallback serves single dispatch, only the pair is forbidden (out: $out)"
+printf "%s" "$out" | grep -qF 'pair: forbidden (t_nofiles t_web, no FILES: line on t_nofiles - unprovable surface, never a pair)' \
+	&& ok || bad "T17a: no FILES line is unprovable, not precise - the pair was not forbidden / reason did not name the missing line (out: $out)"
+
+# T17b: the go+go leg - the no-FILES go card makes the pair unprovable, and the
+# hold names it (same-pass leg: t_nfgo went legal first, t_gofl follows it).
+out=$(PAIRRUN "$NF_GO
+INSERT INTO tasks VALUES('t_gofl','ready','memory store','FILES: harness/memory/store.go',NULL,NULL,5,'2026-11-11T05:01',NULL,NULL);")
+printf "%s" "$out" | grep -q "^legal: t_nfgo" \
+	&& ok || bad "T17b: no-FILES go card should stay legal alone (out: $out)"
+printf "%s" "$out" | grep -q "^hold: t_gofl  (go-class beside go with unproven surface" \
+	&& ok || bad "T17b: no FILES line is unprovable, not precise - the go pair was not held (out: $out)"
+printf "%s" "$out" | grep -qF 'absent FILES: line is unprovable, never precise: same-pass t_nfgo' \
+	&& ok || bad "T17b: the hold reason did not name the FILES-less card (out: $out)"
+
+# T17c: the boundary - a `FILES:` line with NO value declares no surface either.
+out=$(PAIRRUN "INSERT INTO tasks VALUES('t_empty','ready','empty surface','FILES:',NULL,NULL,5,'2026-11-07T14:00',NULL,NULL);
+$WEB")
+printf "%s" "$out" | grep -qF 'pair: forbidden (t_empty t_web, no FILES: line on t_empty - unprovable surface, never a pair)' \
+	&& ok || bad "T17c: an EMPTY FILES line must read absent, not precise (out: $out)"
+
+# T17d: CONTROL - the same two-card fixture with a real FILES line still pairs.
+out=$(PAIRRUN "INSERT INTO tasks VALUES('t_precise','ready','webui tweak','FILES: webui/app/pages/y.vue',NULL,NULL,5,'2026-11-07T14:00',NULL,NULL);
+$WEB")
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_precise t_web, classes webui+webui, FILES disjoint)' \
+	&& ok || bad "T17d: a declared FILES surface must still pair - the rule is the ABSENT line, not a pair ban (out: $out)"
+
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]
