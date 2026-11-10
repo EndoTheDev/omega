@@ -21,6 +21,14 @@ open_app
 JRN_ID=$(new_journey_session title-fallback)
 label_journey_session "$JRN_ID" "$LABEL"
 
+# the seed lands through the REST path, and the sidebar list no longer
+# fetches on a timer (db7ab37f: the push channel replaced every poller) -
+# a session created outside the UI fires no socket event, so the row
+# exists in the store but never reaches a page that was already open.
+# Re-open the app: the boot fetch renders the seeded row, and the label
+# fallback contract under test needs nothing else.
+open_app
+
 # the sidebar row renders the label (title state 0: generation never
 # ran, and generation needing a model must never change that)
 row_ok=0; i=0
