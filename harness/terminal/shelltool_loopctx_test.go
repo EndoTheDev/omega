@@ -41,7 +41,8 @@ func TestLoopShellsRunInTheWorkspace(t *testing.T) {
 	a.SetLoopProvider(loop.Loop{})
 
 	ctx := core.WithRunWorkspace(context.Background(), ws, "")
-	events := a.RunWithProvider(ctx, prov, []core.Message{core.NewUser("probe the cwd")}, (&ShellProvider{}).Tools())
+	tools := testShellProvider(t).Tools()
+	events := a.RunWithProvider(ctx, prov, []core.Message{core.NewUser("probe the cwd")}, tools)
 
 	var result string
 	isErr := false
