@@ -32,7 +32,9 @@ func TestBuildPlugins(t *testing.T) {
 	// -process (t_5a49790b, the ONE shell domain: the process capsule
 	// dissolves into the terminal capsule's shell registry - its four
 	// verbs retired, the machinery stayed) = 23.
-	const want = 23
+	// +observability (t_8de82cff, the observability arc's engine half:
+	// the event ring + the log tail capsule) = 24.
+	const want = 24
 	if len(plugins) != want {
 		t.Fatalf("buildPlugins returned %d plugins, want %d", len(plugins), want)
 	}

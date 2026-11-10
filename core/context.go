@@ -126,6 +126,10 @@ func (c *Context) RunGroup() *Lifecycle {
 type eventObserverSet struct {
 	mu  sync.Mutex
 	obs []EventObserver
+	// sessObs are the session-attributed subscribers (card t_8de82cff):
+	// same spine, same cheap-and-blocking contract, plus the run's
+	// session id.
+	sessObs []SessionEventObserver
 }
 
 func (c *Context) obsSet() *eventObserverSet {
@@ -157,6 +161,32 @@ func (c *Context) EventObservers() []EventObserver {
 	defer s.mu.Unlock()
 	out := make([]EventObserver, len(s.obs))
 	copy(out, s.obs)
+	return out
+}
+
+// AddSessionEventObserver subscribes one session-attributed observer to
+// the run event spine (card t_8de82cff): same registration surface and
+// lifetime as AddEventObserver, and the observer also receives the id of
+// the session its run belongs to. Registration is post-mount safe for
+// the same reason - the run snapshots the set at its start.
+func (c *Context) AddSessionEventObserver(o SessionEventObserver) {
+	s := c.obsSet()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessObs = append(s.sessObs, o)
+}
+
+// SessionEventObservers snapshots the session-attributed spine
+// subscriptions at run start.
+func (c *Context) SessionEventObservers() []SessionEventObserver {
+	s := c.eventOb
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]SessionEventObserver, len(s.sessObs))
+	copy(out, s.sessObs)
 	return out
 }
 
