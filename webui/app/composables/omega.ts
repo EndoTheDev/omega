@@ -2273,6 +2273,13 @@ export interface SettingKnob {
     | "model"
     | "providers";
   value: unknown;
+  // default is the knob's effective default (card t_d13c7264): the value
+  // it takes when config.yaml names no key. The settings pane's modified
+  // dot and reset-to-default compare against exactly this field (card
+  // t_c04c959e). JSON null is the server's "no default known" sentinel
+  // (provider.model_name - the config validator requires it, so no value
+  // can ever be "the default"); such a row renders neither affordance.
+  default?: unknown;
   // options drive select knobs: plain strings are value+label; the
   // object form splits them (user themes label their names, value
   // theme:<id>). Server knobs only ever send plain strings.
@@ -2348,6 +2355,10 @@ export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
           label: kn.label,
           type: kn.type as SettingKnob["type"],
           value: kn.value,
+          // the default rides EVERY knob (card t_d13c7264); JSON null is
+          // the no-default sentinel and survives the normalization so the
+          // pane can tell it from default=false/""/0 (card t_c04c959e).
+          default: kn.default,
           options: Array.isArray(kn.options) ? (kn.options as string[]) : undefined,
           filter:
             kn.filter === "decision" || kn.filter === "vision"
@@ -2754,6 +2765,34 @@ export function filterSettingGroups(
     if (knobs.length > 0) out.push({ ...g, knobs });
   }
   return out;
+}
+
+// knobHasDefault: the wire answers default: null for a knob whose default
+// the config layer cannot name (the no-omitempty sentinel of card
+// t_d13c7264, e.g. provider.model_name). Such a row gets no modified dot
+// and no reset affordance - "unknown" is never rendered as "modified".
+// Pure.
+export function knobHasDefault(def: unknown): boolean {
+  return def !== null && def !== undefined;
+}
+
+// blankValue folds an UNSET value and the empty string into one shape: a
+// knob cleared to "" and a knob whose default is "" are the same state, so
+// the empty-default text knobs (server.default_workspace, logging.file)
+// never light a modified dot.
+function blankValue(v: unknown): unknown {
+  return v === undefined || v === null ? "" : v;
+}
+
+// knobDiffersFromDefault is the settings pane's modified test (card
+// t_c04c959e, the VS Code modified marker): true when the value differs
+// from the knob default. Scalars compare by identity, structural values
+// (the providers list) by content through valuesEqual, and the
+// empty/unset pair is one value. A knob with no known default is never
+// modified. Pure.
+export function knobDiffersFromDefault(value: unknown, def: unknown): boolean {
+  if (!knobHasDefault(def)) return false;
+  return !valuesEqual(blankValue(value), blankValue(def));
 }
 
 // valuesEqual compares two knob values: strict equality for the scalar

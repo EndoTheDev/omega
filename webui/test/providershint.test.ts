@@ -44,7 +44,10 @@ test("a blank row carries placeholders for name and host - and NO model column",
 // --- the knob help and the editor copy agree ---
 
 test("the provider.instances knob help carries the same flow facts", () => {
+  // the window is generous on purpose: the knob literal carries comments
+  // between Value and Help (the default-source note of card t_d13c7264),
+  // so a tight window reds on comments, not on drift
   assert.match(settings,
-    /Key: "provider\.instances"[\s\S]{0,200}Help: +?"named provider endpoints: the name is the instance id/,
+    /Key: "provider\.instances"[\s\S]{0,600}Help: +?"named provider endpoints: the name is the instance id/,
     "the server-side help keeps saying the name is the instance id (now: named provider ENDPOINTS)");
 });
