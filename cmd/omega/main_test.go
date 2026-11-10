@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/EndoTheDev/omega/agent"
@@ -545,5 +546,87 @@ func TestWebBaseURL(t *testing.T) {
 	}
 	if got := webBaseURL("", ""); got != "" {
 		t.Errorf("unset host = %q, want empty", got)
+	}
+}
+
+// TestRepoHomeHint is the C5 regression: a home that IS the exe's own
+// directory and the top of a git work tree warns once; the dev lane's
+// bin/ home, a prod home and an explicit OMEGA_HOME off the exe dir
+// stay quiet.
+func TestRepoHomeHint(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("checkout root home warns", func(t *testing.T) {
+		hint := repoHomeHint(repo, repo)
+		if hint == "" {
+			t.Fatal("want a stray hint for a home that is the checkout root")
+		}
+		for _, want := range []string{filepath.ToSlash(repo), "bin/", "OMEGA_HOME"} {
+			if !strings.Contains(hint, want) {
+				t.Errorf("hint does not mention %q: %s", want, hint)
+			}
+		}
+	})
+
+	t.Run("git worktree root (.git file) warns", func(t *testing.T) {
+		wt := t.TempDir()
+		if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: /elsewhere/.git/worktrees/x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if repoHomeHint(wt, wt) == "" {
+			t.Fatal("want a stray hint for a worktree root home")
+		}
+	})
+
+	t.Run("dev lane bin home stays quiet", func(t *testing.T) {
+		bin := filepath.Join(repo, "bin")
+		if err := os.MkdirAll(bin, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if got := repoHomeHint(bin, bin); got != "" {
+			t.Errorf("bin/ lane home warned: %s", got)
+		}
+	})
+
+	t.Run("prod home stays quiet", func(t *testing.T) {
+		prod := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(prod, "bin"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if got := repoHomeHint(prod, filepath.Join(prod, "bin")); got != "" {
+			t.Errorf("prod home warned: %s", got)
+		}
+	})
+
+	t.Run("explicit OMEGA_HOME at the repo root stays quiet", func(t *testing.T) {
+		bin := filepath.Join(repo, "bin")
+		if err := os.MkdirAll(bin, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if got := repoHomeHint(repo, bin); got != "" {
+			t.Errorf("an explicit OMEGA_HOME at the checkout root warned: %s", got)
+		}
+	})
+}
+
+// TestPrintRepoHomeHint verifies the hint reaches stderr exactly once
+// on the warned shape and writes nothing on a normal home.
+func TestPrintRepoHomeHint(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStderr(t, func() { printRepoHomeHint(repo, repo) })
+	if n := strings.Count(out, "home is the repo checkout root"); n != 1 {
+		t.Errorf("hint printed %d times, want exactly 1: %q", n, out)
+	}
+
+	prod := t.TempDir()
+	if out := captureStderr(t, func() { printRepoHomeHint(prod, prod) }); out != "" {
+		t.Errorf("normal home printed %q, want nothing", out)
 	}
 }

@@ -48,12 +48,55 @@ import (
 )
 
 func main() {
+	home := omegaHome()
+	// Stray guard (finding C5): a home that IS a checkout root gets one
+	// visible warning BEFORE bootstrapHome writes the examples into it.
+	// Hint, never a block - home resolution is unchanged.
+	exeDir := ""
+	if exe, err := os.Executable(); err == nil {
+		exeDir = filepath.Dir(exe)
+	}
+	printRepoHomeHint(home, exeDir)
 	// first-run bootstrap: write the example configs into the home so
 	// any install (release folder, go install, dotfolder) is self-documenting
-	bootstrapHome(omegaHome())
+	bootstrapHome(home)
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "omega:", err)
 		os.Exit(1)
+	}
+}
+
+// repoHomeHint is the first-user stray guard (finding C5). Running the
+// binary from a checkout root resolves home = the exe's own directory,
+// so every omega write (data/, omega.log, the config examples) lands in
+// the work tree - the observed omega.exe/omega.log residue a first user
+// hits. The default resolution stays exactly as it is: a release-folder
+// home beside the binary is legitimate, so this only warns. Returns ""
+// when there is nothing worth saying.
+//
+// The condition is deliberately narrow. home == exe dir excludes an
+// explicit OMEGA_HOME (an operator who points home at a checkout chose
+// that), and home holding .git excludes the dev lane's bin/ home
+// (inside the work tree, never its root) and every prod home.
+func repoHomeHint(home, exeDir string) string {
+	if home == "" || exeDir == "" {
+		return ""
+	}
+	if !strings.EqualFold(canonPath(home), canonPath(exeDir)) {
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join(home, ".git")); err != nil {
+		return ""
+	}
+	return fmt.Sprintf("omega: home is the repo checkout root (%s) - omega writes its db, log and config examples there, dirtying the tree.\n"+
+		"omega: build into bin/ instead (go build -o bin/omega.exe ./cmd/omega), or set OMEGA_HOME to move the home.", canonPath(home))
+}
+
+// printRepoHomeHint writes repoHomeHint to stderr, once per process
+// (main is the only caller).
+func printRepoHomeHint(home, exeDir string) {
+	if hint := repoHomeHint(home, exeDir); hint != "" {
+		fmt.Fprintln(os.Stderr, hint)
 	}
 }
 
