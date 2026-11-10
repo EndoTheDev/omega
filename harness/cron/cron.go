@@ -190,15 +190,38 @@ type Config struct {
 	Jobs []Job `yaml:"jobs"`
 }
 
+// readCronFile reads one crons.yaml. A missing file is NO content, NO
+// error and "did not exist": deleting the file is a legitimate
+// "no jobs left" statement, and a truncated file is not - so the
+// reload law below needs the distinction.
+func readCronFile(path string) (data []byte, existed bool, err error) {
+	data, err = os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("read crons.yaml: %w", err)
+	}
+	return data, true, nil
+}
+
 // LoadConfig reads and parses the crons.yaml at path. A missing file
 // is an empty config (no jobs), matching the mcp.yaml load behavior.
 func LoadConfig(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	return loadConfig(path, false)
+}
+
+// loadConfig is LoadConfig with the reload law switchable: strict turns
+// a zero-byte or whitespace-only EXISTING file into a read error instead
+// of an empty job set (loadAllConfigsForReload below, card t_8be45d55).
+// A missing file stays an empty config in both modes.
+func loadConfig(path string, strict bool) (*Config, error) {
+	data, existed, err := readCronFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return &Config{}, nil
-		}
-		return nil, fmt.Errorf("read crons.yaml: %w", err)
+		return nil, err
+	}
+	if strict && existed && strings.TrimSpace(string(data)) == "" {
+		return nil, fmt.Errorf("%s: empty content (a write may be in progress; write \"jobs: []\" to remove every job)", path)
 	}
 	cfg, err := ParseConfig(data)
 	if err != nil {
@@ -214,8 +237,31 @@ func LoadConfig(path string) (*Config, error) {
 // is a load error like a malformed main file - the operator sees the
 // offending home, not a silent skip. A malformed home directory skips
 // silently (agent.LoadProfiles' scan law).
+//
+// This is the lenient read (boot and the write paths): an empty file is
+// a config with no jobs. The hot-reload watcher uses
+// loadAllConfigsForReload, where an empty file is a read error.
 func LoadAllConfigs(home string) (*Config, error) {
-	cfg, err := LoadConfig(homeFile(home))
+	return loadAllConfigs(home, false)
+}
+
+// loadAllConfigsForReload is LoadAllConfigs for the hot-reload watcher,
+// with the truncated-write law (card t_8be45d55): a zero-byte or
+// whitespace-only crons.yaml is a READ ERROR, never an empty job set.
+// The watcher cannot tell a file mid-rewrite from a file the operator
+// emptied, and applying the empty set would drop every live job - a
+// non-atomic save (os.WriteFile shortens first, most editors write in
+// place) opens exactly that window. Removing every job stays
+// expressible and is applied normally: `jobs: []`, `jobs:`, a
+// comment-only file, or deleting the file.
+func loadAllConfigsForReload(home string) (*Config, error) {
+	return loadAllConfigs(home, true)
+}
+
+// loadAllConfigs is the one home walk; strictEmpty carries the reload
+// law into every file it reads.
+func loadAllConfigs(home string, strictEmpty bool) (*Config, error) {
+	cfg, err := loadConfig(homeFile(home), strictEmpty)
 	if err != nil {
 		return nil, fmt.Errorf("main crons: %w", err)
 	}
@@ -224,7 +270,7 @@ func LoadAllConfigs(home string) (*Config, error) {
 			continue // main is the root file, already read
 		}
 		path := filepath.Join(p.Dir, "config", stateFileName)
-		agentCfg, err := LoadConfig(path)
+		agentCfg, err := loadConfig(path, strictEmpty)
 		if err != nil {
 			return nil, fmt.Errorf("agent %s crons: %w", p.Name, err)
 		}
