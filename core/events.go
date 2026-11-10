@@ -90,6 +90,20 @@ func (AssistantMessageEvent) isEvent() {}
 // in encounter order.
 type EventObserver func(Event)
 
+// SessionEventObserver is an EventObserver that also receives the id of
+// the session the emitting run belongs to (card t_8de82cff, the
+// observability arc): "" for a sessionless run (a one-shot CLI run, a
+// test). The plain observer shape cannot attribute an event to a
+// conversation - the session rides the RUN CONTEXT
+// (agent.SessionIDFromContext), never the event payload, because the
+// events are the loop's transport and a session is the host's label.
+// The forward goroutine in Agent.RunWithProvider holds that context, so
+// it is the one place that can hand the id to a spine consumer; a
+// consumer that must scope by session subscribes through this shape
+// instead. Same contract as EventObserver: cheap, blocking, one
+// goroutine of the live run.
+type SessionEventObserver func(sessionID string, ev Event)
+
 // TickEvent is a module-emitted spine payload (card t_72ecca67, M4):
 // cron owns WHEN and fires a wake tick; continuous owns WHAT and
 // consumes it. The v0.12 payload law holds: the emitter namespace is a

@@ -75,6 +75,8 @@ against localhost from the same host is unaffected.
 | `/commands`                          | GET        | extension command registry (palette rows)      |
 | `/commands/dispatch`                 | POST       | run one command/skill locally — never the agent |
 | `/logs?lines=N`                      | GET        | omega.log tail (default 200, clamped 1..2000)  |
+| `/observability/events`              | GET        | structured run-event ring: `?session=`, `?level=error\|warn`, `?limit=` (newest N, oldest-first); 1024-record in-process cap |
+| `/observability/logs`                | GET        | omega.log tail from the observability capsule (`?lines=`, default 200, cap 2000); 404 without a log file |
 | `/settings`                          | GET, PUT   | config knobs schema / diff-only save (`GET ?key=<dotted path>` = one knob, 404 on a miss) |
 | `/themes`                            | GET        | user theme tokens (`<home>/themes/*.yaml`)     |
 | `/`                                  | GET        | embedded SPA catch-all (history-mode fallback) |
@@ -508,6 +510,49 @@ a toast delta, and row mark-read actions dispatch through
 the canvas, not from this SSE route. All answer 501 when the
 notifications seam is not mounted - removing the module removes the
 panels, the toast events and this surface together.
+
+### Observability (event ring + log tail)
+
+The `observability` capsule owns the two reads behind the webui logging
+tab. Both are GET-only; both die with the capsule (a disabled module's
+paths answer 404 at the module mux), and neither exports anything - no
+OTLP, no exporter, no telemetry dependency (t_8de82cff; OTel is a
+future concern, deliberately out of v1).
+
+- `GET /observability/events` — the structured run-event stream, read
+  from a bounded in-process ring (1024 records, oldest dropped). Each
+  row: `seq` (monotonic, the client's ordering key), `time`
+  (RFC3339Nano UTC), `session`, `type` (`agent_start`, `turn_start`,
+  `turn_end`, `tool_call`, `tool_result`, `stream_end`, `agent_end`),
+  `level` (`info` / `warn` / `error`), `tool`, `turn`, `duration_ms`,
+  `summary`, `error`. Filters: `?session=<id>` (absent = every
+  session), `?level=error` (errors only) or `?level=warn` (warnings and
+  errors; `all` / `info` = unfiltered - an unknown value is a 400, not
+  a silently empty page), `?limit=N` (default 200, cap 1000; the page
+  is the newest N matches, returned oldest-first). The body also
+  carries `returned`, `buffered` and `capacity`, so a client can tell
+  "nothing yet" from "the ring rolled over while you were away".
+  Durations are DERIVED, never measured: a turn's start→end span and a
+  tool call's call→result span, both paired in-process (`duration_ms`
+  is absent when nothing could be paired). Levels are derived too:
+  `stream_end`/`agent_end` errors and `IsError` tool results are
+  errors, a `cancelled`/`max_turns` finish and a `length`-capped
+  stream are warnings. Token-level stream chunks are not recorded -
+  the ring stays structural.
+- `GET /observability/logs?lines=N` — the tail of the log the running
+  process writes (default 200 lines, clamped 1..2000, 512 KiB read
+  window), as `{"path": ..., "lines": [...]}` with the lines verbatim.
+  404 when there is no log file (logging disabled, or a logger without
+  a readable path). This is the secondary view: the disk side of the
+  picture, and the only history across restarts. The shell's
+  `GET /logs` remains the Logs tab's own door to the same file.
+
+The ring is fed from the run event spine through the session-attributed
+observer (`core.SessionEventObserver`): the spine's events carry no
+session, so the capsule subscribes through the shape that receives the
+run's session id alongside each event. Recording stops when the capsule
+dismounts (its lifecycle handle's Stop) - the leftover subscription
+costs one atomic read per event thereafter.
 
 ### POST /attach-file
 
