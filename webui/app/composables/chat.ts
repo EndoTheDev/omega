@@ -21,6 +21,7 @@ import { computed, reactive, ref, type ComputedRef, type InjectionKey, type Ref 
 import {
   attachSession,
   chatPanelContent,
+  handlePayload,
   lastUserText,
   normalizeChatPayload,
   persistedTelemetry,
@@ -305,6 +306,13 @@ export interface ChatHost {
   closeSession(sessionId: string): void;
   /** refreshSessions feeds the server-reported active rows in */
   noteServerActive(ids: string[]): void;
+  /** one runs-topic edge: a session's live-run truth moved (busy pulse +
+      the pending waiter's wake event) */
+  noteRunState(session: string, active: boolean): void;
+  /** one chat-topic frame for the tabs NOT attached to that run's stream */
+  noteSocketChat(session: string, event: string, payload: unknown): void;
+  /** the socket came back: refetch every open pane through the GET routes */
+  reconnectCatchUp(): Promise<void>;
   /** the card t_30137f67 boot backfill: seed the JUST-LOADED
       server.default_workspace onto the unbound, non-ephemeral states
       that were created before the settings read resolved. Only BLANK
@@ -515,6 +523,60 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     serverBusy.value = new Set(ids);
   }
 
+  // --- the push channel's chat-host surface (card t_896cf5a8) -----------
+  //
+  // noteRunState is the runs topic's edge: one session's live-run truth
+  // moved. It updates the server-owned busy set (the pulse) and wakes
+  // every pending waiter on that session - the event that replaced the
+  // 2s run-slot poll.
+  function noteRunState(session: string, active: boolean) {
+    if (!session) return;
+    serverBusy.value = withBusy(serverBusy.value, session, active);
+    if (active) wakePending(session);
+  }
+
+  // noteSocketChat feeds one chat frame (the run's SSE event verbatim)
+  // into the tabs that are NOT attached to the run's own stream: usage
+  // telemetry, the canvas delta fallback and the yielded-run arming all
+  // land there. The attached tab's SSE owns its frames - a second
+  // dispatch would double-count the meters.
+  function noteSocketChat(session: string, event: string, payload: unknown) {
+    if (!session) return;
+    for (const st of states.values()) {
+      if (st.sessionId !== session) continue;
+      if (st.attached || busyKeys.value.has(st.key)) continue;
+      if (event === "session") continue; // the auto-create id rides the sender's own stream
+      const handlers: StreamHandlers = {
+        onUsage: (u) => {
+          st.tokens = u.promptTokens + u.completionTokens;
+        },
+        onViewModelDelta: (panel) => deps.canvasDelta?.(panel),
+        onRunEnd: (finishReason) => {
+          st.lastFinishReason = finishReason;
+          if (finishReason === "yielded") watchPending(st);
+        },
+      };
+      try {
+        handlePayload(payload, handlers, {});
+      } catch {
+        // an error payload on a background tab: the tab's own load/attach
+        // paints the transcript - a socket hint never throws into the loop
+      }
+    }
+  }
+
+  // reconnectCatchUp is the socket's catch-up half: nothing replayed, so
+  // every open pane refetches through the ordinary GET routes (events are
+  // hints, state is truth). The restore also re-arms a pending waiter.
+  async function reconnectCatchUp(): Promise<void> {
+    const loads: Promise<void>[] = [];
+    for (const [key, st] of states) {
+      if (!st.sessionId || busyKeys.value.has(key) || st.attached) continue;
+      loads.push(load(key, st.sessionId));
+    }
+    await Promise.all(loads);
+  }
+
   // makeTransportHandlers builds the SSE handler set one stream runs
   // with: usage telemetry + delta metering (the live run's repaints/s)
   // + the canonical canvas forward. NO transcript composition - the
@@ -596,84 +658,100 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
   // WAKE RUN on the same session (the same pipe a user send takes; the
   // panel repaints it). The origin /chat stream is over, so without a
   // subscriber the wake's view_model_delta frames land on nobody and
-  // the pending chip never fills. The watcher closes that gap: poll
-  // the run slot until the wake launches, then ATTACH and ride it
-  // (the same reattach flow load() uses) - the wake streams into the
-  // same pane, the chip resolves in place. A wake that yields again
-  // (the model delegated twice) re-arms on its own ending; still-
-  // pending siblings keep the watch alive across every ride.
-  const PENDING_POLL_MS = 2000;
-  const PENDING_RECHECK_EVERY = 5; // transcript truth recheck interval, in misses
+  // the pending chip never fills. The watcher closes that gap: ATTACH to
+  // the wake run and ride it (the same reattach flow load() uses) - the
+  // wake streams into the same pane, the chip resolves in place. A wake
+  // that yields again (the model delegated twice) re-arms on its own
+  // ending; still-pending siblings keep the watch across every ride.
+  //
+  // The wake is an EVENT since the push channel landed (card
+  // t_896cf5a8): the socket's runs topic carries the live-run truth, so
+  // noteRunState's active edge rides the wake - nothing polls the run
+  // slot. One arming probe per wait covers the edge that fired in the
+  // gap between the view's fetch and the arming; one budget deadline
+  // retires a waiter whose wake never comes (a parked home, a page that
+  // lost the socket) and the next reconnect catch-up re-arms it.
   const PENDING_WATCH_MS = 30 * 60 * 1000; // cap: the server's run timeout budget
 
-  const pendingWatchers = new Set<string>();
-
-  const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const pendingWaiters = new Map<string, string>(); // state key -> session id
+  const pendingDeadlines = new Map<string, ReturnType<typeof setTimeout>>();
 
   // pendingInTranscript reads the REST truth once: are any chips still
   // pending? A fetch fault answers true - a transient blip must not
-  // disarm the watch (the next recheck re-decides).
+  // disarm the watch.
   async function pendingInTranscript(sessionId: string): Promise<boolean> {
     try {
       const detail = await fetchTranscript(sessionId);
-      if (detail.running) return true; // a run holds the slot: the loop attaches
+      if (detail.running) return true; // a run holds the slot: the wake is live
       return transcriptHasPending(renderTranscriptItems(detail.items));
     } catch {
       return true;
     }
   }
 
-  // watchPending arms ONE watcher per state key: poll the slot, ride
-  // each wake run through the transport, stop when the transcript
-  // carries no pending chip anymore (settled, or parked by the runaway
-  // guard - its note is a user row, the chips stay by design) or the
-  // watch budget dies. Never touches busy state while merely polling:
-  // the slot is FREE while the call runs out-of-band, and a send from
-  // this tab is exactly how the user resets the guard.
+  // disarmPending retires one waiter (settled, parked, or budget spent).
+  function disarmPending(key: string): void {
+    pendingWaiters.delete(key);
+    const t = pendingDeadlines.get(key);
+    if (t) clearTimeout(t);
+    pendingDeadlines.delete(key);
+  }
+
+  // armDeadline is the budget guard: one truth recheck per window, never
+  // a loop. Still pending re-arms (a long out-of-band tool may outlive
+  // one window); settled disarms and repaints from the snapshot.
+  function armDeadline(key: string, sid: string): void {
+    const t = setTimeout(() => {
+      pendingDeadlines.delete(key);
+      const st = states.get(key);
+      if (!st || st.sessionId !== sid) return;
+      void (async () => {
+        if (!(await pendingInTranscript(sid))) {
+          disarmPending(key);
+          await deps.canvasRefresh?.();
+          return;
+        }
+        if (pendingWaiters.has(key)) armDeadline(key, sid);
+      })();
+    }, PENDING_WATCH_MS);
+    pendingDeadlines.set(key, t);
+  }
+
+  // ridePending attaches the wake run and rides it to its end. Its
+  // runStream finally re-arms when the truth still carries pending
+  // chips; a re-entry guard keeps two edges from double-attaching.
+  async function ridePending(key: string, sid: string): Promise<void> {
+    const st = states.get(key);
+    if (!st || st.sessionId !== sid) {
+      disarmPending(key);
+      return;
+    }
+    if (busyKeys.value.has(key) || st.attached) return; // a live stream owns it; its end re-arms
+    disarmPending(key);
+    st.attached = true;
+    await runStream(st, (handlers) => attachSession(sid, handlers));
+  }
+
+  // wakePending: one session's run went live - every armed waiter on
+  // that session rides it. Called from noteRunState (the runs topic).
+  function wakePending(session: string): void {
+    if (!session) return;
+    for (const [key, sid] of [...pendingWaiters]) {
+      if (sid === session) void ridePending(key, sid);
+    }
+  }
+
+  // watchPending arms ONE waiter per state key. The arming probe asks
+  // the run slot once (a single GET /events probe, not a poll): a wake
+  // that started before the edge subscription existed is still ridden.
   function watchPending(st: ChatState) {
     const sid = st.sessionId;
-    if (!sid || pendingWatchers.has(st.key)) return;
-    pendingWatchers.add(st.key);
+    if (!sid || pendingWaiters.has(st.key)) return;
+    pendingWaiters.set(st.key, sid);
+    armDeadline(st.key, sid);
     void (async () => {
-      const deadline = Date.now() + PENDING_WATCH_MS;
-      let misses = 0;
-      try {
-        while (Date.now() < deadline) {
-          const cur = states.get(st.key);
-          if (!cur || cur.sessionId !== sid) return; // state gone or rebound
-          if (busyKeys.value.has(st.key) || cur.attached) {
-            // a stream owns the tab (the user sent, another watcher
-            // rode): its own end re-arms through runStream's hook
-            await sleepMs(PENDING_POLL_MS);
-            continue;
-          }
-          if (await runActive(sid)) {
-            // the wake is live: attach and ride it to its end. Its
-            // agent_end arms the next loop turn (yielded = again, or
-            // the post-ride recheck decides below)
-            misses = 0;
-            cur.attached = true;
-            await runStream(cur, (handlers) => attachSession(sid, handlers));
-            continue;
-          }
-          misses++;
-          if (misses % PENDING_RECHECK_EVERY === 0) {
-            if (!(await pendingInTranscript(sid))) {
-              // the truth says nothing is pending anymore (settled
-              // while we slept, or the guard parked the home): repaint
-              // the panel from the snapshot and stand down
-              await deps.canvasRefresh?.();
-              return;
-            }
-          }
-          await sleepMs(PENDING_POLL_MS);
-        }
-      } catch {
-        // a transport fault ends the watch; the chips stay rendered
-        // and the next load re-arms if the truth still shows pending
-      } finally {
-        pendingWatchers.delete(st.key);
-      }
+      if (!(await runActive(sid))) return;
+      await ridePending(st.key, sid);
     })();
   }
 
@@ -1097,6 +1175,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
   function closeState(key: string) {
     const st = states.get(key);
     if (!st) return;
+    // a dropped state must not keep a wake waiter (card t_896cf5a8): the
+    // runs edge would otherwise ride a run into nothing
+    disarmPending(key);
     if (busyKeys.value.has(key)) st.orphan = true;
     else {
       states.delete(key);
@@ -1137,6 +1218,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     closeState,
     closeSession,
     noteServerActive,
+    noteRunState,
+    noteSocketChat,
+    reconnectCatchUp,
     seedDefaultWorkspace,
     sessionRow: deps.sessionRow,
   };
@@ -1286,6 +1370,9 @@ export function createCanvasTranscript(): CanvasTranscript {
       const it = (cache.get(csig) ?? reactive({ kind: "tool", name: "tool" })) as ToolItem;
       it.kind = "tool";
       it.name = block.tool_call?.name || "tool";
+      // the chips topic's join key (card t_896cf5a8): the pending chip's
+      // live tail rides the row whose call id matches
+      it.callId = callId;
       // the store id rides the CALL row (a run head can be a tool call
       // row - the variant switcher anchors on it, t_0df4efd8); the
       // result merge mutates this same item, so the id stays the call's
