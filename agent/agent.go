@@ -58,6 +58,11 @@ type Agent struct {
 	// each Run (card t_72ecca67, M3). Nil-safe: an Agent built without
 	// NewFromContext runs observer-free.
 	eventObserverSource func() []core.EventObserver
+	// sessionObserverSource is the session-attributed spine
+	// subscriptions (card t_8de82cff): same snapshot-per-run rule, and
+	// the forward goroutine hands each observer the run's session id
+	// alongside the event. Nil-safe like the plain source.
+	sessionObserverSource func() []core.SessionEventObserver
 }
 
 // EventObservers returns the agent's spine snapshot source; nil is the
@@ -74,6 +79,22 @@ func (a *Agent) eventObservers() []core.EventObserver {
 // run, never mid-run).
 func (a *Agent) SetEventObserverSource(src func() []core.EventObserver) {
 	a.eventObserverSource = src
+}
+
+// sessionEventObservers returns the session-attributed spine snapshot
+// source; nil is the empty subscription set.
+func (a *Agent) sessionEventObservers() []core.SessionEventObserver {
+	if a.sessionObserverSource == nil {
+		return nil
+	}
+	return a.sessionObserverSource()
+}
+
+// SetSessionEventObserverSource wires the Context's session-attributed
+// spine subscriptions (card t_8de82cff): one snapshot per run, the same
+// rule as SetEventObserverSource.
+func (a *Agent) SetSessionEventObserverSource(src func() []core.SessionEventObserver) {
+	a.sessionObserverSource = src
 }
 
 // NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
@@ -448,6 +469,7 @@ func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	ag.SetPromptContext(opts.PromptContext)
 	ag.SetCWD(opts.CWD)
 	ag.SetEventObserverSource(ctx.EventObservers)
+	ag.SetSessionEventObserverSource(ctx.SessionEventObservers)
 	ag.SetCompactionProvider(bindNeed[CompactionProvider](ctx, "compactor"))
 	// The smart-approval seam (card t_c2b52cb5): nil rides as nil -
 	// a host with no gate (mode off, no module) runs the loop ungated.
@@ -542,14 +564,25 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 	// consumer sees it. Inline, never buffered: a slow observer slows
 	// the run (the contract says cheap), but an event can NEVER be
 	// delivered to the host before the observers saw it.
-	if obs := a.eventObservers(); len(obs) > 0 {
+	//
+	// The session-attributed subscribers (card t_8de82cff) ride the
+	// same forward goroutine: the run's session id is already settled
+	// above (the attribution default), so this is the one place a
+	// consumer can learn WHICH conversation an event belongs to.
+	obs := a.eventObservers()
+	sessObs := a.sessionEventObservers()
+	if len(obs) > 0 || len(sessObs) > 0 {
 		forwarded := make(chan core.Event)
 		events = forwarded
+		sessionID := SessionIDFromContext(ctx)
 		go func() {
 			defer close(forwarded)
 			for e := range inner {
 				for _, o := range obs {
 					o(e)
+				}
+				for _, o := range sessObs {
+					o(sessionID, e)
 				}
 				forwarded <- e
 			}
