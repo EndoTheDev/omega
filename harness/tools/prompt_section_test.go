@@ -7,19 +7,33 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestPromptSectionsRendersTools verifies the Tools section rendering:
-// one "### <extension>" block per extension with tools, descriptions
-// truncated by firstLine.
-func TestPromptSectionsRendersTools(t *testing.T) {
+// TestPromptSectionsRendersOnlyTheDelta pins the trim (card
+// t_4f2c7b2e): a plain tool renders nothing - its name and description
+// already ride the provider's JSON schema - while an action-bearing
+// tool renders the domain line plus its sub-verb one-liners, the part
+// a schema enum cannot carry. An extension with no action-bearing tool
+// gets no block at all.
+func TestPromptSectionsRendersOnlyTheDelta(t *testing.T) {
 	p := NewPlugin()
 	secs := p.PromptSections(core.PromptBuildOptions{
 		Extensions: []core.ExtensionInfo{
 			{
-				Name: "webui",
+				Name: "memory",
 				ToolList: []core.ToolInfo{
-					{Name: "ui.click", Description: "Run a shell command.\nSecond line ignored."},
+					{
+						Name:        "memory.batch",
+						Description: "Atomic multi-change.\nSecond line ignored.",
+						Actions: []core.ToolAction{
+							{Name: "add", Description: "append an entry"},
+							{Name: "remove", Description: "delete an entry"},
+						},
+					},
+					{Name: "memory.replace", Description: "plain tool the schema already carries"},
 				},
 			},
+			{Name: "files", ToolList: []core.ToolInfo{
+				{Name: "files.read", Description: "read a file"},
+			}},
 			{Name: "empty", ToolList: nil},
 		},
 	})
@@ -33,7 +47,7 @@ func TestPromptSectionsRendersTools(t *testing.T) {
 	if s.Order != promptSectionOrder {
 		t.Errorf("Order = %d, want %d", s.Order, promptSectionOrder)
 	}
-	want := "### webui\n- ui.click: Run a shell command.\n\n"
+	want := "### memory\n- memory.batch: Atomic multi-change.\n  .add: append an entry\n  .remove: delete an entry\n\n"
 	if s.Body != want {
 		t.Errorf("Body = %q, want %q", s.Body, want)
 	}
@@ -61,24 +75,30 @@ func TestPromptSectionsImplementsSeam(t *testing.T) {
 }
 
 // TestPromptSectionsSkipsDisabledTools pins the registry enable flag's
-// prompt effect (card t_441deb04): the Tools section is the model's
-// tool list, so an entry the fold switched off must not be advertised -
+// prompt effect (card t_441deb04): the section is the model's tool
+// list, so an entry the fold switched off must not be advertised -
 // the model would call a tool the wire no longer carries.
 func TestPromptSectionsSkipsDisabledTools(t *testing.T) {
 	p := NewPlugin()
 	secs := p.PromptSections(core.PromptBuildOptions{
 		Extensions: []core.ExtensionInfo{
 			{
-				Name: "files",
+				Name: "kanban",
 				ToolList: []core.ToolInfo{
-					{Name: "files.read", Description: "read a file"},
-					{Name: "files.write", Description: "write a file", Disabled: true},
+					{Name: "kanban.batch", Description: "run several ops", Actions: []core.ToolAction{
+						{Name: "create", Description: "create a task"},
+					}},
+					{Name: "kanban.update", Description: "move a task", Disabled: true, Actions: []core.ToolAction{
+						{Name: "move", Description: "move status"},
+					}},
 				},
 			},
 			{
 				Name: "shell",
 				ToolList: []core.ToolInfo{
-					{Name: "shell.run", Description: "run a command", Disabled: true},
+					{Name: "shell.run", Description: "run a command", Disabled: true, Actions: []core.ToolAction{
+						{Name: "run", Description: "run it"},
+					}},
 				},
 			},
 		},
@@ -87,10 +107,10 @@ func TestPromptSectionsSkipsDisabledTools(t *testing.T) {
 		t.Fatalf("expected 1 section, got %d", len(secs))
 	}
 	body := secs[0].Body
-	if !strings.Contains(body, "files.read") {
-		t.Fatalf("enabled tool missing from the section: %q", body)
+	if !strings.Contains(body, "kanban.batch") {
+		t.Fatalf("enabled action tool missing from the section: %q", body)
 	}
-	if strings.Contains(body, "files.write") {
+	if strings.Contains(body, "kanban.update") {
 		t.Fatalf("disabled tool advertised to the model: %q", body)
 	}
 	if strings.Contains(body, "shell") {
@@ -98,19 +118,33 @@ func TestPromptSectionsSkipsDisabledTools(t *testing.T) {
 	}
 }
 
-// TestPromptSectionsAllDisabledContributesNothing pins the empty case: a
-// home with every tool off renders no Tools heading at all, never a
-// dangling "## Tools" with nothing under it.
-func TestPromptSectionsAllDisabledContributesNothing(t *testing.T) {
+// TestPromptSectionsEmptyCasesContributeNothing pins the empty cases: a
+// home whose tools carry no action annotations (the shipped set, card
+// t_4f2c7b2e) and a home with every tool off both contribute no
+// section - never a dangling "## Tools" heading.
+func TestPromptSectionsEmptyCasesContributeNothing(t *testing.T) {
 	p := NewPlugin()
-	secs := p.PromptSections(core.PromptBuildOptions{
+	plain := p.PromptSections(core.PromptBuildOptions{
 		Extensions: []core.ExtensionInfo{
 			{Name: "files", ToolList: []core.ToolInfo{
-				{Name: "files.read", Description: "read a file", Disabled: true},
+				{Name: "files.read", Description: "read a file"},
+				{Name: "files.write", Description: "write a file"},
 			}},
 		},
 	})
-	if len(secs) != 0 {
-		t.Fatalf("expected no section, got %#v", secs)
+	if len(plain) != 0 {
+		t.Fatalf("plain tools rendered a section: %#v", plain)
+	}
+	disabled := p.PromptSections(core.PromptBuildOptions{
+		Extensions: []core.ExtensionInfo{
+			{Name: "kanban", ToolList: []core.ToolInfo{
+				{Name: "kanban.batch", Description: "run several ops", Disabled: true, Actions: []core.ToolAction{
+					{Name: "create", Description: "create a task"},
+				}},
+			}},
+		},
+	})
+	if len(disabled) != 0 {
+		t.Fatalf("all-disabled set rendered a section: %#v", disabled)
 	}
 }
