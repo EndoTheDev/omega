@@ -67,10 +67,30 @@ func settingsSchema(path string) (*core.SettingsSchema, error) {
 	return &core.SettingsSchema{Groups: settingGroups(&cfg)}, nil
 }
 
+// defaultConfig returns the config layer BENEATH the file: the built-in
+// defaults (DefaultConfig) with the OMEGA_* environment overrides
+// applied - exactly the value LoadConfig gives a knob whose key
+// config.yaml does not name. The file itself is deliberately excluded:
+// writeConfigFile marshals the whole Config, so one settings save
+// materializes EVERY key, and a file-derived "default" would equal every
+// current value - the settings pane's modified-dot (tier 2b, card
+// t_c04c959e) could never light. Every knob's Default reads a field of
+// this struct, never a hand-typed literal, so a Config rename breaks the
+// build instead of silently drifting from the schema (card t_d13c7264).
+func defaultConfig() Config {
+	cfg := DefaultConfig()
+	applyEnv(&cfg)
+	return cfg
+}
+
 // settingGroups builds the full knob inventory from a config. Field
 // order follows the config.yaml layout (provider, server, store,
-// compaction, runtime, skills, memory, logging).
+// compaction, runtime, skills, memory, logging). Every knob carries
+// Default from defaultConfig(); the only omission is
+// provider.model_name - config.Validate requires it, so no value can be
+// its default and the wire answers null (the pane's "no default known").
 func settingGroups(cfg *Config) []core.SettingsGroup {
+	def := defaultConfig()
 	return []core.SettingsGroup{
 		{
 			Key:   "provider",
@@ -79,30 +99,46 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				{Key: "provider.type", Label: "type", Type: "select",
 					Options: []string{"ollama", "openai", "anthropic", "mock"},
 					Value:   strings.ToLower(cfg.Provider.Type),
+					// config-layer default is empty ("empty defaults to
+					// ollama" is the provider capsule's read of it), so a
+					// fresh config is NOT shown as modified.
+					Default: strings.ToLower(def.Provider.Type),
 					Help:    "provider flavor; empty defaults to ollama; mock answers deterministically with no network (tests, journeys)"},
 				// Card t_1914a8c9: the provider group is ordered CONNECTION
 				// FIRST (type, base url, api key), then the model knobs,
 				// then the instance list and the slots - the fields render
 				// in the shape the pane groups them.
 				{Key: "provider.host", Label: "base url", Type: "text",
-					Value: cfg.Provider.Host,
-					Help:  "provider base URL (default http://localhost:11434)"},
+					Value:   cfg.Provider.Host,
+					Default: def.Provider.Host,
+					Help:    "provider base URL (default http://localhost:11434)"},
 				{Key: "provider.api_key", Label: "api key", Type: "secret",
 					Value: maskSecret(cfg.Provider.APIKey),
-					Help:  "masked here; edit config.yaml instead (blank for local ollama)"},
+					// The default rides masked exactly like the value: an
+					// env-supplied OMEGA_API_KEY must never leak through the
+					// unauthenticated GET, and no stored key means the default
+					// is the empty string (masking that would imply a key).
+					Default: maskSecret(def.Provider.APIKey),
+					Help:    "masked here; edit config.yaml instead (blank for local ollama)"},
 				// card t_70c28128: model fields are typed pickers - the
 				// webui renders type "model" as a dropdown of the
 				// provider's live models, filtered by the knob's Filter
 				// (vision slots see vision-capable models only).
 				{Key: "provider.model_name", Label: "model name", Type: "model",
 					Value: cfg.Provider.ModelName,
-					Help:  "default model the agent serves; the webui model picker overrides per chat; applies on restart"},
+					// NO Default: config.Validate rejects an empty
+					// model_name, so no value can be "the default" - the
+					// knob answers JSON null and the pane renders no dot
+					// and no reset (the one omission in this schema).
+					Help: "default model the agent serves; the webui model picker overrides per chat; applies on restart"},
 				{Key: "provider.vision_model", Label: "vision model", Type: "model", Filter: "vision", DefaultOption: true,
-					Value: cfg.VisionModel,
-					Help:  "auxiliary captioner model for image messages; \"default\" follows the model the current chat runs (the composer's chip), resolved per call - useful only when that model can see images (the caption hop exists for a blind main model, so \"default\" on a blind one sends the image there and the run fails on the caption); the dropdown lists vision-capable models only; empty = images reach the main model unchanged and may fail loudly; applies on restart"},
+					Value:   cfg.VisionModel,
+					Default: def.VisionModel,
+					Help:    "auxiliary captioner model for image messages; \"default\" follows the model the current chat runs (the composer's chip), resolved per call - useful only when that model can see images (the caption hop exists for a blind main model, so \"default\" on a blind one sends the image there and the run fails on the caption); the dropdown lists vision-capable models only; empty = images reach the main model unchanged and may fail loudly; applies on restart"},
 				{Key: "provider.title_model", Label: "title model", Type: "model",
-					Value: cfg.TitleModel,
-					Help:  "cheap model for session titles; empty = the main model; applies on restart"},
+					Value:   cfg.TitleModel,
+					Default: def.TitleModel,
+					Help:    "cheap model for session titles; empty = the main model; applies on restart"},
 				// card t_7dcd4280, reshaped t_1914a8c9: the named
 				// instances - one row per instance, each a NAMED ENDPOINT
 				// only (name, type, base url, api key; no model column -
@@ -112,7 +148,10 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				// secret".
 				{Key: "provider.instances", Label: "provider instances", Type: "providers",
 					Value: providerInstancesKnob(cfg),
-					Help:  "named provider endpoints: the name is the instance id, so two accounts of one type are two rows; the provider section above stays the default; rows can be renamed, retyped and removed here, but a row's host and api key are config.yaml-only (changes apply on restart)"},
+					// The default is the empty list, rendered through the
+					// same function as the value so the shapes cannot drift.
+					Default: providerInstancesKnob(&def),
+					Help:    "named provider endpoints: the name is the instance id, so two accounts of one type are two rows; the provider section above stays the default; rows can be renamed, retyped and removed here, but a row's host and api key are config.yaml-only (changes apply on restart)"},
 				// card t_fc0b2f2d: the four per-subsystem model
 				// slots - provider settings assigns one named model
 				// per subsystem ("instance:model" or a bare model;
@@ -120,16 +159,20 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				// four call sites (compaction, summarizer, curator,
 				// approval reviewer) resolve the slot live.
 				{Key: "provider.compaction_model", Label: "compaction model", Type: "model", Slot: true,
-					Value: cfg.CompactionModel, Live: true,
+					Value:   cfg.CompactionModel,
+					Default: def.CompactionModel, Live: true,
 					Help: "model the compaction summarizer consults; instance:model rides a named provider instance (empty = the session provider model); applies live"},
 				{Key: "provider.summarizer_model", Label: "summarizer model", Type: "model", Slot: true,
-					Value: cfg.SummarizerModel, Live: true,
+					Value:   cfg.SummarizerModel,
+					Default: def.SummarizerModel, Live: true,
 					Help: "model the hygiene job consults for session summaries; instance:model rides a named provider instance (empty = the session provider model); applies live - the next sweep consults it (the report names the slot)"},
 				{Key: "provider.skills_model", Label: "skills curator model", Type: "model", Slot: true,
-					Value: cfg.SkillsModel, Live: true,
+					Value:   cfg.SkillsModel,
+					Default: def.SkillsModel, Live: true,
 					Help: "model the weekly skills curator consults for merge/distill proposals; instance:model rides a named provider instance (empty = the session provider model); applies live - the next curator action consults it"},
 				{Key: "provider.approvals_model", Label: "approval decision model", Type: "model", Slot: true, Filter: "decision",
-					Value: cfg.ApprovalsModel, Live: true,
+					Value:   cfg.ApprovalsModel,
+					Default: def.ApprovalsModel, Live: true,
 					Help: "decision model the smart approval gate consults; instance:model routes the consult through a named provider instance (empty = fail-closed, every gated command escalates); applies live"},
 			},
 		},
@@ -139,18 +182,28 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			Knobs: []core.SettingsKnob{
 				{Key: "server.port", Label: "port", Type: "number",
 					Min: ptrF(1), Max: ptrF(math.MaxUint16), Step: ptrF(1),
-					Value: cfg.Server.Port,
-					Help:  "HTTP channel port; applies on restart"},
+					Value:   cfg.Server.Port,
+					Default: def.Server.Port,
+					Help:    "HTTP channel port; applies on restart"},
 				{Key: "server.bind", Label: "bind addresses", Type: "bindlist",
 					Value: strings.Join(cfg.Server.Bind, ", "),
-					Help:  "comma-separated listen addresses; loopback only by default (unauthenticated API); edit config.yaml instead (applies on restart)"},
+					// Config-layer default is empty; the api capsule's
+					// api.Default() supplies 127.0.0.1 for an unset bind
+					// (api/config.go:60), so the loopback-only law is the
+					// effective default while an empty config stays
+					// unmodified. An explicit 0.0.0.0 lights the dot.
+					Default: strings.Join(def.Server.Bind, ", "),
+					Help:    "comma-separated listen addresses; loopback only by default (unauthenticated API); edit config.yaml instead (applies on restart)"},
 				{Key: "server.run_timeout", Label: "run timeout (s)", Type: "number",
 					Min: ptrF(1), Step: ptrF(1),
-					Value: cfg.Server.RunTimeout,
-					Help:  "wall-clock cap per detached chat run, in seconds; applies on restart"},
+					Value:   cfg.Server.RunTimeout,
+					Default: def.Server.RunTimeout,
+					Help:    "wall-clock cap per detached chat run, in seconds; applies on restart"},
 				{Key: "server.default_workspace", Label: "default workspace", Type: "text",
 					Value: cfg.Server.DefaultWorkspace, Live: true,
-					Help: "absolute path; the Files tab roots here when the focused session has no pinned workspace, and a workspace-less session's tool runs (shell, files, processes) root here instead of the process working directory; empty = the process working directory; applies live"},
+					// empty is the default (the cwd fallback stands)
+					Default: def.Server.DefaultWorkspace,
+					Help:    "absolute path; the Files tab roots here when the focused session has no pinned workspace, and a workspace-less session's tool runs (shell, files, processes) root here instead of the process working directory; empty = the process working directory; applies live"},
 			},
 		},
 		{
@@ -158,8 +211,9 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			Label: "store",
 			Knobs: []core.SettingsKnob{
 				{Key: "store.db_path", Label: "database path", Type: "text",
-					Value: cfg.Store.DBPath,
-					Help:  "SQLite file, relative to the working dir; applies on restart"},
+					Value:   cfg.Store.DBPath,
+					Default: def.Store.DBPath,
+					Help:    "SQLite file, relative to the working dir; applies on restart"},
 			},
 		},
 		{
@@ -169,11 +223,20 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				{Key: "sessions.retention_days", Label: "retention (days)", Type: "number",
 					Min: ptrF(0), Step: ptrF(1),
 					Value: cfg.Sessions.RetentionDays, Live: true,
-					Help: "the hygiene job deletes sessions inactive longer than this many days (pinned sessions are exempt); 0 = never prune; applies live - the section rides the same hot-apply push as summarizer_model"},
+					// store.DefaultHygiene().RetentionDays (config.go:348)
+					Default: def.Sessions.RetentionDays,
+					Help:    "the hygiene job deletes sessions inactive longer than this many days (pinned sessions are exempt); 0 = never prune; applies live - the section rides the same hot-apply push as summarizer_model"},
 				{Key: "sessions.summarize_after_hours", Label: "summarize after (h)", Type: "number",
 					Min: ptrF(0), Step: ptrF(1),
 					Value: cfg.Sessions.SummarizeAfterHours, Live: true,
-					Help: "the hygiene job summarizes settled sessions that lack a summary once they are idle this many hours; 0 = the default (24h); applies live - the section rides the same hot-apply push as summarizer_model"},
+					// The 0-pseudo-default knob: 0 is the runtime sentinel
+					// ("the default, 24h"), the machine default is the real
+					// window - store.DefaultHygiene().SummarizeAfterHours
+					// (config.go:349), the number this pane shows as
+					// unmodified. A written 0 therefore reads as modified,
+					// which is honest: it is a different setting.
+					Default: def.Sessions.SummarizeAfterHours,
+					Help:    "the hygiene job summarizes settled sessions that lack a summary once they are idle this many hours; 0 = the default (24h); applies live - the section rides the same hot-apply push as summarizer_model"},
 				// The summarizer's model moved to provider settings
 				// (card t_fc0b2f2d): provider.summarizer_model.
 			},
@@ -181,7 +244,7 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 		{
 			Key:   "compaction",
 			Label: "compaction",
-			Knobs: compactionKnobs(cfg),
+			Knobs: compactionKnobs(cfg, &def),
 		},
 		{
 			Key:   "runtime",
@@ -189,15 +252,21 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			Knobs: []core.SettingsKnob{
 				{Key: "system_prompt", Label: "system prompt", Type: "textarea",
 					Value: cfg.SystemPrompt, Live: true,
-					Help: "extra custom prompt lines appended to the system prompt; applies live - the next run reads it"},
+					Default: def.SystemPrompt,
+					Help:    "extra custom prompt lines appended to the system prompt; applies live - the next run reads it"},
 				{Key: "http_timeout", Label: "http timeout (s)", Type: "number",
 					Min: ptrF(1), Step: ptrF(1),
-					Value: cfg.HTTPTimeout,
-					Help:  "LLM request timeout in seconds", Live: true},
+					Value:   cfg.HTTPTimeout,
+					Default: def.HTTPTimeout,
+					Help:    "LLM request timeout in seconds", Live: true},
 				{Key: "max_turns", Label: "max turns", Type: "number",
 					Min: ptrF(0), Step: ptrF(1),
 					Value: cfg.MaxTurns, Live: true,
-					Help: "tool-loop turn cap per chat; applies live - the next run reads it (0 = the 100 default)"},
+					// 0 is a runtime sentinel (the same 100); the machine
+					// default is the number DefaultConfig carries
+					// (config.go:384).
+					Default: def.MaxTurns,
+					Help:    "tool-loop turn cap per chat; applies live - the next run reads it (0 = the 100 default)"},
 			},
 		},
 		{
@@ -205,12 +274,15 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			Label: "skills",
 			Knobs: []core.SettingsKnob{
 				{Key: "skills.dir", Label: "skills directory", Type: "text",
-					Value: cfg.Skills.Dir,
-					Help:  "loaded at startup; applies on restart"},
+					Value:   cfg.Skills.Dir,
+					Default: def.Skills.Dir,
+					Help:    "loaded at startup; applies on restart"},
 				{Key: "skills.nudge_interval", Label: "nudge interval", Type: "number",
 					Min: ptrF(0), Step: ptrF(1),
 					Value: cfg.Skills.NudgeInterval,
-					Help:  "learning-loop reminder cadence: tool iterations without a persisted lesson before the next turn prep carries one reminder line; 0 = off; applies on restart"},
+					// skills.DefaultNudgeInterval (config.go:365)
+					Default: def.Skills.NudgeInterval,
+					Help:    "learning-loop reminder cadence: tool iterations without a persisted lesson before the next turn prep carries one reminder line; 0 = off; applies on restart"},
 				// The curator's model moved to provider settings
 				// (card t_fc0b2f2d): provider.skills_model.
 			},
@@ -220,23 +292,29 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			Label: "memory",
 			Knobs: []core.SettingsKnob{
 				{Key: "memory.enabled", Label: "enabled", Type: "toggle",
-					Value: cfg.Memory.Enabled,
-					Help:  "persistent memory system; applies on restart"},
+					Value:   cfg.Memory.Enabled,
+					Default: def.Memory.Enabled,
+					Help:    "persistent memory system; applies on restart"},
 				{Key: "memory.user_profile_enabled", Label: "user profile enabled", Type: "toggle",
-					Value: cfg.Memory.UserProfileEnabled,
-					Help:  "user-profile memory file; applies on restart"},
+					Value:   cfg.Memory.UserProfileEnabled,
+					Default: def.Memory.UserProfileEnabled,
+					Help:    "user-profile memory file; applies on restart"},
 				{Key: "memory.char_limit", Label: "char limit", Type: "number",
 					Min: ptrF(1), Step: ptrF(1),
-					Value: cfg.Memory.CharLimit,
-					Help:  "memory file budget in characters; applies on restart"},
+					Value:   cfg.Memory.CharLimit,
+					Default: def.Memory.CharLimit,
+					Help:    "memory file budget in characters; applies on restart"},
 				{Key: "memory.user_char_limit", Label: "user profile char limit", Type: "number",
 					Min: ptrF(1), Step: ptrF(1),
-					Value: cfg.Memory.UserProfileCharLimit,
-					Help:  "user-profile budget in characters; applies on restart"},
+					Value:   cfg.Memory.UserProfileCharLimit,
+					Default: def.Memory.UserProfileCharLimit,
+					Help:    "user-profile budget in characters; applies on restart"},
 				{Key: "memory.file", Label: "memory file", Type: "text",
-					Value: cfg.Memory.File, Help: "applies on restart"},
+					Value:   cfg.Memory.File,
+					Default: def.Memory.File, Help: "applies on restart"},
 				{Key: "memory.user_file", Label: "user profile file", Type: "text",
-					Value: cfg.Memory.UserProfileFile, Help: "applies on restart"},
+					Value:   cfg.Memory.UserProfileFile,
+					Default: def.Memory.UserProfileFile, Help: "applies on restart"},
 			},
 		},
 		{
@@ -244,11 +322,17 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			Label: "logging",
 			Knobs: []core.SettingsKnob{
 				{Key: "logging.enabled", Label: "enabled", Type: "toggle",
-					Value: cfg.Logging.Enabled,
-					Help:  "operational log; applies on restart"},
+					Value:   cfg.Logging.Enabled,
+					Default: def.Logging.Enabled,
+					Help:    "operational log; applies on restart"},
 				{Key: "logging.file", Label: "log file", Type: "text",
 					Value: cfg.Logging.File,
-					Help:  "applies on restart"},
+					// The default filename is deliberately empty: a bare
+					// relative name would open a log in the process CWD
+					// (config.go:377-381); resolveHomePaths computes the
+					// real path at boot.
+					Default: def.Logging.File,
+					Help:    "applies on restart"},
 			},
 		},
 		// The approval gate group (card t_c2b52cb5): mode off|manual|smart
@@ -264,12 +348,16 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				{Key: "approvals.mode", Label: "mode", Type: "select",
 					Options: []string{"off", "manual", "smart"},
 					Value:   cfg.Approvals.Mode, Live: true,
-					Help: "off = no gate at all; manual = flagged commands ask you (default); smart = a decision model reviews them first; applies live for mounted gates (off at boot keeps the gate unmounted)"},
+					// config.go:392-394: manual IS the explicit default
+					// (the ship-dark ruling).
+					Default: def.Approvals.Mode,
+					Help:    "off = no gate at all; manual = flagged commands ask you (default); smart = a decision model reviews them first; applies live for mounted gates (off at boot keeps the gate unmounted)"},
 				// The decision model moved to provider settings (card
 				// t_fc0b2f2d): provider.approvals_model.
 				{Key: "approvals.smart_policy", Label: "operator policy", Type: "textarea",
 					Value: cfg.Approvals.SmartPolicy, Live: true,
-					Help: "trusted text the reviewer reads beside every command: describe routine operations that should not interrupt you; applies live; a policy edit also re-keys the gate cache"},
+					Default: def.Approvals.SmartPolicy,
+					Help:    "trusted text the reviewer reads beside every command: describe routine operations that should not interrupt you; applies live; a policy edit also re-keys the gate cache"},
 			},
 		},
 	}
@@ -277,36 +365,48 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 
 // compactionKnobs renders the agent.CompactionConfig section. Every
 // compaction knob is read per Compact call, so all hot-apply live.
-func compactionKnobs(cfg *Config) []core.SettingsKnob {
+// def carries the default layer (defaultConfig) the Default fields read.
+func compactionKnobs(cfg, def *Config) []core.SettingsKnob {
 	c := &cfg.Compaction
+	d := &def.Compaction
 	return []core.SettingsKnob{
 		{Key: "compaction.enabled", Label: "enabled", Type: "toggle",
-			Value: c.Enabled,
-			Help:  "summarize history when the token budget is exceeded", Live: true},
+			Value:   c.Enabled,
+			Default: d.Enabled,
+			Help:    "summarize history when the token budget is exceeded", Live: true},
 		{Key: "compaction.threshold", Label: "threshold", Type: "number",
 			Min: ptrF(0.05), Max: ptrF(1), Step: ptrF(0.05),
-			Value: c.Threshold,
-			Help:  "fraction of the context window that triggers compaction", Live: true},
+			Value:   c.Threshold,
+			Default: d.Threshold,
+			Help:    "fraction of the context window that triggers compaction", Live: true},
 		{Key: "compaction.context_window", Label: "context window", Type: "number",
 			Min: ptrF(0), Step: ptrF(1),
 			Value: c.ContextWindow,
-			Help:  "model context window in tokens the budget is measured against; 0 = auto (probed from the provider at startup)", Live: true},
+			// The config default is the 32768 floor DefaultConfig carries
+			// (config.go:357); 0 is the "probe the provider" sentinel and
+			// therefore reads as modified.
+			Default: d.ContextWindow,
+			Help:    "model context window in tokens the budget is measured against; 0 = auto (probed from the provider at startup)", Live: true},
 		{Key: "compaction.keep_first", Label: "keep first", Type: "number",
 			Min: ptrF(0), Step: ptrF(1),
-			Value: c.KeepFirst,
-			Help:  "messages kept unsummarized at the head", Live: true},
+			Value:   c.KeepFirst,
+			Default: d.KeepFirst,
+			Help:    "messages kept unsummarized at the head", Live: true},
 		{Key: "compaction.keep_last", Label: "keep last", Type: "number",
 			Min: ptrF(0), Step: ptrF(1),
-			Value: c.KeepLast,
-			Help:  "messages kept unsummarized at the tail", Live: true},
+			Value:   c.KeepLast,
+			Default: d.KeepLast,
+			Help:    "messages kept unsummarized at the tail", Live: true},
 		{Key: "compaction.reserve_tokens", Label: "reserve tokens", Type: "number",
 			Min: ptrF(1), Step: ptrF(1),
-			Value: c.ReserveTokens,
-			Help:  "tokens reserved for the summary response", Live: true},
+			Value:   c.ReserveTokens,
+			Default: d.ReserveTokens,
+			Help:    "tokens reserved for the summary response", Live: true},
 		{Key: "compaction.max_tool_output", Label: "max tool output", Type: "number",
 			Min: ptrF(1), Step: ptrF(1),
-			Value: c.MaxToolOutput,
-			Help:  "tool-result truncation length in characters; applies on restart"},
+			Value:   c.MaxToolOutput,
+			Default: d.MaxToolOutput,
+			Help:    "tool-result truncation length in characters; applies on restart"},
 	}
 }
 
