@@ -13,6 +13,9 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  DEFAULT_SOCKET_TOPICS,
+  LOG_STREAM_EVENT,
+  LOG_SUBSCRIBE_EVENT,
   SOCKET_BACKOFF_BASE_MS,
   SOCKET_BACKOFF_MAX_MS,
   SOCKET_TOPICS,
@@ -217,7 +220,7 @@ test("connect opens one connection, subscribes to the whole topic set, dispatche
   assert.equal(sock.url, "ws://lane/ws");
   sock.open();
   assert.equal(client.status.value, "open");
-  assert.deepEqual(JSON.parse(sock.sent[0]!), { type: "subscribe", topics: [...SOCKET_TOPICS] });
+  assert.deepEqual(JSON.parse(sock.sent[0]!), { type: "subscribe", topics: [...DEFAULT_SOCKET_TOPICS] });
   sock.push({ topic: "chat", session: "s1", event: "tool_call", data: { type: "tool_call" } });
   assert.deepEqual(chats, ["s1:tool_call"]);
   client.close();
@@ -376,4 +379,67 @@ test("the app wires every topic and catches up on reconnect only", () => {
   assert.ok(app.includes("if (!reconnect) return"), "the catch-up is the reconnect path, not the cold boot");
   assert.ok(app.includes("socket.close()"), "the page unmount closes the connection");
   assert.ok(app.includes("ingestChipFrame"), "the chips topic feeds the live tail store");
+});
+
+// --- the logs topic's gate (card t_0e7bc0bb) ------------------------------
+
+test("logs is the sixth topic and is NOT in the default subscription", () => {
+  assert.deepEqual([...SOCKET_TOPICS], ["chat", "chips", "canvas", "runs", "health", "logs"]);
+  assert.ok(!(DEFAULT_SOCKET_TOPICS as readonly string[]).includes("logs"));
+});
+
+test("the shell adds logs on the pane's request and drops it again", () => {
+  FakeSocket.made = [];
+  const client = createSocketClient(
+    {},
+    { factory: (u) => new FakeSocket(u) as unknown as WebSocket, url: "ws://lane/ws", rand: () => 0.5 },
+  );
+  client.connect();
+  const sock = FakeSocket.made[0]!;
+  sock.open();
+  const withLogs = [...DEFAULT_SOCKET_TOPICS, "logs"] as const;
+  client.subscribe(withLogs);
+  assert.deepEqual(client.topics(), [...withLogs]);
+  assert.deepEqual(JSON.parse(sock.sent[1]!), { type: "subscribe", topics: [...withLogs] });
+  // the reconnect re-sends the CURRENT set - the gate survives a drop
+  sock.drop();
+  return sleep(600).then(() => {
+    FakeSocket.made[1]!.open();
+    assert.deepEqual(JSON.parse(FakeSocket.made[1]!.sent[0]!), {
+      type: "subscribe",
+      topics: [...withLogs],
+    });
+    // the last logs pane unmounts
+    client.subscribe(DEFAULT_SOCKET_TOPICS);
+    assert.ok(!client.topics().includes("logs"));
+    client.close();
+  });
+});
+
+test("a logs frame hands the pane only the appended lines, verbatim", () => {
+  const got: string[][] = [];
+  const handlers: SocketHandlers = { logs: (lines) => got.push(lines) };
+  dispatchFrame(
+    { topic: "logs", data: { lines: ["2026/11/11 10:00:00 one", "2026/11/11 10:00:01 two"] } },
+    handlers,
+  );
+  assert.deepEqual(got, [["2026/11/11 10:00:00 one", "2026/11/11 10:00:01 two"]]);
+  // malformed payloads are silent no-ops, never a crash
+  dispatchFrame({ topic: "logs", data: { lines: "nope" } }, handlers);
+  dispatchFrame({ topic: "logs", data: { lines: [1, "kept", null] } }, handlers);
+  dispatchFrame({ topic: "logs", data: { lines: [] } }, handlers);
+  dispatchFrame({ topic: "logs" }, handlers);
+  assert.deepEqual(got.at(-1), ["kept"]);
+  assert.equal(got.length, 2);
+});
+
+test("the pane's window seam literals match the shell's", () => {
+  // module UI cannot import shell code, so the two constants are
+  // duplicated on purpose - this pins them to the same strings
+  const pane = readFileSync(
+    resolve(root, "..", "..", "api", "http_channel", "ui", "logstream.ts"),
+    "utf8",
+  );
+  assert.match(pane, new RegExp(`LOG_SUBSCRIBE_EVENT = "${LOG_SUBSCRIBE_EVENT}"`));
+  assert.match(pane, new RegExp(`LOG_STREAM_EVENT = "${LOG_STREAM_EVENT}"`));
 });

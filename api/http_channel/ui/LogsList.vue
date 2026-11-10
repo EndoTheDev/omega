@@ -8,7 +8,7 @@
          error toggle chips, the card's scope). One chip per severity,
          aria-pressed carries the on/off state, the click toggles it;
          all-on is the default (the full stream). The chips classify
-         the SAME raw tail the poll fetches - no server-side filter. -->
+         the SAME raw tail the pane holds - no server-side filter. -->
     <TabBand title="Logs">
       <button
         v-for="sev in LOG_SEVERITIES"
@@ -57,7 +57,7 @@
       </div>
       <p
         class="logs-meta">
-        polling every {{ POLL_MS / 1000 }}s · {{ shown.length }} of {{ lines.length }} lines
+        live · {{ shown.length }} of {{ lines.length }} lines
       </p>
     </template>
   </section>
@@ -66,22 +66,23 @@
 <script setup lang="ts">
   import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
   import { isNarrowWidth } from "./narrow";
+  import { LOG_STREAM_EVENT, LOG_SUBSCRIBE_EVENT, mergeTail, type LogStreamDetail } from "./logstream";
   import {
     filterLogLines,
     LOG_SEVERITIES,
     type LogSeverity,
   } from "./severity";
 
-  // Transport-owned UI (card t_db430fea): the tail of the omega log
-  // the channel's server itself writes, from GET /logs?lines=200, and
-  // LIVE: a 2.5s poll re-reads the tail; no websocket infrastructure
-  // for this (settled v1 decision). READ-ONLY: the endpoint is a tail
-  // read - the poll never mutates anything.
+  // Transport-owned UI (card t_db430fea): the tail of the omega log the
+  // channel's server itself writes. The FIRST read is REST -
+  // GET /logs?lines=200 - and everything after it arrives on the push
+  // channel's `logs` topic (card t_0e7bc0bb: the 2.5s poll this pane used
+  // to run is gone; the socket carries the DELTA only, never a snapshot).
+  // READ-ONLY: the endpoint is a tail read and the socket only listens.
   interface LogPayload {
     path: string;
     lines: string[];
   }
-  const POLL_MS = 2500;
   const LINES = 200;
 
   const lines = ref<string[]>([]);
@@ -89,11 +90,40 @@
   const error = ref("");
   const bodyEl = ref<HTMLElement | null>(null);
 
+  // pending buffers pushed lines that land before the snapshot does: the
+  // pane subscribes first (so no appended line is lost in the gap), then
+  // folds the buffer on with mergeTail, which drops the overlap a line
+  // written during the REST read would otherwise render twice.
+  let pending: string[] = [];
+
+  // onStream is the shell's half of the pane's window seam: a pushed
+  // delta appends, a reset (the reconnect signal - nothing is replayed
+  // server-side) re-reads the snapshot.
+  function onStream(e: Event) {
+    const detail = (e as CustomEvent<LogStreamDetail>).detail ?? {};
+    if (detail.reset) {
+      void load();
+      return;
+    }
+    const incoming = detail.lines ?? [];
+    if (!incoming.length) return;
+    if (!loaded.value) {
+      pending.push(...incoming);
+      return;
+    }
+    lines.value = mergeTail(lines.value, incoming);
+  }
+
+  function subscribe(on: boolean) {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new CustomEvent(LOG_SUBSCRIBE_EVENT, { detail: { on } }));
+  }
+
   // --- the severity filter (card t_221dc498): toggle chips classify
   // the raw tail in-band (the "ERROR: "/"WARN: " markers after the
   // timestamp - severity.ts, pinned with the node suite). All three on
-  // by default; the filter is view-only, the poll always fetches the
-  // full tail so a chip toggle is instant (no refetch round trip).
+  // by default; the filter is view-only over the kept tail, so a chip
+  // toggle is instant (no refetch round trip).
   const sevEnabled = reactive<Record<LogSeverity, boolean>>({
     info: true,
     warning: true,
@@ -139,16 +169,14 @@
     resizeObs = null;
   });
 
-  let timer: ReturnType<typeof setInterval> | null = null;
-
-  async function poll() {
+  async function load() {
     let nextError = "";
-    let next: string[] = [];
+    let snapshot: string[] = [];
     try {
       const res = await fetch(`/logs?lines=${LINES}`);
       if (!res.ok) throw new Error(`GET /logs: ${res.status}`);
       const data: LogPayload = await res.json();
-      next = data.lines ?? [];
+      snapshot = data.lines ?? [];
     } catch (e) {
       nextError = e instanceof Error ? e.message : String(e);
     }
@@ -157,7 +185,16 @@
     if (!nextError || lines.value.length === 0) {
       error.value = nextError;
     }
-    if (next.length) lines.value = next;
+    if (snapshot.length) {
+      // the snapshot is the truth up to the moment it was read; the
+      // buffer carries what the socket pushed during the read
+      lines.value = mergeTail(snapshot, pending.splice(0));
+    } else if (!nextError) {
+      // an empty log is a real answer: keep the pushed lines that beat
+      // the read, which are all this pane will show
+      lines.value = mergeTail(lines.value, pending.splice(0));
+    }
+    // on a failure the buffer stays: the next successful read folds it
     loaded.value = true;
   }
 
@@ -176,13 +213,19 @@
 
   watch(shown, follow, { flush: "post" });
 
+  // mount order matters: subscribe FIRST (the shell adds the `logs` topic
+  // to its one connection and starts forwarding deltas - anything written
+  // during the snapshot read lands in `pending`), then read the snapshot.
   onMounted(() => {
-    void poll();
-    timer = setInterval(poll, POLL_MS);
+    subscribe(true);
+    window.addEventListener(LOG_STREAM_EVENT, onStream);
+    void load();
   });
 
   onBeforeUnmount(() => {
-    if (timer !== null) clearInterval(timer);
+    window.removeEventListener(LOG_STREAM_EVENT, onStream);
+    // the last mounted pane drops the topic: no pane, no tail on the wire
+    subscribe(false);
   });
 </script>
 

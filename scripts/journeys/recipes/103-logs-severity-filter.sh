@@ -33,11 +33,17 @@ assert_eq "$chips" "toggle info lines,toggle warning lines,toggle error lines" \
 pressed=$(jsq 'Array.from(document.querySelectorAll(".dock-pane.edge-bottom .logs-sev-chip")).every(c=>c.getAttribute("aria-pressed")==="true")?1:0')
 assert_eq "$pressed" "1" "every chip starts aria-pressed=true (the full stream)"
 
-# --- 2: seed warn/error lines into the tailed log --------------------------
-# The lane home's omega.log is the file GET /logs tails; appending two
-# marker-shaped lines makes the filter observable without mocking
-# anything. Timestamps match the log.LstdFlags shape so the classifier
-# reads them like any logger-written line.
+# --- 2: a PUSHED line reaches the pane - no poll, no reload ---------------
+# The lane's omega.log is the file the server follows: `GET /logs` tails it
+# and the `logs` topic pushes its deltas (card t_0e7bc0bb - the pane's 2.5s
+# poll is gone). Appending two marker-shaped lines makes the filter
+# observable without mocking anything. Timestamps match the log.LstdFlags
+# shape so the classifier reads them like any logger-written line.
+#
+# The receipt is not just "the line appeared": it is "the line appeared
+# with ZERO /logs reads after the pane was live". Instrument the wire
+# before the seed - a poller would increment on every tick.
+js 'window.__logFetches=0;(()=>{const f=window.fetch;window.fetch=(...a)=>{try{if(String(a[0]).includes("/logs"))window.__logFetches++;}catch(e){}return f(...a)}})()' >/dev/null 2>&1
 LOG="${OMEGA_HOME:?run must export OMEGA_HOME (the lane home)}/omega.log"
 [ -f "$LOG" ] || die "lane log missing: $LOG (logging disabled on this lane?)"
 NOW=$(date '+%Y/%m/%d %H:%M:%S')
@@ -45,12 +51,15 @@ printf '%s WARN: journey seeded warning line\n' "$NOW" >> "$LOG"
 printf '%s ERROR: journey seeded error line\n' "$NOW" >> "$LOG"
 step "seeded one WARN and one ERROR line into $LOG"
 
-# the 2.5s poll picks the tail up; both seeded lines must classify.
-# (poll_js passes only on the literal "true" - boolean expression, not
-# a 1/0 ternary.)
+# the logs topic's delta follower reads the file once a second; the frame
+# reaches the pane over the socket. No refetch is allowed to rescue it.
+# (poll_js passes only on the literal "true" - boolean expression, not a
+# 1/0 ternary.)
 poll_js '(()=>{const lines=Array.from(document.querySelectorAll(".dock-pane.edge-bottom .logs-line")).map(l=>l.textContent);return lines.some(t=>t.includes("journey seeded warning line"))&&lines.some(t=>t.includes("journey seeded error line"))})()' 12 \
-  || die "the seeded warn/error lines never showed in the tail (poll or classifier broken)"
-step "ok: seeded warn + error lines render in the unfiltered tail"
+  || die "the seeded warn/error lines never arrived on the push channel (follower or pane merge broken)"
+step "ok: seeded warn + error lines arrived as pushed deltas, no reload"
+FETCHES=$(jsq 'window.__logFetches')
+assert_eq "$FETCHES" "0" "the tail grew with zero GET /logs reads - the 2.5s poll is dead (got $FETCHES)"
 
 TOTAL=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .logs-line").length')
 
@@ -78,6 +87,11 @@ case "$meta" in
   *"$META_FILTERED of "*) step "ok: meta reads filtered of total ($meta)" ;;
   *) die "meta line lost the filtered/total counts: $meta" ;;
 esac
+case "$meta" in
+  *polling*) die "the pane still advertises a poll: $meta" ;;
+  *live*) step "ok: the meta line reads live, not polling ($meta)" ;;
+  *) die "meta line lost its live marker: $meta" ;;
+esac
 
 # --- 4: toggle warning off too - only error lines remain ------------------
 js 'Array.from(document.querySelectorAll(".dock-pane.edge-bottom .logs-sev-chip")).find(c=>c.getAttribute("aria-label")==="toggle warning lines").click()' >/dev/null 2>&1
@@ -98,8 +112,8 @@ nolines=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .logs-line").le
 assert_eq "$nolines" "0" "all chips off: zero log lines render"
 
 # --- 6: toggle info back on - the info lines return with no refetch --------
-# (the poll never stopped: the filter is view-only over the kept tail -
-# a refetch-based filter would blank the tab mid-toggle. Info back on
+# (the pane keeps its tail in memory; the filter is view-only - a
+# refetch-based filter would blank the tab mid-toggle. Info back on
 # returns the INFO lines only - warning/error chips are still off.)
 js 'Array.from(document.querySelectorAll(".dock-pane.edge-bottom .logs-sev-chip")).find(c=>c.getAttribute("aria-label")==="toggle info lines").click()' >/dev/null 2>&1
 sleep 0.4
