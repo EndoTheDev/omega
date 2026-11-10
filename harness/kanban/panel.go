@@ -11,11 +11,11 @@ package kanban
 // The push law is the notifications capsule's law (arc 4b): mutations
 // that run through the module's own faces (the task tools, the /board
 // command) refresh the panels through the sink the canvas runtime
-// installed at registration. Mutations from outside the module (an
-// HTTP PATCH from a frontend pressing its own board UI) do not push -
-// the snapshot is the catch-up, the same law the delta fan-out obeys.
-// A nil sink or a failed push never fails the mutation: the store is
-// already updated.
+// installed at registration, and so do the REST mutations (card
+// t_b5784de3: a PATCH from a frontend, a sibling agent or curl refreshes
+// the panels on its 2xx answer - the board renders from the deltas now,
+// so the HTTP surface must speak them too). A nil sink or a failed push
+// never fails the mutation: the store is already updated.
 
 import (
 	"context"
