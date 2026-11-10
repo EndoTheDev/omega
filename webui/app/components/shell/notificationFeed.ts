@@ -203,35 +203,29 @@ let started = false;
 let toastKey = 0;
 const timers = new Set<ReturnType<typeof setTimeout>>();
 let releaseFeed: (() => void) | null = null;
-let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 // startNotificationFeed lights the page-lifetime store: the initial
-// refresh, the canvas toast subscription (ONE subscriber - arc 4b), and
-// the verdict poll. Idempotent; every mount calls it, only the first
-// one pays.
+// refresh and the canvas toast subscription (ONE subscriber - arc 4b).
+// Idempotent; every mount calls it, only the first one pays.
+//
+// The 15s verdict poll RETIRED with the push channel (card t_896cf5a8):
+// the shell pulls this store on event hints instead - a chat frame's
+// call/turn edge (verdict issuance and its answer ride the chat topic),
+// a runs-topic edge, a canvas toast, a reconnect catch-up, and the
+// panel's own activation read. Nothing polls.
 export function startNotificationFeed(): void {
   if (started) return;
   started = true;
   void refresh();
   releaseFeed = onToastPanel(ingest);
-  // verdict cards have no SSE in v1: poll every 15s. Cheap (localhost,
-  // a tiny JSON list) and matches the cadence a human-paced question
-  // settles at; the card's own live render in chat is the real UI.
-  pollTimer = setInterval(() => {
-    void refresh();
-  }, 15_000);
 }
 
-// stopNotificationFeed: drop the funnel + poll + toast timers so a
-// store lit under a disposed page (HMR, tests) never leaks them across
-// a module re-evaluation.
+// stopNotificationFeed: drop the funnel + toast timers so a store lit
+// under a disposed page (HMR, tests) never leaks them across a module
+// re-evaluation.
 export function stopNotificationFeed(): void {
   releaseFeed?.();
   releaseFeed = null;
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
   started = false;
   for (const id of timers) clearTimeout(id);
   timers.clear();

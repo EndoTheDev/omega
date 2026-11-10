@@ -195,6 +195,10 @@ export interface ToolItem {
   kind: "tool";
   name: string;
   status: string;
+  // the TOOL CALL id (tool_call.id) - the chips topic's key (card
+  // t_896cf5a8): the pending chip's live tail merges onto the row whose
+  // call id matches. Absent on an id-less call (nothing to attach to).
+  callId?: string;
   // store row id (the tool_CALL row) - a run HEAD can be a tool call
   // row (a multi-row replay without an opening thinking block); the
   // result merge keeps the call item's identity, so the id stays the
@@ -202,6 +206,11 @@ export interface ToolItem {
   id?: string;
   output?: string;
   result?: string;
+  // the chips topic's live tail (card t_896cf5a8): the pending chip's
+  // streamed output as it lands. Rendering wins only while the row has
+  // no settled result - the fill/transcript are the truth.
+  liveText?: string;
+  liveSettled?: boolean;
   // the smart gate's decision record (card t_1b3e2a8b): the verdict
   // line stamped on the call's result, rendered on this row. Absent =
   // no machine decision (benign, manual mode, unresolved escalation).
@@ -378,6 +387,7 @@ export function renderTranscriptItems(
         const t: ToolItem = {
           kind: "tool",
           name: it.tool_call?.name || "tool",
+          callId: cid || undefined,
           status:
             it.running ? "running"
             : cid && !resultIds.has(cid) ? "pending"
