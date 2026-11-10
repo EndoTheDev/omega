@@ -329,6 +329,38 @@ single value without decoding the group envelope. An unknown key is
 full payload answers). The one-knob read is the same masked schema
 the full read serves (`provider.api_key` still rides `****`).
 
+#### agent scopes (`scopes`, settings tier 3a)
+
+The payload also carries `scopes`: one entry per agent home under
+`<home>/agents/`, for the pane's agent tabs. The list always rides the
+wire and is never null - an empty list (no agent dirs) means the pane
+renders no scope strip at all. The main agent is never a scope: its
+home is the home root and its config stays locked (the agents REST
+edit endpoint answers 409 for it).
+
+Each scope is `{name, groups[], error?}`. `groups` is the four
+overridable knob groups in render order - `provider`,
+`system_prompt`, `description`, `max_turns` - each with a roll-up
+`overridden` and its `knobs[]`. Each knob is
+`{key, value, overridden}`: `key` is the same dotted path the main
+payload's knob uses, `value` is the EFFECTIVE value (the agent layer's
+own when the layer names the key, main's otherwise, secrets masked
+exactly like the main payload), and `overridden` is structural - the
+agent's `config/config.yaml` names the key (a commented-out scaffold
+line is not an override). A knob marked `overridden: false` inherits
+the main group's knob with the same key, which is the pane's
+differs-from-main base for its dot.
+
+`max_turns` follows the runtime lane: the inherited value is the
+serving agent's live turn cap, not the yaml file's, because a run is
+capped by the live knob (the same hot-apply the settings pane's own
+`max_turns` save rides). `error` is present only on a layer file that
+could not be read or parsed; the scope then carries inherited values
+and no override flags, and the field says so.
+
+The write path does not live here: every scope write goes through the
+agents REST edit endpoint (`PUT /agents/{name}`), unchanged.
+
 PUT applies a **diff-only** values map keyed by the schema's dotted
 knob paths (`provider.api_key`, `compaction.keep_first`, ...) — note
 these are not all literal yaml paths (the vision/title models are root
