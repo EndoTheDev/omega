@@ -370,11 +370,53 @@
     window.removeEventListener(BOARD_SELECT_EVENT, onBoardSelect);
   });
 
-  const POLLS_MS = 5000;
-  let timer: ReturnType<typeof setInterval> | undefined;
+  // --- live refresh (card t_b5784de3): the 5s poll is DEAD --------------
+  // The board re-reads its own REST view when the shell announces a canvas
+  // delta. The tasks panel is NOT enough to render this grid (rows carry no
+  // body, no priority, no position, and cap at 20 - see panel.go), so the
+  // event is a pulse: it says "task state moved", the board answers with
+  // the same GET its mount fetch runs. Nothing here repeats on a cadence.
+  const CANVAS_DELTA_EVENT = "omega-canvas-delta";
+  interface CanvasDeltaPanel {
+    id?: string;
+  }
+  function onCanvasDelta(ev: Event) {
+    const detail = (ev as CustomEvent<CanvasDeltaPanel>).detail;
+    if (!detail || typeof detail !== "object") return;
+    if (detail.id === "tasks") {
+      void fetchBoard();
+      return;
+    }
+    if (detail.id === "boards") void refreshRegistry();
+  }
+
+  // a boards-panel delta: the registry grew or shrank elsewhere. Re-read
+  // the list only - a live selection outranks the pointer target, so the
+  // board name stays unless the selected board is the one that vanished.
+  async function refreshRegistry() {
+    try {
+      const res = await fetch("/boards");
+      if (!res.ok) return;
+      const body = await res.json();
+      boards.value = body.boards ?? [];
+      if (boardName.value && !boards.value.some((b) => b.name === boardName.value)) {
+        boardName.value = pickBootBoard(boards.value);
+        selected.value = null;
+        await fetchBoard();
+      }
+    } catch {
+      // the next delta retries - the registry GET is the catch-up
+    }
+  }
+
+  // the list's request epoch: an event-triggered refetch and a mutation's
+  // own refetch can overlap, and the older answer must never overwrite the
+  // newer one.
+  let fetchSeq = 0;
 
   async function fetchBoard() {
     if (drag.value && drag.value.moved) return; // a live drag owns the list
+    const seq = ++fetchSeq;
     try {
       // status=all: the board grid carries the archived column (folded
       // settled column), so it can never default to the active-only
@@ -382,12 +424,14 @@
       const res = await fetch(withBoard("/tasks?status=all", boardName.value));
       if (!res.ok) throw new Error(`GET /tasks: ${res.status}`);
       const body = await res.json();
+      if (seq !== fetchSeq) return; // a newer read owns the list
       tasks.value = body.tasks ?? [];
       error.value = "";
       // keep the open drawer honest: if the drawn task is gone or moved,
       // refresh the drawer's view of it
       if (selected.value) applyDetailPatch(selected.value.id);
     } catch (e) {
+      if (seq !== fetchSeq) return;
       error.value = e instanceof Error ? e.message : String(e);
     }
   }
@@ -503,8 +547,9 @@
   // {status, after_id} - so the optimistic view is exactly what the
   // server persisted. A drag that never clears the threshold stays a
   // click (the drawer). The click that trails a real drag is
-  // suppressed, and the 5s poll pauses while a drag is live so fetch
-  // cannot clobber the gesture.
+  // suppressed, and a canvas delta that arrives mid-drag never
+  // re-reads the list (fetchBoard's guard) so the gesture keeps the
+  // view it is building.
   interface DragState {
     id: string;
     fromStatus: string;
@@ -749,10 +794,10 @@
 
   onMounted(() => {
     fetchBoards().then(() => fetchBoard());
-    timer = setInterval(fetchBoard, POLLS_MS);
+    window.addEventListener(CANVAS_DELTA_EVENT, onCanvasDelta);
   });
   onUnmounted(() => {
-    if (timer) clearInterval(timer);
+    window.removeEventListener(CANVAS_DELTA_EVENT, onCanvasDelta);
   });
 </script>
 

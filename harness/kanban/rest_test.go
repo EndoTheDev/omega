@@ -491,3 +491,61 @@ func TestBoardsCreateEndpoint(t *testing.T) {
 		t.Fatalf("boards dir exists: %v", serr)
 	}
 }
+
+// TestRESTMutationsPushPanels (card t_b5784de3): the board renders from
+// canvas deltas now instead of a 5s GET poll, so the HTTP surface must
+// speak them - a 2xx POST/PATCH refreshes the module's panels through the
+// installed sink, a GET read never pushes, and a refused mutation pushes
+// nothing (the error text is the answer).
+func TestRESTMutationsPushPanels(t *testing.T) {
+	p, ctx, _ := mountPlugin(t)
+	pushed := capture(t, p.capsule)
+	ts := serveRoutes(t, ctx)
+
+	// the snapshot read is not a mutation
+	res, err := http.Get(ts.URL + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if len(*pushed) != 0 {
+		t.Fatalf("GET pushed %d panels, want 0", len(*pushed))
+	}
+
+	// create through the route: one tasks panel follows the 201
+	created := postTask(t, ts.URL, "rest push")
+	if len(*pushed) != 1 || (*pushed)[0].ID != listPanelID {
+		t.Fatalf("POST pushed %+v, want one %q panel", *pushed, listPanelID)
+	}
+
+	// patch through the route: the panel reflects the move
+	res2, body := patchBody(t, ts.URL, created, `{"status":"done"}`)
+	if res2.StatusCode != http.StatusOK {
+		t.Fatalf("patch = %d %s", res2.StatusCode, body)
+	}
+	if len(*pushed) != 2 {
+		t.Fatalf("PATCH pushed %d panels total, want 2", len(*pushed))
+	}
+	payload, ok := (*pushed)[1].Payload.(taskListPayload)
+	if !ok {
+		t.Fatalf("pushed payload is %T, want taskListPayload", (*pushed)[1].Payload)
+	}
+	found := false
+	for _, row := range payload.Rows {
+		if row.ID == created && row.Status == StatusDone && row.RowAction == nil {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("pushed panel does not carry %s as a settled done row: %+v", created, payload.Rows)
+	}
+
+	// a refused mutation (unknown id -> 404) pushes nothing
+	res3, _ := patchBody(t, ts.URL, "t_ffffffffffffffff", `{"status":"done"}`)
+	if res3.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown-id patch = %d, want 404", res3.StatusCode)
+	}
+	if len(*pushed) != 2 {
+		t.Fatalf("a refused mutation pushed (%d panels, want 2)", len(*pushed))
+	}
+}

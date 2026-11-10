@@ -96,6 +96,7 @@ export function createCanvasStore(): CanvasStore {
     if (i >= 0) panels[i] = p;
     else panels.push(p);
     feedToastPanel(p);
+    announceDelta(p);
   }
 
   async function invoke(panel: CanvasPanel, action: CanvasPanelAction, args?: unknown): Promise<void> {
@@ -128,6 +129,32 @@ export function createCanvasStore(): CanvasStore {
     invoke,
     refresh,
   };
+}
+
+// --- the module-UI delta seam (card t_b5784de3) -------------------------
+
+// A module view that renders beyond a panel's view-model (the kanban
+// board: body preview, priority, drag position - none of them in the
+// tasks panel, which is the 20 newest rows of the tools' session board)
+// still has to converge when someone mutates a task from outside. The
+// shell answers with the ONE window event this file publishes: every
+// panel delta that lands in the store is announced as
+// `omega-canvas-delta`, the panel descriptor as detail.
+//
+// Module UI imports no shell code, so the event literal is duplicated on
+// both sides ON PURPOSE - the reverse direction is `omega-select-board`
+// (composables/notifications.ts -> harness/kanban/ui/Board.vue), the same
+// discipline. No shared module, no second socket, no new topic: the
+// canvas topic already carries every delta.
+//
+// A delta is a PULSE, not a payload: the panel's board is the module's
+// session board, which need not be the board a frontend shows, so a
+// consumer re-reads its own view instead of rendering the panel.
+export const CANVAS_DELTA_EVENT = "omega-canvas-delta";
+
+function announceDelta(p: CanvasPanel): void {
+  if (typeof window === "undefined") return; // node tests: no page to tell
+  window.dispatchEvent(new CustomEvent(CANVAS_DELTA_EVENT, { detail: p }));
 }
 
 // --- the toast feed (arc 4b, t_9339ad05) ---------------------------------
