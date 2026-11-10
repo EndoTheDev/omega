@@ -18,6 +18,68 @@
       :class="{ open: open, narrow: narrow }">
       <TabBand title="Settings"></TabBand>
 
+    <!-- card t_af7e1150 (settings tier 4): the VSCode settings BONES are
+         master-detail, and the search keeps the tier-2 seat it already
+         had - the pane-top full-width bar. It sits ABOVE both regions
+         because its hits cross every category (ruling 6): one input, one
+         query ref, no second filter. -->
+    <div class="settings-filterbar">
+      <SearchInput
+        v-model="query"
+        placeholder="filter settings" />
+    </div>
+
+    <!-- the master-detail split. LEFT is the category nav (ruling 1); it
+         renders every level at rest - a parent with its children indented
+         under it, never click-to-expand (ruling 5) - and a live query
+         GREYS the categories with no hit instead of hiding them, so the
+         nav keeps its shape and you can see where the hits live (ruling
+         6). RIGHT is ONE category's knobs. Narrow panes are two SCREENS
+         of the same two components, not a second renderer (ruling 12):
+         the nav, then the content with a back control. -->
+    <div class="settings-split">
+      <nav
+        v-if="!narrow || !drilled"
+        class="settings-nav"
+        aria-label="settings categories">
+        <template v-for="cat in nav" :key="cat.id">
+          <button
+            class="settings-nav-cat"
+            :class="{ active: !searching && selection === cat.id, dim: searching && !matchIds.has(cat.id) }"
+            type="button"
+            :data-category="cat.id"
+            :aria-current="!searching && selection === cat.id ? 'true' : undefined"
+            @click="selectCategory(cat.id)">
+            <span class="settings-nav-label">{{ cat.label }}</span>
+            <span class="settings-nav-count">{{ cat.knobs.length }}</span>
+          </button>
+          <button
+            v-for="sub in navChildren(cat)"
+            :key="cat.id + '/' + sub.id"
+            class="settings-nav-sub"
+            :class="{ active: !searching && selection === cat.id + '/' + sub.id, dim: searching && !matchIds.has(cat.id) }"
+            type="button"
+            :data-category="cat.id + '/' + sub.id"
+            :aria-current="!searching && selection === cat.id + '/' + sub.id ? 'true' : undefined"
+            @click="selectCategory(cat.id + '/' + sub.id)">
+            <span class="settings-nav-label">{{ sub.label }}</span>
+            <span class="settings-nav-count">{{ sub.knobs.length }}</span>
+          </button>
+        </template>
+      </nav>
+
+      <section v-if="!narrow || drilled" class="settings-content">
+        <button
+          v-if="narrow"
+          class="settings-back"
+          type="button"
+          aria-label="back to categories"
+          @click="drilled = false">
+          <Icon class="settings-back-icon" name="chevron-down" :size="12" />
+          <span>categories</span>
+        </button>
+
+        <div class="settings-content-head">
     <!-- card t_04eb11d6 (settings tier 3b, R6/R8): the scope strip, the
          VSCode tab row at the head of the pane. R8 EMPTY WORLD: zero
          agent scopes in the payload renders NO strip at all, so the pane
@@ -42,13 +104,27 @@
       </button>
     </div>
 
-    <!-- the VSCode search header: full-width at the head of the pane,
-         outside the scrollport (structurally pinned above .settings-body) -->
-    <div class="settings-filterbar">
-      <SearchInput
-        v-model="query"
-        placeholder="filter settings" />
+    <!-- ruling 9: the content pane opens with the category name and its
+         knob count. ruling 8: the modified-only switch rides the same
+         bar, above the list it narrows (the VSCode affordance). Both are
+         chrome AROUND the rows - the rows themselves stay exactly as
+         tier 2b built them (ruling 10). -->
+    <div class="settings-content-bar">
+      <h2 class="settings-content-title">
+        {{ view.title }}
+        <span v-if="view.count > 0" class="settings-knob-count">{{ view.count }}</span>
+      </h2>
+      <button
+        class="settings-modified"
+        :class="{ on: modifiedOnly }"
+        type="button"
+        :aria-pressed="modifiedOnly"
+        title="show only knobs that differ from the default"
+        @click="modifiedOnly = !modifiedOnly">
+        modified only
+      </button>
     </div>
+        </div>
 
     <!-- an agent scope whose layer file cannot be read/written: the
          endpoint refuses it too, so the pane renders the message and
@@ -62,9 +138,9 @@
     </p>
     <div class="settings-body" :class="{ 'settings-readonly': scopeReadOnly }">
       <p
-      v-if="!loadError && visibleGroups.length === 0"
+      v-if="!loadError && view.count === 0"
       class="settings-empty">
-        no settings match "{{ query.trim() }}"
+        {{ emptyText }}
       </p>
 
     <!--
@@ -73,30 +149,20 @@
         omega.theme-mode, panel prefs) - never sent to the server;
       - every other group is server config, edited in the draft map and
         saved through PUT /settings (diff-only).
+      The section list IS the content view (settingsNav.contentFor): one
+      category's knobs with its children as headed sections, or - while a
+      query is live - the cross-category hits.
     -->
     <section
-      v-for="group in visibleGroups"
-      :key="group.key"
-      class="settings-group">
-      <!-- full-row clickable header, same interaction feel as the sidebar
-           day groups: chevron prefix, whole header toggles, aria-expanded.
-           A group is hidden when collapsed, EXCEPT while a search narrows
-           the list - matching results must never hide the sections that
-           found them. -->
-      <button
-        class="settings-group-head"
-        type="button"
-        :aria-expanded="!isCollapsed(group.key)"
-        @click="toggleCollapsed(group.key)">
-        <Icon
-          class="bucket-chevron"
-          :class="{ open: !isCollapsed(group.key) }"
-          name="chevron-down"
-          :size="12" />
-        <span class="settings-group-title">{{ group.label }}</span>
-      </button>
-      <template v-if="!isCollapsed(group.key)">
-        <template v-for="knob in group.knobs" :key="knob.key">
+      v-for="section in view.sections"
+      :key="section.id"
+      class="settings-category"
+      :data-section="section.id">
+      <!-- the child heading: a multi-child category view names its
+           children; a flat list or a one-child domain would only repeat
+           the title above it -->
+      <h3 v-if="section.heading" class="settings-subgroup-title">{{ section.label }}</h3>
+        <template v-for="knob in section.knobs" :key="knob.key">
         <!-- toggle (card t_c04c959e: the row is the label's wrapper now, so
              the modified dot + reset affordance can share the line
              without a click on them flipping the checkbox) -->
@@ -104,15 +170,15 @@
           <label class="setting-toggle-main">
             <input
               type="checkbox"
-              :checked="toggleValue(group, knob)"
+              :checked="toggleValue(owner(knob), knob)"
               @change="
-                setToggle(group, knob, ($event.target as HTMLInputElement).checked)
+                setToggle(owner(knob), knob, ($event.target as HTMLInputElement).checked)
               " />
             <span>{{ knob.label }}</span>
           </label>
           <span class="setting-badges">
             <span
-              v-if="isModified(group, knob)"
+              v-if="isModified(owner(knob), knob)"
               class="setting-dot"
               role="img"
               :aria-label="dotLabel"
@@ -121,11 +187,11 @@
                  head below): toggle rows never carried it, and this card
                  does not move it (card t_c04c959e step 3) -->
             <button
-              v-if="canReset(group, knob)"
+              v-if="canReset(owner(knob), knob)"
               class="setting-reset"
               type="button"
               :title="resetLabel"
-              @click.stop.prevent="resetKnob(group, knob)">
+              @click.stop.prevent="resetKnob(owner(knob), knob)">
               reset
             </button>
           </span>
@@ -141,7 +207,7 @@
                  labels name that base instead. -->
             <span class="setting-badges">
               <span
-                v-if="isModified(group, knob)"
+                v-if="isModified(owner(knob), knob)"
                 class="setting-dot"
                 role="img"
                 :aria-label="dotLabel"
@@ -151,11 +217,11 @@
                 class="setting-dirty"
                 title="edited, not saved">*</span>
               <button
-                v-if="canReset(group, knob)"
+                v-if="canReset(owner(knob), knob)"
                 class="setting-reset"
                 type="button"
                 :title="resetLabel"
-                @click.stop.prevent="resetKnob(group, knob)">
+                @click.stop.prevent="resetKnob(owner(knob), knob)">
                 reset
               </button>
             </span>
@@ -165,11 +231,11 @@
           <BandSelect
             v-if="knob.type === 'select'"
             class="setting-select"
-            :model-value="selectValue(group, knob)"
+            :model-value="selectValue(owner(knob), knob)"
             :options="knobOptions(knob)"
             :label="knob.label"
             drop="down"
-            @update:model-value="setSelect(group, knob, $event)" />
+            @update:model-value="setSelect(owner(knob), knob, $event)" />
           <!-- model (card t_70c28128: the typed model picker - a
                BandSelect from the provider's live list, filtered by
                the knob's slot; free text only when the list has
@@ -233,7 +299,6 @@
           <p v-if="knob.help" class="setting-help">{{ knob.help }}</p>
         </div>
         </template>
-      </template>
     </section>
     <!-- card t_210a0d19: the MODULES group is gone from settings - the
          module toggles live in the extensions tab now (the module
@@ -258,6 +323,8 @@
     <p class="settings-note">
       {{ noteText }}
     </p>
+      </section>
+    </div>
   </aside>
 </template>
 
@@ -267,6 +334,7 @@
     onMounted,
     reactive,
     ref,
+    watch,
   } from "vue";
   import {
     DEFAULT_THEME_ID,
@@ -280,8 +348,6 @@
     settingsDiff,
     updateAgentConfig,
     valuesEqual,
-    parseCollapsedKeys,
-    serializeCollapsedKeys,
     themePickOptions,
     colorModeOptions,
     type SettingGroup,
@@ -300,6 +366,20 @@
   import ModelField from "./ModelField.vue";
   // card t_7dcd4280: the named provider instances list editor
   import ProvidersField from "./ProvidersField.vue";
+  // card t_af7e1150 (settings tier 4): the category nav's nesting DATA and
+  // its pure builders - the tree, the selection algebra, the content view.
+  import {
+    COMMON_CATEGORY,
+    NAV_STORAGE_KEY,
+    buildNav,
+    contentFor,
+    effectiveSelection,
+    matchingCategoryIds,
+    withSubgroups,
+    type ContentView,
+    type NavCategory,
+    type NavSubgroup,
+  } from "./settingsNav";
   import { useNarrow } from "~/composables/narrow";
   import { DEFAULT_TOOL_DISPLAY, type ToolDisplay } from "~/composables/toolDisplay";
   import { DEFAULT_THINKING_DISPLAY, type ThinkingDisplay } from "~/composables/thinkingDisplay";
@@ -770,13 +850,13 @@
     // R3: an agent tab's ONE source is the scope's four groups - no
     // Commonly Used, no chat/dock client state, no other registry group
     if (activeScope.value !== null) return scopeGroups.value;
-    // the curated group pins FIRST and rests there; a live search drops
-    // it, because the surviving registry rows already carry the same
-    // knobs - search replaces the resting sections, it never lists one
-    // knob twice
-    const curated = query.value.trim() === "" ? commonlyUsedGroup.value : null;
+    // card t_af7e1150: the curated group is ALWAYS in the list now - the
+    // nav must keep its shape under a live query (ruling 6 greys, never
+    // hides), so Commonly Used stays a category. The duplicate-row risk is
+    // answered in contentFor: search mode SKIPS the curated section, so a
+    // hit renders once, under the domain that owns it.
     return [
-      ...(curated ? [curated] : []),
+      ...(commonlyUsedGroup.value ? [commonlyUsedGroup.value] : []),
       chatGroup.value,
       dockGroup.value,
       ...groups.value,
@@ -788,53 +868,85 @@
   // (ModelField reads it from composables/modelCatalog), so the pane
   // carries no rows plumbing anymore.
 
-  const visibleGroups = computed<SettingGroup[]>(() =>
-    filterSettingGroups(allGroups.value, query.value),
+  // --- master-detail: the category nav (card t_af7e1150, ruling 1) ---
+
+  // The knob's OWN domain, for the row plumbing below. A knob can be
+  // rendered from the virtual Commonly Used category, but its diff base,
+  // its client/server routing and its reset target belong to the domain
+  // that DEFINED it - so the lookup is built from the real groups, never
+  // from the nav (which mixes domains in the curated category).
+  const ownerGroups = computed<SettingGroup[]>(() =>
+    activeScope.value === null
+      ? [chatGroup.value, dockGroup.value, ...groups.value]
+      : scopeGroups.value,
+  );
+  const ownerMap = computed(() => {
+    const map = new Map<string, SettingGroup>();
+    for (const group of ownerGroups.value)
+      for (const knob of group.knobs) if (!map.has(knob.key)) map.set(knob.key, group);
+    return map;
+  });
+  const owner = (knob: SettingKnob): SettingGroup =>
+    ownerMap.value.get(knob.key) ?? { key: "", label: "", knobs: [] };
+
+  // The nav builds itself from the per-knob subgroup DATA (ruling 2):
+  // withSubgroups stamps each knob, buildNav derives the two levels, and
+  // an undeclared knob lands in the implicit "general" child (ruling 3).
+  // Empty categories never enter (ruling 14: an unmounted module's domain
+  // is absent from the payload, so it is absent from the nav).
+  const nav = computed<NavCategory[]>(() =>
+    buildNav(withSubgroups(allGroups.value)),
   );
 
-  // --- collapsible groups (same mechanic as the sidebar day groups) ---
-  // collapsed holds the group KEYS whose knobs are hidden. Restored from
-  // localStorage on setup; every group defaults expanded (unknown data
-  // restores expanded too, via parseCollapsedKeys' tolerance). Search
-  // wins over collapse: while a query narrows the list, every surviving
-  // group shows its matches (see isCollapsed). Groups are dynamic server
-  // data, so the persisted keys are parsed without a bucket allowlist -
-  // stale keys are inert (no section renders under that key).
-  const COLLAPSED_KEY = "omega.settings-collapsed";
-  const collapsed = ref<Set<string>>(new Set());
+  // Ruling 5: every level renders at rest, so a category's children are
+  // always visible under it. A domain whose knobs all land in ONE child
+  // shows no child row - a nested copy of the parent's name is noise.
+  const navChildren = (cat: NavCategory): NavSubgroup[] =>
+    cat.subgroups.length > 1 ? cat.subgroups : [];
 
-  function restoreCollapsed() {
+  // Ruling 13: the selection is remembered PER CLIENT (localStorage, never
+  // a server config key) and a fresh pane opens on Commonly Used. The
+  // remembered id is kept RAW; resolution against the live nav happens per
+  // render, so a scope that does not carry that category (an agent tab has
+  // no Commonly Used) falls back for display WITHOUT clobbering the memory
+  // - switching back to Main finds the remembered category again.
+  const rawSelection = ref<string>(COMMON_CATEGORY);
+  const selection = computed(() => effectiveSelection(nav.value, rawSelection.value));
+  function selectCategory(id: string) {
+    rawSelection.value = id;
+    // ruling 12: on a narrow pane a category tap opens the content screen
+    drilled.value = true;
+    try {
+      localStorage.setItem(NAV_STORAGE_KEY, id);
+    } catch {
+      // private mode / quota: the session still selects, only the memory
+      // is gone - never a broken click
+    }
+  }
+  function restoreCategory() {
     if (typeof window === "undefined") return;
-    collapsed.value = parseCollapsedKeys(
-      localStorage.getItem(COLLAPSED_KEY),
-    );
+    try {
+      const stored = localStorage.getItem(NAV_STORAGE_KEY);
+      if (stored) rawSelection.value = stored;
+    } catch {
+      // storage unavailable: keep the Commonly Used default
+    }
   }
+  restoreCategory();
 
-  function toggleCollapsed(key: string) {
-    // The persisted set is shared storage, so every toggle starts from
-    // the storage set plus this pane's own view. A blind in-memory
-    // write clobbered a concurrent writer's keys between two toggles
-    // (found in the verify lane, card t_8ac225f1). Card t_210a0d19
-    // moved the modules group (its second writer) to the extensions
-    // tab, but the read-modify-write stays: any writer that reappears
-    // must not lose the other groups' keys.
-    const stored =
-      typeof window === "undefined"
-        ? collapsed.value
-        : parseCollapsedKeys(localStorage.getItem(COLLAPSED_KEY));
-    const next = new Set([...stored, ...collapsed.value]);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    collapsed.value = next;
-    if (typeof window !== "undefined")
-      localStorage.setItem(COLLAPSED_KEY, serializeCollapsedKeys(next));
-  }
+  // Ruling 12: narrow panes are TWO SCREENS, not a second renderer. The
+  // nav screen lists categories; tapping one drills into the content
+  // screen (the same two components), whose back control returns. Widening
+  // the pane puts both on screen and the flag goes inert; narrowing again
+  // starts from the nav, like a phone's settings app.
+  const drilled = ref(false);
+  watch(narrow, (isNarrow) => {
+    if (isNarrow) drilled.value = false;
+  });
 
-  // a search that narrows the groups must not also swallow their knobs
-  const isCollapsed = (key: string) =>
-    collapsed.value.has(key) && query.value.trim().length === 0;
+  // Ruling 8: the VSCode modified-only switch above the content list.
+  const modifiedOnly = ref(false);
 
-  restoreCollapsed();
 
   // --- value plumbing ---
 
@@ -1013,6 +1125,52 @@
   // or a pending edit to undo).
   const canReset = (group: SettingGroup, knob: SettingKnob): boolean =>
     activeScope.value === null ? isModified(group, knob) : scopeDiffersFromMain(knob);
+
+  // --- the content pane: search, hits, the rendered view (t_af7e1150) ---
+
+  // The query's knob set comes from the EXISTING filter (tier 1's
+  // filterSettingGroups: label + help substring), applied to this scope's
+  // own group list - so ruling 7's per-scope search survives untouched.
+  // null means NO query is live; an EMPTY set is a query that matched
+  // nothing, and the two must stay distinguishable (everything vs. the
+  // empty state).
+  const searchHits = computed<ReadonlySet<string> | null>(() => {
+    if (query.value.trim() === "") return null;
+    const hits = new Set<string>();
+    for (const group of filterSettingGroups(allGroups.value, query.value))
+      for (const knob of group.knobs) hits.add(knob.key);
+    return hits;
+  });
+  const searching = computed(() => searchHits.value !== null);
+
+  // Ruling 8's predicate: the SAME modified test the rows carry, asked
+  // through the knob's own domain (the dot and the switch can never
+  // disagree about which knobs are modified).
+  const knobModified = (knob: SettingKnob): boolean =>
+    isModified(owner(knob), knob);
+
+  const view = computed<ContentView>(() =>
+    contentFor(nav.value, selection.value, {
+      hits: searchHits.value,
+      modifiedOnly: modifiedOnly.value,
+      isModified: knobModified,
+    }),
+  );
+  const matchIds = computed<ReadonlySet<string>>(() =>
+    matchingCategoryIds(nav.value, {
+      hits: searchHits.value,
+      modifiedOnly: modifiedOnly.value,
+      isModified: knobModified,
+    }),
+  );
+
+  // the empty state names the reason it is empty (a live query, the
+  // modified-only switch, or a payload with nothing in this category)
+  const emptyText = computed(() => {
+    if (query.value.trim() !== "") return `no settings match "${query.value.trim()}"`;
+    if (modifiedOnly.value) return "no modified settings here";
+    return "no settings here";
+  });
 
   // resetKnob (card t_c04c959e): writes the knob default down the control's
   // OWN set path - the draft map for server knobs (so the normal diff-only
@@ -1270,5 +1428,181 @@
     flex: 1;
     min-width: 0;
     cursor: pointer;
+  }
+
+  /* --- card t_af7e1150 (settings tier 4): the master-detail bones ---
+     LEFT is the category nav, RIGHT is one category's content. Two
+     regions, one axis each (ruling 11: the scope strip lives in the
+     content head, the nav stays categories). The rows inside keep their
+     tier-2b styles untouched (ruling 10). */
+  .settings-split {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+  .settings-nav {
+    flex: none;
+    width: 136px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 0 6px;
+    border-right: 1px solid var(--stroke);
+  }
+  .settings-nav-cat,
+  .settings-nav-sub {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    width: 100%;
+    padding: 4px 10px;
+    border: 0;
+    background: transparent;
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+  }
+  /* ruling 5: children are indented under their parent, never hidden
+     behind a click-to-expand */
+  .settings-nav-sub {
+    padding-left: 20px;
+    font-size: 11.5px;
+  }
+  .settings-nav-cat:hover,
+  .settings-nav-sub:hover,
+  .settings-nav-cat.active,
+  .settings-nav-sub.active {
+    color: var(--text);
+    background: var(--z1-raised);
+  }
+  .settings-nav-cat.active,
+  .settings-nav-sub.active {
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  /* ruling 6: a live query GREYS the categories with no hit - the nav
+     keeps its shape, so you can see where the hits live */
+  .settings-nav-cat.dim,
+  .settings-nav-sub.dim {
+    opacity: 0.38;
+  }
+  .settings-nav-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .settings-nav-count {
+    flex: none;
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+  .settings-nav-cat:focus-visible,
+  .settings-nav-sub:focus-visible,
+  .settings-modified:focus-visible,
+  .settings-back:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+  }
+
+  .settings-content {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .settings-content-head {
+    flex: none;
+  }
+  /* ruling 9: the category name + knob count; ruling 8: the modified-only
+     switch on the same bar */
+  .settings-content-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px 2px;
+  }
+  .settings-content-title {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text);
+  }
+  .settings-knob-count {
+    margin-left: 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--text-dim);
+  }
+  .settings-modified {
+    flex: none;
+    border: 1px solid var(--stroke);
+    border-radius: var(--r-chip);
+    background: var(--z0);
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 10.5px;
+    padding: 2px 6px;
+    cursor: pointer;
+  }
+  .settings-modified:hover {
+    color: var(--text);
+    border-color: var(--accent);
+  }
+  .settings-modified.on {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  /* a child heading inside a multi-child category view */
+  .settings-subgroup-title {
+    margin: 8px 0 0;
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+  }
+
+  /* ruling 12: narrow panes are TWO SCREENS of the SAME two components -
+     the nav, then the content with a back control. No accordion path, no
+     dropdown, one renderer. */
+  .settings-back {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    padding: 4px 10px;
+    border: 0;
+    border-bottom: 1px solid var(--stroke);
+    background: transparent;
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .settings-back:hover {
+    color: var(--text);
+  }
+  .settings-back-icon {
+    transform: rotate(90deg);
+  }
+  .settings.narrow .settings-split {
+    flex-direction: column;
+  }
+  .settings.narrow .settings-nav {
+    width: auto;
+    flex: 1;
+    border-right: 0;
+  }
+  .settings.narrow .settings-content {
+    flex: 1;
   }
 </style>

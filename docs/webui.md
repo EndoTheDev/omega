@@ -362,6 +362,65 @@ resolution mirror the one command law every surface follows:
   alone). Session rows are dead on this tab — sessions live in the
   sidebar, never in the roster.
 
+## The Settings pane
+
+`SettingsTab.vue` is a MASTER-DETAIL surface (card t_af7e1150, settings
+tier 4): a CATEGORY NAV on the left, ONE category's knobs on the right -
+the VSCode settings bones. The tier-1/2 seat stays: the full-width search
+bar is the pane's top row, the rows themselves are untouched (modified
+dot, reset link, draft star, live note).
+
+- **The nav is two levels, declared as DATA.** `settingsNav.ts` owns
+  `KNOB_SUBGROUPS` (knob key -> child id) and `SUBGROUP_LABELS`; the pane
+  stamps every knob with its `subgroup` (`withSubgroups`) and `buildNav`
+  derives the tree. No hand-authored tree, no derivation from a config
+  key's spelling, and a knob with no line lands in the implicit `general`
+  child, pinned first in its domain. Adding a knob to a child is ONE line
+  in the table - never a new branch anywhere else.
+- **Every level renders at rest** (no click-to-expand): a parent with its
+  children indented under it. A domain whose knobs all land in one child
+  shows no child row (a nested copy of the parent's name is noise), and a
+  category with no knobs never enters the nav (an unmounted module's
+  domain is absent from the payload, so absent from the nav).
+- **Commonly Used is a virtual FLAT top category** - the curated
+  `COMMONLY_USED_KEYS` gathered from every domain, always first on Main.
+  It renders flat because nesting curated knobs across domains would mean
+  nothing. An agent scope carries no curated category (its four overridable
+  domains only, tier 3b R3).
+- **Search is cross-category, the nav greys instead of hiding.** The
+  filter stays `filterSettingGroups` over the active scope's own groups
+  (per-scope queries survive); a live query renders hits from EVERY
+  category in the content pane and only dims the categories with no hit -
+  the nav keeps its shape so you can see where the hits live. Search mode
+  skips the curated section: a hit renders once, under the domain that
+  owns it.
+- **Modified-only** is a pressed-state switch on the content bar (the
+  VSCode affordance): it filters the rendered list with the SAME
+  `isModified` test the row dots use, so the switch and the dots can never
+  disagree. Emptied child sections drop out.
+- **The content pane's head** is the tier-3 scope strip (one axis per
+  region: the strip is the scope axis, the nav is the category axis), then
+  the category name with its knob count, then the switch.
+- **Narrow panes drill down** (ruling 12): the nav and the content are two
+  SCREENS of the same two components - a category tap opens the content
+  full width with a `back to categories` control; the nav returns. No
+  accordion path and no category dropdown exists at any width - one
+  renderer, two doors.
+- **The selection is remembered per client** (`omega.settings-category` in
+  localStorage, never a server key), opening on Commonly Used. The
+  remembered id is kept RAW and normalised against the live nav per
+  render, so an agent scope that does not carry the remembered category
+  falls back without clobbering the memory - switching back finds it again.
+- **The accordion is deleted, not hidden**: no `isCollapsed`, no group
+  heads, no `omega.settings-collapsed`, no `.settings-group-head` CSS.
+  Pinned by `webui/test/settingsnav.test.ts` (the tree, the selection
+  algebra, the content view, the grey-out set, plus the deletion proof) and
+  the live pair `scripts/journeys/recipes/113-settings-nav.journey.sh`
+  (landing, two levels, search greying, modified-only, drill-down + back,
+  remembered selection, no-accordion proof) and
+  `110-settings-scopes.journey.sh` (the tier-3 scope tabs, re-witnessed
+  under the new bones).
+
 ## Terminal and browser panes
 
 Two module capsules complete the main surface (t_55a3fc4b terminal +
