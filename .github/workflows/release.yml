@@ -96,6 +96,15 @@ jobs:
         # deterministic counts + highlights from the round's commit log; the
         # one prose line rides the ANNOTATED tag message (empty annotation =
         # counts + highlights only - loud is nice, blocking on prose is not)
+        #
+        # continue-on-error: a headline-heavy cycle can still overflow the
+        # Discord cap after every trimmable bullet is gone (release-notes.sh
+        # exits 1 and writes dist/discord-exception.txt). The GitHub notes and
+        # body are already on disk at that point, so the release must still
+        # ship; the "Report Discord skip" step below makes the skip loud and
+        # the Discord step's payload gate keeps the webhook silent. Any other
+        # notes failure still shows up as a red step in the run.
+        continue-on-error: true
         run: scripts/release-notes.sh "" "${{ steps.version.outputs.VERSION }}"
 
       - name: Compose release body
@@ -139,11 +148,23 @@ jobs:
             dist/checksums.txt
           body_path: dist/release-body.md
 
+      - name: Report Discord skip
+        # release-notes.sh writes an exception report (never a payload) when
+        # the post still overflows the 2000-char cap after trimming every
+        # doc/tune bullet. Surface it as a warning annotation with the full
+        # report; the release itself is unaffected.
+        if: hashFiles('dist/discord-exception.txt') != ''
+        run: |
+          echo "::warning::Discord post skipped - see dist/discord-exception.txt"
+          cat dist/discord-exception.txt
+
       - name: Post to Discord
         # the word is the marketing moment: nightlies soak quietly, only
         # stable releases announce. The payload file is generated in the
-        # notes step - curl -d @file, never an inline -d string.
-        if: success() && steps.version.outputs.PRERELEASE == 'false'
+        # notes step - curl -d @file, never an inline -d string. No payload
+        # file means an overflow skip: do not post (the report step above
+        # already said why), and keep the rest of the job green.
+        if: ${{ !cancelled() && steps.version.outputs.PRERELEASE == 'false' && hashFiles('dist/discord-release.json') != '' }}
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |

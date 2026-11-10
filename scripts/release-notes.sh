@@ -30,6 +30,16 @@ set -euo pipefail
 #   scopes stay newest-touched first, capped at 6 so it stays one
 #   line a human reads.
 #
+# Discord length ladder (Endo ruling 2026-11-10, card t_878b1b7c): the full
+# notes above are the record and never shrink - GitHub gets every bullet.
+# The Discord payload is capped at 2000 chars, so a fat cycle trims trailing
+# bullets from the lowest-signal classes (docs first, then tune), oldest
+# first, until the post fits. The counts line always reports the TRUE totals
+# however many bullets were trimmed. If the post still does not fit with
+# every trimmable bullet gone, no JSON is written: the full notes stand,
+# Discord is skipped, and dist/discord-exception.txt carries the reason plus
+# the full content for a hand-written post. Never a silent drop.
+#
 # Usage:
 #   scripts/release-notes.sh [base-ref] [version-tag]
 #     base    default: newest stable v* tag that is not the version tag
@@ -40,9 +50,12 @@ set -euo pipefail
 #   release-notes-body.md  lead sentence + counts + highlights (release body)
 #   discord-release.json   {"content","username"} payload - the webhook step
 #                          posts with curl -d @file, never an inline -d string
+#   discord-exception.txt  only when the post cannot fit even after trimming:
+#                          why the JSON is absent, plus the full content
 #
-# Exit codes: 2 unusable input (not a git repo / no base found), and the
-# JSON step fails loudly if the content would blow Discord's 2000-char cap.
+# Exit codes: 2 unusable input (not a git repo / no base found); 1 when the
+# Discord payload cannot fit even after trimming (the full notes are still
+# written - the release body is complete, only Discord is skipped loudly).
 
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
   echo "release-notes: not a git repo" >&2
@@ -144,21 +157,23 @@ done < <(git log --format='%h%x1f%p%x1f%s%x1e' "${BASE}..HEAD")
 # Ordered classes, each newest-first. feat and refactor are the headline
 # classes: the range's story, listed complete. fix, tune and docs are the
 # tail: the newest CLASS_CAP subjects each. No per-scope dedupe - a class
-# shows what shipped, not one line per topic.
+# shows what shipped, not one line per topic. hl_cls rides hl so the Discord
+# ladder knows which bullets are trimmable.
 CLASS_CAP=5
-hl=()
+hl=() hl_cls=()
 
 # headline classes: complete
-for disp in "${fc_disp[@]}"; do hl+=("$disp"); done
-for disp in "${rf_disp[@]}"; do hl+=("$disp"); done
+for disp in "${fc_disp[@]}"; do hl+=("$disp"); hl_cls+=("feat"); done
+for disp in "${rf_disp[@]}"; do hl+=("$disp"); hl_cls+=("refactor"); done
 
 # tail classes: newest-first, capped
-for class in fx_disp tn_disp dc_disp; do
-  declare -n box="$class"
+for pair in fx:fix tn:tune dc:docs; do
+  declare -n box="${pair%%:*}_disp"
   n=0
   for disp in "${box[@]}"; do
     [ "$n" -lt "$CLASS_CAP" ] || break
     hl+=("$disp")
+    hl_cls+=("${pair##*:}")
     n=$((n + 1))
   done
   unset -n box
@@ -203,13 +218,83 @@ JSON="$OUT_DIR/discord-release.json"
   for line in "${hl[@]}"; do printf -- '- %s\n' "$line"; done
 } > "$BODY"
 
-python3 - "$MD" "$JSON" <<'PY'
+# --- the Discord ladder ------------------------------------------------------
+# Build the trim order: walk the pick from the END (the tail classes always
+# sit last), keeping only tune/docs bullets - docs is the lowest-signal
+# class and lands last, so it trims first, then tune, oldest first inside
+# each class. feat/refactor/fix bullets are never trimmable: the headline
+# story and the fix list are the post, not filler.
+TRIM_LIST="$OUT_DIR/.discord-trim"
+: > "$TRIM_LIST"
+for ((i = ${#hl[@]} - 1; i >= 0; i--)); do
+  case "${hl_cls[$i]}" in
+    docs | tune) printf -- '- %s\n' "${hl[$i]}" >> "$TRIM_LIST" ;;
+  esac
+done
+DISCORD_EXCEPTION="$OUT_DIR/discord-exception.txt"
+# A previous run's payload must never be posted by mistake: the ladder either
+# writes a fresh JSON or an exception report, never both.
+rm -f -- "$JSON" "$DISCORD_EXCEPTION"
+trap 'rm -f -- "$TRIM_LIST"' EXIT
+
+python3 - "$MD" "$JSON" "$TRIM_LIST" "$DISCORD_EXCEPTION" <<'PY'
 import json, sys
-md_path, json_path = sys.argv[1], sys.argv[2]
+
+md_path, json_path, trim_path, exc_path = sys.argv[1:5]
+LIMIT = 2000
+
 with open(md_path, encoding="utf-8") as f:
-    content = f.read()
-if len(content) > 2000:
-    sys.exit("release-notes: Discord content exceeds the 2000-char cap (%d chars)" % len(content))
+    full = f.read()
+with open(trim_path, encoding="utf-8") as f:
+    # tail-first, lowest-signal class first - built by release-notes.sh
+    candidates = [line for line in f.read().split("\n") if line]
+
+lines = full.split("\n")
+trimmed = []
+while len("\n".join(lines)) > LIMIT and candidates:
+    cand = candidates.pop(0)
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i] == cand:
+            del lines[i]
+            trimmed.append(cand)
+            break
+content = "\n".join(lines)
+
+if len(content) > LIMIT:
+    trimmed_note = ""
+    if trimmed:
+        trimmed_note = "Trimmed to fit:\n%s\n\n" % "\n".join(
+            "  " + line for line in trimmed)
+    with open(exc_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(
+            "release-notes: Discord post skipped - %d chars after trimming "
+            "%d bullet%s (limit %d).\n"
+            "The GitHub release notes are complete at %s.\n"
+            "%s"
+            "Post the full content below by hand if wanted.\n"
+            "\n-----8<-----\n%s"
+            % (len(content), len(trimmed), "" if len(trimmed) == 1 else "s",
+               LIMIT, md_path, trimmed_note, full)
+        )
+    sys.stderr.write(
+        "release-notes: Discord post skipped - %d chars after trimming all "
+        "%d trimmable bullet%s (limit %d); full notes at %s; "
+        "exception report at %s\n"
+        % (len(content), len(trimmed), "" if len(trimmed) == 1 else "s",
+           LIMIT, md_path, exc_path)
+    )
+    sys.exit(1)
+
+if trimmed:
+    sys.stderr.write(
+        "release-notes: Discord post trimmed %d bullet%s to fit the "
+        "%d-char cap (%d chars) - full notes at %s\n"
+        % (len(trimmed), "" if len(trimmed) == 1 else "s", LIMIT,
+           len(content), md_path)
+    )
+    for line in trimmed:
+        sys.stderr.write("release-notes: trimmed %s\n" % line)
+
 with open(json_path, "w", encoding="utf-8") as f:
     json.dump({"content": content, "username": "omega releases"},
               f, ensure_ascii=False, indent=2)
