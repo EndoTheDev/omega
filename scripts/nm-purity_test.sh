@@ -649,6 +649,116 @@ else
 fi
 rm -rf "$TESTDIR" "$SCRUBPY"
 
+# 14. the anchor-scope strand (card t_f77dd67d): the := names a dying
+# wire line files are FUNCTION-scoped - Go gives a := name the scope of
+# its block - while dead_ids is file-wide. An anchor born inside a
+# dying capsule func therefore killed a LIVE sibling helper of the
+# same file that merely used the same spelling. cmd/omega/settings.go
+# died this way: providerInstancesKnob anchored `out`, and settingsArgs
+# (a pure argv helper, no capsule wire at all) lost its declaration,
+# its append and its `return out` to the value rule - "missing return"
+# in the scrubbed tree, provider the only red in the --all rotation.
+TESTDIR="$(mktemp -d)"
+cat > "$TESTDIR/config.go" <<'EOF'
+package main
+
+type ProviderConfig struct {
+	Type string
+}
+
+type Config struct {
+	Provider  ProviderConfig            `yaml:"provider"`
+	Providers map[string]ProviderConfig `yaml:"providers"`
+	Server    string                    `yaml:"server"`
+}
+EOF
+cat > "$TESTDIR/knobs.go" <<'EOF'
+package main
+
+func providerInstancesKnob(cfg *Config) []map[string]any {
+	names := make([]string, 0, len(cfg.Providers))
+	for n := range cfg.Providers {
+		names = append(names, n)
+	}
+	out := make([]map[string]any, 0, len(names))
+	for _, n := range names {
+		out = append(out, map[string]any{"name": n})
+	}
+	return out
+}
+
+func settingsArgs(rest []string) []string {
+	out := make([]string, 0, len(rest))
+	for i := 0; i < len(rest); i++ {
+		out = append(out, rest[i])
+	}
+	return out
+}
+EOF
+SCRUBPY="$(mktemp)"
+awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
+scrub "config.go,knobs.go" provider >/dev/null || bad "scrub pass exited nonzero (anchor-scope fixture) - see stderr above"
+if ! grep -q 'providerInstancesKnob' "$TESTDIR/knobs.go" \
+  && grep -q 'func settingsArgs' "$TESTDIR/knobs.go" \
+  && grep -q 'out := make(\[\]string, 0, len(rest))' "$TESTDIR/knobs.go" \
+  && grep -q 'return out' "$TESTDIR/knobs.go" \
+  && ! grep -q 'Provider' "$TESTDIR/config.go"; then
+  ok
+else
+  bad "an anchored local leaked out of its function and ate the live sibling's declaration/return: $(cat "$TESTDIR/knobs.go" 2>/dev/null)"
+fi
+for f in "$TESTDIR/config.go" "$TESTDIR/knobs.go"; do
+  if ! gofmt -e "$f" > /dev/null 2>"$TESTDIR/gofmt.err"; then
+    bad "scrubbed fixture does not parse: $(cat "$TESTDIR/gofmt.err")"
+  else
+    ok
+  fi
+done
+rm -rf "$TESTDIR" "$SCRUBPY"
+
+# 15. the teeth of 14 (gate law: a deliberately-broken shape stays red).
+# Scoping the anchor must not neuter it: a local anchored by a dying
+# wire line still cascades INSIDE its own function. Here `out` reads
+# the anchored `names`, so the whole wired func must die; a scrubber
+# that simply stopped anchoring would leave `out` behind reading a
+# removed `names` - a build red, not a green proof.
+TESTDIR="$(mktemp -d)"
+cat > "$TESTDIR/config.go" <<'EOF'
+package main
+
+type ProviderConfig struct {
+	Type string
+}
+
+type Config struct {
+	Provider  ProviderConfig            `yaml:"provider"`
+	Providers map[string]ProviderConfig `yaml:"providers"`
+}
+EOF
+cat > "$TESTDIR/knobs.go" <<'EOF'
+package main
+
+func providerInstancesKnob(cfg *Config) []map[string]any {
+	names := make([]string, 0, len(cfg.Providers))
+	for n := range cfg.Providers {
+		names = append(names, n)
+	}
+	out := make([]map[string]any, 0, len(names))
+	return out
+}
+EOF
+SCRUBPY="$(mktemp)"
+awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
+scrub "config.go,knobs.go" provider >/dev/null || bad "scrub pass exited nonzero (anchor-teeth fixture) - see stderr above"
+if ! grep -q 'providerInstancesKnob' "$TESTDIR/knobs.go" \
+  && ! grep -q '\bnames\b' "$TESTDIR/knobs.go" \
+  && ! grep -q '\bout\b' "$TESTDIR/knobs.go"; then
+  ok
+else
+  bad "the anchor stopped cascading inside its own function - a removed wire line stranded a live local: $(cat "$TESTDIR/knobs.go" 2>/dev/null)"
+fi
+rm -rf "$TESTDIR" "$SCRUBPY"
+
 if [ "$fail" -gt 0 ]; then
   echo "nm-purity_test: $pass ok, $fail FAIL" >&2
   exit 1

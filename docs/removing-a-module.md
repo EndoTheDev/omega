@@ -158,6 +158,17 @@ surface) is its sibling: `docs/migrating-a-module.md`.
      live local, never the package - only the qualified use
      (`provider.X`) is the wire. Fixture 10 in
      `scripts/nm-purity_test.sh` pins all five plus the counter-law.
+   - Anchored names are FUNCTION-scoped (card t_f77dd67d). A `:=` name
+     filed from a dying wire line lives only inside the chunk that
+     anchored it - Go gives it its block's scope, so no sibling
+     function can read it anyway, and a sibling declaring the same
+     spelling is not a wire. A file-wide anchor leaked the dying
+     provider function's `out` into `settingsArgs` and ate that helper's
+     declaration, append and return ("missing return" in the scrubbed
+     tree). Package-level vocabulary (module name, `<Noun>Config` types,
+     deleted func names) still crosses chunks; anchors do not. Fixtures
+     14 and 15 in `scripts/nm-purity_test.sh` pin the scope and its
+     teeth.
 8. **Run the gates in the worktree**: `go build ./...`, `go vet ./...`,
    `go test ./...`. The journey suite proves the board behavior green
    before removal (`91-canvas-tab` and the module journeys) and green
