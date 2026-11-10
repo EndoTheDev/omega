@@ -157,6 +157,28 @@ function announceDelta(p: CanvasPanel): void {
   window.dispatchEvent(new CustomEvent(CANVAS_DELTA_EVENT, { detail: p }));
 }
 
+// CANVAS_RESET_ID is the reset detail's id: the same event, one more
+// emitter. Nothing is replayed server-side (socket.ts's law), so a delta
+// that lands while this page's socket is down is LOST - a module view that
+// renders from its own REST route (the kanban board) would then stay stale
+// until some later mutation happened to fire. The reconnect catch-up
+// (app.vue's catchUp) therefore re-announces, after the ordinary pane
+// refetches, asking every consumer to re-read its own GET route. Boot
+// never fires it: a cold page load mounts its views, which fetch
+// themselves - a boot pulse would only double every read.
+//
+// Consumers match the id (the literal is duplicated on their side, same
+// discipline as CANVAS_DELTA_EVENT); `detail.panel` is absent because a
+// reset is about the page, not one panel.
+export const CANVAS_RESET_ID = "reconnect";
+
+export function announceCanvasReset(): void {
+  if (typeof window === "undefined") return; // node tests: no page to tell
+  window.dispatchEvent(
+    new CustomEvent(CANVAS_DELTA_EVENT, { detail: { id: CANVAS_RESET_ID } }),
+  );
+}
+
 // --- the toast feed (arc 4b, t_9339ad05) ---------------------------------
 
 // Panels of kind "toast" are canvas events, not persistent surface (the

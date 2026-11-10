@@ -316,5 +316,3 @@ step "ok: an API create lands on the idle board by push (no reload, no poll)"
 
 assert_no_console_errors
 step "98-kanban-drag-reorder GREEN"
-
-

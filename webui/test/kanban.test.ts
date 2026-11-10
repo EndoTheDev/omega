@@ -34,7 +34,12 @@ import {
   type BoardTask,
 } from "../../harness/kanban/ui/board/boardLogic.ts";
 
-import { CANVAS_DELTA_EVENT, createCanvasStore } from "../app/composables/canvas.ts";
+import {
+  CANVAS_DELTA_EVENT,
+  CANVAS_RESET_ID,
+  announceCanvasReset,
+  createCanvasStore,
+} from "../app/composables/canvas.ts";
 
 const uiRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -389,12 +394,75 @@ test("board renders from the mount fetch + the shell's canvas delta event, never
   assert.match(boardVue, /const CANVAS_DELTA_EVENT = "omega-canvas-delta"/, "the event literal is duplicated on purpose (module UI imports no shell code)");
   assert.match(boardVue, /addEventListener\(CANVAS_DELTA_EVENT, onCanvasDelta\)/, "the board listens for the shell's announcement");
   assert.match(boardVue, /removeEventListener\(CANVAS_DELTA_EVENT, onCanvasDelta\)/, "the listener leaves with the component");
-  assert.match(boardVue, /if \(detail\.id === "tasks"\) \{\s*\n\s*void fetchBoard\(\);/, "a tasks delta re-reads the board's own REST view");
+  assert.match(boardVue, /if \(detail\.id === "tasks"\) \{\s*\n\s*scheduleBoardRefetch\(\);/, "a tasks delta queues the board's own REST read");
   assert.match(boardVue, /if \(detail\.id === "boards"\) void refreshRegistry\(\);/, "a boards delta re-reads the registry only");
   assert.match(boardVue, /fetchBoards\(\)\.then\(\(\) => fetchBoard\(\)\)/, "the mount fetch is still the initial render");
+  // the coalescer: a burst of deltas is one read, not N (round-2 nit)
+  assert.match(boardVue, /const DELTA_COALESCE_MS = \d+/, "a delta burst coalesces into one read");
+  assert.match(boardVue, /if \(deltaTimer !== null\) return;/, "an already-queued read absorbs the rest of the burst");
+  assert.match(boardVue, /clearTimeout\(deltaTimer\)/, "a queued read leaves with the component");
   // the request epoch: an event-triggered read must never lose to an older one
   assert.match(boardVue, /const seq = \+\+fetchSeq/, "each list read carries its request epoch");
   assert.match(boardVue, /if \(seq !== fetchSeq\) return/, "a late answer never overwrites a newer list");
+});
+
+// --- the reconnect reset (card t_b5784de3 round 2, vera's outage finding):
+// the socket replays nothing, so a delta that lands while THIS page's socket
+// is down is lost. Without a pulse the idle board would stay stale until some
+// later mutation fired a delta - the 5s poll used to heal that in <=5s. The
+// shell's catchUp re-announces the SAME canvas event with the reset id, and
+// the board re-reads its whole view on it.
+
+test("the board re-reads its whole view on the shell's reconnect reset pulse", () => {
+  const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
+  assert.match(boardVue, /const CANVAS_RESET_ID = "reconnect"/, "the reset literal is duplicated on purpose");
+  assert.match(boardVue, /if \(detail\.id === CANVAS_RESET_ID\) \{\s*\n\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*void reloadAll\(\);/, "a reset pulse re-reads the pane");
+  assert.match(boardVue, /async function reloadAll\(\) \{\s*\n\s*await refreshRegistry\(\);\s*\n\s*await fetchBoard\(\);/, "the registry is read first, then the list (never a stale boardName)");
+  assert.match(boardVue, /if \(drag\.value && drag\.value\.moved\) return/, "the reset obeys the drag guard like every other read");
+});
+
+test("the canvas store publishes the reconnect reset on the same event, and only when asked", () => {
+  const g = globalThis as unknown as { window?: unknown; CustomEvent?: unknown };
+  const priorWindow = g.window;
+  const priorCustomEvent = g.CustomEvent;
+  const seen: { type?: string; detail?: unknown }[] = [];
+  g.CustomEvent = class {
+    type: string;
+    detail: unknown;
+    constructor(type: string, opts?: { detail?: unknown }) {
+      this.type = type;
+      this.detail = opts?.detail;
+    }
+  };
+  g.window = {
+    dispatchEvent: (ev: { type?: string; detail?: unknown }) => {
+      seen.push(ev);
+      return true;
+    },
+  };
+  try {
+    const store = createCanvasStore();
+    // the boot path: a snapshot refresh says nothing, so a page load
+    // never storms its consumers
+    store.applySnapshot([{ id: "tasks", title: "Tasks", kind: "list", payload: { board: "main", total: 0, rows: [] }, actions: [] }]);
+    assert.equal(seen.length, 0, "the snapshot (boot + catch-up) announces nothing");
+    // the reconnect path: the shell asks every consumer to re-read
+    announceCanvasReset();
+    assert.equal(seen.length, 1, "the reset pulse is exactly one announcement");
+    assert.equal(seen[0].type, CANVAS_DELTA_EVENT, "the reset rides the ONE canvas event - no second channel");
+    assert.equal((seen[0].detail as { id?: string }).id, CANVAS_RESET_ID, "the reset id rides as detail");
+    // and the two sides agree on the literal without importing each other
+    const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
+    assert.ok(
+      boardVue.includes(`const CANVAS_RESET_ID = "${CANVAS_RESET_ID}"`),
+      "the board's duplicated reset literal matches the shell's constant",
+    );
+  } finally {
+    if (priorWindow === undefined) delete g.window;
+    else g.window = priorWindow;
+    if (priorCustomEvent === undefined) delete g.CustomEvent;
+    else g.CustomEvent = priorCustomEvent;
+  }
 });
 
 test("the canvas store announces every applied delta; a snapshot is not an announcement", () => {
