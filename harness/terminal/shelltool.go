@@ -205,14 +205,16 @@ const shellOutputCap = 1 << 20 // 1 MB
 
 // tapLog streams a running shell's log to the run's output tap as the
 // file grows - the pending chip's live tail (push channel, card
-// t_7624bab1). The registry log is the ONE writer (the child holds a
-// file descriptor on it), so the tap tails from its own offset: an
-// in-process pipe would die with omega and take the shell down with it,
-// which the detachment contract forbids. A context without a tap makes
-// core.EmitToolOutput a no-op, and the tail stops when the shell exits
-// or the call ends. Live bytes are bounded by the same head cap the
-// call's own result uses: past it the tap announces the truncation once
-// and stops - the log on disk keeps the rest for shell.read.
+// t_7624bab1). RunShell starts it immediately after Spawn, before it
+// waits, so the whole inline wait streams; the shell's log is the ONE
+// writer (the child holds a file descriptor on it), so the tap tails
+// from its own offset: an in-process pipe would die with omega and take
+// the shell down with it, which the detachment contract forbids. A
+// context without a tap makes core.EmitToolOutput a no-op, and the tail
+// stops when the shell exits or the call ends. Live bytes are bounded
+// by the same head cap the call's own result uses: past it the tap
+// announces the truncation once and stops - the log on disk keeps the
+// rest for shell.read.
 func tapLog(ctx context.Context, e *Entry) {
 	const (
 		interval = 50 * time.Millisecond
@@ -287,6 +289,16 @@ func (p *ShellProvider) RunShell(ctx context.Context, args map[string]any) (stri
 	if err != nil {
 		return "", err
 	}
+	// Live tail for the push channel (card t_7624bab1): the pending
+	// chip streams a running call's output as it lands. The tap starts
+	// HERE, before the wait, so the whole inline wait streams - started
+	// after it, the shell would already be done and the tap would
+	// replay the finished file in one burst. The log is the child's own
+	// file descriptor, so the tap reads it rather than owning a pipe (a
+	// pipe dies with omega and takes the shell with it - the
+	// detachment contract forbids that). The tap stops on its own when
+	// the shell exits or the call is cut.
+	go tapLog(ctx, e)
 	select {
 	case <-e.done:
 		// The reaper records the exit code before it closes done.
@@ -299,12 +311,6 @@ func (p *ShellProvider) RunShell(ctx context.Context, args map[string]any) (stri
 			"shell %s is still running (pid %d): the call was interrupted (%v) - the shell outlives it; shell.read id=%s tails it, shell.kill id=%s stops it",
 			e.ID, e.PID, ctx.Err(), e.ID, e.ID)
 	}
-	// Live tail for the push channel (card t_7624bab1): the pending
-	// chip streams a running call's output as it lands. The log is the
-	// child's own file descriptor, so the tap reads it rather than
-	// owning a pipe (a pipe dies with omega and takes the shell with
-	// it - the detachment contract forbids that).
-	go tapLog(ctx, e)
 	out, total, err := readLogHead(e.LogPath)
 	if err != nil {
 		return "", err
