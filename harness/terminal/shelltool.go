@@ -123,6 +123,11 @@ const shellOutputCap = 1 << 20 // 1 MB
 // total". The condition (over > 0) was honest; the accumulator
 // underneath it lied.
 type cappedBuffer struct {
+	// ctx is the call's context: its run output tap (core.EmitToolOutput)
+	// is the live-stream source for the pending chip (push channel, card
+	// t_7624bab1). A context without a tap streams nothing - the shell
+	// tool itself never knows whether anyone listens.
+	ctx  context.Context
 	mu   sync.Mutex
 	buf  bytes.Buffer
 	over int64
@@ -130,17 +135,23 @@ type cappedBuffer struct {
 
 func (b *cappedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	room := shellOutputCap - b.buf.Len()
-	if room > 0 {
-		if len(p) <= room {
-			b.buf.Write(p) //nolint:errcheck // bytes.Buffer never errors
-		} else {
-			b.buf.Write(p[:room]) //nolint:errcheck // bytes.Buffer never errors
-			b.over += int64(len(p) - room)
-		}
-	} else {
-		b.over += int64(len(p))
+	kept := len(p)
+	if room <= 0 {
+		kept = 0
+	} else if kept > room {
+		kept = room
+	}
+	if kept > 0 {
+		b.buf.Write(p[:kept]) //nolint:errcheck // bytes.Buffer never errors
+	}
+	b.over += int64(len(p) - kept)
+	b.mu.Unlock()
+	// The kept bytes are the chip's tail as they land; a write that lost
+	// bytes carries the truncation marker on the streaming path too
+	// (t_304afb4e's law, same as shellOutput's final note).
+	if kept > 0 || kept < len(p) {
+		core.EmitToolOutput(b.ctx, string(p[:kept]), kept < len(p))
 	}
 	return len(p), nil
 }
@@ -186,7 +197,7 @@ func (p *ShellProvider) RunShell(ctx context.Context, args map[string]any) (stri
 	if workdir != "" {
 		cmd.Dir = workdir
 	}
-	outBuf := &cappedBuffer{}
+	outBuf := &cappedBuffer{ctx: ctx}
 	cmd.Stdout = outBuf
 	cmd.Stderr = outBuf
 	if err := cmd.Start(); err != nil {

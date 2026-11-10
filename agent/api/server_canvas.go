@@ -44,6 +44,12 @@ func (s *Server) CanvasEmit(event core.Event) {
 		return
 	}
 	s.runs.broadcastAll(runFrame{event: eventType, data: data})
+	// The push channel's canvas topic (card t_7624bab1): a panel delta is
+	// a global fact, not a session's - session stays empty. This is the
+	// frame that retires the SPA's 15s canvas snapshot poll: a toast or a
+	// board change emitted between runs reaches the page now, and it also
+	// reaches a page with no live run (broadcastAll's blind spot).
+	s.sockets.PublishEvent(TopicCanvas, "", eventType, data)
 }
 
 // handleCanvas serves GET /ui/canvas: the current panel snapshot of

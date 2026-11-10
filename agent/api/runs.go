@@ -340,6 +340,12 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		// what resets the runaway guard.
 		defer s.drainWakes(req.SessionID)
 		defer s.runs.finish(run)
+		// The runs topic's release edge rides the slot release (card
+		// t_7624bab1): declared AFTER the finish defer, so it publishes
+		// before the slot frees - a client that refetches on the edge
+		// must not race a still-occupied slot. The final agent_end frame
+		// was already broadcast by the loop above.
+		defer s.publishRunState(req.SessionID, false)
 		// Chat panel's exit hook runs BEFORE the hub releases the
 		// slot: the ephemeral final rows still read the live tail.
 		defer s.chat.endRun(req.SessionID)
@@ -361,6 +367,12 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		// Verdict cards v1 (card t_2ecf9c51): a webui /chat is an
 		// interactive turn - the verdict tool may issue from here.
 		ctx = core.WithRunOrigin(ctx, "interactive")
+		// The run's output tap (push channel, t_7624bab1): a tool that
+		// streams (the shell's capped buffer) feeds the pending chip's
+		// live tail through this ctx. Installed even when nobody is
+		// attached - the hub skips the frame with no subscriber, so an
+		// unwatched run pays one map scan.
+		ctx = core.WithRunOutputTap(ctx, s.chipTap(req.SessionID))
 		// Turn copy persistence belongs to the loop (card t_471f6d4a),
 		// same wiring as the inline path.
 		ctx = agent.WithTurnSink(ctx, s.turnSinkFor(req))
@@ -407,14 +419,14 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 			}
 			eventType, data, err := sseEvent(event)
 			if err != nil {
-				s.runs.broadcast(run, runFrame{event: "error", data: []byte("event encode: " + err.Error())})
+				s.emitRunFrame(run, runFrame{event: "error", data: []byte("event encode: " + err.Error())})
 				s.persistRun(runCtx, run, prov, req, append(recs, rec), usage, meter.stats(usage))
 				return
 			}
-			s.runs.broadcast(run, runFrame{event: eventType, data: data})
+			s.emitRunFrame(run, runFrame{event: eventType, data: data})
 		}
 		if err := ctx.Err(); errors.Is(err, context.DeadlineExceeded) {
-			s.runs.broadcast(run, runFrame{event: "error", data: []byte(
+			s.emitRunFrame(run, runFrame{event: "error", data: []byte(
 				"run timeout: the run exceeded its wall-clock cap (" + s.runTimeout.String() + ") and was stopped")})
 		}
 		s.persistRun(runCtx, run, prov, req, append(recs, rec), usage, meter.stats(usage))
@@ -427,7 +439,7 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 // attached wire should learn about the failure the same way.
 func (s *Server) persistRun(ctx context.Context, run *activeRun, prov agent.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *core.LastRunStats) {
 	if err := s.persistAssistant(ctx, prov, req, recs, usage, last); err != nil {
-		s.runs.broadcast(run, runFrame{event: "error", data: []byte(err.Error())})
+		s.emitRunFrame(run, runFrame{event: "error", data: []byte(err.Error())})
 	}
 }
 
