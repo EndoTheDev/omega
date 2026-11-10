@@ -49,6 +49,16 @@
         >{{ result }}</pre
       >
     </div>
+    <!-- live chip tail (card t_896cf5a8): the chips topic's streamed
+         output while the call runs - the pending chip shows work in
+         progress, not a silent gap until the fill. The settled result
+         wins: a row with a result renders the section above. -->
+    <div
+      v-else-if="liveText"
+      class="tool-section">
+      <span class="tool-section-label">{{ liveSettled ? "output" : "live output" }}</span>
+      <pre class="tool-output tool-live">{{ liveText }}</pre>
+    </div>
     <!-- variant anchor (t_0df4efd8): a tool CALL row can be a branch's
          active head (a text-less multi-row replay) - the switcher
          mounts on the line's tail -->
@@ -92,6 +102,12 @@
     // this row's branch block when the call row is the branch's active
     // head (a text-less multi-row replay) - resolved by ChatTab
     variant?: VariantBlock | null;
+    // the chips topic's live tail (card t_896cf5a8): the pending chip's
+    // streamed output as it lands, truncation marker included. Rendered
+    // only while the row has no settled result (the fill/transcript are
+    // the truth).
+    liveText?: string;
+    liveSettled?: boolean;
   }>();
 
   const emit = defineEmits<{

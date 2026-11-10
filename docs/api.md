@@ -684,6 +684,20 @@ server-side. On close the client reconnects with backoff, does one
 routes - which stay complete and authoritative. The socket is never the
 only way to read a fact.
 
+The client half (card t_896cf5a8, `webui/app/composables/socket.ts`)
+owns one connection per page load: it subscribes to the five topics,
+reconnects on an exponential ladder (0.5s doubling, 15s cap, jitter),
+and runs a quiet-wire check - 15s without a frame while the health topic
+beats every 5s means a half-open socket that will never fire `close`
+(a wifi flap, a suspended laptop, the devtools offline toggle), so it is
+cut by hand and the ladder rebuilds it. That timer is the liveness
+heartbeat, not a poller: no GET repeats on a cadence anywhere in the
+shell. The `chips` topic feeds the pending chip's live tail; `runs`
+edges clear the pulse and wake an awaiting yielded call; `canvas` feeds
+the panel store and the toast funnel; the verdict list has no topic of
+its own and is refetched on chat call/turn edges, run edges and
+reconnect.
+
 ### Frame envelope
 
 Every pushed frame is one JSON text message:

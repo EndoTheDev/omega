@@ -190,7 +190,7 @@
   // and the SSE-composed live view are gone; the state keeps the
   // composer transport side (draft, attach chips, the REST restore's
   // fallback for sessions the single panel does not cover, variants).
-  import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+  import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
   import {
     CHAT_HOST_KEY,
     EPHEMERAL_DRAFT_REF,
@@ -224,6 +224,7 @@
     type ModelProviderSection,
   } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
+  import { chipDisplay, chipOf } from "../composables/chips";
   import { defaultWorkspaceNow } from "../composables/defaultWorkspace";
   // card t_e4280de7: consecutive tool rows collapse into ONE group
   // block (render-site view, the transcript itself stays flat)
@@ -359,10 +360,34 @@
   const panelMatches = computed(
     () => !!panelPayload.value && panelPayload.value.session === sessionId.value,
   );
-  const canvasItems = computed(() =>
-    panelMatches.value && panelPayload.value ? canvasTranscript.apply(panelPayload.value) : null,
+  const canvasItems = computed(() => {
+    if (!(panelMatches.value && panelPayload.value)) return null;
+    return canvasTranscript.apply(panelPayload.value);
+  });
+  // the live chip tail (card t_896cf5a8): a running call's streamed
+  // output rides the row whose tool call id matches. The store is
+  // reactive, so a landed chunk repaints exactly these rows; the merge
+  // runs over the FINAL transcript, so both render sources (the canvas
+  // panel and the REST restore fallback) show the live half. Restore
+  // items are wrapped in reactive proxies: the mutation lands on the
+  // child's own prop read (the t_078a2c35 mechanism the canvas items
+  // already ride), and identity is kept - the elapsed meter never
+  // restarts on a chunk.
+  const restoreItems = computed(() =>
+    (state.value?.restored ?? []).map((it) =>
+      it.kind === "tool" ? (reactive(it) as TranscriptItem) : it,
+    ),
   );
-  const transcript = computed(() => canvasItems.value ?? state.value?.restored ?? []);
+  const transcript = computed(() => {
+    const items = canvasItems.value ?? restoreItems.value;
+    for (const it of items) {
+      if (it.kind !== "tool") continue;
+      const chip = chipOf(it.callId);
+      it.liveText = chipDisplay(chip) || undefined;
+      it.liveSettled = chip?.settled === true;
+    }
+    return items;
+  });
   const statusLine = computed(() => state.value?.statusLine ?? "");
   const itemKey = createItemKeySource();
   // stacked layout (card t_84e4653c): the transcript cut at user
@@ -460,23 +485,11 @@
     return gateByItem.value.get(item) ?? null;
   }
 
-  // the freeze cadence: the feed's 15s poll is a badge cadence. While
-  // a pending question rides this session, refresh the shared store
-  // every 5s (and once on a run start - the card exists by the time
-  // the tool row renders only if a poll saw it).
-  let gatePoll: ReturnType<typeof setInterval> | null = null;
-  watch(
-    () => sessionGateBinding.value.assigned.length + sessionGateBinding.value.standalone.length,
-    (n) => {
-      if (n > 0 && gatePoll === null) {
-        gatePoll = setInterval(() => void refreshNotifications(), 5000);
-      } else if (n === 0 && gatePoll !== null) {
-        clearInterval(gatePoll);
-        gatePoll = null;
-      }
-    },
-    { immediate: true },
-  );
+  // the freeze cadence: the feed is pulled on EVENT HINTS since the push
+  // channel landed (card t_896cf5a8) - a run start, and every chat
+  // frame's call/turn edge at the shell level. The 5s freeze poll is
+  // gone: a pending question's issuance and answer both ride the chat
+  // topic, so the pull is edge-driven.
   watch(busy, (live) => {
     if (live) void refreshNotifications();
   });
@@ -487,12 +500,6 @@
     () => sessionGateBinding.value.standalone.length,
     () => nextTick(resizeContentRO),
   );
-  onBeforeUnmount(() => {
-    if (gatePoll) {
-      clearInterval(gatePoll);
-      gatePoll = null;
-    }
-  });
 
   // --- the activity line (card t_e9baac4b): the phase is a pure
   // derivation of the rendered items + the session's busy gate (no new
