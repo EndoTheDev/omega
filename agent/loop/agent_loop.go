@@ -429,6 +429,11 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			} else {
 				ex.ctx = ctx
 			}
+			// Call identity for the run output tap (push channel,
+			// t_7624bab1): the tool streams its live output through
+			// core.EmitToolOutput and the chunk must name WHICH call it
+			// belongs to - the loop is the only place that knows.
+			ex.ctx = core.WithToolCall(ex.ctx, ex.call.ID, ex.call.Name)
 			go ex.run()
 		}
 		if yieldReady && len(inlineExecs) > 0 {
@@ -768,6 +773,9 @@ func pendingPlaceholderContent(tool string) string {
 func dispatchYieldCall(runCtx context.Context, call core.ToolCall, tool core.Tool, sessionID string, timeout time.Duration, opts agent.LoopOptions) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(runCtx), timeout)
 	defer cancel()
+	// Call identity for the run output tap (push channel, t_7624bab1):
+	// a dispatched call streams its live output just like an inline one.
+	ctx = core.WithToolCall(ctx, call.ID, call.Name)
 	start := time.Now()
 
 	content, isErr, timedOut, gateLine := "", false, false, ""

@@ -219,7 +219,47 @@ pending marker the model sees on a still-pending call is unmistakable
 (card t_1501cb04, session bf0fa2a2): it names the tool and forbids
 re-running, re-dispatching, or working around it.
 
-### The capsule-service namespace (the closed list, 7)
+### The push channel (`/ws`, card t_7624bab1)
+
+The transport-only arc that retired browser polling: ONE websocket per
+browser connection (`GET /ws`), every update a typed topic on it. The
+split runs along the import law -
+`agent/api/sockets.go` owns the fan-out (`SocketHub`: attach, per
+connection topic set, publish, nothing else) and `api/ws.go` owns the
+upgrade and the two loops, because a websocket library is an external
+module and `agent/api` admits none.
+
+The broadcast hooks sit at seams that already existed, so no producer
+learned a new call:
+
+- **chat** - `emitRunFrame` wraps `RunHub.broadcast`: every run frame
+  (`launchRun`, `persistRun`) rides the SSE subscribers and the socket
+  with the same bytes. Wake turns launch through `launchRun` like any
+  user send, so a yielded result streams on the same topic - the wake
+  seam has no separate fan-out and needed none.
+- **chips** - two halves. The live tail comes from the run output tap
+  (`core.WithRunOutputTap`, installed per run in `launchRun`, fed by
+  the shell's capped buffer through `core.EmitToolOutput`; the loop
+  stamps the call identity on the per-call ctx with
+  `core.WithToolCall`). The fill comes from `wakeHome`, the one settle
+  entry point.
+- **canvas** - `CanvasEmit` publishes the panel delta it already fans
+  to live run streams. This is also the frame that closes
+  `broadcastAll`'s blind spot: a toast or board change emitted between
+  runs now reaches the page.
+- **runs** - the slot's two edges: taken in `prepareRun` (the single
+  run-slot truth), released in `launchRun`'s finish hook (plus every
+  early slot-release path).
+- **health** - a heartbeat started by `Serve` (never at mount: the
+  goroutine fence), carrying the same body `GET /health` serves.
+
+Delivery law: no queue server-side, no replay. A subscriber that falls
+behind is cut (authoritative topics) or loses frames (the one lossy
+topic, `chips`) and reconnects; catch-up is a refetch of the visible
+panes through the GET routes plus one `GET /health`, because events are
+hints and state is truth. The GET API stays complete and authoritative.
+
+## The capsule-service namespace (the closed list, 7)
 
 `skills`, `memory`, `trust`, `cron`, `notifications`, `verdicts`,
 `chat-runs` - services one capsule (or, for `chat-runs`, the serving
@@ -286,6 +326,7 @@ into a new package).
 | `server_settings.go` | settings - the third shell-ring face (GET/PUT /settings) |
 | `server_transcript.go` | chat - the transcript serving (live + store-backed restore) |
 | `server_variants.go` | chat - message variants on the live run (regenerate/branch selection) |
+| `sockets.go` | chat - the push channel's fan-out: the `/ws` hub, the typed topic set, the broadcast hooks at the run/wake/canvas seams (card t_7624bab1) |
 | `web_tools.go` | chat - the web.search/web.fetch tool pair: built-in shell vocabulary since v0.13 (shell law 1), always mounted |
 
 The movers' tombstones (the capsule their surface rides, the wave that

@@ -20,6 +20,7 @@ against localhost from the same host is unaffected.
 | Route                                | Methods    | Notes                                          |
 | ------------------------------------ | ---------- | ---------------------------------------------- |
 | `/health`                            | GET        | liveness                                       |
+| `/ws`                                | GET        | the push channel (one websocket, typed topics) |
 | `/models`                            | GET        | model list + context window                    |
 | `/chat`                              | POST       | SSE streaming chat                             |
 | `/attach-image`                      | POST       | server-side URL fetch -> chat image            |
@@ -669,6 +670,78 @@ registration is Start-gated: the panel exists only once a channel
 actually starts - a process that never serves carries no dead http
 chat panel. The `/chat` REST + SSE API
 surface stays untouched - the panel is additive for canvas renderers.
+
+## The push channel (`GET /ws`)
+
+One websocket per browser connection, and every live update is a typed
+topic on it (card t_7624bab1, design of record
+`Workshop/omega/websocket-channel.md`). The socket replaces the webui's
+polling: nothing polls beside it.
+
+**Events are hints, state is truth.** Nothing is buffered or replayed
+server-side. On close the client reconnects with backoff, does one
+`GET /health`, and refetches the visible panes through the ordinary GET
+routes - which stay complete and authoritative. The socket is never the
+only way to read a fact.
+
+### Frame envelope
+
+Every pushed frame is one JSON text message:
+
+```json
+{"topic": "chat", "session": "s-1", "event": "response_chunk", "seq": 42, "data": {...}}
+```
+
+- `topic` - one of the five below (the closed set).
+- `session` - the conversation the frame scopes to; absent on the
+  global topics (`canvas`, `health`).
+- `event` - the chat topic's SSE event name (`response_chunk`,
+  `tool_call`, `tool_result`, `turn_end`, `agent_end`, `error`,
+  `view_model_delta`...). Absent elsewhere: the topic is the type and
+  `data` is a typed payload.
+- `seq` - the hub's monotonic frame counter, one publish order across
+  all topics. It is diagnostic, not a loss detector: a subscriber to a
+  subset sees the jumps of the frames it does not hold, and the `chips`
+  topic may drop frames by design. Loss is signalled by the connection
+  ending, never by a number.
+- `data` - the payload: the chat/canvas frames carry the SSE bytes
+  **verbatim**, so a client dispatches a socket frame exactly like a
+  stream frame; the other topics carry a typed struct.
+
+### Topics
+
+| Topic | Payload | Source (the broadcast seam) |
+| ----- | ------- | -------------------------- |
+| `chat` | the run's SSE frame verbatim | the run broadcast funnel - every frame `launchRun` broadcasts (token/thinking deltas, `tool_call`, `tool_result`, `turn_end`, `agent_end`, `error`). Wake turns launch through the same pipe, so yielded results stream on the same topic |
+| `chips` | `{call_id, tool, fill, text, content, truncated, is_error, timeout, elapsed_ms}` | `fill` false: the run output tap - a tool's live output as it lands (the shell's capped buffer). `fill` true: the pending chip settles (`wakeHome`, the one settle entry point) |
+| `canvas` | one `view_model_delta` panel descriptor | `CanvasEmit` - every mounted capsule's panel state, notifications toasts and board changes included. Panel state names itself in the payload, so the shell carries no capsule noun |
+| `runs` | `{active}` | the run slot: taken in `prepareRun`, released when the run's finish hook fires. This is the live-run truth `GET /sessions` used to be polled for |
+| `health` | `{status, uptime_seconds, version}` | the server heartbeat, every 5s. The same body `GET /health` serves |
+
+The `chips` topic is the one **lossy** topic: a consumer that falls
+behind drops frames rather than losing the wire (the tool result and
+the transcript remain the truth). On every other topic a stalled
+consumer is cut and reconnects.
+
+### Client -> server
+
+The only message is a subscription:
+
+```json
+{"type": "subscribe", "topics": ["chat", "chips"]}
+```
+
+It **replaces** the connection's topic set (a connection starts
+subscribed to all five). Unknown names are dropped; an empty list keeps
+the current set. Any other `type` is ignored.
+
+### Refusals
+
+`/ws` is GET-only (`405` otherwise) and must carry upgrade headers - a
+plain GET answers `400`. The same origin law as every other route
+applies: the upgrader refuses an `Origin` whose host is not the serving
+host, and the host guard stays wrapped around the mux. Loopback bind
+until the gateway arc owns auth.
 
 ## SPA catch-all
 

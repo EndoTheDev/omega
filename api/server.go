@@ -54,6 +54,11 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 	s := &Server{Server: agentapi.NewServer(a, tools, store, settings, modules, registries), startedAt: time.Now(), themes: newThemeRegistry(resolveThemesDir())}
 	mux := s.Server.Mux()
 	mux.HandleFunc("/health", s.handleHealth)
+	// The push channel (card t_7624bab1): one websocket per browser
+	// connection, every update a typed topic on it. The transport lives
+	// here (api/ws.go), the fan-out lives with the loop
+	// (agent/api/sockets.go).
+	mux.HandleFunc("/ws", s.handleSocket)
 	mux.HandleFunc("/themes", s.handleThemes)
 	// v0.12 E2: the module toggle surface - registry introspection and
 	// the live toggle (Q7), rejections visible through the refusal
@@ -161,6 +166,9 @@ func (s *Server) Serve(ctx context.Context, addr string) error {
 	}
 	// hot-reload: the themes folder watcher dies with the server ctx.
 	go s.themes.watch(ctx)
+	// the push channel's heartbeat: started here, after the listener is
+	// up (the goroutine fence - mount never starts background work).
+	go s.pushHealth(ctx)
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- s.httpSrv.ListenAndServe()
@@ -180,14 +188,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	// The same body the health topic pushes (api/ws.go): one shape, so a
+	// reconnecting client's single fetch and the pushed frames agree.
 	w.Header().Set("Content-Type", "application/json")
-	out := map[string]any{
-		"status":         "ok",
-		"uptime_seconds": int(time.Since(s.startedAt).Seconds()),
-	}
-	// version rides along when the host supplied one
-	if s.version != "" {
-		out["version"] = s.version
-	}
-	json.NewEncoder(w).Encode(out)
+	json.NewEncoder(w).Encode(s.healthState()) //nolint:errcheck // best-effort response body
 }
