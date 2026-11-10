@@ -50,7 +50,13 @@ func newShellServer(t *testing.T) (*Server, *agent.FakeProvider, string) {
 	prov := agent.NewFakeProviderScripts("mock", shellTurn(probe)...)
 	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(loop.Loop{})
-	s := NewServer(a, (&terminal.ShellProvider{}).Tools(), nil, nil, nil, nil)
+	// The shell registry is explicit and private: a zero provider has no
+	// default, and a default would resolve the installed instance's home
+	// (~/.omega) and write process.json plus per-shell logs there on
+	// every gate run (review round 1 on card t_5a49790b).
+	reg := terminal.NewRegistry(terminal.RegistryConfig{Home: t.TempDir(), KillGraceSeconds: 1})
+	t.Cleanup(reg.Close)
+	s := NewServer(a, terminal.NewShellProvider(nil, reg).Tools(), nil, nil, nil, nil)
 	return s, prov, probe
 }
 

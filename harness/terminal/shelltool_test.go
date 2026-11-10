@@ -3,6 +3,7 @@ package terminal
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -61,6 +62,9 @@ func TestRunShellContextKill(t *testing.T) {
 // to the wake path. The latency property is structural: inline IS the
 // fast path now.
 func TestShellRunEscalationEligible(t *testing.T) {
+	// The tool SURFACE needs no registry: Tools() only builds the map,
+	// and the registry is the verbs' business (a zero provider is a
+	// valid source of the schema, never of an execution).
 	tools := (&ShellProvider{}).Tools()
 	if tools["shell.run"].Yield {
 		t.Fatal("shell.run must not be immediate-yield - the static Yield class is superseded by budget escalation (t_1501cb04)")
@@ -302,7 +306,8 @@ func TestShellSmallOutputNoMarker(t *testing.T) {
 
 // TestShellOversizeOutputHonestMarker (card t_304afb4e): past the 1 MB
 // cap the marker is honest - kept-first size, real total, and the
-// retrieval path named (process.spawn persists the full log).
+// retrieval path named (shell.read tails the log, which survives the
+// shell; the retired process.spawn spelling is gone, card t_5a49790b).
 func TestShellOversizeOutputHonestMarker(t *testing.T) {
 	big := filepath.Join(t.TempDir(), "big.txt")
 	payload := bytes.Repeat([]byte("xxxxxxxxxx\n"), 160000) // 1,760,000 bytes
@@ -347,6 +352,39 @@ func testShellProvider(t *testing.T) *ShellProvider {
 	reg := NewRegistry(RegistryConfig{Home: t.TempDir(), KillGraceSeconds: 1})
 	t.Cleanup(reg.Close)
 	return &ShellProvider{reg: reg}
+}
+
+// TestShellProviderWithoutRegistryNamesItself pins the review-round-1
+// fix (card t_5a49790b): there is NO lazy default registry. A zero
+// provider used to build one whose config resolved datadir.Home(), so
+// any test executing through it rewrote the installed instance's
+// process.json and dropped logs in ~/.omega - two gate-run sites did
+// exactly that. Every verb now answers the named wiring error instead,
+// and nothing resolves a home.
+func TestShellProviderWithoutRegistryNamesItself(t *testing.T) {
+	p := &ShellProvider{}
+	ctx := context.Background()
+	cases := []struct {
+		verb string
+		call func() (string, error)
+	}{
+		{"shell.run", func() (string, error) {
+			return p.RunShell(ctx, map[string]any{"command": "echo probe"})
+		}},
+		{"shell.list", func() (string, error) { return p.List(ctx, map[string]any{}) }},
+		{"shell.read", func() (string, error) {
+			return p.Read(ctx, map[string]any{"id": "sh-1"})
+		}},
+		{"shell.kill", func() (string, error) {
+			return p.Kill(ctx, map[string]any{"id": "sh-1"})
+		}},
+	}
+	for _, c := range cases {
+		out, err := c.call()
+		if !errors.Is(err, errNoRegistry) {
+			t.Fatalf("%s without a registry: out=%q err=%v, want the named wiring error", c.verb, out, err)
+		}
+	}
 }
 
 // longSleeper is a command that reliably outlives a test's patience on
@@ -394,7 +432,7 @@ func TestShellVerbRoundTrip(t *testing.T) {
 	p := testShellProvider(t)
 	ctx := context.Background()
 
-	if _, err := p.registry().Spawn(ctx, echoThenSleeper("round-trip"), "rt", ""); err != nil {
+	if _, err := p.reg.Spawn(ctx, echoThenSleeper("round-trip"), "rt", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	// The echo may land a beat after Spawn returns.
