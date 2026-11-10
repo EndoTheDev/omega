@@ -18,6 +18,30 @@
       :class="{ open: open, narrow: narrow }">
       <TabBand title="Settings"></TabBand>
 
+    <!-- card t_04eb11d6 (settings tier 3b, R6/R8): the scope strip, the
+         VSCode tab row at the head of the pane. R8 EMPTY WORLD: zero
+         agent scopes in the payload renders NO strip at all, so the pane
+         stays exactly the tier-2b shape; one scope or more materializes
+         Main + one tab per agent name, and a tab switches the WHOLE pane
+         (its groups, its search, the dot's base, the reset target). -->
+    <div
+      v-if="scopeTabs.length > 1"
+      class="settings-scopes"
+      role="tablist"
+      aria-label="settings scope">
+      <button
+        v-for="tab in scopeTabs"
+        :key="tab.name ?? 'main'"
+        class="settings-scope-tab"
+        :class="{ active: tab.name === activeScope }"
+        type="button"
+        role="tab"
+        :aria-selected="tab.name === activeScope"
+        @click="selectScope(tab.name)">
+        {{ tab.label }}
+      </button>
+    </div>
+
     <!-- the VSCode search header: full-width at the head of the pane,
          outside the scrollport (structurally pinned above .settings-body) -->
     <div class="settings-filterbar">
@@ -26,10 +50,17 @@
         placeholder="filter settings" />
     </div>
 
+    <!-- an agent scope whose layer file cannot be read/written: the
+         endpoint refuses it too, so the pane renders the message and
+         goes read-only (R4 - never a silent edit that cannot land) -->
+    <p v-if="scopeMessage" class="settings-error">
+      {{ scopeMessage }}
+    </p>
+
     <p v-if="loadError" class="settings-error">
       {{ loadError }}
     </p>
-    <div class="settings-body">
+    <div class="settings-body" :class="{ 'settings-readonly': scopeReadOnly }">
       <p
       v-if="!loadError && visibleGroups.length === 0"
       class="settings-empty">
@@ -84,16 +115,16 @@
               v-if="isModified(group, knob)"
               class="setting-dot"
               role="img"
-              aria-label="differs from default"
-              title="differs from default" />
+              :aria-label="dotLabel"
+              :title="dotLabel" />
             <!-- the draft star keeps its pre-existing seat (the non-toggle
                  head below): toggle rows never carried it, and this card
                  does not move it (card t_c04c959e step 3) -->
             <button
-              v-if="isModified(group, knob)"
+              v-if="canReset(group, knob)"
               class="setting-reset"
               type="button"
-              title="reset to default"
+              :title="resetLabel"
               @click.stop.prevent="resetKnob(group, knob)">
               reset
             </button>
@@ -104,23 +135,26 @@
             <span>{{ knob.label }}</span>
             <!-- card t_c04c959e: two DIFFERENT markers coexist - the dot
                  means "differs from the knob default" (persistent state),
-                 the star means "edited in the draft, not saved yet". -->
+                 the star means "edited in the draft, not saved yet".
+                 card t_04eb11d6: on an agent tab the dot's base is MAIN's
+                 inherited value and reset removes the override, so the
+                 labels name that base instead. -->
             <span class="setting-badges">
               <span
                 v-if="isModified(group, knob)"
                 class="setting-dot"
                 role="img"
-                aria-label="differs from default"
-                title="differs from default" />
+                :aria-label="dotLabel"
+                :title="dotLabel" />
               <span
                 v-if="serverKnobDirty(knob)"
                 class="setting-dirty"
                 title="edited, not saved">*</span>
               <button
-                v-if="isModified(group, knob)"
+                v-if="canReset(group, knob)"
                 class="setting-reset"
                 type="button"
-                title="reset to default"
+                :title="resetLabel"
                 @click.stop.prevent="resetKnob(group, knob)">
                 reset
               </button>
@@ -205,8 +239,10 @@
          module toggles live in the extensions tab now (the module
          lifecycle cockpit), and this pane carries config knobs only. -->
     </div>
-    <!-- save row stays pinned below the scrollable body -->
-    <div v-if="dirtyCount > 0" class="settings-save-row">
+    <!-- save row stays pinned below the scrollable body; a read-only
+         scope (broken layer / a 409 the endpoint sent) has nothing to
+         save, so the row stays out of the way -->
+    <div v-if="dirtyCount > 0 && !scopeReadOnly" class="settings-save-row">
       <button
         class="settings-save"
         type="button"
@@ -220,8 +256,7 @@
     </div>
     <p v-if="saveError" class="settings-error">{{ saveError }}</p>
     <p class="settings-note">
-      knobs marked live apply to the running server; the rest take effect
-      on restart.
+      {{ noteText }}
     </p>
   </aside>
 </template>
@@ -230,6 +265,7 @@
   import {
     computed,
     onMounted,
+    reactive,
     ref,
   } from "vue";
   import {
@@ -239,7 +275,9 @@
     knobDiffersFromDefault,
     knobHasDefault,
     saveSettings,
+    scopeConfigDiff,
     settingsDiff,
+    updateAgentConfig,
     valuesEqual,
     parseCollapsedKeys,
     serializeCollapsedKeys,
@@ -248,6 +286,8 @@
     type SettingGroup,
     type SettingKnob,
     type SettingsPayload,
+    type SettingsScope,
+    type SettingsScopeKnob,
     type Appearance,
     type ColorMode,
     type UserTheme,
@@ -315,7 +355,81 @@
   const loadError = ref<string | null>(null);
   const saveError = ref<string | null>(null);
   const saving = ref(false);
-  const query = ref("");
+
+  // --- agent scopes (settings tier 3b) ---
+  // The payload's scopes ARE the tab strip (R8: zero scopes = no strip).
+  // activeScope null is the Main tab - the tier-2b pane untouched. Each
+  // scope keeps its OWN loaded/draft/unset state, so switching tabs never
+  // throws an unsaved edit away (and a main-tab save round-trip keeps an
+  // untouched agent tab's draft, see applyPayload).
+  interface ScopeState {
+    loaded: Record<string, unknown>;
+    draft: Record<string, unknown>;
+    // the dotted keys whose override the user asked to REMOVE: the wire
+    // verb is `unset` (a key deletion), never a write of main's value
+    unset: string[];
+  }
+  const scopes = ref<SettingsScope[]>([]);
+  const activeScope = ref<string | null>(null);
+  const scopeStates = reactive<Record<string, ScopeState>>({});
+  // a 409 (or any refusal that means "this layer is not writable") locks
+  // the scope read-only with the endpoint's own message (R4)
+  const scopeLocks = reactive<Record<string, string>>({});
+
+  const activeScopeData = computed<SettingsScope | null>(() =>
+    activeScope.value === null
+      ? null
+      : scopes.value.find((s) => s.name === activeScope.value) ?? null,
+  );
+  const activeState = computed<ScopeState | null>(() =>
+    activeScope.value === null ? null : scopeStates[activeScope.value] ?? null,
+  );
+
+  // the strip: Main first, then one tab per agent scope name
+  const scopeTabs = computed<{ name: string | null; label: string }[]>(() => [
+    { name: null, label: "Main" },
+    ...scopes.value.map((s) => ({ name: s.name, label: s.name })),
+  ]);
+
+  // R7 per-scope search: each tab keeps its OWN query, so switching from
+  // a broad Main search to an agent tab never lands on a stale "no
+  // settings match" - and the filter itself already runs per tab, since
+  // it filters that tab's group list (Main: the registry + client groups,
+  // agent: the four overridable groups only - see allGroups).
+  const queries = reactive<Record<string, string>>({});
+  const query = computed<string>({
+    get: () => queries[activeScope.value ?? "main"] ?? "",
+    set: (value: string) => {
+      queries[activeScope.value ?? "main"] = value;
+    },
+  });
+
+  function selectScope(name: string | null) {
+    if (activeScope.value === name) return;
+    activeScope.value = name;
+    saveError.value = null;
+  }
+
+  const scopeMessage = computed(() => {
+    const scope = activeScopeData.value;
+    if (!scope) return "";
+    return scope.error ?? (activeScope.value ? scopeLocks[activeScope.value] ?? "" : "");
+  });
+  const scopeReadOnly = computed(() => scopeMessage.value !== "");
+
+  // the dot/reset voice names its BASE: main's inherited value on an
+  // agent tab, the config default on the Main tab (R3/seam ruling)
+  const dotLabel = computed(() =>
+    activeScope.value === null ? "differs from default" : "differs from main",
+  );
+  const resetLabel = computed(() =>
+    activeScope.value === null ? "reset to default" : "reset to main",
+  );
+  const noteText = computed(() =>
+    activeScope.value === null
+      ? "knobs marked live apply to the running server; the rest take effect on restart."
+      : "agent knobs override main; a knob without a dot inherits main. reset removes the override and falls back to main. changes apply to this agent's next run.",
+  );
 
   // Card 5: settings is a dock TAB, not an overlay - the tab opens once
   // and stays mounted, so the load-on-open watch dies with the drawer
@@ -353,10 +467,43 @@
       for (const k of g.knobs) values[k.key] = k.value;
     loaded.value = values;
     draft.value = { ...values };
+    applyScopes(payload.scopes);
     // card t_30137f67: every read (mount reload + save round-trip)
     // keeps the shared signal fresh - a Settings edit applies to the
     // next new session's chip without a reload. "" clears it.
     setDefaultWorkspace(values[DEFAULT_WORKSPACE_KNOB]);
+  }
+
+  // applyScopes re-seeds the per-scope state from a fresh payload. A
+  // scope whose file did NOT change keeps its draft + pending unset (a
+  // main-tab save round-trip must not discard an agent tab's unsaved
+  // edit); a changed file re-seeds, because the values just moved under
+  // the draft. Scopes that vanished (agent removed) drop their state and
+  // the tab falls back to Main.
+  function applyScopes(next: SettingsScope[]) {
+    scopes.value = next;
+    const seen = new Set<string>();
+    for (const scope of next) {
+      seen.add(scope.name);
+      const values: Record<string, unknown> = {};
+      for (const g of scope.groups)
+        for (const k of g.knobs) values[k.key] = k.value;
+      const prev = scopeStates[scope.name];
+      if (prev && valuesEqual(prev.loaded, values)) {
+        prev.loaded = values; // same truth: draft + unset survive
+        continue;
+      }
+      scopeStates[scope.name] = { loaded: values, draft: { ...values }, unset: [] };
+      // a file that changed under us may have fixed what a 409 refused
+      delete scopeLocks[scope.name];
+    }
+    for (const name of Object.keys(scopeStates))
+      if (!seen.has(name)) {
+        delete scopeStates[name];
+        delete scopeLocks[name];
+      }
+    if (activeScope.value !== null && !seen.has(activeScope.value))
+      activeScope.value = null;
   }
 
   // --- client (chat) group: props in, emits out ---
@@ -533,7 +680,95 @@
     return { key: "common", label: "Commonly Used", knobs };
   });
 
+  // --- the agent scope groups (settings tier 3b, R3) ---
+
+  // mainValues / mainKnobByKey read the MAIN registry (the server groups
+  // only - chat/dock are client state and can never be an agent knob):
+  // an agent row's inherited base and control metadata both come from
+  // there, so one vocabulary serves both tabs.
+  const mainValues = computed<Record<string, unknown>>(() => {
+    const out: Record<string, unknown> = {};
+    for (const group of groups.value)
+      for (const knob of group.knobs) out[knob.key] = knob.value;
+    return out;
+  });
+  const mainKnobByKey = computed(() => {
+    const out = new Map<string, SettingKnob>();
+    for (const group of groups.value)
+      for (const knob of group.knobs) out.set(knob.key, knob);
+    return out;
+  });
+
+  // R3: an agent tab renders the four overridable groups and nothing
+  // else - the scope payload decides which groups/knobs exist.
+  const SCOPE_GROUP_LABELS: Record<string, string> = {
+    provider: "provider",
+    system_prompt: "system prompt",
+    description: "description",
+    max_turns: "max turns",
+  };
+  // the control each scope knob renders through; the main registry's
+  // knob answers the rest (labels, select options, number bounds)
+  const SCOPE_KNOB_TYPES: Record<string, SettingKnob["type"]> = {
+    "provider.type": "select",
+    "provider.host": "text",
+    "provider.api_key": "secret",
+    "provider.model_name": "model",
+    system_prompt: "textarea",
+    description: "text",
+    max_turns: "number",
+  };
+  // the help text names what the row MEANS on this tab: the main
+  // registry's text talks about config.yaml and restarts, which is not
+  // this surface's contract (one PUT /agents/{name}, reset falls back)
+  const SCOPE_KNOB_HELP: Record<string, string> = {
+    "provider.type": "provider flavor for this agent; empty defaults to ollama; mock answers deterministically",
+    "provider.host": "provider base URL for this agent; empty inherits main's",
+    "provider.api_key": "masked; a key here overrides main's for this agent - reset falls back to main's key",
+    "provider.model_name": "model this agent serves; reset falls back to the main model",
+    system_prompt: "this agent's system prompt; reset falls back to the main system prompt",
+    description: "one-line description for this agent (the roster subtitle)",
+    max_turns: "tool-loop turn cap for this agent's runs; empty inherits main (0 = the 100 default)",
+  };
+
+  function scopeKnobDef(knob: SettingsScopeKnob): SettingKnob {
+    const base = mainKnobByKey.value.get(knob.key);
+    return {
+      key: knob.key,
+      label: base?.label ?? SCOPE_GROUP_LABELS[knob.key] ?? knob.key,
+      type: SCOPE_KNOB_TYPES[knob.key] ?? base?.type ?? "text",
+      value: knob.value,
+      // the DIFF base on an agent tab is MAIN's value (the seam ruling):
+      // the existing isModified test then means "differs from main"
+      default: mainValues.value[knob.key] ?? "",
+      options: base?.options,
+      min: base?.min,
+      max: base?.max,
+      step: base?.step,
+      help: SCOPE_KNOB_HELP[knob.key],
+    };
+  }
+
+  const scopeGroups = computed<SettingGroup[]>(() => {
+    const scope = activeScopeData.value;
+    if (!scope) return [];
+    const out: SettingGroup[] = [];
+    for (const group of scope.groups) {
+      const knobs = group.knobs.map(scopeKnobDef);
+      if (knobs.length === 0) continue;
+      out.push({
+        key: group.key,
+        label: SCOPE_GROUP_LABELS[group.key] ?? group.key,
+        knobs,
+      });
+    }
+    return out;
+  });
+
   const allGroups = computed<SettingGroup[]>(() => {
+    // R3: an agent tab's ONE source is the scope's four groups - no
+    // Commonly Used, no chat/dock client state, no other registry group
+    if (activeScope.value !== null) return scopeGroups.value;
     // the curated group pins FIRST and rests there; a live search drops
     // it, because the surviving registry rows already carry the same
     // knobs - search replaces the resting sections, it never lists one
@@ -602,6 +837,35 @@
 
   // --- value plumbing ---
 
+  // The pane reads ONE pair of maps: Main's loaded/draft on the Main tab,
+  // the active scope's on an agent tab. Writing routes the same way, so
+  // every control keeps its single set path (card t_6bebff18's per-knob
+  // routing is untouched).
+  const paneLoaded = computed<Record<string, unknown>>(() =>
+    activeScope.value === null ? loaded.value : activeState.value?.loaded ?? {},
+  );
+  const paneDraft = computed<Record<string, unknown>>(() =>
+    activeScope.value === null ? draft.value : activeState.value?.draft ?? {},
+  );
+
+  function writeDraft(key: string, value: unknown) {
+    const name = activeScope.value;
+    if (name !== null) {
+      const state = scopeStates[name];
+      if (!state) return;
+      state.draft = { ...state.draft, [key]: value };
+      // an edited key is no longer a pending override removal: the edit
+      // is the new state (only an untouched reset stays pending)
+      if (state.unset.includes(key))
+        state.unset = state.unset.filter((k) => k !== key);
+      return;
+    }
+    draft.value = { ...draft.value, [key]: value };
+  }
+
+  // clientValue reads the live chat/dock state: a knob the user edited
+  // (dirty or not) always shows the client's own truth - never the
+  // server draft map (card t_6bebff18's per-knob routing).
   const clientValue = (knob: SettingKnob): unknown => {
     if (knob.key === "chat.show_thinking") return props.showThinking;
     if (knob.key === "chat.appearance") return props.appearance;
@@ -613,9 +877,10 @@
   };
 
   // serverValue reads draft-first: a knob the user edited (dirty or not)
-  // always displays what will be saved.
+  // always displays what will be saved - Main's maps on the Main tab, the
+  // active scope's on an agent tab (card t_04eb11d6).
   const serverValue = (knob: SettingKnob): unknown =>
-    draft.value[knob.key] ?? loaded.value[knob.key];
+    paneDraft.value[knob.key] ?? paneLoaded.value[knob.key];
 
   // modelValue (card t_70c28128): the model pickers take strings -
   // a number-typed server value (never expected, tolerated) stringifies
@@ -665,7 +930,7 @@
       if (knob.key === "chat.show_thinking") emit("update:showThinking", on);
       return;
     }
-    draft.value = { ...draft.value, [knob.key]: on };
+    writeDraft(knob.key, on);
   }
 
   function setSelect(group: SettingGroup, knob: SettingKnob, value: string) {
@@ -683,7 +948,7 @@
         setBottomWidthMode(value === "full" ? "full" : "aligned");
       return;
     }
-    draft.value = { ...draft.value, [knob.key]: value };
+    writeDraft(knob.key, value);
   }
 
   // setServer stores text verbatim; numeric inputs parse what the
@@ -695,7 +960,7 @@
       const n = Number(raw);
       value = raw === "" ? "" : Number.isFinite(n) ? n : raw;
     }
-    draft.value = { ...draft.value, [knob.key]: value };
+    writeDraft(knob.key, value);
   }
 
   // knobValue is the value the row is SHOWING right now: draft-first for
@@ -709,15 +974,70 @@
   // edited-back-to-default-then-unsaved-elsewhere (star, no dot). A knob the
   // server knows no default for (default: null - provider.model_name) never
   // shows the dot.
+  //
+  // card t_04eb11d6 (seam ruling): on an agent tab the SAME marker names a
+  // different BASE - differs from MAIN, because main's inherited value is
+  // that tab's default. The base is structural where the value cannot
+  // answer (provider.api_key rides masked, so the override flag is the
+  // only honest "this agent has its own").
+  const scopeOverriddenKeys = computed<Set<string>>(() => {
+    const out = new Set<string>();
+    const scope = activeScopeData.value;
+    if (!scope) return out;
+    for (const group of scope.groups)
+      for (const knob of group.knobs) if (knob.overridden) out.add(knob.key);
+    return out;
+  });
+
+  const scopeDiffersFromMain = (knob: SettingKnob): boolean => {
+    const state = activeState.value;
+    if (!state) return false;
+    // a queued removal is on its way back to main: the star marks it as
+    // unsaved, the dot goes out
+    if (state.unset.includes(knob.key)) return false;
+    if (scopeOverriddenKeys.value.has(knob.key)) return true;
+    // a draft edit departs from main before it is saved - show the dot so
+    // the tab reads as "this row will override main"
+    const draft = state.draft[knob.key];
+    const main = mainValues.value[knob.key];
+    return !valuesEqual(draft === undefined ? "" : draft, main === undefined ? "" : main);
+  };
+
   const isModified = (group: SettingGroup, knob: SettingKnob): boolean =>
-    knobDiffersFromDefault(knobValue(group, knob), knob.default);
+    activeScope.value === null
+      ? knobDiffersFromDefault(knobValue(group, knob), knob.default)
+      : scopeDiffersFromMain(knob);
+
+  // canReset: Main - the tier-2b rule (a modified row resets to the config
+  // default). Agent tab - reset is the OVERRIDE REMOVAL, so it exists
+  // exactly while the row differs from main (a saved override to delete,
+  // or a pending edit to undo).
+  const canReset = (group: SettingGroup, knob: SettingKnob): boolean =>
+    activeScope.value === null ? isModified(group, knob) : scopeDiffersFromMain(knob);
 
   // resetKnob (card t_c04c959e): writes the knob default down the control's
   // OWN set path - the draft map for server knobs (so the normal diff-only
   // save ships it, and the star clears when the default is what was loaded)
   // and the client emit/ref for the chat and dock groups. A no-default knob
   // has no button, but guard anyway: the reset never invents a value.
+  //
+  // card t_04eb11d6: on an agent tab the reset target is MAIN, and the
+  // verb is the wire's `unset` (delete the key), never a write of main's
+  // value - that would pin a phantom override and, on provider.api_key,
+  // persist the read mask as the agent's secret (card t_53523d5b).
   function resetKnob(group: SettingGroup, knob: SettingKnob) {
+    if (activeScope.value !== null) {
+      const state = activeState.value;
+      if (!state) return;
+      const main = mainValues.value[knob.key];
+      state.draft = { ...state.draft, [knob.key]: main === undefined ? "" : main };
+      if (
+        scopeOverriddenKeys.value.has(knob.key) &&
+        !state.unset.includes(knob.key)
+      )
+        state.unset = [...state.unset, knob.key];
+      return;
+    }
     if (!knobHasDefault(knob.default)) return;
     const def = knob.default;
     if (isClient(group)) {
@@ -725,22 +1045,61 @@
       else setSelect(group, knob, String(def));
       return;
     }
-    draft.value = { ...draft.value, [knob.key]: def };
+    writeDraft(knob.key, def);
   }
 
-  const serverKnobDirty = (knob: SettingKnob): boolean =>
-    !valuesEqual(draft.value[knob.key], loaded.value[knob.key]);
+  const serverKnobDirty = (knob: SettingKnob): boolean => {
+    if (activeScope.value !== null) {
+      const state = activeState.value;
+      if (!state) return false;
+      return (
+        state.unset.includes(knob.key) ||
+        !valuesEqual(state.draft[knob.key], state.loaded[knob.key])
+      );
+    }
+    return !valuesEqual(draft.value[knob.key], loaded.value[knob.key]);
+  };
 
-  const dirtyCount = computed(
-    () => Object.keys(settingsDiff(loaded.value, draft.value)).length,
-  );
+  // the agent tab's pending save: ONE derivation (the pure helper the
+  // save ships) so the button's count can never drift from the wire.
+  const scopePending = computed(() => {
+    const state = activeState.value;
+    if (!state)
+      return { body: {} as Record<string, unknown>, invalid: undefined as string | undefined, count: 0 };
+    const diff = scopeConfigDiff(
+      state.loaded,
+      state.draft,
+      state.unset,
+      scopeOverriddenKeys.value,
+    );
+    const unset = (diff.body.unset as string[] | undefined) ?? [];
+    const count = Object.keys(diff.body).filter((k) => k !== "unset").length + unset.length;
+    return { ...diff, count };
+  });
+
+  const dirtyCount = computed(() => {
+    if (activeScope.value !== null) return scopePending.value.count;
+    return Object.keys(settingsDiff(loaded.value, draft.value)).length;
+  });
 
   function resetDraft() {
     saveError.value = null;
+    if (activeScope.value !== null) {
+      const state = activeState.value;
+      if (state) {
+        state.draft = { ...state.loaded };
+        state.unset = [];
+      }
+      return;
+    }
     draft.value = { ...loaded.value };
   }
 
   async function save() {
+    if (activeScope.value !== null) {
+      await saveScope(activeScope.value);
+      return;
+    }
     const changes = settingsDiff(loaded.value, draft.value);
     if (Object.keys(changes).length === 0) return;
     saving.value = true;
@@ -753,9 +1112,95 @@
       saving.value = false;
     }
   }
+
+  // saveScope ships one agent tab through the EXISTING agents edit
+  // endpoint (R4: one write path, one call per save - the webui never
+  // learns or cares which lane the server walks). The endpoint's answer
+  // IS the error mapping: any refusal (409 locked default / a layer that
+  // will not parse, 400 a bad value) pins its own words on the scope and
+  // renders the tab read-only - never a silent edit that cannot land.
+  async function saveScope(name: string) {
+    const diff = scopePending.value;
+    if (diff.invalid) {
+      saveError.value = diff.invalid;
+      return;
+    }
+    if (diff.count === 0) return;
+    saving.value = true;
+    saveError.value = null;
+    try {
+      await updateAgentConfig(name, diff.body);
+    } catch (err) {
+      scopeLocks[name] = err instanceof Error ? err.message : String(err);
+      saving.value = false;
+      return;
+    }
+    // the layer file just changed: drop the local draft so the refresh
+    // re-seeds from disk (a kept draft would shadow the saved truth)
+    delete scopeStates[name];
+    try {
+      applyScopes((await fetchSettings()).scopes);
+    } catch (err) {
+      saveError.value = err instanceof Error ? err.message : String(err);
+    } finally {
+      saving.value = false;
+    }
+  }
 </script>
 
 <style scoped>
+  /* card t_04eb11d6 (R6): the scope strip - the pane's own tab row at the
+     head, [Main | agent names...]. It scrolls sideways when the roster is
+     long (the .dock-tabs shape) and the active tab carries the accent's
+     inset top bar - the dock tab language at settings size. The strip
+     only exists when the payload carries scopes (R8 empty world renders
+     no strip at all; v-if lives in the template). */
+  .settings-scopes {
+    flex: none;
+    display: flex;
+    align-items: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    border-bottom: 1px solid var(--stroke);
+  }
+  .settings-scopes::-webkit-scrollbar { display: none; }
+  .settings-scope-tab {
+    flex: none;
+    max-width: 160px;
+    padding: 5px 10px;
+    border: 0;
+    background: transparent;
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+  .settings-scope-tab:hover { color: var(--text); }
+  .settings-scope-tab.active {
+    color: var(--text);
+    background: var(--z1);
+    box-shadow: inset 0 2px 0 var(--accent);
+  }
+  .settings-scope-tab:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+  }
+  /* a read-only scope (a layer file that will not parse, or any refusal
+     the endpoint sent): the values stay visible behind the message, but
+     nothing can be edited and no save row exists (R4) */
+  .settings-readonly {
+    opacity: 0.7;
+  }
+  .settings-readonly :deep(input),
+  .settings-readonly :deep(textarea),
+  .settings-readonly :deep(.setting-select) {
+    pointer-events: none;
+  }
+
   /* card t_6bebff18 (Endo ruling 2026-11-10): the filter left TabBand's
      shared 128px band seat and became the pane-top full-width bar - the
      VSCode settings-search shape. Placement only: the input's look stays

@@ -2325,8 +2325,46 @@ export interface SettingGroup {
   knobs: SettingKnob[];
 }
 
+// --- settings scopes: the per-agent surface (settings tier 3b) ---
+
+// SettingsScopeKnob is one knob inside an agent scope (wire shape of
+// core.SettingsScopeKnob, card t_22a5f70a). Key is the SAME dotted path
+// the main payload's knob carries where the two surfaces name the same
+// knob; value is the EFFECTIVE value (the agent's own when the layer
+// names the key, main's otherwise); overridden is STRUCTURAL - the
+// agent's config file names the key. That flag is the seam ruling's
+// "differs from main" for a secret, whose masked value cannot be
+// compared.
+export interface SettingsScopeKnob {
+  key: string;
+  value: unknown;
+  overridden: boolean;
+}
+
+// SettingsScopeGroup is one of the four overridable groups an agent tab
+// renders, in wire order: provider, system_prompt, description,
+// max_turns.
+export interface SettingsScopeGroup {
+  key: string;
+  overridden: boolean;
+  knobs: SettingsScopeKnob[];
+}
+
+// SettingsScope is one agent home in the settings payload. error rides
+// when the agent's layer file could not be read/parsed - the pane then
+// renders the scope read-only with the message (the write endpoint
+// refuses the same layer).
+export interface SettingsScope {
+  name: string;
+  groups: SettingsScopeGroup[];
+  error?: string;
+}
+
 export interface SettingsPayload {
   groups: SettingGroup[];
+  // scopes is ALWAYS an array: an empty one is the R8 empty world (no
+  // agent dirs), where the pane renders no scope strip at all.
+  scopes: SettingsScope[];
 }
 
 // normalizeSettingsPayload sanitizes a /settings response: malformed
@@ -2376,7 +2414,41 @@ export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
       groups.push({ key: gr.key, label: gr.label, knobs });
     }
   }
-  return { groups };
+  // --- scopes (settings tier 3b) ---
+  // Same tolerance as the groups above: a malformed scope entry drops
+  // whole, a malformed knob drops, and the list is ALWAYS an array (R8:
+  // the pane decides "no strip" from scopes.length === 0, never from a
+  // missing key).
+  const scopes: SettingsScope[] = [];
+  const rawScopes = raw && typeof raw === "object" ? (raw as Record<string, unknown>).scopes : undefined;
+  if (Array.isArray(rawScopes)) {
+    for (const s of rawScopes as unknown[]) {
+      if (!s || typeof s !== "object") continue;
+      const sr = s as Record<string, unknown>;
+      if (typeof sr.name !== "string" || sr.name === "") continue;
+      if (!Array.isArray(sr.groups)) continue;
+      const scopeGroups: SettingsScopeGroup[] = [];
+      for (const g of sr.groups as unknown[]) {
+        if (!g || typeof g !== "object") continue;
+        const gr = g as Record<string, unknown>;
+        if (typeof gr.key !== "string" || !Array.isArray(gr.knobs)) continue;
+        const knobs: SettingsScopeKnob[] = [];
+        for (const k of gr.knobs as unknown[]) {
+          if (!k || typeof k !== "object") continue;
+          const kn = k as Record<string, unknown>;
+          if (typeof kn.key !== "string" || kn.value === undefined) continue;
+          knobs.push({ key: kn.key, value: kn.value, overridden: kn.overridden === true });
+        }
+        scopeGroups.push({ key: gr.key, overridden: gr.overridden === true, knobs });
+      }
+      scopes.push({
+        name: sr.name,
+        groups: scopeGroups,
+        ...(typeof sr.error === "string" && sr.error !== "" ? { error: sr.error } : {}),
+      });
+    }
+  }
+  return { groups, scopes };
 }
 
 // fetchSettings loads the config-knob payload. Throws on non-2xx with
@@ -2820,6 +2892,116 @@ export function settingsDiff(
     if (!valuesEqual(draft[key], loaded[key])) out[key] = draft[key];
   }
   return out;
+}
+
+// AGENT_KNOB_FIELDS maps an agent-scope knob's dotted key onto the one
+// write field PUT /agents/{name} carries for it (settings tier 3b, card
+// t_53523d5b). The webui knows nothing about which lane the server then
+// walks (yaml upsert vs the runtime hot hook) - one call per save (R4).
+export const AGENT_KNOB_FIELDS: Record<string, string> = {
+  "provider.type": "provider_type",
+  "provider.model_name": "model_name",
+  "provider.host": "host",
+  "provider.api_key": "api_key",
+  system_prompt: "system_prompt",
+  description: "description",
+  max_turns: "max_turns",
+};
+
+// agentConfigUpdate builds the PUT /agents/{name} body for one agent
+// tab save: the changed knob values mapped onto their wire fields, plus
+// the "unset" list - the reset verb that DELETES a key so the scope
+// falls back to main (never a write of main's value, which would pin a
+// phantom override and, on the secret, persist the mask). A key in
+// `unset` never rides as a value too (the endpoint refuses set+unset on
+// one key); a knob outside the four overridable groups is dropped
+// (nothing else is writable from this pane). A non-whole max_turns
+// answers `invalid` and no body, so the pane can say why before the
+// round-trip. Pure.
+export function agentConfigUpdate(
+  changed: Record<string, unknown>,
+  unset: string[],
+): { body: Record<string, unknown>; invalid?: string } {
+  const body: Record<string, unknown> = {};
+  const dropped = new Set(unset);
+  for (const [key, value] of Object.entries(changed)) {
+    if (dropped.has(key)) continue;
+    const field = AGENT_KNOB_FIELDS[key];
+    if (!field) continue;
+    if (field === "max_turns") {
+      const raw = String(value ?? "").trim();
+      const n = typeof value === "number" ? value : Number(raw);
+      // an EMPTY field is not 0: 0 is a real cap ("no turn limit"), so
+      // emptiness can never be inferred into it - the caller's unset verb
+      // is the only "inherit" (see scopeConfigDiff)
+      if (raw === "" || !Number.isInteger(n) || n < 0) return { body, invalid: `max turns: "${String(value ?? "")}" is not a whole number` };
+      body.max_turns = n;
+      continue;
+    }
+    body[field] = value === null || value === undefined ? "" : String(value);
+  }
+  if (unset.length > 0) body.unset = [...unset];
+  return { body };
+}
+
+// scopeConfigDiff builds one agent tab's PUT body from its local state:
+// every draft key that departs from what the server last served, plus
+// the queued override removals. An EMPTIED max_turns field is a removal
+// (the wire's "inherit" verb) - 0 is a real cap, so emptiness is never
+// inferred as a value; on a knob with no override there is nothing to
+// delete and the emptiness is dropped. Keys outside the four overridable
+// groups never ride. Pure - the pane's save count and the wire body are
+// the same derivation, so they cannot drift.
+export function scopeConfigDiff(
+  loaded: Record<string, unknown>,
+  draft: Record<string, unknown>,
+  queuedUnset: string[],
+  overridden: Iterable<string>,
+): { body: Record<string, unknown>; invalid?: string } {
+  const own = new Set(overridden);
+  // a removal only means something for a key the agent owns; anything else
+  // would be a no-op write on the layer
+  const unset = new Set(queuedUnset.filter((key) => own.has(key)));
+  const changed: Record<string, unknown> = {};
+  for (const key of Object.keys(draft)) {
+    if (!AGENT_KNOB_FIELDS[key]) continue;
+    const value = draft[key];
+    if (!unset.has(key) && valuesEqual(value, loaded[key])) continue;
+    if (key === "max_turns" && (value === "" || value === null || value === undefined)) {
+      if (own.has(key)) unset.add(key);
+      continue;
+    }
+    changed[key] = value;
+  }
+  return agentConfigUpdate(changed, [...unset]);
+}
+
+// updateAgentConfig PUTs one agent's config diff through the EXISTING
+// agents edit endpoint (the agents tab's own write path - card
+// t_53523d5b's max_turns + unset ride the same call). The response is the
+// refreshed Profile; the caller re-reads /settings for the scope payload,
+// because that is computed from the layer on disk. Throws the endpoint's
+// own words on a non-2xx - a 409 (the locked default, a layer that will
+// not parse) is rendered read-only by the pane, never retried.
+export async function updateAgentConfig(
+  name: string,
+  body: Record<string, unknown>,
+): Promise<void> {
+  const r = await fetch(`/agents/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (r.ok) return;
+  let msg = `agent save: ${r.status}`;
+  try {
+    // the error envelope is plain text (http.Error), not JSON
+    const text = (await r.text()).trim();
+    if (text) msg = text;
+  } catch {
+    // keep the status-code message
+  }
+  throw new Error(msg);
 }
 
 // --- session search: one endpoint owns title AND content hits ---
