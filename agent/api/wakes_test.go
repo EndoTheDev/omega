@@ -79,7 +79,7 @@ func TestBootRecoveryInjectsTimeoutResults(t *testing.T) {
 	s := NewServer(a, nil, st, nil, nil, nil)
 
 	// The sweep settled the entry...
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) && len(s.yieldLedger.All()) != 0 {
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -87,7 +87,7 @@ func TestBootRecoveryInjectsTimeoutResults(t *testing.T) {
 		t.Fatalf("boot sweep left entries: %+v", left)
 	}
 	// ...and launched the wake run (the session's slot went live).
-	deadline = time.Now().Add(3 * time.Second)
+	deadline = time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) && !s.runs.active("s1") {
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -96,7 +96,7 @@ func TestBootRecoveryInjectsTimeoutResults(t *testing.T) {
 	}
 	// The injected result persisted as a first-class yield_result row
 	// once the run lands it (the loop's input persist).
-	deadline = time.Now().Add(5 * time.Second)
+	deadline = time.Now().Add(testWaitTimeout)
 	seen := false
 	for time.Now().Before(deadline) && !seen {
 		msgs, err := st.GetMessages(context.Background(), "s1")
@@ -175,7 +175,7 @@ func TestWakeSliceEndToEnd(t *testing.T) {
 
 	// The result re-enters: the wake run (a second run on the same
 	// home, through the same launchRun slot) lands the synthetic row.
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	seen := false
 	for time.Now().Before(deadline) && !seen {
 		msgs, err := st.GetMessages(context.Background(), "s1")

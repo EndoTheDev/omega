@@ -143,7 +143,7 @@ func TestSocketReconnect(t *testing.T) {
 // attach/detach happen on the server's own goroutines).
 func waitSubscribers(t *testing.T, s *Server, count int) bool {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) {
 		if s.Sockets().SubscriberCount() == count {
 			return true

@@ -55,7 +55,7 @@ func (r *chatRecorder) all() []core.Panel { return <-r.done }
 // waitRunQuiescent spins until the session's run slot is free.
 func waitRunQuiescent(t *testing.T, s *Server, id string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) {
 		if !s.runs.active(id) {
 			return
@@ -298,7 +298,7 @@ func TestChatPanelCadenceFlushesTokenBatches(t *testing.T) {
 	s.chat.runEvent("sess-panel", core.StreamEvent{Event: core.ResponseChunk{Type: "response_chunk", Content: "tok"}})
 	s.chat.runEvent("sess-panel", core.StreamEvent{Event: core.ResponseChunk{Type: "response_chunk", Content: "tok"}})
 	// the cadence tick carries the batch without any structural event
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for {
 		mu.Lock()
 		now := pushes
@@ -388,7 +388,7 @@ func TestChatActionStopThroughThePipe(t *testing.T) {
 	stopBody := `{"module":"http_channel","action":"stop","args":{"session":"` + sessionID + `"}}`
 	var out map[string]any
 	status := 0
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for {
 		res, err := http.Post(ts.URL+"/ui/actions", "application/json", strings.NewReader(stopBody))
 		if err != nil {
@@ -554,7 +554,7 @@ func TestRetryRendersInPlaceMidRun(t *testing.T) {
 
 	// mid-run: the fresh chunk is in the open tail and the OLD answer
 	// is gone from the payload - the retry streams in place
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	var mid []transcriptItem
 	for time.Now().Before(deadline) {
 		mid = s.chat.sessionItems("s-ip", true)
@@ -677,7 +677,7 @@ func TestChatActionRetryThroughThePipe(t *testing.T) {
 	// run's entire lifetime. active() is a transient; the persisted
 	// sibling branch is the durable proof the retry launched. Accept
 	// either; a single instantaneous check reds ~1 run per nightly.
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for {
 		if s.runs.active(sessionID) {
 			break

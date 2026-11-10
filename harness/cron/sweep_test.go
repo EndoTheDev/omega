@@ -20,6 +20,13 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
+// testWaitTimeout bounds every poll-until-true wait in this package's tests.
+// It exists to catch a HANG, not to time correctness: a healthy condition can
+// take seconds when the full suite runs packages in parallel and starves the
+// goroutine under test. Bounding it tightly (2-5s) made load-sensitive tests
+// red on a loaded machine and green in isolation - the worst kind of flake.
+const testWaitTimeout = 30 * time.Second
+
 // writeState writes a cronstate.json fixture into home.
 func writeState(t *testing.T, home string, st cronState) {
 	t.Helper()
@@ -56,7 +63,7 @@ func readState(t *testing.T, home string) cronState {
 // tests that read the file with no concurrent writer.
 func waitForState(t *testing.T, home string, keep func(cronState) bool) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) {
 		if data, err := os.ReadFile(filepath.Join(home, cronStateFileName)); err == nil {
 			var st cronState

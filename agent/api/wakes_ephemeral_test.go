@@ -100,7 +100,7 @@ func TestEphemeralYieldSliceEndToEnd(t *testing.T) {
 	}
 
 	// The wake run lands the synthetic result in the eph registry.
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	seen := false
 	for time.Now().Before(deadline) && !seen {
 		seen = hasYieldResult(s.eph.history(id), "c1", core.YieldResult{Content: "async:hi"})
@@ -228,7 +228,7 @@ func TestBootRecoveryDropsEphemeralResidue(t *testing.T) {
 	s := NewServer(a, nil, st, nil, nil, nil)
 
 	// The sweep settles every row - the residue included.
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) && len(s.yieldLedger.All()) != 0 {
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -236,7 +236,7 @@ func TestBootRecoveryDropsEphemeralResidue(t *testing.T) {
 		t.Fatalf("boot sweep left entries: %+v", left)
 	}
 	// The durable home woke (the existing recovery law).
-	deadline = time.Now().Add(3 * time.Second)
+	deadline = time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) && !s.runs.active("s1") {
 		time.Sleep(10 * time.Millisecond)
 	}

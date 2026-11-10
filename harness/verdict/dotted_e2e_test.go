@@ -27,7 +27,7 @@ func TestDottedRequestEndToEndThroughTheLoop(t *testing.T) {
 	// the way a user click would.
 	answerErr := make(chan error, 1)
 	go func() {
-		deadline := time.Now().Add(10 * time.Second)
+		deadline := time.Now().Add(testWaitTimeout)
 		for time.Now().Before(deadline) {
 			if cards := h.Pending(""); len(cards) > 0 {
 				_, err := h.Answer("", cards[0].ID, core.QuestionAnswer{OptionIndex: 1})

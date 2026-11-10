@@ -13,6 +13,13 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
+// testWaitTimeout bounds every poll-until-true wait in this package's tests.
+// It exists to catch a HANG, not to time correctness: a healthy condition can
+// take seconds when the full suite runs packages in parallel and starves the
+// goroutine under test. Bounding it tightly (2-5s) made load-sensitive tests
+// red on a loaded machine and green in isolation - the worst kind of flake.
+const testWaitTimeout = 30 * time.Second
+
 // The verdict REST face's self-check (moved whole from
 // agent/api/server_verdicts_test.go by the shell-ring shrink wave 3,
 // card t_b75df168): pin the answering wire contract directly against
@@ -65,7 +72,7 @@ func issueCard(t *testing.T, h *Hub, session, id string) <-chan struct{} {
 		close(done)
 	}()
 	// wait for the card to register before the caller inspects it.
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) {
 		if len(h.Pending(session)) > 0 {
 			return done
@@ -155,7 +162,7 @@ func TestVerdictsMultiAnswerEchoesIndexes(t *testing.T) {
 	}()
 	// wait for the card; the pending list must carry the described
 	// options and the multi flag (the card the webui re-renders from).
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) {
 		if len(h.Pending("s1")) > 0 {
 			break
@@ -273,7 +280,7 @@ func issueCardShaped(t *testing.T, h *Hub, session, id string, card core.Questio
 		_, _ = h.Ask(context.Background(), card)
 		close(done)
 	}()
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) {
 		if len(h.Pending(session)) > 0 {
 			return done

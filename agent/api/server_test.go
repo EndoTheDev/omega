@@ -1408,7 +1408,7 @@ func TestChatFiresProvisionalThenFinalOnce(t *testing.T) {
 		t.Fatalf("first chat status = %d, want 200", code)
 	}
 	settle := func(wantTitleState int) bool {
-		deadline := time.Now().Add(2 * time.Second)
+		deadline := time.Now().Add(testWaitTimeout)
 		for time.Now().Before(deadline) {
 			if sess, _ := st.GetSession(ctx, "s1"); sess.TitleState == wantTitleState {
 				return true
@@ -1615,7 +1615,7 @@ func chatBody(sessionID, provider string) []byte {
 // quiesce waits until the session has no live run (the detached run
 // finished), bounded, so the next POST below cannot trip the 409 slot.
 func quiesce(s *Server, sessionID string) {
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) {
 		if !s.runs.active(sessionID) {
 			return

@@ -271,6 +271,19 @@ go build ./...    # all packages compile
 go vet ./...      # no suspicious constructs
 ```
 
+**Never pass `-count=1` in a gate.** It bypasses the test cache to hunt
+flakes, which is the nightly's job: an uncached full suite costs ~3 min
+against ~25s warm, and the factory runs these gates four to six times per
+card. Gate runs trust the cache; flake detection belongs to the nightly
+sweep, where a repeat costs a machine instead of a card's retry budget.
+
+**A test that waits for a condition bounds the wait to catch a HANG, not to
+time correctness.** The full suite runs packages in parallel, so a healthy
+goroutine can take seconds to get scheduled. A 2-5s poll deadline makes a
+test red on a loaded machine and green in isolation - the worst kind of
+flake, because the debugging run always passes. Use the package's
+`testWaitTimeout` (30s) and let a separate signal decide failure.
+
 ## Pointers
 
 - `docs/cli.md` - subcommands, flags, home resolution, OMEGA_* env vars
