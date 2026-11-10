@@ -314,9 +314,10 @@ func (s *Server) publishChipFill(sessionID string, res core.YieldResult) {
 }
 
 // chipTap is the run's output tap (core.RunOutputTap): a tool that
-// streams (the shell's capped buffer) hands its live tail here and it
-// lands on the chips topic straight away. Nothing accumulates: the hub
-// holds no state, so a chip missed on a dead socket costs one refetch.
+// streams (the shell's log tail, tapLog in harness/terminal) hands its
+// live tail here and it lands on the chips topic straight away. Nothing
+// accumulates: the hub holds no state, so a chip missed on a dead
+// socket costs one refetch.
 func (s *Server) chipTap(sessionID string) core.RunOutputTap {
 	return func(chunk core.ToolOutputChunk) {
 		s.sockets.Publish(TopicChips, sessionID, ChipFrame{
