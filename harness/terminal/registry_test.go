@@ -484,7 +484,7 @@ func TestPostMortemRead(t *testing.T) {
 func TestReadRotatedGenerationFallback(t *testing.T) {
 	r := testRegistry(t)
 	e := Entry{
-		ID:       "legacy",
+		ID:         "legacy",
 		Command:    "echo x",
 		PID:        1,
 		StartedAt:  time.Now().Add(-time.Minute).Unix(),
@@ -555,7 +555,7 @@ func TestRetainSweepGC(t *testing.T) {
 	week := 7 * 24 * time.Hour
 	mk := func(name string, age time.Duration) Entry {
 		return Entry{
-			ID:       name,
+			ID:         name,
 			Command:    "echo " + name,
 			PID:        1,
 			StartedAt:  time.Now().Add(-age - time.Minute).Unix(),
