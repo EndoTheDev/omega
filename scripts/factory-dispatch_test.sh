@@ -688,6 +688,80 @@ $WEB")
 printf "%s" "$out" | grep -qF 'pair: sanctioned (t_precise t_web, classes webui+webui, FILES disjoint)' \
 	&& ok || bad "T17d: a declared FILES surface must still pair - the rule is the ABSENT line, not a pair ban (out: $out)"
 
+# T18 (local + CI): the PROSE legs of class_of() match on WORD BOUNDARIES (card
+# t_64255dca, tagged during the t_2d0d48ac review). The webui leg grepped
+# "webui\|webui\|nuxt\|spa" - a bare `spa` alternative is a SUBSTRING, and it
+# matches "di+spa+tch" and "space". This factory's card prose says "dispatch"
+# constantly, so ANY FILES-less card mentioning a dispatch classed webui
+# whatever its real surface (that is why the t_2d0d48ac incident pair reported
+# `classes webui+webui`). Class feeds the go+go hold legs, so the misclass let
+# a go-shaped FILES-less candidate skip the class-leg hold beside a running go
+# card. Pinned shapes: (T18a) the dispatch fixture classes go, "space" classes
+# go, and the TRUE hits still class webui (engine/webui prose, nuxt.config.ts,
+# the word SPA) while docs prose stays docs - no over-tightening; (T18b) the
+# harm itself - a FILES-less dispatch card beside a RUNNING go card must HOLD
+# (pre-change the same fixture read `legal: t_dispatch`, the class leg skipped);
+# (T18c) the PRE-change prose body pinned verbatim still answers webui for that
+# very row, so the fixture is the exact red this fix removes rather than a
+# shape that happens to pass.
+T18DB=$(mktemp); T18DB_N=$(mixpath "$T18DB")
+sqlex "$T18DB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER);
+INSERT INTO tasks VALUES('t_dispatch','ready','dispatch guard sweep','the dispatch pass prints verdicts for the oldest ready card','',NULL,5,'2026-11-11T05:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_space','ready','free space check','disk space on the pi host','',NULL,5,'2026-11-11T05:01',NULL,NULL);
+INSERT INTO tasks VALUES('t_webprose','ready','dock tweak','the engine/webui dock pane and its nuxt route','',NULL,5,'2026-11-11T05:02',NULL,NULL);
+INSERT INTO tasks VALUES('t_spaprose','ready','spa tweak','the spa dock pane','',NULL,5,'2026-11-11T05:03',NULL,NULL);
+INSERT INTO tasks VALUES('t_docsprose','ready','doc pass','documentation tidy-up in docs/cli.md','',NULL,5,'2026-11-11T05:04',NULL,NULL);"
+# claim_lock '' rather than NULL: class_of() reads the row, claim state is
+# irrelevant here, and the dry-run shapes below use their own NULL fixtures.
+T18SED="/^DBPY='/,/^'/p; /^dbq()/,/^}/p; /^class_of()/,/^}/p"
+out=$(DB="$T18DB_N" PY="$PY" GUARD="$GUARD" SEDEXPR="$T18SED" bash -c '
+source <(sed -n "$SEDEXPR" "$GUARD")
+# the PRE-change prose body, pinned verbatim: the old legs grepped bare
+# substrings and had the doubled "webui\|webui" alternative.
+class_of_old() {
+  local t
+  t=$(dbq "SELECT lower(title||char(32)||body) FROM tasks WHERE id='"'"'$1'"'"';")
+  if grep -q "docs/\|documentation" <<<"$t" && ! grep -q "webui" <<<"$t"; then echo docs
+  elif grep -q "webui\|webui\|nuxt\|spa" <<<"$t"; then echo webui
+  else echo go; fi
+}
+for id in t_dispatch t_space t_webprose t_spaprose t_docsprose; do
+  printf "new %s=%s\n" "$id" "$(class_of "$id")"
+done
+printf "old t_dispatch=%s\n" "$(class_of_old t_dispatch)"
+printf "old t_space=%s\n" "$(class_of_old t_space)"
+' 2>&1)
+printf "%s" "$out" | grep -qx "new t_dispatch=go" \
+	&& ok || bad "T18a: a FILES-less card whose prose says 'dispatch' must class go, not webui (out: $out)"
+printf "%s" "$out" | grep -qx "new t_space=go" \
+	&& ok || bad "T18a: 'space' must not class webui either - bare spa is a substring (out: $out)"
+printf "%s" "$out" | grep -qx "new t_webprose=webui" \
+	&& ok || bad "T18a: TRUE webui prose (engine/webui + nuxt) must still class webui (out: $out)"
+printf "%s" "$out" | grep -qx "new t_spaprose=webui" \
+	&& ok || bad "T18a: the word SPA must still class webui - word boundaries, not a removal (out: $out)"
+printf "%s" "$out" | grep -qx "new t_docsprose=docs" \
+	&& ok || bad "T18a: docs prose must still class docs (out: $out)"
+printf "%s" "$out" | grep -qx "old t_dispatch=webui" \
+	&& ok || bad "T18c: the pinned PRE-change prose body no longer reds on the fixture - the shape is not the bug (out: $out)"
+printf "%s" "$out" | grep -qx "old t_space=webui" \
+	&& ok || bad "T18c: the pinned PRE-change body must still misclass 'space' (out: $out)"
+rm -f "$T18DB"
+
+# T18b: the harm leg - a FILES-less 'dispatch' candidate beside a RUNNING go
+# card. Pre-change the misclass made it webui, so the go-class hold never fired
+# and the card read `legal: t_dispatch` (probe receipt on the card). Post-change
+# it classes go and holds on the unproven surface, naming itself.
+out=$(PAIRRUN "INSERT INTO tasks VALUES('t_rgo','running','cron bits','FILES: harness/cron/runner.go','pibtw:1',NULL,5,'2026-11-11T04:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_dispatch','ready','dispatch guard sweep','the dispatcher picks the oldest ready card; this card declares no files line',NULL,NULL,5,'2026-11-11T05:00',NULL,NULL);")
+printf "%s" "$out" | grep -q "^hold: t_dispatch  (go-class beside go with unproven surface" \
+	&& ok || bad "T18b: a FILES-less dispatch card beside a running go card must class go and hold - not skip the class leg as webui (out: $out)"
+printf "%s" "$out" | grep -qF "[absent FILES: line is unprovable, never precise: candidate t_dispatch]" \
+	&& ok || bad "T18b: the hold reason must name the FILES-less candidate (out: $out)"
+printf "%s" "$out" | grep -q "^legal: t_dispatch" \
+	&& bad "T18b: the candidate leaked as legal - the webui misclass is still in the prose leg (out: $out)" || ok
+
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]
