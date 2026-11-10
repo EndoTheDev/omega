@@ -2976,6 +2976,27 @@ export function scopeConfigDiff(
   return agentConfigUpdate(changed, [...unset]);
 }
 
+// scopeKnobDiffersFromMain is the agent tab's dot predicate (seam ruling,
+// R3): the row means "this agent departs from MAIN", because main's
+// inherited value is that tab's default. Three answers, in order:
+// a queued override removal is on its way back to main, so it shows no
+// dot; a knob the agent's layer OWNS is structural (the layer file names
+// the key) - and that is the only honest answer for provider.api_key,
+// whose masked value cannot be compared; otherwise a draft edit departs
+// from main exactly when the two values differ. Empty and unset are one
+// value, so an untouched blank knob never lights the dot. Pure.
+export function scopeKnobDiffersFromMain(
+  key: string,
+  draftValue: unknown,
+  mainValue: unknown,
+  overridden: boolean,
+  unset: readonly string[],
+): boolean {
+  if (unset.includes(key)) return false;
+  if (overridden) return true;
+  return !valuesEqual(blankValue(draftValue), blankValue(mainValue));
+}
+
 // updateAgentConfig PUTs one agent's config diff through the EXISTING
 // agents edit endpoint (the agents tab's own write path - card
 // t_53523d5b's max_turns + unset ride the same call). The response is the

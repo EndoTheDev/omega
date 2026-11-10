@@ -276,6 +276,7 @@
     knobHasDefault,
     saveSettings,
     scopeConfigDiff,
+    scopeKnobDiffersFromMain,
     settingsDiff,
     updateAgentConfig,
     valuesEqual,
@@ -992,15 +993,13 @@
   const scopeDiffersFromMain = (knob: SettingKnob): boolean => {
     const state = activeState.value;
     if (!state) return false;
-    // a queued removal is on its way back to main: the star marks it as
-    // unsaved, the dot goes out
-    if (state.unset.includes(knob.key)) return false;
-    if (scopeOverriddenKeys.value.has(knob.key)) return true;
-    // a draft edit departs from main before it is saved - show the dot so
-    // the tab reads as "this row will override main"
-    const draft = state.draft[knob.key];
-    const main = mainValues.value[knob.key];
-    return !valuesEqual(draft === undefined ? "" : draft, main === undefined ? "" : main);
+    return scopeKnobDiffersFromMain(
+      knob.key,
+      state.draft[knob.key],
+      mainValues.value[knob.key],
+      scopeOverriddenKeys.value.has(knob.key),
+      state.unset,
+    );
   };
 
   const isModified = (group: SettingGroup, knob: SettingKnob): boolean =>
