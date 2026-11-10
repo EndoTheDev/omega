@@ -227,21 +227,17 @@ func TestBootRecoveryDropsEphemeralResidue(t *testing.T) {
 	a.SetLoopProvider(loop.Loop{})
 	s := NewServer(a, nil, st, nil, nil, nil)
 
-	// The sweep settles every row - the residue included.
-	deadline := time.Now().Add(testWaitTimeout)
-	for time.Now().Before(deadline) && len(s.yieldLedger.All()) != 0 {
-		time.Sleep(10 * time.Millisecond)
-	}
+	// The sweep settles every row - the residue included - and launches
+	// the durable home's wake. Synchronous inside NewServer, so both are
+	// read as records right here: polling s.runs.active would sample a
+	// 2-4ms slot with a 10ms timer and let the deadline decide the
+	// verdict (card t_32c3fce2, same class as the sibling wakes_test.go).
 	if left := s.yieldLedger.All(); len(left) != 0 {
 		t.Fatalf("boot sweep left entries: %+v", left)
 	}
 	// The durable home woke (the existing recovery law).
-	deadline = time.Now().Add(testWaitTimeout)
-	for time.Now().Before(deadline) && !s.runs.active("s1") {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if !s.runs.active("s1") {
-		t.Error("boot recovery never launched the durable wake run")
+	if n := s.wakeLaunchCount("s1"); n != 1 {
+		t.Errorf("boot recovery launched %d durable wake runs, want 1", n)
 	}
 	waitFor(t, "durable wake finished", func() bool { return !s.runs.active("s1") })
 
