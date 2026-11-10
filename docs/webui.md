@@ -166,7 +166,8 @@ Everything else animates through `transition`, not keyframes.
   Cron, Skills, Tools, Agents, Settings, Kanban, Modules, Insights,
   MCP, Notifications — no X); the bottom panel under the main pane
   hosts Logs (bottom-only — its sidebar copy was ruled a duplicate and
-  removed); middle = main pane. The LAST main pane never closes its
+  removed), the Terminal and the Observability tab (card t_e703180e);
+  middle = main pane. The LAST main pane never closes its
   PANE (Endo ruling, 2026-10-25, corrected t_b620f99d): `removePane`
   (and the move-out
   auto-close) refuse it as a no-op — the main area never reaches zero
@@ -184,7 +185,9 @@ Everything else animates through `transition`, not keyframes.
   tabs: chat (multi, closable), the viewer (multi, closable,
   row-click only), the browser (singleton main tab, closable — the
   menu opener focuses the one instance), the terminal (bottom host,
-  unclosable) and the notifications feed (right pane, unclosable,
+  unclosable), the observability tab (bottom host, unclosable - the
+  structured run-event stream over the raw log tail; see its own
+  section) and the notifications feed (right pane, unclosable,
   inbox glyph — the bell died). `inspector` is legacy
   only: deserialization still accepts the persisted id and modernizes
   it, nothing opens one. `continuous` and the `canvas` host tab left
@@ -420,6 +423,53 @@ dot, reset link, draft star, live note).
   remembered selection, no-accordion proof) and
   `110-settings-scopes.journey.sh` (the tier-3 scope tabs, re-witnessed
   under the new bones).
+## The Observability tab
+
+- The face of the observability capsule (`harness/observability`, the
+  engine half): two read-only routes, ONE tab. The STRUCTURED event
+  stream is the primary view - `GET /observability/events?session=&level=&limit=`
+  answers `{events, returned, buffered, capacity}` with rows of
+  `{seq, time, session, type, level, tool, turn, duration_ms, summary,
+  error}` (level is DERIVED server-side: error on a failure field or an
+  IsError result, warn on an unclean stop, info otherwise). The raw log
+  tail is the SECONDARY view inside the same tab (Endo's ruling 1: not
+  a peer tab) - `GET /observability/logs?lines=` answers
+  `{path, lines}` verbatim.
+- **Band controls**: the session chip (scope defaults to the OPEN
+  session, the chip flips the whole ring into view - a shell with no
+  focused session says "all sessions" and disables the toggle), the
+  errors-only chip, and the tail chip that swaps the pane's view. No
+  free-text search in v1 (ruling 4, deferred until the stream proves
+  too loud) and no OTel anything (ruling 5).
+- **Filters differ by kind, on purpose**: the session scope is a SERVER
+  parameter (the ring's `Page()` selects the newest N of that session;
+  filtering the newest N of everything would starve a quiet session),
+  while errors-only is a CLIENT filter over the fetched page - one page
+  is `limit=1000` against a 1024-record ring, i.e. the whole live
+  history, so a toggle is instant and costs no round trip.
+- **Rows paint newest first** and the DOM is capped at 300 (the ring is
+  1024 records; the meta line carries "N of M events" plus the error
+  count and the ring's fill). Error rows carry a `--err` rail and level
+  cell, warnings the accent rail; a row's failure text rides its own
+  line, and the session column appears only in the all-sessions scope.
+- **Refresh is bounded by mount**, not a permanent poll: fetch on open
+  plus one `REFRESH_MS` (5s) interval cleared on unmount - the dock
+  unmounts a sibling-activated outlet, so a background tab costs
+  nothing. The push channel (`composables/socket.ts`) carries a CLOSED
+  topic set (chat, chips, canvas, runs, health) with no observability
+  topic; riding it would be an engine-side change
+  (`agent/api/sockets.go`), so v1 does not pretend to subscribe.
+- **Degradation is a sentence, not a blank pane**: a 404 from the
+  events route reads "observability module is not loaded" (the capsule
+  is toggleable - disabling it drops both routes whole), a 404 from the
+  tail reads "no log file" (logging off, or a logger with no path), and
+  a transient failure never wipes the last good page.
+- The view is the capsule's own (`harness/observability/ui/
+  ObservabilityTab.vue` + the pure `rows.ts`); the shell's registry
+  keeps the composition (`TAB_MODULES`, the bottom home) and `app.vue`
+  binds the component from `module-tabs.generated.ts`, passing
+  `focusedSessionId` as the default scope. Pinned by
+  `webui/test/observability.test.ts`.
 
 ## Terminal and browser panes
 
@@ -515,6 +565,9 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   panel, never a silent blank frame). Both are tab capsules - their
   views live in the capsule, the shell's outlets bind them through
   `module-tabs.generated.ts` (card t_617c2ad0).
+  Observability view: `harness/observability/ui/ObservabilityTab` (the
+  event stream + the tail toggle over the observability capsule's two
+  reads; the pure filter/format half is `ui/rows.ts`).
 - Canvas (arc 3c): `composables/canvas.ts` is the store —
   snapshot load (GET /ui/canvas) + view_model_delta merge (forwarded
   by the chat host's `canvasDelta` dep) + the action pipe POST

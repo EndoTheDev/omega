@@ -10,7 +10,8 @@
 
 import t0 from "../../../harness/browser/ui/BrowserTab.vue";
 import t1 from "../../../harness/notifications/ui/NotificationsPanel.vue";
-import t2 from "../../../harness/terminal/ui/TerminalTab.vue";
+import t2 from "../../../harness/observability/ui/ObservabilityTab.vue";
+import t3 from "../../../harness/terminal/ui/TerminalTab.vue";
 import type { DockableSpec } from "./dockables";
 
 export interface ModuleTab {
@@ -22,5 +23,6 @@ export interface ModuleTab {
 export const moduleTabs: ModuleTab[] = [
   { module: "browser", component: t0, dockable: null },
   { module: "notifications", component: t1, dockable: null },
-  { module: "terminal", component: t2, dockable: null },
+  { module: "observability", component: t2, dockable: null },
+  { module: "terminal", component: t3, dockable: null },
 ];

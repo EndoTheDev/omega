@@ -164,7 +164,7 @@ test("the bottom drawer's default tab set derives from the registry bottom-home 
   // parity - the integrated ships seated), after logs.
   assert.deepEqual(
     tabs.map((t) => t.id),
-    ["http_channel", "terminal"],
+    ["http_channel", "terminal", "observability"],
   );
   for (const t of tabs) {
     assert.equal(t.icon, dockableIcon(t.id));
