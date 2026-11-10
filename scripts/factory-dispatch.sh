@@ -318,8 +318,17 @@ class_of() {  # id -> webui | go | docs  (FILES: line is the truth; body text
     # go, holding that card (and every later go candidate behind it).
     elif grep -oE '[^ ]+' <<<"${files#files:}" | grep -qv '^docs/'; then echo go
     else echo docs; fi
-  elif grep -q "docs/\|documentation" <<<"$t" && ! grep -q "webui" <<<"$t"; then echo docs
-  elif grep -q "webui\|webui\|nuxt\|spa" <<<"$t"; then echo webui
+  # Prose legs match on WORD BOUNDARIES, never bare substrings (card t_64255dca).
+  # The old webui leg grepped "webui\|webui\|nuxt\|spa": bare `spa` matches the
+  # word "dispatch" ("di"+"spa"+"tch") and "space", and this factory's card prose
+  # says "dispatch" constantly - so ANY FILES-less card mentioning a dispatch
+  # classed webui whatever its real surface (the t_2d0d48ac incident pair read
+  # `classes webui+webui` for exactly this). Class feeds the go+go hold legs, so
+  # the misclass let a go-shaped FILES-less candidate skip the class-leg hold
+  # beside a running go card. \b keeps every true hit ("engine/webui",
+  # "nuxt.config.ts", the word SPA) and drops the substring shapes.
+  elif grep -qE 'docs/|\bdocumentation\b' <<<"$t" && ! grep -qE '\bwebui\b' <<<"$t"; then echo docs
+  elif grep -qE '\b(webui|nuxt|spa)\b' <<<"$t"; then echo webui
   else echo go; fi
 }
 
