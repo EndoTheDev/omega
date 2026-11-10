@@ -40,6 +40,7 @@ var censusPin = map[string]string{
 	"server_images.go":      "chat - image serving + /attach-image (chat renders images)",
 	"server_settings.go":    "settings - the third shell-ring face (GET/PUT /settings)",
 	"server_transcript.go":  "chat - the transcript serving (live + store-backed restore)",
+	"sockets.go":            "chat - the push channel's fan-out (the /ws hub, the typed topic set and the broadcast hooks at the run/wake/canvas seams; card t_7624bab1) - the chat floor's live transport, retired polling",
 	"server_variants.go":    "chat - message variants on the live run (regenerate/branch selection)",
 	"wakes.go":              "chat - the yield harness's wake path (async agent loop t_f3f953d0): settled re-entry launches through the home input path, the per-home FIFO drain, the runaway guard and boot recovery",
 	"web_tools.go":          "chat - the web.search/web.fetch tool pair: built-in shell vocabulary since v0.13 (shell law 1), always mounted",
