@@ -1,9 +1,11 @@
 <template>
   <!-- Session workspace picker (card t_9de5b009, draft intent
-       t_ea7e6a58). A chip in the composer toolbar showing the current
-       folder: a BOUND session's pinned row folder, or - while the
-       composer is a draft - the draft's workspace intent, consumed by
-       the first send. The popover browses real directories
+       t_ea7e6a58). Card t_8fd38f88 moved its HOME: the status bar's left
+       zone hosts it now (the composer chip died with that card); the
+       Settings pane's browse mode rides the same component. A chip showing
+       the current folder: a BOUND session's pinned row folder, or - while
+       the tab is unbound - the draft's workspace intent, consumed by the
+       first send. The popover browses real directories
        (/workspaces/browse, dirs only) or takes a typed absolute path.
        v0.14.3 (user screenshot findings): the chip rides the same
        interactive treatment as its row neighbors (.model-chip: full
@@ -15,10 +17,12 @@
        popup edge and the muted text carries real contrast. -->
   <div class="ws-select">
     <button
-      class="model-chip ws-btn"
+      class="ws-btn"
+      :class="variant === 'bar' ? 'ws-bar-btn' : 'model-chip'"
       type="button"
       :title="btnTitle"
       :aria-expanded="open"
+      :disabled="disabled"
       @click="toggle">
       <!-- t_a5f9d185: browseLabel mode - the settings pane rides the SAME
            picker with a plain "browse" chip instead of the value chip
@@ -98,6 +102,13 @@
     // t_a5f9d185: browse mode - a fixed chip label ("browse"); the chip
     // stops echoing the value (other surfaces show it beside the chip).
     browseLabel?: string;
+    // t_8fd38f88: the status bar hosts this picker now - "bar" drops the
+    // composer's .model-chip treatment for a quiet bar segment (the .ws-btn
+    // / .ws-pop class law and every journey selector stay untouched).
+    variant?: "composer" | "bar";
+    // t_8fd38f88: no chat tab is focused - the chip still shows the
+    // configured default, but there is no session intent to write.
+    disabled?: boolean;
   }>();
 
   const emit = defineEmits<{
@@ -116,14 +127,19 @@
   // the chip's tooltip (script keeps the literal strings - apostrophes
   // in template expressions break the vue template parser)
   const btnTitle = computed(() =>
-    props.browseLabel
-      ? "browse for the default workspace folder"
-      : props.workspace
-        ? `workspace: ${props.workspace}`
-        : "pick the working folder",
+    props.disabled
+      ? props.workspace
+        ? `no open chat - a new session starts in ${props.workspace}`
+        : "no open chat - a new session starts in the server cwd"
+      : props.browseLabel
+        ? "browse for the default workspace folder"
+        : props.workspace
+          ? `workspace: ${props.workspace}`
+          : "pick the working folder",
   );
 
   function toggle() {
+    if (props.disabled) return;
     open.value = !open.value;
     if (open.value) {
       // the picker opens where the folder is rooted now - or at "/",

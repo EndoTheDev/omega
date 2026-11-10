@@ -163,7 +163,6 @@
       :groups="groups"
       :busy="busy"
       :thinking="thinking"
-      :workspace="workspaceValue"
       :attachments="state.attachments"
       :files="state.files"
       :fork-anchor="forkAnchor"
@@ -171,7 +170,6 @@
       @update:model="onModelChange"
       @update:thinking="emit('update:thinking', $event)"
       @refresh-models="emit('refresh-models')"
-      @update:workspace="onWorkspaceChange"
       @send="onSend"
       @cancel="host.cancel(stateKey)"
       @attach-files="(imgs: never[]) => host.attachFiles(stateKey, imgs)"
@@ -225,7 +223,6 @@
   } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
   import { chipDisplay, chipOf } from "../composables/chips";
-  import { defaultWorkspaceNow } from "../composables/defaultWorkspace";
   // card t_e4280de7: consecutive tool rows collapse into ONE group
   // block (render-site view, the transcript itself stays flat)
   import { groupToolRuns, isToolRun, type ChatEntry } from "../composables/toolGroup";
@@ -260,7 +257,6 @@
   const emit = defineEmits<{
     (e: "update:model", value: string): void;
     (e: "update:thinking", value: string): void;
-    (e: "update:workspace", value: string): void;
     (e: "refresh-models"): void;
   }>();
 
@@ -289,23 +285,16 @@
 
   // --- the session's remembered context (card t_9de5b009) ---
   //
-  // The pinned model + workspace belong to the SESSION, not to the app:
-  // reopening restores what it last used, a mid-session change updates
-  // the row (the app PATCHes on our emit). A bound tab adopts the row's
-  // pins. An UNBOUND tab holds the draft's workspace INTENT (card
-  // t_ea7e6a58) in the chat state - the first send POSTs /chat
-  // {workspace}, the auto-created row is born pinned, and the binding
-  // swaps this read over to the row with no further state.
+  // The pinned model belongs to the SESSION, not to the app: reopening
+  // restores what it last used, a mid-session change updates the row (the
+  // app PATCHes on our emit). A bound tab adopts the row's pin.
+  //
+  // The session's WORKSPACE pin left this component with its chip (card
+  // t_8fd38f88): the workdir selector lives in the status bar's left zone
+  // now, and app.vue writes the same two targets it used to - the row
+  // (bound) or the draft intent (unbound). ChatTab only carries the state
+  // the send consumes.
   const modelValue = ref(props.session?.model || props.model);
-  // The chip mirrors the folder the tool runs root at (card
-  // t_ccf74d88): a bound session with an EMPTY row pin has its runs
-  // rooted at the server's default_workspace, so the chip falls back
-  // to it - the chip shows the effective workdir, never a blank that
-  // hides the configured default.
-  const workspaceValue = computed(() => {
-    if (!sessionId.value) return state.value?.workspaceIntent ?? "";
-    return props.session?.workspace || defaultWorkspaceNow();
-  });
   // rebind (draft -> sent adopts an id; tab remount) restores from the
   // row; a row refresh adopts the pin the PATCH persisted. The pinned
   // model only wins while non-empty - a draft with no row keeps the
@@ -333,16 +322,6 @@
   function onModelChange(v: string) {
     modelValue.value = v;
     emit("update:model", v);
-  }
-  function onWorkspaceChange(v: string) {
-    if (sessionId.value) {
-      // bound: the folder pins on the session row (the app PATCHes)
-      emit("update:workspace", v);
-      return;
-    }
-    // unbound: the draft's intent - stored per state, consumed by the
-    // first send (card t_ea7e6a58)
-    if (state.value) state.value.workspaceIntent = v;
   }
 
   // --- the transcript's render source (chat-last 2a) ---
