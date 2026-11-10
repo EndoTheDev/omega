@@ -1,27 +1,30 @@
 <template>
-    <!-- card t_308e6d9b: the tab carries the universal band ("Settings");
-         card t_529628d5: the EXISTING filter input SEATS IN the band
-         (the t_7ee0a673 sessions card's move, the shared .band-search
-         seat in TabBand's band-tool slot) - the filter's BEHAVIOR is
-         untouched (filterSettingGroups on the loaded groups, v-model
-         "query"); only its seat moved. The old filter row below the
-         band is GONE (card t_f1a034dc's own-row shape died with this
-         ruling). The dock tab bar still carries the chip and the tab
-         lives pinned in the inspector (card t_49d0b308). The aside
-         classes carry the mobile drawer shape (mirrors FilesTab);
-         `narrow` is the width-driven adaptation class (a measured on
-         the root: the inspector's ~300px column). -->
+    <!-- card t_308e6d9b: the tab carries the universal band ("Settings").
+         card t_6bebff18 (Endo ruling 2026-11-10, option B): settings
+         LEAVES the shared band-search roster (card t_529628d5, which now
+         scopes to the four module tabs - cron/skills/tools/mcp) and the
+         filter becomes a pane-top full-width bar, the VSCode settings
+         shape. The filter's BEHAVIOR is untouched (filterSettingGroups
+         on the loaded groups, v-model "query"); only its seat moved -
+         one input, one query ref, no second filter. The dock tab bar
+         still carries the chip and the tab lives pinned in the
+         inspector (card t_49d0b308). The aside classes carry the mobile
+         drawer shape (mirrors FilesTab); `narrow` is the width-driven
+         adaptation class (a measured on the root: the inspector's
+         ~300px column). -->
     <aside
       ref="rootEl"
       class="settings aside pane inspector-panel"
       :class="{ open: open, narrow: narrow }">
-      <TabBand title="Settings">
-        <div class="band-search">
-          <SearchInput
-            v-model="query"
-            placeholder="filter settings" />
-        </div>
-      </TabBand>
+      <TabBand title="Settings"></TabBand>
+
+    <!-- the VSCode search header: full-width at the head of the pane,
+         outside the scrollport (structurally pinned above .settings-body) -->
+    <div class="settings-filterbar">
+      <SearchInput
+        v-model="query"
+        placeholder="filter settings" />
+    </div>
 
     <p v-if="loadError" class="settings-error">
       {{ loadError }}
@@ -477,19 +480,72 @@
     ],
   }));
 
-  const isClient = (group: SettingGroup) =>
-    group.key === "chat" || group.key === "dock";
+  // Client knobs write props/emits, server knobs write the draft map.
+  // Card t_6bebff18: the Commonly Used group renders BOTH origins side
+  // by side, so the routing is per KNOB (the key prefix names its
+  // owner), never per group alone - a curated theme row read through
+  // serverValue would render empty and swallow its edit into a
+  // PUT /settings the server never accepts.
+  const CLIENT_KNOB_PREFIXES = ["chat.", "dock."];
+  const isClientKnob = (knob: SettingKnob) =>
+    CLIENT_KNOB_PREFIXES.some((prefix) => knob.key.startsWith(prefix));
+  const isClient = (group: SettingGroup, knob?: SettingKnob) =>
+    group.key === "chat" ||
+    group.key === "dock" ||
+    (knob !== undefined && isClientKnob(knob));
 
   // t_a5f9d185: the path knob (default workspace) renders input + the
   // workspace browse chip; every other text knob keeps the plain input.
   const isPathKnob = (knob: SettingKnob) =>
     knob.key === "server.default_workspace";
 
-  const allGroups = computed<SettingGroup[]>(() => [
-    chatGroup.value,
-    dockGroup.value,
-    ...groups.value,
-  ]);
+  // --- the curated first group (card t_6bebff18) ---
+  // Membership is DATA, one line to change: every model knob (the main
+  // model plus the decision / vision / title / per-subsystem slots) and
+  // the appearance pair (theme, colour mode). Each entry is picked BY
+  // KEY out of the already-loaded registry - the SAME knob objects, no
+  // clone and no second fetch - so an edit here writes the draft map /
+  // emits the client event exactly as the origin row does.
+  const COMMONLY_USED_KEYS = [
+    "provider.model_name",
+    "provider.vision_model",
+    "provider.title_model",
+    "provider.approvals_model",
+    "provider.compaction_model",
+    "provider.summarizer_model",
+    "provider.skills_model",
+    "chat.theme",
+    "chat.color_mode",
+  ];
+
+  const commonlyUsedGroup = computed<SettingGroup | null>(() => {
+    // the chat group's knobs are rebuilt per render, so the lookup map
+    // is built from the live groups every time - never a stale copy
+    const byKey = new Map<string, SettingKnob>();
+    for (const group of [chatGroup.value, dockGroup.value, ...groups.value])
+      for (const knob of group.knobs) byKey.set(knob.key, knob);
+    const knobs = COMMONLY_USED_KEYS.map((key) => byKey.get(key)).filter(
+      (knob): knob is SettingKnob => knob !== undefined,
+    );
+    // a registry that carries none of the keys (an older server, a 501
+    // seam) renders no empty section
+    if (knobs.length === 0) return null;
+    return { key: "common", label: "Commonly Used", knobs };
+  });
+
+  const allGroups = computed<SettingGroup[]>(() => {
+    // the curated group pins FIRST and rests there; a live search drops
+    // it, because the surviving registry rows already carry the same
+    // knobs - search replaces the resting sections, it never lists one
+    // knob twice
+    const curated = query.value.trim() === "" ? commonlyUsedGroup.value : null;
+    return [
+      ...(curated ? [curated] : []),
+      chatGroup.value,
+      dockGroup.value,
+      ...groups.value,
+    ];
+  });
 
   // instanceRows was the model pickers' instance feed (card t_fc0b2f2d)
   // - card t_1914a8c9 moved the options to the grouped /models catalog
@@ -595,17 +651,17 @@
   };
 
   function toggleValue(group: SettingGroup, knob: SettingKnob): boolean {
-    if (isClient(group)) return clientValue(knob) === true;
+    if (isClient(group, knob)) return clientValue(knob) === true;
     return serverValue(knob) === true;
   }
 
   function selectValue(group: SettingGroup, knob: SettingKnob): string {
-    const v = isClient(group) ? clientValue(knob) : serverValue(knob);
+    const v = isClient(group, knob) ? clientValue(knob) : serverValue(knob);
     return typeof v === "string" ? v : String(v);
   }
 
   function setToggle(group: SettingGroup, knob: SettingKnob, on: boolean) {
-    if (isClient(group)) {
+    if (isClient(group, knob)) {
       if (knob.key === "chat.show_thinking") emit("update:showThinking", on);
       return;
     }
@@ -613,7 +669,7 @@
   }
 
   function setSelect(group: SettingGroup, knob: SettingKnob, value: string) {
-    if (isClient(group)) {
+    if (isClient(group, knob)) {
       if (knob.key === "chat.color_mode")
         emit("set-color-mode", value as ColorMode);
       else if (knob.key === "chat.theme") emit("set-theme", value);
@@ -700,9 +756,17 @@
 </script>
 
 <style scoped>
-  /* card t_529628d5: the filter rides TabBand's shared .band-search
-     seat (the t_f1a034dc own-row shape died with this ruling). The
-     knob select is the shared BandSelect chip - inline (the
+  /* card t_6bebff18 (Endo ruling 2026-11-10): the filter left TabBand's
+     shared 128px band seat and became the pane-top full-width bar - the
+     VSCode settings-search shape. Placement only: the input's look stays
+     the ONE shared .search-input sheet (main.css), no second copy here.
+     The bar is a flex child ABOVE .settings-body, so it never scrolls. */
+  .settings-filterbar {
+    flex: none;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--stroke);
+  }
+  /* the knob select is the shared BandSelect chip - inline (the
      composer's listbox pattern), never wider than its row */
   .setting-select {
     max-width: 100%;
