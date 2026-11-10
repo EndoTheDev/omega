@@ -411,3 +411,111 @@ func TestAgentUpdateEndpointUnset(t *testing.T) {
 		t.Errorf("default agent unset status = %d (%s), want 409", res, body)
 	}
 }
+
+// TestAgentsRosterLastSessionID pins the field the Agents tab binds a
+// chat to (card t_81109e1c): every roster row carries the agent's MOST
+// RECENT session id - most recent by updated_at, ties to the
+// later-created session - and the DEFAULT (main) agent rides the same
+// roster with Continuous set. A row with no sessions omits the field
+// rather than inventing an id.
+func TestAgentsRosterLastSessionID(t *testing.T) {
+	srv, st, home := newAgentsFixture(t)
+
+	// The store that OWNS scout's sessions: the agent home's own db
+	// (per-agent data isolation - the daemon's store never holds them
+	// after the boot migration).
+	scoutStore, err := store.Open(filepath.Join(home, "agents", "scout", "data", "omega.db"))
+	if err != nil {
+		t.Fatalf("open scout store: %v", err)
+	}
+	t.Cleanup(func() { scoutStore.Close() })
+	// main's sessions ride the mounted store (the fixture's seam store).
+
+	type row struct {
+		Name          string `json:"name"`
+		SessionCount  int    `json:"session_count"`
+		LastSessionID string `json:"last_session_id"`
+		Continuous    bool   `json:"continuous"`
+	}
+	roster := func() map[string]row {
+		t.Helper()
+		code, body := getJSON(t, srv.URL+"/agents")
+		if code != http.StatusOK {
+			t.Fatalf("roster status %d: %s", code, body)
+		}
+		var rows []row
+		if err := json.Unmarshal(body, &rows); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		out := make(map[string]row, len(rows))
+		for _, r := range rows {
+			out[r.Name] = r
+		}
+		return out
+	}
+
+	// A fresh home: main is in the roster, nothing to bind yet.
+	first := roster()
+	main, ok := first[agent.DefaultAgentName]
+	if !ok {
+		t.Fatalf("default agent missing from the roster: %+v", first)
+	}
+	if main.Continuous {
+		t.Errorf("default continuous = true, want false - Continuous marks a WAKE home; the main marker is the name (the webui's DefaultAgentName)")
+	}
+	if scout := first["scout"]; !scout.Continuous {
+		t.Errorf("scout continuous = false, want true (a agents/<name> wake home)")
+	}
+	if main.LastSessionID != "" {
+		t.Errorf("default last_session_id = %q before any session, want empty", main.LastSessionID)
+	}
+	if scout := first["scout"]; scout.LastSessionID != "" {
+		t.Errorf("scout last_session_id = %q with zero sessions, want empty", scout.LastSessionID)
+	}
+
+	// Two sessions as scout: the newer one is the tab's click target.
+	ctx := context.Background()
+	if err := scoutStore.CreateAgentSession(ctx, "sess-old", "", "", "scout"); err != nil {
+		t.Fatal(err)
+	}
+	if err := scoutStore.CreateAgentSession(ctx, "sess-new", "", "", "scout"); err != nil {
+		t.Fatal(err)
+	}
+	scout := roster()["scout"]
+	if scout.SessionCount != 2 {
+		t.Fatalf("scout session_count = %d, want 2", scout.SessionCount)
+	}
+	if scout.LastSessionID != "sess-new" {
+		t.Errorf("scout last_session_id = %q, want sess-new (newest)", scout.LastSessionID)
+	}
+
+	// ACTIVITY wins over creation order: touching the old session moves
+	// the click target (the continuous session is the one being used).
+	if err := scoutStore.UpdateSession(ctx, "sess-old", "touched"); err != nil {
+		t.Fatal(err)
+	}
+	if got := roster()["scout"].LastSessionID; got != "sess-old" {
+		t.Errorf("scout last_session_id = %q after touching sess-old, want sess-old", got)
+	}
+
+	// The main agent binds too - it is a roster row like any other.
+	if err := st.CreateSession(ctx, "sess-main", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := roster()[agent.DefaultAgentName].LastSessionID; got != "sess-main" {
+		t.Errorf("default last_session_id = %q, want sess-main", got)
+	}
+
+	// GET /agents/{name} answers the same row shape.
+	code, body := getJSON(t, srv.URL+"/agents/scout")
+	if code != http.StatusOK {
+		t.Fatalf("detail status %d: %s", code, body)
+	}
+	var one row
+	if err := json.Unmarshal(body, &one); err != nil {
+		t.Fatal(err)
+	}
+	if one.LastSessionID != "sess-old" {
+		t.Errorf("detail last_session_id = %q, want sess-old", one.LastSessionID)
+	}
+}

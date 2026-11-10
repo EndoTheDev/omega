@@ -36,7 +36,7 @@ against localhost from the same host is unaffected.
 | `/sessions/{id}/export`              | GET        | active path as JSONL attachment                |
 | `/sessions/{id}/verdicts`            | GET, POST  | one session's verdict cards / the answer POST  |
 | `/verdicts`                          | GET        | cross-session verdict listing (the bell count) |
-| `/agents`                            | GET        | agent homes (roster rows)                      |
+| `/agents`                            | GET        | agent homes (roster rows; each row carries `last_session_id`) |
 | `/agents/{name}`                     | GET, PUT   | detail / the node-preserving config layer editor |
 | `/agents/{name}/sessions`            | GET        | the agent's session list                       |
 | `/disabled`                          | GET        | the registry-browser folded state (skills/tools/agents namespaces) |
