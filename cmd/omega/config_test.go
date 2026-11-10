@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -501,4 +502,65 @@ provider:
 	if cfg.Compaction.ContextWindow != 32768 {
 		t.Errorf("context_window = %d, want default 32768 (invalid env skipped)", cfg.Compaction.ContextWindow)
 	}
+}
+
+// TestLoadConfigLegacyPathNamesNewLocation is the C1 regression: reading
+// the pre-v0.8 home-root config.yaml used to surface only the raw OS
+// message ("The system cannot find the file specified"). The error now
+// names the config/ layout location the file moved to.
+func TestLoadConfigLegacyPathNamesNewLocation(t *testing.T) {
+	t.Run("moved config is named", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("OMEGA_HOME", home)
+		cfgDir := filepath.Join(home, "config")
+		if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		moved := filepath.Join(cfgDir, "config.yaml")
+		if err := os.WriteFile(moved, []byte("provider:\n  model_name: llama3\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := LoadConfig(filepath.Join(home, "config.yaml"))
+		if err == nil {
+			t.Fatal("LoadConfig(legacy home config.yaml) = nil error, want a missing-file error")
+		}
+		wantMoved := filepath.ToSlash(moved)
+		if !strings.Contains(err.Error(), wantMoved) {
+			t.Errorf("error does not name the moved config %q: %v", wantMoved, err)
+		}
+		if !strings.Contains(err.Error(), "--config "+wantMoved) {
+			t.Errorf("error does not show the reachable --config form: %v", err)
+		}
+	})
+
+	t.Run("location named even before setup wrote one", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("OMEGA_HOME", home)
+
+		_, err := LoadConfig(filepath.Join(home, "config.yaml"))
+		if err == nil {
+			t.Fatal("LoadConfig(legacy home config.yaml) = nil error, want a missing-file error")
+		}
+		wantMoved := filepath.ToSlash(filepath.Join(home, "config", "config.yaml"))
+		if !strings.Contains(err.Error(), wantMoved) {
+			t.Errorf("error does not name the live location %q: %v", wantMoved, err)
+		}
+		if !strings.Contains(err.Error(), "omega setup") {
+			t.Errorf("error does not point at the setup wizard: %v", err)
+		}
+	})
+
+	t.Run("unrelated missing path keeps the plain error", func(t *testing.T) {
+		t.Setenv("OMEGA_HOME", t.TempDir())
+		missing := filepath.Join(t.TempDir(), "config.yaml")
+
+		_, err := LoadConfig(missing)
+		if err == nil {
+			t.Fatal("LoadConfig(missing) = nil error, want a missing-file error")
+		}
+		if strings.Contains(err.Error(), "v0.8 layout") {
+			t.Errorf("an unrelated missing config got a relocation hint: %v", err)
+		}
+	})
 }
