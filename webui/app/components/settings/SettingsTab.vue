@@ -1,27 +1,30 @@
 <template>
-    <!-- card t_308e6d9b: the tab carries the universal band ("Settings");
-         card t_529628d5: the EXISTING filter input SEATS IN the band
-         (the t_7ee0a673 sessions card's move, the shared .band-search
-         seat in TabBand's band-tool slot) - the filter's BEHAVIOR is
-         untouched (filterSettingGroups on the loaded groups, v-model
-         "query"); only its seat moved. The old filter row below the
-         band is GONE (card t_f1a034dc's own-row shape died with this
-         ruling). The dock tab bar still carries the chip and the tab
-         lives pinned in the inspector (card t_49d0b308). The aside
-         classes carry the mobile drawer shape (mirrors FilesTab);
-         `narrow` is the width-driven adaptation class (a measured on
-         the root: the inspector's ~300px column). -->
+    <!-- card t_308e6d9b: the tab carries the universal band ("Settings").
+         card t_6bebff18 (Endo ruling 2026-11-10, option B): settings
+         LEAVES the shared band-search roster (card t_529628d5, which now
+         scopes to the four module tabs - cron/skills/tools/mcp) and the
+         filter becomes a pane-top full-width bar, the VSCode settings
+         shape. The filter's BEHAVIOR is untouched (filterSettingGroups
+         on the loaded groups, v-model "query"); only its seat moved -
+         one input, one query ref, no second filter. The dock tab bar
+         still carries the chip and the tab lives pinned in the
+         inspector (card t_49d0b308). The aside classes carry the mobile
+         drawer shape (mirrors FilesTab); `narrow` is the width-driven
+         adaptation class (a measured on the root: the inspector's
+         ~300px column). -->
     <aside
       ref="rootEl"
       class="settings aside pane inspector-panel"
       :class="{ open: open, narrow: narrow }">
-      <TabBand title="Settings">
-        <div class="band-search">
-          <SearchInput
-            v-model="query"
-            placeholder="filter settings" />
-        </div>
-      </TabBand>
+      <TabBand title="Settings"></TabBand>
+
+    <!-- the VSCode search header: full-width at the head of the pane,
+         outside the scrollport (structurally pinned above .settings-body) -->
+    <div class="settings-filterbar">
+      <SearchInput
+        v-model="query"
+        placeholder="filter settings" />
+    </div>
 
     <p v-if="loadError" class="settings-error">
       {{ loadError }}
@@ -662,9 +665,17 @@
 </script>
 
 <style scoped>
-  /* card t_529628d5: the filter rides TabBand's shared .band-search
-     seat (the t_f1a034dc own-row shape died with this ruling). The
-     knob select is the shared BandSelect chip - inline (the
+  /* card t_6bebff18 (Endo ruling 2026-11-10): the filter left TabBand's
+     shared 128px band seat and became the pane-top full-width bar - the
+     VSCode settings-search shape. Placement only: the input's look stays
+     the ONE shared .search-input sheet (main.css), no second copy here.
+     The bar is a flex child ABOVE .settings-body, so it never scrolls. */
+  .settings-filterbar {
+    flex: none;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--stroke);
+  }
+  /* the knob select is the shared BandSelect chip - inline (the
      composer's listbox pattern), never wider than its row */
   .setting-select {
     max-width: 100%;
