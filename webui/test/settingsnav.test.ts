@@ -966,3 +966,79 @@ test("the spy's anchor write is gated on the user's scroll, never on geometry", 
     "no second write path around the gate",
   );
 });
+
+// --- card t_720c9cff: a scroll inside a lock is clamped when the lock ends --
+//
+// The nightly reded on the SAME clamp assertion the merge before had fixed
+// (113-settings-nav: scrollTop 5709, want 2509, document end 5709 - byte for
+// byte the pre-fix numbers). The card guessed the 650ms spy lock refused the
+// clamp; the probe on the dev lane says otherwise, and it reproduces:
+//
+//   nav-click provider, then wheel + `scrollTop = 1e6` in the NEXT task
+//     (inside the same frame - a fast host's jsq round trip)
+//                                                      -> 6247, STAYED there
+//   the same wheel + assignment 2s after the click      -> 2722 (clamped)
+//   the same, 3s after (no lock, nothing suppressed)    -> 2722 (clamped)
+//   the same frame, WITHOUT the wheel                   -> 2722 (clamped)
+//
+// The un-wheeled row is the card's own hypothesis refuted: it sits inside the
+// very same 650ms lock and still clamps, because the clamp never read that
+// lock (t_e7404b84 removed it). The swallow is an EVENT-LESS scroll: the pane
+// was already resting at the document's end (a previous free scroll left it
+// there), so `scrollTop = 1e6` is a same-value instant request and fires no
+// scroll event at all; the wheel that preceded it ended the pane's own scroll
+// tracking AND cleared the 400ms settle timer that would have re-measured.
+// Nothing is left pending, so the pane sits outside its section for good.
+test("a scroll inside the lock window is clamped when the lock ends (t_720c9cff)", () => {
+  // the swallowed state is DECIDABLE: nothing is in flight, the pane is just
+  // never re-measured - which is why the clamp is allowed to run the moment a
+  // lock lifts (the t_e7404b84 gate answers "yes, settled")
+  const swallowed: PaneScrollState = { target: null, graceUntil: 0 };
+  assert.equal(
+    paneScrollSettled(swallowed),
+    true,
+    "the pane's own scroll is over - the clamp would bite, it is only never asked",
+  );
+  // and the range it was kept outside is the same maths the nightly's numbers
+  // fall out of: the CI red names only the document end (5709) and the wanted
+  // end (2509), so the probe document's shape is what is pinned here
+  const lane = { top: 1813, height: 1332, viewport: 423, content: 6670 };
+  assert.deepEqual(
+    clampedRange(lane),
+    [1813, 2722],
+    "the selected section's window, measured on the probe's document",
+  );
+  const nightly = { top: 1589, height: 1343, viewport: 423, content: 6132 };
+  assert.equal(nightly.content - nightly.viewport, 5709, "the nightly's document end");
+  const [, hi] = clampedRange(nightly);
+  assert.equal(hi, 2509, "and its 'want 2509' is this same clampedRange, no special case");
+
+  // ONE pass, on the locks that already exist: the timed lock's expiry...
+  assert.match(
+    tab,
+    /spyTimer = setTimeout\(\(\) => \{\s*spyLocked = false;\s*spyTimer = undefined;\s*clampOnLockEnd\(\);\s*\}, ms\);/,
+    "the timed lock re-measures when it expires, not never",
+  );
+  // ...and a deselect's open-ended suppression, which lifts on real input
+  assert.match(
+    tab,
+    /function unlockSpy\(\) \{[\s\S]{0,220}spyLocked = false;\s*clampOnLockEnd\(\);/,
+    "the suppression's release re-measures too - same shape, same pass",
+  );
+  // the pass reuses the clamp machinery instead of inventing a second one
+  assert.match(
+    tab,
+    /function clampOnLockEnd\(\) \{\s*if \(clampId\.value\) scheduleClamp\(\);\s*\}/,
+    "one pass through the existing scheduleClamp - no new primitive",
+  );
+  assert.ok(
+    !/function clampOnLockEnd\(\)[\s\S]{0,200}root\.scrollTop =/.test(tab),
+    "and it never writes scrollTop itself: applyClamp stays the only writer",
+  );
+  // the timed lock's LENGTH is untouched: it exists so the observer does not
+  // fight the smooth scroll it started
+  assert.match(tab, /lockSpy\(650\);/, "the 650ms jump window is unchanged");
+  // and the pane-scroll suppression's own gate is untouched (PANE_SCROLL_GAP_MS)
+  assert.match(tab, /const PANE_SCROLL_GAP_MS = 400;/, "the stream-suppression window is unchanged");
+});
+
