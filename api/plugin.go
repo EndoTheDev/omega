@@ -154,6 +154,18 @@ func (p *Plugin) SetAgentPromptConfig(prompt string, maxTurns int) {
 	}
 }
 
+// SetAgentRunFactory hands the host's per-agent run factory to every
+// mounted bind (card t_a7fab745). A session owned by an agent home then
+// runs on that home's provider/model/system prompt instead of the
+// daemon's. Same walk as SetAgentPromptConfig.
+func (p *Plugin) SetAgentRunFactory(f agentapi.AgentRunFactory) {
+	for _, ch := range p.mounted {
+		if h, ok := ch.(*HTTPChannel); ok {
+			h.SetAgentRunFactory(f)
+		}
+	}
+}
+
 // Dismount removes the channels Mount appended, by identity (the E1
 // dismount proof). The shell never lands in the disable list -
 // Dismount exists for the teardown proof, not for toggling.

@@ -32,6 +32,7 @@ var censusPin = map[string]string{
 	"chat_panel.go":         "chat - the composer panel + the /chat turn handling",
 	"runs.go":               "chat - the live run: the RunHub, detached runs, the SSE run frames + the store floor guards",
 	"server.go":             "chat - the chat floor: /models, /chat, the session-existence floor (POST /sessions, /sessions/{id}), /tools, the command palette, canvas wiring",
+	"server_agentrun.go":    "chat - the per-agent run config: a session owned by an agent home runs on THAT home's provider, model, system prompt and max_turns (card t_a7fab745)",
 	"server_atmention.go":   "chat - the @-mention expansion on the submit path (the browser never expands; /chat does)",
 	"server_attachments.go": "chat - the composer attach surface for non-image files: /attach-file writes into the session upload dir and /chat carries the typed reference (kind, name, size, path)",
 	"server_canvas.go":      "canvas - the transport: GET /ui/canvas snapshot + POST /ui/actions, deltas fan out on the run streams",

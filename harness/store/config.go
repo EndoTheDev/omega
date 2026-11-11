@@ -3,6 +3,11 @@ package store
 // Config configures the session store extension.
 type Config struct {
 	DBPath string `yaml:"db_path"`
+	// Home is the omega home this store belongs to (host wiring, not a
+	// yaml knob): session-addressed routing resolves agent homes under
+	// <Home>/agents/<name>/data/omega.db from it (card t_a7fab745).
+	// Empty = routing off, one file only.
+	Home string `yaml:"-"`
 }
 
 // Default returns the default store configuration.
