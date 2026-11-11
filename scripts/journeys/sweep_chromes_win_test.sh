@@ -145,7 +145,11 @@ powershell.exe -NoProfile -Command \
   >/dev/null 2>&1
 
 orphan_pid=""
-for _ in $(seq 1 40); do
+# 60s, not 20s: a cold chromium start on a busy host (a journey suite running
+# at the same time - exactly when a reaper is most needed) outran the old
+# window and red'd at fixture setup, which reads as a reaper bug. Poll long
+# enough that the only red left is a real one.
+for _ in $(seq 1 120); do
   candidate="$(main_pids "agent-browser-chrome-orphan-$stamp")"
   if [ -n "$candidate" ]; then
     seen="$(ps1 -DryRun | tr -d '\r')"
@@ -165,7 +169,7 @@ fi
 "$CW" --user-data-dir="$PROF_PROT" --remote-debugging-port=0 --headless=new \
   --no-first-run --disable-gpu about:blank >/dev/null 2>&1 &
 PROT_PID=""
-for _ in $(seq 1 40); do
+for _ in $(seq 1 120); do
   PROT_PID="$(main_pids "agent-browser-chrome-live-$stamp")"
   [ -n "$PROT_PID" ] && break
   sleep 0.5
@@ -180,8 +184,20 @@ if [ -n "$orphan_pid" ] && [ -n "$PROT_PID" ]; then
   out="$(bash "$SWEEP" 2>&1 | tr -d '\r')"
   rc=$?
   [ "$rc" = 1 ] && ok || bad "phase B: sweep exit $rc, want 1 (it reaped). output: $out"
-  left="$(main_pids "agent-browser-chrome-orphan-$stamp")"
-  [ -z "${left// /}" ] && ok || bad "phase B: the orphan chrome ($orphan_pid) survived the sweep"
+  # chrome does not die instantly - the ps1 sleeps a second for its renderer
+  # belt before it even exits, and teardown can lag further behind. Poll
+  # before declaring a survivor; a witness that can false-FAIL is not a
+  # witness (vera reproduced 16/17 then 17/17 on this same check).
+  gone=0
+  for _ in $(seq 1 20); do
+    left="$(main_pids "agent-browser-chrome-orphan-$stamp")"
+    if [ -z "${left// /}" ]; then gone=1; break; fi
+    sleep 0.5
+  done
+  [ "$gone" = 1 ] && ok \
+    || bad "phase B: the orphan chrome ($orphan_pid) survived the sweep for 10s. sweep output: $out"
+  # NOT polled on purpose: a killed live-parent chrome is a real failure and
+  # waiting only hides it longer.
   left="$(main_pids "agent-browser-chrome-live-$stamp")"
   [ -n "${left// /}" ] && ok || bad "phase B: the sweep killed a chrome with a LIVE parent"
 else
