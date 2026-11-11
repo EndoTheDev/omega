@@ -762,6 +762,119 @@ printf "%s" "$out" | grep -qF "[absent FILES: line is unprovable, never precise:
 printf "%s" "$out" | grep -q "^legal: t_dispatch" \
 	&& bad "T18b: the candidate leaked as legal - the webui misclass is still in the prose leg (out: $out)" || ok
 
+# T19 pins the CLAMP (card t_8a1a46e1): a LIVE `--max N` (N>1) must OBEY the
+# pair verdict the dry-run prints, not assume the caller read it. On 2026-11-11
+# a tick batched the dry-run and the real dispatch into one terminal call, so
+# `pair: forbidden` printed and the real `--max 2` spawned both cards anyway
+# (surfaces happened to be disjoint - luck, not law). Shapes pinned: (T19a) a
+# forbidden head set with --max 2 hands the inner dispatcher --max 1, spawns
+# exactly ONE card, and says so in a loud `clamp:` line naming the ids it
+# declined to pair; (T19b) the CONTROL - a sanctioned pair still gets --max 2
+# and two spawns; (T19c) a dry-run prints the verdict and NO clamp (the clamp
+# never touches dry-run output, and a dry-run never spawns); (T19d) --max 1 is
+# already single, so no clamp line (the clamp is for N>1 only).
+#
+# T19 helper: a LIVE pass against a fake board with a STUB inner dispatcher.
+# The stub records the --max it was handed and spawns exactly that many ready
+# cards, so the assertions read the real spawn count the pass would produce.
+# The stub is found through PATH, and the guard calls bare `hermes` - the
+# PATH entry must be POSIX (cygpath -u): a C:/ entry is split at the drive
+# colon by MSYS and never resolves, which would silently hand the call to the
+# REAL hermes (it refuses in a worker context), reding the log assertion.
+SPAWN_BASE=$(mktemp -d)
+SPAWN_BASE_N=$(mixpath "$SPAWN_BASE")
+SPAWN_BASE_U=$(cygpath -u "$SPAWN_BASE" 2>/dev/null || printf '%s' "$SPAWN_BASE")
+sphome() { printf '%s' "$SPAWN_BASE/$1"; }
+spdb()   { printf '%s' "$SPAWN_BASE_N/$1/kanban/boards/project-omega/kanban.db"; }
+splog()  { printf '%s' "$SPAWN_BASE_N/$1/args.log"; }
+SPAWNRUN() {  # $1 = case tag (names its board dir), $2 = seed SQL, rest = guard args
+  local tag="$1" seed="$2" home hn hu
+  shift 2
+  home=$(sphome "$tag")
+  rm -rf "$home"; mkdir -p "$home/kanban/boards/project-omega" "$home/bin"
+  hn=$(mixpath "$home")
+  hu="$SPAWN_BASE_U/$tag"
+  printf 'project-omega\n' >"$home/kanban/current"
+  : >"$(splog "$tag")"
+  sqlex "$(spdb "$tag")" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER);
+$seed"
+  cat >"$home/bin/hermes" <<'STUB_EOF'
+#!/usr/bin/env bash
+py=$(command -v python3 || command -v python)
+exec "$py" - "$HERMES_STUB_DB" "$HERMES_STUB_LOG" "$@" <<'PYEOF'
+import sqlite3, sys
+db, log = sys.argv[1], sys.argv[2]
+args = sys.argv[3:]
+mx = int(args[args.index("--max") + 1]) if "--max" in args else 0
+open(log, "a", newline="").write(" ".join(args) + "\n")  # newline="": no CRLF translation
+con = sqlite3.connect(db, timeout=10)
+rows = [r[0] for r in con.execute(
+    "SELECT id FROM tasks WHERE status='ready' AND claim_lock IS NULL ORDER BY priority DESC, created_at")]
+take = rows[:mx]
+for cid in take:
+    con.execute("UPDATE tasks SET status='running', claim_lock='pibtw:9', worker_pid=1 WHERE id=?", (cid,))
+con.commit()
+print("Spawned: %d (%s)" % (len(take), " ".join(take)))
+PYEOF
+STUB_EOF
+  chmod +x "$home/bin/hermes"
+  out=$(HOME="$home" HERMES_HOME= HERMES_KANBAN_HOME="$hn" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
+    PATH="$hu/bin:$PATH" HERMES_STUB_DB="$(spdb "$tag")" HERMES_STUB_LOG="$(splog "$tag")" \
+    bash "$GUARD" "$@" 2>&1)
+  printf '%s' "$out"
+}
+
+# T19a: forbidden head set (no-FILES card beside a legal webui card) under a
+# LIVE --max 2 -> the clamp fires, ONE spawn, and the ids it declined to pair.
+out=$(SPAWNRUN clamp-forbidden "$NF_WEB
+$WEB" --max 2)
+printf "%s" "$out" | grep -qF 'pair: forbidden (t_nofiles t_web, no FILES: line on t_nofiles - unprovable surface, never a pair)' \
+	&& ok || bad "T19a: fixture no longer reads forbidden - the clamp case is not testing the clamp (out: $out)"
+printf "%s" "$out" | grep -qF 'clamp: --max 2 -> 1 (pair: forbidden - no FILES: line on t_nofiles - unprovable surface, never a pair) - declined to pair: t_nofiles t_web' \
+	&& ok || bad "T19a: a forbidden head pair did not clamp --max 2, or the clamp line lost its reason/ids (out: $out)"
+grep -qxF 'kanban dispatch --max 1' "$(splog clamp-forbidden)" \
+	&& ok || bad "T19a: the inner dispatcher was not handed --max 1 (got: $(tr '\n' ';' <"$(splog clamp-forbidden)"))"
+printf "%s" "$out" | grep -qF 'Spawned: 1 (t_nofiles)' \
+	&& ok || bad "T19a: exactly ONE card must spawn under the clamp (out: $out)"
+nrun=$(sql "$(spdb clamp-forbidden)" "SELECT COUNT(*) FROM tasks WHERE status='running';")
+[ "$nrun" = "1" ] && ok || bad "T19a: $nrun cards running after a clamped pass (expected 1)"
+
+# T19b: CONTROL - the same LIVE path with a SANCTIONED pair (disjoint go+go)
+# still passes --max 2 through and spawns two. The clamp must not be a blanket.
+out=$(SPAWNRUN clamp-sanctioned "$GO1
+$GO2" --max 2)
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1 t_go2, classes go+go, FILES disjoint)' \
+	&& ok || bad "T19b: control fixture is not a sanctioned pair any more (out: $out)"
+printf "%s" "$out" | grep -q "clamp:" \
+	&& bad "T19b: a sanctioned pair was clamped - the clamp must obey the verdict, not ban pairs (out: $out)" || ok
+grep -qxF 'kanban dispatch --max 2' "$(splog clamp-sanctioned)" \
+	&& ok || bad "T19b: a sanctioned pair did not pass --max 2 through (got: $(tr '\n' ';' <"$(splog clamp-sanctioned)"))"
+nrun=$(sql "$(spdb clamp-sanctioned)" "SELECT COUNT(*) FROM tasks WHERE status='running';")
+[ "$nrun" = "2" ] && ok || bad "T19b: $nrun cards running after a sanctioned pair (expected 2)"
+
+# T19c: DRY-RUN is untouched - the verdict prints, the clamp never does, and
+# nothing dispatches (ticks and tests read this output; it stays byte-stable).
+out=$(PAIRRUN "$NF_WEB
+$WEB" --max 2)
+printf "%s" "$out" | grep -qF 'pair: forbidden (t_nofiles t_web' \
+	&& ok || bad "T19c: dry-run lost its pair verdict (out: $out)"
+printf "%s" "$out" | grep -q "clamp:" \
+	&& bad "T19c: dry-run printed a clamp line - the clamp must sit BELOW the dry exit (out: $out)" || ok
+printf "%s" "$out" | grep -q "dry-run: no dispatch" \
+	&& ok || bad "T19c: dry-run dispatched (out: $out)"
+
+# T19d: --max 1 needs no clamp - the request is already single, so the line
+# stays silent (N>1 is the condition, never a blanket on every forbidden pass).
+out=$(SPAWNRUN max1 "$NF_WEB
+$WEB" --max 1)
+printf "%s" "$out" | grep -q "clamp:" \
+	&& bad "T19d: --max 1 is already single - no clamp line expected (out: $out)" || ok
+grep -qxF 'kanban dispatch --max 1' "$(splog max1)" \
+	&& ok || bad "T19d: --max 1 pass did not hand --max 1 through (got: $(tr '\n' ';' <"$(splog max1)"))"
+rm -rf "$SPAWN_BASE"
+
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]
