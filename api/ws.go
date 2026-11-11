@@ -118,11 +118,17 @@ func (s *Server) pushHealth(ctx context.Context) {
 }
 
 // healthState is the /health body, shared by the GET route and the
-// health topic so the reconnect fetch and the pushed frames agree.
+// health topic so the reconnect fetch and the pushed frames agree. The
+// three fact objects are optional and additive (card t_5e2f3095): each
+// is nil when this process has no source for it, and the body then stays
+// exactly the shape it was before the facts existed.
 func (s *Server) healthState() agentapi.HealthState {
 	return agentapi.HealthState{
 		Status:        "ok",
 		UptimeSeconds: int(time.Since(s.startedAt).Seconds()),
 		Version:       s.version,
+		Provider:      s.providerHealth(),
+		Database:      s.databaseHealth(),
+		LastError:     s.lastErrorFact(),
 	}
 }
