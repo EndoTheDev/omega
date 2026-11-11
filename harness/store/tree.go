@@ -99,6 +99,9 @@ func (s *Store) loadViewRows(ctx context.Context, sessionID string) ([]core.Stor
 // t_17365247's session fork) derive over the merged ancestor+own rows,
 // so the child's active path IS the whole lineage.
 func (s *Store) GetActiveView(ctx context.Context, sessionID string) (core.ActiveView, error) {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.GetActiveView(ctx, sessionID)
+	}
 	if _, err := s.GetSession(ctx, sessionID); err != nil {
 		return core.ActiveView{}, err
 	}
@@ -112,6 +115,9 @@ func (s *Store) GetActiveView(ctx context.Context, sessionID string) (core.Activ
 // GetActiveMessages returns the active path as plain messages - the
 // context assembly and session-load seam.
 func (s *Store) GetActiveMessages(ctx context.Context, sessionID string) ([]core.Message, error) {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.GetActiveMessages(ctx, sessionID)
+	}
 	view, err := s.GetActiveView(ctx, sessionID)
 	if err != nil {
 		return nil, err

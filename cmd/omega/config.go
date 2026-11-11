@@ -850,7 +850,7 @@ func WatchConfig(path string, onChange func(Config)) {
 func (c Config) ConfigSection(name string) (any, bool) {
 	switch name {
 	case "store":
-		return store.Config{DBPath: c.Store.DBPath}, true
+		return store.Config{DBPath: c.Store.DBPath, Home: omegaHome()}, true
 	case "sessions":
 		return sessionsSection(c), true
 	case "provider":

@@ -389,7 +389,8 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		var rec assistantRecord
 		var usage streamUsage
 		meter := newRunMeter()
-		for event := range s.agent.RunWithProvider(ctx, prov, messages, tools) {
+		runner := s.runAgent(&req)
+		for event := range runner.RunWithProvider(ctx, prov, messages, tools) {
 			s.accumulateAssistant(&recs, &rec, event, req)
 			// Chat panel hook (chat-last 1/3): one call per event -
 			// token chunks batch, structural events flush.
