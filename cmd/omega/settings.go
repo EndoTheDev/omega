@@ -270,10 +270,10 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Value:   cfg.VisionModel,
 					Default: def.VisionModel,
 					Help:    "auxiliary captioner model for image messages; \"default\" follows the model the current chat runs (the composer's chip), resolved per call - useful only when that model can see images (the caption hop exists for a blind main model, so \"default\" on a blind one sends the image there and the run fails on the caption); the dropdown lists vision-capable models only; empty = images reach the main model unchanged and may fail loudly; applies on restart"},
-				{Key: "provider.title_model", Label: "title model", Type: "model",
+				{Key: "provider.title_model", Label: "title model", Type: "model", DefaultOption: true,
 					Value:   cfg.TitleModel,
 					Default: def.TitleModel,
-					Help:    "cheap model for session titles; empty = the main model; applies on restart"},
+					Help:    "cheap model for session titles; empty or \"default\" = the model this chat runs (resolved per call); applies on restart"},
 				// card t_7dcd4280, reshaped t_1914a8c9: the named
 				// instances - one row per instance, each a NAMED ENDPOINT
 				// only (name, type, base url, api key; no model column -
@@ -293,18 +293,18 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				// the selector also lists the named instances). The
 				// four call sites (compaction, summarizer, curator,
 				// approval reviewer) resolve the slot live.
-				{Key: "provider.compaction_model", Label: "compaction model", Type: "model", Slot: true,
+				{Key: "provider.compaction_model", Label: "compaction model", Type: "model", Slot: true, DefaultOption: true,
 					Value:   cfg.CompactionModel,
 					Default: def.CompactionModel, Live: true,
-					Help: "model the compaction summarizer consults; instance:model rides a named provider instance (empty = the session provider model); applies live"},
-				{Key: "provider.summarizer_model", Label: "summarizer model", Type: "model", Slot: true,
+					Help: "model the compaction summarizer consults; instance:model rides a named provider instance (empty or \"default\" = the session provider model, resolved per call); applies live"},
+				{Key: "provider.summarizer_model", Label: "summarizer model", Type: "model", Slot: true, DefaultOption: true,
 					Value:   cfg.SummarizerModel,
 					Default: def.SummarizerModel, Live: true,
-					Help: "model the hygiene job consults for session summaries; instance:model rides a named provider instance (empty = the session provider model); applies live - the next sweep consults it (the report names the slot)"},
-				{Key: "provider.skills_model", Label: "skills curator model", Type: "model", Slot: true,
+					Help: "model the hygiene job consults for session summaries; instance:model rides a named provider instance (empty or \"default\" = the session provider model, resolved per call); applies live - the next sweep consults it (the report names the slot)"},
+				{Key: "provider.skills_model", Label: "skills curator model", Type: "model", Slot: true, DefaultOption: true,
 					Value:   cfg.SkillsModel,
 					Default: def.SkillsModel, Live: true,
-					Help: "model the weekly skills curator consults for merge/distill proposals; instance:model rides a named provider instance (empty = the session provider model); applies live - the next curator action consults it"},
+					Help: "model the weekly skills curator consults for merge/distill proposals; instance:model rides a named provider instance (empty or \"default\" = the session provider model, resolved per call); applies live - the next curator action consults it"},
 				{Key: "provider.approvals_model", Label: "approval decision model", Type: "model", Slot: true, Filter: "decision",
 					Value:   cfg.ApprovalsModel,
 					Default: def.ApprovalsModel, Live: true,
