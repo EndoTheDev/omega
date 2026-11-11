@@ -46,6 +46,15 @@ A card with NO `FILES:` line is UNPROVABLE for a pair (its prose
 tokens still make it legal for a single dispatch) - the verdict names it.
 The pass ends with a handoff report (wanted/after/over-run).
 
+The inner dispatcher claims TWO lanes: ready cards, and review-state
+cards whose claim_lock is free (`claim_review_task`, review -> running).
+The pass gates its dispatch call on exactly that claimable work, so a
+board whose ready queue is empty but whose review lane is not still
+dispatches the review. The dry-run names both lanes: `candidates: N
+ready, unclaimed` and `review candidates: N unclaimed (ids)`. Review
+rows are not candidates - they take no hold, no pair slot and no
+surface verdict (the inner claims them in its own lane).
+
 Flags:
   --dry-run   evaluate and print verdicts only; no dispatch, no writes
   --max N     pass N as the inner dispatcher's bound for this invocation
@@ -446,6 +455,28 @@ CAND=()
 # whose computation went blind.
 echo "running: ${RUNNING[*]:-none} (surface tokens: $(grep -c . "$SURF" || true))"
 echo "candidates: ${#CAND[@]} ready, unclaimed"
+# -- review lane: the SAME inner call claims review-state cards ---------------
+# `hermes kanban dispatch` never only drained the ready queue: dispatch_once
+# enumerates _lane_rows(conn,"review") - `status='review' AND claim_lock IS
+# NULL` (hermes_cli/kanban_db_dispatch.py:2296, review loop at 2448) - and
+# claims each row through claim_review_task (same file:2125 -> kanban_db.py:
+# 2213, an atomic review->running CAS whose `claimed` event carries
+# source_status="review"). PROBED for this card (t_3b13064e, 2026-11-11) on a
+# scratch board holding ONE review card, zero ready, zero running:
+# dispatch_once(dry_run=True) answered spawned=[('t_082b9c1e','vera','')], and
+# the live call flipped the row to running with worker_pid set. A free review
+# card is therefore claimable work for THIS pass - and the gate below could
+# not see it, so on a quiet board (workers hand off together, nothing ready,
+# the review lane holds the only work) the pass printed `no dispatch` and the
+# reviews could never spawn from it. The gate widens; the law does not: review
+# rows are NOT candidates - no per-candidate surface verdict, no hold, no pair
+# slot (the inner claims them in its own lane after ready).
+REV_RAW=$(dbq "SELECT id FROM tasks WHERE status='review' AND claim_lock IS NULL ORDER BY priority DESC, created_at;")
+REV=()
+[ -n "$REV_RAW" ] && mapfile -t REV <<<"$REV_RAW"
+REVIDS=""
+[ "${#REV[@]}" -gt 0 ] && REVIDS=" (${REV[*]})"
+echo "review candidates: ${#REV[@]} unclaimed$REVIDS"
 PARKED=(); LEGAL=0
 
 # guard bug #4 (2026-10-25) is RETIRED (2026-11-09): hermes kanban
@@ -728,7 +759,19 @@ park()   { local p; for p in "$@"; do [ -n "$p" ] || continue; dbx "UPDATE tasks
 unpark() { local p; for p in "$@"; do [ -n "$p" ] || continue; dbx "UPDATE tasks SET claim_lock=NULL WHERE id='$p' AND claim_lock='pibtw:dispatch-hold';"; done; }
 park "${PARKED[@]:-}"
 trap 'unpark "${PARKED[@]:-}"' EXIT
-if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(dbq "SELECT COUNT(*) FROM tasks WHERE status='ready';")" -gt 0 ]; then
+# -- claimable-work gate ------------------------------------------------------
+# The inner call is made only when the inner can actually CLAIM something:
+# a ready card (any lock state - unchanged, the ready lane's own filter
+# decides), or a review card whose claim_lock IS NULL (the review lane's
+# filter, `_lane_rows(conn,"review")`). The review leg is what a quiet board
+# needs: every worker hands off together, the ready queue empties, and the
+# review lane holds the only spawnable work - a ready-only gate printed
+# `no dispatch` through every quiet cycle and the reviews could not spawn from
+# it (probed, see the review-lane block above). Nothing else moves: the cap,
+# the park/restore of named holds, the pair verdict and the fence stamp are
+# untouched, and review rows never enter the candidate/pair accounting.
+CLAIMABLE=$(dbq "SELECT (SELECT COUNT(*) FROM tasks WHERE status='ready') + (SELECT COUNT(*) FROM tasks WHERE status='review' AND claim_lock IS NULL);")
+if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$CLAIMABLE" -gt 0 ]; then
   DOUT=$(mktemp)
   if [ "$MAXARG" -gt 0 ]; then
     # an explicit --max N bounds TRUE concurrency: pass N through unchanged.
@@ -807,7 +850,10 @@ if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(dbq "SELECT COUNT(*) FROM tasks WHERE
   fi
   rm -f "$DOUT"
 else
-  echo "no dispatch (running=${#RUNNING[@]}/cap=$CAP)"
+  # Name the reason, not just the cap: `running=0/cap=2` on a board whose only
+  # work sits in the review lane with a lock, or on a board with no work at
+  # all, is the same line - the tick reads claimable to tell them apart.
+  echo "no dispatch (running=${#RUNNING[@]}/cap=$CAP, claimable=$CLAIMABLE)"
 fi
 
 # sweep repair (guard bug #11): named holds go back to their pre-pass

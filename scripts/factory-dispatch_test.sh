@@ -810,13 +810,22 @@ args = sys.argv[3:]
 mx = int(args[args.index("--max") + 1]) if "--max" in args else 0
 open(log, "a", newline="").write(" ".join(args) + "\n")  # newline="": no CRLF translation
 con = sqlite3.connect(db, timeout=10)
+order = "ORDER BY priority DESC, created_at"
 rows = [r[0] for r in con.execute(
-    "SELECT id FROM tasks WHERE status='ready' AND claim_lock IS NULL ORDER BY priority DESC, created_at")]
+    "SELECT id FROM tasks WHERE status='ready' AND claim_lock IS NULL " + order)]
+# the review lane: dispatch_once claims `status='review' AND claim_lock IS
+# NULL` through claim_review_task (review -> running), sharing the same budget
+# after the ready lane. Mirrored here so a review-only board's spawn is real.
+revs = [r[0] for r in con.execute(
+    "SELECT id FROM tasks WHERE status='review' AND claim_lock IS NULL " + order)]
 take = rows[:mx]
+rev_take = revs[:max(mx - len(take), 0)]
 for cid in take:
     con.execute("UPDATE tasks SET status='running', claim_lock='pibtw:9', worker_pid=1 WHERE id=?", (cid,))
+for cid in rev_take:
+    con.execute("UPDATE tasks SET status='running', claim_lock='pibtw:9', worker_pid=1 WHERE id=?", (cid,))
 con.commit()
-print("Spawned: %d (%s)" % (len(take), " ".join(take)))
+print("Spawned: %d (%s)" % (len(take) + len(rev_take), " ".join(take + rev_take)))
 PYEOF
 STUB_EOF
   chmod +x "$home/bin/hermes"
@@ -885,6 +894,76 @@ grep -qxF 'kanban dispatch --max 1' "$(splog clamp-bare)" \
 	&& ok || bad "T19e: the bare pass was not clamped to --max 1 (got: $(tr '\n' ';' <"$(splog clamp-bare)"))"
 nrun=$(sql "$(spdb clamp-bare)" "SELECT COUNT(*) FROM tasks WHERE status='running';")
 [ "$nrun" = "1" ] && ok || bad "T19e: $nrun cards running after a bare clamped pass (expected 1)"
+
+# T20 (local + CI): the CLAIMABLE-WORK GATE (card t_3b13064e, 2026-11-11). The
+# pass used to gate the inner `hermes kanban dispatch` on a READY card alone,
+# but the inner claims two lanes: dispatch_once enumerates
+# `status='review' AND claim_lock IS NULL` and claims it through
+# claim_review_task (review -> running). So on a quiet board - every worker
+# handed off together, ready queue empty, the review lane holding the only
+# work - the pass printed `no dispatch` and the reviews could never spawn from
+# it (probed live 2026-11-11 08:19: two cards sat in review with running=0 and
+# the inner dispatcher never got the call). Shapes pinned: (T20a) a
+# review-only board opens the gate, the stub inner dispatcher is called ONCE
+# and the review row really spawns (review -> running); (T20b) CONTROL - a
+# board with no claimable work at all stays a no-op, never a pointless call;
+# (T20c) CONTROL - a review card carrying a NAMED lock is invisible to the
+# inner claim filter, so it does not open the gate; (T20d) the dry-run must
+# name the review candidate it would spawn (a dry-run reporting 0 while the
+# live pass spawns one is the verdict-beside-the-action failure this factory
+# already closed on the pair clamp).
+REV_SEED="INSERT INTO tasks VALUES('t_rev','review','review handoff','the review of the batch',NULL,NULL,5,'2026-11-11T08:00',NULL,NULL);"
+
+# T20a: ONE review card, zero ready, zero running -> the dispatcher IS called,
+# once, and the review spawns.
+out=$(SPAWNRUN review-only "$REV_SEED")
+printf "%s" "$out" | grep -qF 'review candidates: 1 unclaimed (t_rev)' \
+	&& ok || bad "T20a: a review-only board must name its review candidate (out: $out)"
+ncalls=$(grep -c . "$(splog review-only)" || true)
+[ "$ncalls" = "1" ] && ok || bad "T20a: the inner dispatcher must be called EXACTLY once (calls: $ncalls, log: $(tr '\n' ';' <"$(splog review-only)"))"
+grep -qE '^kanban dispatch --max [0-9]+$' "$(splog review-only)" \
+	&& ok || bad "T20a: the inner call lost its shape (log: $(tr '\n' ';' <"$(splog review-only)"))"
+printf "%s" "$out" | grep -qF 'Spawned: 1 (t_rev)' \
+	&& ok || bad "T20a: the review row did not spawn (out: $out)"
+s=$(sql "$(spdb review-only)" "SELECT status FROM tasks WHERE id='t_rev';")
+[ "$s" = "running" ] && ok || bad "T20a: review card status is '$s' after the pass (expected running - claim_review_task flips review -> running)"
+printf "%s" "$out" | grep -q "no dispatch" \
+	&& bad "T20a: the pass took the no-dispatch branch on a review-only board (out: $out)" || ok
+
+# T20b: CONTROL - zero ready AND zero review: no claimable work, no call. A
+# pass with nothing to claim must stay a no-op, not a pointless invocation.
+out=$(SPAWNRUN empty-board "SELECT 1;")
+ncalls=$(grep -c . "$(splog empty-board)" || true)
+[ "$ncalls" = "0" ] && ok || bad "T20b: an empty board made $ncalls inner dispatch call(s) - expected none (log: $(tr '\n' ';' <"$(splog empty-board)"))"
+printf "%s" "$out" | grep -qF 'no dispatch (running=0/cap=2, claimable=0)' \
+	&& ok || bad "T20b: the empty-board line must state the reason (out: $out)"
+printf "%s" "$out" | grep -qF 'review candidates: 0 unclaimed' \
+	&& ok || bad "T20b: the empty board must still print the review count (out: $out)"
+
+# T20c: CONTROL - a review card with a NAMED lock is not claimable: the inner
+# filter is `claim_lock IS NULL`, so the gate must stay shut. The lock is
+# deliberately NOT `...-hold`: the guard's bug #13 leg normalizes ANY
+# `pibtw:%-hold` card to blocked before the gate, which would make this case
+# pass for the wrong reason (and prove nothing about the claim filter).
+out=$(SPAWNRUN review-locked "INSERT INTO tasks VALUES('t_revl','review','parked review','the review waits on the design gate','pibtw:review-park',NULL,5,'2026-11-11T08:00',NULL,NULL);")
+ncalls=$(grep -c . "$(splog review-locked)" || true)
+[ "$ncalls" = "0" ] && ok || bad "T20c: a locked review card opened the gate ($ncalls call(s)) - the inner filter is claim_lock IS NULL (log: $(tr '\n' ';' <"$(splog review-locked)"))"
+printf "%s" "$out" | grep -qF 'review candidates: 0 unclaimed' \
+	&& ok || bad "T20c: a locked review card counted as a review candidate (out: $out)"
+printf "%s" "$out" | grep -qF 'no dispatch (running=0/cap=2, claimable=0)' \
+	&& ok || bad "T20c: the locked-review board must report no claimable work (out: $out)"
+s=$(sql "$(spdb review-locked)" "SELECT status||'|'||claim_lock FROM tasks WHERE id='t_revl';")
+[ "$s" = "review|pibtw:review-park" ] && ok || bad "T20c: the locked review card changed shape ('$s')"
+
+# T20d: the DRY-RUN names the review candidate it would spawn - the live pass
+# in T20a spawned one, so a dry-run reporting zero would lie about it.
+out=$(PAIRRUN "$REV_SEED")
+printf "%s" "$out" | grep -qF 'review candidates: 1 unclaimed (t_rev)' \
+	&& ok || bad "T20d: dry-run did not name the review candidate (out: $out)"
+printf "%s" "$out" | grep -qF 'pair: sanctioned (none, empty would-spawn set)' \
+	&& ok || bad "T20d: a review row must not enter the pair accounting (out: $out)"
+printf "%s" "$out" | grep -q "dry-run: no dispatch" \
+	&& ok || bad "T20d: dry-run dispatched (out: $out)"
 rm -rf "$SPAWN_BASE"
 
 echo
