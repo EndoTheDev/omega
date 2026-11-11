@@ -20,6 +20,10 @@
 #   memory    - the last anchor is remembered per client and a reopen
 #               restores the scroll to it (a DESELECT persists as NO
 #               anchor, so a cleared selection never comes back).
+#   clamp     - card t_a6b794b5: a SELECTED category bounds the pane's
+#               scroll to its own range (start and end), a deselect
+#               releases it in the same frame, and the boundary follows the
+#               section's box when the pane resizes - nothing is filtered.
 #   narrow    - the SAME document; the nav is a drawer that jumps and then
 #               closes. There is no second screen and no back control.
 #
@@ -31,8 +35,30 @@ scroll_top() { jsq '(()=>{const b=document.querySelector(".settings-body");retur
 nav_ids() { jsq '(()=>{return [...document.querySelectorAll(".settings-nav-cat")].map(e=>e.getAttribute("data-category")).join(",")})()' 2>&1 | plain; }
 doc_ids() { jsq '(()=>{return [...document.querySelectorAll(".settings-category")].map(e=>e.getAttribute("data-category")).join(",")})()' 2>&1 | plain; }
 active_id() { jsq '(()=>{const a=document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active");return a?a.getAttribute("data-category"):""})()' 2>&1 | plain; }
+# sec_geom <id>: "<top>|<height>|<viewport>|<content>" of a category section,
+# in the scrollport's own scroll coordinates (top is a DOCUMENT offset).
+sec_geom() {
+  jsq "(()=>{const root=document.querySelector('.settings-body');const el=document.querySelector('.settings-category[data-category=\"$1\"]');if(!root||!el) return '';const top=Math.round(el.getBoundingClientRect().top-root.getBoundingClientRect().top+root.scrollTop);return [top,Math.round(el.offsetHeight),Math.round(root.clientHeight),Math.round(root.scrollHeight)].join('|')})()" 2>&1 | plain
+}
+# sec_range <top> <height> <viewport> <content>: the "<min>|<max>" window the
+# card's clamp allows. The RECIPE's own arithmetic - the pane's answer is
+# never taken as its own witness (the pure maths is pinned in the node suite).
+sec_range() {
+  local top=$1 h=$2 vp=$3 content=$4 limit min natural max
+  limit=$((content - vp)); [ "$limit" -lt 0 ] && limit=0
+  min=$top; [ "$min" -lt 0 ] && min=0; [ "$min" -gt "$limit" ] && min=$limit
+  natural=$((top + h - vp))
+  max=$natural; [ "$max" -gt "$limit" ] && max=$limit; [ "$max" -lt "$min" ] && max=$min
+  printf '%s|%s' "$min" "$max"
+}
 navclick() {
   jsq "(()=>{const b=[...document.querySelectorAll('.settings-nav-cat,.settings-nav-sub')].find(x=>x.getAttribute('data-category')==='$1');if(!b) return 0;b.click();return 1})()" 2>&1 | plain
+}
+# force_scroll <px>: a REAL user scroll - the wheel releases the observer's
+# post-deselect suppression (so the clamp is armed), then the pane jumps to
+# the absolute position asked for
+force_scroll() {
+  jsq "(()=>{const root=document.querySelector('.settings-body');if(!root) return 0;root.dispatchEvent(new WheelEvent('wheel',{bubbles:true}));root.scrollTop=$1;return 1})()" 2>&1 | plain
 }
 # scroll_pane_to <id>: a REAL user scroll - the wheel event releases the
 # observer's post-deselect suppression, then the scroll lands the section
@@ -195,6 +221,124 @@ if ! poll_js '(()=>{const a=document.querySelector(".settings-nav-cat.active,.se
   die "the reopen did not restore the anchor (active: $(active_id), scrollTop: $(scroll_top))"
 fi
 step "ok: the remembered anchor survives a reload (scrollTop $before -> $(scroll_top))"
+
+# --- clamp: a SELECTED category bounds the pane's scroll ------------------
+# card t_a6b794b5 (Endo, 2026-11-11): "when i select a category i should not
+# be able to scroll further than inside the category. until i deselected
+# again and nothing is selected." Option A: selection never filters the
+# document - the clamp moves the window over it.
+# The memory block above left `compaction` restored. A restore does not
+# clamp (the remembered id may be a spy highlight), so click it off first -
+# that deselect is also the card's own release.
+assert_eq "$(navclick "compaction")" "1" "the restored anchor is a real entry to toggle off"
+if ! poll_js '(()=>{const b=document.querySelector(".settings-body");const a=document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active");return !!b&&b.scrollTop===0&&!a})()' 15; then
+  die "deselecting the restored anchor did not clear it (active: $(active_id), scrollTop: $(scroll_top))"
+fi
+
+# a) NOTHING SELECTED -> the document scrolls end to end (today's behaviour)
+assert_eq "$(force_scroll 999999)" "1" "the pane accepts a user scroll with nothing selected"
+if ! poll_js '(()=>{const b=document.querySelector(".settings-body");return !!b&&Math.abs(b.scrollTop-(b.scrollHeight-b.clientHeight))<=1})()' 10; then
+  die "nothing selected must scroll the whole document (scrollTop: $(scroll_top), end: $(jsq '(()=>{const b=document.querySelector(".settings-body");return Math.round(b.scrollHeight-b.clientHeight)})()' 2>&1 | plain))"
+fi
+freeend=$(scroll_top)
+[ "${freeend:-0}" -gt 200 ] 2>/dev/null || die "the document is too short to prove free scroll (scrollTop $freeend)"
+step "ok: nothing selected -> the document scrolls end to end (scrollTop -> $freeend)"
+
+# b) SELECTED -> both boundaries hold
+target="provider"
+assert_eq "$(navclick "$target")" "1" "$target is a jump link"
+if ! poll_js "(()=>{const b=document.querySelector('.settings-body');const a=document.querySelector('.settings-nav-cat.active,.settings-nav-sub.active');return !!b&&b.scrollTop>50&&!!a&&a.getAttribute('data-category')==='$target'})()" 15; then
+  die "selecting $target did not jump (scrollTop: $(scroll_top), active: $(active_id))"
+fi
+geom=$(sec_geom "$target")
+[ -n "$geom" ] || die "the $target section never rendered"
+top=${geom%%|*}; rest=${geom#*|}; h=${rest%%|*}; rest=${rest#*|}; vp=${rest%%|*}; content=${rest##*|}
+range=$(sec_range "$top" "$h" "$vp" "$content")
+lo=${range%%|*}; hi=${range##*|}
+[ "${hi:-0}" -gt "${lo:-0}" ] 2>/dev/null || die "the $target section has no travel (geom $geom) - the recipe needs a tall one"
+step "ok: $target is selected and its window is [$lo, $hi] (top $top, height $h, pane $vp, content $content)"
+
+# BELOW the end: ask for the document's bottom, land on the section's bottom
+assert_eq "$(force_scroll 999999)" "1" "the pane accepts a scroll while a section is selected"
+if ! poll_js "(()=>{const b=document.querySelector('.settings-body');return !!b&&Math.abs(b.scrollTop-$hi)<=2})()" 10; then
+  die "scrolling past the section's end did not stop at its bottom (scrollTop: $(scroll_top), want $hi, document end $((content - vp)))"
+fi
+pastend=$(scroll_top)
+[ "$pastend" -lt "$((content - vp))" ] 2>/dev/null || die "the clamp never bit: the pane reached the document's bottom ($pastend)"
+step "ok: the selected section stops the pane at its END (scrollTop $pastend < document end $((content - vp)))"
+
+# ABOVE the start: ask for the document's top, land on the section's top
+assert_eq "$(force_scroll 0)" "1" "the pane still accepts a scroll while a section is selected"
+if ! poll_js "(()=>{const b=document.querySelector('.settings-body');return !!b&&Math.abs(b.scrollTop-$lo)<=2})()" 10; then
+  die "scrolling above the section's start did not stop at its top (scrollTop: $(scroll_top), want $lo)"
+fi
+step "ok: the selected section stops the pane at its START (scrollTop $(scroll_top), want $lo)"
+
+# c) DESELECT -> free scroll returns in the same frame. The pane first
+#    rests at the section's END, deep inside it, so the spy has moved the
+#    highlight onto one of its blocks: a single click on the CATEGORY must
+#    still release (the card's promise cannot depend on where the highlight
+#    landed).
+assert_eq "$(force_scroll "$hi")" "1" "rest at the section's end, deep inside it"
+if ! poll_js "(()=>{const b=document.querySelector('.settings-body');return !!b&&Math.abs(b.scrollTop-$hi)<=2})()" 10; then
+  die "the pane did not rest at the section's end (scrollTop: $(scroll_top), want $hi)"
+fi
+if ! poll_js "(()=>{const a=document.querySelector('.settings-nav-cat.active,.settings-nav-sub.active');return !!a&&a.getAttribute('data-category')!=='$target'})()" 15; then
+  die "the spy kept the category highlighted at its end - the block release path was not exercised (active: $(active_id))"
+fi
+spied=$(active_id)
+assert_eq "$(navclick "$target")" "1" "the category entry is clickable while one of its blocks is highlighted"
+if ! poll_js '(()=>{const b=document.querySelector(".settings-body");const a=document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active");return !!b&&b.scrollTop===0&&!a})()' 15; then
+  die "ONE click on the category did not release it while the spy sat on $spied (active: $(active_id), scrollTop: $(scroll_top))"
+fi
+step "ok: one click on the category releases it even with the spy on a block ($spied)"
+assert_eq "$(force_scroll "$pastend")" "1" "the pane accepts a scroll after the deselect"
+if ! poll_js "(()=>{const b=document.querySelector('.settings-body');return !!b&&Math.abs(b.scrollTop-$pastend)<=2})()" 10; then
+  die "the clamp did not release: the pane still refuses the section's old end (scrollTop: $(scroll_top), want $pastend)"
+fi
+step "ok: a deselect releases the clamp - the pane scrolls past the old end again"
+
+# the free scroll let the spy highlight whatever section sits there: clear
+# it, so the next click is a SELECT and not a toggle-off
+jsq '(()=>{const a=document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active");if(a) a.click();return 1})()' >/dev/null 2>&1
+if ! poll_js '(()=>{return !document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active")})()' 10; then
+  die "the spy's highlight could not be cleared before the resize witness (active: $(active_id))"
+fi
+
+# d) the boundary follows the SECTION's box, not just the first measurement:
+#    grow the pane while the section holds the scroll and the stale max must
+#    pull the pane up (step 3 - a box change with no scroll event)
+assert_eq "$(navclick "$target")" "1" "re-selecting $target for the resize witness"
+if ! poll_js "(()=>{const b=document.querySelector('.settings-body');const a=document.querySelector('.settings-nav-cat.active,.settings-nav-sub.active');return !!b&&b.scrollTop>50&&!!a&&a.getAttribute('data-category')==='$target'})()" 15; then
+  die "re-selecting $target did not jump (scrollTop: $(scroll_top), active: $(active_id))"
+fi
+assert_eq "$(force_scroll 999999)" "1" "scroll to the section's end again"
+if ! poll_js "(()=>{const b=document.querySelector('.settings-body');return !!b&&Math.abs(b.scrollTop-$hi)<=2})()" 10; then
+  die "the section's end moved on the re-selection (scrollTop: $(scroll_top), want $hi)"
+fi
+held=$(scroll_top)
+ab set viewport 1280 900 >/dev/null 2>&1
+if ! poll_js "(()=>{const b=document.querySelector('.settings-body');return !!b&&Math.round(b.clientHeight)>$vp})()" 10; then
+  die "the pane never took the taller viewport (clientHeight: $(jsq '(()=>{const b=document.querySelector(".settings-body");return Math.round(b.clientHeight)})()' 2>&1 | plain), was $vp)"
+fi
+geom=$(sec_geom "$target")
+top=${geom%%|*}; rest=${geom#*|}; h=${rest%%|*}; rest=${rest#*|}; vp2=${rest%%|*}; content=${rest##*|}
+range=$(sec_range "$top" "$h" "$vp2" "$content")
+lo2=${range%%|*}; hi2=${range##*|}
+[ "${hi2:-0}" -lt "${held:-0}" ] 2>/dev/null || die "the taller pane did not move the section's end ($held -> $hi2) - the witness needs a shorter max"
+if ! poll_js "(()=>{const b=document.querySelector('.settings-body');return !!b&&Math.abs(b.scrollTop-$hi2)<=3})()" 10; then
+  die "the clamp kept a STALE max after the pane grew (scrollTop: $(scroll_top), want the new end $hi2, was $held)"
+fi
+step "ok: the boundary follows the pane (max $held -> $hi2 after the pane grew)"
+ab set viewport 1280 800 >/dev/null 2>&1
+if ! wait_js "(()=>{const b=document.querySelector('.settings-body');return !!b&&Math.round(b.clientHeight)>=$vp})()" 10; then
+  die "the pane never returned to its 800px box"
+fi
+# leave the pane with NOTHING selected: the sticky block below scrolls freely
+jsq '(()=>{const a=document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active");if(a) a.click();return 1})()' >/dev/null 2>&1
+if ! poll_js '(()=>{return !document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active")})()' 10; then
+  die "the clamp witness did not leave a clean, unselected pane (active: $(active_id))"
+fi
 
 # --- sticky: the heading pins, the next one pushes it out ----------------
 # card t_a8063683 (Endo, 2026-11-11): the document's own section headings are

@@ -24,6 +24,7 @@ import {
   SUBGROUP_LABELS,
   anchorSelection,
   buildNav,
+  clampedRange,
   documentFor,
   expandedCategoryIds,
   knobSubgroup,
@@ -369,8 +370,8 @@ test("a nav click SCROLLS the pane (smooth, reduced-motion aware) and marks it",
 test("a second click on the selected entry DESELECTS: clear, collapse, top", () => {
   assert.match(
     tab,
-    /if \(selection\.value === id\) \{\s*deselect\(\);\s*return;/,
-    "the same entry toggles the selection off",
+    /if \(\s*selection\.value === id \|\|\s*\(picked\.subgroup === null && clampId\.value === picked\.category\)\s*\) \{\s*deselect\(\);\s*return;/,
+    "the same entry toggles the selection off - and so does the category holding the scroll",
   );
   assert.match(
     tab,
@@ -540,4 +541,118 @@ test("the search stays ONE filter, wired to filterSettingGroups", () => {
   assert.match(tab, /query\.value\.trim\(\) === ""\) return null/, "no query is null, not an empty hit set");
   // clearing the query gives the document back where it was
   assert.match(tab, /node\.scrollTop = lastDocScrollTop/, "the interrupted scroll position returns");
+});
+
+// --- the selected-section scroll clamp (card t_a6b794b5) ------------------
+//
+// Endo, 2026-11-11: selecting a category must bound the pane's scroll to
+// that category; a deselect restores free scroll through the whole
+// document. The maths is here because it is the part that is easy to get
+// wrong: a range that inverts, or one that answers a position the document
+// cannot reach, is a pane that fights the hand or locks the user out.
+
+test("a full-height section pins the pane to its own top", () => {
+  // exactly as tall as the pane: there is no travel at all
+  assert.deepEqual(
+    clampedRange({ top: 300, height: 800, viewport: 800, content: 5000 }),
+    [300, 300],
+    "one legal position - the section's top at the pane's top edge",
+  );
+});
+
+test("a taller section lets the pane travel its own height, no further", () => {
+  const [min, max] = clampedRange({ top: 300, height: 2000, viewport: 800, content: 5000 });
+  assert.equal(min, 300, "the section's top at the pane's top edge");
+  assert.equal(max, 1500, "the section's bottom at the pane's bottom edge");
+  assert.equal(300 + 2000 - 800, max, "max is exactly the bottom-aligned position");
+  // and the document continues below the section: the clamp, not the
+  // document's own end, is what stops the pane here
+  assert.ok(max < 5000 - 800, "a mid-document section stops short of the document's end");
+});
+
+test("a section shorter than the viewport does not scroll at all", () => {
+  // step 4: an empty range collapses to the section's top - an inverted
+  // range [top, top - 600] would either invert or scroll into nowhere
+  for (const height of [0, 40, 120, 799]) {
+    const [min, max] = clampedRange({ top: 500, height, viewport: 800, content: 5000 });
+    assert.equal(min, 500, `height ${height}: the range starts at the section's top`);
+    assert.equal(max, 500, `height ${height}: and ends there - the pane rests`);
+  }
+});
+
+test("the range can never invert, whatever the geometry", () => {
+  for (let top = 0; top <= 2000; top += 137)
+    for (const height of [0, 1, 300, 800, 1600])
+      for (const viewport of [1, 400, 800, 1200]) {
+        const [min, max] = clampedRange({ top, height, viewport, content: 5000 });
+        assert.ok(
+          min <= max,
+          `top ${top} height ${height} viewport ${viewport} answered [${min}, ${max}]`,
+        );
+      }
+});
+
+test("a section at the very end answers a REACHABLE window", () => {
+  // its natural max (top + height - viewport) overshoots the document's
+  // last legal scroll position; answering that would leave the clamp
+  // asking for a scrollTop the browser cannot hold
+  assert.deepEqual(
+    clampedRange({ top: 900, height: 100, viewport: 800, content: 1000 }),
+    [200, 200],
+    "the document's own end becomes the range",
+  );
+  assert.deepEqual(
+    clampedRange({ top: 300, height: 700, viewport: 800, content: 1000 }),
+    [200, 200],
+    "a tall last section pins to the bottom of the document it ends",
+  );
+  // a document shorter than the pane has exactly one legal position
+  assert.deepEqual(
+    clampedRange({ top: 40, height: 100, viewport: 800, content: 500 }),
+    [0, 0],
+    "nothing can scroll, so the range is the document's top",
+  );
+});
+
+test("only a REAL selection clamps, measured fresh, on the frame after", () => {
+  // the arithmetic lives in settingsNav (asserted above); a second copy in
+  // the component is the drift this pins out
+  assert.match(navSource, /export function clampedRange\(/);
+  assert.match(tab, /const \[min, max\] = clampedRange\(\{/, "the pane asks the pure function");
+  // a nav click clamps to the section it selected - and the spy, which
+  // moves `selection` while the user scrolls, never clamps (the card's trap:
+  // otherwise free scroll seizes up the moment the user scrolls)
+  assert.match(
+    tab,
+    /clampId\.value = picked\.category;/,
+    "a nav click clamps to its category section",
+  );
+  assert.equal(
+    (tab.match(/clampId\.value = (?!==)/g) ?? []).length,
+    3,
+    "exactly three writers: the click, the deselect, the scope that lost the section",
+  );
+  assert.ok(
+    !/selection\.value = best;[\s\S]{0,240}clampId/.test(tab),
+    "the spy moves the highlight and never the clamp",
+  );
+  // step 2: compare before assigning (a write fires another scroll event)
+  assert.match(
+    tab,
+    /if \(Math\.abs\(next - now\) < 1\) return;/,
+    "the clamp writes only when it actually moves the pane",
+  );
+  // the trap: clamp on the frame after the event, not inside it
+  assert.match(tab, /if \(clampId\.value\) scheduleClamp\(\);/, "the scroll handler schedules");
+  assert.match(tab, /requestAnimationFrame\(\(\) => \{/, "and the clamp lands on the next frame");
+  // step 5: reuse the spy's own suppression, never a second mechanism
+  assert.match(tab, /if \(spyLocked\) return;/, "the smooth jump's lock suppresses the clamp");
+  // step 3: a section's box changes without any scroll - re-measure then
+  assert.match(tab, /new ResizeObserver\(\(\) => applyClamp\(\)\)/, "the boxes are observed");
+  assert.match(tab, /function observeClamp\(\)/);
+  assert.match(
+    tab,
+    /syncSpy\(\);\s*observeClamp\(\);\s*applyClamp\(\);/,
+    "a rebuilt document re-arms and re-measures the clamp",
+  );
 });

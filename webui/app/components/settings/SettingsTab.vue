@@ -426,6 +426,7 @@
     NAV_STORAGE_KEY,
     anchorSelection,
     buildNav,
+    clampedRange,
     documentFor,
     expandedCategoryIds,
     matchingCategoryIds,
@@ -1089,14 +1090,27 @@
     }
   }
 
-  /** first click: select + expand + scroll. Second click on the SAME
-      entry: deselect + collapse + top - one action in both directions. */
+  /** first click: select + expand + scroll. A second click on the SAME
+      entry - or on the CATEGORY that currently HOLDS the scroll - deselects:
+      one action in both directions. The second half matters for the clamp
+      (card t_a6b794b5): the spy moves the highlight onto a block while the
+      user scrolls INSIDE a selected category, and the promised "click
+      again to release" must not depend on where the highlight landed. A
+      subsection link still jumps (its parent holding the scroll is not a
+      toggle-off). */
   function selectCategory(id: string) {
-    if (selection.value === id) {
+    const picked = parseSelection(id);
+    if (
+      selection.value === id ||
+      (picked.subgroup === null && clampId.value === picked.category)
+    ) {
       deselect();
       return;
     }
     selection.value = id;
+    // a REAL selection clamps the pane to its category (card t_a6b794b5);
+    // the spy's highlight never does
+    clampId.value = picked.category;
     persistAnchor(id);
     // the observer must not fight the smooth scroll it just started
     lockSpy(650);
@@ -1106,6 +1120,9 @@
 
   function deselect() {
     selection.value = null;
+    // the clamp releases in the SAME frame: free scroll returns before the
+    // pane's return-to-top animation even starts
+    clampId.value = null;
     persistAnchor(null);
     lockSpy(); // stays shut until the NEXT real scroll
     scrollToAnchor(null);
@@ -1134,13 +1151,117 @@
   let lastDocScrollTop = 0;
   function onBodyScroll() {
     if (!searching.value && bodyEl.value) lastDocScrollTop = bodyEl.value.scrollTop;
+    // the selected section bounds the pane (card t_a6b794b5)
+    if (clampId.value) scheduleClamp();
   }
+
+  // --- the SELECTED-SECTION scroll clamp (card t_a6b794b5) ----------------
+  //
+  // Endo, 2026-11-11: "when i select a category i should not be able to
+  // scroll further than inside the category. until i deselected again and
+  // nothing is selected." Option A: every section stays in the document
+  // (selection never filters it); the clamp only bounds WHERE it may rest.
+  //
+  // Only a REAL user selection writes `clampId`. The spy writes `selection`
+  // while the user scrolls - clamping on that would seize free scroll the
+  // moment the user scrolled at all (the trap the card names). A RESTORED
+  // anchor does not clamp either: the remembered id is written by the spy
+  // too, so reopening the pane must never trap a scroll in a section the
+  // user merely scrolled past.
+  const clampId = ref<string | null>(null);
+  let clampObserver: ResizeObserver | null = null;
+  let clampFrame = 0;
+
+  /** the section a selection clamps to - its CATEGORY section, which is
+      the box carrying the sticky heading; a block jump inside it still
+      lands clear of that heading (scrollToAnchor), so the clamp never
+      undoes a subsection jump */
+  function clampNode(id: string): HTMLElement | null {
+    const root = bodyEl.value;
+    if (!root) return null;
+    const category = parseSelection(id).category;
+    return (
+      spyNodes.get(category) ??
+      root.querySelector<HTMLElement>(`[data-section="${category}"]`)
+    );
+  }
+
+  /** applyClamp holds scrollTop inside the selected section's range. The
+      maths is the pure clampedRange (settingsNav.ts); the component only
+      measures. The range is in DOCUMENT coordinates, so it does not move
+      as the pane scrolls - only the pane's window does. */
+  function applyClamp() {
+    // a programmatic jump is intent, not the user's hand: the spy's
+    // existing lock is the ONE suppression (step 5 - no second mechanism),
+    // so the smooth scroll and a deselect's return-to-top are never fought
+    if (spyLocked) return;
+    const root = bodyEl.value;
+    const id = clampId.value;
+    if (!root || !id) return;
+    // a section a live query or `modified only` filtered out of the
+    // document has no range to hold: free scroll is the only truth left
+    const node = clampNode(id);
+    if (!node) return;
+    const [min, max] = clampedRange({
+      top: node.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop,
+      height: node.offsetHeight,
+      viewport: root.clientHeight,
+      content: root.scrollHeight,
+    });
+    const now = root.scrollTop;
+    const next = Math.min(Math.max(now, min), max);
+    // COMPARE BEFORE ASSIGNING: a write fires another scroll event, and an
+    // unguarded handler loops. Sub-pixel positions never settle exactly.
+    if (Math.abs(next - now) < 1) return;
+    root.scrollTop = next;
+  }
+
+  /** the clamp rides the frame AFTER the event: wheel and trackpad keep
+      pushing for a frame or two after the snap, and clamping synchronously
+      inside the scroll handler reads as the pane fighting the hand */
+  function scheduleClamp() {
+    if (clampFrame) return;
+    clampFrame = requestAnimationFrame(() => {
+      clampFrame = 0;
+      applyClamp();
+    });
+  }
+
+  /** observeClamp re-arms over the boxes the range is measured from. A
+      section's height changes with NO scroll at all: a parent's jump links
+      expand, `modified only` narrows the document, a scope tab swaps the
+      knob set, a font or width reflow lands, the window resizes. Measuring
+      whenever a box moves is what keeps the boundary from going stale (a
+      stale max either locks the pane out of the section's bottom or lets
+      it past - step 3). */
+  function observeClamp() {
+    if (typeof ResizeObserver === "undefined") return;
+    if (!clampObserver) clampObserver = new ResizeObserver(() => applyClamp());
+    clampObserver.disconnect();
+    const root = bodyEl.value;
+    const id = clampId.value;
+    if (!root || !id) return;
+    clampObserver.observe(root);
+    const node = clampNode(id);
+    if (node) clampObserver.observe(node);
+  }
+
+  watch(clampId, () => {
+    void nextTick(() => {
+      observeClamp();
+      applyClamp();
+    });
+  });
 
   onBeforeUnmount(() => {
     unlockSpy();
     bindIntent(null);
     spyObserver?.disconnect();
     spyObserver = null;
+    clampObserver?.disconnect();
+    clampObserver = null;
+    if (clampFrame) cancelAnimationFrame(clampFrame);
+    clampFrame = 0;
   });
 
   // Ruling 8: the VSCode modified-only switch above the content list.
@@ -1454,19 +1575,27 @@
 
   // a scope that cannot show the selection (an agent tab carries no
   // Commonly Used) clears the HIGHLIGHT only - the stored anchor stays
-  // raw for the next open.
+  // raw for the next open. The clamp goes with it: a section that is not
+  // in this pane's document cannot bound its scroll.
   watch(nav, (next) => {
     const id = selection.value;
     if (id && !resolveSelection(next, id)) {
       selection.value = null;
+      clampId.value = null;
       lockSpy();
     }
   });
 
   // the document's targets move with the query/scope: re-arm the spy and
-  // give a cleared query back the scroll position it interrupted
+  // give a cleared query back the scroll position it interrupted. The
+  // clamp's boxes moved with them, so re-observe and re-apply (card
+  // t_a6b794b5 step 3: a box change is not always a scroll).
   watch(docSections, () => {
-    void nextTick(() => syncSpy());
+    void nextTick(() => {
+      syncSpy();
+      observeClamp();
+      applyClamp();
+    });
   });
   watch(searching, (now, was) => {
     if (now === was) return;
