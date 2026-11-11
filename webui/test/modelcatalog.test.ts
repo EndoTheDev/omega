@@ -154,12 +154,6 @@ const modelField = read(
   "settings",
   "ModelField.vue",
 );
-const bandSelect = read(
-  webuiApp,
-  "components",
-  "ui",
-  "BandSelect.vue",
-);
 
 test("settings normalization: the per-subsystem slot flag survives exactly as a boolean", () => {
   const out = normalizeSettingsPayload({
@@ -202,30 +196,37 @@ test("settings normalization: the per-subsystem slot flag survives exactly as a 
   assert.equal(knobs[2].slot, undefined);
 });
 
-test("the model knob renders ModelField, not a text input or a new select", () => {
+test("the model knob renders ModelField, and the field IS the composer's picker", () => {
   assert.match(settingsTab, /v-else-if="knob\.type === 'model'"/);
   assert.match(settingsTab, /<ModelField[\s\S]*?:knob="knob"/);
   assert.doesNotMatch(settingsTab, /knob\.type === 'model'[\s\S]{0,200}<input/);
-  // the field itself rides THE shared listbox
-  assert.match(modelField, /<BandSelect[\s\S]*?:options="options"/);
-  assert.match(modelField, /import BandSelect from "..\/ui\/BandSelect.vue"/);
+  // card t_dac84a33: the settings field renders ModelSelect - the SAME
+  // grouped popover the composer rides - with the catalog as groups. The
+  // old flat BandSelect list is gone, and no native select ever appears.
+  assert.match(modelField, /<ModelSelect[\s\S]*?:groups="groups"/);
+  assert.match(
+    modelField,
+    /import ModelSelect from "\.\.\/chat\/ModelSelect\.vue"/,
+  );
+  assert.doesNotMatch(modelField, /<BandSelect/);
   assert.doesNotMatch(modelField, /<select[\s>]/);
 });
 
-test("the degrade path is decided by the NAMED entries, never the aux sentinel", () => {
+test("the degrade path is decided by the PICKABLE named entries, never the inherit row", () => {
   // the wiring pin for the helper above (no component mounter in this
-  // suite): mode feeds off the named list, while `options` keeps the
-  // prepended "default" for rendering only
+  // suite): mode feeds off the count of rows the slot actually accepts,
+  // while the inherit row is a flag the picker renders, never a model
   assert.match(
     modelField,
-    /pickerNeedsFreeText\(\s*namedOptions\.value\.length/,
-    "mode must count NAMED models - the sentinel is not a model",
+    /pickerNeedsFreeText\(\s*pickableCount\.value/,
+    "mode must count PICKABLE named models - the inherit row is not a model",
   );
-  assert.match(modelField, /withAuxDefault\(\s*namedOptions\.value/);
+  assert.match(modelField, /const pickableCount = computed/);
+  assert.match(modelField, /:inherit-row="inheritRow"/);
   assert.doesNotMatch(
     modelField,
-    /options\.value\.length > 0/,
-    "the sentinel-inflated options list must not gate the listbox",
+    /pickableCount\.value > 0/,
+    "the count reaches the degrade rule, never a hand-rolled threshold",
   );
 });
 
@@ -240,26 +241,28 @@ test("the degrade path: fetch failure or empty filtered list yields text + hint"
   assert.equal(typeof refreshModelCatalog, "function");
 });
 
-// --- the per-subsystem slots (card t_fc0b2f2d, reshaped t_1914a8c9):
-// the instance picker reads the GROUPED CATALOG ---
+// --- the per-subsystem slots (card t_fc0b2f2d, reshaped t_1914a8c9 and
+// again t_dac84a33): the picker reads the GROUPED CATALOG whole ---
 
-test("the slot mode: ModelField prepends instance:model options from the grouped catalog sections", () => {
+test("the slot mode: ModelField hands the grouped catalog to the composer picker verbatim", () => {
   // the component reads the grouped /models sections, not a prop:
-  // a section without an error and not the default one offers its
-  // catalog as "instance:model" pairs (t_1914a8c9 removed the
-  // bound-model column from the instance rows, so the OLD
-  // ProviderInstanceRow prop is gone)
+  // t_1914a8c9 removed the bound-model column from the instance rows, so
+  // the OLD ProviderInstanceRow prop is gone; t_dac84a33 then stopped
+  // flattening anything - ModelSelect renders every section itself
   assert.doesNotMatch(modelField, /instances\?: ProviderInstanceRow\[\]/,
     "the instance-row prop is gone - slots read the grouped catalog");
   assert.match(modelField, /catalog\.value\.sections \?\? \[\]/);
   assert.match(
     modelField,
-    /\.filter\(\(s\) => s\.name !== "default" && !s\.error\)/,
-    "the default section is the pane's own pickers; a failed section contributes nothing",
+    /sections\.value\.map\(\(s\) => \(\{/,
+    "every section reaches the picker as a group",
   );
-  assert.match(modelField, /value: `\$\{s\.name\}:\$\{e\.name\}`/);
-  // only the slot knobs get the instance list; the chat pickers never
-  assert.match(modelField, /props\.knob\.slot !== true\)/);
+  assert.doesNotMatch(
+    modelField,
+    /filterModelEntries/,
+    "no model is dropped from the picker - the slot rule lands as a REASON",
+  );
+  assert.match(modelField, /slotRejectReason\(filter, model, wire\)/);
   // the pane no longer hands ModelField instance rows
   assert.doesNotMatch(settingsTab, /:instances="instanceRows"/);
 });
