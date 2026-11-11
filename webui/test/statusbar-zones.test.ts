@@ -130,14 +130,33 @@ describe("chatPanelPendingCount: the open session's pending calls", () => {
 // --- 1/2/3/5/7. the bar's shape ------------------------------------------
 
 describe("the bar's zones and the closed clickable set", () => {
-  it("renders exactly two zones, left (work context) and right (metrics)", () => {
+  it("renders exactly two zones: health + work context LEFT, metrics + version RIGHT", () => {
     const bar = statusBar();
     assert.equal((bar.match(/class="zone left"/g) ?? []).length, 1);
     assert.equal((bar.match(/class="zone right"/g) ?? []).length, 1);
-    // the left zone is the workdir picker, nothing else
     const left = bar.slice(bar.indexOf('class="zone left"'), bar.indexOf('class="zone right"'));
+    // card t_5656d52f: the health segment LEADS the bar, the picker follows
+    assert.match(left, /^[^]*class="seg seg-btn health"/, "health is in the left zone");
+    assert.ok(
+      left.indexOf('class="seg seg-btn health"') < left.indexOf("<WorkspaceSelect"),
+      "health is the FIRST thing on the bar, the workdir picker comes after it",
+    );
     assert.match(left, /<WorkspaceSelect/);
-    assert.doesNotMatch(left, /<button/, "the left zone holds no other control");
+  });
+
+  it("the version segment is the RIGHTMOST segment, the message count before it", () => {
+    const bar = statusBar();
+    const right = bar.slice(bar.indexOf('class="zone right"'), bar.indexOf('class="health-pop"'));
+    const version = right.indexOf("server build and uptime");
+    const messages = right.indexOf("{{ messageCount }} messages");
+    assert.ok(version > 0, "the version segment is still in the bar");
+    assert.ok(messages > 0 && messages < version, "moved AFTER the messages segment");
+    // nothing else follows it: the version is the last segment in the zone
+    assert.doesNotMatch(
+      right.slice(version),
+      /class="seg( |")/,
+      "the version is the last segment in the right zone",
+    );
   });
 
   it("the clickable set is CLOSED: workdir, health, pending - nothing else", () => {
@@ -190,18 +209,18 @@ describe("narrow collapse (ruling 6)", () => {
   it("every right-zone metric carries hide-sm; the dot and the picker do not", () => {
     const bar = statusBar();
     const right = bar.slice(bar.indexOf('class="zone right"'));
-    // the version/build, messages, tokens, ctx, rates and the pending count all hide
+    // the messages/streaming, tokens, ctx, rates, pending and version all hide
     for (const cls of [
       'class="seg seg-btn pending hide-sm"',
       'class="seg hide-sm"',
     ]) {
       assert.ok(right.includes(cls), `missing narrow-hide segment: ${cls}`);
     }
-    // the health button itself does NOT hide - only its word does
-    assert.match(right, /class="seg seg-btn health"\s+type="button"[\s\S]{0,400}<span class="hide-sm">/, "only the label hides, the dot stays");
-    // the workdir picker sits outside .right, so no rule can hide it
+    // the health button itself does NOT hide - only its word does (card
+    // t_5656d52f moved it to the left zone; the narrow law is unchanged)
     const left = bar.slice(bar.indexOf('class="zone left"'), bar.indexOf('class="zone right"'));
-    assert.doesNotMatch(left, /hide-sm/, "the workdir segment never hides");
+    assert.match(left, /class="seg seg-btn health"\s+type="button"[\s\S]{0,400}<span class="hide-sm">/, "only the label hides, the dot stays");
+    assert.equal((left.match(/hide-sm/g) ?? []).length, 1, "the dot is the ONLY thing left on a narrow bar besides the picker");
     // and the existing utility does the hiding (no second mechanism)
     assert.match(css(), /\.statusbar \.hide-sm \{ display: none; \}/, "the hide-sm utility still backs the collapse");
   });

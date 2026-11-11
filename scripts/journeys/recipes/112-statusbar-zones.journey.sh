@@ -6,8 +6,9 @@
 # session label. The CLICKABLE SET IS CLOSED: workdir, health, pending.
 # Narrow screens collapse to the health dot + the workdir.
 #
-#   zones    - two children: .zone.left hosts the picker (.ws-btn), .zone.right
-#              hosts the metrics; the composer renders NO .ws-btn.
+#   zones    - two children: .zone.left leads with the HEALTH segment, then
+#              the picker (.ws-btn); .zone.right hosts the metrics with the
+#              version LAST (card t_5656d52f); the composer renders NO .ws-btn.
 #   closed   - the bar's only <button>s are health + (when live) pending;
 #              every metric segment stays a span.
 #   picker   - clicking the bar's chip opens the SAME .ws-pop directory
@@ -30,7 +31,7 @@ step "ok: the bar's left zone hosts the workdir picker"
 
 # --- 1. two zones, and the composer chip is gone -----------------------------
 probe_zones() {
-  jsq '(()=>{const bar=document.querySelector(".statusbar");if(!bar)return 0;const zones=[...bar.querySelectorAll(":scope > .zone")];if(zones.length!==2)return 0;const left=bar.querySelector(".zone.left"),right=bar.querySelector(".zone.right");if(!left||!right)return 0;if(!left.querySelector(".ws-btn"))return 0;if(left.children.length!==1)return 0;if(!right.querySelector(".seg.seg-btn.health"))return 0;if(!right.querySelector(".seg[title^=\"server build\"]"))return 0;if(document.querySelector(".composer .ws-btn"))return 0;if(document.querySelector(".composer .ws-pop"))return 0;return 1})()'
+  jsq '(()=>{const bar=document.querySelector(".statusbar");if(!bar)return 0;const zones=[...bar.querySelectorAll(":scope > .zone")];if(zones.length!==2)return 0;const left=bar.querySelector(".zone.left"),right=bar.querySelector(".zone.right");if(!left||!right)return 0;if(!left.querySelector(".ws-btn"))return 0;if(left.children.length!==2)return 0;if(!left.children[0].classList.contains("health"))return 0;if(right.querySelector(".seg.seg-btn.health"))return 0;if(!right.querySelector(".seg[title^=\"server build\"]"))return 0;if(document.querySelector(".composer .ws-btn"))return 0;if(document.querySelector(".composer .ws-pop"))return 0;return 1})()'
 }
 v=$(probe_zones)
 [ "$v" = "1" ] || die "the two-zone shape is off (left=workdir, right=metrics+build, composer chip gone): $(jsq '(()=>{const bar=document.querySelector(".statusbar");const z=[...bar.querySelectorAll(":scope > .zone")].map(x=>x.className);return "zones="+z.join("|")+" composerChip="+!!document.querySelector(".composer .ws-btn")})()')"
@@ -44,6 +45,11 @@ v=$(probe_buttons)
 [ "$v" = "1" ] || die "the clickable set is not closed: $(jsq '(()=>{return [...document.querySelector(".statusbar").querySelectorAll("button")].map(b=>b.className).join("|")})()')"
 step "ok: only health (and a live pending) are buttons - every metric stays a read"
 
+# card t_5656d52f: the version segment is the LAST thing in the right zone
+lastseg=$(jsq '(()=>{const r=document.querySelector(".statusbar .zone.right");if(!r)return 0;const segs=[...r.querySelectorAll(".seg")];const last=segs[segs.length-1];if(!last)return 0;const t=last.getAttribute("title")||"";return t.indexOf("server build")>=0?1:0})()' 2>&1 | tr -d '"')
+assert_eq "$lastseg" "1" "the version segment is the RIGHTMOST segment on the bar"
+step "ok: version sits at the far right, after the message count"
+
 # --- 3. the picker survived the move ---------------------------------------
 jsq 'document.querySelector(".statusbar .ws-btn").click()' >/dev/null 2>&1
 wait_js '!!document.querySelector(".statusbar .ws-pop .ws-dirs")' 10 \
@@ -55,8 +61,14 @@ jsq 'document.querySelector(".ws-pop .ws-close")?.click()' >/dev/null 2>&1
 jsq 'document.querySelector(".statusbar .seg.seg-btn.health").click()' >/dev/null 2>&1
 wait_js '!!document.querySelector(".health-pop")' 10 \
   || die "the health dot opened no detail popover"
+# card t_5656d52f: the trigger leads the bar, so the popover anchors LEFT -
+# it must render FULLY inside the viewport from that new position
+if ! wait_js '(()=>{const p=document.querySelector(".health-pop");if(!p)return false;const r=p.getBoundingClientRect();const vw=document.documentElement.clientWidth;const vh=document.documentElement.clientHeight;return r.left>=0&&r.top>=0&&r.right<=vw&&r.bottom<=vh})()' 10; then
+  die "the health popover does not render fully inside the pane from the left edge ($(jsq '(()=>{const p=document.querySelector(".health-pop");if(!p)return "missing";const r=p.getBoundingClientRect();return "left="+Math.round(r.left)+" right="+Math.round(r.right)+" top="+Math.round(r.top)+" bottom="+Math.round(r.bottom)+" vw="+document.documentElement.clientWidth+" vh="+document.documentElement.clientHeight})()' 2>&1 | tr -d '\"'))"
+fi
+step "ok: the health popover renders fully inside the pane (left-anchored)"
 probe_health() {
-  jsq '(()=>{const p=document.querySelector(".health-pop");if(!p)return 0;const keys=[...p.querySelectorAll(".hp-key")].map(k=>k.textContent.trim());for(const k of ["server","provider","database","uptime","last error"]){if(!keys.includes(k))return 0}const val=k=>{const row=[...p.querySelectorAll(".hp-row")].find(r=>r.querySelector(".hp-key").textContent.trim()===k);return row?row.querySelector(".hp-val").textContent.trim():""};const up=val("uptime");if(!/^[0-9]+(s|m|h)/.test(up))return 0;for(const k of ["provider","database","last error"]){if(val(k)!=="not reported")return 0}const note=(p.querySelector(".hp-note")||{}).textContent||"";if(!note.includes("/health reports"))return 0;return 1})()'
+  jsq '(()=>{const p=document.querySelector(".health-pop");if(!p)return 0;const keys=[...p.querySelectorAll(".hp-key")].map(k=>k.textContent.trim());for(const k of ["server","provider","database","uptime","last error"]){if(!keys.includes(k))return 0}const val=k=>{const row=[...p.querySelectorAll(".hp-row")].find(r=>r.querySelector(".hp-key").textContent.trim()===k);return row?row.querySelector(".hp-val").textContent.trim():""};const up=val("uptime");if(!/^[0-9]+(s|m|h)/.test(up))return 0;for(const k of ["provider","database","last error"]){if(val(k)!=="not reported")return 0}const note=(p.querySelector(".hp-note")||{}).textContent||"";if(!note.includes("/health"))return 0;return 1})()'
 }
 v=$(probe_health)
 [ "$v" = "1" ] || die "the health popover's facts are wrong: $(jsq '(()=>{return [...document.querySelectorAll(".health-pop .hp-row")].map(r=>r.querySelector(".hp-key").textContent+"="+r.querySelector(".hp-val").textContent.trim()).join(" | ")})()')"
