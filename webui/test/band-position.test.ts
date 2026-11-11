@@ -36,7 +36,7 @@ function ruleBlock(css: string, selector: string): string {
   return css.slice(open + 1, close);
 }
 
-describe("settings: the band mounts flush (card t_ffab9823)", () => {
+describe("settings: no band left to mount - the root still carries no padding (t_ffab9823, band gone per t_1cfb080a)", () => {
   it("the .settings root carries no padding and no flex gap", () => {
     const block = ruleBlock(maincss, ".settings {");
     assert.doesNotMatch(block, /padding:\s*[1-9]/, "no root padding");
@@ -97,9 +97,8 @@ describe("insights: the band's left edge matches Files (card t_ffab9823)", () =>
 });
 
 describe("the universal contract: band FIRST in every root", () => {
-  it("the band is the root's first child in all three components", () => {
+  it("the band is the root's first child", () => {
     for (const [name, text, rootAt, bandAt] of [
-      ["settings", src("app/components/settings/SettingsTab.vue"), 'class="settings aside pane inspector-panel"', /<TabBand[^>]*title="Settings"/],
       ["tools", tools, 'class="tools-list"', /<TabBand[^>]*title="Tools">/],
       ["insights", insights, 'class="pane insights"', /<TabBand[^>]*title="Insights"/],
     ] as const) {
