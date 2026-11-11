@@ -1,9 +1,10 @@
 <template>
   <!-- The status bar, TWO zones (card t_8fd38f88, the settings-tier2
        round-1/2 ruling - VSCode's actual arrangement):
-         LEFT  = work context: the workdir selector, moved OUT of the
-                 composer (the composer chip died with it).
-         RIGHT = live metrics + the build/uptime segment.
+         LEFT  = work context: the health segment and the workdir selector
+                 (moved OUT of the composer; the composer chip died with
+                 it). The health dot leads the whole bar (card t_5656d52f).
+         RIGHT = live metrics + the build/uptime segment, version LAST.
        The CLICKABLE SET IS CLOSED: workdir, health, pending. Every other
        segment is display-only. No model segment (the composer keeps the
        model + reasoning chips), no session label (the open tab names the
@@ -11,6 +12,24 @@
        every other segment carries hide-sm. -->
   <footer class="statusbar">
     <div class="zone left">
+      <!-- health leads the bar (card t_5656d52f): the dot (and its word on
+           wide) stays visible on narrow (ruling 6); the click opens the
+           detail popover (seam ruling), which anchors LEFT because its
+           trigger does. -->
+      <button
+        class="seg seg-btn health"
+        type="button"
+        title="server health - click for detail"
+        aria-label="server health"
+        aria-haspopup="dialog"
+        :aria-expanded="healthOpen"
+        @click="toggleHealth">
+        <span
+          class="dot"
+          :class="healthy ? 'ok' : 'down'"
+          aria-hidden="true" />
+        <span class="hide-sm">{{ healthy ? "online" : "offline" }}</span>
+      </button>
       <WorkspaceSelect
         :workspace="workdir"
         variant="bar"
@@ -61,28 +80,7 @@
         title="generation speed, last run">
         {{ tokensPerSecond }} tok/s
       </span>
-      <!-- health: the dot (and its word on wide) stays visible on narrow
-           (ruling 6); the click opens the detail popover (seam ruling). -->
-      <button
-        class="seg seg-btn health"
-        type="button"
-        title="server health - click for detail"
-        aria-label="server health"
-        aria-haspopup="dialog"
-        :aria-expanded="healthOpen"
-        @click="toggleHealth">
-        <span
-          class="dot"
-          :class="healthy ? 'ok' : 'down'"
-          aria-hidden="true" />
-        <span class="hide-sm">{{ healthy ? "online" : "offline" }}</span>
-      </button>
-      <span
-        v-if="version"
-        class="seg hide-sm"
-        :title="`server build and uptime - ${version}`">
-        {{ shortVersion(version) }} · up {{ formatUp }}
-      </span>
+      <!-- the open session's message count, or the live tail -->
       <span class="seg hide-sm">
         <span
           v-if="streaming"
@@ -91,6 +89,14 @@
         >
         <span v-else>{{ messageCount }} messages</span>
       </span>
+      <!-- version LAST (card t_5656d52f): the rightmost thing on the bar -
+           a position change only, shortVersion + uptime text untouched -->
+      <span
+        v-if="version"
+        class="seg hide-sm"
+        :title="`server build and uptime - ${version}`">
+        {{ shortVersion(version) }} · up {{ formatUp }}
+      </span>
 
       <!-- the health detail popover: the four ruled facts, each one
            rendered from its wire source and "not reported" when the body
@@ -98,7 +104,10 @@
            landed yet, no store mounted). Uptime + build + server
            reachability ride the /health status fields (pushed every 5s);
            provider, database and last error ride the optional facts the
-           Go side reports (agent/api.HealthState, card t_5e2f3095). -->
+           Go side reports (agent/api.HealthState, card t_5e2f3095).
+           Card t_5656d52f: its trigger leads the bar now, so the card
+           anchors to the bar's LEFT edge (main.css .health-pop) - a
+           right-anchored popover would open away from its own dot. -->
       <div
         v-if="healthOpen"
         class="health-pop"
