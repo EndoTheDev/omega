@@ -27,7 +27,10 @@ func TestParseModelSlot(t *testing.T) {
 		// instance lookup stays bare (below)
 		{"llama3.2:70b", "llama3.2", "70b"}, // dot ids split too; lookup decides
 		{"gemma3", "", "gemma3"},            // no colon = a bare model name
-		{":gemma3:27b", "", ":gemma3:27b"},  // empty prefix is not a route
+		{"default", "", "default"},          // grammar only: the word is a bare
+		// model here; the RESERVED meaning (the receiver's own model) is
+		// ResolveModelSlot's, see the default-word test below.
+		{":gemma3:27b", "", ":gemma3:27b"}, // empty prefix is not a route
 	}
 	for _, c := range cases {
 		inst, model := ParseModelSlot(c.slot)
@@ -64,7 +67,9 @@ func TestResolveModelSlotKnownInstances(t *testing.T) {
 		{"big:gemma3:27b", "gemma3:27b", "big"},      // instance + its model
 		{"big:", "", "big"},                          // the instance's own default model
 		{"default:gemma3:27b", "gemma3:27b", "base"}, // the reserved default
-		{"unknown:m", "unknown:m", "base"},           // unconfigured prefix = bare
+		{"default", "", "base"},                      // the reserved word alone = the
+		// receiver's own model (card t_b403ad88)
+		{"unknown:m", "unknown:m", "base"}, // unconfigured prefix = bare
 	}
 	for _, c := range cases {
 		prov, model := ResolveModelSlot(base, c.slot)
@@ -87,6 +92,40 @@ func TestResolveModelSlotNoInstances(t *testing.T) {
 	}
 	if got := drainFake(t, out); got != "base" {
 		t.Errorf("routed wrong provider: %q", got)
+	}
+}
+
+// The reserved default word (card t_b403ad88): the settings aux pickers
+// offer "default (inherit from the main model)", so a bare "default" on a
+// slot knob must answer the receiver's own model - the same answer as an
+// empty slot - never a model literally named "default". Both provider
+// shapes are pinned: with the named-instance upgrade and without it (the
+// compactor/summarizer providers need not carry instances).
+func TestResolveModelSlotDefaultWordFollowsTheReceiver(t *testing.T) {
+	cases := []struct {
+		name     string
+		withInst bool
+	}{
+		{"plain provider", false},
+		{"provider with instances", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			base := NewFakeProvider("main", streamScript("base")...)
+			if c.withInst {
+				base.SetInstances(map[string]Provider{"big": NewFakeProvider("big-model", streamScript("big")...)})
+			}
+			out, model := ResolveModelSlot(base, DefaultModelSlot)
+			if model != "" {
+				t.Fatalf("ResolveModelSlot(%q) model = %q, want the receiver's own model", DefaultModelSlot, model)
+			}
+			if out.ModelName() != "main" {
+				t.Fatalf("resolved provider serves %q, want the receiver (main)", out.ModelName())
+			}
+			if got := drainFake(t, out); got != "base" {
+				t.Fatalf("routed wrong provider: %q", got)
+			}
+		})
 	}
 }
 
