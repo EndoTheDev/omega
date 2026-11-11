@@ -184,7 +184,9 @@ describe("nav cluster wiring", () => {
     assert.match(css, /\.menubar-wordmark\s*\{[^}]*var\(--mono\)/);
     assert.match(menubar, /<span class="menubar-wordmark">Omega<\/span>/);
     // no version anywhere in the menubar - the status bar owns it
-    assert.match(menubar, /<span class="brand">Ωmega<\/span>/);
+    // card t_c5d4f2ad: the far-left brand is the lone omega glyph (the
+    // center wordmark below is a SEPARATE span and keeps its 'Omega')
+    assert.match(menubar, /<span class="brand">Ω<\/span>/);
     assert.doesNotMatch(menubar, /Omega v?\d+\.\d+/);
     assert.doesNotMatch(menubar, /\/health/);
     // the ruling: disabled attribute dimming, never a click-swallow class
