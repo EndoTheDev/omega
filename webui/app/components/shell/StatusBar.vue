@@ -4,7 +4,9 @@
          LEFT  = work context: the health segment and the workdir selector
                  (moved OUT of the composer; the composer chip died with
                  it). The health dot leads the whole bar (card t_5656d52f).
-         RIGHT = live metrics + the build/uptime segment, version LAST.
+         RIGHT = live metrics + the build segment, version LAST (the
+                 uptime the bar used to print lives in the health popover,
+                 card t_be30543a).
        The CLICKABLE SET IS CLOSED: workdir, health, pending. Every other
        segment is display-only. No model segment (the composer keeps the
        model + reasoning chips), no session label (the open tab names the
@@ -90,12 +92,15 @@
         <span v-else>{{ messageCount }} messages</span>
       </span>
       <!-- version LAST (card t_5656d52f): the rightmost thing on the bar -
-           a position change only, shortVersion + uptime text untouched -->
+           a position change only, the short version text untouched. It
+           carries the build ALONE since card t_be30543a: the uptime it
+           used to repeat ("· up 8m 20s") now lives in the health popover
+           below, which is where a live number belongs. -->
       <span
         v-if="version"
         class="seg hide-sm"
-        :title="`server build and uptime - ${version}`">
-        {{ shortVersion(version) }} · up {{ formatUp }}
+        :title="`server build - ${version}`">
+        {{ shortVersion(version) }}
       </span>
 
       <!-- the health detail popover: the four ruled facts, each one

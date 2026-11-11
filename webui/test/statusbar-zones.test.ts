@@ -147,7 +147,7 @@ describe("the bar's zones and the closed clickable set", () => {
   it("the version segment is the RIGHTMOST segment, the message count before it", () => {
     const bar = statusBar();
     const right = bar.slice(bar.indexOf('class="zone right"'), bar.indexOf('class="health-pop"'));
-    const version = right.indexOf("server build and uptime");
+    const version = right.indexOf("server build");
     const messages = right.indexOf("{{ messageCount }} messages");
     assert.ok(version > 0, "the version segment is still in the bar");
     assert.ok(messages > 0 && messages < version, "moved AFTER the messages segment");
@@ -157,6 +157,13 @@ describe("the bar's zones and the closed clickable set", () => {
       /class="seg( |")/,
       "the version is the last segment in the right zone",
     );
+    // card t_be30543a: the segment reads the short version ALONE - the
+    // uptime the bar used to repeat ("· up 8m 20s") moved into the health
+    // popover, so formatUp must not render in this segment any more.
+    const seg = right.slice(version, right.indexOf("</span>", version));
+    assert.match(seg, /\{\{ shortVersion\(version\) \}\}/, "the segment renders the short version");
+    assert.doesNotMatch(seg, /formatUp/, "the bar segment no longer renders the uptime");
+    assert.doesNotMatch(seg, /· up/, 'no "· up <duration>" tail on the bar');
   });
 
   it("the clickable set is CLOSED: workdir, health, pending - nothing else", () => {
@@ -245,7 +252,16 @@ describe("the health popover", () => {
     }
     // the sourced facts read the real /health body
     assert.match(bar, /\{\{ healthy \? "reachable" : "not reachable" \}\}/);
-    assert.match(bar, /\{\{ formatUp \}\}/);
+    // card t_be30543a: the uptime row is the ONE place formatUp renders. A
+    // bare "formatUp appears somewhere" match would pass for the wrong
+    // reason now (the bar dropped its copy), so pin the row AND the count:
+    // exactly one template read, inside the popover.
+    assert.match(
+      bar,
+      /<span class="hp-key">uptime<\/span>\s*<span class="hp-val">\{\{ formatUp \}\}<\/span>/,
+      "the uptime row renders the computed",
+    );
+    assert.equal((bar.match(/\{\{ formatUp \}\}/g) ?? []).length, 1, "formatUp renders exactly once - the popover row, never the bar");
     // the three enriched facts (card t_5e2f3095): each renders its wire
     // verdict when the body carries one...
     assert.match(bar, /\{\{ providerReachable \? "reachable" : "not reachable" \}\}/, "provider row reads its verdict");
