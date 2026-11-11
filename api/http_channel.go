@@ -57,7 +57,12 @@ type HTTPChannel struct {
 	// SetAgentPromptConfig covers the live bind.
 	agentPrompt   string
 	agentMaxTurns int
-	publicHosts   []string // server.public_hosts: declared public identities
+	// agentRuns is the host's per-agent run factory (card t_a7fab745):
+	// a session owned by an agent home runs on that home's agent. Same
+	// two-sided discipline - the field covers a bind that wires later,
+	// the write-through covers a live server.
+	agentRuns agentapi.AgentRunFactory
+	publicHosts []string // server.public_hosts: declared public identities
 	srv              *Server
 	// hub is the process-wide run registry (t_c6f13a82): one per
 	// plugin, shared by every bind's server. A second bind must not get
@@ -90,6 +95,17 @@ func (c *HTTPChannel) Start(ctx context.Context, deps core.ChannelDeps) error {
 		return err
 	}
 	return c.srv.Serve(ctx, c.addr)
+}
+
+// SetAgentRunFactory wires the host's per-agent run factory (card
+// t_a7fab745) onto this bind's server. Same two-sided discipline as
+// SetAgentPromptConfig: the field covers a bind that wires later, the
+// write-through covers a live server.
+func (c *HTTPChannel) SetAgentRunFactory(f agentapi.AgentRunFactory) {
+	c.agentRuns = f
+	if c.srv != nil {
+		c.srv.SetAgentRunFactory(f)
+	}
 }
 
 // SetAgentPromptConfig is the hot-apply hook for the serving agent's
@@ -197,6 +213,10 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	// AgentOptions - the boot cfg never reached the serving agent
 	// through NewFromContext, so this pair is every surface they ride.
 	c.srv.SetAgentPrompt(c.agentPrompt, c.agentMaxTurns)
+	// The per-agent run factory (card t_a7fab745): the host wires it
+	// once at boot; every bind's server serves an agent-owned session on
+	// that home's agent.
+	c.srv.SetAgentRunFactory(c.agentRuns)
 	c.srv.SetPublicHosts(c.publicHosts)
 	c.srv.version = deps.Version
 	// The capsule pin goes live LAST, after every server field above

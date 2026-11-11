@@ -664,7 +664,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 // via the in-process plugin system. The store and plugin context are
 // returned so the caller can close the store and start channels. The
 // mount registry rides along for the E2 module-toggle surface.
-func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.LoggerProvider, *agent.Context, *agent.Registry, func([]string), func(string), func(string), func(string), func(string, int), error) {
+func newAgent(cfg Config, configPath string, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.LoggerProvider, *agent.Context, *agent.Registry, func([]string), func(string), func(string), func(string), func(string, int), error) {
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("build plugins: %w", err)
@@ -716,6 +716,9 @@ func newAgent(cfg Config, appendPrompts []string, trust trustFlags) (*agent.Agen
 		if hp, ok := p.(*api.Plugin); ok {
 			setChannelWorkspace = hp.SetDefaultWorkspace
 			setAgentPromptHook = hp.SetAgentPromptConfig
+			// Per-agent run config (card t_a7fab745): the chat floor
+			// serves an agent-owned session on that home's agent.
+			hp.SetAgentRunFactory(agentRunFactory(configPath, appendPrompts, trust))
 		}
 		if tp, ok := p.(*terminal.Plugin); ok {
 			setTerminalWorkspace = tp.SetDefaultWorkspace
@@ -871,7 +874,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		return err
 	}
 	llm.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, logger, pctx, reg, setAgents, setFilesWorkspace, setChannelWorkspace, setTerminalWorkspace, setAgentConfig, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, pctx, reg, setAgents, setFilesWorkspace, setChannelWorkspace, setTerminalWorkspace, setAgentConfig, err := newAgent(cfg, configPath, appendPrompts, trust)
 	if err != nil {
 		return err
 	}
@@ -1092,7 +1095,7 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 		applyDBPathEnvOverride(&cfg)
 	}
 	llm.SetHTTPTimeout(cfg.HTTPTimeout)
-	ag, store, logger, _, _, _, _, _, _, _, err := newAgent(cfg, appendPrompts, trust)
+	ag, store, logger, _, _, _, _, _, _, _, err := newAgent(cfg, configPath, appendPrompts, trust)
 	if err != nil {
 		return err
 	}

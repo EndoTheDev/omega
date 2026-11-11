@@ -83,6 +83,10 @@ type Server struct {
 	// otherwise run forever and hold the session's run slot until
 	// restart. Default set here; the mount overrides it from config.
 	runTimeout time.Duration
+	// agentRuns is the host's per-agent run factory (card t_a7fab745):
+	// a session owned by an agent home runs on THAT home's agent. Nil =
+	// the daemon's agent serves every session (tests, embedding).
+	agentRuns AgentRunFactory
 
 	// The yield harness (async agent loop phase 1, t_f3f953d0): the
 	// wake hub - the per-home FIFO of settled yield results and the
@@ -913,6 +917,12 @@ type chatRequest struct {
 	// (400): both replay the persisted tree, which ephemeral sessions
 	// never have. The memory tool never runs in an ephemeral session.
 	Ephemeral bool `json:"ephemeral,omitempty"`
+	// runAgent is the agent that serves THIS run when the session
+	// belongs to an agent home (card t_a7fab745, prepared in
+	// prepareRun): that home's provider, model, system prompt, skills
+	// and max_turns instead of the daemon's. Nil = the daemon's agent.
+	// Unexported: never part of the request wire.
+	runAgent *agent.Agent
 }
 
 // assistantRecord accumulates one response segment of an assistant turn
@@ -1053,6 +1063,19 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 		if v, err := s.store.GetSession(ctx, req.SessionID); err == nil {
 			sess, sessionKnown = v, true
 		}
+	}
+
+	// Per-agent run config (card t_a7fab745): a session owned by an agent
+	// home runs on THAT home's agent - provider, model, system prompt,
+	// skills and max_turns all resolve from its config layer. The host
+	// builds (and caches) it; a failure here is a loud 500, never a
+	// silent run as the wrong agent.
+	if ag, aerr := s.runAgentFor(ctx, req.SessionID); aerr != nil {
+		s.runs.finish(run)
+		s.publishRunState(req.SessionID, false)
+		return nil, &runError{http.StatusInternalServerError, aerr.Error()}
+	} else {
+		req.runAgent = ag
 	}
 
 	// Workspace scope: a session rooted in a folder roots THIS run's
@@ -1647,7 +1670,7 @@ func (s *Server) resolveSlotModel(req *chatRequest, wireProvider string) bool {
 		return false
 	}
 	if inst != "default" {
-		if prov := s.agent.Provider(); prov != nil {
+		if prov := s.baseProvider(req); prov != nil {
 			if ir, ok := prov.(agent.ProviderInstances); ok {
 				if _, found := ir.Instance(inst); found {
 					req.Provider = inst
@@ -1668,7 +1691,10 @@ func (s *Server) resolveSlotModel(req *chatRequest, wireProvider string) bool {
 }
 
 func (s *Server) pinProvider(req *chatRequest) (agent.Provider, *runError) {
-	prov := s.agent.Provider()
+	prov := s.baseProvider(req)
+	if prov == nil {
+		return nil, &runError{http.StatusInternalServerError, "no provider configured"}
+	}
 	if req.Provider != "" {
 		// Instance resolution (card t_7dcd4280): the run serves
 		// through the NAMED provider instance. Unknown name = the
@@ -1742,7 +1768,8 @@ func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, f
 	var rec assistantRecord
 	var usage streamUsage
 	meter := newRunMeter()
-	for event := range s.agent.RunWithProvider(ctx, prov, messages, tools) {
+	runner := s.runAgent(&req)
+	for event := range runner.RunWithProvider(ctx, prov, messages, tools) {
 		s.accumulateAssistant(&recs, &rec, event, req)
 		meter.tick(event)
 		// Usage arrives on each stream_end; sum every turn of the run.

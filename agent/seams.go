@@ -208,6 +208,17 @@ type AgentSessionStore interface {
 	ListAgentSessions(ctx context.Context, agentName string) ([]core.Session, error)
 }
 
+// SessionOwnerStore is the optional home-routing surface (card
+// t_a7fab745, Endo's ruling A 2026-11-10): which agent home owns a
+// session id. The chat floor asks it before a run so an agent-owned
+// session runs on that home's provider/model/system prompt instead of
+// the daemon's. Empty = the store's own file owns the id. A store
+// without the upgrade answers nothing and every session keeps today's
+// single-home behavior.
+type SessionOwnerStore interface {
+	SessionOwner(sessionID string) string
+}
+
 // SessionContextStore is the optional session-context surface (card
 // t_9de5b009): the per-session pinned model and working folder. The
 // store's default surface stays untouched so every fake keeps

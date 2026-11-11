@@ -69,6 +69,16 @@ type Store struct {
 	// mu guards it; reads snapshot under RLock.
 	hygMu sync.RWMutex
 	hyg   HygieneConfig
+	// home is the omega home this store belongs to (SetHome, called by
+	// the plugin at mount); agentName is the home name when this store
+	// IS an agent's own file. The routing trio (router.go, card
+	// t_a7fab745) resolves which file owns a session id: agent stores
+	// open lazily under routes/agents as the chat floor asks for them.
+	home      string
+	agentName string
+	routeMu   sync.Mutex
+	routes    map[string]*Store
+	agents    map[string]*Store
 }
 
 // SetHygieneConfig swaps the hygiene pass's knobs live (card
@@ -167,9 +177,15 @@ func openStore(dsn string) (*Store, error) {
 	return s, nil
 }
 
-// Close closes the underlying database.
+// Close closes the underlying database and every agent home store this
+// one opened for routing - a handle left open keeps the agent's data
+// file locked on windows.
 func (s *Store) Close() error {
-	return s.db.Close()
+	homesErr := s.closeHomes()
+	if err := s.db.Close(); err != nil {
+		return err
+	}
+	return homesErr
 }
 
 // DBPath reports the dsn this store opened with - the session database
@@ -465,6 +481,9 @@ const sessionColumns = "id, parent_id, delegate_parent, label, created_at, updat
 // session's row, or clears it when stats is nil. It is a telemetry
 // write, not activity - updated_at is untouched.
 func (s *Store) SetSessionLastRun(ctx context.Context, sessionID string, stats *core.LastRunStats) error {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.SetSessionLastRun(ctx, sessionID, stats)
+	}
 	encoded := ""
 	if stats != nil {
 		b, err := json.Marshal(stats)
@@ -482,6 +501,9 @@ func (s *Store) SetSessionLastRun(ctx context.Context, sessionID string, stats *
 // seam, card t_9de5b009). Empty clears the pin. A picker concern, not
 // activity - updated_at is untouched.
 func (s *Store) SetSessionModel(ctx context.Context, sessionID, model string) error {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.SetSessionModel(ctx, sessionID, model)
+	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET model = ? WHERE id = ?`, model, sessionID)
 	return err
@@ -492,6 +514,9 @@ func (s *Store) SetSessionModel(ctx context.Context, sessionID, model string) er
 // the default provider: section serves the session again. A picker
 // concern, not activity - updated_at is untouched.
 func (s *Store) SetSessionProvider(ctx context.Context, sessionID, provider string) error {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.SetSessionProvider(ctx, sessionID, provider)
+	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET provider = ? WHERE id = ?`, provider, sessionID)
 	return err
@@ -502,6 +527,9 @@ func (s *Store) SetSessionProvider(ctx context.Context, sessionID, provider stri
 // picker concern, not activity - updated_at is untouched. Directory
 // validation lives at the HTTP surface; the store knows only rows.
 func (s *Store) SetSessionWorkspace(ctx context.Context, sessionID, workspace string) error {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.SetSessionWorkspace(ctx, sessionID, workspace)
+	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET workspace = ? WHERE id = ?`, workspace, sessionID)
 	return err
@@ -509,6 +537,9 @@ func (s *Store) SetSessionWorkspace(ctx context.Context, sessionID, workspace st
 
 // GetSession returns the session with the given id, or ErrNotFound.
 func (s *Store) GetSession(ctx context.Context, id string) (core.Session, error) {
+	if o := s.owner(ctx, id); o != nil {
+		return o.GetSession(ctx, id)
+	}
 	sess, err := scanSession(s.db.QueryRowContext(ctx,
 		`SELECT `+sessionColumns+` FROM sessions WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -563,11 +594,17 @@ func (s *Store) ListSessions(ctx context.Context) ([]core.Session, error) {
 // via the ON DELETE CASCADE foreign keys. It is a no-op (nil) when the
 // session does not exist.
 func (s *Store) DeleteSession(ctx context.Context, id string) error {
+	if o := s.owner(ctx, id); o != nil {
+		return o.DeleteSession(ctx, id)
+	}
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id)
 	return err
 }
 
 func (s *Store) UpdateSession(ctx context.Context, id, label string) error {
+	if o := s.owner(ctx, id); o != nil {
+		return o.UpdateSession(ctx, id, label)
+	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET label = ?, updated_at = ? WHERE id = ?`,
 		label, core.NowISO(), id)
@@ -609,6 +646,9 @@ func (s *Store) GetSessionTree(ctx context.Context) ([]*core.SessionNode, error)
 // ancestors up to the root, in root-to-leaf order. A branch therefore
 // inherits its parent's history as a prefix.
 func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]core.Message, error) {
+	if o := s.owner(ctx, id); o != nil {
+		return o.GetAncestorMessages(ctx, id)
+	}
 	// ponytail: walk the parent chain one query per hop. Fine for a
 	// session store; a recursive CTE would collapse it to one query if
 	// deep trees ever matter.
@@ -648,6 +688,9 @@ func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]core.Mess
 // (model_change/thinking_level_change/variant_select) persist
 // pointerless; they live outside the tree.
 func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg core.Message) error {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.AppendMessage(ctx, sessionID, msg)
+	}
 	role, payload, err := core.EncodeMessage(msg)
 	if err != nil {
 		return err
@@ -677,6 +720,9 @@ func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg core.Me
 
 // GetMessages returns a session's messages in append order.
 func (s *Store) GetMessages(ctx context.Context, sessionID string) ([]core.Message, error) {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.GetMessages(ctx, sessionID)
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT role, payload FROM messages WHERE session_id = ? ORDER BY id`, sessionID)
 	if err != nil {
@@ -702,11 +748,17 @@ func (s *Store) GetMessages(ctx context.Context, sessionID string) ([]core.Messa
 // each paired with its row id (the tree identity, core.MsgID renders
 // it for the wire and pointers) and store-level created_at.
 func (s *Store) GetMessagesWithTimes(ctx context.Context, sessionID string) ([]core.StoredMessage, error) {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.GetMessagesWithTimes(ctx, sessionID)
+	}
 	return s.loadRows(ctx, sessionID)
 }
 
 // CountMessages returns the number of messages in a session.
 func (s *Store) CountMessages(ctx context.Context, sessionID string) (int, error) {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.CountMessages(ctx, sessionID)
+	}
 	var n int
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM messages WHERE session_id = ?`, sessionID).Scan(&n)
@@ -748,6 +800,9 @@ func (s *Store) SessionCounts(ctx context.Context) (map[string]core.SessionCount
 // SetSessionPinned sets the pinned flag on a session row. It is a
 // user-list concern: updated_at (the time bucketing key) is untouched.
 func (s *Store) SetSessionPinned(ctx context.Context, sessionID string, pinned bool) error {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.SetSessionPinned(ctx, sessionID, pinned)
+	}
 	n := boolToInt(pinned)
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET pinned = ? WHERE id = ?`, n, sessionID)
@@ -758,6 +813,9 @@ func (s *Store) SetSessionPinned(ctx context.Context, sessionID string, pinned b
 // pinning, archiving is a user-list concern: updated_at (the time
 // bucketing key) is untouched.
 func (s *Store) SetSessionArchived(ctx context.Context, sessionID string, archived bool) error {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.SetSessionArchived(ctx, sessionID, archived)
+	}
 	n := boolToInt(archived)
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET archived = ? WHERE id = ?`, n, sessionID)
@@ -768,6 +826,9 @@ func (s *Store) SetSessionArchived(ctx context.Context, sessionID string, archiv
 // (updated_at after last_read_at) clears. Reading is not activity:
 // updated_at is untouched.
 func (s *Store) SetSessionRead(ctx context.Context, sessionID string) error {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.SetSessionRead(ctx, sessionID)
+	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET last_read_at = ? WHERE id = ?`, core.NowISO(), sessionID)
 	return err
@@ -781,7 +842,10 @@ func (s *Store) SetSessionRead(ctx context.Context, sessionID string) error {
 // label. A losing update (session already advanced) writes nothing.
 // updated_at is untouched: a generated label is not activity, and a
 // title landing after a read stamp must not turn the session unread.
-func (s *Store) SetSessionTitle(ctx context.Context, sessionID string, title string, final bool) error {
+func (s *Store) SetSessionTitle(ctx context.Context, sessionID, title string, final bool) error {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.SetSessionTitle(ctx, sessionID, title, final)
+	}
 	stmt := `UPDATE sessions SET label = ?, title_state = 1 WHERE id = ? AND title_state = 0`
 	if final {
 		stmt = `UPDATE sessions SET label = ?, title_state = 2 WHERE id = ? AND title_state <= 1`
@@ -796,6 +860,9 @@ func (s *Store) SetSessionTitle(ctx context.Context, sessionID string, title str
 // the session unread. The trigger reindexes the FTS row with both
 // fields.
 func (s *Store) SetSessionSummary(ctx context.Context, sessionID, summary string) error {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.SetSessionSummary(ctx, sessionID, summary)
+	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET summary = ? WHERE id = ?`, summary, sessionID)
 	return err
@@ -873,6 +940,9 @@ func boolToInt(b bool) int {
 // AddSessionTokens adds a turn's real provider-reported usage to the
 // session's accumulated totals on the sessions row.
 func (s *Store) AddSessionTokens(ctx context.Context, sessionID string, prompt, completion int) error {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.AddSessionTokens(ctx, sessionID, prompt, completion)
+	}
 	if prompt == 0 && completion == 0 {
 		return nil
 	}
