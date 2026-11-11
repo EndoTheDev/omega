@@ -29,32 +29,53 @@
         placeholder="filter settings" />
     </div>
 
-    <!-- the master-detail split. LEFT is the category nav (ruling 1); it
-         renders every level at rest - a parent with its children indented
-         under it, never click-to-expand (ruling 5) - and a live query
-         GREYS the categories with no hit instead of hiding them, so the
-         nav keeps its shape and you can see where the hits live (ruling
-         6). RIGHT is ONE category's knobs. Narrow panes are two SCREENS
-         of the same two components, not a second renderer (ruling 12):
-         the nav, then the content with a back control. -->
+    <!-- the master-detail split. LEFT is the category nav (ruling 1). Card
+         t_5656d52f SUPERSEDES ruling 5: both levels render, and each parent
+         carries its own disclosure chevron - clicking the CHEVRON toggles
+         the children, clicking the LABEL still selects the category (two
+         hit targets on one row, so a parent can be selected without being
+         expanded). The default is EXPANDED - a fresh pane still shows every
+         level at rest - and the collapsed set is component-local state,
+         never persisted. A live query IGNORES it entirely: hits must stay
+         visible, so searching force-opens every parent and only GREYS the
+         categories with no hit (ruling 6 - grey, never hide). RIGHT is ONE
+         category's knobs. Narrow panes are two SCREENS of the same two
+         components, not a second renderer (ruling 12): the nav, then the
+         content with a back control. -->
     <div class="settings-split">
       <nav
         v-if="!narrow || !drilled"
         class="settings-nav"
         aria-label="settings categories">
         <template v-for="cat in nav" :key="cat.id">
+          <div class="settings-nav-row">
+            <button
+              v-if="navChildren(cat).length"
+              class="settings-nav-chev"
+              type="button"
+              :aria-expanded="isOpen(cat.id)"
+              :aria-label="`${isOpen(cat.id) ? 'collapse' : 'expand'} ${cat.label}`"
+              @click="toggleOpen(cat.id)">
+              <Icon class="settings-nav-chevron" name="chevron-down" :size="10" />
+            </button>
+            <!-- a flat category keeps the chevron's column so labels align -->
+            <span
+              v-else
+              class="settings-nav-chev-gap"
+              aria-hidden="true" />
+            <button
+              class="settings-nav-cat"
+              :class="{ active: !searching && selection === cat.id, dim: searching && !matchIds.has(cat.id) }"
+              type="button"
+              :data-category="cat.id"
+              :aria-current="!searching && selection === cat.id ? 'true' : undefined"
+              @click="selectCategory(cat.id)">
+              <span class="settings-nav-label">{{ cat.label }}</span>
+              <span class="settings-nav-count">{{ cat.knobs.length }}</span>
+            </button>
+          </div>
           <button
-            class="settings-nav-cat"
-            :class="{ active: !searching && selection === cat.id, dim: searching && !matchIds.has(cat.id) }"
-            type="button"
-            :data-category="cat.id"
-            :aria-current="!searching && selection === cat.id ? 'true' : undefined"
-            @click="selectCategory(cat.id)">
-            <span class="settings-nav-label">{{ cat.label }}</span>
-            <span class="settings-nav-count">{{ cat.knobs.length }}</span>
-          </button>
-          <button
-            v-for="sub in navChildren(cat)"
+            v-for="sub in openChildren(cat)"
             :key="cat.id + '/' + sub.id"
             class="settings-nav-sub"
             :class="{ active: !searching && selection === cat.id + '/' + sub.id, dim: searching && !matchIds.has(cat.id) }"
@@ -898,11 +919,31 @@
     buildNav(withSubgroups(allGroups.value)),
   );
 
-  // Ruling 5: every level renders at rest, so a category's children are
-  // always visible under it. A domain whose knobs all land in ONE child
-  // shows no child row - a nested copy of the parent's name is noise.
+  // Two levels, and card t_5656d52f SUPERSEDES ruling 5: a parent may be
+  // COLLAPSED now, so its children render only while it is open. A domain
+  // whose knobs all land in ONE child still shows no child row at all - a
+  // nested copy of the parent's name is noise, and there is nothing to
+  // disclose.
   const navChildren = (cat: NavCategory): NavSubgroup[] =>
     cat.subgroups.length > 1 ? cat.subgroups : [];
+
+  // The collapsed set is COMPONENT-LOCAL (a plain id list - never
+  // persisted, no store field) and starts EMPTY, so a fresh pane is
+  // expanded and nothing looks missing on first open. A LIVE QUERY ignores
+  // it outright: the hits must stay visible, so searching force-opens every
+  // parent and the nav only greys the dead categories (ruling 6's spirit -
+  // grey, never hide).
+  const collapsedIds = ref<string[]>([]);
+  const isOpen = (catId: string): boolean =>
+    searching.value || !collapsedIds.value.includes(catId);
+  function toggleOpen(catId: string) {
+    collapsedIds.value = collapsedIds.value.includes(catId)
+      ? collapsedIds.value.filter((id) => id !== catId)
+      : [...collapsedIds.value, catId];
+  }
+  // the children the nav renders for a category right now
+  const openChildren = (cat: NavCategory): NavSubgroup[] =>
+    isOpen(cat.id) ? navChildren(cat) : [];
 
   // Ruling 13: the selection is remembered PER CLIENT (localStorage, never
   // a server config key) and a fresh pane opens on Commonly Used. The
@@ -1442,11 +1483,47 @@
   }
   .settings-nav {
     flex: none;
-    width: 136px;
+    width: 200px;
     overflow-y: auto;
     overflow-x: hidden;
     padding: 4px 0 6px;
     border-right: 1px solid var(--stroke);
+  }
+  /* the category row: the disclosure chevron and the category button share
+     one line (card t_5656d52f). TWO hit targets, never one - the chevron
+     toggles the children, the label still selects, so a parent can be
+     picked without being expanded. */
+  .settings-nav-row {
+    display: flex;
+    align-items: center;
+  }
+  .settings-nav-chev {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    padding: 4px 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .settings-nav-chev:hover {
+    color: var(--text);
+  }
+  /* collapsed points right (the iconset's down glyph, rotated); a flat
+     category keeps the same column so every label starts on one x */
+  .settings-nav-chev[aria-expanded="false"] .settings-nav-chevron {
+    transform: rotate(-90deg);
+  }
+  .settings-nav-chev-gap {
+    flex: none;
+    width: 20px;
+  }
+  .settings-nav-row .settings-nav-cat {
+    flex: 1;
+    min-width: 0;
   }
   .settings-nav-cat,
   .settings-nav-sub {
@@ -1463,10 +1540,11 @@
     text-align: left;
     cursor: pointer;
   }
-  /* ruling 5: children are indented under their parent, never hidden
-     behind a click-to-expand */
+  /* card t_5656d52f: children are INDENTED under their parent and hidden
+     while the parent is collapsed (the chevron toggles) - the indent
+     clears the chevron column so both levels share one label axis */
   .settings-nav-sub {
-    padding-left: 20px;
+    padding-left: 30px;
     font-size: 11.5px;
   }
   .settings-nav-cat:hover,
@@ -1500,6 +1578,7 @@
   }
   .settings-nav-cat:focus-visible,
   .settings-nav-sub:focus-visible,
+  .settings-nav-chev:focus-visible,
   .settings-modified:focus-visible,
   .settings-back:focus-visible {
     outline: 1px solid var(--accent);
