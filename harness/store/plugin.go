@@ -79,6 +79,11 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err != nil {
 		return err
 	}
+	// Routing home (card t_a7fab745): the chat floor addresses sessions
+	// the agents roster lists, and those rows live in each agent home's
+	// own store. The home names where to look; a store opened outside a
+	// resolved home (CLI tools, tests) keeps one file.
+	s.SetHome(cfg.Home)
 	// A same-instance re-mount (the double-mount removal proofs) opens
 	// a second store: the prior handle is dead weight - close it, or
 	// the abandoned handle keeps the database file locked on windows.
