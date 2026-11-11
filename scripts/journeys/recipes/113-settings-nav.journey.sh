@@ -61,8 +61,12 @@ navclick() {
   jsq "(()=>{const b=[...document.querySelectorAll('.settings-nav-cat,.settings-nav-sub')].find(x=>x.getAttribute('data-category')==='$1');if(!b) return 0;b.click();return 1})()" 2>&1 | plain
 }
 # force_scroll <px>: a REAL user scroll - the wheel releases the observer's
-# post-deselect suppression (so the clamp is armed), then the pane jumps to
-# the absolute position asked for
+# post-deselect suppression (so the spy follows the hand), then the pane
+# jumps to the absolute position asked for. Card t_e7404b84: the CLAMP no
+# longer waits for that wheel - any scroll the pane did not issue itself is
+# clamped - so this helper would be held at the section's boundary even
+# without it. Keep the wheel: it is what a user does, and the spy assertions
+# below still need the suppression released.
 force_scroll() {
   jsq "(()=>{const root=document.querySelector('.settings-body');if(!root) return 0;root.dispatchEvent(new WheelEvent('wheel',{bubbles:true}));root.scrollTop=$1;return 1})()" 2>&1 | plain
 }

@@ -430,6 +430,9 @@
     documentFor,
     expandedCategoryIds,
     matchingCategoryIds,
+    paneScrollIsUser,
+    paneScrollSettle,
+    paneScrollSettled,
     parseSelection,
     resolveSelection,
     spyTargetIds,
@@ -439,6 +442,7 @@
     type DocSection,
     type NavCategory,
     type NavSubgroup,
+    type PaneScrollState,
   } from "./settingsNav";
   import { useNarrow } from "~/composables/narrow";
   import { DEFAULT_TOOL_DISPLAY, type ToolDisplay } from "~/composables/toolDisplay";
@@ -1036,6 +1040,75 @@
     spyLocked = false;
   }
 
+  // --- the pane's OWN scrolls (card t_e7404b84) ---------------------------
+  //
+  // The suppression above exists for ONE thing: a scroll the PANE issued
+  // itself (a jump, a deselect's return to top, a restore, a cleared
+  // query's give-back, the clamp's own snap). Those converge on a KNOWN
+  // target, so the pane tracks it and judges every scroll event against
+  // that track: while its own animation is still in flight the event is the
+  // pane's, and everything else is the USER's hand.
+  //
+  // Gating the release on the INTENT_EVENTS list alone was the defect: a
+  // scrollbar drag, an assistive-technology scroll and a programmatic
+  // scrollTop dispatch none of wheel/touchstart/pointerdown/keydown in
+  // Chromium, so a scroll that arrived while the lock was up was never
+  // clamped AND never moved the spy - the pane simply stayed wherever it
+  // landed (the nightly landed it on the document's end, 5709, where the
+  // selected section's bottom was 2509).
+  //
+  // The pane's own scroll ENDS by SETTLING, not by a stopwatch: every scroll
+  // event it produces re-arms a short gap timer, and the gap closing is what
+  // ends it. A duration guess would be wrong twice - Chrome runs a long
+  // smooth jump ~1.1s, and an animation that gets OVERRIDDEN (a programmatic
+  // scrollTop, a scrollbar drag) lands nowhere at all - while the gap timer
+  // answers both: the events stop, the pane's scroll is over, and the clamp
+  // re-measures (a scroll that interrupted a jump can never leave the pane
+  // outside its section). The decision itself is the pure paneScroll* rules
+  // in settingsNav.
+  const PANE_SCROLL_GAP_MS = 400;
+  // a frame or two of settle: the animation's own trailing repeats must not
+  // release a deselect's suppression (the pane would re-select the section
+  // its return-to-top just passed)
+  const PANE_SETTLE_GRACE_MS = 200;
+  let paneScroll: PaneScrollState = { target: null, graceUntil: 0 };
+  let paneScrollTimer: ReturnType<typeof setTimeout> | undefined;
+  function nowMs(): number {
+    return typeof performance !== "undefined" ? performance.now() : Date.now();
+  }
+  /** armPaneSettle: the pane's own scroll is still producing events */
+  function armPaneSettle() {
+    if (paneScrollTimer !== undefined) clearTimeout(paneScrollTimer);
+    paneScrollTimer = setTimeout(() => {
+      paneScrollTimer = undefined;
+      if (paneScroll.target === null) return;
+      paneScroll = paneScrollSettle(nowMs(), PANE_SETTLE_GRACE_MS);
+      // the pane's own scroll is over: hold it to its section again, so an
+      // interrupted animation cannot strand it outside the range
+      if (clampId.value) scheduleClamp();
+    }, PANE_SCROLL_GAP_MS);
+  }
+  function endPaneScroll() {
+    paneScroll = { target: null, graceUntil: 0 };
+    if (paneScrollTimer !== undefined) clearTimeout(paneScrollTimer);
+    paneScrollTimer = undefined;
+  }
+  /** notePaneScroll: the pane is about to scroll ITSELF to `top` */
+  function notePaneScroll(root: HTMLElement, top: number) {
+    const limit = Math.max(root.scrollHeight - root.clientHeight, 0);
+    paneScroll = { target: Math.min(Math.max(top, 0), limit), graceUntil: 0 };
+    armPaneSettle();
+  }
+  /** paneOwnScroll: true while a scroll event still belongs to a scroll the
+      PANE issued (its animation is producing events, or its settle window
+      is open). Every other scroll event is the user's. */
+  function paneOwnScroll(): boolean {
+    const now = nowMs();
+    if (paneScrollIsUser(paneScroll, now)) return false;
+    if (paneScroll.target !== null) armPaneSettle();
+    return true;
+  }
+
   function collectSpyTargets(root: HTMLElement) {
     spyNodes.clear();
     // SECTIONS answer first (card t_c4b42357): a flat or one-child category
@@ -1076,6 +1149,7 @@
       ? spyNodes.get(id) ?? spyNodes.get(parseSelection(id).category)
       : null;
     if (!node) {
+      notePaneScroll(root, 0);
       root.scrollTo({ top: 0, behavior });
       return;
     }
@@ -1090,6 +1164,10 @@
     const rootTop = root.getBoundingClientRect().top;
     const delta = node.getBoundingClientRect().top - rootTop;
     const clear = isBlock ? pinnedHeadingHeight(node) : 0;
+    // the pane's own scroll, tracked by its landing position: the clamp may
+    // not fight it on the way (card t_e7404b84), the user's next scroll is
+    // again the user's
+    notePaneScroll(root, root.scrollTop + delta - clear);
     root.scrollTo({ top: root.scrollTop + delta - clear, behavior });
   }
 
@@ -1145,10 +1223,17 @@
   }
 
   // Any real input on the pane releases a deselect's suppression - that
-  // IS the "next user scroll" the ruling names.
+  // IS the "next user scroll" the ruling names. A scroll event the pane
+  // did not issue does the same (card t_e7404b84): the four events below
+  // are not the only way a hand moves a pane.
   const INTENT_EVENTS = ["wheel", "touchstart", "pointerdown", "keydown"];
   let intentTarget: HTMLElement | null = null;
-  const noteUserIntent = () => unlockSpy();
+  const noteUserIntent = () => {
+    // input INTERRUPTS the pane's own animation: whatever it was heading
+    // for, it is the user's scroll now
+    endPaneScroll();
+    unlockSpy();
+  };
   function bindIntent(el: HTMLElement | null) {
     if (intentTarget === el) return;
     if (intentTarget) {
@@ -1166,6 +1251,10 @@
   let lastDocScrollTop = 0;
   function onBodyScroll() {
     if (!searching.value && bodyEl.value) lastDocScrollTop = bodyEl.value.scrollTop;
+    // a scroll the pane did not issue IS the user's hand, whatever event
+    // started it (card t_e7404b84): the suppression ends here, so the spy
+    // answers a scrollbar drag or an AT scroll exactly like a wheel
+    if (bodyEl.value && !paneOwnScroll()) unlockSpy();
     // the selected section bounds the pane (card t_a6b794b5)
     if (clampId.value) scheduleClamp();
   }
@@ -1211,13 +1300,19 @@
       measures. The range is in DOCUMENT coordinates, so it does not move
       as the pane scrolls - only the pane's window does. */
   function applyClamp() {
-    // a programmatic jump is intent, not the user's hand: the spy's
-    // existing lock is the ONE suppression (step 5 - no second mechanism),
-    // so the smooth scroll and a deselect's return-to-top are never fought
-    if (spyLocked) return;
+    // a programmatic jump is intent, not the user's hand: the pane's OWN
+    // scroll (tracked by its landing position) is the ONE suppression (step
+    // 5 - no second mechanism), so the smooth scroll and a deselect's
+    // return-to-top are never fought. Everything else - a wheel, a
+    // scrollbar drag, an assistive-technology scroll, a programmatic
+    // scrollTop - is the user's and is held to the section (card
+    // t_e7404b84: this used to ride the spy's intent-event lock, which none
+    // of those paths ever released).
     const root = bodyEl.value;
+    if (!root) return;
+    if (!paneScrollSettled(paneScroll)) return;
     const id = clampId.value;
-    if (!root || !id) return;
+    if (!id) return;
     // a section a live query or `modified only` filtered out of the
     // document has no range to hold: free scroll is the only truth left
     const node = clampNode(id);
@@ -1236,10 +1331,15 @@
     root.scrollTop = next;
   }
 
-  /** the clamp rides the frame AFTER the event: wheel and trackpad keep
-      pushing for a frame or two after the snap, and clamping synchronously
-      inside the scroll handler reads as the pane fighting the hand */
+  /** the clamp lands on the EVENT, and again on the frame after: a wheel or
+      a trackpad keeps pushing for a frame or two after the snap, so the
+      delayed pass is what stops that momentum. The event pass is NOT
+      optional - a hidden or occluded tab throttles requestAnimationFrame to
+      nothing, and the pane then keeps a scroll it was never allowed to rest
+      at (card t_e7404b84: the nightly's clamp assertion went red on exactly
+      that, landing on the document's end where the section's bottom was). */
   function scheduleClamp() {
+    applyClamp();
     if (clampFrame) return;
     clampFrame = requestAnimationFrame(() => {
       clampFrame = 0;
@@ -1275,6 +1375,7 @@
 
   onBeforeUnmount(() => {
     unlockSpy();
+    endPaneScroll();
     bindIntent(null);
     spyObserver?.disconnect();
     spyObserver = null;
@@ -1526,7 +1627,9 @@
       the root margin is chosen to avoid; the suppression window above is
       the other half (the observer never fights the click that started a
       smooth scroll, and a deselect stays put until the next real
-      scroll). */
+      scroll). A scroll the pane did not issue ends that suppression even
+      with no intent event (card t_e7404b84), so a scrollbar drag or an
+      assistive-technology scroll moves the highlight like a wheel does. */
   function syncSpy() {
     const root = bodyEl.value;
     spyObserver?.disconnect();
@@ -1623,7 +1726,10 @@
     if (now) return;
     void nextTick(() => {
       const node = bodyEl.value;
-      if (node) node.scrollTop = lastDocScrollTop;
+      if (node) {
+        notePaneScroll(node, lastDocScrollTop);
+        node.scrollTop = lastDocScrollTop;
+      }
       syncSpy();
     });
   });
