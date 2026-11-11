@@ -15,8 +15,11 @@
 #              browser (the component's class law survived the move).
 #   health   - the dot opens .health-pop: server reachable, provider,
 #              database, uptime and last error rows. provider/database/
-#              last error read "not reported": /health carries status,
-#              uptime and version only (the honest gap, never a guess).
+#              last error are OPTIONAL by wire law (card t_0b52537a, after
+#              701ce273 sourced them): each row renders a real value when
+#              /health carries the fact and "not reported" when it does
+#              not - the probe accepts either, and the "no source" note
+#              must render exactly when at least one row is unsourced.
 #   narrow   - at 700px: every .hide-sm segment is gone, the health DOT and
 #              the workdir chip are still there.
 #
@@ -67,12 +70,18 @@ if ! wait_js '(()=>{const p=document.querySelector(".health-pop");if(!p)return f
   die "the health popover does not render fully inside the pane from the left edge ($(jsq '(()=>{const p=document.querySelector(".health-pop");if(!p)return "missing";const r=p.getBoundingClientRect();return "left="+Math.round(r.left)+" right="+Math.round(r.right)+" top="+Math.round(r.top)+" bottom="+Math.round(r.bottom)+" vw="+document.documentElement.clientWidth+" vh="+document.documentElement.clientHeight})()' 2>&1 | tr -d '\"'))"
 fi
 step "ok: the health popover renders fully inside the pane (left-anchored)"
+# card t_0b52537a: provider / database / last error are OPTIONAL facts on the
+# /health body (701ce273) - absent means "not reported", present means a
+# rendered value (a dead provider still renders "not reachable"; a sourced
+# but silent logger renders "none"). The probe is runtime-honest: it takes
+# EITHER shape per row, and pins the note to the unsourced count - the
+# "no source" footnote renders exactly when at least one row is unsourced.
 probe_health() {
-  jsq '(()=>{const p=document.querySelector(".health-pop");if(!p)return 0;const keys=[...p.querySelectorAll(".hp-key")].map(k=>k.textContent.trim());for(const k of ["server","provider","database","uptime","last error"]){if(!keys.includes(k))return 0}const val=k=>{const row=[...p.querySelectorAll(".hp-row")].find(r=>r.querySelector(".hp-key").textContent.trim()===k);return row?row.querySelector(".hp-val").textContent.trim():""};const up=val("uptime");if(!/^[0-9]+(s|m|h)/.test(up))return 0;for(const k of ["provider","database","last error"]){if(val(k)!=="not reported")return 0}const note=(p.querySelector(".hp-note")||{}).textContent||"";if(!note.includes("/health"))return 0;return 1})()'
+  jsq '(()=>{const p=document.querySelector(".health-pop");if(!p)return 0;const keys=[...p.querySelectorAll(".hp-key")].map(k=>k.textContent.trim());for(const k of ["server","provider","database","uptime","last error"]){if(!keys.includes(k))return 0}const val=k=>{const row=[...p.querySelectorAll(".hp-row")].find(r=>r.querySelector(".hp-key").textContent.trim()===k);return row?row.querySelector(".hp-val").textContent.trim():""};if(!/^(reachable|not reachable)$/.test(val("server")))return 0;if(!/^[0-9]+(s|m|h)/.test(val("uptime")))return 0;let unsourced=0;for(const k of ["provider","database","last error"]){const fv=val(k);if(fv==="not reported"){unsourced=unsourced+1;continue}if(!fv)return 0}const note=(p.querySelector(".hp-note")||{}).textContent||"";const t=note.trim();if((unsourced>0)!==(t.length>0))return 0;if(unsourced>0){if(t.indexOf("/health")<0)return 0;const lead=unsourced===1?"one fact has":unsourced+" facts have";if(t.indexOf(lead)!==0)return 0}return 1})()'
 }
 v=$(probe_health)
-[ "$v" = "1" ] || die "the health popover's facts are wrong: $(jsq '(()=>{return [...document.querySelectorAll(".health-pop .hp-row")].map(r=>r.querySelector(".hp-key").textContent+"="+r.querySelector(".hp-val").textContent.trim()).join(" | ")})()')"
-step "ok: health popover - reachable server, live uptime, and the unsourced facts say not reported"
+[ "$v" = "1" ] || die "the health popover's facts are wrong: $(jsq '(()=>{const rows=[...document.querySelectorAll(".health-pop .hp-row")].map(r=>r.querySelector(".hp-key").textContent+"="+r.querySelector(".hp-val").textContent.trim()).join(" | ");const n=document.querySelector(".health-pop .hp-note");return rows+" || note="+(n?n.textContent.trim():"<none>")})()')"
+step "ok: health popover - reachable server, live uptime, each optional fact sourced or honestly not reported, note matches the gaps"
 assert_eq "$(jsq 'document.querySelector(".statusbar .seg.seg-btn.health").getAttribute("aria-expanded")' | tr -d '"')" "true" "the health control reports its open state"
 jsq 'document.querySelector(".statusbar .seg.seg-btn.health").click()' >/dev/null 2>&1
 wait_js '!document.querySelector(".health-pop")' 10 || die "the health popover never closed"
