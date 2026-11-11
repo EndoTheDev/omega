@@ -138,7 +138,12 @@ Body: `{"messages": [...], "session_id": "...?", "model": "...?",
   with no wire field, so removing the pin's instance strands the
   session (its next send 400s) until a new instance is selected.
 - **model**: per-run override via a provider copy — concurrent chats
-  keep their own model, the default stays untouched.
+  keep their own model, the default stays untouched. A session owned by
+  an agent home is the exception: its home's config layer names the
+  provider and model, so a wire `model`/`provider` pick (and one
+  remembered on the row) is ignored for that run — resolving a
+  daemon-catalog name against another home's provider would answer as
+  the wrong agent.
 - **thinking_level**: indexes the shared thinking ladder (0 = none = no
   thinking parameter sent; unset = provider default).
 - **tools**: optional allowlist; empty enables the full server
