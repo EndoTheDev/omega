@@ -81,7 +81,8 @@ set -u
 # sometimes, and a single leaked lock fd keeps the flock alive after
 # run.sh exits - every later suite would refuse forever (proven live
 # 2026-10-28, fixed the same day).
-JOURNEY_LOCK=/tmp/omega-journeys.lock
+JOURNEY_LOCK="${JOURNEY_LOCK:-/tmp/omega-journeys.lock}"
+export JOURNEY_LOCK
 JOURNEY_LOCK_WAIT="${JOURNEY_LOCK_WAIT:-0}"
 journey_lock_refuse() { # $1: holder pid text; callers pass 'cat-or-?'
   printf 'journeys: another journey suite holds the run lock (pid %s) - refusing to interleave\n' "$1" >&2
@@ -432,6 +433,11 @@ for recipe in $want; do
   (
     trap 'cleanup_journey_residue' EXIT
     . "$JROOT/lib.sh"
+    # scope the console record to THIS recipe (t_6654bc60): the daemon's
+    # buffer outlives the page, the reload and the chrome, so a transient
+    # error from an earlier run used to red every later
+    # assert_no_console_errors while the pages themselves were silent.
+    console_scope_begin
     . "$recipe"
   ) > "$log" 2>&1 9>&- &
   rpid=$!

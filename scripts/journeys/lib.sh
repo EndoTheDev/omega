@@ -56,6 +56,24 @@ ab() {
 # step <desc>: progress line
 step() { printf '%s [journey] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
 
+# console_scope_begin: start a CLEAN console record for the recipe about to
+# run. agent-browser keeps the console buffer with the DAEMON SESSION, not
+# with the page or the chrome: it survives a navigation, a reload AND a
+# reconnect to a different chrome (proven live t_6654bc60 - a fresh chrome
+# on another port still answered with the previous chrome's error). One
+# transient [NUXT_E5002] from an earlier run therefore red ever later
+# assert_no_console_errors on that host, while every product step stays
+# green and the manifest itself answers 200. run.sh calls this before every
+# recipe forks, so the assert judges only what THIS run's own load and
+# interactions produced. That strictly narrows the window - an old error
+# can no longer mask a new one, and no recipe skips the assertion.
+console_scope_begin() {
+  # unpiped + redirected on purpose: on an auto-launch lane this is the
+  # first ab call of the run, and a pipe or a command substitution here
+  # would hang while the daemon spawns its chrome (the t_b86f709d law).
+  ab console --clear >/dev/null 2>&1 || true
+}
+
 # die <msg>: red journey. Prints, captures evidence, exits non-zero.
 die() {
   printf '%s [journey RED] %s\n' "$(date +%H:%M:%S)" "$*" >&2
@@ -196,6 +214,10 @@ open_journey_row() {
 # the vite HMR client, whose websocket/connect noise is a dev artifact -
 # set JOURNEY_DEV_LANE=1 there; the embedded lane (CI, :8098) never sets
 # it and asserts genuine silence.
+# The window judged here is the RECIPE (run.sh clears the session's console
+# record right before each recipe forks, see console_scope_begin): the
+# buffer outlives pages, reloads and chromes, so an unscoped read red on
+# errors that no longer exist anywhere (t_6654bc60).
 assert_no_console_errors() {
   local errs
   errs=$(ab console 2>&1)

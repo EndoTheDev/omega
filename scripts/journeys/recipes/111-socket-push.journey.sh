@@ -53,9 +53,19 @@ read_up() {
   jsq '(()=>{const p=document.querySelector(".health-pop");if(!p)return "";const row=[...p.querySelectorAll(".hp-row")].find(r=>(r.querySelector(".hp-key").textContent||"").trim()==="uptime");return row?(row.querySelector(".hp-val").textContent||"").trim():""})()' 2>&1 | tail -1 | tr -d '"'
 }
 up1=$(read_up)
-sleep 6
-up2=$(read_up)
 [ -n "$up1" ] || die "the health popover renders no uptime row (the pushed-frame probe has nothing to read)"
+# the row's voice drops the seconds above the hour mark ("2m 05s" below 1h,
+# "1h 02m" above it), so a fixed 6s window can only see a change 1 minute in
+# 10 on a lane that has been up past the hour - poll instead, bounded by the
+# slowest honest change (the next minute boundary). Reading the DOM is not a
+# fetch: the poller assertion above still covers the window.
+up2="$up1"
+_i=0
+while [ "$up2" = "$up1" ] && [ "$_i" -lt 70 ]; do
+  sleep 1
+  up2=$(read_up)
+  _i=$((_i + 1))
+done
 assert_ne "$up1" "$up2" "the health popover's uptime advanced from PUSHED frames only"
 jsq 'document.querySelector(".statusbar .seg.seg-btn.health").click()' >/dev/null 2>&1
 wait_js '!document.querySelector(".health-pop")' 10 \
