@@ -1033,6 +1033,7 @@
       spyTimer = setTimeout(() => {
         spyLocked = false;
         spyTimer = undefined;
+        clampOnLockEnd();
       }, ms);
     }
   }
@@ -1040,6 +1041,7 @@
     if (spyTimer !== undefined) clearTimeout(spyTimer);
     spyTimer = undefined;
     spyLocked = false;
+    clampOnLockEnd();
   }
 
   // --- the pane's OWN scrolls (card t_e7404b84) ---------------------------
@@ -1370,6 +1372,36 @@
       clampFrame = 0;
       applyClamp();
     });
+  }
+
+  /** clampOnLockEnd: a lock LIFTING is not the same thing as free scroll
+      (card t_720c9cff). Every lock above suppresses a measurement the pane
+      would otherwise take - and the clamp is only ever reached from a scroll
+      EVENT. A scroll request that produces NO event therefore slips between
+      both: a same-value instant request (`scrollTop = 1e6` while the pane
+      already rests at the document's end, which is exactly where a previous
+      free scroll left it) fires nothing, and the very request that ends the
+      pane's own scroll tracking (a wheel, an intent event) clears the settle
+      timer that would have re-measured 400ms later. The probe that opened
+      the card, on the dev lane's settings document (13 categories, pane
+      clientHeight 423, document end 6247, provider range [1813, 2722]):
+
+        nav-click provider, wheel + `scrollTop = 1e6` in the NEXT task,
+          inside the same frame                      -> 6247, and it STAYED
+        the same wheel + assignment 2s after the click -> 2722 (clamped)
+        the same, 3s after (no lock, no suppression)   -> 2722 (clamped)
+        the same frame WITHOUT the wheel               -> 2722 (clamped)
+
+      So the swallow is not the spy lock refusing the clamp (the clamp never
+      read that lock - the un-wheeled row above is inside the same lock and
+      still clamps) and not the merged t_e7404b84 event path (the 3s row): it
+      is a scroll nobody ever measures. A swallowed scroll must not become a
+      forgotten one, so the moment a lock lifts, ONE pass runs against the
+      position the pane actually sits at - the same applyClamp, the same
+      clampedRange, no new primitive. Do NOT shorten the timed lock: it is
+      what keeps the observer from fighting the smooth scroll it started. */
+  function clampOnLockEnd() {
+    if (clampId.value) scheduleClamp();
   }
 
   /** observeClamp re-arms over the boxes the range is measured from. A
