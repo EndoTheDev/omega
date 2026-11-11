@@ -81,9 +81,14 @@ online=$(jsq 'navigator.onLine' 2>&1 | tail -1 | tr -d '"\r')
 assert_eq "$online" "false" "the tab is offline (the socket is cut)"
 
 # a half-open socket never fires `close`: the client's quiet-wire check
-# (15s without a frame; the health topic beats every 5s) cuts it and the
-# backoff ladder starts. Hold offline past that budget so the cut has
-# really happened before the reconnect can succeed.
+# cuts it once 15s have passed with no frame (the health topic beats
+# every 5s), and the backoff ladder starts. That budget is a deadline
+# from the LAST FRAME, so the cut lands inside this hold: 18s offline
+# plus the seed's 3s sleep puts ~21s of dark wire behind the cut, which
+# is the margin the journey needs (card t_71f28526 pinned the deadline -
+# a full-budget re-arm stretched the discovery window to 30s and the
+# socket outlived the outage, reviving with the network instead of
+# reconnecting, so the catch-up never ran).
 step "holding offline 18s (the quiet-wire budget)"
 sleep 18
 
