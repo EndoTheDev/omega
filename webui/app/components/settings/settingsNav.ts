@@ -501,3 +501,49 @@ export function clampedRange(input: ClampGeometry): [number, number] {
   const max = Math.max(min, Math.min(natural, limit));
   return [min, max];
 }
+
+// --- the pane's OWN scrolls (card t_e7404b84) -----------------------------
+//
+// The clamp and the scroll-spy are suppressed for exactly ONE reason: a
+// scroll the PANE issued itself (a jump, a deselect's return to top, a
+// restore, a cleared query's give-back). Those converge on a KNOWN landing
+// position, which is what makes the rule decidable: while the pane is
+// still travelling to (or has just landed on) that position the event is
+// the pane's, and every OTHER scroll event is the user's hand - whatever
+// started it.
+//
+// This REPLACES the intent-event gate (wheel/touchstart/pointerdown/
+// keydown). A scrollbar drag, an assistive-technology scroll and a
+// programmatic `scrollTop` dispatch none of those, so gating the release
+// on them left every such scroll unclamped AND left the spy frozen: the
+// nightly landed the pane on the document's end (5709) where the selected
+// section's bottom was 2509.
+
+export interface PaneScrollState {
+  /** the scrollTop the pane asked for; null when it is not scrolling */
+  target: number | null;
+  /** the settle window after that scroll ENDED (absolute ms) */
+  graceUntil: number;
+}
+
+/** paneScrollSettled: the pane's own scroll is over - its animation landed,
+    or something else overrode it. The CLAMP may hold the pane to its
+    section again from here. */
+export function paneScrollSettled(state: PaneScrollState): boolean {
+  return state.target === null;
+}
+
+/** paneScrollIsUser: this scroll event is the USER's - no pane scroll in
+    flight, and the settle window (which swallows an animation's trailing
+    repeats, so a deselect cannot re-select what its return-to-top just
+    passed) is over. The clamp runs and the suppression ends. */
+export function paneScrollIsUser(state: PaneScrollState, now: number): boolean {
+  return state.target === null && now >= state.graceUntil;
+}
+
+/** paneScrollSettle: the pane's own scroll ended at `now` - open the settle
+    window the next scroll event is judged against. */
+export function paneScrollSettle(now: number, graceMs: number): PaneScrollState {
+  return { target: null, graceUntil: now + graceMs };
+}
+
