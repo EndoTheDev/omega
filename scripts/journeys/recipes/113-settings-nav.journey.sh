@@ -32,6 +32,12 @@
 
 plain() { tr -d '"'; }
 scroll_top() { jsq '(()=>{const b=document.querySelector(".settings-body");return b?Math.round(b.scrollTop):-1})()' 2>&1 | plain; }
+# edge_probe <id>: "<edge>|<scrollTop>" in ONE frame - the distance between the
+# section's box and the pane's top edge (the observable the jump assertion
+# reads), plus the pane's scroll position for a diagnosable red.
+edge_probe() {
+  jsq "(()=>{const root=document.querySelector('.settings-body');const el=[...document.querySelectorAll('.settings-category')].find(x=>x.getAttribute('data-category')==='$1');if(!root||!el) return '999|-1';return Math.round(Math.abs(el.getBoundingClientRect().top-root.getBoundingClientRect().top))+'|'+Math.round(root.scrollTop)})()" 2>&1 | plain
+}
 nav_ids() { jsq '(()=>{return [...document.querySelectorAll(".settings-nav-cat")].map(e=>e.getAttribute("data-category")).join(",")})()' 2>&1 | plain; }
 doc_ids() { jsq '(()=>{return [...document.querySelectorAll(".settings-category")].map(e=>e.getAttribute("data-category")).join(",")})()' 2>&1 | plain; }
 active_id() { jsq '(()=>{const a=document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active");return a?a.getAttribute("data-category"):""})()' 2>&1 | plain; }
@@ -120,9 +126,17 @@ only=$(jsq '(()=>{const open=[...document.querySelectorAll(".settings-nav-row")]
 assert_eq "$only" "$target" "exactly ONE branch is open (expansion is derived from the selection)"
 stored=$(jsq '(()=>{return localStorage.getItem("omega.settings-category")||""})()' 2>&1 | plain)
 assert_eq "$stored" "$target" "the click is remembered as the anchor"
-# the section's heading sits at the pane's top edge (the jump really landed)
-edge=$(jsq "(()=>{const root=document.querySelector('.settings-body');const el=document.querySelector('.settings-category[data-category=\"$target\"]');if(!root||!el) return 999;return Math.round(Math.abs(el.getBoundingClientRect().top-root.getBoundingClientRect().top))})()" 2>&1 | plain)
-[ "${edge:-999}" -le 8 ] 2>/dev/null || die "the jump landed $edge px off the pane's top edge"
+# the section's heading sits at the pane's top edge (the jump really landed).
+# The jump is a SMOOTH scroll and the wait above (scrollTop >= 50) is true in
+# its FIRST frames, so measuring once there read the animation in flight -
+# 36 px off on loaded CI, 0 px on an idle host (t_d17f0400). Wait on the
+# ASSERTED observable - the section-to-pane-top distance - and let a red carry
+# the last measurement so the log alone is diagnosable.
+if ! poll_js "(()=>{const root=document.querySelector('.settings-body');const el=[...document.querySelectorAll('.settings-category')].find(x=>x.getAttribute('data-category')==='$target');if(!root||!el) return false;return Math.abs(el.getBoundingClientRect().top-root.getBoundingClientRect().top)<=8})()" 15; then
+  last=$(edge_probe "$target")
+  die "the jump landed ${last%%|*} px off the pane's top edge (last edge|scrollTop: $last)"
+fi
+edge=$(edge_probe "$target"); edge=${edge%%|*}
 step "ok: the jumped-to section heads the pane (${edge}px)"
 
 # --- the subsections are jump links too ----------------------------------
