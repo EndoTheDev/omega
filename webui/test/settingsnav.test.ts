@@ -313,14 +313,42 @@ test("the pane renders the two regions: a nav of categories and one content pane
   assert.match(navSource, /KNOB_SUBGROUPS/, "the declaration table lives in one place");
 });
 
-test("the nav shows every level at rest - no click-to-expand", () => {
-  assert.match(tab, /v-for="sub in navChildren\(cat\)"/, "children render under their parent");
-  assert.doesNotMatch(tab, /aria-expanded/, "no expander state survives in settings");
-  assert.match(tab, /subgroups\.length > 1 \? cat\.subgroups : \[\]/,
-    "a one-child domain shows no duplicate child row");
+test("card t_5656d52f: a parent carries a disclosure chevron - two hit targets, one row", () => {
+  // the chevron is its OWN control: toggling the disclosure and selecting
+  // the category are different clicks, so a parent can be picked without
+  // being expanded
+  assert.match(
+    tab,
+    /class="settings-nav-chev"[\s\S]{0,220}:aria-expanded="isOpen\(cat\.id\)"[\s\S]{0,160}@click="toggleOpen\(cat\.id\)"/,
+    "the chevron owns the toggle",
+  );
+  assert.match(
+    tab,
+    /class="settings-nav-cat"[\s\S]{0,600}@click="selectCategory\(cat\.id\)"/,
+    "the label still selects the category",
+  );
+  // children are gated by the open state, which starts open and is
+  // overridden by a live query (hits must never hide)
+  assert.match(tab, /v-for="sub in openChildren\(cat\)"/, "children render through the open gate");
+  assert.match(
+    tab,
+    /const isOpen = \(catId: string\): boolean =>\s*\n\s*searching\.value \|\| !collapsedIds\.value\.includes\(catId\)/,
+    "default expanded, and a live query force-opens every parent",
+  );
+  assert.match(tab, /const collapsedIds = ref<string\[\]>\(\[\]\)/, "component-local, starts expanded");
+  assert.doesNotMatch(
+    tab,
+    /localStorage[\s\S]{0,120}collapsedIds|collapsedIds[\s\S]{0,120}localStorage/,
+    "the collapsed set is never persisted (no store field, no client key)",
+  );
+  assert.match(
+    tab,
+    /subgroups\.length > 1 \? cat\.subgroups : \[\]/,
+    "a one-child domain still shows no duplicate child row, and no chevron",
+  );
 });
 
-test("the accordion is DELETE-proof (step 10): no collapse machinery, no head", () => {
+test("no accordion returns: the only collapse left is the nav's own disclosure", () => {
   for (const dead of [
     "isCollapsed",
     "toggleCollapsed",
@@ -335,6 +363,18 @@ test("the accordion is DELETE-proof (step 10): no collapse machinery, no head", 
   assert.ok(!mainCss.includes("settings-group-head"), "the accordion's CSS is gone");
   assert.ok(!mainCss.includes(".settings-group-title"), "the head type rule is gone");
   assert.ok(!navSource.includes("Collapsed"), "the nav module never resurrects collapse state");
+});
+
+test("the nav is 200px wide - room for the chevron, the label and the count", () => {
+  assert.match(
+    tab,
+    /\.settings-nav \{\s*flex: none;\s*width: 200px;\s*overflow-y: auto;\s*overflow-x: hidden;/,
+    "wider nav, horizontal overflow still clipped",
+  );
+  assert.match(tab, /\.settings-nav-row \.settings-nav-cat \{\s*flex: 1;\s*min-width: 0;/, "the label flexes beside the chevron");
+  assert.match(tab, /\.settings-nav-count \{\s*flex: none;/, "the count keeps its right-hand seat");
+  assert.match(tab, /\.settings-nav-label \{[\s\S]{0,120}text-overflow: ellipsis;[\s\S]{0,80}white-space: nowrap;/,
+    "labels ellipsize on one line, never wrap");
 });
 
 test("narrow panes DRILL DOWN - nav screen, then content with a back control (ruling 12)", () => {

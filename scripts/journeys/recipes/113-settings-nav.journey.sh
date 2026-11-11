@@ -6,10 +6,12 @@
 #   landing   - a fresh client opens on Commonly Used (ruling 4/13: the
 #               virtual top category is FIRST, and the remembered id is
 #               client storage - cleared here, so the default is provable).
-#   two levels- the nav renders parents AND their children at rest
-#               (ruling 5): no click-to-expand, a child indented under its
-#               domain, and the content pane follows the selection - the
-#               whole category (heading + count, ruling 9) or one child.
+#   two levels- the nav renders parents AND their children, and every
+#               parent carries its own disclosure chevron (card t_5656d52f
+#               SUPERSEDES ruling 5): the chevron collapses/expands, the
+#               label still SELECTS, a child is indented under its domain,
+#               and the content pane follows the selection - the whole
+#               category (heading + count, ruling 9) or one child.
 #   search    - a live query is CROSS-category in the content pane, while
 #               the nav KEEPS ITS SHAPE and greys the categories with no
 #               hit (ruling 6) - it never hides an entry, and the curated
@@ -24,8 +26,9 @@
 #   memory    - the last selected category is remembered PER CLIENT and a
 #               reopen lands on it (ruling 13).
 #   gone      - the accordion is deleted, not hidden (step 10): no group
-#               head, no aria-expanded, no collapse class anywhere in the
-#               pane.
+#               head, no collapse class anywhere in the pane (card
+#               t_5656d52f re-introduced ONLY the nav's own disclosure -
+#               the accordion's group machinery stays dead).
 #
 # No seeding, no model: the lane's own home is enough. Residue-free.
 . "${JROOT:?run must export JROOT}/lib.sh"
@@ -68,16 +71,41 @@ rows=$(jsq '(()=>{return document.querySelectorAll(".setting-item,.setting-row")
 [ "${rows:-0}" -gt 0 ] 2>/dev/null || die "the curated category rendered no rows ($rows)"
 step "ok: the curated category renders its $rows rows"
 
-# --- two levels at rest: children are in the DOM, indented, no expander ---
+# --- two levels, each parent carrying its OWN disclosure chevron ----------
+# card t_5656d52f SUPERSEDES ruling 5: children still render at rest (the
+# nav opens EXPANDED - nothing looks missing), but a parent can be
+# collapsed, and the chevron is a SEPARATE hit target from the label (a
+# parent must stay selectable without being expanded).
 levels=$(jsq '(()=>{const parents=document.querySelectorAll(".settings-nav-cat").length;const kids=document.querySelectorAll(".settings-nav-sub").length;return parents+"/"+kids})()' 2>&1 | tr -d '"')
 case "$levels" in
   */0) die "the nav rendered no child level (parents/children: $levels)" ;;
-  *) step "ok: the nav renders both levels at rest (parents/children: $levels)" ;;
+  *) step "ok: the nav opens with both levels showing (parents/children: $levels)" ;;
 esac
 indent=$(jsq '(()=>{const k=document.querySelector(".settings-nav-sub");if(!k) return 0;const p=document.querySelector(".settings-nav-cat");if(!p) return 0;const ki=parseFloat(getComputedStyle(k).paddingLeft);const pi=parseFloat(getComputedStyle(p).paddingLeft);return ki>pi?1:0})()' 2>&1 | tr -d '"')
-assert_eq "$indent" "1" "a child row is INDENTED under its parent (ruling 5)"
+assert_eq "$indent" "1" "a child row is INDENTED under its parent"
+chevrons=$(jsq '(()=>{return document.querySelectorAll(".settings-nav .settings-nav-chev").length})()' 2>&1 | tr -d '"')
 expanders=$(jsq '(()=>{return document.querySelectorAll(".settings-nav [aria-expanded]").length})()' 2>&1 | tr -d '"')
-assert_eq "$expanders" "0" "the nav has no click-to-expand control (all levels show at once)"
+[ "${chevrons:-0}" -gt 0 ] 2>/dev/null || die "no parent carries a disclosure chevron"
+assert_eq "$expanders" "$chevrons" "every chevron reports its own open state"
+opened=$(jsq '(()=>{const c=document.querySelector(".settings-nav-chev");return c?c.getAttribute("aria-expanded"):"none"})()' 2>&1 | tr -d '"')
+assert_eq "$opened" "true" "the nav opens EXPANDED (today's behaviour at rest)"
+kids_before=$(jsq '(()=>{return document.querySelectorAll(".settings-nav-sub").length})()' 2>&1 | tr -d '"')
+jsq '(()=>{const row=[...document.querySelectorAll(".settings-nav-row")].find(r=>{const b=r.querySelector(".settings-nav-cat");return b&&b.getAttribute("data-category")==="provider"});const c=row?row.querySelector(".settings-nav-chev"):null;if(!c)return 0;c.click();return 1})()' >/dev/null 2>&1 \
+  || die "the provider category carries no chevron to click"
+if ! wait_js "(()=>{const row=[...document.querySelectorAll('.settings-nav-row')].find(r=>{const b=r.querySelector('.settings-nav-cat');return b&&b.getAttribute('data-category')==='provider'});const c=row?row.querySelector('.settings-nav-chev'):null;const kids=document.querySelectorAll('.settings-nav-sub').length;return !!c&&c.getAttribute('aria-expanded')==='false'&&kids<${kids_before}})()" 10; then
+  die "collapsing the provider category did not hide its children (children before: $kids_before)"
+fi
+step "ok: the chevron collapses a parent ($kids_before children -> $(jsq '(()=>{return document.querySelectorAll(".settings-nav-sub").length})()' 2>&1 | tr -d '"'))"
+# the LABEL of that collapsed parent still selects it (two hit targets)
+assert_eq "$(navclick provider)" "1" "a collapsed parent's label is still a click target"
+if ! wait_js "(()=>{const t=((document.querySelector('.settings-content-title')||{}).textContent||'').trim();return t.indexOf('provider')===0&&!!document.querySelector('.settings-category')})()" 10; then
+  die "clicking the LABEL of a collapsed parent did not select it (title: $(title_now))"
+fi
+step "ok: the label selects a collapsed category without expanding it"
+# re-open, so the rest of the recipe sees the expanded nav
+jsq '(()=>{const row=[...document.querySelectorAll(".settings-nav-row")].find(r=>{const b=r.querySelector(".settings-nav-cat");return b&&b.getAttribute("data-category")==="provider"});const c=row?row.querySelector(".settings-nav-chev"):null;if(c&&c.getAttribute("aria-expanded")==="false") c.click();return 1})()' >/dev/null 2>&1
+wait_js "(()=>{return document.querySelectorAll('.settings-nav-sub').length>=${kids_before}})()" 10 \
+  || die "the chevron never re-opened the parent"
 
 # --- the parent shows the whole category; the child shows its slice ---
 assert_eq "$(navclick provider)" "1" "the provider category is clickable"
@@ -181,8 +209,10 @@ assert_eq "$active" "provider" "a reopen lands on the remembered category"
 step "ok: the remembered category survives a reload"
 
 # --- the accordion is GONE, not hidden (step 10) ---
-gone=$(jsq '(()=>{const head=document.querySelectorAll(".settings-group-head").length;const exp=document.querySelectorAll("aside.settings [aria-expanded]").length;const old=document.querySelectorAll(".settings-group").length;return head+"|"+exp+"|"+old})()' 2>&1 | tr -d '"')
-assert_eq "$gone" "0|0|0" "no group head, no expander, no collapse wrapper survives in the pane"
+# card t_5656d52f: the ONLY disclosure left is the nav's own chevron; the
+# accordion's group head, expanders and wrappers stay dead
+gone=$(jsq '(()=>{const head=document.querySelectorAll(".settings-group-head").length;const exp=[...document.querySelectorAll("aside.settings [aria-expanded]")].filter(e=>!e.classList.contains("settings-nav-chev")).length;const old=document.querySelectorAll(".settings-group").length;return head+"|"+exp+"|"+old})()' 2>&1 | tr -d '"')
+assert_eq "$gone" "0|0|0" "no group head, no expander outside the nav, no collapse wrapper survives in the pane"
 
 # widening puts both regions back on screen (one renderer, two widths)
 ab set viewport 1280 800 >/dev/null 2>&1
