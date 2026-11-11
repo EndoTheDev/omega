@@ -39,14 +39,28 @@ polled=$(jsq '(()=>{const re=/\/(sessions|health|ui\/canvas|notifications|verdic
 assert_eq "$polled" "0" "no polling fetch in 17s (health/sessions/canvas/notifications/verdicts)"
 
 # the socket is actually alive: the health topic pushes every 5s, so the
-# status bar's uptime climbs without a single fetch. Uptime is the
+# health popover's uptime row climbs without a single fetch. Uptime is the
 # server's, so a still page that shows a moving number is a pushed fact.
-up1=$(jsq '(()=>{const el=document.querySelector(".statusbar .right .seg[title^=\"server build\"]");return el?(el.textContent||"").trim():""})()' 2>&1 | tail -1)
+# card t_be30543a: the bar's version segment no longer repeats the uptime -
+# the popover row is the ONLY place it renders, so the probe opens the
+# popover and reads it there. The click is local state (the popover renders
+# the already-pushed health frame), not a fetch: the poller assertion above
+# still covers the whole window.
+jsq 'document.querySelector(".statusbar .seg.seg-btn.health").click()' >/dev/null 2>&1
+wait_js '!!document.querySelector(".health-pop .hp-row")' 10 \
+  || die "the health popover never opened (the pushed-frame probe has nothing to read)"
+read_up() {
+  jsq '(()=>{const p=document.querySelector(".health-pop");if(!p)return "";const row=[...p.querySelectorAll(".hp-row")].find(r=>(r.querySelector(".hp-key").textContent||"").trim()==="uptime");return row?(row.querySelector(".hp-val").textContent||"").trim():""})()' 2>&1 | tail -1 | tr -d '"'
+}
+up1=$(read_up)
 sleep 6
-up2=$(jsq '(()=>{const el=document.querySelector(".statusbar .right .seg[title^=\"server build\"]");return el?(el.textContent||"").trim():""})()' 2>&1 | tail -1)
-[ -n "$up1" ] || die "no server build/uptime segment rendered (uptime probe has nothing to read)"
-assert_ne "$up1" "$up2" "the status bar's uptime advanced from PUSHED frames only"
-step "ok: pushed health keeps the bar live with zero fetches"
+up2=$(read_up)
+[ -n "$up1" ] || die "the health popover renders no uptime row (the pushed-frame probe has nothing to read)"
+assert_ne "$up1" "$up2" "the health popover's uptime advanced from PUSHED frames only"
+jsq 'document.querySelector(".statusbar .seg.seg-btn.health").click()' >/dev/null 2>&1
+wait_js '!document.querySelector(".health-pop")' 10 \
+  || die "the health popover never closed after the uptime probe"
+step "ok: pushed health keeps the popover uptime live with zero fetches"
 
 # --- 2: drop -> reconnect -> refetched pane -------------------------------
 mark=$(jsq '(()=>{window.__fetchMark=(window.__fetchLog||[]).length;return window.__fetchMark})()' 2>&1 | tail -1 | tr -d '"\r')

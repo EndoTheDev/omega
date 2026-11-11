@@ -532,7 +532,8 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   escaping is the sanitizer), `createRenderScheduler`.
 - Shell: `MenuBar` (brand, nav cluster after the brand, the plain
   'Omega' wordmark dead center, edge toggles far right), `StatusBar` (health dot,
-  token/ctx/rate telemetry, build version + uptime), `SearchInput`,
+  token/ctx/rate telemetry, build version; uptime lives in the health
+  popover the dot opens), `SearchInput`,
   `PaneDivider`, `TabBand` (the universal panel top bar: title left,
   actions right, outside every scrollport), `TogglePill` (the one
   switch, see above), `BandSelect` (the themed select — chip button +
