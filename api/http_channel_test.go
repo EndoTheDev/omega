@@ -177,9 +177,18 @@ func TestTitleModelDefaultFollowsTheRunModel(t *testing.T) {
 		cancel()
 	})
 	// The title call is a detached goroutine fired once the exchange
-	// lands: wait for it, then judge every model that served.
+	// lands: wait for it, then judge every model that served. The wait
+	// condition must be the observable the assertions read - the store's
+	// label - not the provider's request count: the second request is
+	// served before the title goroutine has parsed the response and
+	// written the label, and a loaded box widens that gap (the nightly
+	// flake this test shipped with).
 	waitFor(t, "the chat and its detached title call", func() bool {
-		return len(prov.servedModelNames()) >= 2
+		if len(prov.servedModelNames()) < 2 {
+			return false
+		}
+		sess, err := st.GetSession(context.Background(), "title-default")
+		return err == nil && sess.Label != ""
 	})
 	models := prov.servedModelNames()
 	for i, model := range models {
