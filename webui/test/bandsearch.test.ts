@@ -96,22 +96,24 @@ describe("every module registry tab seats its search in the band", () => {
   }
 });
 
-describe("settings: the filter LEFT the band roster (card t_6bebff18)", () => {
+describe("settings: the filter left the band roster (card t_6bebff18) and the pane has NO band (card t_1cfb080a)", () => {
   const settings = read("app/components/settings/SettingsTab.vue");
 
-  it("the band carries NO search seat - it is a plain title band again", () => {
-    const chunk = bandChunk(settings);
-    assert.doesNotMatch(chunk, /band-search/, "no .band-search wrapper inside the band");
-    assert.doesNotMatch(chunk, /<SearchInput/, "no in-band input");
+  it("there is no band to seat a search in - the pane composes none", () => {
+    // card t_1cfb080a (Endo, 2026-11-11) supersedes t_308e6d9b here: the
+    // dock tab carries the name, so the pane renders no band at all. The
+    // absence pin lives in band-breaks.test.ts; this is the roster's half.
+    assert.doesNotMatch(settings, /<TabBand/, "no band in the settings pane");
+    assert.doesNotMatch(settings, /class="band-search"/, "no in-band seat either");
   });
 
-  it("the pane-top bar sits between the band and the scrollport", () => {
-    const closeAt = settings.indexOf("</TabBand>");
+  it("the pane-top bar heads the scrollport directly", () => {
     const barAt = settings.indexOf('class="settings-filterbar"');
     const bodyAt = settings.indexOf('class="settings-body"');
-    assert.ok(closeAt > 0, "the band renders");
-    assert.ok(closeAt < barAt, "the bar is BELOW the band, outside it");
+    const navAt = settings.indexOf('class="settings-nav"');
+    assert.ok(barAt > 0, "the bar renders");
     assert.ok(barAt < bodyAt, "the bar heads the body, before the scrollport");
+    assert.ok(barAt < navAt, "the bar sits above the nav/document split");
   });
 
   it("the bar IS the shared SearchInput bound to the same query ref", () => {
