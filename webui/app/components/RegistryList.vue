@@ -42,7 +42,7 @@
             @click.stop="flipExpand(r)">{{ isExpanded(r.name) ? "▾" : "▸" }}</button>
           <div class="reg-row-main">
             <button
-              v-if="openable"
+              v-if="openableRow(r)"
               type="button"
               class="reg-row-name registry-open"
               :title="`open ${r.name}`"
@@ -158,11 +158,17 @@
       emptyText?: string;
       /** card t_36ceb99b: the name click opens the row's content in a
           main-pane viewer tab (the skills consumer only; everything else
-          keeps the plain name span and byte-identical renders) */
-      openable?: boolean;
+          keeps the plain name span and byte-identical renders).
+          card t_81109e1c: a PREDICATE form - the agents tab opens a
+          chat only for a row whose agent has a session to bind, so the
+          rows without one stay plain spans instead of dead buttons. */
+      openable?: boolean | ((row: RegistryRow) => boolean);
     }>(),
     { busy: null, error: null, loaded: false, toggleable: false, showState: true, emptyText: "nothing registered", openable: false },
   );
+
+  const openableRow = (r: RegistryRow): boolean =>
+    typeof props.openable === "function" ? props.openable(r) : props.openable;
 
   // toggle carries the CONFIRMED direction: the parent PUTs and
   // re-renders the rows from the response fold. expand tells the

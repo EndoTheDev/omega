@@ -1078,6 +1078,19 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 		req.runAgent = ag
 	}
 
+	// Per-agent run config OWNS provider and model (card t_81109e1c): the
+	// home's config layer names both, and every send from the webui
+	// carries the composer's model - a chat tab with no pinned model
+	// inherits the DAEMON's default, so an agent-owned session would
+	// answer on a model its home never configured (or fail on a name its
+	// endpoint does not serve). Neither the wire's pick nor one
+	// remembered from an earlier send applies here; the picks below are
+	// the daemon's picker concerns, and this session is not the daemon's.
+	agentOwned := req.runAgent != nil
+	if agentOwned {
+		req.Model, req.Provider = "", ""
+	}
+
 	// Workspace scope: a session rooted in a folder roots THIS run's
 	// relative file operations there (the loop and the tools read the
 	// scope off ctx) and serves the folder's trust-gated AGENTS.md
@@ -1118,7 +1131,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	// fails loudly (pinProvider's 400), never a silent fallback to
 	// the default instance.
 	wireProvider := req.Provider
-	if sessionKnown {
+	if sessionKnown && !agentOwned {
 		if req.Provider != "" {
 			if req.Provider != sess.ProviderName {
 				if scx, ok := s.store.(agent.SessionContextStore); ok {
@@ -1134,7 +1147,8 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	// what the session remembers from here on, card t_9de5b009); no
 	// wire model serves the session's remembered one. The write is
 	// best-effort - a failed pin leaves the send on the request model.
-	if sessionKnown {
+	// Agent-owned sessions keep their home's model (card t_81109e1c).
+	if sessionKnown && !agentOwned {
 		if req.Model != "" {
 			if req.Model != sess.Model {
 				if scx, ok := s.store.(agent.SessionContextStore); ok {
@@ -1153,7 +1167,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	// resolved pin sticks like the wire rule of t_9de5b009 (best-
 	// effort): the session remembers the instance the picker chose.
 	s.resolveSlotModel(req, wireProvider)
-	if sessionKnown {
+	if sessionKnown && !agentOwned {
 		if scx, ok := s.store.(agent.SessionContextStore); ok {
 			switch {
 			case req.Provider != "" && req.Provider != sess.ProviderName:

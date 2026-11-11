@@ -205,6 +205,72 @@ func TestDaemonOwnedSessionKeepsItsAgent(t *testing.T) {
 	}
 }
 
+// TestAgentOwnedSessionIgnoresTheDaemonModelPin pins the wire the webui
+// actually sends (card t_81109e1c): every chat send carries the
+// composer's model, and a chat tab with no pinned model carries the
+// DAEMON's default. An agent-owned session answers on its own home's
+// model anyway - the daemon's pick addresses the daemon's catalog, and
+// resolving that name against another home's provider is the wrong
+// agent (or a hard provider error). Nothing sticks on the session.
+func TestAgentOwnedSessionIgnoresTheDaemonModelPin(t *testing.T) {
+	ctx := context.Background()
+	_, srv, ts, daemonSeen, scoutSeen := agentHomeServer(t)
+
+	body, _ := json.Marshal(map[string]any{
+		"messages":   []map[string]any{{"role": "user", "content": "hi"}},
+		"session_id": "sess-scout-2",
+		// exactly what the composer sends for an unpinned tab
+		"model":    "daemon-model",
+		"provider": "daemon-instance",
+	})
+	res, err := http.Post(ts.URL+"/chat", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("post chat: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("chat status = %d, want 200", res.StatusCode)
+	}
+	started, ended := "", false
+	rd := bufio.NewReader(res.Body)
+	for !ended {
+		frame, ok := nextFrame(t, rd)
+		if !ok {
+			t.Fatal("stream closed before agent_end")
+		}
+		if frame.event == "agent_start" {
+			var start struct {
+				ModelName string `json:"model_name"`
+			}
+			if err := json.Unmarshal(frame.data, &start); err != nil {
+				t.Fatalf("decode agent_start: %v", err)
+			}
+			started = start.ModelName
+		}
+		ended = frame.event == "agent_end"
+	}
+
+	if started != "scout-model" {
+		t.Fatalf("agent_start model_name = %q, want the home's %q", started, "scout-model")
+	}
+	if got := scoutSeen.Provider.ModelName(); got != "scout-model" {
+		t.Fatalf("agent-owned run used model %q, want %q", got, "scout-model")
+	}
+	if daemonSeen.Provider != nil {
+		t.Fatal("the daemon's agent served an agent-owned session")
+	}
+	// The pick must not stick on the row either: the home decides on
+	// every send, and a remembered daemon model would outlive the rule.
+	sess, err := srv.store.GetSession(ctx, "sess-scout-2")
+	if err != nil {
+		t.Fatalf("read scout session: %v", err)
+	}
+	if sess.Model != "" || sess.ProviderName != "" {
+		t.Fatalf("session pinned model %q / provider %q, want both empty (the home owns them)",
+			sess.Model, sess.ProviderName)
+	}
+}
+
 // postChatAndWait sends one turn and waits for the run to finish
 // persisting (the run detaches from the request; the frames tell us the
 // stream ended, the store tells us the rows landed).

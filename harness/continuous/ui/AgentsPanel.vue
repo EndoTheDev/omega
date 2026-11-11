@@ -100,9 +100,21 @@
       :error="toggleError"
       :loaded="loaded"
       :toggleable="toggleable"
+      :openable="rowHasChat"
       empty-text="no agents registered"
       @toggle="onToggle"
+      @open="openAgentChat"
       @expand="onExpand">
+      <!-- card t_81109e1c (ruling 3): the main agent rides the roster
+           like every other home and its row says which one it is - the
+           badge sits beside the name, so it survives a host that
+           serves no toggle seam (where the locked pill never renders). -->
+      <template #side="{ row }">
+        <span
+          v-if="row.name === DefaultAgentName"
+          class="agents-main-badge"
+          title="the main agent - the home at the daemon's root">main</span>
+      </template>
       <template #detail="{ row }">
         <!-- the expansion: the agent's details + edit (card t_2d8deb8c
              ruling 3). The DEFAULT agent's config IS the home config -
@@ -253,6 +265,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import {
+  agentRosterSubtitle,
   agentStatusFor,
   continuousIndex,
   DefaultAgentName,
@@ -336,7 +349,9 @@ const rows = computed<RegistryRow[]>(() => {
     const c = idx[a.name] ?? null;
     return {
       name: a.name,
-      description: a.description || "",
+      // card t_81109e1c: the subtitle carries the roster's facts -
+      // description, model, session count, last activity.
+      description: agentRosterSubtitle(a),
       detail: mergedRowDetail(a, c),
       disabled: a.name === DefaultAgentName ? false : set.has(a.name),
       locked: a.name === DefaultAgentName,
@@ -344,6 +359,38 @@ const rows = computed<RegistryRow[]>(() => {
     };
   });
 });
+
+// --- card t_81109e1c: the row click opens the agent's chat ------------
+// Ruling 1: a click opens a FULL interactive chat on the agent's
+// session (the ordinary ChatTab, a different session id). Ruling 2: it
+// lands on the agent's MOST RECENT session - the id the roster payload
+// carries (last_session_id). Ruling 4 is the shell's: app.vue's
+// openChatTab focuses a tab already bound to that session instead of
+// minting a second one, so this panel never needs its own dedupe.
+//
+// Module UI imports no shell code (the Board precedent), so the open
+// rides a window CustomEvent. THE LITERAL IS COPIED from
+// composables/chat.ts (CHAT_SESSION_OPEN_EVENT) - the agents chat test
+// pins both spellings identical.
+const CHAT_SESSION_OPEN_EVENT = "omega:open-chat-session";
+
+function sessionOf(name: string): string {
+  const p = profiles.value.find((a) => a.name === name);
+  return p?.last_session_id ?? "";
+}
+
+/** the roster's openable predicate: only a row with a session to bind
+    is clickable - an agent with none keeps the plain name span rather
+    than a button that would do nothing. */
+function rowHasChat(row: RegistryRow): boolean {
+  return sessionOf(row.name) !== "";
+}
+
+function openAgentChat(row: RegistryRow): void {
+  const id = sessionOf(row.name);
+  if (!id) return;
+  window.dispatchEvent(new CustomEvent(CHAT_SESSION_OPEN_EVENT, { detail: id }));
+}
 
 function rosterOf(name: string): OmegaContinuousRow | null {
   const idx = continuousIndex(roster.value);
@@ -638,6 +685,19 @@ defineExpose({ load, profiles, fold, rows, roster, rowStatusOf, rowStatusVoice }
 </script>
 
 <style scoped>
+/* card t_81109e1c: the main-agent row badge - a quiet chip on line 1,
+   beside the name (the locked pill marks the same row when the toggle
+   seam exists; the badge survives a host that serves none). */
+.agents-main-badge {
+  align-self: center;
+  background: var(--z2, rgba(128, 128, 128, 0.12));
+  border-radius: 4px;
+  color: var(--text-dim, #8a8a92);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  text-transform: lowercase;
+}
 /* card t_308e6d9b: the root is a band + scroll body; card t_2d8deb8c:
    the body's inset/padding rides the CRON reference (4px 12px 14px)
    - padding/margin/gap parity with the cron tab. */
