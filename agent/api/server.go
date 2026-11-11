@@ -489,6 +489,11 @@ func (s *Server) Active(id string) bool { return s.runs.active(id) }
 // disabled-tools surfaces ride it).
 func (s *Server) Agent() *agent.Agent { return s.agent }
 
+// Store exposes the store seam (the shell's /health database fact pings
+// it through the optional agent.StorePinger upgrade). Nil when no store
+// module is mounted - the health body then carries no database fact.
+func (s *Server) Store() agent.StoreProvider { return s.store }
+
 // ModuleToggles exposes the module-toggle seam (GET/PUT /modules).
 func (s *Server) ModuleToggles() core.ModuleToggles { return s.modules }
 

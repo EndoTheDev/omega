@@ -800,13 +800,26 @@ Every pushed frame is one JSON text message:
 | `chips` | `{call_id, tool, fill, text, content, truncated, is_error, timeout, elapsed_ms}` | `fill` false: the run output tap - a tool's live output as it lands (the shell's capped buffer). `fill` true: the pending chip settles (`wakeHome`, the one settle entry point) |
 | `canvas` | one `view_model_delta` panel descriptor | `CanvasEmit` - every mounted capsule's panel state, notifications toasts and board changes included. Panel state names itself in the payload, so the shell carries no capsule noun |
 | `runs` | `{active}` | the run slot: taken in `prepareRun`, released when the run's finish hook fires. This is the live-run truth `GET /sessions` used to be polled for |
-| `health` | `{status, uptime_seconds, version}` | the server heartbeat, every 5s. The same body `GET /health` serves |
+| `health` | `{status, uptime_seconds, version}` + the optional facts `{provider: {reachable, checked_at, detail?}, database: {healthy, detail?}, last_error: {message, at?}}` | the server heartbeat, every 5s. The same body `GET /health` serves |
 | `logs` | `{lines: string[]}` | the log follower (`api/server_inspector.go`): the lines appended to the log file since the previous frame, read by offset from the same path `GET /logs` tails (the write site is `harness/logging`'s `FileLogger`). A DELTA, never the tail - the pane's snapshot is `GET /logs`. Subscription-gated: nothing is read or published while no connection holds the topic, and a subscriber that did not ask receives nothing |
 
 The `chips` topic is the one **lossy** topic: a consumer that falls
 behind drops frames rather than losing the wire (the tool result and
 the transcript remain the truth). On every other topic a stalled
 consumer is cut and reconnects.
+
+**The health body's optional facts** (card t_5e2f3095) are all-or-nothing
+per key: an ABSENT key means the process has no source for that fact -
+no provider probe has landed yet, no store module is mounted, the
+logger carries no last-error record, or the server predates the
+enrichment - and the webui's health popover renders `not reported`
+rather than inventing a value. A sourced fact always rides as an
+object, so `last_error: {message: ""}` (a sourced "none since boot") is
+distinguishable from an absent `last_error`. `provider` is a CACHED
+probe - one model-list round trip a minute (`api/health.go`), never one
+per 5s frame - and `checked_at` dates it; `database` is the store seam's
+`Ping`, probed inline with a 2s budget; `last_error` is the newest
+`ERROR:` entry the logger itself recorded.
 
 ### Client -> server
 

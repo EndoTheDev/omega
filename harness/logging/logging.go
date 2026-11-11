@@ -7,12 +7,12 @@
 package logging
 
 import (
-	"github.com/EndoTheDev/omega/agent"
 	"fmt"
+	"github.com/EndoTheDev/omega/agent"
 	"log"
 	"os"
 	"sync"
-
+	"time"
 )
 
 // FileLogger implements agent.LoggerProvider with a file backend.
@@ -21,6 +21,12 @@ type FileLogger struct {
 	path string
 	file *os.File
 	log  *log.Logger
+	// lastErr / lastErrAt are the newest ERROR-level entry (the health
+	// popover's "last error" fact, agent.LoggerLastError). The message
+	// is the formatted text WITHOUT the in-band "ERROR: " marker - the
+	// row already says what it is.
+	lastErr   string
+	lastErrAt time.Time
 }
 
 // NewFileLogger opens the log file (append mode) and returns a
@@ -59,6 +65,23 @@ func (l *FileLogger) Errorf(format string, args ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.log.Printf("ERROR: "+format, args...)
+	// The health fact keeps the newest entry only: the file tail is the
+	// history (GET /logs), the popover asks "what broke last".
+	l.lastErr = fmt.Sprintf(format, args...)
+	l.lastErrAt = time.Now().Truncate(time.Second)
+}
+
+// LastError returns the newest ERROR-level entry and when it was
+// written (agent.LoggerLastError - the health popover's last-error
+// fact). ok=false when no error has been logged since this logger
+// opened.
+func (l *FileLogger) LastError() (string, time.Time, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.lastErr == "" {
+		return "", time.Time{}, false
+	}
+	return l.lastErr, l.lastErrAt, true
 }
 
 // Warnf writes a warning-level log entry. The in-band "WARN: " marker

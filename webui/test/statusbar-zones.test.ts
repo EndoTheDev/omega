@@ -219,7 +219,7 @@ describe("the health popover", () => {
     assert.match(bar, /closest\("\.health-pop, \.health"\)/, "an outside click closes it");
   });
 
-  it("carries the four ruled facts - and never invents a value it has no source for", () => {
+  it("carries the five ruled facts - and never invents a value it has no source for", () => {
     const bar = statusBar();
     for (const key of ["server", "provider", "database", "uptime", "last error"]) {
       assert.match(bar, new RegExp(`<span class="hp-key">${key}</span>`), `fact row missing: ${key}`);
@@ -227,9 +227,77 @@ describe("the health popover", () => {
     // the sourced facts read the real /health body
     assert.match(bar, /\{\{ healthy \? "reachable" : "not reachable" \}\}/);
     assert.match(bar, /\{\{ formatUp \}\}/);
-    // the unsourced three say so, with the reason in the footnote
+    // the three enriched facts (card t_5e2f3095): each renders its wire
+    // verdict when the body carries one...
+    assert.match(bar, /\{\{ providerReachable \? "reachable" : "not reachable" \}\}/, "provider row reads its verdict");
+    assert.match(bar, /\{\{ databaseHealthy \? "healthy" : "unhealthy" \}\}/, "database row reads its verdict");
+    assert.match(bar, /\{\{ lastErrorMessage \|\| "none" \}\}/, "last error row reads the recorded message, or none");
+    // ...and each degrades to not reported when it has no source: three
+    // v-else fallbacks, no invented value anywhere.
     assert.equal((bar.match(/\{\{ NOT_REPORTED \}\}/g) ?? []).length, 3);
-    assert.match(bar, /provider, database and last error: this build's \/health reports/);
-    assert.match(bar, /const NOT_REPORTED = "not reported";/);
+    assert.equal((bar.match(/v-else class="hp-val muted"/g) ?? []).length, 3, "every row has an unsourced branch");
+  });
+
+  it("only names the gap while a row is actually unsourced", () => {
+    const bar = statusBar();
+    // the footnote is conditional - a fully sourced popover carries no
+    // apology (the old unconditional note named a build-level gap).
+    assert.match(bar, /<p v-if="unsourcedCount" class="hp-note">/);
+    assert.match(bar, /if \(!providerSourced\.value\) n\+\+;/);
+    assert.match(bar, /if \(!databaseSourced\.value\) n\+\+;/);
+    assert.match(bar, /if \(!lastErrorSourced\.value\) n\+\+;/);
+    assert.match(bar, /no source in this server's \/health/);
+  });
+
+  it("decides sourced-vs-unsourced from the wire shapes, not from defaults", () => {
+    const bar = statusBar();
+    // a boolean verdict is the only sourced provider/database shape
+    assert.match(bar, /typeof props\.providerReachable === "boolean"/);
+    assert.match(bar, /typeof props\.databaseHealthy === "boolean"/);
+    // an EMPTY last-error message is sourced ("none since boot"); only an
+    // absent field is the gap
+    assert.match(bar, /typeof props\.lastErrorMessage === "string"/);
+    // the facts are optional props - an older shell passes nothing
+    assert.match(bar, /providerReachable\?: boolean \| null;/);
+    assert.match(bar, /databaseHealthy\?: boolean \| null;/);
+    assert.match(bar, /lastErrorMessage\?: string \| null;/);
+  });
+});
+
+// --- 5b. the facts' wiring: /health body -> app shell -> the bar ----------
+
+describe("the health facts' wiring (card t_5e2f3095)", () => {
+  it("the wire types carry the three optional facts", () => {
+    const socket = src("composables/socket.ts");
+    assert.match(socket, /provider\?: HealthProviderFact;/);
+    assert.match(socket, /database\?: HealthDatabaseFact;/);
+    assert.match(socket, /last_error\?: HealthErrorFact;/);
+    const omega = src("composables/omega.ts");
+    assert.match(omega, /provider\?: \{[\s\S]{0,120}reachable\?: boolean;/);
+    assert.match(omega, /database\?: \{ healthy\?: boolean; detail\?: string \};/);
+    assert.match(omega, /last_error\?: \{ message\?: string; at\?: number \};/);
+  });
+
+  it("ONE copy path feeds all three /health read sites", () => {
+    const app = appVue();
+    assert.match(app, /function noteHealthFacts\(h: HealthPush\): void \{/);
+    assert.equal((app.match(/noteHealthFacts\(/g) ?? []).length, 4, "the helper + its three call sites (boot, catch-up, pushed frame)");
+    assert.equal((app.match(/noteHealthFacts\(h\);/g) ?? []).length, 2, "boot read + reconnect catch-up");
+    assert.equal((app.match(/noteHealthFacts\(s\);/g) ?? []).length, 1, "the pushed frame");
+  });
+
+  it("the shell hands every fact to the bar as an optional prop", () => {
+    const app = appVue();
+    for (const prop of [
+      ":provider-reachable=\"healthProviderReachable\"",
+      ":provider-checked-at=\"healthProviderCheckedAt\"",
+      ":provider-detail=\"healthProviderDetail\"",
+      ":database-healthy=\"healthDatabaseHealthy\"",
+      ":database-detail=\"healthDatabaseDetail\"",
+      ":last-error-message=\"healthLastErrorMessage\"",
+      ":last-error-at=\"healthLastErrorAt\"",
+    ]) {
+      assert.ok(app.includes(prop), `app.vue does not pass ${prop}`);
+    }
   });
 });

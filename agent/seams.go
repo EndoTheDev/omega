@@ -242,6 +242,20 @@ type DelegateSessionStore interface {
 	CreateDelegateSession(ctx context.Context, id, delegateParent, label string) error
 }
 
+// StorePinger is the optional store health surface (the health
+// popover's "database" row). The StoreProvider surface stays untouched
+// - a store (or a test fake) without the upgrade is a full member, the
+// health body simply carries no database fact, and the popover renders
+// "not reported" instead of inventing one. Probed at runtime like the
+// other upgrades.
+type StorePinger interface {
+	// Ping answers whether the store's backing database answers a round
+	// trip right now. The caller bounds it with ctx; a healthy store
+	// returns nil within that budget, so an implementation must keep it
+	// a liveness read (a pooled round trip), never a full-file scan.
+	Ping(ctx context.Context) error
+}
+
 // LoggerProvider is the logging seam. Extensions call it to write
 // log entries. The default implementation writes to a file in
 // OMEGA_HOME; a no-op implementation is used when logging is disabled.
@@ -254,6 +268,19 @@ type LoggerProvider interface {
 	Errorf(format string, args ...any)
 	// Close flushes and closes the log output.
 	Close() error
+}
+
+// LoggerLastError is the optional logger upgrade behind the health
+// popover's "last error" row: the newest ERROR-level entry the logger
+// itself recorded, with the time it was written. The LoggerProvider
+// surface stays untouched - a logger without the upgrade (the NopLogger
+// of a logging-disabled install, a test double) reports nothing and the
+// row degrades to "not reported".
+type LoggerLastError interface {
+	// LastError returns the newest error entry's message (the formatted
+	// text, without the in-band "ERROR: " marker) and its timestamp.
+	// ok=false means no error has been recorded since the logger opened.
+	LastError() (message string, at time.Time, ok bool)
 }
 
 // PromptBuilder builds the system prompt and supplies guideline
