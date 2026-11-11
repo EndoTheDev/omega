@@ -35,12 +35,14 @@ import {
   parseSelection,
   resolveSelection,
   selectionId,
+  spyAnchorMayWrite,
   spyTargetIds,
   subgroupLabel,
   withSubgroups,
   buildSpyTargets,
   targetSection,
   type PaneScrollState,
+  type SpyAnchorTrace,
   type SpyNodeLike,
 } from "../app/components/settings/settingsNav.ts";
 
@@ -859,8 +861,8 @@ test("the clamp rides the scroll event and never the intent-event lock", () => {
   );
   assert.match(
     tab,
-    /if \(bodyEl\.value && !paneOwnScroll\(\)\) unlockSpy\(\);/,
-    "any other scroll event releases the suppression",
+    /if \(bodyEl\.value && !paneOwnScroll\(\)\) \{\s*unlockSpy\(\);[\s\S]{0,220}anchorTrace\.userScrollAt = nowMs\(\);/,
+    "any other scroll event releases the suppression - and it is the only one that stamps the user's scroll",
   );
   assert.ok(
     !/if \(spyLocked\) return;[\s\S]{0,400}function scheduleClamp/.test(tab),
@@ -876,5 +878,91 @@ test("the clamp rides the scroll event and never the intent-event lock", () => {
     tab,
     /paneScroll = paneScrollSettle\(nowMs\(\), PANE_SETTLE_GRACE_MS\);[\s\S]{0,220}if \(clampId\.value\) scheduleClamp\(\);/,
     "when the pane's own scroll settles, the clamp re-measures",
+  );
+});
+
+// --- card t_63c699ce: a resize is not a scroll ---------------------------
+//
+// The probe that opened this card (private lane 18201, settings pane, 13
+// categories; narrow 340x780 -> widen 1280x800) sampled the stored anchor
+// every 100ms across the widen, with the pane's own smooth jump still in
+// flight and the spy's 650ms post-click hold already expired:
+//
+//   108ms  anchor compaction          scrollTop 2807  (the jump's animation)
+//   404ms  anchor compaction          scrollTop 4039  <-- widen lands here
+//   503ms  anchor server/workspace    scrollTop 3340  <-- the flip
+//   609ms  anchor compaction          scrollTop 3904  (the clamp's re-snap)
+//   704ms  anchor compaction/budget   scrollTop 4217
+//   801ms  anchor compaction/window   scrollTop 4335
+//   1001ms anchor compaction/window   scrollTop 4399  (settled)
+//
+// Every write after 404ms was a delivery the RESIZE armed: the observer
+// re-resolved the band at the new boxes and persisted whatever id it found,
+// then the clamp's own snap re-armed it again. Nothing scrolled. The rule the
+// pane now follows is ORDER - the anchor is written only by a scroll the
+// pane did not issue itself, once per scroll - and it is pure, so it is
+// pinned here rather than in a browser.
+test("a resize re-spies the highlight but never rewrites the anchor (t_63c699ce)", () => {
+  const fresh: SpyAnchorTrace = { userScrollAt: 0, geometryAt: 0, wroteAt: 0 };
+  assert.equal(spyAnchorMayWrite(fresh), false, "a pane nobody scrolled writes nothing");
+  // the drawer jump is the PANE's own scroll (notePaneScroll), so it stamps
+  // no user scroll - and the widen after it is geometry
+  const jumpedThenWidened: SpyAnchorTrace = { userScrollAt: 0, geometryAt: 1000, wroteAt: 0 };
+  assert.equal(
+    spyAnchorMayWrite(jumpedThenWidened),
+    false,
+    "the delivery a widen arms leaves the explicit jump's anchor alone",
+  );
+  // the user's own hand, after that geometry change, is the one that writes
+  const scrolled: SpyAnchorTrace = { ...jumpedThenWidened, userScrollAt: 1200 };
+  assert.equal(spyAnchorMayWrite(scrolled), true, "a user scroll writes the anchor");
+  assert.equal(
+    spyAnchorMayWrite({ ...scrolled, wroteAt: 1200 }),
+    false,
+    "one write per scroll - the clamp's trailing delivery writes nothing",
+  );
+  // a scroll OLDER than the geometry change is not evidence: the resize
+  // resolved new boxes, whatever the user did before it
+  assert.equal(
+    spyAnchorMayWrite({ userScrollAt: 900, geometryAt: 1000, wroteAt: 0 }),
+    false,
+    "a resize closes the write the user's previous scroll opened",
+  );
+});
+
+test("the spy's anchor write is gated on the user's scroll, never on geometry", () => {
+  assert.match(
+    navSource,
+    /export function spyAnchorMayWrite\(trace: SpyAnchorTrace\): boolean \{\s*return trace\.userScrollAt > trace\.geometryAt && trace\.userScrollAt > trace\.wroteAt;/,
+    "the rule is ORDER: user scroll newer than the last geometry change, once per scroll",
+  );
+  // the observer decides the highlight as before, but the WRITE asks the rule
+  assert.match(
+    tab,
+    /selection\.value = best;[\s\S]{0,260}if \(!spyAnchorMayWrite\(anchorTrace\)\) return;\s*anchorTrace\.wroteAt = anchorTrace\.userScrollAt;\s*persistAnchor\(best\);/,
+    "the spy persists only what the user's scroll earned",
+  );
+  // geometry is stamped by the two things that move the boxes: a re-arm...
+  assert.match(
+    tab,
+    /inBand\.clear\(\);\s*\/\/ a re-arm is a GEOMETRY change[\s\S]{0,120}anchorTrace\.geometryAt = nowMs\(\);/,
+    "re-arming the spy is a geometry change",
+  );
+  // ...and the scrollport's own box observer
+  assert.match(
+    tab,
+    /new ResizeObserver\(\(\) => \{\s*anchorTrace\.geometryAt = nowMs\(\);\s*\}\)/,
+    "the scrollport's box is observed as geometry",
+  );
+  assert.match(tab, /paneBoxObserver\?\.disconnect\(\);/, "the box observer dies with the pane");
+  // a re-clamp is the PANE's own scroll, so its event cannot arm a write
+  assert.match(
+    tab,
+    /notePaneScroll\(root, next\);\s*root\.scrollTop = next;/,
+    "the clamp's snap is noted as the pane's own scroll",
+  );
+  assert.ok(
+    !/localStorage\.setItem\(NAV_STORAGE_KEY, best\)/.test(tab),
+    "no second write path around the gate",
   );
 });
