@@ -337,8 +337,16 @@ export function createSocketClient(
       try {
         socket.close();
       } catch {
-        // already dead: the close handler's job
+        // already dead: the teardown below still owns the recovery
       }
+      // Hand recovery to the ladder NOW. The browser's close EVENT is not a
+      // promise: on a half-open wire it can be deferred until the network
+      // returns (measured: the entire dark window under `ab set offline`) or
+      // never arrive at all. Waiting for it leaves the client dark with no
+      // timer armed - no reconnect, no onopen, no catch-up refetch, and the
+      // pane stays stale (card t_71f28526). A late close is ignored by the
+      // stale-socket guard in onclose.
+      if (ws === socket) dropConnection();
     }, delayMs ?? budget());
   }
 
@@ -367,6 +375,24 @@ export function createSocketClient(
     }
   }
 
+  // dropConnection takes the CURRENT socket out of the client's hands and
+  // hands recovery to the ladder. Both routes into it - the browser's close
+  // event and the liveness cut - must leave exactly one reconnect pending,
+  // never two: `ws = null` plus `schedule()`'s own guard is what keeps the
+  // ladder single-file, and the stale-socket guard in onclose is what stops
+  // a late close from stepping it twice.
+  function dropConnection(): void {
+    ws = null;
+    disarmLiveness();
+    if (closedByUser) {
+      status.value = "closed";
+      return;
+    }
+    status.value = "reconnecting";
+    handlers.close?.();
+    schedule();
+  }
+
   function connect(): void {
     if (closedByUser) return;
     if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
@@ -387,15 +413,11 @@ export function createSocketClient(
       if (env) dispatchFrame(env, handlers);
     };
     socket.onclose = () => {
-      ws = null;
-      disarmLiveness();
-      if (closedByUser) {
-        status.value = "closed";
-        return;
-      }
-      status.value = "reconnecting";
-      handlers.close?.();
-      schedule();
+      // a socket we already dropped is not news: its close can land after the
+      // ladder has replaced it (the liveness cut does not wait for it), and
+      // nulling the live socket here would strand the connection
+      if (ws !== socket) return;
+      dropConnection();
     };
     socket.onerror = () => {
       // the close event always follows; nothing to do here

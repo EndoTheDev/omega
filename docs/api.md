@@ -762,6 +762,18 @@ within one budget of the final frame. A full-budget re-arm instead let a
 dead wire sit undetected for up to 2x the budget (30s), longer than the
 outage a reconnect catch-up is given - the half-open socket then revived
 with the network and the catch-up refetch never ran (card t_71f28526).
+The cut also hands recovery to the ladder ITSELF: a half-open socket's
+`close` event is not a promise. Measured under `ab set offline` (both
+agent-browser 0.26.0 and 0.42.0), `close()` was called at 15-16s of
+silence and the close event stayed absent for the entire outage - it
+only landed when the network returned, and a client that waits for it
+sits dark with no timer armed (no reconnect, no catch-up refetch, a
+stale pane, journey 111 red at 45s of polling). So the deadline tears
+the socket out of the client's hands and schedules the ladder at once;
+the browser's late close is ignored by the stale-socket guard in
+`onclose` (card t_71f28526, pinned by
+`test/socket.test.ts` "the ladder runs even when the dead socket never
+reports close").
 That timer is the liveness
 heartbeat, not a poller: no GET repeats on a cadence anywhere in the
 shell. The `chips` topic feeds the pending chip's live tail; `runs`
