@@ -10,9 +10,11 @@
 //   - settings: card t_529628d5 superseded the own-row shape with an
 //     in-band seat, then card t_6bebff18 (Endo ruling 2026-11-10,
 //     option B) moved the filter OUT of the band to a pane-top
-//     full-width bar (the VSCode shape) - settings leaves the
-//     band-search roster, which now scopes to the four module tabs
-//     (pinned in bandsearch.test.ts);
+//     full-width bar (the VSCode shape), and card t_1cfb080a (Endo,
+//     2026-11-11) removed the band itself - the dock tab already says
+//     "Settings", so the pane renders NO band and the bar heads it
+//     (this file pins that ABSENCE; bandsearch.test.ts owns the
+//     band-search roster, which now scopes to the four module tabs);
 //   - tools: the Skills refresh band-tool pattern in the band;
 //   - insights: ONE window control, no duplicate period label.
 // Run: node --test test/band-breaks.test.ts
@@ -28,26 +30,49 @@ const settings = src("app/components/settings/SettingsTab.vue");
 const tools = src("../harness/tools/ui/ToolsList.vue");
 const insights = src("../harness/store/ui/InsightsTab.vue");
 const skills = src("../harness/skills/ui/SkillsList.vue");
-const tabband = src("app/components/ui/TabBand.vue");
 const maincss = src("app/assets/css/main.css");
 
-describe("settings: the filter heads the pane, OUTSIDE the band (card t_6bebff18)", () => {
-  it("the band is a plain title band - no in-band search seat", () => {
-    const bandStart = settings.indexOf('<TabBand title="Settings">');
-    const bandEnd = settings.indexOf("</TabBand>", bandStart);
-    assert.ok(bandStart >= 0, "the band renders");
-    assert.ok(bandEnd > bandStart, "the band closes");
-    const chunk = settings.slice(bandStart, bandEnd);
-    assert.doesNotMatch(chunk, /class="band-search"/, "the shared seat left with the roster");
-    assert.doesNotMatch(chunk, /<SearchInput/, "no input inside the band");
+describe("settings: NO tab band - the dock tab already says Settings (card t_1cfb080a)", () => {
+  // card t_308e6d9b put the universal band in this pane on purpose; card
+  // t_1cfb080a (Endo, 2026-11-11) SUPERSEDES it. The dock tab carries the
+  // name, so the in-pane band only repeated it while spending a 22px row
+  // plus the band's 14px lead. The pin below is the ABSENCE: a later edit
+  // must not quietly put it back (band-breaks is where the settings band
+  // shape has always been pinned).
+  it("the pane composes no tab band at all", () => {
+    assert.ok(!/<TabBand\b/.test(settings), "no <TabBand> element in the settings pane");
+    assert.doesNotMatch(settings, /class="tab-band/, "no band markup");
+    assert.doesNotMatch(settings, /from\s+["'][^"']*TabBand["']/, "no TabBand import");
   });
 
-  it("the full-width bar sits between the band and the scrollport", () => {
-    const closeAt = settings.indexOf("</TabBand>");
+  it("the filter bar is the pane's FIRST row - nothing renders above it", () => {
+    const rootAt = settings.indexOf('class="settings aside pane inspector-panel"');
+    assert.ok(rootAt >= 0, "the pane root renders");
+    const rootTagEnd = settings.indexOf(">", rootAt);
     const barAt = settings.indexOf('class="settings-filterbar"');
     const bodyAt = settings.indexOf('class="settings-body"');
-    assert.ok(closeAt < barAt, "the bar renders BELOW the closed band");
+    assert.ok(rootTagEnd > rootAt, "the pane root's open tag closes");
+    assert.ok(barAt > rootTagEnd, "the bar mounts INSIDE the pane root");
+    // slice to the bar's OWN open tag, so the assertion is about markup
+    // between the root and the bar, never about the bar's attributes
+    const barTagAt = settings.lastIndexOf("<", barAt);
+    const between = settings.slice(rootTagEnd, barTagAt);
+    assert.doesNotMatch(
+      between,
+      /<(?!\/?!?!--)[a-zA-Z]/,
+      "nothing renders between the root and the bar (the band's old seat)",
+    );
     assert.ok(barAt < bodyAt, "the bar heads the body, never inside the scrollport");
+  });
+
+  it("the bar carries the pane's own top inset - the band's 14px lead", () => {
+    // the 22px title row is NOT recovered (the name is gone); the lead the
+    // band's margin-top supplied is, on the row that now heads the pane.
+    // Sides stay 10px = the body's inset, so the horizontal geometry is
+    // identical to the band era.
+    const block = settings.match(/\.settings-filterbar\s*\{[^}]*\}/)?.[0] ?? "";
+    assert.match(block, /padding:\s*14px\s+10px/, "14px top lead, 10px sides unchanged");
+    assert.doesNotMatch(block, /padding:\s*6px\s+10px/, "the flush 6px seat is gone");
   });
 
   it("the old filter rows are GONE - source and shared sheet", () => {
@@ -56,7 +81,7 @@ describe("settings: the filter heads the pane, OUTSIDE the band (card t_6bebff18
     assert.ok(!maincss.includes(".settings-search"), "no settings-search rule in main.css");
   });
 
-  it("no flush seating remains - the band rides the shared 22/14 contract", () => {
+  it("no flush seating remains - no band overrides survive either", () => {
     assert.doesNotMatch(
       settings,
       /:lead="false"/,
@@ -72,9 +97,6 @@ describe("settings: the filter heads the pane, OUTSIDE the band (card t_6bebff18
       /class="settings-search"/,
       "the in-band filter class is gone",
     );
-    // the component's own measurements are the contract
-    assert.match(tabband, /min-height:\s*22px/);
-    assert.match(tabband, /margin-top:\s*14px/);
   });
 
   it("the shared SearchInput still carries the behavior via v-model", () => {

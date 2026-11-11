@@ -1,5 +1,13 @@
 <template>
-    <!-- card t_308e6d9b: the tab carries the universal band ("Settings").
+    <!-- card t_1cfb080a (Endo, 2026-11-11) SUPERSEDES card t_308e6d9b FOR
+         THIS PANE: the settings tab carries NO tab band. t_308e6d9b put the
+         universal band here on purpose; a later pass removed it because the
+         DOCK TAB already reads "Settings" - the in-pane band only repeated
+         the name and spent 22px of row + 14px of lead on it. Do not add it
+         back. The band's 14px lead was not lost with it: it is now the
+         filter bar's own top padding (the bar is the pane's first row - see
+         .settings-filterbar below). The other tabs keep the shared band
+         (shell/ExtensionsTab.vue still composes it).
          card t_6bebff18 (Endo ruling 2026-11-10, option B): settings
          LEAVES the shared band-search roster (card t_529628d5, which now
          scopes to the four module tabs - cron/skills/tools/mcp) and the
@@ -16,7 +24,6 @@
       ref="rootEl"
       class="settings aside pane inspector-panel"
       :class="{ open: open, narrow: narrow }">
-      <TabBand title="Settings"></TabBand>
 
     <!-- card t_8b464090 (Endo, 2026-11-11) - the ONE-DOCUMENT law, which
          SUPERSEDES rulings 1 and 12 of the 2026-11-10 grill. The pane is a
@@ -1675,17 +1682,22 @@
     pointer-events: none;
   }
 
-  /* card t_6bebff18 (Endo ruling 2026-11-10): the filter left TabBand's
-     shared 128px band seat and became the pane-top full-width bar - the
-     VSCode settings-search shape. Placement only: the input's look stays
-     the ONE shared .search-input sheet (main.css), no second copy here.
-     The bar is a flex child ABOVE .settings-body, so it never scrolls. */
+  /* card t_6bebff18 (Endo ruling 2026-11-10): the filter left the shared
+     128px band seat and became the pane-top full-width bar - the VSCode
+     settings-search shape. Placement only: the input's look stays the ONE
+     shared .search-input sheet (main.css), no second copy here. The bar is
+     a flex child ABOVE .settings-body, so it never scrolls.
+     card t_1cfb080a (Endo, 2026-11-11): the band above it is GONE, so the
+     bar is now the pane's FIRST row and carries the top seat the band used
+     to supply - 14px, the band's own lead-in (TabBand's margin-top), NOT
+     its 22px title row. The sides stay 10px, matching the body's inset, so
+     the pane's horizontal geometry is unchanged. */
   .settings-filterbar {
     flex: none;
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 10px;
+    padding: 14px 10px 6px;
     border-bottom: 1px solid var(--stroke);
   }
   .settings-filterbar > :first-child {
