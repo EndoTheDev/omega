@@ -26,10 +26,23 @@
 #   - Only ppid==1 processes are matched: a live run.sh (or a live worker
 #     shell) is a parent and protects its chrome. Concurrent suites and
 #     in-use debug chromes are never touched.
-#   - Profile-shape match: cmdline must name "*chrome-profile*", which
-#     covers the journey shape (omega-journeys-chrome-profile-<port>) and
-#     the worker debug shape (dbgN-chrome-profile). A chrome outside this
-#     naming never matches, whatever else it is.
+#   - Profile-shape match: cmdline must name a journey/debug profile dir -
+#     "*chrome-profile*" covers omega-journeys-chrome-profile-<port> and
+#     dbgN-chrome-profile; "agent-browser-chrome-*" covers the auto-launch
+#     browser that agent-browser itself starts and never reaps when its
+#     daemon dies (24 such mains with dead parents were holding 314
+#     chrome.exe on winbtw, found 2026-11-11). A chrome outside these
+#     naming shapes never matches, whatever else it is.
+#
+# Windows (MSYS): /proc exists but holds only MSYS processes, so the scan
+# below finds nothing there. sweep-chromes.ps1 does the same job off
+# Win32_Process - same shapes, same "main process" rule, same live-parent
+# protection, plus a pid-recycling guard the /proc version gets for free
+# (a dead parent's pid can be worn by a live stranger; a real parent always
+# predates its child). It runs before the lock block on purpose: in
+# mkdir-lock mode run.sh exports no fd 9 for this script to inherit, and a
+# sweep that can only kill a chrome whose parent is dead cannot collide
+# with a live suite.
 #
 # Usage:
 #   scripts/journeys/sweep-chromes.sh        # print what it found/killed
@@ -41,6 +54,29 @@ set -u
 
 quiet=0
 [ "${1:-}" = "-q" ] && quiet=1
+
+# --- Windows / MSYS: hand the whole job to the PowerShell half --------------
+# MSYS does mount a /proc, but it only sees MSYS's own processes - a native
+# chrome.exe is not in it, so the scan below finds nothing there (proven on
+# winbtw: 314 chrome.exe, 0 matches). Detect the host, not the tree.
+case "$(uname -s 2>/dev/null)" in
+  MINGW*|MSYS*|CYGWIN*) on_windows=1 ;;
+  *) on_windows=0 ;;
+esac
+if [ "$on_windows" = 1 ]; then
+  jdir="$(cd "$(dirname "$0")" && pwd)"
+  ps1="$jdir/sweep-chromes.ps1"
+  if [ ! -f "$ps1" ] || ! command -v powershell.exe >/dev/null 2>&1; then
+    [ "$quiet" = "1" ] || printf 'sweep-chromes: no Windows reaper next to this script - nothing to scan\n'
+    exit 0
+  fi
+  wps1="$ps1"
+  command -v cygpath >/dev/null 2>&1 && wps1="$(cygpath -w "$ps1")"
+  if [ "$quiet" = "1" ]; then
+    exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$wps1" -Quiet
+  fi
+  exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$wps1"
+fi
 
 # --- run lock ----------------------------------------------------------------
 # run.sh flocks /tmp/omega-journeys.lock on fd 9 for its whole suite body.
