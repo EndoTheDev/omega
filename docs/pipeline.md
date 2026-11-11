@@ -123,6 +123,19 @@ concurrently:
   That half needs no lock: it only kills a chrome whose parent is dead or
   whose parent pid was recycled, and no live suite owns such a chrome.
   `bash scripts/journeys/sweep_chromes_win_test.sh` is its witness.
+- `scripts/journeys/sweep-daemons.sh` closes IDLE agent-browser daemons.
+  A daemon outlives its client by design and holds the chrome it launched,
+  so the chrome reaper above must never touch that pair - the chrome's parent
+  is alive. `run.sh` calls the daemon sweep at the RELEASE GATE: after the
+  last recipe, while it still holds the run lock, so no other suite can be
+  between recipes. A session is closed only when all three verifiable facts
+  hold: the run lock is the caller's (`JOURNEY_GATE_PID` matches the recorded
+  holder), no client holds an ESTABLISHED connection on the session's control
+  port, and the daemon has been up for `JOURNEY_DAEMON_IDLE_MIN` (default 10)
+  minutes - the gate's own `$JOURNEY_SESSION` is exempt from the age rule
+  because the suite body has provably ended. Standalone (cron, pre-merge) it
+  takes the lock itself and stands down while a suite holds it.
+  `bash scripts/journeys/sweep_daemons_test.sh` is its witness.
 
 ## Marker-bisect law
 

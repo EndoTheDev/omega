@@ -38,6 +38,14 @@
 #     Pi/Linux side is pattern-extended, not host-proven. A chrome outside
 #     these naming shapes never matches, whatever else it is.
 #
+# NOT this script's business: an IDLE agent-browser DAEMON with the chrome it
+# holds. That chrome's parent - the daemon - is alive, so the dead-parent rule
+# here correctly leaves the pair alone; the daemon outlives its client by
+# design, which is exactly why a chrome reaper must not judge it. Those are
+# closed at the release gate by scripts/journeys/sweep-daemons.sh (card
+# t_6485e22e), which verifies the run lock, the attached-client probe and an
+# idle window before it closes anything.
+#
 # Windows (MSYS): /proc exists but holds only MSYS processes, so the scan
 # below finds nothing there. sweep-chromes.ps1 does the same job off
 # Win32_Process - same shapes, same "main process" rule, same live-parent

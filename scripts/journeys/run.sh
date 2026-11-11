@@ -59,6 +59,16 @@
 #                                        standalone (cron, pre-merge).
 # A chrome this run ATTACHED to (already listening when we started) is
 # never ours: CHROME_PID stays empty and every kill path no-ops.
+#
+# Daemon contract (card t_6485e22e): killing the chrome is not enough. The
+# agent-browser DAEMON outlives its client by design (that is how a session
+# stays warm), and every session name ever used leaves one daemon holding
+# one auto-launched chrome that sweep-chromes.sh correctly refuses to touch
+# (the chrome's parent - the daemon - is alive). So the RELEASE GATE closes
+# idle daemons: sweep-daemons.sh runs after the last recipe, while this
+# suite still holds the run lock, so no other suite (the only thing that
+# drives a session to a schedule) can be mid-flight. It never runs at suite
+# start - a concurrent worker's session is live then.
 
 set -u
 
@@ -460,6 +470,16 @@ for recipe in $want; do
   kill "$watchdog" 2>/dev/null
   wait "$watchdog" 2>/dev/null
 done
+
+# --- release gate: close idle agent-browser daemons ---------------------------
+# The suite body is over and the run lock is still ours, so no other run.sh
+# suite can be between recipes: the only sessions that could be mid-flight
+# are gone by construction. Each closed daemon takes the chrome it was
+# holding with it (a chrome this suite ATTACHED to is left alone - it was
+# never the daemon's). JOURNEY_GATE_PID is the lock the sweep verifies
+# against; it stands down if the recorded holder is anyone else.
+JOURNEY_GATE_PID=$$ JOURNEY_SESSION="$JOURNEY_SESSION" JOURNEY_AB="$AB" \
+  bash "$JROOT/sweep-daemons.sh" -q --gate 2>/dev/null || true
 
 elapsed=$((SECONDS - started))
 redcount=0
