@@ -72,12 +72,19 @@ func (s *Store) route(ctx context.Context, sessionID string) *Store {
 			target = owner
 		}
 	}
-	s.routeMu.Lock()
-	if s.routes == nil {
-		s.routes = map[string]*Store{}
+	// Cache POSITIVE owners only. Caching "this store owns it" would pin a
+	// miss forever: an id first seen before its agent home existed (or
+	// before the roster minted the home at all) would keep answering
+	// not-found until a restart. A local hit re-probes with one indexed
+	// PK query, which is what the common path paid before anyway.
+	if target != s {
+		s.routeMu.Lock()
+		if s.routes == nil {
+			s.routes = map[string]*Store{}
+		}
+		s.routes[sessionID] = target
+		s.routeMu.Unlock()
 	}
-	s.routes[sessionID] = target
-	s.routeMu.Unlock()
 	return target
 }
 
@@ -148,6 +155,13 @@ func (s *Store) homeStore(name string) *Store {
 			opened.home, opened.agentName = s.home, name
 			st = opened
 		}
+	}
+	if st == nil {
+		// Do NOT cache the miss: an agent home created while the daemon
+		// runs (the roster mints homes at runtime) must start routing
+		// without a restart. The cost is one os.Stat per home per
+		// unresolved id, not per request.
+		return nil
 	}
 	if s.agents == nil {
 		s.agents = map[string]*Store{}

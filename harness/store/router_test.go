@@ -172,6 +172,50 @@ func TestRouterKeepsMainSessionLocal(t *testing.T) {
 	}
 }
 
+func TestRouterSeesAgentHomeCreatedAfterStart(t *testing.T) {
+	ctx := context.Background()
+	home, mainDSN, _ := agentHomeFixture(t)
+	// Start with NO agents directory: the roster has minted no home yet.
+	// The daemon opens its router here and caches what it sees.
+	if err := os.RemoveAll(filepath.Join(home, "agents")); err != nil {
+		t.Fatalf("clear agents dir: %v", err)
+	}
+	router, err := Open(mainDSN)
+	if err != nil {
+		t.Fatalf("open router: %v", err)
+	}
+	router.SetHome(home)
+	defer router.Close()
+
+	if _, err := router.GetSession(ctx, "sess-late"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetSession(late) before the home exists = %v, want ErrNotFound", err)
+	}
+
+	// The roster mints the home while the daemon runs.
+	lateDSN := datadir.DBPath(filepath.Join(home, "agents", "scout"), "omega.db")
+	late, err := Open(lateDSN)
+	if err != nil {
+		t.Fatalf("open late store: %v", err)
+	}
+	if err := late.CreateSession(ctx, "sess-late", "", ""); err != nil {
+		t.Fatalf("create late session: %v", err)
+	}
+	if err := late.AppendMessage(ctx, "sess-late", core.NewUser("late hello")); err != nil {
+		t.Fatalf("append late message: %v", err)
+	}
+	if err := late.Close(); err != nil {
+		t.Fatalf("close late store: %v", err)
+	}
+
+	// No restart: the router must see the new home and route to it.
+	if got := router.SessionOwner("sess-late"); got != "scout" {
+		t.Fatalf("SessionOwner(late) = %q, want scout (a cached miss hid a home created after start)", got)
+	}
+	if sess, err := router.GetSession(ctx, "sess-late"); err != nil || sess.ID != "sess-late" {
+		t.Fatalf("GetSession(late) = %+v, %v", sess, err)
+	}
+}
+
 func TestRouterOffWithoutHome(t *testing.T) {
 	ctx := context.Background()
 	home, mainDSN, _ := agentHomeFixture(t)
