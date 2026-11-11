@@ -104,8 +104,9 @@ else
   # trappable exit (traps set further down); no trappable exit leaves a
   # dir the NEXT suite's staleness check reaps. /tmp is shared across
   # every MSYS shell on the host, same as the flock file. fd 9 does not
-  # exist in this mode, so the suite-start sweep-chromes call stands down
-  # like any standalone sweep (its chrome scan is a no-op on MSYS anyway).
+  # exist in this mode; sweep-chromes.sh detects MSYS and hands the reap to
+  # sweep-chromes.ps1, which runs regardless of the lock - a chrome whose
+  # parent is dead cannot belong to a live suite.
   JOURNEY_LOCK_DIR="$JOURNEY_LOCK.d"
   journey_lock_try() {
     if mkdir "$JOURNEY_LOCK_DIR" 2>/dev/null; then

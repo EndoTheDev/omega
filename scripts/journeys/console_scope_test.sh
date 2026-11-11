@@ -134,7 +134,7 @@ done
 # in the repo.
 make_tree() { # $1 = dir
   mkdir -p "$1"
-  cp -r "$JROOT/lib.sh" "$JROOT/run.sh" "$JROOT/sweep-chromes.sh" "$1"/
+  cp -r "$JROOT/lib.sh" "$JROOT/run.sh" "$JROOT/sweep-chromes.sh" "$JROOT/sweep-chromes.ps1" "$1"/
   mkdir -p "$1/recipes"
   cat > "$1/recipes/990-scope-old-error.sh" <<'R'
 #!/bin/bash

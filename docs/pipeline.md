@@ -118,6 +118,11 @@ concurrently:
 - `scripts/journeys/sweep-chromes.sh` honors the lock: called standalone
   while a suite is live it skips (exit 0); called from the suite (inherited
   fd 9) it proceeds.
+- On Windows/MSYS there is no `/proc` view of native processes, so
+  `sweep-chromes.sh` hands the reap to `scripts/journeys/sweep-chromes.ps1`.
+  That half needs no lock: it only kills a chrome whose parent is dead or
+  whose parent pid was recycled, and no live suite owns such a chrome.
+  `bash scripts/journeys/sweep_chromes_win_test.sh` is its witness.
 
 ## Marker-bisect law
 
