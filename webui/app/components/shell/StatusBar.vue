@@ -92,15 +92,13 @@
         <span v-else>{{ messageCount }} messages</span>
       </span>
 
-      <!-- the health detail popover: the four ruled facts, sourced where a
-           source exists. Uptime + build + server reachability ride the
-           real /health body (pushed every 5s). provider / database / last
-           error have NO wire fact today - api/ws.go's healthState carries
-           {status, uptime_seconds, version} only, and nothing else on the
-           wire reports a provider probe, a db ping or a last error - so
-           they render the honest not-reported state instead of an invented
-           one, and the footnote names the gap. The server-side enrichment
-           is a Go card of its own (this card's files are webui only). -->
+      <!-- the health detail popover: the four ruled facts, each one
+           rendered from its wire source and "not reported" when the body
+           carries no source for it (an older server, a probe that has not
+           landed yet, no store mounted). Uptime + build + server
+           reachability ride the /health status fields (pushed every 5s);
+           provider, database and last error ride the optional facts the
+           Go side reports (agent/api.HealthState, card t_5e2f3095). -->
       <div
         v-if="healthOpen"
         class="health-pop"
@@ -116,11 +114,26 @@
         </div>
         <div class="hp-row">
           <span class="hp-key">provider</span>
-          <span class="hp-val muted">{{ NOT_REPORTED }}</span>
+          <span
+            v-if="providerSourced"
+            class="hp-val"
+            :class="{ down: !providerReachable }"
+            :title="providerDetail">
+            {{ providerReachable ? "reachable" : "not reachable" }}
+            <span class="hp-age">{{ ageOf(providerCheckedAt) }}</span>
+          </span>
+          <span v-else class="hp-val muted">{{ NOT_REPORTED }}</span>
         </div>
         <div class="hp-row">
           <span class="hp-key">database</span>
-          <span class="hp-val muted">{{ NOT_REPORTED }}</span>
+          <span
+            v-if="databaseSourced"
+            class="hp-val"
+            :class="{ down: !databaseHealthy }"
+            :title="databaseDetail">
+            {{ databaseHealthy ? "healthy" : "unhealthy" }}
+          </span>
+          <span v-else class="hp-val muted">{{ NOT_REPORTED }}</span>
         </div>
         <div class="hp-row">
           <span class="hp-key">uptime</span>
@@ -128,11 +141,20 @@
         </div>
         <div class="hp-row">
           <span class="hp-key">last error</span>
-          <span class="hp-val muted">{{ NOT_REPORTED }}</span>
+          <span
+            v-if="lastErrorSourced"
+            class="hp-val"
+            :class="{ down: !!lastErrorMessage }"
+            :title="lastErrorMessage">
+            {{ lastErrorMessage || "none" }}
+            <span v-if="lastErrorMessage" class="hp-age">{{ ageOf(lastErrorAt) }}</span>
+          </span>
+          <span v-else class="hp-val muted">{{ NOT_REPORTED }}</span>
         </div>
-        <p class="hp-note">
-          provider, database and last error: this build's /health reports
-          status, uptime and version only.
+        <p v-if="unsourcedCount" class="hp-note">
+          {{ unsourcedCount === 1 ? "one fact has" : `${unsourcedCount} facts have` }}
+          no source in this server's /health - an older build, or the
+          probe has not landed yet.
         </p>
         <div class="hp-foot">
           <span>{{ version || "build unknown" }}</span>
@@ -176,6 +198,23 @@
     pending: number;
     // the page's push-channel state (idle|connecting|open|reconnecting|closed)
     socket: string;
+    // --- the health popover's optional facts (card t_5e2f3095) ------------
+    // Every one is optional ON PURPOSE: a shell served by an older build
+    // (or a process whose probe has not landed yet) sends nothing, and
+    // the row renders "not reported" instead of an invented value.
+    // providerReachable: the /health body's provider.reachable verdict;
+    // null/undefined = no source.
+    providerReachable?: boolean | null;
+    // unix seconds of that verdict (the row's "12s ago" freshness hint)
+    providerCheckedAt?: number;
+    // the probe's error text, shown as the row's tooltip when it failed
+    providerDetail?: string;
+    databaseHealthy?: boolean | null;
+    databaseDetail?: string;
+    // lastErrorMessage: "" is a SOURCED "no errors since boot" (the row
+    // reads "none"); undefined/null means the server reports no such fact.
+    lastErrorMessage?: string | null;
+    lastErrorAt?: number;
   }>();
 
   defineEmits<{
@@ -185,6 +224,31 @@
   }>();
 
   const NOT_REPORTED = "not reported";
+
+  // --- the popover's sourced-vs-unsourced gates --------------------------
+  // A boolean is the only "sourced" shape: the wire carries a real
+  // verdict or nothing at all.
+  const providerSourced = computed(() => typeof props.providerReachable === "boolean");
+  const databaseSourced = computed(() => typeof props.databaseHealthy === "boolean");
+  // An empty message is sourced ("none"): only an absent field is a gap.
+  const lastErrorSourced = computed(() => typeof props.lastErrorMessage === "string");
+  // The footnote appears only while some row is unsourced - a fully
+  // sourced popover carries no apology.
+  const unsourcedCount = computed(() => {
+    let n = 0;
+    if (!providerSourced.value) n++;
+    if (!databaseSourced.value) n++;
+    if (!lastErrorSourced.value) n++;
+    return n;
+  });
+
+  // ageOf renders "12s ago" for a unix-seconds stamp; empty when the
+  // fact carries no time (the row then shows the value alone).
+  function ageOf(unix?: number): string {
+    if (!unix) return "";
+    const ms = Date.now() - unix * 1000;
+    return ms > 0 ? `${formatDurationMs(ms)} ago` : "";
+  }
 
   // 1048576 -> "1M", 32768 -> "32k"
   const formatCtx = computed(() => {

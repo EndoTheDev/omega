@@ -25,6 +25,30 @@ var ErrNotFound = errors.New("session not found")
 // Compile-time assertion that Store implements agent.StoreProvider.
 var _ agent.StoreProvider = (*Store)(nil)
 
+// Compile-time assertion that Store carries the optional health probe
+// (agent.StorePinger) - the /health database fact.
+var _ agent.StorePinger = (*Store)(nil)
+
+// Ping is the store health probe (agent.StorePinger): one pooled round
+// trip, bounded by ctx. Deliberately NOT a PRAGMA quick_check - that
+// walks every page of the file, and this fact rides the 5s health
+// heartbeat, so it must stay O(1). Corruption scanning is the store's
+// own hygiene pass's job; the popover asks only "is the database
+// answering".
+func (s *Store) Ping(ctx context.Context) error {
+	if s.db == nil {
+		return errors.New("store: not open")
+	}
+	var one int
+	if err := s.db.QueryRowContext(ctx, `SELECT 1`).Scan(&one); err != nil {
+		return err
+	}
+	if one != 1 {
+		return fmt.Errorf("store: ping answered %d, want 1", one)
+	}
+	return nil
+}
+
 // Store persists sessions and its message history in SQLite.
 // It is safe for concurrent use via *sql.DB.
 type Store struct {

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 func TestFileLoggerWrite(t *testing.T) {
@@ -271,5 +271,55 @@ func TestPluginMountDefaultNoCwdFile(t *testing.T) {
 	defer ctx.Services().Resolve("logger").(agent.LoggerProvider).Close()
 	if entries, err := os.ReadDir(cwd); err != nil || len(entries) != 0 {
 		t.Errorf("log file leaked into CWD: entries=%v err=%v", entries, err)
+	}
+}
+
+// TestLastErrorFact pins the health popover's last-error source (card
+// t_5e2f3095): the newest ERROR-level entry with its time, the "ERROR: "
+// marker stripped (the row already says what it is), and info/warn never
+// moving it. A fresh logger reports ok=false - the popover's "none"
+// rather than a stale entry from a previous run.
+func TestLastErrorFact(t *testing.T) {
+	l, err := NewFileLogger(filepath.Join(t.TempDir(), "last-error.log"))
+	if err != nil {
+		t.Fatalf("NewFileLogger: %v", err)
+	}
+	defer l.Close()
+
+	if msg, at, ok := l.LastError(); ok || msg != "" || !at.IsZero() {
+		t.Fatalf("fresh logger = (%q, %v, %v), want none", msg, at, ok)
+	}
+
+	l.Printf("wired on port %d", 8098)
+	l.Warnf("slow provider: %v", "12s")
+	if _, _, ok := l.LastError(); ok {
+		t.Fatal("an info/warn entry sourced a last error")
+	}
+
+	l.Errorf("stream died: %v", "eof")
+	msg, at, ok := l.LastError()
+	if !ok {
+		t.Fatal("Errorf did not source a last error")
+	}
+	if msg != "stream died: eof" {
+		t.Fatalf("message = %q, want the formatted text with no ERROR: marker", msg)
+	}
+	if at.IsZero() {
+		t.Fatal("last error carries no timestamp")
+	}
+
+	l.Errorf("second failure")
+	if msg, _, _ := l.LastError(); msg != "second failure" {
+		t.Fatalf("LastError = %q, want the newest entry", msg)
+	}
+}
+
+// TestNopLoggerHasNoLastError: the upgrade is optional - a
+// logging-disabled install reports nothing and the popover degrades to
+// "not reported" instead of inventing a "none".
+func TestNopLoggerHasNoLastError(t *testing.T) {
+	var l agent.LoggerProvider = NopLogger{}
+	if _, ok := l.(agent.LoggerLastError); ok {
+		t.Fatal("NopLogger claims the last-error upgrade")
 	}
 }
