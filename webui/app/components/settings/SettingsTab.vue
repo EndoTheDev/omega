@@ -18,34 +18,54 @@
       :class="{ open: open, narrow: narrow }">
       <TabBand title="Settings"></TabBand>
 
-    <!-- card t_af7e1150 (settings tier 4): the VSCode settings BONES are
-         master-detail, and the search keeps the tier-2 seat it already
-         had - the pane-top full-width bar. It sits ABOVE both regions
-         because its hits cross every category (ruling 6): one input, one
-         query ref, no second filter. -->
+    <!-- card t_8b464090 (Endo, 2026-11-11) - the ONE-DOCUMENT law, which
+         SUPERSEDES rulings 1 and 12 of the 2026-11-10 grill. The pane is a
+         single scrollable document: EVERY category renders as a headed
+         section, top to bottom, in nav order, and NOTHING is selected on
+         open. The sidebar is not a selector any more - it is JUMP LINKS. A
+         click scrolls the pane to that section (scrollIntoView, smooth
+         unless prefers-reduced-motion asks otherwise) and marks it
+         SELECTED; a second click on the selected entry DESELECTS: the
+         highlight clears and the pane returns to the top. Scrolling moves
+         the highlight (IntersectionObserver scroll-spy). Selection NEVER
+         filters the document - it always shows every knob and its
+         description.
+
+         Expansion follows SELECTION (this REPLACES t_5656d52f's
+         default-expanded + per-parent toggle): a category discloses its
+         subsection jump links only while it, or one of its subsections, is
+         selected - exactly one branch open, no remembered toggle set. A
+         live query force-opens every parent that carries a hit, so hits
+         stay reachable.
+
+         Narrow panes are the SAME document with the nav as a drawer that
+         jumps and closes - there is nothing to drill into, so the two-screen
+         state is gone. -->
     <div class="settings-filterbar">
       <SearchInput
         v-model="query"
         placeholder="filter settings" />
+      <button
+        v-if="narrow"
+        class="settings-jump"
+        type="button"
+        :aria-expanded="drawerOpen"
+        aria-label="settings categories"
+        @click="drawerOpen = !drawerOpen">
+        <Icon class="settings-jump-icon" name="chevron-down" :size="12" />
+        <span>categories</span>
+      </button>
     </div>
 
-    <!-- the master-detail split. LEFT is the category nav (ruling 1). Card
-         t_5656d52f SUPERSEDES ruling 5: both levels render, and each parent
-         carries its own disclosure chevron - clicking the CHEVRON toggles
-         the children, clicking the LABEL still selects the category (two
-         hit targets on one row, so a parent can be selected without being
-         expanded). The default is EXPANDED - a fresh pane still shows every
-         level at rest - and the collapsed set is component-local state,
-         never persisted. A live query IGNORES it entirely: hits must stay
-         visible, so searching force-opens every parent and only GREYS the
-         categories with no hit (ruling 6 - grey, never hide). RIGHT is ONE
-         category's knobs. Narrow panes are two SCREENS of the same two
-         components, not a second renderer (ruling 12): the nav, then the
-         content with a back control. -->
     <div class="settings-split">
+      <div
+        v-if="narrow && drawerOpen"
+        class="settings-scrim"
+        @click="drawerOpen = false" />
       <nav
-        v-if="!narrow || !drilled"
+        v-if="!narrow || drawerOpen"
         class="settings-nav"
+        :class="{ drawer: narrow }"
         aria-label="settings categories">
         <template v-for="cat in nav" :key="cat.id">
           <div class="settings-nav-row">
@@ -53,9 +73,9 @@
               v-if="navChildren(cat).length"
               class="settings-nav-chev"
               type="button"
-              :aria-expanded="isOpen(cat.id)"
-              :aria-label="`${isOpen(cat.id) ? 'collapse' : 'expand'} ${cat.label}`"
-              @click="toggleOpen(cat.id)">
+              :aria-expanded="expandedIds.has(cat.id)"
+              :aria-label="`${expandedIds.has(cat.id) ? 'collapse' : 'expand'} ${cat.label}`"
+              @click="selectCategory(cat.id)">
               <Icon class="settings-nav-chevron" name="chevron-down" :size="10" />
             </button>
             <!-- a flat category keeps the chevron's column so labels align -->
@@ -65,10 +85,10 @@
               aria-hidden="true" />
             <button
               class="settings-nav-cat"
-              :class="{ active: !searching && selection === cat.id, dim: searching && !matchIds.has(cat.id) }"
+              :class="{ active: selection === cat.id, dim: searching && !matchIds.has(cat.id) }"
               type="button"
               :data-category="cat.id"
-              :aria-current="!searching && selection === cat.id ? 'true' : undefined"
+              :aria-current="selection === cat.id ? 'true' : undefined"
               @click="selectCategory(cat.id)">
               <span class="settings-nav-label">{{ cat.label }}</span>
               <span class="settings-nav-count">{{ cat.knobs.length }}</span>
@@ -78,10 +98,10 @@
             v-for="sub in openChildren(cat)"
             :key="cat.id + '/' + sub.id"
             class="settings-nav-sub"
-            :class="{ active: !searching && selection === cat.id + '/' + sub.id, dim: searching && !matchIds.has(cat.id) }"
+            :class="{ active: selection === cat.id + '/' + sub.id, dim: searching && !matchIds.has(cat.id) }"
             type="button"
             :data-category="cat.id + '/' + sub.id"
-            :aria-current="!searching && selection === cat.id + '/' + sub.id ? 'true' : undefined"
+            :aria-current="selection === cat.id + '/' + sub.id ? 'true' : undefined"
             @click="selectCategory(cat.id + '/' + sub.id)">
             <span class="settings-nav-label">{{ sub.label }}</span>
             <span class="settings-nav-count">{{ sub.knobs.length }}</span>
@@ -89,17 +109,7 @@
         </template>
       </nav>
 
-      <section v-if="!narrow || drilled" class="settings-content">
-        <button
-          v-if="narrow"
-          class="settings-back"
-          type="button"
-          aria-label="back to categories"
-          @click="drilled = false">
-          <Icon class="settings-back-icon" name="chevron-down" :size="12" />
-          <span>categories</span>
-        </button>
-
+      <section class="settings-content">
         <div class="settings-content-head">
     <!-- card t_04eb11d6 (settings tier 3b, R6/R8): the scope strip, the
          VSCode tab row at the head of the pane. R8 EMPTY WORLD: zero
@@ -125,15 +135,17 @@
       </button>
     </div>
 
-    <!-- ruling 9: the content pane opens with the category name and its
-         knob count. ruling 8: the modified-only switch rides the same
-         bar, above the list it narrows (the VSCode affordance). Both are
-         chrome AROUND the rows - the rows themselves stay exactly as
-         tier 2b built them (ruling 10). -->
+    <!-- ruling 9 (one document): the bar names the LAST ANCHOR and its
+         knob count - "settings" + the visible total while nothing is
+         selected. ruling 8: the modified-only switch rides the same bar
+         and now narrows the WHOLE document, not one category (the
+         behaviour it was always pretending to have). Both are chrome
+         AROUND the rows - the rows themselves stay exactly as tier 2b
+         built them (ruling 10). -->
     <div class="settings-content-bar">
       <h2 class="settings-content-title">
-        {{ view.title }}
-        <span v-if="view.count > 0" class="settings-knob-count">{{ view.count }}</span>
+        {{ barTitle }}
+        <span v-if="barCount > 0" class="settings-knob-count">{{ barCount }}</span>
       </h2>
       <button
         class="settings-modified"
@@ -157,9 +169,13 @@
     <p v-if="loadError" class="settings-error">
       {{ loadError }}
     </p>
-    <div class="settings-body" :class="{ 'settings-readonly': scopeReadOnly }">
+    <div
+      ref="bodyEl"
+      class="settings-body"
+      :class="{ 'settings-readonly': scopeReadOnly }"
+      @scroll.passive="onBodyScroll">
       <p
-      v-if="!loadError && view.count === 0"
+      v-if="!loadError && totalCount === 0"
       class="settings-empty">
         {{ emptyText }}
       </p>
@@ -170,20 +186,32 @@
         omega.theme-mode, panel prefs) - never sent to the server;
       - every other group is server config, edited in the draft map and
         saved through PUT /settings (diff-only).
-      The section list IS the content view (settingsNav.contentFor): one
-      category's knobs with its children as headed sections, or - while a
-      query is live - the cross-category hits.
+      The document IS the content view (settingsNav.documentFor): EVERY
+      category in nav order, each a headed section carrying its children
+      as headed blocks. The selection never filters it; a live query and
+      the modified-only switch filter it in place.
     -->
     <section
-      v-for="section in view.sections"
+      v-for="section in docSections"
       :key="section.id"
       class="settings-category"
+      :data-category="section.id"
       :data-section="section.id">
-      <!-- the child heading: a multi-child category view names its
-           children; a flat list or a one-child domain would only repeat
-           the title above it -->
-      <h3 v-if="section.heading" class="settings-subgroup-title">{{ section.label }}</h3>
-        <template v-for="knob in section.knobs" :key="knob.key">
+      <h2 class="settings-section-title">
+        {{ section.label }}
+        <span class="settings-knob-count">{{ section.count }}</span>
+      </h2>
+      <div
+        v-for="block in section.blocks"
+        :key="block.id"
+        class="settings-block"
+        :data-category="block.id"
+        :data-section="block.id">
+      <!-- the child heading: a multi-child category names its children;
+           a flat list or a one-child domain would only repeat the title
+           above it -->
+      <h3 v-if="block.heading" class="settings-subgroup-title">{{ block.label }}</h3>
+        <template v-for="knob in block.knobs" :key="knob.key">
         <!-- toggle (card t_c04c959e: the row is the label's wrapper now, so
              the modified dot + reset affordance can share the line
              without a click on them flipping the checkbox) -->
@@ -320,6 +348,7 @@
           <p v-if="knob.help" class="setting-help">{{ knob.help }}</p>
         </div>
         </template>
+      </div>
     </section>
     <!-- card t_210a0d19: the MODULES group is gone from settings - the
          module toggles live in the extensions tab now (the module
@@ -352,6 +381,8 @@
 <script setup lang="ts">
   import {
     computed,
+    nextTick,
+    onBeforeUnmount,
     onMounted,
     reactive,
     ref,
@@ -387,17 +418,22 @@
   import ModelField from "./ModelField.vue";
   // card t_7dcd4280: the named provider instances list editor
   import ProvidersField from "./ProvidersField.vue";
-  // card t_af7e1150 (settings tier 4): the category nav's nesting DATA and
-  // its pure builders - the tree, the selection algebra, the content view.
+  // card t_8b464090: the pane is ONE DOCUMENT - the nav's nesting DATA,
+  // the document builder, the anchor resolution and the grey-out set. The
+  // master-detail selection algebra (fallbackSelection/effectiveSelection/
+  // contentFor) is gone with the two-screen model.
   import {
-    COMMON_CATEGORY,
     NAV_STORAGE_KEY,
+    anchorSelection,
     buildNav,
-    contentFor,
-    effectiveSelection,
+    documentFor,
+    expandedCategoryIds,
     matchingCategoryIds,
+    parseSelection,
+    resolveSelection,
+    spyTargetIds,
     withSubgroups,
-    type ContentView,
+    type DocSection,
     type NavCategory,
     type NavSubgroup,
   } from "./settingsNav";
@@ -538,6 +574,7 @@
   // shape. The tab mount loads; the save round-trip refreshes from the
   // server response the same way it did before.
   onMounted(() => {
+    bindIntent(rootEl.value);
     void reload();
   });
 
@@ -551,6 +588,13 @@
       // fields exist only once the groups do; the composable shares
       // the single answer across every model field).
       refreshModelCatalog();
+      // card t_8b464090: the document exists only once the payload does,
+      // so the remembered anchor restores HERE - and the spy arms over the
+      // rendered sections (a save round-trip re-arms it, never restores).
+      void nextTick(() => {
+        restoreAnchor();
+        syncSpy();
+      });
     } catch (err) {
       // a host without the settings seam (501) or an unreachable
       // server: keep the client-side settings usable, say why the
@@ -874,8 +918,8 @@
     // card t_af7e1150: the curated group is ALWAYS in the list now - the
     // nav must keep its shape under a live query (ruling 6 greys, never
     // hides), so Commonly Used stays a category. The duplicate-row risk is
-    // answered in contentFor: search mode SKIPS the curated section, so a
-    // hit renders once, under the domain that owns it.
+    // answered in documentFor: a live query SKIPS the curated section, so
+    // a hit renders once, under the domain that owns it.
     return [
       ...(commonlyUsedGroup.value ? [commonlyUsedGroup.value] : []),
       chatGroup.value,
@@ -889,7 +933,7 @@
   // (ModelField reads it from composables/modelCatalog), so the pane
   // carries no rows plumbing anymore.
 
-  // --- master-detail: the category nav (card t_af7e1150, ruling 1) ---
+  // --- the jump-link nav (card t_8b464090, superseding t_af7e1150) ---
 
   // The knob's OWN domain, for the row plumbing below. A knob can be
   // rendered from the virtual Commonly Used category, but its diff base,
@@ -914,75 +958,172 @@
   // withSubgroups stamps each knob, buildNav derives the two levels, and
   // an undeclared knob lands in the implicit "general" child (ruling 3).
   // Empty categories never enter (ruling 14: an unmounted module's domain
-  // is absent from the payload, so it is absent from the nav).
+  // is absent from the payload, so it is absent from the nav - and from
+  // the document below).
   const nav = computed<NavCategory[]>(() =>
     buildNav(withSubgroups(allGroups.value)),
   );
 
-  // Two levels, and card t_5656d52f SUPERSEDES ruling 5: a parent may be
-  // COLLAPSED now, so its children render only while it is open. A domain
-  // whose knobs all land in ONE child still shows no child row at all - a
-  // nested copy of the parent's name is noise, and there is nothing to
-  // disclose.
+  // a domain whose knobs all land in ONE child shows no child jump link -
+  // a nested copy of the parent's name is noise and there is nothing to
+  // jump to.
   const navChildren = (cat: NavCategory): NavSubgroup[] =>
     cat.subgroups.length > 1 ? cat.subgroups : [];
 
-  // The collapsed set is COMPONENT-LOCAL (a plain id list - never
-  // persisted, no store field) and starts EMPTY, so a fresh pane is
-  // expanded and nothing looks missing on first open. A LIVE QUERY ignores
-  // it outright: the hits must stay visible, so searching force-opens every
-  // parent and the nav only greys the dead categories (ruling 6's spirit -
-  // grey, never hide).
-  const collapsedIds = ref<string[]>([]);
-  const isOpen = (catId: string): boolean =>
-    searching.value || !collapsedIds.value.includes(catId);
-  function toggleOpen(catId: string) {
-    collapsedIds.value = collapsedIds.value.includes(catId)
-      ? collapsedIds.value.filter((id) => id !== catId)
-      : [...collapsedIds.value, catId];
-  }
-  // the children the nav renders for a category right now
+  // --- the selection: jump links, not a selector (card t_8b464090) ---
+  //
+  // Selection is state the USER sets and clears - never a pure read of
+  // the scroll. A pure read could not deselect: jumping back to the top
+  // would make the observer instantly reselect whatever sits there, and
+  // the deselect would look broken. A nav click sets it, a second click
+  // on the same entry clears it, the observer moves it while scrolling.
+  const selection = ref<string | null>(null);
+
+  // the narrow drawer: the SAME jump links over the SAME document
+  const drawerOpen = ref(false);
+
+  // EXPANSION IS DERIVED FROM THE SELECTION. There is no collapsed set,
+  // no per-parent toggle and nothing remembered (this supersedes
+  // t_5656d52f's default-expanded model): exactly the branch the
+  // selection lives in is open, every other branch shut - so "what is
+  // open" and "where I am" can never disagree. A live query force-opens
+  // every parent carrying a hit: hits stay reachable whatever is
+  // selected.
+  const expandedIds = computed<ReadonlySet<string>>(() =>
+    expandedCategoryIds(
+      selection.value,
+      searching.value ? matchIds.value : null,
+    ),
+  );
+  // the child jump links the nav renders for a category right now
   const openChildren = (cat: NavCategory): NavSubgroup[] =>
-    isOpen(cat.id) ? navChildren(cat) : [];
+    expandedIds.value.has(cat.id) ? navChildren(cat) : [];
 
-  // Ruling 13: the selection is remembered PER CLIENT (localStorage, never
-  // a server config key) and a fresh pane opens on Commonly Used. The
-  // remembered id is kept RAW; resolution against the live nav happens per
-  // render, so a scope that does not carry that category (an agent tab has
-  // no Commonly Used) falls back for display WITHOUT clobbering the memory
-  // - switching back to Main finds the remembered category again.
-  const rawSelection = ref<string>(COMMON_CATEGORY);
-  const selection = computed(() => effectiveSelection(nav.value, rawSelection.value));
+  // --- the scrollport, the jump, the anchor ---
+  const bodyEl = ref<HTMLElement | null>(null);
+  // id -> element for BOTH levels: a category section answers to its own
+  // id, each block to "cat/sub". Rebuilt from the DOM by collectSpyTargets
+  // whenever the document changes (a query, a scope), so a filtered-away
+  // section can never leave a stale target behind.
+  const spyNodes = new Map<string, HTMLElement>();
+  // The observer starts SHUT: a fresh pane has nothing selected (card
+  // t_8b464090) and the observer's first delivery would otherwise select
+  // whatever heads the document. Real input is what opens it - the same
+  // suppression a nav click and a deselect use.
+  let spyLocked = true;
+  let spyTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function lockSpy(ms?: number) {
+    spyLocked = true;
+    if (spyTimer !== undefined) clearTimeout(spyTimer);
+    spyTimer = undefined;
+    if (ms !== undefined) {
+      spyTimer = setTimeout(() => {
+        spyLocked = false;
+        spyTimer = undefined;
+      }, ms);
+    }
+  }
+  function unlockSpy() {
+    if (spyTimer !== undefined) clearTimeout(spyTimer);
+    spyTimer = undefined;
+    spyLocked = false;
+  }
+
+  function collectSpyTargets(root: HTMLElement) {
+    spyNodes.clear();
+    for (const node of root.querySelectorAll<HTMLElement>("[data-section]")) {
+      const id = node.dataset.section;
+      if (id) spyNodes.set(id, node);
+    }
+  }
+
+  function reducedMotion(): boolean {
+    return (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    );
+  }
+
+  function scrollToAnchor(id: string | null) {
+    const root = bodyEl.value;
+    if (!root) return;
+    const behavior: ScrollBehavior = reducedMotion() ? "auto" : "smooth";
+    const node = id
+      ? spyNodes.get(id) ?? spyNodes.get(parseSelection(id).category)
+      : null;
+    if (!node) {
+      root.scrollTo({ top: 0, behavior });
+      return;
+    }
+    node.scrollIntoView({ behavior, block: "start" });
+  }
+
+  function persistAnchor(id: string | null) {
+    try {
+      // DESELECTED persists as NO anchor: a reload must open at the top,
+      // never resurrect a selection the user cleared
+      if (id) localStorage.setItem(NAV_STORAGE_KEY, id);
+      else localStorage.removeItem(NAV_STORAGE_KEY);
+    } catch {
+      // private mode / quota: the session still navigates, only the
+      // memory is gone - never a broken click
+    }
+  }
+
+  /** first click: select + expand + scroll. Second click on the SAME
+      entry: deselect + collapse + top - one action in both directions. */
   function selectCategory(id: string) {
-    rawSelection.value = id;
-    // ruling 12: on a narrow pane a category tap opens the content screen
-    drilled.value = true;
-    try {
-      localStorage.setItem(NAV_STORAGE_KEY, id);
-    } catch {
-      // private mode / quota: the session still selects, only the memory
-      // is gone - never a broken click
+    if (selection.value === id) {
+      deselect();
+      return;
     }
+    selection.value = id;
+    persistAnchor(id);
+    // the observer must not fight the smooth scroll it just started
+    lockSpy(650);
+    scrollToAnchor(id);
+    if (narrow.value) drawerOpen.value = false;
   }
-  function restoreCategory() {
-    if (typeof window === "undefined") return;
-    try {
-      const stored = localStorage.getItem(NAV_STORAGE_KEY);
-      if (stored) rawSelection.value = stored;
-    } catch {
-      // storage unavailable: keep the Commonly Used default
-    }
-  }
-  restoreCategory();
 
-  // Ruling 12: narrow panes are TWO SCREENS, not a second renderer. The
-  // nav screen lists categories; tapping one drills into the content
-  // screen (the same two components), whose back control returns. Widening
-  // the pane puts both on screen and the flag goes inert; narrowing again
-  // starts from the nav, like a phone's settings app.
-  const drilled = ref(false);
-  watch(narrow, (isNarrow) => {
-    if (isNarrow) drilled.value = false;
+  function deselect() {
+    selection.value = null;
+    persistAnchor(null);
+    lockSpy(); // stays shut until the NEXT real scroll
+    scrollToAnchor(null);
+    if (narrow.value) drawerOpen.value = false;
+  }
+
+  // Any real input on the pane releases a deselect's suppression - that
+  // IS the "next user scroll" the ruling names.
+  const INTENT_EVENTS = ["wheel", "touchstart", "pointerdown", "keydown"];
+  let intentTarget: HTMLElement | null = null;
+  const noteUserIntent = () => unlockSpy();
+  function bindIntent(el: HTMLElement | null) {
+    if (intentTarget === el) return;
+    if (intentTarget) {
+      for (const type of INTENT_EVENTS)
+        intentTarget.removeEventListener(type, noteUserIntent);
+      intentTarget = null;
+    }
+    if (!el) return;
+    intentTarget = el;
+    for (const type of INTENT_EVENTS)
+      el.addEventListener(type, noteUserIntent, { passive: true });
+  }
+
+  // the document scroll position a cleared query must give back
+  let lastDocScrollTop = 0;
+  function onBodyScroll() {
+    if (!searching.value && bodyEl.value) lastDocScrollTop = bodyEl.value.scrollTop;
+  }
+
+  onBeforeUnmount(() => {
+    unlockSpy();
+    bindIntent(null);
+    spyObserver?.disconnect();
+    spyObserver = null;
   });
 
   // Ruling 8: the VSCode modified-only switch above the content list.
@@ -1190,8 +1331,11 @@
   const knobModified = (knob: SettingKnob): boolean =>
     isModified(owner(knob), knob);
 
-  const view = computed<ContentView>(() =>
-    contentFor(nav.value, selection.value, {
+  // The document: EVERY category, in nav order, filtered IN PLACE by the
+  // live query and the modified-only switch. This is the whole content
+  // pane now - there is no per-selection view to swap in (card t_8b464090).
+  const docSections = computed<DocSection[]>(() =>
+    documentFor(nav.value, {
       hits: searchHits.value,
       modifiedOnly: modifiedOnly.value,
       isModified: knobModified,
@@ -1205,11 +1349,136 @@
     }),
   );
 
+  // the bar reads the ANCHOR (or "settings" while nothing is selected),
+  // with the knob count of what sits under it
+  const totalCount = computed(() =>
+    docSections.value.reduce((n, section) => n + section.count, 0),
+  );
+  const anchoredSection = computed<DocSection | null>(() => {
+    const id = selection.value;
+    if (!id) return null;
+    const category = parseSelection(id).category;
+    return docSections.value.find((section) => section.id === category) ?? null;
+  });
+  const barTitle = computed(() => {
+    const id = selection.value;
+    if (!id) return "settings";
+    const selectionIds = parseSelection(id);
+    const section = anchoredSection.value;
+    if (!section) return "settings";
+    if (!selectionIds.subgroup) return section.label;
+    return (
+      section.blocks.find((block) => block.id === id)?.label ?? section.label
+    );
+  });
+  const barCount = computed(() => anchoredSection.value?.count ?? totalCount.value);
+
+  // --- the scroll-spy (the nav follows the document) ---
+  const spyOrder = computed<string[]>(() => spyTargetIds(docSections.value));
+  const inBand = new Set<string>();
+  let spyObserver: IntersectionObserver | null = null;
+
+  /** One thin band at the top of the scrollport: whichever heading sits
+      nearest its top edge - a category or one of its blocks - is the one
+      the pane is looking at. A generous band would let two neighbours
+      fight over the highlight mid-scroll, which is exactly the flicker
+      the root margin is chosen to avoid; the suppression window above is
+      the other half (the observer never fights the click that started a
+      smooth scroll, and a deselect stays put until the next real
+      scroll). */
+  function syncSpy() {
+    const root = bodyEl.value;
+    spyObserver?.disconnect();
+    spyObserver = null;
+    inBand.clear();
+    if (!root || typeof IntersectionObserver === "undefined") return;
+    collectSpyTargets(root);
+    spyObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = (entry.target as HTMLElement).dataset.section ?? "";
+          if (!id) continue;
+          if (entry.isIntersecting) inBand.add(id);
+          else inBand.delete(id);
+        }
+        if (spyLocked) return;
+        const rootTop = root.getBoundingClientRect().top;
+        let best: string | null = null;
+        let bestGap = Number.POSITIVE_INFINITY;
+        for (const id of spyOrder.value) {
+          if (!inBand.has(id)) continue;
+          const node = spyNodes.get(id);
+          if (!node) continue;
+          const gap = Math.abs(node.getBoundingClientRect().top - rootTop);
+          if (gap < bestGap) {
+            bestGap = gap;
+            best = id;
+          }
+        }
+        if (best === null || best === selection.value) return;
+        selection.value = best;
+        // the last place the user was IS the anchor a reopen restores
+        persistAnchor(best);
+      },
+      { root, rootMargin: "0px 0px -80% 0px", threshold: 0 },
+    );
+    for (const node of spyNodes.values()) spyObserver.observe(node);
+  }
+
+  // Ruling 13 survives as an ANCHOR: on open the pane restores the scroll
+  // to the remembered section and marks it. A remembered id that no
+  // longer exists (module unmounted, an agent tab without that category)
+  // opens at the top - no selection is invented, and a DESELECTED pane
+  // stored no anchor at all, so it never resurrects one.
+  let restored = false;
+  function restoreAnchor() {
+    if (restored || typeof window === "undefined") return;
+    restored = true;
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(NAV_STORAGE_KEY);
+    } catch {
+      return;
+    }
+    const id = anchorSelection(nav.value, stored);
+    if (!id) return;
+    selection.value = id;
+    lockSpy(); // a restore is not a scroll: hold it until real input
+    void nextTick(() => scrollToAnchor(id));
+  }
+
+  // a scope that cannot show the selection (an agent tab carries no
+  // Commonly Used) clears the HIGHLIGHT only - the stored anchor stays
+  // raw for the next open.
+  watch(nav, (next) => {
+    const id = selection.value;
+    if (id && !resolveSelection(next, id)) {
+      selection.value = null;
+      lockSpy();
+    }
+  });
+
+  // the document's targets move with the query/scope: re-arm the spy and
+  // give a cleared query back the scroll position it interrupted
+  watch(docSections, () => {
+    void nextTick(() => syncSpy());
+  });
+  watch(searching, (now, was) => {
+    if (now === was) return;
+    lockSpy(400);
+    if (now) return;
+    void nextTick(() => {
+      const node = bodyEl.value;
+      if (node) node.scrollTop = lastDocScrollTop;
+      syncSpy();
+    });
+  });
+
   // the empty state names the reason it is empty (a live query, the
-  // modified-only switch, or a payload with nothing in this category)
+  // modified-only switch, or a payload with no knobs at all)
   const emptyText = computed(() => {
     if (query.value.trim() !== "") return `no settings match "${query.value.trim()}"`;
-    if (modifiedOnly.value) return "no modified settings here";
+    if (modifiedOnly.value) return "no modified settings";
     return "no settings here";
   });
 
@@ -1413,8 +1682,40 @@
      The bar is a flex child ABOVE .settings-body, so it never scrolls. */
   .settings-filterbar {
     flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
     padding: 6px 10px;
     border-bottom: 1px solid var(--stroke);
+  }
+  .settings-filterbar > :first-child {
+    flex: 1;
+    min-width: 0;
+  }
+  /* narrow only: the jump-links drawer's toggle (card t_8b464090). The
+     document never leaves the screen - the nav arrives over it. */
+  .settings-jump {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: 1px solid var(--stroke);
+    border-radius: var(--r-chip);
+    background: var(--z0);
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 11px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .settings-jump:hover,
+  .settings-jump[aria-expanded="true"] {
+    color: var(--text);
+    border-color: var(--accent);
+  }
+  .settings-jump-icon {
+    transform: rotate(90deg);
   }
   /* the knob select is the shared BandSelect chip - inline (the
      composer's listbox pattern), never wider than its row */
@@ -1471,11 +1772,11 @@
     cursor: pointer;
   }
 
-  /* --- card t_af7e1150 (settings tier 4): the master-detail bones ---
-     LEFT is the category nav, RIGHT is one category's content. Two
-     regions, one axis each (ruling 11: the scope strip lives in the
-     content head, the nav stays categories). The rows inside keep their
-     tier-2b styles untouched (ruling 10). */
+  /* --- card t_8b464090: the one-document bones ---
+     LEFT is the JUMP-LINK nav, RIGHT is the single scrolling document of
+     every category (ruling 11 survives only in placement: the scope strip
+     lives in the content head, the nav stays categories). The rows inside
+     keep their tier-2b styles untouched (ruling 10). */
   .settings-split {
     flex: 1;
     min-height: 0;
@@ -1580,7 +1881,7 @@
   .settings-nav-sub:focus-visible,
   .settings-nav-chev:focus-visible,
   .settings-modified:focus-visible,
-  .settings-back:focus-visible {
+  .settings-jump:focus-visible {
     outline: 1px solid var(--accent);
     outline-offset: -1px;
   }
@@ -1639,7 +1940,25 @@
     color: var(--accent);
     border-color: var(--accent);
   }
-  /* a child heading inside a multi-child category view */
+  /* a category heading inside the ONE document (card t_8b464090): the
+     section's own title, carrying its knob count. The nav's jump links are
+     styled above; these are the document's furniture. */
+  .settings-section-title {
+    margin: 14px 0 2px;
+    padding-top: 6px;
+    border-top: 1px solid var(--stroke);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text);
+  }
+  .settings-category:first-of-type .settings-section-title {
+    margin-top: 4px;
+    border-top: 0;
+    padding-top: 0;
+  }
+  /* a child heading inside a multi-child category */
   .settings-subgroup-title {
     margin: 8px 0 0;
     font-size: 10.5px;
@@ -1649,37 +1968,33 @@
     color: var(--text-dim);
   }
 
-  /* ruling 12: narrow panes are TWO SCREENS of the SAME two components -
-     the nav, then the content with a back control. No accordion path, no
-     dropdown, one renderer. */
-  .settings-back {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    width: 100%;
-    padding: 4px 10px;
-    border: 0;
-    border-bottom: 1px solid var(--stroke);
-    background: transparent;
-    color: var(--text-dim);
-    font: inherit;
-    font-size: 12px;
-    text-align: left;
-    cursor: pointer;
+  /* narrow (card t_8b464090): the SAME document, the nav as a drawer over
+     it - it jumps, then closes. There is nothing to drill into, so no
+     second screen and no back control. The pane root is the drawer's
+     positioning context. */
+  .settings {
+    position: relative;
   }
-  .settings-back:hover {
-    color: var(--text);
+  .settings-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    background: rgba(0, 0, 0, 0.45);
   }
-  .settings-back-icon {
-    transform: rotate(90deg);
+  .settings-nav.drawer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 5;
+    width: 220px;
+    max-width: 82%;
+    background: var(--z1);
+    border-right: 1px solid var(--stroke);
+    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.35);
   }
   .settings.narrow .settings-split {
     flex-direction: column;
-  }
-  .settings.narrow .settings-nav {
-    width: auto;
-    flex: 1;
-    border-right: 0;
   }
   .settings.narrow .settings-content {
     flex: 1;
