@@ -26,13 +26,17 @@
 #   - Only ppid==1 processes are matched: a live run.sh (or a live worker
 #     shell) is a parent and protects its chrome. Concurrent suites and
 #     in-use debug chromes are never touched.
-#   - Profile-shape match: cmdline must name a journey/debug profile dir -
-#     "*chrome-profile*" covers omega-journeys-chrome-profile-<port> and
-#     dbgN-chrome-profile; "agent-browser-chrome-*" covers the auto-launch
-#     browser that agent-browser itself starts and never reaps when its
-#     daemon dies (24 such mains with dead parents were holding 314
-#     chrome.exe on winbtw, found 2026-11-11). A chrome outside these
-#     naming shapes never matches, whatever else it is.
+#   - Profile-shape match: cmdline must name a journey/debug/agent-browser
+#     profile dir - "*chrome-profile*" covers omega-journeys-chrome-profile-
+#     <port> and dbgN-chrome-profile; "*agent-browser-chrome-*" covers the
+#     auto-launch browser that agent-browser itself starts and never reaps
+#     when its daemon dies (24 such mains with dead parents were holding 314
+#     chrome.exe on winbtw, found 2026-11-11).
+#     Evidence behind that shape: WINDOWS-PROVEN (Win32_Process, the ps1
+#     half, live reaped). The /proc scan below matches the same shape string,
+#     but nobody has observed agent-browser's Pi profile naming - so the
+#     Pi/Linux side is pattern-extended, not host-proven. A chrome outside
+#     these naming shapes never matches, whatever else it is.
 #
 # Windows (MSYS): /proc exists but holds only MSYS processes, so the scan
 # below finds nothing there. sweep-chromes.ps1 does the same job off
@@ -115,7 +119,7 @@ for p in /proc/[0-9]*; do
     *) continue ;;
   esac
   case "$cmd" in
-    *chrome-profile*) ;;
+    *chrome-profile*|*agent-browser-chrome-*) ;;
     *) continue ;;
   esac
   mains="$mains $pid"
