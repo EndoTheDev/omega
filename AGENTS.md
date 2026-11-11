@@ -42,6 +42,11 @@ is a review finding; its content lands in its mapped home instead.
 - **Tool errors are structured returns.** Tools return `(string, error)`;
   the error becomes an `IsError` tool result message. No panic into
   the agent.
+- **No lint suppressions.** `//nolint`, `eslint-disable` and `@ts-ignore`
+  are a review finding, not a fix. Handle the error, or discard it
+  explicitly (`_ = f()`) with a word on why ignoring it is correct.
+  No errcheck pass runs in this pipeline, so a suppression asserts a
+  check that does not exist - it reads as handled and handles nothing.
 - **No backwards compatibility.** Breaking changes are normal. They
   are not marked with `!` in commit messages (see `.agents/COMMIT.md`).
 - **Secrets never committed.** `.env` and the home `config/*.yaml`
