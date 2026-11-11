@@ -139,9 +139,12 @@ tabs=$(jsq '(()=>{return [...document.querySelectorAll(".settings-scopes .settin
 assert_eq "$tabs" "Main,$AGENT" "the strip reads [Main | $AGENT]"
 
 # placement (tier-4 ruling 11: the strip is the head of the CONTENT pane -
-# inside .settings-content, outside the scrollport, above the content bar)
-placement=$(jsq '(()=>{const s=document.querySelector(".settings-scopes"),c=document.querySelector(".settings-content"),b=document.querySelector(".settings-body"),bar=document.querySelector(".settings-content-bar");if(!s||!c||!b||!bar) return "missing";const inside=c.contains(s),outside=!b.contains(s);const before=(s.compareDocumentPosition(bar)&Node.DOCUMENT_POSITION_FOLLOWING)!==0;return inside&&outside&&before?"head":"misplaced"})()' 2>&1 | tr -d '"')
-assert_eq "$placement" "head" "the strip heads the CONTENT pane, above its bar, outside the scrollport"
+# inside .settings-content, outside the scrollport, above the document).
+# card t_a8063683: the heading stripe that used to sit under it is GONE -
+# its presence here is a FAILURE, because a stripe is exactly the mirror
+# the card deleted (the section headings are the only headings now).
+placement=$(jsq '(()=>{const s=document.querySelector(".settings-scopes"),c=document.querySelector(".settings-content"),b=document.querySelector(".settings-body"),bar=document.querySelector(".settings-content-bar");if(!s||!c||!b) return "missing";if(bar) return "stale-bar";const inside=c.contains(s),outside=!b.contains(s);const before=(s.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING)!==0;return inside&&outside&&before?"head":"misplaced"})()' 2>&1 | tr -d '"')
+assert_eq "$placement" "head" "the strip heads the CONTENT pane, above the scrollport, and NO heading stripe remains"
 
 # --- the agent tab: exactly the four overridable categories (R3) ---
 clicked=$(jsq "(()=>{const t=[...document.querySelectorAll('.settings-scopes .settings-scope-tab')].find(b=>(b.textContent||'').trim()==='$AGENT');if(!t) return 0;t.click();return 1})()" 2>&1 | tr -d '"')
@@ -169,9 +172,18 @@ navclick() {
 rows_now() {
   jsq '(()=>{const out=[];for(const r of document.querySelectorAll(".setting-item")){const lab=(r.querySelector(".setting-head > span")?.textContent||"").trim();const d=r.querySelector(".setting-dot");const rs=r.querySelector(".setting-reset");out.push(lab+"="+(d?d.getAttribute("aria-label"):"none")+(rs?"+reset":""))}return out.join(";")})()' 2>&1 | tr -d '"'
 }
-title_now() {
-  jsq '(()=>{return (document.querySelector(".settings-content-title")||{textContent:""}).textContent.trim()})()' 2>&1 | tr -d '"'
+# the document's OWN heading for one category (card t_a8063683: the section
+# heading is the pane's only heading - the mirror stripe is gone, so this
+# reads the real one rather than a copy that lags behind the scroll)
+sec_title() {
+  jsq "(()=>{const s=[...document.querySelectorAll('.settings-category')].find(x=>x.getAttribute('data-section')==='$1');const h=s&&s.querySelector('.settings-section-title');return h?(h.textContent||'').replace(/\s+/g,' ').trim():''})()" 2>&1 | tr -d '"'
 }
+# the sections the document is painting right now, in document order
+doc_sections() {
+  jsq '(()=>{return [...document.querySelectorAll(".settings-category")].map(x=>x.getAttribute("data-section")).join(",")})()' 2>&1 | tr -d '"'
+}
+
+assert_eq "$(doc_sections)" "provider,system_prompt,description,max_turns" "the agent tab's DOCUMENT carries only the four scope sections (the headings are the surface now - no stripe)"
 
 assert_eq "$(navclick provider)" "1" "the provider category is in the agent nav"
 if ! wait_js "(()=>{return !!document.querySelector('.setting-item')})()" 10; then
@@ -184,9 +196,13 @@ case ",$rows," in
 esac
 
 assert_eq "$(navclick max_turns)" "1" "the max turns category is clickable"
-if ! wait_js "(()=>{const t=((document.querySelector('.settings-content-title')||{}).textContent||'').trim();return t.indexOf('max turns')===0&&!!document.querySelector('.setting-item')})()" 10; then
-  die "the max turns category never rendered its row (title: $(title_now))"
+if ! wait_js "(()=>{const s=[...document.querySelectorAll('.settings-category')].find(x=>x.getAttribute('data-section')==='max_turns');return !!s&&!!s.querySelector('.setting-item')})()" 10; then
+  die "the max turns section never rendered its row (sections: $(doc_sections))"
 fi
+case "$(sec_title max_turns)" in
+  "max turns"*) step "ok: the document's max turns heading names the section (the pane's ONLY heading)" ;;
+  *) die "the max turns section heading reads '$(sec_title max_turns)'" ;;
+esac
 rows=$(rows_now)
 case ",$rows," in
   *"max turns=none"*) step "ok: the inherited max turns row carries no dot (it IS main's value)" ;;
@@ -194,9 +210,13 @@ case ",$rows," in
 esac
 
 assert_eq "$(navclick description)" "1" "the description category is clickable"
-if ! wait_js "(()=>{const t=((document.querySelector('.settings-content-title')||{}).textContent||'').trim();return t.indexOf('description')===0&&!!document.querySelector('.setting-item')})()" 10; then
-  die "the description category never rendered its row (title: $(title_now))"
+if ! wait_js "(()=>{const s=[...document.querySelectorAll('.settings-category')].find(x=>x.getAttribute('data-section')==='description');return !!s&&!!s.querySelector('.setting-item')})()" 10; then
+  die "the description section never rendered its row (sections: $(doc_sections))"
 fi
+case "$(sec_title description)" in
+  "description"*) step "ok: the document's description heading names the section" ;;
+  *) die "the description section heading reads '$(sec_title description)'" ;;
+esac
 rows=$(rows_now)
 case ",$rows," in
   *"description=differs from main+reset"*) step "ok: the seeded description override reads as its own row" ;;
@@ -257,5 +277,13 @@ fi
 step "ok: Main keeps its curated category and chat state"
 mainq=$(jsq '(()=>{const i=document.querySelector(".settings-filterbar input");return i?i.value:""})()' 2>&1 | tr -d '"')
 assert_eq "$mainq" "" "per-scope search: Main's query is its own (empty), never the agent tab's"
+
+# card t_a8063683 (Endo, 2026-11-11): each heading renders ONCE. The old top
+# stripe mirrored the section heading, so "commonly used" appeared TWICE and
+# kept a stale name after a deselect. The pane's own text proves the mirror
+# is gone - the nav sits outside .settings-content, so a count of exactly one
+# is the document heading itself.
+dupes=$(jsq '(()=>{const c=document.querySelector(".settings-content");if(!c) return -1;return ((c.textContent||"").toLowerCase().match(/commonly used/g)||[]).length})()' 2>&1 | tr -d '"')
+assert_eq "$dupes" "1" "the pane's heading renders exactly ONCE (no mirror stripe)"
 
 step "110-settings-scopes green"
