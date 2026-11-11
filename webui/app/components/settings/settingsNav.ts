@@ -405,6 +405,49 @@ export function spyTargetIds(sections: DocSection[]): string[] {
   ]);
 }
 
+/** The node surface the spy/clamp target resolution needs: a node's
+    data-section id and its DOM ancestry, as a structural subset of
+    Element - so the node suite can pin resolution against a hand-built
+    tree (the suite has no DOM). */
+export interface SpyNodeLike {
+  readonly dataset: { readonly section?: string };
+  closest(selector: string): unknown;
+}
+
+/** buildSpyTargets is the pane's id -> node map (the spy observes these
+    nodes, the jump and the clamp measure them). SECTIONS answer FIRST: a
+    real `.settings-category` owns its category id. A `.settings-block`
+    joins only under an id NO section claims ("category/subgroup") - a flat
+    or one-child category renders one unheaded block whose block id IS the
+    section id, so the document carries that id twice, and a map built in
+    plain DOM order let the inner block win (card t_c4b42357): the jump then
+    put the block's top at y=0, i.e. hidden behind the section's own opaque
+    sticky heading, and the clamp measured the block's box instead of the
+    section's. */
+export function buildSpyTargets<T extends SpyNodeLike>(root: {
+  querySelectorAll(selector: string): Iterable<T>;
+}): Map<string, T> {
+  const targets = new Map<string, T>();
+  for (const node of root.querySelectorAll(".settings-category[data-section]")) {
+    const id = node.dataset.section;
+    if (id) targets.set(id, node);
+  }
+  for (const node of root.querySelectorAll(".settings-block[data-section]")) {
+    const id = node.dataset.section;
+    if (id && !targets.has(id)) targets.set(id, node);
+  }
+  return targets;
+}
+
+/** targetSection is the box a scroll anchor lands IN: the nearest category
+    section. For a SECTION target that is the node itself - so a section
+    jump subtracts no heading and the section's own first row stays under
+    its pinned heading (card t_c4b42357); only a BLOCK jump subtracts the
+    heading this resolves to. */
+export function targetSection<T extends SpyNodeLike>(node: T): T {
+  return (node.closest(".settings-category") as T | null) ?? node;
+}
+
 /** matchingCategoryIds is the nav's grey-out set (ruling 6): the
     categories that still carry a knob under the live query and the
     modified-only switch. The nav itself never changes shape. */
