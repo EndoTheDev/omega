@@ -40,8 +40,13 @@ tab=$(jsq '(() => {
   if (!pane) return "";
   return Array.from(pane.querySelectorAll(".dock-tab .dock-tab-title")).map((t) => t.textContent.trim()).join(",");
 })()' 2>/dev/null | tr -d '"')
-# card t_55a3fc4b: terminal joins the fresh bottom strip (logs + terminal)
-assert_eq "$tab" "Logs,Terminal" "the bottom strip seats Logs + Terminal, logs first"
+# the fresh bottom strip's pinned roster, in order: logs first (t_55a3fc4b
+# seated the terminal beside it), then observability - the third permanent
+# bottom tab card t_e703180e added (the observability arc's face half,
+# UNCLOSABLE like the other two: the pinned-bottom shape, so nothing here
+# can close a tab). Three tabs is the intended roster; a two-tab pin is the
+# stale shape.
+assert_eq "$tab" "Logs,Terminal,Observability" "the bottom strip seats the pinned tabs Logs, Terminal, Observability, logs first"
 
 # the logs body streams: it polls /logs every 2.5s - give one tick plus a
 # margin for the poll's first requests to fill the tail
