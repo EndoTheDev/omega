@@ -148,6 +148,53 @@ step "ok: a second click DESELECTS - highlight cleared, branch collapsed, pane b
 stored=$(jsq '(()=>{return localStorage.getItem("omega.settings-category")||""})()' 2>&1 | plain)
 assert_eq "$stored" "" "a DESELECT persists as NO anchor"
 
+# --- a FLAT or ONE-CHILD category's jump never hides its first knob -------
+# card t_c4b42357: a flat (or one-child) category renders ONE unheaded list,
+# so its block repeats the section's own data-section id. The spy/clamp map
+# kept the LAST match in DOM order - the inner block - so a jump put the
+# block's top at y=0, hidden behind the section's own opaque STICKY heading,
+# and the clamp measured the block instead of the section: its minimum moved
+# down by the heading's height, so scrolling up to reveal the hidden row
+# snapped back. The witness is two MEASURED rects - the category's first knob
+# row starts at or below the pinned heading's bottom edge - never a pixel
+# constant.
+#
+# wait_settled: the jump is a SMOOTH scroll, so measure only once the pane's
+# scrollTop has stopped moving (two equal samples 200ms apart).
+wait_settled() {
+  local last=-1 now i=0
+  while [ "$i" -lt 75 ]; do
+    now=$(scroll_top)
+    if [ "$now" = "$last" ]; then return 0; fi
+    last=$now
+    sleep 0.2
+    i=$((i + 1))
+  done
+  return 1
+}
+# first_row_clear <id>: "<verdict>|<rowTop>|<headingBottom>" - viewport
+# coordinates, so both rects come from the same frame
+first_row_clear() {
+  jsq "(()=>{const el=document.querySelector('.settings-category[data-category=\"$1\"]');if(!el) return 'missing||';const h=el.querySelector('.settings-section-title');if(!h) return 'no-heading||';const row=el.querySelector('.setting-row,.setting-item');if(!row) return 'no-row||';const rt=row.getBoundingClientRect().top,hb=h.getBoundingClientRect().bottom;return (rt>=hb-1?'clear':'occluded')+'|'+Math.round(rt)+'|'+Math.round(hb)})()" 2>&1 | plain
+}
+for flatcat in common dock store; do
+  assert_eq "$(navclick "$flatcat")" "1" "$flatcat is a jump link"
+  if ! poll_js "(()=>{const a=document.querySelector('.settings-nav-cat.active,.settings-nav-sub.active');return !!a&&a.getAttribute('data-category')==='$flatcat'})()" 15; then
+    die "the nav click did not select $flatcat (active: $(active_id))"
+  fi
+  wait_settled || die "the $flatcat jump never settled (scrollTop: $(scroll_top))"
+  measured=$(first_row_clear "$flatcat")
+  state=${measured%%|*}; rest=${measured#*|}; rowtop=${rest%%|*}; headbottom=${rest##*|}
+  assert_eq "$state" "clear" "$flatcat's first knob row starts BELOW its pinned heading (row top $rowtop, heading bottom $headbottom)"
+  step "ok: $flatcat jumps clear of its sticky heading (row top $rowtop >= heading bottom $headbottom)"
+done
+# leave the pane unselected for the spy block below: ONE click on whatever
+# entry currently holds the selection releases it (and the clamp with it)
+jsq '(()=>{const a=document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active");if(a) a.click();return 1})()' >/dev/null 2>&1
+if ! poll_js '(()=>{const b=document.querySelector(".settings-body");const a=document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active");return !!b&&b.scrollTop===0&&!a})()' 15; then
+  die "the flat-category witness did not leave a clean pane (active: $(active_id), scrollTop: $(scroll_top))"
+fi
+
 # --- scroll-spy: the nav follows the pane --------------------------------
 spy="server"
 assert_eq "$(scroll_pane_to "$spy")" "1" "the pane accepts a user scroll"
