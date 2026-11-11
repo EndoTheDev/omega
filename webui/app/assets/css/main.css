@@ -2865,10 +2865,14 @@ labels stopped short of the right edge. */
 }
 
 /* the health detail popover (card t_8fd38f88): docked to the bar's top
-   edge, one card on layer 2 */
+   edge, one card on layer 2. Card t_5656d52f: LEFT-anchored, because the
+   health dot leads the bar now - a right-anchored card would open a whole
+   pane away from its own trigger. 12px is the bar's own padding, so the
+   card's edge sits exactly under the dot. */
 .health-pop {
   position: absolute;
-  right: 12px;
+  left: 12px;
+  right: auto;
   bottom: calc(100% + 8px);
   z-index: 60;
   width: 280px;
