@@ -104,9 +104,13 @@ assert_eq "$(navclick "provider/models")" "1" "a subsection is a jump link"
 if ! poll_js "(()=>{const a=document.querySelector('.settings-nav-cat.active,.settings-nav-sub.active');return !!a&&a.getAttribute('data-category')==='provider/models'})()" 15; then
   die "the subsection click did not mark provider/models (active: $(active_id))"
 fi
-subedge=$(jsq '(()=>{const root=document.querySelector(".settings-body");const el=[...document.querySelectorAll(".settings-block")].find(b=>b.getAttribute("data-category")==="provider/models");if(!root||!el) return 999;return Math.round(Math.abs(el.getBoundingClientRect().top-root.getBoundingClientRect().top))})()' 2>&1 | plain)
-[ "${subedge:-999}" -le 8 ] 2>/dev/null || die "the subsection jump landed $subedge px off the top edge"
-step "ok: a subsection jump lands its block at the top (${subedge}px)"
+# card t_a8063683: the section heading is STICKY, so a subsection must land
+# BELOW it - a block scrolled to exactly 0 would paint its first rows behind
+# the pinned heading. The witness: the block's top is at or under the
+# heading's bottom edge, and the heading is pinned at the pane's top.
+subok=$(jsq '(()=>{const root=document.querySelector(".settings-body");const el=[...document.querySelectorAll(".settings-block")].find(b=>b.getAttribute("data-category")==="provider/models");if(!root||!el) return "missing";const sec=el.closest(".settings-category");const h=sec&&sec.querySelector(".settings-section-title");if(!h) return "no-heading";const rt=root.getBoundingClientRect().top,bt=el.getBoundingClientRect().top,hb=h.getBoundingClientRect().bottom;return (bt>rt&&bt>=hb-1)?"clear":"occluded:"+Math.round(bt-rt)+"/"+Math.round(hb-rt)})()' 2>&1 | plain)
+assert_eq "$subok" "clear" "the subsection lands BELOW the pinned heading - nothing is hidden behind it"
+step "ok: a subsection jump lands clear of the pinned heading"
 
 # --- a second click on the selected entry DESELECTS ----------------------
 # one click does all three in reverse: highlight off, branch collapsed, top
@@ -191,6 +195,20 @@ if ! poll_js '(()=>{const a=document.querySelector(".settings-nav-cat.active,.se
   die "the reopen did not restore the anchor (active: $(active_id), scrollTop: $(scroll_top))"
 fi
 step "ok: the remembered anchor survives a reload (scrollTop $before -> $(scroll_top))"
+
+# --- sticky: the heading pins, the next one pushes it out ----------------
+# card t_a8063683 (Endo, 2026-11-11): the document's own section headings are
+# the pane's ONLY headings, and they STICK - the effect the deleted mirror
+# stripe was imitating. Two witnesses only a browser can give: the heading
+# holds at the pane's top edge while its section scrolls under it, and the
+# NEXT section's heading takes that edge and pushes the previous one out.
+# (Run last: these scrolls unstick the spy, which may move the highlight.)
+stuck=$(jsq '(()=>{const root=document.querySelector(".settings-body");const el=document.querySelector(".settings-category");if(!root||!el) return "missing";const h=el.querySelector(".settings-section-title");if(!h) return "no-heading";const style=getComputedStyle(h);root.scrollTop=root.scrollTop+(el.getBoundingClientRect().top-root.getBoundingClientRect().top)+60;const rt=root.getBoundingClientRect().top;const ht=h.getBoundingClientRect().top;const st=el.getBoundingClientRect().top;return (style.position==="sticky"&&Math.abs(ht-rt)<=1&&st<=rt-40)?"pinned":"loose:"+style.position+"@"+Math.round(ht-rt)+"/"+Math.round(st-rt)})()' 2>&1 | plain)
+assert_eq "$stuck" "pinned" "scrolling inside a section pins its heading at the pane's top edge"
+
+pushed=$(jsq '(()=>{const root=document.querySelector(".settings-body");const secs=[...document.querySelectorAll(".settings-category")];const rt0=root?root.getBoundingClientRect().top:0;const i=secs.findIndex(s=>{const h=s.querySelector(".settings-section-title");return !!h&&Math.abs(h.getBoundingClientRect().top-rt0)<=1});if(i<0||i+1>=secs.length) return "no-next";const cur=secs[i],next=secs[i+1];root.scrollTop=root.scrollTop+(next.getBoundingClientRect().top-root.getBoundingClientRect().top);const rt=root.getBoundingClientRect().top;const nh=next.querySelector(".settings-section-title"),oh=cur.querySelector(".settings-section-title");const nt=nh?nh.getBoundingClientRect().top:999,ot=oh?oh.getBoundingClientRect().top:999;return (Math.abs(nt-rt)<=1&&ot<rt-1)?"pushed":"bad:"+Math.round(nt-rt)+"/"+Math.round(ot-rt)})()' 2>&1 | plain)
+assert_eq "$pushed" "pushed" "the next heading takes the top edge and pushes the previous one out"
+step "ok: section headings are sticky and push each other out"
 
 # --- the two-screen model is GONE, not hidden ---------------------------
 gone=$(jsq '(()=>{const back=document.querySelectorAll(".settings-back").length;const screens=[...document.querySelectorAll("aside.settings .settings-content")].length;const nav=[...document.querySelectorAll("aside.settings .settings-nav")].length;return back+"|"+screens+"|"+nav})()' 2>&1 | plain)

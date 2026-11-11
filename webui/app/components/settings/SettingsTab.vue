@@ -52,6 +52,20 @@
       <SearchInput
         v-model="query"
         placeholder="filter settings" />
+      <!-- card t_a8063683 (Endo, 2026-11-11): the modified-only switch left
+           the deleted heading bar and sits beside the other pane-wide
+           control. It is a DOCUMENT-wide filter, so it belongs with the
+           search, not with a heading. Same contract as before: a
+           pressed-state chip that narrows the whole document. -->
+      <button
+        class="settings-modified"
+        :class="{ on: modifiedOnly }"
+        type="button"
+        :aria-pressed="modifiedOnly"
+        title="show only knobs that differ from the default"
+        @click="modifiedOnly = !modifiedOnly">
+        modified only
+      </button>
       <button
         v-if="narrow"
         class="settings-jump"
@@ -117,7 +131,10 @@
       </nav>
 
       <section class="settings-content">
-        <div class="settings-content-head">
+        <!-- card t_a8063683: the head keeps ONLY the scope strip. It is a
+             flex child, so a payload with no second scope must render no
+             head AT ALL - an empty wrapper would still hold a seat. -->
+        <div v-if="scopeTabs.length > 1" class="settings-content-head">
     <!-- card t_04eb11d6 (settings tier 3b, R6/R8): the scope strip, the
          VSCode tab row at the head of the pane. R8 EMPTY WORLD: zero
          agent scopes in the payload renders NO strip at all, so the pane
@@ -125,7 +142,6 @@
          Main + one tab per agent name, and a tab switches the WHOLE pane
          (its groups, its search, the dot's base, the reset target). -->
     <div
-      v-if="scopeTabs.length > 1"
       class="settings-scopes"
       role="tablist"
       aria-label="settings scope">
@@ -139,29 +155,6 @@
         :aria-selected="tab.name === activeScope"
         @click="selectScope(tab.name)">
         {{ tab.label }}
-      </button>
-    </div>
-
-    <!-- ruling 9 (one document): the bar names the LAST ANCHOR and its
-         knob count - "settings" + the visible total while nothing is
-         selected. ruling 8: the modified-only switch rides the same bar
-         and now narrows the WHOLE document, not one category (the
-         behaviour it was always pretending to have). Both are chrome
-         AROUND the rows - the rows themselves stay exactly as tier 2b
-         built them (ruling 10). -->
-    <div class="settings-content-bar">
-      <h2 class="settings-content-title">
-        {{ barTitle }}
-        <span v-if="barCount > 0" class="settings-knob-count">{{ barCount }}</span>
-      </h2>
-      <button
-        class="settings-modified"
-        :class="{ on: modifiedOnly }"
-        type="button"
-        :aria-pressed="modifiedOnly"
-        title="show only knobs that differ from the default"
-        @click="modifiedOnly = !modifiedOnly">
-        modified only
       </button>
     </div>
         </div>
@@ -1053,6 +1046,16 @@
     );
   }
 
+  /** The height of the heading a target sits UNDER (its own section's
+      sticky heading). A block jump must clear it - the heading pins at the
+      scrollport's top edge, so a block scrolled to exactly 0 would paint
+      its first rows BEHIND it (card t_a8063683). */
+  function pinnedHeadingHeight(node: HTMLElement): number {
+    const section = node.closest(".settings-category");
+    const heading = section?.querySelector<HTMLElement>(".settings-section-title");
+    return heading ? heading.offsetHeight : 0;
+  }
+
   function scrollToAnchor(id: string | null) {
     const root = bodyEl.value;
     if (!root) return;
@@ -1064,7 +1067,14 @@
       root.scrollTo({ top: 0, behavior });
       return;
     }
-    node.scrollIntoView({ behavior, block: "start" });
+    // a SECTION lands with its own heading exactly at the top (the heading
+    // pins there itself); a BLOCK lands just below that pinned heading, so
+    // nothing it owns is hidden behind it.
+    const isBlock = id !== null && node.dataset.section !== parseSelection(id).category;
+    const rootTop = root.getBoundingClientRect().top;
+    const delta = node.getBoundingClientRect().top - rootTop;
+    const clear = isBlock ? pinnedHeadingHeight(node) : 0;
+    root.scrollTo({ top: root.scrollTop + delta - clear, behavior });
   }
 
   function persistAnchor(id: string | null) {
@@ -1356,29 +1366,12 @@
     }),
   );
 
-  // the bar reads the ANCHOR (or "settings" while nothing is selected),
-  // with the knob count of what sits under it
+  // the visible knob total under the live query / modified-only switch -
+  // the empty state's witness (card t_a8063683 deleted the heading bar
+  // that also carried it; the section headings carry their own counts)
   const totalCount = computed(() =>
     docSections.value.reduce((n, section) => n + section.count, 0),
   );
-  const anchoredSection = computed<DocSection | null>(() => {
-    const id = selection.value;
-    if (!id) return null;
-    const category = parseSelection(id).category;
-    return docSections.value.find((section) => section.id === category) ?? null;
-  });
-  const barTitle = computed(() => {
-    const id = selection.value;
-    if (!id) return "settings";
-    const selectionIds = parseSelection(id);
-    const section = anchoredSection.value;
-    if (!section) return "settings";
-    if (!selectionIds.subgroup) return section.label;
-    return (
-      section.blocks.find((block) => block.id === id)?.label ?? section.label
-    );
-  });
-  const barCount = computed(() => anchoredSection.value?.count ?? totalCount.value);
 
   // --- the scroll-spy (the nav follows the document) ---
   const spyOrder = computed<string[]>(() => spyTargetIds(docSections.value));
@@ -1410,18 +1403,23 @@
         }
         if (spyLocked) return;
         const rootTop = root.getBoundingClientRect().top;
+        // card t_a8063683: the section headings are STICKY now, so several
+        // of them can sit at the SAME top edge. "Nearest the top" would
+        // pick a neighbour arbitrarily there; the honest signal is the
+        // LAST heading in document order that has reached the scrollport's
+        // top - that is the one currently PINNED at it, and its predecessor
+        // has already been pushed out. `first` is the fallback for a pane
+        // whose targets are all still below the edge.
         let best: string | null = null;
-        let bestGap = Number.POSITIVE_INFINITY;
+        let first: string | null = null;
         for (const id of spyOrder.value) {
           if (!inBand.has(id)) continue;
           const node = spyNodes.get(id);
           if (!node) continue;
-          const gap = Math.abs(node.getBoundingClientRect().top - rootTop);
-          if (gap < bestGap) {
-            bestGap = gap;
-            best = id;
-          }
+          if (first === null) first = id;
+          if (node.getBoundingClientRect().top - rootTop <= 1) best = id;
         }
+        if (best === null) best = first;
         if (best === null || best === selection.value) return;
         selection.value = best;
         // the last place the user was IS the anchor a reopen restores
@@ -1908,24 +1906,6 @@
   .settings-content-head {
     flex: none;
   }
-  /* ruling 9: the category name + knob count; ruling 8: the modified-only
-     switch on the same bar */
-  .settings-content-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 10px 2px;
-  }
-  .settings-content-title {
-    flex: 1;
-    min-width: 0;
-    margin: 0;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: var(--text);
-  }
   .settings-knob-count {
     margin-left: 6px;
     font-family: var(--mono);
@@ -1954,11 +1934,25 @@
   }
   /* a category heading inside the ONE document (card t_8b464090): the
      section's own title, carrying its knob count. The nav's jump links are
-     styled above; these are the document's furniture. */
+     styled above; these are the document's furniture.
+     card t_a8063683 (Endo, 2026-11-11): this heading is the pane's ONLY
+     heading, and it STICKS - it holds at the scrollport's top edge until
+     the next section's heading pushes it out. Two traps this rule must
+     not fall into:
+     - a sticky box pins its BORDER box at top: 0, so the old
+       `margin: 14px 0 2px` left a sliver ABOVE the pinned heading through
+       which rows scrolled. The 14px now rides padding-top (with the 6px
+       the label always had), so the pinned block is solid.
+     - the heading must be OPAQUE or rows show through it. --z1 is the
+       pane's own background (main.css .settings), so every theme agrees. */
   .settings-section-title {
-    margin: 14px 0 2px;
-    padding-top: 6px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin: 0 0 2px;
+    padding: 20px 0 6px;
     border-top: 1px solid var(--stroke);
+    background: var(--z1);
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
@@ -1966,9 +1960,9 @@
     color: var(--text);
   }
   .settings-category:first-of-type .settings-section-title {
-    margin-top: 4px;
+    margin-top: 0;
     border-top: 0;
-    padding-top: 0;
+    padding-top: 4px;
   }
   /* a child heading inside a multi-child category */
   .settings-subgroup-title {
