@@ -35,6 +35,9 @@ import {
   spyTargetIds,
   subgroupLabel,
   withSubgroups,
+  buildSpyTargets,
+  targetSection,
+  type SpyNodeLike,
 } from "../app/components/settings/settingsNav.ts";
 
 // --- fixtures -------------------------------------------------------------
@@ -317,12 +320,125 @@ test("anchorSelection restores only what the live nav still carries", () => {
   assert.equal(NAV_STORAGE_KEY, "omega.settings-category", "the key survives the model change");
 });
 
+// --- spy target RESOLUTION in the document (card t_c4b42357) -------------
+//
+// A flat (or one-child) category renders ONE unheaded block, so its block id
+// IS the section id: the document carries `data-section="common"` twice. The
+// resolution must hand that id to the SECTION - the box that owns the sticky
+// heading - or a jump lands the block at y=0, hidden behind that heading, and
+// the clamp measures the block instead of the section. The tree here is hand
+// built (the suite has no DOM); `.settings-category` ancestry is what the
+// real closest() answers.
+
+type FakeNode = SpyNodeLike & {
+  readonly classes: readonly string[];
+  readonly dataset: { readonly section?: string };
+  readonly parent: FakeNode | null;
+};
+
+function fakeNode(
+  classes: string[],
+  section?: string,
+  parent: FakeNode | null = null,
+): FakeNode {
+  const node: FakeNode = {
+    classes,
+    parent, // closest() walks this chain, exactly as a real element's ancestry
+    dataset: section === undefined ? {} : { section },
+    closest(selector: string) {
+      if (selector !== ".settings-category")
+        throw new Error(`unexpected selector ${selector}`);
+      let cur: FakeNode | null = node;
+      while (cur && !cur.classes.includes("settings-category")) cur = cur.parent;
+      return cur;
+    },
+  };
+  return node;
+}
+
+function fakeRoot(nodes: FakeNode[]) {
+  return {
+    querySelectorAll(selector: string): FakeNode[] {
+      const match = /^\.([\w-]+)\[data-section\]$/.exec(selector);
+      if (!match) throw new Error(`unexpected selector ${selector}`);
+      const cls = match[1];
+      return nodes.filter(
+        (node) => node.classes.includes(cls) && node.dataset.section !== undefined,
+      );
+    },
+  };
+}
+
+test("a flat category's repeated data-section id resolves to the SECTION, never its block", () => {
+  // DOM order exactly as the pane paints it: the section, then its one block
+  const common = fakeNode(["settings-category"], "common");
+  const commonBlock = fakeNode(["settings-block"], "common", common);
+  const provider = fakeNode(["settings-category"], "provider");
+  const models = fakeNode(["settings-block"], "provider/models", provider);
+  const store = fakeNode(["settings-category"], "store");
+  const storeBlock = fakeNode(["settings-block"], "store", store);
+  const pane = fakeRoot([common, commonBlock, provider, models, store, storeBlock]);
+
+  const targets = buildSpyTargets<FakeNode>(pane);
+  assert.equal(targets.get("common"), common, "the flat category's id belongs to its SECTION");
+  assert.equal(targets.get("store"), store, "and so does a one-child category's id");
+  assert.equal(targets.get("provider"), provider, "a multi-child category answers for itself");
+  assert.equal(
+    targets.get("provider/models"),
+    models,
+    "a genuinely distinct block still answers for itself",
+  );
+  assert.equal(targets.size, 4, "the duplicate id never adds a second entry");
+
+  // the jump's clear: a section target IS its own section, so it subtracts no
+  // heading (isBlock false) - the pane scrolls the section's top to 0 and its
+  // first row flows BELOW the pinned heading instead of under it
+  const sectionTarget = targets.get("common")!;
+  assert.equal(targetSection(sectionTarget), sectionTarget, "a section target resolves to itself");
+  assert.equal(
+    sectionTarget !== targetSection(sectionTarget),
+    false,
+    "isBlock is false for a section target",
+  );
+
+  // a block target still clears its section's sticky heading
+  const blockTarget = targets.get("provider/models")!;
+  assert.equal(targetSection(blockTarget), provider, "a block target resolves to its section");
+  assert.equal(
+    blockTarget !== targetSection(blockTarget),
+    true,
+    "isBlock is true for a block target",
+  );
+});
+
 // --- the pane's SOURCE pins ----------------------------------------------
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 const tab = read("app/components/settings/SettingsTab.vue");
 const navSource = read("app/components/settings/settingsNav.ts");
+
+test("the jump/clamp targets are SECTIONS first (card t_c4b42357)", () => {
+  assert.match(
+    tab,
+    /buildSpyTargets<HTMLElement>\(/,
+    "one shared, section-first target map builder",
+  );
+  assert.ok(
+    !tab.includes('querySelectorAll<HTMLElement>("[data-section]")'),
+    "no plain DOM-order scan - the inner block shadowed its own section",
+  );
+  assert.match(
+    tab,
+    /\.settings-category\[data-section="\$\{category\}"\]/,
+    "the clamp's fallback resolves a section, never a block",
+  );
+  assert.match(
+    tab,
+    /const section = targetSection\(node\);\s*const isBlock = node !== section;/,
+    "the clear is measured from the SAME box the jump scrolls",
+  );
+});
 
 test("the pane renders ONE document of every category", () => {
   assert.match(tab, /v-for="section in docSections"/, "the document is the content pane");

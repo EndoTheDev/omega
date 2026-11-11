@@ -433,6 +433,8 @@
     parseSelection,
     resolveSelection,
     spyTargetIds,
+    buildSpyTargets,
+    targetSection,
     withSubgroups,
     type DocSection,
     type NavCategory,
@@ -1003,9 +1005,12 @@
   // --- the scrollport, the jump, the anchor ---
   const bodyEl = ref<HTMLElement | null>(null);
   // id -> element for BOTH levels: a category section answers to its own
-  // id, each block to "cat/sub". Rebuilt from the DOM by collectSpyTargets
-  // whenever the document changes (a query, a scope), so a filtered-away
-  // section can never leave a stale target behind.
+  // id, each block to "cat/sub" - and where a flat/one-child category
+  // repeats the section id on its single block, the SECTION owns it (card
+  // t_c4b42357; the precedence lives in settingsNav's buildSpyTargets).
+  // Rebuilt from the DOM by collectSpyTargets whenever the document changes
+  // (a query, a scope), so a filtered-away section can never leave a stale
+  // target behind.
   const spyNodes = new Map<string, HTMLElement>();
   // The observer starts SHUT: a fresh pane has nothing selected (card
   // t_8b464090) and the observer's first delivery would otherwise select
@@ -1033,10 +1038,16 @@
 
   function collectSpyTargets(root: HTMLElement) {
     spyNodes.clear();
-    for (const node of root.querySelectorAll<HTMLElement>("[data-section]")) {
-      const id = node.dataset.section;
-      if (id) spyNodes.set(id, node);
-    }
+    // SECTIONS answer first (card t_c4b42357): a flat or one-child category
+    // renders one unheaded block whose id IS the section id, so the document
+    // carries that id twice. buildSpyTargets lets the section own it - a map
+    // built in plain DOM order kept the LAST match, the inner block, and a
+    // jump then parked the block at y=0 under the section's own sticky
+    // heading. A genuinely distinct block ("cat/sub") still resolves.
+    const targets = buildSpyTargets<HTMLElement>({
+      querySelectorAll: (selector) => root.querySelectorAll<HTMLElement>(selector),
+    });
+    for (const [id, node] of targets) spyNodes.set(id, node);
   }
 
   function reducedMotion(): boolean {
@@ -1070,8 +1081,12 @@
     }
     // a SECTION lands with its own heading exactly at the top (the heading
     // pins there itself); a BLOCK lands just below that pinned heading, so
-    // nothing it owns is hidden behind it.
-    const isBlock = id !== null && node.dataset.section !== parseSelection(id).category;
+    // nothing it owns is hidden behind it. The section box resolves through
+    // closest (card t_c4b42357), so the clear is measured from the SAME box
+    // the jump moves - a target answering for its own section can never
+    // subtract the heading it is meant to sit under.
+    const section = targetSection(node);
+    const isBlock = node !== section;
     const rootTop = root.getBoundingClientRect().top;
     const delta = node.getBoundingClientRect().top - rootTop;
     const clear = isBlock ? pinnedHeadingHeight(node) : 0;
@@ -1182,7 +1197,12 @@
     const category = parseSelection(id).category;
     return (
       spyNodes.get(category) ??
-      root.querySelector<HTMLElement>(`[data-section="${category}"]`)
+      // SECTIONS only (card t_c4b42357): a flat or one-child category's
+      // single block repeats the id, and a bare [data-section] lookup would
+      // answer with whichever came first in document order
+      root.querySelector<HTMLElement>(
+        `.settings-category[data-section="${category}"]`,
+      )
     );
   }
 
