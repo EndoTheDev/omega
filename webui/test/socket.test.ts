@@ -319,6 +319,52 @@ test("a quiet wire is cut and rebuilt - a half-open socket never fires close", a
   client.close();
 });
 
+test("the ladder runs even when the dead socket never reports close", async () => {
+  // The liveness deadline cuts a half-open wire with socket.close(), but the
+  // browser's close EVENT can be deferred for the whole outage or never
+  // arrive: measured in the browser under `ab set offline on` (both
+  // agent-browser 0.26.0 and 0.42.0), close() was called at 15-16s of silence
+  // and the close event stayed absent for the entire dark window - it only
+  // landed once the network returned. A client that schedules its reconnect
+  // from that event sits dark with NO timer armed: no reconnect, no onopen,
+  // no catch-up refetch, the pane stays stale and journey 111 reds. Recovery
+  // belongs to the ladder the moment the deadline fires (card t_71f28526).
+  FakeSocket.made = [];
+  const closes: number[] = [];
+  const client = createSocketClient(
+    { close: () => closes.push(Date.now()) },
+    {
+      factory: (u) => new FakeSocket(u) as unknown as WebSocket,
+      url: "ws://lane/ws",
+      rand: () => 0.5,
+      livenessMs: 120,
+    },
+  );
+  client.connect();
+  const sock = FakeSocket.made[0]!;
+  sock.open();
+  await sleep(400); // past 3x the budget: the cut has fired, no close event came
+  assert.equal(sock.closed, true, "the quiet-wire check closed the dead socket");
+  assert.equal(
+    closes.length,
+    1,
+    "the cut itself handed recovery to the ladder (no close event was ever delivered)",
+  );
+  assert.equal(client.status.value, "reconnecting");
+  await sleep(1000); // attempt 0 = 500ms, with room for a loaded box
+  assert.equal(
+    FakeSocket.made.length,
+    2,
+    "a fresh connection replaces the quiet one without waiting for a close event",
+  );
+  // the browser's own close event, arriving late, is not news: it must not
+  // null the live socket or step the ladder a second time
+  sock.drop();
+  await sleep(300);
+  assert.equal(FakeSocket.made.length, 2, "a stale close never spawns a second ladder step");
+  client.close();
+});
+
 test("frames keep the wire alive - a chatty socket is never cut", async () => {
   FakeSocket.made = [];
   const closes: number[] = [];
