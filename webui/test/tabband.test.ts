@@ -38,9 +38,10 @@ const TABS: Array<{
   { file: "../harness/store/ui/InsightsTab.vue", title: "Insights", scrollClass: "insights-scroll", actions: ["window in days, 0 = all time"] },
   // card t_6bebff18 (Endo ruling 2026-11-10, option B): settings LEFT the
   // band-search roster - the filter is the pane-top full-width bar, so the
-  // band carries the title alone (bandsearch.test.ts + band-breaks.test.ts
-  // pin the bar). The band itself still rides the shared contract.
-  { file: "app/components/settings/SettingsTab.vue", title: "Settings", scrollClass: "settings-body", actions: [] },
+  // band carried the title alone; card t_1cfb080a (Endo, 2026-11-11) then
+  // dropped the band ITSELF from this pane (the dock tab already says
+  // "Settings"), so there is no entry here any more. The absence is pinned
+  // in band-breaks.test.ts; the bar is pinned in bandsearch.test.ts.
   // card t_9794272d (Endo's de-crowd ruling, 2026-11-06): the two actions
   // are ICON-only band tools now - the verbs live on the title/aria-label
   // attrs, which the action probe below matches (the tooltip string is
