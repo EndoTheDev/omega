@@ -367,6 +367,14 @@ resolution mirror the one command law every surface follows:
   read-only observer) in the main pane, and a session already open in
   any tab is FOCUSED rather than opened twice. An agent with no
   sessions has no clickable name - there is nothing to bind.
+- **An agent-owned chat runs on its own home's model.** The opened tab
+  is the same ChatTab, and its composer carries the app's model chip,
+  but the chat floor ignores that pick for a session whose owner is an
+  agent home (`agent/api/server.go`): the home's config layer names the
+  provider and model, and neither the wire's pick nor one remembered
+  from an earlier send sticks on the row. The stream's `agent_start`
+  reports the home's `model_name`. The chip is a daemon-catalog
+  control; it cannot address another home's models.
 - The continuous roster folds into the same rows over
   `GET /continuous/roster`: the row law with a live dot + short word
   on the subtitle (green active, dim sleeping), the right-anchored
