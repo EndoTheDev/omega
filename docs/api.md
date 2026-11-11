@@ -755,7 +755,14 @@ reconnects on an exponential ladder (0.5s doubling, 15s cap, jitter),
 and runs a quiet-wire check - 15s without a frame while the health topic
 beats every 5s means a half-open socket that will never fire `close`
 (a wifi flap, a suspended laptop, the devtools offline toggle), so it is
-cut by hand and the ladder rebuilds it. That timer is the liveness
+cut by hand and the ladder rebuilds it. That budget is a DEADLINE
+measured from the last frame: a check that finds the wire alive re-arms
+for the remainder, never for a fresh whole budget, so the cut lands
+within one budget of the final frame. A full-budget re-arm instead let a
+dead wire sit undetected for up to 2x the budget (30s), longer than the
+outage a reconnect catch-up is given - the half-open socket then revived
+with the network and the catch-up refetch never ran (card t_71f28526).
+That timer is the liveness
 heartbeat, not a poller: no GET repeats on a cadence anywhere in the
 shell. The `chips` topic feeds the pending chip's live tail; `runs`
 edges clear the pulse and wake an awaiting yielded call; `canvas` feeds
