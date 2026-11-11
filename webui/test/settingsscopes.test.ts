@@ -293,7 +293,11 @@ test("R8: the scope strip exists only when the payload carries a scope", () => {
   // scopeTabs is Main + one per scope, so a bare payload (zero scopes)
   // renders the pane with NO strip at all - the tier-2b shape
   assert.match(SETTINGS_TAB, /const scopeTabs = computed<\{ name: string \| null; label: string \}\[\]>\(\(\) => \[\s*\{ name: null, label: "Main" \},\s*\.\.\.scopes\.value\.map/);
-  assert.match(SETTINGS_TAB, /<div\s+v-if="scopeTabs\.length > 1"\s+class="settings-scopes"/);
+  // card t_a8063683: the gate moved to the HEAD WRAPPER - the head is a
+  // flex child, so an ungated wrapper would hold an empty seat even with
+  // the strip gone.
+  assert.match(SETTINGS_TAB, /<div\s+v-if="scopeTabs\.length > 1"\s+class="settings-content-head">/);
+  assert.match(SETTINGS_TAB, /class="settings-scopes"/);
   // role=tablist + aria-selected: the strip is one tablist, Main first
   assert.match(SETTINGS_TAB, /role="tablist"[\s\S]*?role="tab"[\s\S]*?:aria-selected="tab\.name === activeScope"/);
 });

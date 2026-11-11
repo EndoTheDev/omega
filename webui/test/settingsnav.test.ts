@@ -345,7 +345,15 @@ test("a nav click SCROLLS the pane (smooth, reduced-motion aware) and marks it",
     /function selectCategory\(id: string\) \{[\s\S]{0,260}selection\.value = id;[\s\S]{0,320}scrollToAnchor\(id\)/,
     "the click selects and jumps",
   );
-  assert.match(tab, /scrollIntoView\(\{ behavior, block: "start" \}\)/, "the jump is a scrollIntoView");
+  // card t_a8063683: the jump is a scrollTop computation, not a bare
+  // scrollIntoView - the section heading is STICKY, so a block landing at
+  // exactly 0 would paint behind the pinned heading (it subtracts the
+  // heading's measured height for a block, nothing for a section).
+  assert.match(
+    tab,
+    /const clear = isBlock \? pinnedHeadingHeight\(node\) : 0;[\s\S]{0,140}root\.scrollTo\(\{ top: root\.scrollTop \+ delta - clear, behavior \}\)/,
+    "the jump scrolls the pane and clears the pinned heading for a block",
+  );
   assert.match(
     tab,
     /prefers-reduced-motion: reduce/,
@@ -459,14 +467,58 @@ test("the last anchor is remembered per client and restored on open", () => {
   );
 });
 
-test("the content head carries the scope strip, the anchor readout and the switch", () => {
-  assert.match(tab, /class="settings-content-head"/, "the strip/heading live in the content head");
+test("the content head carries the scope strip and NOTHING else", () => {
+  // card t_a8063683 (Endo, 2026-11-11): the heading mirror stripe is gone.
+  // It repeated the heading the pane thought it was looking at and lagged
+  // behind the scroll (and said "Commonly Used" twice). The document's own
+  // section heading IS the heading, and it sticks instead.
+  assert.match(
+    tab,
+    /<div v-if="scopeTabs\.length > 1" class="settings-content-head">/,
+    "the head wrapper itself is gated - an empty flex child would still hold a seat",
+  );
   assert.match(tab, /class="settings-scopes"/, "the tier-3 strip survives, in the content pane");
-  assert.match(tab, /class="settings-content-title"[\s\S]{0,200}\{\{ barTitle \}\}/,
-    "the bar names the anchor (or settings)");
-  assert.match(tab, /class="settings-knob-count"/, "the knob count rides the heading");
-  assert.match(tab, /class="settings-modified"[\s\S]{0,200}:aria-pressed="modifiedOnly"/,
-    "the modified-only switch is a pressed-state control");
+  for (const dead of [
+    "settings-content-bar",
+    "settings-content-title",
+    "barTitle",
+    "barCount",
+  ]) {
+    assert.ok(!tab.includes(dead), `the mirror stripe and its vocabulary are gone (${dead})`);
+  }
+});
+
+test("the modified-only switch is a pane-wide control beside the search", () => {
+  // card t_a8063683: it narrows the WHOLE document, so it belongs with the
+  // other pane-wide control, not with a heading it would outlive.
+  const bar = tab.match(/<div class="settings-filterbar">[\s\S]*?<\/div>/)?.[0] ?? "";
+  assert.ok(bar.includes("<SearchInput"), "the filter bar carries the search");
+  assert.match(
+    bar,
+    /class="settings-modified"[\s\S]{0,200}:aria-pressed="modifiedOnly"/,
+    "the modified-only switch lives in the filter bar, still a pressed-state control",
+  );
+  assert.ok(
+    bar.indexOf("<SearchInput") < bar.indexOf("settings-modified"),
+    "the toggle sits beside the search, not in front of it",
+  );
+});
+
+test("the section heading is the pane's STICKY header", () => {
+  const rule = tab.match(/\.settings-section-title\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.match(rule, /position:\s*sticky/, "the only heading sticks");
+  assert.match(rule, /top:\s*0/, "it pins at the scrollport's top edge");
+  // a transparent header would let rows scroll visibly underneath it
+  assert.match(rule, /background:\s*var\(--z1\)/, "it is OPAQUE, on the pane's own token");
+  // a sticky box pins its BORDER box at top: 0 - the old 14px top margin
+  // would leave a sliver above it through which rows show
+  assert.match(rule, /margin:\s*0 0 2px/, "no top margin on the sticky box");
+  assert.match(rule, /padding:\s*20px 0 6px/, "the old 14px lead rides padding-top");
+  const first =
+    tab.match(/\.settings-category:first-of-type \.\s*settings-section-title\s*\{[^}]*\}/)?.[0] ??
+    "";
+  assert.match(first, /border-top:\s*0/, "the first heading keeps its borderless top");
+  assert.match(first, /padding-top:\s*4px/, "and its 4px lead, with no top margin");
 });
 
 test("the rows are EXACTLY tier 2b's (ruling 10: no restyle)", () => {
