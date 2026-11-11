@@ -50,7 +50,7 @@ quiet=0
 # a live suite: if the lock is held by someone else, stand down entirely.
 # A sweep that takes the lock holds it for the reaping, so a suite starting
 # mid-sweep queues instead of racing it.
-JOURNEY_LOCK=/tmp/omega-journeys.lock
+JOURNEY_LOCK="${JOURNEY_LOCK:-/tmp/omega-journeys.lock}"
 if [ "$(readlink "/proc/$$/fd/9" 2>/dev/null)" = "$JOURNEY_LOCK" ]; then
   : # inherited the live suite's lock fd - sweep on
 else

@@ -22,6 +22,15 @@
 #   - scripts/fence-test.sh: the worker fence eval - a worker session's
 #     push/landing must refuse or be mechanically blocked; the eval
 #     fails if the operation succeeds. Runs in the train gate list.
+#   - scripts/journeys/console_scope_test.sh: the console-record scope pin
+#     (t_6654bc60) - agent-browser's console buffer belongs to the DAEMON
+#     SESSION (it survives navigation, reload and a reconnect to a
+#     different chrome), so one transient [NUXT_E5002] red every later
+#     assert_no_console_errors on that host while the manifest answered
+#     200. run.sh now clears the record before each recipe forks; the test
+#     drives the real run.sh with a stub browser and proves the old line
+#     cannot red the next recipe, the unscoped shape still does, and a real
+#     error from the recipe's own run still reds.
 60-settings-themes t_31aa2542 - the Settings chip/knob poll contract: the cold-runner wait_js race (theme picker "got [0] want [1]") - poll, never a zero-wait query
 61-session-title-fallback  t_8abdbb15 - session titles never lean on a model: the label renders with zero title runs; the unlabeled tab keeps the stable generic fallback (the nightly's no-provider reds, f82f4ee)
 75-divider-resize  t_38c0e960 - dock-stuck divider shapes: the v0.9.0 drag rework crossed the cumulative/per-event delta contract - the divider looked dead (~10px per full drag)
