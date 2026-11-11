@@ -342,6 +342,43 @@ test("frames keep the wire alive - a chatty socket is never cut", async () => {
   client.close();
 });
 
+test("the quiet-wire deadline runs from the last frame, not from the last check", async () => {
+  // The budget is a DEADLINE measured from the last frame, so a check that
+  // finds the wire alive must re-arm for the REMAINDER. Re-arming a fresh
+  // full budget lets a dead wire sit undetected for up to 2x the budget: at
+  // the shipped 15s that is a 30s discovery window, longer than the outage
+  // a reconnect catch-up is given - an 18s cut never closed the socket, the
+  // half-open connection revived with the network, and the catch-up refetch
+  // that brings the missed rows back never ran (card t_71f28526).
+  FakeSocket.made = [];
+  const BUDGET = 500;
+  const client = createSocketClient(
+    {},
+    {
+      factory: (u) => new FakeSocket(u) as unknown as WebSocket,
+      url: "ws://lane/ws",
+      rand: () => 0.5,
+      livenessMs: BUDGET,
+    },
+  );
+  client.connect();
+  const sock = FakeSocket.made[0]!;
+  sock.open();
+  await sleep(30); // one frame early in the first budget window, then silence
+  sock.push({ topic: "health", data: { status: "ok" } });
+  const quietFrom = Date.now();
+  // 1.4x the budget: a remainder re-arm cuts at ~1x, a full-budget re-arm
+  // needs ~2x
+  while (!sock.closed && Date.now() - quietFrom < BUDGET * 1.4) await sleep(10);
+  const lateness = Date.now() - quietFrom;
+  assert.equal(
+    sock.closed,
+    true,
+    `the cut landed ${lateness}ms after the last frame (budget ${BUDGET}ms) - the deadline is the budget, not a fresh one`,
+  );
+  client.close();
+});
+
 // --- the receipts: nothing polls beside the socket ------------------------
 
 test("the shell's polling timers are gone - the two survivors never fetch", () => {

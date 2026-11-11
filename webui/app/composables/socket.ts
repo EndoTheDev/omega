@@ -316,13 +316,22 @@ export function createSocketClient(
     scheduleLivenessCheck();
   }
 
-  function scheduleLivenessCheck(): void {
+  function scheduleLivenessCheck(delayMs?: number): void {
     liveness = setTimeout(() => {
       liveness = null;
       const socket = ws;
       if (!socket) return;
-      if (Date.now() - lastFrameAt < budget()) {
-        scheduleLivenessCheck();
+      const silence = Date.now() - lastFrameAt;
+      if (silence < budget()) {
+        // re-arm for the REMAINDER: the budget is a deadline measured from
+        // the LAST FRAME, so a fresh full-budget timer lets a dead wire sit
+        // undetected for up to 2x the budget (the check can land one tick
+        // before the last frame, then wait another whole budget). At the
+        // shipped 15s that is a 30s discovery window - longer than a
+        // reconnect catch-up is given, so the half-open socket outlives the
+        // outage and revives with the network instead of reconnecting
+        // (card t_71f28526).
+        scheduleLivenessCheck(budget() - silence);
         return;
       }
       try {
@@ -330,7 +339,7 @@ export function createSocketClient(
       } catch {
         // already dead: the close handler's job
       }
-    }, budget());
+    }, delayMs ?? budget());
   }
 
   function disarmLiveness(): void {
