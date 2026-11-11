@@ -8,6 +8,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +16,21 @@ import (
 	agentapi "github.com/EndoTheDev/omega/agent/api"
 	"github.com/EndoTheDev/omega/core"
 )
+
+// runtimeTitleModel resolves the persisted title_model word at the wire
+// boundary (card t_b403ad88). config.yaml keeps the choice VERBATIM -
+// "default" is what the settings pane shows back - but the base server
+// must never route a title call to a model literally NAMED "default":
+// that word means "follow the model this chat runs", which is exactly
+// the server's no-knob behaviour (the title call streams through the
+// per-request pinned provider). So the word lands as "" here and the
+// resolution stays at the call site, every call.
+func runtimeTitleModel(configured string) string {
+	if strings.TrimSpace(configured) == agent.DefaultModelSlot {
+		return ""
+	}
+	return configured
+}
 
 // sharedCanvas builds the process's ONE canvas on first use and hands
 // every bind's server the same instance (t_1c9793a8). A per-bind canvas
@@ -43,9 +59,12 @@ func (sc *sharedCanvas) build(ctx *core.Context, emit func(core.Event)) (*agent.
 // HTTPChannel adapts the HTTP server to the core.Channel interface.
 // It creates one agent from the Context and reuses it for all requests.
 type HTTPChannel struct {
-	addr         string
-	runTimeout   time.Duration // detached-run wall-clock cap from config
-	titleModel   string        // title_model knob from config
+	addr       string
+	runTimeout time.Duration // detached-run wall-clock cap from config
+	// titleModel is the title_model knob from config, VERBATIM - the
+	// persisted word (including "default") is what the pane reads back.
+	// runtimeTitleModel resolves it at the wire boundary.
+	titleModel string
 	// defaultWorkspace is the server.default_workspace knob: the
 	// tools' fallback workdir for workspace-less sessions (card
 	// t_ccf74d88). Empty = unset - the cwd fallback stands.
@@ -61,9 +80,9 @@ type HTTPChannel struct {
 	// a session owned by an agent home runs on that home's agent. Same
 	// two-sided discipline - the field covers a bind that wires later,
 	// the write-through covers a live server.
-	agentRuns agentapi.AgentRunFactory
+	agentRuns   agentapi.AgentRunFactory
 	publicHosts []string // server.public_hosts: declared public identities
-	srv              *Server
+	srv         *Server
 	// hub is the process-wide run registry (t_c6f13a82): one per
 	// plugin, shared by every bind's server. A second bind must not get
 	// a second hub - the action pipe's launchRun registers on the
@@ -203,7 +222,7 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	// Inspector seams (card t_db430fea): read-only views for the
 	// /cron/jobs, /skills and /logs endpoints. All optional - the
 	// handlers degrade to empty lists / 404 when a module is absent.
-	c.srv.SetChannelKnobs(c.runTimeout, c.titleModel)
+	c.srv.SetChannelKnobs(c.runTimeout, runtimeTitleModel(c.titleModel))
 	// The default workspace knob rides its own setter (the hot apply
 	// calls it live): the wire applies the boot value here.
 	c.srv.SetDefaultWorkspace(c.defaultWorkspace)

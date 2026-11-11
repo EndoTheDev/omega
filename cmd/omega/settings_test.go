@@ -769,51 +769,99 @@ func TestApplyProviderInstancesGate(t *testing.T) {
 	}
 }
 
-// TestVisionModelDefaultOption pins the auxiliary "default" entry (card
-// t_df46c8cf): the vision knob advertises default_option so the picker
-// offers the word, and no other knob does (the main model name and the
-// title/compaction slots are not aux lanes that follow a run).
-func TestVisionModelDefaultOption(t *testing.T) {
+// TestAuxModelDefaultOptionSet pins WHICH knobs offer the auxiliary
+// "default (inherit from the main model)" entry (card t_b403ad88 - it
+// widens t_df46c8cf's vision-only pin): every auxiliary model lane
+// follows the model the chat runs, EXCEPT the approval gate - an
+// approval decision is a deliberate choice, not an inherited default
+// (Endo's exception) - and the main model row, which has no default to
+// follow (its schema comment above says so). Exact set equality: a new
+// model knob has to be a deliberate decision, never a silent
+// inheritance.
+func TestAuxModelDefaultOptionSet(t *testing.T) {
 	cfg := DefaultConfig()
+	want := []string{
+		"provider.vision_model",
+		"provider.title_model",
+		"provider.compaction_model",
+		"provider.summarizer_model",
+		"provider.skills_model",
+	}
+	flagged := map[string]bool{}
+	seen := map[string]bool{}
 	for _, g := range settingGroups(&cfg) {
 		for _, k := range g.Knobs {
-			want := k.Key == "provider.vision_model"
-			if k.DefaultOption != want {
-				t.Errorf("%s default_option = %v, want %v", k.Key, k.DefaultOption, want)
+			seen[k.Key] = true
+			if k.DefaultOption {
+				flagged[k.Key] = true
 			}
+		}
+	}
+	for _, key := range want {
+		if !flagged[key] {
+			t.Errorf("%s does not offer the default entry", key)
+		}
+	}
+	if len(flagged) != len(want) {
+		t.Fatalf("default_option knobs = %v, want exactly %v", flagged, want)
+	}
+	// The exclusions are asserted by NAME: a flag drifting onto either
+	// one breaks Endo's exception (approval) or the main row.
+	for _, key := range []string{"provider.approvals_model", "provider.model_name"} {
+		if !seen[key] {
+			t.Fatalf("%s missing from the schema - the exclusion assert went vacuous", key)
+		}
+		if flagged[key] {
+			t.Errorf("%s offers the default entry, want it excluded", key)
 		}
 	}
 }
 
-// The "default" choice persists as the WORD: saving it writes
-// vision_model: default to config.yaml (never resolved against whatever
-// main model happened to be selected), and the refreshed schema reads it
-// back verbatim.
-func TestVisionModelDefaultPersistsVerbatim(t *testing.T) {
-	path := writeTestConfig(t, testConfigYAML)
-	payload, err := saveSettings(path, nil, nil, nil, nil, nil, map[string]any{
-		"provider.vision_model": "default",
-	})
-	if err != nil {
-		t.Fatalf("save: %v", err)
+// The "default" choice persists as the WORD on every auxiliary knob
+// that offers it (card t_b403ad88, widening t_df46c8cf's vision pin):
+// saving writes <knob>: default to config.yaml - never resolved against
+// whatever main model happened to be selected - and the refreshed
+// schema reads it back verbatim. The runtime resolves the word at each
+// call; the file keeps the intent.
+func TestAuxModelDefaultPersistsVerbatim(t *testing.T) {
+	cases := []struct {
+		knob  string
+		field func(Config) string
+	}{
+		{"provider.vision_model", func(c Config) string { return c.VisionModel }},
+		{"provider.title_model", func(c Config) string { return c.TitleModel }},
+		{"provider.compaction_model", func(c Config) string { return c.CompactionModel }},
+		{"provider.summarizer_model", func(c Config) string { return c.SummarizerModel }},
+		{"provider.skills_model", func(c Config) string { return c.SkillsModel }},
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var saved Config
-	if err := yaml.Unmarshal(data, &saved); err != nil {
-		t.Fatal(err)
-	}
-	if saved.VisionModel != "default" {
-		t.Fatalf("persisted vision_model = %q, want the literal \"default\"", saved.VisionModel)
-	}
-	knob, ok := payload.Knob("provider.vision_model")
-	if !ok {
-		t.Fatal("refreshed schema lost the vision knob")
-	}
-	if knob.Value != "default" {
-		t.Fatalf("refreshed knob value = %v, want default", knob.Value)
+	for _, c := range cases {
+		t.Run(c.knob, func(t *testing.T) {
+			path := writeTestConfig(t, testConfigYAML)
+			payload, err := saveSettings(path, nil, nil, nil, nil, nil, map[string]any{
+				c.knob: "default",
+			})
+			if err != nil {
+				t.Fatalf("save: %v", err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var saved Config
+			if err := yaml.Unmarshal(data, &saved); err != nil {
+				t.Fatal(err)
+			}
+			if got := c.field(saved); got != "default" {
+				t.Fatalf("persisted %s = %q, want the literal \"default\"", c.knob, got)
+			}
+			knob, ok := payload.Knob(c.knob)
+			if !ok {
+				t.Fatalf("refreshed schema lost the %s knob", c.knob)
+			}
+			if knob.Value != "default" {
+				t.Fatalf("refreshed %s value = %v, want default", c.knob, knob.Value)
+			}
+		})
 	}
 }
 
