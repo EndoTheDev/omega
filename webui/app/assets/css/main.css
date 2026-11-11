@@ -2395,6 +2395,42 @@ labels stopped short of the right edge. */
 .model-list li.model-none { color: var(--text-dim); cursor: default; }
 .model-list li.model-none:hover { background: transparent; }
 
+/* disabled-with-reason rows (card t_dac84a33): a settings knob's filter
+   SHOWS every catalog model, striking out the ones the slot refuses and
+   saying why - the catalog must read complete, and the row never
+   selects (the picker guards it, the pointer cursor is the tell) */
+.model-list li.off { color: var(--text-dim); opacity: 0.55; cursor: default; }
+.model-list li.off:hover { background: transparent; color: var(--text-dim); }
+.model-list li .row-reason {
+  margin-left: 8px;
+  font-size: 10px;
+  font-style: italic;
+  opacity: 0.8;
+}
+
+/* the aux INHERIT row (card t_dac84a33, Endo's ruling 1): a PINNED top row
+   above the provider sections - the word "default" here means "follow the
+   chat's model", never the base provider's section, so it is never folded
+   into one and never scrolls with the list */
+.model-inherit {
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+  text-align: left;
+  background: var(--z1);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-chip);
+  cursor: pointer;
+}
+.model-inherit:hover { color: var(--text); border-color: var(--text-dim); }
+.model-inherit.current {
+  color: var(--accent);
+  border-color: rgba(232, 131, 58, 0.55);
+}
+
 /* grouped catalog (card t_1914a8c9): one collapsible section per
    provider - the scroll moves to the .model-body wrapper, the section
    lists flow inside it; searching forces every section open */

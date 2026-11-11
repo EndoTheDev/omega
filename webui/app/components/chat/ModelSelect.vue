@@ -14,17 +14,19 @@
        (the explicit left-the-instance pick cancels the sticky pin). -->
   <div
     class="model-select"
+    :class="{ down: flipDown, measured: measured }"
+    :style="popRoom"
     ref="root">
     <button
       class="model-chip"
       type="button"
-      title="Model"
+      :title="chipTitle"
       :aria-expanded="open"
       @click="open ? close() : openNow()"
       @keydown.down.prevent="openNow()">
       <!-- ellipsis container: at narrow widths the chip gives up width
            BEFORE the toolbar wraps (t_357cbe9c squeeze, 320px floor) -->
-      <span class="chip-name">{{ model }}</span>
+      <span class="chip-name">{{ chipText }}</span>
       <span
         class="chev"
         aria-hidden="true"
@@ -42,6 +44,23 @@
         placeholder="filter models"
         spellcheck="false"
         @keydown.escape.stop="close" />
+      <!-- the aux INHERIT row (card t_dac84a33, Endo's ruling 1): PINNED
+           above the provider sections - never folded into one, because the
+           word "default" here means "follow the chat's model", NOT the base
+           provider's section. It sits OUTSIDE .model-body so it stays put
+           while the sections scroll. Only a settings knob marked
+           default_option passes inheritRow; the composer never does. -->
+      <button
+        v-if="inheritRow"
+        type="button"
+        class="model-inherit"
+        role="option"
+        :aria-selected="model === AUX_DEFAULT_VALUE"
+        :class="{ current: model === AUX_DEFAULT_VALUE }"
+        title="follow the model the current chat runs"
+        @click="pickInherit()">
+        {{ INHERIT_LABEL }}
+      </button>
       <div class="model-body">
         <div
           v-for="g in visibleGroups"
@@ -73,9 +92,19 @@
                 :key="`${g.name}:${m}`"
                 role="option"
                 :aria-selected="isCurrent(g, m)"
-                :class="{ current: isCurrent(g, m) }"
+                :aria-disabled="reasonFor(g.name, m) !== null || undefined"
+                :title="reasonFor(g.name, m) ?? undefined"
+                :class="{
+                  current: isCurrent(g, m),
+                  off: reasonFor(g.name, m) !== null,
+                }"
                 @click="pick(g, m)">
                 {{ m }}
+                <span
+                  v-if="reasonFor(g.name, m)"
+                  class="row-reason"
+                  >{{ reasonFor(g.name, m) }}</span
+                >
               </li>
               <li
                 v-if="!g.error && g.models.length === 0"
@@ -175,7 +204,8 @@
 
 <script setup lang="ts">
   import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
-  import type { ModelProviderSection } from "../composables/omega";
+  import type { ModelProviderSection } from "../../composables/omega";
+  import { AUX_DEFAULT_VALUE } from "../../composables/modelCatalog";
 
   const props = defineProps<{
     model: string;
@@ -186,12 +216,46 @@
     /** the grouped catalog (card t_1914a8c9): one section per provider;
          empty falls back to the flat models prop */
     groups?: ModelProviderSection[];
+    /** the chip's tooltip (card t_dac84a33: a settings row must say WHICH
+         knob it sets; the composer leaves it and renders "Model") */
+    label?: string;
+    /** the aux INHERIT row (card t_dac84a33): pins a TOP row above the
+         provider sections that emits the literal "default" - "follow the
+         model the current chat runs". Off by default, so the composer
+         (which has no default to follow) renders exactly as before. */
+    inheritRow?: boolean;
+    /** qualify marks a model row unusable and says WHY ("not a vision
+         model"): a rejected row renders DISABLED with the reason as its
+         title and never emits a pick - it is shown, never hidden, so the
+         catalog reads complete. Off by default: every composer row is
+         pickable. */
+    qualify?: (section: string, model: string) => string | null;
+    /** where the pop opens (card t_dac84a33): the composer's chip sits on
+         the floor, so "up" is the default and the geometry is unchanged;
+         a settings row sits mid-pane and passes "down" */
+    drop?: "up" | "down";
   }>();
 
   const emit = defineEmits<{
     (e: "update:model", value: string): void;
     (e: "refresh-models"): void;
   }>();
+
+  // The inherit row's exact label (Endo's ruling 1, card t_dac84a33). It
+  // is NOT a provider section and must never read as one: the same word
+  // spells the composer grammar's base-provider prefix ("default:model").
+  const INHERIT_LABEL = "default (inherit from the main model)";
+  const INHERIT_CHIP = "default (inherit)";
+
+  const chipTitle = computed(() => props.label ?? "Model");
+  // the chip face: the stored value, except that an INHERITED knob reads
+  // as the word's meaning rather than dropping a bare "default" beside a
+  // slot knob's "default:llama3" (two different defaults would look alike)
+  const chipText = computed(() =>
+    props.inheritRow && props.model === AUX_DEFAULT_VALUE
+      ? INHERIT_CHIP
+      : props.model,
+  );
 
   const open = ref(false);
   const query = ref("");
@@ -289,11 +353,28 @@
   // cancels a sticky pin). The flat floor also rides "default:" so a
   // pick from the default section never re-routes a pinned session.
   function pick(g: ModelProviderSection, m: string) {
+    // a DISABLED-with-reason row (card t_dac84a33) never stores anything:
+    // the reason is information, not an override of the slot's rule
+    if (reasonFor(g.name, m) !== null) return;
     emit(
       "update:model",
       g.name === "default" ? `default:${m}` : `${g.name}:${m}`,
     );
     close();
+  }
+
+  // the inherit row emits THE LITERAL WORD - never a section prefix. It is
+  // the aux lane's one magic value ("follow the chat's model"), not the
+  // composer grammar's "default:" section address (card t_dac84a33).
+  function pickInherit() {
+    emit("update:model", AUX_DEFAULT_VALUE);
+    close();
+  }
+
+  // the row's disqualification reason, or null when it is pickable. No
+  // qualify hook = no rejected rows (the composer's behavior exactly).
+  function reasonFor(section: string, model: string): string | null {
+    return props.qualify ? props.qualify(section, model) : null;
   }
 
   // current-row highlight: the chip may carry the slot value OR the
@@ -350,10 +431,50 @@
     saveCustoms();
   }
 
+  // Where the pop opens (card t_dac84a33). The composer's chip sits on the
+  // floor, so the shared .model-pop anchors UP and nothing is measured. A
+  // settings row asks for "down" - but the settings body CLIPS its
+  // overflow, so a pop poking past a floor is simply invisible. At open the
+  // chip measures its nearest scrolling container: the pop takes the roomier
+  // side and the section body is capped to what is left, so the list scrolls
+  // inside the pop instead of disappearing behind the clip.
+  const flipDown = ref(false);
+  const measured = ref(false);
+  const popRoom = ref<Record<string, string>>({});
+
+  function placePop() {
+    measured.value = false;
+    popRoom.value = {};
+    if (props.drop !== "down") return;
+    const chip = root.value?.getBoundingClientRect();
+    if (!chip) return;
+    let floor = window.innerHeight;
+    let ceil = 0;
+    for (let el = root.value?.parentElement ?? null; el; el = el.parentElement) {
+      if (getComputedStyle(el).overflowY !== "visible") {
+        const r = el.getBoundingClientRect();
+        floor = r.bottom;
+        ceil = r.top;
+        break;
+      }
+    }
+    const below = floor - chip.bottom - 12;
+    const above = chip.top - ceil - 12;
+    flipDown.value = below >= above;
+    // search + footer + padding + the inherit row: the body keeps the rest,
+    // never more than the grouped design's own 260px cap
+    const room = (flipDown.value ? below : above) - 106;
+    popRoom.value = {
+      "--model-pop-body": `${Math.round(Math.max(120, Math.min(260, room)))}px`,
+    };
+    measured.value = true;
+  }
+
   function openNow() {
     open.value = true;
     adding.value = false;
     editing.value = false;
+    placePop();
     nextTick(() => searchEl.value?.focus());
   }
 
@@ -374,3 +495,19 @@
     document.removeEventListener("pointerdown", onDocPointer),
   );
 </script>
+
+<style scoped>
+  /* the settings pickers open DOWN (their row sits mid-pane); the shared
+     .model-pop anchors upward for the composer's floor chip - same flip
+     BandSelect makes for its drop="down" seats */
+  .model-select.down .model-pop {
+    bottom: auto;
+    top: calc(100% + 6px);
+  }
+  /* a MEASURED seat (settings) caps the section body to the room its own
+     scrolling container leaves, so the list scrolls inside the pop instead
+     of being clipped by the pane. The composer never sets the var. */
+  .model-select.measured .model-body {
+    max-height: var(--model-pop-body, 260px);
+  }
+</style>

@@ -111,6 +111,59 @@ export function pickerNeedsFreeText(
   return !loading && namedCount === 0;
 }
 
+// --- a filtered slot's DISQUALIFIER (card t_dac84a33) ---
+
+// slotRejectReason says why a model may not be picked in a filtered slot,
+// or null when it may. The settings pickers render a rejected row
+// DISABLED WITH THIS REASON instead of dropping it: the catalog must read
+// complete, and an operator can see that a model exists and why the knob
+// refuses it. An empty filter (chat slots, the main model) never rejects.
+export function slotRejectReason(
+  filter: ModelFilter,
+  model: string,
+  wire: string[] | null | undefined,
+): string | null {
+  if (filter !== "vision" && filter !== "decision") return null;
+  const caps = effectiveCapabilities(model, wire);
+  if (filter === "vision" && !caps.includes("vision"))
+    return "not a vision model";
+  if (filter === "decision" && !caps.includes("decision"))
+    return "not an approval model";
+  return null;
+}
+
+// --- the value a knob PERSISTS (card t_dac84a33) ---
+
+// knobModelValue maps the picker's emit onto the value a settings knob
+// stores. The word "default" carries TWO meanings here and they stay
+// apart: the composer grammar's "default:model" addresses the BASE
+// PROVIDER's section, while the aux inherit word "default"
+// (AUX_DEFAULT_VALUE) means "follow the model the chat runs" - a literal
+// the pinned inherit row is the only source of.
+//   - slot knobs (compaction, summarizer, curator, approval) persist the
+//     chat grammar VERBATIM: "instance:model" / "default:model" - the
+//     server resolves them on its slot lane.
+//   - every other model knob persists a BARE model name: vision_model,
+//     title_model and provider.model_name feed a provider directly, so a
+//     section prefix is never part of the value. An inherited "default"
+//     rides through untouched and is never produced by a section pick.
+export function knobModelValue(
+  raw: string,
+  slot: boolean,
+  sections: string[],
+): string {
+  if (slot) return raw;
+  if (raw === AUX_DEFAULT_VALUE) return raw;
+  if (raw.startsWith("default:")) return raw.slice("default:".length);
+  // a model's own name may carry colons ("clef:27b"), so strip exactly the
+  // KNOWN section prefix the picker adds - never a split on the first one
+  for (const name of sections) {
+    if (name === "" || name === "default") continue;
+    if (raw.startsWith(name + ":")) return raw.slice(name.length + 1);
+  }
+  return raw;
+}
+
 // --- the shared catalog state (one fetch per settings open) ---
 
 export interface ModelCatalogState {

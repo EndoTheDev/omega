@@ -1,23 +1,30 @@
 <template>
-  <!-- omega webui: the TYPED MODEL PICKER (card t_70c28128). A
-       settings model field renders the shared BandSelect listbox
-       populated from the provider's live model catalog, narrowed to
-       the knob's slot (decision / vision / full chat list). The
-       per-subsystem model knobs (card t_fc0b2f2d, knob.slot) ALSO
-       list the named provider instances' models as "instance:model"
-       values - the server routes the consult through that instance.
-       No list = no dropdown: the fetch's error state (or an empty
-       filtered result) falls back to free text with the hint spelled
-       out - the escape hatch is the DEGRADED state, never a silent
-       dead dropdown. -->
+  <!-- omega webui: the TYPED MODEL PICKER (card t_70c28128; THE COMPOSER'S
+       picker since t_dac84a33). A settings model field renders the same
+       popover the chat composer has - one collapsible section per
+       provider, search across sections, a listing failure shown inline in
+       its section, footer actions (refresh / add custom / edit custom) -
+       from the ONE shared catalog (composables/modelCatalog.ts; the
+       catalogs were always shared, only the rendering differed).
+       The knob's slot filter rides the picker's qualify hook: a model the
+       knob refuses stays VISIBLE, disabled with its reason ("not a vision
+       model"), so the catalog reads complete instead of quietly missing
+       rows. A pick maps onto the value the knob persists (see commit()).
+       No usable list = no dropdown: a failed fetch (or a catalog whose
+       every model is disqualified for this slot) falls back to free text
+       with the hint spelled out - the escape hatch is the DEGRADED state,
+       never a silent dead dropdown. -->
   <template v-if="mode === 'list'">
-    <BandSelect
+    <ModelSelect
       class="setting-select setting-model"
-      :model-value="value"
-      :options="options"
+      :model="value"
+      :models="flatModels"
+      :groups="groups"
       :label="knob.label"
+      :inherit-row="inheritRow"
+      :qualify="qualify"
       drop="down"
-      @update:model-value="$emit('update', $event)" />
+      @update:model="commit" />
   </template>
   <template v-else>
     <input
@@ -34,88 +41,87 @@
 
 <script setup lang="ts">
   import { computed } from "vue";
-  import type { SettingKnob } from "~/composables/omega";
+  import type { ModelProviderSection, SettingKnob } from "~/composables/omega";
   import {
-    filterModelEntries,
+    knobModelValue,
     pickerNeedsFreeText,
+    slotRejectReason,
     useModelCatalog,
-    withAuxDefault,
     type ModelFilter,
-    type ModelEntry,
   } from "~/composables/modelCatalog";
-  // THE shared listbox (card t_acad02ec) - never a new select
-  // component, never a native select popup (OS chrome over the panes)
-  import BandSelect from "../ui/BandSelect.vue";
+  // THE composer's picker (card t_1914a8c9): settings and chat render the
+  // SAME popover since t_dac84a33 - never a second grouped picker
+  import ModelSelect from "../chat/ModelSelect.vue";
 
   const props = defineProps<{
     knob: SettingKnob;
     value: string;
   }>();
 
-  defineEmits<{
+  const emit = defineEmits<{
     (e: "update", value: string): void;
   }>();
 
   const { state: catalog } = useModelCatalog();
   const filter = (props.knob.filter ?? "") as ModelFilter;
-  // card t_fc0b2f2d / t_1914a8c9: the per-subsystem slots also offer
-  // the named provider instances - the models come from each
-  // instance's own catalog section (the grouped /models payload), so
-  // a slot named instance:model resolves on the server as before. A
-  // section that failed to list contributes nothing (the picker shows
-  // the failure in the chat picker; the slots ride the default
-  // catalog's models and free text).
-  const instanceOptions = computed(() => {
-    if (props.knob.slot !== true) return [];
-    const sections = catalog.value.sections ?? [];
-    return sections
-      .filter((s) => s.name !== "default" && !s.error)
-      .flatMap((s) => {
-        const entries: ModelEntry[] = (s.models ?? []).map((name) => ({
-          name,
-          capabilities: s.capabilities?.[name] ?? [],
-        }));
-        return filterModelEntries(entries, filter).map((e) => ({
-          value: `${s.name}:${e.name}`,
-          label: `${s.name}:${e.name}`,
-        }));
-      });
-  });
-
-  // The NAMED entries only (instances + default catalog, filtered). The
-  // aux "default" sentinel is added for RENDERING below - it is never a
-  // model, so it must not decide whether the listbox may render (see
-  // pickerNeedsFreeText: a filtered list that matched nothing has to
-  // keep the free-text escape hatch).
-  const namedOptions = computed(() => [
-    ...instanceOptions.value,
-    ...filterModelEntries(catalog.value.entries ?? [], filter).map((e) => ({
-      value: e.name,
-      label: e.name,
-    })),
-  ]);
-
-  const options = computed(() =>
-    withAuxDefault(
-      namedOptions.value,
-      // card t_df46c8cf: an aux knob marked default_option offers the
-      // "default" entry FIRST - the aux lane then follows the model the
-      // chat runs, resolved server-side per call.
-      props.knob.defaultOption === true,
-    ),
+  const sections = computed<ModelProviderSection[]>(
+    () => catalog.value.sections ?? [],
   );
 
+  // The picker's groups: EVERY section and EVERY model, unfiltered - the
+  // slot rule lands on the rows as a reason (qualify), never as a drop.
+  const groups = computed<ModelProviderSection[]>(() =>
+    sections.value.map((s) => ({
+      name: s.name,
+      models: s.models ?? [],
+      capabilities: s.capabilities,
+      error: s.error,
+    })),
+  );
+
+  // the flat floor: the picker's default section while no grouped payload
+  // arrived (a /models answer without providers, or the loader's first
+  // paint). A pick from it carries the "default:" grammar prefix.
+  const flatModels = computed(() =>
+    (catalog.value.entries ?? []).map((e) => e.name),
+  );
+
+  // qualify: the reason a row may not be picked in THIS knob's slot, or
+  // null. The wire's per-model capabilities come from the row's own
+  // section; the curated families fill in where the wire is silent
+  // (effectiveCapabilities). The flat floor has no section, so its flags
+  // come from the shared entry list.
+  function qualify(section: string, model: string): string | null {
+    if (filter !== "vision" && filter !== "decision") return null;
+    const wire = sections.value.length
+      ? sections.value.find((s) => s.name === section)?.capabilities?.[model]
+      : catalog.value.entries?.find((e) => e.name === model)?.capabilities;
+    return slotRejectReason(filter, model, wire);
+  }
+
+  // The NAMED rows the picker will render pickable. Feeds the degrade rule
+  // only - a filtered slot whose every model is disqualified has no live
+  // choice and must fall back to free text. A failed section contributes
+  // nothing (it renders its own error line); the inherit row is NOT a
+  // model and never counts (pickerNeedsFreeText's contract).
+  const pickableCount = computed(() => {
+    const rows = sections.value.length
+      ? sections.value
+          .filter((s) => !s.error)
+          .flatMap((s) =>
+            (s.models ?? []).map((m) => ({ section: s.name, model: m })),
+          )
+      : (catalog.value.entries ?? []).map((e) => ({
+          section: "default",
+          model: e.name,
+        }));
+    return rows.filter((r) => qualify(r.section, r.model) === null).length;
+  });
+
   type Mode = "list" | "fallback";
-  // list = the dropdown renders: while the catalog is in flight
-  // (brief round trip, the hint says loading) and once it landed with
-  // a non-empty filtered list of NAMED models. A listing that answered
-  // but matched nothing in a filtered slot degrades the same way a
-  // failed fetch does (the empty pop would be a dead dropdown with no
-  // escape) - including an aux knob, whose prepended "default" entry
-  // must never be the only thing left to pick.
   const mode = computed<Mode>(() =>
     pickerNeedsFreeText(
-      namedOptions.value.length,
+      pickableCount.value,
       catalog.value.loading,
       catalog.value.error,
     )
@@ -123,23 +129,46 @@
       : "list",
   );
 
+  // The inherit row appears ONLY for a knob the schema marks
+  // default_option (card t_df46c8cf; the flags land in t_b403ad88) -
+  // Endo's exception: an APPROVAL decision is deliberate, never inherited,
+  // so the decision slot gets no row even once it carries the flag, and
+  // the literal word "default" has no route into a decision knob.
+  const inheritRow = computed(
+    () => props.knob.defaultOption === true && filter !== "decision",
+  );
+
+  // THE COLLISION (card t_dac84a33): "default" has two meanings and they
+  // stay apart - the composer grammar's "default:model" addresses the base
+  // provider's SECTION, the aux word "default" means INHERIT the chat's
+  // model. knobModelValue keeps slot knobs verbatim and strips the section
+  // prefix from every other knob, so the literal word can only arrive from
+  // the pinned inherit row.
+  const sectionNames = computed(() =>
+    sections.value.map((s) => s.name).filter((n) => n !== "default"),
+  );
+
+  function commit(raw: string) {
+    emit(
+      "update",
+      knobModelValue(raw, props.knob.slot === true, sectionNames.value),
+    );
+  }
+
   const hint = computed(() => {
     if (catalog.value.error !== null)
-      return props.knob.defaultOption === true
+      return inheritRow.value
         ? `provider model list unavailable (${catalog.value.error}) - type "default" to follow the chat's model, or type a model name`
         : `provider model list unavailable (${catalog.value.error}) - type the model name`;
     if (catalog.value.loading) return "loading the provider's models…";
-    if (namedOptions.value.length === 0) {
-      const lead =
-        filter === "decision"
-          ? "no decision models in the provider's list"
-          : filter === "vision"
-            ? "no vision models in the provider's list"
-            : "the provider's model list came back empty";
-      return props.knob.defaultOption === true
-        ? `${lead} - type "default" to follow the chat's model, or type a model name`
-        : `${lead} - type the model name`;
-    }
-    return "";
+    const lead =
+      filter === "decision"
+        ? "no decision models in the provider's list"
+        : filter === "vision"
+          ? "no vision models in the provider's list"
+          : "the provider's model list came back empty";
+    return inheritRow.value
+      ? `${lead} - type "default" to follow the chat's model, or type a model name`
+      : `${lead} - type the model name`;
   });
 </script>
