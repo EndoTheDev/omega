@@ -329,6 +329,16 @@ export interface ChatHost {
 
 export const CHAT_HOST_KEY: InjectionKey<ChatHost> = Symbol("omega-chat-host");
 
+/** the module->shell chat-open event (card t_81109e1c, the Agents tab):
+    a module-owned panel imports no shell code, so a roster row click
+    hands the agent's most-recent SESSION ID over through this window
+    CustomEvent (the viewer precedent) and app.vue runs the ordinary
+    chat opener on it - focus an already-open tab, mint only when no
+    tab holds the session. THE LITERAL IS COPIED in
+    harness/continuous/ui/AgentsPanel.vue; the agents chat test pins
+    both spellings identical. Detail payload: the session id string. */
+export const CHAT_SESSION_OPEN_EVENT = "omega:open-chat-session";
+
 // --- the ONE composer button's face (t_357cbe9c; retry left in
 // t_95d2bc34) ---
 //

@@ -350,7 +350,32 @@ resolution mirror the one command law every surface follows:
 
 ## The Agents tab
 
-- The continuous roster is a flat list (no grouping) over
+- The roster is a flat list (no grouping) over `GET /agents`: one row
+  per agent home, the main agent included. The subtitle line carries
+  the facts the tab is for - description, model, session count, last
+  activity - and the main row additionally carries a `main` badge
+  beside its name (the locked pill marks it too when the host serves
+  the toggle seam; the badge survives a host that serves none).
+- **A row click opens the agent's chat** (card t_81109e1c): the name
+  is a button that hands the agent's MOST RECENT session id
+  (`last_session_id` on the roster row, newest by `updated_at`) to the
+  shell over the `omega:open-chat-session` window event - module UI
+  imports no shell code, so the literal is copied in
+  `harness/continuous/ui/AgentsPanel.vue` and pinned by
+  `webui/test/agentschat.test.ts`. The shell runs the ORDINARY chat
+  opener, so the click opens a full interactive ChatTab (never a
+  read-only observer) in the main pane, and a session already open in
+  any tab is FOCUSED rather than opened twice. An agent with no
+  sessions has no clickable name - there is nothing to bind.
+- **An agent-owned chat runs on its own home's model.** The opened tab
+  is the same ChatTab, and its composer carries the app's model chip,
+  but the chat floor ignores that pick for a session whose owner is an
+  agent home (`agent/api/server.go`): the home's config layer names the
+  provider and model, and neither the wire's pick nor one remembered
+  from an earlier send sticks on the row. The stream's `agent_start`
+  reports the home's `model_name`. The chip is a daemon-catalog
+  control; it cannot address another home's models.
+- The continuous roster folds into the same rows over
   `GET /continuous/roster`: the row law with a live dot + short word
   on the subtitle (green active, dim sleeping), the right-anchored
   toggle per the pill law, and NO wake control anywhere — waking is
@@ -362,8 +387,9 @@ resolution mirror the one command law every surface follows:
 - **Expansion = details + edit**: expanding a row seats the config
   summary and the `PUT /agents/{name}` layer editor (description,
   provider host/type/model_name/api_key, system_prompt; nil = leave
-  alone). Session rows are dead on this tab — sessions live in the
-  sidebar, never in the roster.
+  alone). Session ROWS are dead on this tab — the roster opens a
+  session's chat, it never lists sessions (the per-agent session
+  endpoints stay in the API, docs/api.md).
 
 ## The Settings pane
 

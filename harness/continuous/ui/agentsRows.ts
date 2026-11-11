@@ -23,6 +23,10 @@ export interface OmegaAgent {
   memory_size: number;
   session_count: number;
   last_activity?: string;
+  /** card t_81109e1c: the agent's MOST RECENT session - the id the
+      roster row click binds a chat tab to (GET /agents, additive
+      field). Absent for an agent with no sessions. */
+  last_session_id?: string;
 }
 
 export interface OmegaAgentSession {
@@ -107,6 +111,57 @@ export function agentStatusFor(
     entry an older build persisted must not render a disabled row)
     and the row carries the locked pill. */
 export const DefaultAgentName = "default";
+
+/** agentIsMain (card t_81109e1c, ruling 3): the roster includes the
+    main agent like every other home, and the row says so. The main
+    agent is the one at the home root - the NAME is its identity
+    (`Profile.Continuous` is the wake-home flag, true for agents/<name>
+    and false for main). */
+export function agentIsMain(a: Pick<OmegaAgent, "name">): boolean {
+  return a.name === DefaultAgentName;
+}
+
+/** agentSessionCountText (card t_81109e1c): the roster's session
+    count column. Zero is honest ("no sessions"), never "0 sessions"
+    dressed up as activity. */
+export function agentSessionCountText(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "no sessions";
+  return n === 1 ? "1 session" : `${n} sessions`;
+}
+
+/** agentActivityText (card t_81109e1c): the last-activity column as a
+    relative age. Empty for a missing/unparseable timestamp (honest
+    absence beats an invented row voice); a future stamp (clock skew)
+    reads "just now", never a negative age. */
+export function agentActivityText(iso?: string, now: Date = new Date()): string {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const secs = Math.floor((now.getTime() - t) / 1000);
+  if (secs < 60) return "just now";
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return iso.slice(0, 10);
+}
+
+/** agentRosterSubtitle (card t_81109e1c): the roster row's subtitle
+    line - the facts the tab is FOR: description, model, session
+    count, last activity. Missing facts drop out; the count always
+    shows (zero is a fact). */
+export function agentRosterSubtitle(a: OmegaAgent, now: Date = new Date()): string {
+  const parts: string[] = [];
+  if (a.description) parts.push(a.description);
+  const model = agentModelText(a);
+  if (model) parts.push(model);
+  parts.push(agentSessionCountText(a.session_count));
+  const activity = agentActivityText(a.last_activity, now);
+  if (activity) parts.push(`last ${activity}`);
+  return parts.join(" · ");
+}
 
 /** mergedRowDetail (card t_c7222095): the merged agent row's detail -
     the config summary as today, plus the wake-state line of the
