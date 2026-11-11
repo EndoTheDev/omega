@@ -2223,10 +2223,21 @@ export function createRenderScheduler(
 }
 
 // HealthInfo is the /health payload beyond the status string: the
-// server's build tag and uptime - the status bar's version + up seg.
+// server's build tag and uptime - the status bar's version + up seg -
+// plus the optional facts the health popover renders (card t_5e2f3095:
+// provider reachability, the store's health, the newest recorded error).
+// Every fact is optional: an older server sends none of them and the
+// popover degrades to "not reported" instead of inventing a value.
 export interface HealthInfo {
   version?: string;
   uptime_seconds?: number;
+  provider?: {
+    reachable?: boolean;
+    checked_at?: number;
+    detail?: string;
+  };
+  database?: { healthy?: boolean; detail?: string };
+  last_error?: { message?: string; at?: number };
 }
 
 export async function fetchHealthInfo(): Promise<HealthInfo | null> {

@@ -16,10 +16,11 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
-	agentapi "github.com/EndoTheDev/omega/agent/api"
 	"github.com/EndoTheDev/omega/agent"
+	agentapi "github.com/EndoTheDev/omega/agent/api"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -45,6 +46,12 @@ type Server struct {
 	// watched with the cron watcher's mtime-poll pattern. Nil-safe: no
 	// home configured means an empty list and no watcher.
 	themes *themeRegistry
+	// healthMu guards healthProvider, the cached provider reachability
+	// verdict (card t_5e2f3095): the monitor goroutine writes it, every
+	// health read copies it. Nil until the first probe lands - the
+	// health body then carries no provider fact at all.
+	healthMu       sync.Mutex
+	healthProvider *agentapi.HealthProvider
 }
 
 // NewServer creates the shell server: base surface first, then the
@@ -173,6 +180,10 @@ func (s *Server) Serve(ctx context.Context, addr string) error {
 	// the same start point - the file the logger writes is followed only
 	// while its topic has a subscriber.
 	go s.followLogs(ctx)
+	// the provider reachability probe (card t_5e2f3095): one model-list
+	// round trip a minute, cached for the health body's provider fact -
+	// never on the 5s heartbeat frame.
+	go s.monitorHealth(ctx)
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- s.httpSrv.ListenAndServe()

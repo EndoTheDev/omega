@@ -114,11 +114,48 @@ type LogLines struct {
 
 // HealthState is the health topic's payload - the same body GET /health
 // serves, so the reconnect fetch and the pushed frames agree byte for
-// byte.
+// byte. The three fact objects below are OPTIONAL and additive: an
+// absent one means this build (or this process, before the first probe
+// landed) has no source for that fact, and the popover renders "not
+// reported" rather than an invented value. A sourced fact always rides
+// as an object, so "none recorded" (an error object with an empty
+// message) stays distinguishable from "no source".
 type HealthState struct {
 	Status        string `json:"status"`
 	UptimeSeconds int    `json:"uptime_seconds"`
 	Version       string `json:"version,omitempty"`
+	// Provider is the cached model-endpoint probe's verdict.
+	Provider *HealthProvider `json:"provider,omitempty"`
+	// Database is the store seam's liveness ping.
+	Database *HealthDatabase `json:"database,omitempty"`
+	// LastError is the newest error the process logger recorded.
+	LastError *HealthError `json:"last_error,omitempty"`
+}
+
+// HealthProvider is the provider-reachability fact: the last probe's
+// verdict and when it was taken. Detail carries the probe's error text
+// when it failed (empty on success) - the popover's tooltip.
+type HealthProvider struct {
+	Reachable bool   `json:"reachable"`
+	CheckedAt int64  `json:"checked_at"` // unix seconds of the probe
+	Detail    string `json:"detail,omitempty"`
+}
+
+// HealthDatabase is the store-health fact: whether the store's database
+// answered a round trip on this very health read (it is probed inline,
+// not cached, so the row is never stale). Detail carries the ping's
+// error text when it failed.
+type HealthDatabase struct {
+	Healthy bool   `json:"healthy"`
+	Detail  string `json:"detail,omitempty"`
+}
+
+// HealthError is the last-error fact. Message empty = the logger has
+// recorded no error since the process started (a sourced "none"); At is
+// the entry's unix seconds and stays 0 in that case.
+type HealthError struct {
+	Message string `json:"message"`
+	At      int64  `json:"at,omitempty"`
 }
 
 // socketSubBuffer bounds one connection's frame queue. The chat topic

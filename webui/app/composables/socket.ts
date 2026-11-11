@@ -69,11 +69,43 @@ export interface ChipFrame {
   elapsed_ms?: number;
 }
 
+// HealthProviderFact is the /health body's provider reachability fact
+// (card t_5e2f3095): the server's cached model-endpoint probe. Absent =
+// no probe has landed yet (or an older server) - the popover renders
+// "not reported" rather than a guess.
+export interface HealthProviderFact {
+  reachable?: boolean;
+  /** unix seconds of the probe that produced this verdict */
+  checked_at?: number;
+  /** the probe's error text when it failed */
+  detail?: string;
+}
+
+// HealthDatabaseFact is the store seam's liveness ping: present = the
+// server can answer for its database, absent = it has no source for the
+// fact (no store mounted, older build).
+export interface HealthDatabaseFact {
+  healthy?: boolean;
+  detail?: string;
+}
+
+// HealthErrorFact is the newest error the server's logger recorded.
+// An object with an EMPTY message is a sourced "none since boot" - only
+// an absent object means "not reported".
+export interface HealthErrorFact {
+  message?: string;
+  /** unix seconds of the entry */
+  at?: number;
+}
+
 // HealthPush is the /health body the health topic pushes.
 export interface HealthPush {
   status?: string;
   uptime_seconds?: number;
   version?: string;
+  provider?: HealthProviderFact;
+  database?: HealthDatabaseFact;
+  last_error?: HealthErrorFact;
 }
 
 // LogLinesPush is the logs topic's payload: the lines appended to the

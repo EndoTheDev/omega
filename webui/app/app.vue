@@ -492,6 +492,13 @@
       :workdir-target="barWorkdirTarget"
       :pending="pendingCount"
       :socket="socketStatus"
+      :provider-reachable="healthProviderReachable"
+      :provider-checked-at="healthProviderCheckedAt"
+      :provider-detail="healthProviderDetail"
+      :database-healthy="healthDatabaseHealthy"
+      :database-detail="healthDatabaseDetail"
+      :last-error-message="healthLastErrorMessage"
+      :last-error-at="healthLastErrorAt"
       @update:workdir="onBarWorkdir"
       @focus-pending="focusPendingCalls" />
   </div>
@@ -652,6 +659,7 @@
     DEFAULT_SOCKET_TOPICS,
     LOG_STREAM_EVENT,
     LOG_SUBSCRIBE_EVENT,
+    type HealthPush,
     type SocketClient,
     type SocketStatus,
   } from "./composables/socket";
@@ -728,6 +736,35 @@
   // socket again.
   const healthVersion = ref("");
   const upSeconds = ref(0);
+  // the health popover's three optional facts (card t_5e2f3095). null is
+  // the unsourced state - the popover renders "not reported" - and each
+  // is set only when the /health body actually carries it, so a server
+  // from before the enrichment keeps today's honest gap.
+  const healthProviderReachable = ref<boolean | null>(null);
+  const healthProviderCheckedAt = ref(0);
+  const healthProviderDetail = ref("");
+  const healthDatabaseHealthy = ref<boolean | null>(null);
+  const healthDatabaseDetail = ref("");
+  const healthLastErrorMessage = ref<string | null>(null);
+  const healthLastErrorAt = ref(0);
+  // noteHealthFacts copies a /health body's optional facts into the
+  // popover's refs. One function for all three read paths (boot fetch,
+  // reconnect catch-up, pushed frame) so they can never disagree.
+  function noteHealthFacts(h: HealthPush): void {
+    if (h.provider && typeof h.provider.reachable === "boolean") {
+      healthProviderReachable.value = h.provider.reachable;
+      healthProviderCheckedAt.value = h.provider.checked_at ?? 0;
+      healthProviderDetail.value = h.provider.detail ?? "";
+    }
+    if (h.database && typeof h.database.healthy === "boolean") {
+      healthDatabaseHealthy.value = h.database.healthy;
+      healthDatabaseDetail.value = h.database.detail ?? "";
+    }
+    if (h.last_error && typeof h.last_error.message === "string") {
+      healthLastErrorMessage.value = h.last_error.message;
+      healthLastErrorAt.value = h.last_error.at ?? 0;
+    }
+  }
   const models = ref<string[]>([]);
   const selectedModel = ref("");
   // the GROUPED catalog (card t_1914a8c9): one section per provider -
@@ -1748,6 +1785,7 @@
       if (h) {
         healthVersion.value = h.version ?? "";
         upSeconds.value = h.uptime_seconds ?? 0;
+        noteHealthFacts(h);
       }
     } catch {
       // a failed health read leaves the dot red until the next frame
@@ -2372,6 +2410,7 @@
         healthy.value = (s.status ?? "ok") === "ok";
         if (typeof s.version === "string") healthVersion.value = s.version;
         if (typeof s.uptime_seconds === "number") upSeconds.value = s.uptime_seconds;
+        noteHealthFacts(s);
       },
       runs: (session, active) => onRunEdge(session, active),
       canvas: (_event, payload) => {
@@ -2417,6 +2456,7 @@
     if (h) {
       healthVersion.value = h.version ?? "";
       upSeconds.value = h.uptime_seconds ?? 0;
+      noteHealthFacts(h);
     }
     // the health interval is GONE (card t_896cf5a8): the health topic
     // pushes the same body every 5s, and a reconnect does one plain read

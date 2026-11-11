@@ -2890,14 +2890,21 @@ labels stopped short of the right edge. */
   justify-content: space-between;
   gap: 12px;
 }
+/* the row label never wraps: a long value ellipsizes beside it, not
+   under it (the last-error row carries whole error messages) */
+.health-pop .hp-key { flex: none; white-space: nowrap; }
 .health-pop .hp-val {
   color: var(--text);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .health-pop .hp-val.muted { color: var(--text-dim); font-style: italic; }
 .health-pop .hp-val.down { color: var(--err); }
+/* the freshness hint beside a probed value ("12s ago") - dim, never
+   bold: the verdict is the fact, the age only dates it */
+.health-pop .hp-age { color: var(--text-dim); font-size: 10.5px; margin-left: 4px; }
 .health-pop .hp-note {
   margin: 2px 0 0;
   font-family: var(--sans);
