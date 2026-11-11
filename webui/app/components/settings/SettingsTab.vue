@@ -435,6 +435,7 @@
     paneScrollSettled,
     parseSelection,
     resolveSelection,
+    spyAnchorMayWrite,
     spyTargetIds,
     buildSpyTargets,
     targetSection,
@@ -443,6 +444,7 @@
     type NavCategory,
     type NavSubgroup,
     type PaneScrollState,
+    type SpyAnchorTrace,
   } from "./settingsNav";
   import { useNarrow } from "~/composables/narrow";
   import { DEFAULT_TOOL_DISPLAY, type ToolDisplay } from "~/composables/toolDisplay";
@@ -1109,6 +1111,18 @@
     return true;
   }
 
+  // --- the anchor is the USER's (card t_63c699ce) -------------------------
+  //
+  // The spy may move the HIGHLIGHT on any delivery, but the remembered anchor
+  // is "the section the user actually scrolled to": a delivery armed by a
+  // geometry change (a viewport resize, a reflow, the clamp's own re-snap)
+  // resolves a different id at new boxes and must not overrule it - the
+  // nightly widened the pane after a drawer jump and the stored anchor read
+  // back as the neighbouring section. Only a scroll the pane did NOT issue
+  // stamps the user's scroll, and one scroll writes once; the rule itself is
+  // the pure spyAnchorMayWrite (settingsNav).
+  let anchorTrace: SpyAnchorTrace = { userScrollAt: 0, geometryAt: 0, wroteAt: 0 };
+
   function collectSpyTargets(root: HTMLElement) {
     spyNodes.clear();
     // SECTIONS answer first (card t_c4b42357): a flat or one-child category
@@ -1254,7 +1268,12 @@
     // a scroll the pane did not issue IS the user's hand, whatever event
     // started it (card t_e7404b84): the suppression ends here, so the spy
     // answers a scrollbar drag or an AT scroll exactly like a wheel
-    if (bodyEl.value && !paneOwnScroll()) unlockSpy();
+    if (bodyEl.value && !paneOwnScroll()) {
+      unlockSpy();
+      // and it is the ONLY kind of scroll that may rewrite the remembered
+      // anchor (card t_63c699ce: a resize is not a scroll)
+      anchorTrace.userScrollAt = nowMs();
+    }
     // the selected section bounds the pane (card t_a6b794b5)
     if (clampId.value) scheduleClamp();
   }
@@ -1328,6 +1347,12 @@
     // COMPARE BEFORE ASSIGNING: a write fires another scroll event, and an
     // unguarded handler loops. Sub-pixel positions never settle exactly.
     if (Math.abs(next - now) < 1) return;
+    // the re-snap is the PANE's own scroll, and noting it is what keeps it
+    // out of the spy's anchor gate (card t_63c699ce): a clamp is not the
+    // user's hand, so the scroll event it fires must not arm an anchor write.
+    // Until now the clamp wrote scrollTop bare, so its own snap read as a
+    // USER scroll - which is how a resize kept re-persisting a stale anchor.
+    notePaneScroll(root, next);
     root.scrollTop = next;
   }
 
@@ -1379,6 +1404,8 @@
     bindIntent(null);
     spyObserver?.disconnect();
     spyObserver = null;
+    paneBoxObserver?.disconnect();
+    paneBoxObserver = null;
     clampObserver?.disconnect();
     clampObserver = null;
     if (clampFrame) cancelAnimationFrame(clampFrame);
@@ -1619,6 +1646,22 @@
   const spyOrder = computed<string[]>(() => spyTargetIds(docSections.value));
   const inBand = new Set<string>();
   let spyObserver: IntersectionObserver | null = null;
+  let paneBoxObserver: ResizeObserver | null = null;
+
+  /** observePaneBox: the scrollport's OWN box moving is a geometry change,
+      never a scroll - a resize re-resolves every target at new heights and
+      the delivery it arms must not rewrite the anchor (t_63c699ce). The
+      boxes the spy measures ARE the geometry, so the observer that owns them
+      is the one that says so. */
+  function observePaneBox(root: HTMLElement | null) {
+    if (typeof ResizeObserver === "undefined") return;
+    if (!paneBoxObserver)
+      paneBoxObserver = new ResizeObserver(() => {
+        anchorTrace.geometryAt = nowMs();
+      });
+    paneBoxObserver.disconnect();
+    if (root) paneBoxObserver.observe(root);
+  }
 
   /** One thin band at the top of the scrollport: whichever heading sits
       nearest its top edge - a category or one of its blocks - is the one
@@ -1635,6 +1678,9 @@
     spyObserver?.disconnect();
     spyObserver = null;
     inBand.clear();
+    // a re-arm is a GEOMETRY change, not a scroll: the boxes below are new
+    anchorTrace.geometryAt = nowMs();
+    observePaneBox(root);
     if (!root || typeof IntersectionObserver === "undefined") return;
     collectSpyTargets(root);
     spyObserver = new IntersectionObserver(
@@ -1666,7 +1712,11 @@
         if (best === null) best = first;
         if (best === null || best === selection.value) return;
         selection.value = best;
-        // the last place the user was IS the anchor a reopen restores
+        // the last place the USER was IS the anchor a reopen restores - a
+        // delivery a geometry change armed resolves a new id at new boxes and
+        // must not write it (card t_63c699ce: one write per user scroll)
+        if (!spyAnchorMayWrite(anchorTrace)) return;
+        anchorTrace.wroteAt = anchorTrace.userScrollAt;
         persistAnchor(best);
       },
       { root, rootMargin: "0px 0px -80% 0px", threshold: 0 },

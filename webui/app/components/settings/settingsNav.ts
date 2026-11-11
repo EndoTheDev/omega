@@ -547,3 +547,37 @@ export function paneScrollSettle(now: number, graceMs: number): PaneScrollState 
   return { target: null, graceUntil: now + graceMs };
 }
 
+// --- the anchor is the USER's (card t_63c699ce) ---------------------------
+//
+// The remembered anchor means "the section the user actually scrolled to".
+// The spy decides from a band of intersections, and an intersection moves
+// for reasons that are NOT a scroll: a viewport resize, a reflow, the clamp's
+// own re-snap. A delivery like that resolves whatever id the NEW boxes put at
+// the top edge, and the nightly caught it overwriting the anchor an explicit
+// jump had just written - a drawer jump to "compaction" at 340px, a widen to
+// 1280px, and the stored anchor read back as the neighbouring section.
+//
+// So the write is gated on ORDER, never on a flag someone must remember to
+// clear: a delivery may write only when the user's scroll is newer than the
+// last geometry change, and only once per scroll. A scroll the pane issued
+// itself (a jump, a re-clamp, a restore) never stamps `userScrollAt`, so the
+// ONE suppression of card t_e7404b84 keeps covering the anchor too.
+
+export interface SpyAnchorTrace {
+  /** when a scroll event was last judged the USER's (ms); 0 = never */
+  userScrollAt: number;
+  /** when the spy's boxes last moved with no scroll - a resize, a re-arm
+      (ms); 0 = never */
+  geometryAt: number;
+  /** the user scroll already written (ms) - one write per scroll */
+  wroteAt: number;
+}
+
+/** spyAnchorMayWrite: this spy decision may persist the remembered anchor.
+    False for every delivery a geometry change armed (the resize that red the
+    nightly), false for a scroll the pane issued itself, and false for a
+    second write of a scroll already written. */
+export function spyAnchorMayWrite(trace: SpyAnchorTrace): boolean {
+  return trace.userScrollAt > trace.geometryAt && trace.userScrollAt > trace.wroteAt;
+}
+
