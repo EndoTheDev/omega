@@ -29,6 +29,9 @@ import {
   expandedCategoryIds,
   knobSubgroup,
   matchingCategoryIds,
+  paneScrollIsUser,
+  paneScrollSettle,
+  paneScrollSettled,
   parseSelection,
   resolveSelection,
   selectionId,
@@ -37,6 +40,7 @@ import {
   withSubgroups,
   buildSpyTargets,
   targetSection,
+  type PaneScrollState,
   type SpyNodeLike,
 } from "../app/components/settings/settingsNav.ts";
 
@@ -468,7 +472,7 @@ test("a nav click SCROLLS the pane (smooth, reduced-motion aware) and marks it",
   // heading's measured height for a block, nothing for a section).
   assert.match(
     tab,
-    /const clear = isBlock \? pinnedHeadingHeight\(node\) : 0;[\s\S]{0,140}root\.scrollTo\(\{ top: root\.scrollTop \+ delta - clear, behavior \}\)/,
+    /const clear = isBlock \? pinnedHeadingHeight\(node\) : 0;[\s\S]{0,300}root\.scrollTo\(\{ top: root\.scrollTop \+ delta - clear, behavior \}\)/,
     "the jump scrolls the pane and clears the pinned heading for a block",
   );
   assert.match(
@@ -730,7 +734,7 @@ test("a section at the very end answers a REACHABLE window", () => {
   );
 });
 
-test("only a REAL selection clamps, measured fresh, on the frame after", () => {
+test("only a REAL selection clamps, measured fresh, on the scroll event", () => {
   // the arithmetic lives in settingsNav (asserted above); a second copy in
   // the component is the drift this pins out
   assert.match(navSource, /export function clampedRange\(/);
@@ -758,11 +762,29 @@ test("only a REAL selection clamps, measured fresh, on the frame after", () => {
     /if \(Math\.abs\(next - now\) < 1\) return;/,
     "the clamp writes only when it actually moves the pane",
   );
-  // the trap: clamp on the frame after the event, not inside it
+  // the trap: the clamp lands on the scroll EVENT (a frame callback alone
+  // is not enough - a hidden/occluded tab throttles it to nothing, card
+  // t_e7404b84) and again on the frame after, for wheel momentum
   assert.match(tab, /if \(clampId\.value\) scheduleClamp\(\);/, "the scroll handler schedules");
-  assert.match(tab, /requestAnimationFrame\(\(\) => \{/, "and the clamp lands on the next frame");
-  // step 5: reuse the spy's own suppression, never a second mechanism
-  assert.match(tab, /if \(spyLocked\) return;/, "the smooth jump's lock suppresses the clamp");
+  assert.match(
+    tab,
+    /function scheduleClamp\(\) \{\s*applyClamp\(\);/,
+    "the clamp lands on the event, not only on the next frame",
+  );
+  assert.match(tab, /requestAnimationFrame\(\(\) => \{/, "and again on the next frame");
+  // step 5: ONE suppression - a scroll the PANE issued itself, never the
+  // spy's intent-event lock: a scrollbar drag, an AT scroll and a
+  // programmatic scrollTop dispatch no intent event at all, and gating on
+  // them left those scrolls unclamped (card t_e7404b84)
+  assert.match(
+    tab,
+    /if \(!paneScrollSettled\(paneScroll\)\) return;/,
+    "the pane's own scroll is the clamp's only suppression",
+  );
+  assert.ok(
+    !/if \(spyLocked\) return;[\s\S]{0,400}function scheduleClamp/.test(tab),
+    "the clamp no longer rides the spy's intent-event lock",
+  );
   // step 3: a section's box changes without any scroll - re-measure then
   assert.match(tab, /new ResizeObserver\(\(\) => applyClamp\(\)\)/, "the boxes are observed");
   assert.match(tab, /function observeClamp\(\)/);
@@ -770,5 +792,89 @@ test("only a REAL selection clamps, measured fresh, on the frame after", () => {
     tab,
     /syncSpy\(\);\s*observeClamp\(\);\s*applyClamp\(\);/,
     "a rebuilt document re-arms and re-measures the clamp",
+  );
+});
+
+
+// --- card t_e7404b84: a scroll with NO intent event is still the USER's ---
+//
+// The probe that opened this card (private lane 18201, 13 sections, pane
+// clientHeight 423, document end 6247, provider range [1813, 2722]):
+//
+//   nav-click provider                                  -> scrollTop 1813
+//   `.settings-body`.scrollTop = 1e6, NO intent event,
+//     dispatched 80ms after that click                  -> 6247 = the
+//       document's end, UNCLAMPED (the section's bottom is 2722), and it
+//       STAYED there
+//   the same assignment 1.2s after the click            -> 2722, clamped
+//   a real wheel (the CDP input pipeline)               -> 2722, clamped
+//   a real scrollbar drag                               -> pointerdown does
+//       fire on the pane here, so the intent path released it
+//   requestAnimationFrame blacked out + the recipe's own
+//     force_scroll (synthetic wheel + scrollTop)         -> 6247 again
+//
+// So two things were true, and both are fixed: (1) the clamp only ever ran
+// inside a requestAnimationFrame callback, which a hidden or occluded tab
+// throttles to nothing, and (2) the suppression that gated it could only be
+// released by wheel/touchstart/pointerdown/keydown - none of which a
+// programmatic scrollTop, a scrollbar drag in other engines or an
+// assistive-technology scroll dispatches. The suppression is now the pane's
+// OWN scroll, tracked to its settle, and nothing else.
+test("a scroll the pane did not issue is clamped and ends the suppression (t_e7404b84)", () => {
+  const GRACE = 200;
+  // the pane issued a jump: until its events stop arriving, they are its own
+  const travelling: PaneScrollState = { target: 1813, graceUntil: 0 };
+  assert.equal(paneScrollSettled(travelling), false, "an animation in flight is not settled");
+  assert.equal(paneScrollIsUser(travelling, 1000), false, "nor is it the user's scroll");
+  // the events stop -> settle -> its last repeats stay the pane's (a
+  // deselect must not re-select the section its return-to-top just passed)
+  const settled = paneScrollSettle(1000, GRACE);
+  assert.deepEqual(settled, { target: null, graceUntil: 1200 }, "the pane's own scroll ended");
+  assert.equal(paneScrollSettled(settled), true, "the clamp may run again");
+  assert.equal(paneScrollIsUser(settled, 1100), false, "a trailing repeat is still the pane's");
+  // and past the settle window EVERY scroll is the user's: the probe's
+  // programmatic 1e6, a scrollbar drag, an AT scroll - all clamped, and all
+  // of them release the spy
+  assert.equal(
+    paneScrollIsUser(settled, 1200),
+    true,
+    "a scroll with no pane animation behind it is the user's - clamped, spy released",
+  );
+  assert.equal(paneScrollIsUser({ target: null, graceUntil: 0 }, 0), true, "a fresh pane has no suppression at all");
+});
+
+test("the clamp rides the scroll event and never the intent-event lock", () => {
+  // a frame callback alone is not enough: a hidden/occluded tab throttles
+  // requestAnimationFrame to nothing and the pane kept every scroll
+  assert.match(
+    tab,
+    /function scheduleClamp\(\) \{\s*applyClamp\(\);/,
+    "the clamp lands on the event, not only on the next frame",
+  );
+  assert.match(tab, /requestAnimationFrame\(\(\) => \{/, "and again on the next frame, for momentum");
+  assert.match(
+    tab,
+    /if \(!paneScrollSettled\(paneScroll\)\) return;/,
+    "the clamp's ONE suppression is the pane's own scroll",
+  );
+  assert.match(
+    tab,
+    /if \(bodyEl\.value && !paneOwnScroll\(\)\) unlockSpy\(\);/,
+    "any other scroll event releases the suppression",
+  );
+  assert.ok(
+    !/if \(spyLocked\) return;[\s\S]{0,400}function scheduleClamp/.test(tab),
+    "the clamp no longer rides the spy's intent-event lock",
+  );
+  // the pane tracks the target of every scroll it issues itself
+  assert.match(tab, /function notePaneScroll\(root: HTMLElement, top: number\)/, "the track exists");
+  assert.match(tab, /notePaneScroll\(root, root\.scrollTop \+ delta - clear\)/, "a jump tracks its landing");
+  assert.match(tab, /notePaneScroll\(root, 0\);/, "a deselect's return to top tracks its landing");
+  assert.match(tab, /notePaneScroll\(node, lastDocScrollTop\)/, "a cleared query's give-back tracks its landing");
+  // and an interrupted animation cannot strand the pane outside its section
+  assert.match(
+    tab,
+    /paneScroll = paneScrollSettle\(nowMs\(\), PANE_SETTLE_GRACE_MS\);[\s\S]{0,220}if \(clampId\.value\) scheduleClamp\(\);/,
+    "when the pane's own scroll settles, the clamp re-measures",
   );
 });
