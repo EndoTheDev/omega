@@ -417,3 +417,44 @@ export function matchingCategoryIds(
   for (const category of nav) if (category.knobs.some(keep)) ids.add(category.id);
   return ids;
 }
+
+// --- the selected-section scroll clamp (card t_a6b794b5) ------------------
+
+export interface ClampGeometry {
+  /** the section's top, in the scrollport's own scroll coordinates */
+  top: number;
+  /** the section's rendered height */
+  height: number;
+  /** the scrollport's client height (the pane's visible box) */
+  viewport: number;
+  /** the scrollport's scrollHeight - the document it scrolls through */
+  content: number;
+}
+
+/** clampedRange answers the `[min, max]` scrollTop window a SELECTED section
+    allows. Selection never filters the document (the one-document ruling),
+    so the pane still scrolls - the clamp only bounds WHERE it may rest:
+    `min` puts the section's top at the scrollport's top edge (its sticky
+    heading is the section's first child, so the heading pins exactly
+    there), `max` puts the section's bottom at the bottom edge.
+
+    A section SHORTER than the viewport has no room to travel - `max` would
+    land above `min` - so its range collapses to `[min, min]`: while it is
+    selected the pane does not scroll at all. That is the honest answer,
+    not a bug (card t_a6b794b5 step 4), and the clamp can never produce
+    `max < min`.
+
+    Both ends are capped by the document's OWN scroll limit, so a section
+    at the very end (whose natural `max` overshoots the content) still
+    answers a REACHABLE window instead of a dead one. */
+export function clampedRange(input: ClampGeometry): [number, number] {
+  const viewport = Math.max(0, input.viewport);
+  // the last legal scroll position of the document itself
+  const limit = Math.max(0, input.content - viewport);
+  // the section's top, never above the document's start nor below its end
+  const min = Math.min(Math.max(0, input.top), limit);
+  // its bottom at the pane's bottom edge, inside the same document bounds
+  const natural = input.top + input.height - viewport;
+  const max = Math.max(min, Math.min(natural, limit));
+  return [min, max];
+}
