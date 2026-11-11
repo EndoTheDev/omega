@@ -53,6 +53,15 @@ lastseg=$(jsq '(()=>{const r=document.querySelector(".statusbar .zone.right");if
 assert_eq "$lastseg" "1" "the version segment is the RIGHTMOST segment on the bar"
 step "ok: version sits at the far right, after the message count"
 
+# card t_be30543a: the version segment carries the SHORT VERSION alone - the
+# uptime it used to repeat ("· up 8m 20s") now lives ONLY in the health
+# popover (step 4), so the bar must render no uptime string at all.
+vseg=$(jsq '(()=>{const r=document.querySelector(".statusbar .zone.right");if(!r)return "no-zone";const segs=[...r.querySelectorAll(".seg")];const last=segs[segs.length-1];if(!last)return "no-seg";const t=(last.textContent||"").replace(/\s+/g," ").trim();if(/\bup\b/.test(t))return "uptime-in-bar:"+t;return t?("ok:"+t):"empty"})()' 2>&1 | tail -1 | tr -d '"')
+case "$vseg" in
+  ok:*) step "ok: the version segment reads the short version alone [$vseg]" ;;
+  *) die "the bar's version segment should read the short version alone - uptime lives in the health popover now: $vseg" ;;
+esac
+
 # --- 3. the picker survived the move ---------------------------------------
 jsq 'document.querySelector(".statusbar .ws-btn").click()' >/dev/null 2>&1
 wait_js '!!document.querySelector(".statusbar .ws-pop .ws-dirs")' 10 \
