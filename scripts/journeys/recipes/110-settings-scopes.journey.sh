@@ -1,9 +1,10 @@
 #!/bin/bash
 # 110-settings-scopes - the settings SCOPE TABS (settings tier 3b, card
-# t_04eb11d6) as they read under the tier-4 MASTER-DETAIL bones (card
-# t_af7e1150: the accordion is gone - a category nav on the left, one
-# category's knobs on the right - so this recipe CLICKS nav categories to
-# reach a domain's rows instead of scrolling one long accordion).
+# t_04eb11d6) as they read under the ONE-DOCUMENT pane (card t_8b464090,
+# which supersedes the master-detail bones of t_af7e1150: every category is
+# a section of one scrollable document, and the nav is a set of jump links -
+# so this recipe CLICKS a nav entry to bring its rows on screen instead of
+# drilling into a category).
 #
 #   strip    - an agent home on the lane materializes the VSCode tab row at
 #              the head of the CONTENT pane (tier-4 ruling 11), structurally
@@ -18,7 +19,7 @@
 #              knob the layer does not name inherits main and carries
 #              neither (the seam ruling: differs-from-main, reset =
 #              override removal).
-#   search   - the filter on an agent tab narrows within those four
+#   search   - the filter on an agent tab narrows the DOCUMENT to the four
 #              categories only (R7) and GREYS the categories with no hit
 #              (tier-4 ruling 6), while Main keeps its own query.
 #   main     - back on Main the pane is untouched: the curated Commonly
@@ -158,8 +159,10 @@ leak=$(jsq '(()=>{const t=[...document.querySelectorAll(".settings-nav-cat,.sett
 assert_eq "$leak" "0" "no Commonly Used / chat / dock category on an agent tab"
 
 # --- dots: one override set (dot + reset), one inherited knob (neither).
-# Master-detail renders ONE category at a time (tier-4 ruling 1), so the
-# recipe clicks the category a row lives in - the same rows as before.
+# The document carries every category at once (tier-4 one-document law,
+# card t_8b464090), so the recipe still CLICKS a nav entry - not to swap
+# the view, but to bring the rows it reasons about on screen and to prove
+# the jump links work on an agent tab.
 navclick() {
   jsq "(()=>{const b=[...document.querySelectorAll('.settings-nav-cat,.settings-nav-sub')].find(x=>x.getAttribute('data-category')==='$1');if(!b) return 0;b.click();return 1})()" 2>&1 | tr -d '"'
 }

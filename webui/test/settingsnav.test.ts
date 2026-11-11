@@ -1,10 +1,14 @@
-// omega webui: unit tests for the settings MASTER-DETAIL nav (card
-// t_af7e1150, settings tier 4): the per-knob subgroup DATA, the two-level
-// tree it derives, the selection algebra, the content view, the nav's
-// grey-out set - and the SOURCE pins that prove the accordion is gone.
-// The node suite has no DOM: the tree/selection/view are pinned as pure
-// functions, the pane as structural assertions on SettingsTab.vue (the
-// live shape is the journey's job, recipes 110/113).
+// omega webui: unit tests for the settings ONE-DOCUMENT pane (card
+// t_8b464090, which SUPERSEDES the master-detail nav of t_af7e1150): the
+// per-knob subgroup DATA, the two-level tree it derives, the document the
+// pane paints (EVERY category, in nav order, filtered in place), the nav's
+// grey-out set, the last-anchor resolution - and the SOURCE pins that prove
+// the selector/two-screen model is gone.
+//
+// The node suite has no DOM: the document, the anchor and the grey set are
+// pinned as pure functions, the pane as structural assertions on
+// SettingsTab.vue (the live scroll behaviour is the journey's job, recipes
+// 110/113).
 // Run: node --test webui/test/
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -17,17 +21,17 @@ import {
   GENERAL_SUBGROUP,
   KNOB_SUBGROUPS,
   NAV_STORAGE_KEY,
-  SEARCH_TITLE,
   SUBGROUP_LABELS,
+  anchorSelection,
   buildNav,
-  contentFor,
-  effectiveSelection,
-  fallbackSelection,
+  documentFor,
+  expandedCategoryIds,
   knobSubgroup,
   matchingCategoryIds,
   parseSelection,
   resolveSelection,
   selectionId,
+  spyTargetIds,
   subgroupLabel,
   withSubgroups,
 } from "../app/components/settings/settingsNav.ts";
@@ -146,133 +150,114 @@ test("Commonly Used is a virtual FLAT top category", () => {
   assert.equal(nav[1].id, "provider");
 });
 
-// --- the selection algebra ------------------------------------------------
+// --- the ONE document -----------------------------------------------------
 
-test("selection ids round-trip, one level or two", () => {
-  assert.equal(selectionId("provider"), "provider");
-  assert.equal(selectionId("provider", "models"), "provider/models");
-  assert.deepEqual(parseSelection("provider"), { category: "provider", subgroup: null });
-  assert.deepEqual(parseSelection("provider/models"), {
-    category: "provider",
-    subgroup: "models",
-  });
+test("the document carries EVERY category, in nav order, with no selection", () => {
+  const nav = buildNav(withSubgroups([commonGroup(), providerGroup(), logGroup()]));
+  const doc = documentFor(nav);
+  assert.deepEqual(
+    doc.map((section) => section.id),
+    nav.map((category) => category.id),
+    "one section per category, same order as the nav",
+  );
+  assert.equal(doc[0].id, COMMON_CATEGORY, "the curated category leads");
+  assert.equal(doc[1].id, "provider");
+  assert.equal(doc[2].id, "unknown");
+  // every knob is present, and the counts add up to the nav's own totals
+  const rendered = doc.reduce((n, section) => n + section.count, 0);
+  const total = nav.reduce((n, category) => n + category.knobs.length, 0);
+  assert.equal(rendered, total, "no category is dropped from the one page");
 });
 
-test("resolveSelection tolerates a vanished category and a vanished child", () => {
-  const nav = buildNav(withSubgroups([providerGroup(), commonGroup()]));
-  assert.equal(resolveSelection(nav, "gone")?.category.id, undefined);
-  assert.equal(resolveSelection(nav, "gone"), null);
-  assert.equal(resolveSelection(nav, "provider/gone")?.subgroup, null);
-  assert.equal(resolveSelection(nav, "provider/gone")?.category.id, "provider");
-});
-
-test("a fresh pane opens on Commonly Used; an agent nav falls back to its first category", () => {
-  const main = buildNav(withSubgroups([commonGroup(), providerGroup()]));
-  assert.equal(fallbackSelection(main), COMMON_CATEGORY);
-  // the agent tab carries the four overridable groups and no curated one
-  const agent = buildNav(withSubgroups([group("provider", "provider", [knob("provider.model_name", "model name")])]));
-  assert.equal(fallbackSelection(agent), "provider");
-  assert.equal(fallbackSelection([]), "");
-});
-
-test("the remembered id survives a scope that cannot show it (ruling 13)", () => {
-  const main = buildNav(withSubgroups([commonGroup(), providerGroup()]));
-  const agent = buildNav(withSubgroups([group("provider", "provider", [knob("provider.model_name", "model name")])]));
-  // remembered on Main: resolvable there and on the agent tab alike
-  assert.equal(effectiveSelection(main, "provider/models"), "provider/models");
-  assert.equal(effectiveSelection(agent, "provider/models"), "provider/models");
-  // a child the agent's four groups do not carry normalises to its parent
-  assert.equal(effectiveSelection(agent, "provider/connection"), "provider");
-  // and the raw id still resolves when Main returns - the memory is raw
-  assert.equal(effectiveSelection(main, "provider/connection"), "provider/connection");
-});
-
-// --- the content view -----------------------------------------------------
-
-test("one category renders at a time, children as headed sections", () => {
-  const nav = buildNav(withSubgroups([providerGroup(), logGroup()]));
-  const view = contentFor(nav, "provider");
-  assert.equal(view.title, "provider");
-  assert.equal(view.count, 3);
-  assert.deepEqual(view.sections.map((s) => s.id), ["provider/connection", "provider/models"]);
-  assert.ok(view.sections.every((s) => s.heading), "a multi-child view names its children");
-  assert.equal(view.searching, false);
-});
-
-test("a child selection narrows to that child alone", () => {
+test("a multi-child domain renders its children as headed blocks", () => {
   const nav = buildNav(withSubgroups([providerGroup()]));
-  const view = contentFor(nav, "provider/models");
-  assert.equal(view.count, 1);
-  assert.equal(view.sections.length, 1);
-  assert.equal(view.sections[0].heading, false, "a single list never repeats its title");
-  assert.equal(view.sections[0].knobs[0].key, "provider.model_name");
+  const section = documentFor(nav)[0];
+  assert.equal(section.id, "provider");
+  assert.equal(section.count, 3);
+  assert.deepEqual(section.blocks.map((block) => block.id), [
+    "provider/connection",
+    "provider/models",
+  ]);
+  assert.ok(section.blocks.every((block) => block.heading), "each block names itself");
+  // the block ids are the jump targets the nav's child rows carry
+  assert.equal(selectionId("provider", "models"), "provider/models");
 });
 
-test("a one-child domain renders one unheaded list", () => {
-  const nav = buildNav(withSubgroups([logGroup()]));
-  const view = contentFor(nav, "unknown");
-  assert.equal(view.sections.length, 1);
-  assert.equal(view.sections[0].heading, false);
-  assert.equal(view.count, 2);
+test("a flat or one-child domain renders ONE unheaded block", () => {
+  const nav = buildNav(withSubgroups([logGroup(), commonGroup()]));
+  const doc = documentFor(nav);
+  assert.equal(doc[0].blocks.length, 1, "one implicit child: no duplicate heading");
+  assert.equal(doc[0].blocks[0].heading, false);
+  assert.equal(doc[0].blocks[0].id, "unknown", "the block answers to the category id");
+  const common = doc.find((section) => section.id === COMMON_CATEGORY);
+  assert.ok(common !== undefined);
+  assert.equal(common.blocks[0].heading, false, "the curated list stays flat");
 });
 
-test("the flat virtual category renders flat", () => {
-  const nav = buildNav(withSubgroups([commonGroup()]));
-  const view = contentFor(nav, COMMON_CATEGORY);
-  assert.equal(view.title, "Commonly Used");
-  assert.equal(view.sections.length, 1);
-  assert.equal(view.sections[0].heading, false);
-});
-
-test("a live query is CROSS-category (ruling 6)", () => {
+test("a live query filters the document IN PLACE and drops emptied sections", () => {
   const nav = buildNav(withSubgroups([commonGroup(), providerGroup(), logGroup()]));
   const hits = new Set(["provider.model_name", "custom.one"]);
-  const view = contentFor(nav, "unknown", { hits });
-  assert.equal(view.searching, true);
-  assert.equal(view.title, SEARCH_TITLE);
-  assert.deepEqual(view.sections.map((s) => s.id), ["provider", "unknown"]);
-  assert.equal(view.count, 2, "each hit renders ONCE, under the domain that owns it");
+  const doc = documentFor(nav, { hits });
+  assert.deepEqual(doc.map((section) => section.id), ["provider", "unknown"]);
+  assert.equal(
+    doc.reduce((n, section) => n + section.count, 0),
+    2,
+    "each hit renders ONCE, under the domain that owns it",
+  );
+  // the curated category is a VIEW of other domains' knobs: a live query
+  // skips its section so nothing is listed twice (the nav keeps the entry)
+  assert.ok(!doc.some((section) => section.id === COMMON_CATEGORY));
 });
 
-test("search mode never duplicates a curated hit (the nav keeps its shape)", () => {
-  // commonlyUsed carries provider.model_name; the provider section carries
-  // it too - the content pane shows one row, the nav still shows the
-  // curated category (greyed or lit, never hidden)
-  const nav = buildNav(withSubgroups([commonGroup(), providerGroup()]));
-  const hits = new Set(["provider.model_name"]);
-  const view = contentFor(nav, COMMON_CATEGORY, { hits });
-  assert.deepEqual(view.sections.map((s) => s.id), ["provider"]);
-  assert.equal(view.count, 1);
-  assert.ok(matchingCategoryIds(nav, { hits }).has(COMMON_CATEGORY),
-    "the curated category is lit, not dropped");
+test("a hit inside a category keeps only that category's surviving block", () => {
+  const nav = buildNav(withSubgroups([providerGroup()]));
+  const doc = documentFor(nav, { hits: new Set(["provider.model_name"]) });
+  assert.equal(doc.length, 1);
+  assert.deepEqual(doc[0].blocks.map((block) => block.id), ["provider/models"]);
+  assert.equal(doc[0].count, 1);
 });
 
 test("an empty hit set is the empty state, never 'everything'", () => {
   const nav = buildNav(withSubgroups([providerGroup()]));
-  const view = contentFor(nav, "provider", { hits: new Set() });
-  assert.equal(view.count, 0);
-  assert.deepEqual(view.sections, []);
+  assert.deepEqual(documentFor(nav, { hits: new Set() }), []);
   // null means NO query is live
-  assert.equal(contentFor(nav, "provider", { hits: null }).count, 3);
+  assert.equal(documentFor(nav, { hits: null }).length, 1);
+  assert.equal(documentFor(nav, { hits: null })[0].count, 3);
 });
 
-test("modified-only narrows the list and drops emptied sections (ruling 8)", () => {
-  const nav = buildNav(withSubgroups([providerGroup()]));
-  const isModified = (k: SettingKnob) => k.key === "provider.model_name";
-  const view = contentFor(nav, "provider", { modifiedOnly: true, isModified });
-  assert.equal(view.count, 1);
-  assert.deepEqual(view.sections.map((s) => s.id), ["provider/models"]);
+test("modified-only filters the WHOLE document, not one category", () => {
+  const nav = buildNav(withSubgroups([providerGroup(), logGroup()]));
+  const isModified = (k: SettingKnob) =>
+    k.key === "provider.model_name" || k.key === "custom.two";
+  const doc = documentFor(nav, { modifiedOnly: true, isModified });
+  assert.deepEqual(
+    doc.map((section) => section.id),
+    ["provider", "unknown"],
+    "both categories survive - the switch used to narrow one category at a time",
+  );
+  assert.equal(doc.reduce((n, section) => n + section.count, 0), 2);
   // the switch is inert without the predicate (never drops silently)
-  assert.equal(contentFor(nav, "provider", { modifiedOnly: true }).count, 0);
+  assert.deepEqual(documentFor(nav, { modifiedOnly: true }), []);
 });
 
 test("modified-only intersects with the query", () => {
   const nav = buildNav(withSubgroups([providerGroup(), logGroup()]));
   const hits = new Set(["provider.model_name", "custom.one"]);
   const isModified = (k: SettingKnob) => k.key === "custom.one";
-  const view = contentFor(nav, "provider", { hits, modifiedOnly: true, isModified });
-  assert.deepEqual(view.sections.map((s) => s.id), ["unknown"]);
-  assert.equal(view.count, 1);
+  const doc = documentFor(nav, { hits, modifiedOnly: true, isModified });
+  assert.deepEqual(doc.map((section) => section.id), ["unknown"]);
+  assert.equal(doc[0].count, 1);
+});
+
+test("spyTargetIds lists each section then its blocks, in document order", () => {
+  const nav = buildNav(withSubgroups([commonGroup(), providerGroup()]));
+  const doc = documentFor(nav);
+  assert.deepEqual(spyTargetIds(doc), [
+    COMMON_CATEGORY,
+    "provider",
+    "provider/connection",
+    "provider/models",
+  ]);
 });
 
 // --- the nav's grey-out set ----------------------------------------------
@@ -295,114 +280,190 @@ test("matchingCategoryIds answers exactly the categories with a survivor", () =>
   );
 });
 
+// --- the anchor (ruling 13 survives as a scroll anchor) -------------------
+
+test("selection ids round-trip, one level or two", () => {
+  assert.equal(selectionId("provider"), "provider");
+  assert.equal(selectionId("provider", "models"), "provider/models");
+  assert.deepEqual(parseSelection("provider"), { category: "provider", subgroup: null });
+  assert.deepEqual(parseSelection("provider/models"), {
+    category: "provider",
+    subgroup: "models",
+  });
+});
+
+test("resolveSelection tolerates a vanished category and a vanished child", () => {
+  const nav = buildNav(withSubgroups([providerGroup(), commonGroup()]));
+  assert.equal(resolveSelection(nav, "gone"), null);
+  assert.equal(resolveSelection(nav, "provider/gone")?.subgroup, null);
+  assert.equal(resolveSelection(nav, "provider/gone")?.category.id, "provider");
+});
+
+test("anchorSelection restores only what the live nav still carries", () => {
+  const nav = buildNav(withSubgroups([commonGroup(), providerGroup()]));
+  // a remembered category and a remembered child both restore verbatim
+  assert.equal(anchorSelection(nav, "provider"), "provider");
+  assert.equal(anchorSelection(nav, "provider/models"), "provider/models");
+  // NO anchor - the opening state, and what a DESELECT persists - never
+  // invents a selection (there is no fallback category any more)
+  assert.equal(anchorSelection(nav, null), null);
+  assert.equal(anchorSelection(nav, ""), null);
+  // a category that no longer exists opens at the top instead of breaking
+  assert.equal(anchorSelection(nav, "unmounted-domain"), null);
+  // a child the nav dropped normalises to its category - a stale id is
+  // never a dangling anchor
+  assert.equal(anchorSelection(nav, "provider/removed-child"), "provider");
+  assert.equal(NAV_STORAGE_KEY, "omega.settings-category", "the key survives the model change");
+});
+
 // --- the pane's SOURCE pins ----------------------------------------------
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 const tab = read("app/components/settings/SettingsTab.vue");
 const navSource = read("app/components/settings/settingsNav.ts");
-const mainCss = read("app/assets/css/main.css");
 
-test("the pane renders the two regions: a nav of categories and one content pane", () => {
-  assert.match(tab, /<nav[\s\S]{0,200}class="settings-nav"/, "the nav region exists");
-  assert.match(tab, /class="settings-split"/, "the split wrapper exists");
-  assert.match(tab, /class="settings-content"/, "the content region exists");
-  // the nav builds from the DATA, never from a hand-authored list
-  assert.match(tab, /buildNav\(withSubgroups\(allGroups\.value\)\)/,
-    "the tree derives from the per-knob subgroup data");
-  assert.match(navSource, /KNOB_SUBGROUPS/, "the declaration table lives in one place");
+test("the pane renders ONE document of every category", () => {
+  assert.match(tab, /v-for="section in docSections"/, "the document is the content pane");
+  assert.match(
+    tab,
+    /documentFor\(nav\.value, \{[\s\S]{0,220}hits: searchHits\.value/,
+    "the document derives from the pure builder",
+  );
+  assert.match(tab, /:data-category="section\.id"/, "journey recipes key on the section id");
+  assert.match(tab, /:data-section="section\.id"/, "and the spy keys on the same attribute");
+  assert.match(tab, /v-for="block in section\.blocks"/, "children render as blocks inside the section");
+  assert.match(navSource, /export function documentFor\(/, "the builder lives in one place");
+  // there is no per-selection view left to swap in
+  assert.ok(!tab.includes("view.sections"), "no single-category view remains");
+  assert.ok(!tab.includes("contentFor("), "the master-detail content view is gone");
 });
 
-test("card t_5656d52f: a parent carries a disclosure chevron - two hit targets, one row", () => {
-  // the chevron is its OWN control: toggling the disclosure and selecting
-  // the category are different clicks, so a parent can be picked without
-  // being expanded
+test("a nav click SCROLLS the pane (smooth, reduced-motion aware) and marks it", () => {
   assert.match(
     tab,
-    /class="settings-nav-chev"[\s\S]{0,220}:aria-expanded="isOpen\(cat\.id\)"[\s\S]{0,160}@click="toggleOpen\(cat\.id\)"/,
-    "the chevron owns the toggle",
+    /function selectCategory\(id: string\) \{[\s\S]{0,260}selection\.value = id;[\s\S]{0,320}scrollToAnchor\(id\)/,
+    "the click selects and jumps",
+  );
+  assert.match(tab, /scrollIntoView\(\{ behavior, block: "start" \}\)/, "the jump is a scrollIntoView");
+  assert.match(
+    tab,
+    /prefers-reduced-motion: reduce/,
+    "the smooth scroll honours prefers-reduced-motion",
   );
   assert.match(
     tab,
-    /class="settings-nav-cat"[\s\S]{0,600}@click="selectCategory\(cat\.id\)"/,
-    "the label still selects the category",
-  );
-  // children are gated by the open state, which starts open and is
-  // overridden by a live query (hits must never hide)
-  assert.match(tab, /v-for="sub in openChildren\(cat\)"/, "children render through the open gate");
-  assert.match(
-    tab,
-    /const isOpen = \(catId: string\): boolean =>\s*\n\s*searching\.value \|\| !collapsedIds\.value\.includes\(catId\)/,
-    "default expanded, and a live query force-opens every parent",
-  );
-  assert.match(tab, /const collapsedIds = ref<string\[\]>\(\[\]\)/, "component-local, starts expanded");
-  assert.doesNotMatch(
-    tab,
-    /localStorage[\s\S]{0,120}collapsedIds|collapsedIds[\s\S]{0,120}localStorage/,
-    "the collapsed set is never persisted (no store field, no client key)",
-  );
-  assert.match(
-    tab,
-    /subgroups\.length > 1 \? cat\.subgroups : \[\]/,
-    "a one-child domain still shows no duplicate child row, and no chevron",
+    /@click="selectCategory\(cat\.id\)"/,
+    "every nav row is a jump link",
   );
 });
 
-test("no accordion returns: the only collapse left is the nav's own disclosure", () => {
-  for (const dead of [
-    "isCollapsed",
-    "toggleCollapsed",
-    "restoreCollapsed",
-    "settings-group-head",
-    "settings-group-title",
-    "omega.settings-collapsed",
-    "visibleGroups",
-  ]) {
-    assert.ok(!tab.includes(dead), `SettingsTab carries no ${dead}`);
+test("a second click on the selected entry DESELECTS: clear, collapse, top", () => {
+  assert.match(
+    tab,
+    /if \(selection\.value === id\) \{\s*deselect\(\);\s*return;/,
+    "the same entry toggles the selection off",
+  );
+  assert.match(
+    tab,
+    /function deselect\(\) \{[\s\S]{0,200}selection\.value = null;[\s\S]{0,200}persistAnchor\(null\);[\s\S]{0,200}scrollToAnchor\(null\)/,
+    "deselect clears the highlight, drops the anchor and returns to the top",
+  );
+  assert.match(
+    tab,
+    /aria-current="selection === cat\.id \? 'true' : undefined"/,
+    "the highlight is the selection, never a filter",
+  );
+});
+
+test("the scroll-spy watches the sections and never fights a click", () => {
+  assert.match(tab, /new IntersectionObserver\(/, "an observer drives the highlight");
+  assert.match(
+    tab,
+    /rootMargin: "0px 0px -80% 0px"/,
+    "a thin top band, so neighbours cannot flicker mid-scroll",
+  );
+  // the observer is suppressed while a jump animates, and a deliberate
+  // deselect stays suppressed until the NEXT real scroll
+  assert.match(tab, /lockSpy\(650\);/, "a nav click holds the observer through its smooth scroll");
+  assert.match(tab, /lockSpy\(\); \/\/ stays shut until the NEXT real scroll/, "a deselect holds it until input");
+  assert.match(
+    tab,
+    /const INTENT_EVENTS = \["wheel", "touchstart", "pointerdown", "keydown"\]/,
+    "real input is what releases the suppression",
+  );
+  assert.match(tab, /persistAnchor\(best\)/, "the spy's landing place becomes the next anchor");
+});
+
+test("expansion is DERIVED from the selection - no remembered toggle set", () => {
+  // nothing selected -> nothing open: the opening state
+  assert.deepEqual([...expandedCategoryIds(null)], []);
+  // the selected branch is the ONLY one open - a category or a subsection
+  assert.deepEqual([...expandedCategoryIds("provider")], ["provider"]);
+  assert.deepEqual(
+    [...expandedCategoryIds("provider/models")],
+    ["provider"],
+    "selecting a subsection opens its parent",
+  );
+  // a live query force-opens every parent carrying a hit, whatever is
+  // selected - and only those
+  assert.deepEqual(
+    [...expandedCategoryIds(null, new Set(["provider", "memory"]))].sort(),
+    ["memory", "provider"],
+  );
+  assert.deepEqual(
+    [...expandedCategoryIds("provider", new Set(["memory"]))],
+    ["memory"],
+    "the query wins while it is live",
+  );
+  // the component asks the pure rule, never a set of its own
+  assert.match(
+    tab,
+    /const expandedIds = computed<ReadonlySet<string>>\(\(\) =>\s*expandedCategoryIds\(/,
+    "expansion is the derived function",
+  );
+  for (const dead of ["collapsedIds", "toggleOpen", "isOpen(", "omega.settings-collapsed"]) {
+    assert.ok(!tab.includes(dead), `SettingsTab carries no ${dead} - expansion is not a preference`);
   }
-  assert.ok(!mainCss.includes("settings-group-head"), "the accordion's CSS is gone");
-  assert.ok(!mainCss.includes(".settings-group-title"), "the head type rule is gone");
   assert.ok(!navSource.includes("Collapsed"), "the nav module never resurrects collapse state");
 });
 
-test("the nav is 200px wide - room for the chevron, the label and the count", () => {
+test("the two-screen drill-down is GONE: narrow is a drawer over the same document", () => {
+  for (const dead of ["drilled", "settings-back", 'v-if="!narrow || drilled"']) {
+    assert.ok(!tab.includes(dead), `the narrow two-screen state is gone (${dead})`);
+  }
+  assert.match(tab, /<button[\s\S]{0,220}class="settings-jump"/, "narrow carries the drawer toggle");
+  assert.match(tab, /:class="\{ drawer: narrow \}"/, "the nav becomes the drawer");
+  assert.match(tab, /v-if="!narrow \|\| drawerOpen"/, "wide keeps the nav always on screen");
   assert.match(
     tab,
-    /\.settings-nav \{\s*flex: none;\s*width: 200px;\s*overflow-y: auto;\s*overflow-x: hidden;/,
-    "wider nav, horizontal overflow still clipped",
+    /if \(narrow\.value\) drawerOpen\.value = false;/,
+    "a jump closes the drawer",
   );
-  assert.match(tab, /\.settings-nav-row \.settings-nav-cat \{\s*flex: 1;\s*min-width: 0;/, "the label flexes beside the chevron");
-  assert.match(tab, /\.settings-nav-count \{\s*flex: none;/, "the count keeps its right-hand seat");
-  assert.match(tab, /\.settings-nav-label \{[\s\S]{0,120}text-overflow: ellipsis;[\s\S]{0,80}white-space: nowrap;/,
-    "labels ellipsize on one line, never wrap");
+  // the document itself is never gated by the width - same renderer
+  assert.match(tab, /<section class="settings-content">/, "the content has no narrow gate");
 });
 
-test("narrow panes DRILL DOWN - nav screen, then content with a back control (ruling 12)", () => {
-  assert.match(tab, /v-if="!narrow \|\| !drilled"/, "the nav is its own narrow screen");
-  assert.match(tab, /v-if="!narrow \|\| drilled"/, "the content is the second screen");
-  assert.match(tab, /class="settings-back"/, "the back control exists");
-  assert.match(tab, /aria-label="back to categories"/, "and it is labelled for a screen reader");
-  assert.match(tab, /@click="drilled = false"/, "the back control returns to the nav");
-  // no second renderer: no dropdown, no accordion path on any width
-  assert.doesNotMatch(tab, /settings-jump|category-select|settings-dropdown/,
-    "no category dropdown exists");
+test("the last anchor is remembered per client and restored on open", () => {
+  assert.match(tab, /localStorage\.setItem\(NAV_STORAGE_KEY, id\)/, "a selection is remembered");
+  assert.match(
+    tab,
+    /else localStorage\.removeItem\(NAV_STORAGE_KEY\)/,
+    "a DESELECT persists as no anchor",
+  );
+  assert.match(tab, /const id = anchorSelection\(nav\.value, stored\)/, "the open resolves the anchor");
+  assert.match(
+    tab,
+    /if \(!id\) return;[\s\S]{0,160}selection\.value = id;/,
+    "a pane with no anchor opens with nothing selected",
+  );
 });
 
-test("the selection is remembered per client, defaulting to Commonly Used", () => {
-  assert.ok(tab.includes("rawSelection = ref<string>(COMMON_CATEGORY)"),
-    "a fresh pane opens on Commonly Used");
-  assert.ok(tab.includes('localStorage.setItem(NAV_STORAGE_KEY, id)'),
-    "a selection is remembered in client storage");
-  assert.ok(tab.includes('localStorage.getItem(NAV_STORAGE_KEY)'),
-    "and restored on the next open");
-  assert.equal(NAV_STORAGE_KEY, "omega.settings-category");
-});
-
-test("the content head carries the scope strip, the heading, its count and the switch", () => {
+test("the content head carries the scope strip, the anchor readout and the switch", () => {
   assert.match(tab, /class="settings-content-head"/, "the strip/heading live in the content head");
   assert.match(tab, /class="settings-scopes"/, "the tier-3 strip survives, in the content pane");
-  assert.match(tab, /class="settings-content-title"[\s\S]{0,200}\{\{ view\.title \}\}/,
-    "the heading is the category name");
+  assert.match(tab, /class="settings-content-title"[\s\S]{0,200}\{\{ barTitle \}\}/,
+    "the bar names the anchor (or settings)");
   assert.match(tab, /class="settings-knob-count"/, "the knob count rides the heading");
   assert.match(tab, /class="settings-modified"[\s\S]{0,200}:aria-pressed="modifiedOnly"/,
     "the modified-only switch is a pressed-state control");
@@ -423,6 +484,8 @@ test("the rows are EXACTLY tier 2b's (ruling 10: no restyle)", () => {
 test("the search stays ONE filter, wired to filterSettingGroups", () => {
   assert.match(tab, /filterSettingGroups\(allGroups\.value, query\.value\)/);
   assert.equal((tab.match(/<SearchInput/g) ?? []).length, 1, "one input, not one per screen");
-  assert.match(tab, /hits: searchHits\.value/, "the hits feed the view and the grey-out set");
+  assert.match(tab, /hits: searchHits\.value/, "the hits feed the document and the grey-out set");
   assert.match(tab, /query\.value\.trim\(\) === ""\) return null/, "no query is null, not an empty hit set");
+  // clearing the query gives the document back where it was
+  assert.match(tab, /node\.scrollTop = lastDocScrollTop/, "the interrupted scroll position returns");
 });

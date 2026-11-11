@@ -43,14 +43,14 @@ test("settings keeps only config knobs, and search narrows them", () => {
   // the removal must not have touched the knob surface
   assert.match(tab, /filterSettingGroups\(allGroups\.value, query\.value\)/,
     "the knob groups still narrow under the live query");
-  // card t_af7e1150: the group renderer became the CONTENT pane's section
-  // list (master-detail) - one category per render, same rows inside
+  // card t_8b464090: the group renderer is the ONE document - every
+  // category section, same rows inside
   assert.match(tab, /class="settings-category"/, "the knob section renderer stands");
-  // the empty state is knob-only again (counted off the rendered view)
+  // the empty state is knob-only again (counted off the rendered document)
   assert.match(
     tab,
-    /view\.count === 0"[\s\S]{0,80}\{\{ emptyText \}\}/,
-    "the empty state keys off the rendered knob view alone",
+    /totalCount === 0"[\s\S]{0,80}\{\{ emptyText \}\}/,
+    "the empty state keys off the rendered knob document alone",
   );
 });
 

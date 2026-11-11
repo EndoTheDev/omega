@@ -1,6 +1,8 @@
 // omega webui: the settings pane's CATEGORY NAVIGATION - the per-knob
-// nesting DATA plus the pure builders the master-detail pane renders
-// (settings tier 4, card t_af7e1150).
+// nesting DATA plus the pure builders the ONE-DOCUMENT pane renders
+// (card t_8b464090, which SUPERSEDES the master-detail model of
+// t_af7e1150: the pane is one scrollable document of every category and
+// the sidebar is a set of JUMP LINKS into it, not a selector).
 //
 // Ruling 2: nesting is declared AS DATA per knob - a `subgroup` field on
 // each knob - and the nav builds itself from that data. KNOB_SUBGROUPS is
@@ -27,8 +29,8 @@
 // unmounted module's domain is absent, not empty).
 //
 // Pure on purpose: no Vue, no fetch, no DOM. The unit suite pins the
-// tree, the selection algebra and the content view; the component only
-// paints what these functions return.
+// tree, the one-document builder, the anchor resolution and the grey-out
+// set; the component only paints what these functions return.
 
 import type { SettingGroup, SettingKnob } from "../../composables/omega";
 
@@ -36,10 +38,8 @@ import type { SettingGroup, SettingKnob } from "../../composables/omega";
 export const GENERAL_SUBGROUP = "general";
 /** the virtual top category of curated knobs (ruling 4) */
 export const COMMON_CATEGORY = "common";
-/** client storage key for the remembered selection (ruling 13) */
+/** client storage key for the remembered LAST ANCHOR (ruling 13 survives) */
 export const NAV_STORAGE_KEY = "omega.settings-category";
-/** what the content pane says while a live query finds nothing */
-export const SEARCH_TITLE = "search results";
 
 // --- the nesting data (ruling 2) -----------------------------------------
 
@@ -266,41 +266,58 @@ export function resolveSelection(
   return { category, subgroup: subgroup ?? null };
 }
 
-/** the category a fresh pane opens on: Commonly Used when the nav has it
-    (the Main scope), else the first category (an agent scope, which
-    carries the four overridable groups and nothing else) */
-export function fallbackSelection(nav: NavCategory[]): string {
-  const common = nav.find((c) => c.id === COMMON_CATEGORY);
-  if (common) return common.id;
-  return nav[0]?.id ?? "";
-}
-
-/** the remembered id when it still resolves, else the fallback. The
-    answer is NORMALISED against the live nav: a remembered CHILD that
-    this scope no longer carries resolves to its category, so the nav
-    lights the parent instead of nothing at all (a stale id is never a
-    blank pane, and the raw memory stays untouched in storage). */
-export function effectiveSelection(nav: NavCategory[], remembered: string): string {
+/** anchorSelection resolves the REMEMBERED value (ruling 13's client
+    storage) into the id the pane opens scrolled to. There is no fallback
+    selection any more: a pane opens with NOTHING selected (card
+    t_8b464090), so this answers null for "no anchor" - an empty stored
+    value (a DESELECT persists as nothing at all) and a stale category
+    both open at the top instead of resurrecting a selection the user
+    cleared. A remembered CHILD the current nav no longer carries
+    normalises to its category: a stale id is never a broken restore. */
+export function anchorSelection(
+  nav: NavCategory[],
+  remembered: string | null,
+): string | null {
+  if (!remembered) return null;
   const resolved = resolveSelection(nav, remembered);
-  if (!resolved) return fallbackSelection(nav);
+  if (!resolved) return null;
   return selectionId(resolved.category.id, resolved.subgroup?.id ?? null);
 }
 
-// --- the content pane -----------------------------------------------------
+/** expandedCategoryIds is the nav's OPEN branches - DERIVED, never
+    remembered (card t_8b464090, superseding t_5656d52f's per-parent
+    toggle): the one branch the selection lives in, or - under a live
+    query - every parent carrying a hit (`queryOpen`, so hits stay
+    reachable whatever is selected). Nothing selected and no query means
+    nothing is open. There is no collapse set anywhere: "what is open" and
+    "where I am" cannot disagree. */
+export function expandedCategoryIds(
+  selection: string | null,
+  queryOpen: ReadonlySet<string> | null = null,
+): Set<string> {
+  if (queryOpen !== null) return new Set(queryOpen);
+  if (!selection) return new Set<string>();
+  return new Set<string>([parseSelection(selection).category]);
+}
 
-export interface ContentSection {
+// --- the ONE document -----------------------------------------------------
+
+export interface DocBlock {
+  /** the anchor id this block answers to: "<cat>" or "<cat>/<sub>" */
   id: string;
   label: string;
-  /** render the label as a child heading (a multi-child category view) */
+  /** render the label as a child heading (a multi-child category) */
   heading: boolean;
   knobs: SettingKnob[];
 }
 
-export interface ContentView {
-  title: string;
-  sections: ContentSection[];
+export interface DocSection {
+  /** the category id - the section's jump target and its data-category */
+  id: string;
+  label: string;
+  /** knobs this section renders right now (filtered) */
   count: number;
-  searching: boolean;
+  blocks: DocBlock[];
 }
 
 export interface ContentInput {
@@ -324,73 +341,68 @@ function keeper(input: ContentInput): (knob: SettingKnob) => boolean {
   };
 }
 
-/** contentFor answers what the content pane renders for a selection.
-    A live query is CROSS-CATEGORY (ruling 6): every category with a hit
-    contributes a section, whatever the selection is. Without a query the
-    selection decides - the whole category (its children as headed
-    sections) or one child. */
-export function contentFor(
+/** documentFor is the pane's whole body: EVERY category, in nav order, as
+    a headed section - the selection never filters it (card t_8b464090:
+    "the right pane ALWAYS shows every knob and its description"). A
+    multi-child domain renders its children as headed blocks; a flat or
+    one-child domain renders one unheaded list, because a heading that
+    repeats the section title is noise.
+
+    Search filters the document IN PLACE - the old cross-category hits
+    view is gone, the filtered document IS the hits view - and a live
+    query still skips the curated category: its knobs belong to other
+    domains, so a hit renders ONCE, under the domain that owns it, while
+    the nav keeps the curated entry and greys or lights it (ruling 6).
+    "modified only" narrows the SAME document, whole - never one category
+    at a time. */
+export function documentFor(
   nav: NavCategory[],
-  id: string,
   input: ContentInput = {},
-): ContentView {
+): DocSection[] {
   const keep = keeper(input);
-  if (input.hits != null) {
-    const sections: ContentSection[] = [];
-    let count = 0;
-    for (const category of nav) {
-      // the curated category is a VIEW of knobs other domains own: in
-      // search mode it is skipped, so a hit renders once - under its
-      // domain - while the nav keeps its shape and greys instead (ruling
-      // 6: never hide, never list one knob twice)
-      if (category.id === COMMON_CATEGORY) continue;
+  const searching = input.hits != null;
+  const sections: DocSection[] = [];
+  for (const category of nav) {
+    if (searching && category.id === COMMON_CATEGORY) continue;
+    const blocks: DocBlock[] = [];
+    if (category.flat || category.subgroups.length <= 1) {
       const knobs = category.knobs.filter(keep);
-      if (knobs.length === 0) continue;
-      sections.push({ id: category.id, label: category.label, heading: true, knobs });
-      count += knobs.length;
+      if (knobs.length > 0)
+        blocks.push({
+          id: category.id,
+          label: category.label,
+          heading: false,
+          knobs,
+        });
+    } else {
+      for (const child of category.subgroups) {
+        const knobs = child.knobs.filter(keep);
+        if (knobs.length === 0) continue;
+        blocks.push({
+          id: selectionId(category.id, child.id),
+          label: child.label,
+          heading: true,
+          knobs,
+        });
+      }
     }
-    return { title: SEARCH_TITLE, sections, count, searching: true };
+    const count = blocks.reduce((n, block) => n + block.knobs.length, 0);
+    if (count === 0) continue;
+    sections.push({ id: category.id, label: category.label, count, blocks });
   }
-  const resolved =
-    resolveSelection(nav, id) ?? (nav[0] ? { category: nav[0], subgroup: null } : null);
-  if (!resolved) return { title: "", sections: [], count: 0, searching: false };
-  const { category, subgroup } = resolved;
-  const sections: ContentSection[] = [];
-  if (subgroup) {
-    const knobs = subgroup.knobs.filter(keep);
-    if (knobs.length > 0)
-      sections.push({
-        id: selectionId(category.id, subgroup.id),
-        label: subgroup.label,
-        heading: false,
-        knobs,
-      });
-  } else if (category.flat || category.subgroups.length <= 1) {
-    // a flat category (Commonly Used) or a domain whose every knob lands
-    // in one child: one unheaded list - a heading that repeats the title
-    // is noise
-    const knobs = category.knobs.filter(keep);
-    if (knobs.length > 0)
-      sections.push({
-        id: category.id,
-        label: category.label,
-        heading: false,
-        knobs,
-      });
-  } else {
-    for (const child of category.subgroups) {
-      const knobs = child.knobs.filter(keep);
-      if (knobs.length === 0) continue;
-      sections.push({
-        id: selectionId(category.id, child.id),
-        label: child.label,
-        heading: true,
-        knobs,
-      });
-    }
-  }
-  const count = sections.reduce((n, section) => n + section.knobs.length, 0);
-  return { title: category.label, sections, count, searching: false };
+  return sections;
+}
+
+/** spyTargetIds is the scroll-spy's document order: each section followed
+    by its blocks - a block that answers to the section's OWN id (the
+    unheaded list of a flat or one-child domain) is not listed twice. */
+export function spyTargetIds(sections: DocSection[]): string[] {
+  return sections.flatMap((section) => [
+    section.id,
+    ...section.blocks
+      .map((block) => block.id)
+      .filter((id) => id !== section.id),
+  ]);
 }
 
 /** matchingCategoryIds is the nav's grey-out set (ruling 6): the
