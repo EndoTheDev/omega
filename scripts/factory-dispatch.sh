@@ -738,21 +738,29 @@ if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$(dbq "SELECT COUNT(*) FROM tasks WHERE
     # 2 zombie-running made B below zero, SLOTS kept its cap-derived 2, the
     # inner got --max 4 on a reclaim-emptied pool and spawned 4.
     DISPATCH_MAX="$MAXARG"
-    # CLAMP (card t_8a1a46e1): the pair verdict above is computed on THIS path
-    # too - it was merely printed, and the caller was trusted to read it. On
-    # 2026-11-11 a tick batched the dry-run and the real dispatch into one
-    # terminal call, so `pair: forbidden` printed and this very `--max 2`
-    # spawned both cards anyway (surfaces happened to be disjoint: luck, not
-    # law). The verdict is a gate now: a forbidden head pair caps a live pass
-    # at ONE card, said out loud with the ids it declined to pair. A sanctioned
-    # pair passes N through untouched. The dry-run output stays byte-identical
-    # (the clamp sits below the dry exit, and a dry-run never spawns).
-    if [ "$MAXARG" -gt 1 ] && [ "$PAIRV" != sanctioned ]; then
-      DISPATCH_MAX=1
-      echo "clamp: --max $MAXARG -> 1 (pair: $PAIRV - $PAIRWHY) - declined to pair: $PAIRIDS"
-    fi
   else
     DISPATCH_MAX=$(( ${#RUNNING[@]} + SLOTS ))
+  fi
+  # CLAMP (card t_8a1a46e1): the pair verdict above is computed on THIS path
+  # too - it was merely printed, and the caller was trusted to read it. On
+  # 2026-11-11 a tick batched the dry-run and the real dispatch into one
+  # terminal call, so `pair: forbidden` printed and this very `--max 2`
+  # spawned both cards anyway (surfaces happened to be disjoint: luck, not
+  # law). The verdict is a gate now: a forbidden head pair caps a live pass
+  # at ONE card, said out loud with the ids it declined to pair. A sanctioned
+  # pair passes N through untouched. The dry-run output stays byte-identical
+  # (the clamp sits below the dry exit, and a dry-run never spawns).
+  # It sits BELOW the --max branch on purpose: a BARE pass (no --max) computes
+  # its own slot count and can equal 2 - leaving it unclamped would keep the
+  # hole open behind the "always pass an explicit --max" ritual this card
+  # exists to delete.
+  if [ "$DISPATCH_MAX" -gt 1 ] && [ "$PAIRV" != sanctioned ]; then
+    if [ "$MAXARG" -gt 0 ]; then
+      echo "clamp: --max $MAXARG -> 1 (pair: $PAIRV - $PAIRWHY) - declined to pair: $PAIRIDS"
+    else
+      echo "clamp: wanted $DISPATCH_MAX -> 1 (pair: $PAIRV - $PAIRWHY) - declined to pair: $PAIRIDS"
+    fi
+    DISPATCH_MAX=1
   fi
   # FENCE STAMP (card t_8b32a09a, Endo ruling 2026-11-02 "bake + fence"):
   # every worker spawned through this call is stamped OMEGA_WORKER=1 and

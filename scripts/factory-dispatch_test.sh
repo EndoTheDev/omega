@@ -873,6 +873,18 @@ printf "%s" "$out" | grep -q "clamp:" \
 	&& bad "T19d: --max 1 is already single - no clamp line expected (out: $out)" || ok
 grep -qxF 'kanban dispatch --max 1' "$(splog max1)" \
 	&& ok || bad "T19d: --max 1 pass did not hand --max 1 through (got: $(tr '\n' ';' <"$(splog max1)"))"
+# T19e: the clamp also covers a BARE pass (no --max): the guard computes its
+# own slot count there and it can equal 2, so an unclamped bare pass would keep
+# the hole open behind the "always pass an explicit --max" ritual this card
+# exists to delete.
+out=$(SPAWNRUN clamp-bare "$NF_WEB
+$WEB")
+printf "%s" "$out" | grep -qF 'clamp: wanted 2 -> 1 (pair: forbidden' \
+	&& ok || bad "T19e: a bare pass against a forbidden head set did not clamp (out: $out)"
+grep -qxF 'kanban dispatch --max 1' "$(splog clamp-bare)" \
+	&& ok || bad "T19e: the bare pass was not clamped to --max 1 (got: $(tr '\n' ';' <"$(splog clamp-bare)"))"
+nrun=$(sql "$(spdb clamp-bare)" "SELECT COUNT(*) FROM tasks WHERE status='running';")
+[ "$nrun" = "1" ] && ok || bad "T19e: $nrun cards running after a bare clamped pass (expected 1)"
 rm -rf "$SPAWN_BASE"
 
 echo
