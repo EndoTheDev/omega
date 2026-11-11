@@ -48,8 +48,11 @@ test("the bar renders the shortened string, never the raw one", () => {
 });
 
 test("the tooltip keeps the FULL version string", () => {
-  const m = bar.match(/:title="`server build and uptime - \$\{version\}`"/);
+  // card t_be30543a: the tooltip sheds "and uptime" with the segment's
+  // uptime half (the popover owns that number now); the raw version stays.
+  const m = bar.match(/:title="`server build - \$\{version\}`"/);
   assert.ok(m, "title binding still carries the raw version");
+  assert.doesNotMatch(bar, /server build and uptime/, "the tooltip promises only the build");
 });
 
 // --- the pane corner seam: strip = the card's top half ---
