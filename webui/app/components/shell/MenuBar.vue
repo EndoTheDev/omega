@@ -1,6 +1,11 @@
 <template>
   <header class="menubar">
-    <span class="brand">Ωmega</span>
+    <!-- card t_c5d4f2ad (Endo, 2026-11-11): the far-left brand is the
+         lone omega glyph - U+03A9 is the Greek capital omega, so the
+         glyph itself carries the accessible name "omega". No
+         aria-hidden: the text IS the name. The CENTER wordmark
+         (`.menubar-wordmark`, 'Omega') is a different span and stays. -->
+    <span class="brand">Ω</span>
     <!-- card t_6215474b: the nav cluster - back / forward / palette
          trigger. Seats INLINE after the brand (card t_3aed367e,
          Endo's ruling 2026-11-06: the center wordmark vacated the
