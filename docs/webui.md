@@ -482,8 +482,9 @@ dot, reset link, draft star, live note).
   plus one `REFRESH_MS` (5s) interval cleared on unmount - the dock
   unmounts a sibling-activated outlet, so a background tab costs
   nothing. The push channel (`composables/socket.ts`) carries a CLOSED
-  topic set (chat, chips, canvas, runs, health) with no observability
-  topic; riding it would be an engine-side change
+  topic set of six names (chat, chips, canvas, runs, health, logs - the
+  last subscription-gated), none of them an observability topic; riding
+  it would be an engine-side change
   (`agent/api/sockets.go`), so v1 does not pretend to subscribe.
 - **Degradation is a sentence, not a blank pane**: a 404 from the
   events route reads "observability module is not loaded" (the capsule

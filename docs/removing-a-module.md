@@ -17,7 +17,7 @@ surface) is its sibling: `docs/migrating-a-module.md`.
 ## What the law guarantees
 
 - An unregistered plugin ships no store, no seam, no tools, no
-  commands, no panels. `TestModuleOmissionDropsTUICommands`
+  commands, no panels. `TestModuleOmissionDropsCommands`
   (`cmd/omega/plugins_test.go`) and the per-module removal proofs in
   `cmd/omega/removal_test.go` gate this.
 - Module REST routes are registered by the capsule itself

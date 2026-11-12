@@ -47,8 +47,9 @@ func (s *Store) isRouter() bool {
 }
 
 // route returns the store that owns sessionID. The local row wins (the
-// common case, one PK probe cached per id); otherwise each agent home is
-// probed once and the answer is cached. An id no home holds answers this
+// common case): a local hit is never cached, so it re-probes with one
+// indexed PK query per call. A positive owner found in an agent home is
+// cached by id; a miss is not cached. An id no home holds answers this
 // store, so creating a session through it keeps today's main-store
 // default.
 //
