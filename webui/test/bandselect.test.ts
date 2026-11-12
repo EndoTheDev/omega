@@ -235,6 +235,28 @@ test("keyboard law: Escape and a pick hand focus back to the chip (one close pat
       `${key} stops the act keystroke - type-to-capture must not steal the focus return`,
     );
   }
+  // the SAME obligation on the other member of the roving family (ModelSelect
+  // is the template this grammar came from): its pick keys ride one line, so
+  // pinning BOTH bodies here reds the moment either implementation drops the
+  // stop. Without it a Space pick on a model row bubbles to app.vue and the
+  // focus lands in .composer-input instead of the chip that opened the pop.
+  const modelBodies = caseBodies(
+    modelSelect.slice(modelSelect.indexOf("function onRowKey")),
+  );
+  assert.ok(
+    /e\.stopPropagation\(\);[\s\S]*?close\(\)/.test(
+      modelBodies.get('"Escape"') ?? "",
+    ),
+    "ModelSelect Escape stops at the pop too",
+  );
+  for (const key of ['"Enter"', '" "']) {
+    assert.ok(
+      /e\.stopPropagation\(\);[\s\S]*?pickRow\(section, model\)/.test(
+        modelBodies.get(key) ?? "",
+      ),
+      `ModelSelect ${key} stops the act keystroke - type-to-capture must not steal the focus return`,
+    );
+  }
 });
 
 test("one law, two implementations: BandSelect and ModelSelect bind the same key set", () => {
