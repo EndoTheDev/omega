@@ -568,8 +568,8 @@ test("the two-screen drill-down is GONE: narrow is a drawer over the same docume
   assert.match(tab, /v-if="!narrow \|\| drawerOpen"/, "wide keeps the nav always on screen");
   assert.match(
     tab,
-    /if \(narrow\.value\) drawerOpen\.value = false;/,
-    "a jump closes the drawer",
+    /if \(narrow\.value\) closeDrawer\(\);/,
+    "a jump closes the drawer - through the one close path that returns focus (card t_a990f422)",
   );
   // the document itself is never gated by the width - same renderer
   assert.match(tab, /<section class="settings-content">/, "the content has no narrow gate");
@@ -1040,5 +1040,184 @@ test("a scroll inside the lock window is clamped when the lock ends (t_720c9cff)
   assert.match(tab, /lockSpy\(650\);/, "the 650ms jump window is unchanged");
   // and the pane-scroll suppression's own gate is untouched (PANE_SCROLL_GAP_MS)
   assert.match(tab, /const PANE_SCROLL_GAP_MS = 400;/, "the stream-suppression window is unchanged");
+});
+
+// --- the A11Y keyboard law (card t_a990f422) -----------------------------
+//
+// vera's trio, scoped to settings:
+//   1. the model rows carried role="option" and nothing else - unreachable
+//      by keyboard, un-pickable by Enter;
+//   2. the narrow nav drawer had no Escape, no trap, no focus return, and a
+//      scrim that was not decoration;
+//   3. the pane's ONE heading STICKS, so any scroll omega did not issue
+//      landed its target behind it (WCAG 2.2 SC 2.4.11).
+// The node suite has no DOM: the handlers are pinned at the source, and the
+// live keyboard round trip is the journey's job (recipe 113) plus the lane
+// probe recorded on the card.
+
+const picker = read("app/components/chat/ModelSelect.vue");
+const fieldSource = read("app/components/settings/ModelField.vue");
+
+test("settings model rows are a keyboard listbox: roving tabindex, arrows, Enter, Escape", () => {
+  // the settings picker IS this component (card t_dac84a33 shares it with
+  // the composer) - the keyboard law therefore reaches the settings rows
+  assert.match(
+    fieldSource,
+    /import ModelSelect from "\.\.\/chat\/ModelSelect\.vue";/,
+    "the settings model field renders the shared picker, not a second one",
+  );
+
+  // one row in the tab order at a time: Tab enters the list ON the cursor
+  // instead of walking a 200-model catalog
+  assert.match(
+    picker,
+    /:tabindex="isActiveRow\(g\.name, m\) \? 0 : -1"/,
+    "a roving tabindex - exactly one row is tabbable",
+  );
+  // the rows are a listbox's options, and the popup they sit in is the
+  // combobox the search input drives
+  assert.match(picker, /role="listbox"/, "the section list is a real listbox");
+  assert.match(picker, /@keydown="onRowKey\(\$event, g\.name, m\)"/, "the rows own their keydown");
+  assert.match(
+    picker,
+    /function onRowKey\(e: KeyboardEvent, section: string, model: string\)/,
+    "one handler for the whole grammar",
+  );
+  for (const key of ['"ArrowDown"', '"ArrowUp"', '"Enter"', '"Escape"']) {
+    assert.ok(
+      picker.includes(`case ${key}:`) || picker.includes(`e.key === ${key}`),
+      `the rows handle ${key}`,
+    );
+  }
+  // the wrap is the app's ONE keyboard arithmetic, not a second one
+  assert.match(
+    picker,
+    /import \{ clampIndex \} from "\.\.\/\.\.\/composables\/commandRegistry";/,
+    "the rows ride the command palette's clampIndex",
+  );
+  assert.match(
+    picker,
+    /const next = clampIndex\(activeIndex\.value, delta, flatRows\.value\.length\);/,
+    "arrows wrap",
+  );
+
+  // focus follows the cursor AND the cursor follows focus: the row that
+  // takes focus is the row the highlight paints
+  assert.match(picker, /@focus="seatOn\(g\.name, m\)"/, "focusing a row seats the cursor on it");
+  assert.match(picker, /active: isActiveRow\(g\.name, m\)/, "the active row is highlighted");
+  assert.match(picker, /\.model-list li\.active \{/, "and the highlight has a rule");
+
+  // a keyboard pick rides the SAME guard as a click: a disabled row never
+  // emits, its reason is information
+  assert.match(
+    picker,
+    /function pickRow\(section: string, model: string\) \{\s*if \(reasonFor\(section, model\) !== null\) return;/,
+    "Enter on a disabled row is a no-op, not an override",
+  );
+
+  // the popup opens on the value's own row, and typing "filter models"
+  // still filters: the seat falls back to row one when the value is gone
+  assert.match(
+    picker,
+    /function seatOnCurrent\(\)[\s\S]{0,260}activeKey\.value = seat \? rowKey\(seat\.section, seat\.model\) : null;/,
+    "the popup seats on the current value",
+  );
+  assert.match(
+    picker,
+    /const seat = rows\.findIndex\(\s*\(r\) => rowKey\(r\.section, r\.model\) === activeKey\.value,\s*\);\s*return seat >= 0 \? seat : 0;/,
+    "a filtered-away seat falls back to the first row",
+  );
+
+  // Escape closes and hands focus BACK to the chip: a keyboard user is
+  // never dropped on <body>
+  assert.match(picker, /const chipEl = ref<HTMLButtonElement \| null>\(null\);/, "the chip is the focus return target");
+  assert.match(picker, /ref="chipEl"/, "and the template binds it");
+  assert.match(
+    picker,
+    /const hadFocus = !!root\.value\?\.contains\(document\.activeElement\);[\s\S]{0,300}if \(restoreFocus && hadFocus\) void nextTick\(\(\) => chipEl\.value\?\.focus\(\)\);/,
+    "closing from inside the popup returns focus to the chip",
+  );
+  // leaving by Tab must not be stolen back
+  assert.match(picker, /case "Tab":[\s\S]{0,140}close\(false\);/, "a Tab close never steals the Tab");
+});
+
+test("the settings drawer honours Escape, holds focus, and returns it to the toggle", () => {
+  // the toggle moves focus into the drawer and is the return target
+  assert.match(tab, /ref="jumpEl"/, "the toggle is addressable");
+  assert.match(
+    tab,
+    /@click="drawerOpen \? closeDrawer\(\) : openDrawer\(\)"/,
+    "one open path and one close path, never a bare boolean flip",
+  );
+  assert.match(
+    tab,
+    /function openDrawer\(\) \{\s*drawerOpen\.value = true;[\s\S]{0,240}nextTick\(\(\) => drawerFocusables\(\)\[0\]\?\.focus\(\)\);/,
+    "opening lands focus INSIDE the drawer - a trap needs something to hold",
+  );
+  assert.match(
+    tab,
+    /function closeDrawer\(\) \{\s*if \(!drawerOpen\.value\) return;[\s\S]{0,320}nextTick\(\(\) => jumpEl\.value\?\.focus\(\)\);/,
+    "closing hands focus back to the toggle that opened it",
+  );
+  // EVERY close lands in closeDrawer: a jump link, a deselect, the scrim.
+  // Exactly one assignment means no path can bypass the focus return.
+  const clears = tab.match(/drawerOpen\.value = false;/g) ?? [];
+  assert.equal(clears.length, 1, "closeDrawer is the ONLY place the drawer closes");
+  assert.equal(
+    (tab.match(/if \(narrow\.value\) closeDrawer\(\);/g) ?? []).length,
+    2,
+    "a jump and a deselect both close through the one path",
+  );
+
+  // Escape closes; Tab and Shift+Tab wrap at the drawer's edges
+  assert.match(tab, /@keydown="onDrawerKey"/, "the pane root owns the drawer's keys");
+  assert.match(
+    tab,
+    /if \(!narrow\.value \|\| !drawerOpen\.value\) return;\s*if \(e\.key === "Escape"\) \{\s*e\.preventDefault\(\);\s*e\.stopPropagation\(\);\s*closeDrawer\(\);/,
+    "Escape closes the drawer",
+  );
+  assert.match(
+    tab,
+    /if \(e\.shiftKey && active === first\) \{\s*e\.preventDefault\(\);\s*last\.focus\(\);\s*\} else if \(!e\.shiftKey && active === last\) \{\s*e\.preventDefault\(\);\s*first\.focus\(\);/,
+    "Tab wraps forward, Shift+Tab wraps back",
+  );
+  assert.match(tab, /const FOCUSABLE =\s*'button:not\(\[disabled\]\), \[href\]/, "the trap walks the drawer's own focusables");
+
+  // the scrim is decoration: click-to-close stays, semantics leave
+  assert.match(
+    tab,
+    /class="settings-scrim"\s*role="presentation"\s*@click="closeDrawer\(\)"/,
+    "the scrim is presentational and still click-to-close",
+  );
+});
+
+test("the settings body reserves the pinned heading for native scrolls (SC 2.4.11)", () => {
+  assert.match(
+    tab,
+    /\.settings-body \{\s*scroll-padding-top: 44px;\s*\}/,
+    "the scrollport pads its own top edge",
+  );
+  // the number is not a mood: the pinned heading measures 42px on the lane
+  // (20px padding-top + 6px padding-bottom + an 11px heading's line box +
+  // the 1px rule), and the pad must leave a landed target CLEAR of it, not
+  // flush under it
+  const heading = tab.match(
+    /\.settings-section-title \{\s*position: sticky;[\s\S]{0,400}?padding: (\d+)px 0 (\d+)px;/,
+  );
+  assert.ok(heading, "the sticky heading's own padding is readable");
+  const declared = Number(heading![1]) + Number(heading![2]) + 1; // + the top rule
+  const pad = tab.match(/scroll-padding-top: (\d+)px;/);
+  assert.ok(pad, "a pixel value, not a keyword");
+  const value = Number(pad![1]);
+  assert.ok(
+    value > declared,
+    `scroll-padding-top ${value}px must exceed the heading's ${declared}px of padding + rule`,
+  );
+  // the heading still pins - the pad is an addition to that law, not a
+  // replacement for it
+  assert.match(tab, /\.settings-section-title \{\s*position: sticky;/, "the heading still sticks");
+  // and the pane's OWN jump keeps measuring the live heading: the constant
+  // is for the scrolls omega does not issue
+  assert.match(tab, /const clear = isBlock \? pinnedHeadingHeight\(node\) : 0;/, "the measured jump is untouched");
 });
 

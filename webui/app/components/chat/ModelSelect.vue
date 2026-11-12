@@ -18,10 +18,12 @@
     :style="popRoom"
     ref="root">
     <button
+      ref="chipEl"
       class="model-chip"
       type="button"
       :title="chipTitle"
       :aria-expanded="open"
+      :aria-controls="open ? listId : undefined"
       @click="open ? close() : openNow()"
       @keydown.down.prevent="openNow()">
       <!-- ellipsis container: at narrow widths the chip gives up width
@@ -41,9 +43,14 @@
         v-model="query"
         class="model-search"
         type="text"
+        role="combobox"
+        aria-autocomplete="list"
+        :aria-expanded="open"
+        :aria-controls="listId"
+        :aria-activedescendant="activeDomId || undefined"
         placeholder="filter models"
         spellcheck="false"
-        @keydown.escape.stop="close" />
+        @keydown="onSearchKey" />
       <!-- the aux INHERIT row (card t_dac84a33, Endo's ruling 1): PINNED
            above the provider sections - never folded into one, because the
            word "default" here means "follow the chat's model", NOT the base
@@ -58,10 +65,12 @@
         :aria-selected="model === AUX_DEFAULT_VALUE"
         :class="{ current: model === AUX_DEFAULT_VALUE }"
         title="follow the model the current chat runs"
-        @click="pickInherit()">
+        @click="pickInherit()"
+        @keydown.escape.stop.prevent="close()"
+        @keydown.down.prevent="focusRow(0)">
         {{ INHERIT_LABEL }}
       </button>
-      <div class="model-body">
+      <div class="model-body" :id="listId">
         <div
           v-for="g in visibleGroups"
           :key="g.name"
@@ -86,19 +95,28 @@
               class="model-sec-err">
               {{ g.error }} - use refresh models to retry
             </p>
-            <ul class="model-list">
+            <ul
+              class="model-list"
+              role="listbox"
+              :aria-label="g.name">
               <li
                 v-for="m in g.models"
                 :key="`${g.name}:${m}`"
+                :id="optionId(g.name, m)"
                 role="option"
+                :tabindex="isActiveRow(g.name, m) ? 0 : -1"
                 :aria-selected="isCurrent(g, m)"
                 :aria-disabled="reasonFor(g.name, m) !== null || undefined"
                 :title="reasonFor(g.name, m) ?? undefined"
                 :class="{
                   current: isCurrent(g, m),
                   off: reasonFor(g.name, m) !== null,
+                  active: isActiveRow(g.name, m),
                 }"
-                @click="pick(g, m)">
+                :ref="setRowEl(g.name, m)"
+                @focus="seatOn(g.name, m)"
+                @click="pick(g, m)"
+                @keydown="onRowKey($event, g.name, m)">
                 {{ m }}
                 <span
                   v-if="reasonFor(g.name, m)"
@@ -206,6 +224,10 @@
   import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
   import type { ModelProviderSection } from "../../composables/omega";
   import { AUX_DEFAULT_VALUE } from "../../composables/modelCatalog";
+  // the app's ONE keyboard arithmetic (the command palette's wrap) - the
+  // model rows ride the same grammar instead of inventing a second one
+  // (card t_a990f422)
+  import { clampIndex } from "../../composables/commandRegistry";
 
   const props = defineProps<{
     model: string;
@@ -260,6 +282,7 @@
   const open = ref(false);
   const query = ref("");
   const root = ref<HTMLElement | null>(null);
+  const chipEl = ref<HTMLButtonElement | null>(null);
   const searchEl = ref<HTMLInputElement | null>(null);
 
   // ---- the custom models ("add custom model..." store) - localStorage:
@@ -384,6 +407,161 @@
     return props.model === `${g.name}:${m}`;
   }
 
+  // --- the KEYBOARD LAW (card t_a990f422) --------------------------------
+  //
+  // The rows carried role="option" and nothing else - a keyboard user could
+  // not reach a single model, and the whole popup was mouse-only. They are
+  // now a real listbox: exactly ONE row is in the tab order (roving
+  // tabindex), arrows walk the rows through the app's palette arithmetic
+  // (clampIndex - the same wrap the command palette rides), Enter/Space
+  // picks the focused row, Escape closes and hands focus back to the chip,
+  // and the ACTIVE row is highlighted so the visible cursor follows focus.
+  // Disabled-with-reason rows stay IN the walk: the reason is information
+  // an AT user must be able to read, Enter on one is simply a no-op.
+  let pickerSeq = 0;
+  const pickerId = `model-picker-${++pickerSeq}`;
+  const listId = `${pickerId}-list`;
+
+  /** every row the popup paints right now, in VISUAL order - the flat index
+      is the keyboard's address space and it can never disagree with what
+      the user sees (a query forces every section open). */
+  const flatRows = computed(() =>
+    visibleGroups.value.flatMap((g) =>
+      isExpanded(g) ? g.models.map((m) => ({ section: g.name, model: m })) : [],
+    ),
+  );
+
+  /** the row the keyboard is ON. Null means "not seated yet": the popup
+      opens on the current value's row, and a query that hides it falls back
+      to the first row. */
+  const activeKey = ref<string | null>(null);
+  // the identity of a row: a model name may itself carry a colon
+  // ("clef:27b"), so the separator can never be a printable character
+  const rowKey = (section: string, model: string) =>
+    `${section}\u0000${model}`;
+
+  const activeIndex = computed(() => {
+    const rows = flatRows.value;
+    if (!rows.length) return -1;
+    const seat = rows.findIndex(
+      (r) => rowKey(r.section, r.model) === activeKey.value,
+    );
+    return seat >= 0 ? seat : 0;
+  });
+
+  function isActiveRow(section: string, model: string): boolean {
+    if (activeIndex.value < 0) return false;
+    const seat = flatRows.value[activeIndex.value]!;
+    return seat.section === section && seat.model === model;
+  }
+
+  const optionId = (section: string, model: string) =>
+    `${pickerId}-opt-${activeIndexOf(section, model)}`;
+
+  function activeIndexOf(section: string, model: string): number {
+    return flatRows.value.findIndex(
+      (r) => r.section === section && r.model === model,
+    );
+  }
+
+  /** the option the search input's aria-activedescendant points at - the
+      input keeps DOM focus only until an arrow moves it into the list. */
+  const activeDomId = computed(() => {
+    const seat = flatRows.value[activeIndex.value];
+    return seat ? optionId(seat.section, seat.model) : "";
+  });
+
+  const rowEls = new Map<string, HTMLElement>();
+  function setRowEl(section: string, model: string) {
+    const key = rowKey(section, model);
+    return (el: unknown) => {
+      if (el instanceof HTMLElement) rowEls.set(key, el);
+      else rowEls.delete(key);
+    };
+  }
+
+  function seatOn(section: string, model: string) {
+    activeKey.value = rowKey(section, model);
+  }
+
+  /** land the keyboard on row `i` and move DOM focus there - the highlight
+      and the focus ring are the same cursor. */
+  function focusRow(i: number) {
+    const rows = flatRows.value;
+    if (i < 0 || i >= rows.length) return;
+    const row = rows[i]!;
+    activeKey.value = rowKey(row.section, row.model);
+    const el = rowEls.get(activeKey.value);
+    el?.scrollIntoView({ block: "nearest" });
+    el?.focus();
+  }
+
+  function moveActive(delta: number) {
+    const next = clampIndex(activeIndex.value, delta, flatRows.value.length);
+    if (next >= 0) focusRow(next);
+  }
+
+  function onSearchKey(e: KeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      moveActive(1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      focusRow(flatRows.value.length - 1);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const row = flatRows.value[activeIndex.value];
+      if (row) pickRow(row.section, row.model);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    }
+  }
+
+  function onRowKey(e: KeyboardEvent, section: string, model: string) {
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        moveActive(1);
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        moveActive(-1);
+        break;
+      case "Home":
+        e.preventDefault();
+        focusRow(0);
+        break;
+      case "End":
+        e.preventDefault();
+        focusRow(flatRows.value.length - 1);
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        pickRow(section, model);
+        break;
+      case "Escape":
+        e.preventDefault();
+        e.stopPropagation();
+        close();
+        break;
+      case "Tab":
+        // leaving the list is leaving the popup - but never steal the Tab
+        close(false);
+        break;
+    }
+  }
+
+  /** a keyboard pick goes through the SAME guard as a click: a disabled
+      row is information, never an override of the slot's rule. */
+  function pickRow(section: string, model: string) {
+    if (reasonFor(section, model) !== null) return;
+    const g = visibleGroups.value.find((x) => x.name === section);
+    if (g) pick(g, model);
+  }
+
   const adding = ref(false);
   const editing = ref(false);
   const addProvider = ref("default");
@@ -474,13 +652,34 @@
     open.value = true;
     adding.value = false;
     editing.value = false;
+    query.value = "";
+    // seat the keyboard on the CURRENT value's row: opening lands the
+    // cursor where the knob already points, not on row one
+    seatOnCurrent();
     placePop();
     nextTick(() => searchEl.value?.focus());
   }
 
-  function close() {
+  /** the seat a fresh popup takes: the row the knob's value already names,
+      or the first row when the value is not in this catalog. */
+  function seatOnCurrent() {
+    const rows = flatRows.value;
+    const seat = rows.find((r) =>
+      r.section === "default" ? props.model === r.model : props.model === `${r.section}:${r.model}`,
+    );
+    activeKey.value = seat ? rowKey(seat.section, seat.model) : null;
+  }
+
+  function close(restoreFocus = true) {
+    if (!open.value) return;
+    // the popup is about to unmount: if the keyboard was inside it, focus
+    // would fall to <body> and the user's place in the page would be lost.
+    // Hand it back to the chip that opened the list.
+    const hadFocus = !!root.value?.contains(document.activeElement);
     open.value = false;
     query.value = "";
+    activeKey.value = null;
+    if (restoreFocus && hadFocus) void nextTick(() => chipEl.value?.focus());
   }
 
   // click-outside closes the list - the native select gave us this for free,
@@ -509,5 +708,23 @@
      of being clipped by the pane. The composer never sets the var. */
   .model-select.measured .model-body {
     max-height: var(--model-pop-body, 260px);
+  }
+  /* the KEYBOARD CURSOR (card t_a990f422): the ACTIVE row is the one the
+     roving tabindex and DOM focus sit on. It reads as the hover row, so a
+     keyboard user sees the same affordance a mouse user gets; a disabled
+     row keeps the highlight too (its reason is information, and Enter on
+     it is a no-op, never a pick). */
+  .model-list li.active {
+    background: var(--z1-raised);
+    color: var(--text);
+  }
+  .model-list li:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+  }
+  .model-inherit:focus-visible,
+  .model-sec-head:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
   }
 </style>
