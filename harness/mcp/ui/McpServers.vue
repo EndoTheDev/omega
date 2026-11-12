@@ -100,17 +100,16 @@
             </div>
             <!-- the toggle is the shared TogglePill (card t_d93864e7):
                  the pill this module originated in t_83f37525, extracted
-                 to ui/ - a BUTTON whose armed state comes from the
-                 reactive model, the t_87303e8f law structural. The write
-                 path stays local: the arm/confirm two-step, POST
-                 /mcp/toggle riding toggle.ts. -->
+                 to ui/ - a BUTTON whose state comes from the reactive
+                 model, the t_87303e8f law structural. The write path
+                 stays local: ONE click POSTs /mcp/toggle riding
+                 toggle.ts (card t_5051d523: the arm/confirm two-step is
+                 dead - it made every server need a double click). -->
             <TogglePill
               class="reg-row-ctrl"
               :state="serverEnabled(s)"
               :disabled="busy !== null"
-              :armed="armed === s.name"
               :label="`${serverEnabled(s) ? 'disable' : 'enable'} ${s.name}`"
-              :confirm-label="`confirm apply to ${s.name}?`"
               @click="onToggle(s)" />
           </div>
           <p
@@ -137,11 +136,6 @@
             v-else-if="serverEnabled(s)"
             class="mcp-none">
             no tools discovered
-          </p>
-          <p
-            v-if="armed === s.name"
-            class="mcp-confirm">
-            {{ noteFor(s) }}
           </p>
         </li>
       </ul>
@@ -203,27 +197,22 @@
   }
 
   // --- the per-server toggle (card t_83f37525) ----------------------------
-  // The two-step RegistryList mechanic, armed locally: click 1 arms the
-  // row (the confirm note states the consequence), click 2 commits -
-  // no accidental first-click flips. busy holds the committing row's
-  // name so a stacked double-click cannot overlap writes.
-  const armed = ref<string | null>(null);
+  // ONE click commits (card t_5051d523: the two-step RegistryList
+  // mechanic this module copied - click 1 arms, click 2 applies, i.e.
+  // every server needed a double click - is dead everywhere). busy
+  // holds the committing row's name so a stacked double-click cannot
+  // overlap writes.
   const busy = ref<string | null>(null);
 
   function onToggle(s: McpServerWire) {
     if (busy.value !== null) return;
-    if (armed.value !== s.name) {
-      armed.value = s.name;
-      return;
-    }
     apply(s);
   }
 
   // the commit: POST the toggle chain (toggle.ts), then re-render from
-  // the fresh listing. Armed clears whether the write lands or throws.
+  // the fresh listing.
   async function apply(s: McpServerWire) {
     const target = !serverEnabled(s);
-    armed.value = null;
     busy.value = s.name;
     try {
       const rep = await setMcpServerEnabled(s.name, target);
@@ -234,12 +223,6 @@
     } finally {
       busy.value = null;
     }
-  }
-
-  function noteFor(s: McpServerWire): string {
-    return serverEnabled(s)
-      ? `disable ${s.name}? click again to confirm`
-      : `enable ${s.name}? click again to confirm`;
   }
 
   // one key per row identity (the config file owns the names)
@@ -455,11 +438,6 @@
     margin: 0;
     font-size: 10.5px;
     opacity: 0.5;
-  }
-  .mcp-confirm {
-    margin: 0;
-    font-size: 11px;
-    opacity: 0.75;
   }
   /* the disabled row stays visible, muted (the skills list law) */
   .mcp-off .mcp-name,

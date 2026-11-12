@@ -5,18 +5,28 @@
        dot shifts, border goes --ok when on, transparent background - the
        MCP tab's look (t_83f37525) extracted so the registry rows
        (skills/tools/agents) and the MCP rows speak the same toggle. The
-       mechanics stay with the host: the arm/confirm two-step, the write
-       path, the confirm note under the row. This owns the LOOK and the
-       armed aria only. No :checked prop exists for Vue's prop diff
-       to skip, so the t_87303e8f stale-arm trap is structurally dead
-       for every host that adopts the pill. -->
+       MECHANICS stay with the host: the write path, the busy lock, the
+       consequence hint. This owns the LOOK only.
+
+       CARD t_5051d523: ONE CLICK = ONE SWITCH. The two-step arm/confirm
+       (click one armed the row, click two committed) is DEAD - it made
+       every tab's enable/disable need a double click. The pill carries
+       NO armed state and NO confirm label any more, so that shape
+       cannot come back through the shared component: one activation
+       emits exactly one intent and the host applies it. The consequence
+       text that used to gate the second click now rides the pill's
+       title (`hint`) - readable on hover, never a gate. A native
+       <button> keeps keyboard parity: Enter and Space fire the same
+       single click, so there is no keydown path to double-fire. No
+       :checked prop exists for Vue's prop diff to skip, so the
+       t_87303e8f stale-arm trap stays structurally dead. -->
   <button
     type="button"
     class="toggle-pill"
-    :class="{ on: state, armed: armed }"
+    :class="{ on: state }"
     :disabled="disabled"
-    :aria-label="armed ? confirmLabel : label"
-    :title="armed ? confirmLabel : label"
+    :aria-label="label"
+    :title="hint ? `${label} - ${hint}` : label"
     @click="emit('click')">
     <span class="toggle-pill-thumb"></span>
   </button>
@@ -30,20 +40,16 @@
     defineProps<{
       /** the row's current state, rendered as the dot + border truth */
       state: boolean;
-      /** the steady aria: "enable x" / "disable x" */
+      /** the accessible name: "enable x" / "disable x" (the next move) */
       label: string;
-      /** the ARMED aria: the confirm question (armed = click two commits).
-          Defaults to the steady label - a host without the two-step
-          (none today) reads exactly as before. */
-      confirmLabel?: string;
-      /** the two-step middle state. Aria only - the visual arm feedback
-          is the confirm note under the row, the MCP reference's shape;
-          adding an armed border here would diverge from it. */
-      armed?: boolean;
+      /** the consequence hint (what an exclusion means, a module's
+          dependents). Tooltip only - card t_5051d523 killed the arm
+          step that used to render this text as a gate. */
+      hint?: string;
       /** the host's busy lock: one write at a time */
       disabled?: boolean;
     }>(),
-    { confirmLabel: "", armed: false, disabled: false },
+    { hint: "", disabled: false },
   );
 
   const emit = defineEmits<{

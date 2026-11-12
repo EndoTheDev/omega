@@ -193,8 +193,9 @@ appends the run's final message to `file`. Legacy values
 
 omega runs the scheduler at serve; jobs hot-reload from the file.
 The webui Cron tab edits every field through `POST /cron/save` +
-`/cron/delete` (schema-validated upserts) and the two-step toggle via
-`POST /cron/toggle`, which writes only the per-job `enabled:` flag.
+`/cron/delete` (schema-validated upserts) and the row toggle via
+`POST /cron/toggle`, which writes only the per-job `enabled:` flag
+(one click, card t_5051d523).
 An agent-home wake job is refused by the editor (the cross-home law).
 omega can propose jobs in conversation but never writes the file
 itself.
