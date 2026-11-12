@@ -23,7 +23,8 @@
     <aside
       ref="rootEl"
       class="settings aside pane inspector-panel"
-      :class="{ open: open, narrow: narrow }">
+      :class="{ open: open, narrow: narrow }"
+      @keydown="onDrawerKey">
 
     <!-- card t_8b464090 (Endo, 2026-11-11) - the ONE-DOCUMENT law, which
          SUPERSEDES rulings 1 and 12 of the 2026-11-10 grill. The pane is a
@@ -68,23 +69,29 @@
       </button>
       <button
         v-if="narrow"
+        ref="jumpEl"
         class="settings-jump"
         type="button"
         :aria-expanded="drawerOpen"
         aria-label="settings categories"
-        @click="drawerOpen = !drawerOpen">
+        @click="drawerOpen ? closeDrawer() : openDrawer()">
         <Icon class="settings-jump-icon" name="chevron-down" :size="12" />
         <span>categories</span>
       </button>
     </div>
 
     <div class="settings-split">
+      <!-- the scrim is DECORATION (card t_a990f422): it carries no name, no
+           state and no focus - role="presentation" keeps it out of the
+           accessibility tree while a click on it still closes the drawer -->
       <div
         v-if="narrow && drawerOpen"
         class="settings-scrim"
-        @click="drawerOpen = false" />
+        role="presentation"
+        @click="closeDrawer()" />
       <nav
         v-if="!narrow || drawerOpen"
+        ref="drawerEl"
         class="settings-nav"
         :class="{ drawer: narrow }"
         aria-label="settings categories">
@@ -991,6 +998,74 @@
   // the narrow drawer: the SAME jump links over the SAME document
   const drawerOpen = ref(false);
 
+  // --- the DRAWER's focus law (card t_a990f422) ---------------------------
+  //
+  // The narrow pane's nav is a MODAL drawer: it covers the document behind a
+  // scrim, so while it is open the keyboard may not wander into that
+  // document, Escape must close it, and closing must hand focus back to the
+  // toggle that opened it. One OPEN path and one CLOSE path own all three:
+  // a jump-link click (selectCategory/deselect), a scrim click and Escape
+  // all land in closeDrawer(), so no close can strand focus on <body>.
+  const drawerEl = ref<HTMLElement | null>(null);
+  const jumpEl = ref<HTMLButtonElement | null>(null);
+
+  const FOCUSABLE =
+    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  function drawerFocusables(): HTMLElement[] {
+    const nav = drawerEl.value;
+    if (!nav) return [];
+    return Array.from(nav.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+      (el) => el.offsetParent !== null,
+    );
+  }
+
+  function openDrawer() {
+    drawerOpen.value = true;
+    // a modal drawer holds focus, so focus enters it - the trap has nothing
+    // to hold otherwise
+    void nextTick(() => drawerFocusables()[0]?.focus());
+  }
+
+  function closeDrawer() {
+    if (!drawerOpen.value) return;
+    drawerOpen.value = false;
+    // the covered document is the user's next stop: the toggle is where
+    // they were, and Tab from it walks into the section they just picked
+    void nextTick(() => jumpEl.value?.focus());
+  }
+
+  /** Escape closes; Tab and Shift+Tab WRAP inside the drawer. The trap is a
+      boundary check on the pane, not a body-wide listener: focus starts
+      inside the drawer (openDrawer) and every wrap returns it there. */
+  function onDrawerKey(e: KeyboardEvent) {
+    if (!narrow.value || !drawerOpen.value) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      closeDrawer();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const items = drawerFocusables();
+    if (!items.length) return;
+    const first = items[0]!;
+    const last = items[items.length - 1]!;
+    const active = document.activeElement as HTMLElement | null;
+    if (!active || !drawerEl.value?.contains(active)) {
+      e.preventDefault();
+      (e.shiftKey ? last : first).focus();
+      return;
+    }
+    if (e.shiftKey && active === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
   // EXPANSION IS DERIVED FROM THE SELECTION. There is no collapsed set,
   // no per-parent toggle and nothing remembered (this supersedes
   // t_5656d52f's default-expanded model): exactly the branch the
@@ -1224,7 +1299,7 @@
     // the observer must not fight the smooth scroll it just started
     lockSpy(650);
     scrollToAnchor(id);
-    if (narrow.value) drawerOpen.value = false;
+    if (narrow.value) closeDrawer();
   }
 
   function deselect() {
@@ -1235,7 +1310,7 @@
     persistAnchor(null);
     lockSpy(); // stays shut until the NEXT real scroll
     scrollToAnchor(null);
-    if (narrow.value) drawerOpen.value = false;
+    if (narrow.value) closeDrawer();
   }
 
   // Any real input on the pane releases a deselect's suppression - that
@@ -2309,6 +2384,19 @@
     text-transform: uppercase;
     letter-spacing: 1px;
     color: var(--text-dim);
+  }
+
+  /* card t_a990f422 (WCAG 2.2 SC 2.4.11): the pane's ONE heading STICKS, so
+     a scroll that lands a box flush at scrollTop 0 paints it BEHIND that
+     heading. The jump-to-section path measures the heading itself
+     (pinnedHeadingHeight); this constant covers every scroll omega does NOT
+     issue - the browser scrolling a focused row into view, an AT
+     scrollIntoView, an anchor jump. The pinned block measures 42px on the
+     lane (20px padding-top + 6px padding-bottom + the 11px heading's 15px
+     line box + the 1px rule), so 44px lands a target TWO pixels clear of it
+     instead of exactly under it. main.css still owns the body's box. */
+  .settings-body {
+    scroll-padding-top: 44px;
   }
 
   /* narrow (card t_8b464090): the SAME document, the nav as a drawer over
