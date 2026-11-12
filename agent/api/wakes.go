@@ -257,6 +257,65 @@ func (s *Server) drainWakes(sessionID string) {
 	}
 }
 
+// wakeNoteSink wraps a wake run's TurnSink (card t_954a67a6): a wake
+// run must NEVER end with zero persisted output. The inner sink's
+// all-empty-assistant skip is right for a normal turn (a blank stream
+// before an error end finished nothing the provider produced), but on a
+// wake run it ate the re-entry turn whole - no row, no log, no error,
+// and the transcript read as a conversation that simply stopped. The
+// wrapper sees the empty assistant BEFORE the inner sink drops it and
+// leaves a visible bookkeeping note: the diagnostic breadcrumb and the
+// honest UI state in one row. Non-wake runs never get this wrapper, so
+// their empty-skip is untouched.
+type wakeNoteSink struct {
+	s  *Server
+	id string
+	// inner is the run's real sink (store or ephemeral); it still
+	// applies the skip - the note is what stands in for the row it
+	// drops.
+	inner agent.TurnSink
+	// noted latches one note per run.
+	noted bool
+}
+
+// wakeEmptyNoteText words the note: the tool that settled when the run's
+// input names one, plus the way forward.
+func wakeEmptyNoteText(toolName string) string {
+	if toolName == "" {
+		return "[wake turn ended with no output - send a message to continue]"
+	}
+	return "[wake turn for " + toolName + " ended with no output - send a message to continue]"
+}
+
+// wakeToolName reads the settled result the run re-entered with (the
+// wake launch passes it as the run's only input).
+func wakeToolName(ctx context.Context) string {
+	for _, m := range agent.PersistInput(ctx) {
+		if y, ok := m.(core.YieldResult); ok {
+			return y.ToolName
+		}
+	}
+	return ""
+}
+
+// AppendTurnMessage passes the message through and, when a wake run's
+// completion is all-empty, persists the note instead of letting that
+// completion vanish.
+func (w *wakeNoteSink) AppendTurnMessage(ctx context.Context, msg core.Message) error {
+	if a, ok := msg.(core.Assistant); ok && !w.noted && agent.IsEmptyAssistant(a) {
+		w.noted = true
+		name := wakeToolName(ctx)
+		if lgr := w.s.Logger(); lgr != nil {
+			lgr.Printf("wake turn for session %s (%s) ended with no output - note persisted", w.id, name)
+		}
+		w.s.appendSessionBookkeeping(w.id, core.NewUser(wakeEmptyNoteText(name)))
+	}
+	if w.inner == nil {
+		return nil
+	}
+	return w.inner.AppendTurnMessage(ctx, msg)
+}
+
 // launchWake starts one wake run: the settled result re-enters through
 // the home input path - the same prepareRun/launchRun pipe a user send
 // takes (ruling 3: the loop never changes, any future writer of the

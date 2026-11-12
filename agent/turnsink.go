@@ -81,12 +81,21 @@ type storeTurnSink struct {
 	headPinned   bool
 }
 
+// IsEmptyAssistant reports whether a completion carries nothing at all -
+// no content, no thinking, no tool calls. Both turn sinks skip such a
+// message (a blank stream before an error end finished no message the
+// provider ever produced, so there is no row to write); the wake path
+// turns the same shape into a visible note instead of a silent drop
+// (card t_954a67a6).
+func IsEmptyAssistant(a core.Assistant) bool {
+	return a.Content == "" &&
+		(a.Thinking == nil || *a.Thinking == "") &&
+		len(a.ToolCalls) == 0
+}
+
 func (s *storeTurnSink) AppendTurnMessage(ctx context.Context, msg core.Message) error {
 	a, isAssistant := msg.(core.Assistant)
-	if isAssistant &&
-		a.Content == "" &&
-		(a.Thinking == nil || *a.Thinking == "") &&
-		len(a.ToolCalls) == 0 {
+	if isAssistant && IsEmptyAssistant(a) {
 		return nil
 	}
 	if isAssistant && !s.headPinned {
