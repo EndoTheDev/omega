@@ -1757,13 +1757,22 @@ func (s *Server) pinProvider(req *chatRequest) (agent.Provider, *runError) {
 // conversation's store equivalent). A legacy no-store non-ephemeral
 // run gets nil - it persists nothing, exactly as before.
 func (s *Server) turnSinkFor(req chatRequest) agent.TurnSink {
+	var sink agent.TurnSink
 	if req.Ephemeral && req.SessionID != "" {
-		return &ephTurnSink{r: &s.eph, id: req.SessionID}
+		sink = &ephTurnSink{r: &s.eph, id: req.SessionID}
+	} else {
+		if s.store == nil || req.SessionID == "" {
+			return nil
+		}
+		sink = agent.NewStoreTurnSink(s.store, req.SessionID, req.branchParent)
 	}
-	if s.store == nil || req.SessionID == "" {
-		return nil
+	if req.wake {
+		// A wake run must never end with zero persisted output (card
+		// t_954a67a6): the wrapper stands a visible note in for the
+		// all-empty completion the sink would otherwise drop silently.
+		sink = &wakeNoteSink{s: s, id: req.SessionID, inner: sink}
 	}
-	return agent.NewStoreTurnSink(s.store, req.SessionID, req.branchParent)
+	return sink
 }
 
 // streamAgentEvents runs the agent event loop, writing SSE events to w.
