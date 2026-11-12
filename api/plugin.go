@@ -17,6 +17,11 @@ type Plugin struct {
 	// logical frontend - a run started on any mirror must be visible to
 	// the reads and reattach on all of them.
 	hub *agentapi.RunHub
+	// sockets is the process-wide push hub (t_229edd92): one fan-out
+	// for every bind's /ws, for the same reason as hub - a multi-bind
+	// process serves one logical frontend, and a browser attached to
+	// one bind must see the frames another bind publishes.
+	sockets *agentapi.SocketHub
 	// chat is the conversation's canvas capsule (chat-last 1/3): one
 	// instance per plugin, registered with the canvas seam below and
 	// shared by every bind's channel start (multi-bind: the last
@@ -91,6 +96,11 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// at channel start, so action-pipe launches, reattach reads and the
 	// SSE attach agree on what is live regardless of which bind speaks.
 	p.hub = &agentapi.RunHub{}
+	// ONE push hub per process (t_229edd92), the run registry's law one
+	// seam over: every bind's server binds it at wire, every /ws
+	// attaches to it, so a frame published on any bind reaches every
+	// connected browser.
+	p.sockets = agentapi.NewSocketHub()
 	p.canvas = &sharedCanvas{}
 	p.api = api
 	for _, b := range binds {
@@ -102,6 +112,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 			publicHosts:      cfg.PublicHosts,
 			chat:             p.chat,
 			hub:              p.hub,
+			sockets:          p.sockets,
 			canvas:           p.canvas,
 			ext:              p.api,
 		}

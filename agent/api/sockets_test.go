@@ -490,3 +490,43 @@ func TestSocketTopicsDocumented(t *testing.T) {
 		t.Fatal("docs/architecture.md does not document the push seam (/ws)")
 	}
 }
+
+// TestBindSocketHubSharesOneFanOutAcrossBinds pins the multi-bind push
+// seam (t_229edd92): BindSocketHub is the one binding, and a frame any
+// bound server publishes reaches a subscriber attached through another.
+// NewServer's own hub is the single-server floor (runs: &RunHub{} has
+// the same shape); what makes binds share is the binding, so this test
+// is structurally decisive - with per-bind hubs each server fans out to
+// its own subscriber set and the first subscriber below stays blind.
+func TestBindSocketHubSharesOneFanOutAcrossBinds(t *testing.T) {
+	hub := NewSocketHub()
+	sA := NewServer(nil, nil, nil, nil, nil, nil)
+	sB := NewServer(nil, nil, nil, nil, nil, nil)
+	sA.BindSocketHub(hub)
+	sB.BindSocketHub(hub)
+	if sA.Sockets() != sB.Sockets() {
+		t.Fatalf("bound binds serve different hubs (%p vs %p): one hub cannot be per-bind and shared", sA.Sockets(), sB.Sockets())
+	}
+
+	subA := sA.Sockets().Attach()
+	defer subA.Close()
+	subB := sB.Sockets().Attach()
+	defer subB.Close()
+
+	// Published through SERVER B's own hook (the run-state edge every
+	// launch takes); both binds' subscribers must see it.
+	sB.publishRunState("mb-shared", true)
+	for name, sub := range map[string]*SocketSub{"bind A": subA, "bind B": subB} {
+		frame := recvFrame(t, sub)
+		if frame.Topic != TopicRuns || frame.Session != "mb-shared" {
+			t.Fatalf("%s received %+v, want the runs/mb-shared frame published on bind B", name, frame)
+		}
+		var state RunState
+		if err := json.Unmarshal(frame.Data, &state); err != nil {
+			t.Fatalf("%s: decode run state: %v", name, err)
+		}
+		if !state.Active {
+			t.Fatalf("%s: run state active = false, want true", name)
+		}
+	}
+}
