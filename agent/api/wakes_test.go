@@ -351,6 +351,122 @@ func TestWakeEmptyTurnLeavesNote(t *testing.T) {
 	}
 }
 
+// TestWakeStreamErrorLeavesNote: the adjacent break in the same
+// contract (card t_9821e39b). A wake run killed mid-stream by a
+// provider stream error (StreamEnd with FinishReason="error") never
+// reaches the loop's persistence epilogue, so the all-empty note
+// wrapper never sees an Assistant at all: the live UI painted the
+// agent_end error frame, the lane log wrote the "stream error" line,
+// and the SESSION kept no row - after a reload the re-entry turn
+// vanished with zero trace. The run must leave a visible bookkeeping
+// note naming the tool that settled instead.
+func TestWakeStreamErrorLeavesNote(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	// The wake run's only script: the provider stream dies before a
+	// single completion - no chunk, no calls, just the error end.
+	prov := newWakeScripted("step", [][]core.ProviderStreamEvent{
+		{core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "provider 500: upstream exploded"}},
+	})
+	a := agent.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(loop.Loop{})
+	s := NewServer(a, nil, st, nil, nil, nil)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	createSession(t, ts, "s1")
+	muteTitles(t, st, "s1")
+
+	// The settled result re-enters through the real wake path.
+	s.wakeHome("s1", core.YieldResult{
+		ToolCallID: "call_9err0r",
+		ToolName:   "files.glob",
+		Content:    "a.txt",
+		Timestamp:  core.NowISO(),
+	})
+	waitFor(t, "wake run launched and finished", func() bool {
+		return s.wakeLaunchCount("s1") == 1 && !s.runs.active("s1")
+	})
+
+	msgs, err := st.GetMessages(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("get messages: %v", err)
+	}
+	note := ""
+	for _, m := range msgs {
+		if u, ok := m.(core.User); ok && contains(u.Content, "provider error") {
+			note = u.Content
+		}
+		if _, ok := m.(core.Assistant); ok {
+			t.Errorf("the errored wake turn persisted an assistant row the live stream never finished: %s", sessionRowDump(msgs))
+		}
+	}
+	if note == "" {
+		dumpSessionRows(t, st, "s1")
+		t.Fatal("the stream-errored wake turn left no note - the run vanished with zero trace")
+	}
+	if !contains(note, "files.glob") {
+		t.Errorf("note %q does not name the tool that settled", note)
+	}
+	// The note is the run's last word: the settled result still carries
+	// its own row before it.
+	if !hasYieldResult(msgs, "call_9err0r", core.YieldResult{}) {
+		dumpSessionRows(t, st, "s1")
+		t.Error("the settled result row went missing")
+	}
+}
+
+// TestNonWakeStreamErrorLeavesNoRow pins the untouched half (scope
+// law, card t_9821e39b): a NON-wake run killed by a stream error keeps
+// today's behavior - the live error frame is the whole trace, nothing
+// extra is written behind the sender's back.
+func TestNonWakeStreamErrorLeavesNoRow(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	prov := newWakeScripted("step", [][]core.ProviderStreamEvent{
+		{core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "provider 500: upstream exploded"}},
+	})
+	a := agent.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(loop.Loop{})
+	s := NewServer(a, nil, st, nil, nil, nil)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	createSession(t, ts, "s1")
+	muteTitles(t, st, "s1")
+
+	resp, cancel, sc := postChatStream(t, ts, "s1")
+	defer cancel()
+	var lines []string
+	for sc.Scan() {
+		lines = append(lines, sc.Text())
+	}
+	resp.Body.Close()
+	waitFor(t, "run finished", func() bool { return !s.runs.active("s1") })
+
+	// The error really reached the live wire - otherwise this pin
+	// would pass on a run that never errored at all.
+	if !contains(strings.Join(lines, "\n"), `"finish_reason":"error"`) {
+		t.Fatalf("no error-end frame on the wire; frames: %v", lines)
+	}
+	msgs, err := st.GetMessages(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("get messages: %v", err)
+	}
+	for _, m := range msgs {
+		if u, ok := m.(core.User); ok && contains(u.Content, "provider error") {
+			t.Fatalf("a non-wake stream error wrote a bookkeeping note: %q", u.Content)
+		}
+		if _, ok := m.(core.Assistant); ok {
+			t.Errorf("the errored non-wake run persisted an assistant row: %s", sessionRowDump(msgs))
+		}
+	}
+}
+
 // TestWakeGuardUserSendResets: parkHome parks with a persisted visible
 // note; a plain user send through the /chat pipe resets the guard
 // (launchRun's non-wake reset) and runs to its own end. The session
