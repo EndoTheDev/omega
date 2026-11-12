@@ -140,7 +140,7 @@ func fileError(w http.ResponseWriter, status int, msg string) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v) //nolint:errcheck // the client is gone; nothing to report to
+	_ = json.NewEncoder(w).Encode(v) // the client is gone; nothing to report to
 }
 
 // files root sources, reported on every /files/browse response so the
@@ -590,23 +590,23 @@ func (r *Routes) handleFilesWrite(w http.ResponseWriter, req *http.Request) {
 	}
 	tmp := tmpFile.Name()
 	if _, werr := tmpFile.WriteString(body.Content); werr != nil {
-		tmpFile.Close() //nolint:errcheck // best-effort cleanup
-		os.Remove(tmp)  //nolint:errcheck // best-effort cleanup
+		_ = tmpFile.Close() // best-effort cleanup
+		_ = os.Remove(tmp)  // best-effort cleanup
 		fileError(w, http.StatusInternalServerError, "write file: "+werr.Error())
 		return
 	}
 	if cerr := tmpFile.Close(); cerr != nil {
-		os.Remove(tmp) //nolint:errcheck // best-effort cleanup
+		_ = os.Remove(tmp) // best-effort cleanup
 		fileError(w, http.StatusInternalServerError, "write file: "+cerr.Error())
 		return
 	}
 	if werr := os.Chmod(tmp, 0o644); werr != nil {
-		os.Remove(tmp) //nolint:errcheck // best-effort cleanup
+		_ = os.Remove(tmp) // best-effort cleanup
 		fileError(w, http.StatusInternalServerError, "write file: "+werr.Error())
 		return
 	}
 	if werr := os.Rename(tmp, resolved); werr != nil {
-		os.Remove(tmp) //nolint:errcheck // best-effort cleanup
+		_ = os.Remove(tmp) // best-effort cleanup
 		fileError(w, http.StatusInternalServerError, "write file: "+werr.Error())
 		return
 	}

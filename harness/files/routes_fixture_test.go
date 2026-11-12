@@ -35,7 +35,7 @@ func chdirToWorkdir(t *testing.T) string {
 		testWorkdir = dir
 		t.Cleanup(func() {
 			testWorkdir = ""
-			os.Chdir("/") //nolint:errcheck // test cleanup only
+			_ = os.Chdir("/") // test cleanup only
 		})
 	}
 	return testWorkdir

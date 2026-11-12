@@ -257,7 +257,7 @@ func opArgs(op fileOp) map[string]any {
 func restoreFiles(snap map[string][]byte, existed map[string]bool, modes map[string]os.FileMode) {
 	for abs, data := range snap {
 		if !existed[abs] {
-			os.Remove(abs) //nolint:errcheck // rollback is best effort
+			_ = os.Remove(abs) // rollback is best effort
 			continue
 		}
 		mode, ok := modes[abs]

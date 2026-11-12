@@ -219,7 +219,7 @@ func (fm *FileMemory) snapshotFiles() func() {
 				}
 			}
 			if !existed {
-				os.Remove(path) //nolint:errcheck // snapshot semantics
+				_ = os.Remove(path) // snapshot semantics
 			}
 		}
 	}

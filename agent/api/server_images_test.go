@@ -79,7 +79,7 @@ func TestAttachImage(t *testing.T) {
 	// upstream: a server that answers with PNG bytes
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
-		w.Write(onePNG) //nolint:errcheck // test server
+		_, _ = w.Write(onePNG) // test server
 	}))
 	defer upstream.Close()
 
@@ -114,7 +114,7 @@ func TestAttachImageNonImage(t *testing.T) {
 	defer func() { internalHostGuard = oldGuard }()
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("<html>this is text</html>")) //nolint:errcheck // test server
+		_, _ = w.Write([]byte("<html>this is text</html>")) // test server
 	}))
 	defer upstream.Close()
 
@@ -138,7 +138,7 @@ func TestAttachImageOversize(t *testing.T) {
 	defer func() { internalHostGuard = oldGuard }()
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(onePNG) //nolint:errcheck // test server
+		_, _ = w.Write(onePNG) // test server
 		// pad past the cap
 		if _, err := w.Write(make([]byte, maxChatImageBytes+1)); err != nil {
 			t.Errorf("write: %v", err)

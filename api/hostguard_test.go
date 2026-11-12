@@ -20,7 +20,7 @@ import (
 func guardServer(t *testing.T, bind string) *httptest.Server {
 	t.Helper()
 	g := &hostGuard{next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "ok") //nolint:errcheck // test sink
+		_, _ = io.WriteString(w, "ok") // test sink
 	})}
 	if bind != "" {
 		g.addr.Store(bind)

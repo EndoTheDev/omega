@@ -674,7 +674,7 @@ func writeDisabled(path string, fold DisabledNamespaces) error {
 		return fmt.Errorf("write config: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp) //nolint:errcheck // best-effort cleanup
+		_ = os.Remove(tmp) // best-effort cleanup
 		return fmt.Errorf("replace config: %w", err)
 	}
 	return nil
