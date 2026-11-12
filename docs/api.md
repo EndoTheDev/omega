@@ -2,10 +2,14 @@
 
 The surface `omega serve` exposes: SSE chat streaming, session CRUD +
 tree operations, the settings/theming/files/tasks surfaces, and the
-embedded webui SPA at `/`. This is the only unauthenticated network
-surface omega has — **loopback only by default**; extra binds (e.g. a
-Tailscale IP for Traefik) are an explicit `server.bind` opt-in, and
-the public edge always sits behind an auth wall.
+embedded webui SPA at `/`. This is the only network surface omega has and
+it is **unauthenticated** — there is no login, no token, no auth
+middleware anywhere in the tree. **Loopback only by default**; extra
+binds (e.g. a Tailscale IP for Traefik) are an explicit `server.bind`
+opt-in and stay unauthenticated, so whatever sits beyond loopback is
+exposed to whoever can reach the port. The only gate is the Host/Origin
+heuristic in `api/hostguard.go`, which stops cross-site browser writes -
+it is not authentication.
 
 Routes are registered in `api/server.go`. Anything
 documented below that is not in that mux is not real.
@@ -729,9 +733,13 @@ surface stays untouched - the panel is additive for canvas renderers.
 One websocket per browser connection, and every live update is a typed
 topic on it (card t_7624bab1, design of record
 `Workshop/omega/websocket-channel.md`). The socket replaces the webui's
-polling: no shell or module view polls a GET route on a cadence beside it
-(the kanban board's 5s `GET /tasks` died with card t_b5784de3, the logs
-pane's tail with t_0e7bc0bb).
+polling: no shell view polls a GET route on a cadence beside it (the
+kanban board's 5s `GET /tasks` died with card t_b5784de3, the logs
+pane's tail with t_0e7bc0bb). One module pane is the exception and polls
+on purpose: the observability tab re-reads `/observability/events` every
+5s while it is mounted (`harness/observability/ui/rows.ts`, `REFRESH_MS`),
+because the closed topic set carries no observability topic - a topic
+there would be an engine change (`docs/webui.md`).
 
 **Events are hints, state is truth.** Nothing is buffered or replayed
 server-side. On close the client reconnects with backoff, does one
@@ -750,7 +758,8 @@ without that pulse the pane would stay stale until some later mutation
 happened to fire (card t_b5784de3).
 
 The client half (card t_896cf5a8, `webui/app/composables/socket.ts`)
-owns one connection per page load: it subscribes to the five live topics,
+owns one connection per page load: it subscribes to five live topics by
+default (the sixth, `logs`, is added while a logs pane is mounted),
 reconnects on an exponential ladder (0.5s doubling, 15s cap, jitter),
 and runs a quiet-wire check - 15s without a frame while the health topic
 beats every 5s means a half-open socket that will never fire `close`
@@ -776,7 +785,9 @@ the browser's late close is ignored by the stale-socket guard in
 reports close").
 That timer is the liveness
 heartbeat, not a poller: no GET repeats on a cadence anywhere in the
-shell. The `chips` topic feeds the pending chip's live tail; `runs`
+shell (the one repeated GET in the product is a module pane, the
+observability tab's 5s ring read, see above). The `chips` topic feeds
+the pending chip's live tail; `runs`
 edges clear the pulse and wake an awaiting yielded call; `canvas` feeds
 the panel store and the toast funnel; the verdict list has no topic of
 its own and is refetched on chat call/turn edges, run edges and

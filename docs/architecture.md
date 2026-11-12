@@ -259,7 +259,7 @@ topic, `chips`) and reconnects; catch-up is a refetch of the visible
 panes through the GET routes plus one `GET /health`, because events are
 hints and state is truth. The GET API stays complete and authoritative.
 
-## The capsule-service namespace (the closed list, 7)
+### The capsule-service namespace (the closed list, 7)
 
 `skills`, `memory`, `trust`, `cron`, `notifications`, `verdicts`,
 `chat-runs` - services one capsule (or, for `chat-runs`, the serving
@@ -274,7 +274,7 @@ whole. The census flags each mounted key: `core/census.go`'s slot list
 `harness/kanban`'s `"kanban"` Provides() string is a mount-order
 claim only; nothing is offered under it.
 
-### Enforcement
+#### Enforcement
 
 - `agent/seams_test.go`: the substrate noun scan (core/ + llm/ carry
   no capsule name - comments and string keys never trip, the scan is
