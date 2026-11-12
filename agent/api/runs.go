@@ -375,7 +375,8 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		ctx = core.WithRunOutputTap(ctx, s.chipTap(req.SessionID))
 		// Turn copy persistence belongs to the loop (card t_471f6d4a),
 		// same wiring as the inline path.
-		ctx = agent.WithTurnSink(ctx, s.turnSinkFor(req))
+		sink := s.turnSinkFor(req)
+		ctx = agent.WithTurnSink(ctx, sink)
 		ctx = agent.WithPersistInput(ctx, req.persistInput)
 		// Ephemeral (card t_d96a5cd5): the loop filters the denied names
 		// AFTER every provider merge, so a tool an extension re-adds
@@ -388,6 +389,10 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		var recs []assistantRecord
 		var rec assistantRecord
 		var usage streamUsage
+		// erroredEnd records the loop's terminal error end (card
+		// t_9821e39b): the one signal that the run died before it
+		// persisted a completion, so the wake note below knows.
+		var erroredEnd bool
 		meter := newRunMeter()
 		runner := s.runAgent(&req)
 		for event := range runner.RunWithProvider(ctx, prov, messages, tools) {
@@ -418,6 +423,12 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 					}
 				}
 			}
+			// A terminal error end (a provider stream error ends the
+			// loop this way) persists nothing itself - the wake note
+			// below stands in for the row the turn never wrote.
+			if end, ok := event.(core.AgentEnd); ok && end.FinishReason == "error" {
+				erroredEnd = true
+			}
 			eventType, data, err := sseEvent(event)
 			if err != nil {
 				s.emitRunFrame(run, runFrame{event: "error", data: []byte("event encode: " + err.Error())})
@@ -429,6 +440,14 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		if err := ctx.Err(); errors.Is(err, context.DeadlineExceeded) {
 			s.emitRunFrame(run, runFrame{event: "error", data: []byte(
 				"run timeout: the run exceeded its wall-clock cap (" + s.runTimeout.String() + ") and was stopped")})
+		}
+		// Wake runs only (card t_9821e39b): a wake turn that died on a
+		// provider error leaves a visible note, so the re-entry turn
+		// never vanishes from the session on the next reload.
+		if erroredEnd && req.wake {
+			if ws, ok := sink.(*wakeNoteSink); ok {
+				ws.noteErrorEnd(ctx)
+			}
 		}
 		s.persistRun(runCtx, run, prov, req, append(recs, rec), usage, meter.stats(usage))
 	}()
