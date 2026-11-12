@@ -205,20 +205,20 @@ func (s *Server) handleAttachFile(w http.ResponseWriter, r *http.Request) {
 		case "session_id":
 			raw, rerr := io.ReadAll(io.LimitReader(part, 256))
 			if rerr != nil {
-				part.Close() //nolint:errcheck // best-effort
+				_ = part.Close() // best-effort
 				http.Error(w, "invalid request: "+rerr.Error(), http.StatusBadRequest)
 				return
 			}
 			sessionID = strings.TrimSpace(string(raw))
 		case "file":
 			if saved != nil {
-				part.Close() //nolint:errcheck // best-effort
+				_ = part.Close() // best-effort
 				http.Error(w, "invalid request: one file per request", http.StatusBadRequest)
 				return
 			}
 			att, serr := saveUpload(root, sessionID, part)
 			if serr != nil {
-				part.Close() //nolint:errcheck // best-effort
+				_ = part.Close() // best-effort
 				status := http.StatusBadRequest
 				if errors.Is(serr, errUploadTooLarge) {
 					status = http.StatusRequestEntityTooLarge
@@ -228,7 +228,7 @@ func (s *Server) handleAttachFile(w http.ResponseWriter, r *http.Request) {
 			}
 			saved = att
 		}
-		part.Close() //nolint:errcheck // best-effort
+		_ = part.Close() // best-effort
 	}
 	if saved == nil {
 		http.Error(w, "invalid request: file part is required", http.StatusBadRequest)
@@ -240,7 +240,7 @@ func (s *Server) handleAttachFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(encoded) //nolint:errcheck // best-effort response
+	_, _ = w.Write(encoded) // best-effort response
 }
 
 // errUploadTooLarge separates the size refusal from the other write

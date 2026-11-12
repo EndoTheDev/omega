@@ -147,7 +147,7 @@ func spaHandler(fsys fs.FS) http.Handler {
 					return
 				}
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				w.Write(b) //nolint:errcheck // best-effort static response
+				_, _ = w.Write(b) // best-effort static response
 				return
 			}
 		}
@@ -206,5 +206,5 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	// The same body the health topic pushes (api/ws.go): one shape, so a
 	// reconnecting client's single fetch and the pushed frames agree.
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(s.healthState()) //nolint:errcheck // best-effort response body
+	_ = json.NewEncoder(w).Encode(s.healthState()) // best-effort response body
 }

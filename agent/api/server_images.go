@@ -231,5 +231,5 @@ func (s *Server) handleAttachImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(encoded) //nolint:errcheck // best-effort response
+	_, _ = w.Write(encoded) // best-effort response
 }

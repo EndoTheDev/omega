@@ -81,7 +81,7 @@ func TestFilesRootResolutionChain(t *testing.T) {
 
 	// default_workspace set, still no session: the knob wins.
 	ws := t.TempDir()
-	os.MkdirAll(filepath.Join(ws, "marker"), 0o755) //nolint:errcheck // setup
+	_ = os.MkdirAll(filepath.Join(ws, "marker"), 0o755) // setup
 	setDefault(ws)
 	_, root, source = browseRoot(t, s, "/files/browse")
 	if source != filesSourceDefault || root != ws {
@@ -105,8 +105,8 @@ func TestFilesRootSessionOutranksDefault(t *testing.T) {
 	s, _, st, setDefault := filesRootServer(t)
 	ws := t.TempDir()
 	sessDir := t.TempDir()
-	os.MkdirAll(filepath.Join(sessDir, "sess-marker"), 0o755) //nolint:errcheck // setup
-	os.MkdirAll(filepath.Join(ws, "default-marker"), 0o755)   //nolint:errcheck // setup
+	_ = os.MkdirAll(filepath.Join(sessDir, "sess-marker"), 0o755) // setup
+	_ = os.MkdirAll(filepath.Join(ws, "default-marker"), 0o755)   // setup
 	setDefault(ws)
 	id := createWorkspaceSession(t, st, sessDir)
 
@@ -165,7 +165,7 @@ func TestFilesConfinementUnderSessionRoot(t *testing.T) {
 	s, cwd, st, _ := filesRootServer(t)
 	sessDir := t.TempDir()
 	id := createWorkspaceSession(t, st, sessDir)
-	os.WriteFile(filepath.Join(sessDir, "notes.txt"), []byte("hello"), 0o644) //nolint:errcheck // setup
+	_ = os.WriteFile(filepath.Join(sessDir, "notes.txt"), []byte("hello"), 0o644) // setup
 
 	// read inside the resolved root works
 	req := httptest.NewRequest(http.MethodGet, "/files/read?path=notes.txt&session="+id, nil)
@@ -178,7 +178,7 @@ func TestFilesConfinementUnderSessionRoot(t *testing.T) {
 	// the SAME relative path does NOT resolve against cwd - the file
 	// only lives in the session workspace
 	cwdFile := filepath.Join(cwd, "only-in-cwd.txt")
-	os.WriteFile(cwdFile, []byte("x"), 0o644) //nolint:errcheck // setup
+	_ = os.WriteFile(cwdFile, []byte("x"), 0o644) // setup
 	req = httptest.NewRequest(http.MethodGet, "/files/read?path=only-in-cwd.txt&session="+id, nil)
 	rec = httptest.NewRecorder()
 	s.ServeHTTP(rec, req)
