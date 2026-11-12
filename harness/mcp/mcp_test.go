@@ -14,11 +14,11 @@ type fakeConn struct {
 	tools []mcpTool
 }
 
-func (f fakeConn) request(method string, params any) (json.RawMessage, error) {
+func (f fakeConn) request(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	return nil, nil
 }
-func (f fakeConn) listTools() ([]mcpTool, error) { return f.tools, nil }
-func (f fakeConn) callTool(name string, args map[string]any) (string, bool, error) {
+func (f fakeConn) listTools(ctx context.Context) ([]mcpTool, error) { return f.tools, nil }
+func (f fakeConn) callTool(ctx context.Context, name string, args map[string]any) (string, bool, error) {
 	return "called " + name, false, nil
 }
 func (f fakeConn) close() {}

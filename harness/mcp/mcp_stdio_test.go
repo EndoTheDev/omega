@@ -1,7 +1,9 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -85,7 +87,7 @@ func TestNewStdioServerHandshake(t *testing.T) {
 	defer s.close()
 
 	// listTools through the real stdio request path.
-	tools, err := s.listTools()
+	tools, err := s.listTools(context.Background())
 	if err != nil {
 		t.Fatalf("listTools: %v", err)
 	}
@@ -97,7 +99,7 @@ func TestNewStdioServerHandshake(t *testing.T) {
 	}
 
 	// callTool through the real stdio request path.
-	text, isErr, err := s.callTool("echo", map[string]any{"msg": "hi"})
+	text, isErr, err := s.callTool(context.Background(), "echo", map[string]any{"msg": "hi"})
 	if err != nil {
 		t.Fatalf("callTool: %v", err)
 	}
@@ -175,7 +177,7 @@ for line in sys.stdin:
 		t.Fatalf("newStdioServer: %v", err)
 	}
 	defer s.close()
-	text, _, err := s.callTool("envcheck", nil)
+	text, _, err := s.callTool(context.Background(), "envcheck", nil)
 	if err != nil {
 		t.Fatalf("callTool: %v", err)
 	}
@@ -195,7 +197,7 @@ func TestStdioServerRequestRoundTrip(t *testing.T) {
 	}
 	defer s.close()
 
-	result, err := s.request("tools/list", map[string]any{})
+	result, err := s.request(context.Background(), "tools/list", map[string]any{})
 	if err != nil {
 		t.Fatalf("request tools/list: %v", err)
 	}
@@ -208,11 +210,89 @@ func TestStdioServerRequestRoundTrip(t *testing.T) {
 	}
 
 	// Second request must still route correctly (no stale pending state).
-	result2, err := s.request("unknown/method", nil)
+	result2, err := s.request(context.Background(), "unknown/method", nil)
 	if err == nil {
 		t.Fatal("expected error for unknown method, got nil")
 	}
 	if result2 != nil {
 		t.Fatalf("expected nil result on error, got %s", result2)
 	}
+}
+
+// TestStdioServerRequestContextCancel is the receipt for ctx threading on the
+// stdio transport: a call the server never answers aborts on cancellation,
+// drops its pending slot, and leaves the connection usable.
+func TestStdioServerRequestContextCancel(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "slow_mcp_server.py")
+	scriptSrc := `import sys, json, time
+
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    req = json.loads(line)
+    if "id" not in req:
+        continue
+    method = req.get("method", "")
+    if method == "tools/call":
+        time.sleep(60)  # never answers within the test window
+        continue
+    if method == "initialize":
+        result = {"protocolVersion": "2025-11-25", "serverInfo": {"name": "slow", "version": "0.1.0"}, "capabilities": {}}
+    elif method == "tools/list":
+        result = {"tools": [{"name": "slow", "description": "Slow tool", "inputSchema": {"type": "object"}}]}
+    else:
+        result = {}
+    sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": req["id"], "result": result}) + "\n")
+    sys.stdout.flush()
+`
+	if err := os.WriteFile(script, []byte(scriptSrc), 0o644); err != nil {
+		t.Fatalf("write slow script: %v", err)
+	}
+	s, err := newStdioServer("slow", pythonBin(), []string{script}, nil)
+	if err != nil {
+		t.Fatalf("newStdioServer: %v", err)
+	}
+	defer s.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	type outcome struct {
+		err     error
+		elapsed time.Duration
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		start := time.Now()
+		_, _, err := s.callTool(ctx, "slow", nil)
+		done <- outcome{err: err, elapsed: time.Since(start)}
+	}()
+
+	select {
+	case got := <-done:
+		if got.err == nil {
+			t.Fatal("expected the cancelled call to fail, got nil")
+		}
+		if got.elapsed > 5*time.Second {
+			t.Fatalf("cancelled call took %v, want an abort near the 200ms deadline (err: %v)", got.elapsed, got.err)
+		}
+		if !errors.Is(got.err, context.DeadlineExceeded) && !strings.Contains(got.err.Error(), "context") {
+			t.Fatalf("error should name the cancellation, got %v", got.err)
+		}
+	case <-time.After(testWaitTimeout):
+		t.Fatal("cancelled call did not return - ctx is not threaded through the stdio request")
+	}
+
+	// The abandoned request must not leak its pending slot.
+	s.pendingMu.Lock()
+	pending := len(s.pending)
+	s.pendingMu.Unlock()
+	if pending != 0 {
+		t.Fatalf("pending requests after cancellation: got %d, want 0", pending)
+	}
+	// No "connection is still usable" assertion here: the fake server is
+	// single-threaded and is still inside its 60s sleep for the abandoned
+	// call, so any follow-up request would only prove the fake is busy.
 }
