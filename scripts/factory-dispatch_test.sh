@@ -966,6 +966,124 @@ printf "%s" "$out" | grep -q "dry-run: no dispatch" \
 	&& ok || bad "T20d: dry-run dispatched (out: $out)"
 rm -rf "$SPAWN_BASE"
 
+# T21 (local + CI): the RUNNING path shares the candidate precedence (card
+# t_42ff3dad, 2026-11-12). surface_of_card() read the running card's WHOLE body
+# prose, so a card whose curated FILES: line is disjoint from a sibling's but
+# whose CONTEXT prose cites the sibling's DIRECTORY claimed that directory the
+# moment it started running, and the sibling went `hold: ... (same-file)`. The
+# same pair read `sanctioned` while both cards were ready (live receipt: the
+# 19:39 tick sanctioned t_4bcea3dd+t_2daae1aa, the 19:52 tick - with
+# t_4bcea3dd running - held t_2daae1aa on the bare token `webui/app/`, which
+# its prose merely cited; neither card wrote a file the other wrote). A cap
+# slot idled for the whole run, and the pair verdict depended on RUN STATE -
+# the one thing the machine verdict law assumes cannot happen.
+#
+# The fixture needs REAL worktree diffs, so the guard under test runs from a
+# THROWAWAY git repo (the guard cd's to <script>/..): wt/t_cite carries a diff
+# on scripts/embed-lane.sh, wt/t_intrude a diff INSIDE the sibling's directory.
+# Shapes pinned:
+#   T21a  the incident - t_cite (FILES scripts/*, prose cites webui/app/) is
+#         spawnable and t_web is LEGAL both before and after t_cite starts
+#         running: the pair decision must not read the run state.
+#   T21b  the conservative direction, DIFF leg - a running card whose FILES
+#         line is disjoint but whose worktree diff really writes into the
+#         sibling's directory still holds it (the union cannot be used to
+#         defeat the same-file law).
+#   T21c  the conservative direction, FILES leg - a running card that DECLARES
+#         the sibling's directory holds it with no diff at all.
+#   T21d  the prose fallback survives - a running card with NO FILES: line is
+#         still guarded by its prose (that is the only surface the guard has),
+#         and a FILES-less card with no branch yet must not kill the pass.
+T21REPO=$(mktemp -d); T21HOME=$(mktemp -d)
+mkdir -p "$T21REPO/scripts"
+cp "$GUARD" "$T21REPO/scripts/factory-dispatch.sh"
+GITC() { git -c user.name=t -c user.email=t@t "$@" >/dev/null 2>&1; }
+(
+  cd "$T21REPO" || exit 3
+  git init -q -b dev . || exit 3
+  printf '.worktrees/\n' >.gitignore
+  printf '#!/usr/bin/env bash\n: baseline\n' >scripts/embed-lane.sh
+  GITC add -A; GITC commit -qm init
+  GITC checkout -q -b wt/t_cite
+  printf '#!/usr/bin/env bash\necho cite\n' >scripts/embed-lane.sh
+  GITC add -A; GITC commit -qm cite
+  GITC checkout -q dev
+  GITC checkout -q -b wt/t_intrude
+  mkdir -p webui/app/components/ui
+  printf '<template><div/></template>\n' >webui/app/components/ui/BandSelect.vue
+  GITC add -A; GITC commit -qm intrude
+  GITC checkout -q dev
+) || bad "T21: the throwaway fixture repo could not be built"
+mkdir -p "$T21HOME/kanban/boards/project-omega" \
+         "$T21REPO/.worktrees/t_cite" "$T21REPO/.worktrees/t_intrude" \
+         "$T21REPO/.worktrees/t_filerun" "$T21REPO/.worktrees/t_nofiles"
+printf 'project-omega\n' >"$T21HOME/kanban/current"
+T21DB_N="$(mixpath "$T21HOME")/kanban/boards/project-omega/kanban.db"
+# The prose cites the DIRECTORY (bare `webui/app/` token) exactly like the live
+# card did; tokens_of turns it into the prefix token that held the sibling.
+T21_CITE_BODY="FILES: scripts/embed-lane.sh scripts/embed-lane_test.sh
+CONTEXT: which roots get bundled - under webui/app/ the generated panel
+manifest (webui/app/composables/module-panels.generated.ts) decides what ships.
+DO: touch scripts/embed-lane.sh"
+sqlex "$T21DB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER);
+INSERT INTO tasks VALUES('t_cite','ready','bundle roots','$T21_CITE_BODY',NULL,NULL,5,'2026-11-12T19:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_web','ready','band select','FILES: webui/app/components/ui/BandSelect.vue',NULL,NULL,5,'2026-11-12T19:01',NULL,NULL);
+INSERT INTO tasks VALUES('t_intrude','blocked','intruder','FILES: scripts/other.sh',NULL,NULL,5,'2026-11-12T19:02',NULL,NULL);
+INSERT INTO tasks VALUES('t_filerun','blocked','declared sibling dir','FILES: webui/app/components/ui/',NULL,NULL,5,'2026-11-12T19:03',NULL,NULL);
+INSERT INTO tasks VALUES('t_nofiles','blocked','prose only','CONTEXT: the guard reads webui/app/ roots while deciding',NULL,NULL,5,'2026-11-12T19:04',NULL,NULL);"
+T21STATE() {  # $1 = id to leave RUNNING ('' -> t_cite ready); t_web is the sibling
+  sqlex "$T21DB_N" "UPDATE tasks SET status='blocked', claim_lock=NULL
+WHERE id IN ('t_cite','t_intrude','t_filerun','t_nofiles');
+UPDATE tasks SET status='ready', claim_lock=NULL WHERE id='t_web';"
+  case "$1" in
+    '') sqlex "$T21DB_N" "UPDATE tasks SET status='ready' WHERE id='t_cite';" ;;
+    *)  sqlex "$T21DB_N" "UPDATE tasks SET status='running' WHERE id='$1';" ;;
+  esac
+}
+T21RUN() {  # $1 = running id ('' = none) -> guard output on the fixture board
+  T21STATE "$1"
+  ( cd "$T21REPO" && HOME="$T21HOME" HERMES_HOME= HERMES_KANBAN_HOME="$(mixpath "$T21HOME")" \
+      HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= bash scripts/factory-dispatch.sh --dry-run 2>&1 )
+}
+
+# T21a: running=none and running=t_cite must agree that t_web may spawn.
+out0=$(T21RUN "")
+printf "%s" "$out0" | grep -q "^legal: t_cite" \
+	&& ok || bad "T21a: t_cite should be legal while ready (out: $out0)"
+printf "%s" "$out0" | grep -q "^legal: t_web" \
+	&& ok || bad "T21a: t_web should be legal beside the ready t_cite (out: $out0)"
+printf "%s" "$out0" | grep -qF 'pair: sanctioned (t_cite t_web, classes go+webui, FILES disjoint)' \
+	&& ok || bad "T21a: the disjoint pair was not sanctioned while both are ready (out: $out0)"
+out1=$(T21RUN t_cite)
+printf "%s" "$out1" | grep -q "^hold: t_web" \
+	&& bad "T21a: t_web HELD once t_cite started running - the pair verdict read the run state; the running card's prose must not claim a directory its FILES: line never named (out: $out1)" \
+	|| ok
+printf "%s" "$out1" | grep -q "^legal: t_web" \
+	&& ok || bad "T21a: t_web should stay legal once t_cite is running (out: $out1)"
+printf "%s" "$out1" | grep -qF 'pair: sanctioned (t_web, single would-spawn candidate)' \
+	&& ok || bad "T21a: the pair verdict flipped with the run state (out: $out1)"
+
+# T21b: DIFF leg - t_intrude declares scripts/other.sh but its branch really
+# writes webui/app/components/ui/BandSelect.vue. The union must hold t_web.
+out=$(T21RUN t_intrude)
+printf "%s" "$out" | grep -q "^hold: t_web  (same-file: webui/app/components/ui/BandSelect.vue" \
+	&& ok || bad "T21b: a running card whose DIFF writes the sibling's file must still hold it (out: $out)"
+
+# T21c: FILES leg - t_filerun declares the sibling's directory and has no diff.
+out=$(T21RUN t_filerun)
+printf "%s" "$out" | grep -q "^hold: t_web" \
+	&& ok || bad "T21c: a running card that DECLARES the sibling's directory must hold it (out: $out)"
+
+# T21d: FILES-less running card - prose is the only surface it has (and it has
+# no branch yet, so the diff probe fails; the pass must not die on that).
+out=$(T21RUN t_nofiles); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T21d: a FILES-less running card with no branch killed the pass (exit $rc, out: $out)"
+printf "%s" "$out" | grep -q "^hold: t_web" \
+	&& ok || bad "T21d: the prose fallback was lost - a FILES-less running card must still hold the sibling (out: $out)"
+rm -rf "$T21REPO" "$T21HOME"
+
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]

@@ -4,10 +4,29 @@
 # The bare dispatcher takes the OLDEST ready cards and is collision-blind:
 # it will spawn a card whose files overlap a running card. This script
 # applies the same-file law at dispatch time:
-#   1. compute each running card's file surface (worktree diff + body tokens)
-#   2. compute each candidate's file surface (body tokens)
+#   1. compute each running card's file surface
+#   2. compute each candidate's file surface
 #   3. park colliding candidates as 'todo' for the dispatch call, restore after
 #   4. dispatch --max CAP (fills free slots with the oldest LEGAL cards)
+#
+# SURFACE PRECEDENCE - IDENTICAL ON BOTH PATHS (card t_42ff3dad, 2026-11-12):
+# a card's surface is its curated `FILES:` line when it carries one (plus the
+# move-shaped sources that line may not name), and its body prose ONLY when it
+# carries none. WORKTREE EVIDENCE (git diff dev...wt/<id> + status --short) is
+# UNIONED in on both paths - a candidate resumed from a dead run and a running
+# card both really write those files, and the diff is the only honest evidence
+# of what a RUNNING card touches. So a running card never surfaces more than
+# its ready self. The guarded asymmetry read a running card's WHOLE body prose
+# instead: a card that merely CITED a sibling's directory in its CONTEXT
+# claimed that directory the moment it started, so the same pair read
+# `sanctioned` at running=0 and `hold: ... (same-file)` once one leg was
+# running (live 2026-11-12: t_4bcea3dd's prose quoted
+# webui/app/composables/module-panels.generated.ts, which held t_2daae1aa's
+# webui/app/components/ui/BandSelect.vue - neither card wrote a file the other
+# wrote, and a cap slot idled for that card's whole run). A verdict that
+# depends on RUN STATE is the one thing the machine verdict law assumes cannot
+# happen. The prose fallback stays for FILES-less cards: a card that declares
+# no surface at all is exactly the case where prose is all the guard has.
 #
 # ponytail: token granularity is body-text paths - a card whose body names
 # no paths falls back to class rules (webui+webui allowed, Go beside webui
@@ -303,15 +322,28 @@ imprecise_surface() {  # id -> 0 (true) when the surface is UNPROVABLE: no FILES
   return 1
 }
 
-surface_of_card() {  # id -> file tokens: worktree diff against dev + body
+surface_of_card() {  # id -> file tokens: FILES: line (prose only when absent)
+                     # UNION worktree diff + status (card t_42ff3dad)
+  # The precedence is candidate_tokens' own - this function used to be the one
+  # place that READ DIFFERENTLY (whole body prose, no FILES: preference), so a
+  # card that merely CITED a sibling's directory in its CONTEXT claimed that
+  # directory the moment it started running, and the sibling went
+  # `hold: ... (same-file)` while the same pair had read `sanctioned` with both
+  # cards ready. The verdict must not depend on run state. The worktree
+  # evidence stays in the union because it is the only honest record of what a
+  # RUNNING card actually touches - a diff that writes into a sibling's
+  # directory must still hold (the conservative direction). Both git probes are
+  # `|| true`: a card with a worktree dir but no branch yet (or a worktree the
+  # board no longer has on disk) must not kill the pass on `set -e`.
   local id="$1"
   local wt=".worktrees/$id"
-  if [ -d "$wt" ]; then
-    { git diff --name-only dev..."wt/$id" 2>/dev/null   # three-dot: only THIS branch's changes
-      git -C "$wt" status --short 2>/dev/null | awk '{print $NF}'
-    } | sort -u
-  fi
-  dbq "SELECT body FROM tasks WHERE id='$id';" | tokens_of
+  {
+    candidate_tokens "$id"
+    if [ -d "$wt" ]; then
+      git diff --name-only dev..."wt/$id" 2>/dev/null || true   # three-dot: only THIS branch's changes
+      git -C "$wt" status --short 2>/dev/null | awk '{print $NF}' || true   # ...and uncommitted files
+    fi
+  } | sort -u
 }
 
 class_of() {  # id -> webui | go | docs  (FILES: line is the truth; body text
