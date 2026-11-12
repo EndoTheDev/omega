@@ -3,7 +3,8 @@ set -euo pipefail
 
 # embed-lane.sh - the ONE lane that owns api/static/.
 #
-# Webui cards commit SOURCE ONLY (webui/ and harness/<name>/ui/).
+# Webui cards commit SOURCE ONLY (webui/, harness/<name>/ui/ and the
+# serving shell's api/<name>/ui/).
 # The committed SPA bundle is regenerated and committed here, right
 # after a source merge lands, so no branch ever diverges static/ and
 # parallel webui cards can never collide on it. go build = complete
@@ -20,9 +21,20 @@ set -euo pipefail
 #                 gate rather than risk skipping a needed regen.
 #
 # Guards:
-#   - change gate: if <base>..HEAD touches no webui source (webui/
-#     or harness/*/ui/), skip regeneration entirely - Go-only merges
-#     pay nothing.
+#   - change gate: if <base>..HEAD touches no SPA source, skip
+#     regeneration entirely - Go-only merges pay nothing. The SPA
+#     source set is webui/ plus every module UI directory the build's
+#     own scan registers (webui/nuxt.config.ts ->
+#     scanModuleUIs(harness/, api/)): harness/<name>/ui/** for the
+#     capsules, api/<name>/ui/** for the serving shell (a pane ships
+#     from api/http_channel/ui/ - LogsList.vue and its helper .ts
+#     siblings - and reaches users only through the bundle). The gate
+#     reads the whole ui/ directories, not module-panels.generated.ts:
+#     that manifest is written at nuxt-config-eval time (untracked, so
+#     absent in a clean checkout) and lists only the .vue panels, while
+#     the helpers beside them are bundled just the same. The roots are
+#     held in ONE array below; a new root in the build's scan is a new
+#     entry there, or the gate is silently deaf to it again.
 #   - hash gate: after the build, a bundle that is CONTENT-identical to
 #     the committed one is not committed - the lane never writes no-op
 #     commits. Nuxt's volatile build metadata (buildId uuid, epoch
@@ -41,11 +53,21 @@ set -euo pipefail
 STATIC="api/static"
 LANE_PREFIX="embed-lane: rebuild webui bundle for"
 
-# ui_changed <base> <head>: non-empty output when the diff touches
-# webui source (additions, edits, renames AND deletions - removing a
-# component changes the bundle too).
+# SPA_SOURCE_SPECS: the build's input set, one pathspec per root the
+# bundle is assembled from. Keep in step with webui/nuxt.config.ts's
+# scanModuleUIs(harness/, api/) - embed-lane_test.sh pins each root
+# against a diff that touches nothing else.
+SPA_SOURCE_SPECS=("webui" ":(glob)harness/*/ui/**" ":(glob)api/*/ui/**")
+
+# ui_changed <base> <head>: non-empty output when the diff touches SPA
+# source (additions, edits, renames AND deletions - removing a component
+# changes the bundle too). The pathspec filter is what keeps renames
+# honest: git narrows the diff to the specs before rename detection, so
+# a file moved OUT of a ui/ dir reads as its removal there (a rename
+# whose destination is outside the set lists the source side, never
+# nothing) and a move INTO one lists the new path.
 ui_changed() {
-	git diff --name-only "$1" "$2" -- "webui" ":(glob)harness/*/ui/**"
+	git diff --name-only "$1" "$2" -- "${SPA_SOURCE_SPECS[@]}"
 }
 
 # strip_volatile: nuxt build ids (uuids) and epoch-millisecond build
