@@ -956,6 +956,13 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	if setAgentConfig != nil {
 		setAgentConfig(cfg.SystemPrompt, cfg.MaxTurns)
 	}
+	// The cron fire's cap, boot half (card t_e635df3a): the scheduler
+	// bounds a hung turn with server.run_timeout and cannot see the
+	// config file THIS process booted on (an explicit --config path,
+	// or an exe-dir home without OMEGA_HOME), so the host pushes its
+	// resolution before the fence starts the runner. The same helper
+	// rides every settings save/reload.
+	pushRunTimeout(pctx, cfg)
 	errCh := make(chan error, len(pctx.Channels))
 	for _, ch := range pctx.Channels {
 		deps := core.ChannelDeps{
