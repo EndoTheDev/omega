@@ -14,12 +14,26 @@ it is not authentication.
 Routes are registered in `api/server.go`. Anything
 documented below that is not in that mux is not real.
 
-**The Host/Origin guard** (t_b52d09f3): the unauthenticated surface is
-loopback-local, so cross-origin writes ride the browser's own rules —
-the `hostGuard` wraps the whole mux and refuses a MUTATING request
-whose Origin/Host is not the serving origin with 403 (GETs pass). The
-guard covers the fixed routes AND the module capsule routes; curl
-against localhost from the same host is unaffected.
+**The Host/Origin guard** (t_b52d09f3, hardened at t_9caf16c8): the
+unauthenticated surface is loopback-local, so cross-origin writes ride the
+browser's own rules - the `hostGuard` wraps the whole mux and refuses with
+403 any request whose Host is not a trusted identity (reads included: a
+rebinding GET carries no Origin, and `/files/read` answers bytes), and any
+mutating request (anything but GET/HEAD/OPTIONS) whose Origin the request
+Host does not own. The guard covers the fixed routes AND the module capsule
+routes.
+
+The identity set follows the bind shape. A loopback bind trusts the loopback
+names on its port; an exact non-loopback bind trusts that address; a
+wildcard bind (`0.0.0.0`, `::`, a bare `:port`) cannot be enumerated, so it
+trusts ONLY the operator's `server.public_hosts` declaration - and refuses to
+start when that list is empty, naming both fields in the error. Two Origin
+rules follow from the same split: an absent Origin is exempt on a loopback
+bind only (so a local `curl` keeps working), and a non-loopback bind requires
+one, because a no-Origin LAN client is unattributable. Host/Origin equality
+alone never authorises a write off loopback - that pair is exactly the
+DNS-rebinding shape. Loopback-only installs need no declaration and are
+unchanged.
 
 | Route                                | Methods    | Notes                                          |
 | ------------------------------------ | ---------- | ---------------------------------------------- |
