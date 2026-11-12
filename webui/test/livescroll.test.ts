@@ -59,30 +59,22 @@ describe("live-run scroll chain: the body is contained, not clipped (t_64878551)
     );
   });
 
-  it(".messages.live-body carries min-height: 0 on the BRANCH class", () => {
-    const body = rule(css(), ".messages.live-body {");
-    assert.ok(
-      body,
-      ".messages.live-body rule not found: the live body's shrink chain must live on a class-based rule",
-    );
-    assert.match(body, /min-height:\s*0/);
-  });
-
-  it("the scroll geometry does not hang on the stacked appearance chip", () => {
-    const stacked = rule(css(), ".messages.stacked.live-body {");
-    assert.ok(stacked, ".messages.stacked.live-body rule not found");
+  it("the scrollport's shrink chain runs wrap -> .messages (the live body is gone)", () => {
+    // card t_5bb319f6 retired the run-only body; the chain that must hold
+    // is the one every stacked run uses: the wrap shrinks below content,
+    // the column owns the overflow
+    const wrap = rule(css(), ".messages-wrap {");
+    assert.ok(wrap, ".messages-wrap rule not found");
+    assert.match(wrap, /min-height:\s*0/, "the wrap must shrink below content");
+    const messages = rule(css(), ".messages {");
+    assert.ok(messages, ".messages rule not found");
+    assert.match(messages, /flex:\s*1/);
+    assert.match(messages, /overflow-y:\s*auto/);
     assert.doesNotMatch(
-      stacked,
-      /min-height/,
-      "min-height must not live on .stacked: the appearance chip is not a scroll owner",
+      cssNoComments(),
+      /\.messages\.live-body/,
+      "no run-only scroll body: the pin's card (t_5bb319f6) renders one column",
     );
-  });
-
-  it(".messages stays the scrollport (flex: 1 + overflow-y: auto)", () => {
-    const body = rule(css(), ".messages {");
-    assert.ok(body, ".messages rule not found");
-    assert.match(body, /flex:\s*1/);
-    assert.match(body, /overflow-y:\s*auto/);
   });
 
   it("the :has(.live-body) override stays retired", () => {
@@ -97,40 +89,23 @@ describe("live-run scroll chain: the body is contained, not clipped (t_64878551)
     assert.doesNotMatch(
       cssNoComments(),
       /:has\([^)]*live-body/,
-      "the live body's shrink chain must be class-based, never a :has() override",
+      "the scroll chain must be class-based, never a :has() override",
     );
   });
 
-  it("the live branch wires the pin, the body and the scroll listener", () => {
+  it("the live pin rides the column's own scroll listener", () => {
     const src = chatTab();
     const pin = src.indexOf('class="live-pin"');
-    const body = src.indexOf('"messages live-body stacked"');
-    assert.ok(pin !== -1, "the pinned question header is missing");
-    assert.ok(
-      body !== -1,
-      'the live body must render class "messages live-body stacked"',
-    );
-    assert.ok(
-      pin < body,
-      "the pinned question renders ABOVE the agent body",
-    );
-    // the body element carries the scroll wiring (tail-follow + pill)
-    const afterBody = src.slice(body, body + 300);
-    assert.match(
-      afterBody,
-      /@scroll="onScroll"/,
-      "the live body owns the scroll listener while it is mounted",
-    );
+    assert.ok(pin !== -1, "the pinned question row is missing");
+    // ONE scrollport: the history and the streaming turn share it, so a
+    // mid-stream scroll-up reaches the older messages (t_5bb319f6)
+    const listeners = src.match(/@scroll="onScroll"/g) ?? [];
+    assert.equal(listeners.length, 1, "exactly one scroll container is wired");
+    assert.ok(!/liveBodyEl/.test(src), "the run-only body is retired");
   });
 
   it("the tail-follow gate yields to manual scrolls", () => {
     const src = chatTab();
-    // the live body is the ACTIVE scroll container while mounted
-    assert.match(
-      src,
-      /liveBodyEl\.value\s*\?\?\s*messagesEl\.value/,
-      "scrollEl() must prefer the live body while the live layout is mounted",
-    );
     // no append may stomp on a manual scroll: follow only when pinned
     assert.match(
       src,
@@ -149,13 +124,13 @@ describe("content-change follow (t_bef3f45e)", () => {
       "onScroll must derive the follow state from resumesFollow",
     );
     // the guard fuel: the scroller height at the last scroll event -
-    // declared once, written only in the scroll handler (RO callbacks
-    // must never touch it, or the shrink guard loses its pre-fold value)
+    // declared once, written in the scroll handler and in the follow
+    // write's own-event branch (which resyncs it without deciding)
     const writers = src.match(/lastScrollHeight\s*=/g) ?? [];
     assert.equal(
       writers.length,
-      2,
-      "lastScrollHeight: the declaration plus exactly one write - in the scroll handler",
+      3,
+      "lastScrollHeight: the declaration plus two scroll-event-path writes",
     );
   });
 
@@ -181,7 +156,7 @@ describe("content-change follow (t_bef3f45e)", () => {
 
   it("the RO targets re-sync on every growth surface", () => {
     const src = chatTab();
-    // transcript deltas (items mount, branch swaps rebuild targets)
+    // transcript deltas (items mount into the one column)
     const tw = src.indexOf("watch(transcript, () => {");
     assert.ok(tw !== -1, "the transcript watcher exists");
     assert.match(
@@ -189,13 +164,13 @@ describe("content-change follow (t_bef3f45e)", () => {
       /resizeContentRO/,
       "the transcript watcher must re-sync the RO targets",
     );
-    // the live branch transitions swap container nodes
-    const lw = src.indexOf("watch(\n    liveLayout,");
+    // a run starting re-syncs too (the pin slot mounts inside the column)
+    const lw = src.indexOf("watch(liveLayout,");
     assert.ok(lw !== -1, "the liveLayout watch exists");
     assert.match(
-      src.slice(lw, src.indexOf('flush: "post"', lw)),
+      src.slice(lw, lw + 300),
       /resizeContentRO/,
-      "the liveLayout watch must re-sync the RO targets post-flush",
+      "the liveLayout watch must re-sync the RO targets",
     );
     // mount-time priming
     const mounted = src.indexOf("onMounted(async () => {");

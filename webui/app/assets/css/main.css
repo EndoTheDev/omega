@@ -1316,42 +1316,31 @@ labels stopped short of the right edge. */
   border: none;
   padding: 0;
 }
-/* The LIVE-RUN two-region layout (card t_c40164cf): while a stacked run
-   streams, the pane stops being one scrolling list - the last user
-   message pins as a header row (always visible for the whole run) and
-   the run's thinking/tool/response items scroll in their own body
-   region underneath, auto-following the tail. Older history rides out
-   of view for the run's duration; agent_end unmounts the branch and the
-   settled chronological column returns with the block in flow. */
+/* The LIVE-RUN pin (card t_5bb319f6, replacing the two-region split of
+   t_c40164cf): while a stacked run streams, its user row sticks to the
+   top of the ONE scrollport and the run paints underneath. The older
+   history stays in that same scrollport above it, so scrolling up
+   releases the pin at its place in the flow and the history is readable
+   mid-stream - the split's run-only body made scrollTop 0 a dead end
+   under the pin. Sticky, not fixed: the containing block is the turn's
+   own .msg-block, so the pin can never outlive its turn. */
 .live-pin {
-  flex: none;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  /* full-bleed across the scrollport's 20px side padding - the background
+     has to cover the rows sliding under it, edge to edge */
+  margin: 0 -20px;
   padding: 14px 20px 12px;
   background: var(--z1);
   border-bottom: 1px solid var(--stroke);
+  /* the scrollport's 16px top padding sits ABOVE the sticky position, so
+     the row sliding under the pin peeks through that band as a clipped
+     line (measured on the private lane). A zero-blur shadow paints the
+     seam opaque without moving the pin; at rest it is the pane's own
+     surface colour, so it is invisible. */
+  box-shadow: 0 -16px 0 0 var(--z1);
 }
-/* the pinned header speaks the stacked document language too: the user
-   row renders full width like every stacked block (the .messages.stacked
-   selectors above don't reach this region) */
-.live-pin .msg.user { justify-content: flex-start; }
-.live-pin .msg.user .bubble { width: 100%; max-width: 100%; }
-
-/* the wrap is ALWAYS vertical now (t_c252b9c6): pinned question ABOVE,
-   agent body BELOW - the old :has(.live-body) column override is moot. */
-
-/* the body reuses .messages (flex:1, overflow-y:auto, full-width
-   column) - its own scroll container with the tail-follow. Its items
-   are ONE turn: the within-block 12px rhythm, not the 28px between-turn
-   gap; the pin's border stands in for the turn separation. */
-.messages.stacked.live-body { gap: 12px; padding-top: 12px; }
-
-/* the live body's shrink chain (t_64878551): under the ALWAYS-vertical
-   wrap every flex item on the wrap-to-live-body path must shrink below
-   its content, or the body grows past the pane and the wheel finds
-   nothing to scroll. The rule lives class-based on the BRANCH class -
-   not stacked (the appearance chip must not own scroll geometry) and
-   not :has() (9208ac8 retired the :has column override). The wrap
-   carries its own min-height: 0 upstream; this closes the chain. */
-.messages.live-body { min-height: 0; }
 
 .jump-live {
   position: absolute;
