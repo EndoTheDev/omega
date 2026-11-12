@@ -278,9 +278,12 @@ test("RegistryList's toggle is the shared TogglePill; the checkbox shape is dead
   assert.ok(!src.includes('type="checkbox"'), "the checkbox trap (t_87303e8f) is dead - a button carries no :checked prop");
   assert.ok(!/\.registry-toggle\s*\{/.test(src), "no local toggle CSS - the look lives in ui/TogglePill once");
   assert.ok(!src.includes("revisions"), "the revision-remount machinery is gone with the checkbox");
-  // the two-step mechanic + the confirm note stay (behavior, not pixels)
-  assert.ok(src.includes("confirm apply to ${r.name}?"), "the armed aria rides the shared pill's confirm label");
-  assert.ok(src.includes('class="registry-confirm reg-row-note"'), "the confirm note under the row stays (in the row law's note line seat)");
+  // card t_5051d523: ONE click commits - the armed confirm aria and the
+  // confirm note under the row are dead (they cost every row a second
+  // click); the same consequence text rides the pill's title instead.
+  assert.match(src, /:hint="toggleHint\(r\)"/, "the consequence text is a hover hint on the shared pill");
+  assert.ok(!src.includes("confirm-label"), "no armed confirm relabel on the pill");
+  assert.ok(!src.includes("registry-confirm"), "the armed confirm note under the row is gone");
   const css = readFileSync(join(root, "webui", "app", "components", "ui", "TogglePill.vue"), "utf8");
   assert.match(css, /width:\s*26px/, "the MCP reference's pill dimensions live once, in ui/");
   assert.match(css, /border-color:\s*var\(--ok\)/, "the on border rides the ok token");

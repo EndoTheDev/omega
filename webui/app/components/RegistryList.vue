@@ -3,11 +3,11 @@
        consumers (skills, tools, agents) - rows with a name, one
        toggle each, and an expandable detail section. The parent owns
        the data (fetches + fold state through composables/omega.ts);
-       this renders the rows and drives the two-step toggle (the same
-       arm/confirm mechanic the module list rides, no accidental
-       first-click flips), rendered with the shared TogglePill
-       (card t_d93864e7). A host without the toggle seam (501) renders
-       the list read-only: no pills, the state text only.
+       this renders the rows and drives the toggle - ONE click, ONE
+       write (card t_5051d523: the arm/confirm two-step is dead; it
+       made every row need a double click), rendered with the shared
+       TogglePill (card t_d93864e7). A host without the toggle seam
+       (501) renders the list read-only: no pills, the state text only.
        v0.14.3: the insights tab joins as the read-only stat consumer -
        `showState=false` drops the right state text (insight rows
        have no fold), and the generic #side slot seats a row's right
@@ -80,34 +80,34 @@
             :row="r" />
           <!-- the toggle is the shared TogglePill (card t_d93864e7): the
                MCP tab's pill look, now here too - same 26px pill, same
-               dot, same armed aria. A button whose armed state comes from
-               the reactive model carries no :checked prop for Vue's prop
-               diff to skip (t_87303e8f), so the checkbox revision-remount
-               machinery is gone with it. A LOCKED row (card t_2d8deb8c,
-               the default agent): permanently on, non-interactive - the
-               pill renders locked-on, the arm step never arms, the
-               emit never fires. -->
+               dot. ONE activation applies the write (card t_5051d523):
+               the arm step that ate the first click is gone, and the
+               shared pill carries no armed state to resurrect it. A
+               button whose state comes from the reactive model carries
+               no :checked prop for Vue's prop diff to skip (t_87303e8f),
+               so the checkbox revision-remount machinery is gone with
+               it. A LOCKED row (card t_2d8deb8c, the default agent):
+               permanently on, non-interactive - the pill renders
+               locked-on, the handler never emits. -->
           <TogglePill
             v-if="toggleable"
             class="registry-toggle reg-row-ctrl"
             :class="{ 'toggle-locked': r.locked }"
             :state="!r.disabled"
             :disabled="busy !== null || !!r.locked"
-            :armed="armed === r.name"
             :label="lockedLabel(r)"
-            :confirm-label="`confirm apply to ${r.name}?`"
+            :hint="toggleHint(r)"
             @click="onToggle(r)" />
           <span
             v-else-if="showState"
             class="registry-state reg-row-ctrl"
             :aria-label="`${r.disabled ? 'enable' : 'disable'} ${r.name}`">{{ r.disabled ? "disabled" : "on" }}</span>
         </div>
-        <span
-          v-if="armed === r.name"
-          class="registry-confirm reg-row-note">{{ noteFor(r) }}</span>
         <!-- card t_2d8deb8c: the under-row preview line DIED with it
              (ruling 3) - the two-line anatomy is the law, the status
-             word rides the subtitle. -->
+             word rides the subtitle. Card t_5051d523: the armed
+             confirm note died with the arm step - the same consequence
+             text rides the pill's title (toggleHint). -->
         <template v-if="isExpanded(r.name)">
           <ul
             v-if="hasDetail(r)"
@@ -188,23 +188,17 @@
   // tricks since the toggle became the shared pill
   const rowKey = (r: RegistryRow) => r.name;
 
-  // --- two-step toggle: arm, then apply (ModuleToggleList mechanic) ---
+  // --- one-click toggle (card t_5051d523) ---
   // Card t_87303e8f's checkbox trap needed the per-row remount hack
   // when the toggle was an input: a :checked prop Vue could skip. The
-  // shared TogglePill (card t_d93864e7) is a button whose armed state
-  // comes from the reactive model - no DOM prop to miss - so the
-  // remount machinery is gone with the checkbox.
-  const armed = ref<string | null>(null);
-
+  // shared TogglePill (card t_d93864e7) is a button whose state comes
+  // from the reactive model - no DOM prop to miss - so the remount
+  // machinery is gone with the checkbox. The arm step is gone too: the
+  // first (and only) click commits. The pill applies the intent and the
+  // fold write re-renders the rows from the response.
   function onToggle(r: RegistryRow) {
     if (props.busy !== null) return;
-    if (r.locked) return; // card t_2d8deb8c: the locked pill never arms
-    if (armed.value !== r.name) {
-      // arm: the note below the row shows what the exclusion means
-      armed.value = r.name;
-      return;
-    }
-    armed.value = null;
+    if (r.locked) return; // card t_2d8deb8c: the locked pill never emits
     // the target direction IS the row's disabled flag: a disabled row
     // emits enabled=true (the fold write re-renders from the response)
     emit("toggle", r.name, r.disabled);
@@ -217,7 +211,15 @@
       ? `${r.name} is locked on - the default agent cannot be disabled`
       : `${r.disabled ? "enable" : "disable"} ${r.name}`;
 
-  const noteFor = (r: RegistryRow) => registryNote(props.kind, r.name, r.disabled);
+  // toggleHint (card t_5051d523): the consequence text ("disable x?
+  // excluded from the session prompt build") used to gate the second
+  // click. It now rides the pill's title - the click never waits on it.
+  // The helper speaks the old confirm SENTENCE; the title already
+  // carries the request ("disable x"), so only the consequence rides it.
+  const toggleHint = (r: RegistryRow) =>
+    r.locked
+      ? ""
+      : registryNote(props.kind, r.name, r.disabled).replace(/^disable .*?\?\s*/, "");
 
   // --- expandable detail: per-row, click-driven, one set per mount ---
   const expanded = ref<Record<string, boolean>>({});
@@ -228,7 +230,7 @@
     if (isExpanded(r.name)) emit("expand", r);
   }
 
-  defineExpose({ armed, flipExpand, isExpanded });
+  defineExpose({ flipExpand, isExpanded });
 </script>
 
 <style scoped>

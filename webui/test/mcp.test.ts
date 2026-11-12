@@ -303,8 +303,12 @@ test("the from-mcp.yaml caption is dead, the toggle is the shared pill (card t_d
   // the row toggle is the shared pill - the look lives in ui/ once
   assert.match(src, /<TogglePill/, "the row toggle is the shared TogglePill");
   assert.ok(!src.includes(".mcp-toggle"), "no local toggle CSS block - one component, zero copies");
-  // the two-step mechanic stays local (behavior, not pixels)
-  assert.ok(src.includes("armed.value !== s.name") && src.includes("/mcp/toggle"), "the arm/confirm two-step + POST /mcp/toggle stay in the module");
+  // the two-step mechanic is DEAD (card t_5051d523: one click commits -
+  // the arm step made every row need a double click); the write path
+  // stays local to the module
+  assert.ok(!src.includes("armed.value"), "no arm step: the first click commits");
+  assert.ok(!src.includes("confirm-label"), "no confirm relabel on the shared pill");
+  assert.ok(src.includes("/mcp/toggle"), "POST /mcp/toggle stays in the module");
 });
 
 test("the row speaks the design tokens: status dot, transport pill, no bare mono dump", () => {
