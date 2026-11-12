@@ -52,11 +52,12 @@
 # unset dies loudly. Residue-free: the cleanup trap re-enables only the
 # names STILL folded, so a green run leaves the fold untouched and a red
 # one puts it back; a leftover fold from a crashed earlier run is cleared
-# at pre-flight instead of reding this run's arm step.
+# at pre-flight instead of reding this run's toggle.
 #
 # Drive-by-aria-label (worker-onboarding law): the toggle is clicked
-# through its aria state machine ("disable files" -> "confirm apply to
-# files?" -> "enable files"); snapshot refs invalidate between clicks.
+# through its aria state machine ("disable files" -> "enable files") -
+# ONE click switches (card t_5051d523: the arm/confirm second click is
+# dead); snapshot refs invalidate between clicks.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 if [ -z "${OMEGA_HOME:-}" ]; then
@@ -246,14 +247,13 @@ assert_eq "$(detail_domain_breaks)" "" "every detail line belongs to its own row
 step "ok: (b)+(c) the files identities sit under the files row and nowhere else"
 
 # --- (d) the fold-aware render: disabling the domain keeps its row -------
+# ONE click commits (card t_5051d523): the arm/confirm two-step that
+# needed a second click is dead, so the click writes and the row
+# re-renders off.
 clicked=$(toggle_click "disable files" "__arm__")
-assert_eq "$clicked" "1" "the files row's toggle answered an arm click"
-wait_js '(()=>{return [...document.querySelectorAll(".tools-list button.registry-toggle")].some(b=>(b.getAttribute("aria-label")||"")==="confirm apply to files?")})()' 5 \
-  || die "the files toggle never armed (no confirm state)"
-clicked=$(toggle_click "__apply__" "confirm apply to files?")
-assert_eq "$clicked" "1" "the confirm click applied the fan-out"
+assert_eq "$clicked" "1" "the files row's toggle answered the click"
 wait_js "$ROW_IS_OFF" 10 \
-  || die "the files row never rendered the off state - the one-way door: the row must STAY, dimmed and toggleable"
+  || die "one click did not switch the files row - the one-way door: the row must STAY, dimmed and toggleable"
 assert_eq "$(files_rows)" "1" "the disabled domain keeps its ONE row (no vanish, no split)"
 assert_eq "$(dup_domains)" "" "still one row per domain while the domain is off"
 assert_eq "$(missing_files_detail)" "" "the dimmed row keeps its full detail (the management surface still says what is off)"
@@ -271,13 +271,9 @@ step "ok: (e) model registry drops the domain, management read keeps it, fold pe
 
 # --- (f) re-enable: the fold clears and the row renders on again ----------
 clicked=$(toggle_click "enable files" "__arm__")
-assert_eq "$clicked" "1" "the re-enable arm click landed"
-wait_js '(()=>{return [...document.querySelectorAll(".tools-list button.registry-toggle")].some(b=>(b.getAttribute("aria-label")||"")==="confirm apply to files?")})()' 5 \
-  || die "the re-enable never armed"
-clicked=$(toggle_click "__apply__" "confirm apply to files?")
-assert_eq "$clicked" "1" "the re-enable confirm click landed"
+assert_eq "$clicked" "1" "the single re-enable click landed"
 wait_js "$ROW_IS_ON" 10 \
-  || die "the re-enable never landed (the files row never came back on)"
+  || die "one click did not re-enable (the files row never came back on)"
 assert_eq "$(files_fold)" "" "the fold cleared on the wire"
 assert_eq "$(wire_stamped)" "6 0" "the management read lists all six, none stamped disabled"
 assert_eq "$(wire_files_count "")" "6" "bare GET /tools carries the domain again"

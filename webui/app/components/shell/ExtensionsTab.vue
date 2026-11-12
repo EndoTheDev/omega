@@ -67,7 +67,9 @@
             <!-- the right control seat: the shared TogglePill
                  (card t_d93864e7) for toggleable rows - one switch, top-
                  aligned with the name, no "disabled" text beside it (the
-                 pill IS the state, the row dims). Machine-critical rows
+                 pill IS the state, the row dims). ONE click applies
+                 (card t_5051d523: the arm step is dead; the consequence
+                 text rides the pill's title). Machine-critical rows
                  keep the always-on annotation in the seat (the same law
                  the old settings group spoke); shell rows the tier-law
                  badge. -->
@@ -76,9 +78,8 @@
               class="module-toggle reg-row-ctrl"
               :state="row.state === 'mounted'"
               :disabled="busy !== null"
-              :armed="armed === armedId(row.name, row.state !== 'mounted')"
               :label="`${row.state === 'mounted' ? 'disable' : 'enable'} ${row.name}`"
-              :confirm-label="`confirm: apply ${row.state === 'mounted' ? 'disable' : 'enable'}?`"
+              :hint="rowHint(row)"
               @click="onToggle(row, row.state !== 'mounted')" />
             <span
               v-else-if="row.state === 'shell'"
@@ -170,12 +171,12 @@
   // Card t_210a0d19 makes it the module lifecycle cockpit: the row model
   // merges the registry introspection (GET /modules - live state,
   // toggleable, dependents) into the inventory, every toggleable row
-  // gets the two-step toggle (arm, then apply - the same law the old
-  // settings group obeyed), expansion reveals the module's tools,
-  // commands and panels, and the MODULES settings group is gone - this
-  // tab is the only toggle surface; the settings pane keeps config
-  // knobs only. /help parity: the webui has no slash-command bar, so
-  // this tab IS the /extensions surface.
+  // gets the shared one-click toggle (card t_5051d523 killed the old
+  // two-step arm/confirm: one click applies), expansion reveals the
+  // module's tools, commands and panels, and the MODULES settings group
+  // gone - this tab is the only toggle surface; the settings pane
+  // keeps config knobs only. /help parity: the webui has no
+  // slash-command bar, so this tab IS the /extensions surface.
   // Lazy like the other inspector tabs: the load runs on mount, the dock
   // only activates a tab's content when the tab IS active.
   import { computed, ref } from "vue";
@@ -253,14 +254,12 @@
     expanded.value = next;
   }
 
-  // --- the two-step toggle (ported from the settings group, card
-  // t_210a0d19): the first click arms the row - the note names what
-  // goes down with it (the dependents law, spoken by toggleNote) or
-  // asks plain; the second click applies. The shared TogglePill renders
-  // from server state, so no remount machinery exists (gate must-fix). ---
-  const armed = ref<string | null>(null);
-  const armedId = (name: string, enabled: boolean) =>
-    `${name}:${String(enabled)}`;
+  // --- the one-click toggle (card t_5051d523) ------------------------
+  // The arm/confirm two-step (ported from the settings group, card
+  // t_210a0d19) is dead: it made the first click arm the row and the
+  // second apply, i.e. every module toggle needed a double click. One
+  // activation now commits; busy names the in-flight row so a second
+  // click cannot overlap the write.
 
   // toggleNote speaks the registry introspection's dialect (ModuleRow):
   // shrink the merged row to just the fields the note reads.
@@ -275,20 +274,28 @@
     dependents: row.dependents,
   });
 
+  // rowHint (card t_5051d523): the consequence line ("disable kanban?
+  // this also disables: cron") used to appear only after the first
+  // click, as the arm gate. It now rides the pill's title, where it
+  // informs without ever blocking the switch. The helper speaks the old
+  // confirm SENTENCE; the title already carries the request, so only the
+  // consequence rides it.
+  const rowHint = (row: {
+    name: string;
+    state: string;
+    toggleable: boolean;
+    dependents: string[];
+  }): string =>
+    toggleNote(asModuleRow(row), row.state !== "mounted").replace(/^disable .*?\?\s*/, "");
+
   const rowNote = (row: {
     name: string;
     state: string;
     toggleable: boolean;
     dependents: string[];
   }): string => {
-    if (armed.value === armedId(row.name, false)) {
-      return toggleNote(asModuleRow(row), false) || "confirm: apply disable?";
-    }
-    if (armed.value === armedId(row.name, true)) {
-      return toggleNote(asModuleRow(row), true) || "confirm: apply enable?";
-    }
     // resting state: name the dependents while the module runs (the Q3
-    // facts stay visible in the cockpit, not only at arm time)
+    // facts stay visible in the cockpit, not only on hover)
     if (row.toggleable && row.dependents.length > 0) {
       return `dependents: ${row.dependents.join(", ")}`;
     }
@@ -308,15 +315,11 @@
   };
 
   async function onToggle(row: ToggleRow, checked: boolean) {
+    // card t_5051d523: ONE click commits. The arm/confirm two-step
+    // (click one armed, click two applied) is dead - it made every
+    // module row need a double click. The consequence text that used
+    // to gate the second click rides the pill's title (rowHint).
     if (busy.value !== null) return;
-    const id = armedId(row.name, checked);
-    if (armed.value !== id) {
-      // arm: the first click never applies - the confirm note shows in
-      // the row; the pill renders from server state, nothing to reset.
-      armed.value = id;
-      return;
-    }
-    armed.value = null;
     busy.value = row.name;
     toggleError.value = null;
     try {

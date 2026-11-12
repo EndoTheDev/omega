@@ -84,7 +84,7 @@ unchanged.
 | `/cron/jobs`                         | GET        | cron job list (empty when unmounted — not 501); rows carry the authored `prompt`, the fire-pinned `skills` and the last fire's `status` + `last` + `status_note` |
 | `/cron/save`                         | POST       | upsert one full job definition into the main crons.yaml (schema-validated, hot-reloaded); returns the fresh job set |
 | `/cron/delete`                       | POST       | remove one job from the main crons.yaml; unknown name 404 |
-| `/cron/toggle`                       | POST       | the row's two-step toggle commit: writes the per-job `enabled:` flag only |
+| `/cron/toggle`                       | POST       | the row's toggle commit: writes the per-job `enabled:` flag only |
 | `/skills`                            | GET        | loaded skills (name + description only)        |
 | `/skills/content`                    | GET        | one skill's SKILL.md body for the viewer tab (64 KiB cap) |
 | `/skills/save`                       | POST       | the skills tab editor's upsert: a new name composes `<dir>/<name>/SKILL.md` (frontmatter composed, loader-parsed), an existing name rewrites the body under the fence while the operator's other frontmatter keys stay byte-true; answers the fresh listing |

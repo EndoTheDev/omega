@@ -3728,12 +3728,14 @@ export async function toggleRegistryEntry(
   return normalizeDisabledPayload(await r.json());
 }
 
-// registryNote builds the confirm line a disabled-direction toggle
-// shows in its row: each namespace names what its exclusion means
-// (the same voice as toggleNote for modules). Enable needs no note.
+// registryNote builds the consequence a disabled-direction toggle shows:
+// each namespace names what its exclusion means (the same voice as
+// toggleNote for modules). Enable needs no note. Card t_5051d523: the
+// text rides the shared pill's title (a hover hint) - it used to be the
+// arm gate that ate the first click, and it no longer gates anything.
 // Insights (v0.14.3's read-only stat consumer) has no exclusion
-// surface - the note is the empty string, and the arm step never
-// reaches it (RegistryList only arms through the toggleable seam).
+// surface - the note is the empty string, and the toggleable seam never
+// reaches it.
 export function registryNote(kind: RegistryKind, name: string, enable: boolean): string {
   if (enable || kind === "insights") return "";
   const consequence: Record<Exclude<RegistryKind, "insights">, string> = {

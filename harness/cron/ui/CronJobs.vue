@@ -197,24 +197,21 @@
           </button>
           <!-- card t_561dc4e0: the "enabled"/"disabled" text dies - the
                one right control is the SHARED TogglePill (card
-               t_d93864e7, the MCP pill), two-step armed (no accidental
-               first-click flips), top-aligned with the name. The
-               confirmed click POSTs /cron/toggle (harness/cron/ui/
-               toggle.ts): the write path is the per-job `enabled:` flag
-               in the crons.yaml that owns the job, hot-reloaded - the
-               same config-file law the MCP tab's own toggle rides. -->
+               t_d93864e7, the MCP pill), ONE click applies (card
+               t_5051d523: the arm/confirm two-step and its "click again
+               to confirm" note are dead - they made every job need a
+               double click), top-aligned with the name. The click POSTs
+               /cron/toggle (harness/cron/ui/toggle.ts): the write path
+               is the per-job `enabled:` flag in the crons.yaml that owns
+               the job, hot-reloaded - the same config-file law the MCP
+               tab's own toggle rides. -->
           <TogglePill
             class="cron-toggle reg-row-ctrl"
             :state="j.enabled"
             :disabled="busy !== null"
-            :armed="armed === cronKeyOf(j)"
             :label="`${j.enabled ? 'disable' : 'enable'} ${j.name}`"
-            :confirm-label="`confirm apply to ${j.name}?`"
             @click="onToggle(j)" />
         </div>
-        <p
-          v-if="armed === cronKeyOf(j)"
-          class="cron-confirm reg-row-note">{{ noteFor(j) }}</p>
       </li>
       </ul>
       <!-- card t_529628d5: the row anatomy law - the filter HIDES rows,
@@ -307,8 +304,9 @@
   // --- the job editor (card t_ecec864e) -------------------------------
   // One editor at a time, keyed by the row it edits (creating = a new
   // job, the name is the only identity). draftOf pre-fills from the
-  // wire row; emptyDraft seeds a new one. The two-step delete reuses
-  // the armed mechanic the toggle rides.
+  // wire row; emptyDraft seeds a new one. The two-step delete is its
+  // own guard (a DELETE, not a switch: card t_5051d523 killed the
+  // toggle's arm step, not the delete's).
   const editor = ref<{
     creating: boolean;
     draft: JobDraft;
@@ -365,7 +363,7 @@
   async function onDeleteFromEditor() {
     if (!editor.value || editor.value.busy) return;
     if (!editor.value.armedDelete) {
-      editor.value.armedDelete = true; // two-step: the toggle mechanic
+      editor.value.armedDelete = true; // two-step: the delete guard
       return;
     }
     editor.value.busy = true;
@@ -404,28 +402,21 @@
   }
 
   // --- the per-job toggle (card t_561dc4e0) ----------------------------
-  // The two-step mcp mechanic, armed locally: click 1 arms the row (the
-  // confirm note states the consequence), click 2 commits - no
-  // accidental first-click flips. busy holds the committing key so a
-  // stacked double-click cannot overlap writes.
-  const armed = ref<string | null>(null);
+  // ONE click commits (card t_5051d523: the two-step arm/confirm the
+  // mcp tab used to ride is dead - click one armed the row, click two
+  // applied, i.e. every job needed a double click). busy holds the
+  // committing key so a stacked double-click cannot overlap writes.
   const busy = ref<string | null>(null);
 
   function onToggle(j: CronJobWire) {
     if (busy.value !== null) return;
-    if (armed.value !== cronKeyOf(j)) {
-      armed.value = cronKeyOf(j);
-      return;
-    }
     apply(j);
   }
 
   // the commit: POST the toggle (the `enabled:` flag write lands and
   // the runner hot-reloads), then re-render from the fresh listing.
-  // Armed clears whether the write lands or throws.
   async function apply(j: CronJobWire) {
     const target = !j.enabled;
-    armed.value = null;
     busy.value = cronKeyOf(j);
     try {
       jobs.value = await setCronJobEnabled(cronKeyOf(j), target);
@@ -435,12 +426,6 @@
     } finally {
       busy.value = null;
     }
-  }
-
-  function noteFor(j: CronJobWire): string {
-    return j.enabled
-      ? `disable ${j.name}? click again to confirm`
-      : `enable ${j.name}? click again to confirm`;
   }
 
   // --- narrow adaptation, the module-UI recipe (card t_a2fdc630): this

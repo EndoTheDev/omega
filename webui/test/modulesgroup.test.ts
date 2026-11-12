@@ -89,11 +89,12 @@ test("the extensions tab rows merge the registry introspection", () => {
   );
 });
 
-test("module rows keep the E2 toggle contract (two-step arm, annotations)", () => {
-  // the same law the settings group obeyed: the busy gate, the pill
-  // rendered from live server state (the shared TogglePill, gate
-  // must-fix: the checkbox + its remount machinery are dead), the
-  // arm-then-apply confirm, the Q12 tail
+test("module rows keep the one-click toggle contract (single write, annotations)", () => {
+  // card t_5051d523: the arm/confirm two-step is dead - one click
+  // commits. The busy gate, the pill rendered from live server state
+  // (the shared TogglePill, gate must-fix: the checkbox + its remount
+  // machinery are dead), the consequence hint on the title and the Q12
+  // tail all stay.
   assert.match(
     extTab,
     /:disabled="busy !== null"/,
@@ -109,11 +110,16 @@ test("module rows keep the E2 toggle contract (two-step arm, annotations)", () =
     /type="checkbox"/,
     "no checkbox remains (the t_87303e8f :checked-prop trap is structurally dead)",
   );
-  assert.match(extTab, /toggleNote\(/, "the confirm note carries the law");
+  assert.match(extTab, /toggleNote\(/, "the consequence text carries the law");
   assert.match(
     extTab,
-    /confirm: apply (disable|enable)\?/,
-    "two-step arm: the second click answers a question",
+    /:hint="rowHint\(row\)"/,
+    "one click commits: the consequence text is a hover hint, never a gate",
+  );
+  assert.doesNotMatch(
+    extTab,
+    /:armed=|confirm-label|confirm: apply/,
+    "no arm state, no confirm relabel (the double-click defect, card t_5051d523)",
   );
   assert.match(
     extTab,
