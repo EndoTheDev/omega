@@ -73,6 +73,12 @@ bin/              Build output + local runtime (gitignored; skills/ templates tr
       <name>.log  The agent's wake log (stdout+stderr of wake children)
 ```
 
+An agent home's config is read once, at build time, and the built agent
+is cached for the process lifetime: hand-editing
+`agents/<name>/config/config.yaml` while the daemon runs leaves the
+running agent on its old values - restart the daemon for the edit to
+take effect.
+
 A released/installed copy is self-contained: the binary, config/,
 omega.db, memory files, and skills live in one home directory - the
 executable's directory for release-folder installs, or `~/.omega` when
