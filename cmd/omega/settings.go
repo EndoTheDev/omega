@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
@@ -333,7 +334,7 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Min: ptrF(1), Step: ptrF(1),
 					Value:   cfg.Server.RunTimeout,
 					Default: def.Server.RunTimeout,
-					Help:    "wall-clock cap per detached chat run, in seconds; applies on restart"},
+					Help:    "wall-clock cap per detached chat run and per cron fire, in seconds; a chat run takes a change on restart, a cron fire on its next fire"},
 				{Key: "server.default_workspace", Label: "default workspace", Type: "text",
 					Value: cfg.Server.DefaultWorkspace, Live: true,
 					// empty is the default (the cwd fallback stands)
@@ -1144,6 +1145,37 @@ func hotApply(cfg Config, prevWorkspace string, pctx *agent.Context, setFilesWor
 	// supply, tests).
 	if setAgentConfig != nil {
 		setAgentConfig(cfg.SystemPrompt, cfg.MaxTurns)
+	}
+	// The cron fire's cap follows the operator's knob (card
+	// t_e635df3a): a fire bounds a hung turn with
+	// server.run_timeout, and only this host knows which config file
+	// it booted on - so every save/reload hands the resolution to the
+	// scheduler instead of leaving it to re-guess a home.
+	pushRunTimeout(pctx, cfg)
+}
+
+// runTimeoutSetter is the host's consumer-owned face for the cron
+// capsule's fire cap (card t_e635df3a): hotApply declares its need
+// here, the capsule satisfies it with SetRunTimeout - the owner name
+// never leaves harness/ (the curatorSlotSetter discipline).
+type runTimeoutSetter interface {
+	SetRunTimeout(time.Duration)
+}
+
+// pushRunTimeout hands the cron runner the server.run_timeout this
+// host resolved - the config file the process booted on, an explicit
+// `--config` path included - so a fire's cap follows the operator's
+// knob even when the module's own home candidates point elsewhere
+// (card t_e635df3a). Both the boot push and every settings save/reload
+// ride this one helper (the setAgentConfig shape). A nil context or an
+// unmounted cron capsule is a no-op: the fire keeps its own
+// home-candidate read, then the 30-minute default.
+func pushRunTimeout(pctx *agent.Context, cfg Config) {
+	if pctx == nil {
+		return
+	}
+	if rt, ok := pctx.Services().Resolve("cron").(runTimeoutSetter); ok {
+		rt.SetRunTimeout(time.Duration(cfg.Server.RunTimeout) * time.Second)
 	}
 }
 
