@@ -965,3 +965,45 @@ func TestSchemaDefaultsAreTheFreshConfigLayer(t *testing.T) {
 		t.Errorf("knobs without a default = %v, want exactly [provider.model_name]", omitted)
 	}
 }
+
+// recordingRunTimeout is the cron capsule's offered face as the host
+// sees it: the consumer-owned SetRunTimeout the hot-apply resolves.
+type recordingRunTimeout struct {
+	got    time.Duration
+	pushed bool
+}
+
+func (rr *recordingRunTimeout) SetRunTimeout(d time.Duration) {
+	rr.got, rr.pushed = d, true
+}
+
+// TestHotApplyPushesCronRunTimeout pins the host half of card
+// t_e635df3a: every settings save/reload hands the cron scheduler the
+// server.run_timeout THIS host resolved from the config it booted on
+// (an explicit --config path included), so a fire's wall-clock cap
+// follows the operator's knob instead of the module's own home guess.
+// The capsule is reached through its offered seam - never an import.
+func TestHotApplyPushesCronRunTimeout(t *testing.T) {
+	stub := &recordingRunTimeout{}
+	pctx := &agent.Context{}
+	pctx.ApplyOffer("cron", "test", stub)
+	cfg := DefaultConfig()
+	cfg.Server.RunTimeout = 120
+	hotApply(cfg, cfg.Server.DefaultWorkspace, pctx, nil, nil, nil, nil)
+	if !stub.pushed {
+		t.Fatalf("cron SetRunTimeout never called: the fire would fall back to its own home-candidate read")
+	}
+	if stub.got != 120*time.Second {
+		t.Fatalf("pushed run timeout = %s, want the config's 120s", stub.got)
+	}
+	// A second save pushes the NEW value, not the first one.
+	stub.pushed = false
+	cfg.Server.RunTimeout = 45
+	hotApply(cfg, cfg.Server.DefaultWorkspace, pctx, nil, nil, nil, nil)
+	if !stub.pushed || stub.got != 45*time.Second {
+		t.Fatalf("re-push = %s (called %v), want 45s", stub.got, stub.pushed)
+	}
+	// An unmounted cron capsule (or a disabled module) is a no-op: no
+	// panic, and the fire keeps its own read.
+	hotApply(cfg, cfg.Server.DefaultWorkspace, &agent.Context{}, nil, nil, nil, nil)
+}
