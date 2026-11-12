@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -89,6 +90,25 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	if agent.Toolless(ctx) {
 		tools = map[string]core.Tool{}
 	}
+
+	// The tools block is computed ONCE per run, off the finished registry.
+	// Two laws ride here:
+	//
+	//   - toolSchemas sorts by name, so the serialized tools[] is
+	//     byte-identical on every call (a map's iteration order is
+	//     randomized per range - unsorted, the block reshuffled every
+	//     turn).
+	//   - The tool set is fixed for the run (ToolProviders are consulted
+	//     once, above), so one computation serves every turn. Anything
+	//     that changes with the MESSAGES belongs after it, never in it.
+	//
+	// Why it matters on the wire: prefix caches (ollama cloud, every
+	// OpenAI-compatible prompt cache) reuse only a byte-identical prompt
+	// PREFIX and re-prefill from the first differing token. A reshuffled
+	// tools[] made the divergence land at the START of the block, so the
+	// cached prefix collapsed to the system prompt alone and the tools
+	// block plus the resent history re-prefilled every turn.
+	schemas := toolSchemas(tools)
 
 	maxTurns := opts.MaxTurns
 	if maxTurns <= 0 {
@@ -234,7 +254,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			return nil
 		}
 
-		for event := range opts.Provider.Stream(ctx, AttachmentContext(messages), toolSchemas(tools)) {
+		for event := range opts.Provider.Stream(ctx, AttachmentContext(messages), schemas) {
 			switch e := event.(type) {
 			case core.ResponseChunk:
 				meter.response(time.Now())
@@ -973,7 +993,12 @@ func (m *phaseMeter) delta(last, now time.Time) time.Duration {
 	return 0
 }
 
-// toolSchemas converts a tools map to the provider schema list.
+// toolSchemas converts a tools map to the provider schema list, sorted
+// by tool name. The sort is load-bearing, not cosmetic: a map's range
+// order is randomized, so an unsorted list serializes the tools[] block
+// in a different order on every call, and a prefix cache re-prefills
+// from the first differing token onward. Sorted, the block is a stable
+// prefix, so only the new tail of the conversation pays.
 func toolSchemas(tools map[string]core.Tool) []llm.ToolSchema {
 	if len(tools) == 0 {
 		return nil
@@ -989,5 +1014,6 @@ func toolSchemas(tools map[string]core.Tool) []llm.ToolSchema {
 			Parameters: tool.SchemaParameters(),
 		})
 	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result
 }
