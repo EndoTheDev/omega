@@ -116,21 +116,23 @@ test("auto keeps the group open while the run is live or any row runs", () => {
 
 // --- structural wiring: the card's must-haves ---
 
-test("ChatTab renders the group at all THREE sites and keys on item identity", () => {
+test("ChatTab renders the group at BOTH sites and keys on item identity", () => {
   const t = src("components/ChatTab.vue");
   // the grouping rides the transcript level (render-site view), never
   // a transcript mutation
   assert.match(t, /import \{ groupToolRuns, isToolRun, type ChatEntry \}/);
   assert.match(t, /groupToolRuns\(transcript\.value, variantOfItem\)/);
   assert.match(t, /groupToolRuns\(block, variantOfItem\)/);
-  assert.match(t, /groupToolRuns\(liveRun\.value\.body, variantOfItem\)/);
+  // the third site retired with the run-only live body (card t_5bb319f6):
+  // a streaming run now groups its calls inside the ordinary stacked block
+  assert.doesNotMatch(t, /groupToolRuns\(liveRun\.value\.body/);
   // the group's key is its HEAD ROW's key - a growing run keeps its
   // details element (pins survive the growth)
   assert.match(t, /return isToolRun\(entry\) \? itemKey\(entry\.items\[0\]!\) : itemKey\(entry\)/);
   // the live gate rides the busy slot so auto stays open across the
   // whole run (no per-call yoyo)
   assert.match(t, /:live="busy"/);
-  assert.equal(t.match(/<ToolGroup(?![\w-])/g)?.length, 3, "one render per site");
+  assert.equal(t.match(/<ToolGroup(?![\w-])/g)?.length, 2, "one render per site");
 });
 
 test("ToolGroup mirrors the row/block fold: shared mode, pin click, child passthrough", () => {
