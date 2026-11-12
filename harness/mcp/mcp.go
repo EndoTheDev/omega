@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -67,16 +68,20 @@ type mcpCallResult struct {
 // --- unified MCP connection interface ---
 
 // MCPConn is the abstraction over stdio and HTTP MCP server connections.
+// Every call that a live run drives takes a ctx (card t_0a068e11): the
+// agent loop's tool call carries cancellation, and a cancelled call must
+// abort instead of riding out the 30s request budget. close() has no ctx -
+// it is a shutdown edge, not a request.
 type MCPConn interface {
-	request(method string, params any) (json.RawMessage, error)
-	listTools() ([]mcpTool, error)
-	callTool(name string, args map[string]any) (string, bool, error)
+	request(ctx context.Context, method string, params any) (json.RawMessage, error)
+	listTools(ctx context.Context) ([]mcpTool, error)
+	callTool(ctx context.Context, name string, args map[string]any) (string, bool, error)
 	close()
 }
 
 // mcpListTools calls tools/list on any MCP connection.
-func mcpListTools(c MCPConn) ([]mcpTool, error) {
-	result, err := c.request("tools/list", map[string]any{})
+func mcpListTools(ctx context.Context, c MCPConn) ([]mcpTool, error) {
+	result, err := c.request(ctx, "tools/list", map[string]any{})
 	if err != nil {
 		return nil, err
 	}
@@ -88,8 +93,8 @@ func mcpListTools(c MCPConn) ([]mcpTool, error) {
 }
 
 // mcpCallTool calls tools/call on any MCP connection and extracts text content.
-func mcpCallTool(c MCPConn, name string, args map[string]any) (string, bool, error) {
-	result, err := c.request("tools/call", map[string]any{"name": name, "arguments": args})
+func mcpCallTool(ctx context.Context, c MCPConn, name string, args map[string]any) (string, bool, error) {
+	result, err := c.request(ctx, "tools/call", map[string]any{"name": name, "arguments": args})
 	if err != nil {
 		return "", false, err
 	}
@@ -180,7 +185,7 @@ func (s *stdioServer) readLoop() {
 	}
 }
 
-func (s *stdioServer) request(method string, params any) (json.RawMessage, error) {
+func (s *stdioServer) request(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	s.pendingMu.Lock()
 	s.nextID++
 	id := s.nextID
@@ -204,6 +209,15 @@ func (s *stdioServer) request(method string, params any) (json.RawMessage, error
 			return nil, fmt.Errorf("mcp error %d: %s", resp.Error.Code, resp.Error.Message)
 		}
 		return resp.Result, nil
+	case <-ctx.Done():
+		// The run above cancelled (turn aborted, request deadline): drop
+		// the pending slot so the readLoop's late answer is discarded, and
+		// answer the cancellation. The child process keeps running - it is
+		// the bridge's to close, not one call's.
+		s.pendingMu.Lock()
+		delete(s.pending, id)
+		s.pendingMu.Unlock()
+		return nil, fmt.Errorf("%s: %w", method, ctx.Err())
 	case <-s.done:
 		s.pendingMu.Lock()
 		delete(s.pending, id)
@@ -223,7 +237,10 @@ func (s *stdioServer) initialize() error {
 		"clientInfo":      map[string]string{"name": "omega-mcp-bridge", "version": "0.1.0"},
 		"capabilities":    map[string]any{},
 	}
-	_, err := s.request("initialize", params)
+	// The handshake runs at mount, before any run owns a cancellable ctx;
+	// Background is the honest context here (the 30s request budget still
+	// bounds it).
+	_, err := s.request(context.Background(), "initialize", params)
 	if err != nil {
 		return err
 	}
@@ -233,12 +250,12 @@ func (s *stdioServer) initialize() error {
 	return nil
 }
 
-func (s *stdioServer) listTools() ([]mcpTool, error) {
-	return mcpListTools(s)
+func (s *stdioServer) listTools(ctx context.Context) ([]mcpTool, error) {
+	return mcpListTools(ctx, s)
 }
 
-func (s *stdioServer) callTool(name string, args map[string]any) (string, bool, error) {
-	return mcpCallTool(s, name, args)
+func (s *stdioServer) callTool(ctx context.Context, name string, args map[string]any) (string, bool, error) {
+	return mcpCallTool(ctx, s, name, args)
 }
 
 func (s *stdioServer) close() {
@@ -286,24 +303,18 @@ func (s *httpServer) nextRequestID() int64 {
 	return id
 }
 
-func (s *httpServer) request(method string, params any) (json.RawMessage, error) {
+func (s *httpServer) request(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	id := s.nextRequestID()
 	req := mcpRequest{JSONRPC: "2.0", ID: id, Method: method, Params: params}
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal: %w", err)
 	}
-	httpReq, err := http.NewRequest("POST", s.url, bytes.NewReader(body))
+	// The ctx rides the request (and its body read): a cancelled run closes
+	// the connection instead of waiting out the client timeout.
+	httpReq, err := s.newMCPRequest(ctx, s.url, "POST", body)
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json, text/event-stream")
-	for k, v := range s.headers {
-		httpReq.Header.Set(k, v)
-	}
-	if s.sessionID != "" {
-		httpReq.Header.Set("mcp-session-id", s.sessionID)
 	}
 	resp, err := s.client.Do(httpReq)
 	if err != nil {
@@ -312,7 +323,7 @@ func (s *httpServer) request(method string, params any) (json.RawMessage, error)
 	defer resp.Body.Close()
 	ct := resp.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "text/event-stream") {
-		return s.readSSE(resp.Body)
+		return s.readSSE(ctx, resp.Body)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("http %d", resp.StatusCode)
@@ -327,35 +338,95 @@ func (s *httpServer) request(method string, params any) (json.RawMessage, error)
 	return mcpResp.Result, nil
 }
 
+// SSE frame limits (card t_0a068e11). The scanner's default 64 KiB token cap
+// killed any larger frame with bufio.ErrTooLong; 10 MiB is the loud ceiling -
+// a message beyond it is a hard error, never a silent truncation.
+const (
+	sseInitialBufferBytes = 64 * 1024
+	sseMaxFrameBytes      = 10 * 1024 * 1024
+)
+
 // readSSE reads an SSE stream and returns the first JSON-RPC response.
-func (s *httpServer) readSSE(body io.Reader) (json.RawMessage, error) {
+// Events accumulate per the SSE spec: consecutive `data:` lines belong to the
+// SAME event and concatenate with newlines, and a blank line dispatches it.
+// Parsing each data line on its own (the old shape) silently dropped every
+// continuation line, so a long payload arrived cut in half.
+func (s *httpServer) readSSE(ctx context.Context, body io.Reader) (json.RawMessage, error) {
 	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 0, sseInitialBufferBytes), sseMaxFrameBytes)
+	var data strings.Builder
 	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "data: ") {
-			data := strings.TrimPrefix(line, "data: ")
-			if data == "[DONE]" {
-				continue
-			}
-			var mcpResp mcpResponse
-			if err := json.Unmarshal([]byte(data), &mcpResp); err == nil {
-				if mcpResp.Error != nil {
-					return nil, fmt.Errorf("mcp error %d: %s", mcpResp.Error.Code, mcpResp.Error.Message)
-				}
-				return mcpResp.Result, nil
-			}
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("SSE read: %w", err)
 		}
+		line := scanner.Text()
+		if line == "" {
+			res, ok, err := parseSSEEvent(data.String())
+			data.Reset()
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				return res, nil
+			}
+			continue
+		}
+		value, isData := sseDataValue(line)
+		if !isData {
+			continue
+		}
+		if data.Len() > 0 {
+			data.WriteByte('\n')
+		}
+		data.WriteString(value)
 	}
 	if err := scanner.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			return nil, fmt.Errorf("SSE frame exceeds the %d byte cap: %w", sseMaxFrameBytes, err)
+		}
 		return nil, fmt.Errorf("SSE read: %w", err)
+	}
+	// A stream may end without the blank line that dispatches its last event.
+	if res, ok, err := parseSSEEvent(data.String()); err != nil {
+		return nil, err
+	} else if ok {
+		return res, nil
 	}
 	return nil, fmt.Errorf("SSE stream ended without response")
 }
 
+// sseDataValue reports whether line carries a `data:` field and returns its
+// value with the single optional space after the colon removed.
+func sseDataValue(line string) (string, bool) {
+	if !strings.HasPrefix(line, "data:") {
+		return "", false
+	}
+	return strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " "), true
+}
+
+// parseSSEEvent parses one accumulated event payload. ok=false means the
+// event carried no usable response ([DONE], empty, or non-JSON keep-alive
+// noise) and reading continues.
+func parseSSEEvent(payload string) (res json.RawMessage, ok bool, err error) {
+	if payload == "" || payload == "[DONE]" {
+		return nil, false, nil
+	}
+	var mcpResp mcpResponse
+	if err := json.Unmarshal([]byte(payload), &mcpResp); err != nil {
+		return nil, false, nil
+	}
+	if mcpResp.Error != nil {
+		return nil, false, fmt.Errorf("mcp error %d: %s", mcpResp.Error.Code, mcpResp.Error.Message)
+	}
+	return mcpResp.Result, true, nil
+}
+
 // newMCPRequest builds an HTTP request to the MCP endpoint with the common
-// headers (Content-Type, Accept, and any configured custom headers) applied.
-func (s *httpServer) newMCPRequest(url, method string, body []byte) (*http.Request, error) {
-	req, err := http.NewRequest(method, url, bytes.NewReader(body))
+// headers (Content-Type, Accept, the session id once known, and any
+// configured custom headers) applied. One door for both the JSON-RPC
+// requests and the initialize handshake.
+func (s *httpServer) newMCPRequest(ctx context.Context, url, method string, body []byte) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -363,6 +434,9 @@ func (s *httpServer) newMCPRequest(url, method string, body []byte) (*http.Reque
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	for k, v := range s.headers {
 		req.Header.Set(k, v)
+	}
+	if s.sessionID != "" {
+		req.Header.Set("mcp-session-id", s.sessionID)
 	}
 	return req, nil
 }
@@ -376,7 +450,10 @@ func (s *httpServer) initialize() error {
 	// Do the initialize request manually to capture the session ID header.
 	id := s.nextRequestID()
 	reqBody, _ := json.Marshal(mcpRequest{JSONRPC: "2.0", ID: id, Method: "initialize", Params: params})
-	httpReq, err := s.newMCPRequest(s.url, "POST", reqBody)
+	// Mount-time handshake: no run owns a cancellable ctx yet, so Background
+	// (the 30s client timeout bounds it).
+	ctx := context.Background()
+	httpReq, err := s.newMCPRequest(ctx, s.url, "POST", reqBody)
 	if err != nil {
 		return fmt.Errorf("http request: %w", err)
 	}
@@ -388,7 +465,7 @@ func (s *httpServer) initialize() error {
 	// Capture the session ID for subsequent requests.
 	s.sessionID = resp.Header.Get("mcp-session-id")
 	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
-		_, err = s.readSSE(resp.Body)
+		_, err = s.readSSE(ctx, resp.Body)
 		if err != nil {
 			return fmt.Errorf("read SSE: %w", err)
 		}
@@ -401,14 +478,12 @@ func (s *httpServer) initialize() error {
 			return fmt.Errorf("mcp error %d: %s", mcpResp.Error.Code, mcpResp.Error.Message)
 		}
 	}
-	// Send initialized notification. For HTTP, this is a POST with no ID.
+	// Send initialized notification. For HTTP, this is a POST with no ID; the
+	// session id rides newMCPRequest now that it is captured.
 	notifBody, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
-	httpReq2, err := s.newMCPRequest(s.url, "POST", notifBody)
+	httpReq2, err := s.newMCPRequest(ctx, s.url, "POST", notifBody)
 	if err != nil {
 		return nil
-	}
-	if s.sessionID != "" {
-		httpReq2.Header.Set("mcp-session-id", s.sessionID)
 	}
 	resp2, err := s.client.Do(httpReq2)
 	if err != nil {
@@ -422,12 +497,12 @@ func (s *httpServer) initialize() error {
 	return nil
 }
 
-func (s *httpServer) listTools() ([]mcpTool, error) {
-	return mcpListTools(s)
+func (s *httpServer) listTools(ctx context.Context) ([]mcpTool, error) {
+	return mcpListTools(ctx, s)
 }
 
-func (s *httpServer) callTool(name string, args map[string]any) (string, bool, error) {
-	return mcpCallTool(s, name, args)
+func (s *httpServer) callTool(ctx context.Context, name string, args map[string]any) (string, bool, error) {
+	return mcpCallTool(ctx, s, name, args)
 }
 
 func (s *httpServer) close() {
@@ -656,7 +731,9 @@ func (b *Bridge) connect(cfg *mcpConfig) error {
 			continue
 		}
 		b.servers[sc.Name] = conn
-		tools, err := conn.listTools()
+		// connect runs at mount, before any run owns a cancellable ctx; the
+		// per-request budget (30s) bounds the discovery pass.
+		tools, err := conn.listTools(context.Background())
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "mcp: failed to list tools from %s: %v\n", sc.Name, err)
 			b.errs[sc.Name] = "tools/list failed: " + err.Error()
@@ -696,7 +773,7 @@ func (b *Bridge) Tools() map[string]agentTool {
 				if srv == nil {
 					return "", fmt.Errorf("MCP server %s is not running", mapping.server)
 				}
-				content, isErr, err := srv.callTool(mapping.mcp, args)
+				content, isErr, err := srv.callTool(ctx, mapping.mcp, args)
 				if err != nil {
 					return "", fmt.Errorf("MCP call failed: %v", err)
 				}
