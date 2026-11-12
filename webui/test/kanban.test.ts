@@ -357,7 +357,7 @@ test("boardLogic: bodyPreview takes the first non-empty line, truncated", () => 
   assert.ok(bodyPreview(long).length <= 81);
 });
 
-test("CRUD: the board builds cards from a full form, edits in the drawer, deletes armed", () => {
+test("CRUD: the board builds cards from a full form, edits in the drawer, deletes from the drawer", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
   const drawerVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "board", "DetailDrawer.vue"), "utf8");
   // create: full form POSTing title/body/assignee/priority with the column preset
@@ -370,15 +370,59 @@ test("CRUD: the board builds cards from a full form, edits in the drawer, delete
   assert.match(drawerVue, /\(e: "save", patch: \{ title\?: string; body\?: string; priority\?: number \}\)/, "the drawer reports save patches");
   assert.match(boardVue, /@save="onDrawerSave"/, "the board wires the drawer's saves");
   assert.match(boardVue, /await loadDetail\(id\)/, "a save refetches the drawer view");
-  // delete: armed second click, DELETE through the capability route
-  assert.match(drawerVue, /confirmingDelete/, "the card delete is an armed two-click");
-  assert.match(boardVue, /@delete="onDrawerDelete"/);
-  assert.match(boardVue, /method: "DELETE"/);
   // events: the GET payload's events reach the drawer as a prop
   assert.match(boardVue, /:events="detailEvents"/);
   assert.match(boardVue, /detailEvents\.value = d\.events \?\? \[\]/, "the detail payload's events land in the drawer");
   assert.match(drawerVue, /events: BoardEvent\[\]/);
   assert.match(drawerVue, /class="event-list"/);
+});
+
+// --- card delete (card t_5a638160): the wire tool kanban.delete (and its
+// REST face, DELETE /tasks/{id}) existed while the UI affordance was buried
+// inside the body editor - you had to click into the body to even see it.
+// The delete now rides the drawer's own danger zone, never the board canvas
+// (no stray click on the grid), the confirm NAMES the card (id + title), and
+// the board drops the row optimistically. There is NO undo: undoing a delete
+// would need card resurrection the tool layer does not have, so the confirm
+// is the safety - stated in the code so nobody adds a half undo later.
+test("delete: drawer-level control, a confirm that names the card, optimistic removal, no undo", () => {
+  const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
+  const drawerVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "board", "DetailDrawer.vue"), "utf8");
+
+  // the control: its own drawer row, outside the body editor, absent from the grid
+  assert.match(drawerVue, /class="drawer-danger"/, "the delete rides the drawer's own danger zone");
+  assert.match(drawerVue, /@click="armDelete"/, "the first click arms the confirm");
+  assert.match(drawerVue, /@click="confirmDelete"/, "only the confirm emits the delete");
+  assert.doesNotMatch(drawerVue, /drawer-discard/, "the delete no longer hides in the body-edit form");
+  assert.doesNotMatch(boardVue, /class="[^"]*card-delete/, "no delete control on the card canvas");
+  // the confirm names id + title
+  assert.match(
+    drawerVue,
+    /const deleteConfirmLabel = computed\(\s*\(\) => `delete \$\{props\.task\.id\} - \$\{props\.task\.title\}\?`/,
+    "the confirm names the card's id AND title",
+  );
+  assert.match(drawerVue, /class="drawer-confirm-text">\{\{ deleteConfirmLabel \}\}/, "the named confirm is rendered");
+  // the emit is gated: emit("delete") appears only inside confirmDelete
+  assert.equal(
+    (drawerVue.match(/emit\("delete"\)/g) ?? []).length,
+    1,
+    "exactly one delete emit, in the confirm handler",
+  );
+  assert.match(drawerVue, /function confirmDelete\(\) \{\s*disarmDelete\(\);\s*emit\("delete"\);/, "the confirm disarms, then emits");
+  // no undo, and the reason is in the code
+  assert.match(drawerVue, /there is NO undo/, "the no-undo ruling is stated where the control lives");
+  assert.match(drawerVue, /would need card resurrection/, "and names WHY undo cannot exist");
+  assert.doesNotMatch(drawerVue, /undo-|showUndo|emit\("undo"\)/i, "no half-built undo affordance");
+
+  // the wire: DELETE through the capability route, card leaves the list first
+  assert.match(boardVue, /@delete="onDrawerDelete"/, "the board wires the drawer's delete");
+  const deleteFn = boardVue.slice(boardVue.indexOf("async function onDrawerDelete"));
+  assert.ok(deleteFn.length > 0, "the board has the delete handler");
+  const optimisticAt = deleteFn.indexOf("tasks.value = tasks.value.filter((t) => t.id !== id)");
+  const requestAt = deleteFn.indexOf('method: "DELETE"');
+  assert.ok(optimisticAt >= 0, "the confirmed card is dropped from the list");
+  assert.ok(requestAt > optimisticAt, "the row leaves the grid before the round trip (optimistic)");
+  assert.match(deleteFn, /await fetchBoard\(\);\s*return;/, "a refused DELETE snaps the board back to the server's truth");
 });
 
 // --- the push shape (card t_b5784de3): the 5s poll is dead, the shell's

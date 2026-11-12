@@ -11,8 +11,10 @@
 #      server (GET /tasks and GET /tasks/{id} carry the change);
 #   c. COMMENT - the comment form appends and the event trail grows a
 #      comment row; the events list renders created/edited/comment;
-#   d. DELETE - the armed two-click discard (edit-body form) removes
-#      the card: gone from the DOM, gone from the server (404).
+#   d. DELETE - the drawer's danger zone (never the grid, never the
+#      body editor) arms a confirm that NAMES the card (id + title);
+#      confirming removes the card: gone from the DOM, gone from the
+#      server (404). There is no undo - the confirm is the safety.
 #
 # The board is PINNED (j100-crud, recipe 78/98's shape); this run's card
 # carries the run tag in the title and DELETEs out at exit (the
@@ -177,19 +179,24 @@ curl -s "${JOURNEY_BASE_URL}/tasks/${A}?board=${BOARD}" | grep -q "round-trip no
 wait_js '(()=>{const k=[...document.querySelectorAll(".event-row .event-kind")].map(x=>(x.textContent||"").trim());return k.includes("created")&&k.includes("edited")&&k.includes("comment")})()' 10
 step "ok: comment posted, event trail renders created/edited/comment"
 
-# ---- d: DELETE - armed two-click, card gone everywhere ----------------------
-# the discard lives in the body-edit form
-js_click '.drawer-body'
-wait_js '(()=>{return !!document.querySelector(".drawer-discard")})()' 8
-js_click '.drawer-discard'
-wait_js '(()=>{const d=document.querySelector(".drawer-discard");return !!d&&(d.textContent||"").includes("confirm delete")})()' 5
-js_click '.drawer-discard'
-wait_js '(()=>{return !document.querySelector(".drawer")})()' 8
-wait_js "$(printf '(()=>{return ![...document.querySelectorAll(".card")].some(x=>x.dataset.id==="%s")})()' "$A")" 8
+# ---- d: DELETE - the drawer's danger zone, card gone everywhere -------------
+# card t_5a638160: the control no longer hides inside the body editor. It is
+# a drawer-level button; the confirm strip NAMES the card (id + title) and its
+# own button is the trigger. No undo exists, so the confirm is the safety.
+wait_js "(()=>{return !!document.querySelector('.drawer-danger .drawer-delete')})()" 8 ||
+  die "the drawer never shows its delete control"
+step "ok: the drawer-level delete control renders without opening the body editor"
+js_click '.drawer-danger .drawer-delete'
+wait_js "(()=>{const t=(document.querySelector('.drawer-confirm-text')||{}).textContent||'';return t.includes('$A')&&t.includes('$NEW_TITLE')})()" 5 ||
+  die "the confirm does not name the card (want id $A and title $NEW_TITLE)"
+step "ok: the confirm names the card ($A + its title)"
+js_click '.drawer-confirm-actions .drawer-delete'
+wait_js "(()=>{return !document.querySelector('.drawer')})()" 8
+wait_js "(()=>{return ![...document.querySelectorAll('.card')].some(x=>x.dataset.id==='$A')})()" 8
 sleep 1
 code=$(curl -s -o /dev/null -w '%{http_code}' "${JOURNEY_BASE_URL}/tasks/${A}?board=${BOARD}")
 [ "$code" = "404" ] || die "deleted card still answers GET $code (task $A)"
-step "ok: armed delete removes the card (drawer closes, server 404s)"
+step "ok: the confirmed delete removes the card (drawer closes, server 404s)"
 
 assert_no_console_errors
 A=""   # the delete already cleaned this run's card
