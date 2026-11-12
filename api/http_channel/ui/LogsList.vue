@@ -66,7 +66,7 @@
 <script setup lang="ts">
   import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
   import { isNarrowWidth } from "./narrow";
-  import { LOG_STREAM_EVENT, LOG_SUBSCRIBE_EVENT, mergeTail, type LogStreamDetail } from "./logstream";
+  import { LOG_STREAM_EVENT, LOG_SUBSCRIBE_EVENT, MAX_LINES, SNAPSHOT_OVERLAP, mergeTail, type LogStreamDetail } from "./logstream";
   import {
     filterLogLines,
     LOG_SEVERITIES,
@@ -92,8 +92,9 @@
 
   // pending buffers pushed lines that land before the snapshot does: the
   // pane subscribes first (so no appended line is lost in the gap), then
-  // folds the buffer on with mergeTail, which drops the overlap a line
-  // written during the REST read would otherwise render twice.
+  // folds the buffer on with mergeTail - the ONE merge whose overlap bound
+  // is open (the buffered run may repeat the snapshot's tail). Every later
+  // push is a transport delta and appends at the default bound of zero.
   let pending: string[] = [];
 
   // onStream is the shell's half of the pane's window seam: a pushed
@@ -187,12 +188,13 @@
     }
     if (snapshot.length) {
       // the snapshot is the truth up to the moment it was read; the
-      // buffer carries what the socket pushed during the read
-      lines.value = mergeTail(snapshot, pending.splice(0));
+      // buffer carries what the socket pushed during the read, so this is
+      // the merge whose overlap bound is positional-open
+      lines.value = mergeTail(snapshot, pending.splice(0), MAX_LINES, SNAPSHOT_OVERLAP);
     } else if (!nextError) {
       // an empty log is a real answer: keep the pushed lines that beat
       // the read, which are all this pane will show
-      lines.value = mergeTail(lines.value, pending.splice(0));
+      lines.value = mergeTail(lines.value, pending.splice(0), MAX_LINES, SNAPSHOT_OVERLAP);
     }
     // on a failure the buffer stays: the next successful read folds it
     loaded.value = true;
