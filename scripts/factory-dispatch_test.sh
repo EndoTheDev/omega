@@ -30,6 +30,59 @@ set -uo pipefail
 
 GUARD="$(cd "$(dirname "$0")" && pwd)/factory-dispatch.sh"
 
+# ---- FENCE ROOT (card t_8ff31265) ------------------------------------------
+# Every LIVE pass ends in `hermes kanban dispatch` behind the FENCE STAMP: the
+# guard cds to `dirname "$0"/..` and refuses to dispatch at all (exit 1,
+# "FENCE STAMP MISSING: <root>/bin/shims/git absent") unless THAT tree carries
+# an executable bin/shims/git.
+#
+# That is why this suite used to be location-sensitive, and the mechanism was
+# never stub-hermes PATH resolution: a copy of `scripts/factory-dispatch.sh` in
+# a scratch dir makes the guard root the scratch dir's PARENT - a tree with no
+# bin/shims - so the fence refused before the stub `hermes` on PATH was ever
+# consulted, and 23 live-leg assertions (T9/T10/T11/T13/T19/T20) red as if the
+# clamp or the claimable gate had regressed. The reviewer law forbids mutating
+# the worktree under review, so a reviewer ALWAYS runs from a scratch copy and
+# ALWAYS read that false red (vera, review of t_42ff3dad, 2026-11-13).
+#
+# The shim is a checkout artifact: only a checkout can satisfy the stamp. So a
+# scratch copy gets a STAGED root - the same guard bytes at <stage>/scripts/
+# factory-dispatch.sh with a real bin/shims/git beside them - and the live legs
+# run the file under test exactly as a checkout would. A checkout that has LOST
+# its shim is the opposite case (a guard regression), so that stays a hard red.
+GUARD_ROOT="$(cd "$(dirname "$GUARD")/.." && pwd)"
+stage_fence_root() {  # $1 = guard path -> copy of it inside a fence-shaped root
+  local src="$1" stg real
+  stg=$(mktemp -d) || return 1
+  mkdir -p "$stg/scripts" "$stg/bin/shims" || return 1
+  cp "$src" "$stg/scripts/factory-dispatch.sh" || return 1
+  real=$(command -v git || true)
+  # An absolute real-git path, never a bare `git`: the guard prepends this dir
+  # to PATH for the dispatch call, so a bare name would re-enter this shim.
+  {
+    echo '#!/usr/bin/env bash'
+    echo '# staged fence shim (test harness, card t_8ff31265): the guard only'
+    echo '# requires an executable bin/shims/git to stamp a live dispatch pass.'
+    if [ -n "$real" ]; then printf 'exec "%s" "$@"\n' "$real"; else echo 'exit 0'; fi
+  } >"$stg/bin/shims/git" || return 1
+  chmod +x "$stg/bin/shims/git" || return 1
+  printf '%s' "$stg/scripts/factory-dispatch.sh"
+}
+if [ ! -x "$GUARD_ROOT/bin/shims/git" ]; then
+  # A REAL omega checkout that carries this suite's own guard but lost the shim
+  # is a guard regression, not a location artifact: name it and stop, never
+  # stage a fake fence over a broken checkout.
+  if [ -e "$GUARD_ROOT/.git" ] && [ -f "$GUARD_ROOT/scripts/factory-dispatch.sh" ]; then
+    echo "factory-dispatch_test: bin/shims/git is MISSING from the checkout at $GUARD_ROOT - every live pass refuses to dispatch without the fence stamp, so this is a guard regression, not an environment gap" >&2
+    exit 2
+  fi
+  STAGED_GUARD=$(stage_fence_root "$GUARD") \
+    || { echo "factory-dispatch_test: cannot stage a fence root for $GUARD - the guard root $GUARD_ROOT has no bin/shims/git and no staging dir could be made" >&2; exit 2; }
+  echo "fence: $GUARD_ROOT has no bin/shims/git (not an omega checkout) - live legs run a staged copy at ${STAGED_GUARD%/*} (same guard bytes, the stamp's own shim beside them)"
+  trap 'rm -rf "${STAGED_GUARD%/scripts/factory-dispatch.sh}"' EXIT
+  GUARD="$STAGED_GUARD"
+fi
+
 pass=0
 fail=0
 ok() { pass=$((pass + 1)); }
@@ -781,6 +834,10 @@ printf "%s" "$out" | grep -q "^legal: t_dispatch" \
 # PATH entry must be POSIX (cygpath -u): a C:/ entry is split at the drive
 # colon by MSYS and never resolves, which would silently hand the call to the
 # REAL hermes (it refuses in a worker context), reding the log assertion.
+# That is a SEPARATE trap from the suite's location sensitivity: a live pass
+# also needs the fence stamp at the guard's OWN root (bin/shims/git), which the
+# preflight at the top of this file stages for a scratch copy. Both conditions
+# hold before any live leg runs, so a `calls: 0` here is a real guard finding.
 SPAWN_BASE=$(mktemp -d)
 SPAWN_BASE_N=$(mixpath "$SPAWN_BASE")
 SPAWN_BASE_U=$(cygpath -u "$SPAWN_BASE" 2>/dev/null || printf '%s' "$SPAWN_BASE")
