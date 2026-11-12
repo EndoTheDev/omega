@@ -306,7 +306,7 @@ func (s *Server) handleThemes(w http.ResponseWriter, request *http.Request) {
 	// (a theme edited a second ago), never a cached list.
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(map[string]any{"themes": s.themes.snapshot()}) //nolint:errcheck // best-effort read response
+	_ = json.NewEncoder(w).Encode(map[string]any{"themes": s.themes.snapshot()}) // best-effort read response
 }
 
 // fingerprintEqual compares two mtime maps.

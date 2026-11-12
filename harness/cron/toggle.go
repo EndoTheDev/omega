@@ -246,7 +246,7 @@ func writeJobsYAML(path string, doc *yaml.Node) error {
 		return fmt.Errorf("write %s: %w", tmp, err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp) //nolint:errcheck // best-effort cleanup
+		_ = os.Remove(tmp) // best-effort cleanup
 		return fmt.Errorf("replace %s: %w", path, err)
 	}
 	return nil
