@@ -77,14 +77,33 @@ rm -rf "$d"
 bid="${MOCK_BUILDID:-11111111-1111-1111-1111-111111111111}"
 mkdir -p "$d/_nuxt/builds/meta"
 echo "bundle-stamp=${MOCK_STAMP:-s0} buildId=$bid" >"$d/index.html"
+# The real bundle's name shape, which is also the collation-sensitive
+# one (card t_a34ab80b): byte order puts 200.html / 404.html BEFORE
+# _nuxt/... (digit < underscore in ASCII), while a UTF-8 locale lifts
+# _nuxt/... to the top. A fixture without this shape cannot catch the
+# hash gate's locale bug.
+echo "<html>200</html>" >"$d/200.html"
+echo "<html>404</html>" >"$d/404.html"
+echo "// chunk A" >"$d/_nuxt/Aa.js"
+echo "// chunk B" >"$d/_nuxt/BD0C.js"
+if [ "${MOCK_STABLE_META:-0}" = "1" ]; then
+	# byte-identical rebuild: volatile metadata frozen too, so git sees
+	# the same tree and NOTHING can make the gate disagree except the
+	# file ordering (the collation bug's exact shape: commit --only has
+	# nothing to commit and the lane dies FATAL)
+	ts=1792531190000
+	now=1792531190000
+else
+	ts=$((1792531190000 + RANDOM))
+	now="$(date +%s%3N)"
+fi
+echo "{\"id\":\"$bid\",\"timestamp\":$ts,\"prerendered\":[]}" >"$d/_nuxt/builds/meta/$bid.json"
+echo "{\"id\":\"$bid\",\"timestamp\":$now}" >"$d/_nuxt/builds/latest.json"
 poison=""
 if [ "${MOCK_POISON:-0}" = "1" ]; then
 	poison="<<<<<<< poison"
 fi
 echo "$poison" >"$d/_nuxt/chunk.js"
-ts=$((1792531190000 + RANDOM))
-echo "{\"id\":\"$bid\",\"timestamp\":$ts,\"prerendered\":[]}" >"$d/_nuxt/builds/meta/$bid.json"
-echo "{\"id\":\"$bid\",\"timestamp\":$(date +%s%3N)}" >"$d/_nuxt/builds/latest.json"
 EOF
 	chmod +x "$MOCK"
 }
@@ -92,11 +111,18 @@ EOF
 run() {
 	# run <args, ...>; rc, $TMP/run.out and $OUT capture the result.
 	# cd INSIDE the fixture: the lane resolves its repo from cwd.
+	# LANE_LOCALE=<locale> runs the lane under that AMBIENT locale - the
+	# lane's own collation pin must hold without the caller exporting
+	# anything (card t_a34ab80b).
 	STAMP="${STAMP:-s0}"
 	rc=0
 	(
-		cd "$TMP" &&
-			EMBED_LANE_BUILD_CMD="$MOCK" MOCK_STAMP="$STAMP" bash "$LANE" "$@"
+		cd "$TMP" || exit 1
+		export EMBED_LANE_BUILD_CMD="$MOCK" MOCK_STAMP="$STAMP"
+		if [ -n "${LANE_LOCALE:-}" ]; then
+			export LC_ALL="$LANE_LOCALE" LANG="$LANE_LOCALE"
+		fi
+		bash "$LANE" "$@"
 	) >"$TMP/run.out" 2>"$OUT" || rc=$?
 }
 
@@ -268,6 +294,74 @@ check "parallel B merges with zero static/ conflicts" test "$rc_merge" -eq 0
 run "branch B"
 check "parallel B: lane commit ok" test "$rc" -eq 0
 check "parallel B: bundle carries B's regen" contains "bundle-stamp=pb" "$TMP/api/static/index.html"
+
+########## repo 4: locale collation must never reach the hash gate ##########
+# Regression pin (card t_a34ab80b). canonical_hash_disk read the disk set
+# through find + a LOCALE-sorted `sort -z` while canonical_hash_head walks
+# git's tree in BYTE order. On a UTF-8 host the same bundle ordered two
+# ways (bytes: 200.html, 404.html, _nuxt/...; en_US.UTF-8: _nuxt/...,
+# 200.html, 404.html), so a content-identical rebuild read as CHANGED,
+# `git commit --only` found nothing to commit and the lane died on
+# "failed to commit the regenerated api/static". The fix pins LC_ALL=C
+# INSIDE the lane: the caller's env must not matter.
+#
+# MOCK_STABLE_META=1 freezes the volatile build metadata, so the rebuild
+# below is BYTE-identical: nothing but the file ordering can make the two
+# hashes disagree. That is the live failure's exact shape - gate reads
+# "changed", `git add -A` stages nothing, `git commit --only` fails, lane
+# dies "failed to commit the regenerated api/static".
+export MOCK_STABLE_META=1
+new_repo
+
+# The hostile locale to run under, if this host has one. Absent, the
+# lane-level assertions below still run (they must hold under C too) but
+# the locale-difference check cannot bite here - say so, never skip
+# silently.
+HOSTILE=""
+for cand in en_US.UTF-8 en_US.utf8 en_US.UTF8; do
+	if locale -a 2>/dev/null | grep -qix "$cand"; then
+		HOSTILE="$cand"
+		break
+	fi
+done
+
+# the fixture's own two orderings - the gate compares exactly these
+c_order="$( (cd "$TMP" && find api/static -type f -printf '%P\n' | LC_ALL=C sort) )"
+head_order="$(git -C "$TMP" ls-tree -r --name-only HEAD -- api/static | sed 's|^api/static/||')"
+check "collation fixture: C order == git tree order" test "$c_order" = "$head_order"
+
+if [ -n "$HOSTILE" ]; then
+	loc_order="$( (cd "$TMP" && find api/static -type f -printf '%P\n' | LC_ALL="$HOSTILE" sort) )"
+	check "collation fixture: $HOSTILE order differs from byte order (the fixture can bite)" test "$c_order" != "$loc_order"
+else
+	echo "NOTE: no en_US.UTF-8 locale on this host - the fixture cannot demonstrate locale reordering here"
+fi
+
+# canonical_hash_disk must return the same hash whatever the ambient
+# locale is, and it must agree with canonical_hash_head on identical
+# content (that agreement IS the gate).
+disk_hash_c="$( (cd "$TMP" && export LC_ALL=C LANG=C && . "$LANE" && canonical_hash_disk) )"
+disk_hash_amb="$( (cd "$TMP" && export LC_ALL="${HOSTILE:-C}" LANG="${HOSTILE:-C}" && . "$LANE" && canonical_hash_disk) )"
+head_hash="$( (cd "$TMP" && . "$LANE" && canonical_hash_head) )"
+check "canonical_hash_disk is locale-independent" test -n "$disk_hash_c" -a "$disk_hash_c" = "$disk_hash_amb"
+check "canonical_hash_disk == canonical_hash_head on identical content" test "$disk_hash_c" = "$head_hash"
+
+# live lane shape: a source change whose rebuild is BYTE-identical must
+# skip cleanly - no lane commit, no FATAL - with the ambient locale left
+# hostile and nothing exported by the caller.
+STAMP="s0"
+echo "source v2 (source-only change; bundle content unchanged)" >"$TMP/webui/app/Foo.vue"
+git -C "$TMP" commit -qam "ui change: Foo v2, bundle unchanged"
+lane_before="$(git -C "$TMP" rev-parse HEAD)"
+rm -f "$TMP.mock/canary-mock-ran"
+LANE_LOCALE="${HOSTILE:-C}" run --base "$BASE" "card t_locale"
+check "content-identical rebuild (${HOSTILE:-C}): exit 0" test "$rc" -eq 0
+check "content-identical rebuild: regen ran (build reached)" test -f "$TMP.mock/canary-mock-ran"
+check "content-identical rebuild: no lane commit" test "$(git -C "$TMP" rev-parse HEAD)" = "$lane_before"
+check "content-identical rebuild: hash-gate skip logged" contains "hash gate" "$TMP/run.out"
+check "content-identical rebuild: no FATAL" not_contains "FATAL" "$OUT"
+check "content-identical rebuild: nothing left staged" test -z "$(git -C "$TMP" diff --cached --name-only)"
+check "content-identical rebuild: rebuild really was byte-identical" test -z "$(git -C "$TMP" status --porcelain -- api/static)"
 
 ########## summary ##########
 echo "embed-lane_test: pass=$pass fail=$fail"
