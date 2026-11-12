@@ -1,11 +1,21 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/EndoTheDev/omega/agent"
+	agentapi "github.com/EndoTheDev/omega/agent/api"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/store"
 )
@@ -202,5 +212,151 @@ func TestTitleModelDefaultFollowsTheRunModel(t *testing.T) {
 	// The title really landed: the detached call ran, not just the chat.
 	if sess, err := st.GetSession(context.Background(), "title-default"); err != nil || sess.Label == "" {
 		t.Fatalf("no title written (session=%+v, err=%v) - the title call never ran", sess, err)
+	}
+}
+
+// TestMultiBindWebsocketSharesOneHub pins the multi-bind push seam
+// (t_229edd92) on the real start path: two loopback binds, one
+// websocket client per bind, a chat run started on the FIRST bind - and
+// the chat frames must land on BOTH clients. Per-bind hubs (one per
+// wire, NewServer's floor) delivered them only to the publishing bind's
+// own subscriber set, so the other bind's browser sat blind to every
+// frame the process emitted.
+func TestMultiBindWebsocketSharesOneHub(t *testing.T) {
+	prov := newMultiProvider("step")
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	// A private port for this test's two binds.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve port: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+
+	p := NewPlugin()
+	ctx := &core.Context{Configs: map[string]any{
+		"http_channel": Config{Port: port, Bind: []string{"127.0.0.1", "127.0.0.2"}},
+	}}
+	ctx.ApplyOffer("provider", "test", prov)
+	ctx.ApplyOffer("loop", "test", testLoop{})
+	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+	if len(p.mounted) != 2 {
+		t.Fatalf("binds = %d, want one channel per bind", len(p.mounted))
+	}
+	runCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	deps := core.ChannelDeps{Ctx: ctx, Store: st}
+	for _, ch := range ctx.Channels {
+		go func(c core.Channel) { _ = c.Start(runCtx, deps) }(ch)
+	}
+	binds := []string{"127.0.0.1", "127.0.0.2"}
+	for _, b := range binds {
+		waitMirrorHealthy(t, fmt.Sprintf("http://%s:%d", b, port))
+	}
+
+	chA, ok := p.mounted[0].(*HTTPChannel)
+	if !ok {
+		t.Fatalf("mounted channel %T is not an HTTPChannel", p.mounted[0])
+	}
+	chB, ok := p.mounted[1].(*HTTPChannel)
+	if !ok {
+		t.Fatalf("mounted channel %T is not an HTTPChannel", p.mounted[1])
+	}
+
+	// One websocket client per bind, each dialling the bind's real
+	// listener.
+	connA := dialSocketURL(t, fmt.Sprintf("ws://%s:%d/ws", binds[0], port))
+	connB := dialSocketURL(t, fmt.Sprintf("ws://%s:%d/ws", binds[1], port))
+
+	// The seam under test: both binds serve ONE hub, and both clients
+	// are attached to it before the run starts (a per-bind hub answers
+	// 1 subscriber here, this bind's own).
+	if hubA, hubB := chA.srv.Sockets(), chB.srv.Sockets(); hubA != hubB {
+		t.Fatalf("bind %s serves hub %p, bind %s serves hub %p: one hub cannot be per-bind and shared", binds[0], hubA, binds[1], hubB)
+	}
+	waitFor(t, "both binds' /ws clients attached to the one hub", func() bool {
+		return chA.srv.Sockets().SubscriberCount() == 2
+	})
+
+	// The trigger: a chat run started on bind A over bind A's listener.
+	// Every chat frame it emits is published through bind A's server.
+	sbody, _ := json.Marshal(map[string]any{"id": "mb-ws"})
+	sresp, err := http.Post(fmt.Sprintf("http://%s:%d/sessions", binds[0], port), "application/json", bytes.NewReader(sbody))
+	if err != nil {
+		t.Fatalf("create session on bind A: %v", err)
+	}
+	sresp.Body.Close()
+	if sresp.StatusCode != http.StatusCreated {
+		t.Fatalf("create session status = %d, want 201", sresp.StatusCode)
+	}
+	muteTitles(t, st, "mb-ws")
+	chatCtx, chatCancel := context.WithCancel(context.Background())
+	t.Cleanup(chatCancel)
+	chatReq, err := http.NewRequestWithContext(chatCtx, http.MethodPost,
+		fmt.Sprintf("http://%s:%d/chat", binds[0], port),
+		strings.NewReader(`{"messages":[{"role":"user","content":"hi"}],"session_id":"mb-ws"}`))
+	if err != nil {
+		t.Fatalf("new chat request: %v", err)
+	}
+	chatResp, err := (&http.Client{}).Do(chatReq)
+	if err != nil {
+		t.Fatalf("chat on bind A: %v", err)
+	}
+	t.Cleanup(func() { chatResp.Body.Close() })
+	prov.send(finalStep("cross-bind hello")...)
+	prov.done()
+
+	for name, conn := range map[string]*websocket.Conn{"bind A": connA, "bind B": connB} {
+		frame := readFrameTopic(t, conn, agentapi.TopicChat)
+		if frame.Session != "mb-ws" {
+			t.Fatalf("%s chat frame session = %q, want mb-ws", name, frame.Session)
+		}
+	}
+}
+
+// dialSocketURL connects a websocket client to one bind's /ws.
+func dialSocketURL(t *testing.T, url string) *websocket.Conn {
+	t.Helper()
+	conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	if err != nil {
+		status := 0
+		if resp != nil {
+			status = resp.StatusCode
+		}
+		t.Fatalf("dial %s: %v (status %d)", url, err, status)
+	}
+	t.Cleanup(func() { conn.Close() })
+	return conn
+}
+
+// readFrameTopic reads frames until one carries the wanted topic,
+// skipping the rest - both binds push their own health heartbeat onto
+// the shared hub, so a first frame is not necessarily the one under
+// test. The deadline bounds a HANG, never correctness.
+func readFrameTopic(t *testing.T, conn *websocket.Conn, topic string) agentapi.SocketMessage {
+	t.Helper()
+	deadline := time.Now().Add(testWaitTimeout)
+	for {
+		if err := conn.SetReadDeadline(deadline); err != nil {
+			t.Fatalf("set read deadline: %v", err)
+		}
+		_, raw, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("no %q frame arrived on this bind's /ws: %v", topic, err)
+		}
+		var msg agentapi.SocketMessage
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			t.Fatalf("decode frame: %v (%s)", err, raw)
+		}
+		if msg.Topic == topic {
+			return msg
+		}
 	}
 }

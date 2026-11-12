@@ -89,6 +89,12 @@ type HTTPChannel struct {
 	// capsule's pinned last-started server, and with per-bind hubs the
 	// transcript/events reads on the other mirrors go blind to that run.
 	hub *agentapi.RunHub
+	// sockets is the process-wide push hub (t_229edd92): one fan-out
+	// per plugin, shared by every bind's server. Per-bind hubs served
+	// each bind's /ws from its own subscriber set, so a frame published
+	// on one bind never reached a client connected to another - the
+	// same multi-bind blindness the run hub above cured, one seam over.
+	sockets *agentapi.SocketHub
 	// canvas is the per-process canvas builder every bind shares
 	// (t_1c9793a8): one panel state behind every mirror's snapshot
 	// GET, action pipe and delta fan-out - the canvas is per-process,
@@ -182,6 +188,14 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	// surface's source of truth and it is per-process, not per-bind.
 	if c.hub != nil {
 		c.srv.BindRunHub(c.hub)
+	}
+	// Multi-bind push mirror (t_229edd92): every bind's /ws attaches to
+	// the ONE process-wide hub, the same law the run registry above
+	// follows. Per-bind hubs left a client connected to one bind blind
+	// to every frame published on another - the chat frames a run on
+	// bind B emitted never reached the browser served by bind A.
+	if c.sockets != nil {
+		c.srv.BindSocketHub(c.sockets)
 	}
 	// The chat-runs offer (the shell-ring shrink wave 2, Endo ruling
 	// 2026-11-04): the first shell-offered capsule-service key. The
