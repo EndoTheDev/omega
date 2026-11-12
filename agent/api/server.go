@@ -535,6 +535,16 @@ func (s *Server) BindInspectSeams(logger agent.LoggerProvider) {
 // BindRunHub swaps the per-process run registry in (HTTPChannel.wire).
 func (s *Server) BindRunHub(h *RunHub) { s.runs = h }
 
+// BindSocketHub swaps the per-process push hub in (HTTPChannel.wire).
+// Same seam, same law as BindRunHub one registry over: NewServer's own
+// hub (its constructor floor, like runs: &RunHub{}) is what a directly
+// constructed or embedded server publishes to, but a process serving
+// several binds serves ONE fan-out - every bind's /ws attaches to the
+// hub its wire bound, so a frame any bind publishes reaches every
+// connected client. Per-bind hubs left each bind's browser blind to
+// every frame the other binds published (t_229edd92).
+func (s *Server) BindSocketHub(h *SocketHub) { s.sockets = h }
+
 // Sockets exposes the push channel's hub: the serving shell attaches
 // websocket connections here and pushes the health heartbeat (the
 // transport lives in the shell, the fan-out lives with the loop).

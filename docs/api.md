@@ -741,6 +741,14 @@ on purpose: the observability tab re-reads `/observability/events` every
 because the closed topic set carries no observability topic - a topic
 there would be an engine change (`docs/webui.md`).
 
+**One hub per process.** The fan-out is bound once per process, never
+per bind: a multi-bind server (several `server.bind` addresses) wires
+every bind's `/ws` to the same `SocketHub` (`BindSocketHub`, the same
+binding the run registry follows at channel start), so a frame any bind
+publishes reaches every connected browser. Per-bind hubs served each
+bind's clients from its own subscriber set - a browser on one bind
+never saw a frame published on another (card t_229edd92).
+
 **Events are hints, state is truth.** Nothing is buffered or replayed
 server-side. On close the client reconnects with backoff, does one
 `GET /health`, and refetches the visible panes through the ordinary GET
