@@ -276,6 +276,11 @@ type wakeNoteSink struct {
 	inner agent.TurnSink
 	// noted latches one note per run.
 	noted bool
+	// wrote latches that the run produced an assistant row. An errored
+	// end AFTER a produced completion is not a zero-trace turn - the
+	// session already holds what the provider wrote (card t_9821e39b),
+	// so the error note stays home.
+	wrote bool
 }
 
 // wakeEmptyNoteText words the note: the tool that settled when the run's
@@ -302,18 +307,58 @@ func wakeToolName(ctx context.Context) string {
 // completion is all-empty, persists the note instead of letting that
 // completion vanish.
 func (w *wakeNoteSink) AppendTurnMessage(ctx context.Context, msg core.Message) error {
-	if a, ok := msg.(core.Assistant); ok && !w.noted && agent.IsEmptyAssistant(a) {
-		w.noted = true
-		name := wakeToolName(ctx)
-		if lgr := w.s.Logger(); lgr != nil {
-			lgr.Printf("wake turn for session %s (%s) ended with no output - note persisted", w.id, name)
+	if a, ok := msg.(core.Assistant); ok {
+		if agent.IsEmptyAssistant(a) {
+			if !w.noted {
+				w.noted = true
+				name := wakeToolName(ctx)
+				if lgr := w.s.Logger(); lgr != nil {
+					lgr.Printf("wake turn for session %s (%s) ended with no output - note persisted", w.id, name)
+				}
+				w.s.appendSessionBookkeeping(w.id, core.NewUser(wakeEmptyNoteText(name)))
+			}
+		} else {
+			// An assistant row is the turn's own output. The run's
+			// input row rides this sink too (a yield result), so the
+			// zero-trace test cannot be "any row" - only a produced
+			// completion counts.
+			w.wrote = true
 		}
-		w.s.appendSessionBookkeeping(w.id, core.NewUser(wakeEmptyNoteText(name)))
 	}
 	if w.inner == nil {
 		return nil
 	}
 	return w.inner.AppendTurnMessage(ctx, msg)
+}
+
+// wakeErrorNoteText words the note a wake run leaves when the provider
+// stream died before the turn finished: the tool that settled when the
+// run's input names one, plus the way forward.
+func wakeErrorNoteText(toolName string) string {
+	if toolName == "" {
+		return "[wake turn ended on a provider error - send a message to continue]"
+	}
+	return "[wake turn for " + toolName + " ended on a provider error - send a message to continue]"
+}
+
+// noteErrorEnd persists the note a wake run leaves when it ends on an
+// error (card t_9821e39b). A stream-error end returns from the loop
+// BEFORE any completion is persisted, so the all-empty path above never
+// sees a message at all and the re-entry turn vanished from the
+// session with zero trace - the live error frame and the lane log were
+// the only record. The latch is shared with the empty note: one note
+// per run, whichever end fires first. A run that already persisted an
+// assistant row is not a zero-trace turn and gets nothing.
+func (w *wakeNoteSink) noteErrorEnd(ctx context.Context) {
+	if w.noted || w.wrote {
+		return
+	}
+	w.noted = true
+	name := wakeToolName(ctx)
+	if lgr := w.s.Logger(); lgr != nil {
+		lgr.Printf("wake turn for session %s (%s) ended on a provider error - note persisted", w.id, name)
+	}
+	w.s.appendSessionBookkeeping(w.id, core.NewUser(wakeErrorNoteText(name)))
 }
 
 // launchWake starts one wake run: the settled result re-enters through
