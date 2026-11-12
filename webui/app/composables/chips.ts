@@ -78,10 +78,11 @@ export function resetLiveChips(): void {
 
 // TRUNCATION_MARK is the streaming path's own honesty (the truncation
 // marker law): the producer kept a capped head, so the tail the chip
-// holds is not the whole output. The settled result carries the same
-// note from the tool itself.
+// holds is not the whole output. The settled result is a capped head too
+// (shellOutputCap, then the loop's output cap), so the note must not
+// promise the full text - only `shell.read id=<id>` tails the log.
 export const TRUNCATION_MARK =
-  "\n... [output truncated while streaming: the chip keeps the head bytes - the settled result carries the full text]";
+  "\n... [output truncated while streaming: the chip keeps the head bytes - the settled result is a capped head too; shell.read id=<id> tails the full log]";
 
 // chipDisplay renders one tail for the row: the text plus the marker when
 // the producer capped it. Empty text renders nothing (a chip with no
