@@ -339,13 +339,13 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		// finish already released, and this entry (a plain send) is
 		// what resets the runaway guard.
 		defer s.drainWakes(req.SessionID)
-		defer s.runs.finish(run)
 		// The runs topic's release edge rides the slot release (card
-		// t_7624bab1): declared AFTER the finish defer, so it publishes
-		// before the slot frees - a client that refetches on the edge
-		// must not race a still-occupied slot. The final agent_end frame
+		// t_7624bab1): declared BEFORE the finish defer, so it publishes
+		// after the slot frees - a client that refetches on the edge
+		// does not race a still-occupied slot. The final agent_end frame
 		// was already broadcast by the loop above.
 		defer s.publishRunState(req.SessionID, false)
+		defer s.runs.finish(run)
 		// Chat panel's exit hook runs BEFORE the hub releases the
 		// slot: the ephemeral final rows still read the live tail.
 		defer s.chat.endRun(req.SessionID)

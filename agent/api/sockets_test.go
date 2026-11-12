@@ -11,10 +11,14 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/agent/loop"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/harness/store"
 )
 
 // recvFrame reads one pushed frame, failing the test on timeout.
@@ -335,6 +339,128 @@ func TestRunStateEdges(t *testing.T) {
 	if !active.Active || idle.Active {
 		t.Fatalf("edges = %+v then %+v, want active then idle", active, idle)
 	}
+}
+
+// TestReleaseEdgePublishesAfterTheSlotFrees pins the ORDER of launchRun's
+// two exit defers, not just their outcome: the runs topic's release edge
+// reaches the wire only AFTER the run hub released the slot. The comment
+// on those defers has claimed that property since card t_7624bab1 while
+// the declarations ran LIFO the other way round, so a client refetching
+// /sessions on the edge could read running=true for the session the push
+// just called idle. This test measures the interleaving instead of
+// reading the comment.
+//
+// The measurement: a blocking store parks the run goroutine in its
+// persist step - the last work between the loop's final frame and the
+// exit defers - and the test then takes the SOCKET hub's mutex. Publish
+// and finish park on different mutexes (the socket hub's, the run hub's),
+// so holding the socket hub's freezes a publish that reached it and
+// nothing else. While it is held the slot MUST still release: that
+// happens only when finish runs before the publish.
+func TestReleaseEdgePublishesAfterTheSlotFrees(t *testing.T) {
+	const sid = "sess-release-edge-order"
+
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	pause := &pauseOnPersist{StoreProvider: st, entered: make(chan struct{}), release: make(chan struct{})}
+
+	// Empty script: the run streams no provider events, so what it
+	// publishes never depends on scripted pacing.
+	prov := agent.NewFakeProviderScripts("fake", nil)
+	a := agent.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(loop.Loop{})
+	s := NewServer(a, nil, pause, nil, nil, nil)
+
+	sub := s.Sockets().Attach()
+	defer sub.Close()
+	sub.Subscribe([]string{TopicRuns})
+
+	// The take edge, published by prepareRun in the live path.
+	s.publishRunState(sid, true)
+	if take := recvFrame(t, sub); take.Topic != TopicRuns || take.Session != sid {
+		t.Fatalf("take edge = %+v, want runs/%s", take, sid)
+	}
+
+	run, ok := s.runs.start(sid)
+	if !ok {
+		t.Fatalf("run slot for %q was already taken", sid)
+	}
+	s.launchRun(context.Background(), run, prov, []core.Message{core.User{Content: "hi"}}, nil, chatRequest{SessionID: sid})
+
+	// The run is parked on its persist step: every chat frame is out and
+	// the exit defers have not started.
+	select {
+	case <-pause.entered:
+	case <-time.After(testWaitTimeout):
+		t.Fatalf("the run on %q never reached its persist step", sid)
+	}
+
+	// Freeze the hub: a publish that reaches it parks on this mutex.
+	s.sockets.mu.Lock()
+	held := true
+	defer func() {
+		if held {
+			s.sockets.mu.Unlock()
+		}
+	}()
+	close(pause.release)
+
+	// The pinned property: with the release edge unable to reach the
+	// wire, the slot still releases. LIFO runs the LAST declaration
+	// first, so this holds only when publishRunState is declared before
+	// runs.finish - the other order parks the publish, and the slot is
+	// then never released.
+	deadline := time.Now().Add(testWaitTimeout)
+	for s.runs.active(sid) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the run slot on %q never released while the release edge was parked on the socket hub: the edge published BEFORE the slot freed (the exit defers run LIFO - declare publishRunState before runs.finish)", sid)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	// Released, with the edge still queued behind the held mutex.
+	select {
+	case raw := <-sub.Messages():
+		t.Fatalf("release edge published while the test still held the hub: %s", raw)
+	default:
+	}
+	s.sockets.mu.Unlock()
+	held = false
+
+	release := recvFrame(t, sub)
+	if release.Topic != TopicRuns || release.Session != sid {
+		t.Fatalf("release edge = %+v, want runs/%s", release, sid)
+	}
+	var state RunState
+	if err := json.Unmarshal(release.Data, &state); err != nil {
+		t.Fatalf("decode release edge: %v", err)
+	}
+	if state.Active {
+		t.Fatalf("release edge carries Active = true, want the idle edge")
+	}
+}
+
+// pauseOnPersist parks the run's persist step (AddSessionTokens) until
+// the test opens release. Persistence itself is a no-op write: this test
+// pins frame ORDER, and a store error would publish an error frame that
+// parks on the held hub and hides the defers under test.
+type pauseOnPersist struct {
+	agent.StoreProvider
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (p *pauseOnPersist) AddSessionTokens(_ context.Context, _ string, _, _ int) error {
+	p.once.Do(func() { close(p.entered) })
+	<-p.release
+	return nil
+}
+
+func (p *pauseOnPersist) SetSessionLastRun(_ context.Context, _ string, _ *core.LastRunStats) error {
+	return nil
 }
 
 // TestSocketTopicsDocumented pins the topic vocabulary to its doc home:
