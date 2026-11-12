@@ -7,59 +7,19 @@
          BELOW the scroller, above the composer, where it cannot clip.
          An absolutely positioned child of the scroll container itself
          would scroll away with the content, so the pill lives here. -->
+    <!-- ONE scrollport, always (card t_5bb319f6). The live-run branch that
+         used to replace this column with a pinned header + a run-only
+         body is gone: it rendered the scroll region WITHOUT the older
+         history, so mid-stream the pane hit scrollTop 0 under the pin
+         and prior messages were unreachable - a scroll lock nobody
+         asked for. The pin is now a STICKY row inside this scrollport:
+         at the tail it holds the question against the top while the run
+         streams underneath; scrolling up releases it at its place in
+         the flow and the history above is readable, and the append
+         follow stays gated on the pinned flag (scrolling up detaches
+         it - new content never yanks the pane). -->
     <div class="messages-wrap">
-      <!-- live-run branch (card t_c40164cf): while a stacked run streams
-           the pane stops being one scrolling list and becomes TWO regions
-           - the last user message pinned as the header, the run's items
-           scrolling in their own body underneath, auto-following the tail.
-           Older history rides out of view for the run's duration (a layout
-           state, not a scroll position); agent_end unmounts the branch and
-           the settled column returns with the run's block in flow. -->
-      <template v-if="liveLayout">
-        <div class="live-pin">
-          <ChatItem
-            :key="itemKey(liveRun.user!)"
-            :item="liveRun.user!"
-            :session-id="sessionId"
-            :show-thinking="showThinking"
-            @select="onSelect"
-            @fork="onFork" />
-        </div>
-        <div
-          class="messages live-body stacked"
-          ref="liveBodyEl"
-          @scroll="onScroll">
-          <!-- card t_e4280de7: consecutive tool rows render as ONE
-               collapsible group here too - a live run is the noisiest
-               case (the run body is all calls) -->
-          <template
-            v-for="entry in groupedBody"
-            :key="entryKey(entry)">
-            <ToolGroup
-              v-if="isToolRun(entry)"
-              :items="entry.items"
-              :gate-cards="entry.items.map(gateCardForItem)"
-              :session-id="sessionId"
-              :live="busy" />
-            <ChatItem
-              v-else
-              :item="entry"
-              :variant="variantOfItem(entry)"
-              :gate-card="gateCardForItem(entry)"
-              :session-id="sessionId"
-              :show-thinking="showThinking" />
-          </template>
-          <!-- card t_63204dfd: pending gate questions with no running
-               row to ride render standalone at the tail -->
-          <GateCard
-            v-for="card in sessionGateBinding.standalone"
-            :key="card.id"
-            :card="card"
-            :session-id="sessionId ?? undefined" />
-        </div>
-      </template>
       <div
-        v-else
         class="messages"
         :class="{ stacked: appearance === 'stacked' }"
         ref="messagesEl"
@@ -84,7 +44,7 @@
             :key="blockKey(block)"
             class="msg-block">
             <template
-              v-for="entry in block"
+              v-for="(entry, index) in block"
               :key="entryKey(entry)">
               <ToolGroup
                 v-if="isToolRun(entry)"
@@ -92,6 +52,21 @@
                 :gate-cards="entry.items.map(gateCardForItem)"
                 :session-id="sessionId"
                 :live="busy" />
+              <!-- the live pin (card t_5bb319f6): the streaming turn's user
+                   row rides a sticky slot - it holds the scrollport top
+                   while the run paints underneath, and returns to its place
+                   in the flow as soon as the reader scrolls up to it -->
+              <div
+                v-else-if="pinnedSlot(block, index)"
+                class="live-pin">
+                <ChatItem
+                  :item="entry"
+                  :gate-card="gateCardForItem(entry)"
+                  :session-id="sessionId"
+                  :show-thinking="showThinking"
+                  @select="onSelect"
+                  @fork="onFork" />
+              </div>
               <ChatItem
                 v-else
                 :item="entry"
@@ -431,10 +406,11 @@
     );
   }
 
-  // --- stacked live-run layout (card t_c40164cf): derived, no new
-  // state - the last user message is the pinned header, the items after
-  // it are the run's agent body; the branch mounts for the run's
-  // lifetime and the settled column renders the same transcript in flow
+  // --- stacked live-run pin (card t_5bb319f6, superseding the two-region
+  // split of t_c40164cf): the last user message of the streaming turn
+  // rides a STICKY slot inside the one scrollport. Derived, no new state -
+  // the pin is the head row of the last block, and the pinned slot only
+  // exists while that turn streams.
   const liveRun = computed(() => liveRunSlice(transcript.value));
   const liveLayout = computed(
     () =>
@@ -442,6 +418,15 @@
       busy.value &&
       liveRun.value.user !== null,
   );
+  // the head row of the LAST block, while that block is the live turn:
+  // every other row renders in flow exactly as it always did, so the
+  // scrollport keeps the full history and a mid-stream scroll-up reaches
+  // it (the old branch rendered the run body alone - scrollTop 0 was the
+  // top of the world until agent_end)
+  function pinnedSlot(block: ChatEntry[], index: number): boolean {
+    if (!liveLayout.value || index !== 0) return false;
+    return block === groupedBlocks.value[groupedBlocks.value.length - 1];
+  }
 
   // --- pending gate questions (card t_63204dfd): the chat surface ---
   //
@@ -521,7 +506,6 @@
   // --- scroll pinning + jump-to-live pill: PER INSTANCE now - multiple
   // panes may render the same component, each owns its scrollbar ---
   const messagesEl = ref<HTMLElement | null>(null);
-  const liveBodyEl = ref<HTMLElement | null>(null);
   const pinned = ref(true);
   const jumpPill = ref(false);
   // the scroller's height at the LAST scroll event - the shrink-clamp
@@ -530,14 +514,14 @@
   // still pre-fold, so the event reads as a layout event, not a user
   // scroll. (card t_bef3f45e)
   let lastScrollHeight = 0;
-
-  // the ACTIVE scroll container: the live-run body owns scrolling while
-  // the live layout is mounted (.messages listeners suspend for the
-  // branch's lifetime - both containers carry the same scroll wiring);
-  // otherwise the settled column scrolls as always
-  function scrollEl(): HTMLElement | null {
-    return liveBodyEl.value ?? messagesEl.value;
-  }
+  // the scrollTop OUR last follow write landed at (the browser clamps it).
+  // The scroll event that write raises is not a reader decision: a stream
+  // delta can grow the scroller between the write and the event, so the
+  // plain near-bottom check would read "the reader is above the tail" and
+  // un-latch the follow for the rest of the run (measured live on this
+  // card: the pane parked one delta short of the bottom and the run
+  // streamed away from it).
+  let followWrite = -1;
 
   // --- content-change follow (card t_bef3f45e): the transcript
   // watcher below fires per delta, but paint does not always grow the
@@ -553,7 +537,7 @@
   const roTargets = new WeakSet<HTMLElement>();
 
   function resizeContentRO(): void {
-    const el = scrollEl();
+    const el = messagesEl.value;
     if (!el) return;
     if (typeof ResizeObserver === "undefined") return;
     if (contentRO === null) contentRO = new ResizeObserver(onContentResize);
@@ -571,7 +555,7 @@
   }
 
   function onContentResize(): void {
-    const el = scrollEl();
+    const el = messagesEl.value;
     if (!el) return;
     scrollDown();
     jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
@@ -583,8 +567,17 @@
   });
 
   function onScroll() {
-    const el = scrollEl();
+    const el = messagesEl.value;
     if (!el) return;
+    if (followWrite >= 0 && el.scrollTop === followWrite) {
+      // our own follow write coming back as a scroll event - the follow
+      // state belongs to the writer, not to the reader
+      followWrite = -1;
+      lastScrollHeight = el.scrollHeight;
+      jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
+      return;
+    }
+    followWrite = -1;
     pinned.value = resumesFollow(
       pinned.value,
       lastScrollHeight,
@@ -596,31 +589,18 @@
     jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
   }
 
-  // live-run branch transitions (card t_c40164cf): mounting the layout
-  // starts tail-follow from zero; unmounting it (agent_end) lands the
-  // settled column at the run's block - the same post-run feel as the
-  // tail-follow the branch just held. Post-flush: the scroll reads the
-  // freshly patched settled element (the v-else column remounts on the
-  // swap), not the pre-patch world. Both transitions also re-sync the
-  // RO targets - the branches swap container nodes (card t_bef3f45e).
-  watch(
-    liveLayout,
-    (live, was) => {
-      if (live && !was) {
-        pinned.value = true;
-        jumpPill.value = false;
-      } else if (!live && was) {
-        pinned.value = true;
-        jumpPill.value = false;
-        nextTick(() => {
-          const el = messagesEl.value;
-          if (el) el.scrollTop = el.scrollHeight;
-        });
-      }
-      nextTick(resizeContentRO);
-    },
-    { flush: "post" },
-  );
+  // a run starting (card t_5bb319f6): the send path lands the reader at
+  // the tail and re-arms the follow, so the new turn's pin and its first
+  // output are on screen. The run's END is not a layout swap any more -
+  // the pin just stops being sticky where it stands, so a reader who
+  // scrolled up mid-stream keeps their place.
+  watch(liveLayout, (live) => {
+    if (!live) return;
+    pinned.value = true;
+    jumpPill.value = false;
+    scrollDown();
+    nextTick(resizeContentRO);
+  });
 
   function scrollDown(force = false) {
     if (force) pinned.value = true;
@@ -631,10 +611,13 @@
     (
       tick === "raf" ? requestAnimationFrame : (fn: () => void) => setTimeout(fn, 0)
     )(() => {
-      const el = scrollEl();
+      const el = messagesEl.value;
       if (!el) return;
       if (!force && !pinned.value) return;
       el.scrollTop = el.scrollHeight;
+      // read back the clamped value: that scrollTop is what the follow's
+      // own scroll event will carry (onScroll recognises it)
+      followWrite = el.scrollTop;
     });
   }
 
@@ -725,7 +708,6 @@
   const groupedBlocks = computed(() =>
     blocks.value.map((block) => groupToolRuns(block, variantOfItem)),
   );
-  const groupedBody = computed(() => groupToolRuns(liveRun.value.body, variantOfItem));
   // entry keys ride ITEM identity: a group's key is its head row's key,
   // so a run growing (a new call streams in) keeps the same details
   // element - and a pinned open state survives the growth.
