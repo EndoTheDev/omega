@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/EndoTheDev/omega/agent"
@@ -87,6 +88,15 @@ type Runner struct {
 	// Mount (arc 6). Nil-safe: no canvas, no push - a reload still
 	// works, frontends catch up on their next snapshot.
 	panels *capsule
+
+	// runTimeout is the host-pushed server.run_timeout, in
+	// nanoseconds (card t_e635df3a): the cap the HOST resolved from
+	// the config file it actually booted on. Zero = nothing pushed
+	// (tests, embedders, a host without the knob), and turnCap falls
+	// back to reading this module's own home candidates. Atomic: the
+	// host pushes at boot and on every settings save while fires read
+	// it on their own goroutine.
+	runTimeout atomic.Int64
 
 	mu        sync.Mutex
 	running   map[string]bool        // per-job fire guard
@@ -408,17 +418,40 @@ type serverRunTimeout struct {
 	} `yaml:"server"`
 }
 
-// turnCap resolves one fire's wall-clock cap: the configured
-// server.run_timeout when the host sets one, turnCapDefault otherwise
-// (unset, zero, negative, or no readable config). The knob is the
-// shell's - server.run_timeout caps every detached /chat run - and the
-// scheduler runs in-process beside that same shell, so the fire reads
-// the config the process booted on rather than inventing a cron-side
-// section. The two candidate paths mirror cmd/omega's resolveConfigPath
-// (the legacy home root first, the config/ layout second). Re-read per
-// fire: the cap bounds a hung turn, it is not a boot-time identity, and
-// fires are minutes apart.
+// SetRunTimeout is the host's push for the fire's wall-clock cap (card
+// t_e635df3a): the cap the HOST resolved server.run_timeout to. The
+// host is the only component that knows which config file it booted on
+// - an explicit `--config <elsewhere>` path, or the exe-dir home an
+// install without OMEGA_HOME resolves - and a module cannot re-derive
+// that (its own home candidates point at $HOME/.omega). A push of zero
+// or less clears the push: the fire then falls back to the
+// home-candidate file read, then to turnCapDefault. Called at boot and
+// again on every settings save/reload, so a saved knob reaches the next
+// fire without a restart.
+func (r *Runner) SetRunTimeout(d time.Duration) {
+	if d < 0 {
+		d = 0
+	}
+	r.runTimeout.Store(int64(d))
+}
+
+// turnCap resolves one fire's wall-clock cap: the value the host
+// pushed when it has one, the configured server.run_timeout read out of
+// this module's home candidates when it has not, turnCapDefault when
+// neither exists. The knob is the shell's - server.run_timeout caps
+// every detached /chat run - and the scheduler runs in-process beside
+// that shell, so the fire follows the operator's knob rather than
+// inventing a cron-side section. The file read below is the fallback,
+// not the truth: it cannot see a `--config` path or an exe-dir home,
+// which is why the host hands its resolution over through
+// SetRunTimeout (card t_e635df3a). The two candidate paths mirror
+// cmd/omega's resolveConfigPath (the legacy home root first, the
+// config/ layout second). Re-read per fire: the cap bounds a hung
+// turn, it is not a boot-time identity, and fires are minutes apart.
 func (r *Runner) turnCap() time.Duration {
+	if pushed := time.Duration(r.runTimeout.Load()); pushed > 0 {
+		return pushed
+	}
 	if r.home == "" {
 		return turnCapDefault // no home: nothing to read, never a relative-path hit
 	}

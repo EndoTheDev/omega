@@ -708,6 +708,32 @@ func TestPluginMountSetsCronSeam(t *testing.T) {
 	}
 }
 
+// TestCronSeamCarriesTheHostRunTimeoutPush pins the whole hop the host
+// takes (card t_e635df3a): the offered "cron" seam value satisfies the
+// host's consumer-owned SetRunTimeout face, and the value it receives is
+// the cap the next fire actually runs under. A renamed offer key or a
+// drifted signature would compile on both ends and leave the push a
+// silent no-op - the fire would fall back to a home it never booted on.
+func TestCronSeamCarriesTheHostRunTimeoutPush(t *testing.T) {
+	p := NewPluginWithConfig(&Config{Jobs: []Job{{Name: "capped", Schedule: "0 8 * * *", Prompt: "p"}}}, t.TempDir())
+	ctx := &core.Context{}
+	if _, err := agent.MountAllAPI([]agent.Plugin{notificationsPlugin{}, p}, ctx, nil, nil); err != nil {
+		t.Fatalf("api mount: %v", err)
+	}
+	// The host's own face, declared here exactly as cmd/omega declares
+	// it (runTimeoutSetter): no capsule type crosses the seam.
+	type runTimeoutSetter interface{ SetRunTimeout(time.Duration) }
+	svc := ctx.Services().Resolve("cron")
+	setter, ok := svc.(runTimeoutSetter)
+	if !ok {
+		t.Fatalf("the cron seam value %T does not satisfy the host's SetRunTimeout face", svc)
+	}
+	setter.SetRunTimeout(90 * time.Second)
+	if got := p.runner.turnCap(); got != 90*time.Second {
+		t.Fatalf("turnCap after the host push = %s, want 90s", got)
+	}
+}
+
 func TestPluginMountInvalidConfigIsError(t *testing.T) {
 	home := t.TempDir()
 	if err := os.WriteFile(filepath.Join(home, "crons.yaml"), []byte("jobs:\n  - name: bad\n    schedule: \"oops\"\n    prompt: p\n"), 0o644); err != nil {
@@ -826,3 +852,83 @@ func TestFireTurnCapUsesConfiguredRunTimeout(t *testing.T) {
 		})
 	}
 }
+
+// TestFireTurnCapHostPushWins pins the host push (card t_e635df3a): the
+// fire's cap is the value the HOST resolved from the config file it
+// actually booted on - an explicit `--config <elsewhere>` path, or the
+// exe-dir home an install without OMEGA_HOME resolves - which this
+// module cannot re-derive from its own home candidates. The file in
+// this test deliberately disagrees with the push, so a fire that goes
+// back to re-reading it instead of the pushed value fails here.
+func TestFireTurnCapHostPushWins(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+	// The module's own candidate: a home this process never booted on.
+	const moduleFile = "server:\n  run_timeout: 9999\n"
+	if err := os.WriteFile(filepath.Join(home, "config", "config.yaml"), []byte(moduleFile), 0o644); err != nil {
+		t.Fatalf("write config.yaml: %v", err)
+	}
+	r := newTestRunner(t, home, Job{Name: "capped", Schedule: "0 8 * * *", Prompt: "p"})
+
+	// The push wins over the file the module can see.
+	r.SetRunTimeout(45 * time.Second)
+	if got := firedTurnCap(t, r); !withinASecond(got, 45*time.Second) {
+		t.Fatalf("turn cap = %s, want the host-pushed 45s (the push must beat the home-candidate read)", got.Round(time.Millisecond))
+	}
+	// A later push lands too: the settings lane re-sends the knob on
+	// every save, and the next fire must follow it.
+	r.SetRunTimeout(2 * time.Minute)
+	if got := firedTurnCap(t, r); !withinASecond(got, 2*time.Minute) {
+		t.Fatalf("turn cap after re-push = %s, want 2m", got.Round(time.Millisecond))
+	}
+	// Clearing the push restores the file read - the fallback a host
+	// without the knob (tests, embedders) relies on.
+	r.SetRunTimeout(0)
+	if got := firedTurnCap(t, r); !withinASecond(got, 9999*time.Second) {
+		t.Fatalf("turn cap after clearing the push = %s, want the file's 9999s", got.Round(time.Minute))
+	}
+	// No push and no file: the 30-minute default stands.
+	bare := newTestRunner(t, t.TempDir(), Job{Name: "capped", Schedule: "0 8 * * *", Prompt: "p"})
+	bare.SetRunTimeout(0)
+	if got := firedTurnCap(t, bare); !withinASecond(got, turnCapDefault) {
+		t.Fatalf("turn cap with nothing set = %s, want %s", got.Round(time.Second), turnCapDefault)
+	}
+}
+
+// firedTurnCap runs one fire and returns the wall-clock cap the turn
+// actually ran under - the one witness that matters for the knob.
+func firedTurnCap(t *testing.T, r *Runner) time.Duration {
+	t.Helper()
+	var got time.Duration
+	var hasDeadline bool
+	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
+		deadline, ok := ctx.Deadline()
+		if ok {
+			got = time.Until(deadline)
+		}
+		hasDeadline = ok
+		return "ok", nil
+	}
+	r.fire(context.Background(), r.jobsSnapshot()[0], time.Now())
+	if !hasDeadline {
+		t.Fatalf("fire ran the turn with no deadline; want the configured cap")
+	}
+	return got
+}
+
+// withinASecond keeps a cap pin about the VALUE, never about scheduling
+// jitter: the deadline is stamped microseconds before the turn starts.
+func withinASecond(got, want time.Duration) bool {
+	return got >= want-time.Second && got <= want+time.Second
+}
+
+// The host reaches the push hook through the offered seam (Services
+// "cron"), typed by its OWN consumer-owned face (cmd/omega's
+// runTimeoutSetter) - the capsule's type name never crosses. A
+// signature drift on either side would compile on both ends and
+// silently stop the push, so the match is pinned here.
+var _ interface {
+	SetRunTimeout(time.Duration)
+} = (*Runner)(nil)
