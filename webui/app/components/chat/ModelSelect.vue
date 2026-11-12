@@ -540,6 +540,13 @@
       case "Enter":
       case " ":
         e.preventDefault();
+        // Space is ALSO the shell's TYPE-TO-CAPTURE key (app.vue's
+        // onKeyCapture jumps into the chat composer on any PRINTABLE key):
+        // activating an option is not typing, so the keystroke must not
+        // bubble out and steal the focus this pop is about to hand back to
+        // the chip. Enter is not printable - the pair rides one line so the
+        // focus-return law holds for BOTH pick keys.
+        e.stopPropagation();
         pickRow(section, model);
         break;
       case "Escape":
