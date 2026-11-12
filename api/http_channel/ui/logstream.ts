@@ -22,30 +22,53 @@ export const LOG_STREAM_EVENT = "omega-log-stream";
 // grow the DOM without bound.
 export const MAX_LINES = 2000;
 
+// SNAPSHOT_OVERLAP is the positional bound for the ONE merge that has a
+// real overlap: the one right after a REST snapshot read. The pane
+// subscribes before it reads, so the pushes that landed while the read
+// was in flight are in the snapshot AND in the buffer - up to the whole
+// buffered run may therefore be a duplicate (mergeTail narrows the bound
+// to min(base, incoming)). No other merge has one; see the delta law in
+// mergeTail.
+export const SNAPSHOT_OVERLAP = Number.MAX_SAFE_INTEGER;
+
 // mergeTail folds pushed lines onto the tail the pane holds and keeps the
 // last `max` of them.
 //
-// The overlap rule: a pushed run can start INSIDE the snapshot (the pane
-// subscribes before it re-reads, so a line written during that read is in
-// both). The longest run where the base's suffix equals the incoming
-// prefix is dropped, so a line is never rendered twice - and when the runs
-// share nothing (the ordinary append), nothing is dropped.
-export function mergeTail(base: readonly string[], incoming: readonly string[], max = MAX_LINES): string[] {
+// The overlap rule is POSITIONAL, never content-driven on its own. The
+// tailer publishes byte-offset deltas (`api/server_inspector.go`
+// pushLogDelta): frame N and frame N+1 are disjoint by construction and
+// nothing is replayed, so two consecutive pushes can never duplicate a
+// line - a line the log printed twice in a row is TWO lines, not an
+// overlap to swallow. `overlapLimit` is the bound that says so: it is the
+// number of leading incoming lines that may be dropped as a duplicate of
+// the base's tail, and it defaults to 0 - the delta law, nothing dropped.
+//
+// Inside an allowed window the longest run where the base's suffix equals
+// the incoming prefix is dropped, so the snapshot and the push that
+// straddles it render the line once. The match never runs past the
+// window, and the window only exists where position makes a duplicate
+// possible, so a genuine repeat stays.
+export function mergeTail(
+  base: readonly string[],
+  incoming: readonly string[],
+  max = MAX_LINES,
+  overlapLimit = 0,
+): string[] {
   let skip = 0;
-  if (incoming.length) {
-    const limit = Math.min(base.length, incoming.length);
-    for (let n = limit; n > 0; n--) {
-      let same = true;
-      for (let i = 0; i < n; i++) {
-        if (base[base.length - n + i] !== incoming[i]) {
-          same = false;
-          break;
-        }
-      }
-      if (same) {
-        skip = n;
+  // an overlap is at most min(base, incoming) lines; the caller's window
+  // can only narrow that, never widen it
+  const limit = Math.floor(Math.min(Math.max(0, overlapLimit), base.length, incoming.length));
+  for (let n = limit; n > 0; n--) {
+    let same = true;
+    for (let i = 0; i < n; i++) {
+      if (base[base.length - n + i] !== incoming[i]) {
+        same = false;
         break;
       }
+    }
+    if (same) {
+      skip = n;
+      break;
     }
   }
   const merged = base.concat(incoming.slice(skip));
