@@ -113,10 +113,10 @@ func TestEnsureUnderRoot(t *testing.T) {
 func TestFilesBrowseShapeAndSort(t *testing.T) {
 	dir := chdirToWorkdir(t)
 	for _, d := range []string{"beta", "a-dir"} {
-		os.Mkdir(filepath.Join(dir, d), 0o755) //nolint:errcheck // setup
+		_ = os.Mkdir(filepath.Join(dir, d), 0o755) // setup
 	}
 	for _, f := range []string{"zeta.txt", "Alpha.txt"} {
-		os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644) //nolint:errcheck // setup
+		_ = os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644) // setup
 	}
 	res, body := filesGet(t, "/files/browse")
 	if res.StatusCode != http.StatusOK {
@@ -147,7 +147,7 @@ func TestFilesBrowseShapeAndSort(t *testing.T) {
 
 func TestFilesBrowseEmptyPathIsRoot(t *testing.T) {
 	dir := chdirToWorkdir(t)
-	os.WriteFile(filepath.Join(dir, "marker.txt"), []byte("x"), 0o644) //nolint:errcheck // setup
+	_ = os.WriteFile(filepath.Join(dir, "marker.txt"), []byte("x"), 0o644) // setup
 	for _, url := range []string{"/files/browse", "/files/browse?path="} {
 		_, body := filesGet(t, url)
 		raw, _ := json.Marshal(body["entries"])
@@ -167,7 +167,7 @@ func TestFilesBrowseEmptyPathIsRoot(t *testing.T) {
 
 func TestFilesBrowseRejections(t *testing.T) {
 	dir := chdirToWorkdir(t)
-	os.WriteFile(filepath.Join(dir, "plain.txt"), []byte("x"), 0o644) //nolint:errcheck // setup
+	_ = os.WriteFile(filepath.Join(dir, "plain.txt"), []byte("x"), 0o644) // setup
 	cases := map[string]int{
 		"/files/browse?path=../outside":  http.StatusBadRequest, // traversal
 		"/files/browse?path=a/../b":      http.StatusBadRequest, // traversal segment
@@ -203,7 +203,7 @@ func TestFilesBrowseMethodGate(t *testing.T) {
 func TestFilesRead(t *testing.T) {
 	dir := chdirToWorkdir(t)
 	content := strings.Repeat("omega\n", 10)
-	os.WriteFile(filepath.Join(dir, "small.txt"), []byte(content), 0o644) //nolint:errcheck // setup
+	_ = os.WriteFile(filepath.Join(dir, "small.txt"), []byte(content), 0o644) // setup
 
 	res, body := filesGet(t, "/files/read?path=small.txt")
 	if res.StatusCode != http.StatusOK {
@@ -219,7 +219,7 @@ func TestFilesRead(t *testing.T) {
 
 func TestFilesReadTruncation(t *testing.T) {
 	dir := chdirToWorkdir(t)
-	os.WriteFile(filepath.Join(dir, "big.txt"), bytes.Repeat([]byte("a"), fileReadCap+100), 0o644) //nolint:errcheck // setup
+	_ = os.WriteFile(filepath.Join(dir, "big.txt"), bytes.Repeat([]byte("a"), fileReadCap+100), 0o644) // setup
 	_, body := filesGet(t, "/files/read?path=big.txt")
 	if body["truncated"] != true {
 		t.Errorf("truncated = %v; want true", body["truncated"])
@@ -231,7 +231,7 @@ func TestFilesReadTruncation(t *testing.T) {
 
 func TestFilesReadBinary(t *testing.T) {
 	dir := chdirToWorkdir(t)
-	os.WriteFile(filepath.Join(dir, "blob.bin"), []byte{0x00, 0xff, 0xfe, 0x80, 0x01}, 0o644) //nolint:errcheck // setup
+	_ = os.WriteFile(filepath.Join(dir, "blob.bin"), []byte{0x00, 0xff, 0xfe, 0x80, 0x01}, 0o644) // setup
 	_, body := filesGet(t, "/files/read?path=blob.bin")
 	if body["binary"] != true {
 		t.Errorf("binary = %v; want true", body["binary"])
@@ -243,7 +243,7 @@ func TestFilesReadBinary(t *testing.T) {
 
 func TestFilesReadRejections(t *testing.T) {
 	dir := chdirToWorkdir(t)
-	os.Mkdir(filepath.Join(dir, "adir"), 0o755) //nolint:errcheck // setup
+	_ = os.Mkdir(filepath.Join(dir, "adir"), 0o755) // setup
 	cases := map[string]int{
 		"/files/read?path=../outside":  http.StatusBadRequest, // traversal
 		"/files/read?path=a/./b.txt":   http.StatusBadRequest, // traversal segment
@@ -339,9 +339,9 @@ func TestFilesRootBehindSymlink(t *testing.T) {
 	// so the process working directory reads back as the symlink path -
 	// exactly the environment that broke the raw-root containment check
 	t.Setenv("PWD", link)
-	os.Chdir(link)                      //nolint:errcheck // verified via Getwd below
-	t.Cleanup(func() { os.Chdir("/") }) //nolint:errcheck // test cleanup only
-	claimTestWorkdir(t, link)           // the mux builder must keep this cwd
+	_ = os.Chdir(link)                      // verified via Getwd below
+	t.Cleanup(func() { _ = os.Chdir("/") }) // test cleanup only
+	claimTestWorkdir(t, link)               // the mux builder must keep this cwd
 	if wd, err := os.Getwd(); err != nil || wd != link {
 		t.Fatalf("Getwd = %q, %v; want %q", wd, err, link)
 	}
@@ -406,7 +406,7 @@ func TestFilesWriteCreateReadBack(t *testing.T) {
 
 func TestFilesWriteNestedUnderExistingDir(t *testing.T) {
 	dir := chdirToWorkdir(t)
-	os.Mkdir(filepath.Join(dir, "docs"), 0o755) //nolint:errcheck // setup
+	_ = os.Mkdir(filepath.Join(dir, "docs"), 0o755) // setup
 	res, body := filesPost(t, "/files/write", `{"path":"docs/notes.md","content":""}`)
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("write status = %d; want 200 (%v)", res.StatusCode, body)
@@ -418,7 +418,7 @@ func TestFilesWriteNestedUnderExistingDir(t *testing.T) {
 
 func TestFilesWriteRefusals(t *testing.T) {
 	dir := chdirToWorkdir(t)
-	os.Mkdir(filepath.Join(dir, "adir"), 0o755) //nolint:errcheck // setup
+	_ = os.Mkdir(filepath.Join(dir, "adir"), 0o755) // setup
 	cases := []struct {
 		json string
 		want int
@@ -456,8 +456,8 @@ func TestFilesWriteRefusals(t *testing.T) {
 func TestFilesWriteSymlinkEscape(t *testing.T) {
 	dir := chdirToWorkdir(t)
 	outside := filepath.Join(t.TempDir(), "victim.txt")
-	os.WriteFile(outside, []byte("original"), 0o644)   //nolint:errcheck // setup
-	os.Symlink(outside, filepath.Join(dir, "esc.lnk")) //nolint:errcheck // setup
+	_ = os.WriteFile(outside, []byte("original"), 0o644)   // setup
+	_ = os.Symlink(outside, filepath.Join(dir, "esc.lnk")) // setup
 	res, _ := filesPost(t, "/files/write", `{"path":"esc.lnk","content":"hijack"}`)
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("symlink escape status = %d; want 400", res.StatusCode)
@@ -476,10 +476,10 @@ func TestFilesWriteSymlinkEscape(t *testing.T) {
 // ensureUnderRoot, never the segment scan.
 func TestFilesDotNamesServe(t *testing.T) {
 	dir := chdirToWorkdir(t)
-	os.Mkdir(filepath.Join(dir, ".git"), 0o755)                             //nolint:errcheck // setup
-	os.Mkdir(filepath.Join(dir, ".github"), 0o755)                          //nolint:errcheck // setup
-	os.WriteFile(filepath.Join(dir, ".git", "HEAD"), []byte("ref"), 0o644)  //nolint:errcheck // setup
-	os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("bin/\n"), 0o644) //nolint:errcheck // setup
+	_ = os.Mkdir(filepath.Join(dir, ".git"), 0o755)                             // setup
+	_ = os.Mkdir(filepath.Join(dir, ".github"), 0o755)                          // setup
+	_ = os.WriteFile(filepath.Join(dir, ".git", "HEAD"), []byte("ref"), 0o644)  // setup
+	_ = os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("bin/\n"), 0o644) // setup
 
 	// a dot folder lists like any folder
 	res, body := filesGet(t, "/files/browse?path=.git")
@@ -521,8 +521,8 @@ func TestFilesDotNamesServe(t *testing.T) {
 func TestFilesDotSymlinkEscape(t *testing.T) {
 	dir := chdirToWorkdir(t)
 	outside := filepath.Join(t.TempDir(), "victim.txt")
-	os.WriteFile(outside, []byte("original"), 0o644)   //nolint:errcheck // setup
-	os.Symlink(outside, filepath.Join(dir, ".victim")) //nolint:errcheck // setup
+	_ = os.WriteFile(outside, []byte("original"), 0o644)   // setup
+	_ = os.Symlink(outside, filepath.Join(dir, ".victim")) // setup
 
 	res, _ := filesGet(t, "/files/browse?path=.victim")
 	if res.StatusCode != http.StatusBadRequest {
@@ -568,7 +568,7 @@ func TestFilesMkdirCreates(t *testing.T) {
 
 func TestFilesMkdirRefusals(t *testing.T) {
 	dir := chdirToWorkdir(t)
-	os.Mkdir(filepath.Join(dir, "here"), 0o755) //nolint:errcheck // setup
+	_ = os.Mkdir(filepath.Join(dir, "here"), 0o755) // setup
 	cases := []struct {
 		json string
 		want int
@@ -589,7 +589,7 @@ func TestFilesMkdirRefusals(t *testing.T) {
 		}
 	}
 	// mkdir of a path whose file exists: loud, not idempotent-noise
-	os.WriteFile(filepath.Join(dir, "afile.txt"), []byte("x"), 0o644) //nolint:errcheck // setup
+	_ = os.WriteFile(filepath.Join(dir, "afile.txt"), []byte("x"), 0o644) // setup
 	res, _ := filesPost(t, "/files/mkdir", `{"path":"afile.txt"}`)
 	if res.StatusCode != http.StatusBadRequest {
 		t.Errorf("mkdir over a file status = %d; want 400", res.StatusCode)

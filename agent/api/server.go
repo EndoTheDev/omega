@@ -1521,7 +1521,7 @@ func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"cancelling"}`)) //nolint:errcheck // constant body
+	_, _ = w.Write([]byte(`{"status":"cancelling"}`)) // constant body
 }
 
 // sessionHistory loads the session's persisted history and returns it

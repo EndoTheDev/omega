@@ -120,5 +120,5 @@ func (s *Server) handleUIActions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(uiActionResponse{Result: result}) //nolint:errcheck // best-effort response body
+	_ = json.NewEncoder(w).Encode(uiActionResponse{Result: result}) // best-effort response body
 }
