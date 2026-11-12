@@ -13,7 +13,10 @@ package main
 // agents/<name>/config/config.yaml (ApplyAgentLayer), mount the plugin
 // set for that config. Mounting is startup work, never per turn - the
 // result is cached per agent name for the process lifetime, and its
-// handles (store, logger) stay with it.
+// handles (store, logger) stay with it. Nothing re-reads a home's
+// config.yaml while the daemon runs, so a HAND edit of that file leaves
+// the running agent on its old values until a restart (docs/architecture.md,
+// the agent-homes section).
 
 import (
 	"context"
