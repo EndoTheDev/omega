@@ -232,6 +232,16 @@ func messagesToJSON(messages []core.Message, stringArgs bool) []map[string]any {
 			m["role"] = "assistant"
 		case core.ToolResult:
 			m["role"] = "tool"
+		case core.YieldResult:
+			// The settled result of a yield-class call re-enters the
+			// conversation as its call's answer (card t_954a67a6): it
+			// rides the wire as a "tool" row keeping its tool_call_id,
+			// the same shape a normal ToolResult produces, so the
+			// pairing with the assistant's tool_calls holds. Without
+			// the role the row reached no model - the wake turn's
+			// context ended at its own last message and the completion
+			// came back empty.
+			m["role"] = "tool"
 		}
 		// The OpenAI wire format requires each tool_calls entry to be
 		// {"id","type":"function","function":{"name","arguments":"<json>"}}

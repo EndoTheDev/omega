@@ -287,6 +287,70 @@ func TestWakeSliceEndToEnd(t *testing.T) {
 	}
 }
 
+// TestWakeEmptyTurnLeavesNote: a wake run whose only completion is
+// all-empty must never end with zero persisted output (card t_954a67a6).
+// The store sink's all-empty-assistant skip is right for a blank stream
+// before an error end on a normal turn; on a wake run it ate the
+// re-entry turn whole - no row, no log line, and the transcript read as
+// a conversation that simply stopped. The run leaves a visible
+// bookkeeping note instead: the diagnostic breadcrumb and the honest UI
+// state in one row.
+func TestWakeEmptyTurnLeavesNote(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	// The wake run's only script: a completion with nothing in it -
+	// no content delta, no thinking, no calls. Exactly the shape the
+	// live lane recorded (a ~1s empty answer).
+	prov := newWakeScripted("step", [][]core.ProviderStreamEvent{
+		{core.StreamEnd{Type: "stream_end", FinishReason: "stop"}},
+	})
+	a := agent.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(loop.Loop{})
+	s := NewServer(a, nil, st, nil, nil, nil)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	createSession(t, ts, "s1")
+	muteTitles(t, st, "s1")
+
+	// The settled result re-enters through the real wake path.
+	s.wakeHome("s1", core.YieldResult{
+		ToolCallID: "call_5b16qor0",
+		ToolName:   "files.glob",
+		Content:    "a.txt\nb.txt",
+		Timestamp:  core.NowISO(),
+	})
+	waitFor(t, "wake run launched and finished", func() bool {
+		return s.wakeLaunchCount("s1") == 1 && !s.runs.active("s1")
+	})
+
+	msgs, err := st.GetMessages(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("get messages: %v", err)
+	}
+	note := ""
+	for _, m := range msgs {
+		if u, ok := m.(core.User); ok && contains(u.Content, "ended with no output") {
+			note = u.Content
+		}
+	}
+	if note == "" {
+		dumpSessionRows(t, st, "s1")
+		t.Fatal("the empty wake turn left no note - the run vanished with zero trace")
+	}
+	if !contains(note, "files.glob") {
+		t.Errorf("note %q does not name the tool that settled", note)
+	}
+	// The note is the run's last word: the settled result still carries
+	// its own row before it.
+	if !hasYieldResult(msgs, "call_5b16qor0", core.YieldResult{}) {
+		dumpSessionRows(t, st, "s1")
+		t.Error("the settled result row went missing")
+	}
+}
+
 // TestWakeGuardUserSendResets: parkHome parks with a persisted visible
 // note; a plain user send through the /chat pipe resets the guard
 // (launchRun's non-wake reset) and runs to its own end. The session
