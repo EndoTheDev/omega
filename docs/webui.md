@@ -133,16 +133,19 @@ dead — the control column rides the pill.
 the 26px rounded pill with the 11px state DOT inside (dot shifts,
 border goes `--ok` when on, transparent background). No `:checked`
 prop exists for Vue's prop diff to skip, so the stale-arm re-render
-trap is structurally dead for every host that adopts it. The pill owns
-the LOOK and the armed aria; the host owns the two-step arm/confirm —
-the first click ARMS (the confirm question becomes the aria/title, the
-confirm note seats under the row), the second commits — and the write
-path, re-rendering the row from the server's answer. Adopted across
-the registry tabs (skills, tools, agents, MCP, modules) and the
-agents roster; the MCP tab's "from mcp.yaml" caption is gone (rows
-speak transport + live state from GET /mcp/servers). The default
-agent's pill is locked-on and non-interactive with no arm path —
-the default agent cannot be disabled (api.md's 409).
+trap is structurally dead for every host that adopts it. ONE CLICK IS
+ONE SWITCH (card t_5051d523): the pill emits a single intent per
+activation and carries no armed state and no confirm label, so the
+arm/confirm two-step that used to make every toggle need a double
+click cannot come back through the shared component. The host owns the
+write path and re-renders the row from the server's answer; the
+consequence text (what an exclusion means, a module's dependents)
+rides the pill's `hint` as its title - informative on hover, never a
+gate. Adopted across the registry tabs (skills, tools, agents, MCP,
+modules) and the agents roster; the MCP tab's "from mcp.yaml" caption
+is gone (rows speak transport + live state from GET /mcp/servers). The
+default agent's pill is locked-on and non-interactive - the default
+agent cannot be disabled (api.md's 409).
 
 ## Motion
 

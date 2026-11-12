@@ -61,7 +61,10 @@ second map, the death of its 2026-10-30 predecessor.
   their specifics only - a consumer carrying a family-anatomy block
   is a review finding.
 - The toggle pill is the only switch in the webui, and it renders as
-  a button - never a checkbox.
+  a button - never a checkbox. ONE click is one switch (card
+  t_5051d523): no arm/confirm second click, no confirm label. The
+  consequence text (what an exclusion means, a module's dependents)
+  rides the pill's title, where it informs without gating.
 - Registry lists are quiet: hierarchy by typography weight and
   opacity, one hairline between rows - not borders or boxes.
 

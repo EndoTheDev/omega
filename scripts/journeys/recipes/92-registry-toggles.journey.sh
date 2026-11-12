@@ -35,7 +35,9 @@
 #
 # Drive-by-aria-label (worker-onboarding law): the refs invalidate each
 # snapshot; the toggles are clicked by their aria-label state machine
-# ("disable X" -> "confirm apply to X?" -> "enable X").
+# ("disable X" -> "enable X"). ONE click switches (card t_5051d523: the
+# arm/confirm two-step that needed a second click is dead - the first
+# click now writes and the aria flips straight to the opposite name).
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 SKILL="jrn-tgl$(date +%d%b%H%M%S | tr 'A-Z' 'a-z')"
@@ -178,15 +180,12 @@ wait_js "(()=>{return [...document.querySelectorAll('.skills-list .registry-row'
   || die "the seeded skill's row never rendered"
 step "ok: seeded row renders"
 
-# the armed first click: "disable X" -> "confirm apply to X?"
+# ONE click switches (card t_5051d523): "disable X" -> the write lands ->
+# the row re-renders as "enable X". No arm state, no confirm click.
 clicked=$(registry_click ".skills-list" "disable $SKILL" "__arm__")
-assert_eq "$clicked" "1" "arm click found the toggle"
-wait_js "(()=>{return [...document.querySelectorAll('.skills-list button.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='confirm apply to $SKILL?')})()" 5 \
-  || die "the toggle never armed (no confirm state)"
-clicked=$(registry_click ".skills-list" "__apply__" "confirm apply to $SKILL?")
-assert_eq "$clicked" "1" "confirm click applied the toggle"
+assert_eq "$clicked" "1" "the single click found the toggle"
 wait_js "(()=>{return [...document.querySelectorAll('.skills-list button.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='enable $SKILL')})()" 10 \
-  || die "the toggle never landed (row never showed the off state)"
+  || die "one click did not switch the toggle (row never showed the off state)"
 
 # (a) the fold persists: the wire answers it AND config.yaml owns it
 i=0
@@ -236,8 +235,8 @@ step "ok: (c) unknown-name toggles refused 404, nothing persisted"
 # (c, visible half) the LOCKED default agent (card t_2d8deb8c, Endo
 # verbatim "it cannot be disabled EVER!"). The Agents tab renders the
 # default row's pill locked-on: the aria states the law, the DOM
-# disables the button, and clicking it never arms - no confirm state
-# ever appears. The curl must hit the same wall.
+# disables the button, and clicking it writes nothing - the aria never
+# becomes an enable request. The curl must hit the same wall.
 open_tab Agents
 wait_js '(()=>{return document.querySelector(".pane.agents .registry-rows")?true:false})()' 10 \
   || die "the Agents tab never rendered rows"
@@ -249,9 +248,13 @@ inert=$(jsq '(()=>{const b=[...document.querySelectorAll(".pane.agents button.re
   .find(x=>(x.getAttribute("aria-label")||"").includes("locked on"));
   if(!b){return "MISSING"} b.click(); return "clicked"})()' 2>&1 | tail -1 | tr -d '"')
 assert_eq "$inert" "clicked" "the default pill was clicked"
-armed=$(jsq '(()=>{return [...document.querySelectorAll(".pane.agents button.registry-toggle")]
-  .some(b=>(b.getAttribute("aria-label")||"").startsWith("confirm apply to default?"))?1:0})()' 2>&1 | tail -1 | tr -d '"')
-assert_eq "$armed" "0" "the locked pill never armed (clicking it does nothing)"
+# one click commits for every other row (card t_5051d523), so the
+# locked row's refusal is the aria holding still: it stays "locked on"
+# and never turns into an enable/disable request.
+after=$(jsq '(()=>{const b=[...document.querySelectorAll(".pane.agents button.registry-toggle")]
+  .find(x=>(x.getAttribute("aria-label")||"").includes("locked on"));
+  return b ? "still-locked" : "RELABELED"})()' 2>&1 | tail -1 | tr -d '"')
+assert_eq "$after" "still-locked" "the locked pill never turns into a switch (clicking it does nothing)"
 # the wire: a curl hits the same wall the pill renders - refusal 409,
 # the reason text states the law, nothing persists.
 code=$(curl -s -o "$JOURNEY_WORKTMP/omega-jrn-disable-default.$$" -w '%{http_code}' -X PUT "$JOURNEY_BASE_URL/disabled/agents" \
@@ -268,13 +271,9 @@ open_tab Skills
 wait_js "(()=>{return [...document.querySelectorAll('.skills-list button.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='enable $SKILL')})()" 10 \
   || die "the skills tab lost the seeded row before the re-enable"
 clicked=$(registry_click ".skills-list" "enable $SKILL" "__arm__")
-assert_eq "$clicked" "1" "re-enable arm click"
-wait_js "(()=>{return [...document.querySelectorAll('.skills-list button.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='confirm apply to $SKILL?')})()" 5 \
-  || die "the re-enable never armed"
-clicked=$(registry_click ".skills-list" "__apply__" "confirm apply to $SKILL?")
-assert_eq "$clicked" "1" "re-enable confirm click"
+assert_eq "$clicked" "1" "the single re-enable click landed"
 wait_js "(()=>{return [...document.querySelectorAll('.skills-list button.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='disable $SKILL')})()" 10 \
-  || die "the re-enable never landed (row never back on)"
+  || die "one click did not re-enable (row never back on)"
 case "$(disabled_names skills)" in
   *"$SKILL"*) die "the fold kept the disabled skill after the re-enable" ;;
 esac
