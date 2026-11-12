@@ -726,7 +726,7 @@
       detailComments.value = d.comments ?? [];
       detailEvents.value = d.events ?? [];
       // fold the fresh detail back into the board row - a move in the
-      // drawer must not wait for the next poll to leave the column
+      // drawer must not wait for the next board read to leave the column
       const i = tasks.value.findIndex((x) => x.id === id);
       if (i >= 0) tasks.value[i] = d.task;
     } catch (e) {
@@ -734,7 +734,7 @@
     }
   }
 
-  // poll-time drawer refresh: pull the drawn task's detail without
+  // board-read drawer refresh: pull the drawn task's detail without
   // spinning the loading flag (the user may be typing a comment)
   async function applyDetailPatch(id: string) {
     try {
@@ -747,7 +747,7 @@
       const i = tasks.value.findIndex((x) => x.id === id);
       if (i >= 0) tasks.value[i] = d.task;
     } catch {
-      // poll noise stays silent - the next poll retries
+      // a failed patch read stays silent - the next board read retries
     }
   }
 

@@ -276,7 +276,8 @@ func splitLines(s string) []string {
 
 // logPushInterval is the logs topic's cadence. The follower reads only
 // the bytes the file gained since the last tick (one stat, at most one
-// read), and it reads nothing at all while no pane holds the topic.
+// read), and no bytes are read and nothing is published while no pane
+// holds the topic.
 const logPushInterval = time.Second
 
 // logPushWindow bounds one tick's read: a log that grew past this in a

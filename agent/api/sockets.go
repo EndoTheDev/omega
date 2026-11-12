@@ -25,7 +25,8 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// The topic vocabulary: one closed set, five names.
+// The topic vocabulary: one closed set, six names (five live on every
+// connection; `logs` is subscription-gated).
 const (
 	// TopicChat carries run event deltas - the exact frames the SSE
 	// stream emits (event name + verbatim payload), so the SPA's

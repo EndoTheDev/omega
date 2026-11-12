@@ -272,11 +272,12 @@
 
   // --- the bounded refresh (ruling/card step 4) ------------------------
   // The push channel (composables/socket.ts) carries a CLOSED topic set
-  // (chat, chips, canvas, runs, health) with no observability topic, so
-  // there is no topic to ride for ring records; a topic is an engine-side
-  // change (agent/api/sockets.go), not this tab's. The refresh is
-  // therefore bounded by mount: the dock unmounts a sibling-activated
-  // outlet, so an inactive tab costs nothing.
+  // of six names (chat, chips, canvas, runs, health, logs - the last one
+  // subscription-gated) and no observability topic, so there is no topic
+  // to ride for ring records; a topic is an engine-side change
+  // (agent/api/sockets.go), not this tab's. The refresh is therefore
+  // bounded by mount: the dock unmounts a sibling-activated outlet, so
+  // an inactive tab costs nothing.
   let timer: ReturnType<typeof setInterval> | null = null;
 
   onMounted(() => {
