@@ -1,14 +1,22 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
+
+// testWaitTimeout bounds a wait for a HANG, not for correctness (AGENTS.md):
+// the suite runs packages in parallel, so a healthy goroutine can take
+// seconds to be scheduled.
+const testWaitTimeout = 30 * time.Second
 
 // --- httptest helpers ---
 
@@ -143,7 +151,7 @@ func TestHTTPRequestJSONResponse(t *testing.T) {
 		url:    srv.URL,
 		client: srv.Client(),
 	}
-	res, err := s.request("tools/list", map[string]any{})
+	res, err := s.request(context.Background(), "tools/list", map[string]any{})
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
@@ -163,7 +171,7 @@ func TestHTTPRequestError(t *testing.T) {
 	defer srv.Close()
 
 	s := &httpServer{name: "t", url: srv.URL, client: srv.Client()}
-	_, err := s.request("anything", nil)
+	_, err := s.request(context.Background(), "anything", nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -183,7 +191,7 @@ func TestHTTPRequestHTTPStatus(t *testing.T) {
 	defer srv.Close()
 
 	s := &httpServer{name: "t", url: srv.URL, client: srv.Client()}
-	_, err := s.request("anything", nil)
+	_, err := s.request(context.Background(), "anything", nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -200,7 +208,7 @@ func TestHTTPRequestSSEResponse(t *testing.T) {
 	defer srv.Close()
 
 	s := &httpServer{name: "t", url: srv.URL, client: srv.Client()}
-	res, err := s.request("tools/list", nil)
+	res, err := s.request(context.Background(), "tools/list", nil)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
@@ -215,7 +223,7 @@ func TestReadSSEHappyPath(t *testing.T) {
 	body := "event: message\n" +
 		"data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}\n\n"
 	s := &httpServer{}
-	res, err := s.readSSE(strings.NewReader(body))
+	res, err := s.readSSE(context.Background(), strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("readSSE: %v", err)
 	}
@@ -230,7 +238,7 @@ func TestReadSSEDoneMarker(t *testing.T) {
 	body := "data: [DONE]\n\n" +
 		"data: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"x\":1}}\n\n"
 	s := &httpServer{}
-	res, err := s.readSSE(strings.NewReader(body))
+	res, err := s.readSSE(context.Background(), strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("readSSE: %v", err)
 	}
@@ -244,7 +252,7 @@ func TestReadSSEDoneMarker(t *testing.T) {
 func TestReadSSEError(t *testing.T) {
 	body := "data: {\"jsonrpc\":\"2.0\",\"id\":3,\"error\":{\"code\":-1,\"message\":\"oops\"}}\n\n"
 	s := &httpServer{}
-	_, err := s.readSSE(strings.NewReader(body))
+	_, err := s.readSSE(context.Background(), strings.NewReader(body))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -258,7 +266,7 @@ func TestReadSSEError(t *testing.T) {
 func TestReadSSENoResponse(t *testing.T) {
 	body := "data: [DONE]\n\n"
 	s := &httpServer{}
-	_, err := s.readSSE(strings.NewReader(body))
+	_, err := s.readSSE(context.Background(), strings.NewReader(body))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -270,7 +278,7 @@ func TestReadSSENoResponse(t *testing.T) {
 // TestReadSSEEmpty covers readSSE on a completely empty stream.
 func TestReadSSEEmpty(t *testing.T) {
 	s := &httpServer{}
-	_, err := s.readSSE(strings.NewReader(""))
+	_, err := s.readSSE(context.Background(), strings.NewReader(""))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -427,7 +435,7 @@ func TestNewHTTPServerEndToEnd(t *testing.T) {
 	}
 
 	// listTools via the shared helper.
-	tools, err := s.listTools()
+	tools, err := s.listTools(context.Background())
 	if err != nil {
 		t.Fatalf("listTools: %v", err)
 	}
@@ -436,7 +444,7 @@ func TestNewHTTPServerEndToEnd(t *testing.T) {
 	}
 
 	// callTool via the shared helper.
-	text, isErr, err := s.callTool("echo", map[string]any{"msg": "hi"})
+	text, isErr, err := s.callTool(context.Background(), "echo", map[string]any{"msg": "hi"})
 	if err != nil {
 		t.Fatalf("callTool: %v", err)
 	}
@@ -458,7 +466,7 @@ func TestHTTPListToolsError(t *testing.T) {
 	defer srv.Close()
 
 	s := &httpServer{name: "t", url: srv.URL, client: srv.Client()}
-	_, err := s.listTools()
+	_, err := s.listTools(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -474,7 +482,7 @@ func TestHTTPCallToolError(t *testing.T) {
 	defer srv.Close()
 
 	s := &httpServer{name: "t", url: srv.URL, client: srv.Client()}
-	_, _, err := s.callTool("echo", nil)
+	_, _, err := s.callTool(context.Background(), "echo", nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -544,7 +552,7 @@ func TestHTTPRequestCustomHeaders(t *testing.T) {
 	defer srv.Close()
 
 	s := &httpServer{name: "t", url: srv.URL, client: srv.Client(), headers: map[string]string{"X-Test": "hello"}}
-	if _, err := s.request("ping", nil); err != nil {
+	if _, err := s.request(context.Background(), "ping", nil); err != nil {
 		t.Fatalf("request: %v", err)
 	}
 }
@@ -563,7 +571,7 @@ func TestHTTPRequestSessionHeader(t *testing.T) {
 	defer srv.Close()
 
 	s := &httpServer{name: "t", url: srv.URL, client: srv.Client(), sessionID: "sess-xyz"}
-	if _, err := s.request("ping", nil); err != nil {
+	if _, err := s.request(context.Background(), "ping", nil); err != nil {
 		t.Fatalf("request: %v", err)
 	}
 }
@@ -628,5 +636,166 @@ func TestNewPluginFromEnvBadConfig(t *testing.T) {
 	_, err := NewPluginFromEnv()
 	if err == nil {
 		t.Fatal("expected error for bad config, got nil")
+	}
+}
+
+// --- SSE frame limits and continuation lines (card t_0a068e11) ---
+
+// TestReadSSELargeFrame is the receipt for the 64 KiB scanner cap: a single
+// SSE frame well past bufio.Scanner's default token limit must round-trip
+// intact instead of dying as ErrTooLong.
+func TestReadSSELargeFrame(t *testing.T) {
+	const payloadBytes = 256 * 1024
+	big := strings.Repeat("x", payloadBytes)
+	frame, err := json.Marshal(mcpResponse{
+		JSONRPC: "2.0",
+		ID:      1,
+		Result:  json.RawMessage(`{"echo":"` + big + `"}`),
+	})
+	if err != nil {
+		t.Fatalf("marshal frame: %v", err)
+	}
+	body := "data: " + string(frame) + "\n\n"
+
+	s := &httpServer{}
+	res, err := s.readSSE(context.Background(), strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("readSSE: %v", err)
+	}
+	var got struct {
+		Echo string `json:"echo"`
+	}
+	if err := json.Unmarshal(res, &got); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if len(got.Echo) != payloadBytes {
+		t.Fatalf("payload truncated: got %d bytes, want %d", len(got.Echo), payloadBytes)
+	}
+}
+
+// TestReadSSEFrameOverCap pins the ceiling: a frame larger than the 10 MiB
+// max is a loud error, never a silent truncation.
+func TestReadSSEFrameOverCap(t *testing.T) {
+	body := "data: " + strings.Repeat("x", sseMaxFrameBytes+1024) + "\n\n"
+	s := &httpServer{}
+	_, err := s.readSSE(context.Background(), strings.NewReader(body))
+	if err == nil {
+		t.Fatal("expected an error for an over-cap frame, got nil")
+	}
+	if !strings.Contains(err.Error(), "token too long") {
+		t.Fatalf("error should name the scanner limit, got %v", err)
+	}
+}
+
+// TestReadSSEMultilineData is the receipt for the dropped continuations: per
+// the SSE spec consecutive data: lines are ONE event and join with newlines,
+// so a payload split across lines must arrive complete.
+func TestReadSSEMultilineData(t *testing.T) {
+	body := "event: message\n" +
+		"data: {\"jsonrpc\":\"2.0\",\"id\":7,\n" +
+		"data: \"result\":{\"a\":1,\n" +
+		"data: \"b\":2}}\n" +
+		"\n"
+	s := &httpServer{}
+	res, err := s.readSSE(context.Background(), strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("readSSE: %v", err)
+	}
+	var got struct {
+		A int `json:"a"`
+		B int `json:"b"`
+	}
+	if err := json.Unmarshal(res, &got); err != nil {
+		t.Fatalf("unmarshal result %q: %v", res, err)
+	}
+	if got.A != 1 || got.B != 2 {
+		t.Fatalf("continuation lines dropped: got %+v, want a=1 b=2", got)
+	}
+}
+
+// TestReadSSEMultilineLongPayload splits one large result across many data:
+// lines (>64 KiB total) - the shape that used to arrive truncated and surface
+// as "stream ended without response".
+func TestReadSSEMultilineLongPayload(t *testing.T) {
+	chunk := strings.Repeat("y", 8*1024)
+	var b strings.Builder
+	b.WriteString("data: {\"jsonrpc\":\"2.0\",\"id\":9,\n")
+	b.WriteString("data: \"result\":{\"parts\":[\n")
+	for i := 0; i < 16; i++ {
+		if i > 0 {
+			b.WriteString("data: ,\n")
+		}
+		b.WriteString("data: \"" + chunk + "\"\n")
+	}
+	b.WriteString("data: ]}}\n\n")
+
+	s := &httpServer{}
+	res, err := s.readSSE(context.Background(), strings.NewReader(b.String()))
+	if err != nil {
+		t.Fatalf("readSSE: %v", err)
+	}
+	var got struct {
+		Parts []string `json:"parts"`
+	}
+	if err := json.Unmarshal(res, &got); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if len(got.Parts) != 16 {
+		t.Fatalf("parts: got %d, want 16", len(got.Parts))
+	}
+	for i, p := range got.Parts {
+		if len(p) != 8*1024 {
+			t.Fatalf("part %d truncated: got %d bytes, want %d", i, len(p), 8*1024)
+		}
+	}
+}
+
+// TestHTTPCallToolContextCancel is the receipt for ctx threading: a call whose
+// stream never completes aborts on cancellation instead of riding out the
+// client timeout.
+func TestHTTPCallToolContextCancel(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.(http.Flusher).Flush()
+		// Open the event and never terminate it - the client must give up.
+		fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"id\":1,\n")
+		w.(http.Flusher).Flush()
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+
+	s := &httpServer{name: "t", url: srv.URL, client: srv.Client()}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	type outcome struct {
+		err     error
+		elapsed time.Duration
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		start := time.Now()
+		_, _, err := s.callTool(ctx, "echo", nil)
+		done <- outcome{err: err, elapsed: time.Since(start)}
+	}()
+
+	select {
+	case got := <-done:
+		if got.err == nil {
+			t.Fatal("expected the cancelled call to fail, got nil")
+		}
+		if got.elapsed > 5*time.Second {
+			t.Fatalf("cancelled call took %v, want an abort near the 200ms deadline (err: %v)", got.elapsed, got.err)
+		}
+		if !errors.Is(got.err, context.DeadlineExceeded) && !strings.Contains(got.err.Error(), "context") {
+			t.Fatalf("error should name the cancellation, got %v", got.err)
+		}
+	case <-time.After(testWaitTimeout):
+		t.Fatal("cancelled call did not return - ctx is not threaded through the HTTP request")
 	}
 }

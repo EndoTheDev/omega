@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -14,14 +15,14 @@ type scriptedConn struct {
 	err    error
 }
 
-func (s scriptedConn) request(method string, params any) (json.RawMessage, error) {
+func (s scriptedConn) request(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	return s.result, s.err
 }
-func (s scriptedConn) listTools() ([]mcpTool, error) {
-	return mcpListTools(s)
+func (s scriptedConn) listTools(ctx context.Context) ([]mcpTool, error) {
+	return mcpListTools(ctx, s)
 }
-func (s scriptedConn) callTool(name string, args map[string]any) (string, bool, error) {
-	return mcpCallTool(s, name, args)
+func (s scriptedConn) callTool(ctx context.Context, name string, args map[string]any) (string, bool, error) {
+	return mcpCallTool(ctx, s, name, args)
 }
 func (s scriptedConn) close() {}
 
@@ -33,7 +34,7 @@ func TestMcpListToolsValid(t *testing.T) {
 		{"name":"fetch","description":"Fetch a URL","inputSchema":{"type":"object"}}
 	]}`)
 	conn := scriptedConn{result: payload}
-	tools, err := mcpListTools(conn)
+	tools, err := mcpListTools(context.Background(), conn)
 	if err != nil {
 		t.Fatalf("mcpListTools: %v", err)
 	}
@@ -50,7 +51,7 @@ func TestMcpListToolsValid(t *testing.T) {
 
 func TestMcpListToolsEmpty(t *testing.T) {
 	conn := scriptedConn{result: json.RawMessage(`{"tools":[]}`)}
-	tools, err := mcpListTools(conn)
+	tools, err := mcpListTools(context.Background(), conn)
 	if err != nil {
 		t.Fatalf("mcpListTools: %v", err)
 	}
@@ -61,7 +62,7 @@ func TestMcpListToolsEmpty(t *testing.T) {
 
 func TestMcpListToolsMalformed(t *testing.T) {
 	conn := scriptedConn{result: json.RawMessage(`{bad json}`)}
-	_, err := mcpListTools(conn)
+	_, err := mcpListTools(context.Background(), conn)
 	if err == nil {
 		t.Fatal("expected error for malformed JSON, got nil")
 	}
@@ -69,7 +70,7 @@ func TestMcpListToolsMalformed(t *testing.T) {
 
 func TestMcpListToolsRequestError(t *testing.T) {
 	conn := scriptedConn{err: errors.New("connection refused")}
-	_, err := mcpListTools(conn)
+	_, err := mcpListTools(context.Background(), conn)
 	if err == nil {
 		t.Fatal("expected error from request, got nil")
 	}
@@ -83,7 +84,7 @@ func TestMcpCallToolTextContent(t *testing.T) {
 		{"type":"text","text":"world"}
 	],"isError":false}`)
 	conn := scriptedConn{result: payload}
-	text, isErr, err := mcpCallTool(conn, "echo", map[string]any{"msg": "hi"})
+	text, isErr, err := mcpCallTool(context.Background(), conn, "echo", map[string]any{"msg": "hi"})
 	if err != nil {
 		t.Fatalf("mcpCallTool: %v", err)
 	}
@@ -100,7 +101,7 @@ func TestMcpCallToolIsError(t *testing.T) {
 		{"type":"text","text":"tool failed"}
 	],"isError":true}`)
 	conn := scriptedConn{result: payload}
-	text, isErr, err := mcpCallTool(conn, "broken", nil)
+	text, isErr, err := mcpCallTool(context.Background(), conn, "broken", nil)
 	if err != nil {
 		t.Fatalf("mcpCallTool: %v", err)
 	}
@@ -118,7 +119,7 @@ func TestMcpCallToolSkipsNonText(t *testing.T) {
 		{"type":"text","text":"only-text"}
 	],"isError":false}`)
 	conn := scriptedConn{result: payload}
-	text, _, err := mcpCallTool(conn, "mixed", nil)
+	text, _, err := mcpCallTool(context.Background(), conn, "mixed", nil)
 	if err != nil {
 		t.Fatalf("mcpCallTool: %v", err)
 	}
@@ -129,7 +130,7 @@ func TestMcpCallToolSkipsNonText(t *testing.T) {
 
 func TestMcpCallToolEmptyContent(t *testing.T) {
 	conn := scriptedConn{result: json.RawMessage(`{"content":[],"isError":false}`)}
-	text, isErr, err := mcpCallTool(conn, "noop", nil)
+	text, isErr, err := mcpCallTool(context.Background(), conn, "noop", nil)
 	if err != nil {
 		t.Fatalf("mcpCallTool: %v", err)
 	}
@@ -143,7 +144,7 @@ func TestMcpCallToolEmptyContent(t *testing.T) {
 
 func TestMcpCallToolMalformed(t *testing.T) {
 	conn := scriptedConn{result: json.RawMessage(`not json`)}
-	_, _, err := mcpCallTool(conn, "bad", nil)
+	_, _, err := mcpCallTool(context.Background(), conn, "bad", nil)
 	if err == nil {
 		t.Fatal("expected error for malformed JSON, got nil")
 	}
@@ -151,7 +152,7 @@ func TestMcpCallToolMalformed(t *testing.T) {
 
 func TestMcpCallToolRequestError(t *testing.T) {
 	conn := scriptedConn{err: errors.New("timeout")}
-	_, _, err := mcpCallTool(conn, "any", nil)
+	_, _, err := mcpCallTool(context.Background(), conn, "any", nil)
 	if err == nil {
 		t.Fatal("expected error from request, got nil")
 	}
