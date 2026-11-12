@@ -1084,6 +1084,50 @@ printf "%s" "$out" | grep -q "^hold: t_web" \
 	&& ok || bad "T21d: the prose fallback was lost - a FILES-less running card must still hold the sibling (out: $out)"
 rm -rf "$T21REPO" "$T21HOME"
 
+# T22 (local + CI): the CORPSE readout (card t_534d58c5, 2026-11-13). Cards
+# died mid-pass leaving the pass log reading `running: t_x` for a process that
+# was already gone - the death only existed as a traceback nobody had named.
+# The readout must fire for a running card whose registered worker pid is
+# PROVABLY gone, must stay SILENT for a live pid, and must never fire on a
+# refused probe (the first live run of this readout printed a corpse for two
+# LIVE cards because tasklist refused `//FI`; a false corpse is worse than no
+# readout). It is also read-only: the card keeps its cap slot and its status.
+T22REPO=$(mktemp -d); T22HOME=$(mktemp -d)
+mkdir -p "$T22REPO/scripts" "$T22HOME/kanban/boards/project-omega"
+cp "$GUARD" "$T22REPO/scripts/factory-dispatch.sh"
+printf 'project-omega\n' >"$T22HOME/kanban/current"
+T22DB_N="$(mixpath "$T22HOME")/kanban/boards/project-omega/kanban.db"
+# A live pid the host can prove (this test shell) and a pid that is really
+# gone: spawn a sleeper, read its host pid, kill it, reap it.
+LIVE_PID=$(cat /proc/$$/winpid 2>/dev/null || echo $$)
+sleep 60 & T22VICTIM=$!
+VICTIM_PID=$(cat "/proc/$T22VICTIM/winpid" 2>/dev/null || echo "$T22VICTIM")
+kill "$T22VICTIM" 2>/dev/null || true
+wait "$T22VICTIM" 2>/dev/null || true
+T22NOW=$(date +%s)
+sqlex "$T22DB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER, current_run_id INTEGER);
+CREATE TABLE task_runs(id INTEGER PRIMARY KEY, task_id TEXT, profile TEXT, status TEXT);
+INSERT INTO task_runs VALUES(4242,'t_dead','cody','running');
+INSERT INTO task_runs VALUES(4243,'t_alive','vera','running');
+INSERT INTO tasks VALUES('t_dead','running','dead worker','FILES: scripts/x.sh',NULL,$((T22NOW + 900)),5,'2026-11-12T19:00',$VICTIM_PID,$((T22NOW - 45)),4242);
+INSERT INTO tasks VALUES('t_alive','running','live worker','FILES: scripts/y.sh',NULL,$((T22NOW + 900)),5,'2026-11-12T19:01',$LIVE_PID,$((T22NOW - 5)),4243);"
+T22RUN() { ( cd "$T22REPO" && HOME="$T22HOME" HERMES_HOME= HERMES_KANBAN_HOME="$(mixpath "$T22HOME")" \
+    HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= bash scripts/factory-dispatch.sh --dry-run 2>&1 ); }
+out=$(T22RUN); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T22: the corpse readout killed the pass (exit $rc, out: $out)"
+printf "%s" "$out" | grep -q "corpse: t_dead run 4242 (cody) worker pid $VICTIM_PID is GONE" \
+	&& ok || bad "T22a: a running card with a dead worker pid printed no corpse line (out: $out)"
+printf "%s" "$out" | grep -qF "last tool calls in" \
+	&& ok || bad "T22a: the corpse line named no corpse source (out: $out)"
+printf "%s" "$out" | grep -q "corpse: t_alive" \
+	&& bad "T22b: a LIVE worker pid read as a corpse - a false corpse makes every later corpse line untrustworthy (out: $out)" \
+	|| ok
+s=$(sql "$T22DB_N" "SELECT status||'|'||coalesce(worker_pid,0)||'|'||current_run_id FROM tasks WHERE id='t_dead';")
+[ "$s" = "running|$VICTIM_PID|4242" ] && ok || bad "T22c: the readout MUTATED the dead card ('$s') - it must be read-only"
+rm -rf "$T22REPO" "$T22HOME"
+
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]

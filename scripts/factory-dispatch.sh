@@ -486,6 +486,75 @@ CAND=()
 # empty because the board is empty must be indistinguishable from one
 # whose computation went blind.
 echo "running: ${RUNNING[*]:-none} (surface tokens: $(grep -c . "$SURF" || true))"
+
+# -- corpse readout: a running card whose worker pid is PROVABLY GONE ---------
+# Card t_534d58c5 (2026-11-13). Three cards died mid-pass and left the tick
+# nothing to read: worker_result exit_code 1, EMPTY output, worker_lost
+# managed_worker_failed (16:30 2026-11-11 run 1334, 21:17 2026-11-12 runs 1397
+# and a sibling). The mechanism was the gateway's worker-receipt seam, not a
+# kill (see the card: every factory script carries ZERO taskkill/kill calls),
+# but the SYMPTOM the operator hit was that a death produced no line anywhere
+# the factory reads - the pass printed "running: t_x" for a card whose process
+# was already dead, and the next tick's log had to reconstruct the death from
+# the board DB by hand.
+#
+# This is a READ-ONLY readout and it changes NO accounting: the card keeps its
+# cap slot (guard bug #14's keep-rule above is untouched - dropping a
+# claim-expired-but-live card from the snapshot is what evaporated the budget),
+# nothing is reclaimed, requeued, parked or killed. It only names the corpse so
+# a death is visible in the pass log the same tick it happens.
+#
+# The pid check is POSITIVE-EVIDENCE ONLY: a card gets a corpse line only when
+# a pid is registered AND the host answers that the pid is gone. No tasklist
+# and no kill(0) answer => no line, never a guess. Windows: tasklist CSV, field
+# 2 exact (the CSV row is `"image","<pid>",...`; a bare pid substring would
+# also match a session number). POSIX: the worker runs as the guard's own user,
+# so a failed `kill -0` is ESRCH, not EPERM.
+pid_state() {  # pid -> alive | gone | unknown
+  local p="$1" out f2
+  case "$p" in ''|*[!0-9]*) printf unknown; return ;; esac
+  if command -v tasklist >/dev/null 2>&1; then
+    # /FI /FO /NH stay intact under MSYS_NO_PATHCONV; `//FI` is refused by the
+    # binary itself ("Invalid argument/option") and a REFUSED query must never
+    # read as a dead pid - a false corpse is worse than no readout (it fired on
+    # two live cards in this readout's first live run, 2026-11-13). tasklist
+    # answers rc 0 for "no tasks match" and rc 1 only for a bad invocation, so
+    # rc!=0 means UNKNOWN, not gone.
+    out=$(MSYS_NO_PATHCONV=1 tasklist /FI "PID eq $p" /FO CSV /NH 2>/dev/null) \
+      || { printf unknown; return; }
+    # CSV row: "image.exe","<pid>","Console","1","10,960 K" - field 2 must
+    # EQUAL the pid; a bare substring also matches a session number.
+    f2=$(printf '%s\n' "$out" | head -1 | cut -d, -f2 | tr -d '"')
+    if [ "$f2" = "$p" ]; then printf alive; else printf gone; fi
+    return
+  fi
+  if kill -0 "$p" 2>/dev/null; then printf alive; else printf gone; fi
+}
+corpse_readout() {
+  local r row wpid run age prof
+  for r in "${RUNNING[@]:-}"; do
+    [ -n "$r" ] || continue
+    # The task-level read is enough to prove a corpse: registered pid + the
+    # heartbeat age. If even THIS fails the pass must keep going - a readout
+    # must never be the thing that kills a dispatch pass.
+    row=$(dbq "SELECT coalesce(worker_pid,''), coalesce(current_run_id,''),
+                      coalesce(CAST(strftime('%s','now') AS INTEGER) - last_heartbeat_at, -1)
+               FROM tasks WHERE id='$r';") || continue
+    [ -n "$row" ] || continue
+    IFS='|' read -r wpid run age <<<"$row"
+    [ -n "$wpid" ] || continue                       # no pid registered: nothing to prove
+    [ "$(pid_state "$wpid")" = gone ] || continue    # alive or unverifiable: no line
+    [ "$age" -ge 0 ] 2>/dev/null || age='?'
+    # The run's profile only names WHERE the traceback lives. Boards without a
+    # task_runs table (older fixtures) still get the corpse line, minus the
+    # pointer - swallowed on purpose, see above.
+    prof=$(dbq "SELECT coalesce(profile,'') FROM task_runs WHERE id='${run:-0}';" 2>/dev/null) || prof=""
+    echo "corpse: $r run ${run:-?}${prof:+ ($prof)} worker pid $wpid is GONE, last heartbeat ${age}s ago"
+    echo "  the run died mid-pass with no result: cause in task_runs.error for run ${run:-?}, last tool calls in $ROOT/profiles/${prof:-<profile>}/logs/agent.log"
+  done
+}
+corpse_readout
+
 echo "candidates: ${#CAND[@]} ready, unclaimed"
 # -- review lane: the SAME inner call claims review-state cards ---------------
 # `hermes kanban dispatch` never only drained the ready queue: dispatch_once
