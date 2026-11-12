@@ -91,9 +91,7 @@
       </button>
     </div>
 
-    <!-- body: read-view until clicked, then the edit form (which also
-         hosts the armed card-delete control, the one destructive act
-         the drawer carries) -->
+    <!-- body: read-view until clicked, then the edit form -->
     <form
       v-if="editingBody"
       class="drawer-edit-body"
@@ -112,13 +110,6 @@
           type="button"
           class="drawer-cancel"
           @click="cancelBodyEdit">cancel</button>
-        <button
-          type="button"
-          class="drawer-discard"
-          :class="{ armed: confirmingDelete }"
-          @click="deleteClick">
-          {{ confirmingDelete ? "confirm delete" : "delete card" }}
-        </button>
       </div>
     </form>
     <pre
@@ -183,6 +174,44 @@
           reply
         </button>
       </form>
+    </div>
+
+    <!-- card t_5a638160: the card DELETE rides the drawer, never the board
+         canvas - a destructive act must not sit one stray click away on the
+         grid, and it must not hide inside the body editor (the old shape: you
+         had to click into the body to even see it). First click arms the
+         confirm below; the confirm NAMES the card (id + title) because the
+         delete is FINAL: there is NO undo, and there can be no undo toast -
+         undoing a delete would need card resurrection, which the tool layer
+         does not have (kanban.delete/DELETE /tasks/{id} has no counterpart).
+         The confirm IS the safety. Do not add undo by half. -->
+    <div class="drawer-danger">
+      <button
+        v-if="!confirmingDelete"
+        class="drawer-delete"
+        title="delete this card"
+        @click="armDelete">
+        delete card
+      </button>
+      <div
+        v-else
+        class="drawer-confirm"
+        role="alertdialog"
+        aria-label="confirm card delete">
+        <p class="drawer-confirm-text">{{ deleteConfirmLabel }}</p>
+        <div class="drawer-confirm-actions">
+          <button
+            class="drawer-delete armed"
+            @click="confirmDelete">
+            delete
+          </button>
+          <button
+            class="drawer-cancel"
+            @click="disarmDelete">
+            keep
+          </button>
+        </div>
+      </div>
     </div>
   </aside>
 </template>
@@ -284,7 +313,7 @@
   function beginBodyEdit() {
     bodyDraft.value = props.task.body;
     editingBody.value = true;
-    disarmDelete(); // the armed delete belongs to the edit form
+    disarmDelete(); // an armed confirm dies when the drawer turns to editing
     void nextTick(() => bodyEl.value?.focus());
   }
   function cancelBodyEdit() {
@@ -301,10 +330,15 @@
     emit("save", { body });
   }
 
-  // --- armed delete (the board-remove pattern: second click inside the
-  // warning window is the trigger, the server is the law)
+  // --- armed delete (card t_5a638160: the drawer-level control).
+  // First click arms; the confirm strip names the card (id + title) and its
+  // button is the trigger. There is deliberately NO undo - see the template
+  // comment: the tool layer cannot resurrect a deleted card.
   const confirmingDelete = ref(false);
   let disarmTimer: ReturnType<typeof setTimeout> | undefined;
+  const deleteConfirmLabel = computed(
+    () => `delete ${props.task.id} - ${props.task.title}?`,
+  );
   function disarmDelete() {
     confirmingDelete.value = false;
     if (disarmTimer) {
@@ -312,15 +346,14 @@
       disarmTimer = undefined;
     }
   }
-  function deleteClick() {
-    if (!confirmingDelete.value) {
-      confirmingDelete.value = true;
-      if (disarmTimer) clearTimeout(disarmTimer);
-      // disarm on timeout: the second click lands only while the
-      // warning still shows
-      disarmTimer = setTimeout(disarmDelete, 6000);
-      return;
-    }
+  function armDelete() {
+    confirmingDelete.value = true;
+    if (disarmTimer) clearTimeout(disarmTimer);
+    // disarm on timeout: the confirm lands only while the warning still
+    // shows
+    disarmTimer = setTimeout(disarmDelete, 6000);
+  }
+  function confirmDelete() {
     disarmDelete();
     emit("delete");
   }
@@ -410,10 +443,16 @@
     opacity: 0.4;
     cursor: default;
   }
-  /* armed delete: the heavier border is the second-click warning, the
-     same tinge the board-remove button carries */
-  .drawer-discard {
-    margin-left: auto;
+  /* armed delete (card t_5a638160): the drawer-level danger zone - one
+     quiet button at rest, a named confirm strip when armed. The heavier
+     border is the warning, the same tinge the board-remove button carries */
+  .drawer-danger {
+    flex: none;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid color-mix(in srgb, currentcolor 10%, transparent);
+  }
+  .drawer-delete {
     font: inherit;
     font-size: 11.5px;
     color: inherit;
@@ -422,10 +461,30 @@
     border-radius: var(--r-chip);
     background: none;
     padding: 3px 8px;
+    opacity: 0.7;
   }
-  .drawer-discard.armed {
+  .drawer-delete:hover {
+    opacity: 1;
+  }
+  .drawer-delete.armed {
+    opacity: 1;
     border-color: color-mix(in srgb, currentcolor 45%, transparent);
     font-weight: 600;
+  }
+  .drawer-confirm {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .drawer-confirm-text {
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+  .drawer-confirm-actions {
+    display: flex;
+    gap: 6px;
   }
   .drawer-meta {
     display: flex;

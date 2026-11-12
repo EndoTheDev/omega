@@ -774,10 +774,16 @@
     }
   }
 
-  // armed delete: the drawer confirmed; DELETE, drop the drawer, refetch
+  // armed delete (card t_5a638160): the drawer confirmed a NAMED card; the
+  // card leaves the grid on the click, not on the round trip (optimistic),
+  // and the drawer closes with it. A refused DELETE (server is the law, and
+  // there is no undo anywhere - the confirm is the safety) snaps the board
+  // back to the server's truth and says why.
   async function onDrawerDelete() {
     if (!selected.value) return;
     const id = selected.value.id;
+    selected.value = null;
+    tasks.value = tasks.value.filter((t) => t.id !== id);
     try {
       const res = await fetch(withBoard(taskDeletePath(id), boardName.value), {
         method: "DELETE",
@@ -785,13 +791,13 @@
       if (!res.ok) {
         const detail = await res.text().catch(() => `DELETE /tasks/${id}: ${res.status}`);
         setNotice(detail, true);
+        await fetchBoard();
         return;
       }
       setNotice(`card ${id} deleted`);
-      selected.value = null;
-      await fetchBoard();
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e), true);
+      await fetchBoard();
     }
   }
 
