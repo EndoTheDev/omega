@@ -79,13 +79,23 @@ strip_volatile() {
 
 # canonical_hash_disk: content hash of $STATIC on disk with volatile
 # build metadata (in paths and in contents) stripped.
+#
+# LC_ALL=C on the sort is load-bearing, not style: canonical_hash_head
+# walks git's tree, which orders by BYTES, so the disk side must walk
+# its file set in byte order too. The ambient locale sorts the same set
+# differently - en_US.UTF-8 lifts _nuxt/... above 200.html where bytes
+# put 200.html first - so a locale-sorted find turns a content-identical
+# rebuild into CHANGED, git commit --only then finds nothing to commit
+# and the lane dies on its own FATAL. The pin lives here, not in the
+# caller's env: the script has to be correct on a UTF-8 host with
+# nothing exported.
 canonical_hash_disk() {
 	local path norm
 	while IFS= read -r -d '' path; do
 		norm="$(strip_volatile <<<"${path#"$STATIC"/}")"
 		printf '%s\n' "$norm"
 		strip_volatile <"$path" | sha256sum
-	done < <(find "$STATIC" -type f -print0 | sort -z) | sha256sum
+	done < <(find "$STATIC" -type f -print0 | LC_ALL=C sort -z) | sha256sum
 }
 
 # canonical_hash_head: the same hash over the committed $STATIC tree
