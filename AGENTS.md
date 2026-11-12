@@ -61,7 +61,8 @@ is a review finding; its content lands in its mapped home instead.
   second write).
 - **Bind loopback only by default.** The HTTP channel is unauthenticated
   and `/chat` reaches the shell tools. Anything beyond loopback is an
-  explicit `server.bind` opt-in behind an auth wall.
+  explicit `server.bind` opt-in gated by the Host/Origin check - a CSRF
+  heuristic, not authentication.
 - **One map.** A new AGENTS.md outside this root is a review finding;
   move its content into its mapped home.
 
