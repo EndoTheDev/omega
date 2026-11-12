@@ -167,9 +167,14 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) Serve(ctx context.Context, addr string) error {
 	s.httpSrv.Addr = addr
 	// the Host/Origin guard learns the bind here (before the listener
-	// accepts anything) - the allowed-Host set is derived from it
+	// accepts anything) - the allowed-Host set is derived from it, and a
+	// bind the guard cannot defend (a wildcard bind with no
+	// server.public_hosts) refuses to start instead of failing open
+	// (t_9caf16c8)
 	if g, ok := s.httpSrv.Handler.(*hostGuard); ok {
-		g.addr.Store(addr)
+		if err := g.bind(addr); err != nil {
+			return err
+		}
 	}
 	// hot-reload: the themes folder watcher dies with the server ctx.
 	go s.themes.watch(ctx)
