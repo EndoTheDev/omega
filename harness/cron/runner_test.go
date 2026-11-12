@@ -772,3 +772,57 @@ func TestJobsInspectorEmptyConfig(t *testing.T) {
 		t.Fatalf("jobs = %+v, want empty", jobs)
 	}
 }
+
+// TestFireTurnCapUsesConfiguredRunTimeout pins the turn's wall-clock cap
+// (card t_ef885fd4): the configured server.run_timeout reaches the fire's
+// context, and the 30-minute default holds when the host sets none. Seen
+// through the ONE witness that matters - the deadline the turn actually
+// runs under.
+func TestFireTurnCapUsesConfiguredRunTimeout(t *testing.T) {
+	cases := []struct {
+		name string
+		file string // config.yaml body; empty = no file at all
+		want time.Duration
+	}{
+		{"configured", "server:\n  run_timeout: 120\n", 120 * time.Second},
+		{"zero falls back", "server:\n  run_timeout: 0\n", 30 * time.Minute},
+		{"absent key falls back", "server:\n  port: 8099\n", 30 * time.Minute},
+		{"no config file", "", 30 * time.Minute},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			if tc.file != "" {
+				if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {
+					t.Fatalf("mkdir config: %v", err)
+				}
+				if err := os.WriteFile(filepath.Join(home, "config", "config.yaml"), []byte(tc.file), 0o644); err != nil {
+					t.Fatalf("write config.yaml: %v", err)
+				}
+			}
+			r := newTestRunner(t, home, Job{Name: "capped", Schedule: "0 8 * * *", Prompt: "p"})
+
+			var got time.Duration
+			var hasDeadline bool
+			r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
+				deadline, ok := ctx.Deadline()
+				if ok {
+					got = time.Until(deadline)
+				}
+				hasDeadline = ok
+				return "ok", nil
+			}
+			r.fire(context.Background(), r.jobsSnapshot()[0], time.Now())
+
+			if !hasDeadline {
+				t.Fatalf("fire ran the turn with no deadline; want the %s cap", tc.want)
+			}
+			// The deadline is stamped microseconds before the turn starts;
+			// a second of slack either way keeps the pin about the VALUE,
+			// never about scheduling jitter (the waitFor law).
+			if got < tc.want-time.Second || got > tc.want+time.Second {
+				t.Fatalf("turn cap = %s, want %s", got.Round(time.Millisecond), tc.want)
+			}
+		})
+	}
+}

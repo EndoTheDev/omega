@@ -16,6 +16,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/robfig/cron/v3"
+	"gopkg.in/yaml.v3"
 )
 
 // catchUpWindow bounds how far back a missed fire is allowed to be.
@@ -371,9 +372,10 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	// Wall-clock cap on the turn itself: without it, one hung tool
 	// call (shell sleep, wedged provider) never returns, every later
 	// fire logs "skipped, previous fire still running", and the job's
-	// journal/memory delivery stops until a process restart. Same
-	// 1800s default as the /chat run_timeout.
-	turnCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	// journal/memory delivery stops until a process restart. The cap
+	// is the configured server.run_timeout - the same knob the /chat
+	// runs carry - 30 minutes when it is unset (card t_ef885fd4).
+	turnCtx, cancel := context.WithTimeout(ctx, r.turnCap())
 	defer cancel()
 	// Verdict cards v1 (card t_2ecf9c51): a cron fire is a background
 	// turn - the verdict tool refuses to hard-pause from this origin.
@@ -390,6 +392,57 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	r.recordFire(job, when)
 	r.recordOutcome(job, runErr)
 	r.emitFinished(job.Name, runErr == nil)
+}
+
+// turnCapDefault is the unset server.run_timeout fallback: 30 minutes,
+// the same 1800s the detached /chat run cap falls back to.
+const turnCapDefault = 30 * time.Minute
+
+// serverRunTimeout is the ONE host knob a fire reads out of config.yaml
+// - the server section's run_timeout, in seconds. One parse shape per
+// concern (the agent/profiles.go law): every other server key is the
+// host's business and stays unparsed here.
+type serverRunTimeout struct {
+	Server struct {
+		RunTimeout int `yaml:"run_timeout"`
+	} `yaml:"server"`
+}
+
+// turnCap resolves one fire's wall-clock cap: the configured
+// server.run_timeout when the host sets one, turnCapDefault otherwise
+// (unset, zero, negative, or no readable config). The knob is the
+// shell's - server.run_timeout caps every detached /chat run - and the
+// scheduler runs in-process beside that same shell, so the fire reads
+// the config the process booted on rather than inventing a cron-side
+// section. The two candidate paths mirror cmd/omega's resolveConfigPath
+// (the legacy home root first, the config/ layout second). Re-read per
+// fire: the cap bounds a hung turn, it is not a boot-time identity, and
+// fires are minutes apart.
+func (r *Runner) turnCap() time.Duration {
+	if r.home == "" {
+		return turnCapDefault // no home: nothing to read, never a relative-path hit
+	}
+	for _, path := range []string{
+		filepath.Join(r.home, "config.yaml"),
+		filepath.Join(r.home, "config", "config.yaml"),
+	} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var cfg serverRunTimeout
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			// A malformed config.yaml already failed the host's own boot
+			// parse; a fire degrades to the default instead of inventing
+			// a second opinion on the operator's file.
+			return turnCapDefault
+		}
+		if cfg.Server.RunTimeout > 0 {
+			return time.Duration(cfg.Server.RunTimeout) * time.Second
+		}
+		return turnCapDefault
+	}
+	return turnCapDefault
 }
 
 // emitFinished records one finished-things record for the fire (card
