@@ -147,10 +147,13 @@ test("the view's home is the secondary sidebar (card t_d7fd3ad3)", () => {
     /id: "insights",\n    title: "Insights",/,
     "the tab label reads Insights (capital I)",
   );
+  // card t_d04a1c80: the new-tab placeholder entry closes the registry
+  // now, so pin the insights ENTRY's own shape (right shell, unclosable)
+  // instead of its position at the inventory's tail
   assert.match(
     dockables,
-    /\n    area: "right",\n    closable: false,\n  \},\n\];/s,
-    "insights is the last registry entry, right-shell, unclosable",
+    /id: "insights",\n    title: "Insights",[\s\S]*?area: "right",\n    closable: false,\n  \},/,
+    "insights is right-shell, unclosable",
   );
   assert.match(dockables, /card t_d7fd3ad3/, "the ruling is recorded at the entry");
   // the app outlet exists (the tab renders wherever it lives)

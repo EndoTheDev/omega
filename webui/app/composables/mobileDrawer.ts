@@ -143,10 +143,18 @@ export const DRAWER_RENDERABLE: Record<MobileShell, readonly DockComponentName[]
 
 /** the ids NO drawer block branches: chat and the viewer render from a
     per-tab payload, and the browser is a main-pane content tab whose mobile
-    home is the page itself. The pin suite fails the next dockable that is
+    home is the page itself. card t_d04a1c80: the new-tab placeholder too -
+    its "surface" is a blank body, so a drawer clamped to it would open an
+    empty overlay; the clamp drops it and the floor still seats the edge's
+    home tabs. The pin suite fails the next dockable that is
     in none of the three lists (renderable / panel-resolved / declared here),
     so a new view has to pick one on purpose. */
-export const DRAWER_UNBRANCHED: readonly DockComponentName[] = ["chat", "viewer", "browser"];
+export const DRAWER_UNBRANCHED: readonly DockComponentName[] = [
+  "chat",
+  "viewer",
+  "browser",
+  "newtab",
+];
 
 /** card t_572015db: a drawer's tab set. The live edge pane's tabs first (its
     own order), then the registry floor's missing ids - the right drawer's

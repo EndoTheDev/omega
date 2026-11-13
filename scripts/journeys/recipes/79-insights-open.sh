@@ -17,9 +17,10 @@
 #              header is gone (the window chip is the one control).
 #   ranges  - the period switches exist and the chip follows a click.
 #   plus    - the MAIN pane's '+' MINTS a fresh chat session directly
-#             (Endo amendment 2026-10-26, t_a582486d: the inventory
-#             dropdown is OUT of the '+'; the empty-pane watermark
-#             keeps the dockable inventory).
+#             (Endo amendment 2026-10-26, t_a582486d: no inventory
+#             dropdown in it; card t_d04a1c80 deleted the empty-pane
+#             component menu, so the '+' is the pane's only add door and
+#             the palette carries the rest).
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 open_app
