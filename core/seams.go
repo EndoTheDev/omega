@@ -206,6 +206,24 @@ type Settings interface {
 	// validates, persists the config file, hot-applies what the
 	// running process can apply, and returns the refreshed payload.
 	Save(values map[string]any) (*SettingsSchema, error)
+	// Raw returns the config FILE as YAML text: the settings pane's
+	// export / edit-as-YAML read. Secret values are masked exactly
+	// like Schema masks them - the file is the secret's home, so the
+	// wire never carries one.
+	Raw() (string, error)
+	// SaveRaw validates a whole YAML document through the same
+	// LoadConfig path Save rides, persists it through the same
+	// writer, hot-applies, and returns the refreshed payload. A
+	// masked secret (the Raw mask) KEEPS the value on disk - the
+	// save round-trips an export without destroying a credential.
+	SaveRaw(text string) (*SettingsSchema, error)
+	// Reset restores every knob that HAS a default to it through
+	// Save's own write path and returns the refreshed payload. The
+	// config.yaml-only doors (provider.api_key, server.bind, the
+	// named instances and their secrets) and knobs with no known
+	// default (provider.model_name - config requires it) are kept:
+	// resetting is never destructive.
+	Reset() (*SettingsSchema, error)
 }
 
 // ModuleStatus is one module in the registry introspection (v0.12 E2,
@@ -495,7 +513,7 @@ type Notice struct {
 	ID        int64  `json:"id"`
 	Kind      string `json:"kind"` // task | cron | chat
 	SourceID  string `json:"source_id"`
-	Title     string `json:"title"` // metadata line, no prompt/session content
+	Title     string `json:"title"`   // metadata line, no prompt/session content
 	Verdict   string `json:"verdict"` // ok | failed
 	CreatedAt string `json:"created_at"`
 	Read      bool   `json:"read"`
