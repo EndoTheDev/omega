@@ -185,6 +185,21 @@
                   name="download"
                   :size="13" />
               </a>
+              <!-- card t_61cc8762: the copy-id affordance (Endo's 0.17.2
+                   batch item 3). Hover-revealed with its siblings (the
+                   .row-actions cluster), .stop so a copy never opens the
+                   row, and the click writes the id through the ONE copy
+                   path (composables/clipboard.ts) with the confirmation
+                   on the shell's local toast funnel. -->
+              <button
+                class="icon-btn row-act row-copy-id"
+                title="Copy session id"
+                aria-label="Copy session id"
+                @click.stop="copySessionId(s.id)">
+                <Icon
+                  name="copy"
+                  :size="13" />
+              </button>
               <button
                 class="icon-btn row-act"
                 :title="s.archived ? 'Unarchive session' : 'Archive session'"
@@ -228,6 +243,14 @@
   import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from "vue";
   // card t_502b8e81: the iconset wrapper - every glyph in the sidebar
   import Icon from "~/components/ui/Icon.vue";
+  // card t_61cc8762: the copy-id row action. The clipboard write rides
+  // the ONE copy path (composables/clipboard.ts - no source outside it
+  // touches the clipboard API directly); the confirmation rides the
+  // shell's local toast funnel (composables/canvas.ts emitLocalToast), the
+  // same subscriber set the files tree's failure hint emits through.
+  // Module UI owns no toast stack of its own.
+  import { copyText } from "~/composables/clipboard";
+  import { emitLocalToast } from "~/composables/canvas";
   import {
     bucketSessions,
     commitSessionRename,
@@ -481,6 +504,28 @@
   }
   function exportUrl(id: string): string {
     return exportSessionUrl(id);
+  }
+
+  // copySessionId (card t_61cc8762): the row's copy-id click. The awaited
+  // verdict is the copy-path contract - a refused/unsupported clipboard
+  // must never read as "copied" - so the confirmation's title and verdict
+  // both follow copyText's answer. The payload carries a timestamp so two
+  // copies of the SAME id stay distinct fingerprints (emitLocalToast
+  // dedupes identical payloads, and a repeat copy deserves its own
+  // toast). source_id is not a session id: a toast click routes kind
+  // "chat" through app.vue's openNotification, and this receipt opens
+  // nothing.
+  async function copySessionId(id: string) {
+    const ok = await copyText(id);
+    emitLocalToast({
+      id: 0,
+      kind: "chat",
+      source_id: "session-copy",
+      title: ok ? `copied session id ${id}` : "copy failed - clipboard unavailable",
+      verdict: ok ? "ok" : "failed",
+      created_at: new Date().toISOString(),
+      read: true,
+    });
   }
 
   // --- inline rename ---
