@@ -211,15 +211,13 @@
       ? `${r.name} is locked on - the default agent cannot be disabled`
       : `${r.disabled ? "enable" : "disable"} ${r.name}`;
 
-  // toggleHint (card t_5051d523): the consequence text ("disable x?
-  // excluded from the session prompt build") used to gate the second
-  // click. It now rides the pill's title - the click never waits on it.
-  // The helper speaks the old confirm SENTENCE; the title already
-  // carries the request ("disable x"), so only the consequence rides it.
+  // toggleHint (card t_5051d523): the consequence text ("excluded from
+  // the session prompt build") used to gate the second click. It now
+  // rides the pill's title - the click never waits on it. The helper
+  // speaks the consequence only; the title already carries the request
+  // ("disable x") through the label.
   const toggleHint = (r: RegistryRow) =>
-    r.locked
-      ? ""
-      : registryNote(props.kind, r.name, r.disabled).replace(/^disable .*?\?\s*/, "");
+    r.locked ? "" : registryNote(props.kind, r.disabled);
 
   // --- expandable detail: per-row, click-driven, one set per mount ---
   const expanded = ref<Record<string, boolean>>({});

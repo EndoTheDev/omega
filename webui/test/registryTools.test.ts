@@ -293,8 +293,8 @@ test("toggleTargets: a merged domain row fans out to the domain tool AND its abs
 });
 
 test("arming a tool disable names the tool-list consequence; enable is silent", () => {
-  assert.equal(registryNote("tools", "shell", false), "disable shell? absent from the agent tool list");
-  assert.equal(registryNote("tools", "shell", true), "");
+  assert.equal(registryNote("tools", false), "absent from the agent tool list");
+  assert.equal(registryNote("tools", true), "");
 });
 
 test("ToolsList consumes the shared component and the fold wire", () => {
