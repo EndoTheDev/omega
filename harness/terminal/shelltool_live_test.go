@@ -11,10 +11,10 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// liveWaitTimeout bounds the waits in the live-stream pin so a hang is
-// caught without turning scheduling latency into a failure (the gate
-// law: bound for hangs, never for timing correctness).
-const liveWaitTimeout = 30 * time.Second
+// The live-stream pin's waits ride the package's testWaitTimeout
+// (waits_test.go): a hang is caught without turning scheduling latency
+// into a failure (the gate law: bound for hangs, never for timing
+// correctness).
 
 // liveStreamWindow is how long a live chunk may take to land after the
 // call starts. The shell under test outlives it by several seconds, so
@@ -75,7 +75,7 @@ func TestRunShellStreamsLiveBeforeItExits(t *testing.T) {
 
 	select {
 	case <-live:
-	case <-time.After(liveWaitTimeout):
+	case <-time.After(testWaitTimeout):
 		t.Fatal("no chunk reached the run's output tap while the shell was running")
 	}
 
@@ -93,7 +93,7 @@ func TestRunShellStreamsLiveBeforeItExits(t *testing.T) {
 
 	select {
 	case <-done:
-	case <-time.After(liveWaitTimeout):
+	case <-time.After(testWaitTimeout):
 		t.Fatal("RunShell never returned")
 	}
 	if runErr != nil {

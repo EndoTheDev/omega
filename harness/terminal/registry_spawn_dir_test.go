@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -39,7 +38,7 @@ func TestSpawnDirOverride(t *testing.T) {
 	if _, err := r.Spawn(ctx, probe, "abs-dir", sub); err != nil {
 		t.Fatalf("spawn abs dir: %v", err)
 	}
-	waitFor(t, 10*time.Second, "the abs-dir log to name its dir", func() bool {
+	waitFor(t, testWaitTimeout, "the abs-dir log to name its dir", func() bool {
 		log, _, _, err := r.Read("abs-dir", 100)
 		return err == nil && strings.Contains(log, sub)
 	})
@@ -48,7 +47,7 @@ func TestSpawnDirOverride(t *testing.T) {
 	if _, err := r.Spawn(ctx, probe, "rel-dir", "sub"); err != nil {
 		t.Fatalf("spawn rel dir: %v", err)
 	}
-	waitFor(t, 10*time.Second, "the rel-dir log to name its dir", func() bool {
+	waitFor(t, testWaitTimeout, "the rel-dir log to name its dir", func() bool {
 		log, _, _, err := r.Read("rel-dir", 100)
 		return err == nil && strings.Contains(log, sub)
 	})
@@ -57,7 +56,7 @@ func TestSpawnDirOverride(t *testing.T) {
 	if _, err := r.Spawn(ctx, probe, "no-dir", ""); err != nil {
 		t.Fatalf("spawn workspace: %v", err)
 	}
-	waitFor(t, 10*time.Second, "the no-dir log to name the workspace", func() bool {
+	waitFor(t, testWaitTimeout, "the no-dir log to name the workspace", func() bool {
 		log, _, _, err := r.Read("no-dir", 100)
 		return err == nil && strings.Contains(log, filepath.Clean(ws))
 	})
