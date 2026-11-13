@@ -9,6 +9,8 @@ import {
   ArrowLeft,
   ArrowRight,
   Command,
+  // card t_61cc8762: the sessions row's copy-id action
+  Copy,
   Inbox,
   Book,
   Box,
@@ -111,6 +113,7 @@ export const ICONS = {
   "chevron-down": ChevronDown, // collapsers (rotated per state)
   star: Star, // pinned sessions
   download: Download, // session export
+  copy: Copy, // the row's copy-session-id action (card t_61cc8762)
   pencil: Pencil, // inline rename
   plus: Plus, // the cron tab's add-job editor tool (card t_ecec864e)
   branch: GitFork, // session fork
