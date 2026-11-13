@@ -2034,13 +2034,57 @@ export interface DividerDragResult {
   collapsedPaneId: string | null;
 }
 
+/** card t_8098aa06: the divider's ADJACENT neighbor absorbs the fixed
+    pane's change 1:1. The fixed lanes used to write only their own `fixed`
+    px and let the flex reflow spread the delta over EVERY flexible child:
+    the pane the divider touches then tracked the pointer at its SHARE of
+    the flex space (a small pane beside a big one shrank at a fraction of
+    the drag - Endo's "the terminal shrinks slow" - while a pane the user
+    never touched moved too). WALL LAW: the neighbor absorbs, everything
+    else holds still. The pair's px box is the divider's own geometry, so
+    the absorber lands on `pairPx - fixedNew` and every other flexible
+    child keeps its measured px by rescaling against the pair's new free
+    space. Both are re-derived from the gesture's FROZEN startPx each event,
+    so the write is idempotent like the fixed lanes themselves, and the
+    sizes sum is preserved (later events re-read the same total). No-op
+    when the split holds one flexible child (nothing to freeze - the
+    reflow was already 1:1) or when the neighbor is fixed too (nothing can
+    absorb). */
+function absorbNeighbor(
+  next: DockSplit,
+  fixedIdx: number,
+  absorberIdx: number,
+  startPx: number[],
+  pairPx: number,
+): void {
+  const flexIdx: number[] = [];
+  next.children.forEach((c, k) => {
+    if (!isPane(c) || c.fixed === null) flexIdx.push(k);
+  });
+  if (flexIdx.length < 2 || !flexIdx.includes(absorberIdx)) return;
+  const fixedPx = (next.children[fixedIdx] as DockPane).fixed;
+  if (fixedPx === null) return;
+  const freeStart = flexIdx.reduce((a, k) => a + (startPx[k] ?? 0), 0);
+  const freeNew = freeStart - (fixedPx - (startPx[fixedIdx] ?? 0));
+  const targetPx = pairPx - fixedPx;
+  if (freeNew <= 0 || targetPx <= 0) return;
+  const flexSizes = flexIdx.reduce((a, k) => a + (next.sizes[k] ?? 0), 0);
+  if (flexSizes <= 0) return;
+  const scale = flexSizes / freeNew;
+  const sizes = [...next.sizes];
+  for (const k of flexIdx) {
+    sizes[k] = scale * (k === absorberIdx ? targetPx : (startPx[k] ?? 0));
+  }
+  next.sizes = sizes;
+}
+
 /** pure divider drag: between children [i-1, i] of `split`. startPx carries
     the RENDERED px of every child at drag start (measurement is the
     component's job). deltaPx + means right/down. Applies the 128px drag
     floor, the 320px floor against the absorbing neighbor, and the +320
     snap ladder (snapCandidate) on the controlled pane.
     - left child fixed: drag controls the LEFT pane (grows/shrinks over the
-      right neighbor, which flexes/floors as measured).
+      right neighbor, which absorbs 1:1 - absorbNeighbor).
     - left flexible, right fixed: invert - the RIGHT pane is controlled
       (mirrors the old invert=true divider), so the magnet reads right px.
     - both flexible: fractions shift relative to the content px box.
@@ -2095,6 +2139,7 @@ export function dragSplitDivider(
     // (128 for fixed, 320 for a flexible pane with no contract)
     const hi = capFor(contractFloorOf(rp));
     (next.children[li] as DockPane).fixed = applySnap(req, MIN_PANE_PX, hi);
+    absorbNeighbor(next, li, i, startPx, room);
     return { split: next, collapsedPaneId: null };
   }
   if (isPane(rp) && rp.fixed !== null) {
@@ -2120,6 +2165,7 @@ export function dragSplitDivider(
         Math.max(MIN_PANE_PX, Math.floor(contentPx * BOTTOM_MAX_FRACTION)),
       );
       (next.children[i] as DockPane).fixed = applySnap(req, MIN_PANE_PX, hi, BOTTOM_SNAP_STEP);
+      absorbNeighbor(next, i, li, startPx, room);
       return { split: next, collapsedPaneId: null };
     }
     const req = pxOf(i) - deltaPx;
@@ -2127,9 +2173,10 @@ export function dragSplitDivider(
       return { split: next, collapsedPaneId: rp.id };
     }
     // mirror (the old invert=true divider): dragging left widens the fixed
-    // right pane; the flexible left flexes at the resolver's floor
+    // right pane; the flexible left absorbs 1:1 at the resolver's floor
     const hi = capFor(contractFloorOf(lp));
     (next.children[i] as DockPane).fixed = applySnap(req, MIN_PANE_PX, hi);
+    absorbNeighbor(next, i, li, startPx, room);
     return { split: next, collapsedPaneId: null };
   }
 
