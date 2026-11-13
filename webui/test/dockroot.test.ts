@@ -53,7 +53,7 @@ function bottomRoot(): { root: DockSplit; a: DockPane; bottom: DockPane } {
   const right = makePane("files", 240, "right");
   const a = makePane("chat");
   const row = makeSplit("row", [left, a, right]);
-  const bottom = makePane("http_channel", 200, "bottom");
+  const bottom = makePane("terminal", 200, "bottom");
   const root = makeSplit("column", [row, bottom]);
   return { root, a, bottom };
 }
@@ -222,7 +222,7 @@ describe("auto-merge (ruling 8: leaves merge away, roots never die)", () => {
     const row = makeSplit("row", [left, a, right]);
     const shellLeaf = makePane("chat");
     const fresh = makePane("chat");
-    const bottom = makePane("http_channel", 200, "bottom");
+    const bottom = makePane("terminal", 200, "bottom");
     bottom.tabs = [];
     bottom.grown = makeSplit("row", [shellLeaf, fresh]);
     const root = makeSplit("column", [row, bottom]);

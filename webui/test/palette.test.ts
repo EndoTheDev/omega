@@ -278,7 +278,7 @@ describe("command registry filter (substring, the settled lazy default)", () => 
     assert.ok(filterPaletteCommands("brow", cmds).some((c) => c.title === "Open Browser"));
     assert.ok(filterPaletteCommands("BROW", cmds).some((c) => c.title === "Open Browser"));
     // keywords rescue odd voice titles
-    assert.ok(filterPaletteCommands("logs", cmds).some((c) => c.id === "open:http_channel"));
+    assert.ok(filterPaletteCommands("logs", cmds).some((c) => c.id === "open:observability"));
     // the id is fuel too
     assert.ok(filterPaletteCommands("tab:close", cmds).some((c) => c.id === "tab:close"));
   });
