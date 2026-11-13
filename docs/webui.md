@@ -145,7 +145,9 @@ arm/confirm two-step that used to make every toggle need a double
 click cannot come back through the shared component. The host owns the
 write path and re-renders the row from the server's answer; the
 consequence text (what an exclusion means, a module's dependents)
-rides the pill's `hint` as its title - informative on hover, never a
+rides the pill's `hint` in BOTH the accessible name and the title
+(card t_d92a1f74: one composed string, so a screen reader hears the
+consequence a hover tooltip would hide) - always informative, never a
 gate. Adopted across the registry tabs (skills, tools, agents, MCP,
 modules) and the agents roster; the MCP tab's "from mcp.yaml" caption
 is gone (rows speak transport + live state from GET /mcp/servers). The
