@@ -30,7 +30,9 @@ const TABS: Array<{
   { file: "../harness/cron/ui/CronJobs.vue", title: "Cron", scrollClass: "cron-body", actions: ["refresh cron jobs", "Search cron jobs"] },
   { file: "../harness/skills/ui/SkillsList.vue", title: "Skills", scrollClass: "skills-body", actions: ["refresh skills", "Search skills"] },
   { file: "../harness/tools/ui/ToolsList.vue", title: "Tools", scrollClass: "tools-body", actions: ["refresh tools", "Search tools"] },
-  { file: "../api/http_channel/ui/LogsList.vue", title: "Logs", scrollClass: "logs-body", actions: [] },
+  // card t_01c53e78: the raw-tail Logs pane retired - the Logs tab IS the
+  // observability capsule's view now (band title follows the dock title)
+  { file: "../harness/observability/ui/ObservabilityTab.vue", title: "Logs", scrollClass: "obs-body", actions: ["toggle errors only", "toggle raw log tail"] },
   { file: "../harness/mcp/ui/McpServers.vue", title: "MCP", scrollClass: "mcp-body", actions: ["refresh mcp servers", "Search MCP servers"] },
   { file: "../harness/kanban/ui/Board.vue", title: "Kanban", scrollClass: "board-scroll", actions: ["board-remove-btn"] },
   { file: "app/components/shell/ExtensionsTab.vue", title: "Modules", scrollClass: "inspector-extensions", actions: [] },

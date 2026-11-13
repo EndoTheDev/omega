@@ -84,8 +84,8 @@ export function buildPaletteCommands(deps: PaletteCommandDeps): PaletteCommand[]
       continue;
     }
     // the iconset name rides the keyword fuel too: it is the concept word
-    // the voice may not carry (the logs strip is "http_channel" by id - a
-    // user typing "logs" still finds it)
+    // the voice may not carry (a user typing the module's internal id
+    // still finds the tab)
     cmds.push({
       id: "open:" + id,
       title: "Open " + d.title,

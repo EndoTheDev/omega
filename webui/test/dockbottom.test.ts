@@ -125,49 +125,52 @@ describe("the bottom shell's place in the tree", () => {
     assert.equal(bottom.fixed, BOTTOM_DEFAULT_PX, "fresh height = default rung 200");
     assert.deepEqual(
       bottom.tabs.map((t) => t.component),
-      ["http_channel", "terminal", "observability"],
-      "logs + terminal + observability are the bottom host's default tabs (card t_55a3fc4b, t_e703180e)",
+      ["terminal", "observability"],
+      "terminal + the Logs tab are the bottom host's default tabs (card t_55a3fc4b, t_e703180e, t_01c53e78)",
     );
   });
 
-  it("logs is bottom-hosted ONLY - the secondary sidebar never seats it (Endo's comment 2026-10-26)", () => {
+  it("the raw-tail logs pane is GONE: no component seats it anywhere (card t_01c53e78)", () => {
     const dock = createDock(new MemoryStorage() as unknown as Storage);
     const inspector = findEdgePane(dock.tree.value, "inspector")!;
-    const inspectorLogs = inspector.tabs.find((t) => t.component === "http_channel");
-    assert.ok(!inspectorLogs, "the inspector does NOT seat logs (duplicate removed)");
+    assert.ok(
+      !inspector.tabs.some((t) => (t.component as string) === "http_channel"),
+      "the inspector never seats the retired pane",
+    );
     const bottom = bottomOf(dock.tree.value)!;
-    const bottomLogs = bottom.tabs.find((t) => t.component === "http_channel");
-    assert.ok(bottomLogs, "the bottom panel seats logs");
+    assert.ok(
+      !bottom.tabs.some((t) => (t.component as string) === "http_channel"),
+      "the bottom panel does not seat it either",
+    );
   });
 
-  it("rehomeLogsTab lifts a persisted right-shell logs copy (dual-host era trees)", () => {
-    // a record persisted while logs was dual-host (t_67fc1905): the
-    // right shell seats an http_channel tab beside its inspector
-    // views. The real load path (createDock over the stored record)
-    // must lift it - the registry alone would leave the copy alive
-    // (restoreInspectorSet only ADDS missing tabs, never prunes).
+  it("a persisted http_channel tab drops on load with a repair receipt (the deletability proof)", () => {
+    // a record persisted before the pane retired (card t_01c53e78): the
+    // component left the registry, so the total reader drops the tab and
+    // says so - the surviving Logs tab is NOT duplicated or re-seated.
     const store = new MemoryStorage() as unknown as Storage;
     const fresh = createDock(store); // fresh boot (no record to persist yet)
     store.setItem(DOCK_LAYOUT_KEY, serialize(fresh.tree.value, []));
     const rec = JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!);
     let seeded = false;
     for (const n of allNodes(rec.tree as DockNode)) {
-      if (!isPane(n) || n.edge !== "right") continue;
-      n.tabs.push({ component: "http_channel" });
+      if (!isPane(n) || n.edge !== "bottom") continue;
+      n.tabs.unshift({ component: "http_channel" });
       seeded = true;
     }
-    assert.ok(seeded, "pre: the record carries the dual-host copy");
+    assert.ok(seeded, "pre: the record carries the retired pane");
     store.setItem(DOCK_LAYOUT_KEY, JSON.stringify(rec));
     const dock = createDock(store);
     assert.ok(
-      !findEdgePane(dock.tree.value, "inspector")!.tabs.some(
-        (x) => x.component === "http_channel",
+      ![...allNodes(dock.tree.value)].some(
+        (n) => isPane(n) && n.tabs.some((t) => (t.component as string) === "http_channel"),
       ),
-      "the right-shell copy is lifted on load",
+      "the retired tab is dropped on load",
     );
-    assert.ok(
-      bottomOf(dock.tree.value)!.tabs.some((x) => x.component === "http_channel"),
-      "the bottom shell keeps its own logs seat",
+    assert.deepEqual(
+      bottomOf(dock.tree.value)!.tabs.map((t) => t.component),
+      defaultHostTabs("bottom"),
+      "the surviving strip is the registry's bottom home",
     );
   });
 
@@ -362,12 +365,12 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
   const appended = (tabs: DockTab[]): string[] =>
     bottomDefaults.filter((d) => !tabs.some((t) => t.component === d));
 
-  it("a persisted pre-terminal strip gains the missing bottom homes", () => {
-    checkStripSync([{ component: "http_channel" }], 0, 0);
+  it("a persisted pre-observability strip gains the missing bottom homes", () => {
+    checkStripSync([{ component: "terminal" }], 0, 0);
   });
 
   it("the active index is PRESERVED (append at end)", () => {
-    checkStripSync([{ component: "http_channel" }, { component: "chat" }], 1, 1);
+    checkStripSync([{ component: "terminal" }, { component: "chat" }], 1, 1);
   });
 
   function checkStripSync(
@@ -411,11 +414,11 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
     const main = makePane(null);
     main.tabs = [{ component: terminal }];
     const shell = makePane(null, null, "bottom");
-    shell.tabs = [{ component: "http_channel" }, { component: observability }];
+    shell.tabs = [{ component: observability }];
     const tree = makeSplit("column", [main, shell]);
     const out = syncBottomHostTabs(tree);
     assert.strictEqual(out, tree, "no-op: the default is seated");
-    assert.equal(shellOf(out).tabs.length, 2, "the strip gained nothing");
+    assert.equal(shellOf(out).tabs.length, 1, "the strip gained nothing");
     assert.equal(findComponentTab(out, terminal)!.paneId, main.id,
       "the singleton stays in the main pane");
   });
@@ -424,13 +427,13 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
     const shell = makePane(null, null, "bottom");
     shell.tabs = []; // the classic bar is empty while grown (by law)
     const leaf = makePane(null); // the shell's original content leaf
-    leaf.tabs = [{ component: "http_channel" }];
+    leaf.tabs = [{ component: terminal }];
     shell.grown = makeSplit("row", [leaf, makePane(null)]);
     const tree = makeSplit("column", [makePane("chat"), shell]);
     const out = syncBottomHostTabs(tree);
     assert.equal(shellOf(out).tabs.length, 0, "the shell's own bar stays empty");
     for (const n of allNodes(out)) {
-      if (isPane(n) && n.tabs.some((t) => t.component === "http_channel")) {
+      if (isPane(n) && n.tabs.some((t) => t.component === terminal)) {
         assert.deepEqual(
           n.tabs.map((t) => t.component),
           bottomDefaults,
@@ -637,14 +640,16 @@ describe("persistence round-trip", () => {
 });
 
 describe("the registry's home rulings", () => {
-  it("logs' default home is the bottom host", () => {
-    // card t_55a3fc4b: terminal joins the fresh bottom strip (logs first)
-    // card t_e703180e: the observability tab is the third bottom home
-    assert.deepEqual(defaultHostTabs("bottom"), ["http_channel", "terminal", "observability"]);
+  it("the Logs tab and the terminal are the bottom host's defaults", () => {
+    // card t_55a3fc4b: terminal joins the fresh bottom strip
+    // card t_e703180e: the observability tab is the second bottom home
+    // card t_01c53e78: the raw-tail logs pane retired - Logs is the
+    // surviving observability tab's name
+    assert.deepEqual(defaultHostTabs("bottom"), ["terminal", "observability"]);
   });
 
-  it("logs reports its bottom home; every other component single-hosts", () => {
-    assert.deepEqual([...hostsOf("http_channel")], ["bottom"]);
+  it("the Logs tab reports its bottom home; every other component single-hosts", () => {
+    assert.deepEqual([...hostsOf("observability")], ["bottom"]);
     assert.deepEqual([...hostsOf("cron")], ["right"]);
     assert.deepEqual([...hostsOf("chat")], ["main"]);
   });
@@ -652,7 +657,7 @@ describe("the registry's home rulings", () => {
   it("the bottom host's fresh strip comes from the default home mapping", () => {
     const strip = bottomShellPane();
     assert.equal(strip.edge, "bottom");
-    assert.equal(strip.tabs[0]!.component, "http_channel");
+    assert.equal(strip.tabs[0]!.component, "terminal");
     assert.equal(strip.fixed, BOTTOM_DEFAULT_PX);
   });
 

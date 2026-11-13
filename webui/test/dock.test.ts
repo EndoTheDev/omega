@@ -662,9 +662,10 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     const bottom = asPane(asSplit(t).children[1]);
     assert.equal(bottom.edge, "bottom");
     assert.equal(bottom.fixed, 200);
-    // card t_55a3fc4b: terminal rides the fresh bottom shell with logs
-    // card t_e703180e: observability joins them (the stream/tail tab)
-    assert.deepEqual(bottom.tabs.map((x) => x.component), ["http_channel", "terminal", "observability"]);
+    // card t_55a3fc4b: terminal rides the fresh bottom shell
+    // card t_e703180e: observability joins it (the stream/tail tab)
+    // card t_01c53e78: the raw-tail logs pane retired - two tabs remain
+    assert.deepEqual(bottom.tabs.map((x) => x.component), ["terminal", "observability"]);
   });
   it("persisted widths render verbatim, open flags are dead history", () => {
     const t = migrateLegacy((k) =>
