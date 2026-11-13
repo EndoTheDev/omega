@@ -272,8 +272,16 @@ tokens_of() {  # extract repo paths from free text (body or diff)
 candidate_tokens() {  # id -> WRITE-surface tokens: curated FILES: lines win over body prose
   local body files
   body=$(dbq "SELECT body FROM tasks WHERE id='$1';")
-  files=$(grep -i '^FILES:' <<<"$body" | head -1 | cut -d: -f2- || true)
-  if [ -n "$files" ]; then
+  # EVERY `FILES:` line, joined into one value (card t_5389fd95). The old
+  # `head -1` read made lines 2..N invisible to the hold verdict: a card
+  # minted one-path-per-line under-declared its surface, so it read `legal`
+  # beside a running card that owned a file on its 4th line (live
+  # 2026-11-13 23:41: t_20fd8745 / t_d04a1c80 both legal while running
+  # t_81d0901b owned webui/app/app.vue). The SINGLE-LINE shape stays the
+  # documented contract (whitespace-separated paths, no commas); the union
+  # read is defensive, not a new format.
+  files=$(grep -i '^FILES:' <<<"$body" | cut -d: -f2- | tr '\n' ' ' || true)
+  if [ -n "${files//[[:space:]]/}" ]; then   # whitespace-only = no declaration
     { tokens_of <<<"$files"
       move_paths <<<"$body"   # a FILES line naming move TARGETS only must not hide the SOURCES
     } | sort -u
@@ -288,8 +296,11 @@ files_line_absent() {  # id -> 0 (true) when the card declares NO usable FILES: 
   # that carries no value ("FILES:") declares no surface either, so it counts
   # as absent - an empty declaration is not a proof.
   local files
-  files=$(dbq "SELECT body FROM tasks WHERE id='$1';" | grep -i '^FILES:' | head -1 | cut -d: -f2- || true)
-  [ -z "$files" ]
+  # UNION of every `FILES:` line (card t_5389fd95): a body carrying one bare
+  # `FILES:` line plus one with paths is NOT absent, and the old `head -1`
+  # read answered the wrong way for the reverse order too.
+  files=$(dbq "SELECT body FROM tasks WHERE id='$1';" | grep -i '^FILES:' | cut -d: -f2- | tr '\n' ' ' || true)
+  [ -z "${files//[[:space:]]/}" ]
 }
 
 imprecise_surface() {  # id -> 0 (true) when the surface is UNPROVABLE: no FILES:
@@ -311,8 +322,11 @@ imprecise_surface() {  # id -> 0 (true) when the surface is UNPROVABLE: no FILES
   # never authorize a PAIR.
   local body files tok
   body=$(dbq "SELECT body FROM tasks WHERE id='$1';")
-  files=$(grep -i '^FILES:' <<<"$body" | head -1 | cut -d: -f2- || true)
-  [ -n "$files" ] || return 0        # no declared surface: nothing to prove with
+  # EVERY declared `FILES:` line (card t_5389fd95): a bare-dir token on line 2
+  # makes the surface exactly as unprovable as one on line 1, and the old
+  # `head -1` read answered "precise" for the split shape.
+  files=$(grep -i '^FILES:' <<<"$body" | cut -d: -f2- | tr '\n' ' ' || true)
+  [ -n "${files//[[:space:]]/}" ] || return 0   # no declared surface: nothing to prove with
   for tok in $files; do
     case "$tok" in
       */*|*.*) : ;;                  # path-shaped: precise enough
@@ -352,14 +366,19 @@ class_of() {  # id -> webui | go | docs  (FILES: line is the truth; body text
               # classed webui because its OUT OF SCOPE line said "webui")
   local t files
   t=$(dbq "SELECT lower(title||' '||body) FROM tasks WHERE id='$1';")
-  files=$(grep -o 'files:.*' <<<"$t" | head -1)
-  if [ -n "$files" ]; then
+  # EVERY `files:` match, labels stripped per line and joined (card
+  # t_5389fd95): the class must come from the FULL declared surface, so a
+  # card whose first FILES line names docs/ and whose second names a .vue
+  # classes webui, not docs. The label is stripped BEFORE the join - a
+  # surviving mid-string `files:` token would count as a non-docs hit in the
+  # go leg below.
+  files=$(grep -o 'files:.*' <<<"$t" | sed 's/^files:[[:space:]]*//' | tr '\n' ' ')
+  if [ -n "${files//[[:space:]]/}" ]; then
     if grep -q "webui\|\.ts\|\.vue\|nuxt" <<<"$files"; then echo webui
-    # Strip the 'files:' label BEFORE tokenizing: the old sed ran per token and
-    # left an EMPTY token behind, which `grep -qv '^docs/'` counted as a
-    # non-docs hit - a docs-only FILES line ('FILES: docs/cli.md') classed as
-    # go, holding that card (and every later go candidate behind it).
-    elif grep -oE '[^ ]+' <<<"${files#files:}" | grep -qv '^docs/'; then echo go
+    # Labels are already stripped above; the empty-token trap the old sed
+    # left behind (an EMPTY token counted as a non-docs hit, classing a
+    # docs-only FILES line as go) cannot come back through this read.
+    elif grep -oE '[^ ]+' <<<"$files" | grep -qv '^docs/'; then echo go
     else echo docs; fi
   # Prose legs match on WORD BOUNDARIES, never bare substrings (card t_64255dca).
   # The old webui leg grepped "webui\|webui\|nuxt\|spa": bare `spa` matches the
