@@ -38,7 +38,16 @@ set -euo pipefail
 # The annotation's subject is its title and is not posted; when the body
 # carries no prose the subject IS the prose (a one-line `git tag -a -m ...`).
 # A tag with no annotation gets no prose paragraph - the post is highlights +
-# counts + link, never a blank paragraph.
+# counts + link, never a blank paragraph, and the absence is NAMED on stderr.
+#
+# The annotation is read off the LOCAL tag OBJECT. A CI checkout can leave
+# refs/tags/<v> pointing at the bare commit - actions/checkout@v4's targeted
+# fallback fetch (`+<sha>:refs/tags/<v>`) rewrites the ref whenever
+# github.sha, the peeled commit, does not equal the tag OBJECT sha. The
+# annotation is then unreadable and the post ships bare, which is what
+# happened to v0.17.1 (t_530c4635): the workflow restores the tag object
+# before this script runs, and the stderr note below names the shape
+# whenever an annotated tag arrives without one.
 #
 # The annotation IS the approval moment: nothing unapproved is generated at
 # post time, and the post is public text. The tag is the only human input.
@@ -112,6 +121,15 @@ if [ "$VERSION" != "unreleased" ] \
    && git rev-parse -q --verify "refs/tags/$VERSION^{tag}" >/dev/null 2>&1; then
   TAG_SUBJ="$(git for-each-ref "refs/tags/$VERSION" --format='%(contents:subject)')"
   TAG_BODY="$(git for-each-ref "refs/tags/$VERSION" --format='%(contents:body)')"
+elif [ "$VERSION" != "unreleased" ] \
+   && git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null 2>&1; then
+  # The tag exists but is not a tag OBJECT here: either a genuinely
+  # lightweight tag (no prose by design) or an annotated tag whose ref was
+  # rewritten to the commit by a CI checkout. Nothing is invented - but the
+  # absence is not silent, and the remedy is named (v0.17.1 lost its
+  # paragraph to exactly this and nobody saw a word about it).
+  printf 'release-notes: refs/tags/%s carries no readable annotation - the post has no prose paragraph (a lightweight tag has none; if the tag IS annotated, restore the tag object: git fetch --force origin refs/tags/%s:refs/tags/%s)\n' \
+    "$VERSION" "$VERSION" "$VERSION" >&2
 fi
 
 ltrim() { local s="$1"; printf '%s' "${s#"${s%%[![:space:]]*}"}"; }

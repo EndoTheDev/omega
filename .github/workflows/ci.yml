@@ -27,10 +27,11 @@ jobs:
       - run: go test ./...
       - name: Binary-purity canary (scripts/nm-purity.sh - the kanban module must never survive its own removal build)
         run: scripts/nm-purity.sh
-      - name: Shell scratch-repo suite (drift gate + release suggest + purity negatives + checksum emission + the git fence)
+      - name: Shell scratch-repo suite (drift gate + release suggest + release notes + purity negatives + checksum emission + the git fence)
         run: |
           bash scripts/drift-gate_test.sh
           bash scripts/release-suggest_test.sh
+          bash scripts/release-notes_test.sh
           bash scripts/release-checksums_test.sh
           bash scripts/nm-purity_test.sh
           bash scripts/fence-test.sh
