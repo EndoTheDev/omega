@@ -11,7 +11,7 @@
       @toggle-sidebar="toggleSidebar"
       @toggle-bottom="toggleBottomPanel"
       @toggle-inspector="toggleInspector"
-      @open-palette="openPalette"
+      @open-palette="togglePalette"
       @open-settings="openSettingsTab"
       @open-notification="openNotification" />
 
@@ -2014,8 +2014,12 @@
   // one overlay) - a plain command array over the shell's own flows; the
   // registry never owns app state (PaletteCommandDeps is the one seam).
   const paletteOpen = ref(false);
-  function openPalette() {
-    paletteOpen.value = true;
+  // ONE toggle for both doors: Ctrl+K and the cluster's palette button. The
+  // overlay's outside-click handler skips the trigger (`data-palette-trigger`)
+  // so this click is the only one that runs - no close-then-reopen flicker.
+  function togglePalette() {
+    if (deleteId.value) return; // the confirm dialog owns the window then
+    paletteOpen.value = !paletteOpen.value;
   }
 
   // open (or focus) any dockable from the palette - the singleton opener
@@ -2128,9 +2132,7 @@
   function onNavKeys(e: KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key === "k" && !e.altKey && !e.shiftKey) {
       e.preventDefault();
-      if (deleteId.value) return; // the confirm dialog owns the window then
-      if (paletteOpen.value) paletteOpen.value = false;
-      else openPalette();
+      togglePalette();
       return;
     }
     if (e.altKey && e.key === "ArrowLeft" && !e.ctrlKey && !e.metaKey) {

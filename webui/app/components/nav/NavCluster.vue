@@ -30,6 +30,7 @@
       class="icon-btn nav-btn"
       aria-label="Command palette"
       title="Command palette (Ctrl+K)"
+      data-palette-trigger
       @click="$emit('open-palette')">
       <Icon
         name="palette"

@@ -216,9 +216,11 @@ describe("nav cluster wiring", () => {
     assert.match(app, /window\.addEventListener\("keydown", onNavKeys\)/);
     assert.match(app, /onNavKeys[\s\S]{0,1200}ArrowLeft[\s\S]{0,300}nav\.back\(\)/);
     assert.match(app, /onNavKeys[\s\S]{0,1200}ArrowRight[\s\S]{0,300}nav\.forward\(\)/);
-    // Ctrl+K (ruling 1) and the palette open both exist
+    // Ctrl+K (ruling 1) and the palette open both exist - ONE toggle since
+    // the outside-click rider (t_bdcfefc6): both doors call togglePalette
     assert.match(app, /e\.key === "k"/);
-    assert.match(app, /function openPalette/);
+    assert.match(app, /function togglePalette/);
+    assert.match(app, /onNavKeys[\s\S]{0,200}togglePalette\(\)/);
     // pane focus records (ruling 2), via the existing document click seam
     assert.match(app, /if \(paneId\) recordNav\(paneId\)/);
     assert.match(app, /navTabId\(tab\)/);

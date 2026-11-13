@@ -6,6 +6,7 @@
        three shipped search boxes are the pattern, keyboard nav rides
        clampIndex (the composer palette's arithmetic). -->
   <div
+    ref="rootEl"
     v-if="open"
     class="command-palette"
     role="dialog"
@@ -51,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, nextTick, ref, watch } from "vue";
+  import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
   import {
     clampIndex,
     filterPaletteCommands,
@@ -69,6 +70,7 @@
 
   const query = ref("");
   const active = ref(0);
+  const rootEl = ref<HTMLElement | null>(null);
   const inputEl = ref<HTMLInputElement | null>(null);
   const listEl = ref<HTMLUListElement | null>(null);
 
@@ -126,4 +128,27 @@
     emit("close");
     void c.run();
   }
+
+  // click anywhere OUTSIDE the palette closes it. The overlay has no scrim
+  // on purpose (the panes stay readable behind it), so the "outside" click
+  // cannot be caught by an overlay element - it rides the document, the
+  // same seam the settings pickers use. pointerdown, not click: it lands
+  // BEFORE the opening gesture's own click, so a click that opens the
+  // palette can never close it on the way out. The ONE exemption is the
+  // shell's trigger button (`data-palette-trigger`, the nav cluster's
+  // Ctrl+K button): its own click toggles the palette, so closing it here
+  // on pointerdown would flicker closed-then-reopened.
+  function onDocPointer(e: PointerEvent) {
+    if (!props.open || !rootEl.value) return;
+    const target = e.target as Element | null;
+    if (target instanceof Element && target.closest("[data-palette-trigger]"))
+      return;
+    if (rootEl.value.contains(target as Node)) return;
+    emit("close");
+  }
+
+  onMounted(() => document.addEventListener("pointerdown", onDocPointer));
+  onBeforeUnmount(() =>
+    document.removeEventListener("pointerdown", onDocPointer),
+  );
 </script>
