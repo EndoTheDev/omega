@@ -182,7 +182,11 @@ step "ok: seeded row renders"
 
 # ONE click switches (card t_5051d523): "disable X" -> the write lands ->
 # the row re-renders as "enable X". No arm state, no confirm click.
-clicked=$(registry_click ".skills-list" "disable $SKILL" "__arm__")
+# Card t_d92a1f74: the ON row's accessible name carries the consequence of
+# the click it offers ("disable X - excluded from the session prompt
+# build"), so the ON-state match is fold-aware; the OFF row offers a plain
+# "enable X" and stays exact.
+clicked=$(registry_click ".skills-list" "disable $SKILL" "disable $SKILL - ")
 assert_eq "$clicked" "1" "the single click found the toggle"
 wait_js "(()=>{return [...document.querySelectorAll('.skills-list button.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='enable $SKILL')})()" 10 \
   || die "one click did not switch the toggle (row never showed the off state)"
@@ -272,7 +276,7 @@ wait_js "(()=>{return [...document.querySelectorAll('.skills-list button.registr
   || die "the skills tab lost the seeded row before the re-enable"
 clicked=$(registry_click ".skills-list" "enable $SKILL" "__arm__")
 assert_eq "$clicked" "1" "the single re-enable click landed"
-wait_js "(()=>{return [...document.querySelectorAll('.skills-list button.registry-toggle')].some(b=>(b.getAttribute('aria-label')||'')==='disable $SKILL')})()" 10 \
+wait_js "(()=>{const s=(b)=>{const l=(b&&b.getAttribute('aria-label'))||'';return l==='disable $SKILL'||l.startsWith('disable $SKILL - ')};return [...document.querySelectorAll('.skills-list button.registry-toggle')].some(s)})()" 10 \
   || die "one click did not re-enable (row never back on)"
 case "$(disabled_names skills)" in
   *"$SKILL"*) die "the fold kept the disabled skill after the re-enable" ;;
