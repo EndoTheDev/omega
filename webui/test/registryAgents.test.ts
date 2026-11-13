@@ -64,8 +64,8 @@ test("agentDetailLines renders the config summary honestly", () => {
 test("the agents fold merges by name; the disable note names roster+wake", () => {
   const fold = normalizeDisabledPayload({ agents: ["bots/patrol"] }).agents;
   assert.deepEqual(fold, ["bots/patrol"]);
-  assert.equal(registryNote("agents", "bots/patrol", false), "disable bots/patrol? roster row and wake triggers off; home untouched");
-  assert.equal(registryNote("agents", "bots/patrol", true), "");
+  assert.equal(registryNote("agents", false), "roster row and wake triggers off; home untouched");
+  assert.equal(registryNote("agents", true), "");
 });
 
 test("AgentsPanel renders the shared pattern and the SOFT toggle wire", () => {

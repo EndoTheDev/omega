@@ -274,19 +274,17 @@
     dependents: row.dependents,
   });
 
-  // rowHint (card t_5051d523): the consequence line ("disable kanban?
-  // this also disables: cron") used to appear only after the first
-  // click, as the arm gate. It now rides the pill's title, where it
-  // informs without ever blocking the switch. The helper speaks the old
-  // confirm SENTENCE; the title already carries the request, so only the
-  // consequence rides it.
+  // rowHint (card t_5051d523): the consequence line ("this also
+  // disables: cron") used to appear only after the first click, as the
+  // arm gate. It now rides the pill's title, where it informs without
+  // ever blocking the switch. The helper speaks the consequence only;
+  // the title already carries the request through the label.
   const rowHint = (row: {
     name: string;
     state: string;
     toggleable: boolean;
     dependents: string[];
-  }): string =>
-    toggleNote(asModuleRow(row), row.state !== "mounted").replace(/^disable .*?\?\s*/, "");
+  }): string => toggleNote(asModuleRow(row), row.state !== "mounted");
 
   const rowNote = (row: {
     name: string;

@@ -51,19 +51,19 @@ test("normalize tolerates junk root payloads", () => {
   }
 });
 
-// --- toggleNote: the confirm text carries Q3 and the tier law ---
+// --- toggleNote: the consequence carries Q3 and the tier law ---
 
 test("disable with dependents names what goes down", () => {
   const m = row({ dependents: ["cron", "delegate"] });
-  assert.equal(toggleNote(m, false), "disable kanban? this also disables: cron, delegate");
+  assert.equal(toggleNote(m, false), "this also disables: cron, delegate");
 });
 
-test("disable without dependents just asks", () => {
-  assert.equal(toggleNote(row(), false), "disable kanban?");
+test("disable without dependents has no consequence to state", () => {
+  assert.equal(toggleNote(row({}), false), "");
 });
 
 test("enable needs no confirm", () => {
-  assert.equal(toggleNote(row(), true), "");
+  assert.equal(toggleNote(row({}), true), "");
 });
 
 test("not-toggleable states the always-on law instead", () => {
