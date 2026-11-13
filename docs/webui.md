@@ -231,6 +231,17 @@ Everything else animates through `transition`, not keyframes.
   `app/composables/module-panels.generated.ts` is generated at build
   time and there is NO runtime registry. `harness/tools/ui/ToolsList.vue`
   is the canary.
+- **Mobile drawers resolve views, not panels** (t_e703180e, t_07ad4fda):
+  below the 768px breakpoint every edge shell becomes an overlay drawer,
+  and each drawer's tab chain ends in the generic `InspectorPanel`
+  catch-all - which reads the PANEL manifest. A TAB capsule (terminal,
+  notifications, observability, browser) and a shell-owned view (files,
+  settings, extensions, insights, agents) therefore each need their own
+  branch AHEAD of that catch-all, or a loaded tab renders "module not
+  loaded". The bug is a width breakpoint, not a device: a desktop window
+  resized under 768px shows it. `webui/test/drawerresolves.test.ts`
+  derives every drawer-reachable id and fails the next one that forgets;
+  only a real panel module may fall through to the catch-all.
 
 ## Streaming + rendering rules
 
