@@ -360,11 +360,50 @@ describe("fullscreen composer: column anatomy (card t_08ef793b)", () => {
 
   it("card geometry: inset margin on all four sides, radius kept", () => {
     const card = rule(".composer.expanded {");
-    assert.match(card, /margin:\s*12px/, "floating card, not a pane overlay");
-    assert.match(card, /flex-grow/);
+    assert.match(card, /margin:\s*12px/, "the card's inset stays main.css's");
     const base = rule(".composer {");
     assert.match(base, /border-radius:\s*var\(--r-card\)/, "radius unchanged");
     assert.match(base, /border:\s*1px solid var\(--stroke\)/, "stroke unchanged");
+    // an OVERLAY card must be opaque or the history bleeds through it
+    assert.match(base, /background:\s*var\(--z1-raised\)/, "opaque card fill");
+  });
+
+  it("the fullscreen mount is an overlay: out of flow over the pane (t_9ff2f621)", () => {
+    // the displacement shape (the card grew IN the pane's flex column and
+    // left .messages a 32px sliver) is retired: out of flow, the history
+    // keeps the pane's whole height underneath and collapsing needs no
+    // refetch and no scroll repair (live-probed round trip: .messages
+    // clientHeight 473 -> 616 -> 473, scrollTop 400 held, zero fetches)
+    const at = composer.indexOf("<style scoped>");
+    assert.ok(at > -1, "AppComposer carries the overlay's scoped block");
+    const overlay = composer.slice(at);
+    assert.match(
+      overlay,
+      /\.composer\.expanded\s*\{[^}]*position:\s*absolute/,
+      "the expanded card leaves the flex flow",
+    );
+    assert.match(
+      overlay,
+      /\.composer\.expanded\s*\{[^}]*inset:\s*0/,
+      "it fills its containing block (12px inset = the base margin)",
+    );
+    assert.match(
+      overlay,
+      /\.composer\.expanded\s*\{[^}]*z-index:\s*20/,
+      "above the history, the activity line and the jump-live pill",
+    );
+    assert.doesNotMatch(overlay, /margin:/, "one owner for the inset");
+    // the containing block is the CHAT PANE, not the pane-area above it
+    const chat = readFileSync(
+      join(here, "../app/components/ChatTab.vue"),
+      "utf8",
+    );
+    const chatStyle = chat.slice(chat.indexOf("<style scoped>"));
+    assert.match(
+      chatStyle,
+      /\.chat\.pane\s*\{[^}]*position:\s*relative/,
+      "the chat pane anchors the overlay",
+    );
   });
 
   it("the send keeps its accent fill at normal contrast in the bottom row", () => {

@@ -807,3 +807,14 @@
     },
   );
 </script>
+
+<style scoped>
+  /* the fullscreen composer's containing block (card t_9ff2f621): the
+     expanded card is out of flow and floats over this pane, so the pane -
+     not the pane-area above it - is the box it fills. Nothing here is
+     positioned against the pane today; the scroll wrap keeps its own
+     relative context for the pill. */
+  .chat.pane {
+    position: relative;
+  }
+</style>
