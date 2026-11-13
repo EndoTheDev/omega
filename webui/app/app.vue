@@ -376,6 +376,17 @@
         v-else-if="notificationsPanelView && inspectorDrawerActiveId === 'notifications'"
         class="pane"
         @open="openNotification" />
+      <!-- card t_07ad4fda: agents is a SHELL-owned view (harness/
+           continuous ships the component, the shell owns the tab and its
+           fetch) - neither a module panel nor a tab capsule, so the
+           drawer seats it by its own branch like ExtensionsTab and
+           InsightsTab above. The catch-all would resolve
+           InspectorPanel(module="agents"), find no entry in the PANEL
+           manifest, and render "module not loaded" for a tab that is
+           mounted and loaded. -->
+      <AgentsPanel
+        v-else-if="inspectorDrawerActiveId === 'agents'"
+        class="pane" />
       <!-- v0.14.3: the canvas drawer branch left with the tab (the fold
            ruling) - module panels seat through the module catch-all,
            chat + toasts keep their own surfaces -->
@@ -428,6 +439,18 @@
         v-else-if="bottomDrawerActiveId === 'observability' && observabilityTabView"
         class="pane"
         :session="focusedSessionId" />
+      <!-- card t_07ad4fda: the terminal is a TAB capsule too, and it is
+           the drawer's FIRST default bottom-home tab - so it needs the
+           same manifest resolution ahead of the catch-all that card
+           t_e703180e gave the Logs tab. Without this branch the drawer
+           opens on "module not loaded": InspectorPanel(module=
+           "terminal") reads the PANEL manifest, where a tab capsule has
+           no entry. -->
+      <component
+        :is="terminalTabView"
+        v-else-if="bottomDrawerActiveId === 'terminal' && terminalTabView"
+        class="pane"
+        :focused-session="focusedSessionId" />
       <InspectorPanel
         v-else-if="bottomDrawerActiveId"
         class="pane"
