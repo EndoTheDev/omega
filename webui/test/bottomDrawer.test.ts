@@ -153,7 +153,7 @@ test("drawerTabsForEdge: an id outside the openable registry renders a bare chip
   assert.equal(tabs[0]!.icon, null);
 });
 
-test("the bottom drawer's default tab set derives from the registry bottom-home (logs), with its glyph", () => {
+test("the bottom drawer's default tab set derives from the registry bottom-home (the Logs tab), with its glyph", () => {
   const tabs = drawerTabsForEdge(
     null,
     defaultHostTabs("bottom"),
@@ -161,10 +161,11 @@ test("the bottom drawer's default tab set derives from the registry bottom-home 
   );
   assert.ok(tabs.length > 0, "the registry seats at least one bottom-home tab");
   // card t_55a3fc4b: terminal joins the fresh bottom strip (VS Code
-  // parity - the integrated ships seated), after logs.
+  // parity - the integrated ships seated); card t_01c53e78: the raw-tail
+  // logs pane retired, the Logs tab is the observability one.
   assert.deepEqual(
     tabs.map((t) => t.id),
-    ["http_channel", "terminal", "observability"],
+    ["terminal", "observability"],
   );
   for (const t of tabs) {
     assert.equal(t.icon, dockableIcon(t.id));
@@ -173,11 +174,11 @@ test("the bottom drawer's default tab set derives from the registry bottom-home 
 
 test("the bottom drawer reads the LIVE bottom pane's tabs when the tree holds one", () => {
   const tabs = drawerTabsForEdge(
-    pane(["http_channel", "files"], "bottom"),
+    pane(["observability", "files"], "bottom"),
     defaultHostTabs("bottom"),
     (id) => COMPONENT_TITLES[id],
   );
-  assert.deepEqual(tabs.map((t) => t.id), ["http_channel", "files"]);
+  assert.deepEqual(tabs.map((t) => t.id), ["observability", "files"]);
 });
 
 // --- structural pins (no-SFC-compile convention) -------------------------

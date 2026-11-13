@@ -168,8 +168,9 @@ Everything else animates through `transition`, not keyframes.
   X); right sidebar = inspector pane with the fixed module tabs (Files,
   Cron, Skills, Tools, Agents, Settings, Kanban, Modules, Insights,
   MCP, Notifications — no X); the bottom panel under the main pane
-  hosts Logs (bottom-only — its sidebar copy was ruled a duplicate and
-  removed), the Terminal and the Observability tab (card t_e703180e);
+  hosts the Logs tab (the structured event stream over a raw-tail
+  chip, card t_e703180e; named "Logs" since card t_01c53e78 retired
+  the old raw-tail pane) and the Terminal;
   middle = main pane. The LAST main pane never closes its
   PANE (Endo ruling, 2026-10-25, corrected t_b620f99d): `removePane`
   (and the move-out
@@ -188,7 +189,7 @@ Everything else animates through `transition`, not keyframes.
   tabs: chat (multi, closable), the viewer (multi, closable,
   row-click only), the browser (singleton main tab, closable — the
   menu opener focuses the one instance), the terminal (bottom host,
-  unclosable), the observability tab (bottom host, unclosable - the
+  unclosable), the Logs tab (bottom host, unclosable - the
   structured run-event stream over the raw log tail; see its own
   section) and the notifications feed (right pane, unclosable,
   inbox glyph — the bell died). `inspector` is legacy
@@ -452,10 +453,14 @@ dot, reset link, draft star, live note).
   remembered selection, no-accordion proof) and
   `110-settings-scopes.journey.sh` (the tier-3 scope tabs, re-witnessed
   under the new bones).
-## The Observability tab
+## The Logs tab
 
 - The face of the observability capsule (`harness/observability`, the
-  engine half): two read-only routes, ONE tab. The STRUCTURED event
+  engine half): two read-only routes, ONE tab. The tab is NAMED "Logs"
+  (Endo ruling 2026-11-13, card t_01c53e78): the old raw-tail
+  `http_channel` pane answered the same question with nothing but a
+  `GET /logs` tail, and retired with its component - one logs surface
+  survives. The STRUCTURED event
   stream is the primary view - `GET /observability/events?session=&level=&limit=`
   answers `{events, returned, buffered, capacity}` with rows of
   `{seq, time, session, type, level, tool, turn, duration_ms, summary,
@@ -598,7 +603,8 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   `module-tabs.generated.ts` (card t_617c2ad0).
   Observability view: `harness/observability/ui/ObservabilityTab` (the
   event stream + the tail toggle over the observability capsule's two
-  reads; the pure filter/format half is `ui/rows.ts`).
+  reads; the pure filter/format half is `ui/rows.ts`) - the tab the dock
+  names "Logs" (card t_01c53e78).
 - Canvas (arc 3c): `composables/canvas.ts` is the store —
   snapshot load (GET /ui/canvas) + view_model_delta merge (forwarded
   by the chat host's `canvasDelta` dep) + the action pipe POST

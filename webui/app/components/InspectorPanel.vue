@@ -28,8 +28,8 @@
   import { computed } from "vue";
   import { modulePanels } from "../composables/module-panels.generated";
 
-  // module = the dock-tab component id (cron / http_channel / skills /
-  // tools): the composition's module name IS the tab id, no alias map
+  // module = the dock-tab component id (cron / skills / tools): the
+  // composition's module name IS the tab id, no alias map
   const props = defineProps<{
     module: string;
     open?: boolean;

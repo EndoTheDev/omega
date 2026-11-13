@@ -70,7 +70,7 @@ test("dividerDelta + dragSplitDivider: the reduced stream tracks the pointer (th
 // The old "+delta grows it" left-child read moved the divider AGAINST the
 // pointer (drag up -> divider down); this test pins BOTH ways so the
 // orientation cannot regress silently again.
-const columnShell = () => makeSplit("column", [makePane("chat", null), makePane("http_channel", 200)]);
+const columnShell = () => makeSplit("column", [makePane("chat", null), makePane("terminal", 200)]);
 
 test("dividerDelta + dragSplitDivider (column): drag UP tracks the pointer up (the shell GROWS)", () => {
   const CONTENT = 1000; // mainRow 800 + bottom 200; divider starts at y 800

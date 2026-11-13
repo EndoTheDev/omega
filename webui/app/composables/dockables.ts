@@ -23,7 +23,7 @@
 // card t_4ae27e0d (the pane-model reset): "inspector" is no longer a
 // component - the right sidebar's views are REAL dock tabs living in one
 // sidebar-pinned pane. The module ids mirror the shipped module names
-// verbatim (cron / http_channel / skills / tools / kanban) so the app's
+// verbatim (cron / skills / tools / kanban) so the app's
 // outlet templates and the composition lookup agree without an alias map.
 // card t_49d0b308: settings moved into the inspector; card t_00e4a784
 // (Endo ruling 2026-11-09) MOVED IT BACK OUT - settings is an on-demand
@@ -52,10 +52,13 @@ export const TAB_MODULES = [
   // the durable feed/history in the inspector; the transient toasts
   // are the shell's own (they serve ANY emitter, components/shell/).
   "notifications",
-  // card t_e703180e (the observability arc's face half): the logging
-  // tab - the structured run-event stream (primary) over the raw log
-  // tail (secondary, behind a chip), session-scoped, errors-only
-  // filter. The view is the observability capsule's own
+  // card t_e703180e (the observability arc's face half): the LOGS tab -
+  // the structured run-event stream (primary) over the raw log tail
+  // (secondary, behind a chip), session-scoped, errors-only filter.
+  // card t_01c53e78 (Endo ruling 2026-11-13): this tab IS the one logs
+  // surface - the old raw-tail http_channel pane answered the same
+  // question and died with its component; the survivor carries the name
+  // "Logs". The view is the observability capsule's own
   // (harness/observability/ui/ObservabilityTab.vue); disabling the
   // capsule leaves the tab rendering its 404 sentence, and deleting it
   // drops this manifest entry (the deletability proof).
@@ -67,7 +70,6 @@ export const DOCK_COMPONENTS = [
   "viewer",
   "files",
   "cron",
-  "http_channel",
   "skills",
   "tools",
   "agents",
@@ -118,7 +120,7 @@ export type DockInstancePolicy = "singleton" | "multi";
 // sidebar-pinned sessions pane, "right" the sidebar-pinned inspector
 // pane, "main" the closable main pane class (hover-X). card t_67fc1905:
 // "bottom" joins the pinned class - the horizontal panel under the main
-// panel (logs home today, the terminal's future tab host).
+// panel (the Logs tab and the terminal live there).
 export type DockArea = "left" | "right" | "main" | "bottom";
 
 // card t_502b8e81: `icon` is a semantic NAME in the webui iconset
@@ -155,15 +157,14 @@ export interface DockableComponent {
   /** card t_67fc1905: the hosts that keep this component alive BEYOND its
       `area` home. Most components are single-host ([area] by omission);
       the machinery stays for a future multi-home domain (the terminal
-      tab). Logs was the first dual-host domain (right + bottom) until
-      its sidebar copy was ruled a duplicate and removed (Endo, 2026-10-26
-      - logs is bottom-only now). Two instances may coexist across hosts;
+      tab). Two instances may coexist across hosts;
       the singleton "at most once" invariant reads one per host. */
   homes?: readonly DockArea[];
   /** card t_67fc1905: where a FRESH built host seats this component -
       its default home. null/omitted = `area`. The bottom host's builder
       reads this: every component with defaultHome "bottom" joins the
-      fresh bottom panel's tab strip (logs today, one place to grow). */
+      fresh bottom panel's tab strip (the terminal and Logs, one place to
+      grow). */
   defaultHome?: DockArea;
   /** tab shows a hover-X. Pinned components (left/right) are unclosable:
       their pane hosts them forever; main tabs close (hover-X). */
@@ -233,18 +234,6 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     icon: "cron",
     policy: "singleton",
     area: "right",
-    closable: false,
-  },
-  {
-    id: "http_channel",
-    title: "http_channel",
-    icon: "logs",
-    policy: "singleton",
-    // Endo's comment (2026-10-26): logs' home is the BOTTOM panel only -
-    // the secondary-sidebar copy duplicated it. The dual-host shape was
-    // t_67fc1905's transition; rehomeLogsTab (dock.ts) lifts persisted
-    // right-shell copies on load.
-    area: "bottom",
     closable: false,
   },
   {
@@ -361,7 +350,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     // t_67fc1905 reservation cashed in); the shell keeps running
     // server-side while another tab is active - the detached session
     // reattaches with its 256KiB replay on remount. Unclosable (the
-    // pinned-bottom shape the logs tab has): the tab is the module's
+    // pinned-bottom shape the Logs tab has): the tab is the module's
     // whole face, removing it means removing the module.
     id: "terminal",
     title: "Terminal",
@@ -371,17 +360,19 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     closable: false,
   },
   {
-    // card t_e703180e (the observability arc's face half): the logging
-    // tab - the STRUCTURED run-event stream as the primary view, the
-    // raw log tail as a secondary view inside the same tab (Endo's
-    // ruling 1: the tail is not a peer tab), session scope defaulting
-    // to the open session, an errors-only chip, no free-text search in
-    // v1. Home is the bottom panel - the logs home it succeeds, where a
-    // wide, short stream reads best - seated by the same default-home
-    // mapping the logs strip and the terminal ride. Unclosable (the
+    // card t_e703180e (the observability arc's face half): the Logs tab -
+    // the STRUCTURED run-event stream as the primary view, the raw log
+    // tail as a secondary view inside the same tab (Endo's ruling 1: the
+    // tail is not a peer tab), session scope defaulting to the open
+    // session, an errors-only chip, no free-text search in v1. Home is
+    // the bottom panel - the logs home, where a wide, short stream reads
+    // best - seated by the same default-home mapping the terminal rides.
+    // card t_01c53e78 (Endo ruling 2026-11-13): the tab is NAMED "Logs" -
+    // the raw-tail http_channel pane that used to own that name answered
+    // the same question and retired; one pane survives. Unclosable (the
     // pinned-bottom shape): the tab is the capsule's whole face.
     id: "observability",
-    title: "Observability",
+    title: "Logs",
     icon: "activity",
     policy: "singleton",
     area: "bottom",
@@ -437,7 +428,6 @@ const DOCKABLE_MIN_PX: Record<DockComponentName, number> = {
   viewer: MIN_PANE_PX,
   files: MIN_PANE_PX,
   cron: MIN_PANE_PX,
-  http_channel: MIN_PANE_PX,
   skills: MIN_PANE_PX,
   tools: MIN_PANE_PX,
   agents: MIN_PANE_PX,
@@ -580,8 +570,8 @@ export const INSPECTOR_TAB_COMPONENTS: readonly DockComponentName[] =
 // tab strip from every component whose defaultHome names it. ----
 
 /** the components a fresh `host` pane seats as its default tabs.
-    "bottom" today: logs (http_channel) - the terminal joins here later
-    by registering the same way. Registered in ONE place (the registry). */
+    "bottom" today: the terminal and the Logs tab. Registered in ONE
+    place (the registry). */
 export function defaultHostTabs(host: DockArea): DockComponentName[] {
   return DOCKABLES
     .filter((d) => (d.defaultHome ?? d.area) === host)
@@ -589,7 +579,7 @@ export function defaultHostTabs(host: DockArea): DockComponentName[] {
 }
 
 /** which hosts may keep an instance of `id` alive (the singleton
-    invariant now reads ONE PER HOST for dual-host domains like logs) */
+    invariant reads ONE PER HOST where a component declares `homes`) */
 export function hostsOf(id: DockComponentName): readonly DockArea[] {
   const d = dockableOf(id);
   return d.homes ?? [d.area];

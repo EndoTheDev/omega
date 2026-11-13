@@ -95,10 +95,14 @@
         </template>
 
         <!-- card t_4ae27e0d: the RIGHT sidebar's views are REAL dock tabs
-             (Files / Cron / Logs / Skills / Tools - the chip strip is
-             gone). Files is the shell's own panel; each module view is
-             the composition panel body, resolved by module name - the
-             dock tabbar hosts the tab, this outlet only hosts content. -->
+             (Files / Cron / Skills / Tools - the chip strip is gone).
+             Files is the shell's own panel; each module view is the
+             composition panel body, resolved by module name - the dock
+             tabbar hosts the tab, this outlet only hosts content.
+             card t_01c53e78: the raw-tail Logs panel (a http_channel
+             module panel) retired with its component - no outlet, no
+             manifest entry; the bottom shell's surviving tab is the
+             observability capsule's, named "Logs". -->
         <template #pane-files>
           <FilesTab
             v-if="!isMobile"
@@ -121,13 +125,6 @@
             v-if="!isMobile"
             class="pane"
             module="cron"
-            :open="isMobile ? inspectorOpen : false" />
-        </template>
-        <template #pane-http_channel>
-          <InspectorPanel
-            v-if="!isMobile"
-            class="pane"
-            module="http_channel"
             :open="isMobile ? inspectorOpen : false" />
         </template>
         <!-- card t_55a3fc4b: the terminal tab - the integrated shell

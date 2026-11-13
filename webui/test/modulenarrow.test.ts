@@ -12,7 +12,6 @@ import { dirname, join, resolve } from "node:path";
 
 import { isNarrowWidth, NARROW_MAX_PX } from "../app/composables/narrow.ts";
 import { isNarrowWidth as cronIsNarrowWidth } from "../../harness/cron/ui/narrow.ts";
-import { isNarrowWidth as logsIsNarrowWidth } from "../../api/http_channel/ui/narrow.ts";
 import { isNarrowWidth as skillsIsNarrowWidth } from "../../harness/skills/ui/narrow.ts";
 import { isNarrowWidth as toolsIsNarrowWidth } from "../../harness/tools/ui/narrow.ts";
 // the recipe's original: the Board's module-owned copy must stay in the
@@ -35,7 +34,6 @@ test("every narrow copy agrees with the shell threshold (shell + all modules)", 
   // shared and pinned here.
   for (const [name, fn] of [
     ["cron", cronIsNarrowWidth],
-    ["http_channel", logsIsNarrowWidth],
     ["skills", skillsIsNarrowWidth],
     ["tools", toolsIsNarrowWidth],
     ["kanban", boardIsNarrowWidth],
@@ -56,7 +54,7 @@ test("every narrow copy agrees with the shell threshold (shell + all modules)", 
 const RETROFIT: Array<{
   rel: string;
   label: string;
-  module: "cron" | "http_channel" | "skills" | "tools" | "mcp" | "browser" | null;
+  module: "cron" | "skills" | "tools" | "mcp" | "browser" | null;
   rules: RegExp[];
 }> = [
   {
@@ -67,12 +65,6 @@ const RETROFIT: Array<{
     // card t_561dc4e0: the head wrap + name shrink died with the row
     // law - the shared anatomy's narrow rule owns the row rhythm.
     rules: [/\.cron-list\.narrow \.cron-body \{/],
-  },
-  {
-    rel: "api/http_channel/ui/LogsList.vue",
-    label: "logs",
-    module: "http_channel",
-    rules: [/\.logs-list\.narrow \./],
   },
   {
     rel: "harness/skills/ui/SkillsList.vue",
