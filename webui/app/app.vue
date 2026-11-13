@@ -643,7 +643,8 @@
   // menubar toggle route: the shell flags flip BELOW the breakpoint
   // (one drawer at a time), the dock tree only above it.
   import {
-    drawerTabsForEdge,
+    drawerTabs,
+    DRAWER_RENDERABLE,
     clampDrawerTab,
     routeShellToggle,
     type MobileShell,
@@ -1857,7 +1858,9 @@
   // pinned-edge content independently of the dock tree (REPRO 1: a
   // desktop-closed sidebar prunes the edge pane - the drawer must still
   // open with content), so its tab set reads the live edge pane when it
-  // exists and falls back to the registry default when it does not. The
+  // exists and joins the registry floor's missing ids when it does not
+  // (card t_572015db: the floor joins EVERY drawer now, clamped, so a
+  // drifted or empty pane never strands a home tab on mobile). The
   // active tab is the drawer's OWN state - switching it never touches the
   // dock tree (the desktop hidden state is page-lifetime by design and
   // must not be coupled to the mobile drawer, REPRO 1's root cause).
@@ -1871,32 +1874,34 @@
     return panel?.dockable?.title ?? COMPONENT_TITLES[id];
   }
 
-  const sidebarDrawerTabs = computed(() =>
-    drawerTabsForEdge(
-      findEdgePane(dock.tree.value, "sidebar"),
-      ["sidebar"],
+  // card t_572015db: the drawer's tab set is CLAMPED to the ids its own
+  // branch chain resolves (DRAWER_RENDERABLE) plus the module panels the
+  // generic catch-all honestly resolves. A tab is free content in the dock
+  // - any unlocked tab can be dragged into any pane - so the live edge pane
+  // can hold a tab this drawer has no branch for; without the clamp the chip
+  // renders and the chain falls through to InspectorPanel(module="<id>"),
+  // which reads the PANEL manifest and shows "module not loaded" for a tab
+  // that is loaded (t_07ad4fda's cross-host residual). Every edge-home tab
+  // stays reachable: drawerTabs unions the live pane with the registry
+  // floor, and the floor is exactly the home strip.
+  function drawerKeeps(shell: MobileShell, id: DockComponentName): boolean {
+    if ((DRAWER_RENDERABLE[shell] as readonly string[]).includes(id)) return true;
+    // the generic catch-all IS the honest resolution for a module panel
+    return modulePanels.some((p) => p.module === id);
+  }
+  function drawerTabsFor(shell: MobileShell, floor: readonly DockComponentName[]) {
+    return drawerTabs(
+      findEdgePane(dock.tree.value, shell),
+      floor,
       drawerTabTitle,
-    ),
+      (id) => drawerKeeps(shell, id),
+    );
+  }
+
+  const sidebarDrawerTabs = computed(() => drawerTabsFor("sidebar", ["sidebar"]));
+  const inspectorDrawerTabs = computed(() =>
+    drawerTabsFor("inspector", INSPECTOR_TAB_COMPONENTS),
   );
-  const inspectorDrawerTabs = computed(() => {
-    const live = drawerTabsForEdge(
-      findEdgePane(dock.tree.value, "inspector"),
-      INSPECTOR_TAB_COMPONENTS,
-      drawerTabTitle,
-    );
-    // card t_67fc1905: logs is a DUAL-HOST domain now - a fresh boot seats
-    // it in the bottom panel (its defaultHome), so the inspector pane's
-    // strip no longer names it. The drawer reads the live strip, which
-    // would strand the logs view on mobile (its pane instance is
-    // zero-collapsed there). The registry's right-domain list is the
-    // drawer's floor: missing entries join the live tabs at the end.
-    const seen = new Set(live.map((t) => t.id));
-    return live.concat(
-      INSPECTOR_TAB_COMPONENTS
-        .filter((id) => !seen.has(id))
-        .map((id) => ({ id, title: drawerTabTitle(id) })),
-    );
-  });
 
   // the active tab id, clamped against the live tab set (the edge pane's
   // tabs can change under a DnD while the drawer is closed; the drawer
@@ -1910,14 +1915,11 @@
 
   // card t_4bf1d5b7: the bottom drawer's tab set - the live bottom pane
   // when the tree holds one, else the registry's bottom-home default
-  // (logs). Its active state is the drawer's own, like the other two.
+  // (terminal + Logs). Its active state is the drawer's own, like the
+  // other two. card t_572015db: same clamp + floor union as the other two.
   const mobileBottomTab = ref(0);
   const bottomDrawerTabs = computed(() =>
-    drawerTabsForEdge(
-      findEdgePane(dock.tree.value, "bottom"),
-      defaultHostTabs("bottom"),
-      drawerTabTitle,
-    ),
+    drawerTabsFor("bottom", defaultHostTabs("bottom")),
   );
   const bottomDrawerActiveId = computed(() =>
     clampDrawerTab(bottomDrawerTabs.value, mobileBottomTab.value)?.id,
