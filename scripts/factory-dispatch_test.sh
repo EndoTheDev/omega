@@ -1185,6 +1185,73 @@ s=$(sql "$T22DB_N" "SELECT status||'|'||coalesce(worker_pid,0)||'|'||current_run
 [ "$s" = "running|$VICTIM_PID|4242" ] && ok || bad "T22c: the readout MUTATED the dead card ('$s') - it must be read-only"
 rm -rf "$T22REPO" "$T22HOME"
 
+# T23 (local + CI): EVERY `FILES:` line is the write surface (card t_5389fd95,
+# live miss 2026-11-13 23:41). The guard read only the FIRST `FILES:` line, so
+# a card minted one-path-per-line under-declared its surface: the 5-card batch
+# that night read `legal: t_20fd8745` / `legal: t_d04a1c80` while both named
+# webui/app/app.vue on a LATER line - a file running t_81d0901b owned - and one
+# free slot would have co-spawned a card into an active-file collision. The
+# single-line shape (whitespace-separated paths) stays the documented
+# contract; this read is defensive. Shapes pinned: (T23a) the token on the
+# SECOND FILES line holds the candidate beside a running card that owns it -
+# pre-change that fixture reads `legal:` (the exact live miss); (T23b) class_of
+# reads the FULL declared surface - a docs path first, a .vue path second
+# classes webui, not docs, while a docs+docs split still classes docs (no
+# label leak into the go leg); (T23c) imprecise_surface is a union too - a
+# bare-dir token on line 2 keeps a go pair forbidden; (T23d) files_line_absent
+# is a union - a bare `FILES:` line followed by one carrying paths is NOT
+# absent, so that pair stays sanctioned.
+
+# T23a: the live shape - running webui card owns webui/app/app.vue, candidate
+# names docs/webui.md on line 1 and the owned file on line 2.
+out=$(PAIRRUN "INSERT INTO tasks VALUES('t_rweb','running','dock pane','FILES: webui/app/app.vue','pibtw:1',NULL,5,'2026-11-13T22:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_multi','ready','menubar + dock','FILES: docs/webui.md
+FILES: webui/app/app.vue',NULL,NULL,5,'2026-11-13T23:17',NULL,NULL);")
+printf "%s" "$out" | grep -qF 'hold: t_multi  (same-file: webui/app/app.vue)' \
+	&& ok || bad "T23a: a token on the SECOND FILES line did not hold the candidate - the union read is missing (out: $out)"
+printf "%s" "$out" | grep -q "^legal: t_multi" \
+	&& bad "T23a: the candidate leaked as legal - lines 2..N are still invisible to the hold verdict (out: $out)" || ok
+
+# T23b: class_of on the full surface. Direct assertion (same extract T18 uses):
+# a docs FILES line first, a .vue line second, must class webui.
+T23DB=$(mktemp); T23DB_N=$(mixpath "$T23DB")
+sqlex "$T23DB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER);
+INSERT INTO tasks VALUES('t_multiclass','ready','menubar + dock','FILES: docs/cli.md
+FILES: webui/app/app.vue','',NULL,5,'2026-11-13T23:17',NULL,NULL);
+INSERT INTO tasks VALUES('t_multidocs','ready','doc pair','FILES: docs/cli.md
+FILES: docs/configuration.md','',NULL,5,'2026-11-13T23:18',NULL,NULL);
+INSERT INTO tasks VALUES('t_singledocs','ready','doc one','FILES: docs/cli.md','',NULL,5,'2026-11-13T23:19',NULL,NULL);"
+T23SED="/^DBPY='/,/^'/p; /^dbq()/,/^}/p; /^class_of()/,/^}/p"
+out=$(DB="$T23DB_N" PY="$PY" GUARD="$GUARD" SEDEXPR="$T23SED" bash -c '
+source <(sed -n "$SEDEXPR" "$GUARD")
+for id in t_multiclass t_multidocs t_singledocs; do
+  printf "%s=%s\n" "$id" "$(class_of "$id")"
+done
+' 2>&1)
+printf "%s" "$out" | grep -qx "t_multiclass=webui" \
+	&& ok || bad "T23b: a .vue path on the SECOND FILES line must class webui, not docs (out: $out)"
+printf "%s" "$out" | grep -qx "t_multidocs=docs" \
+	&& ok || bad "T23b: a docs+docs split must still class docs - the joined labels must not leak a non-docs token into the go leg (out: $out)"
+printf "%s" "$out" | grep -qx "t_singledocs=docs" \
+	&& ok || bad "T23b: the documented single-line docs shape drifted (out: $out)"
+rm -f "$T23DB"
+
+# T23c: a bare-dir token on line 2 keeps the go pair unprovable.
+out=$(PAIRRUN "INSERT INTO tasks VALUES('t_rgo23','running','store work','FILES: scripts/other.sh','pibtw:1',NULL,5,'2026-11-13T22:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_multibare','ready','memory store','FILES: harness/memory/store.go
+FILES: agent',NULL,NULL,5,'2026-11-13T23:17',NULL,NULL);")
+printf "%s" "$out" | grep -q "^hold: t_multibare  (go-class beside go with unproven surface" \
+	&& ok || bad "T23c: a bare-dir token on the SECOND FILES line did not make the surface unprovable - the go pair was sanctioned on a split surface (out: $out)"
+
+# T23d: a bare `FILES:` line plus one carrying paths is NOT absent.
+out=$(PAIRRUN "INSERT INTO tasks VALUES('t_split','ready','split declaration','FILES:
+FILES: docs/cli.md',NULL,NULL,5,'2026-11-13T23:17',NULL,NULL);
+INSERT INTO tasks VALUES('t_doc2','ready','doc two','FILES: docs/other.md',NULL,NULL,5,'2026-11-13T23:18',NULL,NULL);")
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_split t_doc2, classes docs+docs, FILES disjoint)' \
+	&& ok || bad "T23d: a bare FILES line beside one carrying paths read ABSENT - the union read is missing (out: $out)"
+
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]
