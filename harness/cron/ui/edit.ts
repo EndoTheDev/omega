@@ -140,6 +140,206 @@ export function parseSkills(s: string): string[] {
   return out;
 }
 
+// --- the field option sources (card t_60e0651e) ----------------------
+//
+// Three GETs, all pre-existing, no new registry:
+//
+//   GET /agents   the roster inventory, harness/continuous/agentsrest.go
+//                 (LoadProfiles: the main profile first, then every
+//                 agents/<name> home, named `default` for the home root)
+//   GET /models   the provider catalog the settings model knobs read,
+//                 agent/api/server.go handleModels
+//   GET /skills   the loaded skill inventory, api/server_inspector.go
+//
+// Every control degrades to free text (or a named empty list) when its
+// GET fails - an option source that is down must never strand an edit.
+
+// FieldOption is one dropdown row in the editor's option sources.
+// `hint` is the secondary line (a description, "the main agent");
+// `group` labels the source family so a test can tell them apart.
+export interface FieldOption {
+  value: string;
+  label: string;
+  hint: string;
+  group: string;
+}
+
+// agentRowWire is the subset of GET /agents this editor reads (the
+// roster row: agent.Profile + last_session_id).
+interface AgentRowWire {
+  name?: string;
+  description?: string;
+  continuous?: boolean;
+}
+
+// fetchAgentOptions reads the agents registry. Typing a name that is
+// NOT on this list stays legal: a job may reference an agent home that
+// no longer exists, and the editor must never strand that job's edit.
+//
+// The wire's `continuous` flag marks a SECONDARY agent home (the one
+// that wakes as a subprocess, agent/profiles.go loadProfile); the home
+// root - the main agent, named `default` - answers false and never
+// wakes as a subprocess (harness/continuous/wake.go refuses it), so its
+// row says so where the operator picks it. Verified live against
+// GET /agents, not read off the stale Profile comment.
+export async function fetchAgentOptions(): Promise<FieldOption[]> {
+  const res = await fetch("/agents");
+  if (!res.ok) throw new Error(`GET /agents: ${res.status}`);
+  const rows = (await res.json()) as AgentRowWire[];
+  const out: FieldOption[] = [];
+  for (const r of rows) {
+    const name = (r.name ?? "").trim();
+    if (name === "") continue;
+    out.push({
+      value: name,
+      label: name,
+      hint:
+        r.description ||
+        (r.continuous
+          ? "agent home"
+          : "the main agent - in-process, never wakes"),
+      group: "agents",
+    });
+  }
+  return out;
+}
+
+// modelListWire is the subset of GET /models this editor reads.
+interface ModelListWire {
+  current?: string;
+  models?: string[];
+  providers?: { name: string; models?: string[]; error?: string }[];
+}
+
+// fetchModelOptions reads the model catalog the settings knobs use.
+//
+// The offered VALUE is a BARE model name, and that is the load-bearing
+// choice: a cron job's `model:` is consumed as a bare model on the
+// provider - harness/cron/runner.go hands it straight to
+// p.WithModel(model) for a session fire, and harness/continuous/wake.go
+// rides it as OMEGA_MODEL for a wake fire - while the `instance:model`
+// slot grammar is resolved only in the chat/slot lanes
+// (agent/api/server.go through agent.ParseModelSlot). Offering an
+// instance-qualified value here would write a string every fire fails
+// on, so the list is the base provider's own catalog (the flat
+// `models` array the settings pickers fall back to); an operator who
+// needs another instance's model types it, exactly as before. The
+// grouped `providers` sections stay unread for the same reason.
+export async function fetchModelOptions(): Promise<FieldOption[]> {
+  const res = await fetch("/models");
+  if (!res.ok) throw new Error(`GET /models: ${res.status}`);
+  const wire = (await res.json()) as ModelListWire;
+  const seen = new Set<string>();
+  const out: FieldOption[] = [];
+  for (const raw of wire.models ?? []) {
+    const name = (raw ?? "").trim();
+    if (name === "" || seen.has(name)) continue;
+    seen.add(name);
+    out.push({ value: name, label: name, hint: "", group: "models" });
+  }
+  return out;
+}
+
+// skillRowWire is one GET /skills row (name + description only).
+interface SkillRowWire {
+  name?: string;
+  description?: string;
+}
+
+// fetchSkillOptions reads the skills registry. The skills control is
+// STRICT: only names that answer here are offered, and only those
+// survive a job's load (strictSkills below).
+export async function fetchSkillOptions(): Promise<FieldOption[]> {
+  const res = await fetch("/skills");
+  if (!res.ok) throw new Error(`GET /skills: ${res.status}`);
+  const rows = (await res.json()) as SkillRowWire[];
+  const out: FieldOption[] = [];
+  for (const r of rows) {
+    const name = (r.name ?? "").trim();
+    if (name === "") continue;
+    out.push({
+      value: name,
+      label: name,
+      hint: r.description ?? "",
+      group: "skills",
+    });
+  }
+  return out;
+}
+
+// filterFieldOptions narrows a dropdown by the typed query, matching
+// the value or the hint (case-insensitive). An empty query is the full
+// list - opening a control always shows the whole catalog.
+export function filterFieldOptions(
+  options: FieldOption[],
+  query: string,
+): FieldOption[] {
+  const q = query.trim().toLowerCase();
+  if (q === "") return options;
+  return options.filter(
+    (o) =>
+      o.value.toLowerCase().includes(q) || o.hint.toLowerCase().includes(q),
+  );
+}
+
+// optionKnown reports whether a typed value names a listed option.
+export function optionKnown(options: FieldOption[], value: string): boolean {
+  const v = value.trim();
+  return options.some((o) => o.value === v);
+}
+
+// moveComboIndex steps a combobox's active row, wrapping at both ends.
+// -1 = nothing active (the typed text stands); the first Down lands on
+// row 0 and the first Up on the last row.
+export function moveComboIndex(
+  index: number,
+  delta: number,
+  length: number,
+): number {
+  if (length <= 0) return -1;
+  if (index < 0) return delta > 0 ? 0 : length - 1;
+  return (((index + delta) % length) + length) % length;
+}
+
+// --- the strict skills multi-select (ruling 3) -----------------------
+
+// strictSkills splits a job's pinned names into what the registry can
+// serve and what it cannot. STRICT means the control loads only known
+// names: an unknown one cannot be represented as a chip, so it is
+// dropped - and returned, so the editor can SAY it dropped something
+// instead of losing it silently.
+export function strictSkills(
+  skills: string[],
+  options: FieldOption[],
+): { kept: string[]; dropped: string[] } {
+  const known = new Set(options.map((o) => o.value));
+  const kept: string[] = [];
+  const dropped: string[] = [];
+  for (const s of skills) {
+    if (known.has(s)) {
+      if (!kept.includes(s)) kept.push(s);
+    } else {
+      dropped.push(s);
+    }
+  }
+  return { kept, dropped };
+}
+
+// withSkill / withoutSkill are the checkbox toggles over a chip list.
+export function withSkill(skills: string[], name: string): string[] {
+  return skills.includes(name) ? skills : [...skills, name];
+}
+
+export function withoutSkill(skills: string[], name: string): string[] {
+  return skills.filter((s) => s !== name);
+}
+
+// skillsVoice renders a chip list back into the draft's comma voice -
+// the ONE string saveCronJob parses (the upsert path is untouched).
+export function skillsVoice(skills: string[]): string {
+  return skills.join(", ");
+}
+
 // saveCronJob POSTs the full job definition (the /cron/save route: the
 // server validates through the loader's own ParseConfig, upserts at
 // the yaml.Node level, hot-reloads) and answers the fresh listing in
