@@ -364,10 +364,12 @@ body {
    into the card below - tab + panel read as one continuous surface,
    browser-tab style. Inactive tabs stay flat and blend into the strip.
    Both themes via vars. Layout-neutral: widths and offsets change not.
-   t_bc321318 (Endo ruling, 2026-10-25, dividers run THROUGH): the seam
-   under the strip is a REAL full-width border-bottom - opaque children
-   no longer break it (the old inset-shadow read had it run only where
-   chrome shows, which read as a stub beside the sidebar's own seam). */
+   t_063e3ced (Endo ruling, 2026-11-12, supersedes t_bc321318's seam):
+   the hairline under the strip DIES - no bottom stroke on any pane.
+   Strip and content read as one continuous surface the way the active
+   tab already merges; the strip-content boundary survives on the fill
+   tone shift alone (--z1-raised above, --z1 below). Top/side strokes
+   stay: only the strip's lower edge goes. */
 .dock-tabbar {
   flex: 0 0 auto;
   height: 35px;
@@ -376,10 +378,12 @@ body {
   gap: 2px;
   padding-right: 4px;
   background: var(--z1-raised);
-  border: 1px solid var(--stroke);
-  /* the seam: a real border-bottom, full pane width, NEVER broken by
-     opaque children (t_bc321318; supersedes t_f6c1b5fe's inset-shadow) */
-  border-bottom: 1px solid var(--stroke);
+  /* t_063e3ced: THREE sides. The bottom stroke was t_bc321318's seam and
+     is gone with that ruling - the pane's card tucks its top edge under a
+     strip that has no lower edge to break the two into separate surfaces */
+  border-top: 1px solid var(--stroke);
+  border-left: 1px solid var(--stroke);
+  border-right: 1px solid var(--stroke);
   border-radius: var(--r-pane) var(--r-pane) 0 0;
   /* paint above the tucked pane card so its hidden top curve never bleeds */
   position: relative;
