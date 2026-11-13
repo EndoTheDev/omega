@@ -91,11 +91,22 @@ test("keyboard parity: activation IS the native click, so Enter and Space fire t
   assert.ok(!/disabled="[^"]*"\s*tabindex/.test(src), "disabled state never removes focusability");
 });
 
-test("the consequence text rides the title, it is never a gate", () => {
+test("the consequence text rides the accessible name and the title, it is never a gate", () => {
   const src = read(...PILL);
-  assert.match(src, /:title="hint \?/, "the hint composes into the title (hover-only information)");
-  assert.match(src, /:aria-label="label"/, "the aria stays the steady enable/disable name");
+  // card t_d92a1f74 (0.17.1 release gate, finding A2): `:aria-label="label"`
+  // alone won the accessible name while the consequence rode `title` only -
+  // hover-only, so a screen reader never heard it. One composed name now
+  // feeds BOTH attributes (they cannot drift), and it carries the label.
+  assert.match(src, /:aria-label="accessibleName"/, "the aria is the composed name, not the bare label");
+  assert.match(src, /:title="accessibleName"/, "the tooltip is the same composed name (hover text unchanged)");
+  // the BUTTON tag is the wiring under pin (the header comments narrate the
+  // dead shape by name, so the negative is scoped to the element)
+  const tag = src.slice(src.indexOf("<button"), src.indexOf("</button"));
+  assert.ok(!tag.includes(':aria-label="label"'), "the bare-label aria cannot come back");
+  assert.match(src, /props\.hint \? `\$\{props\.label\} - \$\{props\.hint\}` : props\.label/, "the name folds the hint in when there is one");
   assert.ok(!src.includes('aria-label="armed'), "no armed aria branch");
+  // the hint is still only a hint: it never gates the activation
+  assert.equal(count(src, "emit('click')"), 1, "one activation emit, hint or no hint");
 });
 
 // --- the hosts: one activation, one write --------------------------------

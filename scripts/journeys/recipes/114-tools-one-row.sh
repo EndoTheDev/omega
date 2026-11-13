@@ -193,8 +193,11 @@ expand_all() {
 }
 
 # row_is_off / row_is_on: booleans for the toggle round-trip waits.
+# Card t_d92a1f74: the ON row's accessible name carries the consequence of
+# the click it offers ("disable files - absent from the agent tool list"),
+# so the ON match is fold-aware; the OFF row's "enable files" stays exact.
 ROW_IS_OFF='(()=>{const r=[...document.querySelectorAll(".tools-list .registry-row")].find(x=>((x.querySelector(".reg-row-name")||{}).textContent||"").trim()==="files");const b=r&&r.querySelector("button.registry-toggle");return !!r&&r.classList.contains("registry-off")&&!!b&&b.getAttribute("aria-label")==="enable files"})()'
-ROW_IS_ON='(()=>{const r=[...document.querySelectorAll(".tools-list .registry-row")].find(x=>((x.querySelector(".reg-row-name")||{}).textContent||"").trim()==="files");const b=r&&r.querySelector("button.registry-toggle");return !!r&&!r.classList.contains("registry-off")&&!!b&&b.getAttribute("aria-label")==="disable files"})()'
+ROW_IS_ON='(()=>{const r=[...document.querySelectorAll(".tools-list .registry-row")].find(x=>((x.querySelector(".reg-row-name")||{}).textContent||"").trim()==="files");const b=r&&r.querySelector("button.registry-toggle");const l=(b&&b.getAttribute("aria-label"))||"";return !!r&&!r.classList.contains("registry-off")&&!!b&&(l==="disable files"||l.startsWith("disable files - "))})()'
 
 # toggle_click <exact-aria> <prefix-fallback>: click the pane's registry
 # toggle matching the aria state machine once. Prints 1 when clicked,
@@ -250,7 +253,7 @@ step "ok: (b)+(c) the files identities sit under the files row and nowhere else"
 # ONE click commits (card t_5051d523): the arm/confirm two-step that
 # needed a second click is dead, so the click writes and the row
 # re-renders off.
-clicked=$(toggle_click "disable files" "__arm__")
+clicked=$(toggle_click "disable files" "disable files - ")
 assert_eq "$clicked" "1" "the files row's toggle answered the click"
 wait_js "$ROW_IS_OFF" 10 \
   || die "one click did not switch the files row - the one-way door: the row must STAY, dimmed and toggleable"
