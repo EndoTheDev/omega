@@ -34,13 +34,17 @@ test("the sidebar vocabulary covers the tab strip (one name one meaning)", () =>
   const set = new Set(ICON_NAMES as readonly string[]);
   for (const expected of [
     "sidebar", "files", "cron", "logs", "skills", "tools", "agents",
-    "settings", "kanban", "extensions", "insights", "inbox",
+    "settings", "kanban", "insights", "inbox",
   ]) {
     assert.ok(set.has(expected), `the tab vocabulary carries "${expected}"`);
   }
   // card t_180db2cb (deletability): the bell left the vocabulary with
   // the chrome that carried it - the notifications tab is the inbox
   assert.ok(!set.has("bell"), "the bell is not a vocabulary entry");
+  // card t_81d0901b (deletability): the modules cockpit tab retired into
+  // the settings tab, so the puzzle glyph left with it - the settings tab
+  // already carries the sliders glyph
+  assert.ok(!set.has("extensions"), "the puzzle left with the retired modules tab");
   // the chat blocks: thinking gets the brain, tool calls share the
   // tools-tab wrench (the card's one-meaning law)
   assert.ok(set.has("brain"), "thinking block glyph exists");
