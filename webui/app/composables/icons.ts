@@ -72,7 +72,7 @@ export const ICONS = {
   chat: MessageSquare, // a chat tab / "new chat"
   files: Folder, // the file browser tab
   cron: Clock, // wake schedules
-  logs: ScrollText, // the http_channel log strip
+  logs: ScrollText, // the log strip glyph (the Logs tab carries "activity")
   skills: Book, // the skills library
   tools: Wrench, // the tools inventory - also the tool-call block glyph
   agents: Users, // the agent roster (merged config + continuous surface)

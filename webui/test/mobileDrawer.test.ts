@@ -74,14 +74,14 @@ test("drawerTabsForEdge: a free-content left pane hosting dragged-in inspector t
 });
 
 test("drawerTabsForEdge: the injected title resolver wins over the registry fallback", () => {
-  // logs left the inspector strip (bottom-only home, Endo's comment
-  // 2026-10-26) - the resolver still wins for any seated id; assert
-  // over the bottom host's default strip, where logs still lives
+  // the resolver carries what the registry title cannot say (chat's
+  // session label, a module's ui/dockable.json title); assert over the
+  // bottom host's default strip, where the Logs tab still lives
   const resolve = (id: DockComponentName) =>
-    id === "http_channel" ? "Logs" : COMPONENT_TITLES[id];
+    id === "observability" ? "Logs (resolved)" : COMPONENT_TITLES[id];
   const tabs = drawerTabsForEdge(null, defaultHostTabs("bottom"), resolve);
-  const logs = tabs.find((t) => t.id === "http_channel");
-  assert.equal(logs?.title, "Logs");
+  const logs = tabs.find((t) => t.id === "observability");
+  assert.equal(logs?.title, "Logs (resolved)");
 });
 
 test("clampDrawerTab: an out-of-range active index clamps to the last tab", () => {

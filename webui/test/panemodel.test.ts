@@ -174,7 +174,10 @@ describe("gate: fixed shape chrome", () => {
     assert.match(appVue, /dock\.openSingleton\(paneId, "settings"\)/);
     // the inspector chip strip dissolved into real dock tabs
     assert.match(appVue, /#pane-files/);
-    assert.match(appVue, /#pane-http_channel/);
+    // card t_01c53e78: the raw-tail logs pane retired - its outlet left
+    // with the component (no dead outlet template, no dead panel id)
+    assert.doesNotMatch(appVue, /#pane-http_channel/);
+    assert.doesNotMatch(appVue, /module="http_channel"/);
     assert.doesNotMatch(appVue, /#pane-inspector/);
     assert.match(appVue, /InspectorPanel/);
     assert.match(appVue, /FilesTab/);

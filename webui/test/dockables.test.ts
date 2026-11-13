@@ -162,7 +162,8 @@ describe("the dockable registry", () => {
           // card t_55a3fc4b: the integrated terminal's label
           d.title === "Terminal" && d.id === "terminal" ||
           // card t_e703180e: the observability tab's label
-          d.title === "Observability" && d.id === "observability" ||
+          // card t_01c53e78: renamed to "Logs" - the one logs surface
+          d.title === "Logs" && d.id === "observability" ||
           d.title === d.id,
         `${d.id}: unexpected label "${d.title}"`,
       );
@@ -633,7 +634,7 @@ describe("dock store: the pane-model reset", () => {
     const comps = panes(tree).map((p) => p.tabs[0]?.component);
     assert.deepEqual(comps[0], "sidebar");
     assert.equal(panes(tree)[0]!.fixed, 240);
-    assert.deepEqual(comps[3], "http_channel", "the bottom shell holds logs");
+    assert.deepEqual(comps[3], "terminal", "the bottom shell holds the terminal");
   });
 
   it("ensureMainPane returns the first main pane; never inserts when one lives", async () => {

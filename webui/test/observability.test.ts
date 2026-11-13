@@ -288,13 +288,21 @@ test("the tab is declared in TAB_MODULES, with its own registry entry", () => {
   );
   const entry = DOCKABLES.find((d) => d.id === "observability");
   assert.ok(entry, "the registry carries the tab");
-  assert.equal(entry!.title, "Observability");
+  // card t_01c53e78 (Endo ruling 2026-11-13): the surviving logs pane is
+  // named "Logs" - the raw-tail http_channel pane that carried that name
+  // retired with its component
+  assert.equal(entry!.title, "Logs");
   assert.equal(entry!.area, "bottom", "the logs home - a wide, short stream reads best");
   assert.equal(entry!.closable, false, "the pinned-bottom shape");
   assert.equal(entry!.policy, "singleton");
   assert.equal(entry!.icon, "activity", "its own glyph, not the logs scroll");
-  // the fresh bottom strip seats it beside the logs strip and the terminal
-  assert.deepEqual(defaultHostTabs("bottom"), ["http_channel", "terminal", "observability"]);
+  // the fresh bottom strip seats the terminal and the Logs tab; the
+  // retired raw-tail pane has no seat (nor a registry entry to restore)
+  assert.deepEqual(defaultHostTabs("bottom"), ["terminal", "observability"]);
+  assert.ok(
+    !DOCKABLES.some((d) => (d.id as string) === "http_channel"),
+    "the retired raw-tail pane left the registry (deletability)",
+  );
 });
 
 test("app.vue binds the tab from the tabs manifest, never a hardcoded import", () => {
@@ -313,7 +321,8 @@ test("app.vue binds the tab from the tabs manifest, never a hardcoded import", (
 // --- the SFC wiring (shape pins) ---------------------------------------
 
 test("the band carries the three controls, aria-pressed throughout", () => {
-  assert.ok(sfc.includes('title="Observability"'), "the universal band");
+  // card t_01c53e78: the band title follows the dock title - one word, Logs
+  assert.ok(sfc.includes('title="Logs"'), "the universal band");
   assert.ok(sfc.includes('class="band-tool obs-chip obs-scope"'), "the session scope chip");
   assert.ok(sfc.includes('aria-label="toggle errors only"'), "the errors-only chip");
   assert.ok(sfc.includes('class="band-tool obs-chip obs-tail"'), "the tail view chip");

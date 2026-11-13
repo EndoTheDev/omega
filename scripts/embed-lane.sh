@@ -26,8 +26,8 @@ set -euo pipefail
 #     source set is webui/ plus every module UI directory the build's
 #     own scan registers (webui/nuxt.config.ts ->
 #     scanModuleUIs(harness/, api/)): harness/<name>/ui/** for the
-#     capsules, api/<name>/ui/** for the serving shell (a pane ships
-#     from api/http_channel/ui/ - LogsList.vue and its helper .ts
+#     capsules, api/<name>/ui/** for the serving shell (a shell panel
+#     ships from api/<name>/ui/ - one .vue plus its helper .ts
 #     siblings - and reaches users only through the bundle). The gate
 #     reads the whole ui/ directories, not module-panels.generated.ts:
 #     that manifest is written at nuxt-config-eval time (untracked, so
