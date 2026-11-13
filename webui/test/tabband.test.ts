@@ -35,7 +35,10 @@ const TABS: Array<{
   { file: "../harness/observability/ui/ObservabilityTab.vue", title: "Logs", scrollClass: "obs-body", actions: ["toggle errors only", "toggle raw log tail"] },
   { file: "../harness/mcp/ui/McpServers.vue", title: "MCP", scrollClass: "mcp-body", actions: ["refresh mcp servers", "Search MCP servers"] },
   { file: "../harness/kanban/ui/Board.vue", title: "Kanban", scrollClass: "board-scroll", actions: ["board-remove-btn"] },
-  { file: "app/components/shell/ExtensionsTab.vue", title: "Modules", scrollClass: "inspector-extensions", actions: [] },
+  // card t_81d0901b: the Modules tab retired - module toggles are
+  // configuration, so the surface moved into the settings tab's MODULES
+  // section, and the settings pane carries NO band (card t_1cfb080a). No
+  // entry here any more; band-breaks.test.ts pins the settings absence.
   { file: "../harness/continuous/ui/AgentsPanel.vue", title: "Agents", scrollClass: "agents-body", actions: ["scaffold a new agent directory"] },
   { file: "../harness/store/ui/InsightsTab.vue", title: "Insights", scrollClass: "insights-scroll", actions: ["window in days, 0 = all time"] },
   // card t_6bebff18 (Endo ruling 2026-11-10, option B): settings LEFT the

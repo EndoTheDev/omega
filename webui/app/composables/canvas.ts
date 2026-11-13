@@ -7,7 +7,8 @@
 // optimistic pending/error, v1 descriptor schema) is the tabbed
 // renderer AND the transcript's shared source (chat-last 2a) and the
 // toast funnel's feed (arc 4b) - v0.14.3 folded the standalone host
-// tab into the Modules tab, the contract itself stays.
+// tab, and card t_81d0901b moved the module surface into settings; the
+// contract itself stays.
 //
 // Pure-ish by the house test law: the production shapes this store
 // consumes are the wire shapes the server sends (the arc 3b

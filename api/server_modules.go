@@ -20,6 +20,17 @@ var shellModules = map[string]bool{
 	"http_channel": true,
 }
 
+// alwaysOnModules is the load-bearing pair (card t_81d0901b): the mount
+// list's agent loop and provider are the two the process cannot serve
+// without, so the toggle endpoint refuses them AT THE SEAM - the refusal
+// is the guard, and the UI's non-toggleable always-on row only mirrors
+// it. (The frontend reads the pair off the introspection's toggleable
+// flag; it never carries a second copy of this list.)
+var alwaysOnModules = map[string]bool{
+	"agent-loop": true,
+	"provider":   true,
+}
+
 // handleModules serves GET: the module list (introspection, shell
 // modules filtered out) plus the refusal ledger tail (Q12 - rejections
 // visible as events). no-store: the state changes under the pane.
@@ -99,6 +110,12 @@ func (s *Server) handleModuleToggle(w http.ResponseWriter, r *http.Request) {
 	}
 	if shellModules[name] {
 		http.Error(w, "module "+name+" is shell - always on, never toggled", http.StatusBadRequest)
+		return
+	}
+	// card t_81d0901b: the load-bearing pair is locked here, not in the
+	// UI - a disabled row in front of an open endpoint is a lying guard.
+	if alwaysOnModules[name] {
+		http.Error(w, "module "+name+" is always on", http.StatusBadRequest)
 		return
 	}
 	var body struct {

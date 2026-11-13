@@ -130,15 +130,21 @@ assert_eq "$active" "Skills" "REPRO 2: clicking Skills activates it"
 skills=$(jsq 'document.querySelector(".mobile-drawer.right .module-panels")?1:0')
 assert_eq "$skills" "1" "REPRO 2: Skills tab renders the module panel (content switched)"
 
-# switch to Modules -> the module panel renders (content swapped again)
-js 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).find(t=>(t.getAttribute("aria-label")||"").trim()==="Modules").click()' >/dev/null 2>&1
+# switch to Insights -> the shell view renders (content swapped again)
+# card t_81d0901b: the Modules cockpit tab retired (module toggles are
+# configuration now - the settings tab's MODULES section), so this step
+# walks the strip's other shell-owned branch instead.
+js 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).find(t=>(t.getAttribute("aria-label")||"").trim()==="Insights").click()' >/dev/null 2>&1
 sleep 0.6
 active=$(jsq 'document.querySelector(".mobile-drawer.right .mobile-drawer-tab.active")?.getAttribute("aria-label")?.trim()')
 active=${active#\"}; active=${active%\"}
-assert_eq "$active" "Modules" "REPRO 2: clicking Modules activates it"
-modules=$(jsq 'document.querySelector(".mobile-drawer.right .inspector-extensions")?1:0')
-assert_eq "$modules" "1" "REPRO 2: Modules tab renders the extensions panel (content switched)"
-step "ok: REPRO 2 - drawer tab bar switches content (Files -> Skills -> Modules)"
+assert_eq "$active" "Insights" "REPRO 2: clicking Insights activates it"
+insights=$(jsq 'document.querySelector(".mobile-drawer.right .insights")?1:0')
+assert_eq "$insights" "1" "REPRO 2: Insights tab renders its shell view (content switched)"
+# and the retired tab has no chip in the drawer strip at all
+modules_chip=$(jsq 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).filter(t=>(t.getAttribute("aria-label")||"").trim()==="Modules").length')
+assert_eq "$modules_chip" "0" "REPRO 2: the retired Modules tab is not a drawer chip"
+step "ok: REPRO 2 - drawer tab bar switches content (Files -> Skills -> Insights)"
 
 # card t_00e4a784: the settings gear is GLOBAL chrome - below the
 # breakpoint it opens settings as a MAIN tab (the one surface that never
@@ -171,8 +177,13 @@ assert_eq "$bscrim" "1" "REPRO 3: the bottom drawer opens over the scrim"
 assert_eq "$bdrawer" "1" "REPRO 3: the bottom drawer opens (bottom.open)"
 assert_eq "$bottom_pane" "$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0')" "REPRO 3: the toggle left the tree alone (the edge-bottom cell never pruned)"
 echo "$brect" | grep -q '"h":0' && die "REPRO 3: the bottom drawer has zero height (geometry broken)"
-blog=$(jsq 'document.querySelector(".mobile-drawer.bottom.open .logs-view, .mobile-drawer.bottom.open .module-panels, .mobile-drawer.bottom.open .logs-line")?1:0')
-assert_eq "$blog" "1" "REPRO 3: the bottom drawer seats content (logs)"
+blog=$(jsq 'document.querySelector(".mobile-drawer.bottom.open .logs-view, .mobile-drawer.bottom.open .module-panels, .mobile-drawer.bottom.open .logs-line, .mobile-drawer.bottom.open .terminal")?1:0')
+# card t_81d0901b: the bottom home's FIRST tab is the integrated terminal
+# (card t_55a3fc4b registers it ahead of Logs in the registry, and a fresh
+# pane activates index 0), so the drawer seats the shell - the same content
+# seat, a different face. Probed on the dev-tip bundle too: the stale Logs
+# selector was red there as well, so this widens the locator, not the law.
+assert_eq "$blog" "1" "REPRO 3: the bottom drawer seats content (terminal or logs)"
 # close: the same toggle closes the drawer again
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle bottom panel").click()' >/dev/null 2>&1
 sleep 0.5

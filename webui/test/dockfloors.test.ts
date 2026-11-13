@@ -73,7 +73,7 @@ describe("per-component floors (card t_ae9ac5cf Defect 1)", () => {
       makePane("viewer"),
       makePane("mcp"),
       makePane("agents"),
-      makePane("extensions"),
+      makePane("notifications"),
     ]);
     assert.equal(minDockPx(t), 5 * MIN_PANE_PX + 4 * 4, "5 tool panes + 4 dividers");
   });
@@ -117,7 +117,7 @@ function fiveToolTree(): { tree: DockNode; mainPanes: DockPane[] } {
   })();
   for (let i = 0; i < 4; i++) t = splitPane(t, chatId, "row", "after");
   t = hideEdgePane(hideEdgePane(t, "inspector"), "sidebar");
-  const tools: DockComponentName[] = ["files", "viewer", "mcp", "agents", "extensions"];
+  const tools: DockComponentName[] = ["files", "viewer", "mcp", "agents", "notifications"];
   const mainPanes: DockPane[] = [];
   for (const n of allNodes(t)) {
     if (isPane(n) && (n as DockPane).fixed === null) {

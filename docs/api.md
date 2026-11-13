@@ -61,7 +61,7 @@ unchanged.
 | `/disabled/skills`, `/disabled/tools` | PUT       | registry-browser toggle fold (one entry per name) |
 | `/disabled/agents`                   | PUT        | registry-browser toggle; the DEFAULT agent answers 409 (it must always be on) |
 | `/modules`                           | GET        | mounted module capsules (introspection)         |
-| `/modules/{name}`                    | PUT        | the live module toggle (`disabled:` fold)       |
+| `/modules/{name}`                    | PUT        | the live module toggle (`disabled:` fold); `agent-loop` and `provider` answer 400 "module <name> is always on" (the seam's guard, card t_81d0901b) |
 | `/themes`                            | GET        | user theme tokens (`<home>/themes/*.yaml`)      |
 | `/insights`                          | GET        | session usage analytics                        |
 | `/workspaces/browse`, `/workspaces/files` | GET   | the workspace surface (browsers + Files tab root) |

@@ -2694,9 +2694,12 @@ export function toggleNote(m: ModuleRow, enable: boolean): string {
   return "";
 }
 
-// (card t_210a0d19: the settings MODULES group is gone and the
-// extensions tab lists every row with no search - the module row
-// narrowing helper left with its only consumer.)
+// (card t_210a0d19: the settings MODULES group is gone and the module
+// surface lists every row with no search - the module row narrowing
+// helper left with its only consumer. Card t_81d0901b returns that
+// surface to the settings pane as its MODULES section, still with no
+// search of its own: the pane's filter bar covers knobs, not module
+// rows, and a second filter is not a thing this shell carries.)
 
 // --- themes: color mode + theme, two knobs behind the picker split ---
 

@@ -27,11 +27,11 @@ const read = (...p: string[]) => readFileSync(join(root, ...p), "utf8");
 const PILL = ["webui", "app", "components", "ui", "TogglePill.vue"] as const;
 
 // every host that renders the shared pill (the four toggle surfaces:
-// skills/tools/agents via RegistryList, modules via ExtensionsTab,
-// crons, mcp servers)
+// skills/tools/agents via RegistryList, modules via the settings MODULES
+// section (card t_81d0901b: the ExtensionsTab is gone), crons, mcp servers)
 const HOSTS: { name: string; path: readonly string[]; apply: string }[] = [
   { name: "RegistryList", path: ["webui", "app", "components", "RegistryList.vue"], apply: 'emit("toggle"' },
-  { name: "ExtensionsTab", path: ["webui", "app", "components", "shell", "ExtensionsTab.vue"], apply: "toggleModule(" },
+  { name: "ModulesSection", path: ["webui", "app", "components", "settings", "ModulesSection.vue"], apply: "toggleModule(" },
   { name: "CronJobs", path: ["harness", "cron", "ui", "CronJobs.vue"], apply: "apply(j" },
   { name: "McpServers", path: ["harness", "mcp", "ui", "McpServers.vue"], apply: "apply(s" },
 ];
@@ -161,7 +161,7 @@ test("the consequence text is still reachable: the two informed hosts pass it as
   assert.match(registry, /:hint="toggleHint\(r\)"/, "registry rows hint the exclusion consequence");
   assert.match(registry, /registryNote\(props\.kind/, "the hint is the pinned registryNote text");
   assert.ok(!registry.includes("^disable .*?"), "no call site strips a confirm prefix any more");
-  const extensions = read(...["webui", "app", "components", "shell", "ExtensionsTab.vue"]);
+  const extensions = read(...["webui", "app", "components", "settings", "ModulesSection.vue"]);
   assert.match(extensions, /:hint="rowHint\(row\)"/, "module rows hint the dependents law");
   assert.match(extensions, /toggleNote\(asModuleRow\(row\)/, "the hint is the pinned toggleNote text");
   assert.ok(!extensions.includes("^disable .*?"), "no call site strips a confirm prefix any more");
