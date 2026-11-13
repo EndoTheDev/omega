@@ -54,7 +54,7 @@
             :aria-selected="i === node.active"
             :aria-label="iconTabs ? tabTitle(t) : undefined"
             :title="tabTitle(t)"
-            draggable="true"
+            :draggable="draggableTab(t)"
             @click="api.focus(node.id, i)"
             @dragstart="onTabDragStart($event, i)"
             @dragover="onTabbarDragOver"
@@ -97,8 +97,9 @@
                left edge (absolute pseudo-element, no reflow) -->
           <!-- Endo amendment (2026-10-26): the '+' BODY MINTS a new normal
                session directly - no dropdown, no chevron, no inventory menu
-               (Endo owns the menu's return later; the empty-pane watermark
-               below keeps the full inventory). -->
+               (Endo owns the menu's return later; card t_d04a1c80 deleted
+               the empty-pane component menu that used to carry the full
+               inventory, so nothing in this pane offers one). -->
           <button
             v-if="!pinned"
             class="dock-tab-new"
@@ -175,31 +176,18 @@
         :tab="node.tabs[node.active]" />
     </div>
 
-    <!-- empty pane: the '+' component menu IS the pane's content (VS Code
-         empty editor-group watermark); the bar above carries the remove
-         X (hidden when the remove would be refused - edge shells). The
-         MENU inventory (t_d6b657a7) is the refill source for ANY pane,
-         pinned or main: the empty shell renders this same '+' panel. -->
+    <!-- card t_d04a1c80 (DOCK-EMPTY-ACTIONS removal): the 15-button
+         component menu that used to be the empty pane's whole content is
+         DELETED - with it the icons-bleeding-at-the-sidebar-bottom bug
+         (the overflow came from the element, not from a fix). Empty PANES
+         are dead by construction now (NEVER-ZERO-TABS: every pane carries
+         a tab, and closing the last one seats the new-tab placeholder), so
+         this body only ever renders for that placeholder: a blank surface.
+         Do NOT build a replacement menu here - the 0.17.3 canvas class-law
+         + menu work is the future home for adding views. -->
     <div
       v-else
-      class="dock-empty">
-      <div
-        class="dock-empty-actions"
-        role="menu"
-        aria-label="pane components">
-        <button
-          v-for="d in menuDockables"
-          :key="d.id"
-          class="dock-menu-btn"
-          role="menuitem"
-          @click="openDockable(d)">
-          <Icon
-            :name="d.icon"
-            class="dock-item-icon" />
-          {{ menuLabel(d) }}
-        </button>
-      </div>
-    </div>
+      class="dock-empty" />
 
     <!-- corner affordance: split / remove (never on a pinned pane) -->
     <div
@@ -264,11 +252,10 @@
   } from "../composables/dock";
   import {
     COMPONENT_TITLES,
-    MENU_DOCKABLES,
     dockableIcon,
     dockableOf,
     isClosableTab,
-    type DockableComponent,
+    isPlaceholderTab,
     type DockComponentName,
   } from "../composables/dockables";
   import { endGesture, onGestureEnd, tabDrag, zoneForPoint, zoneRectFractions, type DragZone, type ZoneRect } from "../composables/dockdnd";
@@ -289,11 +276,10 @@
   // the re-export path keeps one import surface for dock consumers;
   // dockables.ts is the registry's true source (card t_30ee04fb)
 
-  // MENU_DOCKABLES is the refill inventory (card t_d6b657a7): any pane,
-  // edge shell or main, is refilled from it - sessions is excluded (the
-  // loader owns it) and settings has no menu entry by ruling. The menus
-  // need the full registry entries (title/icon/policy).
-  const menuDockables = MENU_DOCKABLES.map(dockableOf);
+  // MENU_DOCKABLES left this pane with the empty-pane component menu
+  // (card t_d04a1c80): the inventory stays in the registry for the 0.17.3
+  // canvas menus, but NOTHING renders it here - the empty pane is dead by
+  // construction (NEVER-ZERO-TABS seats the new-tab placeholder instead).
 
   const props = defineProps<{
     node: DockPaneNode;
@@ -323,39 +309,36 @@
   function tabClosable(t: DockTab): boolean {
     // Endo ruling 2026-10-25, corrected t_b620f99d: the last-main-pane
     // law protects the PANE, not the tabs - every tab's X renders
-    // whatever the census says. Closing the LAST tab empties the pane
-    // into its launcher state (the pane never leaves the tree).
+    // whatever the census says. card t_d04a1c80 (NEVER-ZERO-TABS):
+    // closing the LAST tab now seats the new-tab placeholder in the same
+    // swap (closeTab), so the pane never dips to zero tabs. The
+    // placeholder itself is unclosable - "if the last tab IS a new tab,
+    // keep it" - so it renders no X.
     return isClosableTab(t.component);
   }
 
   const outletName = computed(() => {
     const c = props.node.tabs[props.node.active]?.component;
-    return c ? ("pane-" + c as `pane-${DockComponentName}`) : null;
+    // card t_d04a1c80: the new-tab placeholder has no outlet - its body is
+    // the blank `.dock-empty` surface (the pane never renders zero tabs,
+    // the placeholder IS the tab)
+    if (!c || isPlaceholderTab(c)) return null;
+    return "pane-" + c as `pane-${DockComponentName}`;
   });
+
+  // card t_d04a1c80: every tab chip drags EXCEPT the new-tab placeholder -
+  // a seat is not content (moveTab refuses it too, for a stale payload).
+  function draggableTab(t: DockTab): boolean {
+    return !isPlaceholderTab(t.component);
+  }
 
   const kindClass = computed(
     () => "kind-" + (props.node.tabs[props.node.active]?.component ?? "empty"),
   );
 
-  // menu labels: the registry's voice; chat's multi policy reads as a verb
-  function menuLabel(d: DockableComponent): string {
-    return d.policy === "multi" ? "new " + d.title : d.title;
-  }
-  // THE open path (card 4): the singleton policy decides - at most one
-  // instance, so opening while it lives FOCUSES it wherever it sits; chat
-  // (multi) always mints a fresh tab through the app's opener. The
-  // empty-pane watermark routes through here.
-  function openDockable(d: DockableComponent) {
-    if (d.policy === "multi") {
-      if (openChat) openChat(props.node.id, null);
-      else api.setComponent(props.node.id, d.id); // unreachable: app always provides the opener
-      return;
-    }
-    api.openSingleton(props.node.id, d.id);
-  }
   // Endo amendment (2026-10-26): the '+' button's BODY mints a new normal
-  // session directly - the inventory dropdown is gone from it (no
-  // chevron, no menu; Endo owns its return later).
+  // session directly - no dropdown, no chevron, no inventory menu (Endo
+  // owns the menu's return later).
   function newSession() {
     if (openChat) openChat(props.node.id, null);
     else api.setComponent(props.node.id, "chat"); // unreachable: app always provides the opener

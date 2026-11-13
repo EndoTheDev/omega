@@ -655,17 +655,15 @@ body {
   border-radius: 999px;
   padding: 2px 8px;
 }
-/* empty pane: the '+' component menu (VS Code empty editor-group style) */
+/* the new-tab body (card t_d04a1c80): NEVER-ZERO-TABS means this surface
+   only ever renders for the new-tab placeholder - a BLANK body. The
+   empty-pane component menu (and its .dock-empty-actions wrapper, and the
+   dashed launcher frame) is deleted: the dashed box WAS the empty-pane
+   watermark the ruling kills. Do not add a replacement menu here. */
 .dock-empty {
   flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--stroke);
-  border-radius: var(--r-pane);
-  min-height: 64px;
+  min-height: 0;
 }
-.dock-empty-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 
 .dock-menu {
   position: absolute;

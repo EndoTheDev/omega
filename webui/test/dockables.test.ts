@@ -162,6 +162,8 @@ describe("the dockable registry", () => {
           // card t_e703180e: the observability tab's label
           // card t_01c53e78: renamed to "Logs" - the one logs surface
           d.title === "Logs" && d.id === "observability" ||
+          // card t_d04a1c80: the new-tab placeholder's own label
+          d.title === "New Tab" && d.id === "newtab" ||
           d.title === d.id,
         `${d.id}: unexpected label "${d.title}"`,
       );
@@ -202,9 +204,11 @@ describe("the dockable registry", () => {
     }
   });
 
-  it("policy split: chat + viewer multi (t_36ceb99b: the viewer mints per opened content); the closable class adds browser + settings singletons (t_95c91f9c, t_00e4a784)", () => {
+  it("policy split: chat + viewer + the new-tab seat are multi (t_36ceb99b, t_d04a1c80); the closable class adds browser + settings singletons (t_95c91f9c, t_00e4a784)", () => {
     const multi = DOCKABLES.filter((d) => d.policy === "multi").map((d) => d.id);
-    assert.deepEqual(multi, ["chat", "viewer"]);
+    // card t_d04a1c80: the new-tab placeholder is multi - every pane mints
+    // its own seat, and the singleton focus rule would teleport a close
+    assert.deepEqual(multi, ["chat", "viewer", "newtab"]);
     const closable = DOCKABLES.filter((d) => isClosableTab(d.id)).map((d) => d.id);
     assert.deepEqual([...closable].sort(), ["browser", "chat", "settings", "viewer"]);
   });
@@ -373,10 +377,12 @@ describe("openSingleton", () => {
     await withScratchSingleton(async (scratch) => {
       const tree = chatOnlyTree();
       const base = splitPane(tree, panes(tree)[0]!.id, "row", "after");
-      const empty = panes(base).find((p) => p.tabs.length === 0)!;
-      const res = openSingleton(base, empty.id, scratch);
+      // card t_d04a1c80: the split seats the new-tab placeholder - the
+      // open replaces the seat wholesale
+      const seat = panes(base).find((p) => p.tabs[0]?.component === "newtab")!;
+      const res = openSingleton(base, seat.id, scratch);
       assert.equal(res.action, "created");
-      const pane = paneById(res.tree, empty.id);
+      const pane = paneById(res.tree, seat.id);
       assert.deepEqual(pane.tabs.map((x) => x.component), [scratch]);
       assert.equal(pane.active, 0);
       assert.equal(instanceCount(res.tree, scratch), 1);
@@ -399,15 +405,16 @@ describe("openSingleton", () => {
     await withScratchSingleton(async (scratch) => {
       const t = defaultTree();
       const base = splitPane(t, panes(t)[1]!.id, "row", "after");
-      const empty = panes(base).find((p) => p.tabs.length === 0)!;
-      const withTab = openSingleton(base, empty.id, scratch);
+      // card t_d04a1c80: the split's fresh pane hosts the new-tab seat
+      const seat = panes(base).find((p) => p.tabs[0]?.component === "newtab")!;
+      const withTab = openSingleton(base, seat.id, scratch);
       assert.equal(withTab.action, "created");
-      const other = panes(withTab.tree).find((p) => p.id !== empty.id)!;
+      const other = panes(withTab.tree).find((p) => p.id !== seat.id)!;
       const res = openSingleton(withTab.tree, other.id, scratch);
       assert.equal(res.action, "focused");
       assert.equal(instanceCount(res.tree, scratch), 1, "never a second singleton");
       assert.equal(
-        paneById(res.tree, empty.id).tabs.length,
+        paneById(res.tree, seat.id).tabs.length,
         1,
         "no structural change - only focus moved",
       );
@@ -695,7 +702,9 @@ describe("dock store: the pane-model reset", () => {
     const id = dock.ensureMainPane();
     const tree = dock.tree.value;
     const pane = paneById(tree, id);
-    assert.equal(pane.tabs.length, 0, "a fresh flexible pane");
+    // card t_d04a1c80: the recovered pane seats the new-tab placeholder -
+    // a fresh main pane never renders zero tabs
+    assert.deepEqual(pane.tabs.map((x) => x.component), ["newtab"], "a fresh seated pane");
     assert.equal(panes(tree).length, 4, "the dock has a main pane again");
     // the new pane lands inside the MAIN ROW, at its after-edge (never
     // beside the column's bottom child)
@@ -734,7 +743,10 @@ describe("dock store: the pane-model reset", () => {
     assert.equal(dock.isLastMainPane(chatPane.id), true, "the census read agrees");
     // a second main pane flips the read: the X comes back on EACH of them
     dock.split(chatPane.id, "row", "after");
-    const fresh = panes(dock.tree.value).find((p) => p.edge === undefined && p.tabs.length === 0)!;
+    // card t_d04a1c80: the split's fresh pane hosts the new-tab seat
+    const fresh = panes(dock.tree.value).find(
+      (p) => p.edge === undefined && p.tabs[0]?.component === "newtab",
+    )!;
     assert.ok(fresh, "the split minted a second main pane");
     assert.equal(dock.canRemovePane(chatPane.id), true, "a main pane may go once another lives");
     assert.equal(dock.canRemovePane(fresh.id), true, "the fresh pane may go too");
@@ -780,7 +792,11 @@ describe("dock store: the pane-model reset", () => {
     dock.split(chatPane.id, "row", "after");
     dock.closeTab(chatPane.id, 0);
     await flush();
-    assert.equal(paneById(dock.tree.value, chatPane.id).tabs.length, 0);
+    // card t_d04a1c80: the last tab closes into the new-tab seat
+    assert.deepEqual(
+      paneById(dock.tree.value, chatPane.id).tabs.map((x) => x.component),
+      ["newtab"],
+    );
   });
 
   it("a settings tab closes through the store like chat (t_00e4a784)", async () => {
@@ -869,9 +885,17 @@ describe("the main-pane '+' mints a session, no menu", () => {
     );
   });
 
-  it("the empty-pane watermark KEEPS the full inventory menu", () => {
-    assert.match(pane, /dock-empty[\s\S]*?role="menu"/);
-    assert.match(pane, /v-for="d in menuDockables"/);
-    assert.match(pane, /function openDockable\(/);
+  it("the empty-pane component menu is GONE (card t_d04a1c80)", () => {
+    // DOCK-EMPTY-ACTIONS removal: the 15-button inventory the empty pane
+    // rendered is deleted - no menu markup, no menu state, no open path
+    // left in the pane. The placeholders are pinned as ABSENCES so a
+    // reintroduced menu reds here (the 0.17.3 canvas menus are the
+    // future home for adding views; a replacement built now is out of
+    // scope by ruling).
+    assert.doesNotMatch(pane, /dock-empty-actions/, "the menu wrapper is gone");
+    assert.doesNotMatch(pane, /v-for="d in menuDockables"/);
+    assert.doesNotMatch(pane, /function openDockable\(/);
+    // the blank new-tab body is the only thing the else-branch renders
+    assert.match(pane, /<div\s+v-else\s+class="dock-empty"\s*\/>/);
   });
 });
