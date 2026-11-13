@@ -15,9 +15,12 @@
        cannot come back through the shared component: one activation
        emits exactly one intent and the host applies it. The consequence
        text that used to gate the second click now rides the pill's
-       title (`hint`) - readable on hover, never a gate. A native
-       <button> keeps keyboard parity: Enter and Space fire the same
-       single click, so there is no keydown path to double-fire. No
+       title (`hint`) - readable on hover, never a gate - and it is
+       folded into the accessible name (card t_d92a1f74): a screen reader
+       never sees a title tooltip, so `:aria-label="label"` alone left
+       the consequence (module dependents, registry exclusions) unheard.
+       A native <button> keeps keyboard parity: Enter and Space fire the
+       same single click, so there is no keydown path to double-fire. No
        :checked prop exists for Vue's prop diff to skip, so the
        t_87303e8f stale-arm trap stays structurally dead. -->
   <button
@@ -25,31 +28,44 @@
     class="toggle-pill"
     :class="{ on: state }"
     :disabled="disabled"
-    :aria-label="label"
-    :title="hint ? `${label} - ${hint}` : label"
+    :aria-label="accessibleName"
+    :title="accessibleName"
     @click="emit('click')">
     <span class="toggle-pill-thumb"></span>
   </button>
 </template>
 
 <script setup lang="ts">
+  import { computed } from "vue";
+
   // state (not modelValue: a switch, not a select - the click emits the
   // INTENT and the host owns the truth, re-rendering the row from the
   // server's answer; the pill carries no persistent state of its own).
-  withDefaults(
+  const props = withDefaults(
     defineProps<{
       /** the row's current state, rendered as the dot + border truth */
       state: boolean;
       /** the accessible name: "enable x" / "disable x" (the next move) */
       label: string;
       /** the consequence hint (what an exclusion means, a module's
-          dependents). Tooltip only - card t_5051d523 killed the arm
-          step that used to render this text as a gate. */
+          dependents). The accessible name AND the hover tooltip - card
+          t_d92a1f74 folded it into the name, because a title is read by
+          no screen reader. Card t_5051d523 killed the arm step that
+          used to render this text as a gate. */
       hint?: string;
       /** the host's busy lock: one write at a time */
       disabled?: boolean;
     }>(),
     { hint: "", disabled: false },
+  );
+
+  // accessibleName (card t_d92a1f74): the next move plus its consequence,
+  // composed ONCE and bound to both attributes so the tooltip and the
+  // accessible name can never drift. A bare `:aria-label="label"` won the
+  // name and dropped the hint into `title` only - hover-only, invisible
+  // to assistive tech (0.17.1 release gate, finding A2).
+  const accessibleName = computed(() =>
+    props.hint ? `${props.label} - ${props.hint}` : props.label,
   );
 
   const emit = defineEmits<{
