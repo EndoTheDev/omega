@@ -9,12 +9,15 @@
        (no free-text search in v1 - ruling 4, and no OTel anything -
        ruling 5).
        The read-only face: nothing here writes - the ring and the log are
-       the process's own record (see the capsule's routes.go). -->
+       the process's own record (see the capsule's routes.go).
+       card t_01c53e78 (Endo ruling 2026-11-13): the TAB IS NAMED "Logs" -
+       the old raw-tail http_channel pane carried that name and retired,
+       so the band title and the dock registry title agree on one word. -->
   <section
     ref="rootEl"
     class="obs-pane"
     :class="{ narrow }">
-    <TabBand title="Observability">
+    <TabBand title="Logs">
       <!-- the SESSION scope (ruling 2): the open session by default; the
            chip flips the whole ring into view. A shell with no focused
            session can only read every session - the chip says so and

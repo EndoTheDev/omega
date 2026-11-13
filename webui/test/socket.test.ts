@@ -14,8 +14,6 @@ import { fileURLToPath } from "node:url";
 
 import {
   DEFAULT_SOCKET_TOPICS,
-  LOG_STREAM_EVENT,
-  LOG_SUBSCRIBE_EVENT,
   SOCKET_BACKOFF_BASE_MS,
   SOCKET_BACKOFF_MAX_MS,
   SOCKET_TOPICS,
@@ -514,15 +512,4 @@ test("a logs frame hands the pane only the appended lines, verbatim", () => {
   dispatchFrame({ topic: "logs" }, handlers);
   assert.deepEqual(got.at(-1), ["kept"]);
   assert.equal(got.length, 2);
-});
-
-test("the pane's window seam literals match the shell's", () => {
-  // module UI cannot import shell code, so the two constants are
-  // duplicated on purpose - this pins them to the same strings
-  const pane = readFileSync(
-    resolve(root, "..", "..", "api", "http_channel", "ui", "logstream.ts"),
-    "utf8",
-  );
-  assert.match(pane, new RegExp(`LOG_SUBSCRIBE_EVENT = "${LOG_SUBSCRIBE_EVENT}"`));
-  assert.match(pane, new RegExp(`LOG_STREAM_EVENT = "${LOG_STREAM_EVENT}"`));
 });

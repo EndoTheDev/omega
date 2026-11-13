@@ -571,7 +571,10 @@ future concern, deliberately out of v1).
   404 when there is no log file (logging disabled, or a logger without
   a readable path). This is the secondary view: the disk side of the
   picture, and the only history across restarts. The shell's
-  `GET /logs` remains the Logs tab's own door to the same file.
+  `GET /logs` (plus the subscription-gated `logs` socket topic that
+  feeds it deltas) stays the raw-tail wire; since card t_01c53e78
+  retired the raw-tail pane, no shipped UI consumes that wire - the
+  Logs tab reads the capsule's own route above.
 
 The ring is fed from the run event spine through the session-attributed
 observer (`core.SessionEventObserver`): the spine's events carry no

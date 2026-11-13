@@ -592,40 +592,6 @@ export function rehomeInsightsTab(tree: DockNode): DockNode {
   });
 }
 
-/** Endo's comment (2026-10-26): logs is bottom-hosted only - the
-    secondary-sidebar copy duplicated the bottom pane. Trees persisted
-    while logs was dual-host (card t_67fc1905) still seat an
-    http_channel tab in the right shell; this lift removes it. The
-    bottom shell keeps logs on its own: a bottom pane's tabs are
-    unclosable (logs never leaves a live shell), a tree predating the
-    shell gets a fresh seeded one from ensureBottomPanel, and
-    restoreInspectorSet can never re-seat it right (the registry's
-    right set no longer names logs). A lifted copy with no bottom
-    pane (closed shell) drops - the reopen grafts a fresh seeded
-    shell, logs returns with it. Free-content copies a user dragged
-    into non-right panes stay (t_d6b657a7). Pure; no-op returns the
-    SAME tree. */
-export function rehomeLogsTab(tree: DockNode): DockNode {
-  let seated = false;
-  for (const n of allNodes(tree)) {
-    if (
-      isPane(n) &&
-      n.edge === "right" &&
-      n.tabs.some((t) => t.component === "http_channel")
-    ) {
-      seated = true;
-      break;
-    }
-  }
-  if (!seated) return tree;
-  return cloneTreeWith(tree, (n) => {
-    if (!isPane(n) || n.edge !== "right") return;
-    if (!n.tabs.some((t) => t.component === "http_channel")) return;
-    n.tabs = n.tabs.filter((t) => t.component !== "http_channel");
-    n.active = clamp(n.active, 0, Math.max(0, n.tabs.length - 1));
-  });
-}
-
 /** the pinned shells are fixed chrome: a loaded tree that somehow lost one
     of the two (a pre-marker tree) gets it re-inserted at its edge, and the
     loader's rulings are re-asserted: sessions ALWAYS sits in the left
@@ -1402,9 +1368,9 @@ export function ensureBottomPanel(
     active index is preserved verbatim (nothing is removed); an empty
     strip focuses 0 (nothing was visible before). Persisted trees heal on
     the next load; a fully-seated shell returns the SAME tree (idempotent).
-    Runs AFTER rehomeLogsTab in the boot chain: a pre-shape tree whose only
-    logs copy sat in the right shell reads as gone there, so the sync
-    re-seats the bottom home instead of trusting the lifted ghost. */
+    Runs after the sidebars repair: a tree persisted before a bottom-home
+    registration reads that home as absent from the whole tree, so the
+    sync seats it instead of trusting a stale strip. */
 export function syncBottomHostTabs(tree: DockNode): DockNode {
   const shell = findEdgePane(tree, "bottom");
   if (!shell) return tree; // closed/absent: the graft owns re-seeding
@@ -3129,15 +3095,11 @@ export function createDock(store: Storage): DockApi {
   // sidebars repair and BEFORE chat keys - the panel hosts no chat tabs,
   // and its id must seed above the loaded tree's max (syncIdSeed ran once)
   initial = ensureBottomPanel(initial, closedEdges);
-  // Endo's comment (2026-10-26): logs is bottom-hosted only - run AFTER
-  // ensureBottomPanel so a lifted right-shell copy never needs to graft
-  // a shell itself (a present one already seats logs; a closed one drops
-  // the copy and reseeds on reopen)
-  initial = rehomeLogsTab(initial);
   // card t_841df625: the bottom shell's strip re-syncs against the
-  // registry's bottom home AFTER the lifts - a tree persisted before a
-  // bottom-home registration (c080511's terminal) heals on this load,
-  // and the repair counts (ruling 6: the raw record backs up first)
+  // registry's bottom home after the sidebars repair - a tree persisted
+  // before a bottom-home registration (c080511's terminal, and card
+  // t_01c53e78's dropped raw-tail pane) heals on this load, and the
+  // repair counts (ruling 6: the raw record backs up first)
   const syncedBottom = syncBottomHostTabs(initial);
   if (syncedBottom !== initial) {
     loaded.repairs.push(
