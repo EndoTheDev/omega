@@ -238,17 +238,35 @@ Everything else animates through `transition`, not keyframes.
   `app/composables/module-panels.generated.ts` is generated at build
   time and there is NO runtime registry. `harness/tools/ui/ToolsList.vue`
   is the canary.
-- **Mobile drawers resolve views, not panels** (t_e703180e, t_07ad4fda):
-  below the 768px breakpoint every edge shell becomes an overlay drawer,
-  and each drawer's tab chain ends in the generic `InspectorPanel`
-  catch-all - which reads the PANEL manifest. A TAB capsule (terminal,
-  notifications, observability, browser) and a shell-owned view (files,
-  settings, extensions, insights, agents) therefore each need their own
-  branch AHEAD of that catch-all, or a loaded tab renders "module not
-  loaded". The bug is a width breakpoint, not a device: a desktop window
-  resized under 768px shows it. `webui/test/drawerresolves.test.ts`
-  derives every drawer-reachable id and fails the next one that forgets;
-  only a real panel module may fall through to the catch-all.
+- **Mobile drawers resolve views, not panels** (t_e703180e, t_07ad4fda,
+  t_572015db): below the 768px breakpoint every edge shell becomes an
+  overlay drawer, and each drawer's tab chain ends in the generic
+  `InspectorPanel` catch-all - which reads the PANEL manifest. A TAB
+  capsule (terminal, notifications, observability) and a shell-owned view
+  (files, settings, extensions, insights, agents) therefore each need
+  their own branch AHEAD of that catch-all, or a loaded tab renders
+  "module not loaded". The bug is a width breakpoint, not a device: a
+  desktop window resized under 768px shows it.
+- **The drawer CLAMPS its tab set** (t_572015db): a tab is free content in
+  the dock, so any unlocked tab can be dragged into any pane - which put a
+  tab the drawer had no branch for into the live edge pane (agents in the
+  bottom pane, terminal in the right one) and rendered "module not loaded"
+  through the catch-all. Branching every permutation is not available
+  (chat and the viewer render from the tab payload a drawer chain does not
+  carry), so the derivation keeps only the ids the drawer actually
+  resolves: `DRAWER_RENDERABLE` in `composables/mobileDrawer.ts`, plus the
+  module panels the catch-all honestly resolves. A tab dragged into a
+  non-default host therefore stops at the drawer; the tab stays reachable
+  because each drawer's list is the live pane UNION its registry floor
+  (the home strip), clamped the same way - so a drifted or emptied pane
+  never strands a home tab on mobile. `DRAWER_UNBRANCHED` names the ids no
+  drawer seats (chat, viewer, browser). The desktop tree is untouched:
+  above the breakpoint the `#pane-<id>` outlets render any tab in any pane.
+  `webui/test/drawerresolves.test.ts` derives the drawer-reachable ids from
+  the registry (`hostsOf` / `defaultHome` / `defaultHostTabs`), pins each
+  drawer's branches against `DRAWER_RENDERABLE` in both directions, and
+  fails the next dockable that is neither drawer-rendered, panel-resolved
+  nor declared unbranched.
 
 ## Streaming + rendering rules
 
