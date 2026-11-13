@@ -47,6 +47,17 @@
          live query force-opens every parent that carries a hit, so hits
          stay reachable.
 
+         card t_cd9952a3 (Endo, 2026-11-12) - THE SECTION FILTER - narrows
+         the document to the SELECTED section: a real nav selection renders
+         that category and its subsections and nothing else (the VS Code
+         read), and a deselect - or Commonly Used, the curated all-view -
+         gives the whole document back. It is a VIEW filter: no knob moves,
+         no config is written. Search outranks it (one global filter across
+         every section), and the in-app URL carries the selection
+         (`?settings=provider` in the address bar) so a deep link lands
+         pre-filtered. The jump, the clamp and the spy are unchanged - only
+         the document they measure is shorter.
+
          Narrow panes are the SAME document with the nav as a drawer that
          jumps and closes - there is nothing to drill into, so the two-screen
          state is gone. -->
@@ -196,8 +207,9 @@
         saved through PUT /settings (diff-only).
       The document IS the content view (settingsNav.documentFor): EVERY
       category in nav order, each a headed section carrying its children
-      as headed blocks. The selection never filters it; a live query and
-      the modified-only switch filter it in place.
+      as headed blocks. A live query and the modified-only switch filter it
+      in place, and card t_cd9952a3's SECTION FILTER narrows it to the
+      selected category (search outranks the selection).
     -->
     <!-- card t_81d0901b: the MODULES section. Module toggles are
          CONFIGURATION, not content - the secondary-pane cockpit tab that
@@ -209,7 +221,10 @@
          exactly like a knob section (it carries .settings-category +
          data-section). The knob filters never apply here: a module row is
          not a knob, so a live query or "modified only" hides the section
-         rather than pretending a module could be a search hit. -->
+         rather than pretending a module could be a search hit. card
+         t_cd9952a3's SECTION FILTER treats it like any other category: it
+         is shown when nothing is filtered or when IT is the filtered
+         section, and hidden while another section owns the pane. -->
     <section
       v-if="modulesShown"
       class="settings-category settings-modules-category"
@@ -471,11 +486,15 @@
     paneScrollSettle,
     paneScrollSettled,
     parseSelection,
+    parseSettingsSection,
     resolveSelection,
+    sectionFilter,
+    selectionId,
     spyAnchorMayWrite,
     spyTargetIds,
     buildSpyTargets,
     targetSection,
+    withSettingsSection,
     withSubgroups,
     type DocSection,
     type NavCategory,
@@ -1330,7 +1349,7 @@
     }
   }
 
-  /** first click: select + expand + scroll. A second click on the SAME
+  /** first click: select + expand + jump. A second click on the SAME
       entry - or on the CATEGORY that currently HOLDS the scroll - deselects:
       one action in both directions. The second half matters for the clamp
       (card t_a6b794b5): the spy moves the highlight onto a block while the
@@ -1349,12 +1368,16 @@
     }
     selection.value = id;
     // a REAL selection clamps the pane to its category (card t_a6b794b5);
-    // the spy's highlight never does
+    // the spy's highlight never does.
     clampId.value = picked.category;
     persistAnchor(id);
     // the observer must not fight the smooth scroll it just started
     lockSpy(650);
-    scrollToAnchor(id);
+    // card t_cd9952a3: the same id narrows the document to this category,
+    // so the jump is measured AFTER that render - measuring first would
+    // scroll to an offset in the all-view document that the filter is
+    // about to delete (a subsection would land past the new end).
+    void nextTick(() => scrollToAnchor(id));
     if (narrow.value) closeDrawer();
   }
 
@@ -1385,6 +1408,19 @@
   function applyJump(): boolean {
     const id = pendingJump.value;
     if (!id) return false;
+    // card t_cd9952a3: a SECTION FILTER from an earlier click can be hiding
+    // the palette's target. The command's request wins, so the filter is
+    // released first and the jump re-lands against the all-view document.
+    const blocking = filterSection.value;
+    if (blocking !== null && blocking !== id) {
+      selection.value = null;
+      clampId.value = null; // the URL drops its section with it
+      lockSpy();
+      void nextTick(() => {
+        applyJump();
+      });
+      return false;
+    }
     if (!modulesShown.value) return false;
     const root = bodyEl.value;
     if (!root || !root.querySelector(`.settings-category[data-section="${id}"]`)) {
@@ -1448,15 +1484,22 @@
   //
   // Endo, 2026-11-11: "when i select a category i should not be able to
   // scroll further than inside the category. until i deselected again and
-  // nothing is selected." Option A: every section stays in the document
-  // (selection never filters it); the clamp only bounds WHERE it may rest.
+  // nothing is selected." The clamp bounds WHERE the pane may rest inside
+  // its selected section. card t_cd9952a3 later shrank the document to that
+  // section (the SECTION FILTER) - the clamp is kept verbatim, and under a
+  // filtered document its `max` is the section's own bottom, which is all
+  // but the document's limit (the scrollport's few px of padding are all
+  // that is left below it: measured 763 against 767 in journey 113).
   //
-  // Only a REAL user selection writes `clampId`. The spy writes `selection`
-  // while the user scrolls - clamping on that would seize free scroll the
-  // moment the user scrolled at all (the trap the card names). A RESTORED
-  // anchor does not clamp either: the remembered id is written by the spy
-  // too, so reopening the pane must never trap a scroll in a section the
-  // user merely scrolled past.
+  // Only a REAL user selection writes `clampId` (and, since t_cd9952a3,
+  // only `clampId` filters and only `clampId` reaches the URL). The spy
+  // writes `selection` while the user scrolls - filtering or clamping on
+  // that would collapse the document and seize free scroll the moment the
+  // user scrolled at all (the trap the card names). A RESTORED anchor does
+  // not clamp either: the remembered id is written by the spy too, so
+  // reopening the pane must never trap a scroll in a section the user
+  // merely scrolled past; a URL section is the one restore that DOES clamp,
+  // because the user named it.
   const clampId = ref<string | null>(null);
   let clampObserver: ResizeObserver | null = null;
   let clampFrame = 0;
@@ -1807,12 +1850,29 @@
   });
   const searching = computed(() => searchHits.value !== null);
 
+  // The SECTION FILTER (card t_cd9952a3): the category the document is
+  // narrowed to. It reads the REAL selection (clampId, the pane's own
+  // record of a user click) and never the spy's highlight - a scroll must
+  // not collapse the document under the hand that is scrolling it. A live
+  // query stands it down and Commonly Used is the all-view; the rule
+  // itself is the pure sectionFilter.
+  const filterSection = computed<string | null>(() =>
+    sectionFilter(clampId.value, searching.value),
+  );
+
   // card t_81d0901b: the MODULES section is CONFIGURATION over persisted
   // module state, not a knob - the live query and the modified-only switch
   // narrow the KNOB document, so the module section steps aside rather than
   // pretending a module row could be a search hit or a modified setting.
+  //
+  // card t_cd9952a3: and the SECTION FILTER treats it like any category -
+  // shown in the all-view, shown when modules IS the filtered section,
+  // hidden while another section owns the pane.
   const modulesShown = computed(
-    () => !searching.value && !modifiedOnly.value,
+    () =>
+      !searching.value &&
+      !modifiedOnly.value &&
+      (filterSection.value === null || filterSection.value === MODULES_CATEGORY),
   );
 
   // Ruling 8's predicate: the SAME modified test the rows carry, asked
@@ -1821,14 +1881,15 @@
   const knobModified = (knob: SettingKnob): boolean =>
     isModified(owner(knob), knob);
 
-  // The document: EVERY category, in nav order, filtered IN PLACE by the
-  // live query and the modified-only switch. This is the whole content
-  // pane now - there is no per-selection view to swap in (card t_8b464090).
+  // The document: every category in nav order in the all-view, the
+  // selected one under the section filter, and either way filtered IN
+  // PLACE by the live query and the modified-only switch.
   const docSections = computed<DocSection[]>(() =>
     documentFor(nav.value, {
       hits: searchHits.value,
       modifiedOnly: modifiedOnly.value,
       isModified: knobModified,
+      only: filterSection.value,
     }),
   );
   const matchIds = computed<ReadonlySet<string>>(() =>
@@ -2009,6 +2070,20 @@
   function restoreAnchor() {
     if (restored || typeof window === "undefined") return;
     restored = true;
+    // card t_cd9952a3 part 3: an in-app deep link (`?settings=<section>`)
+    // is the EXPLICIT door and outranks the remembered anchor - it lands
+    // pre-FILTERED, which is the whole point of carrying the section in the
+    // URL. Unlike the anchor (a spy highlight, never clamped), a URL
+    // section IS a selection, so it clamps too.
+    const fromUrl = urlSectionSelection();
+    if (fromUrl) {
+      selection.value = fromUrl;
+      clampId.value = parseSelection(fromUrl).category;
+      persistAnchor(fromUrl);
+      lockSpy(); // a restore is not a scroll: hold it until real input
+      void nextTick(() => scrollToAnchor(fromUrl));
+      return;
+    }
     let stored: string | null = null;
     try {
       stored = localStorage.getItem(NAV_STORAGE_KEY);
@@ -2021,6 +2096,43 @@
     lockSpy(); // a restore is not a scroll: hold it until real input
     void nextTick(() => scrollToAnchor(id));
   }
+
+  // --- the URL carries the section (card t_cd9952a3 part 3) ---------------
+  //
+  // The pane keeps ONE thing in the URL: the section it is filtered to, on
+  // the QUERY axis (`?settings=<section>`), because the PATH already owns
+  // the focused chat session (card t_06c01beb) and a settings path is the
+  // settings-path card's lane (t_6d6a6dc4) - one scheme, two axes,
+  // replaceState only (the app never grows the history stack).
+  //
+  // The write follows `clampId` - a REAL selection - and never the spy's
+  // highlight: a scroll must not rewrite the URL that a reload then lands
+  // on. The read happens once, on open (restoreAnchor above).
+
+  /** urlSectionSelection resolves the section a deep link names against the
+      LIVE nav. A stale id is not an error - it opens the all-view. */
+  function urlSectionSelection(): string | null {
+    const id = parseSettingsSection(window.location.href);
+    if (!id) return null;
+    const resolved = resolveSelection(nav.value, id);
+    if (!resolved) return null;
+    return selectionId(resolved.category.id, resolved.subgroup?.id ?? null);
+  }
+
+  function writeUrlSection(section: string | null) {
+    try {
+      history.replaceState(
+        {},
+        "",
+        withSettingsSection(window.location.href, section),
+      );
+    } catch {
+      // a sandboxed host can refuse replaceState: the pane still filters,
+      // only the URL's memory of the section is lost
+    }
+  }
+
+  watch(clampId, (section) => writeUrlSection(section));
 
   // a scope that cannot show the selection (an agent tab carries no
   // Commonly Used) clears the HIGHLIGHT only - the stored anchor stays
@@ -2053,8 +2165,13 @@
     void nextTick(() => {
       const node = bodyEl.value;
       if (node) {
-        notePaneScroll(node, lastDocScrollTop);
-        node.scrollTop = lastDocScrollTop;
+        // card t_cd9952a3: when the query clears back into a SECTION FILTER
+        // the returning document is that one section, so the saved all-view
+        // offset points past its end - the give-back is the section's top
+        // instead (the pane stays where the filter says it is).
+        const top = filterSection.value === null ? lastDocScrollTop : 0;
+        notePaneScroll(node, top);
+        node.scrollTop = top;
       }
       syncSpy();
     });
