@@ -548,6 +548,7 @@
     markSessionRead,
     parseSessionPath,
     sessionPath,
+    isSettingsPath,
     pinSession,
     parseAppearance,
     renameSession,
@@ -1249,6 +1250,28 @@
   );
   const boardHostPane = ref<string>("");
 
+  // --- the settings landing route (card t_6d6a6dc4) -----------------------
+  // Settings is a CLOSABLE main tab (t_00e4a784), so the path cannot own a
+  // pinned view; it only adds reload persistence: a boot or a popstate on
+  // /settings/view re-opens the tab through the gear's own opener. Like
+  // /board, nothing WRITES the path on open/close - the settled URL ruling
+  // keeps the pathname the focused chat session's (or the overlay's, while
+  // one is up), and the landing only marks the route as up so the chat
+  // derivation below pauses and does not immediately reclaim it. Any chat
+  // focus (refocusFrom / a popstate into a chat entry) clears the mark.
+  const settingsRoute = ref(false);
+
+  /** landSettingsRoute: the settings path is up - open (or focus) the
+      settings tab and hold the chat URL derivation until chat reclaims.
+      mainView returns to chat for the same reason the board route sets it:
+      the panes must render (a /board overlay left up by an earlier landing
+      would shadow the settings tab the path just opened). */
+  function landSettingsRoute() {
+    settingsRoute.value = true;
+    mainView.value = "chat";
+    openSettingsTab();
+  }
+
   // a board card's transcript chip lands the user in that conversation
   function openBoardSession(id: string) {
     mainView.value = "chat";
@@ -1492,6 +1515,9 @@
       if (tab?.component === "chat" && tab.key) {
         activeChatPaneId.value = paneId;
         focusedKey.value = tab.key;
+        // a chat tab in focus is chat's claim on the URL again (the
+        // settings landing lets go of the pathname here, t_6d6a6dc4)
+        settingsRoute.value = false;
         return;
       }
     }
@@ -1617,6 +1643,12 @@
   // focused (and read), otherwise a new chat tab opens in the active
   // pane - the same flow a reload of /chat/<id> takes
   async function onPop() {
+    // /settings/view lands the settings tab (card t_6d6a6dc4): the same
+    // landing a reload of that path takes; chat focus is untouched
+    if (isSettingsPath(window.location.pathname)) {
+      landSettingsRoute();
+      return;
+    }
     // /board re-enters the kanban view without touching chat focus;
     // enterBoardRoute (t_96844dcb) reclaims the host pane's foreground
     if (/^\/board\/?$/.test(window.location.pathname)) {
@@ -1624,6 +1656,7 @@
       return;
     }
     mainView.value = "chat";
+    settingsRoute.value = false;
     const id = parseSessionPath(window.location.pathname);
     if (id) {
       const found = dock.firstChatTab(id);
@@ -1661,8 +1694,11 @@
   });
   watch(urlPath, (p) => {
     // /board is an overlay the URL owns while it is up - the focused
-    // chat's path reclaims the URL on the way back to chat
+    // chat's path reclaims the URL on the way back to chat. The settings
+    // landing owns the path the same way (card t_6d6a6dc4): a reload of
+    // /settings/view must not turn into /chat/<id> a tick later.
     if (mainView.value === "board") return;
+    if (settingsRoute.value) return;
     history.replaceState({}, "", p);
   });
   // structural changes never steal focus, but a gone focus re-resolves
@@ -1678,7 +1714,10 @@
   // request (openChatTab sets focusedKey synchronously) - its mount
   // re-checks the pending signal and delivers there.
   watch(focusedKey, (key) => {
-    if (key && mainView.value === "chat") composerFocus.request(key);
+    // the settings landing keeps the boot chat focus out of the way: the
+    // path names settings, so the chat pane must not grab the caret
+    // (card t_6d6a6dc4)
+    if (key && mainView.value === "chat" && !settingsRoute.value) composerFocus.request(key);
   });
 
   // type-to-capture: with the omega window focused, the first printable
@@ -2500,7 +2539,11 @@
     // /board boots into the kanban view through the same door as the
     // popstate route (t_96844dcb: the foreground reclaims to chat - a
     // persisted browser pane must not shadow the board on a fresh boot).
-    if (/^\/board\/?$/.test(window.location.pathname)) {
+    // /settings/view boots the settings tab open the same way (card
+    // t_6d6a6dc4): one landing path, one door - the gear's opener.
+    if (isSettingsPath(window.location.pathname)) {
+      landSettingsRoute();
+    } else if (/^\/board\/?$/.test(window.location.pathname)) {
       resolveBoardRoute();
     }
     const initial = parseSessionPath(window.location.pathname);

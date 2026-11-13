@@ -1,11 +1,18 @@
-// omega webui: unit tests for the URL<->session route helpers in
-// composables/omega.ts (parseSessionPath / sessionPath, pure functions).
+// omega webui: unit tests for the URL<->view route helpers in
+// composables/omega.ts (parseSessionPath / sessionPath / isSettingsPath,
+// pure functions) plus the /settings landing's wiring in app.vue (card
+// t_6d6a6dc4: a reload of /settings keeps the settings tab mounted).
 // Run: node --test "test/*.test.ts" (node >= 23 runs TS natively)
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
+  isSettingsPath,
   parseSessionPath,
   sessionPath,
+  SETTINGS_PATH,
 } from "../app/composables/omega.ts";
 
 describe("parseSessionPath", () => {
@@ -25,6 +32,11 @@ describe("parseSessionPath", () => {
     assert.equal(parseSessionPath("/chat/"), null);
     assert.equal(parseSessionPath("/chat/a/b"), null);
   });
+
+  it("never claims the settings path as a session", () => {
+    assert.equal(parseSessionPath(SETTINGS_PATH), null);
+    assert.equal(parseSessionPath(`${SETTINGS_PATH}/`), null);
+  });
 });
 
 describe("sessionPath", () => {
@@ -34,5 +46,81 @@ describe("sessionPath", () => {
 
   it("round-trips with parseSessionPath", () => {
     assert.equal(parseSessionPath(sessionPath("abc-123")), "abc-123");
+  });
+});
+
+describe("isSettingsPath", () => {
+  it("claims the settings view path and its trailing-slash twin", () => {
+    assert.equal(isSettingsPath("/settings/view"), true);
+    assert.equal(isSettingsPath("/settings/view/"), true);
+    assert.equal(SETTINGS_PATH, "/settings/view");
+  });
+
+  it("never claims the settings API's own path", () => {
+    // /settings is the HTTP API (agent/api/server.go registers it exactly);
+    // the SPA only gets the catch-all, so the view path sits one segment
+    // deeper
+    assert.equal(isSettingsPath("/settings"), false);
+    assert.equal(isSettingsPath("/settings/"), false);
+  });
+
+  it("claims nothing else - the path carries the VIEW, no id part", () => {
+    assert.equal(isSettingsPath("/settings/view/general"), false);
+    assert.equal(isSettingsPath("/settings/views"), false);
+    assert.equal(isSettingsPath("/chat/settings"), false);
+    assert.equal(isSettingsPath("/board"), false);
+    assert.equal(isSettingsPath("/"), false);
+    assert.equal(isSettingsPath(""), false);
+  });
+
+  it("carries no query axis (the section rides ?settings=<id>)", () => {
+    // callers hand this helper a PATHNAME only; a pathname string carrying
+    // a query is not the route
+    assert.equal(isSettingsPath("/settings/view?settings=general"), false);
+  });
+});
+
+// --- the landing's wiring (source pin) --------------------------------------
+// The helpers above cannot prove the app CALLS them, and the node suite has
+// no DOM. The landing has exactly two doors (boot, popstate) and one guard
+// (the chat URL derivation pauses while the path is up) - pin that shape so
+// a rewrite cannot silently drop the route while the helper tests stay green.
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const appSrc = readFileSync(join(root, "webui", "app", "app.vue"), "utf8");
+
+describe("/settings landing wiring (app.vue)", () => {
+  it("imports the path helper from the one route module", () => {
+    assert.match(appSrc, /\n\s*isSettingsPath,\n/);
+  });
+
+  it("lands the route at both doors: boot and popstate", () => {
+    const landings = appSrc.match(/isSettingsPath\(window\.location\.pathname\)/g) ?? [];
+    assert.equal(landings.length, 2, "one landing per door (boot + popstate)");
+  });
+
+  it("opens the tab through the gear's opener, never a second opener", () => {
+    const land = appSrc.match(/function landSettingsRoute\(\)[\s\S]*?\n  \}/)?.[0] ?? "";
+    assert.match(land, /settingsRoute\.value = true/);
+    assert.match(land, /openSettingsTab\(\)/);
+    // a stale /board overlay must not shadow the tab the path just opened
+    assert.match(land, /mainView\.value = "chat"/);
+  });
+
+  it("the chat URL derivation pauses while the landing owns the path", () => {
+    const watcher = appSrc.match(/watch\(urlPath, \(p\) => \{[\s\S]*?\n  \}\);/)?.[0] ?? "";
+    assert.match(watcher, /if \(settingsRoute\.value\) return;/);
+  });
+
+  it("a chat tab in focus hands the URL back to chat", () => {
+    const refocus = appSrc.match(/function refocusFrom\([\s\S]*?\n  \}\n/)?.[0] ?? "";
+    assert.match(refocus, /settingsRoute\.value = false/);
+  });
+
+  it("nothing WRITES the settings path (a landing route, like /board)", () => {
+    // the path is entered by the address bar, a bookmark or a link - never
+    // minted by the app on open/close
+    assert.doesNotMatch(appSrc, /(?:replaceState|pushState)\([^)]*SETTINGS_PATH/);
+    assert.doesNotMatch(appSrc, /(?:replaceState|pushState)\([^)]*"\/settings\/view"/);
   });
 });
