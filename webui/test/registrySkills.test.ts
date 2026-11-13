@@ -64,8 +64,8 @@ test("skill rows merge the fold: disabled states land, inputs untouched", () => 
 // --- registryNote: the skills consequence names the prompt build ---
 
 test("arming a skill disable names the prompt-build consequence; enable is silent", () => {
-  assert.equal(registryNote("skills", "dj-music", false), "disable dj-music? excluded from the session prompt build");
-  assert.equal(registryNote("skills", "dj-music", true), "");
+  assert.equal(registryNote("skills", false), "excluded from the session prompt build");
+  assert.equal(registryNote("skills", true), "");
 });
 
 // --- the tab renders the shared pattern and writes the shared wire ---

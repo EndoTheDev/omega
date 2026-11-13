@@ -2681,16 +2681,17 @@ export async function toggleModule(name: string, enabled: boolean): Promise<Modu
   return normalizeModulesPayload(await r.json());
 }
 
-// toggleNote builds the confirm line for a toggle: not-toggleable
-// modules state their always-on law, dependents name what goes down
-// with the module (the Q3 semantics surfaced), everything else just
-// asks. Empty string = apply without a confirm.
+// toggleNote builds the consequence half of a toggle hint: not-toggleable
+// modules state their always-on law, dependents name what goes down with
+// the module (the Q3 semantics surfaced). The "disable x?" question is the
+// pill's own label, so it is not repeated here; the empty string means
+// there is no consequence to state.
 export function toggleNote(m: ModuleRow, enable: boolean): string {
   if (!m.toggleable) return `${m.name} is machine-critical or shell - always on`;
   if (enable) return "";
   if (m.dependents && m.dependents.length > 0)
-    return `disable ${m.name}? this also disables: ${m.dependents.join(", ")}`;
-  return `disable ${m.name}?`;
+    return `this also disables: ${m.dependents.join(", ")}`;
+  return "";
 }
 
 // (card t_210a0d19: the settings MODULES group is gone and the
@@ -3730,20 +3731,21 @@ export async function toggleRegistryEntry(
 
 // registryNote builds the consequence a disabled-direction toggle shows:
 // each namespace names what its exclusion means (the same voice as
-// toggleNote for modules). Enable needs no note. Card t_5051d523: the
-// text rides the shared pill's title (a hover hint) - it used to be the
-// arm gate that ate the first click, and it no longer gates anything.
-// Insights (v0.14.3's read-only stat consumer) has no exclusion
-// surface - the note is the empty string, and the toggleable seam never
-// reaches it.
-export function registryNote(kind: RegistryKind, name: string, enable: boolean): string {
+// toggleNote for modules). Enable needs no note, so the empty string is
+// the silent case. The "disable x?" request is the pill's label; the
+// helper speaks the consequence only. Card t_5051d523: the text rides the
+// shared pill's title (a hover hint) - it used to be the arm gate that ate
+// the first click, and it no longer gates anything. Insights (v0.14.3's
+// read-only stat consumer) has no exclusion surface - the note is the
+// empty string, and the toggleable seam never reaches it.
+export function registryNote(kind: RegistryKind, enable: boolean): string {
   if (enable || kind === "insights") return "";
   const consequence: Record<Exclude<RegistryKind, "insights">, string> = {
     skills: "excluded from the session prompt build",
     tools: "absent from the agent tool list",
     agents: "roster row and wake triggers off; home untouched",
   };
-  return `disable ${name}? ${consequence[kind]}`;
+  return consequence[kind];
 }
 
 // filterRegistryRows narrows the list live: name or description
