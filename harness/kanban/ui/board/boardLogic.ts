@@ -122,6 +122,12 @@ export function isNarrowWidth(px: number): boolean {
 }
 
 // One task row, exactly what GET /tasks returns.
+
+// last_heartbeat_at rides only when the store stamps it (the Hermes
+// board does; omega's own store has no heartbeat column yet, so its
+// rows end at started_at). Optional on purpose: the card's chip reads
+// the field when the wire grows it, and no view has to know which
+// store answered.
 export interface BoardTask {
   id: string;
   title: string;
@@ -134,6 +140,7 @@ export interface BoardTask {
   created_at: string;
   started_at: string;
   completed_at: string;
+  last_heartbeat_at?: string;
 }
 
 // --- priority (the round t_f81e845e): an integer urgency tiebreak in
@@ -172,6 +179,81 @@ export function bodyPreview(body: string): string {
     .find((s) => s !== "");
   if (line === undefined) return "";
   return line.length > 80 ? line.slice(0, 79) + "…" : line;
+}
+
+// --- card polish (card t_65ea61a1): the card is a reading surface, not
+// a wall of text. The Hermes grammar is a 2-line title, a clamped body
+// teaser, the assignee as a chip and ONE meta row. The clamp is one
+// number fed to CSS as a custom property (the same shape as the lane
+// ease): the constant drives the rendered line count instead of
+// agreeing with it by luck.
+
+/** the card text clamp: two lines, title and teaser alike. */
+export const CARD_CLAMP_LINES = 2;
+
+// --- the running heartbeat chip (card t_65ea61a1, Endo ruling
+// 2026-11-12: "the running card dont have a heartbeat"). The store kept
+// the data the eye never showed: a running card knows when it started,
+// and a beating worker knows when it last spoke. The chip says both.
+//
+// Two clocks, deliberately different:
+//   - the WORKING duration only ever grows (from started_at);
+//   - STALENESS only comes back when a beat lands (from
+//     last_heartbeat_at) - a card cannot heal itself by waiting.
+//
+// HEARTBEAT_STALE_MS is the eye's threshold, not the dispatcher's: a
+// reclaim waits an hour, and an hour of a card claiming to work while
+// nothing beats is exactly the lie this chip exists to kill. Two
+// minutes is a couple of missed beats of a worker that should tick
+// every few seconds, and short enough to see across the board.
+export const HEARTBEAT_STALE_MS = 120000;
+
+/** the chip's clock cadence: the label reads whole minutes, so a 5s
+ * tick advances it on the minute without turning the board into a
+ * polling surface (this timer never fetches). */
+export const HEARTBEAT_TICK_MS = 5000;
+
+// One running chip's rendered state.
+export interface HeartbeatChip {
+  /** the face: "working - 3m" | "working" | "stale - 4m quiet" */
+  label: string;
+  /** true once the heartbeat has aged past HEARTBEAT_STALE_MS */
+  stale: boolean;
+  /** whole ms the card has been running (0 when the row carries no start) */
+  runningMs: number;
+}
+
+/** whole minutes, floored and never negative - the chip's own unit. */
+export function minuteLabel(ms: number): string {
+  return `${Math.max(0, Math.floor(ms / 60000))}m`;
+}
+
+/**
+ * heartbeatChip is the chip for one card, or null when there is nothing
+ * to say: only a RUNNING card beats. A start it cannot parse is not a
+ * duration to invent, so that card wears the bare "working" face.
+ *
+ * Staleness needs an AGED stamp. A row with no last_heartbeat_at is not
+ * stale - silence is not evidence, and no wire field at all is not the
+ * same claim as a field that stopped moving.
+ */
+export function heartbeatChip(
+  task: BoardTask,
+  now: Date = new Date(),
+): HeartbeatChip | null {
+  if (task.status !== "running") return null;
+  const startMs = Date.parse(task.started_at ?? "");
+  const hasStart = !Number.isNaN(startMs);
+  const runningMs = hasStart ? Math.max(0, now.getTime() - startMs) : 0;
+  const beatMs = Date.parse(task.last_heartbeat_at ?? "");
+  const hasBeat = !Number.isNaN(beatMs);
+  const quietMs = hasBeat ? Math.max(0, now.getTime() - beatMs) : 0;
+  const stale = hasBeat && quietMs > HEARTBEAT_STALE_MS;
+  let label: string;
+  if (stale) label = `stale - ${minuteLabel(quietMs)} quiet`;
+  else if (!hasStart) label = "working";
+  else label = `working - ${minuteLabel(runningMs)}`;
+  return { label, stale, runningMs };
 }
 
 // --- board switcher (card t_d7a7beaa): named boards + a current-board

@@ -513,6 +513,28 @@ one horizontal scroll strip, 236px columns.
 - **The narrow stack has no rails** (Endo ruling: "not in mobile
   view"). Below `NARROW_MAX_PX` the lanes stack full width and every
   lane renders expanded - the fold is a horizontal-scroll affordance.
+- **The card grammar** (card t_65ea61a1). A card is a reading surface:
+  the title and the body teaser clamp at `CARD_CLAMP_LINES` (2) lines
+  (`-webkit-line-clamp`, fed to CSS as `--card-clamp` from the
+  constant), the assignee is a bordered chip, and ONE meta row carries
+  the assignee, the running heartbeat, the created-age and the move
+  controls. The row never spills: `.card-meta` clips and the heartbeat
+  chip is the row's shrinker (before that, a wide row gave the whole
+  lane a horizontal scrollbar).
+- **The running heartbeat chip.** A card in `running` wears a live
+  `working - Xm` chip computed from `started_at` (`heartbeatChip` in
+  boardLogic); the board re-dates ONE `now` on a `HEARTBEAT_TICK_MS`
+  (5s) setTimeout chain - a clock, never a fetch (the dead poll stays
+  dead, pinned by the no-setInterval test). A running card's created-age
+  stands down in the chip's favour: one time telling per card. When the
+  row carries `last_heartbeat_at` and it has aged past
+  `HEARTBEAT_STALE_MS` (120s) the chip flips to `stale - Xm quiet` in
+  the blocked-lane red with a flat dot. Staleness needs an AGED stamp:
+  a row with no heartbeat field never reads stale. The Hermes board
+  stamps that field; omega's own kanban store does not yet (its rows end
+  at `started_at`), so the stale face stays dark on an omega store until
+  the wire grows the field - heartbeat emission is a separate card, the
+  eye is wired for it now.
 
 ## The Settings pane
 

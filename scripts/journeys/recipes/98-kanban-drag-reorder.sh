@@ -11,6 +11,14 @@
 #      PATCH - the card lands exactly at the slot the live view showed;
 #   c. revert when released off the board - no PATCH, the server order
 #      unchanged, the optimistic move snapped back.
+#   d. the push shape: an API edit/create reaches the idle board with no
+#      reload and no poll (the canvas-delta refetch).
+#   e. lane rails: any lane folds to a 36px rail, the rail is a drop
+#      target and the unfold control, an empty lane folds itself.
+#   f. card polish + the running heartbeat chip (card t_65ea61a1): a long
+#      title clamps at two lines without spilling its lane, the assignee
+#      is a chip, a running card wears "working - Xm", and an AGED
+#      last_heartbeat_at flips that chip to its stale face.
 #
 # The board is PINNED (j98-drag, reused across runs like recipe 78's
 # j78-a); this run's cards carry the run tag in the title and arch out
@@ -71,6 +79,16 @@ card_id() {
   curl -s -X POST "${JOURNEY_BASE_URL}/tasks?board=${BOARD}" \
     -H 'Content-Type: application/json' \
     -d "{\"title\": \"${BTAG}-drag ${TAG} $2\", \"status\": \"$1\"}" \
+    | grep -oE 't_[0-9a-f]+' | head -1
+}
+
+# card_full <status> <title> <assignee> <body>: seed one task carrying
+# the card-polish fields (card t_65ea61a1), print its id. The run tag
+# stays in the title (the board-switch wait keys on it).
+card_full() {
+  curl -s -X POST "${JOURNEY_BASE_URL}/tasks?board=${BOARD}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"title\": \"${BTAG}-drag ${TAG} $2\", \"assignee\": \"$3\", \"body\": \"$4\", \"status\": \"$1\"}" \
     | grep -oE 't_[0-9a-f]+' | head -1
 }
 
@@ -483,6 +501,85 @@ step "ok: the refilled lane came back expanded - no override outlived its empty 
 # above owns the others)
 archive_cards "$S"
 step "e: lane rails GREEN"
+
+# ---- f: card polish + the running heartbeat chip (card t_65ea61a1) ---------
+# The ruling: "the running card dont have a heartbeat". These are the EYE
+# probes - the wire already carries status + started_at (and carries
+# last_heartbeat_at when the store stamps it; omega's store does not yet,
+# so the stale case is driven here by wrapping the page's fetch and
+# letting the REAL canvas-delta refetch render it).
+#
+#   f1. a long title clamps at two lines and the meta row never spills
+#       (the clamp constant is 2; a card that overflowed its column
+#       grew a horizontal scrollbar before the layout fix);
+#   f2. the assignee renders as a chip;
+#   f3. a running card wears the "working - Xm" chip;
+#   f4. an AGED last_heartbeat_at flips that chip to the stale face.
+
+# card_state <id> -> "clamp|titleLines|clipped|assignee|heartbeat"
+card_state() {
+  jsq "(function(){var c=[...document.querySelectorAll('.card')].find(x=>x.dataset.id==='$1');if(!c) return 'missing';var t=c.querySelector('.card-title');var cs=t?getComputedStyle(t):null;var lh=cs?parseFloat(cs.lineHeight):0;var h=t?t.getBoundingClientRect().height:0;var a=c.querySelector('.card-assignee-chip');var hb=c.querySelector('.card-heartbeat');return (cs?cs.getPropertyValue('-webkit-line-clamp').trim():'-')+'|'+Math.round(h/lh)+'|'+(t&&t.scrollHeight>t.clientHeight+1?'clipped':'fits')+'|'+(a?'chip':'none')+'|'+(hb?hb.textContent.trim()+(hb.classList.contains('stale')?' STALE':''):'-')})()" 2>&1 | tail -1 | tr -d "\"'"
+}
+
+# col_hscroll <id>: 1 when the card's lane grew a horizontal scrollbar
+# (an over-wide meta row spills the card - the pre-fix bug)
+col_hscroll() {
+  jsq "(function(){var c=[...document.querySelectorAll('.card')].find(x=>x.dataset.id==='$1');if(!c) return -1;var b=c.closest('.col-body');return b&&b.scrollWidth>b.clientWidth+1?1:0})()" 2>&1 | tail -1 | tr -d "\"'"
+}
+
+step "f1: a long title clamps at two lines, the meta row stays inside the card"
+LONG="a card title long enough to run past two lines on a 218px card which is exactly the case the clamp exists for"
+L=$(card_full triage "$LONG" "j98cody" "first body line is the dimmed teaser")
+R=$(card_full todo "running card" "j98cody" "a worker is beating on this card")
+[ -n "$L" ] && [ -n "$R" ] || die "card-polish seeding failed"
+trap 'archive_cards "$A" "$B" "$C" "$D" "$E" "$S" "$L" "$R"' EXIT
+# the running lane's start stamp is the store's job: this transition sets it
+curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${R}?board=${BOARD}" \
+  -H 'Content-Type: application/json' -d '{"status":"running"}' | grep -q "\"id\":\"$R\"" ||
+  die "PATCH $R to running failed"
+
+poll_js "(function(){return [...document.querySelectorAll('.card')].some(c=>c.dataset.id==='$L')})()" 10 ||
+  die "the long-title card $L never rendered"
+poll_js "(function(){return [...document.querySelectorAll('.card')].some(c=>c.dataset.id==='$R')})()" 10 ||
+  die "the running card $R never rendered"
+
+st="$(card_state "$L")"
+[ "$st" = "2|2|clipped|chip|-" ] ||
+  die "the long title does not clamp at two lines (got [$st] want [2|2|clipped|chip|-])"
+[ "$(col_hscroll "$L")" = "0" ] ||
+  die "the clamped card spilled its lane into a horizontal scrollbar (card-polish layout bug)"
+step "ok: the long title clamps to 2 lines, no lane overflow"
+
+step "f2/f3: the assignee is a chip, the running card wears its working chip"
+case "$st" in *"|chip|-") ;; *) die "no assignee chip on the long-title card (got [$st])" ;; esac
+stR="$(card_state "$R")"
+case "$stR" in
+  2*"|chip|working - "[0-9]*m) ;;
+  *) die "the running card wears no working chip (got [$stR])" ;;
+esac
+step "ok: running card chip reads [$(echo "$stR" | awk -F'|' '{print $5}')]"
+
+step "f4: an aged heartbeat flips the chip to the stale face"
+# wrap the page's own fetch: every /tasks read stamps a running row with
+# an AGED last_heartbeat_at (5 min old). The board's next REAL refetch -
+# the canvas delta from a REST edit - renders it. The original is kept
+# so the recipe hands the page back unwrapped (a later recipe in the
+# same suite must not inherit the simulation).
+js '(function(){var of=window.fetch;window.__j98Of=of;window.fetch=function(u,o){return of(u,o).then(function(r){var url=typeof u==="string"?u:((u&&u.url)||"");if(url.indexOf("/tasks")<0)return r;return r.clone().json().then(function(j){if(!j||!j.tasks)return r;var now=Date.now();j.tasks.forEach(function(t){if(t.status==="running"){t.last_heartbeat_at=new Date(now-300000).toISOString();t.started_at=new Date(now-900000).toISOString();}});return new Response(JSON.stringify(j),{status:r.status,headers:{"Content-Type":"application/json"}});}).catch(function(){return r;});});};return 1})()' >/dev/null
+curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${R}?board=${BOARD}" \
+  -H 'Content-Type: application/json' -d "{\"title\": \"${BTAG}-drag ${TAG} running card stale-sim\"}" |
+  grep -q "\"id\":\"$R\"" || die "the stale-sim PATCH failed"
+poll_js "(function(){var c=[...document.querySelectorAll('.card')].find(x=>x.dataset.id==='$R');var hb=c&&c.querySelector('.card-heartbeat');return !!hb&&hb.classList.contains('stale')})()" 10 ||
+  die "an aged heartbeat did not flip the chip (state: $(card_state "$R"))"
+stR="$(card_state "$R")"
+case "$stR" in
+  *"|stale - "[0-9]*m" quiet STALE") ;;
+  *) die "the stale chip face is wrong (got [$stR])" ;;
+esac
+step "ok: the chip reads [$(echo "$stR" | awk -F'|' '{print $5}')] under an aged beat"
+# hand the page back: the simulation must not outlive this recipe
+js '(function(){if(window.__j98Of){window.fetch=window.__j98Of;delete window.__j98Of;}return 1})()' >/dev/null
+step "f: card polish + running heartbeat chip GREEN"
 
 assert_no_console_errors
 step "98-kanban-drag-reorder GREEN"

@@ -2,7 +2,8 @@
   <section
     ref="boardEl"
     class="board"
-    :class="{ narrow: narrow }">
+    :class="{ narrow: narrow }"
+    :style="{ '--card-clamp': `${CARD_CLAMP_LINES}` }">
     <!-- card t_308e6d9b: the UNIVERSAL band (the shared TabBand) - the
          board switcher + count + remove ride the band now (the law: the
          tab's actions live in the band, not floating over the body).
@@ -178,16 +179,34 @@
                   v-if="hasPriorityChip(t.priority)"
                   class="card-prio"
                   :class="`prio-${Math.min(t.priority, 3)}`">{{ priorityLabel(t.priority) }}</span>
-                <div class="card-title">{{ t.title }}</div>
+                <div class="card-title card-clamp">{{ t.title }}</div>
               </div>
               <div
                 v-if="bodyPreview(t.body)"
-                class="card-preview">{{ bodyPreview(t.body) }}</div>
+                class="card-preview card-clamp">{{ bodyPreview(t.body) }}</div>
+              <!-- the meta row (card t_65ea61a1): assignee as a chip, the
+                   running heartbeat, the age - the Hermes card grammar. -->
               <div class="card-meta">
                 <span
                   v-if="t.assignee"
-                  class="card-assignee">@{{ t.assignee }}</span>
-                <span class="card-age">{{ age(t.created_at) }}</span>
+                  class="card-assignee-chip"
+                  :title="`assignee: ${t.assignee}`">@{{ t.assignee }}</span>
+                <span
+                  v-if="heartbeats[t.id]"
+                  class="card-heartbeat"
+                  :class="{ stale: heartbeats[t.id].stale }"
+                  :title="heartbeats[t.id].stale
+                    ? 'this running card stopped beating - the worker may be gone'
+                    : 'the card is running and its worker is beating'">
+                  <span class="card-heartbeat-dot" />{{ heartbeats[t.id].label }}
+                </span>
+                <!-- one time telling per card: a running card's story is
+                     its heartbeat, so the created-age stands down there
+                     (both would compete for a 218px row and the chip
+                     would clip) -->
+                <span
+                  v-else
+                  class="card-age">{{ age(t.created_at) }}</span>
                 <span class="card-moves">
                   <button
                     v-if="step(BOARD_STATUSES[i], -1)"
@@ -242,7 +261,9 @@
   import DetailDrawer from "./board/DetailDrawer.vue";
   import {
     BOARD_STATUSES,
+    CARD_CLAMP_LINES,
     DEFAULT_BOARD_NAME,
+    HEARTBEAT_TICK_MS,
     LANE_EASE_MS,
     LANE_RAIL_PX,
     age,
@@ -252,6 +273,7 @@
     columns,
     fetchBoardsRetry,
     hasPriorityChip,
+    heartbeatChip,
     isNarrowWidth,
     laneFolded,
     laneTone,
@@ -268,6 +290,7 @@
     type BoardEvent,
     type BoardInfo,
     type BoardTask,
+    type HeartbeatChip,
     type LanePins,
   } from "./board/boardLogic";
 
@@ -515,6 +538,33 @@
   }
 
   const cols = computed(() => columns(tasks.value));
+
+  // --- the running heartbeat chip (card t_65ea61a1): the board already
+  // receives everything the chip needs (status, started_at, and
+  // last_heartbeat_at when the store stamps it - see boardLogic's
+  // BoardTask note), so this is a CLOCK, not a wire call. One tick moves
+  // the whole board's chips: the labels read whole minutes, so a 5s
+  // cadence advances them on the minute. The tick NEVER fetches - it
+  // only re-dates `now`, which the chip map derives from. (The pin that
+  // killed the old 5s fetch poll still holds: the only timer here is
+  // this self-chaining clock.)
+  const now = ref(new Date());
+  let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
+  function tickHeartbeat() {
+    now.value = new Date();
+    heartbeatTimer = setTimeout(tickHeartbeat, HEARTBEAT_TICK_MS);
+  }
+  // one pass per render, keyed by card id: the template reads the map
+  // instead of re-deriving a chip per element (and per re-render).
+  const heartbeats = computed(() => {
+    const at = now.value;
+    const out: Record<string, HeartbeatChip> = {};
+    for (const t of tasks.value) {
+      const chip = heartbeatChip(t, at);
+      if (chip) out[t.id] = chip;
+    }
+    return out;
+  });
 
   // --- narrow adaptation (card t_49d0b308): the inspector column is
   // ~300px (card ruling); the full-width column strip only works wide,
@@ -949,9 +999,17 @@
   onMounted(() => {
     fetchBoards().then(() => fetchBoard());
     window.addEventListener(CANVAS_DELTA_EVENT, onCanvasDelta);
+    // the heartbeat clock: a running card's "working - Xm" must advance
+    // without a fetch (the card body moved a minute older, nothing
+    // changed on the wire)
+    tickHeartbeat();
   });
   onUnmounted(() => {
     window.removeEventListener(CANVAS_DELTA_EVENT, onCanvasDelta);
+    if (heartbeatTimer !== undefined) {
+      clearTimeout(heartbeatTimer); // the clock must not tick into a dead component
+      heartbeatTimer = undefined;
+    }
     if (deltaTimer !== null) {
       clearTimeout(deltaTimer); // a queued read must not fire into a dead component
       deltaTimer = null;
@@ -1264,9 +1322,17 @@
     font-size: 11px;
     line-height: 1.3;
     opacity: 0.55;
-    max-height: 2.6em;
-    overflow: hidden;
     overflow-wrap: anywhere;
+  }
+  /* the card text clamp (card t_65ea61a1): two lines, fed by the
+     CARD_CLAMP_LINES constant. A long title no longer pushes the meta
+     row off the card - the full text lives in the drawer. */
+  .card-clamp {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--card-clamp, 2);
+    line-clamp: var(--card-clamp, 2);
+    overflow: hidden;
   }
   .card-title {
     font-size: 12px;
@@ -1279,10 +1345,71 @@
     gap: 8px;
     font-size: 10.5px;
     opacity: 0.65;
+    min-width: 0;
+    /* one row never spills the card: the chips shrink, the move
+       controls keep their place (card t_65ea61a1 - the heartbeat chip
+       pushed the row past the column and the LANE grew a scrollbar) */
+    overflow: hidden;
   }
   .card-age,
-  .card-assignee {
+  .card-moves {
     flex: none;
+  }
+  /* the assignee as a CHIP (card t_65ea61a1): a bordered token reads as
+     a person, not as stray "@name" text in the meta line */
+  .card-assignee-chip {
+    border: 1px solid color-mix(in srgb, currentcolor 22%, transparent);
+    border-radius: var(--r-chip);
+    padding: 0 5px;
+    line-height: 1.6;
+    min-width: 0;
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* the running heartbeat chip (card t_65ea61a1): a dot that breathes
+     while the worker beats, a flat red dot once it goes quiet. The tone
+     is the running lane's own green; stale is the blocked lane's red. */
+  .card-heartbeat {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    /* the chip is the row's shrinker: a long duration truncates before
+       anything is pushed off the card (card t_65ea61a1) */
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    color: color-mix(in srgb, #34d399 80%, currentcolor);
+    font-variant-numeric: tabular-nums;
+  }
+  .card-heartbeat-dot {
+    flex: none;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentcolor;
+    animation: card-beat 1.6s ease-in-out infinite;
+  }
+  .card-heartbeat.stale {
+    color: color-mix(in srgb, #f87171 85%, currentcolor);
+    font-weight: 600;
+  }
+  /* a dead beat does not pretend to pulse */
+  .card-heartbeat.stale .card-heartbeat-dot {
+    animation: none;
+    box-shadow: 0 0 0 1px color-mix(in srgb, currentcolor 35%, transparent);
+  }
+  @keyframes card-beat {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 1;
+    }
   }
   .card-moves {
     margin-left: auto;
