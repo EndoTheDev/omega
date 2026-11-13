@@ -51,136 +51,175 @@
         :key="BOARD_STATUSES[i]"
         class="board-col"
         :data-status="BOARD_STATUSES[i]"
-        :class="{
-          settled: isSettled(BOARD_STATUSES[i]),
-          folded: isSettled(BOARD_STATUSES[i]) && !expanded.has(BOARD_STATUSES[i]),
-        }">
-        <header
-          class="col-head"
-          @click="isSettled(BOARD_STATUSES[i]) && toggleFold(BOARD_STATUSES[i])">
-          <span class="col-name">{{ BOARD_STATUSES[i] }}</span>
-          <span class="col-count">{{ col.length }}</span>
-          <!-- round t_f81e845e: every column grows cards - the + opens
-               the full create form (title, body, assignee, priority);
-               the column the + sits in is the preset status -->
+        :data-count="col.length"
+        :class="{ folded: isLaneFolded(BOARD_STATUSES[i], col.length) }"
+        :style="{ '--lane-rail-width': `${LANE_RAIL_PX}px`, '--lane-ease': `${LANE_EASE_MS}ms` }">
+        <!-- card t_50a8c145: ANY lane folds to a rail. The rail is BOTH a
+             button (click unfolds) and a live drop target - the drag
+             machinery resolves .board-col, so dropping on a rail needs no
+             drop code of its own (the card lands at the top of the lane).
+             The dot row sits at the header row's height, so dots line up
+             across the board whether a lane is folded or not. The rail
+             carries the same + the header does: an empty lane is a rail
+             forever (its click cannot unfold it), so the create form is
+             the ONLY way to grow a lane from nothing. -->
+        <div
+          v-if="isLaneFolded(BOARD_STATUSES[i], col.length)"
+          class="lane-rail-wrap">
           <button
-            class="icon-btn col-create-btn"
+            class="lane-rail"
+            :aria-expanded="false"
+            :aria-label="`unfold ${BOARD_STATUSES[i]} lane`"
+            :title="col.length
+              ? `unfold ${BOARD_STATUSES[i]} lane`
+              : `${BOARD_STATUSES[i]} is empty - an empty lane folds itself`"
+            @click="toggleLane(BOARD_STATUSES[i], col.length)">
+            <span class="lane-dot-row">
+              <span
+                class="lane-dot"
+                :style="{ background: laneTone(BOARD_STATUSES[i]) }" />
+            </span>
+            <span class="lane-rail-name">{{ BOARD_STATUSES[i] }}</span>
+            <span
+              v-if="col.length"
+              class="lane-rail-count">{{ col.length }}</span>
+          </button>
+          <button
+            class="icon-btn col-create-btn rail-create-btn"
             :title="`new card in ${BOARD_STATUSES[i]}`"
             :aria-label="`new card in ${BOARD_STATUSES[i]}`"
             @click.stop="toggleCreate(BOARD_STATUSES[i])">
             +
           </button>
-          <button
-            v-if="isSettled(BOARD_STATUSES[i])"
-            class="icon-btn col-fold-btn"
-            :title="expanded.has(BOARD_STATUSES[i]) ? 'fold column' : 'unfold column'"
-            @click.stop="toggleFold(BOARD_STATUSES[i])">
-            {{ expanded.has(BOARD_STATUSES[i]) ? "▾" : "▸" }}
-          </button>
-        </header>
-
-        <!-- the full create form (round t_f81e845e): open under exactly
-             one column at a time -->
-        <form
-          v-if="createOpen === BOARD_STATUSES[i]"
-          class="col-create"
-          @submit.prevent="submitCreate"
-          @keydown.esc="closeCreate">
-          <input
-            v-model="createTitle"
-            class="col-create-title"
-            placeholder="title"
-            aria-label="new card title" />
-          <textarea
-            v-model="createBody"
-            class="col-create-body"
-            placeholder="body (optional)"
-            aria-label="new card body" />
-          <input
-            v-model="createAssignee"
-            class="col-create-assignee"
-            placeholder="assignee (optional)"
-            aria-label="new card assignee" />
-          <BandSelect
-            class="col-create-prio"
-            :model-value="createPriority"
-            :options="priorityOptions()"
-            label="priority (higher = more urgent)"
-            @update:model-value="createPriority = $event" />
-          <div class="col-create-actions">
-            <button
-              class="col-add-btn"
-              type="submit"
-              :disabled="!createTitle.trim()">add</button>
-            <button
-              class="col-create-cancel"
-              type="button"
-              @click="closeCreate">cancel</button>
-          </div>
-        </form>
-
-        <div
-          v-if="!isSettled(BOARD_STATUSES[i]) || expanded.has(BOARD_STATUSES[i])"
-          class="col-body">
-          <article
-            v-for="t in col"
-            :key="t.id"
-            class="card"
-            :data-id="t.id"
-            :class="{ dragging: isDragging(t.id) }"
-            @click="onCardClick(t)"
-            @pointerdown="onCardPointerDown($event, t)">
-            <div class="card-title-row">
-              <span
-                v-if="hasPriorityChip(t.priority)"
-                class="card-prio"
-                :class="`prio-${Math.min(t.priority, 3)}`">{{ priorityLabel(t.priority) }}</span>
-              <div class="card-title">{{ t.title }}</div>
-            </div>
-            <div
-              v-if="bodyPreview(t.body)"
-              class="card-preview">{{ bodyPreview(t.body) }}</div>
-            <div class="card-meta">
-              <span
-                v-if="t.assignee"
-                class="card-assignee">@{{ t.assignee }}</span>
-              <span class="card-age">{{ age(t.created_at) }}</span>
-              <span class="card-moves">
-                <button
-                  v-if="step(BOARD_STATUSES[i], -1)"
-                  class="icon-btn"
-                  :title="`move to ${step(BOARD_STATUSES[i], -1)}`"
-                  @click.stop="moveBoard(t, step(BOARD_STATUSES[i], -1) as string)">
-                  ◀
-                </button>
-                <button
-                  v-if="step(BOARD_STATUSES[i], +1)"
-                  class="icon-btn"
-                  :title="`move to ${step(BOARD_STATUSES[i], +1)}`"
-                  @click.stop="moveBoard(t, step(BOARD_STATUSES[i], +1) as string)">
-                  ▶
-                </button>
-                <button
-                  v-if="t.session_id"
-                  class="icon-btn card-link"
-                  title="open the linked conversation"
-                  @click.stop="$emit('open-session', t.session_id)">
-                  ↗
-                </button>
-              </span>
-            </div>
-          </article>
-          <p
-            v-if="col.length === 0"
-            class="col-empty">
-            empty
-          </p>
         </div>
-        <p
-          v-else
-          class="col-folded-note">
-          {{ col.length }} folded
-        </p>
+
+        <template v-else>
+          <header class="col-head">
+            <!-- every lane folds: the dot + name are the fold control. In
+                 the narrow stack there are no rails at all, so the control
+                 is honestly disabled there rather than a dead click. -->
+            <button
+              class="col-fold-btn"
+              :aria-expanded="true"
+              :disabled="narrow"
+              :title="narrow
+                ? 'lane folding is a horizontal-scroll view affordance'
+                : `fold ${BOARD_STATUSES[i]} lane`"
+              @click="toggleLane(BOARD_STATUSES[i], col.length)">
+              <span
+                class="lane-dot"
+                :style="{ background: laneTone(BOARD_STATUSES[i]) }" />
+              <span class="col-name">{{ BOARD_STATUSES[i] }}</span>
+            </button>
+            <span class="col-count">{{ col.length }}</span>
+            <!-- round t_f81e845e: every column grows cards - the + opens
+                 the full create form (title, body, assignee, priority);
+                 the column the + sits in is the preset status -->
+            <button
+              class="icon-btn col-create-btn"
+              :title="`new card in ${BOARD_STATUSES[i]}`"
+              :aria-label="`new card in ${BOARD_STATUSES[i]}`"
+              @click.stop="toggleCreate(BOARD_STATUSES[i])">
+              +
+            </button>
+          </header>
+
+          <!-- the full create form (round t_f81e845e): open under exactly
+               one column at a time -->
+          <form
+            v-if="createOpen === BOARD_STATUSES[i]"
+            class="col-create"
+            @submit.prevent="submitCreate"
+            @keydown.esc="closeCreate">
+            <input
+              v-model="createTitle"
+              class="col-create-title"
+              placeholder="title"
+              aria-label="new card title" />
+            <textarea
+              v-model="createBody"
+              class="col-create-body"
+              placeholder="body (optional)"
+              aria-label="new card body" />
+            <input
+              v-model="createAssignee"
+              class="col-create-assignee"
+              placeholder="assignee (optional)"
+              aria-label="new card assignee" />
+            <BandSelect
+              class="col-create-prio"
+              :model-value="createPriority"
+              :options="priorityOptions()"
+              label="priority (higher = more urgent)"
+              @update:model-value="createPriority = $event" />
+            <div class="col-create-actions">
+              <button
+                class="col-add-btn"
+                type="submit"
+                :disabled="!createTitle.trim()">add</button>
+              <button
+                class="col-create-cancel"
+                type="button"
+                @click="closeCreate">cancel</button>
+            </div>
+          </form>
+
+          <div class="col-body">
+            <article
+              v-for="t in col"
+              :key="t.id"
+              class="card"
+              :data-id="t.id"
+              :class="{ dragging: isDragging(t.id) }"
+              @click="onCardClick(t)"
+              @pointerdown="onCardPointerDown($event, t)">
+              <div class="card-title-row">
+                <span
+                  v-if="hasPriorityChip(t.priority)"
+                  class="card-prio"
+                  :class="`prio-${Math.min(t.priority, 3)}`">{{ priorityLabel(t.priority) }}</span>
+                <div class="card-title">{{ t.title }}</div>
+              </div>
+              <div
+                v-if="bodyPreview(t.body)"
+                class="card-preview">{{ bodyPreview(t.body) }}</div>
+              <div class="card-meta">
+                <span
+                  v-if="t.assignee"
+                  class="card-assignee">@{{ t.assignee }}</span>
+                <span class="card-age">{{ age(t.created_at) }}</span>
+                <span class="card-moves">
+                  <button
+                    v-if="step(BOARD_STATUSES[i], -1)"
+                    class="icon-btn"
+                    :title="`move to ${step(BOARD_STATUSES[i], -1)}`"
+                    @click.stop="moveBoard(t, step(BOARD_STATUSES[i], -1) as string)">
+                    ◀
+                  </button>
+                  <button
+                    v-if="step(BOARD_STATUSES[i], +1)"
+                    class="icon-btn"
+                    :title="`move to ${step(BOARD_STATUSES[i], +1)}`"
+                    @click.stop="moveBoard(t, step(BOARD_STATUSES[i], +1) as string)">
+                    ▶
+                  </button>
+                  <button
+                    v-if="t.session_id"
+                    class="icon-btn card-link"
+                    title="open the linked conversation"
+                    @click.stop="$emit('open-session', t.session_id)">
+                    ↗
+                  </button>
+                </span>
+              </div>
+            </article>
+            <p
+              v-if="col.length === 0"
+              class="col-empty">
+              empty
+            </p>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -199,11 +238,13 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onBeforeUnmount, onMounted, onUnmounted, reactive, ref } from "vue";
+  import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from "vue";
   import DetailDrawer from "./board/DetailDrawer.vue";
   import {
     BOARD_STATUSES,
     DEFAULT_BOARD_NAME,
+    LANE_EASE_MS,
+    LANE_RAIL_PX,
     age,
     boardDeletePath,
     bodyPreview,
@@ -212,18 +253,22 @@
     fetchBoardsRetry,
     hasPriorityChip,
     isNarrowWidth,
-    isSettled,
+    laneFolded,
+    laneTone,
     pickBootBoard,
     priorityLabel,
     priorityOptions,
+    reconcileLanePins,
     reorderAfter,
     step,
     taskDeletePath,
+    toggleLanePin,
     withBoard,
     type BoardComment,
     type BoardEvent,
     type BoardInfo,
     type BoardTask,
+    type LanePins,
   } from "./board/boardLogic";
 
   // The module-owned board view: 9 hermes columns in one horizontal
@@ -451,9 +496,9 @@
     if (drag.value && drag.value.moved) return; // a live drag owns the list
     const seq = ++fetchSeq;
     try {
-      // status=all: the board grid carries the archived column (folded
-      // settled column), so it can never default to the active-only
-      // view the list tool shows (t_02a8beea)
+      // status=all: the board grid carries the archived lane too (no
+      // status is filtered out of the grid), so it can never default to
+      // the active-only view the list tool shows (t_02a8beea)
       const res = await fetch(withBoard("/tasks?status=all", boardName.value));
       if (!res.ok) throw new Error(`GET /tasks: ${res.status}`);
       const body = await res.json();
@@ -502,6 +547,77 @@
     resizeObs?.disconnect();
     resizeObs = null;
   });
+
+  // --- lane rails (card t_50a8c145): any lane folds to a rail, and an
+  // EMPTY lane folds itself. The two halves of the law live in
+  // boardLogic (pure, unit-pinned): laneFolded decides the state for one
+  // lane (reality outranks the override - an empty lane is folded pinned
+  // open or not), reconcileLanePins drops an override the moment its
+  // lane drains so a refilled lane comes back expanded instead of
+  // remembering an override reality already overruled.
+  //
+  // Pins are component state, not persisted: the lane set is a view of
+  // the current board, and a pin that outlived its lane would be exactly
+  // the override-fighting-reality shape the law forbids.
+  const lanePins = ref<LanePins>({});
+  const laneCounts = computed(() => {
+    const counts: Record<string, number> = {};
+    cols.value.forEach((col, i) => {
+      counts[BOARD_STATUSES[i]] = col.length;
+    });
+    return counts;
+  });
+  watch(
+    laneCounts,
+    (counts) => {
+      lanePins.value = reconcileLanePins(counts, lanePins.value);
+    },
+    { immediate: true },
+  );
+
+  // A live drag FREEZES the lane fold state. The optimistic reorder seats
+  // the dragged card in the lane under the pointer, which drains its
+  // source lane and fills its target lane - and an empty lane folds while
+  // a filled one unfolds, so without the freeze every lane beside the
+  // moving card re-lays-out mid-gesture and the drop lands on whatever
+  // slid under the cursor (measured live: a release on the folded
+  // `blocked` rail at x=908 persisted into `ready`, 74px to its left).
+  // Snapshot when the gesture becomes a drag, release it on pointerup:
+  // rails stay rails under the cursor, and the lane the card LANDS in
+  // takes its new shape after the commit. Same law as the live-reorder
+  // feedback: the geometry a drag is aiming at never moves under it.
+  const frozenLanes = ref<Record<string, boolean> | null>(null);
+
+  function freezeLaneLayout() {
+    const frozen: Record<string, boolean> = {};
+    for (const status of BOARD_STATUSES) {
+      frozen[status] = laneFolded(
+        status,
+        laneCounts.value[status] ?? 0,
+        lanePins.value,
+      );
+    }
+    frozenLanes.value = frozen;
+  }
+
+  // rails are a horizontal-scroll affordance only (Endo ruling: "not in
+  // mobile view") - the narrow-stack mode renders every lane expanded.
+  // An open create form also holds the lane in its column shape: a rail
+  // cannot be unfolded (an empty lane is always folded), so the create
+  // form is the ONE way to grow a lane from nothing - it must be able to
+  // open, and it is an editor rather than a resting lane.
+  function isLaneFolded(status: string, count: number): boolean {
+    if (narrow.value) return false;
+    if (createOpen.value === status) return false;
+    const frozen = frozenLanes.value;
+    if (frozen !== null) return frozen[status] ?? false;
+    return laneFolded(status, count, lanePins.value);
+  }
+
+  function toggleLane(status: string, count: number) {
+    if (narrow.value) return;
+    lanePins.value = toggleLanePin(status, count, lanePins.value);
+  }
 
   // --- create form (round t_f81e845e): one column hosts it at a time,
   // the host column is the preset status. Fields: title (required),
@@ -648,13 +764,20 @@
       const d = drag.value;
       if (!d) return;
       if (!d.moved && Math.hypot(e.clientX - sx, e.clientY - sy) < DRAG_THRESHOLD_PX) return;
-      d.moved = true;
+      if (!d.moved) {
+        // the gesture is a drag now: pin every lane's shape before the
+        // optimistic reorder can move one (see freezeLaneLayout)
+        d.moved = true;
+        freezeLaneLayout();
+      }
       updateDropTarget(e.clientX, e.clientY);
     };
     const up = () => {
       endDragListeners();
       const d = drag.value;
       drag.value = null;
+      // the lanes may take their new shapes from here on - the drop is made
+      frozenLanes.value = null;
       if (d && d.moved) {
         suppressNextClick = true;
         void commitDrag(d);
@@ -823,14 +946,6 @@
     }
   }
 
-  // --- settled columns fold to their header; unfolding is a toggle
-  const expanded = reactive(new Set<string>());
-  function toggleFold(status: string) {
-    if (expanded.has(status)) expanded.delete(status);
-    else expanded.add(status);
-    // reactive(Set) delete/add both trigger - no reassignment needed
-  }
-
   onMounted(() => {
     fetchBoards().then(() => fetchBoard());
     window.addEventListener(CANVAS_DELTA_EVENT, onCanvasDelta);
@@ -915,27 +1030,105 @@
     border-radius: var(--r-pane);
     padding: 8px;
     gap: 8px;
+    /* the header row and the rail's dot row are the SAME height - that is
+       why dots line up across the board in either state (card t_50a8c145).
+       24px is the row the header already settles at (its + rides the
+       shell's 24px icon button); pinning it keeps a folded lane's dot on
+       the same line as an unfolded lane's. */
+    --lane-head-h: 24px;
+    /* the fold ease: ~180ms width, ruled (Hermes snaps; omega eases) */
+    transition:
+      flex-basis var(--lane-ease, 180ms) cubic-bezier(0.4, 0, 0.2, 1),
+      padding var(--lane-ease, 180ms) cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .board-col.settled {
+  /* a folded lane IS the rail: a thin vertical strip whose dot row sits at
+     the expanded lanes' header row height */
+  .board-col.folded {
+    flex: 0 0 var(--lane-rail-width, 36px);
+    padding: 8px 0;
+    align-items: center;
+    overflow: hidden;
+  }
+  .lane-rail-wrap {
+    flex: 1;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-height: 0;
+  }
+  .lane-rail {
+    flex: 1;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    border: none;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
+  }
+  .lane-rail:hover .lane-rail-name,
+  .lane-rail:hover .lane-rail-count {
+    opacity: 0.95;
+  }
+  .lane-dot-row {
+    flex: none;
+    height: var(--lane-head-h, 20px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .lane-dot {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    /* the tone rides an inline background from the registry (laneTone) */
+    box-shadow: 0 0 0 1px color-mix(in srgb, currentcolor 12%, transparent);
+  }
+  .lane-rail-name {
+    writing-mode: vertical-rl;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
     opacity: 0.65;
   }
-  .board-col.folded .col-count {
+  .lane-rail-count {
+    font-size: 10.5px;
     opacity: 0.5;
   }
   .col-head {
     display: flex;
     align-items: center;
     gap: 6px;
+    height: var(--lane-head-h, 24px);
     cursor: default;
   }
-  .settled .board-col:hover .col-fold-btn,
+  /* every lane folds: dot + name are the control (no settled-only branch).
+     The dot centers on the header ROW (not on the button box), which is
+     what puts it on the same line as a folded lane's dot row. */
   .col-fold-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     border: none;
     background: none;
     color: inherit;
     cursor: pointer;
-    font-size: 11px;
-    padding: 0 2px;
+    font: inherit;
+    padding: 0;
+  }
+  .col-fold-btn:hover .col-name {
+    opacity: 0.95;
+  }
+  .col-fold-btn:disabled {
+    cursor: default;
   }
   .col-name {
     font-size: 11px;
@@ -949,13 +1142,8 @@
     font-size: 11px;
     opacity: 0.5;
   }
-  .col-folded-note {
-    margin: 0;
-    font-size: 11px;
-    opacity: 0.4;
-  }
   .col-create-btn {
-    margin-left: auto;
+    margin-left: 2px;
   }
   .col-create {
     display: flex;

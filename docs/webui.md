@@ -436,6 +436,61 @@ resolution mirror the one command law every surface follows:
   session's chat, it never lists sessions (the per-agent session
   endpoints stay in the API, docs/api.md).
 
+## The kanban board (lane rails)
+
+The board is `harness/kanban/ui/Board.vue` over the pure lane logic in
+`harness/kanban/ui/board/boardLogic.ts` (pinned by
+`webui/test/kanban.test.ts`). Nine lanes in the Hermes status grammar,
+one horizontal scroll strip, 236px columns.
+
+- **ANY lane folds to a rail** (card t_50a8c145). A folded lane is a
+  thin vertical strip (`LANE_RAIL_PX` = 36px, the 32-40 ruled band):
+  the lane's colored dot on top, the lane name in `writing-mode:
+  vertical-rl` uppercase small, the count below when the lane holds
+  cards. The header's dot + name are the fold control on every lane -
+  the old settled-only fold (done/archived collapsed, the "N folded"
+  note) is dead; `isSettled` no longer exists.
+- **Dots align across the board.** The rail's dot row and an expanded
+  lane's header row are the same height (`--lane-head-h: 24px`), so the
+  dot row reads as one line whichever state each lane is in.
+- **The rail is also a drop target**, not just a button. The drag
+  machinery resolves the lane element (`.board-col[data-status]`), and
+  the rail renders inside that same element, so dragging a card onto a
+  rail moves it into that status (top of the lane - `after_id` empty).
+  No rail-specific drop code exists. **A live drag freezes the lane
+  shapes** (`frozenLanes`, snapshotted when the gesture turns into a
+  drag): the optimistic reorder would otherwise fold the lane the card
+  left and unfold the rail it entered, sliding the whole strip under the
+  cursor mid-gesture - the drop then lands on whatever moved under it
+  (measured: a release on the folded `blocked` rail persisted into
+  `ready`). Rails stay rails while dragging; the lane the card lands in
+  takes its new shape after the commit.
+- **Lane tone** (`LANE_TONES`, the Hermes mapping): triage gray, todo
+  light gray, scheduled violet `#a78bfa`, ready blue `#60a5fa`, running
+  green `#34d399`, blocked red `#f87171`, review amber `#fbbf24`, done
+  gray `#6f6f6f`, archived dim `#4a4a4a`.
+- **The auto-collapse law.** An EMPTY lane folds to its rail
+  automatically. A pin (`open` / `collapsed`) is the user's override
+  and wins while the lane holds cards - but the pin is DROPPED the
+  moment the lane drains (`reconcileLanePins`, run on every list read),
+  so a drained lane is a rail even when it was pinned open, and a lane
+  that refills returns to its default (expanded) instead of
+  remembering an override reality already overruled. Clicking an empty
+  rail is a no-op: `laneFolded` reads count 0 as folded regardless of
+  pins. Pins are component state, never persisted.
+- **A rail keeps the create control.** An empty lane can never be
+  unfolded (that is the law), so the rail carries the same `+` the
+  header does - otherwise a lane could never grow from nothing. Opening
+  the create form holds the lane in its column shape while the editor is
+  up; closing it on a still-empty lane folds the rail back.
+- **~180ms width ease** (`LANE_EASE_MS`, cubic-bezier(0.4, 0, 0.2, 1))
+  on `flex-basis` - Hermes snaps, omega eases. The numbers ride CSS
+  custom properties set from the constants, so the view and the logic
+  cannot drift.
+- **The narrow stack has no rails** (Endo ruling: "not in mobile
+  view"). Below `NARROW_MAX_PX` the lanes stack full width and every
+  lane renders expanded - the fold is a horizontal-scroll affordance.
+
 ## The Settings pane
 
 `SettingsTab.vue` is a MASTER-DETAIL surface (card t_af7e1150, settings
