@@ -92,6 +92,33 @@ jobs:
         # (<= v0.6.0, suffix matcher) can still self-update (t_3d123470)
         run: scripts/release-checksums.sh dist
 
+      - name: Restore the tag annotation
+        # actions/checkout@v4 leaves refs/tags/<v> pointing at the COMMIT, not
+        # the tag object: its all-history fetch brings the annotated tag, then
+        # testRef compares github.sha (the peeled commit) against the tag
+        # OBJECT sha, misses, and re-fetches `+<sha>:refs/tags/<v>` - a
+        # lightweight ref. release-notes.sh then reads no annotation and ships
+        # the post and the body without their prose paragraph (v0.17.1,
+        # t_530c4635). Re-fetch the tag ref itself and fail loud if the remote
+        # says annotated while the local ref is still a bare commit: a release
+        # does not announce text nobody can read.
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          git fetch --force --no-tags --no-recurse-submodules origin \
+            "refs/tags/$VERSION:refs/tags/$VERSION"
+          if git ls-remote --tags origin "refs/tags/$VERSION" "refs/tags/$VERSION^{}" \
+               | grep -qF "refs/tags/$VERSION^{}"; then
+            if ! git rev-parse -q --verify "refs/tags/$VERSION^{tag}" >/dev/null; then
+              echo "::error::refs/tags/$VERSION is annotated on the remote but the local ref is a bare commit - the release body would lose its prose paragraph"
+              exit 1
+            fi
+            echo "annotation: $(git for-each-ref "refs/tags/$VERSION" --format='%(contents:subject)')"
+          else
+            echo "lightweight tag $VERSION - no annotation to read (no prose paragraph)"
+          fi
+
       - name: Generate release notes
         # deterministic counts + FIVE highlights from the round's commit log;
         # the prose paragraph and the optional highlight override ride the

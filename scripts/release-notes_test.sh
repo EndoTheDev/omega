@@ -11,6 +11,10 @@ set -uo pipefail
 # list wins), ONE prose paragraph read off the annotation body, the counts
 # line, the update + changelog link, and the loud 2000-char Discord cap with
 # no trimmer behind it.
+# The annotation has to SURVIVE the CI checkout (t_530c4635): a tag ref
+# rewritten to its commit by actions/checkout@v4 reads as no annotation, so
+# the absence is named on stderr with its remedy and the release workflow's
+# restore step is pinned by shape and order (N17, N18).
 # Merge commits never carry a bullet - they only count; their side commits
 # ride the range and classify on their own subjects.
 #
@@ -416,6 +420,50 @@ printf '%s' "$OUT" | grep -qF "over the 2000-char cap" && ok || bad "N16: the ca
 [ -f "$fx/out/discord-exception.txt" ] && bad "N16: the trimmer's exception file is gone from this design" || ok
 [ "$(wc -c < "$fx/out/release-notes.md")" -gt 2000 ] && ok || bad "N16: the post itself must still be written for the log"
 [ "$(body_bullets "$fx")" -eq 1 ] && ok || bad "N16: the record must survive the loud skip"
+
+# --- N17: the CI checkout shape - a tag ref rewritten to its commit reads ---
+# as no annotation (the v0.17.1 defect): the post ships bare and the absence
+# is NAMED on stderr, remedy included. Restoring the tag object - what the
+# release workflow now does - brings the prose back.
+fx=$(new_fixture)
+c "$fx" "feat(side): a feature"
+"${GUSER[@]}" -C "$fx" tag -a v2.0.0 -m 'The paragraph the runner must not drop.'
+tag_obj="$("${GUSER[@]}" -C "$fx" rev-parse 'refs/tags/v2.0.0')"
+commit="$("${GUSER[@]}" -C "$fx" rev-parse 'v2.0.0^{commit}')"
+# actions/checkout@v4's targeted fallback fetch, verbatim effect:
+# `git fetch origin +<sha>:refs/tags/<v>` writes the COMMIT into the tag ref
+"${GUSER[@]}" -C "$fx" update-ref refs/tags/v2.0.0 "$commit"
+[ "$(git -C "$fx" cat-file -t refs/tags/v2.0.0)" = "commit" ] && ok \
+	|| bad "N17: fixture did not reproduce the checkout shape"
+run_notes "$fx"
+printf '%s' "$OUT" | grep -qF 'The paragraph the runner must not drop.' \
+	&& bad "N17: a rewritten tag ref must not yield prose (the tag object is gone)" || ok
+[ "$(sed -n '1p' "$fx/out/release-notes-body.md")" = "1 feature, 0 refactors, 0 fixes, 0 tunes, 0 doc updates across side" ] \
+	&& ok || bad "N17: the body must lead with the counts line when no annotation reads"
+printf '%s' "$OUT" | grep -qF 'refs/tags/v2.0.0 carries no readable annotation' \
+	&& ok || bad "N17: the absence must be named on stderr: $(printf '%s' "$OUT" | head -2)"
+printf '%s' "$OUT" | grep -qF 'restore the tag object: git fetch --force origin refs/tags/v2.0.0:refs/tags/v2.0.0' \
+	&& ok || bad "N17: the remedy must be named on stderr"
+"${GUSER[@]}" -C "$fx" update-ref refs/tags/v2.0.0 "$tag_obj"
+run_notes "$fx"
+[ "$(sed -n '1p' "$fx/out/release-notes-body.md")" = "The paragraph the runner must not drop." ] \
+	&& ok || bad "N17: a restored tag object must put the prose back at the top of the body"
+printf '%s' "$OUT" | grep -qF 'carries no readable annotation' \
+	&& bad "N17: a readable annotation must not warn" || ok
+
+# --- N18: the release workflow restores the tag object before the notes ----
+# step and fails loud if the remote says annotated while local is a commit.
+# The script cannot repair this itself (a bare checkout has no tag object),
+# so the workflow step is the fix - pin its shape and its order.
+WF="$(cd "$(dirname "$0")/.." && pwd)/.github/workflows/release.yml"
+grep -qF 'refs/tags/$VERSION:refs/tags/$VERSION' "$WF" && ok \
+	|| bad "N18: the workflow must re-fetch the tag ref"
+grep -qF 'is annotated on the remote but the local ref is a bare commit' "$WF" && ok \
+	|| bad "N18: the workflow must fail loud on the rewritten shape"
+restore_ln="$(grep -nF 'refs/tags/$VERSION:refs/tags/$VERSION' "$WF" | head -1 | cut -d: -f1)"
+notes_ln="$(grep -nF 'scripts/release-notes.sh "' "$WF" | head -1 | cut -d: -f1)"
+[ -n "$restore_ln" ] && [ -n "$notes_ln" ] && [ "$restore_ln" -lt "$notes_ln" ] && ok \
+	|| bad "N18: the restore must run before the notes step ($restore_ln vs $notes_ln)"
 
 echo
 echo "release-notes_test: $pass ok, $fail fail"
