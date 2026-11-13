@@ -102,10 +102,83 @@ docids=$(doc_ids)
 [ -n "$navids" ] || die "the nav rendered no categories"
 assert_eq "$docids" "$navids" "every nav category renders as a section, in nav order"
 firstdoc=$(jsq '(()=>{const s=document.querySelector(".settings-category");return s?s.getAttribute("data-category"):"none"})()' 2>&1 | plain)
-assert_eq "$firstdoc" "common" "the document opens on the curated category (nav order)"
+# card t_81d0901b: the MODULES section heads the document now - module
+# toggles are configuration, and the retired cockpit tab's reach moved here
+assert_eq "$firstdoc" "modules" "the document opens on the MODULES section (nav order)"
 rows=$(jsq '(()=>{return document.querySelectorAll(".setting-item,.setting-row").length})()' 2>&1 | plain)
 [ "${rows:-0}" -gt 0 ] 2>/dev/null || die "the document rendered no knob rows ($rows)"
 step "ok: the one document renders every category ($docids) with $rows rows"
+
+# --- MODULES: the moved module surface (card t_81d0901b) ------------------
+# Module toggles are CONFIGURATION, not content: the secondary-pane cockpit
+# tab is gone, and this section carries its whole surface - the rows with
+# live toggles, the always-on pair as a CHIP (never a disabled switch), and
+# the expandable tools/commands/panels detail. The refusal itself lives at
+# the seam (PUT /modules/<name> on agent-loop|provider answers
+# "module <name> is always on").
+# Selection is by getAttribute, never a CSS attr selector: the backslash-free
+# probe is a fixed point of every agent-browser unescape pass (t_2454597e).
+mods_js='(()=>{const s=[...document.querySelectorAll(".settings-category")].find(x=>x.getAttribute("data-section")==="modules");if(!s) return "missing";return s.querySelectorAll(".extension-row").length+"/"+s.querySelectorAll(".module-toggle").length+"/"+s.querySelectorAll(".module-alwayson").length})()'
+mods=$(jsq "$mods_js" 2>&1 | plain)
+mrow=${mods%%/*}; rest=${mods#*/}; mtoggles=${rest%%/*}; mchips=${rest##*/}
+[ "${mrow:-0}" -gt 0 ] 2>/dev/null || die "the MODULES section rendered no rows ($mods)"
+[ "${mtoggles:-0}" -gt 0 ] 2>/dev/null || die "no toggleable module row rendered a switch ($mods)"
+[ "${mchips:-0}" -gt 0 ] 2>/dev/null || die "no always-on row rendered its chip ($mods)"
+step "ok: MODULES section renders $mrow rows ($mtoggles toggles, $mchips always-on chips)"
+
+# one row's probe: "<chip 0|1>|<pill 0|1>|<row classes>"
+row_probe() {
+  jsq "(()=>{const s=[...document.querySelectorAll('.settings-category')].find(x=>x.getAttribute('data-section')==='modules');if(!s) return 'missing||';const row=[...s.querySelectorAll('.extension-row')].find(r=>{const n=r.querySelector('.extension-name');return !!n&&n.textContent.trim()==='$1'});if(!row) return 'norow||';return (row.querySelector('.module-alwayson')?1:0)+'|'+(row.querySelector('.module-toggle')?1:0)+'|'+row.className})()" 2>&1 | plain
+}
+
+# the load-bearing pair: a VISIBLE row with the chip, and NO switch in it
+for pair in agent-loop provider; do
+  prow=$(row_probe "$pair")
+  prows=${prow%%|*}; prest=${prow#*|}
+  assert_eq "$prows" "1" "$pair renders its always-on chip"
+  assert_eq "${prest%%|*}" "0" "$pair renders NO toggle switch (the row is a mirror)"
+  # the body and the code in ONE capture (a native curl -o under MSYS /tmp
+  # writes C:\tmp while cat reads the MSYS path - the empty-body trap)
+  refused=$(curl -s -w '\n%{http_code}' -X PUT \
+    -H 'Content-Type: application/json' -d '{"enabled":false}' \
+    "${JOURNEY_BASE_URL}/modules/$pair")
+  code=${refused##*$'\n'}; body=${refused%$'\n'*}
+  assert_eq "$code" "400" "the toggle endpoint refuses $pair"
+  case "$body" in
+    *"module $pair is always on"*) ;;
+    *) die "the refusal must name itself ('module $pair is always on'), got: $body" ;;
+  esac
+  step "ok: the seam refuses $pair (400: $(echo "$body" | tr -d '\n'))"
+done
+
+# the expandable detail still lists the module's tools, commands and panels
+jsq '(()=>{const s=[...document.querySelectorAll(".settings-category")].find(x=>x.getAttribute("data-section")==="modules");const row=[...s.querySelectorAll(".extension-row")].find(r=>r.querySelector(".extension-expand"));if(!row) return 0;row.querySelector(".extension-expand").click();return 1})()' >/dev/null 2>&1
+if ! wait_js '(()=>{const s=[...document.querySelectorAll(".settings-category")].find(x=>x.getAttribute("data-section")==="modules");if(!s) return false;const d=s.querySelector(".extension-detail");if(!d) return false;return ["tools","commands","panels"].every(k=>[...d.querySelectorAll(".detail-label")].some(e=>e.textContent.trim()===k))})()' 10; then
+  die "the expanded module row lost its tools/commands/panels detail"
+fi
+step "ok: an expanded module row lists its tools, commands and panels"
+
+# a removable module toggles OFF and back ON live, the row following the wire
+# (the first toggleable row carrying a disable label: the round trip leaves
+# the lane as it found it, so the recipe stays residue-free)
+tog=$(jsq '(()=>{const s=[...document.querySelectorAll(".settings-category")].find(x=>x.getAttribute("data-section")==="modules");const pill=[...s.querySelectorAll(".module-toggle")].find(p=>/^disable /.test(p.getAttribute("aria-label")||""));if(!pill) return "missing";return (pill.getAttribute("aria-label")||"").replace(/^disable /,"")})()' 2>&1 | plain)
+[ "$tog" != "missing" ] || die "no toggleable module row carries a disable label"
+click_toggle() {
+  jsq "(()=>{const s=[...document.querySelectorAll('.settings-category')].find(x=>x.getAttribute('data-section')==='modules');if(!s) return 0;const row=[...s.querySelectorAll('.extension-row')].find(r=>{const n=r.querySelector('.extension-name');return !!n&&n.textContent.trim()==='$1'});const pill=row&&row.querySelector('.module-toggle');if(!pill) return 0;pill.click();return 1})()" 2>&1 | plain
+}
+row_off_js="(()=>{const s=[...document.querySelectorAll('.settings-category')].find(x=>x.getAttribute('data-section')==='modules');if(!s) return false;const row=[...s.querySelectorAll('.extension-row')].find(r=>{const n=r.querySelector('.extension-name');return !!n&&n.textContent.trim()==='$tog'});return !!row&&row.className.indexOf('module-off')>=0})()"
+row_on_js="(()=>{const s=[...document.querySelectorAll('.settings-category')].find(x=>x.getAttribute('data-section')==='modules');if(!s) return false;const row=[...s.querySelectorAll('.extension-row')].find(r=>{const n=r.querySelector('.extension-name');return !!n&&n.textContent.trim()==='$tog'});return !!row&&row.querySelector('.module-toggle')!==null&&row.className.indexOf('module-off')<0})()"
+# ONE click applies (card t_5051d523: no arm step) - the row dims off
+assert_eq "$(click_toggle "$tog")" "1" "$tog has a live switch"
+if ! poll_js "$row_off_js" 25; then
+  die "$tog did not go off (row: $(row_probe "$tog"))"
+fi
+step "ok: $tog rendered OFF (row dimmed, the switch flipped)"
+assert_eq "$(click_toggle "$tog")" "1" "$tog's switch is still there while it is off"
+if ! poll_js "$row_on_js" 25; then
+  die "$tog did not come back ON (row: $(row_probe "$tog"))"
+fi
+step "ok: $tog toggles OFF and back ON live (the row state follows the wire)"
 
 active=$(active_id)
 assert_eq "$active" "" "a fresh pane has NOTHING selected"

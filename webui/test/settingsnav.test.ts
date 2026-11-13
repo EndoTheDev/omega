@@ -939,13 +939,13 @@ test("the spy's anchor write is gated on the user's scroll, never on geometry", 
   // the observer decides the highlight as before, but the WRITE asks the rule
   assert.match(
     tab,
-    /selection\.value = best;[\s\S]{0,260}if \(!spyAnchorMayWrite\(anchorTrace\)\) return;\s*anchorTrace\.wroteAt = anchorTrace\.userScrollAt;\s*persistAnchor\(best\);/,
+    /function applySpySelection\(best: string \| null\) \{[\s\S]{0,400}selection\.value = best;[\s\S]{0,300}if \(!spyAnchorMayWrite\(anchorTrace\)\) return;\s*anchorTrace\.wroteAt = anchorTrace\.userScrollAt;\s*persistAnchor\(best\);/,
     "the spy persists only what the user's scroll earned",
   );
   // geometry is stamped by the two things that move the boxes: a re-arm...
   assert.match(
     tab,
-    /inBand\.clear\(\);\s*\/\/ a re-arm is a GEOMETRY change[\s\S]{0,120}anchorTrace\.geometryAt = nowMs\(\);/,
+    /\/\/ a re-arm is a GEOMETRY change[^\n]*\n\s*anchorTrace\.geometryAt = nowMs\(\);/,
     "re-arming the spy is a geometry change",
   );
   // ...and the scrollport's own box observer
@@ -1014,9 +1014,12 @@ test("a scroll inside the lock window is clamped when the lock ends (t_720c9cff)
   assert.equal(hi, 2509, "and its 'want 2509' is this same clampedRange, no special case");
 
   // ONE pass, on the locks that already exist: the timed lock's expiry...
+  // card t_81d0901b: the expiry ALSO re-resolves the spy highlight from the
+  // resting boxes (a long jump's last intersection batch can land inside the
+  // lock window) - the clamp re-measure stays the first call.
   assert.match(
     tab,
-    /spyTimer = setTimeout\(\(\) => \{\s*spyLocked = false;\s*spyTimer = undefined;\s*clampOnLockEnd\(\);\s*\}, ms\);/,
+    /spyTimer = setTimeout\(\(\) => \{\s*spyLocked = false;\s*spyTimer = undefined;\s*clampOnLockEnd\(\);[\s\S]{0,400}?settleSpyIfIdle\(\);\s*\}, ms\);/,
     "the timed lock re-measures when it expires, not never",
   );
   // ...and a deselect's open-ended suppression, which lifts on real input

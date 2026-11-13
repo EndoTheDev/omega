@@ -75,7 +75,6 @@ export const DOCK_COMPONENTS = [
   "agents",
   "settings",
   "kanban",
-  "extensions",
   "insights",
   "mcp",
   // card t_55a3fc4b (Endo ruling 2026-11-01, the v0.15 arc): the
@@ -139,7 +138,7 @@ export const MIN_PANE_PX = 128;
 export const CHAT_FLOOR_PX = 320;
 
 /** the registry entry. `title` is the display voice for the tab/menu chip */
-// (Title Case for shell tabs - Files, Agents, Extensions, Insights - the
+// (Title Case for shell tabs - Files, Agents, Insights - the
 // module dockable.json titles follow the same voice); the open flows add
 // their own verb (chat's multi policy reads "new chat" in the menus).
 // Module-tab titles are resolved at runtime from each module's
@@ -147,6 +146,9 @@ export const CHAT_FLOOR_PX = 320;
 // title is only the fallback. card t_556ee727: identifiers, routes and
 // file paths stay lowercase everywhere - the casing lives in this label
 // alone.
+// card t_81d0901b: the module lifecycle surface is NOT a dockable any
+// more - module toggles are configuration, so they live in the settings
+// tab's MODULES section (components/settings/ModulesSection.vue).
 export interface DockableComponent {
   id: DockComponentName;
   title: string;
@@ -289,26 +291,6 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     closable: false,
   },
   {
-    // card t_14f73742: the extensions inventory joins the inspector -
-    // a SHELL tab over
-    // GET /extensions (the composition-contract ruling is recorded in
-    // extensionsRows.ts): the shell owns the listing because it
-    // aggregates every module, so no module can own this panel. has-ui
-    // rows emit open-module - the tab only routes, the module panels
-    // mount. Unclosable like every inspector view: the loader restores
-    // the full strip, and the outlet template must always exist.
-    id: "extensions",
-    // card t_210a0d19 rename law: the tab label is "Modules" (the
-    // lifecycle cockpit); the dock id stays "extensions" - stored dock
-    // layouts persist ids, and a rename there would orphan them. The
-    // /modules palette name dispatches here; /extensions keeps working.
-    title: "Modules",
-    icon: "extensions",
-    policy: "singleton",
-    area: "right",
-    closable: false,
-  },
-  {
     // card t_d7fd3ad3 (Endo's eyeball round 2): insights' real home is the
     // SECONDARY sidebar - a default-visible inspector tab, label "Insights"
     // (the kanban inspector tab is the pattern). This supersedes the
@@ -433,7 +415,6 @@ const DOCKABLE_MIN_PX: Record<DockComponentName, number> = {
   agents: MIN_PANE_PX,
   settings: MIN_PANE_PX,
   kanban: MIN_PANE_PX,
-  extensions: MIN_PANE_PX,
   insights: MIN_PANE_PX,
   mcp: MIN_PANE_PX,
   browser: MIN_PANE_PX,

@@ -130,15 +130,21 @@ assert_eq "$active" "Skills" "REPRO 2: clicking Skills activates it"
 skills=$(jsq 'document.querySelector(".mobile-drawer.right .module-panels")?1:0')
 assert_eq "$skills" "1" "REPRO 2: Skills tab renders the module panel (content switched)"
 
-# switch to Modules -> the module panel renders (content swapped again)
-js 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).find(t=>(t.getAttribute("aria-label")||"").trim()==="Modules").click()' >/dev/null 2>&1
+# switch to Insights -> the shell view renders (content swapped again)
+# card t_81d0901b: the Modules cockpit tab retired (module toggles are
+# configuration now - the settings tab's MODULES section), so this step
+# walks the strip's other shell-owned branch instead.
+js 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).find(t=>(t.getAttribute("aria-label")||"").trim()==="Insights").click()' >/dev/null 2>&1
 sleep 0.6
 active=$(jsq 'document.querySelector(".mobile-drawer.right .mobile-drawer-tab.active")?.getAttribute("aria-label")?.trim()')
 active=${active#\"}; active=${active%\"}
-assert_eq "$active" "Modules" "REPRO 2: clicking Modules activates it"
-modules=$(jsq 'document.querySelector(".mobile-drawer.right .inspector-extensions")?1:0')
-assert_eq "$modules" "1" "REPRO 2: Modules tab renders the extensions panel (content switched)"
-step "ok: REPRO 2 - drawer tab bar switches content (Files -> Skills -> Modules)"
+assert_eq "$active" "Insights" "REPRO 2: clicking Insights activates it"
+insights=$(jsq 'document.querySelector(".mobile-drawer.right .insights")?1:0')
+assert_eq "$insights" "1" "REPRO 2: Insights tab renders its shell view (content switched)"
+# and the retired tab has no chip in the drawer strip at all
+modules_chip=$(jsq 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).filter(t=>(t.getAttribute("aria-label")||"").trim()==="Modules").length')
+assert_eq "$modules_chip" "0" "REPRO 2: the retired Modules tab is not a drawer chip"
+step "ok: REPRO 2 - drawer tab bar switches content (Files -> Skills -> Insights)"
 
 # card t_00e4a784: the settings gear is GLOBAL chrome - below the
 # breakpoint it opens settings as a MAIN tab (the one surface that never

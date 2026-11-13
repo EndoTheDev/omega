@@ -333,19 +333,22 @@ test("the canvas host tab is deleted (deletability, source + registry)", () => {
   assert.doesNotMatch(css, /\.canvas-pane|\.canvas-empty|\.canvas-panel/, "the canvas render CSS is gone");
 });
 
-test("/panels folds into the Modules tab (the palette keeps its name)", () => {
+test("/panels folds into the settings MODULES section (the palette keeps its name)", () => {
   const app = read("webui", "app", "app.vue");
-  // the shell command still dispatches - to the Modules tab, where the
-  // panels live under their module rows (v0.14.2's cockpit)
+  // card t_81d0901b: the modules cockpit tab retired - module toggles are
+  // configuration, so the shell command opens the settings tab and lands on
+  // its MODULES section, where the panels live under their module rows
+  // (v0.14.3's fold law survives the move).
   assert.match(app, /case "\/panels":/, "/panels stays a dispatching command");
   assert.match(
     app,
-    /case "\/panels":[\s\S]*?openModuleTab\("extensions"\)/,
-    "it opens the Modules tab",
+    /case "\/panels":[\s\S]*?openSettingsTab\(\);[\s\S]*?jumpToSettingsSection\(MODULES_CATEGORY\)/,
+    "it opens settings and jumps to the MODULES section",
   );
   assert.match(app, /panels live under the module rows/, "the note says where they went");
-  // and the pre-fold target is gone - no canvas id in the dispatch
+  // and the pre-fold targets are gone - no canvas id, no dead cockpit tab
   assert.ok(!/openModuleTab\("canvas"\)/.test(app), "no dispatch to the retired id");
+  assert.ok(!/openModuleTab\("extensions"\)/.test(app), "no dispatch to the retired cockpit tab");
 });
 
 // v0.14.3: the contract's stream + boot wiring stayed (the store feeds

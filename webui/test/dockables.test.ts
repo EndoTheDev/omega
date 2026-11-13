@@ -139,18 +139,16 @@ describe("the dockable registry", () => {
     assert.deepEqual([...ids].sort(), [...DOCK_COMPONENTS].sort());
   });
 
-  it("tab labels ride the Title Case siblings (card t_556ee727 + t_210a0d19 rename)", () => {
-    // every shell tab renders Title Case today: Files, Settings,
-    // Insights, Agents, and (card t_210a0d19's rename law) Modules -
-    // the extensions inventory tab's label is "Modules" while its dock
-    // id stays "extensions" (stored layouts persist ids). The module
-    // tabs override via dockable.json; `agents`/`extensions` are the
-    // only registry titles the tab bar prints raw. Display labels
-    // ONLY - ids, routes and module names stay lowercase.
+  it("tab labels ride the Title Case siblings (card t_556ee727)", () => {
+    // every shell tab renders Title Case today: Files, Settings, Insights,
+    // Agents. The module tabs override via dockable.json; `agents` is the
+    // only registry title the tab bar prints raw (card t_210a0d19's
+    // "Modules" label died with that tab - card t_81d0901b moved the
+    // module surface into settings). Display labels ONLY - ids, routes and
+    // module names stay lowercase.
     assert.equal(COMPONENT_TITLES.agents, "Agents");
-    assert.equal(COMPONENT_TITLES.extensions, "Modules");
     for (const d of DOCKABLES) {
-      if (d.id === "agents" || d.id === "extensions") continue;
+      if (d.id === "agents") continue;
       assert.ok(
         d.title === "Sessions" && d.id === "sidebar" ||
           d.title === "Files" && d.id === "files" ||
@@ -211,29 +209,29 @@ describe("the dockable registry", () => {
     assert.deepEqual([...closable].sort(), ["browser", "chat", "settings", "viewer"]);
   });
 
-  it("the fixed sidebars: sidebar pinned left, the inspector TEN pinned right (t_49d0b308 + t_14f73742 + t_d7fd3ad3 + arc 3c canvas + t_c7136c50 mcp + t_180db2cb notifications; t_00e4a784 retired settings)", () => {
+  it("the fixed sidebars: sidebar pinned left, the inspector NINE pinned right (t_49d0b308 + t_d7fd3ad3 + arc 3c canvas + t_c7136c50 mcp + t_180db2cb notifications; t_00e4a784 retired settings; t_81d0901b retired the modules cockpit tab)", () => {
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "left").map((d) => d.id),
       ["sidebar"],
     );
-    // the default order is the ruling's: files, cron, logs, skills,
-    // tools, kanban, extensions, insights, mcp (logs = the
-    // http_channel module id; extensions joined last at t_14f73742;
-    // insights joined the right shell at t_d7fd3ad3; mcp joined last
-    // at t_c7136c50; notifications joined last at t_180db2cb; settings
-    // left for the on-demand main tab at t_00e4a784)
+    // the default order is the ruling's: files, cron, skills, tools,
+    // agents, kanban, insights, mcp, notifications (extensions left the
+    // strip in card t_81d0901b - its surface is the settings MODULES
+    // section; insights joined the right shell at t_d7fd3ad3; mcp joined
+    // last at t_c7136c50; notifications joined last at t_180db2cb;
+    // settings left for the on-demand main tab at t_00e4a784)
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "right").map((d) => d.id),
-      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
     );
     // the inspector tab inventory IS the right-area set, in one place
     assert.deepEqual(
       [...INSPECTOR_TAB_COMPONENTS],
-      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
     );
     assert.ok(
       INSPECTOR_TAB_COMPONENTS.every((c) => !isClosableTab(c)),
-      "no X on any of the ten",
+      "no X on any of the nine",
     );
   });
 
@@ -261,9 +259,9 @@ describe("the dockable registry", () => {
     assert.ok(!MENU_DOCKABLES.includes("viewer"), "no empty viewer menu entry");
     assert.ok(!MENU_DOCKABLES.includes("sidebar"), "sessions never opens by menu");
     assert.ok(MENU_DOCKABLES.includes("kanban"), "kanban IS refillable");
-    // card t_14f73742: extensions IS refillable - the '+' menu is a real
-    // entry point for the inventory tab
-    assert.ok(MENU_DOCKABLES.includes("extensions"), "extensions IS refillable");
+    // card t_81d0901b: the modules cockpit is NOT a dockable any more - it
+    // has no menu entry to check (the settings MODULES section is the
+    // surface, and the /modules command jumps there).
     // card t_d7fd3ad3: insights stays menu-fillable - the singleton
     // opener FOCUSES its inspector instance (clean coexistence with the
     // default sidebar home)
@@ -273,6 +271,36 @@ describe("the dockable registry", () => {
   it("legacy ids: pre-reset trees deserialize but nothing may open one", () => {
     assert.deepEqual([...LEGACY_DOCK_COMPONENTS], ["inspector"]);
     assert.ok(!(DOCK_COMPONENTS as readonly string[]).includes("inspector"));
+  });
+
+  it("card t_81d0901b: the modules cockpit is NOT a dockable any more", () => {
+    // module toggles are configuration, not content - the surface moved into
+    // the settings tab's MODULES section and the secondary-pane tab left the
+    // registry entirely. No id, no inventory entry, no title, no floor line:
+    // a leftover of any of them would let the registry advertise a tab the
+    // shell no longer has an outlet for.
+    assert.ok(
+      !(DOCK_COMPONENTS as readonly string[]).includes("extensions"),
+      "the removed tab id left the openable component universe",
+    );
+    assert.equal(
+      DOCKABLES.find((d) => (d.id as string) === "extensions"),
+      undefined,
+      "no inventory entry survives",
+    );
+    assert.equal(
+      (COMPONENT_TITLES as Record<string, string>).extensions,
+      undefined,
+      "no stale \"Modules\" title",
+    );
+    assert.ok(!MENU_DOCKABLES.includes("extensions" as never), "no '+' menu entry");
+    assert.ok(!INSPECTOR_TAB_COMPONENTS.includes("extensions" as never), "no inspector seat");
+    // and it is NOT a legacy id either: a legacy id would DESERIALIZE (a
+    // phantom tab in a live pane); the removed one must DROP on load
+    assert.ok(
+      !(LEGACY_DOCK_COMPONENTS as readonly string[]).includes("extensions"),
+      "the removed id is not resurrected through the legacy door",
+    );
   });
 
   it("Sessions is locked: openSingleton refuses its only open path (t_d6b657a7)", async () => {
@@ -492,9 +520,11 @@ describe("dock store: the pane-model reset", () => {
       // t_c7136c50 note: an era tree whose insights tab gets lifted
       // (rehomeInsightsTab runs before the right edge lands) re-seats
       // insights AFTER the restored set - the modernized v1 strip ends
-      // [extensions, mcp, insights]. The fresh-tree default stays
-      // canonical (dock.test.ts).
-      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "mcp", "notifications", "insights"],
+      // [mcp, notifications, insights]. The fresh-tree default stays
+      // canonical (dock.test.ts). Card t_81d0901b: the extensions cockpit
+      // left the strip entirely (its surface is the settings MODULES
+      // section), so the tail lost that id too.
+      ["files", "cron", "skills", "tools", "agents", "kanban", "mcp", "notifications", "insights"],
       "the chip strip's tabs are real now, and the new views are in",
     );
     // card t_00e4a784: settings is NOT re-seated by the modernizer - the
@@ -534,7 +564,7 @@ describe("dock store: the pane-model reset", () => {
     const insp = paneById(dock.tree.value, "n4");
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
     );
     assert.equal(insp.active, 2, "the user's active view stays put");
   });
@@ -590,7 +620,7 @@ describe("dock store: the pane-model reset", () => {
       insp.tabs.map((x) => x.component),
       // same lift-and-reseat shape as the pre-reset modernize above: the
       // insights copy lifts back to the right shell
-      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "mcp", "notifications", "insights"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "mcp", "notifications", "insights"],
     );
   });
 
@@ -741,7 +771,7 @@ describe("dock store: the pane-model reset", () => {
     await flush();
     assert.equal(
       paneById(dock.tree.value, files.id).tabs.map((x) => x.component as string).join(","),
-      "files,cron,skills,tools,agents,kanban,extensions,insights,mcp,notifications",
+      "files,cron,skills,tools,agents,kanban,insights,mcp,notifications",
       "none of them may close (logs left the strip - Endo's comment 2026-10-26)",
     );
     // the main class still closes through the store on ANY census read

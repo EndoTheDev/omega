@@ -37,10 +37,12 @@ export interface PaletteItem {
 // help at minimum - the full shell set.
 export const WEBUI_SHELL_COMMANDS: PaletteItem[] = [
   { name: "/copy", description: "copy the last response to the clipboard", kind: "shell" },
-  // card t_210a0d19 rename law: /modules is the new name, /extensions
-  // keeps its palette row as the alias - no muscle-memory break.
-  { name: "/modules", description: "open the module cockpit (inventory + toggles + expansion)", kind: "shell" },
-  { name: "/extensions", description: "open the module cockpit (alias of /modules)", kind: "shell" },
+  // card t_210a0d19 rename law: /modules is the name, /extensions keeps its
+  // palette row as the alias - no muscle-memory break. Card t_81d0901b: both
+  // open the settings tab's MODULES section (the secondary-pane cockpit tab
+  // is gone; module toggles are configuration).
+  { name: "/modules", description: "open settings > modules (inventory + toggles + expansion)", kind: "shell" },
+  { name: "/extensions", description: "open settings > modules (alias of /modules)", kind: "shell" },
   { name: "/fork", description: "aim the next send to continue from the newest response", kind: "shell" },
   { name: "/help", description: "list the commands", kind: "shell" },
   { name: "/new", description: "start a new chat tab", kind: "shell" },

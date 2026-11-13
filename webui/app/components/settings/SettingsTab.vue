@@ -119,7 +119,7 @@
               :aria-current="selection === cat.id ? 'true' : undefined"
               @click="selectCategory(cat.id)">
               <span class="settings-nav-label">{{ cat.label }}</span>
-              <span class="settings-nav-count">{{ cat.knobs.length }}</span>
+              <span class="settings-nav-count">{{ categoryCount(cat) }}</span>
             </button>
           </div>
           <button
@@ -182,7 +182,7 @@
       :class="{ 'settings-readonly': scopeReadOnly }"
       @scroll.passive="onBodyScroll">
       <p
-      v-if="!loadError && totalCount === 0"
+      v-if="!loadError && totalCount === 0 && !modulesShown"
       class="settings-empty">
         {{ emptyText }}
       </p>
@@ -198,6 +198,31 @@
       as headed blocks. The selection never filters it; a live query and
       the modified-only switch filter it in place.
     -->
+    <!-- card t_81d0901b: the MODULES section. Module toggles are
+         CONFIGURATION, not content - the secondary-pane cockpit tab that
+         card t_210a0d19 introduced is GONE, and this section carries its
+         whole surface: the rows, their live toggles, the expandable
+         tools/commands/panels detail and the panel listing. The nav entry
+         (settingsNav.modulesNavCategory) is a jump link like any other
+         category, and the jump/anchor/spy machinery treats this section
+         exactly like a knob section (it carries .settings-category +
+         data-section). The knob filters never apply here: a module row is
+         not a knob, so a live query or "modified only" hides the section
+         rather than pretending a module could be a search hit. -->
+    <section
+      v-if="modulesShown"
+      class="settings-category settings-modules-category"
+      data-category="modules"
+      data-section="modules">
+      <h2 class="settings-section-title">
+        modules
+        <span class="settings-knob-count">{{ moduleCount }}</span>
+      </h2>
+      <ModulesSection
+        :narrow="narrow"
+        @count="moduleCount = $event"
+        @open-module="(moduleId: string) => emit('open-module', moduleId)" />
+    </section>
     <section
       v-for="section in docSections"
       :key="section.id"
@@ -357,9 +382,10 @@
         </template>
       </div>
     </section>
-    <!-- card t_210a0d19: the MODULES group is gone from settings - the
-         module toggles live in the extensions tab now (the module
-         lifecycle cockpit), and this pane carries config knobs only. -->
+    <!-- card t_81d0901b: the MODULES surface is NOT a knob group - it lives
+         in the section above (module toggles are configuration over
+         persisted module state, not settings knobs), so this pane's knob
+         document still carries config knobs only. -->
     </div>
     <!-- save row stays pinned below the scrollable body; a read-only
          scope (broken layer / a 409 the endpoint sent) has nothing to
@@ -431,12 +457,15 @@
   // contentFor) is gone with the two-screen model.
   import {
     NAV_STORAGE_KEY,
+    MODULES_CATEGORY,
     anchorSelection,
     buildNav,
+    categoryCount,
     clampedRange,
     documentFor,
     expandedCategoryIds,
     matchingCategoryIds,
+    modulesNavCategory,
     paneScrollIsUser,
     paneScrollSettle,
     paneScrollSettled,
@@ -453,6 +482,11 @@
     type PaneScrollState,
     type SpyAnchorTrace,
   } from "./settingsNav";
+  // card t_81d0901b: the MODULES section's body (the module lifecycle
+  // surface moved here from the retired secondary-pane tab)
+  import ModulesSection from "./ModulesSection.vue";
+  // the palette's /modules + /extensions commands land on that section
+  import { useSettingsJump } from "~/composables/settingsJump";
   import { useNarrow } from "~/composables/narrow";
   import { DEFAULT_TOOL_DISPLAY, type ToolDisplay } from "~/composables/toolDisplay";
   import { DEFAULT_THINKING_DISPLAY, type ThinkingDisplay } from "~/composables/thinkingDisplay";
@@ -497,6 +531,9 @@
     (e: "update:thinkingDisplay", value: ThinkingDisplay): void;
     (e: "set-color-mode", mode: ColorMode): void;
     (e: "set-theme", id: string): void;
+    /** card t_81d0901b: a MODULES row with UI opens its module's dock tab;
+        the app shell owns the dock call (same seam the removed tab used) */
+    (e: "open-module", moduleId: string): void;
   }>();
 
   // --- server payload state ---
@@ -610,6 +647,10 @@
       void nextTick(() => {
         restoreAnchor();
         syncSpy();
+        // card t_81d0901b: a palette jump that arrived before this payload
+        // landed lands HERE, after the document (and the anchor) exist -
+        // last in the tail, so the user's request is what the pane opens on
+        applyJump();
       });
     } catch (err) {
       // a host without the settings seam (501) or an unreachable
@@ -976,9 +1017,16 @@
   // Empty categories never enter (ruling 14: an unmounted module's domain
   // is absent from the payload, so it is absent from the nav - and from
   // the document below).
-  const nav = computed<NavCategory[]>(() =>
-    buildNav(withSubgroups(allGroups.value)),
-  );
+  //
+  // card t_81d0901b: the MODULES entry is PREPENDED - it is not a knob
+  // domain, it is the module lifecycle surface, and it heads the pane so
+  // the retired secondary-pane tab's reach survives the move. Its count is
+  // the live module-row total (reported by the section), never a knob count.
+  const moduleCount = ref(0);
+  const nav = computed<NavCategory[]>(() => [
+    modulesNavCategory(moduleCount.value),
+    ...buildNav(withSubgroups(allGroups.value)),
+  ]);
 
   // a domain whose knobs all land in ONE child shows no child jump link -
   // a nested copy of the parent's name is noise and there is nothing to
@@ -1109,6 +1157,9 @@
         spyLocked = false;
         spyTimer = undefined;
         clampOnLockEnd();
+        // card t_81d0901b: the jump's trailing intersections may have landed
+        // while the lock was up - re-resolve once the pane has come to rest
+        settleSpyIfIdle();
       }, ms);
     }
   }
@@ -1165,6 +1216,10 @@
       // the pane's own scroll is over: hold it to its section again, so an
       // interrupted animation cannot strand it outside the range
       if (clampId.value) scheduleClamp();
+      // card t_81d0901b: and re-resolve the spy highlight against the box
+      // the pane actually came to rest at (the jump's last intersection
+      // batch may have landed inside the spy lock)
+      settleSpyIfIdle();
     }, PANE_SCROLL_GAP_MS);
   }
   function endPaneScroll() {
@@ -1312,6 +1367,39 @@
     scrollToAnchor(null);
     if (narrow.value) closeDrawer();
   }
+
+  // --- the palette's jump requests (card t_81d0901b) ----------------------
+  //
+  // /modules, /extensions and /panels open this pane and land on the MODULES
+  // section (composables/settingsJump.ts). The request can arrive while this
+  // pane is still being MINTED - the command opens the tab in the same tick,
+  // so no window event could reach a listener that does not exist yet. The
+  // shared signal is consumed instead: here when the document is already
+  // up, and from reload()'s tail when the first payload is still landing.
+  const pendingJump = useSettingsJump();
+
+  /** applyJump consumes a pending request. False = not consumable yet (the
+      section is filtered out, or the document has not rendered): the request
+      stays pending so the next tail can land it. */
+  function applyJump(): boolean {
+    const id = pendingJump.value;
+    if (!id) return false;
+    if (!modulesShown.value) return false;
+    const root = bodyEl.value;
+    if (!root || !root.querySelector(`.settings-category[data-section="${id}"]`)) {
+      return false;
+    }
+    pendingJump.value = null;
+    selectCategory(id);
+    return true;
+  }
+
+  watch(pendingJump, (id) => {
+    if (!id) return;
+    void nextTick(() => {
+      applyJump();
+    });
+  });
 
   // Any real input on the pane releases a deselect's suppression - that
   // IS the "next user scroll" the ruling names. A scroll event the pane
@@ -1718,6 +1806,14 @@
   });
   const searching = computed(() => searchHits.value !== null);
 
+  // card t_81d0901b: the MODULES section is CONFIGURATION over persisted
+  // module state, not a knob - the live query and the modified-only switch
+  // narrow the KNOB document, so the module section steps aside rather than
+  // pretending a module row could be a search hit or a modified setting.
+  const modulesShown = computed(
+    () => !searching.value && !modifiedOnly.value,
+  );
+
   // Ruling 8's predicate: the SAME modified test the rows carry, asked
   // through the knob's own domain (the dot and the switch can never
   // disagree about which knobs are modified).
@@ -1750,10 +1846,36 @@
   );
 
   // --- the scroll-spy (the nav follows the document) ---
-  const spyOrder = computed<string[]>(() => spyTargetIds(docSections.value));
-  const inBand = new Set<string>();
+  /// card t_81d0901b: the MODULES section heads the document when it is
+  /// shown, so it heads the spy's order too - otherwise scrolling onto it
+  /// could never move the highlight onto its nav entry
+  const spyOrder = computed<string[]>(() => [
+    ...(modulesShown.value ? [MODULES_CATEGORY] : []),
+    ...spyTargetIds(docSections.value),
+  ]);
   let spyObserver: IntersectionObserver | null = null;
   let paneBoxObserver: ResizeObserver | null = null;
+
+  /** the band membership, MEASURED: the observer's rootMargin
+      "0 0 -80% 0" is the root's top 20%, so a target is "in the band" when
+      its box overlaps that slice. card t_81d0901b: the decision is measured
+      rather than read off the observer's own isIntersecting bookkeeping - a
+      delivery can arrive carrying a stale entry (a section that left the
+      band two frames ago), and the highlight then named a section the pane
+      was not looking at. The observer is the TRIGGER (boxes moved, resolve),
+      the measurement is the truth. */
+  function spyBand(): (id: string) => boolean {
+    const root = bodyEl.value;
+    if (!root) return () => false;
+    const rootTop = root.getBoundingClientRect().top;
+    const bandBottom = rootTop + root.clientHeight * 0.2;
+    return (id) => {
+      const node = spyNodes.get(id);
+      if (!node) return false;
+      const box = node.getBoundingClientRect();
+      return box.bottom > rootTop && box.top < bandBottom;
+    };
+  }
 
   /** observePaneBox: the scrollport's OWN box moving is a geometry change,
       never a scroll - a resize re-resolves every target at new heights and
@@ -1780,51 +1902,83 @@
       scroll). A scroll the pane did not issue ends that suppression even
       with no intent event (card t_e7404b84), so a scrollbar drag or an
       assistive-technology scroll moves the highlight like a wheel does. */
+  /** pickSpySection is THE selection rule, shared by both membership
+      sources: given "is this id in the band", it answers the section the
+      pane is looking at. card t_a8063683: the section headings are STICKY,
+      so several can sit at the same top edge - the honest signal is the
+      LAST one in document order that has reached the scrollport's top (it
+      is the one currently PINNED at it, its predecessor has already been
+      pushed out). `first` is the fallback for a pane whose targets all
+      still sit below the edge. */
+  function pickSpySection(inBandId: (id: string) => boolean): string | null {
+    const root = bodyEl.value;
+    if (!root) return null;
+    const rootTop = root.getBoundingClientRect().top;
+    let best: string | null = null;
+    let first: string | null = null;
+    for (const id of spyOrder.value) {
+      if (!inBandId(id)) continue;
+      const node = spyNodes.get(id);
+      if (!node) continue;
+      if (first === null) first = id;
+      if (node.getBoundingClientRect().top - rootTop <= 1) best = id;
+    }
+    return best ?? first;
+  }
+
+  function applySpySelection(best: string | null) {
+    if (best === null || best === selection.value) return;
+    selection.value = best;
+    // the last place the USER was IS the anchor a reopen restores - a
+    // delivery a geometry change armed resolves a new id at new boxes and
+    // must not write it (card t_63c699ce: one write per user scroll)
+    if (!spyAnchorMayWrite(anchorTrace)) return;
+    anchorTrace.wroteAt = anchorTrace.userScrollAt;
+    persistAnchor(best);
+  }
+
+  /** resolveSpyAtRest re-resolves the highlight from the boxes the pane
+      RESTS at (card t_81d0901b): a jump's smooth scroll can deliver its last
+      intersection batch INSIDE the spy lock - a long jump down a tall
+      document outruns the 650ms window - so the observer drops those
+      deliveries and, at rest, no further entries arrive: the highlight
+      would sit one section behind the pane it is pointing at. The lock's
+      release therefore re-measures, the same way the CLAMP re-measures on
+      a lock release (card t_720c9cff). It never writes the anchor: this is
+      a programmatic jump, and the click already persisted it. */
+  function resolveSpyAtRest() {
+    if (!bodyEl.value) return;
+    applySpySelection(pickSpySection(spyBand()));
+  }
+
+  /** settleSpyIfIdle re-resolves the highlight ONCE the pane has actually
+      come to rest: not while the spy lock is still up (the observer owns the
+      deliveries until then) and not while the pane's own scroll is still
+      producing events (a fixed delay would resolve a section the jump is
+      merely passing through - the 650ms lock expires mid-flight on a long
+      jump). Whichever gate lifts LAST calls this, and at rest it is a
+      measurement of the boxes the pane really rests at. card t_81d0901b. */
+  function settleSpyIfIdle() {
+    if (spyLocked) return; // the lock's release calls us back
+    if (!paneScrollSettled(paneScroll)) return; // the settle timer calls us back
+    resolveSpyAtRest();
+  }
+
   function syncSpy() {
     const root = bodyEl.value;
     spyObserver?.disconnect();
     spyObserver = null;
-    inBand.clear();
     // a re-arm is a GEOMETRY change, not a scroll: the boxes below are new
     anchorTrace.geometryAt = nowMs();
     observePaneBox(root);
     if (!root || typeof IntersectionObserver === "undefined") return;
     collectSpyTargets(root);
     spyObserver = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const id = (entry.target as HTMLElement).dataset.section ?? "";
-          if (!id) continue;
-          if (entry.isIntersecting) inBand.add(id);
-          else inBand.delete(id);
-        }
+      () => {
         if (spyLocked) return;
-        const rootTop = root.getBoundingClientRect().top;
-        // card t_a8063683: the section headings are STICKY now, so several
-        // of them can sit at the SAME top edge. "Nearest the top" would
-        // pick a neighbour arbitrarily there; the honest signal is the
-        // LAST heading in document order that has reached the scrollport's
-        // top - that is the one currently PINNED at it, and its predecessor
-        // has already been pushed out. `first` is the fallback for a pane
-        // whose targets are all still below the edge.
-        let best: string | null = null;
-        let first: string | null = null;
-        for (const id of spyOrder.value) {
-          if (!inBand.has(id)) continue;
-          const node = spyNodes.get(id);
-          if (!node) continue;
-          if (first === null) first = id;
-          if (node.getBoundingClientRect().top - rootTop <= 1) best = id;
-        }
-        if (best === null) best = first;
-        if (best === null || best === selection.value) return;
-        selection.value = best;
-        // the last place the USER was IS the anchor a reopen restores - a
-        // delivery a geometry change armed resolves a new id at new boxes and
-        // must not write it (card t_63c699ce: one write per user scroll)
-        if (!spyAnchorMayWrite(anchorTrace)) return;
-        anchorTrace.wroteAt = anchorTrace.userScrollAt;
-        persistAnchor(best);
+        // the delivery is the TRIGGER only: resolve from the measured band
+        // (card t_81d0901b - an isIntersecting set can carry a stale entry)
+        applySpySelection(pickSpySection(spyBand()));
       },
       { root, rootMargin: "0px 0px -80% 0px", threshold: 0 },
     );
