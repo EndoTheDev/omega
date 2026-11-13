@@ -503,11 +503,14 @@ body {
 .dock-tab:hover .dock-tab-close,
 .dock-tab-close:focus-visible { opacity: 1; }
 .dock-tab-close:hover { background: var(--z2); color: var(--text); }
-/* card t_49d0b308: the inspector pane hosts SEVEN pinned tabs now - the
-   72px min-width cannot stack in the ~300px column (overflow clipped the
-   tail). Pinned tabs shrink freely and ellipsize instead. */
+/* card t_80775d15: the pinned TEXT strip (the bottom pane's tabs) keeps
+   the base 72px floor - a strip that runs out of room SCROLLS (the
+   t_aca53fee pattern: .dock-tabs overflow-x + DockPane's active-tab
+   resolver), it never crushes a tab into a glyph sliver. The old
+   min-width: 0 here served t_49d0b308's seven-tab inspector column, a
+   shape retired by t_a3b28c37's 28px icon chips (left/right shells never
+   render text tabs now - .ic-only below carries their fixed width). */
 .dock-pane.pinned .dock-tab {
-  min-width: 0;
   flex: 0 1 auto;
   padding: 0 4px 0 8px;
   font-size: 12px;
@@ -692,6 +695,10 @@ body {
 .dock-pane.pinned .dock-tab.ic-only {
   flex: none;
   width: 28px;
+  /* card t_80775d15: the icon chip's own floor. The base .dock-tab's
+     72px min-width would otherwise override the 28px width (min-width
+     beats width on the used value) and blow the chip shape open. */
+  min-width: 28px;
   padding: 0;
   justify-content: center;
 }
