@@ -418,6 +418,77 @@ func TestWakeStreamErrorLeavesNote(t *testing.T) {
 	}
 }
 
+// TestWakeCancelledBetweenTurnsLeavesNote: the same zero-trace gap on
+// the run cap (card t_317136fd). A cap expiring MID-STREAM surfaces as
+// a provider stream error and rides the "error" note above, but an
+// expiry landing BETWEEN turns ends the loop on its own turn-boundary
+// ctx check with a DISTINCT finish_reason "cancelled" (agent/loop/
+// agent_loop.go) - before the first assistant row, so the latch above
+// never saw a note-worthy end and the re-entry turn vanished from the
+// session while only its input row survived. The cancelled end must
+// leave the same visible note, worded for the cap.
+func TestWakeCancelledBetweenTurnsLeavesNote(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	// The provider script a healthy run would consume: if the cap ever
+	// fails to bite, the run produces an assistant row and the
+	// zero-row assertion below goes red instead of passing blind.
+	prov := newWakeScripted("step", [][]core.ProviderStreamEvent{finalStep("unreachable")})
+	a := agent.NewAgent(prov, nil, 0)
+	a.SetLoopProvider(loop.Loop{})
+	s := NewServer(a, nil, st, nil, nil, nil)
+	// The cap has ALREADY expired when the run ctx is built, so the
+	// real loop's first turn-boundary check sees it - the between-turns
+	// window with zero assistant rows, deterministic (no sleep, no race
+	// with how fast the loop reaches its first stream).
+	s.runTimeout = -time.Second
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	createSession(t, ts, "s1")
+	muteTitles(t, st, "s1")
+
+	// The settled result re-enters through the real wake path.
+	s.wakeHome("s1", core.YieldResult{
+		ToolCallID: "call_9canc3l",
+		ToolName:   "files.glob",
+		Content:    "a.txt",
+		Timestamp:  core.NowISO(),
+	})
+	waitFor(t, "wake run launched and finished", func() bool {
+		return s.wakeLaunchCount("s1") == 1 && !s.runs.active("s1")
+	})
+
+	msgs, err := st.GetMessages(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("get messages: %v", err)
+	}
+	note := ""
+	for _, m := range msgs {
+		if u, ok := m.(core.User); ok && contains(u.Content, "run cap") {
+			note = u.Content
+		}
+		if _, ok := m.(core.Assistant); ok {
+			t.Errorf("the cap-cancelled wake turn persisted an assistant row no turn produced: %s", sessionRowDump(msgs))
+		}
+	}
+	if note == "" {
+		dumpSessionRows(t, st, "s1")
+		t.Fatal("the cap-cancelled wake turn left no note - the run vanished with zero trace")
+	}
+	if !contains(note, "files.glob") {
+		t.Errorf("note %q does not name the tool that settled", note)
+	}
+	// The input row survives (the partial trace the gap left behind):
+	// the note stands in for the END row, it does not replace the run.
+	if !hasYieldResult(msgs, "call_9canc3l", core.YieldResult{}) {
+		dumpSessionRows(t, st, "s1")
+		t.Error("the settled result row went missing")
+	}
+}
+
 // TestNonWakeStreamErrorLeavesNoRow pins the untouched half (scope
 // law, card t_9821e39b): a NON-wake run killed by a stream error keeps
 // today's behavior - the live error frame is the whole trace, nothing
