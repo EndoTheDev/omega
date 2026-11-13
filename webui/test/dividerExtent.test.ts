@@ -28,9 +28,11 @@
 //      hover band reaches the pane bottom row beside the band
 //   7. the root column divider reaches 2px past its insets (T-junctions
 //      land on the vertical lines' columns), fallback clean in full mode
-//   8. the pane header's seam is a REAL border-bottom on .dock-tabbar -
-//      opaque children never break it (supersedes the where-chrome-shows
-//      inset-shadow read of t_f6c1b5fe)
+//   8. the pane header's seam is GONE - .dock-tabbar carries THREE sides
+//      and no bottom stroke (t_063e3ced, Endo ruling 2026-11-12: the
+//      strip and the content read as one surface, the fill tone shift
+//      carries the boundary; supersedes t_bc321318's real border-bottom
+//      seam and t_f6c1b5fe's where-chrome-shows inset-shadow before it)
 // Run: node --test webui/test/ (node >= 23)
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -270,9 +272,25 @@ describe("divider law (t_bc321318 through-lines; t_e539ba29 + t_4e2ceca1 BOTH or
     );
   });
 
-  it("the pane header's seam is a real full-width border-bottom", () => {
-    const bar = find(MAIN, ".dock-tabbar").body.replace(/\s+/g, " ");
-    assert.match(bar, /border-bottom:\s*1px solid var\(--stroke\)/);
+  it("the pane header's seam is GONE - the strip carries three sides", () => {
+    // declarations only: the rule's own comment names the dead seam
+    const bar = find(MAIN, ".dock-tabbar")
+      .body.replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/\s+/g, " ");
+    assert.ok(
+      !bar.includes("border-bottom"),
+      "no bottom stroke on the tab bar (t_063e3ced supersedes the t_bc321318 seam)",
+    );
+    assert.ok(
+      !/(?:^|[\s;])border:/.test(bar),
+      "no border shorthand - its bottom edge would re-draw the hairline",
+    );
+    // only the lower edge went: top/side strokes stay (the strip is still
+    // the card's top half), and so does the active tab's merge
+    assert.match(bar, /border-top:\s*1px solid var\(--stroke\)/);
+    assert.match(bar, /border-left:\s*1px solid var\(--stroke\)/);
+    assert.match(bar, /border-right:\s*1px solid var\(--stroke\)/);
+    assert.match(bar, /background:\s*var\(--z1-raised\)/, "the fill tone shift carries the boundary");
     // the where-chrome-shows inset-shadow seam is gone for good
     assert.ok(
       !bar.includes("box-shadow: inset 0 -1px"),
