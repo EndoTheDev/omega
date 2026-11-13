@@ -73,7 +73,12 @@ The gutter divider (`PaneDivider`) retains its magnetic snap rebase
 mechanics. On a drag between two FLEXIBLE panes the shares re-derive
 from the frozen pre-drag baseline (c50b749) — the squeeze chain is
 dead: a divider never pushes a third pane around (t_6a74d5a1's
-wall-law). Fixed panes drag down to the shared 128 floor. Below the
+wall-law). A divider with a FIXED pane on one side writes that pane's
+px and the ADJACENT neighbor absorbs the change 1:1 - every other
+flexible sibling holds its measured px (t_8098aa06; before it, the
+flex reflow spread the delta over the whole flex space, so a small
+pane beside a big one tracked the pointer at a fraction of the drag).
+Fixed panes drag down to the shared 128 floor. Below the
 mobile breakpoint the sidebars collapse into slide-in drawers over a
 scrim; chrome (menu/status bar) rides above all overlays: drawers z12,
 scrim z10.
