@@ -128,14 +128,16 @@ describe("closeSessionTabs", () => {
     });
   });
 
-  it("closing the last tab empties the pane (it survives showing the menu)", () => {
+  it("closing the last tab seats the new-tab placeholder (pane never zero, never removed)", () => {
     const bound = seededTree("gone");
     const key = firstChatTab(bound)!.tab.key!;
     const tree = setTabSessionRef(bound, key, "gone");
     assert.equal(paneAt(tree, 1).tabs.length, 1);
     const next = closeSessionTabs(tree, "gone");
     const chatPane = paneAt(next, 1);
-    assert.equal(chatPane.tabs.length, 0, "pane empty, not removed");
+    // card t_d04a1c80 (NEVER-ZERO-TABS): the session close takes the last
+    // live tab with it - the pane keeps the placeholder seat
+    assert.deepEqual(chatPane.tabs.map((t) => t.component), ["newtab"], "seat, not an empty pane");
   });
 
   it("unrelated session ids change nothing", () => {

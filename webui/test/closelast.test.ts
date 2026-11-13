@@ -26,8 +26,11 @@ import {
   makeSplit,
   movePane,
   moveTab,
+  normalizeTabSeats,
+  openTab,
   removePane,
   serialize,
+  setPaneComponent,
   splitPane,
   DOCK_LAYOUT_KEY,
   paneCount,
@@ -73,6 +76,13 @@ function panes(t: DockNode): DockPane[] {
   };
   walk(t);
   return out;
+}
+
+/** the pane with this id (asserting it exists) */
+function asPaneOf(t: DockNode, id: string): DockPane {
+  const p = panes(t).find((x) => x.id === id);
+  assert.ok(p, `expected pane ${id}`);
+  return p!;
 }
 
 /** the fixed shell shape: left sessions + the single main pane + right
@@ -136,13 +146,45 @@ describe("case 1: a single main pane - pane X hidden, tab X present", () => {
     assert.notEqual(after, withTab, "tab 0 closes");
     assert.equal(findPane(after, twoTabs.id)!.tabs.length, 1, "one tab stays");
     const after2 = closeTab(after, twoTabs.id, 0);
-    assert.equal(
-      findPane(after2, twoTabs.id)!.tabs.length,
-      0,
-      "the LAST tab closes too",
+    // card t_d04a1c80 (NEVER-ZERO-TABS): the LAST tab closes into the
+    // new-tab seat - the pane is never zero-tab, not even for a render
+    assert.deepEqual(
+      findPane(after2, twoTabs.id)!.tabs.map((x) => x.component),
+      ["newtab"],
+      "the LAST tab closes into the new-tab seat",
     );
-    assert.ok(findPane(after2, twoTabs.id), "the emptied pane never left the tree");
-    assert.equal(mainPaneCount(after2), 1, "the launcher state is still a main pane");
+    assert.equal(findPane(after2, twoTabs.id)!.active, 0);
+    assert.ok(findPane(after2, twoTabs.id), "the pane never left the tree");
+    assert.equal(mainPaneCount(after2), 1, "the seat is still a main pane");
+  });
+  it("the new-tab seat itself refuses to close (keep it)", () => {
+    const { t, main } = shellTree();
+    const seated: DockPane = { ...main, tabs: [{ component: "newtab" }], active: 0 };
+    const withSeat: DockNode = makeSplit("row", [
+      (t as { children: DockNode[] }).children[0]!,
+      seated,
+      (t as { children: DockNode[] }).children[2]!,
+    ]);
+    assert.equal(closeTab(withSeat, seated.id, 0), withSeat, "the seat is unclosable - the law keeps it");
+  });
+  it("real content arriving on a seat pane retires the seat", () => {
+    const { t, main } = shellTree();
+    const seated: DockPane = { ...main, tabs: [{ component: "newtab" }], active: 0 };
+    const withSeat: DockNode = makeSplit("row", [
+      (t as { children: DockNode[] }).children[0]!,
+      seated,
+      (t as { children: DockNode[] }).children[2]!,
+    ]);
+    const out = openTab(withSeat, seated.id, { component: "chat" });
+    assert.deepEqual(
+      findPane(out, seated.id)!.tabs.map((x) => x.component),
+      ["chat"],
+      "the seat only ever sits alone",
+    );
+    assert.deepEqual(
+      findPane(setPaneComponent(withSeat, seated.id, "settings"), seated.id)!.tabs.map((x) => x.component),
+      ["settings"],
+    );
   });
   it("the store still hides ONLY the pane X: canRemovePane false, tab close goes through", async () => {
     const { t, main } = shellTree();
@@ -151,9 +193,13 @@ describe("case 1: a single main pane - pane X hidden, tab X present", () => {
     assert.equal(dock.isLastMainPane(main.id), true, "the pane guards on the census");
     dock.closeTab(main.id, 0);
     await flush();
-    assert.equal(findPane(dock.tree.value, main.id)!.tabs.length, 0, "the tab closed");
+    assert.deepEqual(
+      findPane(dock.tree.value, main.id)!.tabs.map((x) => x.component),
+      ["newtab"],
+      "the last tab closed into the seat",
+    );
     assert.ok(findPane(dock.tree.value, main.id), "the pane never left");
-    assert.equal(mainPaneCount(dock.tree.value), 1, "the launcher stays a main pane");
+    assert.equal(mainPaneCount(dock.tree.value), 1, "the seat stays a main pane");
   });
 });
 
@@ -202,13 +248,17 @@ describe("case 3: close-last via direct action call never removes the pane", () 
     assert.equal(serialize(dock.tree.value), before, "the tree is untouched");
     assert.ok(findPane(dock.tree.value, main.id), "the pane never left");
   });
-  it("dock.closeTab on the last main pane closes the tab but never the pane", async () => {
+  it("dock.closeTab on the last main pane seats the new tab, never zero tabs", async () => {
     const { t, main } = shellTree();
     const dock = await dockOver(t);
     dock.closeTab(main.id, 0);
     await flush();
-    assert.equal(findPane(dock.tree.value, main.id)!.tabs.length, 0, "the last tab closed");
-    assert.ok(findPane(dock.tree.value, main.id), "the pane survives as the launcher");
+    assert.deepEqual(
+      findPane(dock.tree.value, main.id)!.tabs.map((x) => x.component),
+      ["newtab"],
+      "the last tab closed into the new-tab seat",
+    );
+    assert.ok(findPane(dock.tree.value, main.id), "the pane survives");
     assert.equal(mainPaneCount(dock.tree.value), 1, "the main area still reads one");
   });
   it("movePane of the last main pane is a no-op, never a duplicate", () => {
@@ -225,14 +275,18 @@ describe("case 3: close-last via direct action call never removes the pane", () 
 });
 
 describe("the move-out exception: the last main pane survives its own last tab", () => {
-  it("the emptied source stays as the launcher when it is the last main pane", () => {
+  it("the emptied source stays on the new-tab seat when it is the last main pane", () => {
     const { t, main } = shellTree();
     const shell = panes(t).find((p) => p.edge === "right")!;
     // the chat tab walks into the pinned shell: the source empties
     const out = moveTab(t, main.id, 0, shell.id, shell.tabs.length);
     const srcPane = findPane(out, main.id);
     assert.ok(srcPane, "the last main pane never closes (t_aa9dbada exception)");
-    assert.equal(srcPane!.tabs.length, 0, "it sits empty as the launcher");
+    assert.deepEqual(
+      srcPane!.tabs.map((x) => x.component),
+      ["newtab"],
+      "the drained last main pane takes the seat (card t_d04a1c80)",
+    );
     assert.equal(mainPaneCount(out), 1, "the main area never reaches zero panes");
   });
   it("a non-last main pane still closes on its last tab out (the law unchanged)", () => {
@@ -242,6 +296,63 @@ describe("the move-out exception: the last main pane survives its own last tab",
     const out = moveTab(t, a.id, 0, b.id, 0);
     assert.ok(!findPane(out, a.id), "the emptied source closed");
     assert.equal(mainPaneCount(out), 1, "the survivor is the last main pane now");
+  });
+});
+
+describe("NEVER-ZERO-TABS through reload (card t_d04a1c80)", () => {
+  it("a persisted zero-tab pane boots onto the new-tab seat", async () => {
+    const t: DockNode = makeSplit("row", [
+      makePane("sidebar", 240, "left"),
+      { kind: "pane", id: "n900", tabs: [], active: 0, fixed: null },
+      makePane("files", 300, "right"),
+    ]);
+    const dock = await dockOver(t);
+    const main = panes(dock.tree.value).find((p) => p.edge === undefined)!;
+    assert.deepEqual(
+      main.tabs.map((x) => x.component),
+      ["newtab"],
+      "the reload never mounts zero tabs",
+    );
+    assert.ok(
+      dock.bootRepairs.some((r) => r.includes("zero-tab pane")),
+      "the boot reports the seat repair",
+    );
+  });
+  it("a persisted seat beside real content is dropped on boot (seats only sit alone)", async () => {
+    const t: DockNode = makeSplit("row", [
+      makePane("sidebar", 240, "left"),
+      {
+        kind: "pane",
+        id: "n901",
+        tabs: [{ component: "newtab" }, { component: "chat" }],
+        active: 0,
+        fixed: null,
+      },
+      makePane("files", 300, "right"),
+    ]);
+    const dock = await dockOver(t);
+    const main = panes(dock.tree.value).find((p) => p.edge === undefined)!;
+    assert.deepEqual(
+      main.tabs.map((x) => x.component),
+      ["chat"],
+      "the stale seat retired, the content stayed",
+    );
+  });
+  it("normalizeTabSeats seats, drops, and is idempotent (same object when settled)", () => {
+    const empty: DockPane = { kind: "pane", id: "n902", tabs: [], active: 0, fixed: null };
+    const t = makeSplit("row", [empty, makePane("chat")]);
+    const out = normalizeTabSeats(t);
+    assert.notEqual(out, t, "the sweep changed the tree");
+    assert.deepEqual(asPaneOf(out, "n902").tabs.map((x) => x.component), ["newtab"]);
+    assert.equal(normalizeTabSeats(out), out, "idempotent: the settled tree is returned as-is");
+
+    const shared: DockPane = {
+      kind: "pane", id: "n903",
+      tabs: [{ component: "newtab" }, { component: "chat" }], active: 1, fixed: null,
+    };
+    const dropped = normalizeTabSeats(makeSplit("row", [shared, makePane("sidebar", 240, "left")]));
+    assert.deepEqual(asPaneOf(dropped, "n903").tabs.map((x) => x.component), ["chat"]);
+    assert.equal(asPaneOf(dropped, "n903").active, 0, "focus follows the content it held");
   });
 });
 

@@ -15,9 +15,11 @@
 #                 GET /browser/frameable says deny=false for the XFO
 #                 origin, true for the friendly one, null for a dead
 #                 host; PUT {"url":""} resets.
-#   b  open     - the main pane's empty-watermark menu carries Browser
-#                 (the singleton opener); clicking mounts BrowserTab
-#                 (the URL bar input, aria-label "browser url").
+#   b  open     - the command palette (ctrl+k) opens Browser through the
+#                 singleton opener (card t_d04a1c80 deleted the empty-pane
+#                 component menu; the palette is the surviving door) and
+#                 mounts BrowserTab (the URL bar input, aria-label
+#                 "browser url").
 #   c  resume   - the tab restores the persisted address on mount (the
 #                 PUT from step a) and a local page load keeps the
 #                 fallback OUT - load = friendly, the resume is real.
@@ -63,6 +65,10 @@ PY
 P_FRIENDLY=$(echo "$PORTS" | cut -d' ' -f1)
 P_DENY=$(echo "$PORTS" | cut -d' ' -f2)
 SRV="${TMPDIR:-/tmp}/jrn-browser-srv$$.py"
+# a native python cannot open an MSYS /tmp path (winbtw: it resolved
+# D:\tmp\... and died); hand it the mapped form where cygpath exists - a
+# Pi has no cygpath and the plain path passes through unchanged
+SRV_PY="$(cygpath -m "$SRV" 2>/dev/null || printf '%s' "$SRV")"
 cat > "$SRV" <<PY
 import http.server, sys, threading
 p_friendly, p_deny = int(sys.argv[1]), int(sys.argv[2])
@@ -82,14 +88,17 @@ class Deny(Friendly):
 threading.Thread(target=lambda: http.server.ThreadingHTTPServer(("127.0.0.1", p_deny), Deny).serve_forever(), daemon=True).start()
 http.server.ThreadingHTTPServer(("127.0.0.1", p_friendly), Friendly).serve_forever()
 PY
-python3 "$SRV" "$P_FRIENDLY" "$P_DENY" & SRVPID=$!
+python3 "$SRV_PY" "$P_FRIENDLY" "$P_DENY" & SRVPID=$!
 FRIENDLY="http://127.0.0.1:$P_FRIENDLY/jrn-marker.html"
 DENYURL="http://127.0.0.1:$P_DENY/jrn-marker.html"
-up=0; for i in $(seq 1 20); do
-  if curl -s -o /dev/null "$FRIENDLY" && curl -s -o /dev/null "$DENYURL"; then up=1; break; fi
-  sleep 0.5
-done
-[ "$up" = "1" ] || die "local frame origins never came up"
+# the origins are python loopbacks: on a slow-start host the first binds
+# land after the first probe, so wait on curl's own retry ladder
+# (connrefused retries) instead of counting sleeps
+fu=$(curl -s -o /dev/null -w '%{http_code}' --retry 20 --retry-delay 1 \
+  --retry-connrefused --max-time 3 "$FRIENDLY")
+du=$(curl -s -o /dev/null -w '%{http_code}' --retry 20 --retry-delay 1 \
+  --retry-connrefused --max-time 3 "$DENYURL")
+[ "$fu" = "200" ] && [ "$du" = "200" ] || die "local frame origins never came up (friendly=$fu deny=$du)"
 # the deny origin really denies (its header is why the embed refuses)
 curl -s -D - -o /dev/null "$DENYURL" | grep -qi "^x-frame-options: deny" || die "deny origin lost its X-Frame-Options header"
 step "ok: local origins up (friendly :$P_FRIENDLY, deny :$P_DENY)"
@@ -121,24 +130,30 @@ put=$(curl -s -X PUT "$B/browser/last" -H 'Content-Type: application/json' \
 printf '%s' "$put" | grep -qF "127.0.0.1:$P_FRIENDLY" || die "PUT did not answer the stored URL: $put"
 step "ok: the last-URL pair round-trips, the probe classifies, the reset clears"
 
-# --- b+c: open the tab (empty-pane watermark), the resume mounts ----------
+# --- b+c: open the tab (the command palette), the resume mounts ----------
 open_app
 js 'localStorage.clear()' >/dev/null 2>&1
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
 
-# close the boot draft chat tab so the main pane empties into the
-# watermark menu (79's proven close)
-draftclosed=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];const hit=ps.find(p=>!p.classList.contains("pinned")&&[...p.querySelectorAll(".dock-tab-title")].some(t=>/^new chat$/i.test((t.textContent||"").trim())));if(!hit) return 0;const t=[...hit.querySelectorAll(".dock-tab-title")].findIndex(x=>/^new chat$/i.test((x.textContent||"").trim()));if(t<0) return 0;const x=hit.querySelectorAll(".dock-tab-close")[t];if(!x) return 0;x.click();return 1})()')
-assert_eq "$draftclosed" "1" "boot draft chat tab closed"
-# the watermark's refill inventory carries Browser (singleton voice)
+# card t_d04a1c80: the empty-pane component menu is DELETED (the
+# never-zero-tabs ruling seats a "New Tab" placeholder instead), so the
+# tab opens through the command palette - the same opener the menus called,
+# and the surviving door to every dockable.
+pal=$(jsq '(()=>{window.dispatchEvent(new KeyboardEvent("keydown",{key:"k",ctrlKey:true,bubbles:true}));return !!document.querySelector(".command-palette-input")?1:0})()')
+if [ "$pal" != "1" ]; then
+  sleep 0.5
+  pal=$(jsq '!!document.querySelector(".command-palette-input")?1:0')
+fi
+assert_eq "$pal" "1" "the command palette opened (ctrl+k)"
+ab fill '.command-palette-input' 'browser' >/dev/null 2>&1
 bopen=0
 for i in $(seq 1 20); do
-  b=$(jsq '(()=>{const b=[...document.querySelectorAll(".dock-empty .dock-menu-btn")].find(x=>(x.textContent||"").trim()==="Browser");if(!b) return 0;b.click();return 1})()')
+  b=$(jsq '(()=>{const r=[...document.querySelectorAll(".command-palette-list li")].find(x=>/^Open Browser$/i.test((x.querySelector(".command-title")||{}).textContent?.trim()||""));if(!r) return 0;r.click();return 1})()')
   [ "$b" = "1" ] && bopen=1 && break
   sleep 0.5
 done
-assert_eq "$bopen" "1" "Browser opened from the empty-pane menu"
+assert_eq "$bopen" "1" "Browser opened from the command palette"
 # the pane mounts: url bar input + frame shell
 wait_js '!!document.querySelector(".browser-tab .browser-url")' 10 \
   || die "BrowserTab never mounted (no url bar)"
