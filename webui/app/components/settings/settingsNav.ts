@@ -31,6 +31,21 @@
 // Pure on purpose: no Vue, no fetch, no DOM. The unit suite pins the
 // tree, the one-document builder, the anchor resolution and the grey-out
 // set; the component only paints what these functions return.
+//
+// THE SECTION FILTER (card t_cd9952a3) is the one ruling that reached
+// INTO the one-document law without reversing it: the document is still
+// ONE document of every category, and the nav is still jump links - but a
+// REAL section selection now narrows what that document RENDERS to the
+// selected section plus its subsections (the VS Code read), and a
+// deselect (or Commonly Used, the curated all-view) gives the whole
+// document back. Search outranks the selection: a live query is GLOBAL,
+// so the filter stands down while it is up and returns when it clears.
+// The filter is a VIEW filter - no knob, no config, no row changes.
+//
+// The URL door (part 3 of that card) is a QUERY parameter on whatever
+// path the app already serves - `?settings=<section>` - because the path
+// already belongs to the focused chat (card t_06c01beb) and the settings
+// path is a different card's lane (t_6d6a6dc4). One scheme, two axes.
 
 import type { SettingGroup, SettingKnob } from "../../composables/omega";
 
@@ -364,6 +379,10 @@ export interface ContentInput {
   /** ruling 8: keep only the knobs that differ from their base */
   modifiedOnly?: boolean;
   isModified?: (knob: SettingKnob) => boolean;
+  /** card t_cd9952a3: the CATEGORY a real selection filters the document
+      to (its own section plus its subsection blocks). null/undefined is
+      the all-view. A live query WINS over it - search is global. */
+  only?: string | null;
 }
 
 function keeper(input: ContentInput): (knob: SettingKnob) => boolean {
@@ -377,12 +396,38 @@ function keeper(input: ContentInput): (knob: SettingKnob) => boolean {
   };
 }
 
+/** sectionFilter is the CATEGORY the pane's document is narrowed to, from
+    the pane's own state (card t_cd9952a3). Three rules, in order:
+
+    1. a live query stands the filter DOWN - search is one global filter
+       across every section, so the selection is ignored while it is up
+       (and it comes back the moment the query clears);
+    2. no selection is the all-view;
+    3. Commonly Used is the curated ALL-VIEW entry: its knobs are borrowed
+       from every domain, so selecting it restores the whole document
+       rather than narrowing to a list that duplicates the rest.
+
+    A subsection id resolves to its CATEGORY: "provider/models" filters to
+    provider (which renders that block), never to a section that does not
+    exist. */
+export function sectionFilter(
+  selected: string | null,
+  searching: boolean,
+): string | null {
+  if (searching) return null;
+  if (!selected) return null;
+  const { category } = parseSelection(selected);
+  if (category === COMMON_CATEGORY) return null;
+  return category;
+}
+
 /** documentFor is the pane's whole body: EVERY category, in nav order, as
-    a headed section - the selection never filters it (card t_8b464090:
-    "the right pane ALWAYS shows every knob and its description"). A
-    multi-child domain renders its children as headed blocks; a flat or
-    one-child domain renders one unheaded list, because a heading that
-    repeats the section title is noise.
+    a headed section - unless the pane holds a SECTION FILTER (card
+    t_cd9952a3), in which case it renders that one category and its
+    subsections (the VS Code read: a nav selection narrows the pane, it
+    does not merely scroll it). A multi-child domain renders its children
+    as headed blocks; a flat or one-child domain renders one unheaded
+    list, because a heading that repeats the section title is noise.
 
     Search filters the document IN PLACE - the old cross-category hits
     view is gone, the filtered document IS the hits view - and a live
@@ -397,9 +442,12 @@ export function documentFor(
 ): DocSection[] {
   const keep = keeper(input);
   const searching = input.hits != null;
+  // a live query outranks the section filter (card t_cd9952a3 part 2)
+  const only = searching ? null : input.only ?? null;
   const sections: DocSection[] = [];
   for (const category of nav) {
     if (searching && category.id === COMMON_CATEGORY) continue;
+    if (only !== null && category.id !== only) continue;
     const blocks: DocBlock[] = [];
     if (category.flat || category.subgroups.length <= 1) {
       const knobs = category.knobs.filter(keep);
@@ -511,11 +559,14 @@ export interface ClampGeometry {
 }
 
 /** clampedRange answers the `[min, max]` scrollTop window a SELECTED section
-    allows. Selection never filters the document (the one-document ruling),
-    so the pane still scrolls - the clamp only bounds WHERE it may rest:
-    `min` puts the section's top at the scrollport's top edge (its sticky
-    heading is the section's first child, so the heading pins exactly
-    there), `max` puts the section's bottom at the bottom edge.
+    allows. The clamped-range maths is settled law (card t_a6b794b5) and
+    card t_cd9952a3 keeps it verbatim: the pane still scrolls, and the
+    clamp only bounds WHERE it may rest - `min` puts the section's top at
+    the scrollport's top edge (its sticky heading is the section's first
+    child, so the heading pins exactly there), `max` puts the section's
+    bottom at the bottom edge. Under the section FILTER the document has
+    shrunk to that section, so both ends collapse onto the document's own
+    limit - the same answer, reached by the same arithmetic.
 
     A section SHORTER than the viewport has no room to travel - `max` would
     land above `min` - so its range collapses to `[min, min]`: while it is
@@ -615,5 +666,69 @@ export interface SpyAnchorTrace {
     second write of a scroll already written. */
 export function spyAnchorMayWrite(trace: SpyAnchorTrace): boolean {
   return trace.userScrollAt > trace.geometryAt && trace.userScrollAt > trace.wroteAt;
+}
+
+// --- the URL carries the section (card t_cd9952a3 part 3) -----------------
+//
+// The in-app URL owns the focused CHAT session on its PATH (card
+// t_06c01beb: replaceState only, no pushState, path only). This card adds
+// the settings pane's section on the QUERY axis instead of inventing a
+// second path scheme: `?settings=<section>` rides whatever path is current,
+// so the two never fight, and the settings-path card (t_6d6a6dc4) can add
+// `/settings` later without touching this parameter.
+//
+// The helpers are pure string work so the node suite can pin them with no
+// DOM: the component hands them `window.location.href` and gets back either
+// the section id or the path to replaceState.
+
+/** the query parameter the settings section rides */
+export const SETTINGS_SECTION_PARAM = "settings";
+
+/** parseSettingsSection answers the section id a settings URL carries.
+    Null for "no parameter" and for a BLANK one: `?settings=` is a deselect
+    that leaked into a bookmark, never a section named "". */
+export function parseSettingsSection(href: string): string | null {
+  const url = settingsUrl(href);
+  const raw = url.searchParams.get(SETTINGS_SECTION_PARAM);
+  if (raw === null) return null;
+  const id = raw.trim();
+  return id === "" ? null : id;
+}
+
+/** withSettingsSection answers the path a replaceState should commit: the
+    SAME path, with the section carried on the query (or dropped for a
+    null section - a deselect leaves no stale section behind). Every other
+    parameter is preserved, in order. A relative path is returned because
+    the URL scheme is replaceState-only: nothing here grows the history.
+    The section id is `<category>` or `<category>/<subgroup>` - both are
+    URL-safe, so the slash stays readable instead of `%2F`. */
+export function withSettingsSection(
+  href: string,
+  section: string | null,
+): string {
+  const url = settingsUrl(href);
+  const pairs: string[] = [];
+  url.searchParams.forEach((value, key) => {
+    if (key === SETTINGS_SECTION_PARAM) return;
+    pairs.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+  });
+  const id = (section ?? "").trim();
+  if (id !== "") {
+    pairs.push(
+      `${SETTINGS_SECTION_PARAM}=${encodeURIComponent(id).replace(/%2F/g, "/")}`,
+    );
+  }
+  const search = pairs.length > 0 ? `?${pairs.join("&")}` : "";
+  return `${url.pathname}${search}${url.hash}`;
+}
+
+/** settingsUrl parses an absolute OR relative href (the node suite pins it
+    with relative paths, the browser hands it an absolute one). */
+function settingsUrl(href: string): URL {
+  try {
+    return new URL(href);
+  } catch {
+    return new URL(href, "http://omega.invalid/");
+  }
 }
 

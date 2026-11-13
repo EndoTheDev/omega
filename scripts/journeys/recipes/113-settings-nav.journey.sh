@@ -23,7 +23,16 @@
 #   clamp     - card t_a6b794b5: a SELECTED category bounds the pane's
 #               scroll to its own range (start and end), a deselect
 #               releases it in the same frame, and the boundary follows the
-#               section's box when the pane resizes - nothing is filtered.
+#               section's box when the pane resizes.
+#   filter    - card t_cd9952a3: selecting a section FILTERS the document to
+#               that section and its subsections (only its rows render),
+#               Commonly Used and a deselect restore the all-view, and a
+#               search query OVERRIDES the filter (global match) until it
+#               clears. A scroll moves the highlight and never filters.
+#   url       - card t_cd9952a3 part 3: the in-app URL carries the selected
+#               section (?settings=<id> on the current path), and a deep
+#               link lands the pane PRE-FILTERED - it outranks the
+#               remembered anchor.
 #   narrow    - the SAME document; the nav is a drawer that jumps and then
 #               closes. There is no second screen and no back control.
 #
@@ -41,6 +50,12 @@ edge_probe() {
 nav_ids() { jsq '(()=>{return [...document.querySelectorAll(".settings-nav-cat")].map(e=>e.getAttribute("data-category")).join(",")})()' 2>&1 | plain; }
 doc_ids() { jsq '(()=>{return [...document.querySelectorAll(".settings-category")].map(e=>e.getAttribute("data-category")).join(",")})()' 2>&1 | plain; }
 active_id() { jsq '(()=>{const a=document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active");return a?a.getAttribute("data-category"):""})()' 2>&1 | plain; }
+# card t_cd9952a3: the rows inside ONE category section, and the rows the
+# pane renders at all - the two agree exactly while a section filter holds
+sec_rows() { jsq "(()=>{const s=document.querySelector('.settings-category[data-category=\"$1\"]');if(!s) return -1;return s.querySelectorAll('.setting-row,.setting-item').length})()" 2>&1 | plain; }
+pane_rows() { jsq '(()=>{return document.querySelectorAll(".settings-body .setting-row,.settings-body .setting-item").length})()' 2>&1 | plain; }
+# url_section: the section the in-app URL carries (card t_cd9952a3 part 3)
+url_section() { jsq '(()=>{return new URL(window.location.href).searchParams.get("settings")||""})()' 2>&1 | plain; }
 # sec_geom <id>: "<top>|<height>|<viewport>|<content>" of a category section,
 # in the scrollport's own scroll coordinates (top is a DOCUMENT offset).
 sec_geom() {
@@ -101,6 +116,8 @@ navids=$(nav_ids)
 docids=$(doc_ids)
 [ -n "$navids" ] || die "the nav rendered no categories"
 assert_eq "$docids" "$navids" "every nav category renders as a section, in nav order"
+all_ids=$docids
+
 firstdoc=$(jsq '(()=>{const s=document.querySelector(".settings-category");return s?s.getAttribute("data-category"):"none"})()' 2>&1 | plain)
 # card t_81d0901b: the MODULES section heads the document now - module
 # toggles are configuration, and the retired cockpit tab's reach moved here
@@ -160,8 +177,12 @@ step "ok: an expanded module row lists its tools, commands and panels"
 
 # a removable module toggles OFF and back ON live, the row following the wire
 # (the first toggleable row carrying a disable label: the round trip leaves
-# the lane as it found it, so the recipe stays residue-free)
-tog=$(jsq '(()=>{const s=[...document.querySelectorAll(".settings-category")].find(x=>x.getAttribute("data-section")==="modules");const pill=[...s.querySelectorAll(".module-toggle")].find(p=>/^disable /.test(p.getAttribute("aria-label")||""));if(!pill) return "missing";return (pill.getAttribute("aria-label")||"").replace(/^disable /,"")})()' 2>&1 | plain)
+# the lane as it found it, so the recipe stays residue-free).
+# The label may carry the CONSEQUENCE hint t_d92a1f74 shipped ("disable
+# notifications - this also disables: cron"): the row is keyed by its NAME,
+# so the hint suffix is stripped here - the same read the panel performs,
+# never a bare prefix match (a prefix would also accept a longer row name).
+tog=$(jsq '(()=>{const s=[...document.querySelectorAll(".settings-category")].find(x=>x.getAttribute("data-section")==="modules");const pill=[...s.querySelectorAll(".module-toggle")].find(p=>/^disable /.test(p.getAttribute("aria-label")||""));if(!pill) return "missing";return (pill.getAttribute("aria-label")||"").replace(/^disable /,"").replace(/ - this also disables:.*$/,"")})()' 2>&1 | plain)
 [ "$tog" != "missing" ] || die "no toggleable module row carries a disable label"
 click_toggle() {
   jsq "(()=>{const s=[...document.querySelectorAll('.settings-category')].find(x=>x.getAttribute('data-section')==='modules');if(!s) return 0;const row=[...s.querySelectorAll('.extension-row')].find(r=>{const n=r.querySelector('.extension-name');return !!n&&n.textContent.trim()==='$1'});const pill=row&&row.querySelector('.module-toggle');if(!pill) return 0;pill.click();return 1})()" 2>&1 | plain
@@ -189,32 +210,41 @@ assert_eq "$top" "0" "nothing selected -> the document opens at the TOP"
 stored=$(jsq '(()=>{return localStorage.getItem("omega.settings-category")||""})()' 2>&1 | plain)
 assert_eq "$stored" "" "a fresh pane carries no anchor"
 
-# --- a click JUMPS: select + expand + scroll ------------------------------
+# --- a click SELECTS + FILTERS + expands (card t_cd9952a3) ---------------
+# The jump mechanics are unchanged (cards t_a6b794b5/t_c4b42357/t_720c9cff/
+# t_63c699ce): a nav click still marks the entry, still expands its branch,
+# still remembers the anchor. What changed is the DOCUMENT: selecting a
+# section now narrows the pane to that section and its subsections, so the
+# clicked section HEADS the document - the jump has nowhere left to travel
+# (scrollTop 0, edge 0). The filter is a view filter: every row of the
+# selected section still renders.
 target="provider"
 assert_eq "$(navclick "$target")" "1" "the provider category is a jump link"
-if ! poll_js "(()=>{const b=document.querySelector('.settings-body');if(!b||b.scrollTop<50) return false;const a=document.querySelector('.settings-nav-cat.active,.settings-nav-sub.active');return !!a&&a.getAttribute('data-category')==='$target'})()" 15; then
-  die "the nav click did not scroll the pane to $target and mark it (scrollTop: $(scroll_top), active: $(active_id))"
+if ! poll_js "(()=>{const a=document.querySelector('.settings-nav-cat.active,.settings-nav-sub.active');const ids=[...document.querySelectorAll('.settings-category')].map(e=>e.getAttribute('data-category')).join(',');return !!a&&a.getAttribute('data-category')==='$target'&&ids==='$target'})()" 15; then
+  die "the nav click did not select $target and filter the document to it (active: $(active_id), doc: $(doc_ids))"
+fi
+step "ok: a nav click marks $target SELECTED and filters the document to it ($(doc_ids))"
+# ONLY its rows: the pane's row count equals the section's own
+secrows=$(sec_rows "$target")
+[ "${secrows:-0}" -gt 0 ] 2>/dev/null || die "the filtered $target section rendered no rows ($secrows)"
+prows=$(pane_rows)
+assert_eq "$prows" "$secrows" "the pane renders ONLY $target's rows - every other section is filtered out"
+# and the section heads the document, so its heading sits on the pane's top
+# edge with nothing above it
+if ! poll_js "(()=>{const root=document.querySelector('.settings-body');const el=[...document.querySelectorAll('.settings-category')].find(x=>x.getAttribute('data-category')==='$target');if(!root||!el) return false;return Math.abs(el.getBoundingClientRect().top-root.getBoundingClientRect().top)<=8})()" 15; then
+  last=$(edge_probe "$target")
+  die "the selected section is ${last%%|*} px off the pane's top edge (last edge|scrollTop: $last)"
 fi
 jumped=$(scroll_top)
-step "ok: a nav click SCROLLS the pane (scrollTop 0 -> $jumped) and selects $target"
+assert_eq "$jumped" "0" "a filtered document opens ON its section - the jump rests at the top"
 kids=$(jsq '(()=>{return document.querySelectorAll(".settings-nav-sub").length})()' 2>&1 | plain)
 [ "${kids:-0}" -gt 0 ] 2>/dev/null || die "selecting a parent did not expand its subsection jump links"
 only=$(jsq '(()=>{const open=[...document.querySelectorAll(".settings-nav-row")].filter(r=>{const c=r.querySelector(".settings-nav-chev");return !!c&&c.getAttribute("aria-expanded")==="true"}).map(r=>r.querySelector(".settings-nav-cat").getAttribute("data-category"));return open.join(",")})()' 2>&1 | plain)
 assert_eq "$only" "$target" "exactly ONE branch is open (expansion is derived from the selection)"
 stored=$(jsq '(()=>{return localStorage.getItem("omega.settings-category")||""})()' 2>&1 | plain)
 assert_eq "$stored" "$target" "the click is remembered as the anchor"
-# the section's heading sits at the pane's top edge (the jump really landed).
-# The jump is a SMOOTH scroll and the wait above (scrollTop >= 50) is true in
-# its FIRST frames, so measuring once there read the animation in flight -
-# 36 px off on loaded CI, 0 px on an idle host (t_d17f0400). Wait on the
-# ASSERTED observable - the section-to-pane-top distance - and let a red carry
-# the last measurement so the log alone is diagnosable.
-if ! poll_js "(()=>{const root=document.querySelector('.settings-body');const el=[...document.querySelectorAll('.settings-category')].find(x=>x.getAttribute('data-category')==='$target');if(!root||!el) return false;return Math.abs(el.getBoundingClientRect().top-root.getBoundingClientRect().top)<=8})()" 15; then
-  last=$(edge_probe "$target")
-  die "the jump landed ${last%%|*} px off the pane's top edge (last edge|scrollTop: $last)"
-fi
-edge=$(edge_probe "$target"); edge=${edge%%|*}
-step "ok: the jumped-to section heads the pane (${edge}px)"
+assert_eq "$(url_section)" "$target" "the in-app URL carries the selected section"
+assert_eq "$(nav_ids)" "$all_ids" "the NAV keeps its shape - the filter narrows the document, never the list"
 
 # --- the subsections are jump links too ----------------------------------
 assert_eq "$(navclick "provider/models")" "1" "a subsection is a jump link"
@@ -230,12 +260,15 @@ assert_eq "$subok" "clear" "the subsection lands BELOW the pinned heading - noth
 step "ok: a subsection jump lands clear of the pinned heading"
 
 # --- a second click on the selected entry DESELECTS ----------------------
-# one click does all three in reverse: highlight off, branch collapsed, top
+# one click does all three in reverse: highlight off, branch collapsed, top -
+# and (card t_cd9952a3) the whole document comes back
 assert_eq "$(navclick "provider/models")" "1" "the selected subsection is clickable"
-if ! poll_js '(()=>{const b=document.querySelector(".settings-body");const a=document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active");return !!b&&b.scrollTop===0&&!a&&document.querySelectorAll(".settings-nav-sub").length===0})()' 15; then
-  die "the second click did not deselect (scrollTop: $(scroll_top), active: $(active_id), children: $(jsq '(()=>{return document.querySelectorAll(".settings-nav-sub").length})()' 2>&1 | plain))"
+if ! poll_js '(()=>{const b=document.querySelector(".settings-body");const a=document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active");const ids=[...document.querySelectorAll(".settings-category")].map(e=>e.getAttribute("data-category")).join(",");return !!b&&b.scrollTop===0&&!a&&document.querySelectorAll(".settings-nav-sub").length===0&&ids==="'"$all_ids"'"})()' 15; then
+  die "the second click did not deselect (scrollTop: $(scroll_top), active: $(active_id), doc: $(doc_ids))"
 fi
-step "ok: a second click DESELECTS - highlight cleared, branch collapsed, pane back at the top"
+assert_eq "$(doc_ids)" "$all_ids" "a deselect restores the ALL-VIEW document"
+assert_eq "$(url_section)" "" "a deselect leaves NO section in the URL"
+step "ok: a second click DESELECTS - highlight cleared, branch collapsed, pane back at the top, all-view restored"
 stored=$(jsq '(()=>{return localStorage.getItem("omega.settings-category")||""})()' 2>&1 | plain)
 assert_eq "$stored" "" "a DESELECT persists as NO anchor"
 
@@ -273,11 +306,18 @@ for flatcat in common dock store; do
   if ! poll_js "(()=>{const a=document.querySelector('.settings-nav-cat.active,.settings-nav-sub.active');return !!a&&a.getAttribute('data-category')==='$flatcat'})()" 15; then
     die "the nav click did not select $flatcat (active: $(active_id))"
   fi
+  # card t_cd9952a3: Commonly Used is the curated ALL-VIEW entry, so
+  # selecting it restores the whole document; dock and store narrow it to
+  # themselves (one section, its own rows, nothing else on screen)
+  if [ "$flatcat" = "common" ]; then wantdoc="$all_ids"; else wantdoc="$flatcat"; fi
+  if ! poll_js "(()=>{const ids=[...document.querySelectorAll('.settings-category')].map(e=>e.getAttribute('data-category')).join(',');return ids==='$wantdoc'})()" 15; then
+    die "selecting $flatcat did not set the document to [$wantdoc] (now: $(doc_ids))"
+  fi
   wait_settled || die "the $flatcat jump never settled (scrollTop: $(scroll_top))"
   measured=$(first_row_clear "$flatcat")
   state=${measured%%|*}; rest=${measured#*|}; rowtop=${rest%%|*}; headbottom=${rest##*|}
   assert_eq "$state" "clear" "$flatcat's first knob row starts BELOW its pinned heading (row top $rowtop, heading bottom $headbottom)"
-  step "ok: $flatcat jumps clear of its sticky heading (row top $rowtop >= heading bottom $headbottom)"
+  step "ok: $flatcat jumps clear of its sticky heading (row top $rowtop >= heading bottom $headbottom, document [$wantdoc])"
 done
 # leave the pane unselected for the spy block below: ONE click on whatever
 # entry currently holds the selection releases it (and the clamp with it)
@@ -293,30 +333,86 @@ if ! poll_js "(()=>{const a=document.querySelector('.settings-nav-cat.active,.se
   die "the scroll-spy did not follow the pane to $spy (active: $(active_id), scrollTop: $(scroll_top))"
 fi
 step "ok: scrolling moves the highlight to the section in view ($spy)"
-spyrows=$(jsq '(()=>{return document.querySelectorAll(".setting-item,.setting-row").length})()' 2>&1 | plain)
-assert_eq "$spyrows" "$rows" "selection never filters the document"
+# card t_cd9952a3: the SPY's highlight is not a section selection, so a
+# scroll must never filter - the whole document stays on screen (only a
+# click, and a deep link, own the filter)
+spyrows=$(pane_rows)
+assert_eq "$spyrows" "$rows" "a scroll never filters the document (the spy only moves the highlight)"
+assert_eq "$(doc_ids)" "$all_ids" "the all-view survives the spy's selection"
+assert_eq "$(url_section)" "" "and a scroll writes no section into the URL"
 
-# --- search: filter in place, grey the dead entries ----------------------
+# --- search: filter in place, grey the dead entries, OVERRIDE the filter --
+# card t_cd9952a3 part 2: a section filter is up while the query runs and
+# is IGNORED by it - the search is one global filter across every section -
+# and clearing the query gives the filter back.
+assert_eq "$(navclick "provider")" "1" "select provider before searching"
+if ! poll_js "(()=>{const ids=[...document.querySelectorAll('.settings-category')].map(e=>e.getAttribute('data-category')).join(',');return ids==='provider'})()" 15; then
+  die "the section filter did not come up before the query (doc: $(doc_ids))"
+fi
 full_ids=$(doc_ids)
 full_nav=$(nav_ids)
 ab fill '.settings-filterbar input' "model" >/dev/null 2>&1 || die "search input never accepted text"
 if ! wait_js "(()=>{const ids=[...document.querySelectorAll('.settings-category')].map(e=>e.getAttribute('data-category')).join(',');return ids.length>0&&ids!=='${full_ids}'})()" 10; then
-  die "the query did not filter the document in place ($(doc_ids) of $full_ids)"
+  die "the query did not override the section filter (doc: $(doc_ids), filter was $full_ids)"
 fi
 filtered=$(doc_ids)
+case "$filtered" in
+  *,*) ;; # more than one section: the query reaches domains the filter hid
+  *) die "the query matched only [$filtered] - it must stay GLOBAL across every section" ;;
+esac
+assert_eq "$(active_id)" "provider" "the selection is untouched by the query - only ignored"
 dim=$(jsq '(()=>{return document.querySelectorAll(".settings-nav-cat.dim,.settings-nav-sub.dim").length})()' 2>&1 | plain)
 [ "${dim:-0}" -gt 0 ] 2>/dev/null || die "a live query greyed nothing"
-common=$(jsq '(()=>{return document.querySelector(".settings-nav-cat[data-category=\"common\"]")?1:0})()' 2>&1 | plain)
+common=$(jsq '(()=>{return [...document.querySelectorAll(".settings-nav-cat")].some(e=>e.getAttribute("data-category")==="common")?1:0})()' 2>&1 | plain)
 assert_eq "$common" "1" "the curated category STAYS in the nav (greyed or lit, never hidden)"
 assert_eq "$(nav_ids)" "$full_nav" "the nav keeps its shape under a query"
-step "ok: the query filters the document ($filtered) and greys $dim nav entries"
+step "ok: the query OVERRIDES the section filter ($filtered) and greys $dim nav entries"
 
 ab fill '.settings-filterbar input' "" >/dev/null 2>&1 || die "search input never cleared"
 if ! wait_js "(()=>{const ids=[...document.querySelectorAll('.settings-category')].map(e=>e.getAttribute('data-category')).join(',');return ids==='${full_ids}'})()" 10; then
-  die "clearing the query did not restore the full document (now: $(doc_ids))"
+  die "clearing the query did not restore the section filter (now: $(doc_ids), want $full_ids)"
 fi
-assert_eq "$(doc_ids)" "$full_ids" "clearing the query brings every category back"
-step "ok: clearing the query restores the whole document"
+assert_eq "$(doc_ids)" "$full_ids" "clearing the query restores the SECTION FILTER, not the all-view"
+step "ok: clearing the query restores the filter ($full_ids)"
+# and a deselect from there gives the whole document back
+assert_eq "$(navclick "provider")" "1" "release the section filter"
+if ! poll_js '(()=>{const ids=[...document.querySelectorAll(".settings-category")].map(e=>e.getAttribute("data-category")).join(",");return ids==="'"$all_ids"'"})()' 15; then
+  die "deselecting did not restore the all-view (doc: $(doc_ids))"
+fi
+assert_eq "$(url_section)" "" "the released selection left no section in the URL"
+step "ok: a deselect after the query restores the whole document"
+
+# --- part 3: the in-app URL carries the section --------------------------
+# The URL is the EXPLICIT door: a deep link opens the pane PRE-FILTERED and
+# outranks the remembered anchor. The witness plants a DIFFERENT anchor
+# first, so only the URL can explain what the pane opens on.
+js 'localStorage.setItem("omega.settings-category","compaction")' >/dev/null 2>&1
+ab open "${JOURNEY_BASE_URL}/?settings=store" >/dev/null 2>&1 || die "the deep-link URL never opened"
+ab wait --load networkidle >/dev/null 2>&1 || true
+if ! poll_js "$GEAR" 15; then
+  die "settings gear never re-rendered after the deep link"
+fi
+if ! poll_js "(()=>{const ids=[...document.querySelectorAll('.settings-category')].map(e=>e.getAttribute('data-category')).join(',');const a=document.querySelector('.settings-nav-cat.active,.settings-nav-sub.active');return ids==='store'&&!!a&&a.getAttribute('data-category')==='store'})()" 20; then
+  die "the deep link did not land pre-filtered (doc: $(doc_ids), active: $(active_id), url: $(url_section))"
+fi
+assert_eq "$(url_section)" "store" "the URL still carries the section after the load"
+assert_eq "$(sec_rows "store")" "$(pane_rows)" "the deep-linked pane renders ONLY that section's rows"
+step "ok: a deep link (?settings=store) lands PRE-FILTERED and outranks the remembered anchor"
+# clean: no anchor, no section left behind for the steps below
+assert_eq "$(navclick "store")" "1" "release the deep link's selection"
+if ! poll_js '(()=>{const ids=[...document.querySelectorAll(".settings-category")].map(e=>e.getAttribute("data-category")).join(",");return ids==="'"$all_ids"'"})()' 15; then
+  die "the deep-linked selection did not release (doc: $(doc_ids))"
+fi
+js 'localStorage.removeItem("omega.settings-category")' >/dev/null 2>&1
+ab reload >/dev/null 2>&1
+ab wait --load networkidle >/dev/null 2>&1 || true
+if ! poll_js "$GEAR" 15; then
+  die "settings gear never re-rendered after the URL clean-up"
+fi
+if ! poll_js "(()=>{const ids=[...document.querySelectorAll('.settings-category')].map(e=>e.getAttribute('data-category')).join(',');return ids==='$all_ids'})()" 20; then
+  die "the pane did not reopen on the all-view (doc: $(doc_ids))"
+fi
+step "ok: with no section in the URL and no anchor, the pane opens on the all-view"
 
 # --- narrow: the SAME document, the nav as a drawer ----------------------
 ab set viewport 340 780 >/dev/null 2>&1
@@ -333,10 +429,10 @@ if ! wait_js '(()=>{const n=document.querySelector(".settings-nav");return !!n&&
 fi
 step "ok: narrow opens the nav as a drawer over the same document"
 assert_eq "$(navclick "compaction")" "1" "a drawer entry is a jump link"
-if ! poll_js '(()=>{const n=document.querySelector(".settings-nav");const b=document.querySelector(".settings-body");const anchor=localStorage.getItem("omega.settings-category");return !n&&!!b&&b.scrollTop>50&&anchor==="compaction"})()' 15; then
-  die "a drawer jump did not scroll the pane and close the drawer (scrollTop: $(scroll_top), anchor: $(jsq '(()=>localStorage.getItem("omega.settings-category")||"")()' 2>&1 | plain))"
+if ! poll_js '(()=>{const n=document.querySelector(".settings-nav");const b=document.querySelector(".settings-body");const anchor=localStorage.getItem("omega.settings-category");const ids=[...document.querySelectorAll(".settings-category")].map(e=>e.getAttribute("data-category")).join(",");return !n&&!!b&&anchor==="compaction"&&ids==="compaction"})()' 15; then
+  die "a drawer jump did not filter the document, remember the anchor and close the drawer (doc: $(doc_ids), scrollTop: $(scroll_top), anchor: $(jsq '(()=>localStorage.getItem("omega.settings-category")||"")()' 2>&1 | plain))"
 fi
-step "ok: a drawer jump scrolls the pane and closes the drawer"
+step "ok: a drawer jump filters the pane to compaction and closes the drawer"
 
 ab set viewport 1280 800 >/dev/null 2>&1
 if ! wait_js '(()=>{const a=document.querySelector("aside.settings");const n=document.querySelector(".settings-nav");return !!a&&!a.classList.contains("narrow")&&!!n})()' 15; then
@@ -344,32 +440,36 @@ if ! wait_js '(()=>{const a=document.querySelector("aside.settings");const n=doc
 fi
 
 # --- memory: a reopen restores the anchor --------------------------------
+# card t_cd9952a3 part 3 rides along here: the selection also wrote the
+# section into the URL, so the reopen lands PRE-FILTERED - the URL is the
+# explicit door and outranks the remembered anchor (which agrees here).
 stored=$(jsq '(()=>{return localStorage.getItem("omega.settings-category")||""})()' 2>&1 | plain)
 assert_eq "$stored" "compaction" "the last anchor is remembered in CLIENT storage"
+assert_eq "$(url_section)" "compaction" "the URL carries the same section the anchor holds"
 before=$(scroll_top)
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
 if ! poll_js "$GEAR" 15; then
   die "settings gear never re-rendered after the reopen"
 fi
-if ! poll_js '(()=>{return !!document.querySelector(".settings-body")})()' 15; then
-  die "the document never re-rendered after the reopen"
+if ! poll_js '(()=>{const a=document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active");const ids=[...document.querySelectorAll(".settings-category")].map(e=>e.getAttribute("data-category")).join(",");return !!a&&a.getAttribute("data-category")==="compaction"&&ids==="compaction"})()' 15; then
+  die "the reopen did not land pre-filtered on the URL's section (active: $(active_id), doc: $(doc_ids), url: $(url_section))"
 fi
-if ! poll_js '(()=>{const a=document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active");const b=document.querySelector(".settings-body");return !!a&&a.getAttribute("data-category")==="compaction"&&!!b&&b.scrollTop>50})()' 15; then
-  die "the reopen did not restore the anchor (active: $(active_id), scrollTop: $(scroll_top))"
-fi
-step "ok: the remembered anchor survives a reload (scrollTop $before -> $(scroll_top))"
+step "ok: a reload lands PRE-FILTERED on the URL's section (scrollTop $before -> $(scroll_top))"
 
 # --- clamp: a SELECTED category bounds the pane's scroll ------------------
 # card t_a6b794b5 (Endo, 2026-11-11): "when i select a category i should not
 # be able to scroll further than inside the category. until i deselected
-# again and nothing is selected." Option A: selection never filters the
-# document - the clamp moves the window over it.
+# again and nothing is selected."
+# card t_cd9952a3 later made a selection FILTER the document down to that
+# section, so the clamp's two ends now coincide with the document's own
+# limit - the arithmetic below is the same one, computed from the section's
+# live box, and it must still describe exactly where the pane rests.
 # The memory block above left `compaction` restored. A restore does not
 # clamp (the remembered id may be a spy highlight), so click it off first -
 # that deselect is also the card's own release.
 assert_eq "$(navclick "compaction")" "1" "the restored anchor is a real entry to toggle off"
-if ! poll_js '(()=>{const b=document.querySelector(".settings-body");const a=document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active");return !!b&&b.scrollTop===0&&!a})()' 15; then
+if ! poll_js '(()=>{const b=document.querySelector(".settings-body");const a=document.querySelector(".settings-nav-cat.active,.settings-nav-sub.active");const ids=[...document.querySelectorAll(".settings-category")].map(e=>e.getAttribute("data-category")).join(",");return !!b&&b.scrollTop===0&&!a&&ids.length>0})()' 15; then
   die "deselecting the restored anchor did not clear it (active: $(active_id), scrollTop: $(scroll_top))"
 fi
 
@@ -382,11 +482,12 @@ freeend=$(scroll_top)
 [ "${freeend:-0}" -gt 200 ] 2>/dev/null || die "the document is too short to prove free scroll (scrollTop $freeend)"
 step "ok: nothing selected -> the document scrolls end to end (scrollTop -> $freeend)"
 
-# b) SELECTED -> both boundaries hold
+# b) SELECTED -> the filtered document IS the section, and both boundaries
+#    hold on its own box
 target="provider"
 assert_eq "$(navclick "$target")" "1" "$target is a jump link"
-if ! poll_js "(()=>{const b=document.querySelector('.settings-body');const a=document.querySelector('.settings-nav-cat.active,.settings-nav-sub.active');return !!b&&b.scrollTop>50&&!!a&&a.getAttribute('data-category')==='$target'})()" 15; then
-  die "selecting $target did not jump (scrollTop: $(scroll_top), active: $(active_id))"
+if ! poll_js "(()=>{const ids=[...document.querySelectorAll('.settings-category')].map(e=>e.getAttribute('data-category')).join(',');const a=document.querySelector('.settings-nav-cat.active,.settings-nav-sub.active');return ids==='$target'&&!!a&&a.getAttribute('data-category')==='$target'})()" 15; then
+  die "selecting $target did not filter the document to it (doc: $(doc_ids), active: $(active_id))"
 fi
 geom=$(sec_geom "$target")
 [ -n "$geom" ] || die "the $target section never rendered"
@@ -394,6 +495,8 @@ top=${geom%%|*}; rest=${geom#*|}; h=${rest%%|*}; rest=${rest#*|}; vp=${rest%%|*}
 range=$(sec_range "$top" "$h" "$vp" "$content")
 lo=${range%%|*}; hi=${range##*|}
 [ "${hi:-0}" -gt "${lo:-0}" ] 2>/dev/null || die "the $target section has no travel (geom $geom) - the recipe needs a tall one"
+# a filtered section heads the document, so its window starts at the top
+assert_eq "$top" "0" "the selected section heads the filtered document"
 step "ok: $target is selected and its window is [$lo, $hi] (top $top, height $h, pane $vp, content $content)"
 
 # BELOW the end: ask for the document's bottom, land on the section's bottom
@@ -402,14 +505,22 @@ if ! poll_js "(()=>{const b=document.querySelector('.settings-body');return !!b&
   die "scrolling past the section's end did not stop at its bottom (scrollTop: $(scroll_top), want $hi, document end $((content - vp)))"
 fi
 pastend=$(scroll_top)
-[ "$pastend" -lt "$((content - vp))" ] 2>/dev/null || die "the clamp never bit: the pane reached the document's bottom ($pastend)"
-step "ok: the selected section stops the pane at its END (scrollTop $pastend < document end $((content - vp)))"
+# card t_cd9952a3: under the filter the document IS the section, so the
+# clamp's end is the section's OWN bottom - measured live at 763 here,
+# against the document's limit of 767 (the scrollport's 4px of body padding
+# is the only document left below the selected section). Both numbers are
+# pinned: the pane must rest on the CLAMP's number, and that number must
+# still be short of the document's own limit.
+assert_eq "$pastend" "$hi" "the pane rests exactly on the clamp's computed END (the section's own bottom)"
+[ "${pastend:-0}" -lt "$((content - vp))" ] 2>/dev/null || die "the clamp never bit: the pane reached the document's bottom ($pastend of $((content - vp)))"
+step "ok: the selected section stops the pane at its END (scrollTop $pastend == clamp end $hi < document end $((content - vp)))"
 
 # ABOVE the start: ask for the document's top, land on the section's top
 assert_eq "$(force_scroll 0)" "1" "the pane still accepts a scroll while a section is selected"
 if ! poll_js "(()=>{const b=document.querySelector('.settings-body');return !!b&&Math.abs(b.scrollTop-$lo)<=2})()" 10; then
   die "scrolling above the section's start did not stop at its top (scrollTop: $(scroll_top), want $lo)"
 fi
+assert_eq "$lo" "0" "the section's START is the filtered document's start"
 step "ok: the selected section stops the pane at its START (scrollTop $(scroll_top), want $lo)"
 
 # c) DESELECT -> free scroll returns in the same frame. The pane first
@@ -430,6 +541,9 @@ if ! poll_js '(()=>{const b=document.querySelector(".settings-body");const a=doc
   die "ONE click on the category did not release it while the spy sat on $spied (active: $(active_id), scrollTop: $(scroll_top))"
 fi
 step "ok: one click on the category releases it even with the spy on a block ($spied)"
+allend=$(jsq '(()=>{const b=document.querySelector(".settings-body");return b?Math.round(b.scrollHeight-b.clientHeight):-1})()' 2>&1 | plain)
+[ "${allend:-0}" -gt "${pastend:-0}" ] 2>/dev/null || die "the all-view did not restore a DEEPER document (all end $allend, filtered end $pastend)"
+assert_eq "$(doc_ids)" "$all_ids" "the release restored the ALL-VIEW document"
 assert_eq "$(force_scroll "$pastend")" "1" "the pane accepts a scroll after the deselect"
 if ! poll_js "(()=>{const b=document.querySelector('.settings-body');return !!b&&Math.abs(b.scrollTop-$pastend)<=2})()" 10; then
   die "the clamp did not release: the pane still refuses the section's old end (scrollTop: $(scroll_top), want $pastend)"
@@ -447,8 +561,8 @@ fi
 #    grow the pane while the section holds the scroll and the stale max must
 #    pull the pane up (step 3 - a box change with no scroll event)
 assert_eq "$(navclick "$target")" "1" "re-selecting $target for the resize witness"
-if ! poll_js "(()=>{const b=document.querySelector('.settings-body');const a=document.querySelector('.settings-nav-cat.active,.settings-nav-sub.active');return !!b&&b.scrollTop>50&&!!a&&a.getAttribute('data-category')==='$target'})()" 15; then
-  die "re-selecting $target did not jump (scrollTop: $(scroll_top), active: $(active_id))"
+if ! poll_js "(()=>{const ids=[...document.querySelectorAll('.settings-category')].map(e=>e.getAttribute('data-category')).join(',');const a=document.querySelector('.settings-nav-cat.active,.settings-nav-sub.active');return ids==='$target'&&!!a&&a.getAttribute('data-category')==='$target'})()" 15; then
+  die "re-selecting $target did not filter the document to it (doc: $(doc_ids), active: $(active_id))"
 fi
 assert_eq "$(force_scroll 999999)" "1" "scroll to the section's end again"
 if ! poll_js "(()=>{const b=document.querySelector('.settings-body');return !!b&&Math.abs(b.scrollTop-$hi)<=2})()" 10; then

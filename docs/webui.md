@@ -523,6 +523,23 @@ dot, reset link, draft star, live note).
   the nav keeps its shape so you can see where the hits live. Search mode
   skips the curated section: a hit renders once, under the domain that
   owns it.
+- **Selecting a section FILTERS the pane** (card t_cd9952a3, the VS Code
+  read; it narrows what the one document RENDERS and reverses nothing).
+  A nav click renders that category and its subsections and nothing else -
+  the pane's row count equals the section's own. A deselect, or selecting
+  Commonly Used (the curated all-view entry), restores the whole document.
+  It is a VIEW filter: no knob changes, no config is written. A live
+  search OVERRIDES it - one global match across every section - and the
+  filter returns the moment the query clears. A scroll moves the
+  highlight only; only a click (or a deep link) filters. The selected
+  section rides the in-app URL on the QUERY axis (`?settings=<id>`,
+  replaceState only; the PATH still owns the focused chat session), so an
+  in-app deep link lands the pane pre-filtered and outranks the
+  remembered anchor. The jump/clamp/spy mechanics are untouched: under a
+  filtered document the clamp's window and the document's own limits
+  coincide, and the jump simply rests on the section it selected. The
+  live filter is pinned by `webui/test/settingsnav.test.ts` and
+  walked by `scripts/journeys/recipes/113-settings-nav.journey.sh`.
 - **Modified-only** is a pressed-state switch on the content bar (the
   VSCode affordance): it filters the rendered list with the SAME
   `isModified` test the row dots use, so the switch and the dots can never
