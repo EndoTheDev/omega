@@ -508,10 +508,23 @@
     () => scrollActiveIntoView(),
     { flush: "post" },
   );
+  // card t_80775d15: tabs carry a readable floor now (the css min-widths),
+  // so a narrow pane SCROLLS its strip instead of crushing chips into
+  // slivers. Consequence: a pane that shrinks under a divider drag or a
+  // window resize can push the active tab outside the visible band with
+  // no selection change to resolve it - the strip's own resize re-runs
+  // the resolver. Scrolling the strip never changes its box, so this
+  // observer cannot re-enter itself.
+  let stripObserver: ResizeObserver | null = null;
   onMounted(() => {
     // a remount restores a persisted tree whose active tab may open out
     // of view - measure once the first layout settles
     scrollActiveIntoView();
+    const strip = tabsEl.value?.querySelector<HTMLElement>(".dock-tabs");
+    if (strip && typeof ResizeObserver !== "undefined") {
+      stripObserver = new ResizeObserver(() => scrollActiveIntoView());
+      stripObserver.observe(strip);
+    }
   });
 
   // the LIVE hit-test: is the current gesture allowed to drop into THIS pane?
@@ -697,6 +710,8 @@
     menuOpen.value = false;
   }
   onBeforeUnmount(() => {
+    stripObserver?.disconnect();
+    stripObserver = null;
     document.removeEventListener("click", onDocClick);
     unbindGesture();
   });
