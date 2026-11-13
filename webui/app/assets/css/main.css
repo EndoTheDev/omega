@@ -2830,6 +2830,28 @@ labels stopped short of the right edge. */
 .statusbar .zone.left { flex: 0 1 auto; }
 .statusbar .right { margin-left: auto; display: flex; gap: 16px; }
 
+/* the build segment (card t_3599d33b): the bar's ONLY unbounded string -
+   a nightly tag reads v0.17.1-nightly.20261112-d57ffb37, and shortVersion
+   leaves an unparsable tag whole. The TEXT span truncates with an ellipsis
+   inside a fixed footprint, so whatever the tag says the bar lays out the
+   same, and on a squeezed bar the build is the FIRST thing to yield
+   (flex-shrink), never a live metric. min-width:0 (no ch floor) so a short
+   tag keeps its natural width at the bar's right edge; the full string
+   stays in the segment's tooltip.
+   The cap rides this INNER span, never the .seg: a display declaration on
+   the seg would out-rule .hide-sm (0,2,0) and put the build back on the
+   narrow bar. And it must be a block, not the .seg flex container - a flex
+   container never ellipsizes its own text (the text becomes an anonymous
+   flex item, which text-overflow cannot clip). */
+.statusbar .build-text {
+  display: block;
+  min-width: 0;
+  max-width: 20ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* the CLOSED clickable set: workdir (the picker chip), health, pending.
    A bar segment that happens to be a button reads exactly like its
    neighbours - the browser chrome is stripped, never restyled into a
