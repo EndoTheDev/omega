@@ -56,6 +56,29 @@ the others:
 | Gutter (divider)  | 8px     |
 | Mobile breakpoint | 768px   |
 
+**Top bar seats** (t_20fd8745, Endo's 2026-11-13 reshape): three regions
+on the 35px bar. The BRAND is ONE element far left - `Ωmega`, the glyph
+and the word in a single span whose text is its accessible name (the old
+lone-glyph brand and the centered `Omega` wordmark are both dead). The
+NAV CLUSTER (back / forward / the fake-input palette affordance / the
+palette trigger) is ABSOLUTELY centered: `left: 50%` +
+`translateX(-50%)` on the menubar's FULL width - the dead-center trick
+the wordmark used, so the cluster stays centered whatever the left/right
+widths are; never spacer-balanced. The EDGE TOGGLES (left / bottom /
+right) and the settings gear stay pinned far right. Back/forward dim via
+the REAL `disabled` attribute, never a lookalike. Below the 768px
+breakpoint the CLUSTER HIDES and the toggles STAY - they are the drawer
+handles. The palette affordance (`.nav-palette-input`, 200x24) is a
+BUTTON dressed as an input: pure affordance, no typing, no second focus
+path (the dialog owns the only search field), one click = the ctrl+k
+intent, and its "placeholder" is a LIVE `HH:MM` clock re-rendered on
+each minute boundary (the `nav-palette-clock` span is decorative -
+`aria-hidden` - so the affordance's name stays the command-palette
+hint). Both palette doors ride app.vue's ONE `paletteOpen` state, and a
+pointerdown anywhere outside the overlay closes it (the scrimless
+overlay listens on the document; the `data-palette-trigger` markers are
+the one exemption, so a click that opens cannot close on the way out).
+
 **Honest floors** (cards t_ae9ac5cf + t_8bcbe72e): the floor is a
 PER-COMPONENT registry fact, not a sidebar rule. `DOCKABLE_MIN_PX`
 (composables/dockables.ts) attaches every dockable's `minPx` — chat is
@@ -636,8 +659,10 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   multipart POST /attach-file, part order `session_id` then `file`),
   `renderMarkdown` (markdown-it, `html: false` — the lib's default
   escaping is the sanitizer), `createRenderScheduler`.
-- Shell: `MenuBar` (brand, nav cluster after the brand, the plain
-  'Omega' wordmark dead center, edge toggles far right), `StatusBar` (health dot,
+- Shell: `MenuBar` (the three seats, see the top-bar paragraph),
+  `NavCluster` (back / forward / the fake-input palette affordance /
+  the Ctrl+K trigger, dead center; the affordance's placeholder is a
+  live clock), `StatusBar` (health dot,
   token/ctx/rate telemetry, build version; uptime lives in the health
   popover the dot opens), `SearchInput`,
   `PaneDivider`, `TabBand` (the universal panel top bar: title left,

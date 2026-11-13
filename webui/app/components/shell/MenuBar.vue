@@ -1,30 +1,26 @@
 <template>
   <header class="menubar">
-    <!-- card t_c5d4f2ad (Endo, 2026-11-11): the far-left brand is the
-         lone omega glyph - U+03A9 is the Greek capital omega, so the
-         glyph itself carries the accessible name "omega". No
-         aria-hidden: the text IS the name. The CENTER wordmark
-         (`.menubar-wordmark`, 'Omega') is a different span and stays. -->
-    <span class="brand">Ω</span>
-    <!-- card t_6215474b: the nav cluster - back / forward / palette
-         trigger. Seats INLINE after the brand (card t_3aed367e,
-         Endo's ruling 2026-11-06: the center wordmark vacated the
-         cluster's old absolute-center seat - the cluster's original
-         centering was card t_6215474b, the pane-toggle bar NOT the
-         frame rail). The dims ride app.vue's nav history; the palette
-         intent routes back up. -->
+    <!-- card t_20fd8745 (Endo ruling 2026-11-13): ONE brand - the omega
+         glyph and the word in a SINGLE element, far left. U+03A9 is the
+         Greek capital omega, so the glyph opens the visible word and the
+         element's text carries the accessible name "Ωmega" (no
+         aria-hidden: the text IS the name). The centered 'Omega'
+         wordmark (`.menubar-wordmark`) is DEAD - its absolute-center seat
+         belongs to the nav cluster below. -->
+    <span class="brand">Ωmega</span>
+    <!-- card t_20fd8745: the nav cluster - back / forward / the
+         fake-input palette affordance / the palette trigger - seats DEAD
+         CENTER on the bar's FULL width (the absolute-middle trick the
+         wordmark used, robust to any left/right width). Below the drawer
+         breakpoint it HIDES: the three edge toggles are the mobile drawer
+         handles. The dims ride app.vue's nav history; both palette doors
+         emit the one `open-palette` intent. -->
     <NavCluster
       :can-back="canBack"
       :can-forward="canForward"
       @back="$emit('back')"
       @forward="$emit('forward')"
       @open-palette="$emit('open-palette')" />
-    <!-- card t_3aed367e (Endo revision 2026-11-06): the PLAIN wordmark
-         seats dead center on the menubar's FULL width (absolute middle,
-         robust to any left/right width) - brand left, toggles far
-         right. No version here: the bottom status bar owns version +
-         uptime, no duplication. -->
-    <span class="menubar-wordmark">Omega</span>
     <span class="menubar-spacer" />
     <!-- card t_47b776ad: the desktop toggles are BACK. "Fixed" means
          identity + reopenability: the sidebars are pinned singleton panes
