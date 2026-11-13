@@ -314,5 +314,175 @@ marker=$(jsq 'window.__j98NoReload===1?1:0' 2>&1 | tail -1)
 [ "$marker" = "1" ] || die "a create only showed after a reload - the push shape is fake"
 step "ok: an API create lands on the idle board by push (no reload, no poll)"
 
+# ---- e: lane rails (card t_50a8c145) ---------------------------------------
+# ANY lane folds to a thin rail (~36px): the lane's dot on the header row's
+# line, the name in vertical-rl uppercase, the count when it holds cards. The
+# rail is a BUTTON (click unfolds) and a DROP TARGET (the drag machinery
+# resolves .board-col, and the rail renders inside it). An EMPTY lane folds
+# itself, and its override dies with it. Rails are a horizontal-scroll
+# affordance: open_app sets the 1280x800 desktop viewport, so the narrow
+# stack (where rails do not exist at all) never applies here.
+#
+# Every drag below runs between ADJACENT lanes: scroll_start puts the source
+# column at the strip's left edge, so its 236px column plus the target's
+# 36px rail fit inside the pane at 1280.
+#
+# The probes read data-status with an UNQUOTED attribute value on purpose
+# (all nine statuses are simple identifiers): a quoted selector has to
+# survive two levels of shell quoting, and the CLI's unescape behaviour
+# differs across agent-browser versions (worker-onboarding, t_2454597e).
+
+# scroll_start <status>: the source lane at the strip's left edge.
+scroll_start() {
+  js "(function(){var c=document.querySelector('.board-col[data-status=$1]');if(c) c.scrollIntoView({block:'nearest',inline:'start'});return 1})()" >/dev/null
+  sleep 0.3
+}
+
+# lane_folded_expr <status>: a BOOLEAN for wait_js (never a ?1:0 answer)
+lane_folded_expr() {
+  printf "(function(){var c=document.querySelector('.board-col[data-status=%s]');return !!c&&c.classList.contains('folded')})()" "$1"
+}
+
+# lane_state <status> -> "folded|count|rail|name|railcount" (dash = absent)
+lane_state() {
+  jsq "(function(){var c=document.querySelector('.board-col[data-status=$1]');if(!c) return 'missing';var r=c.querySelector('.lane-rail');return (c.classList.contains('folded')?'folded':'open')+'|'+c.dataset.count+'|'+(r?'rail':'no-rail')+'|'+(r?((r.querySelector('.lane-rail-name')||{}).textContent||'-'):'-')+'|'+(r?((r.querySelector('.lane-rail-count')||{}).textContent||'-'):'-')})()" 2>&1 | tail -1 | tr -d "\"'"
+}
+
+lane_width() {
+  jsq "(function(){var c=document.querySelector('.board-col[data-status=$1]');return c?Math.round(c.getBoundingClientRect().width):-1})()" 2>&1 | tail -1 | tr -d "\"'"
+}
+
+# dot_row <status>: the lane dot's viewport centre y (folded OR expanded)
+dot_row() {
+  jsq "(function(){var c=document.querySelector('.board-col[data-status=$1]');var d=c&&c.querySelector('.lane-dot');if(!d) return -1;var b=d.getBoundingClientRect();return Math.round(b.y+b.height/2)})()" 2>&1 | tail -1 | tr -d "\"'"
+}
+
+fold_lane() {
+  js "(function(){var b=document.querySelector('.board-col[data-status=$1] .col-fold-btn');if(!b) return 0;b.click();return 1})()" >/dev/null
+}
+
+unfold_lane() {
+  js "(function(){var r=document.querySelector('.board-col[data-status=$1] .lane-rail');if(!r) return 0;r.click();return 1})()" >/dev/null
+}
+
+# rail_geo <status>: sets RX RY to the rail's centre, 40px below its top
+rail_geo() {
+  local v
+  v=$(jsq "(function(){var c=document.querySelector('.board-col[data-status=$1]');var r=c&&c.querySelector('.lane-rail');if(!r) return '0,0';var b=r.getBoundingClientRect();return Math.round(b.x+b.width/2)+','+Math.round(b.y+40)})()" 2>&1 | tail -1 | tr -d "\"'")
+  RX="${v%%,*}"; RY="${v#*,}"
+  [ "$RX" != "0" ] || die "lane $1 renders no rail (geo: $v)"
+}
+
+# rail_box <status> -> "x|width" of the rail button
+rail_box() {
+  jsq "(function(){var c=document.querySelector('.board-col[data-status=$1]');var r=c&&c.querySelector('.lane-rail');if(!r) return '0|0';var b=r.getBoundingClientRect();return Math.round(b.x)+'|'+Math.round(b.width)})()" 2>&1 | tail -1 | tr -d "\"'"
+}
+
+# card_inview <id>: sets CX CY like card_geo, and DIES unless that centre
+# is inside the board's scroll port. A card scrolled behind the sidebar is
+# still in the DOM with a plausible rect, but a pointer press there lands on
+# the pane painted over it - the drag then starts on the wrong element and
+# the recipe measures a gesture nobody made.
+card_inview() {
+  card_geo "$1"
+  local ok
+  ok=$(jsq "(function(){var p=document.querySelector('.board-scroll').getBoundingClientRect();return $CX>Math.round(p.x)&&$CX<Math.round(p.x+p.width)&&$CY>Math.round(p.y)&&$CY<Math.round(p.y+p.height)})()" 2>&1 | tail -1)
+  [ "$ok" = "true" ] || die "card $1 is not inside the board's scroll port at ($CX,$CY) - scroll the SOURCE lane first"
+}
+
+step "e1: folding a card-holding lane renders the rail (dot + vertical name + count)"
+scroll_start todo
+fold_lane todo
+wait_js "$(lane_folded_expr todo)" 6
+sleep 0.4
+st="$(lane_state todo)"
+[ "$st" = "folded|2|rail|todo|2" ] || die "todo rail shape wrong (got [$st] want [folded|2|rail|todo|2])"
+w="$(lane_width todo)"
+[ "$w" = "36" ] || die "a folded lane is not the 36px rail (got ${w}px)"
+# the fold's ease: the ~180ms cubic-bezier transition rides the lane itself
+dur="$(jsq "(function(){var s=getComputedStyle(document.querySelector('.board-col[data-status=todo]'));return s.transitionDuration+'|'+s.transitionTimingFunction})()" 2>&1 | tail -1 | tr -d "\"'")"
+case "$dur" in
+  0.18s*cubic-bezier*) ;;
+  *) die "the fold does not ease over ~180ms on a cubic-bezier (got [$dur])" ;;
+esac
+step "ok: todo folded to a 36px rail, name+count rendered, width ease [$dur]"
+
+# the dot row is ONE line across the board: a folded lane's dot sits exactly
+# on an expanded lane's header dot
+rail_dot="$(dot_row todo)"; head_dot="$(dot_row review)"
+[ "$rail_dot" != "-1" ] && [ "$head_dot" != "-1" ] || die "a lane dot is missing (rail=$rail_dot head=$head_dot)"
+[ "$rail_dot" = "$head_dot" ] || die "dots do not align across lanes: rail row $rail_dot vs header row $head_dot"
+step "ok: rail dots align with expanded header dots (both at y=$rail_dot)"
+
+step "e2: the rail is a live drop target, and a live drag never reshapes the strip"
+# the SOURCE lane is scrolled to the strip's left edge (never the target: a
+# card scrolled out of the pane is not draggable - its rect sits behind a
+# sidebar and the gesture starts on whatever is painted there)
+scroll_start triage
+card_inview "$A"; afx=$CX; afy=$CY
+rail_geo todo
+box_before="$(rail_box todo)"
+drag_to "$afx" "$afy" "$RX" "$RY"
+box_mid="$(rail_box todo)"
+[ "$box_mid" = "$box_before" ] || die "the strip reshaped under the cursor mid-drag (rail $box_before -> $box_mid) - the drop would land on a neighbour"
+drag_release
+sleep 1
+[ "$(col_ids todo | awk '{print $1}')" = "$A" ] || die "a card dropped on the rail did not land at the top of todo (got [$(col_ids todo)])"
+st="$(lane_state todo)"
+[ "$st" = "folded|3|rail|todo|3" ] || die "a pinned rail must keep its shape when a card lands on it (got [$st] want [folded|3|rail|todo|3])"
+step "ok: drop on the rail moved $A into todo; the rail kept its shape and its count grew"
+
+unfold_lane todo
+wait_js "!$(lane_folded_expr todo)" 6
+sleep 0.4
+w="$(lane_width todo)"
+[ "$w" = "236" ] || die "clicking the rail did not unfold the lane (width ${w}px)"
+st="$(lane_state todo)"
+case "$st" in open\|3\|no-rail*) ;; *) die "unfolded lane shape wrong (got [$st])" ;; esac
+step "ok: the rail is the unfold control (todo back to a 236px column)"
+
+step "e3: an empty lane folds itself and its override dies with it"
+S=$(card_id scheduled s)
+[ -n "$S" ] || die "scheduled-card seeding failed"
+trap 'archive_cards "$A" "$B" "$C" "$D" "$E" "$S"' EXIT
+poll_js "(function(){var c=document.querySelector('.board-col[data-status=scheduled]');return !!c&&c.dataset.count==='1'})()" 10 ||
+  die "seeded card $S never rendered in scheduled"
+# pin it COLLAPSED while it holds one card, then drain it through the API: a
+# folded lane's cards are not rendered in the DOM, so another surface takes
+# the last one and the board absorbs the canvas delta
+scroll_start scheduled
+fold_lane scheduled
+wait_js "$(lane_folded_expr scheduled)" 6
+sleep 0.3
+st="$(lane_state scheduled)"
+[ "$st" = "folded|1|rail|scheduled|1" ] || die "scheduled rail shape wrong (got [$st])"
+curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${S}?board=${BOARD}" \
+  -H 'Content-Type: application/json' -d '{"status":"todo"}' | grep -q "\"id\":\"$S\"" ||
+  die "PATCH $S out of scheduled failed"
+poll_js "(function(){var c=document.querySelector('.board-col[data-status=scheduled]');return !!c&&c.dataset.count==='0'&&c.classList.contains('folded')})()" 10 ||
+  die "a drained lane did not fold itself (count/folded: $(lane_state scheduled))"
+st="$(lane_state scheduled)"
+[ "$st" = "folded|0|rail|scheduled|-" ] || die "drained rail shape wrong (got [$st] want [folded|0|rail|scheduled|-])"
+step "ok: the drained lane is a rail with no count, even though it was pinned collapsed"
+
+step "e4: the dropped override does not come back when the lane refills"
+scroll_start todo
+card_inview "$D"; rfx=$CX; rfy=$CY
+rail_geo scheduled
+drag_to "$rfx" "$rfy" "$RX" "$RY"
+drag_release
+sleep 1
+[ "$(col_ids scheduled)" = "$D" ] || die "the refill drop did not land in scheduled (got [$(col_ids scheduled)])"
+st="$(lane_state scheduled)"
+# a surviving 'collapsed' pin would keep this a rail; the override died with
+# the empty lane, so the refilled lane takes its DEFAULT shape (expanded)
+[ "$st" = "open|1|no-rail|-|-" ] || die "a refilled lane kept a dead override (got [$st] want [open|1|no-rail|-|-])"
+step "ok: the refilled lane came back expanded - no override outlived its empty lane"
+
+# the card seeded for this section is this recipe's to clean up (the trap
+# above owns the others)
+archive_cards "$S"
+step "e: lane rails GREEN"
+
 assert_no_console_errors
 step "98-kanban-drag-reorder GREEN"
