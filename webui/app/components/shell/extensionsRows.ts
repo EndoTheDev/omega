@@ -1,8 +1,9 @@
-// omega webui: pure row model for the EXTENSIONS inspector tab
-// (card t_14f73742 - the /extensions inventory;
-// card t_210a0d19 - the tab becomes the module lifecycle cockpit).
+// omega webui: pure row model for the MODULES surface (the settings tab's
+// MODULES section, card t_81d0901b - which moved the whole surface out of
+// the retired secondary-pane cockpit tab that card t_14f73742/t_210a0d19
+// built: module toggles are configuration, not content).
 //
-// Composition contract note: this inventory tab is a SHELL tab over the
+// Composition contract note: this listing is a SHELL-owned surface over the
 // GET /extensions endpoint, NOT a module-owned panel - the shell owns
 // the listing (it aggregates every module, including the modules that
 // carry no panel UI). has-ui and the panel list derive at shell build

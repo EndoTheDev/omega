@@ -172,7 +172,7 @@ describe("tree construction", () => {
     const insp = asSplit(t).children[2];
     assert.deepEqual(
       asPane(insp).tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
     );
     assert.equal(asPane(insp).active, 0);
   });
@@ -471,7 +471,7 @@ describe("tab ops", () => {
       const movedBack = moveTab(movedOut, chat.id, 0, files.id, 0);
       assert.deepEqual(
         tabComps(movedBack, files.id),
-        ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
+        ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
         "the moved tab rejoins the inspector bar at the caret",
       );
       assert.deepEqual(tabComps(t, chat.id), ["chat"], "refusals leave the tree untouched");
@@ -646,7 +646,7 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     assert.equal(root.children.length, 2, "main row + bottom shell");
     return asSplit(root.children[0]);
   }
-  it("always four panes: sidebar(240), chat, inspector-10(240 default), bottom(200, logs)", () => {
+  it("always four panes: sidebar(240), chat, inspector-9(240 default), bottom(200, logs)", () => {
     const t = migrateLegacy(() => null);
     const row = mainRow(t);
     assert.equal(row.children.length, 3);
@@ -657,7 +657,7 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     assert.equal(asPane(row.children[2]).fixed, 240);
     assert.deepEqual(
       asPane(row.children[2]).tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
     );
     const bottom = asPane(asSplit(t).children[1]);
     assert.equal(bottom.edge, "bottom");
@@ -707,7 +707,7 @@ describe("pane-model reset", () => {
     const out = expandInspectorTabs(legacy);
     assert.deepEqual(
       (out as DockPane).tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
     );
     assert.equal((out as DockPane).active, 0);
   });
@@ -731,7 +731,7 @@ describe("pane-model reset", () => {
     const right = asPane(out.children[2]); // [sidebar, chat, inspector]
     assert.deepEqual(
       right.tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
     );
     assert.equal(right.fixed, 240);
   });
@@ -890,7 +890,7 @@ describe("edge toggle (card t_47b776ad)", () => {
     );
     assert.deepEqual(
       insp.tabs.map((x): string => x.component),
-      ["files", "cron", "skills", "tools", "agents", "kanban", "extensions", "insights", "mcp", "notifications"],
+      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
     );
   });
 

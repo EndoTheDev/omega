@@ -214,6 +214,45 @@ describe("parseAnyLayout: the repair table (ruling 6)", () => {
     const a = panes(p.tree)[0]!;
     assert.deepEqual(a.tabs.map((t) => t.component), ["chat"], "the unknown tab is dropped, the chat survives");
   });
+
+  it("card t_81d0901b: a stored layout naming the removed modules tab boots as a clean no-op", () => {
+    // Layouts persisted before the modules cockpit retired still name it.
+    // The reader DROPS the id with a receipt (it is not a legacy id - a
+    // legacy id would deserialize into a live phantom tab), the pane keeps
+    // its surviving tabs, and the boot completes. Probe both readers plus
+    // the real store load.
+    const raw = JSON.stringify({
+      v: 3,
+      tree: { kind: "split", id: "n1", direction: "row", px: [760, 240], children: [
+        { kind: "pane", id: "n2", tabs: [{ component: "chat" }], active: 0, fixed: null },
+        { kind: "pane", id: "n3", tabs: [
+          { component: "extensions" },
+          { component: "files" },
+          { component: "insights" },
+        ], active: 0, fixed: 240 },
+      ] },
+      closedEdges: [],
+    });
+    const p = parseAnyLayout(raw, fallback);
+    const insp = panes(p.tree)[1]!;
+    assert.deepEqual(
+      insp.tabs.map((t) => t.component),
+      ["files", "insights"],
+      "the removed tab is dropped, its siblings survive",
+    );
+    assert.equal(insp.active, 0, "the active index clamps onto the survivor");
+    assert.ok(
+      p.repairs.some((r) => r.includes("extensions") && /dropped/i.test(r)),
+      `the receipt names the dropped id: ${JSON.stringify(p.repairs)}`,
+    );
+    // the store's own load is the same no-op: no throw, the layout persists,
+    // and no phantom tab is reachable through it
+    const store = new MemoryStorage();
+    store.setItem(DOCK_LAYOUT_KEY, raw);
+    const dock = createDock(store as unknown as Storage);
+    assert.ok(JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!).v === 3, "the layout re-persists cleanly");
+    assert.ok(!store.getItem(DOCK_LAYOUT_KEY)!.includes("extensions"), "the orphan id is gone from disk");
+  });
 });
 
 describe("serialize v:3: integer px on disk (ruling 6)", () => {

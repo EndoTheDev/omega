@@ -77,7 +77,7 @@ test("lucide-vue-next is imported ONLY by the iconset composable", () => {
     "../harness/notifications/ui/NotificationsPanel.vue",
     "app/components/shell/NotificationToasts.vue",
     "app/components/settings/SettingsTab.vue",
-    "app/components/shell/ExtensionsTab.vue",
+    "app/components/settings/ModulesSection.vue",
     "app/components/shell/MenuBar.vue",
     "../harness/store/ui/AppSidebar.vue",
   ];
@@ -102,7 +102,7 @@ test("zero hand-rolled inline SVG in application components", () => {
     "../harness/notifications/ui/NotificationsPanel.vue",
     "app/components/shell/NotificationToasts.vue",
     "app/components/settings/SettingsTab.vue",
-    "app/components/shell/ExtensionsTab.vue",
+    "app/components/settings/ModulesSection.vue",
     "app/components/shell/MenuBar.vue",
     "../harness/store/ui/AppSidebar.vue",
     "app/components/chat/ToolCallLine.vue",

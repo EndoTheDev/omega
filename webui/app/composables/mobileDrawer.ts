@@ -131,9 +131,11 @@ export const DRAWER_RENDERABLE: Record<MobileShell, readonly DockComponentName[]
   // every drawer branches (files/settings are freely draggable residents)
   sidebar: ["sidebar", "files", "settings"],
   // the inspector shell: its home views, the shell inventory + insights
-  // (t_14f73742 / t_d7fd3ad3) and the two capsule/panel views it seats by
-  // their own branch (notifications t_180db2cb, agents t_07ad4fda)
-  inspector: ["files", "settings", "extensions", "insights", "notifications", "agents"],
+  // (t_d7fd3ad3) and the two capsule/panel views it seats by their own
+  // branch (notifications t_180db2cb, agents t_07ad4fda). Card t_81d0901b:
+  // the modules cockpit left the strip - its surface is the settings tab's
+  // MODULES section now.
+  inspector: ["files", "settings", "insights", "notifications", "agents"],
   // the bottom shell: the terminal + Logs capsule views (t_07ad4fda,
   // t_e703180e) and the draggable shell views
   bottom: ["files", "settings", "observability", "terminal"],
