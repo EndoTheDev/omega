@@ -331,34 +331,43 @@ func (w *wakeNoteSink) AppendTurnMessage(ctx context.Context, msg core.Message) 
 	return w.inner.AppendTurnMessage(ctx, msg)
 }
 
-// wakeErrorNoteText words the note a wake run leaves when the provider
-// stream died before the turn finished: the tool that settled when the
-// run's input names one, plus the way forward.
-func wakeErrorNoteText(toolName string) string {
-	if toolName == "" {
-		return "[wake turn ended on a provider error - send a message to continue]"
+// wakeStopNoteText words the note a wake run leaves when it stops
+// before producing a turn: the tool that settled when the run's input
+// names one, the reason it stopped, plus the way forward.
+func wakeStopNoteText(reason, toolName string) string {
+	what := "ended on a provider error"
+	if reason == "cancelled" {
+		what = "was stopped by the run cap"
 	}
-	return "[wake turn for " + toolName + " ended on a provider error - send a message to continue]"
+	if toolName == "" {
+		return "[wake turn " + what + " - send a message to continue]"
+	}
+	return "[wake turn for " + toolName + " " + what + " - send a message to continue]"
 }
 
-// noteErrorEnd persists the note a wake run leaves when it ends on an
-// error (card t_9821e39b). A stream-error end returns from the loop
-// BEFORE any completion is persisted, so the all-empty path above never
-// sees a message at all and the re-entry turn vanished from the
-// session with zero trace - the live error frame and the lane log were
-// the only record. The latch is shared with the empty note: one note
-// per run, whichever end fires first. A run that already persisted an
-// assistant row is not a zero-trace turn and gets nothing.
-func (w *wakeNoteSink) noteErrorEnd(ctx context.Context) {
+// noteStoppedEnd persists the note a wake run leaves when it ends
+// without producing a turn (cards t_9821e39b, t_317136fd). An "error"
+// end (a provider stream error) returns from the loop BEFORE any
+// completion is persisted, so the all-empty path above never sees a
+// message at all. A "cancelled" end is the same shape on the run cap:
+// a mid-stream expiry surfaces as a stream error (covered by "error"),
+// but an expiry landing BETWEEN turns ends here before the first
+// assistant row - the input row persisted at loop start and nothing
+// after it. Either way the re-entry turn vanished from the session
+// with zero trace: the live frames and the lane log were the only
+// record. The latch is shared with the empty note - one note per run,
+// whichever end fires first. A run that already persisted an assistant
+// row is not a zero-trace turn and gets nothing.
+func (w *wakeNoteSink) noteStoppedEnd(ctx context.Context, reason string) {
 	if w.noted || w.wrote {
 		return
 	}
 	w.noted = true
 	name := wakeToolName(ctx)
 	if lgr := w.s.Logger(); lgr != nil {
-		lgr.Printf("wake turn for session %s (%s) ended on a provider error - note persisted", w.id, name)
+		lgr.Printf("wake turn for session %s (%s) stopped without a turn (%s) - note persisted", w.id, name, reason)
 	}
-	w.s.appendSessionBookkeeping(w.id, core.NewUser(wakeErrorNoteText(name)))
+	w.s.appendSessionBookkeeping(w.id, core.NewUser(wakeStopNoteText(reason, name)))
 }
 
 // launchWake starts one wake run: the settled result re-enters through

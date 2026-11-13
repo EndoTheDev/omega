@@ -389,10 +389,13 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		var recs []assistantRecord
 		var rec assistantRecord
 		var usage streamUsage
-		// erroredEnd records the loop's terminal error end (card
-		// t_9821e39b): the one signal that the run died before it
-		// persisted a completion, so the wake note below knows.
-		var erroredEnd bool
+		// stoppedReason records the loop's terminal end that writes no
+		// completion (cards t_9821e39b, t_317136fd): "error" for a
+		// provider stream error, "cancelled" for the run cap expiring
+		// between turns before the first assistant row. Both return
+		// from the loop before any row persists, so the wake note
+		// below stands in for the turn that never wrote.
+		var stoppedReason string
 		meter := newRunMeter()
 		runner := s.runAgent(&req)
 		for event := range runner.RunWithProvider(ctx, prov, messages, tools) {
@@ -423,11 +426,16 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 					}
 				}
 			}
-			// A terminal error end (a provider stream error ends the
-			// loop this way) persists nothing itself - the wake note
-			// below stands in for the row the turn never wrote.
-			if end, ok := event.(core.AgentEnd); ok && end.FinishReason == "error" {
-				erroredEnd = true
+			// A terminal stop-without-completion persists nothing
+			// itself: a provider stream error ends the loop as
+			// "error", a run cap that expires between turns as
+			// "cancelled" (agent/loop/agent_loop.go emits the two as
+			// distinct values). Both leave the wake note below to
+			// stand in for the row the turn never wrote.
+			if end, ok := event.(core.AgentEnd); ok {
+				if end.FinishReason == "error" || end.FinishReason == "cancelled" {
+					stoppedReason = end.FinishReason
+				}
 			}
 			eventType, data, err := sseEvent(event)
 			if err != nil {
@@ -441,12 +449,13 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 			s.emitRunFrame(run, runFrame{event: "error", data: []byte(
 				"run timeout: the run exceeded its wall-clock cap (" + s.runTimeout.String() + ") and was stopped")})
 		}
-		// Wake runs only (card t_9821e39b): a wake turn that died on a
-		// provider error leaves a visible note, so the re-entry turn
+		// Wake runs only (cards t_9821e39b, t_317136fd): a wake turn
+		// that died on a provider error - or on the run cap expiring
+		// between turns - leaves a visible note, so the re-entry turn
 		// never vanishes from the session on the next reload.
-		if erroredEnd && req.wake {
+		if stoppedReason != "" && req.wake {
 			if ws, ok := sink.(*wakeNoteSink); ok {
-				ws.noteErrorEnd(ctx)
+				ws.noteStoppedEnd(ctx, stoppedReason)
 			}
 		}
 		s.persistRun(runCtx, run, prov, req, append(recs, rec), usage, meter.stats(usage))
