@@ -209,6 +209,40 @@ describe("gate: narrow-viewport tab strip (card t_aca53fee)", () => {
   });
 });
 
+// --- gate: pane tab min-widths (card t_80775d15) -----------------------------
+
+describe("gate: pane tabs carry a readable min-width", () => {
+  it("no strip crushes a text tab below the 72px floor; the strip scrolls instead", () => {
+    const css = src("app/assets/css/main.css");
+    // the floor: the base text-tab shape
+    assert.match(css, /\.dock-tab\s*\{[^}]*min-width: 72px/,
+      "the base text tab floors at 72px");
+    // the pinned TEXT strip (the bottom pane's tabs) must not zero the
+    // floor again - the old inspector-era min-width: 0 is retired
+    const pinned = css.match(/\.dock-pane\.pinned \.dock-tab\s*\{[^}]*\}/);
+    assert.ok(pinned, "the pinned tab shape exists");
+    assert.doesNotMatch(pinned[0], /min-width:\s*0/,
+      "the pinned text strip keeps the base floor");
+    // overflow rides the EXISTING pattern (t_aca53fee): the strip scrolls
+    assert.match(css, /\.dock-tabs \{[^}]*overflow-x: auto/, "the strip scrolls, never crushes");
+  });
+
+  it("the 28px icon chip keeps its own floor (min-width beats width)", () => {
+    const css = src("app/assets/css/main.css");
+    const rule = css.match(/\.dock-pane\.pinned \.dock-tab\.ic-only\s*\{[^}]*\}/);
+    assert.ok(rule, "the icon chip rule exists");
+    assert.match(rule[0], /min-width: 28px/, "the chip's floor matches its width");
+  });
+
+  it("a pane resize re-runs the active-tab resolver (no stranded selection)", () => {
+    const pane = src("app/components/DockPane.vue");
+    assert.match(pane, /new ResizeObserver\(\(\) => scrollActiveIntoView\(\)\)/,
+      "the strip's resize re-resolves the active tab");
+    assert.match(pane, /stripObserver\?\.disconnect\(\)/,
+      "the observer is torn down with the pane");
+  });
+});
+
 // helpers ------------------------------------------------------------------
 
 function panesOf(t: DockNode): DockPane[] {
