@@ -167,7 +167,9 @@ describe("nav cluster wiring", () => {
   const css = readFileSync(join(here, "../app/assets/css/main.css"), "utf8");
   const iconset = readFileSync(join(here, "../app/composables/icons.ts"), "utf8");
 
-  it("the cluster seats inline after the brand; the wordmark owns the center", () => {
+  // card t_20fd8745 (Endo ruling 2026-11-13): ONE brand far left, the nav
+  // cluster dead center on the bar's full width, the 'Omega' wordmark dead.
+  it("the brand is ONE element; the cluster owns the absolute center", () => {
     assert.match(menubar, /<NavCluster/);
     assert.match(menubar, /:can-back="canBack"/);
     assert.match(menubar, /@open-palette="\$emit\('open-palette'\)"/);
@@ -175,22 +177,75 @@ describe("nav cluster wiring", () => {
     // canBack undefined in the template and both arrows ship dead
     assert.match(menubar, /canBack: boolean/);
     assert.match(menubar, /canForward: boolean/);
-    // card t_3aed367e: the cluster LEFT the menubar's absolute center -
-    // the wordmark's seat; the wordmark takes it (dead center on the
-    // menubar's full width) as the plain static text 'Omega'
-    assert.doesNotMatch(css, /\.nav-cluster\s*\{[^}]*left:\s*50%/);
-    assert.match(css, /\.menubar-wordmark\s*\{[^}]*left:\s*50%/);
-    assert.match(css, /\.menubar-wordmark\s*\{[^}]*translateX\(-50%\)/);
-    assert.match(css, /\.menubar-wordmark\s*\{[^}]*var\(--mono\)/);
-    assert.match(menubar, /<span class="menubar-wordmark">Omega<\/span>/);
+    // ruling 1: ONE brand - glyph + word in a SINGLE element, far left
+    assert.match(menubar, /<span class="brand">Ωmega<\/span>/);
+    assert.equal(
+      (menubar.match(/class="brand"/g) ?? []).length,
+      1,
+      "exactly one brand element",
+    );
+    // ruling 1: the centered wordmark ELEMENT and its CSS rule are deleted
+    // (the comment above may still name the dead class - that is history,
+    // not a render)
+    assert.doesNotMatch(menubar, /<span class="menubar-wordmark"/);
+    assert.doesNotMatch(css, /\.menubar-wordmark\s*\{/);
+    // ruling 2: the cluster takes the absolute-middle seat the wordmark
+    // used (dead center on the menubar's FULL width, robust to any
+    // left/right width) - never spacer-balanced
+    assert.match(css, /\.nav-cluster\s*\{[^}]*position:\s*absolute/);
+    assert.match(css, /\.nav-cluster\s*\{[^}]*left:\s*50%/);
+    assert.match(css, /\.nav-cluster\s*\{[^}]*translateX\(-50%\)/);
+    // ruling 5: below the drawer breakpoint the cluster HIDES (the three
+    // edge toggles stay - they are the drawer handles)
+    assert.match(
+      css,
+      /@media \(max-width: 768px\) \{\s*\.nav-cluster \{ display: none; \}/,
+    );
     // no version anywhere in the menubar - the status bar owns it
-    // card t_c5d4f2ad: the far-left brand is the lone omega glyph (the
-    // center wordmark below is a SEPARATE span and keeps its 'Omega')
-    assert.match(menubar, /<span class="brand">Ω<\/span>/);
     assert.doesNotMatch(menubar, /Omega v?\d+\.\d+/);
     assert.doesNotMatch(menubar, /\/health/);
     // the ruling: disabled attribute dimming, never a click-swallow class
     assert.match(css, /\.nav-btn:disabled\s*\{[^}]*opacity/);
+  });
+
+  // ruling 3: the palette "input" is a BUTTON dressed as one - pure
+  // affordance, and its placeholder is a LIVE clock.
+  it("the palette affordance is a button with a ticking clock, never an input", () => {
+    const nav = readFileSync(
+      join(here, "../app/components/nav/NavCluster.vue"),
+      "utf8",
+    );
+    assert.match(nav, /class="nav-palette-input"/);
+    assert.match(nav, /<button[\s\S]{0,260}class="nav-palette-input"/);
+    // no real input, no v-model, no focus path of its own
+    assert.doesNotMatch(nav, /<input/);
+    assert.doesNotMatch(nav, /v-model/);
+    // one click opens the ONE palette (app.vue's toggle, via the shell)
+    assert.match(
+      nav,
+      /class="nav-palette-input"[\s\S]{0,400}@click="\$emit\('open-palette'\)"/,
+    );
+    // the outside-click exemption rides the same marker as the trigger
+    assert.match(
+      nav,
+      /class="nav-palette-input"[\s\S]{0,300}data-palette-trigger/,
+    );
+    // the affordance's NAME is the command-palette hint; the clock is
+    // decoration (aria-hidden) so a screen reader never reads a time
+    assert.match(nav, /aria-label="Command palette \(Ctrl\+K\)"/);
+    assert.match(nav, /class="nav-palette-clock"\s+aria-hidden="true"/);
+    // the clock: zero-padded HH:MM, re-armed on the minute boundary, and
+    // the timer dies with the component
+    assert.match(nav, /pad\(d\.getHours\(\)\)[\s\S]{0,80}pad\(d\.getMinutes\(\)\)/);
+    assert.match(nav, /60_000 - \(Date\.now\(\) % 60_000\)/);
+    assert.match(nav, /onMounted\(armClock\)/);
+    assert.match(
+      nav,
+      /onBeforeUnmount\(\(\) => \{\s*if \(clockTimer !== null\) clearTimeout\(clockTimer\)/,
+    );
+    // CSS: the affordance reads as an input (token background + border)
+    assert.match(css, /\.nav-palette-input\s*\{[^}]*var\(--z1\)/);
+    assert.match(css, /\.nav-palette-input\s*\{[^}]*border: 1px solid var\(--stroke\)/);
   });
 
   it("the NavCluster dims via :disabled and carries the Ctrl+K hint", () => {

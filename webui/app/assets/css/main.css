@@ -116,30 +116,47 @@ body {
 .menubar .brand { margin-right: 8px; }
 .menubar-spacer { flex: 1; }
 
-/* ---- card t_6215474b: the nav cluster + command palette ----
-   The cluster seats INLINE after the brand (card t_3aed367e: the
-   center wordmark vacated the cluster's old absolute-center seat; the
-   panes' row owns the rest of the flex content). The ends dim via the
+/* ---- card t_20fd8745 (Endo ruling 2026-11-13): the nav cluster seats
+   DEAD CENTER on the menubar's FULL width - the absolute-middle trick the
+   deleted 'Omega' wordmark used (robust to any left/right width), now the
+   cluster's seat: back / forward / the fake-input palette affordance /
+   the Ctrl+K trigger. Below the drawer breakpoint the cluster HIDES - the
+   three edge toggles are the drawer handles there. The ends dim via the
    real disabled attribute - VS Code states. */
 .nav-cluster {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 2px;
 }
-/* ---- card t_3aed367e: the plain 'Omega' wordmark, dead center on the
-   menubar's FULL width (absolute middle - robust to any left/right
-   width, unlike spacer balancing). The brand's font treatment. No
-   version text: the bottom status bar owns version + uptime. */
-.menubar-wordmark {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: var(--mono);
-  color: var(--accent);
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
+@media (max-width: 768px) {
+  .nav-cluster { display: none; }
 }
+/* card t_20fd8745: the palette AFFORDANCE - a button dressed as an input.
+   Pure affordance: no typing, no second focus path (the dialog owns the
+   only search field), one click = the ctrl+k intent. Its placeholder is
+   the LIVE clock NavCluster re-renders on each minute boundary. */
+.nav-palette-input {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 200px;
+  height: 24px;
+  margin: 0 4px;
+  padding: 0 9px;
+  background: var(--z1);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-chip);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.nav-palette-input:hover { color: var(--text); border-color: var(--accent); }
+.nav-palette-clock { font-variant-numeric: tabular-nums; }
 .nav-btn:disabled {
   opacity: 0.35;
   cursor: default;
