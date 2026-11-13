@@ -133,7 +133,7 @@ func TestAgentOwnedSessionReadsAndRunsOnItsHome(t *testing.T) {
 	}
 
 	// RUN config: the send runs on the agent home's agent.
-	postChatAndWait(t, ts, "sess-scout-2")
+	postChatAndWait(t, srv, ts, "sess-scout-2")
 
 	if got := scoutSeen.Provider.ModelName(); got != "scout-model" {
 		t.Fatalf("agent-owned run used model %q, want %q", got, "scout-model")
@@ -183,7 +183,7 @@ func TestDaemonOwnedSessionKeepsItsAgent(t *testing.T) {
 	ctx := context.Background()
 	_, srv, ts, daemonSeen, scoutSeen := agentHomeServer(t)
 
-	postChatAndWait(t, ts, "sess-main")
+	postChatAndWait(t, srv, ts, "sess-main")
 
 	if got := daemonSeen.Provider.ModelName(); got != "daemon-model" {
 		t.Fatalf("daemon run used model %q, want %q", got, "daemon-model")
@@ -249,6 +249,10 @@ func TestAgentOwnedSessionIgnoresTheDaemonModelPin(t *testing.T) {
 		}
 		ended = frame.event == "agent_end"
 	}
+	// The frame loop ends the REQUEST, not the run: agent_end is broadcast
+	// from inside the run's event loop, before it persists usage/last-run
+	// stats. Own that tail before returning (card t_8b6daa57).
+	waitRunSettled(t, srv, "sess-scout-2")
 
 	if started != "scout-model" {
 		t.Fatalf("agent_start model_name = %q, want the home's %q", started, "scout-model")
@@ -273,8 +277,8 @@ func TestAgentOwnedSessionIgnoresTheDaemonModelPin(t *testing.T) {
 
 // postChatAndWait sends one turn and waits for the run to finish
 // persisting (the run detaches from the request; the frames tell us the
-// stream ended, the store tells us the rows landed).
-func postChatAndWait(t *testing.T, ts *httptest.Server, sessionID string) {
+// stream ended, the hub release tells us the writes landed).
+func postChatAndWait(t *testing.T, srv *Server, ts *httptest.Server, sessionID string) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{
 		"messages":   []map[string]any{{"role": "user", "content": "hi"}},
@@ -295,8 +299,24 @@ func postChatAndWait(t *testing.T, ts *httptest.Server, sessionID string) {
 			t.Fatalf("stream closed before agent_end (session %s)", sessionID)
 		}
 		if frame.event == "agent_end" {
+			waitRunSettled(t, srv, sessionID)
 			return
 		}
 	}
 }
 
+// waitRunSettled blocks until the session's detached run has fully
+// unwound. agent_end is broadcast from inside the run's event loop
+// (runs.go), BEFORE the run persists its usage and last-run stats and
+// before the goroutine's deferred hub release - so a test that returns
+// on the last frame leaves that write in flight, and t.TempDir's
+// RemoveAll can hit the home's data dir mid-write: "directory not
+// empty" on a cold runner (card t_8b6daa57). The hub slot is released
+// only after persistRun returns, so this is the run's real end of life:
+// no sleep, no widened tolerance.
+func waitRunSettled(t *testing.T, srv *Server, sessionID string) {
+	t.Helper()
+	waitFor(t, "the run to finish persisting (session "+sessionID+")", func() bool {
+		return !srv.runs.active(sessionID)
+	})
+}
