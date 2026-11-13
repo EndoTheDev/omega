@@ -20,6 +20,13 @@ type fakeSettings struct {
 	saveErr      error
 	saved        map[string]any
 	defaultValue any
+	// the whole-document door (card t_a82d39c8)
+	rawText    string
+	rawErr     error
+	savedRaw   string
+	rawSaveErr error
+	resets     int
+	resetErr   error
 }
 
 func (f *fakeSettings) Schema() (*core.SettingsSchema, error) {
@@ -52,6 +59,33 @@ func (f *fakeSettings) Save(values map[string]any) (*core.SettingsSchema, error)
 	for k, v := range values {
 		f.saved[k] = v
 	}
+	return f.Schema()
+}
+
+// Raw replays the document the fake was seeded with.
+func (f *fakeSettings) Raw() (string, error) {
+	if f.rawErr != nil {
+		return "", f.rawErr
+	}
+	return f.rawText, nil
+}
+
+// SaveRaw records the submitted document and refreshes the schema, the
+// way the host's write path answers.
+func (f *fakeSettings) SaveRaw(text string) (*core.SettingsSchema, error) {
+	if f.rawSaveErr != nil {
+		return nil, f.rawSaveErr
+	}
+	f.savedRaw = text
+	return f.Schema()
+}
+
+// Reset records the call and answers the refreshed schema.
+func (f *fakeSettings) Reset() (*core.SettingsSchema, error) {
+	if f.resetErr != nil {
+		return nil, f.resetErr
+	}
+	f.resets++
 	return f.Schema()
 }
 
@@ -269,6 +303,183 @@ func TestSettingsMethodsRestricted(t *testing.T) {
 		NewServer(nil, nil, nil, &fakeSettings{}, nil, nil).Handler().ServeHTTP(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Errorf("%s: code %d, want 405", method, rec.Code)
+		}
+	}
+}
+
+// --- the whole-document door (card t_a82d39c8) -----------------------
+
+// TestSettingsRawGET pins the export read: the host's document bytes,
+// unmasked here (masking is the host's law, pinned in cmd/omega), with
+// the yaml content type and no-store caching.
+func TestSettingsRawGET(t *testing.T) {
+	fake := &fakeSettings{rawText: "provider:\n  model_name: m\n  api_key: " + "****" + "\n"}
+	ts := settingsServer(fake)
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/settings/raw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/yaml") {
+		t.Errorf("content-type %q, want application/yaml", ct)
+	}
+	if cc := resp.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("cache-control %q, want no-store", cc)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != fake.rawText {
+		t.Errorf("body %q, want the host's document %q", body, fake.rawText)
+	}
+}
+
+// TestSettingsRawPUTCarriesTheDocument: the submitted text reaches the
+// seam verbatim and the refreshed payload comes back, so the pane can
+// re-render the knobs from one round trip.
+func TestSettingsRawPUTCarriesTheDocument(t *testing.T) {
+	fake := &fakeSettings{defaultValue: true}
+	ts := settingsServer(fake)
+	defer ts.Close()
+	doc := "provider:\n  model_name: other\n"
+	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/settings/raw", strings.NewReader(doc))
+	req.Header.Set("Content-Type", "application/yaml")
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if fake.savedRaw != doc {
+		t.Errorf("seam received %q, want %q", fake.savedRaw, doc)
+	}
+	var payload struct {
+		Groups []struct {
+			Key string `json:"key"`
+		} `json:"groups"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("refreshed payload: %v", err)
+	}
+	if len(payload.Groups) != 1 {
+		t.Errorf("refreshed payload carried %d groups, want the schema", len(payload.Groups))
+	}
+}
+
+// TestSettingsRawPUTRefusals: an empty body is the caller's mistake
+// (400) and a document the host rejects is a 400 carrying the host's
+// own sentence - never a 500 that reads as a server fault.
+func TestSettingsRawPUTRefusals(t *testing.T) {
+	fake := &fakeSettings{rawSaveErr: errors.New("config: provider.model_name is required")}
+	ts := settingsServer(fake)
+	defer ts.Close()
+	resp, err := http.NewRequest(http.MethodPut, ts.URL+"/settings/raw", strings.NewReader("   \n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	NewServer(nil, nil, nil, fake, nil, nil).Handler().ServeHTTP(rec, resp)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("empty body: code %d, want 400", rec.Code)
+	}
+
+	bad, _ := http.NewRequest(http.MethodPut, ts.URL+"/settings/raw", strings.NewReader("not: [valid"))
+	r, err := ts.Client().Do(bad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Body.Close()
+	if r.StatusCode != http.StatusBadRequest {
+		t.Fatalf("refused document: status %d, want 400", r.StatusCode)
+	}
+	b, _ := io.ReadAll(r.Body)
+	if !strings.Contains(string(b), "provider.model_name") {
+		t.Errorf("error body %q omits the host's sentence", string(b))
+	}
+}
+
+// TestSettingsRawMethodsRestricted: the document door has exactly GET
+// and PUT - POST/DELETE answer 405 rather than reaching the seam.
+func TestSettingsRawMethodsRestricted(t *testing.T) {
+	for _, method := range []string{http.MethodPost, http.MethodDelete} {
+		req, _ := http.NewRequest(method, "/settings/raw", nil)
+		rec := httptest.NewRecorder()
+		NewServer(nil, nil, nil, &fakeSettings{}, nil, nil).Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s: code %d, want 405", method, rec.Code)
+		}
+	}
+}
+
+// TestSettingsResetPOST: the pane's reset action rides the host's own
+// defaults - the request carries no body, so a client can never invent
+// them.
+func TestSettingsResetPOST(t *testing.T) {
+	fake := &fakeSettings{defaultValue: true}
+	ts := settingsServer(fake)
+	defer ts.Close()
+	resp, err := ts.Client().Post(ts.URL+"/settings/reset", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if fake.resets != 1 {
+		t.Errorf("seam resets = %d, want 1", fake.resets)
+	}
+	var payload struct {
+		Groups []struct {
+			Knobs []struct {
+				Value any `json:"value"`
+			} `json:"knobs"`
+		} `json:"groups"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("refreshed payload: %v", err)
+	}
+	if len(payload.Groups) == 0 || payload.Groups[0].Knobs[0].Value != true {
+		t.Errorf("refreshed payload %+v, want the schema", payload)
+	}
+}
+
+// TestSettingsResetRestricted: GET on the reset route is not a read.
+func TestSettingsResetRestricted(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
+		req, _ := http.NewRequest(method, "/settings/reset", nil)
+		rec := httptest.NewRecorder()
+		NewServer(nil, nil, nil, &fakeSettings{}, nil, nil).Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s: code %d, want 405", method, rec.Code)
+		}
+	}
+}
+
+// TestSettingsRawAndResetNilSeam: a host with no settings seam answers
+// 501 on the new doors too - the pane's "no config surface" branch.
+func TestSettingsRawAndResetNilSeam(t *testing.T) {
+	cases := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/settings/raw"},
+		{http.MethodPut, "/settings/raw"},
+		{http.MethodPost, "/settings/reset"},
+	}
+	for _, tc := range cases {
+		req, _ := http.NewRequest(tc.method, tc.path, strings.NewReader("provider: {}\n"))
+		rec := httptest.NewRecorder()
+		NewServer(nil, nil, nil, nil, nil, nil).Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotImplemented {
+			t.Errorf("%s %s: code %d, want 501", tc.method, tc.path, rec.Code)
 		}
 	}
 }
