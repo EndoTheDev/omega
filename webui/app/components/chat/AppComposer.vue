@@ -1220,3 +1220,23 @@
     },
   });
 </script>
+
+<style scoped>
+  /* the fullscreen OVERLAY mount (card t_9ff2f621). The card used to grow
+     IN the pane's flex column (main.css .composer.expanded flex-grow), so
+     the history stayed mounted but was squeezed to a 32px sliver - the
+     conversation you are replying to vanished while you composed. Out of
+     flow now: .messages keeps the pane's whole height underneath and the
+     card floats over it, so collapsing needs no refetch and no scroll
+     repair (the scrollport is never resized). The 12px inset is the base
+     card's own margin (main.css); ChatTab makes main.chat.pane this box's
+     containing block. The flex-grow main.css still declares is inert -
+     an absolutely positioned child is not a flex item. */
+  .composer.expanded {
+    position: absolute;
+    inset: 0;
+    /* above the pane's content: the history, the activity line and the
+       jump-live pill all stay underneath the card */
+    z-index: 20;
+  }
+</style>
