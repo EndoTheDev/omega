@@ -1487,8 +1487,9 @@
   // nothing is selected." The clamp bounds WHERE the pane may rest inside
   // its selected section. card t_cd9952a3 later shrank the document to that
   // section (the SECTION FILTER) - the clamp is kept verbatim, and under a
-  // filtered document both ends of its range land on the document's own
-  // limit, so the two rulings answer the same number.
+  // filtered document its `max` is the section's own bottom, which is all
+  // but the document's limit (the scrollport's few px of padding are all
+  // that is left below it: measured 763 against 767 in journey 113).
   //
   // Only a REAL user selection writes `clampId` (and, since t_cd9952a3,
   // only `clampId` filters and only `clampId` reaches the URL). The spy
