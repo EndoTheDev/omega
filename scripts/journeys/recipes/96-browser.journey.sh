@@ -65,6 +65,10 @@ PY
 P_FRIENDLY=$(echo "$PORTS" | cut -d' ' -f1)
 P_DENY=$(echo "$PORTS" | cut -d' ' -f2)
 SRV="${TMPDIR:-/tmp}/jrn-browser-srv$$.py"
+# a native python cannot open an MSYS /tmp path (winbtw: it resolved
+# D:\tmp\... and died); hand it the mapped form where cygpath exists - a
+# Pi has no cygpath and the plain path passes through unchanged
+SRV_PY="$(cygpath -m "$SRV" 2>/dev/null || printf '%s' "$SRV")"
 cat > "$SRV" <<PY
 import http.server, sys, threading
 p_friendly, p_deny = int(sys.argv[1]), int(sys.argv[2])
@@ -84,14 +88,17 @@ class Deny(Friendly):
 threading.Thread(target=lambda: http.server.ThreadingHTTPServer(("127.0.0.1", p_deny), Deny).serve_forever(), daemon=True).start()
 http.server.ThreadingHTTPServer(("127.0.0.1", p_friendly), Friendly).serve_forever()
 PY
-python3 "$SRV" "$P_FRIENDLY" "$P_DENY" & SRVPID=$!
+python3 "$SRV_PY" "$P_FRIENDLY" "$P_DENY" & SRVPID=$!
 FRIENDLY="http://127.0.0.1:$P_FRIENDLY/jrn-marker.html"
 DENYURL="http://127.0.0.1:$P_DENY/jrn-marker.html"
-up=0; for i in $(seq 1 20); do
-  if curl -s -o /dev/null "$FRIENDLY" && curl -s -o /dev/null "$DENYURL"; then up=1; break; fi
-  sleep 0.5
-done
-[ "$up" = "1" ] || die "local frame origins never came up"
+# the origins are python loopbacks: on a slow-start host the first binds
+# land after the first probe, so wait on curl's own retry ladder
+# (connrefused retries) instead of counting sleeps
+fu=$(curl -s -o /dev/null -w '%{http_code}' --retry 20 --retry-delay 1 \
+  --retry-connrefused --max-time 3 "$FRIENDLY")
+du=$(curl -s -o /dev/null -w '%{http_code}' --retry 20 --retry-delay 1 \
+  --retry-connrefused --max-time 3 "$DENYURL")
+[ "$fu" = "200" ] && [ "$du" = "200" ] || die "local frame origins never came up (friendly=$fu deny=$du)"
 # the deny origin really denies (its header is why the embed refuses)
 curl -s -D - -o /dev/null "$DENYURL" | grep -qi "^x-frame-options: deny" || die "deny origin lost its X-Frame-Options header"
 step "ok: local origins up (friendly :$P_FRIENDLY, deny :$P_DENY)"
@@ -142,7 +149,7 @@ assert_eq "$pal" "1" "the command palette opened (ctrl+k)"
 ab fill '.command-palette-input' 'browser' >/dev/null 2>&1
 bopen=0
 for i in $(seq 1 20); do
-  b=$(jsq '(()=>{const r=[...document.querySelectorAll(".command-palette-list li")].find(x=>/^Browser$/i.test((x.querySelector(".command-title")||{}).textContent?.trim()||""));if(!r) return 0;r.click();return 1})()')
+  b=$(jsq '(()=>{const r=[...document.querySelectorAll(".command-palette-list li")].find(x=>/^Open Browser$/i.test((x.querySelector(".command-title")||{}).textContent?.trim()||""));if(!r) return 0;r.click();return 1})()')
   [ "$b" = "1" ] && bopen=1 && break
   sleep 0.5
 done
