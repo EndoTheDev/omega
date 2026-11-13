@@ -6,8 +6,10 @@
 # Pins:
 #
 #   inventory  - GET /extensions lists every in-process module, the
-#                registry the /extensions TUI command and the webui
-#                Extensions tab read; /cron's absence here is the
+#                registry the /extensions TUI command and the settings
+#                tab's MODULES section (card t_81d0901b: the webui
+#                surface retired its secondary-pane tab, the endpoint
+#                did not move) read; /cron's absence here is the
 #                buildPlugins omission showing up at runtime.
 #   seams      - the cron module answers GET /cron/jobs (the data
 #                source its CronJobs.vue panel and its /cron TUI

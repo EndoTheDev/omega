@@ -177,8 +177,13 @@ assert_eq "$bscrim" "1" "REPRO 3: the bottom drawer opens over the scrim"
 assert_eq "$bdrawer" "1" "REPRO 3: the bottom drawer opens (bottom.open)"
 assert_eq "$bottom_pane" "$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0')" "REPRO 3: the toggle left the tree alone (the edge-bottom cell never pruned)"
 echo "$brect" | grep -q '"h":0' && die "REPRO 3: the bottom drawer has zero height (geometry broken)"
-blog=$(jsq 'document.querySelector(".mobile-drawer.bottom.open .logs-view, .mobile-drawer.bottom.open .module-panels, .mobile-drawer.bottom.open .logs-line")?1:0')
-assert_eq "$blog" "1" "REPRO 3: the bottom drawer seats content (logs)"
+blog=$(jsq 'document.querySelector(".mobile-drawer.bottom.open .logs-view, .mobile-drawer.bottom.open .module-panels, .mobile-drawer.bottom.open .logs-line, .mobile-drawer.bottom.open .terminal")?1:0')
+# card t_81d0901b: the bottom home's FIRST tab is the integrated terminal
+# (card t_55a3fc4b registers it ahead of Logs in the registry, and a fresh
+# pane activates index 0), so the drawer seats the shell - the same content
+# seat, a different face. Probed on the dev-tip bundle too: the stale Logs
+# selector was red there as well, so this widens the locator, not the law.
+assert_eq "$blog" "1" "REPRO 3: the bottom drawer seats content (terminal or logs)"
 # close: the same toggle closes the drawer again
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle bottom panel").click()' >/dev/null 2>&1
 sleep 0.5

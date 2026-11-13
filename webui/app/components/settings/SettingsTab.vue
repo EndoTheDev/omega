@@ -7,7 +7,8 @@
          back. The band's 14px lead was not lost with it: it is now the
          filter bar's own top padding (the bar is the pane's first row - see
          .settings-filterbar below). The other tabs keep the shared band
-         (shell/ExtensionsTab.vue still composes it).
+         (the module tab capsules still compose it; card t_81d0901b retired
+         the shell ExtensionsTab, whose section now rides this pane).
          card t_6bebff18 (Endo ruling 2026-11-10, option B): settings
          LEAVES the shared band-search roster (card t_529628d5, which now
          scopes to the four module tabs - cron/skills/tools/mcp) and the
@@ -1921,7 +1922,16 @@
       const node = spyNodes.get(id);
       if (!node) continue;
       if (first === null) first = id;
-      if (node.getBoundingClientRect().top - rootTop <= 1) best = id;
+      // a BLOCK lands just BELOW the section's pinned heading (a block at
+      // exactly 0 would paint its first rows behind it, card t_a8063683), so
+      // its own top is the heading height away from the scrollport's - the
+      // edge it must reach is the heading's bottom, or a subsection jump
+      // would never be the section the pane is looking at and the re-resolve
+      // put the highlight back on the block above it (card t_81d0901b)
+      const pinned = node.classList.contains("settings-block")
+        ? pinnedHeadingHeight(node)
+        : 0;
+      if (node.getBoundingClientRect().top - rootTop - pinned <= 1) best = id;
     }
     return best ?? first;
   }
@@ -1976,6 +1986,11 @@
     spyObserver = new IntersectionObserver(
       () => {
         if (spyLocked) return;
+        // a scroll the PANE issued is still producing events: its deliveries
+        // name sections the jump is merely passing through (a long smooth
+        // jump outruns the lock, and the pane then flashed the neighbour it
+        // was flying over). The settle path below resolves once it rests.
+        if (!paneScrollSettled(paneScroll)) return;
         // the delivery is the TRIGGER only: resolve from the measured band
         // (card t_81d0901b - an isIntersecting set can carry a stale entry)
         applySpySelection(pickSpySection(spyBand()));
