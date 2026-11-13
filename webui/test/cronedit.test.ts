@@ -10,6 +10,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   DELIVER_TARGETS,
@@ -18,12 +20,22 @@ import {
   draftOf,
   editableOf,
   emptyDraft,
+  fetchAgentOptions,
+  fetchModelOptions,
+  fetchSkillOptions,
+  filterFieldOptions,
   jobMeta,
   lastMeta,
+  moveComboIndex,
+  optionKnown,
   parseSkills,
   saveCronJob,
+  skillsVoice,
   statusStamp,
+  strictSkills,
   validateDraft,
+  withSkill,
+  withoutSkill,
   type JobDraft,
 } from "../../harness/cron/ui/edit.ts";
 
@@ -320,4 +332,176 @@ test("draftOf carries the listing row's prompt - editing a job never loses the m
   // a row with no prompt drafts empty (create flow)
   const bare = draftOf({ name: "y", schedule: "0 8 * * *", enabled: true, next: "" } as never);
   assert.equal(bare.prompt, "");
+});
+// --- the field option sources (card t_60e0651e) ----------------------
+//
+// Rulings 1-2: agent and model are COMBOBOXES over the agents registry
+// (GET /agents) and the model catalog the settings model knobs read
+// (GET /models). Ruling 3: skills is a STRICT multi-select over the
+// skills registry (GET /skills). No new option source is introduced -
+// each control reads the exact GET that already serves its list.
+// Run: node --test test/cronedit.test.ts
+
+const AGENTS = JSON.stringify([
+  // the LIVE wire's shape: the home root (main) answers continuous false,
+  // a secondary agent home answers true (agent/profiles.go loadProfile)
+  { name: "default", dir: "/home", continuous: false, skill_count: 3 },
+  { name: "coder", dir: "/home/agents/coder", description: "writes code", continuous: true, skill_count: 1 },
+]);
+
+const MODELS = JSON.stringify({
+  current: "clef:27b",
+  models: ["clef:27b", "clef-flash", "clef:27b"],
+  providers: [
+    { name: "default", models: ["clef:27b", "clef-flash"] },
+    { name: "work", models: ["gpt-5.2"] },
+  ],
+});
+
+const SKILLS = JSON.stringify([
+  { name: "omega-dev", description: "omega work" },
+  { name: "ponytail", description: "the laziest fix" },
+]);
+
+test("fetchAgentOptions reads GET /agents and keeps the roster rows", async () => {
+  const calls = recordFetch((call) =>
+    call.url === "/agents"
+      ? { status: 200, payload: AGENTS, contentType: "application/json" }
+      : { status: 404, payload: "wrong lane" },
+  );
+  try {
+    const opts = await fetchAgentOptions();
+    assert.deepEqual(calls.map((c) => c.url), ["/agents"]);
+    assert.deepEqual(opts.map((o) => o.value), ["default", "coder"]);
+    // the main profile is named for the home root and SAYS what it is
+    assert.equal(opts[0]!.hint, "the main agent - in-process, never wakes");
+    assert.equal(opts[1]!.hint, "writes code");
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("fetchAgentOptions throws with the status so the control can degrade to free text", async () => {
+  recordFetch(() => ({ status: 503, payload: "down" }));
+  try {
+    await assert.rejects(fetchAgentOptions, /GET \/agents: 503/);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("fetchModelOptions reads GET /models and offers BARE model names", async () => {
+  const calls = recordFetch((call) =>
+    call.url === "/models"
+      ? { status: 200, payload: MODELS, contentType: "application/json" }
+      : { status: 404, payload: "wrong lane" },
+  );
+  try {
+    const opts = await fetchModelOptions();
+    assert.deepEqual(calls.map((c) => c.url), ["/models"]);
+    // deduped, wire order - and NO instance-qualified rows: a cron job's
+    // model is consumed bare (runner.go WithModel / OMEGA_MODEL), so the
+    // named provider sections must not leak into the option values
+    assert.deepEqual(opts.map((o) => o.value), ["clef:27b", "clef-flash"]);
+    assert.ok(
+      opts.every((o) => !o.value.startsWith("work:")),
+      "an instance:model pick would write a value every fire fails on",
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("fetchSkillOptions reads GET /skills (the strict control's only source)", async () => {
+  const calls = recordFetch((call) =>
+    call.url === "/skills"
+      ? { status: 200, payload: SKILLS, contentType: "application/json" }
+      : { status: 404, payload: "wrong lane" },
+  );
+  try {
+    const opts = await fetchSkillOptions();
+    assert.deepEqual(calls.map((c) => c.url), ["/skills"]);
+    assert.deepEqual(opts.map((o) => o.value), ["omega-dev", "ponytail"]);
+    assert.equal(opts[0]!.hint, "omega work");
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("filterFieldOptions narrows on value and hint, case-insensitively", () => {
+  const opts = [
+    { value: "default", label: "default", hint: "the main agent", group: "agents" },
+    { value: "coder", label: "coder", hint: "writes code", group: "agents" },
+  ];
+  assert.equal(filterFieldOptions(opts, "").length, 2, "an empty query is the whole catalog");
+  assert.equal(filterFieldOptions(opts, "  ").length, 2);
+  assert.deepEqual(filterFieldOptions(opts, "COD").map((o) => o.value), ["coder"]);
+  // the hint matches too - typing what the row SAYS finds it
+  assert.deepEqual(filterFieldOptions(opts, "main").map((o) => o.value), ["default"]);
+  assert.deepEqual(filterFieldOptions(opts, "nope"), []);
+});
+
+test("optionKnown is what tells free text from a listed pick", () => {
+  const opts = [{ value: "coder", label: "coder", hint: "", group: "agents" }];
+  assert.equal(optionKnown(opts, "coder"), true);
+  assert.equal(optionKnown(opts, " coder "), true, "a typed value is trimmed");
+  assert.equal(optionKnown(opts, "gone-agent"), false);
+});
+
+test("moveComboIndex wraps both ways and lands the first press on a real row", () => {
+  assert.equal(moveComboIndex(-1, 1, 3), 0, "Down from nothing opens on row 0");
+  assert.equal(moveComboIndex(-1, -1, 3), 2, "Up from nothing jumps to the last row");
+  assert.equal(moveComboIndex(2, 1, 3), 0, "Down wraps");
+  assert.equal(moveComboIndex(0, -1, 3), 2, "Up wraps");
+  assert.equal(moveComboIndex(0, 1, 0), -1, "an empty list has no active row");
+});
+
+test("strictSkills keeps registry names and NAMES what it drops", () => {
+  const registry = [
+    { value: "omega-dev", label: "omega-dev", hint: "", group: "skills" },
+    { value: "ponytail", label: "ponytail", hint: "", group: "skills" },
+  ];
+  const { kept, dropped } = strictSkills(
+    ["omega-dev", "ghost", "ponytail", "omega-dev"],
+    registry,
+  );
+  assert.deepEqual(kept, ["omega-dev", "ponytail"], "strict, de-duped, order kept");
+  assert.deepEqual(dropped, ["ghost"], "an unknown name is dropped AND reported");
+  // the editor writes the strict set back into the draft's comma voice
+  assert.equal(skillsVoice(kept), "omega-dev, ponytail");
+  assert.deepEqual(parseSkills(skillsVoice(kept)), kept, "the voice round-trips");
+});
+
+test("withSkill / withoutSkill are the checkbox toggles", () => {
+  assert.deepEqual(withSkill([], "a"), ["a"]);
+  assert.deepEqual(withSkill(["a"], "a"), ["a"], "checking a checked row is a no-op");
+  assert.deepEqual(withoutSkill(["a", "b"], "a"), ["b"]);
+  assert.deepEqual(withoutSkill(["a"], "ghost"), ["a"]);
+});
+
+// --- the SFC wiring (source pins: the node suite has no DOM) ---------
+
+test("CronJobs.vue wires the three controls to their sources", () => {
+  const src = readFileSync(
+    fileURLToPath(new URL("../../harness/cron/ui/CronJobs.vue", import.meta.url)),
+    "utf8",
+  );
+  // ONE combobox block driven by COMBO_FIELDS (agent + model), each
+  // control pointing at its own option-list id and binding the draft
+  // field as free text
+  assert.match(src, /v-for="f in COMBO_FIELDS"/);
+  assert.match(src, /role="combobox"/);
+  assert.match(src, /v-model="editor\.draft\[f\.field\]"/, "the combobox binds the draft field as free text");
+  assert.match(src, /:aria-controls="`cron-\$\{f\.field\}-options`"/);
+  assert.match(src, /function comboRows\(field: ComboField\)/);
+  // the skills control: a searchable checkbox list + chips on the control
+  assert.match(src, /class="cron-skills-search"/);
+  assert.match(src, /role="listbox"[\s\S]{0,400}aria-multiselectable="true"/);
+  assert.match(src, /type="checkbox"[\s\S]{0,120}@change="toggleSkill\(o\.value\)"/);
+  assert.match(src, /class="cron-skill-chip"/);
+  // the old comma-separated text input is GONE (the revert target)
+  assert.ok(
+    !/v-model="editor\.draft\.skills"/.test(src),
+    "skills no longer binds a text input - the chips own the draft field",
+  );
 });

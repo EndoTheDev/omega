@@ -97,26 +97,147 @@
             v-model="editor.draft.file"
             placeholder="journal (empty = dated journal file)" />
         </label>
-        <label class="cron-editor-field">
-          <span>agent</span>
-          <input
-            v-model="editor.draft.agent"
-            placeholder="default when empty" />
-        </label>
-        <label class="cron-editor-field">
-          <span>model</span>
-          <input
-            v-model="editor.draft.model"
-            placeholder="session model when empty" />
-        </label>
-        <!-- t_3885c975: the fire-pinned skills - comma-separated names,
-             the bodies ride the fire prompt ahead of the prompt. -->
-        <label class="cron-editor-field">
+        <!-- card t_60e0651e, rulings 1-2: agent and model are COMBOBOXES.
+             Agent reads the agents registry (GET /agents), model reads
+             the same GET /models catalog the settings model knobs use.
+             ONE block, driven by COMBO_FIELDS: the two controls differ
+             only in their source, placeholder and the note they carry.
+             Picking is the fast path; TYPING stays legal both ways - a
+             job may reference an agent home or a model that no longer
+             exists, and the editor never strands that edit. -->
+        <div
+          v-for="f in COMBO_FIELDS"
+          :key="f.field"
+          class="cron-editor-field">
+          <span>{{ f.label }}</span>
+          <div class="cron-combo">
+            <input
+              v-model="editor.draft[f.field]"
+              role="combobox"
+              :aria-label="f.label"
+              :aria-expanded="combo.field === f.field"
+              aria-autocomplete="list"
+              :aria-controls="`cron-${f.field}-options`"
+              autocomplete="off"
+              spellcheck="false"
+              :placeholder="f.placeholder"
+              @focus="openCombo(f.field)"
+              @input="onComboInput(f.field)"
+              @keydown="onComboKeydown($event, f.field)"
+              @blur="closeCombo" />
+            <ul
+              v-if="combo.field === f.field"
+              :id="`cron-${f.field}-options`"
+              class="cron-combo-list"
+              role="listbox">
+              <li
+                v-for="(o, i) in comboRows(f.field)"
+                :key="o.value"
+                class="cron-combo-row"
+                :class="{ active: i === combo.index }"
+                role="option"
+                :aria-selected="i === combo.index"
+                @mousedown.prevent="pickCombo(f.field, o.value)">
+                <span class="cron-combo-label">{{ o.label }}</span>
+                <span
+                  v-if="o.hint"
+                  class="cron-combo-hint">{{ o.hint }}</span>
+              </li>
+              <li
+                v-if="!comboRows(f.field).length"
+                class="cron-combo-empty">
+                {{ optionStatus(f.field) }}
+              </li>
+            </ul>
+          </div>
+          <p
+            v-if="unknownNote(f.field)"
+            class="cron-field-note">{{ unknownNote(f.field) }}</p>
+        </div>
+        <!-- t_3885c975: the fire-pinned skills - the bodies ride the fire
+             prompt ahead of the prompt. card t_60e0651e, ruling 3: a
+             STRICT multi-select - a checkbox dropdown with its own
+             search, chosen names riding the closed control as chips.
+             Strict: only names the skills registry (GET /skills) serves
+             can be chosen or loaded. -->
+        <div class="cron-editor-field cron-editor-wide">
           <span>skills</span>
-          <input
-            v-model="editor.draft.skills"
-            placeholder="comma-separated skill names" />
-        </label>
+          <div
+            class="cron-skills"
+            :class="{ open: skillsOpen }">
+            <div
+              class="cron-skills-control"
+              role="button"
+              tabindex="0"
+              aria-haspopup="listbox"
+              :aria-expanded="skillsOpen"
+              aria-label="choose skills"
+              @click="toggleSkillsPanel"
+              @keydown.enter.prevent="toggleSkillsPanel"
+              @keydown.space.prevent="toggleSkillsPanel">
+              <span
+                v-if="!skillChips.length"
+                class="cron-skills-placeholder">choose skills</span>
+              <button
+                v-for="s in skillChips"
+                :key="s"
+                type="button"
+                class="cron-skill-chip"
+                :aria-label="`remove skill ${s}`"
+                @click.stop="removeSkill(s)">
+                {{ s }}<span
+                  class="cron-skill-x"
+                  aria-hidden="true">&times;</span>
+              </button>
+              <Icon
+                class="cron-skills-caret"
+                name="chevron-down"
+                :size="11" />
+            </div>
+            <div
+              v-if="skillsOpen"
+              class="cron-skills-panel">
+              <input
+                v-model="skillQuery"
+                class="cron-skills-search"
+                aria-label="search skills"
+                placeholder="search skills"
+                autocomplete="off"
+                spellcheck="false" />
+              <ul
+                class="cron-skills-list"
+                role="listbox"
+                aria-multiselectable="true">
+                <li
+                  v-for="o in skillList"
+                  :key="o.value">
+                  <label
+                    class="cron-skill-row"
+                    :title="o.hint || o.value">
+                    <input
+                      type="checkbox"
+                      :checked="skillChips.includes(o.value)"
+                      @change="toggleSkill(o.value)" />
+                    <span class="cron-skill-name">{{ o.value }}</span>
+                    <span
+                      v-if="o.hint"
+                      class="cron-skill-hint">{{ o.hint }}</span>
+                  </label>
+                </li>
+                <li
+                  v-if="!skillList.length"
+                  class="cron-combo-empty">
+                  {{ optionStatus("skills") }}
+                </li>
+              </ul>
+            </div>
+          </div>
+          <p
+            v-if="skillsDropped.length"
+            class="cron-field-note">
+            dropped (not in the skills registry): {{ skillsDropped.join(", ") }}
+          </p>
+        </div>
         <label class="cron-editor-field cron-editor-wide">
           <span>prompt</span>
           <textarea
@@ -269,10 +390,22 @@
     draftOf,
     editableOf,
     emptyDraft,
+    fetchAgentOptions,
+    fetchModelOptions,
+    fetchSkillOptions,
+    filterFieldOptions,
     jobMeta,
     lastMeta,
+    moveComboIndex,
+    optionKnown,
+    parseSkills,
     saveCronJob,
+    skillsVoice,
+    strictSkills,
     validateDraft,
+    withSkill,
+    withoutSkill,
+    type FieldOption,
     type JobDraft,
   } from "./edit";
 
@@ -314,8 +447,244 @@
     busy: boolean;
     armedDelete: boolean;
   } | null>(null);
+  // editorSeq invalidates an in-flight options callback when the open
+  // editor changes (a ref's value is a proxy - identity compares lie)
+  let editorSeq = 0;
+
+  // --- the field option sources (card t_60e0651e) ---------------------
+  // Rulings 1-2: agent and model are COMBOBOXES fed by the agents
+  // registry (GET /agents) and the model catalog the settings knobs
+  // read (GET /models). Ruling 3: skills is a STRICT multi-select fed
+  // by the skills registry (GET /skills). Each source loads once per
+  // panel mount (re-armed on a failed answer); a source that is down
+  // degrades its ONE control, never the edit.
+  type ComboField = "agent" | "model";
+
+  const agentOptions = ref<FieldOption[]>([]);
+  const modelOptions = ref<FieldOption[]>([]);
+  const skillOptions = ref<FieldOption[]>([]);
+  const optionErrors = ref<Record<"agent" | "model" | "skills", string>>({
+    agent: "",
+    model: "",
+    skills: "",
+  });
+  const optionsReady = ref(false);
+  let optionsInflight: Promise<void> | null = null;
+
+  function applySource(
+    settled: PromiseSettledResult<FieldOption[]>,
+    target: typeof agentOptions,
+    key: "agent" | "model" | "skills",
+  ): boolean {
+    if (settled.status === "fulfilled") {
+      target.value = settled.value;
+      optionErrors.value[key] = "";
+      return true;
+    }
+    target.value = [];
+    const reason = settled.reason;
+    optionErrors.value[key] =
+      reason instanceof Error ? reason.message : String(reason);
+    return false;
+  }
+
+  // ensureOptions loads the three sources once. A partial failure stays
+  // degraded for that ONE control and is retried on the next editor
+  // open: optionsReady latches only when every source answered.
+  function ensureOptions(): Promise<void> {
+    if (optionsInflight) return optionsInflight;
+    if (optionsReady.value) return Promise.resolve();
+    optionsInflight = Promise.allSettled([
+      fetchAgentOptions(),
+      fetchModelOptions(),
+      fetchSkillOptions(),
+    ])
+      .then(([agents, models, skills]) => {
+        const all =
+          applySource(agents, agentOptions, "agent") &&
+          applySource(models, modelOptions, "model") &&
+          applySource(skills, skillOptions, "skills");
+        optionsReady.value = all;
+      })
+      .finally(() => {
+        optionsInflight = null;
+      });
+    return optionsInflight;
+  }
+
+  // --- the comboboxes (rulings 1-2) -----------------------------------
+  // One open control at a time; the typed text IS the field's value, so
+  // picking is only a shortcut and a value the registry does not list
+  // still saves (the never-strand-an-edit law).
+  // COMBO_FIELDS drives the ONE combobox block: the agent field (the
+  // agents registry) and the model field (the settings knobs' catalog)
+  // differ only in source, label and placeholder.
+  const COMBO_FIELDS: { field: ComboField; label: string; placeholder: string }[] = [
+    { field: "agent", label: "agent", placeholder: "default when empty" },
+    {
+      field: "model",
+      label: "model",
+      placeholder: "session model when empty",
+    },
+  ];
+
+  const combo = ref<{ field: ComboField | null; index: number }>({
+    field: null,
+    index: -1,
+  });
+  const comboQuery = ref("");
+
+  // comboRows is the open control's list: its own source, narrowed by
+  // what the operator typed into it.
+  function comboRows(field: ComboField): FieldOption[] {
+    const source = field === "agent" ? agentOptions.value : modelOptions.value;
+    return filterFieldOptions(source, comboQuery.value);
+  }
+
+  function openCombo(field: ComboField) {
+    combo.value = { field, index: -1 };
+    comboQuery.value = ""; // opening shows the whole catalog
+  }
+
+  function closeCombo() {
+    combo.value = { field: null, index: -1 };
+  }
+
+  function onComboInput(field: ComboField) {
+    if (!editor.value) return;
+    comboQuery.value =
+      field === "agent" ? editor.value.draft.agent : editor.value.draft.model;
+    if (combo.value.field !== field) combo.value = { field, index: -1 };
+    else combo.value.index = -1;
+  }
+
+  function pickCombo(field: ComboField, value: string) {
+    if (!editor.value) return;
+    if (field === "agent") editor.value.draft.agent = value;
+    else editor.value.draft.model = value;
+    closeCombo();
+  }
+
+  function onComboKeydown(e: KeyboardEvent, field: ComboField) {
+    const list = comboRows(field);
+    if (combo.value.field !== field) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        openCombo(field);
+      }
+      return;
+    }
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        combo.value.index = moveComboIndex(combo.value.index, 1, list.length);
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        combo.value.index = moveComboIndex(combo.value.index, -1, list.length);
+        break;
+      case "Enter": {
+        const pick =
+          combo.value.index >= 0 ? list[combo.value.index] : undefined;
+        if (pick) {
+          e.preventDefault();
+          pickCombo(field, pick.value);
+        }
+        break;
+      }
+      case "Escape":
+        e.preventDefault();
+        closeCombo();
+        break;
+      case "Tab":
+        closeCombo();
+        break;
+    }
+  }
+
+  // optionStatus is the empty-list line: a failed fetch names its own
+  // error, an honest zero says the source answered with nothing.
+  function optionStatus(field: "agent" | "model" | "skills"): string {
+    const err = optionErrors.value[field];
+    if (err) {
+      return field === "skills"
+        ? `${err} - skill names come from the registry`
+        : `${err} - type it instead`;
+    }
+    return "no match";
+  }
+
+  // unknownNote: a typed value the registry does not list. Free text is
+  // legal here, so the note informs without blocking the save.
+  function unknownNote(field: ComboField): string {
+    if (!editor.value || optionErrors.value[field]) return "";
+    const value = (
+      field === "agent" ? editor.value.draft.agent : editor.value.draft.model
+    ).trim();
+    const options = field === "agent" ? agentOptions.value : modelOptions.value;
+    if (value === "" || options.length === 0) return "";
+    if (optionKnown(options, value)) return "";
+    return "not in the registry - kept as typed";
+  }
+
+  // --- the skills multi-select (ruling 3) ------------------------------
+  // STRICT: options come only from the skills registry, the closed
+  // control renders the chosen names as chips, and the panel carries
+  // its own search. A job's pinned name the registry cannot serve is
+  // dropped from the draft and NAMED on screen - visible, never silent.
+  const skillsOpen = ref(false);
+  const skillQuery = ref("");
+  const skillsDropped = ref<string[]>([]);
+
+  const skillChips = computed(() =>
+    parseSkills(editor.value?.draft.skills ?? ""),
+  );
+  const skillList = computed(() =>
+    filterFieldOptions(skillOptions.value, skillQuery.value),
+  );
+
+  function toggleSkillsPanel() {
+    skillsOpen.value = !skillsOpen.value;
+    if (skillsOpen.value) skillQuery.value = "";
+  }
+
+  // setChips writes the chip list back into the draft's comma voice -
+  // the one string saveCronJob parses (the upsert path is untouched).
+  function setChips(next: string[]) {
+    if (!editor.value) return;
+    editor.value.draft.skills = skillsVoice(next);
+  }
+
+  function toggleSkill(name: string) {
+    const chips = skillChips.value;
+    setChips(
+      chips.includes(name)
+        ? withoutSkill(chips, name)
+        : withSkill(chips, name),
+    );
+  }
+
+  function removeSkill(name: string) {
+    setChips(withoutSkill(skillChips.value, name));
+  }
+
+  // applyStrictSkills trims a loaded job to the registry's own set. It
+  // runs once the registry answers, so a strict load never races the
+  // fetch; an unanswered registry leaves the value exactly as loaded.
+  function applyStrictSkills() {
+    if (!editor.value || optionErrors.value.skills) return;
+    const chips = parseSkills(editor.value.draft.skills);
+    if (chips.length === 0) {
+      skillsDropped.value = [];
+      return;
+    }
+    const { kept, dropped } = strictSkills(chips, skillOptions.value);
+    skillsDropped.value = dropped;
+    if (dropped.length) editor.value.draft.skills = skillsVoice(kept);
+  }
 
   function startNew() {
+    editorSeq += 1;
     editor.value = {
       creating: true,
       draft: emptyDraft(),
@@ -323,9 +692,18 @@
       busy: false,
       armedDelete: false,
     };
+    closeCombo();
+    skillsOpen.value = false;
+    skillsDropped.value = [];
+    void ensureOptions();
   }
 
   function startEdit(j: CronJobWire & { kind?: string; minutes?: number; deliver?: string; model?: string; file?: string }) {
+    // the strict-skills callback below must land on THIS editor only: a
+    // sequence token, not an object identity - editor is a ref, so its
+    // value is a reactive PROXY and never === the raw object assigned
+    editorSeq += 1;
+    const token = editorSeq;
     editor.value = {
       creating: false,
       draft: draftOf(j),
@@ -333,10 +711,21 @@
       busy: false,
       armedDelete: false,
     };
+    closeCombo();
+    skillsOpen.value = false;
+    skillsDropped.value = [];
+    // the strict skills load needs the registry: trim once it lands,
+    // and only while THIS editor is still the open one
+    void ensureOptions().then(() => {
+      if (editorSeq === token) applyStrictSkills();
+    });
   }
 
   function cancelEditor() {
     editor.value = null;
+    closeCombo();
+    skillsOpen.value = false;
+    skillsDropped.value = [];
   }
 
   async function commitEditor() {
@@ -642,12 +1031,195 @@
   .cron-meta {
     font-family: var(--mono, monospace);
   }
+  /* card t_60e0651e: the three option controls. Hand-rolled (no styling
+     library, docs/webui.md); the combobox lists and the skills panel
+     float on the z2 layer with the layer shadow, and the chosen skills
+     ride the CLOSED control as chips. Tokens only - main.css owns the
+     values. */
+  .cron-field-note {
+    margin: 2px 0 0;
+    font-size: 10.5px;
+    color: var(--text-dim, #8a8a92);
+  }
+  .cron-combo {
+    position: relative;
+    min-width: 0;
+  }
+  /* the control fills its field (a bare input keeps its intrinsic ~20ch
+     width and overflows a narrow grid column) */
+  .cron-combo input {
+    width: 100%;
+  }
+  .cron-combo-list {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    margin: 0;
+    padding: 2px;
+    list-style: none;
+    max-height: 180px;
+    overflow-y: auto;
+    background: var(--z2, #26262a);
+    border: 1px solid var(--stroke, #2e2e31);
+    border-radius: var(--r-chip, 4px);
+    box-shadow: var(--shadow-2, 0 8px 30px rgba(0, 0, 0, 0.5));
+  }
+  .cron-combo-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 3px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .cron-combo-row.active {
+    background: color-mix(in srgb, var(--accent, #e8833a) 18%, transparent);
+  }
+  .cron-combo-label {
+    flex: none;
+    max-width: 60%;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cron-combo-hint {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 10.5px;
+    color: var(--text-dim, #8a8a92);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cron-combo-empty {
+    padding: 3px 6px;
+    font-size: 10.5px;
+    color: var(--text-dim, #8a8a92);
+  }
+  /* the skills multi-select: a closed control carrying the chips, and a
+     searchable checkbox panel under it */
+  .cron-skills {
+    position: relative;
+  }
+  .cron-skills-control {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    min-height: 24px;
+    padding: 2px 6px;
+    font: inherit;
+    font-size: 11px;
+    color: inherit;
+    background: var(--bg-elev, rgba(128, 128, 128, 0.08));
+    border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .cron-skills.open .cron-skills-control,
+  .cron-skills-control:focus-visible {
+    border-color: var(--accent, #e8833a);
+    outline: none;
+  }
+  .cron-skills-placeholder {
+    color: var(--text-dim, #8a8a92);
+  }
+  .cron-skill-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font: inherit;
+    font-size: 10.5px;
+    font-family: var(--mono, monospace);
+    color: inherit;
+    background: var(--z1-raised, rgba(128, 128, 128, 0.14));
+    border: 1px solid var(--stroke, rgba(128, 128, 128, 0.25));
+    border-radius: var(--r-chip, 4px);
+    padding: 0 4px;
+    cursor: pointer;
+  }
+  .cron-skill-x {
+    opacity: 0.55;
+  }
+  .cron-skill-chip:hover .cron-skill-x {
+    opacity: 1;
+    color: var(--accent, #e8833a);
+  }
+  .cron-skills-caret {
+    margin-left: auto;
+    opacity: 0.6;
+  }
+  .cron-skills-panel {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px;
+    background: var(--z2, #26262a);
+    border: 1px solid var(--stroke, #2e2e31);
+    border-radius: var(--r-chip, 4px);
+    box-shadow: var(--shadow-2, 0 8px 30px rgba(0, 0, 0, 0.5));
+  }
+  .cron-skills-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+  /* the row checkboxes are SELECTION boxes, not switches (the one-switch
+     law covers on/off toggles) - they keep the browser's own box */
+  .cron-editor-field .cron-skill-row input {
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    accent-color: var(--accent, #e8833a);
+  }
+  .cron-skill-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .cron-skill-row:hover {
+    background: rgba(128, 128, 128, 0.12);
+  }
+  .cron-skill-name {
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-family: var(--mono, monospace);
+  }
+  .cron-skill-hint {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 10px;
+    color: var(--text-dim, #8a8a92);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   /* narrow: the module-UI recipe (card t_a2fdc630). The rows are
      already single-column; what dies first at ~300px is horizontal
      breathing room - the head's name/sub pair wraps and the chrome
      condenses so a long schedule line never elides. */
   .cron-list.narrow .cron-body {
     padding: 4px 8px 10px;
+  }
+  /* card t_60e0651e: the editor's 2-wide grid collapses at the narrow
+     threshold - a combobox list floating inside a half-width column is
+     unreadable at ~300px */
+  .cron-list.narrow .cron-editor-grid {
+    grid-template-columns: 1fr;
   }
   /* card t_561dc4e0: the narrow name shrunk to 11.5px under the old
      bespoke anatomy - the row law's uniform heights carry narrow (the
