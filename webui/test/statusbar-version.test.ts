@@ -75,3 +75,43 @@ test("mobile untucks the card (the strip is display:none there)", () => {
   const media = css.slice(css.indexOf("@media (max-width: 768px)"));
   assert.match(media, /\.dock-pane > \.dock-content, \.dock-pane > \.dock-empty \{ margin-top: 0; \}/);
 });
+
+// --- the truncate treatment (card t_3599d33b): the build is the bar's
+// only unbounded string, so the segment owns its width -------------------
+
+test("a nightly tag passes through whole (why the truncate exists)", () => {
+  // shortVersion only rewrites the pseudo-version shape; a nightly tag
+  // (v0.17.1-nightly.20261112-d57ffb37, 33 chars) reaches the bar intact -
+  // the CSS truncate is what keeps it from pushing the layout.
+  assert.equal(
+    shortVersion("v0.17.1-nightly.20261112-d57ffb37"),
+    "v0.17.1-nightly.20261112-d57ffb37",
+  );
+});
+
+test("the build segment carries the truncate treatment on its text span", () => {
+  const seg = bar.match(/<span\s+v-if="version"\s+class="([^"]*)"[\s\S]*?\{\{ shortVersion\(version\) \}\}/);
+  assert.ok(seg, "the build segment is still in the bar");
+  // the cap rides the INNER span: a display declaration on the .seg would
+  // out-rule .hide-sm and put the build back on the narrow bar.
+  assert.match(seg![0], /<span class="build-text">/, "the text is wrapped for truncation");
+  assert.match(seg![1], /\bhide-sm\b/, "the seg still collapses on the narrow bar");
+});
+
+test("the truncate rule caps, clips and ellipsizes the build text", () => {
+  const rule = css.match(/\.statusbar \.build-text \{[^}]*\}/)?.[0] ?? "";
+  assert.ok(rule, "the build text owns a rule");
+  assert.match(rule, /max-width: \d+ch/, "a ch cap, so the footprint follows the mono glyph width");
+  assert.match(rule, /min-width: 0/, "no floor: a short tag keeps its natural width at the bar's edge");
+  assert.match(rule, /overflow: hidden/, "text is clipped at the cap");
+  assert.match(rule, /text-overflow: ellipsis/, "the clip reads as an ellipsis, not a cut glyph");
+  assert.match(rule, /white-space: nowrap/, "one line - a bar segment never wraps");
+});
+
+test("the build text is a block, never its own flex container", () => {
+  // a flex container does not ellipsize its own text: the text becomes an
+  // anonymous flex item and text-overflow cannot clip it.
+  const rule = css.match(/\.statusbar \.build-text \{[^}]*\}/)?.[0] ?? "";
+  assert.match(rule, /display: block/);
+  assert.doesNotMatch(rule, /display: flex/);
+});

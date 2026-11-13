@@ -95,12 +95,20 @@
            a position change only, the short version text untouched. It
            carries the build ALONE since card t_be30543a: the uptime it
            used to repeat ("· up 8m 20s") now lives in the health popover
-           below, which is where a live number belongs. -->
+           below, which is where a live number belongs.
+           The build is the bar's ONLY unbounded string (a nightly tag
+           reads v0.17.1-nightly.20261112-d57ffb37 and shortVersion leaves
+           it whole - card t_3599d33b), so the TEXT span below caps and
+           ellipsizes it: the footprint is the same whatever the tag says.
+           The cap rides the inner span, never this .seg: a display
+           declaration here would out-rule .hide-sm and put the build back
+           on the narrow bar (the seg itself stays flex + hide-sm). The
+           full string keeps living in the tooltip. -->
       <span
         v-if="version"
         class="seg hide-sm"
         :title="`server build - ${version}`">
-        {{ shortVersion(version) }}
+        <span class="build-text">{{ shortVersion(version) }}</span>
       </span>
 
       <!-- the health detail popover: the four ruled facts, each one
