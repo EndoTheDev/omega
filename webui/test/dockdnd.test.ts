@@ -199,7 +199,8 @@ describe("dockDropToZone (the docking mutation)", () => {
     assert.deepEqual(BC.tabs.map((t) => t.component), ["files", "chat"], "center still groups");
     const AC = findPane(center, a.id);
     assert.ok(AC, "the emptied source pane survives (the last main pane never closes)");
-    assert.equal(AC!.tabs.length, 0, "A sits empty as the launcher");
+    // card t_d04a1c80: the drained last main pane takes the new-tab seat
+    assert.deepEqual(AC!.tabs.map((t) => t.component), ["newtab"], "A stays on the seat");
   });
 
   it("the LOCKED tab (sessions) refuses every zone landing outside left", () => {

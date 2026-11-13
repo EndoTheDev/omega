@@ -15,9 +15,11 @@
 #                 GET /browser/frameable says deny=false for the XFO
 #                 origin, true for the friendly one, null for a dead
 #                 host; PUT {"url":""} resets.
-#   b  open     - the main pane's empty-watermark menu carries Browser
-#                 (the singleton opener); clicking mounts BrowserTab
-#                 (the URL bar input, aria-label "browser url").
+#   b  open     - the command palette (ctrl+k) opens Browser through the
+#                 singleton opener (card t_d04a1c80 deleted the empty-pane
+#                 component menu; the palette is the surviving door) and
+#                 mounts BrowserTab (the URL bar input, aria-label
+#                 "browser url").
 #   c  resume   - the tab restores the persisted address on mount (the
 #                 PUT from step a) and a local page load keeps the
 #                 fallback OUT - load = friendly, the resume is real.
@@ -121,24 +123,30 @@ put=$(curl -s -X PUT "$B/browser/last" -H 'Content-Type: application/json' \
 printf '%s' "$put" | grep -qF "127.0.0.1:$P_FRIENDLY" || die "PUT did not answer the stored URL: $put"
 step "ok: the last-URL pair round-trips, the probe classifies, the reset clears"
 
-# --- b+c: open the tab (empty-pane watermark), the resume mounts ----------
+# --- b+c: open the tab (the command palette), the resume mounts ----------
 open_app
 js 'localStorage.clear()' >/dev/null 2>&1
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
 
-# close the boot draft chat tab so the main pane empties into the
-# watermark menu (79's proven close)
-draftclosed=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];const hit=ps.find(p=>!p.classList.contains("pinned")&&[...p.querySelectorAll(".dock-tab-title")].some(t=>/^new chat$/i.test((t.textContent||"").trim())));if(!hit) return 0;const t=[...hit.querySelectorAll(".dock-tab-title")].findIndex(x=>/^new chat$/i.test((x.textContent||"").trim()));if(t<0) return 0;const x=hit.querySelectorAll(".dock-tab-close")[t];if(!x) return 0;x.click();return 1})()')
-assert_eq "$draftclosed" "1" "boot draft chat tab closed"
-# the watermark's refill inventory carries Browser (singleton voice)
+# card t_d04a1c80: the empty-pane component menu is DELETED (the
+# never-zero-tabs ruling seats a "New Tab" placeholder instead), so the
+# tab opens through the command palette - the same opener the menus called,
+# and the surviving door to every dockable.
+pal=$(jsq '(()=>{window.dispatchEvent(new KeyboardEvent("keydown",{key:"k",ctrlKey:true,bubbles:true}));return !!document.querySelector(".command-palette-input")?1:0})()')
+if [ "$pal" != "1" ]; then
+  sleep 0.5
+  pal=$(jsq '!!document.querySelector(".command-palette-input")?1:0')
+fi
+assert_eq "$pal" "1" "the command palette opened (ctrl+k)"
+ab fill '.command-palette-input' 'browser' >/dev/null 2>&1
 bopen=0
 for i in $(seq 1 20); do
-  b=$(jsq '(()=>{const b=[...document.querySelectorAll(".dock-empty .dock-menu-btn")].find(x=>(x.textContent||"").trim()==="Browser");if(!b) return 0;b.click();return 1})()')
+  b=$(jsq '(()=>{const r=[...document.querySelectorAll(".command-palette-list li")].find(x=>/^Browser$/i.test((x.querySelector(".command-title")||{}).textContent?.trim()||""));if(!r) return 0;r.click();return 1})()')
   [ "$b" = "1" ] && bopen=1 && break
   sleep 0.5
 done
-assert_eq "$bopen" "1" "Browser opened from the empty-pane menu"
+assert_eq "$bopen" "1" "Browser opened from the command palette"
 # the pane mounts: url bar input + frame shell
 wait_js '!!document.querySelector(".browser-tab .browser-url")' 10 \
   || die "BrowserTab never mounted (no url bar)"
