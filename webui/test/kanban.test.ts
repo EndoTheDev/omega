@@ -13,7 +13,10 @@ import {
   BOARD_FETCH_BACKOFF_MS,
   BOARD_STATUSES,
   BOARD_PATH,
+  CARD_CLAMP_LINES,
   DEFAULT_BOARD_NAME,
+  HEARTBEAT_STALE_MS,
+  HEARTBEAT_TICK_MS,
   LANE_EASE_MS,
   LANE_RAIL_PX,
   LANE_TONES,
@@ -24,9 +27,11 @@ import {
   columns,
   fetchBoardsRetry,
   hasPriorityChip,
+  heartbeatChip,
   isBoardPath,
   laneFolded,
   laneTone,
+  minuteLabel,
   pickBootBoard,
   priorityLabel,
   priorityOptions,
@@ -680,6 +685,127 @@ test("the canvas store publishes the reconnect reset on the same event, and only
     if (priorCustomEvent === undefined) delete g.CustomEvent;
     else g.CustomEvent = priorCustomEvent;
   }
+});
+
+// --- card polish + the running heartbeat chip (card t_65ea61a1) --------
+// Endo's ruling: "the running card dont have a heartbeat". The board
+// rendered a flat title, stray "@name" text and an age - nothing about
+// the work in flight. These pins hold the Hermes card grammar (2-line
+// clamps, an assignee chip, one meta row) and the chip's two clocks.
+
+test("card polish: the 2-line clamp is ONE constant the CSS renders", () => {
+  assert.equal(CARD_CLAMP_LINES, 2, "the ruled clamp is two lines");
+  const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
+  // both text surfaces wear the clamp class
+  assert.match(boardVue, /class="card-title card-clamp">\{\{ t\.title \}\}/, "the title clamps");
+  assert.match(boardVue, /class="card-preview card-clamp">\{\{ bodyPreview\(t\.body\) \}\}/, "the body teaser clamps");
+  // the class is the mechanism, fed by the constant (not a magic number)
+  assert.match(boardVue, /\.card-clamp \{\s*\n\s*display: -webkit-box;/, "the clamp is a box clamp");
+  assert.match(boardVue, /-webkit-box-orient: vertical;/, "vertical lines");
+  assert.match(boardVue, /-webkit-line-clamp: var\(--card-clamp, 2\);/, "the line count reads the custom property");
+  assert.match(boardVue, /line-clamp: var\(--card-clamp, 2\);/, "and the standard property agrees");
+  assert.match(boardVue, /'--card-clamp': `\$\{CARD_CLAMP_LINES\}`/, "the constant feeds the property");
+  // the old free-growing preview (max-height) is gone with it
+  assert.doesNotMatch(boardVue, /max-height: 2\.6em/, "the teaser clamps by line, not by an em guess");
+});
+
+test("card polish: the assignee is a chip on one Hermes-style meta row", () => {
+  const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
+  assert.match(boardVue, /class="card-assignee-chip"/, "the assignee renders as a chip");
+  assert.match(boardVue, /:title="`assignee: \$\{t\.assignee\}`"/, "the chip names what it is");
+  assert.doesNotMatch(boardVue, /class="card-assignee"/, "the old bare text span is gone");
+  assert.match(boardVue, /\.card-assignee-chip \{[\s\S]*?border-radius: var\(--r-chip\);/, "the chip wears the shell's chip radius");
+  // one meta row carries assignee + heartbeat + age + the move controls
+  const metaAt = boardVue.indexOf('class="card-meta"');
+  assert.ok(metaAt > 0, "the meta row exists");
+  const meta = boardVue.slice(metaAt, boardVue.indexOf("</article>", metaAt));
+  for (const face of ["card-assignee-chip", "card-heartbeat", "card-age", "card-moves"]) {
+    assert.ok(meta.includes(face), `${face} rides the one meta row`);
+  }
+  // ONE time telling: the running chip replaces the created-age (the row
+  // is 218px wide - both would clip the chip, and a running card's story
+  // is how long it has been working)
+  assert.match(
+    meta,
+    /<span\s*\n\s*v-else\s*\n\s*class="card-age">\{\{ age\(t\.created_at\) \}\}/,
+    "the age stands down on a card that wears the heartbeat",
+  );
+});
+
+test("heartbeat chip: a running card counts its working minutes", () => {
+  const now = new Date("2026-11-12T12:00:00Z");
+  const running = task({ status: "running", started_at: "2026-11-12T11:57:00Z" });
+  const chip = heartbeatChip(running, now);
+  if (!chip) throw new Error("a running card must carry a chip");
+  assert.equal(chip.label, "working - 3m");
+  assert.equal(chip.stale, false);
+  assert.equal(chip.runningMs, 3 * 60 * 1000);
+  assert.equal(minuteLabel(0), "0m");
+  assert.equal(minuteLabel(59_999), "0m", "minutes floor - a chip never rounds itself older");
+  assert.equal(minuteLabel(125 * 60_000), "125m", "the count keeps growing (no d/h switch - it is a stopwatch)");
+  // a card that just started reads 0m, not a blank
+  assert.equal(heartbeatChip(task({ status: "running", started_at: "2026-11-12T12:00:00Z" }), now)?.label, "working - 0m");
+  // only the running lane beats
+  for (const status of ["triage", "todo", "scheduled", "ready", "blocked", "review", "done", "archived"]) {
+    assert.equal(heartbeatChip(task({ status, started_at: "2026-11-12T11:00:00Z" }), now), null, `${status} has no chip`);
+  }
+  // an unparseable start is not a duration to invent
+  const noStart = heartbeatChip(task({ status: "running", started_at: "" }), now);
+  assert.equal(noStart?.label, "working", "no start renders the bare working face");
+  assert.equal(noStart?.runningMs, 0);
+  assert.equal(noStart?.stale, false);
+});
+
+test("heartbeat chip: stale is an AGED beat, never mere silence", () => {
+  const now = new Date("2026-11-12T12:00:00Z");
+  const running = (over: Partial<BoardTask>) =>
+    task({ status: "running", started_at: "2026-11-12T11:50:00Z", ...over });
+
+  // a fresh beat: working, and the duration is the START clock
+  const fresh = heartbeatChip(running({ last_heartbeat_at: "2026-11-12T11:59:30Z" }), now);
+  assert.equal(fresh?.stale, false);
+  assert.equal(fresh?.label, "working - 10m", "a beat does not reset the working clock");
+
+  // exactly at the threshold is still inside it - the flip is PAST the age
+  const edge = new Date(now.getTime() - HEARTBEAT_STALE_MS).toISOString();
+  assert.equal(heartbeatChip(running({ last_heartbeat_at: edge }), now)?.stale, false);
+  // one second past it: stale, and the chip says how long the quiet ran
+  const late = new Date(now.getTime() - HEARTBEAT_STALE_MS - 1000).toISOString();
+  const stale = heartbeatChip(running({ last_heartbeat_at: late }), now);
+  assert.equal(stale?.stale, true);
+  assert.equal(stale?.label, "stale - 2m quiet");
+  assert.equal(stale?.runningMs, 10 * 60 * 1000, "the working clock keeps its own count while stale");
+
+  // NO heartbeat field at all is not staleness: silence is not evidence
+  assert.equal(heartbeatChip(running({}), now)?.stale, false, "a wire with no heartbeat field never reads stale");
+  // and an unparseable stamp is not an aged one
+  assert.equal(heartbeatChip(running({ last_heartbeat_at: "not a date" }), now)?.stale, false);
+});
+
+test("heartbeat chip: the board ticks the chip on a clock, not a fetch", () => {
+  assert.equal(HEARTBEAT_TICK_MS, 5000, "the chip clock is 5s");
+  assert.ok(HEARTBEAT_STALE_MS > HEARTBEAT_TICK_MS * 10, "the threshold is many ticks away, not one");
+  const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
+  // the clock: one re-dated `now`, chained on setTimeout
+  assert.match(boardVue, /const now = ref\(new Date\(\)\)/, "the board holds its clock");
+  assert.match(boardVue, /now\.value = new Date\(\);/, "a tick re-dates it");
+  assert.match(boardVue, /heartbeatTimer = setTimeout\(tickHeartbeat, HEARTBEAT_TICK_MS\)/, "the tick re-arms itself");
+  assert.match(boardVue, /clearTimeout\(heartbeatTimer\)/, "and leaves with the component");
+  assert.doesNotMatch(boardVue, /setInterval/, "still no interval: the fetching poll stays dead");
+  // the tick only re-dates - a timer that fetched would be the old poll back
+  const tickAt = boardVue.indexOf("function tickHeartbeat");
+  const tickBody = boardVue.slice(tickAt, boardVue.indexOf("const heartbeats", tickAt));
+  assert.ok(tickBody.length > 0, "the tick handler exists");
+  assert.doesNotMatch(tickBody, /fetch/, "the chip clock never fetches");
+  // one chip map per render, keyed by card; the template reads it
+  assert.match(boardVue, /const heartbeats = computed\(/, "the chips derive once per render");
+  assert.match(boardVue, /const chip = heartbeatChip\(t, at\);/, "through the pure helper");
+  assert.match(boardVue, /v-if="heartbeats\[t\.id\]"/, "a card wears a chip only when it has one");
+  assert.match(boardVue, /class="card-heartbeat"[\s\S]{0,120}:class="\{ stale: heartbeats\[t\.id\]\.stale \}"/, "the stale state rides the chip class");
+  assert.match(boardVue, /\{\{ heartbeats\[t\.id\]\.label \}\}/, "the chip renders the computed face");
+  // the stale face is visibly different: a flat dot, the blocked tone
+  assert.match(boardVue, /\.card-heartbeat\.stale \{\s*\n\s*color: color-mix\(in srgb, #f87171 85%, currentcolor\);/, "stale takes the red tone");
+  assert.match(boardVue, /\.card-heartbeat\.stale \.card-heartbeat-dot \{\s*\n\s*animation: none;/, "a dead beat stops pulsing");
 });
 
 test("the canvas store announces every applied delta; a snapshot is not an announcement", () => {
