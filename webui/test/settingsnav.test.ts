@@ -5,6 +5,12 @@
 // grey-out set, the last-anchor resolution - and the SOURCE pins that prove
 // the selector/two-screen model is gone.
 //
+// card t_cd9952a3 extends that law without reversing it: a nav SELECTION now
+// FILTERS the rendered document to that section and its subsections, a live
+// search OVERRIDES the filter, and the selected section rides the in-app URL
+// (`?settings=<id>`) so a deep link lands pre-filtered. Those rules and the
+// URL are pure and pinned here; the click's live behaviour is journey 113.
+//
 // The node suite has no DOM: the document, the anchor and the grey set are
 // pinned as pure functions, the pane as structural assertions on
 // SettingsTab.vue (the live scroll behaviour is the journey's job, recipes
@@ -21,6 +27,7 @@ import {
   GENERAL_SUBGROUP,
   KNOB_SUBGROUPS,
   NAV_STORAGE_KEY,
+  SETTINGS_SECTION_PARAM,
   SUBGROUP_LABELS,
   anchorSelection,
   buildNav,
@@ -33,11 +40,14 @@ import {
   paneScrollSettle,
   paneScrollSettled,
   parseSelection,
+  parseSettingsSection,
   resolveSelection,
+  sectionFilter,
   selectionId,
   spyAnchorMayWrite,
   spyTargetIds,
   subgroupLabel,
+  withSettingsSection,
   withSubgroups,
   buildSpyTargets,
   targetSection,
@@ -270,6 +280,223 @@ test("spyTargetIds lists each section then its blocks, in document order", () =>
   ]);
 });
 
+// --- the SECTION FILTER (card t_cd9952a3) ---------------------------------
+//
+// Part 1: a nav selection FILTERS the right pane to that section plus its
+// subsections; a deselect - or Commonly Used, the curated all-view -
+// restores the whole document. Part 2: a search query OVERRIDES the
+// selection (one global filter across every section) and clearing it gives
+// the filter back. Part 3: the in-app URL carries the selected section, so
+// a deep link lands pre-filtered. The click's live behaviour is journey
+// 113's job; the rules and the URL are pure and pinned here.
+
+test("the filter is the selected CATEGORY - and Commonly Used is the all-view", () => {
+  assert.equal(sectionFilter(null, false), null, "nothing selected = the all-view");
+  assert.equal(sectionFilter("provider", false), "provider");
+  assert.equal(
+    sectionFilter("provider/models", false),
+    "provider",
+    "a subsection narrows to its CATEGORY, which renders that block",
+  );
+  assert.equal(
+    sectionFilter(COMMON_CATEGORY, false),
+    null,
+    "Commonly Used is the curated ALL-VIEW entry, never a filter",
+  );
+  assert.equal(
+    sectionFilter("provider/models", true),
+    null,
+    "a live query stands the selection down - search is global",
+  );
+});
+
+test("a selected section shows its rows and hides every other section", () => {
+  const nav = buildNav(withSubgroups([commonGroup(), providerGroup(), logGroup()]));
+  const all = documentFor(nav);
+  assert.equal(all.length, 3, "the all-view really is every category");
+  const doc = documentFor(nav, { only: sectionFilter("provider", false) });
+  assert.deepEqual(
+    doc.map((section) => section.id),
+    ["provider"],
+    "only the selected category survives",
+  );
+  assert.deepEqual(
+    doc[0].blocks.map((block) => block.id),
+    ["provider/connection", "provider/models"],
+    "its subsections render with it",
+  );
+  assert.equal(
+    doc[0].count,
+    3,
+    "every row of the section is shown - the filter hides SECTIONS, never rows",
+  );
+  // the surviving ids are the same anchors the nav and the spy use
+  assert.deepEqual(spyTargetIds(doc), [
+    "provider",
+    "provider/connection",
+    "provider/models",
+  ]);
+});
+
+test("a subsection selection filters to its CATEGORY (a block is not a section)", () => {
+  const nav = buildNav(withSubgroups([providerGroup(), logGroup()]));
+  const doc = documentFor(nav, { only: sectionFilter("provider/models", false) });
+  assert.deepEqual(doc.map((section) => section.id), ["provider"]);
+  assert.equal(doc[0].count, 3, "the whole category, not just the clicked child");
+});
+
+test("a search query OVERRIDES the section filter, and clearing it gives the filter back", () => {
+  const nav = buildNav(withSubgroups([commonGroup(), providerGroup(), logGroup()]));
+  const hits = new Set(["provider.model_name", "custom.one"]);
+  // the pane's own composition: sectionFilter returns null while a query is up
+  const searched = documentFor(nav, {
+    hits,
+    only: sectionFilter("provider", true),
+  });
+  assert.deepEqual(
+    searched.map((section) => section.id),
+    ["provider", "unknown"],
+    "a live query matches EVERY section, not the selected one",
+  );
+  // a caller that forgets cannot filter a live query either: the builder
+  // stands the filter down itself (one truth, two doors)
+  assert.deepEqual(
+    documentFor(nav, { hits, only: "provider" }).map((section) => section.id),
+    ["provider", "unknown"],
+    "the builder ignores the filter under a live query",
+  );
+  // the query clears: the filter is still active and comes back
+  const cleared = documentFor(nav, {
+    hits: null,
+    only: sectionFilter("provider", false),
+  });
+  assert.deepEqual(cleared.map((section) => section.id), ["provider"]);
+});
+
+test("modified-only still intersects the filtered section", () => {
+  const nav = buildNav(withSubgroups([providerGroup(), logGroup()]));
+  const isModified = (k: SettingKnob) =>
+    k.key === "provider.model_name" || k.key === "custom.two";
+  const doc = documentFor(nav, {
+    modifiedOnly: true,
+    isModified,
+    only: "provider",
+  });
+  assert.deepEqual(doc.map((section) => section.id), ["provider"]);
+  assert.equal(doc[0].count, 1, "the section shrinks to its modified rows");
+});
+
+test("the in-app URL carries the selected section on the query axis", () => {
+  assert.equal(SETTINGS_SECTION_PARAM, "settings");
+  // the PATH keeps owning the focused chat session (card t_06c01beb), so a
+  // section rides the query and the shipped scheme is untouched
+  assert.equal(withSettingsSection("/", "provider"), "/?settings=provider");
+  assert.equal(
+    withSettingsSection("/chat/abc123", "provider/models"),
+    "/chat/abc123?settings=provider/models",
+    "the chat path survives, and a two-level id stays readable",
+  );
+  assert.equal(
+    withSettingsSection("/chat/abc123?settings=provider/models", null),
+    "/chat/abc123",
+    "a deselect leaves NO stale section in the URL",
+  );
+  assert.equal(
+    withSettingsSection("/?a=1&settings=dock&b=2", "store"),
+    "/?a=1&b=2&settings=store",
+    "other parameters survive the rewrite",
+  );
+  // reading it back is exact, whatever encoded the slash
+  assert.equal(parseSettingsSection("/?settings=provider%2Fmodels"), "provider/models");
+  assert.equal(parseSettingsSection("/chat/abc?settings=dock"), "dock");
+  assert.equal(parseSettingsSection("/chat/abc"), null, "no parameter is no section");
+  assert.equal(
+    parseSettingsSection("/?settings="),
+    null,
+    "a blank value is a deselect that leaked into a bookmark, never a section named ''",
+  );
+  assert.equal(parseSettingsSection("/?other=1"), null);
+});
+
+test("a deep link lands pre-filtered: URL -> selection -> filter -> document", () => {
+  const nav = buildNav(
+    withSubgroups([
+      commonGroup(),
+      providerGroup(),
+      logGroup(),
+      group("dock", "dock", [knob("dock.bottom_width", "bottom panel width", "aligned")]),
+    ]),
+  );
+  const href = "/chat/abc123?settings=provider/models";
+  const id = parseSettingsSection(href);
+  assert.equal(id, "provider/models", "the URL names the section");
+  const resolved = resolveSelection(nav, id as string);
+  assert.ok(resolved, "the id resolves against the LIVE nav");
+  // the pane's opening selection is the nav's own id (a stale child
+  // normalises to its category), clamped to the category and FILTERED
+  const opening = selectionId(resolved!.category.id, resolved!.subgroup?.id ?? null);
+  assert.equal(opening, "provider/models");
+  const doc = documentFor(nav, { only: sectionFilter(opening, false) });
+  assert.deepEqual(
+    doc.map((section) => section.id),
+    ["provider"],
+    "the deep link opens the pane pre-filtered, not merely scrolled",
+  );
+  assert.equal(doc.length, 1, "the other categories are NOT rendered");
+  // a stale deep link is not an error: it opens the all-view
+  assert.equal(resolveSelection(nav, "retired"), null);
+  assert.equal(documentFor(nav, { only: sectionFilter(null, false) }).length, nav.length);
+});
+
+test("the pane filters on its REAL selection, reads and writes the URL", () => {
+  assert.match(navSource, /export function sectionFilter\(/, "the rule lives in the pure module");
+  assert.match(
+    tab,
+    /sectionFilter\(clampId\.value, searching\.value\)/,
+    "the pane asks the pure rule with its REAL selection",
+  );
+  assert.ok(
+    !/sectionFilter\(selection\.value/.test(tab),
+    "the spy's highlight never filters - a scroll must not collapse the document",
+  );
+  assert.match(tab, /only: filterSection\.value,/, "the document is built with the filter");
+  assert.match(
+    tab,
+    /filterSection\.value === null \|\| filterSection\.value === MODULES_CATEGORY/,
+    "the MODULES section follows the filter like any other category",
+  );
+  // the write: replaceState only, on the section a REAL selection set
+  assert.match(
+    tab,
+    /watch\(clampId, \(section\) => writeUrlSection\(section\)\)/,
+    "a real selection writes the URL",
+  );
+  assert.match(
+    tab,
+    /history\.replaceState\([\s\S]{0,80}withSettingsSection\(window\.location\.href, section\)/,
+    "replaceState only - the app never grows the history stack",
+  );
+  // the read: an explicit door that outranks the remembered anchor
+  assert.match(
+    tab,
+    /const fromUrl = urlSectionSelection\(\);[\s\S]{0,400}clampId\.value = parseSelection\(fromUrl\)\.category;/,
+    "a URL section opens FILTERED and clamped - the user named it",
+  );
+  assert.match(
+    tab,
+    /const id = parseSettingsSection\(window\.location\.href\);/,
+    "the live URL is the source of the deep link",
+  );
+});
+
+test("a palette jump releases a blocking filter instead of dying on it", () => {
+  assert.match(
+    tab,
+    /const blocking = filterSection\.value;[\s\S]{0,240}blocking !== null && blocking !== id[\s\S]{0,320}applyJump\(\)/,
+    "the command's request wins: the filter is released and the jump re-lands",
+  );
+});
+
 // --- the nav's grey-out set ----------------------------------------------
 
 test("matchingCategoryIds answers exactly the categories with a survivor", () => {
@@ -465,8 +692,16 @@ test("the pane renders ONE document of every category", () => {
 test("a nav click SCROLLS the pane (smooth, reduced-motion aware) and marks it", () => {
   assert.match(
     tab,
-    /function selectCategory\(id: string\) \{[\s\S]{0,260}selection\.value = id;[\s\S]{0,320}scrollToAnchor\(id\)/,
-    "the click selects and jumps",
+    /function selectCategory\(id: string\) \{[\s\S]{0,260}selection\.value = id;[\s\S]{0,200}clampId\.value = picked\.category;/,
+    "the click selects and clamps to its category",
+  );
+  // card t_cd9952a3: the click also FILTERS the document to that category,
+  // so the jump is measured after that render - a pre-filter measurement
+  // would target an offset the filter deletes.
+  assert.match(
+    tab,
+    /void nextTick\(\(\) => scrollToAnchor\(id\)\)/,
+    "the jump is measured once the section filter has rendered",
   );
   // card t_a8063683: the jump is a scrollTop computation, not a bare
   // scrollIntoView - the section heading is STICKY, so a block landing at
@@ -661,8 +896,15 @@ test("the search stays ONE filter, wired to filterSettingGroups", () => {
   assert.equal((tab.match(/<SearchInput/g) ?? []).length, 1, "one input, not one per screen");
   assert.match(tab, /hits: searchHits\.value/, "the hits feed the document and the grey-out set");
   assert.match(tab, /query\.value\.trim\(\) === ""\) return null/, "no query is null, not an empty hit set");
-  // clearing the query gives the document back where it was
-  assert.match(tab, /node\.scrollTop = lastDocScrollTop/, "the interrupted scroll position returns");
+  // clearing the query gives the document back where it was - and card
+  // t_cd9952a3: when a SECTION FILTER is waiting behind the query, the
+  // document that returns is that one section, so the give-back is its top
+  assert.match(
+    tab,
+    /const top = filterSection\.value === null \? lastDocScrollTop : 0;/,
+    "the give-back keeps the filter's section top when one is active",
+  );
+  assert.match(tab, /node\.scrollTop = top/, "the interrupted scroll position returns");
 });
 
 // --- the selected-section scroll clamp (card t_a6b794b5) ------------------
@@ -751,8 +993,8 @@ test("only a REAL selection clamps, measured fresh, on the scroll event", () => 
   );
   assert.equal(
     (tab.match(/clampId\.value = (?!==)/g) ?? []).length,
-    3,
-    "exactly three writers: the click, the deselect, the scope that lost the section",
+    5,
+    "exactly five writers: the click, the deselect, the scope that lost the section, the deep link's restore (t_cd9952a3), and the palette jump's filter release (t_cd9952a3)",
   );
   assert.ok(
     !/selection\.value = best;[\s\S]{0,240}clampId/.test(tab),
@@ -872,7 +1114,11 @@ test("the clamp rides the scroll event and never the intent-event lock", () => {
   assert.match(tab, /function notePaneScroll\(root: HTMLElement, top: number\)/, "the track exists");
   assert.match(tab, /notePaneScroll\(root, root\.scrollTop \+ delta - clear\)/, "a jump tracks its landing");
   assert.match(tab, /notePaneScroll\(root, 0\);/, "a deselect's return to top tracks its landing");
-  assert.match(tab, /notePaneScroll\(node, lastDocScrollTop\)/, "a cleared query's give-back tracks its landing");
+  assert.match(
+    tab,
+    /notePaneScroll\(node, top\);/,
+    "a cleared query's give-back tracks its landing",
+  );
   // and an interrupted animation cannot strand the pane outside its section
   assert.match(
     tab,
