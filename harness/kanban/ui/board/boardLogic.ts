@@ -26,9 +26,87 @@ export function isBoardPath(p: string): boolean {
   return p === BOARD_PATH || p === BOARD_PATH + "/";
 }
 
-/** true for the two resting columns (rendered dimmed / collapsed). */
-export function isSettled(status: string): boolean {
-  return status === "done" || status === "archived";
+// --- lane rails (card t_50a8c145): ANY lane folds to a thin vertical
+// rail - the Hermes lane-collapse model, ruled in for omega. The old
+// settled-only fold (done/archived collapsed, the "N folded" note) is
+// superseded and gone: the lane model below is the only one.
+//
+// Two numbers are geometry contracts, not taste:
+//   - the rail is ~36px wide (32-40 ruled), wide enough for a dot, a
+//     vertical name and a count, narrow enough to keep the strip usable;
+//   - the fold eases over ~180ms (Hermes snaps; omega ruled an ease).
+export const LANE_RAIL_PX = 36;
+export const LANE_EASE_MS = 180;
+
+/** the per-lane dot tone, the Hermes status mapping (ruled verbatim). */
+export const LANE_TONES: Record<BoardStatus, string> = {
+  triage: "#8f8f8f", // gray
+  todo: "#cfcfcf", // light gray
+  scheduled: "#a78bfa", // violet
+  ready: "#60a5fa", // blue
+  running: "#34d399", // green
+  blocked: "#f87171", // red
+  review: "#fbbf24", // amber
+  done: "#6f6f6f", // gray
+  archived: "#4a4a4a", // dim
+};
+
+/** the dot tone for a lane; an unknown status falls back to triage's gray. */
+export function laneTone(status: string): string {
+  return LANE_TONES[status as BoardStatus] ?? LANE_TONES.triage;
+}
+
+// A pin is the user's override for one lane: "open" (pinned open) or
+// "collapsed" (pinned to its rail). Absent = no override, which reads as
+// open for a lane holding cards.
+export type LanePin = "open" | "collapsed";
+export type LanePins = Record<string, LanePin>;
+
+/**
+ * laneFolded is the ONE fold law. Reality outranks the override: an
+ * EMPTY lane is always folded to its rail, pinned open or not. A
+ * non-empty lane follows its pin, and with no pin it stays expanded.
+ */
+export function laneFolded(status: string, count: number, pins: LanePins): boolean {
+  if (count <= 0) return true; // a drained lane collapses - the auto-collapse law
+  return pins[status] === "collapsed";
+}
+
+/**
+ * reconcileLanePins drops every override whose lane is now empty. This
+ * is the second half of the auto-collapse law: a pin holds while the
+ * lane holds cards, and dies the moment the lane drains - so a lane
+ * that refills comes back to its default (expanded) instead of
+ * remembering an override reality has already overruled. Call it once
+ * per list read; it is pure (an unchanged map is returned as-is only
+ * when nothing was dropped).
+ */
+export function reconcileLanePins(
+  counts: Record<string, number>,
+  pins: LanePins,
+): LanePins {
+  let next: LanePins | null = null;
+  for (const status of Object.keys(pins)) {
+    if ((counts[status] ?? 0) > 0) continue;
+    if (next === null) next = { ...pins };
+    delete next[status];
+  }
+  return next ?? pins;
+}
+
+/**
+ * toggleLanePin flips one lane between its rail and its column. An empty
+ * lane cannot be opened - reality wins there too, so the click is a
+ * no-op and no override is written (the rail stays the drop target).
+ */
+export function toggleLanePin(
+  status: string,
+  count: number,
+  pins: LanePins,
+): LanePins {
+  if (count <= 0) return pins;
+  const next = laneFolded(status, count, pins) ? "open" : "collapsed";
+  return { ...pins, [status]: next };
 }
 
 // Narrow-board adaptation (card t_49d0b308): the inspector's ~300px
