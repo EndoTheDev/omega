@@ -76,7 +76,7 @@ func TestSpawnReadKill(t *testing.T) {
 	if e.ID != "worker" || e.Exited {
 		t.Fatalf("spawn entry: %+v", e)
 	}
-	waitFor(t, 5*time.Second, "log line", func() bool {
+	waitFor(t, testWaitTimeout, "log line", func() bool {
 		tail, _, _, err := r.Read("worker", 100)
 		return err == nil && strings.Contains(tail, "out-line")
 	})
@@ -108,7 +108,7 @@ func TestExitCodeRecorded(t *testing.T) {
 	if _, err := r.Spawn(context.Background(), "sleep 0.3; exit 7", "boom", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	waitFor(t, 5*time.Second, "boom to exit", func() bool {
+	waitFor(t, testWaitTimeout, "boom to exit", func() bool {
 		e, ok := r.Find("boom")
 		return ok && e.Exited
 	})
@@ -122,7 +122,7 @@ func TestExitCodeRecorded(t *testing.T) {
 	if _, err := r.Spawn(context.Background(), "sleep 0.2; exit 0", "quiet", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	waitFor(t, 5*time.Second, "quiet to exit", func() bool {
+	waitFor(t, testWaitTimeout, "quiet to exit", func() bool {
 		e, ok := r.Find("quiet")
 		return ok && e.Exited
 	})
@@ -139,7 +139,7 @@ func TestKillEscalation(t *testing.T) {
 	if _, err := r.Spawn(context.Background(), `trap "" TERM; sleep 300`, "stubborn", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	waitFor(t, 5*time.Second, "stubborn to be live", func() bool {
+	waitFor(t, testWaitTimeout, "stubborn to be live", func() bool {
 		_, _, _, err := r.Read("stubborn", 5)
 		return err == nil
 	})
@@ -164,7 +164,7 @@ func TestReadTailCaps(t *testing.T) {
 		`i=1; while [ $i -le 120 ]; do echo "line-$i"; i=$((i+1)); done; sleep 120`, "writer", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	waitFor(t, 5*time.Second, "log completion", func() bool {
+	waitFor(t, testWaitTimeout, "log completion", func() bool {
 		tail, _, _, err := r.Read("writer", 5)
 		return err == nil && strings.Contains(tail, "line-120")
 	})
@@ -222,7 +222,7 @@ func TestReplaceExitedRotatesLog(t *testing.T) {
 	if _, err := r.Spawn(context.Background(), "echo gen-one", "rot", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	waitFor(t, 5*time.Second, "rot to exit", func() bool {
+	waitFor(t, testWaitTimeout, "rot to exit", func() bool {
 		e, ok := r.Find("rot")
 		return ok && e.Exited
 	})
@@ -233,7 +233,7 @@ func TestReplaceExitedRotatesLog(t *testing.T) {
 	if err != nil || !strings.Contains(string(gen1), "gen-one") {
 		t.Fatalf("rotated log: %v content=%q", err, string(gen1))
 	}
-	waitFor(t, 5*time.Second, "gen-two in the live log", func() bool {
+	waitFor(t, testWaitTimeout, "gen-two in the live log", func() bool {
 		tail, _, _, err := r.Read("rot", 100)
 		return err == nil && strings.Contains(tail, "gen-two")
 	})
@@ -273,7 +273,7 @@ func TestRestartPidRecheck(t *testing.T) {
 	if _, err := probe.Spawn(context.Background(), "exit 0", "dead-pid-source", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	waitFor(t, 5*time.Second, "the reaper to record the exit", func() bool {
+	waitFor(t, testWaitTimeout, "the reaper to record the exit", func() bool {
 		e, _ := probe.Find("dead-pid-source")
 		return e.Exited
 	})
@@ -463,7 +463,7 @@ func TestPostMortemRead(t *testing.T) {
 	if _, err := r.Spawn(context.Background(), "echo post-mortem-ok", "gone", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	waitFor(t, 10*time.Second, "gone to exit", func() bool {
+	waitFor(t, testWaitTimeout, "gone to exit", func() bool {
 		ee, ok := r.Find("gone")
 		return ok && ee.Exited
 	})

@@ -1266,7 +1266,7 @@ func TestVerdictRemovalProof(t *testing.T) {
 	}()
 	var cardID string
 	vp, _ := ctx.Services().Resolve("verdicts").(proofVerdicts)
-	cardDeadline := time.Now().Add(10 * time.Second)
+	cardDeadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(cardDeadline) {
 		if cards := vp.Pending(""); len(cards) > 0 {
 			cardID = cards[0].ID
@@ -1286,7 +1286,7 @@ func TestVerdictRemovalProof(t *testing.T) {
 		if got.err != nil || !strings.Contains(got.res, `"verdict":"answer"`) || !strings.Contains(got.res, `"option":"right"`) {
 			t.Fatalf("FULL MOUNT: verdict did not return the answered pick (res=%s err=%v)", got.res, got.err)
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(testWaitTimeout):
 		t.Fatal("FULL MOUNT: verdict never unblocked after the first answer")
 	}
 	t.Logf("PROOF tool wiring: verdict blocked the turn, the first answer through the seam won the race - %s", strings.TrimSpace(got.res))
@@ -1989,7 +1989,7 @@ func TestShellDomainIsTheOnlyCommandSurface(t *testing.T) {
 	}
 	select {
 	case <-callDone:
-	case <-time.After(20 * time.Second):
+	case <-time.After(testWaitTimeout):
 		t.Fatal("the shell.run call never returned after the kill")
 	}
 

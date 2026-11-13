@@ -66,14 +66,14 @@ func TestKillHandshakeOnRealPty(t *testing.T) {
 		if err == nil {
 			t.Fatal("the parked read survived the kill")
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(testWaitTimeout):
 		t.Fatal("the parked read never returned - the kill left it hanging")
 	}
 
 	// the reap: the exit watcher fires, the code is the signal death
 	select {
 	case <-proc.Done():
-	case <-time.After(5 * time.Second):
+	case <-time.After(testWaitTimeout):
 		t.Fatal("the exit watcher never fired")
 	}
 	if code := proc.ExitCode(); code != -1 {
@@ -113,7 +113,7 @@ func TestIdleKillClosesMasterDirectly(t *testing.T) {
 	}
 	select {
 	case <-proc.Done():
-	case <-time.After(5 * time.Second):
+	case <-time.After(testWaitTimeout):
 		t.Fatal("the exit watcher never fired")
 	}
 }

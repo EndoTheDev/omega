@@ -28,13 +28,13 @@ func TestConPTYShellEcho(t *testing.T) {
 	if err := proc.Resize(30, 100); err != nil {
 		t.Fatalf("resize: %v", err)
 	}
-	if err := drainUntil(t, proc, filepath.Base(dir), 10*time.Second); err != nil {
+	if err := drainUntil(t, proc, filepath.Base(dir), testWaitTimeout); err != nil {
 		t.Fatalf("prompt: %v", err)
 	}
 	if _, err := proc.Write([]byte("echo omega-term-proof\r")); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if err := drainUntil(t, proc, "omega-term-proof", 10*time.Second); err != nil {
+	if err := drainUntil(t, proc, "omega-term-proof", testWaitTimeout); err != nil {
 		t.Fatalf("echo: %v", err)
 	}
 }
@@ -54,7 +54,7 @@ func TestConPTYExitCode(t *testing.T) {
 	}
 	select {
 	case <-proc.Done():
-	case <-time.After(10 * time.Second):
+	case <-time.After(testWaitTimeout):
 		t.Fatal("shell never exited after its own exit command")
 	}
 	if code := proc.ExitCode(); code != 0 {
@@ -76,7 +76,7 @@ func TestConPTYKill(t *testing.T) {
 	}
 	select {
 	case <-proc.Done():
-	case <-time.After(10 * time.Second):
+	case <-time.After(testWaitTimeout):
 		t.Fatal("done fence never closed after Kill")
 	}
 	// the stream is done: a blocking read returns (hangup error or
@@ -89,7 +89,7 @@ func TestConPTYKill(t *testing.T) {
 	}()
 	select {
 	case <-late: // any outcome: hangup is the contract, silence is not
-	case <-time.After(10 * time.Second):
+	case <-time.After(testWaitTimeout):
 		t.Fatal("read still parked after Kill")
 	}
 	if err := proc.Close(); err != nil {

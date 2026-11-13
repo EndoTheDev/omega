@@ -436,7 +436,7 @@ func TestShellVerbRoundTrip(t *testing.T) {
 		t.Fatalf("spawn: %v", err)
 	}
 	// The echo may land a beat after Spawn returns.
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(testWaitTimeout)
 	for {
 		read, err := p.Read(ctx, map[string]any{"id": "rt"})
 		if err == nil && strings.Contains(read, "round-trip") {

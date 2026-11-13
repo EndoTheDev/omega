@@ -775,13 +775,13 @@ func TestRealPTYShellEcho(t *testing.T) {
 	if err := proc.Resize(30, 100); err != nil {
 		t.Fatalf("resize: %v", err)
 	}
-	if err := drainUntil(t, proc, "$ ", 5*time.Second); err != nil {
+	if err := drainUntil(t, proc, "$ ", testWaitTimeout); err != nil {
 		t.Fatalf("prompt: %v", err)
 	}
 	if _, err := proc.Write([]byte("echo omega-term-proof\n")); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if err := drainUntil(t, proc, "omega-term-proof", 5*time.Second); err != nil {
+	if err := drainUntil(t, proc, "omega-term-proof", testWaitTimeout); err != nil {
 		t.Fatalf("echo: %v", err)
 	}
 }
