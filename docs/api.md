@@ -572,9 +572,9 @@ future concern, deliberately out of v1).
   a readable path). This is the secondary view: the disk side of the
   picture, and the only history across restarts. The shell's
   `GET /logs` (plus the subscription-gated `logs` socket topic that
-  feeds it deltas) stays the raw-tail wire; since card t_01c53e78
-  retired the raw-tail pane, no shipped UI consumes that wire - the
-  Logs tab reads the capsule's own route above.
+  feeds it deltas) stays the raw-tail wire, and no shipped UI consumes
+  it - the client half retired with the pane (cards t_01c53e78,
+  t_1423218e): the Logs tab reads the capsule's own route above.
 
 The ring is fed from the run event spine through the session-attributed
 observer (`core.SessionEventObserver`): the spine's events carry no
@@ -783,8 +783,9 @@ without that pulse the pane would stay stale until some later mutation
 happened to fire (card t_b5784de3).
 
 The client half (card t_896cf5a8, `webui/app/composables/socket.ts`)
-owns one connection per page load: it subscribes to five live topics by
-default (the sixth, `logs`, is added while a logs pane is mounted),
+owns one connection per page load: it subscribes to the five topics it
+speaks, `chat`, `chips`, `canvas`, `runs` and `health` (the server's
+sixth, `logs`, has no client consumer - see below),
 reconnects on an exponential ladder (0.5s doubling, 15s cap, jitter),
 and runs a quiet-wire check - 15s without a frame while the health topic
 beats every 5s means a half-open socket that will never fire `close`
@@ -818,15 +819,21 @@ the panel store and the toast funnel; the verdict list has no topic of
 its own and is refetched on chat call/turn edges, run edges and
 reconnect.
 
-The sixth topic, `logs`, is **subscription-gated** (card t_0e7bc0bb):
-the shell adds it to that one connection only while a logs pane is
-mounted and drops it when the last one unmounts, so a page with no logs
-pane receives no log frames at all. It carries only the lines appended
-to the log file since the previous frame - the snapshot half stays
-`GET /logs` (200 lines), and the pane appends the deltas onto it. The
-pane is module UI, so the two directions ride window `CustomEvent`s
-(`omega-logs-subscribe` out, `omega-log-stream` in) rather than an
-import - the same seam the kanban board uses for `omega-select-board`.
+The sixth topic, `logs`, is **subscription-gated** (card t_0e7bc0bb) and
+has NO client consumer. It carries only the lines appended to the log
+file since the previous frame - the snapshot half stays `GET /logs` (200
+lines), and the pane that appended the deltas onto it retired with the
+raw-tail view (card t_01c53e78). The client half went after it (card
+t_1423218e): the topic in the webui's set, the dispatch case, the pane
+counter, the subscribe gate and the two window `CustomEvent`s that
+bridged pane to shell. Nothing dispatched the pane's request any more, so
+the counter sat at zero, the topic was never subscribed and the forward
+had no listener - dormant plumbing on the shell's setup path, which a
+reader reads as a live seam. A `logs` frame now reaches this client as an
+unknown topic and drops. The wire is unchanged and keeps its Go pins
+(`TestPushLogDelta`, `TestFollowLogsPublishesAppends`,
+`TestSocketLogsTopicGated`), so a future raw-tail view re-wires
+deliberately against a topic that is still honest.
 
 ### Frame envelope
 
