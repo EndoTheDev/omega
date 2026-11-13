@@ -2795,8 +2795,11 @@ labels stopped short of the right edge. */
 
 /* ---- v0.12 E2: the module toggle list (registry introspection) ----
    card t_af7e1150: the settings group head is gone (settings is master-
-   detail now), so the extensions tab keeps its own row head - the rules
-   above are the pane's, and nothing modules-specific is left here. */
+   detail now), so the surface keeps its own row head - the rules above
+   are the pane's, and nothing modules-specific is left here.
+   card t_81d0901b: that surface is the settings tab's MODULES section
+   (components/settings/ModulesSection.vue); the classes kept their
+   module-inventory names, the retired tab is what went. */
 .module-note {
   flex-basis: 100%;
   margin-left: 24px;

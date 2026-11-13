@@ -7,9 +7,9 @@ package api
 // 501 (the Settings precedent).
 
 import (
-	"github.com/EndoTheDev/omega/agent"
 	"context"
 	"errors"
+	"github.com/EndoTheDev/omega/agent"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -145,6 +145,45 @@ func TestModulesEngineToggleRejected(t *testing.T) {
 	}
 	if !contains(rec.Body.String(), "is shell") {
 		t.Fatalf("the tier-law rejection must name itself: %s", rec.Body.String())
+	}
+}
+
+func TestModulesAlwaysOnPairRejectedAtTheSeam(t *testing.T) {
+	// card t_81d0901b: only agent-loop + provider are load-bearing. The
+	// refusal lives HERE - the settings row is a mirror, never the gate -
+	// so both directions are refused before the seam is called and the
+	// body names the reason.
+	for _, name := range []string{"agent-loop", "provider"} {
+		for _, body := range []string{`{"enabled":false}`, `{"enabled":true}`} {
+			fm := &fakeModules{mods: []core.ModuleStatus{fakeModule(name, "mounted", false)}}
+			s := NewServer(nil, nil, nil, nil, fm, nil)
+			req := httptest.NewRequest(http.MethodPut, "/modules/"+name, stringBody(body))
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("%s %s answered %d, want 400", name, body, rec.Code)
+			}
+			if len(fm.toggled) != 0 {
+				t.Fatalf("%s %s reached the seam: %v", name, body, fm.toggled)
+			}
+			if want := "module " + name + " is always on"; !contains(rec.Body.String(), want) {
+				t.Fatalf("%s %s refusal must name itself (%q): %s", name, body, want, rec.Body.String())
+			}
+		}
+	}
+	// the pair is NOT the shell ring: both stay in the introspection (the
+	// UI renders them as visible rows), unlike http_channel
+	fm := &fakeModules{mods: []core.ModuleStatus{
+		fakeModule("agent-loop", "mounted", false),
+		fakeModule("provider", "mounted", false),
+	}}
+	s := NewServer(nil, nil, nil, nil, fm, nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/modules", nil))
+	for _, name := range []string{"agent-loop", "provider"} {
+		if !contains(rec.Body.String(), `"name":"`+name+`"`) {
+			t.Fatalf("the always-on pair must stay visible in the list: %s", rec.Body.String())
+		}
 	}
 }
 

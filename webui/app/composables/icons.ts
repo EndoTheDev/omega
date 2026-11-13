@@ -47,7 +47,6 @@ import {
   PanelRightOpen,
   Pencil,
   PlugZap,
-  Puzzle,
   RefreshCw,
   ScrollText,
   SlidersHorizontal,
@@ -80,7 +79,9 @@ export const ICONS = {
   agents: Users, // the agent roster (merged config + continuous surface)
   settings: SlidersHorizontal, // config knobs
   kanban: Kanban, // the board
-  extensions: Puzzle, // the module cockpit tab
+  // card t_81d0901b (deletability): the puzzle left the vocabulary with the
+  // modules cockpit tab that carried it - module toggles are configuration
+  // now, and the settings tab's own sliders glyph is the surface.
   insights: ChartColumn, // usage bars
   mcp: PlugZap, // the MCP servers tab (bridge connections + tools)
   terminal: SquareTerminal, // the terminal tab (card t_55a3fc4b: the

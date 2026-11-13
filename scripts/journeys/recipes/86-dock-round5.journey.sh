@@ -47,19 +47,23 @@ ab wait --load networkidle >/dev/null 2>&1 || true
 sleep 1
 
 # ---- 1: tab labels --------------------------------------------------------
-# card t_210a0d19 rename law: the extensions inventory tab's label is
-# "Modules"; /extensions keeps working as the command alias.
+# card t_210a0d19 rename law: the extensions inventory tab's label was
+# "Modules"; card t_81d0901b RETIRED that tab (module toggles are
+# configuration - settings > modules), so the Title Case check walks Agents
+# only and asserts the retired label renders nowhere.
 # card t_502b8e81: edge shells render ICON-ONLY chips - the name rides
 # aria-label (the tab has no .dock-tab-title); main/bottom tabs keep text.
 chipName='((e.getAttribute("aria-label")||"")||e.title||((e.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim()'
-for want in Agents Modules; do
+for want in Agents; do
   if ! wait_js "(()=>{const t=[...document.querySelectorAll('.dock-tabbar .dock-tab')];return t.some((e)=>($chipName)==='$want')})()" 10; then
     die "tab label '$want' missing from the tab bars"
   fi
 done
-low=$(jsq "(()=>{const t=[...document.querySelectorAll(\".dock-tabbar .dock-tab\")].map((e)=>$chipName);return t.some((n)=>n===\"agents\"||n===\"extensions\")?1:0})()" 2>/dev/null | tail -1)
-assert_eq "$low" "0" "no lowercase agents/extensions tab chips remain"
-step "ok: Agents + Modules tab labels render Title Case"
+low=$(jsq '(()=>{const t=[...document.querySelectorAll(".dock-tabbar .dock-tab")].map((e)=>e.getAttribute("aria-label")||e.title||"");return t.some((n)=>n==="agents")?1:0})()' 2>/dev/null | tail -1)
+assert_eq "$low" "0" "no lowercase agents tab chips remain"
+gone=$(jsq '(()=>{const t=[...document.querySelectorAll(".dock-tabbar .dock-tab")].map((e)=>e.getAttribute("aria-label")||e.title||"");return t.some((n)=>n==="Modules")?1:0})()' 2>/dev/null | tail -1)
+assert_eq "$gone" "0" "the retired Modules tab chip renders nowhere"
+step "ok: Agents tab label renders Title Case; the retired Modules chip is gone"
 
 # ---- 2: the notification click focuses the kanban pane --------------------
 # chat pane state BEFORE the click: the main pane's identity + content

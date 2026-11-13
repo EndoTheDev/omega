@@ -213,6 +213,7 @@
             :color-mode="colorMode"
             :theme-id="themeId"
             :user-themes="userThemes"
+            @open-module="openModuleTab"
             @set-color-mode="setColorMode"
             @set-theme="setTheme" />
         </template>
@@ -233,19 +234,12 @@
             module="kanban"
             :open="isMobile ? inspectorOpen : false" />
         </template>
-        <!-- card t_14f73742: the extensions inventory joins the inspector -
-             a module-command surface (/extensions on the seam). A SHELL
-             tab over GET /extensions (composition ruling in extensionsRows.ts):
-             has-ui rows emit open-module and openModuleTab routes to the
-             module's inspector tab. /help parity: the webui has no
-             slash-command bar - this tab IS the /extensions surface. -->
-        <template #pane-extensions>
-          <ExtensionsTab
-            v-if="!isMobile"
-            class="pane"
-            :open="inspectorOpen"
-            @open-module="openModuleTab" />
-        </template>
+        <!-- card t_81d0901b: the extensions/modules inventory tab is GONE -
+             module toggles are configuration, not content, so the whole
+             surface (rows, live toggles, the expandable tools/commands/
+             panels detail) lives in the settings tab's MODULES section. The
+             /modules and /extensions HTTP endpoints are untouched; the
+             palette commands route onto that section. -->
         <!-- card t_e1e61680: insights was a main-area tab; card t_d7fd3ad3
              moved its home to the SECONDARY sidebar (a default-visible
              inspector tab, label "Insights"). The outlet renders wherever
@@ -317,6 +311,7 @@
         :theme-id="themeId"
         :user-themes="userThemes"
         :open="drawerOpen"
+        @open-module="openModuleTab"
         @set-color-mode="setColorMode"
         @set-theme="setTheme" />
       <InspectorPanel
@@ -348,29 +343,20 @@
         :theme-id="themeId"
         :user-themes="userThemes"
         :open="inspectorOpen"
+        @open-module="openModuleTab"
         @set-color-mode="setColorMode"
         @set-theme="setTheme" />
-      <!-- card t_14f73742: the mobile drawer seats the shell inventory
-           tab like any inspector view - before the module catch-all,
-           which would try InspectorPanel(module="extensions") and
-           render an empty panel body.
-           card t_d7fd3ad3: insights joins the same class - its home is
-           the right shell now, so the drawer needs its branch before the
-           catch-all (InspectorPanel(module="insights") would render an
-           empty body - insights is shell-owned, not a module panel). -->
-      <ExtensionsTab
-        v-else-if="inspectorDrawerActiveId === 'extensions'"
-        class="pane"
-        :open="inspectorOpen"
-        @open-module="openModuleTab" />
+      <!-- card t_d7fd3ad3: insights' home is this shell, so the drawer needs
+           its own branch before the catch-all (InspectorPanel(module=
+           "insights") would render an empty body - insights is shell-owned,
+           not a module panel).
+           card t_180db2cb: the notifications feed panel seats through its
+           own branch the same way - the module catch-all would render an
+           empty InspectorPanel(module="notifications") body (the feed view
+           is a TAB capsule, not a panel; card t_617c2ad0). -->
       <InsightsTab
         v-else-if="inspectorDrawerActiveId === 'insights'"
         class="pane" />
-      <!-- card t_180db2cb: the notifications feed panel seats through its
-           own branch like the other shell-owned tabs - the module
-           catch-all would render an empty InspectorPanel(module=
-           "notifications") body (the feed view is a TAB capsule, not a
-           panel; card t_617c2ad0). -->
       <component
         :is="notificationsPanelView"
         v-else-if="notificationsPanelView && inspectorDrawerActiveId === 'notifications'"
@@ -379,11 +365,13 @@
       <!-- card t_07ad4fda: agents is a SHELL-owned view (harness/
            continuous ships the component, the shell owns the tab and its
            fetch) - neither a module panel nor a tab capsule, so the
-           drawer seats it by its own branch like ExtensionsTab and
+           drawer seats it by its own branch like FilesTab and
            InsightsTab above. The catch-all would resolve
            InspectorPanel(module="agents"), find no entry in the PANEL
            manifest, and render "module not loaded" for a tab that is
-           mounted and loaded. -->
+           mounted and loaded. card t_81d0901b: the modules cockpit left
+           the strip (its surface is the settings MODULES section), so this
+           chain no longer carries an extensions branch at all. -->
       <AgentsPanel
         v-else-if="inspectorDrawerActiveId === 'agents'"
         class="pane" />
@@ -428,6 +416,7 @@
         :theme-id="themeId"
         :user-themes="userThemes"
         :open="bottomDrawerOpen"
+        @open-module="openModuleTab"
         @set-color-mode="setColorMode"
         @set-theme="setTheme" />
       <!-- card t_e703180e: a TAB capsule in the bottom drawer rides its
@@ -700,6 +689,10 @@
     type PaletteCommand,
   } from "./composables/commandRegistry";
   import SettingsTab from "./components/settings/SettingsTab.vue";
+  // card t_81d0901b: the MODULES category id + the palette's jump signal -
+  // /modules, /extensions and /panels open the settings tab and land there.
+  import { MODULES_CATEGORY } from "./components/settings/settingsNav";
+  import { jumpToSettingsSection } from "./composables/settingsJump";
   // card t_5d9032d3: notification open intents route here from the bell;
   // card t_556ee727: the board select seams (the task row's board pick)
   import type { OmegaNotification } from "./composables/notifications";
@@ -716,9 +709,10 @@
   // (harness/notifications/ui/, card t_617c2ad0)
   // the roster surface moved to harness/continuous/ui/ (the wave-2
   // continuous capsule)
-  // card t_14f73742: the extensions inventory joins the inspector (registry:
-  // singleton, pinned right) - the outlet renders it when its tab is active
-  import ExtensionsTab from "./components/shell/ExtensionsTab.vue";
+  // card t_81d0901b: the extensions/modules inventory is NOT a shell tab
+  // any more - its surface is the settings tab's MODULES section
+  // (components/settings/ModulesSection.vue), and the palette commands
+  // below open that pane instead of a dead tab.
   // card t_36ceb99b: the content viewer tab (a file or a skill opened
   // from a row click) - outlet below, opener + titles wired at the
   // provides
@@ -1192,14 +1186,15 @@
       case "/panels":
       case "/modules":
       case "/extensions": {
-        // v0.14.3: /panels folds into the Modules tab too - the panels
-        // render under their module's expanded row (the fold ruling).
-        if (!findEdgePane(dock.tree.value, "inspector")) {
-          dock.toggleEdge("inspector", "after");
-        }
-        openModuleTab("extensions");
+        // card t_81d0901b: module toggles are CONFIGURATION, not content -
+        // the secondary-pane cockpit tab is gone and these commands open the
+        // settings tab, landing on its MODULES section (the panels render
+        // under their module's expanded row there - the v0.14.3 fold law
+        // survives the move).
+        openSettingsTab();
+        jumpToSettingsSection(MODULES_CATEGORY);
         if (!st) return true;
-        note(name === "/panels" ? "modules: the panels live under the module rows" : "modules: the cockpit tab is up");
+        note(name === "/panels" ? "modules: the panels live under the module rows" : "modules: settings > modules is up");
         return true;
       }
       default:

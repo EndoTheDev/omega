@@ -38,6 +38,15 @@ import type { SettingGroup, SettingKnob } from "../../composables/omega";
 export const GENERAL_SUBGROUP = "general";
 /** the virtual top category of curated knobs (ruling 4) */
 export const COMMON_CATEGORY = "common";
+/**
+ * card t_81d0901b: the MODULES category - the module lifecycle surface,
+ * which is CONFIGURATION (toggles over persisted config), not content, so
+ * it lives in this pane instead of the retired secondary-pane tab. Its
+ * rows are NOT knobs: the category carries no SettingKnob, its body is the
+ * ModulesSection component, and `count` reports the module rows it renders
+ * so the nav shows a real number instead of a knob count.
+ */
+export const MODULES_CATEGORY = "modules";
 /** client storage key for the remembered LAST ANCHOR (ruling 13 survives) */
 export const NAV_STORAGE_KEY = "omega.settings-category";
 
@@ -161,6 +170,33 @@ export interface NavCategory {
   flat: boolean;
   knobs: SettingKnob[];
   subgroups: NavSubgroup[];
+  /** card t_81d0901b: the count a knob-less category reports (its rows).
+      Absent on every knob category - the nav then counts `knobs`. */
+  count?: number;
+}
+
+/** the number the nav prints for a category: its declared row count, or
+    the knob count every other category gets (t_81d0901b) */
+export function categoryCount(cat: NavCategory): number {
+  return cat.count ?? cat.knobs.length;
+}
+
+/**
+ * modulesNavCategory is the MODULES entry the settings pane PREPENDS to
+ * the nav (card t_81d0901b): flat, knob-less, titled "modules", carrying
+ * the live module-row count. Its document section is rendered by the
+ * pane's own ModulesSection block, so documentFor (which walks knobs)
+ * never emits it - the nav entry is what makes it a jump target.
+ */
+export function modulesNavCategory(count = 0): NavCategory {
+  return {
+    id: MODULES_CATEGORY,
+    label: "modules",
+    flat: true,
+    knobs: [],
+    subgroups: [],
+    count,
+  };
 }
 
 /** withSubgroups stamps every knob with its declared subgroup, so the
