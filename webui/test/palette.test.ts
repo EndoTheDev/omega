@@ -317,6 +317,52 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
     assert.ok(app.includes("buildPaletteCommands"), "the registry builds from app deps");
   });
 
+  // Endo rider 2026-11-12: the palette had Escape but no outside-click
+  // close. The overlay carries no scrim by design, so the outside click is
+  // a document listener bounded by the root ref - and it must be pointerdown
+  // so the opening click cannot immediately re-close the palette.
+  it("an outside click closes the overlay (no scrim, document listener)", () => {
+    assert.ok(overlay.includes('ref="rootEl"'), "the surface is ref-bound");
+    assert.ok(
+      overlay.includes('document.addEventListener("pointerdown", onDocPointer)'),
+      "outside clicks are caught on the document",
+    );
+    assert.ok(
+      overlay.includes('document.removeEventListener("pointerdown", onDocPointer)'),
+      "the listener dies with the component",
+    );
+    assert.ok(
+      overlay.includes("rootEl.value.contains(target as Node)"),
+      "only clicks OUTSIDE the surface close it",
+    );
+    assert.ok(overlay.includes('emit("close")'), "the close rides the existing @close seam");
+    // Escape must still be the same path (no key handler rewrite)
+    assert.ok(/e\.key === "Escape"[\s\S]{0,80}emit\("close"\)/.test(overlay));
+    // item navigation is untouched: the row click stays a run(), not a close
+    assert.ok(/@click="run\(c\)"/.test(overlay), "row clicks still run the command");
+  });
+
+  // the shell's trigger is the one outside surface the overlay must not
+  // close on pointerdown: its own click toggles, so closing first would
+  // flicker closed-then-reopened. One toggle serves both doors.
+  it("the nav-cluster trigger toggles instead of flickering", () => {
+    const cluster = readFileSync(
+      join(here, "../app/components/nav/NavCluster.vue"),
+      "utf8",
+    );
+    assert.ok(cluster.includes("data-palette-trigger"), "the trigger is marked");
+    assert.ok(
+      overlay.includes('target.closest("[data-palette-trigger]")'),
+      "the outside handler skips the trigger",
+    );
+    assert.ok(app.includes('@open-palette="togglePalette"'), "the trigger rides the toggle");
+    assert.ok(
+      /function togglePalette\(\)[\s\S]{0,200}paletteOpen\.value = !paletteOpen\.value/.test(app),
+      "one toggle closes an open palette",
+    );
+    assert.ok(!app.includes("function openPalette("), "the one-way opener is gone");
+  });
+
   it("the overlay CSS reads the tokens, top-center above the menubar", () => {
     assert.ok(css.includes(".command-palette {"), "the overlay has real CSS");
     const block = css.slice(css.indexOf(".command-palette {"), css.indexOf(".command-palette-input"));
