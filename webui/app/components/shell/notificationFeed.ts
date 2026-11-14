@@ -20,6 +20,19 @@
 // feed panel or the toast stack is mounted. startNotificationFeed is
 // idempotent - the first mount (usually NotificationToasts) lights the
 // feed; every later mount is a no-op.
+//
+// card t_a2ed8412: the store owns THREE emitters now, and the third one
+// is the approval surface. A pending verdict reaches this store through
+// the ordinary event hints (a chat frame's call/turn edge, a runs edge,
+// a reconnect catch-up - the chat topic fans out EVERY run to EVERY
+// page, measured on a private lane: a verdict issued by a session the
+// page never opened toasted 1.5s after its tool_call frame), so the
+// badge has always counted an approval from a background session. What
+// it never had was a VOICE: the badge rides the notifications chip,
+// which is invisible when that tab is not on screen, so an approval from
+// a session the page never opened looked like nothing happening until
+// the panel's activation read. A newly pending card now toasts through
+// the same stack as a finished thing.
 
 import { computed, ref } from "vue";
 import {
@@ -27,10 +40,12 @@ import {
   fetchNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  newlyPendingVerdicts,
   notificationAge,
   notificationBadgeText,
   toastLifetime,
   upsertRecord,
+  VERDICT_TOAST_MS,
   type OmegaNotification,
 } from "../../composables/notifications";
 import { onToastPanel } from "../../composables/canvas";
@@ -43,11 +58,27 @@ export { notificationAge };
 // the durable feed (newest first) + the server's unread count
 const list = ref<OmegaNotification[]>([]);
 const unread = ref(0);
-// pending agent questions (verdict cards v1, t_2ecf9c51) - no SSE for
-// them; the poll below keeps the cadence the bell used
+// pending agent questions (verdict cards v1, t_2ecf9c51). The hub holds
+// them in memory and pushes nothing of its own: this list is a REST read
+// (GET /verdicts) refreshed on the shell's event hints, never a poll
+// (card t_896cf5a8), and its ARRIVALS toast - see newlyPendingVerdicts.
 const pendingVerdicts = ref<PendingVerdictCard[]>([]);
-// the transient toast stack (one toast per live frame)
-const toasts = ref<{ key: number; record: OmegaNotification }[]>([]);
+// the card ids this page has already announced (one toast per card), and
+// whether the boot read has seeded the set (card t_a2ed8412)
+const announcedVerdicts = new Set<string>();
+let verdictsSeeded = false;
+
+// NotificationToast is one row of the transient stack. TWO emitters
+// share it (card t_a2ed8412): `record` is a finished thing off the feed
+// (the canvas toast funnel), `verdict` is a pending APPROVAL request -
+// which has no feed record of its own, because a verdict card is live
+// hub state read through GET /verdicts. The kind discriminates so a
+// renderer (or a click) never has to guess which shape it holds.
+export type NotificationToast =
+  | { key: number; kind: "record"; record: OmegaNotification }
+  | { key: number; kind: "verdict"; card: PendingVerdictCard };
+// the transient toast stack (one toast per live frame / new card)
+const toasts = ref<NotificationToast[]>([]);
 
 // THE badge: the dockable's tab chip reads this. Sums unread
 // finished-things and pending questions - the one place a user looks
@@ -87,26 +118,52 @@ function decodeToast(payload: unknown): OmegaNotification | null {
   };
 }
 
-// refresh pulls the REST truth: the full feed + the pending cards. A
-// failure degrades to "state unchanged" (the store starts empty and a
-// broken lane never breaks the panel - it just renders stale).
+// refresh pulls the REST truth: the full feed + the pending cards. The
+// two reads are INDEPENDENT (card t_a2ed8412): they answer different
+// seams (the notifications capsule's feed, the verdict hub's live
+// cards), so one broken route must not blank the other - the pending
+// list is the half a user is BLOCKED on. A failed read degrades to
+// "state unchanged" (the store starts empty and a broken lane never
+// breaks the panel - it just renders stale).
 async function refresh(): Promise<void> {
-  try {
-    const [page, vpage] = await Promise.all([
-      fetchNotifications(false),
-      fetchVerdicts("").catch(() => ({ cards: [] as PendingVerdictCard[], count: 0 })),
-    ]);
+  const [page, vpage] = await Promise.all([
+    fetchNotifications(false).catch(() => null),
+    fetchVerdicts("").catch(() => null),
+  ]);
+  if (page) {
     list.value = page.notifications;
     unread.value = page.unread;
-    pendingVerdicts.value = vpage.cards;
-  } catch {
-    // stale truth beats a broken panel
   }
+  if (vpage) {
+    const arrivals = newlyPendingVerdicts(announcedVerdicts, vpage.cards, {
+      seed: !verdictsSeeded,
+    });
+    verdictsSeeded = true;
+    pendingVerdicts.value = vpage.cards;
+    for (const card of arrivals) pushVerdictToast(card);
+  }
+}
+
+// newlyPendingVerdicts (the arrival diff this read feeds) lives in
+// composables/notifications.ts: it is pure, import-free, and node-tested
+// there. Every caller of refresh() shares the bookkeeping law - the boot
+// read, an event hint, the panel's activation, a reconnect catch-up.
+
+// pushVerdictToast announces one newly pending approval in the shell:
+// the same stack as a finished thing, one row per card.
+function pushVerdictToast(card: PendingVerdictCard): void {
+  const key = ++toastKey;
+  toasts.value = [...toasts.value, { key, kind: "verdict", card }];
+  const id = setTimeout(() => {
+    timers.delete(id);
+    dismissToast(key);
+  }, VERDICT_TOAST_MS);
+  timers.add(id);
 }
 
 function pushToast(n: OmegaNotification): void {
   const key = ++toastKey;
-  toasts.value = [...toasts.value, { key, record: n }];
+  toasts.value = [...toasts.value, { key, kind: "record", record: n }];
   const id = setTimeout(() => {
     timers.delete(id);
     dismissToast(key);
@@ -195,8 +252,21 @@ export async function openToastRecord(t: {
   record: OmegaNotification;
 }): Promise<OmegaNotification> {
   void markRecordRead(t.record);
-  toasts.value = toasts.value.filter((x) => x.key !== t.key);
+  dismissToast(t.key);
   return t.record;
+}
+
+// openToastVerdict: an approval toast's click. The toast drops and the
+// card comes back for the caller's navigation intent - the answering
+// surface is the notifications panel's pending list (the card also
+// renders inside its issuing session's transcript, but that tab need
+// not be mounted, which is the whole point of the toast).
+export function openToastVerdict(t: {
+  key: number;
+  card: PendingVerdictCard;
+}): PendingVerdictCard {
+  dismissToast(t.key);
+  return t.card;
 }
 
 let started = false;
@@ -212,7 +282,10 @@ let releaseFeed: (() => void) | null = null;
 // the shell pulls this store on event hints instead - a chat frame's
 // call/turn edge (verdict issuance and its answer ride the chat topic),
 // a runs-topic edge, a canvas toast, a reconnect catch-up, and the
-// panel's own activation read. Nothing polls.
+// panel's own activation read. Nothing polls. The chat topic is NOT
+// pane-scoped: the hub fans every run out to every page, so an approval
+// from a session this page never opened still arrives as a call edge
+// (measured, card t_a2ed8412) - and the arrival toasts on the spot.
 export function startNotificationFeed(): void {
   if (started) return;
   started = true;
@@ -222,11 +295,14 @@ export function startNotificationFeed(): void {
 
 // stopNotificationFeed: drop the funnel + toast timers so a store lit
 // under a disposed page (HMR, tests) never leaks them across a module
-// re-evaluation.
+// re-evaluation. The announced-card set resets with it: the next mount
+// is a fresh page and seeds again (no replay of a still-pending card).
 export function stopNotificationFeed(): void {
   releaseFeed?.();
   releaseFeed = null;
   started = false;
+  announcedVerdicts.clear();
+  verdictsSeeded = false;
   for (const id of timers) clearTimeout(id);
   timers.clear();
 }

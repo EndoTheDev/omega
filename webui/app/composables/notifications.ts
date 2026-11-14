@@ -116,6 +116,46 @@ export function notificationBadgeText(count: number): string {
   return count > 99 ? "99+" : String(count);
 }
 
+// VERDICT_TOAST_MS is the approval toast's dwell (card t_a2ed8412):
+// longer than a finished thing's longest (toastLifetime's 12s failed
+// case), because the row is a QUESTION waiting on a click rather than a
+// report - and the badge behind a dock chip is easy to miss.
+export const VERDICT_TOAST_MS = 15_000;
+
+// newlyPendingVerdicts diffs one pending-verdict read against the card
+// ids this page has already announced, and returns the ARRIVALS (card
+// t_a2ed8412). The shell pulls GET /verdicts on event hints, never on a
+// poll (card t_896cf5a8); a card that appears between two pulls is a
+// question the user has not seen, and it earns one toast.
+//
+// Generic over `{ id }` so this composable keeps ZERO imports - the
+// verdict capsule's card shape lives in omega.ts, and the store hands its
+// own rows in.
+//
+// - the FIRST successful read SEEDS: a reload must not replay a toast for
+//   an approval that was already pending - the badge carries that fact,
+//   and re-toasting it on every mount would make the stack noise;
+// - a card that leaves the list leaves the set, so an id re-issued after
+//   an expiry or a retry toasts again;
+// - a malformed row (no non-empty string id) is never announced and
+//   never remembered.
+export function newlyPendingVerdicts<T extends { id: string }>(
+  seen: Set<string>,
+  cards: readonly T[],
+  opts: { seed?: boolean } = {},
+): T[] {
+  const arrivals: T[] = [];
+  const live = new Set<string>();
+  for (const card of cards) {
+    if (!card || typeof card.id !== "string" || !card.id) continue;
+    live.add(card.id);
+    if (!seen.has(card.id)) arrivals.push(card);
+  }
+  seen.clear();
+  for (const id of live) seen.add(id);
+  return opts.seed ? [] : arrivals;
+}
+
 // --- the board-select seam (card t_556ee727) -----------------------------
 
 // A task notification's click focuses the kanban tab; the BOARD the task
