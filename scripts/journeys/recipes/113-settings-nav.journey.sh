@@ -119,9 +119,18 @@ assert_eq "$docids" "$navids" "every nav category renders as a section, in nav o
 all_ids=$docids
 
 firstdoc=$(jsq '(()=>{const s=document.querySelector(".settings-category");return s?s.getAttribute("data-category"):"none"})()' 2>&1 | plain)
-# card t_81d0901b: the MODULES section heads the document now - module
-# toggles are configuration, and the retired cockpit tab's reach moved here
-assert_eq "$firstdoc" "modules" "the document opens on the MODULES section (nav order)"
+# card t_f05b1f28 item 1: the MODULES section is the pane's TAIL now (card
+# t_81d0901b had it heading the document). The curated all-view opens it.
+assert_eq "$firstdoc" "common" "the document opens on the curated all-view (nav order)"
+lastdoc=$(jsq '(()=>{const all=document.querySelectorAll(".settings-category");return all.length?all[all.length-1].getAttribute("data-category"):"none"})()' 2>&1 | plain)
+assert_eq "$lastdoc" "modules" "the MODULES section is the document's LAST section"
+# card t_f05b1f28 item 2: the sections are GROUPED frontend / backend under
+# their own headers - never a flat reorder. The bands the document prints,
+# in paint order, and the same two the nav prints.
+bands=$(jsq '(()=>{return [...document.querySelectorAll(".settings-surface-title")].map(e=>(e.textContent||"").trim()).join(",")})()' 2>&1 | plain)
+assert_eq "$bands" "frontend,backend" "the document prints its two surface bands (frontend, backend)"
+navbands=$(jsq '(()=>{return [...document.querySelectorAll(".settings-nav-surface")].map(e=>(e.textContent||"").trim()).join(",")})()' 2>&1 | plain)
+assert_eq "$navbands" "frontend,backend" "the nav prints the same two bands"
 rows=$(jsq '(()=>{return document.querySelectorAll(".setting-item,.setting-row").length})()' 2>&1 | plain)
 [ "${rows:-0}" -gt 0 ] 2>/dev/null || die "the document rendered no knob rows ($rows)"
 step "ok: the one document renders every category ($docids) with $rows rows"

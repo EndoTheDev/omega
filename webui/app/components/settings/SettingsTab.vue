@@ -172,7 +172,17 @@
         class="settings-nav"
         :class="{ drawer: narrow }"
         aria-label="settings categories">
-        <template v-for="cat in nav" :key="cat.id">
+        <!-- card t_f05b1f28: the jump links are GROUPED by surface class -
+             frontend above backend, each under its own header - and the
+             groups are the ORDER (SURFACE_ORDER), so this list and the
+             document below can never disagree about where a section sits.
+             The two headerless classes (the curated all-view at the top,
+             the module list at the bottom) print no band. -->
+        <template v-for="group in navGroups" :key="'surface:' + group.surface">
+          <div v-if="group.header" class="settings-nav-surface">
+            {{ group.label }}
+          </div>
+          <template v-for="cat in group.items" :key="cat.id">
           <div class="settings-nav-row">
             <button
               v-if="navChildren(cat).length"
@@ -211,6 +221,7 @@
             <span class="settings-nav-label">{{ sub.label }}</span>
             <span class="settings-nav-count">{{ sub.knobs.length }}</span>
           </button>
+          </template>
         </template>
       </nav>
 
@@ -272,44 +283,33 @@
         saved through PUT /settings (diff-only).
       The document IS the content view (settingsNav.documentFor): EVERY
       category in nav order, each a headed section carrying its children
-      as headed blocks. A live query and the modified-only switch filter it
+      as headed blocks, painted in SURFACE GROUPS (card t_f05b1f28: the
+      frontend band, then the backend band, each under its own header - the
+      curated all-view heads the pane headerless and the module list closes
+      it the same way). A live query and the modified-only switch filter it
       in place, and card t_cd9952a3's SECTION FILTER narrows it to the
       selected category (search outranks the selection).
     -->
-    <!-- card t_81d0901b: the MODULES section. Module toggles are
-         CONFIGURATION, not content - the secondary-pane cockpit tab that
-         card t_210a0d19 introduced is GONE, and this section carries its
-         whole surface: the rows, their live toggles, the expandable
-         tools/commands/panels detail and the panel listing. The nav entry
-         (settingsNav.modulesNavCategory) is a jump link like any other
-         category, and the jump/anchor/spy machinery treats this section
-         exactly like a knob section (it carries .settings-category +
-         data-section). The knob filters never apply here: a module row is
-         not a knob, so a live query or "modified only" hides the section
-         rather than pretending a module could be a search hit. card
-         t_cd9952a3's SECTION FILTER treats it like any other category: it
-         is shown when nothing is filtered or when IT is the filtered
-         section, and hidden while another section owns the pane. -->
-    <section
-      v-if="modulesShown"
-      class="settings-category settings-modules-category"
-      data-category="modules"
-      data-section="modules">
-      <h2 class="settings-section-title">
-        modules
-        <span class="settings-knob-count">{{ moduleCount }}</span>
-      </h2>
-      <ModulesSection
-        :narrow="narrow"
-        @count="moduleCount = $event"
-        @open-module="(moduleId: string) => emit('open-module', moduleId)" />
-    </section>
-    <section
-      v-for="section in docSections"
-      :key="section.id"
-      class="settings-category"
-      :data-category="section.id"
-      :data-section="section.id">
+    <!-- card t_f05b1f28: the document paints its sections in SURFACE
+         GROUPS - "frontend" then "backend", each under its own header -
+         instead of one flat list. A headerless class (the curated all-view
+         at the top, the module list at the bottom) prints no band, so the
+         pane still opens on Commonly Used and still closes on MODULES.
+         The band is a WAYFINDING device for the long list, so a SECTION
+         FILTER drops it: the pane is one section the nav (still printed,
+         still banded) has just named, and card t_cd9952a3's law - the
+         selected section HEADS the document, at the top edge - must hold
+         without a band above it. -->
+    <template v-for="group in docGroups" :key="'surface:' + group.surface">
+      <h2
+        v-if="group.header && filterSection === null"
+        class="settings-surface-title">{{ group.label }}</h2>
+      <section
+        v-for="section in group.items"
+        :key="section.id"
+        class="settings-category"
+        :data-category="section.id"
+        :data-section="section.id">
       <h2 class="settings-section-title">
         {{ section.label }}
         <span class="settings-knob-count">{{ section.count }}</span>
@@ -463,10 +463,39 @@
         </template>
       </div>
     </section>
-    <!-- card t_81d0901b: the MODULES surface is NOT a knob group - it lives
-         in the section above (module toggles are configuration over
-         persisted module state, not settings knobs), so this pane's knob
-         document still carries config knobs only. -->
+    </template>
+    <!-- card t_81d0901b: the MODULES section. Module toggles are
+         CONFIGURATION, not content - the secondary-pane cockpit tab that
+         card t_210a0d19 introduced is GONE, and this section carries its
+         whole surface: the rows, their live toggles, the expandable
+         tools/commands/panels detail and the panel listing. The nav entry
+         (settingsNav.modulesNavCategory) is a jump link like any other
+         category, and the jump/anchor/spy machinery treats this section
+         exactly like a knob section (it carries .settings-category +
+         data-section). The knob filters never apply here: a module row is
+         not a knob, so a live query or "modified only" hides the section
+         rather than pretending a module could be a search hit. card
+         t_cd9952a3's SECTION FILTER treats it like any other category: it
+         is shown when nothing is filtered or when IT is the filtered
+         section, and hidden while another section owns the pane.
+         card t_f05b1f28 item 1: the section is the pane's TAIL - it is
+         rendered AFTER the surface groups, which is where SURFACE_ORDER
+         (modules last) puts its nav entry, so the jump link and the
+         document cannot disagree. -->
+    <section
+      v-if="modulesShown"
+      class="settings-category settings-modules-category"
+      data-category="modules"
+      data-section="modules">
+      <h2 class="settings-section-title">
+        modules
+        <span class="settings-knob-count">{{ moduleCount }}</span>
+      </h2>
+      <ModulesSection
+        :narrow="narrow"
+        @count="moduleCount = $event"
+        @open-module="(moduleId: string) => emit('open-module', moduleId)" />
+    </section>
     </div>
     <!-- save row stays pinned below the scrollable body; a read-only
          scope (broken layer / a 409 the endpoint sent) has nothing to
@@ -599,6 +628,7 @@
     clampedRange,
     documentFor,
     expandedCategoryIds,
+    groupBySurface,
     matchingCategoryIds,
     modulesNavCategory,
     paneScrollIsUser,
@@ -621,6 +651,7 @@
     type NavSubgroup,
     type PaneScrollState,
     type SpyAnchorTrace,
+    type SurfaceGroup,
   } from "./settingsNav";
   // card t_81d0901b: the MODULES section's body (the module lifecycle
   // surface moved here from the retired secondary-pane tab)
@@ -1162,15 +1193,27 @@
   // is absent from the payload, so it is absent from the nav - and from
   // the document below).
   //
-  // card t_81d0901b: the MODULES entry is PREPENDED - it is not a knob
-  // domain, it is the module lifecycle surface, and it heads the pane so
-  // the retired secondary-pane tab's reach survives the move. Its count is
-  // the live module-row total (reported by the section), never a knob count.
+  // card t_81d0901b: the MODULES entry is APPENDED - it is not a knob
+  // domain, it is the module lifecycle surface, and card t_f05b1f28 pins it
+  // at the pane's TAIL (the list of what is switched on is the last thing
+  // you read, not the first). Its count is the live module-row total
+  // (reported by the section), never a knob count.
+  //
+  // card t_f05b1f28: the sections are GROUPED by surface class, and the
+  // groups decide the ORDER as well as the headers - `nav` is the flattened
+  // group list, so the jump links, the document and the spy all walk one
+  // order. The pane never sorts: groupBySurface buckets in SURFACE_ORDER
+  // (curated, frontend, backend, modules) and keeps each bucket's wire order.
   const moduleCount = ref(0);
-  const nav = computed<NavCategory[]>(() => [
-    modulesNavCategory(moduleCount.value),
-    ...buildNav(withSubgroups(allGroups.value)),
-  ]);
+  const navGroups = computed<SurfaceGroup<NavCategory>[]>(() =>
+    groupBySurface(
+      [...buildNav(withSubgroups(allGroups.value)), modulesNavCategory(moduleCount.value)],
+      (cat) => cat.surface,
+    ),
+  );
+  const nav = computed<NavCategory[]>(() =>
+    navGroups.value.flatMap((group) => group.items),
+  );
 
   // a domain whose knobs all land in ONE child shows no child jump link -
   // a nested copy of the parent's name is noise and there is nothing to
@@ -2017,6 +2060,15 @@
       only: filterSection.value,
     }),
   );
+  // card t_f05b1f28: the document's SURFACE GROUPS. The sections already
+  // arrive in grouped order (nav is the flattened group list), so this is a
+  // straight partition - and under the section FILTER it groups the one
+  // section that survives, so the header still tells the user where they
+  // are. The MODULES section is not a knob section and is not in here; the
+  // template renders it after these groups, where SURFACE_ORDER puts it.
+  const docGroups = computed<SurfaceGroup<DocSection>[]>(() =>
+    groupBySurface(docSections.value, (section) => section.surface),
+  );
   const matchIds = computed<ReadonlySet<string>>(() =>
     matchingCategoryIds(nav.value, {
       hits: searchHits.value,
@@ -2033,12 +2085,14 @@
   );
 
   // --- the scroll-spy (the nav follows the document) ---
-  /// card t_81d0901b: the MODULES section heads the document when it is
-  /// shown, so it heads the spy's order too - otherwise scrolling onto it
-  /// could never move the highlight onto its nav entry
+  /// card t_81d0901b added the MODULES section to the spy's order; card
+  /// t_f05b1f28 moved the section to the pane's TAIL, so its id rides LAST
+  /// - the spy resolves the id whose box sits in the top band, and an id
+  /// listed before the document's real first section would win the band it
+  /// is nowhere near.
   const spyOrder = computed<string[]>(() => [
-    ...(modulesShown.value ? [MODULES_CATEGORY] : []),
     ...spyTargetIds(docSections.value),
+    ...(modulesShown.value ? [MODULES_CATEGORY] : []),
   ]);
   let spyObserver: IntersectionObserver | null = null;
   let paneBoxObserver: ResizeObserver | null = null;
@@ -2987,6 +3041,20 @@
     display: flex;
     align-items: center;
   }
+  /* card t_f05b1f28: a SURFACE GROUP header in the nav - the band that says
+     which half of the pane the jump links under it belong to. It is not a
+     jump link itself (no target, no state), so it takes no hit area and no
+     hover; the rule above it marks the group boundary. */
+  .settings-nav-surface {
+    margin: 10px 0 2px;
+    padding: 6px 10px 2px;
+    border-top: 1px solid var(--stroke);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+  }
   .settings-nav-chev {
     flex: none;
     display: flex;
@@ -3142,6 +3210,21 @@
     margin-top: 0;
     border-top: 0;
     padding-top: 4px;
+  }
+  /* card t_f05b1f28: a SURFACE GROUP header in the document - the band
+     between "frontend" and "backend". It is NOT sticky: the section heading
+     below it owns the pinned top edge (card t_a8063683), and a second
+     sticky level would need the jump/clamp maths to know about it. It sits
+     in the flow above the group's first section, whose own heading carries
+     the rule and the 20px lead. */
+  .settings-surface-title {
+    margin: 16px 0 0;
+    padding: 0;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.4px;
+    color: var(--text-dim);
   }
   /* a child heading inside a multi-child category */
   .settings-subgroup-title {
