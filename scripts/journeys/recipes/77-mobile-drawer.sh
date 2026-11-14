@@ -46,6 +46,19 @@ desktop_strip=${desktop_strip#\"}; desktop_strip=${desktop_strip%\"}
 [ -n "$desktop_strip" ] || die "could not capture the desktop inspector strip"
 step "ok: inspector strip captured: $desktop_strip"
 
+# capture the BOTTOM-home strip from the same desktop tree: the registry's
+# defaultHostTabs("bottom") = [terminal, observability], the terminal FIRST
+# since card t_07ad4fda gave it the bottom home's head seat. REPRO 3 pins
+# the drawer's strip AND its opening tab to this capture, so a registry
+# reorder moves both surfaces and the assert stays honest instead of
+# carrying a recipe-copied list that rots on the next registry change.
+bottom_strip=$(jsq '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
+ const pane=document.querySelector(".dock-pane.edge-bottom"); if(!pane) return "";
+ return [...pane.querySelectorAll(".dock-tab")].map((t)=>name(t)).join(",")})()')
+bottom_strip=${bottom_strip#\"}; bottom_strip=${bottom_strip%\"}
+[ -n "$bottom_strip" ] || die "could not capture the desktop bottom-home strip"
+step "ok: bottom-home strip captured: $bottom_strip"
+
 # --- REPRO 1 setup: desktop-close BOTH sidebars (prune the pinned panes) ---
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle left sidebar").click()' >/dev/null 2>&1
 sleep 0.3
@@ -177,13 +190,41 @@ assert_eq "$bscrim" "1" "REPRO 3: the bottom drawer opens over the scrim"
 assert_eq "$bdrawer" "1" "REPRO 3: the bottom drawer opens (bottom.open)"
 assert_eq "$bottom_pane" "$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0')" "REPRO 3: the toggle left the tree alone (the edge-bottom cell never pruned)"
 echo "$brect" | grep -q '"h":0' && die "REPRO 3: the bottom drawer has zero height (geometry broken)"
-blog=$(jsq 'document.querySelector(".mobile-drawer.bottom.open .logs-view, .mobile-drawer.bottom.open .module-panels, .mobile-drawer.bottom.open .logs-line, .mobile-drawer.bottom.open .terminal")?1:0')
-# card t_81d0901b: the bottom home's FIRST tab is the integrated terminal
-# (card t_55a3fc4b registers it ahead of Logs in the registry, and a fresh
-# pane activates index 0), so the drawer seats the shell - the same content
-# seat, a different face. Probed on the dev-tip bundle too: the stale Logs
-# selector was red there as well, so this widens the locator, not the law.
-assert_eq "$blog" "1" "REPRO 3: the bottom drawer seats content (terminal or logs)"
+# card t_bb817cf5: REPRO 3 asserts the CURRENT bottom-home contract, and
+# asserts it harder than the retired one did.
+#   - the drawer's chips must EQUAL the desktop bottom strip captured above
+#     (the registry's bottom-home floor - never a recipe-copied list), and
+#   - a fresh drawer seats the strip's FIRST tab's view. That tab is the
+#     integrated terminal (t_07ad4fda moved it ahead of Logs), and a tab
+#     capsule paints its own root class, so the seat is .terminal-pane. A
+#     registry reorder reds on the strip/active asserts above before this
+#     pin can lie.
+#   - then the strip's SECOND tab is clicked and the observability stream
+#     must render: c006f9ac retired the raw tail, so the Logs tab seats
+#     .obs-pane (not .logs-view / .logs-line), and the terminal view must
+#     UNMOUNT - that is the "content switches with the tab" half.
+btabs=$(jsq 'Array.from(document.querySelectorAll(".mobile-drawer.bottom.open .mobile-drawer-tab")).map(t=>(t.getAttribute("aria-label")||"").trim()).join(",")')
+btabs=${btabs#\"}; btabs=${btabs%\"}
+assert_eq "$btabs" "$bottom_strip" "REPRO 3: bottom drawer shows the registry bottom-home strip (== desktop strip)"
+first_tab=${bottom_strip%%,*}
+rest_tabs=${bottom_strip#*,}
+[ "$rest_tabs" != "$bottom_strip" ] || die "REPRO 3: the bottom-home strip has a single tab ($bottom_strip)"
+second_tab=${rest_tabs%%,*}
+bactive=$(jsq 'document.querySelector(".mobile-drawer.bottom.open .mobile-drawer-tab.active")?.getAttribute("aria-label")?.trim()')
+bactive=${bactive#\"}; bactive=${bactive%\"}
+assert_eq "$bactive" "$first_tab" "REPRO 3: the drawer opens on the first bottom-home tab ($first_tab)"
+poll_js '!!document.querySelector(".mobile-drawer.bottom.open .terminal-pane")' 15 || true
+bterm=$(jsq 'document.querySelector(".mobile-drawer.bottom.open .terminal-pane")?1:0')
+assert_eq "$bterm" "1" "REPRO 3: the first tab seats its view (.terminal-pane - the terminal is the bottom home's head tab)"
+js "Array.from(document.querySelectorAll(\".mobile-drawer.bottom .mobile-drawer-tab\")).find(t=>(t.getAttribute(\"aria-label\")||\"\").trim()===\"$second_tab\").click()" >/dev/null 2>&1
+poll_js '!!document.querySelector(".mobile-drawer.bottom.open .obs-pane")' 15 || true
+bactive=$(jsq 'document.querySelector(".mobile-drawer.bottom.open .mobile-drawer-tab.active")?.getAttribute("aria-label")?.trim()')
+bactive=${bactive#\"}; bactive=${bactive%\"}
+assert_eq "$bactive" "$second_tab" "REPRO 3: clicking $second_tab activates it"
+bobs=$(jsq 'document.querySelector(".mobile-drawer.bottom.open .obs-pane")?1:0')
+assert_eq "$bobs" "1" "REPRO 3: $second_tab tab seats the observability stream (.obs-pane, c006f9ac - the raw tail is retired)"
+bterm=$(jsq 'document.querySelector(".mobile-drawer.bottom.open .terminal-pane")?1:0')
+assert_eq "$bterm" "0" "REPRO 3: the previous view unmounts (content actually switched)"
 # close: the same toggle closes the drawer again
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle bottom panel").click()' >/dev/null 2>&1
 sleep 0.5
