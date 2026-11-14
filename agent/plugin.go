@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -122,6 +123,88 @@ func filterDisabled(plugins []Plugin, disabled []string) ([]Plugin, error) {
 		enabled = append(enabled, p)
 	}
 	return enabled, nil
+}
+
+// AlwaysOffDisabled is the ALWAYS OFF law's runtime half (0.17.3
+// make-over, card t_f47319d2): given the capsules an agent home enables,
+// it answers the disable list that leaves exactly those (plus their
+// required seams) mounted and every other toggleable capsule off.
+//
+// An empty enabled list is the law's default and answers "every
+// toggleable capsule off" - the locked pair (agent-loop + provider) is
+// not toggleable, so it stays mounted without being named.
+//
+// A REQUIRES edge is satisfied by keeping that seam's provider on:
+// enabling cron keeps notifications on (its seam), never the other way
+// around. Nothing else is enabled silently - a capsule the agent did
+// not name is off even when the host runs it.
+func AlwaysOffDisabled(plugins []Plugin, enabled []string) ([]string, error) {
+	byName := make(map[string]Plugin, len(plugins))
+	providers := map[string][]string{}
+	for _, p := range plugins {
+		if _, dup := byName[p.Name()]; dup {
+			return nil, fmt.Errorf("two plugins named %q", p.Name())
+		}
+		byName[p.Name()] = p
+		for _, seam := range p.Provides() {
+			providers[seam] = append(providers[seam], p.Name())
+		}
+	}
+	on := map[string]bool{}
+	queue := make([]string, 0, len(enabled))
+	for _, name := range enabled {
+		p, ok := byName[name]
+		if !ok {
+			return nil, fmt.Errorf("agent toggle %q: no such module", name)
+		}
+		if t, ok := p.(Toggleable); !ok || !t.Toggleable() {
+			return nil, fmt.Errorf("agent toggle %q: the module is not toggleable - the locked pair (agent-loop + provider) is always on and cannot be toggled", name)
+		}
+		if !on[name] {
+			on[name] = true
+			queue = append(queue, name)
+		}
+	}
+	// The requires closure, walked to a fixpoint over the enabled set.
+	for i := 0; i < len(queue); i++ {
+		for _, seam := range byName[queue[i]].Requires() {
+			satisfied := false
+			for _, name := range providers[seam] {
+				if on[name] {
+					satisfied = true
+					break
+				}
+			}
+			if satisfied || len(providers[seam]) == 0 {
+				continue // already on, or nothing provides it (the mount fails loud elsewhere)
+			}
+			// Prefer a provider that is not toggleable (it mounts
+			// regardless); otherwise turn the first provider on as the
+			// dependency of a capsule the agent explicitly enabled.
+			pick := providers[seam][0]
+			for _, name := range providers[seam] {
+				if t, ok := byName[name].(Toggleable); !ok || !t.Toggleable() {
+					pick = name
+					break
+				}
+			}
+			if !on[pick] {
+				on[pick] = true
+				queue = append(queue, pick)
+			}
+		}
+	}
+	var disabled []string
+	for _, p := range plugins {
+		if on[p.Name()] {
+			continue
+		}
+		if t, ok := p.(Toggleable); ok && t.Toggleable() {
+			disabled = append(disabled, p.Name())
+		}
+	}
+	sort.Strings(disabled)
+	return disabled, nil
 }
 
 // ConfigSource is the host's raw config as the config router sees

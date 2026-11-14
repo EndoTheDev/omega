@@ -212,7 +212,13 @@ func rosterRows(profiles []agent.Profile, last map[string]string) []agentRow {
 }
 
 // handleAgents serves GET /agents (the inventory) and POST /agents
-// (scaffold a new agent directory from the template).
+// (create an agent home).
+//
+// POST carries TWO doors, one wire (0.17.3 make-over, card t_f47319d2):
+// a bare create scaffolds an empty always-off home; a create with
+// inherit_from MATERIALIZES a clone of that source (the CLONE law - a
+// full copy at birth, never a live link). Clone-then-delete is the
+// rename path, so there is no separate duplicate endpoint.
 func (ar *agentRoutes) handleAgents(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -223,16 +229,28 @@ func (ar *agentRoutes) handleAgents(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Name        string `json:"name"`
 			Description string `json:"description"`
+			InheritFrom string `json:"inherit_from"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			ar.httpError(w, http.StatusBadRequest, "invalid request: %v", err)
 			return
 		}
-		if err := agent.ScaffoldAgent(ar.home, strings.TrimSpace(req.Name), req.Description); err != nil {
+		name := strings.TrimSpace(req.Name)
+		from := strings.TrimSpace(req.InheritFrom)
+		if from != "" {
+			if err := ar.cloneAgent(from, name, req.Description); err != nil {
+				status := http.StatusConflict
+				if errors.Is(err, errCloneStoreTag) {
+					status = http.StatusInternalServerError
+				}
+				ar.httpError(w, status, "clone agent: %v", err)
+				return
+			}
+		} else if err := agent.ScaffoldAgent(ar.home, name, req.Description); err != nil {
 			ar.httpError(w, http.StatusConflict, "scaffold agent: %v", err)
 			return
 		}
-		p, err := agent.LoadProfile(ar.home, strings.TrimSpace(req.Name))
+		p, err := agent.LoadProfile(ar.home, name)
 		if err != nil {
 			ar.httpError(w, http.StatusInternalServerError, "load agent: %v", err)
 			return
@@ -241,6 +259,55 @@ func (ar *agentRoutes) handleAgents(w http.ResponseWriter, r *http.Request) {
 	default:
 		ar.httpError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+// errCloneStoreTag marks a clone whose copy landed but whose store
+// re-tag failed. The destination has been removed by then (the request is
+// retryable and nothing was registered), so it is a server fault, never
+// the caller's conflict.
+var errCloneStoreTag = errors.New("re-tag cloned sessions")
+
+// retagAgentSessions is the clone's last SQLite step, swappable in tests
+// (a real re-tag failure is not inducible from a fixture: the copied
+// store is always writable).
+var retagAgentSessions = store.RetagAgentSessions
+
+// wireStoreSnapshot installs the SQLite-backed store copier the CLONE law
+// needs; agent owns home shape, harness/store owns the driver. Wired once
+// at package init so the hook is immutable while handlers run.
+func init() {
+	agent.StoreSnapshot = store.SnapshotStore
+}
+
+// cloneAgent runs the clone door's two halves as ONE step: the copy
+// (agent.CloneAgent, which removes its own half-built destination on
+// failure) and the store re-tag. A re-tag failure leaves exactly the
+// phantom a mid-copy failure does - a registered folder with the source's
+// rows still tagged to the source - so the destination is removed here
+// too. The folder did not exist before this request.
+func (ar *agentRoutes) cloneAgent(from, to, description string) error {
+	if err := agent.CloneAgent(ar.home, from, to, description); err != nil {
+		return err
+	}
+	if err := ar.retagClonedSessions(from, to); err != nil {
+		dir := agent.AgentDir(ar.home, to)
+		if rmErr := os.RemoveAll(dir); rmErr != nil {
+			return fmt.Errorf("%w: %v (and the half-built %s could not be removed: %v - delete it by hand, folder presence registers an agent)", errCloneStoreTag, err, dir, rmErr)
+		}
+		return fmt.Errorf("%w: %v", errCloneStoreTag, err)
+	}
+	return nil
+}
+
+// retagClonedSessions rewrites the copied store's agent tags to the
+// clone. Main's sessions may predate the agent column, so "" and
+// "default" are both real source tags.
+func (ar *agentRoutes) retagClonedSessions(from, to string) error {
+	dsn := filepath.Join(agent.AgentDir(ar.home, to), "data", "omega.db")
+	if from == agent.DefaultAgentName {
+		return retagAgentSessions(dsn, to, agent.DefaultAgentName, "")
+	}
+	return retagAgentSessions(dsn, to, from)
 }
 
 // handleAgent serves GET /agents/{name}: one agent, detail payload.
@@ -286,28 +353,39 @@ func (ar *agentRoutes) handleAgentUpdate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req struct {
-		Description  *string  `json:"description"`
-		ProviderType *string  `json:"provider_type"`
-		ModelName    *string  `json:"model_name"`
-		Host         *string  `json:"host"`
-		APIKey       *string  `json:"api_key"`
-		SystemPrompt *string  `json:"system_prompt"`
-		MaxTurns     *int     `json:"max_turns"`
-		Unset        []string `json:"unset"`
+		Description      *string             `json:"description"`
+		ProviderInstance *string             `json:"provider_instance"`
+		ModelName        *string             `json:"model_name"`
+		SystemPrompt     *string             `json:"system_prompt"`
+		MaxTurns         *int                `json:"max_turns"`
+		Toggles          *[]string           `json:"toggles"`
+		SkillsAllow      *[]string           `json:"skills_allow"`
+		Inherit          *agent.AgentInherit `json:"inherit"`
+		Unset            []string            `json:"unset"`
+		// Retired secret knobs: decoded only so the refusal is LOUD. A
+		// client written before the secret-free law gets the law spelled
+		// out (400), never a silent drop.
+		ProviderType *string `json:"provider_type"`
+		Host         *string `json:"host"`
+		APIKey       *string `json:"api_key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		ar.httpError(w, http.StatusBadRequest, "invalid request: %v", err)
 		return
 	}
 	updates := agent.AgentConfigUpdates{
-		Description:  req.Description,
-		ProviderType: req.ProviderType,
-		ModelName:    req.ModelName,
-		Host:         req.Host,
-		APIKey:       req.APIKey,
-		SystemPrompt: req.SystemPrompt,
-		MaxTurns:     req.MaxTurns,
-		Unset:        req.Unset,
+		Description:      req.Description,
+		ProviderInstance: req.ProviderInstance,
+		ModelName:        req.ModelName,
+		SystemPrompt:     req.SystemPrompt,
+		MaxTurns:         req.MaxTurns,
+		Toggles:          req.Toggles,
+		SkillsAllow:      req.SkillsAllow,
+		Inherit:          req.Inherit,
+		Unset:            req.Unset,
+		ProviderType:     req.ProviderType,
+		Host:             req.Host,
+		APIKey:           req.APIKey,
 	}
 	if err := agent.UpdateAgentConfigLayer(ar.home, name, updates); err != nil {
 		// A scaffold-law refusal (unknown provider type, the locked

@@ -13,6 +13,13 @@ type Config struct {
 	// in from the disabled: fold at config routing. A disabled skill
 	// stays loaded (the tab lists it) and just leaves the prompt.
 	Disabled []string `yaml:"-"`
+	// Allow is the agent definition layer's explicit skills allowlist
+	// (0.17.3 make-over, card t_f47319d2). AllowSet distinguishes
+	// "unset" (the host's own mount: every skill loads) from "set to
+	// empty" (a secondary agent that enables NO skills) - the always-off
+	// law needs that difference, and an empty slice cannot carry it.
+	Allow    []string `yaml:"-"`
+	AllowSet bool     `yaml:"-"`
 	// NudgeInterval is the learning-loop reminder cadence (card
 	// t_9972dfd0): after this many executed tool calls without a
 	// persisted lesson (skills write/update), the next turn prep

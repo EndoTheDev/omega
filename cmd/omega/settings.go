@@ -158,13 +158,12 @@ func scopeGroups(cfg *Config, lay agent.AgentConfigLayer, inheritedTurns int) []
 		return core.SettingsScopeKnob{Key: key, Value: inherited}
 	}
 	provider := []core.SettingsScopeKnob{
-		value("provider.type", lay.ProviderType, strings.ToLower(cfg.Provider.Type)),
+		// The secret-free provider law (0.17.3 make-over, card
+		// t_f47319d2): an agent names an INSTANCE, and the type, host
+		// and api_key live in settings exactly once. The scope payload
+		// therefore shows two knobs, never a secret.
+		value("provider.instance", lay.ProviderInstance, agent.DefaultProviderInstance),
 		value("provider.model_name", lay.ModelName, cfg.Provider.ModelName),
-		value("provider.host", lay.Host, cfg.Provider.Host),
-		// the secret is masked on the way out exactly like the main
-		// payload (maskSecret lives here: the host decides what the
-		// unauthenticated API may see)
-		{Key: "provider.api_key", Value: maskSecret(layerSecret(lay.APIKey, cfg.Provider.APIKey)), Overridden: lay.APIKey.Set},
 	}
 	turns := core.SettingsScopeKnob{Key: "max_turns", Value: inheritedTurns}
 	if lay.MaxTurns != nil {
@@ -182,15 +181,6 @@ func scopeGroups(cfg *Config, lay agent.AgentConfigLayer, inheritedTurns int) []
 		}},
 		{Key: scopeGroupKeys[3], Overridden: turns.Overridden, Knobs: []core.SettingsScopeKnob{turns}},
 	}
-}
-
-// layerSecret picks the secret a scope shows: the layer's own when it
-// names the key, main's otherwise.
-func layerSecret(own agent.LayerValue, inherited string) string {
-	if own.Set {
-		return own.Value
-	}
-	return inherited
 }
 
 // anyOverridden is the group roll-up: one overridden knob makes the

@@ -147,6 +147,106 @@ func TestScaffoldEndpoint(t *testing.T) {
 	}
 }
 
+// TestCloneEndpoint pins the CLONE law on the wire: one create door with
+// `inherit_from` materializes a full copy (definition, skills, persona
+// files, session store) and re-tags the copied sessions, so the clone's
+// roster row carries the source's history from birth.
+func TestCloneEndpoint(t *testing.T) {
+	srv, st, home := newAgentsFixture(t)
+	// a session owned by scout, so the copy has history to re-tag
+	ctx := context.Background()
+	if err := st.CreateAgentSession(ctx, "scout-sess", "", "probe", "scout"); err != nil {
+		t.Fatal(err)
+	}
+	scoutData := filepath.Join(agent.AgentDir(home, "scout"), "data")
+	if err := os.MkdirAll(scoutData, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// close the live store's handle-free copy: the roster reads the
+	// home's own file, so the fixture writes one by opening it.
+	src, err := store.Open(filepath.Join(scoutData, "omega.db"))
+	if err != nil {
+		t.Fatalf("open source store: %v", err)
+	}
+	if err := src.CreateAgentSession(ctx, "scout-sess", "", "probe", "scout"); err != nil {
+		t.Fatal(err)
+	}
+	if err := src.AppendMessage(ctx, "scout-sess", core.NewUser("wake prompt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := src.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// a persona file and a skill travel with the clone
+	if err := os.WriteFile(filepath.Join(agent.AgentDir(home, "scout"), "memory.md"), []byte("scout memory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	skillDir := filepath.Join(agent.AgentDir(home, "scout"), "skills", "alpha")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# alpha"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if res, err := postAny(t, srv.URL+"/agents", map[string]any{
+		"name": "probe", "inherit_from": "scout",
+	}); err != nil || res != http.StatusCreated {
+		t.Fatalf("clone status = %d (%v), want 201", res, err)
+	}
+	for _, want := range []string{"config/config.yaml", "memory.md", filepath.Join("skills", "alpha", "SKILL.md"), filepath.Join("data", "omega.db")} {
+		if _, err := os.Stat(filepath.Join(agent.AgentDir(home, "probe"), want)); err != nil {
+			t.Errorf("clone missing %s: %v", want, err)
+		}
+	}
+	// The copied rows read as the CLONE's sessions.
+	sessions, err := os.ReadFile(filepath.Join(agent.AgentDir(home, "probe"), "data", "omega.db"))
+	if err != nil || len(sessions) == 0 {
+		t.Fatalf("cloned store unreadable: %v", err)
+	}
+	code, body := getJSON(t, srv.URL+"/agents/probe/sessions")
+	if code != http.StatusOK {
+		t.Fatalf("clone sessions status = %d: %s", code, body)
+	}
+	if !strings.Contains(string(body), "scout-sess") {
+		t.Errorf("the cloned session never arrived under the clone: %s", body)
+	}
+	// cloning a ghost source is the 409 lane, never a half-built home.
+	if res, _ := postAny(t, srv.URL+"/agents", map[string]any{"name": "nope", "inherit_from": "ghost"}); res != http.StatusConflict {
+		t.Errorf("ghost source status = %d, want 409", res)
+	}
+}
+
+// TestCloneEndpointRetagFailureLeavesNoPhantom pins Important 3 on the
+// wire: the clone door is ONE step. A copy that lands and then fails to
+// re-tag its rows must not leave a registered folder behind - the source's
+// rows would read as the source's session AND the roster would list an
+// agent nobody finished creating.
+func TestCloneEndpointRetagFailureLeavesNoPhantom(t *testing.T) {
+	srv, _, home := newAgentsFixture(t)
+	prev := retagAgentSessions
+	retagAgentSessions = func(string, string, ...string) error {
+		return io.ErrUnexpectedEOF
+	}
+	t.Cleanup(func() { retagAgentSessions = prev })
+
+	res, err := postAny(t, srv.URL+"/agents", map[string]any{"name": "probe", "inherit_from": "scout"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res != http.StatusInternalServerError {
+		t.Errorf("re-tag failure status = %d, want 500", res)
+	}
+	if _, statErr := os.Stat(agent.AgentDir(home, "probe")); !os.IsNotExist(statErr) {
+		t.Errorf("a failed clone left a registered phantom agent (%v)", statErr)
+	}
+	// The name is free again: a retry with a working re-tag succeeds.
+	retagAgentSessions = prev
+	if res, _ := postAny(t, srv.URL+"/agents", map[string]any{"name": "probe", "inherit_from": "scout"}); res != http.StatusCreated {
+		t.Errorf("retry after the failed clone = %d, want 201", res)
+	}
+}
+
 func TestAgentDetailEndpoint(t *testing.T) {
 	srv, _, _ := newAgentsFixture(t)
 	code, body := getJSON(t, srv.URL+"/agents/scout")
@@ -246,18 +346,18 @@ func TestAgentsListCarriesSessionCounts(t *testing.T) {
 	}
 }
 
-// TestAgentUpdateEndpoint pins the roster's edit affordance (card
-// t_2d8deb8c, ruling 3): PUT writes the scaffold field set through the
-// agent config layer, an empty update is an honest no-op, the DEFAULT
-// agent answers 409 locked, an unknown agent 404s, and an
-// unscaffolded provider type is the 400 lane.
+// TestAgentUpdateEndpoint pins the roster's edit affordance: PUT writes
+// the definition layer's field set, an empty update is an honest no-op,
+// the DEFAULT agent answers 409 locked, an unknown agent 404s, and the
+// retired secret knobs are the 400 lane (the secret-free provider law).
 func TestAgentUpdateEndpoint(t *testing.T) {
-	srv, _, _ := newAgentsFixture(t)
+	srv, _, home := newAgentsFixture(t)
+	seedHostProviders(t, home)
 
 	if res, _ := putAny(t, srv.URL+"/agents/scout", map[string]any{
-		"description":   "night watch",
-		"model_name":    "claude-4",
-		"provider_type": "openai",
+		"description":       "night watch",
+		"model_name":        "claude-4",
+		"provider_instance": "work",
 	}); res != http.StatusOK {
 		t.Fatalf("update status = %d", res)
 	}
@@ -269,7 +369,7 @@ func TestAgentUpdateEndpoint(t *testing.T) {
 	if err := json.Unmarshal(body, &p); err != nil {
 		t.Fatal(err)
 	}
-	if p.Description != "night watch" || p.ModelName != "claude-4" || p.ProviderType != "openai" {
+	if p.Description != "night watch" || p.ModelName != "claude-4" || p.ProviderInstance != "work" {
 		t.Fatalf("after update: %+v", p)
 	}
 
@@ -289,9 +389,30 @@ func TestAgentUpdateEndpoint(t *testing.T) {
 	if res, _ := putAny(t, srv.URL+"/agents/ghost", map[string]any{"description": "x"}); res != http.StatusNotFound {
 		t.Errorf("ghost update status = %d, want 404", res)
 	}
-	// unscaffolded provider type: the 400 lane.
-	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{"provider_type": "gemini"}); res != http.StatusBadRequest {
-		t.Errorf("bad provider status = %d (%s), want 400", res, body)
+	// every retired secret knob: the 400 lane, naming the law.
+	for _, retired := range []string{"provider_type", "host", "api_key"} {
+		res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{retired: "x"})
+		if res != http.StatusBadRequest {
+			t.Errorf("%s status = %d (%s), want 400", retired, res, body)
+		}
+	}
+	// an unknown provider instance is the same 400 lane.
+	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{"provider_instance": "nope"}); res != http.StatusBadRequest {
+		t.Errorf("unknown instance status = %d (%s), want 400", res, body)
+	}
+}
+
+// seedHostProviders gives the fixture home a settings file with one
+// named provider instance, so the definition layer has something legal
+// to reference.
+func seedHostProviders(t *testing.T, home string) {
+	t.Helper()
+	body := "provider:\n  type: ollama\n  model_name: glm\nproviders:\n  work:\n    type: openai\n    host: http://localhost:9000\n    api_key: sk-test\n"
+	if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "config", "config.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -352,10 +473,10 @@ func TestAgentUpdateEndpointUnset(t *testing.T) {
 
 	// Seed overrides through the same endpoint (the one write path).
 	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{
-		"system_prompt": "be terse",
-		"max_turns":     42,
-		"model_name":    "claude-4",
-		"provider_type": "ollama",
+		"system_prompt":     "be terse",
+		"max_turns":         42,
+		"model_name":        "claude-4",
+		"provider_instance": agent.DefaultProviderInstance,
 	}); res != http.StatusOK {
 		t.Fatalf("seed update status = %d (%s)", res, body)
 	}
@@ -390,8 +511,8 @@ func TestAgentUpdateEndpointUnset(t *testing.T) {
 	if lay.ModelName.Set {
 		t.Fatalf("model_name still overridden after its unset: %+v", lay.ModelName)
 	}
-	if !lay.ProviderType.Set {
-		t.Fatalf("provider.type was collateral damage: %+v", lay.ProviderType)
+	if !lay.ProviderInstance.Set || lay.ProviderInstance.Value != agent.DefaultProviderInstance {
+		t.Fatalf("provider.instance was collateral damage: %+v", lay.ProviderInstance)
 	}
 
 	// Refusal lanes.

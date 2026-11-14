@@ -41,7 +41,7 @@ func TestScaffoldAgent(t *testing.T) {
 			t.Errorf("scaffold missing dir %s: %v", want, err)
 		}
 	}
-	for _, absent := range []string{"memory.md", "user.md", "scout.log"} {
+	for _, absent := range []string{"memory.md", "user.md", SoulFileName, "scout.log"} {
 		if _, err := os.Stat(filepath.Join(home, "agents", "scout", absent)); !os.IsNotExist(err) {
 			t.Errorf("scaffold seeded %s (privacy law: homes start empty of content)", absent)
 		}
@@ -142,13 +142,22 @@ func TestLoadProfileParsesConfigLayer(t *testing.T) {
 	home := scratchHome(t)
 	os.MkdirAll(filepath.Join(home, "agents", "scout", "config"), 0o755)
 	os.WriteFile(filepath.Join(home, "agents", "scout", "config", "config.yaml"),
-		[]byte("description: probe duty\nprovider:\n  type: ollama\n  model_name: qwen3\n"), 0o644)
+		[]byte("description: probe duty\nprovider:\n  instance: work\n  model_name: qwen3\ntoggles: [kanban]\nskills:\n  allow: [omega-dev]\ninherit:\n  soul: true\n"), 0o644)
 	p, err := LoadProfile(home, "scout")
 	if err != nil {
 		t.Fatalf("LoadProfile: %v", err)
 	}
-	if p.ModelName != "qwen3" || p.ProviderType != "ollama" || p.Description != "probe duty" {
+	if p.ModelName != "qwen3" || p.ProviderInstance != "work" || p.Description != "probe duty" {
 		t.Errorf("profile parse off: %+v", p)
+	}
+	if len(p.Toggles) != 1 || p.Toggles[0] != "kanban" {
+		t.Errorf("profile toggles = %v", p.Toggles)
+	}
+	if len(p.SkillsAllow) != 1 || p.SkillsAllow[0] != "omega-dev" {
+		t.Errorf("profile allowlist = %v", p.SkillsAllow)
+	}
+	if len(p.Inherits) != 1 || p.Inherits[0] != "soul" {
+		t.Errorf("profile inherits = %v", p.Inherits)
 	}
 	if _, err := LoadProfile(home, "ghost"); err == nil {
 		t.Errorf("unknown agent returned no error")
@@ -331,5 +340,401 @@ func TestScanProfileSkillNames(t *testing.T) {
 	// dedupe: alpha appears in shared and own - exactly once.
 	if len(names) != 2 || names[0] != "alpha" || names[1] != "beta" {
 		t.Errorf("scan = %v, want [alpha beta]", names)
+	}
+}
+
+// TestCloneAgentMaterializesEverything pins the CLONE law: a clone is a
+// full copy at birth - definition, skills, persona files and the
+// session store - and it diverges freely, so deleting the source
+// afterwards is legal (clone + delete IS the rename path).
+func TestCloneAgentMaterializesEverything(t *testing.T) {
+	home := scratchHome(t)
+	installStubSnapshot(t)
+	if err := ScaffoldAgent(home, "scout", "probe duty"); err != nil {
+		t.Fatal(err)
+	}
+	seeded := "description: probe duty\nprovider:\n  instance: work\n  model_name: qwen3\ntoggles: [kanban]\nskills:\n  allow: [alpha]\n"
+	if err := WriteFileAtomic(AgentConfigPath(home, "scout"), []byte(seeded), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, skill := range []string{"alpha"} {
+		os.MkdirAll(filepath.Join(home, "agents", "scout", "skills", skill), 0o755)
+		os.WriteFile(filepath.Join(home, "agents", "scout", "skills", skill, "SKILL.md"), []byte("# "+skill), 0o644)
+	}
+	os.WriteFile(filepath.Join(home, "agents", "scout", "memory.md"), []byte("scout memory"), 0o644)
+	os.WriteFile(filepath.Join(home, "agents", "scout", "user.md"), []byte("scout user"), 0o644)
+	os.WriteFile(filepath.Join(home, "agents", "scout", SoulFileName), []byte("scout soul"), 0o644)
+	os.MkdirAll(filepath.Join(home, "agents", "scout", "data"), 0o755)
+	os.WriteFile(filepath.Join(home, "agents", "scout", "data", "omega.db"), []byte("source-db"), 0o644)
+
+	if err := CloneAgent(home, "scout", "probe", ""); err != nil {
+		t.Fatalf("clone: %v", err)
+	}
+	for _, want := range []string{
+		filepath.Join("config", "config.yaml"),
+		filepath.Join("skills", "alpha", "SKILL.md"),
+		"memory.md", "user.md", SoulFileName,
+		filepath.Join("data", "omega.db"),
+	} {
+		if _, err := os.Stat(filepath.Join(home, "agents", "probe", want)); err != nil {
+			t.Errorf("clone missing %s: %v", want, err)
+		}
+	}
+	p, err := LoadProfile(home, "probe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ProviderInstance != "work" || p.ModelName != "qwen3" || len(p.Toggles) != 1 {
+		t.Errorf("clone definition did not travel: %+v", p)
+	}
+	// Divergence, not a link: editing the clone never touches the source.
+	if err := UpdateAgentConfigLayer(home, "probe", AgentConfigUpdates{Description: strPtr("now a probe")}); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadProfile(home, "scout").Description; got != "probe duty" {
+		t.Errorf("clone edit leaked into the source (%q)", got)
+	}
+	// Clone + delete is the rename path: deleting the source leaves a
+	// complete agent behind.
+	if err := os.RemoveAll(filepath.Join(home, "agents", "scout")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadProfile(home, "probe"); err != nil {
+		t.Errorf("the clone did not survive deleting its source: %v", err)
+	}
+}
+
+// TestCloneAgentFromMainIsSecretFree pins the exception to "copy
+// everything": main's definition IS the home config, which carries the
+// provider secret - the clone starts on the scaffold instead and
+// references the host provider by name.
+func TestCloneAgentFromMainIsSecretFree(t *testing.T) {
+	home := scratchHome(t)
+	if err := WriteFileAtomic(AgentConfigPath(home, DefaultAgentName),
+		[]byte("provider:\n  type: openai\n  api_key: sk-live\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	os.MkdirAll(filepath.Join(home, "skills", "keeper"), 0o755)
+	os.WriteFile(filepath.Join(home, "skills", "keeper", "SKILL.md"), []byte("# keeper"), 0o644)
+	os.WriteFile(filepath.Join(home, "memory.md"), []byte("main memory"), 0o644)
+	os.WriteFile(filepath.Join(home, SoulFileName), []byte("main soul"), 0o644)
+
+	if err := CloneAgent(home, DefaultAgentName, "twin", "a twin"); err != nil {
+		t.Fatalf("clone main: %v", err)
+	}
+	body, err := os.ReadFile(AgentConfigPath(home, "twin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "sk-live") || hasYAMLKey(string(body), "api_key") {
+		t.Errorf("a clone of main carried the provider secret:\n%s", body)
+	}
+	if _, err := os.Stat(filepath.Join(home, "agents", "twin", "skills", "keeper", "SKILL.md")); err != nil {
+		t.Errorf("main's skills did not travel with the clone: %v", err)
+	}
+	if string(mustRead(t, filepath.Join(home, "agents", "twin", "memory.md"))) != "main memory" {
+		t.Errorf("main's memory.md did not travel with the clone")
+	}
+	if _, err := os.Stat(filepath.Join(home, "agents", "twin", SoulFileName)); err != nil {
+		t.Errorf("main's soul.md did not travel with the clone: %v", err)
+	}
+}
+
+// TestMigrateAgentHomesMovesSoulUp pins soul.md as a persona file: the
+// retired agents/default copy migrates to the home root like user.md and
+// memory.md.
+func TestMigrateAgentHomesMovesSoulUp(t *testing.T) {
+	home := scratchHome(t)
+	os.MkdirAll(filepath.Join(home, "agents", "default"), 0o755)
+	os.WriteFile(filepath.Join(home, "agents", "default", SoulFileName), []byte("old soul"), 0o644)
+	if err := MigrateAgentHomes(home); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if string(mustRead(t, filepath.Join(home, SoulFileName))) != "old soul" {
+		t.Errorf("soul.md did not migrate up")
+	}
+}
+
+// installStubSnapshot wires a fake StoreSnapshot for a test and returns
+// the (src,dst) pairs it saw. The real copier lives in harness/store
+// (this package never touches SQLite); the stub proves the clone CALLS
+// it once per store and never falls back to a byte copy.
+func installStubSnapshot(t *testing.T) *[][2]string {
+	t.Helper()
+	prev := StoreSnapshot
+	var calls [][2]string
+	StoreSnapshot = func(src, dst string) error {
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return err
+		}
+		calls = append(calls, [2]string{src, dst})
+		return WriteFileAtomic(dst, append([]byte("snapshot:"), data...), 0o644)
+	}
+	t.Cleanup(func() { StoreSnapshot = prev })
+	return &calls
+}
+
+// TestCloneAgentCopiesTheWholeHome pins Important 2 of the review: the
+// clone is complete enough to be a rename. The hand-owned config beside
+// the definition layer (crons.yaml), every store in data/, and the wall
+// sidecars' exclusion all travel with it.
+func TestCloneAgentCopiesTheWholeHome(t *testing.T) {
+	home := scratchHome(t)
+	calls := installStubSnapshot(t)
+	if err := ScaffoldAgent(home, "scout", "probe duty"); err != nil {
+		t.Fatal(err)
+	}
+	src := AgentDir(home, "scout")
+	// hand-owned schedules beside the definition layer
+	if err := WriteFileAtomic(filepath.Join(src, "config", "crons.yaml"), []byte("jobs: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// the store set, plus WAL sidecars that must NOT be copied
+	for _, name := range []string{"omega.db", "notifications.db", "kanban.db", "ledger.db"} {
+		if err := os.WriteFile(filepath.Join(src, "data", name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, sidecar := range []string{"omega.db-wal", "omega.db-shm"} {
+		if err := os.WriteFile(filepath.Join(src, "data", sidecar), []byte("stale"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// runtime scratch in data/ is not agent data
+	if err := os.WriteFile(filepath.Join(src, "data", "process.json"), []byte("[]"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := CloneAgent(home, "scout", "probe", ""); err != nil {
+		t.Fatalf("clone: %v", err)
+	}
+	dst := AgentDir(home, "probe")
+	if _, err := os.Stat(filepath.Join(dst, "config", "crons.yaml")); err != nil {
+		t.Errorf("the clone lost the source's hand-owned crons.yaml: %v", err)
+	}
+	if len(*calls) != 4 {
+		t.Errorf("snapshot calls = %d, want 4 (one per store)", len(*calls))
+	}
+	for _, name := range []string{"omega.db", "notifications.db", "kanban.db", "ledger.db"} {
+		body, err := os.ReadFile(filepath.Join(dst, "data", name))
+		if err != nil {
+			t.Errorf("clone lost store %s: %v", name, err)
+			continue
+		}
+		// copied through the SQLite snapshot, never byte-read
+		if !strings.HasPrefix(string(body), "snapshot:") {
+			t.Errorf("store %s was byte-copied, not snapshotted: %q", name, body)
+		}
+	}
+	for _, sidecar := range []string{"omega.db-wal", "omega.db-shm"} {
+		if _, err := os.Stat(filepath.Join(dst, "data", sidecar)); err == nil {
+			t.Errorf("clone copied the meaningless %s sidecar", sidecar)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dst, "data", "process.json")); err == nil {
+		t.Errorf("clone copied runtime scratch (process.json) - live PIDs mean nothing in another home")
+	}
+}
+
+// TestCloneAgentFromMainCarriesItsSchedules pins the same completeness for
+// a clone of main: main's config directory travels minus the one file
+// that carries the host's provider secret. Its schedules ARE copied -
+// they are hand-owned and no tool can regenerate them.
+func TestCloneAgentFromMainCarriesItsSchedules(t *testing.T) {
+	home := scratchHome(t)
+	installStubSnapshot(t)
+	if err := WriteFileAtomic(filepath.Join(home, "config", "config.yaml"),
+		[]byte("provider:\n  type: openai\n  api_key: sk-live\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFileAtomic(filepath.Join(home, "config", "crons.yaml"),
+		[]byte("jobs: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "data", "omega.db"), []byte("main-db"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CloneAgent(home, DefaultAgentName, "twin", "a twin"); err != nil {
+		t.Fatalf("clone main: %v", err)
+	}
+	dst := AgentDir(home, "twin")
+	if _, err := os.Stat(filepath.Join(dst, "config", "crons.yaml")); err != nil {
+		t.Errorf("a clone of main lost main's schedules: %v", err)
+	}
+	body, err := os.ReadFile(AgentConfigPath(home, "twin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "sk-live") || hasYAMLKey(string(body), "api_key") {
+		t.Errorf("a clone of main carried the provider secret:\n%s", body)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "data", "omega.db")); err != nil {
+		t.Errorf("a clone of main lost main's session store: %v", err)
+	}
+}
+
+// TestCloneAgentFromMainRefusesMainOnlySchedules pins the guard on a
+// clone of main: main's crons.yaml may carry main-home-only fields that
+// the cron loader refuses INSIDE an agent home (fatally, at boot), so the
+// clone refuses instead of copying a file that would break the next boot
+// or silently dropping the operator's schedules.
+func TestCloneAgentFromMainRefusesMainOnlySchedules(t *testing.T) {
+	for _, c := range []struct{ name, body, want string }{
+		{
+			name: "deliver",
+			body: "jobs:\n  - name: journal\n    schedule: \"0 8 * * *\"\n    prompt: write\n    deliver: new-session\n",
+			want: "delivers to",
+		},
+		{
+			name: "authored agent",
+			body: "jobs:\n  - name: handoff\n    schedule: \"0 8 * * *\"\n    prompt: write\n    agent: scout\n",
+			want: "authors agent",
+		},
+		{
+			// Skills pinning is the loader's third agent-home refusal
+			// (harness/cron: "skills pinning is a main-home feature") and
+			// the one a clone gate missed before - copying it 201'd and
+			// then took the WHOLE daemon down on the next boot.
+			name: "skills pinned",
+			body: "jobs:\n  - name: nightly\n    schedule: \"0 3 * * *\"\n    prompt: patrol\n    skills:\n      - omega-dev\n",
+			want: "pins skills",
+		},
+		{
+			name: "unparseable",
+			body: "jobs: not-a-list\n",
+			want: "does not parse",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			home := scratchHome(t)
+			installStubSnapshot(t)
+			if err := WriteFileAtomic(filepath.Join(home, "config", "crons.yaml"), []byte(c.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			err := CloneAgent(home, DefaultAgentName, "twin", "")
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("clone of main with %s crons = %v, want a refusal naming %q", c.name, err, c.want)
+			}
+			if _, statErr := os.Stat(AgentDir(home, "twin")); !os.IsNotExist(statErr) {
+				t.Errorf("the refused clone left a registered phantom agent (%v)", statErr)
+			}
+		})
+	}
+	// An agent-legal schedule file still travels (jobs: [] and a
+	// wake-shaped job with no deliver/agent fields).
+	home := scratchHome(t)
+	installStubSnapshot(t)
+	legal := "jobs:\n  - name: journal\n    schedule: \"0 8 * * *\"\n    prompt: write\n"
+	if err := WriteFileAtomic(filepath.Join(home, "config", "crons.yaml"), []byte(legal), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CloneAgent(home, DefaultAgentName, "twin", ""); err != nil {
+		t.Fatalf("clone of main with an agent-legal schedule file: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(AgentDir(home, "twin"), "config", "crons.yaml")); err != nil {
+		t.Errorf("an agent-legal schedule file did not travel: %v", err)
+	}
+	// The loader normalizes skills before judging them, so a list of
+	// whitespace entries is NOT a pinned list and the file must still
+	// travel - the gate refuses what the loader refuses, not more.
+	home2 := scratchHome(t)
+	installStubSnapshot(t)
+	blank := "jobs:\n  - name: blank\n    schedule: \"0 9 * * *\"\n    prompt: write\n    skills:\n      - \"  \"\n"
+	if err := WriteFileAtomic(filepath.Join(home2, "config", "crons.yaml"), []byte(blank), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CloneAgent(home2, DefaultAgentName, "twin", ""); err != nil {
+		t.Fatalf("clone of main with a whitespace-only skills list (normalizes to empty): %v", err)
+	}
+}
+
+// TestCloneAgentFailureLeavesNoPhantom pins Important 3: folder presence
+// IS registration, so a clone that dies mid-copy must not leave a
+// half-built agent home behind.
+func TestCloneAgentFailureLeavesNoPhantom(t *testing.T) {
+	home := scratchHome(t)
+	installStubSnapshot(t)
+	if err := ScaffoldAgent(home, "scout", "probe duty"); err != nil {
+		t.Fatal(err)
+	}
+	src := AgentDir(home, "scout")
+	if err := os.MkdirAll(filepath.Join(src, "skills", "alpha"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(home, "elsewhere.md")
+	if err := os.WriteFile(target, []byte("# out"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// copyTree refuses a symlink; that refusal is the mid-clone failure.
+	if err := os.Symlink(target, filepath.Join(src, "skills", "alpha", "escape.md")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	err := CloneAgent(home, "scout", "probe", "")
+	if err == nil {
+		t.Fatalf("clone of a home holding a symlink must fail loud")
+	}
+	if _, statErr := os.Stat(AgentDir(home, "probe")); !os.IsNotExist(statErr) {
+		t.Errorf("a failed clone left a registered phantom agent home (%v)", statErr)
+	}
+	for _, p := range LoadProfiles(home) {
+		if p.Name == "probe" {
+			t.Errorf("the phantom clone is listed as an agent")
+		}
+	}
+}
+
+// TestCloneAgentWithoutSnapshotIsLoud pins the no-fallback rule: with no
+// SQLite copier wired, a clone that has a store to copy fails and leaves
+// nothing behind rather than byte-copying a live WAL database.
+func TestCloneAgentWithoutSnapshotIsLoud(t *testing.T) {
+	home := scratchHome(t)
+	prev := StoreSnapshot
+	StoreSnapshot = nil
+	t.Cleanup(func() { StoreSnapshot = prev })
+	if err := ScaffoldAgent(home, "scout", "probe duty"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(AgentDir(home, "scout"), "data", "omega.db"), []byte("source-db"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := CloneAgent(home, "scout", "probe", "")
+	if err == nil || !strings.Contains(err.Error(), "no store snapshot wired") {
+		t.Fatalf("clone without a snapshot hook = %v, want the loud no-fallback error", err)
+	}
+	if _, statErr := os.Stat(AgentDir(home, "probe")); !os.IsNotExist(statErr) {
+		t.Errorf("a failed clone left a registered phantom agent home (%v)", statErr)
+	}
+}
+
+// TestMigrateAgentHomesRefusesSymlinkedSkill pins Nit 1 of the review:
+// copyTree's symlink refusal is a MIGRATION behavior too, and it is a
+// deliberate fail-loud, not an accident. A skill reachable only through
+// a link would otherwise land in the home as a dangling escape.
+func TestMigrateAgentHomesRefusesSymlinkedSkill(t *testing.T) {
+	home := scratchHome(t)
+	legacy := filepath.Join(home, "agents", "default")
+	if err := os.MkdirAll(filepath.Join(legacy, "skills", "linked"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(home, "outside.md")
+	if err := os.WriteFile(outside, []byte("# outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(legacy, "skills", "linked", "escape.md")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	err := MigrateAgentHomes(home)
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("migration of a symlinked skill = %v, want the loud symlink refusal", err)
+	}
+	// The refusal is loud and leaves the migration unfinished: the
+	// legacy tree is still there for the operator to fix, never half
+	// merged into the home.
+	if _, statErr := os.Stat(legacy); statErr != nil {
+		t.Errorf("the refused migration destroyed the legacy tree: %v", statErr)
 	}
 }

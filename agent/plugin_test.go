@@ -185,6 +185,49 @@ func TestMountAllDisabledDepRefuses(t *testing.T) {
 	}
 }
 
+// TestAlwaysOffDisabled pins the ALWAYS OFF law's runtime half: an empty
+// enabled list disables every toggleable capsule and keeps the locked
+// pair (not toggleable) mounted; an enabled capsule's REQUIRES seam is
+// kept on with it; and naming a non-toggleable module is refused.
+func TestAlwaysOffDisabled(t *testing.T) {
+	noop := func(c *Context) error { return nil }
+	plugins := []Plugin{
+		testPlugin{name: "provider", provides: []string{"provider"}, mount: noop},
+		testPlugin{name: "store", provides: []string{"store"}, mount: noop},
+		testPlugin{name: "tools", provides: []string{"tools"}, mount: noop},
+		testPlugin{name: "kanban", mount: noop, toggleable: true},
+		testPlugin{name: "notifications", provides: []string{"notifications"}, mount: noop, toggleable: true},
+		testPlugin{name: "cron", requires: []string{"notifications"}, mount: noop, toggleable: true},
+	}
+
+	// Nothing enabled: every toggleable capsule is off, the locked pair
+	// stays (it is not named in the disable list at all).
+	off, err := AlwaysOffDisabled(plugins, nil)
+	if err != nil {
+		t.Fatalf("empty enabled set: %v", err)
+	}
+	if strings.Join(off, ",") != "cron,kanban,notifications" {
+		t.Fatalf("always-off set = %v, want every toggleable capsule", off)
+	}
+
+	// An enabled capsule keeps its requires-providers on with it.
+	off, err = AlwaysOffDisabled(plugins, []string{"cron"})
+	if err != nil {
+		t.Fatalf("enable cron: %v", err)
+	}
+	if strings.Join(off, ",") != "kanban" {
+		t.Fatalf("always-off set = %v, want only kanban (cron + its notifications seam on)", off)
+	}
+
+	// The locked pair is not a toggle.
+	if _, err := AlwaysOffDisabled(plugins, []string{"provider"}); err == nil {
+		t.Fatal("toggling provider was accepted - the locked pair is always on")
+	}
+	if _, err := AlwaysOffDisabled(plugins, []string{"ghost"}); err == nil {
+		t.Fatal("an unknown capsule was accepted")
+	}
+}
+
 func TestMountAllConflict(t *testing.T) {
 	p1 := testPlugin{name: "p1", provides: []string{"provider"}, mount: func(c *Context) error { return nil }}
 	p2 := testPlugin{name: "p2", provides: []string{"provider"}, mount: func(c *Context) error { return nil }}
