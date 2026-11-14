@@ -37,6 +37,11 @@
 
   --mono: 'JetBrains Mono', ui-monospace, monospace;
   --sans: 'Public Sans', system-ui, sans-serif;
+
+  /* the top bar's height - ONE number: the bar's own box, the palette
+     overlay's anchor (it hangs from this edge) and the tab-bar contract
+     all read it (card t_d4443ab5). */
+  --menubar-h: 35px;
 }
 
 html[data-theme='light'] {
@@ -104,7 +109,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 35px;
+  height: var(--menubar-h);
   padding: 0 12px;
   background: var(--z0);
   /* chrome stays above all overlays: drawers (12), scrim (10),
@@ -137,12 +142,17 @@ body {
 /* card t_20fd8745: the palette AFFORDANCE - a button dressed as an input.
    Pure affordance: no typing, no second focus path (the dialog owns the
    only search field), one click = the ctrl+k intent. Its placeholder is
-   the LIVE clock NavCluster re-renders on each minute boundary. */
+   the LIVE clock NavCluster re-renders on each minute boundary.
+   card t_d4443ab5: the affordance is the top bar's command-palette SECTION
+   and it carries the section's max width (200 -> 260); the 26vw cap keeps
+   the centred cluster clear of the edge toggles on a narrow desktop
+   window. The overlay it opens is the wider band (640, below). */
 .nav-palette-input {
   display: inline-flex;
   align-items: center;
   box-sizing: border-box;
-  width: 200px;
+  width: 260px;
+  max-width: 26vw;
   height: 24px;
   margin: 0 4px;
   padding: 0 9px;
@@ -165,14 +175,21 @@ body {
 }
 .nav-btn:hover:disabled { background: transparent; }
 
-/* the palette overlay: top-center, above every chrome (menubar z 40);
-   no scrim - the panes stay readable behind it */
+/* the palette overlay (card t_d4443ab5: VS Code quick-open geometry): it
+   HANGS from the top bar's lower edge - the panel's top IS --menubar-h, so
+   the input you just clicked and the panel it opens read as one control -
+   centred on the top bar's absolute-center section (the affordance the
+   cluster seats there), and overlays the panes below (position: fixed,
+   above every chrome: menubar z 40, panel 200). It never pushes content:
+   the panes keep their geometry while it is up, and it carries no scrim -
+   the panes stay readable behind it. Both open paths (the trigger click,
+   Ctrl+K) ride ONE toggle and therefore this ONE geometry. */
 .command-palette {
   position: fixed;
-  top: 44px;
+  top: var(--menubar-h);
   left: 50%;
   transform: translateX(-50%);
-  width: 480px;
+  width: 640px;
   max-width: calc(100vw - 24px);
   display: flex;
   flex-direction: column;

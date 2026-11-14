@@ -33,7 +33,13 @@ export interface RefSegment {
   token?: RefToken;
 }
 
-const SKILL_TOKEN = /^\/[A-Za-z0-9_-]+/;
+const SKILL_LEADING = /^\/([A-Za-z0-9_-]+)/;
+// the composer's chip editor reads a skill token at ANY word boundary -
+// its slash palette is token-based (t_d1a2951d: "a mid-sentence token dies
+// in place"), so a completed /word must chip wherever the palette accepted
+// it. The boundary shape is the @ token's (start, whitespace or an open
+// paren): "flag -/not-a-pill" stays prose.
+const SKILL_ANYWHERE = /(^|[\s(])\/([A-Za-z0-9_-]+)/g;
 const FILE_TOKEN = /(^|[\s(])@([^\s)]+)/g;
 
 const isBasename = (name: string): boolean => {
@@ -41,27 +47,58 @@ const isBasename = (name: string): boolean => {
   return base !== "" && base !== "." && base !== "..";
 };
 
+// ScanOpts is the surface the scan runs for. ONE token model, two
+// surfaces that differ on exactly one point:
+//
+//   inlineSkills - the composer's chip editor. Its slash palette is
+//                  token-based (t_d1a2951d), so a completed /word chips
+//                  wherever the palette accepted it, exactly like an @
+//                  file token. The composer additionally gates on the
+//                  live skill snapshot (a shell verb never chips).
+//   absent       - the transcript. A leading /word IS the invocation (the
+//                  server's grammar), and prose keeps arbitrary "/" prose
+//                  (paths, "and / or") pill-free.
+export interface ScanOpts {
+  inlineSkills?: boolean;
+}
+
 // scanRefTokens parses a text into its pill tokens:
 //
-//   skill  - "/word" at the TEXT START only. The composer inserts the
-//            token from the slash palette at draft start; shell and
-//            extension verbs never reach a transcript bubble (the send
-//            routes them), so a leading slash IS a skill invocation.
+//   skill  - "/word": at the TEXT START (every surface), or at any word
+//            boundary when opts.inlineSkills (the composer's editor).
+//            Shell and extension verbs never reach a transcript bubble
+//            (the send routes them), so a leading slash IS an invocation.
 //   file   - a standalone "@path" (text start, or after whitespace or an
 //            open paren). A mid-word @ - user@host - is an email, not a
 //            file reference (the server's AtFilePattern law). A token
 //            with no basename ("@dir/") drills, never renders a pill.
-export function scanRefTokens(text: string): RefToken[] {
+export function scanRefTokens(text: string, opts: ScanOpts = {}): RefToken[] {
   const out: RefToken[] = [];
-  const skill = text.match(SKILL_TOKEN);
-  if (skill) {
-    out.push({
-      kind: "skill",
-      token: skill[0],
-      label: skill[0].slice(1),
-      name: skill[0].slice(1),
-      start: 0,
-    });
+  if (opts.inlineSkills) {
+    SKILL_ANYWHERE.lastIndex = 0;
+    for (const m of text.matchAll(SKILL_ANYWHERE)) {
+      const start = m.index + m[1]!.length;
+      const name = m[2]!;
+      out.push({
+        kind: "skill",
+        token: "/" + name,
+        label: name,
+        name,
+        start,
+      });
+    }
+  } else {
+    const skill = text.match(SKILL_LEADING);
+    if (skill) {
+      const name = skill[1]!;
+      out.push({
+        kind: "skill",
+        token: skill[0],
+        label: name,
+        name,
+        start: 0,
+      });
+    }
   }
   FILE_TOKEN.lastIndex = 0;
   for (const m of text.matchAll(FILE_TOKEN)) {
@@ -85,8 +122,8 @@ export function scanRefTokens(text: string): RefToken[] {
 // splitRefSegments turns a text into rendered pieces: the pill tokens as
 // tokens, everything between as text. The consumer renders segments in
 // order - the user bubble keeps its literal text with pills inline.
-export function splitRefSegments(text: string): RefSegment[] {
-  const tokens = scanRefTokens(text);
+export function splitRefSegments(text: string, opts: ScanOpts = {}): RefSegment[] {
+  const tokens = scanRefTokens(text, opts);
   const out: RefSegment[] = [];
   let at = 0;
   for (const t of tokens) {
@@ -101,8 +138,12 @@ export function splitRefSegments(text: string): RefSegment[] {
 // tokenBeforeCaret finds the pill behind the caret - the Backspace
 // dissolve's target (the "pill dissolves to its text" law): the caret
 // sits immediately behind a token's end.
-export function tokenBeforeCaret(text: string, caret: number): RefToken | null {
-  for (const t of scanRefTokens(text)) {
+export function tokenBeforeCaret(
+  text: string,
+  caret: number,
+  opts: ScanOpts = {},
+): RefToken | null {
+  for (const t of scanRefTokens(text, opts)) {
     if (t.start + t.token.length === caret) return t;
   }
   return null;
@@ -189,6 +230,7 @@ export function editorNodes(
   text: string,
   o: ChipOpts,
   isPill?: (t: RefToken) => boolean,
+  opts: ScanOpts = {},
 ): EditorPiece[] {
   const out: EditorPiece[] = [];
   let carry = "";
@@ -198,7 +240,7 @@ export function editorNodes(
       carry = "";
     }
   };
-  for (const seg of splitRefSegments(text)) {
+  for (const seg of splitRefSegments(text, opts)) {
     if (seg.text) {
       carry += seg.text;
       continue;

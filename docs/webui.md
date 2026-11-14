@@ -68,16 +68,27 @@ widths are; never spacer-balanced. The EDGE TOGGLES (left / bottom /
 right) and the settings gear stay pinned far right. Back/forward dim via
 the REAL `disabled` attribute, never a lookalike. Below the 768px
 breakpoint the CLUSTER HIDES and the toggles STAY - they are the drawer
-handles. The palette affordance (`.nav-palette-input`, 200x24) is a
-BUTTON dressed as an input: pure affordance, no typing, no second focus
-path (the dialog owns the only search field), one click = the ctrl+k
-intent, and its "placeholder" is a LIVE `HH:MM` clock re-rendered on
-each minute boundary (the `nav-palette-clock` span is decorative -
-`aria-hidden` - so the affordance's name stays the command-palette
-hint). Both palette doors ride app.vue's ONE `paletteOpen` state, and a
+handles. The palette affordance (`.nav-palette-input`, 260x24, `26vw`
+cap) is a BUTTON dressed as an input: pure affordance, no typing, no
+second focus path (the dialog owns the only search field), one click =
+the ctrl+k intent, and its "placeholder" is a LIVE `HH:MM` clock
+re-rendered on each minute boundary (the `nav-palette-clock` span is
+decorative - `aria-hidden` - so the affordance's name stays the
+command-palette hint). Both palette doors ride app.vue's ONE
+`paletteOpen` state, and a
 pointerdown anywhere outside the overlay closes it (the scrimless
 overlay listens on the document; the `data-palette-trigger` markers are
 the one exemption, so a click that opens cannot close on the way out).
+
+**The command palette's geometry** (card t_d4443ab5, VS Code
+quick-open): the panel HANGS from the top bar. Its top edge is
+`var(--menubar-h)` - the same number the bar's own height reads - so the
+affordance you clicked and the panel it opens read as one control, and
+it is centred on that absolute-center section (640px wide, capped at
+`100vw - 24px`). `position: fixed`, z 200: it overlays the panes and
+never pushes them, with no scrim (the panes stay readable behind it).
+Both open paths - the trigger click and Ctrl+K - ride ONE toggle, so
+they land on ONE geometry.
 
 **Honest floors** (cards t_ae9ac5cf + t_8bcbe72e): the floor is a
 PER-COMPONENT registry fact, not a sidebar rule. `DOCKABLE_MIN_PX`
@@ -779,7 +790,14 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   `.composer-input`, the t_e67c372b chip law: a reference chip
   REPLACES the token span it represents, inline in the flow, and
   Backspace behind a chip dissolves it back to the raw token text while
-  the chip's x removes outright; Shift+Enter writes the newline as a
+  the chip's x removes outright; card t_d4443ab5: `/skill` tokens chip
+  on the SAME machinery as `@file` ones - the composer scans with
+  `ScanOpts.inlineSkills` (a skill token at ANY word boundary, the shape
+  its caret-based slash palette accepts) and the chip is the one
+  `ReferencePill` renderer, so a skill wears the zap + `/name` and a file
+  the document glyph + basename. The transcript keeps the
+  leading-invocation scan, where arbitrary prose "/" stays text.
+  Shift+Enter writes the newline as a
   text node (the editor claims every Enter - plain sends), and Chromium
   hangs a block-final newline in pre-wrap, so every write settles one
   draft-invisible sentinel `<br>` after it (AppComposer's capTail, card
