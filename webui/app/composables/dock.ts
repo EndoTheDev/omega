@@ -44,8 +44,6 @@ import {
   dockableMinPx,
   isClosableTab,
   isLockedTab,
-  isPlaceholderTab,
-  NEW_TAB_COMPONENT,
   validViewerRef,
   type DockableComponentLike,
   type DockComponentName,
@@ -63,11 +61,9 @@ export {
   MAIN_DOCKABLES,
   MENU_DOCKABLES,
   COMPONENT_TITLES,
-  NEW_TAB_COMPONENT,
   dockableMinPx,
   isClosableTab,
   isLockedTab,
-  isPlaceholderTab,
 };
 export type { DockComponentName, DockableComponentLike, ViewerRef };
 // re-export for consumers that think in dock terms (tests, toggle helpers)
@@ -342,59 +338,74 @@ export function isSplit(n: DockNode): n is DockSplit {
   return n.kind === "split";
 }
 
-// --- NEVER-ZERO-TABS (card t_d04a1c80, Endo's canvas ruling 2026-11-12) ------
-// "closing the last tab opens a 'new tab'; if the last tab IS a new tab,
-// keep it - never zero tabs. The canvas never renders an empty pane. The
-// rule must hold through reload: a reload never mounts zero tabs."
+// --- THE LOCKED LAST TAB (card t_9855a20e, Endo ruling 2026-11-14) -----------
+// "the plan was that i should not be able to close the last 'new chat' tab
+// ... it should basically be locked ... the current approach is just empty
+// bad looking space." - the eyeball on the never-zero placeholder (card
+// t_d04a1c80, commit 8eabefc7) a close used to seat in the emptied pane.
 //
 // One law, three sentences:
-//   - every pane carries at least one tab - the placeholder seat
-//     (NEW_TAB_COMPONENT) fills a pane that would otherwise be zero;
-//   - the placeholder only ever sits ALONE: real content arriving in the
-//     same pane drops it (the live tab set is the truth, the seat only
-//     fills zero), and its own close is refused (it is unclosable, so
-//     "if the last tab IS a new tab, keep it" holds by construction);
-//   - a pane whose bar is not rendered is not a pane for this law: a
-//     GROWN root keeps its classic cell empty while its content lives in
-//     the local leaves (v0.14.4 ruling 1).
+//   - a pane's LAST tab never closes: closeTab refuses the request and
+//     DockPane renders no X on it. The lock IS how the pane stays
+//     non-empty - nothing has to be seated in its place;
+//   - nothing is minted to fill an empty pane. A pane emptied by a GESTURE
+//     (a split, a tab dragged out of a pane that cannot close) renders the
+//     bar-less empty state DockPane already had and a drop refills it; the
+//     15-button empty-pane menu stays deleted (DOCK-EMPTY-ACTIONS);
+//   - a pane REPAIRED into emptiness seats a fresh new-chat tab - a
+//     persisted placeholder seat (retired below) or a pane whose last chat
+//     died with its deleted session. That is the chat the user asked for,
+//     not a "New Tab" sticker.
 //
-// closeTab and splitPane seat directly - the two ops whose own ruling is
-// this one - and every other mutating op ends with normalizeTabSeats, so
-// no path (button, drag, stale record) can leave a zero-tab pane.
+// A GROWN root's classic bar is not a pane for this law (v0.14.4 ruling 1):
+// its content lives in the local leaves, its own cell stays empty by
+// design.
 
-/** does the seat law still have work in this tree? (a pure read, so
-    normalizeTabSeats can return the SAME object when nothing changes -
-    the store's identity-based no-op checks depend on it) */
-function seatLawNeeded(n: DockNode): boolean {
-  if (isPane(n)) {
-    if (n.grown) return false;
-    const real = n.tabs.filter((t) => !isPlaceholderTab(t.component)).length;
-    // zero real tabs: the settled shape is exactly one seat
-    if (real === 0) return n.tabs.length !== 1;
-    // real content beside a stale seat: the seat goes
-    return real !== n.tabs.length;
-  }
-  return n.children.some(seatLawNeeded);
+/** card t_9855a20e: the retired never-zero placeholder id - LEGACY now
+    (dockables.ts). No op mints it; the boot repair below removes it. */
+const LEGACY_NEW_TAB = "newtab";
+
+function isLegacySeat(component: string): boolean {
+  return component === LEGACY_NEW_TAB;
 }
 
-/** the never-zero sweep: seat the placeholder on every zero-tab pane and
-    drop it wherever real content lives. Idempotent; returns the same tree
-    object when the law already holds. */
-export function normalizeTabSeats(tree: DockNode): DockNode {
-  if (!seatLawNeeded(tree)) return tree;
+/** a fresh, unsaved new-chat tab: the filler the pane repairs seat -
+    sessionless composer-first, keyed like every runtime-minted chat tab
+    (the per-tab chat host keys its stream state on the key). */
+function newChatTab(): DockTab {
+  return { component: "chat", key: nextTabKey() };
+}
+
+/** card t_9855a20e: the boot's pane-seat repair. Two dead states land
+    here, one law fixes both:
+    - a persisted never-zero placeholder seat (card t_d04a1c80) retires -
+      dropped where it shared a pane with real content, converted into a
+      fresh new-chat tab where it sat alone;
+    - a persisted ZERO-tab pane (a pre-placeholder record) seats the same
+      fresh chat rather than booting a blank pane.
+    Idempotent; a tree with neither dead state is returned as the SAME
+    object (the store's identity no-op checks and the repair receipt both
+    depend on that). Pure. */
+export function repairPaneSeats(tree: DockNode): DockNode {
+  const needs = (n: DockNode): boolean =>
+    isPane(n)
+      ? (!n.grown && (n.tabs.length === 0 || n.tabs.some((t) => isLegacySeat(t.component))))
+      : n.children.some(needs);
+  if (!needs(tree)) return tree;
   return cloneTreeWith(tree, (n) => {
     if (!isPane(n) || n.grown) return;
     const active = n.tabs[n.active];
-    const real = n.tabs.filter((t) => !isPlaceholderTab(t.component));
+    const real = n.tabs.filter((t) => !isLegacySeat(t.component));
     if (real.length === 0) {
-      n.tabs = [{ component: NEW_TAB_COMPONENT }];
+      // the seat sat alone (or the pane carried nothing): a new chat
+      n.tabs = [newChatTab()];
       n.active = 0;
       return;
     }
     if (real.length !== n.tabs.length) {
       // the seat was sharing the pane with real content: it goes, focus
       // follows whatever held it (falling back to the first real tab)
-      const focus = active && !isPlaceholderTab(active.component) ? active : real[0]!;
+      const focus = active && !isLegacySeat(active.component) ? active : real[0]!;
       n.tabs = real;
       n.active = Math.max(0, real.indexOf(focus));
     }
@@ -600,10 +611,11 @@ export function insertMainPaneIntoRow(tree: DockNode): { tree: DockNode; paneId:
   const row = copy.children[rowIdx] as DockSplit;
   row.children.push(makePane(null));
   row.sizes = normalizeSizes(row.children.length, row.sizes);
-  // card t_d04a1c80: the minted pane seats the new-tab placeholder - a
-  // zero-main recovery never renders an empty pane either
+  // card t_9855a20e: the minted pane starts EMPTY - the opener (app.vue)
+  // mints the tab that lands in it (openChatTab / openSingleton), and no
+  // placeholder sticker is seated (the never-zero seat retired)
   return {
-    tree: normalizeTabSeats(copy),
+    tree: copy,
     paneId: (row.children[row.children.length - 1] as DockPane).id,
   };
 }
@@ -617,12 +629,12 @@ export function insertMainPane(tree: DockNode): { tree: DockNode; paneId: string
   const pane = makePane(null);
   if (isPane(tree) || !isSplit(tree) || tree.direction !== "row") {
     // pane root, or a column root: wrap in a row, new pane right of the tree
-    return { tree: normalizeTabSeats(makeSplit("row", [tree, pane])), paneId: pane.id };
+    return { tree: makeSplit("row", [tree, pane]), paneId: pane.id };
   }
   const copy = clone(tree);
   copy.children.push(pane);
   copy.sizes = normalizeSizes(copy.children.length, copy.sizes);
-  return { tree: normalizeTabSeats(copy), paneId: pane.id };
+  return { tree: copy, paneId: pane.id };
 }
 
 /** card t_d7fd3ad3: insights changed HOME. Trees persisted while its area
@@ -1543,10 +1555,9 @@ export function focusTab(tree: DockNode, paneId: string, index: number): DockNod
     tabs wholesale. Emptying back is closeTab's job (card 2). card
     t_d6b657a7: edge shells accept content (the empty-shell refill); the
     only refusal left is the LOCKED sessions tab - it never enters a pane
-    this way, and unknown ids refuse (the safe class). card t_d04a1c80:
-    the never-zero sweep runs after the fill - real content retires a
-    new-tab seat, and a pane that would be left zero (an unknown id) keeps
-    its seat. */
+    this way, and unknown ids refuse (the safe class). card t_9855a20e:
+    no seat sweep rides the fill any more - the pane's tab set is exactly
+    what this op wrote. */
 export function setPaneComponent(
   tree: DockNode,
   paneId: string,
@@ -1554,68 +1565,52 @@ export function setPaneComponent(
 ): DockNode {
   const pane = findPane(tree, paneId);
   if (!pane || isLockedTab(component)) return tree;
-  return normalizeTabSeats(
-    cloneTreeWith(tree, (n) => {
-      if (isPane(n) && n.id === paneId) {
-        n.tabs = [{ component }];
-        n.active = 0;
-      }
-    }),
-  );
+  return cloneTreeWith(tree, (n) => {
+    if (isPane(n) && n.id === paneId) {
+      n.tabs = [{ component }];
+      n.active = 0;
+    }
+  });
 }
 
 /** open a new tab in a pane, appending at the end and activating it
     (the tab-bar '+' menu path; works on an empty pane too - the first
     tab revives it). Refusal (card t_d6b657a7): the LOCKED sessions tab
     opens nowhere - the loader owns it. Any pane hosts any other tab:
-    sidebars are free content now. card t_d04a1c80: the never-zero sweep
-    drops a new-tab seat the arrival shares the pane with. */
+    sidebars are free content now. */
 export function openTab(tree: DockNode, paneId: string, tab: DockTab): DockNode {
   const pane = findPane(tree, paneId);
   if (!pane || isLockedTab(tab.component)) return tree;
-  return normalizeTabSeats(
-    cloneTreeWith(tree, (n) => {
-      if (isPane(n) && n.id === paneId) {
-        n.tabs = [...n.tabs, tab];
-        n.active = n.tabs.length - 1;
-      }
-    }),
-  );
+  return cloneTreeWith(tree, (n) => {
+    if (isPane(n) && n.id === paneId) {
+      n.tabs = [...n.tabs, tab];
+      n.active = n.tabs.length - 1;
+    }
+  });
 }
 
-/** close a tab. card 2 originally emptied the pane here ("menu
-    reappears"); card t_d04a1c80 (Endo's canvas ruling 2026-11-12) makes
-    that state impossible: closing a pane's LAST tab seats the new-tab
-    placeholder instead - "closing the last tab opens a 'new tab'; if the
-    last tab IS a new tab, keep it - never zero tabs". The placeholder is
-    unclosable (registry) so the refusal is the safe-class return below.
-    card t_4ae27e0d: an UNCLOSEABLE tab refuses - the pinned sidebars'
+/** close a tab. card t_9855a20e (Endo ruling 2026-11-14, THE LOCKED LAST
+    TAB): a pane's LAST tab never closes - the request is refused and the
+    tab renders no X (DockPane's tabClosable). That refusal is the whole
+    never-zero law now: no close can empty a pane, so nothing is seated in
+    its place (the 8eabefc7 "new tab" placeholder is retired).
+    card t_4ae27e0d: an UNCLOSEABLE tab refuses too - the pinned sidebars'
     tabs have no X at all. Endo ruling 2026-10-25, corrected t_b620f99d:
     the last-main-pane law protects the PANE (removePane), not the tabs -
-    a close request against the last main pane's closable tabs goes
-    through; the pane survives as the new-tab seat. */
+    a closable tab in the last main pane closes while another tab keeps it
+    company. v0.14.4 ruling 8: an inner leaf leaves the tree through its
+    own remove X (canRemovePane is true for a grown root's leaves), never
+    by closing its last tab - the lock holds there as everywhere. */
 export function closeTab(tree: DockNode, paneId: string, index: number): DockNode {
   const pane = findPane(tree, paneId);
   const tab = pane?.tabs[index];
   if (!pane || !tab || !isClosableTab(tab.component)) return tree;
-  // v0.14.4 ruling 8: closing the last tab of an inner leaf MERGES the
-  // leaf away (the grown root unwinds; its survivor falls back to the
-  // shell's classic single cell). The leaf LEAVES the tree, so the
-  // never-zero law has nothing to seat - and the census never dips.
-  if (pane.tabs.length === 1 && rootPaneOf(tree, paneId)) {
-    return pruneInnerLeaf(tree, paneId);
-  }
+  if (pane.tabs.length <= 1) return tree; // the locked last tab
   return cloneTreeWith(tree, (n) => {
     if (isPane(n) && n.id === paneId) {
       if (n.tabs.length <= index) return;
       n.tabs = n.tabs.filter((_, i) => i !== index);
       n.active = Math.max(0, Math.min(n.active > index ? n.active - 1 : n.active, n.tabs.length - 1));
-      // NEVER-ZERO-TABS: the last tab out seats the placeholder in the
-      // same swap - the pane is never zero-tab, not even for one render
-      if (n.tabs.length === 0) {
-        n.tabs = [{ component: NEW_TAB_COMPONENT }];
-        n.active = 0;
-      }
     }
   });
 }
@@ -1646,10 +1641,6 @@ export function moveTab(
   const to = findPane(tree, toPaneId);
   if (!to) return tree;
   const tab = from.tabs[fromIndex]!;
-  // card t_d04a1c80: the new-tab placeholder is a SEAT, not content - it
-  // never drags anywhere (its chip is not draggable either; this is the
-  // belt for a stale payload).
-  if (isPlaceholderTab(tab.component)) return tree;
   // the locked tab's hit-test: sessions refuses every drop target that is
   // not inside the left root's own area (reorder there, refuse everywhere
   // else - the grown left root's leaves count as its bar, v0.14.4 ruling 4)
@@ -1695,28 +1686,29 @@ export function moveTab(
   const src = findPane(result, fromPaneId);
   if (src && !isPinnedPane(src) && src.tabs.length === 0) {
     // v0.14.4 ruling 8: an inner leaf that emptied MERGES AWAY (the grown
-    // root unwinds) - no seat states inside a root
+    // root unwinds)
     if (rootPaneOf(result, fromPaneId)) return pruneInnerLeaf(result, fromPaneId);
     if (!isLastMainPane(result, src)) return prunePane(result, fromPaneId);
   }
-  // card t_d04a1c80: whatever survived the drain (a pinned shell, the
-  // LAST main pane - the t_aa9dbada exception) takes the new-tab seat, so
-  // no move path leaves a zero-tab pane.
-  return normalizeTabSeats(result);
+  // card t_9855a20e: whatever survived the drain (a pinned shell, the
+  // LAST main pane - the t_aa9dbada exception) simply sits empty: the
+  // placeholder seat is retired, the pane renders its bar-less empty
+  // state, and a drop refills it.
+  return result;
 }
 
 /** split a pane into `direction` (row = side by side, column = stacked).
-    card t_d04a1c80: the NEW pane seats the new-tab placeholder - the
-    empty-pane component menu that used to rule it is deleted, and a pane
-    never renders zero tabs (the seat is also what the drag preview shows
-    before a tab lands there). */
+    card t_9855a20e: the NEW pane starts EMPTY - the pre-placeholder
+    shape. The empty-pane component menu stays deleted, so the fresh group
+    renders the bar-less empty state until something is dropped in (the
+    drag's own split path seats the dragged tab in the same gesture). */
 export function splitPane(
   tree: DockNode,
   paneId: string,
   direction: "row" | "column",
   side: "before" | "after",
 ): DockNode {
-  return normalizeTabSeats(insertPane(tree, paneId, direction, side, makePane(null)));
+  return insertPane(tree, paneId, direction, side, makePane(null));
 }
 
 /** v0.14.4 ruling 1: grow the pinned root `shellId` a LOCAL split in
@@ -1776,22 +1768,20 @@ export function pruneInnerLeaf(tree: DockNode, leafId: string): DockNode {
     };
   };
   const next = cut(clone(root.grown));
-  return normalizeTabSeats(
-    cloneTreeWith(tree, (n) => {
-      if (isPane(n) && n.id === root.id) {
-        if (isPane(next)) {
-          // the root's LAST leaf went: fall back to the classic single cell
-          // (ruling 8 - the survivor's content returns; a survivor with no
-          // tabs takes the never-zero seat in the sweep below)
-          n.grown = undefined;
-          n.tabs = next.tabs;
-          n.active = next.active;
-        } else {
-          n.grown = next;
-        }
+  return cloneTreeWith(tree, (n) => {
+    if (isPane(n) && n.id === root.id) {
+      if (isPane(next)) {
+        // the root's LAST leaf went: fall back to the classic single cell
+        // (ruling 8 - the survivor's content returns; an empty survivor
+        // renders the shell's own empty state, card t_9855a20e)
+        n.grown = undefined;
+        n.tabs = next.tabs;
+        n.active = next.active;
+      } else {
+        n.grown = next;
       }
-    }),
-  );
+    }
+  });
 }
 
 /** v0.14.4 ruling 5 (the load-bearing law): ONE pure formula behind BOTH
@@ -1902,7 +1892,7 @@ export function predictDockDrop(
       break;
     }
   }
-  if (!freshId) return { tree: normalizeTabSeats(after), freshPaneId: null };
+  if (!freshId) return { tree: after, freshPaneId: null };
   return { tree: moveTab(after, fromPaneId, fromIndex, freshId, 0), freshPaneId: freshId };
 }
 
@@ -2101,23 +2091,24 @@ export function setTabSessionRef(
 }
 
 /** close EVERY chat tab bound to a session (the delete flow): the tab
-    bar's close math (active adjustment, empty pane -> menu) per pane. */
+    bar's close math (active adjustment) per pane. card t_9855a20e: a pane
+    whose LAST chat died with its session does NOT sit empty - it seats a
+    fresh new-chat tab, the one filler the lock law allows (the delete
+    flow is a repair of a dead state, not a user emptying a pane). */
 export function closeSessionTabs(tree: DockNode, sessionId: string): DockNode {
   if (firstChatTab(tree, sessionId) === null) return tree;
-  return normalizeTabSeats(
-    cloneTreeWith(tree, (n) => {
-      if (!isPane(n)) return;
-      const drop = new Set<number>();
-      n.tabs.forEach((t, i) => {
-        if (t.component === "chat" && t.sessionRef === sessionId) drop.add(i);
-      });
-      if (drop.size === 0) return;
-      const tabs = n.tabs.filter((_, i) => !drop.has(i));
-      const before = [...drop].filter((i) => i < n.active).length;
-      n.tabs = tabs;
-      n.active = clamp(n.active - before, 0, tabs.length - 1);
-    }),
-  );
+  return cloneTreeWith(tree, (n) => {
+    if (!isPane(n)) return;
+    const drop = new Set<number>();
+    n.tabs.forEach((t, i) => {
+      if (t.component === "chat" && t.sessionRef === sessionId) drop.add(i);
+    });
+    if (drop.size === 0) return;
+    const tabs = n.tabs.filter((_, i) => !drop.has(i));
+    const before = [...drop].filter((i) => i < n.active).length;
+    n.tabs = tabs.length === 0 ? [newChatTab()] : tabs;
+    n.active = clamp(n.active - before, 0, n.tabs.length - 1);
+  });
 }
 
 // --- resize ------------------------------------------------------------------
@@ -3252,16 +3243,16 @@ export function createDock(store: Storage): DockApi {
     initial = syncedBottom;
   }
   initial = assignChatKeys(initial);
-  // card t_d04a1c80 (NEVER-ZERO-TABS): "the rule must hold through reload -
-  // a reload never mounts zero tabs". A record persisted before this law
-  // (or written by any path that predates it) carries zero-tab panes; the
-  // boot seats the placeholder on each and drops any stale seat that shares
-  // a pane with real content. Counted as a repair so the raw record backs
-  // up first (ruling 6 below).
-  const seated = normalizeTabSeats(initial);
+  // card t_9855a20e (THE LOCKED LAST TAB): the boot repairs the two dead
+  // pane states the retired placeholder law can leave on disk - a
+  // persisted never-zero seat (card t_d04a1c80) and a zero-tab pane from a
+  // record older still. Both land on a fresh new-chat tab: the chat the
+  // user closed comes back as a chat, never as a blank "New Tab" body.
+  // Counted as a repair, so the raw record backs up first (ruling 6).
+  const seated = repairPaneSeats(initial);
   if (seated !== initial) {
     loaded.repairs.push(
-      "a persisted layout carried a zero-tab pane: the new-tab seat was restored",
+      "a persisted pane carried no live tab (a retired new-tab seat or a zero-tab pane): a new chat was seated",
     );
     initial = seated;
   }
@@ -3357,7 +3348,9 @@ export function createDock(store: Storage): DockApi {
     if (!s) return false;
     const rec = parseAnyLayout(s, () => tree.value);
     syncIdSeed(rec.tree);
-    const restored = normalizeTabSeats(assignChatKeys(rec.tree));
+    // card t_9855a20e: a snapshot is pre-seat - no placeholder can ride it
+    // once the placeholder is retired, so the restore is plain keys + tree
+    const restored = assignChatKeys(rec.tree);
     if (rec.closedEdges) {
       closedEdges.splice(0, closedEdges.length, ...rec.closedEdges);
     }

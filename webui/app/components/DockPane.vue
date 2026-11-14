@@ -54,7 +54,7 @@
             :aria-selected="i === node.active"
             :aria-label="iconTabs ? tabTitle(t) : undefined"
             :title="tabTitle(t)"
-            :draggable="draggableTab(t)"
+            :draggable="true"
             @click="api.focus(node.id, i)"
             @dragstart="onTabDragStart($event, i)"
             @dragover="onTabbarDragOver"
@@ -81,9 +81,12 @@
             <span
               v-if="!iconTabs"
               class="dock-tab-title">{{ tabTitle(t) }}</span>
-            <!-- the close X: closable components only (chat today); it
-                 surfaces on hover (CSS) wherever the tab lives - pane
-                 identity no longer decides tab chrome (t_d6b657a7) -->
+            <!-- the close X: closable components only (chat today) AND only
+                 while the pane hosts another tab - card t_9855a20e's
+                 LOCKED LAST TAB: the tab left alone in a pane carries no X,
+                 because closing it would leave the pane empty. It surfaces
+                 on hover (CSS) wherever the tab lives - pane identity no
+                 longer decides tab chrome (t_d6b657a7) -->
             <button
               v-if="tabClosable(t)"
               class="dock-tab-close"
@@ -179,12 +182,14 @@
     <!-- card t_d04a1c80 (DOCK-EMPTY-ACTIONS removal): the 15-button
          component menu that used to be the empty pane's whole content is
          DELETED - with it the icons-bleeding-at-the-sidebar-bottom bug
-         (the overflow came from the element, not from a fix). Empty PANES
-         are dead by construction now (NEVER-ZERO-TABS: every pane carries
-         a tab, and closing the last one seats the new-tab placeholder), so
-         this body only ever renders for that placeholder: a blank surface.
-         Do NOT build a replacement menu here - the 0.17.3 canvas class-law
-         + menu work is the future home for adding views. -->
+         (the overflow came from the element, not from a fix). card
+         t_9855a20e: the pane a close could empty is gone too (THE LOCKED
+         LAST TAB - the lone tab carries no X and closeTab refuses), so
+         this surface now renders only for a pane a GESTURE left empty: a
+         fresh split group, or a shell whose last tab was dragged out.
+         Do NOT build a replacement menu here - the 0.17.3 canvas
+         class-law + menu work is the future home for adding views; until
+         then a drop (or the menubar/palette openers) refills the pane. -->
     <div
       v-else
       class="dock-empty" />
@@ -255,7 +260,6 @@
     dockableIcon,
     dockableOf,
     isClosableTab,
-    isPlaceholderTab,
     type DockComponentName,
   } from "../composables/dockables";
   import { endGesture, onGestureEnd, tabDrag, zoneForPoint, zoneRectFractions, type DragZone, type ZoneRect } from "../composables/dockdnd";
@@ -278,8 +282,9 @@
 
   // MENU_DOCKABLES left this pane with the empty-pane component menu
   // (card t_d04a1c80): the inventory stays in the registry for the 0.17.3
-  // canvas menus, but NOTHING renders it here - the empty pane is dead by
-  // construction (NEVER-ZERO-TABS seats the new-tab placeholder instead).
+  // canvas menus, but NOTHING renders it here - card t_9855a20e retired
+  // the new-tab placeholder, so an empty pane is a GESTURE's own state
+  // (a fresh split, a drained shell) rendering the bar-less empty strip.
 
   const props = defineProps<{
     node: DockPaneNode;
@@ -309,28 +314,22 @@
   function tabClosable(t: DockTab): boolean {
     // Endo ruling 2026-10-25, corrected t_b620f99d: the last-main-pane
     // law protects the PANE, not the tabs - every tab's X renders
-    // whatever the census says. card t_d04a1c80 (NEVER-ZERO-TABS):
-    // closing the LAST tab now seats the new-tab placeholder in the same
-    // swap (closeTab), so the pane never dips to zero tabs. The
-    // placeholder itself is unclosable - "if the last tab IS a new tab,
-    // keep it" - so it renders no X.
-    return isClosableTab(t.component);
+    // whatever the census says. card t_9855a20e (Endo ruling 2026-11-14,
+    // THE LOCKED LAST TAB): a pane's LAST tab carries no X at all - the
+    // close that would empty the pane is not offered (closeTab refuses
+    // it too), so the closed tab never had to come back as a blank
+    // "New Tab" placeholder.
+    return isClosableTab(t.component) && props.node.tabs.length > 1;
   }
 
   const outletName = computed(() => {
     const c = props.node.tabs[props.node.active]?.component;
-    // card t_d04a1c80: the new-tab placeholder has no outlet - its body is
-    // the blank `.dock-empty` surface (the pane never renders zero tabs,
-    // the placeholder IS the tab)
-    if (!c || isPlaceholderTab(c)) return null;
+    // an EMPTY pane (a fresh split group, a shell drained by a drag) has
+    // no outlet: its body is the bar-less `.dock-empty` surface, and a
+    // drop refills it (the empty-pane component menu stays deleted)
+    if (!c) return null;
     return "pane-" + c as `pane-${DockComponentName}`;
   });
-
-  // card t_d04a1c80: every tab chip drags EXCEPT the new-tab placeholder -
-  // a seat is not content (moveTab refuses it too, for a stale payload).
-  function draggableTab(t: DockTab): boolean {
-    return !isPlaceholderTab(t.component);
-  }
 
   const kindClass = computed(
     () => "kind-" + (props.node.tabs[props.node.active]?.component ?? "empty"),

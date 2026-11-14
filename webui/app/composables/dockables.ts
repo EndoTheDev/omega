@@ -77,14 +77,8 @@ export const DOCK_COMPONENTS = [
   "kanban",
   "insights",
   "mcp",
-  // card t_d04a1c80 (NEVER-ZERO-TABS): the placeholder a pane seats when
-  // its last tab closes - "closing the last tab opens a new tab; if the
-  // last tab IS a new tab, keep it". It is a SEAT, not a surface: no menu
-  // opens it (the empty-pane component menu is dead), no outlet renders
-  // it (DockPane draws a blank body), and it is unclosable - the law
-  // keeps it. A pane hosting it and real content drops it (the pane's
-  // live tab set is the truth; the seat only fills zero).
-  "newtab",
+  // card t_9855a20e: the never-zero placeholder ("newtab", card
+  // t_d04a1c80) LEFT this list - see LEGACY_DOCK_COMPONENTS.
   // card t_55a3fc4b (Endo ruling 2026-11-01, the v0.15 arc): the
   // integrated terminal joins - VS Code-style, no restrictions (no
   // confirm-gate, no opt-in; the owner's box behind the tailnet). One
@@ -119,7 +113,15 @@ export type DockComponentName = (typeof DOCK_COMPONENTS)[number];
 // pre-reset trees persist tabs {component: "inspector"}; deserialize
 // still accepts the legacy id (createDock modernizes it to the inspector
 // group on load) but nothing may open one again.
-export const LEGACY_DOCK_COMPONENTS = ["inspector"] as const;
+// card t_9855a20e: "newtab" is LEGACY too. It was the never-zero
+// placeholder (card t_d04a1c80) a close seated in a pane's last-tab slot;
+// Endo's 2026-11-14 ruling retired the approach - the blank "New Tab"
+// body WAS the empty bad looking space, and the law it carried is now THE
+// LOCKED LAST TAB (dock.ts closeTab refuses; DockPane renders no X on a
+// lone tab). Records persisted while the placeholder lived still parse
+// here, and the loader's repairPaneSeats converts such a seat into a
+// fresh new-chat tab on boot.
+export const LEGACY_DOCK_COMPONENTS = ["inspector", "newtab"] as const;
 
 export type DockInstancePolicy = "singleton" | "multi";
 
@@ -406,24 +408,6 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     area: "right",
     closable: false,
   },
-  {
-    // card t_d04a1c80 (NEVER-ZERO-TABS, Endo's canvas ruling 2026-11-12):
-    // the new-tab placeholder. It carries a chip (title + glyph) so a pane
-    // is never chip-less, and NOTHING else: no outlet (DockPane renders a
-    // blank body for it), no menu entry (MENU_DOCKABLES excludes it - the
-    // 15-button empty-pane component menu is dead, and the 0.17.3 canvas
-    // menus are the future home for adding views), no close X (closable
-    // false: "if the last tab IS a new tab, keep it" - the law refuses,
-    // there is no dead button). Multi policy: every pane mints its own
-    // seat; the singleton focus rule would teleport a user's close into
-    // another pane's tab.
-    id: "newtab",
-    title: "New Tab",
-    icon: "plus",
-    policy: "multi",
-    area: "main",
-    closable: false,
-  },
 ];
 
 // the per-component floors (card t_ae9ac5cf): chat is the only component
@@ -447,10 +431,6 @@ const DOCKABLE_MIN_PX: Record<DockComponentName, number> = {
   notifications: MIN_PANE_PX,
   terminal: MIN_PANE_PX,
   observability: MIN_PANE_PX,
-  // card t_d04a1c80: the new-tab seat keeps the EMPTY pane's floor
-  // (paneFloorOf's empty rule: "an empty pane's next tenant may be the
-  // chat") - the placeholder is that same empty state, wearing a chip
-  newtab: CHAT_FLOOR_PX,
 };
 
 // THE registry, floors attached (card t_ae9ac5cf): every entry carries its
@@ -534,7 +514,10 @@ export function isLockedTab(id: DockComponentName): boolean {
 }
 
 /** tab-bar X policy: closable components only (chat, viewer, browser,
-    settings). Unknown ids get no X. */
+    settings). Unknown ids get no X. card t_9855a20e: this is the
+    COMPONENT half of the X law; the PANE half (a pane's lone tab renders
+    no X - THE LOCKED LAST TAB) lives where the tab count is known
+    (DockPane's tabClosable + dock.ts closeTab, which refuses the close). */
 export function isClosableTab(id: DockComponentName): boolean {
   const d = safeEntry(id);
   return d !== null && d.closable;
@@ -549,36 +532,18 @@ export const COMPONENT_TITLES: Record<DockComponentName, string> =
     string
   >;
 
-/** card t_d04a1c80: the new-tab placeholder's id - the seat a pane takes
-    when its last tab closes (NEVER-ZERO-TABS: the canvas never renders an
-    empty pane). One name, one law: dock.ts seats it, DockPane draws its
-    blank body, nothing opens it. */
-export const NEW_TAB_COMPONENT = "newtab" as const;
-
-/** is this the never-zero placeholder? (the seat that never drags, never
-    closes, never renders a surface). Unknown ids are NOT placeholders. */
-export function isPlaceholderTab(id: string): boolean {
-  return id === NEW_TAB_COMPONENT;
-}
-
 /** card t_4ae27e0d: the MAIN-area dockables (openable into the main pane
     class; chat's multi policy reads "new chat"). Kept for dock
-    consumers - the MENUS use MENU_DOCKABLES below since t_d6b657a7.
-    card t_d04a1c80: the new-tab placeholder lives in the main pane but
-    is not OPENABLE - nothing mints it but the never-zero law (and a
-    split), so it stays out of the openable inventory. */
+    consumers - the MENUS use MENU_DOCKABLES below since t_d6b657a7. */
 export const MAIN_DOCKABLES: readonly DockComponentName[] =
-  DOCKABLES.filter((d) => d.area === "main" && d.id !== NEW_TAB_COMPONENT)
-    .map((d) => d.id);
+  DOCKABLES.filter((d) => d.area === "main").map((d) => d.id);
 
 /** card t_d6b657a7: the '+' / empty-pane MENU inventory - the refill
     source for ANY pane, pinned or main (free content). Sessions is
     excluded: locked (the loader owns it, it can never be menu-opened).
     Settings is excluded too, but NOT for lack of an entry point: card
     t_00e4a784 gave it the menubar gear (the VSCode read), so the '+'
-    inventory keeps its quiet main-tab voice. card t_d04a1c80: the
-    new-tab placeholder is never a menu entry either - it is the EMPTY
-    state itself, not a view.
+    inventory keeps its quiet main-tab voice.
     card t_d04a1c80 (DOCK-EMPTY-ACTIONS removal): this inventory's last
     renderer (the empty-pane component menu) is deleted; the list stays
     as the registry's openable truth for the 0.17.3 canvas menus. */
@@ -590,8 +555,7 @@ export const MENU_DOCKABLES: readonly DockComponentName[] = DOCKABLES
     (d) =>
       d.id !== "sidebar" &&
       d.id !== "settings" &&
-      d.id !== "viewer" &&
-      d.id !== NEW_TAB_COMPONENT,
+      d.id !== "viewer",
   )
   .map((d) => d.id);
 

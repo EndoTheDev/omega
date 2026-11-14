@@ -179,7 +179,7 @@ describe("tree construction", () => {
 });
 
 describe("insertPane / splitPane", () => {
-  it("splits a mid pane: the new pane seats the new-tab placeholder (t_d04a1c80)", () => {
+  it("splits a mid pane: the new pane starts EMPTY (card t_9855a20e)", () => {
     const t = defaultTree();
     const chat = paneByComponent(t, "chat");
     const out = asSplit(splitPane(t, chat.id, "row", "after"));
@@ -187,23 +187,18 @@ describe("insertPane / splitPane", () => {
     const inner = asSplit(out.children[1]);
     assert.equal(inner.direction, "row");
     assert.equal(asPane(inner.children[0]).id, chat.id);
-    // NEVER-ZERO-TABS: the empty-pane component menu is dead, so a fresh
-    // split seats the placeholder instead of rendering a zero-tab pane
-    assert.deepEqual(
-      asPane(inner.children[1]).tabs.map((x) => x.component),
-      ["newtab"],
-    );
-    assert.deepEqual(comps(out), ["sidebar", "chat", "newtab", "files"]);
+    // card t_9855a20e: the empty-pane component menu is deleted AND the
+    // never-zero placeholder retired - a fresh split group is born empty
+    // and a drop fills it
+    assert.deepEqual(asPane(inner.children[1]).tabs.map((x) => x.component), []);
+    assert.deepEqual(comps(out), ["sidebar", "chat", undefined, "files"]);
   });
   it("side 'before' puts the new pane left", () => {
     const t = defaultTree();
     const chat = paneByComponent(t, "chat");
     const out = asSplit(splitPane(t, chat.id, "row", "before"));
     const inner = asSplit(out.children[1]);
-    assert.deepEqual(
-      asPane(inner.children[0]).tabs.map((x) => x.component),
-      ["newtab"],
-    );
+    assert.deepEqual(asPane(inner.children[0]).tabs.map((x) => x.component), []);
     assert.equal(asPane(inner.children[1]).id, chat.id);
   });
   it("wraps the root when the target IS the root pane", () => {
@@ -216,7 +211,7 @@ describe("insertPane / splitPane", () => {
     let t: DockNode = defaultTree();
     const chat = paneByComponent(t, "chat");
     t = splitPane(t, chat.id, "row", "after");
-    const seat = panes(t).find((p) => p.tabs[0]?.component === "newtab")!;
+    const seat = panes(t).find((p) => p.tabs.length === 0)!;
     t = splitPane(t, seat.id, "column", "before");
     assert.equal(splits(t).length, 3); // root + row + column
   });
@@ -232,20 +227,20 @@ describe("removePane (card t_4ae27e0d refusals)", () => {
     const chat = paneByComponent(t, "chat");
     t = splitPane(t, chat.id, "row", "after"); // 4 panes now
     assert.equal(paneCount(t), 4);
-    const fresh = panes(t).find((p) => p.tabs[0]?.component === "newtab")!; // the split-away pane
+    const fresh = panes(t).find((p) => p.tabs.length === 0)!; // the split-away pane
     const out = asSplit(removePane(t, fresh.id));
     assert.ok(!findPane(out, fresh.id));
     assert.equal(paneCount(out), 3);
   });
   it("a single-child split hoists to the child", () => {
-    // split the chat: root [sidebar, row[chat, newtab], files]; dropping
+    // split the chat: root [sidebar, row[chat, empty], files]; dropping
     // the fresh pane single-childrens the interior row - it hoists to the
     // chat pane itself (the webui guard never even called here: the
     // split never went below 2 children, it collapsed instead)
     let t: DockNode = defaultTree();
     const chat = paneByComponent(t, "chat");
     t = splitPane(t, chat.id, "row", "after");
-    const fresh = panes(t).find((p) => p.tabs[0]?.component === "newtab")!;
+    const fresh = panes(t).find((p) => p.tabs.length === 0)!;
     t = removePane(t, fresh.id);
     assert.equal(paneCount(t), 3);
     const survivor = asSplit(t).children[1];
@@ -274,16 +269,17 @@ describe("removePane (card t_4ae27e0d refusals)", () => {
 });
 
 describe("movePane", () => {
-  it("a MAIN pane moves: root [sidebar, hoisted-seat, chat, files]", () => {
+  it("a MAIN pane moves: root [sidebar, hoisted-empty, chat, files]", () => {
     let t: DockNode = defaultTree();
     const chat = paneByComponent(t, "chat");
     t = splitPane(t, chat.id, "row", "after");
     const mainHalf = findPane(t, chat.id)!;
     const out = movePane(t, mainHalf.id, paneByComponent(t, "files").id, "before");
-    // the detach hoisted the chat's split to its SEAT pane (never-zero:
-    // the placeholder, not a menu-bearing empty pane), which now sits
-    // between sidebar and the insert point
-    assert.deepEqual(comps(out), ["sidebar", "newtab", "chat", "files"]);
+    // the detach hoisted the chat's split to its EMPTY sibling (card
+    // t_9855a20e: the placeholder is retired - the pane it used to fill
+    // sits empty and a drop refills it), which now sits between sidebar
+    // and the insert point
+    assert.deepEqual(comps(out), ["sidebar", undefined, "chat", "files"]);
   });
   it("pinned panes refuse pane-moves (fixed chrome)", () => {
     let t: DockNode = defaultTree();
@@ -301,10 +297,10 @@ describe("movePane", () => {
     const rowPane = findPane(t2, chat.id)!;
     const out = movePane(t2, rowPane.id, paneByComponent(t2, "files").id, "after");
     // root: [sidebar, files, chat]; the split that held half the chat
-    // keeps only its SEAT pane -> hoisted, so the seat is top-level
-    assert.deepEqual(comps(out), ["sidebar", "newtab", "files", "chat"]);
-    const seat = panes(out).find((p) => p.tabs[0]?.component === "newtab")!;
-    assert.ok(seat, "the split-away pane survives as the new-tab seat");
+    // keeps only its EMPTY pane -> hoisted, so the empty pane is top-level
+    assert.deepEqual(comps(out), ["sidebar", undefined, "files", "chat"]);
+    const empty = panes(out).find((p) => p.tabs.length === 0)!;
+    assert.ok(empty, "the split-away pane survives EMPTY (no placeholder is seated)");
     assert.equal(splits(out).length, 2); // root + the split wrapping the drop target
   });
   it("no-ops: self-move / unknown ids", () => {
@@ -332,11 +328,11 @@ describe("tab ops", () => {
   function tabComps(t: DockNode, id: string): string[] {
     return (findPane(t, id) as DockPane).tabs.map((x) => x.component);
   }
-  it("openTab appends and focuses; closeTab removes and shifts focus", () => {
+  it("openTab appends and focuses; closeTab removes, the last tab locks", () => {
     // t_b620f99d: closeTab never consults the last-main-pane census, so
-    // the mechanics run on the plain single-pane tree. card t_d04a1c80
-    // (NEVER-ZERO-TABS): the LAST tab's close seats the new-tab
-    // placeholder in the same swap - the pane never goes zero-tab.
+    // the mechanics run on the plain single-pane tree. card t_9855a20e
+    // (THE LOCKED LAST TAB): the pane's LAST tab refuses the close - no
+    // placeholder is seated in its place.
     const left = asPane(makePane("chat"));
     let t: DockNode = left;
     t = openTab(t, left.id, { component: "scratch" });
@@ -348,11 +344,11 @@ describe("tab ops", () => {
     p = findPane(t, left.id)!;
     assert.equal(p.tabs.length, 1);
     assert.equal(p.active, 0); // focus shifted back onto the survivor
-    t = closeTab(t, left.id, 0);
-    p = findPane(t, left.id)!;
-    assert.deepEqual(p.tabs.map((x) => x.component), ["newtab"], "the last tab closes into the new-tab seat");
-    assert.equal(p.active, 0);
-    assert.ok(findPane(t, left.id), "the pane stays in the tree");
+    const last = closeTab(t, left.id, 0);
+    assert.equal(last, t, "the last tab is locked - the tree is untouched");
+    assert.deepEqual(findPane(last, left.id)!.tabs.map((x) => x.component), ["scratch"]);
+    assert.equal(findPane(last, left.id)!.active, 0);
+    assert.ok(findPane(last, left.id), "the pane stays in the tree");
   });
   it("an UNCLOSEABLE tab refuses closeTab (sidebar tabs have no X)", () => {
     const t = defaultTree();
@@ -442,7 +438,7 @@ describe("tab ops", () => {
       );
     });
 
-    it("a PINNED shell emptied by a move seats the placeholder (never zero tabs)", () => {
+    it("a PINNED shell emptied by a move sits EMPTY (nothing is seated)", () => {
       const shell = makePane("files", 240, "right");
       const chat = makePane("chat");
       const t = makeSplit("row", [shell, chat]);
@@ -451,8 +447,8 @@ describe("tab ops", () => {
       assert.ok(s, "the pinned shell is not pruned");
       assert.deepEqual(
         s.tabs.map((x) => x.component),
-        ["newtab"],
-        "the drained shell takes the new-tab seat (card t_d04a1c80)",
+        [],
+        "the drained shell sits empty - no placeholder sticker (card t_9855a20e)",
       );
       assert.deepEqual(tabComps(out, chat.id), ["files", "chat"], "the tab landed");
     });
@@ -517,8 +513,8 @@ describe("serialize / deserialize", () => {
   it("round-trips a nested tree exactly", () => {
     let t: DockNode = defaultTree();
     t = splitPane(t, paneByComponent(t, "chat").id, "row", "after");
-    // card t_d04a1c80: fill the fresh split's new-tab seat with content
-    t = setPaneComponent(t, panes(t).find((p) => p.tabs[0]?.component === "newtab")!.id, "chat");
+    // card t_9855a20e: fill the fresh split's empty group with content
+    t = setPaneComponent(t, panes(t).find((p) => p.tabs.length === 0)!.id, "chat");
     const back = deserialize(serialize(t));
     assert.ok(back);
     assert.deepEqual(JSON.parse(serialize(back)), JSON.parse(serialize(t)));
@@ -852,9 +848,10 @@ describe("pane-model reset", () => {
     assert.deepEqual(paneIds(res.tree), [...before, res.paneId]);
     const fresh = findPane(res.tree, res.paneId)!;
     assert.equal(fresh.fixed, null);
-    // card t_d04a1c80: the minted pane carries the new-tab seat - an
-    // ensureMainPane recovery never mounts a zero-tab pane
-    assert.deepEqual(fresh.tabs.map((x) => x.component), ["newtab"]);
+    // card t_9855a20e: the minted pane is EMPTY - the opener that asked for
+    // it mints its content (openChatTab / openSingleton), and no placeholder
+    // sticker is seated
+    assert.deepEqual(fresh.tabs.map((x) => x.component), []);
     assert.equal(paneCount(res.tree), 4);
   });
   it("paneCount / isPinnedPane read the whole tree", () => {
@@ -1393,7 +1390,8 @@ describe("tab DnD everywhere (t_d6b657a7)", () => {
   it("empty shells are refillable: openSingleton / setPaneComponent target them", () => {
     let t: DockNode = defaultTree();
     // drain the right shell into the main pane (free content), one at a
-    // time; the shell stays pinned and takes the never-zero seat
+    // time; the shell stays pinned and sits EMPTY (card t_9855a20e: the
+    // placeholder is retired - nothing is minted to fill it)
     const insp = paneByComponent(t, "files");
     const chat = paneByComponent(t, "chat");
     for (let i = 0; i < INSPECTOR_TAB_COMPONENTS.length; i++) {
@@ -1402,8 +1400,8 @@ describe("tab DnD everywhere (t_d6b657a7)", () => {
     const shell = findPane(t, insp.id)!;
     assert.deepEqual(
       shell.tabs.map((x) => x.component),
-      ["newtab"],
-      "the drained shell sits on the new-tab seat (card t_d04a1c80)",
+      [],
+      "the drained shell sits empty (no seat)",
     );
     assert.equal(isPinnedPane(shell), true, "still a shell");
     // the open path fills the shell again: drain the tabs into the main

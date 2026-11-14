@@ -2163,7 +2163,9 @@
   }
 
   // "Close current tab" - the last-focused pane's active tab, when it is
-  // closable; a locked/pinned tab refuses (the X policy reads isClosableTab).
+  // closable; a locked/pinned tab refuses (the X policy reads isClosableTab,
+  // card t_9855a20e adds the pane's LONE tab - the last tab never closes, so
+  // the command stays silent instead of calling a refused close).
   function paletteCloseCurrent() {
     const paneId = lastPaneId.value ??
       dock.activeChatTab()?.paneId ??
@@ -2172,6 +2174,7 @@
     if (!pane) return;
     const tab = pane.tabs[pane.active];
     if (!tab || !isClosableTab(tab.component)) return;
+    if (pane.tabs.length <= 1) return; // the locked last tab
     dock.closeTab(pane.id, pane.active);
   }
 

@@ -15,6 +15,7 @@ import {
   growRoot,
   removePane,
   closeTab,
+  openTab,
   moveTab,
   forceSessionsLeft,
   rootPaneOf,
@@ -229,26 +230,34 @@ describe("auto-merge (ruling 8: leaves merge away, roots never die)", () => {
     return { root, bottom, shellLeaf, fresh };
   }
 
-  it("closing the LAST tab of an inner leaf prunes it; the survivor un-grows", () => {
+  it("closing the LAST tab of an inner leaf is LOCKED; the leaf leaves by its remove X", () => {
     const { root, bottom, shellLeaf, fresh } = grownBottom();
-    const out = closeTab(root, fresh.id, 0);
+    // card t_9855a20e (THE LOCKED LAST TAB): the leaf's only tab refuses the
+    // close - the leaf renders no tab X, the same as every lone tab
+    assert.equal(closeTab(root, fresh.id, 0), root, "the last tab of a leaf never closes");
+    assert.ok(rootPaneOf(root, fresh.id), "the leaf still lives in the root");
+    // the leaf's own remove X is the route (canRemovePane is true for root
+    // leaves) - the root unwinds to its survivor's classic cell
+    const out = removePane(root, fresh.id);
     const B = findPane(out, bottom.id)!;
     assert.equal(B.grown, undefined, "the last leaf went: the root un-grew");
     assert.deepEqual(B.tabs.map((t) => t.component), ["chat"], "the survivor's classic content returned");
     assert.equal(rootPaneOf(out, shellLeaf.id), null, "nothing hosts the survivor anymore");
   });
 
-  it("closing one inner leaf among several prunes just that leaf", () => {
+  it("a leaf's tab WITH company still closes; the split keeps its survivors", () => {
     const { root, bottom, shellLeaf, fresh } = grownBottom();
-    // three leaves: the third keeps the split alive after the close
+    // three leaves, the middle one carrying two tabs: closing one tab is
+    // allowed (it is not the pane's last), the leaf stays
     const l3 = makePane("agents");
     bottom.grown = makeSplit("row", [shellLeaf, fresh, l3]);
-    const first = closeTab(root, shellLeaf.id, 0);
+    const withTwo = openTab(root, fresh.id, { component: "chat" });
+    const first = closeTab(withTwo, fresh.id, 0);
     const B = findPane(first, bottom.id)!;
     assert.ok(B.grown, "the root keeps its split");
     assert.deepEqual(B.tabs.map((t) => t.component), [], "the root's classic bar stays empty");
-    assert.deepEqual(B.grown!.children.map((c) => asPane(c).tabs.map((t) => t.component)), [["chat"], ["agents"]],
-      "only the fresh and third leaves remain");
+    assert.deepEqual(B.grown!.children.map((c) => asPane(c).tabs.map((t) => t.component)), [["chat"], ["chat"], ["agents"]],
+      "every leaf remains; only the closed tab left");
   });
 
   it("moveTab drains an inner leaf: the root un-grows to the survivor", () => {

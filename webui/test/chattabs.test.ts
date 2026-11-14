@@ -128,16 +128,20 @@ describe("closeSessionTabs", () => {
     });
   });
 
-  it("closing the last tab seats the new-tab placeholder (pane never zero, never removed)", () => {
+  it("the last chat's death seats a fresh new chat (never an empty pane)", () => {
     const bound = seededTree("gone");
     const key = firstChatTab(bound)!.tab.key!;
     const tree = setTabSessionRef(bound, key, "gone");
     assert.equal(paneAt(tree, 1).tabs.length, 1);
     const next = closeSessionTabs(tree, "gone");
     const chatPane = paneAt(next, 1);
-    // card t_d04a1c80 (NEVER-ZERO-TABS): the session close takes the last
-    // live tab with it - the pane keeps the placeholder seat
-    assert.deepEqual(chatPane.tabs.map((t) => t.component), ["newtab"], "seat, not an empty pane");
+    // card t_9855a20e: the session close takes the last live tab with it -
+    // the pane seats a FRESH new-chat tab (sessionless, keyed), not the
+    // retired "New Tab" placeholder and never an empty pane
+    assert.deepEqual(chatPane.tabs.map((t) => t.component), ["chat"], "a new chat, not an empty pane");
+    assert.equal(chatPane.tabs[0]!.sessionRef, undefined, "the fresh tab is unbound");
+    assert.ok(chatPane.tabs[0]!.key, "and keyed like every runtime chat tab");
+    assert.notEqual(chatPane.tabs[0]!.key, key, "a new instance, never the dead one");
   });
 
   it("unrelated session ids change nothing", () => {
