@@ -69,7 +69,17 @@ const jobs: CronJobWire[] = [
 
 test("cronKeyOf keys agent wake jobs on the agent path", () => {
   assert.equal(cronKeyOf({ name: "wake", schedule: "", enabled: true, next: "" }), "wake");
-  assert.equal(cronKeyOf({ name: "wake", schedule: "", enabled: true, next: "", agent: "scout" }), "scout/wake");
+  assert.equal(
+    cronKeyOf({ name: "wake", schedule: "", enabled: true, next: "", agent: "scout", agent_owned: true }),
+    "scout/wake",
+  );
+  // a main-home job with an AUTHORED agent keys on its own name: the
+  // server's StateKey never namespaces a main row (card t_21824d98 -
+  // the old derivation sent "ghost/pulse" at a job loaded as "pulse")
+  assert.equal(
+    cronKeyOf({ name: "pulse", schedule: "", enabled: true, next: "", agent: "ghost" }),
+    "pulse",
+  );
 });
 
 test("setCronJobEnabled: POST the toggle, then re-fetch the listing", async () => {

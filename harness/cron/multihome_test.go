@@ -153,3 +153,67 @@ func TestAgentJobStateKeysNamespace(t *testing.T) {
 		t.Error("warden/wake never recorded")
 	}
 }
+
+// TestJobsListingMarksHomeOwnership pins the wire's ownership mark (card
+// t_21824d98): a main-home continuous-agent job carrying an AUTHORED
+// `agent:` and an agent home's wake row both put a non-empty Agent on the
+// row, and only AgentOwned tells them apart. The editor's read-only
+// refusal (and the toggle's state key) read that mark, so the
+// authored-agent row keeps its pencil instead of stranding as a wake.
+func TestJobsListingMarksHomeOwnership(t *testing.T) {
+	home := t.TempDir()
+	mainYAML := "jobs:\n" +
+		"  - name: daily\n    schedule: \"0 8 * * *\"\n    prompt: p\n" +
+		"  - name: pulse\n    kind: interval\n    minutes: 15\n" +
+		"    deliver: continuous-agent\n    agent: ghost\n    prompt: p\n"
+	if err := os.WriteFile(filepath.Join(home, "crons.yaml"), []byte(mainYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := agent.ScaffoldAgent(home, "scout", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "agents", "scout", "config", "crons.yaml"),
+		[]byte("jobs:\n  - name: wake\n    schedule: \"17 * * * *\"\n    prompt: patrol\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadAllConfigs(home)
+	if err != nil {
+		t.Fatalf("LoadAllConfigs: %v", err)
+	}
+	r := NewRunner(cfg, home)
+	r.now = time.Now
+	byName := map[string]JobInfo{}
+	for _, row := range r.Jobs() {
+		byName[row.Name] = row
+	}
+	if row := byName["pulse"]; row.Agent != "ghost" || row.AgentOwned {
+		t.Errorf("authored-agent main row = %+v, want agent ghost and AgentOwned false (editable)", row)
+	}
+	if row := byName["daily"]; row.Agent != "" || row.AgentOwned {
+		t.Errorf("plain main row = %+v, want no agent and AgentOwned false", row)
+	}
+	if row := byName["wake"]; row.Agent != "scout" || !row.AgentOwned {
+		t.Errorf("agent-home row = %+v, want agent scout and AgentOwned true (read-only)", row)
+	}
+	// The wire carries it: agent_owned appears only on the owned row, so
+	// the SPA can tell the two classes apart without guessing.
+	rows := r.JobRows()
+	if len(rows) != 3 {
+		t.Fatalf("wire rows = %d, want 3", len(rows))
+	}
+	for _, raw := range rows {
+		var wire struct {
+			Name       string `json:"name"`
+			AgentOwned bool   `json:"agent_owned"`
+		}
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			t.Fatalf("unmarshal row: %v", err)
+		}
+		if wire.Name == "pulse" && wire.AgentOwned {
+			t.Errorf("authored-agent row marked agent_owned on the wire: %s", raw)
+		}
+		if wire.Name == "wake" && !wire.AgentOwned {
+			t.Errorf("wake row missing agent_owned on the wire: %s", raw)
+		}
+	}
+}

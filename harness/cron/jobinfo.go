@@ -33,6 +33,15 @@ type JobInfo struct {
 	// main-home continuous-agent jobs, empty once resolved to the
 	// default for in-process jobs (the default IS the absence).
 	Agent string `json:"agent,omitempty"`
+	// AgentOwned is the FILE ownership mark (card t_21824d98): true
+	// when the job's yaml lives in an agent home's own
+	// config/crons.yaml, false for a main-home job. A non-empty Agent
+	// carries two different meanings - the owning home's name on a
+	// wake row, the AUTHORED `agent:` on a main-home continuous-agent
+	// job - and Agent alone cannot tell them apart. Consumers that
+	// must refuse a cross-home write (the editor's read-only rows,
+	// the toggle's state key) read THIS mark.
+	AgentOwned bool `json:"agent_owned,omitempty"`
 	// Model is the authored per-job model override; empty = the
 	// session provider model (the defaulting law).
 	Model string `json:"model,omitempty"`
