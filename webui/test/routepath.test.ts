@@ -12,6 +12,7 @@ import {
   isSettingsPath,
   parseSessionPath,
   sessionPath,
+  settingsAddress,
   SETTINGS_PATH,
 } from "../app/composables/omega.ts";
 
@@ -50,22 +51,26 @@ describe("sessionPath", () => {
 });
 
 describe("isSettingsPath", () => {
-  it("claims the settings view path and its trailing-slash twin", () => {
-    assert.equal(isSettingsPath("/settings/view"), true);
-    assert.equal(isSettingsPath("/settings/view/"), true);
-    assert.equal(SETTINGS_PATH, "/settings/view");
+  it("claims the settings path - the trailing-slash SPA form", () => {
+    assert.equal(isSettingsPath("/settings/"), true);
+    assert.equal(SETTINGS_PATH, "/settings/");
   });
 
   it("never claims the settings API's own path", () => {
-    // /settings is the HTTP API (agent/api/server.go registers it exactly);
-    // the SPA only gets the catch-all, so the view path sits one segment
-    // deeper
+    // the bare noun is the HTTP API route (agent/api/server.go registers it
+    // exactly); the SPA only gets the catch-all, so the app's own path is
+    // the trailing-slash form - the same split /board/ has
     assert.equal(isSettingsPath("/settings"), false);
-    assert.equal(isSettingsPath("/settings/"), false);
+  });
+
+  it("retires the one-segment-deeper form the landing used to take", () => {
+    assert.equal(isSettingsPath("/settings/view"), false);
+    assert.equal(isSettingsPath("/settings/view/"), false);
   });
 
   it("claims nothing else - the path carries the VIEW, no id part", () => {
-    assert.equal(isSettingsPath("/settings/view/general"), false);
+    assert.equal(isSettingsPath("/settings/general"), false);
+    assert.equal(isSettingsPath("/settings//"), false);
     assert.equal(isSettingsPath("/settings/views"), false);
     assert.equal(isSettingsPath("/chat/settings"), false);
     assert.equal(isSettingsPath("/board"), false);
@@ -76,7 +81,26 @@ describe("isSettingsPath", () => {
   it("carries no query axis (the section rides ?settings=<id>)", () => {
     // callers hand this helper a PATHNAME only; a pathname string carrying
     // a query is not the route
-    assert.equal(isSettingsPath("/settings/view?settings=general"), false);
+    assert.equal(isSettingsPath("/settings/?settings=general"), false);
+  });
+});
+
+describe("settingsAddress", () => {
+  it("is the SPA path when the URL carries no query", () => {
+    assert.equal(settingsAddress(""), "/settings/");
+    assert.equal(settingsAddress("?"), "/settings/");
+  });
+
+  it("keeps the section query the deep link carried", () => {
+    // the claim must never drop ?settings=<id>: SettingsTab owns that
+    // parameter on the same URL, and a claim that rewrote the path alone
+    // would lose the pre-filtered landing
+    assert.equal(settingsAddress("?settings=dock"), "/settings/?settings=dock");
+    assert.equal(settingsAddress("?a=1&settings=dock"), "/settings/?a=1&settings=dock");
+  });
+
+  it("normalises a query handed over without its '?'", () => {
+    assert.equal(settingsAddress("settings=dock"), "/settings/?settings=dock");
   });
 });
 
@@ -104,7 +128,10 @@ describe("/settings landing wiring (app.vue)", () => {
 
   it("opens the tab through the gear's opener, never a second opener", () => {
     const land = appSrc.match(/function landSettingsRoute\(\)[\s\S]*?\n  \}/)?.[0] ?? "";
-    assert.match(land, /settingsRoute\.value = true/);
+    // the mark has ONE writer now (card t_a5ef6340): the landing claims, it
+    // never pokes settingsRoute itself
+    assert.match(land, /claimSettingsPath\(\)/);
+    assert.doesNotMatch(land, /settingsRoute\.value = true/);
     assert.match(land, /openSettingsTab\(\)/);
     // a stale /board overlay must not shadow the tab the path just opened
     assert.match(land, /mainView\.value = "chat"/);
@@ -195,10 +222,45 @@ describe("/settings landing wiring (app.vue)", () => {
     assert.match(release, /history\.replaceState\(\{\}, "", urlPath\.value\)/);
   });
 
-  it("nothing WRITES the settings path (a landing route, like /board)", () => {
-    // the path is entered by the address bar, a bookmark or a link - never
-    // minted by the app on open/close
-    assert.doesNotMatch(appSrc, /(?:replaceState|pushState)\([^)]*SETTINGS_PATH/);
-    assert.doesNotMatch(appSrc, /(?:replaceState|pushState)\([^)]*"\/settings\/view"/);
+  // card t_a5ef6340 inverts the old "nothing WRITES the settings path" law:
+  // the address bar now names the tab while it is up. The WRITE has exactly
+  // one home (claimSettingsPath) - the three doors call it, nothing else
+  // touches the path.
+  it("the write lives in ONE claim helper, replaceState only", () => {
+    const claim =
+      appSrc.match(/function claimSettingsPath\(\)[\s\S]*?\n  \}/)?.[0] ?? "";
+    assert.ok(claim.length > 0, "claimSettingsPath is the one writer");
+    assert.match(claim, /settingsRoute\.value = true/);
+    // the path is already the settings one on a landing: nothing to write,
+    // and the section query is SettingsTab's to keep
+    assert.match(claim, /if \(isSettingsPath\(window\.location\.pathname\)\) return;/);
+    assert.match(
+      claim,
+      /history\.replaceState\(\{\}, "", settingsAddress\(window\.location\.search\)\)/,
+    );
+    // the app never grows the history stack
+    assert.doesNotMatch(appSrc, /history\.pushState/);
+  });
+
+  it("every door that OPENS or FOCUSES the settings tab claims the path", () => {
+    const open = appSrc.match(/function openSettingsTab\(\)[\s\S]*?\n  \}/)?.[0] ?? "";
+    assert.match(open, /claimSettingsPath\(\)/, "the gear / command opener");
+    const palette =
+      appSrc.match(/function paletteOpenDockable\([\s\S]*?\n  \}/)?.[0] ?? "";
+    assert.match(palette, /if \(id === "settings"\) claimSettingsPath\(\);/, "the palette");
+    const refocus = appSrc.match(/function refocusFrom\([\s\S]*?\n  \}\n/)?.[0] ?? "";
+    assert.match(
+      refocus,
+      /if \(tab\?\.component === "settings"\) claimSettingsPath\(\);/,
+      "a settings chip click",
+    );
+  });
+
+  it("the bare noun is never written - only the SPA form", () => {
+    // the API path in an address bar answers knob JSON: the claim must
+    // never mint /settings (the helper adds the trailing slash, and no
+    // other literal in the shell carries the bare route)
+    assert.doesNotMatch(appSrc, /"\/settings"/);
+    assert.doesNotMatch(appSrc, /"\/settings\/view"/);
   });
 });

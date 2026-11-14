@@ -1285,21 +1285,33 @@ export function sessionPath(id: string): string {
 }
 
 // SETTINGS_PATH is the client path that names the settings tab (card
-// t_6d6a6dc4). It rides the SAME pathname scheme as /chat/<id> with no id
-// part: settings is a singleton tab, so the path names the VIEW, never a
-// target. ONE segment deeper than the bare noun on purpose - the server's
-// settings API owns exact `/settings` (agent/api/server.go), and the
-// catch-all only hands the SPA the paths that API pattern does not claim,
-// so `/settings` in an address bar answers the knob JSON, not the app.
-// Nothing writes the path (see app.vue) - a landing route, exactly like
-// /board.
-export const SETTINGS_PATH = "/settings/view";
+// t_a5ef6340, which retakes the noun from t_6d6a6dc4's /settings/view). It
+// rides the SAME pathname scheme as /chat/<id> with no id part: settings is
+// a singleton tab, so the path names the VIEW, never a target.
+//
+// The TRAILING SLASH is the contract, not decoration. The server's settings
+// API owns the bare noun (agent/api/server.go registers exact `/settings`,
+// beside `/settings/raw` and `/settings/reset`), and the catch-all hands
+// every path those patterns do not claim to spaHandler, which answers the
+// SPA shell - the same split `/board/` has. So `/settings` in an address
+// bar is the knob JSON and `/settings/` is the app. The app WRITES this
+// path while the settings tab is up (app.vue claimSettingsPath), so a
+// copied address bar names what the user is looking at.
+export const SETTINGS_PATH = "/settings/";
 
 // isSettingsPath answers whether a client route path names the settings
-// tab. A trailing slash is the same route (/board accepts one too); a
-// deeper path is not.
+// tab. Exactly the SPA form: the bare noun is the API, never the route.
 export function isSettingsPath(p: string): boolean {
-  return /^\/settings\/view\/?$/.test(p);
+  return p === SETTINGS_PATH;
+}
+
+// settingsAddress answers the value a settings claim hands replaceState:
+// the SPA path, carrying whatever query the section axis already holds
+// (`?settings=<id>` - SettingsTab owns that parameter on the same URL, and
+// a claim that dropped it would lose the pre-filtered deep link).
+export function settingsAddress(search: string): string {
+  if (!search || search === "?") return SETTINGS_PATH;
+  return `${SETTINGS_PATH}${search.startsWith("?") ? search : `?${search}`}`;
 }
 
 // Modules that ship a MAIN-pane view (a switcher destination, not an
