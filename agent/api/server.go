@@ -1928,8 +1928,18 @@ func phaseDelta(last, open, now time.Time) time.Duration {
 // now. It is the anchor a remounted meter counts on from (card
 // t_95385aba: a tab switch or reload mid-answer keeps the answer and
 // thinking durations where they were), the same shape the running
-// tool line already ships (now.Sub(callStart)). Pure.
+// tool line already ships (now.Sub(callStart)).
+//
+// A ZERO open boundary means the phase's window already closed (a tool
+// call ends it - the tool's own run time bills to nobody): the span
+// froze at its last chunk, and the anchor is the accumulated span
+// alone. Without that gate the anchor would keep growing through the
+// tool's wall clock and overstate a duration the server already
+// measured. Pure.
 func phaseElapsed(acc time.Duration, last, open, now time.Time) int64 {
+	if open.IsZero() {
+		return acc.Milliseconds()
+	}
 	return (acc + phaseDelta(last, open, now)).Milliseconds()
 }
 

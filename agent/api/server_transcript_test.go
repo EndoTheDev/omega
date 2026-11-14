@@ -472,6 +472,9 @@ func TestLiveTranscriptItemsCarryStreamingElapsed(t *testing.T) {
 		thinking:  "deliberating",
 		thinkDur:  3 * time.Second,
 		lastThink: now.Add(-2 * time.Second),
+		// a chunk stamps the span's last mark and the window boundary
+		// in the same call - the accumulator's invariant
+		openAt: now.Add(-2 * time.Second),
 	}, now)
 	if len(items) != 1 || items[0].Kind != "thinking" || !items[0].Running {
 		t.Fatalf("open thinking = %+v", items)
@@ -490,6 +493,7 @@ func TestLiveTranscriptItemsCarryStreamingElapsed(t *testing.T) {
 		thinkDur:  1500 * time.Millisecond,
 		respDur:   1200 * time.Millisecond,
 		lastResp:  now.Add(-800 * time.Millisecond),
+		openAt:    now.Add(-800 * time.Millisecond),
 		lastThink: now.Add(-10 * time.Second), // closed by the answer's first chunk
 	}, now)
 	if len(items) != 2 || items[0].Kind != "thinking" || items[1].Kind != "message" {
@@ -510,6 +514,23 @@ func TestLiveTranscriptItemsCarryStreamingElapsed(t *testing.T) {
 	if items[1].ResponseMs != 0 {
 		t.Fatalf("a live answer must not ship a final span: %+v", items[1])
 	}
+
+	// the answer ended and its tool is running: the tool call closed
+	// the phase window, so the anchor is the measured span - the tool's
+	// wall clock never bills to the answer a remount restores
+	items = liveTranscriptItems(nil, assistantRecord{
+		content:    "answered, now calling",
+		respDur:    1500 * time.Millisecond,
+		lastResp:   now.Add(-20 * time.Second),
+		toolCalls:  []core.ToolCall{{ID: "c1", Name: "shell.run"}},
+		callStarts: map[string]time.Time{"c1": now.Add(-19 * time.Second)},
+	}, now)
+	if len(items) != 2 || items[0].Kind != "message" || items[1].Kind != "tool_call" {
+		t.Fatalf("answer-plus-tool items = %+v", kindsOf(items))
+	}
+	if items[0].ElapsedMs != 1500 {
+		t.Fatalf("a closed answer window anchors at its measured 1500, got %d", items[0].ElapsedMs)
+	}
 }
 
 // TestPhaseElapsedSpansTheBoundary: a phase that has not produced its
@@ -523,6 +544,12 @@ func TestPhaseElapsedSpansTheBoundary(t *testing.T) {
 	}
 	if got := phaseElapsed(0, time.Time{}, time.Time{}, now); got != 0 {
 		t.Fatalf("no boundary and no chunks = %d, want 0", got)
+	}
+	// a tool call closed the phase's window: the span froze at its last
+	// chunk - the tool's wall clock never bills to the answer, so a
+	// remounted meter must not count the tool's run time into it
+	if got := phaseElapsed(2*time.Second, now.Add(-10*time.Second), time.Time{}, now); got != 2000 {
+		t.Fatalf("closed window = %d, want the accumulated 2000", got)
 	}
 }
 
@@ -614,6 +641,7 @@ func TestSessionTranscriptStreamsTheAnswerElapsed(t *testing.T) {
 		thinkDur: 3 * time.Second,
 		respDur:  1200 * time.Millisecond,
 		lastResp: time.Now().Add(-800 * time.Millisecond),
+		openAt:   time.Now().Add(-800 * time.Millisecond),
 	}, time.Now()))
 
 	rec := httptest.NewRecorder()

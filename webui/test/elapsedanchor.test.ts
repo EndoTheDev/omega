@@ -63,6 +63,17 @@ for (const [name, source] of [
   });
 }
 
+// The collapsed tool group renders the same line the flat row does - a
+// running call inside a group counts on from the same anchor.
+test("ToolGroup hands its rows the anchor too", () => {
+  const group = src("components/chat/ToolGroup.vue");
+  const at = group.indexOf("<ToolCallLine");
+  assert.ok(at >= 0, "ToolGroup renders the shared tool line");
+  const block = group.slice(at, group.indexOf("/>", at));
+  assert.match(block, /:elapsed-ms="item\.elapsedMs"/, "a grouped running call counts on");
+  assert.match(block, /:final-ms="item\.finalMs"/, "a grouped settled call keeps its span");
+});
+
 // The meter's own contract: an omitted/undefined offset must never
 // produce NaN arithmetic (the `startedAt = now() - undefined` shape).
 test("useElapsed documents the initialMs contract", () => {
