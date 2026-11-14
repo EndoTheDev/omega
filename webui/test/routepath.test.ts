@@ -95,8 +95,11 @@ describe("/settings landing wiring (app.vue)", () => {
   });
 
   it("lands the route at both doors: boot and popstate", () => {
-    const landings = appSrc.match(/isSettingsPath\(window\.location\.pathname\)/g) ?? [];
-    assert.equal(landings.length, 2, "one landing per door (boot + popstate)");
+    const pop = appSrc.match(/async function onPop\(\)[\s\S]*?\n  \}\n/)?.[0] ?? "";
+    assert.match(pop, /isSettingsPath\(window\.location\.pathname\)/);
+    const boot =
+      appSrc.match(/onMounted\([\s\S]*?isSettingsPath\(window\.location\.pathname\)/)?.[0] ?? "";
+    assert.ok(boot.length > 0, "the boot door reads the path");
   });
 
   it("opens the tab through the gear's opener, never a second opener", () => {
@@ -115,6 +118,54 @@ describe("/settings landing wiring (app.vue)", () => {
   it("a chat tab in focus hands the URL back to chat", () => {
     const refocus = appSrc.match(/function refocusFrom\([\s\S]*?\n  \}\n/)?.[0] ?? "";
     assert.match(refocus, /settingsRoute\.value = false/);
+  });
+
+  // the sidebar's row click is the PRIMARY session-navigation gesture and it
+  // routes straight into openChatTab (both the desktop and the mobile pane
+  // bind @open), not through a dock-pane gesture - so the openers must clear
+  // the mark themselves or the landing outlives the landing (vera round 1)
+  it("both sidebar panes route their three chat gestures through the openers", () => {
+    const opens = appSrc.match(/@open="openChatTab"/g) ?? [];
+    const news = appSrc.match(/@new="openChatTab\(null\)"/g) ?? [];
+    const ephemerals = appSrc.match(/@new-ephemeral="openEphemeralTab"/g) ?? [];
+    assert.equal(opens.length, 2, "desktop + mobile session list");
+    assert.equal(news.length, 2);
+    assert.equal(ephemerals.length, 2);
+  });
+
+  it("the chat openers clear the mark - before their focus-existing returns", () => {
+    const open = appSrc.match(/function openChatTab\([\s\S]*?\n  \}\n/)?.[0] ?? "";
+    assert.match(open, /settingsRoute\.value = false/);
+    // the focus-existing / focus-draft branches return early, so a late
+    // clear would miss the very gesture this pin exists for
+    assert.ok(
+      open.indexOf("settingsRoute.value = false") <
+        open.indexOf("if (sessionId)"),
+      "the clear precedes the first early return",
+    );
+    assert.ok(
+      open.indexOf("settingsRoute.value = false") <
+        open.indexOf("focusedKey.value"),
+      "the clear precedes the focus assignment (the URL watcher reads it)",
+    );
+    const ephemeral =
+      appSrc.match(/function openEphemeralTab\([\s\S]*?\n  \}\n/)?.[0] ?? "";
+    assert.match(ephemeral, /settingsRoute\.value = false/);
+  });
+
+  it("a released landing WRITES the path the pause held", () => {
+    // the pause suppresses every derivation, so a release whose derived path
+    // did not change (a draft tab focused before and after) writes nothing
+    // on its own - the sidebar's '+' on a landing would keep /settings/view
+    const release =
+      appSrc.match(/watch\(settingsRoute, \(up\) => \{[\s\S]*?\n  \}\);/)?.[0] ?? "";
+    assert.match(release, /if \(up\) return;/);
+    assert.match(
+      release,
+      /if \(!isSettingsPath\(window\.location\.pathname\)\) return;/,
+      "only a landing that still owns the URL writes",
+    );
+    assert.match(release, /history\.replaceState\(\{\}, "", urlPath\.value\)/);
   });
 
   it("nothing WRITES the settings path (a landing route, like /board)", () => {
