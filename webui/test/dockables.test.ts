@@ -162,8 +162,6 @@ describe("the dockable registry", () => {
           // card t_e703180e: the observability tab's label
           // card t_01c53e78: renamed to "Logs" - the one logs surface
           d.title === "Logs" && d.id === "observability" ||
-          // card t_d04a1c80: the new-tab placeholder's own label
-          d.title === "New Tab" && d.id === "newtab" ||
           d.title === d.id,
         `${d.id}: unexpected label "${d.title}"`,
       );
@@ -204,11 +202,11 @@ describe("the dockable registry", () => {
     }
   });
 
-  it("policy split: chat + viewer + the new-tab seat are multi (t_36ceb99b, t_d04a1c80); the closable class adds browser + settings singletons (t_95c91f9c, t_00e4a784)", () => {
+  it("policy split: chat + viewer are multi (t_36ceb99b); the closable class adds browser + settings singletons (t_95c91f9c, t_00e4a784)", () => {
     const multi = DOCKABLES.filter((d) => d.policy === "multi").map((d) => d.id);
-    // card t_d04a1c80: the new-tab placeholder is multi - every pane mints
-    // its own seat, and the singleton focus rule would teleport a close
-    assert.deepEqual(multi, ["chat", "viewer", "newtab"]);
+    // card t_9855a20e: the new-tab placeholder is retired - the multi class
+    // is the two per-instance content tabs again
+    assert.deepEqual(multi, ["chat", "viewer"]);
     const closable = DOCKABLES.filter((d) => isClosableTab(d.id)).map((d) => d.id);
     assert.deepEqual([...closable].sort(), ["browser", "chat", "settings", "viewer"]);
   });
@@ -273,8 +271,12 @@ describe("the dockable registry", () => {
   });
 
   it("legacy ids: pre-reset trees deserialize but nothing may open one", () => {
-    assert.deepEqual([...LEGACY_DOCK_COMPONENTS], ["inspector"]);
+    // card t_9855a20e: "newtab" joined "inspector" as legacy-only - records
+    // persisted while the never-zero placeholder lived still parse, and the
+    // boot's repairPaneSeats retires the seat onto a fresh new chat
+    assert.deepEqual([...LEGACY_DOCK_COMPONENTS], ["inspector", "newtab"]);
     assert.ok(!(DOCK_COMPONENTS as readonly string[]).includes("inspector"));
+    assert.ok(!(DOCK_COMPONENTS as readonly string[]).includes("newtab"));
   });
 
   it("card t_81d0901b: the modules cockpit is NOT a dockable any more", () => {
@@ -377,9 +379,8 @@ describe("openSingleton", () => {
     await withScratchSingleton(async (scratch) => {
       const tree = chatOnlyTree();
       const base = splitPane(tree, panes(tree)[0]!.id, "row", "after");
-      // card t_d04a1c80: the split seats the new-tab placeholder - the
-      // open replaces the seat wholesale
-      const seat = panes(base).find((p) => p.tabs[0]?.component === "newtab")!;
+      // card t_9855a20e: the split mints an EMPTY pane - the open fills it
+      const seat = panes(base).find((p) => p.tabs.length === 0)!;
       const res = openSingleton(base, seat.id, scratch);
       assert.equal(res.action, "created");
       const pane = paneById(res.tree, seat.id);
@@ -405,8 +406,8 @@ describe("openSingleton", () => {
     await withScratchSingleton(async (scratch) => {
       const t = defaultTree();
       const base = splitPane(t, panes(t)[1]!.id, "row", "after");
-      // card t_d04a1c80: the split's fresh pane hosts the new-tab seat
-      const seat = panes(base).find((p) => p.tabs[0]?.component === "newtab")!;
+      // card t_9855a20e: the split's fresh pane is EMPTY
+      const seat = panes(base).find((p) => p.tabs.length === 0)!;
       const withTab = openSingleton(base, seat.id, scratch);
       assert.equal(withTab.action, "created");
       const other = panes(withTab.tree).find((p) => p.id !== seat.id)!;
@@ -702,9 +703,10 @@ describe("dock store: the pane-model reset", () => {
     const id = dock.ensureMainPane();
     const tree = dock.tree.value;
     const pane = paneById(tree, id);
-    // card t_d04a1c80: the recovered pane seats the new-tab placeholder -
-    // a fresh main pane never renders zero tabs
-    assert.deepEqual(pane.tabs.map((x) => x.component), ["newtab"], "a fresh seated pane");
+    // card t_9855a20e: the recovered pane is EMPTY - the opener that asked
+    // for it mints the content (here: openChatTab in app.vue), and no
+    // placeholder sticker is seated
+    assert.deepEqual(pane.tabs.map((x) => x.component), [], "a fresh, empty main pane");
     assert.equal(panes(tree).length, 4, "the dock has a main pane again");
     // the new pane lands inside the MAIN ROW, at its after-edge (never
     // beside the column's bottom child)
@@ -743,9 +745,9 @@ describe("dock store: the pane-model reset", () => {
     assert.equal(dock.isLastMainPane(chatPane.id), true, "the census read agrees");
     // a second main pane flips the read: the X comes back on EACH of them
     dock.split(chatPane.id, "row", "after");
-    // card t_d04a1c80: the split's fresh pane hosts the new-tab seat
+    // card t_9855a20e: the split's fresh pane is EMPTY (no seat is minted)
     const fresh = panes(dock.tree.value).find(
-      (p) => p.edge === undefined && p.tabs[0]?.component === "newtab",
+      (p) => p.edge === undefined && p.tabs.length === 0,
     )!;
     assert.ok(fresh, "the split minted a second main pane");
     assert.equal(dock.canRemovePane(chatPane.id), true, "a main pane may go once another lives");
@@ -787,16 +789,22 @@ describe("dock store: the pane-model reset", () => {
       "none of them may close (logs left the strip - Endo's comment 2026-10-26)",
     );
     // the main class still closes through the store on ANY census read
-    // (t_b620f99d: the last-main-pane law protects the pane, not tabs)
+    // (t_b620f99d: the last-main-pane law protects the pane, not tabs) -
+    // but card t_9855a20e locks the pane's LAST tab: give it company first
     const chatPane = paneById(tree, row.children[1].id);
     dock.split(chatPane.id, "row", "after");
-    dock.closeTab(chatPane.id, 0);
+    dock.openSingleton(chatPane.id, "settings");
+    dock.closeTab(chatPane.id, 1);
     await flush();
-    // card t_d04a1c80: the last tab closes into the new-tab seat
     assert.deepEqual(
       paneById(dock.tree.value, chatPane.id).tabs.map((x) => x.component),
-      ["newtab"],
+      ["chat"],
+      "the tab with company closed, the lone survivor is locked",
     );
+    const before = serialize(dock.tree.value);
+    dock.closeTab(chatPane.id, 0);
+    await flush();
+    assert.equal(serialize(dock.tree.value), before, "the lone tab refuses the close");
   });
 
   it("a settings tab closes through the store like chat (t_00e4a784)", async () => {

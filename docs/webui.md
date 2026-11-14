@@ -206,32 +206,33 @@ Everything else animates through `transition`, not keyframes.
   (and the move-out
   auto-close) refuse it as a no-op — the main area never reaches zero
   panes. The pane X shows on hover and only while another MAIN pane
-  exists (pinned shells don't count toward that census). Every TAB's
-  close X always renders: the law protects the pane, not the tabs, and
-  closing the last tab seats the new-tab placeholder - the pane never
-  renders an empty pane (see NEVER-ZERO-TABS below).
-- **NEVER-ZERO-TABS** (card t_d04a1c80, Endo's canvas ruling 2026-11-12):
-  a pane never renders zero tabs. Closing a pane's LAST tab opens a "new
-  tab" - the `newtab` placeholder seat (`normalizeTabSeats` /
-  `NEW_TAB_COMPONENT` in `composables/dock.ts`); if the last tab IS the
-  placeholder it stays (it is unclosable, so it renders no X and the
-  store's close is a no-op). The placeholder only ever sits ALONE: real
-  content arriving in the pane retires it, its chip never drags, and its
-  body is a blank surface. It keeps the EMPTY pane's 320px floor (the
-  next tenant may be a chat), so every floor/reveal law reads exactly as
-  before. A split mints the seat, a main-pane recovery
-  (`ensureMainPane`) mints it, and a move that drains a pane (a pinned
-  shell, the last main pane) seats it. The rule holds through RELOAD: a
-  persisted record with a zero-tab pane boots onto the seat (a counted
-  boot repair - the raw record backs up first).
-- **The empty-pane component menu is DELETED** (same card, DOCK-EMPTY-
+  exists (pinned shells don't count toward that census). **The last tab of
+  a pane never closes** (see THE LOCKED LAST TAB below): that is how the
+  pane stays non-empty, so nothing is seated in its place.
+- **THE LOCKED LAST TAB** (card t_9855a20e, Endo ruling 2026-11-14 - the
+  live eyeball on commit 8eabefc7's never-zero placeholder): a pane's LAST
+  tab is locked. `closeTab` refuses the request and `DockPane`'s
+  `tabClosable` renders no X on the lone tab, so no close can empty a
+  pane. The `newtab` placeholder that card t_d04a1c80 used to seat in the
+  emptied pane is RETIRED: a blank "New Tab" body was the "empty bad
+  looking space" Endo closed his last chat into. Nothing is minted to fill
+  an empty pane - a pane a GESTURE leaves empty (a fresh split group, a
+  shell whose last tab was dragged out) renders the bar-less empty strip
+  and a drop refills it. Two dead states are REPAIRED rather than rendered:
+  a persisted `newtab` seat (`LEGACY_DOCK_COMPONENTS`) and a zero-tab pane
+  from an older record both boot onto a fresh new-chat tab
+  (`repairPaneSeats`, a counted boot repair - the raw record backs up
+  first), and a pane whose last chat died with its deleted session seats
+  the same fresh chat. The empty-pane component menu stays deleted
+  (DOCK-EMPTY-ACTIONS).
+- **The empty-pane component menu is DELETED** (card t_d04a1c80, DOCK-EMPTY-
   ACTIONS removal): the 15-button inventory that WAS the empty pane's
   content is gone, and the icons-bleeding-at-the-sidebar-bottom bug died
   with the element (no overflow fix was owed to a deleted element). The
-  `dock-empty` body is now a blank new-tab surface; do not build a
-  replacement menu there - the 0.17.3 canvas class-law + menu work is the
-  future home for adding views. Until then the refill path is a tab drag
-  (or the menubar/palette openers).
+  `dock-empty` body is a blank surface; do not build a replacement menu
+  there - the 0.17.3 canvas class-law + menu work is the future home for
+  adding views. Until then the refill path is a tab drag (or the
+  menubar/palette openers).
 - **Sessions lock to the primary sidebar** — open a session or hit `new`
   and it opens in the MAIN pane, focusing the existing tab instead of
   reopening.
@@ -244,10 +245,9 @@ Everything else animates through `transition`, not keyframes.
   unclosable), the Logs tab (bottom host, unclosable - the
   structured run-event stream over the raw log tail; see its own
   section), the notifications feed (right pane, unclosable,
-  inbox glyph — the bell died) and the `newtab` placeholder (multi,
-  unclosable, NOT openable: no menu, no outlet — the never-zero seat;
-  the mobile drawers clamp it out as an unbranched id, so a seat in an
-  edge pane still opens the drawer's home strip). `inspector` is legacy
+  inbox glyph — the bell died). The `newtab` placeholder left the registry
+  with card t_9855a20e (legacy id only: persisted seats are retired on
+  boot). `inspector` is legacy
   only: deserialization still accepts the persisted id and modernizes
   it, nothing opens one. `continuous`, the `canvas` host tab and the
   modules cockpit tab left the registry — the continuous roster folded
