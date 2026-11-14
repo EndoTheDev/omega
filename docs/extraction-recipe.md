@@ -76,7 +76,7 @@ ordering) plus the plugins' `Provides()` declarations:
 | `harness/trust` | trust | trust | trust |
 | `harness/compactor` | compactor | compactor | compactor |
 | `harness/prompt` | prompt | prompt | (none) |
-| `harness/logging` | logging | logger | logging |
+| `harness/observability` | observability | logger | logging |
 | `harness/provider` | provider | provider | provider |
 | `harness/skills` | skills | skills, tools, prompt_sections | skills |
 

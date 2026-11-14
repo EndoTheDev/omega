@@ -1,6 +1,8 @@
-package logging
+package observability
 
-// Config configures the operational logging extension.
+// Config configures the outbound logging half of the capsule (the
+// config section stays `logging:` - the fold moved the code, not the
+// operator's file).
 type Config struct {
 	Enabled bool   `yaml:"enabled"`
 	File    string `yaml:"file"`

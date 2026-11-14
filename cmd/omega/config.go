@@ -19,8 +19,8 @@ import (
 	"github.com/EndoTheDev/omega/harness/continuous"
 	files "github.com/EndoTheDev/omega/harness/files"
 	kanbanModule "github.com/EndoTheDev/omega/harness/kanban"
-	"github.com/EndoTheDev/omega/harness/logging"
 	"github.com/EndoTheDev/omega/harness/memory"
+	"github.com/EndoTheDev/omega/harness/observability"
 	"github.com/EndoTheDev/omega/harness/provider"
 	"github.com/EndoTheDev/omega/harness/skills"
 	"github.com/EndoTheDev/omega/harness/store"
@@ -889,7 +889,7 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "memory":
 		return memory.Config{Enabled: c.Memory.Enabled, UserProfileEnabled: c.Memory.UserProfileEnabled, CharLimit: c.Memory.CharLimit, UserProfileCharLimit: c.Memory.UserProfileCharLimit, File: c.Memory.File, UserProfileFile: c.Memory.UserProfileFile}, true
 	case "logging":
-		return logging.Config{Enabled: c.Logging.Enabled, File: c.Logging.File}, true
+		return observability.Config{Enabled: c.Logging.Enabled, File: c.Logging.File}, true
 	case "compactor":
 		return compactionSection(c), true
 	case "trust":

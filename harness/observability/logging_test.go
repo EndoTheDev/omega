@@ -1,4 +1,9 @@
-package logging
+// The logging half's tests, riding the capsule they folded into
+// (0.17.3 modules fold, card t_ee3a968b): the file logger, its severity
+// markers and the last-error fact; plus the folded plugin's metadata -
+// the module is the always-on tier's third member, so it declares no
+// Toggleable opt-in (agent/plugin.go: default is NOT toggleable).
+package observability
 
 import (
 	"os"
@@ -175,15 +180,27 @@ func TestPluginImplementsInterface(t *testing.T) {
 
 func TestPluginMetadata(t *testing.T) {
 	p := NewPlugin()
-	if p.Name() != "logging" {
-		t.Errorf("Name() = %q, want %q", p.Name(), "logging")
+	if p.Name() != "observability" {
+		t.Errorf("Name() = %q, want %q", p.Name(), "observability")
 	}
 	provides := p.Provides()
 	if len(provides) != 1 || provides[0] != "logger" {
-		t.Errorf("Provides() = %v, want [logger]", provides)
+		t.Errorf("Provides() = %v, want [logger] (the seam name did not move with the fold)", provides)
 	}
 	if len(p.Requires()) != 0 {
 		t.Errorf("Requires() = %v, want empty", p.Requires())
+	}
+	// the tier re-law: logging is one of the three always-on modules, so
+	// the folded capsule must NOT opt into the toggleable tier.
+	if tg, ok := any(p).(agent.Toggleable); ok && tg.Toggleable() {
+		t.Error("observability claims Toggleable - the always-on tier is agent-loop, provider and logging")
+	}
+	d, ok := any(p).(agent.Describer)
+	if !ok {
+		t.Fatal("observability misses agent.Describer")
+	}
+	if d.ConfigKey() != "logging" {
+		t.Errorf("ConfigKey() = %q, want %q (the operator's config section did not move)", d.ConfigKey(), "logging")
 	}
 }
 

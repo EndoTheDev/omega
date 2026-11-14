@@ -10,7 +10,9 @@
 #                tab's MODULES section (card t_81d0901b: the webui
 #                surface retired its secondary-pane tab, the endpoint
 #                did not move) read; /cron's absence here is the
-#                buildPlugins omission showing up at runtime.
+#                buildPlugins omission showing up at runtime. The folded
+#                names (0.17.3, card t_ee3a968b): logging rides
+#                observability, the shell tool family rides shell.
 #   seams      - the cron module answers GET /cron/jobs (the data
 #                source its CronJobs.vue panel and its /cron TUI
 #                command both read) - present module, mounted seam.
@@ -28,7 +30,7 @@ step "ok: extensions inventory reachable"
 python3 - "$payload" <<'EOF'
 import json, sys
 names = {m.get("name") for m in json.loads(sys.argv[1])}
-missing = [n for n in ("cron", "tools", "logging") if n not in names]
+missing = [n for n in ("cron", "tools", "observability") if n not in names]
 if missing:
     sys.stderr.write("journey RED: registered modules missing from /extensions: %r\n" % (missing,))
     sys.stderr.write("  /extensions lists MOUNTED capsules in mount order; an absent row means the"
@@ -37,7 +39,7 @@ if missing:
     sys.exit(2)
 EOF
 [ $? -eq 0 ] || die "module inventory incomplete (a buildPlugins omission reaches the UI surfaces)"
-step "ok: cron/tools/logging inventory rows present"
+step "ok: cron/tools/observability inventory rows present"
 
 # --- the cron seam answers, so both its surfaces have a source ---
 jobs=$(curl -s "${JOURNEY_BASE_URL}/cron/jobs")

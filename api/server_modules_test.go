@@ -148,12 +148,14 @@ func TestModulesEngineToggleRejected(t *testing.T) {
 	}
 }
 
-func TestModulesAlwaysOnPairRejectedAtTheSeam(t *testing.T) {
-	// card t_81d0901b: only agent-loop + provider are load-bearing. The
-	// refusal lives HERE - the settings row is a mirror, never the gate -
-	// so both directions are refused before the seam is called and the
-	// body names the reason.
-	for _, name := range []string{"agent-loop", "provider"} {
+func TestModulesAlwaysOnTierRejectedAtTheSeam(t *testing.T) {
+	// card t_81d0901b, extended by the 0.17.3 tier re-law (card
+	// t_ee3a968b): only agent-loop, provider and logging (the folded
+	// observability module) are always on. The refusal lives HERE - the
+	// settings row is a mirror, never the gate - so both directions are
+	// refused before the seam is called and the body names the reason.
+	tier := []string{"agent-loop", "provider", "observability"}
+	for _, name := range tier {
 		for _, body := range []string{`{"enabled":false}`, `{"enabled":true}`} {
 			fm := &fakeModules{mods: []core.ModuleStatus{fakeModule(name, "mounted", false)}}
 			s := NewServer(nil, nil, nil, nil, fm, nil)
@@ -171,18 +173,19 @@ func TestModulesAlwaysOnPairRejectedAtTheSeam(t *testing.T) {
 			}
 		}
 	}
-	// the pair is NOT the shell ring: both stay in the introspection (the
-	// UI renders them as visible rows), unlike http_channel
+	// the tier is NOT the shell ring: all three stay in the introspection
+	// (the UI renders them as visible rows), unlike http_channel
 	fm := &fakeModules{mods: []core.ModuleStatus{
 		fakeModule("agent-loop", "mounted", false),
 		fakeModule("provider", "mounted", false),
+		fakeModule("observability", "mounted", false),
 	}}
 	s := NewServer(nil, nil, nil, nil, fm, nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/modules", nil))
-	for _, name := range []string{"agent-loop", "provider"} {
+	for _, name := range tier {
 		if !contains(rec.Body.String(), `"name":"`+name+`"`) {
-			t.Fatalf("the always-on pair must stay visible in the list: %s", rec.Body.String())
+			t.Fatalf("the always-on tier must stay visible in the list: %s", rec.Body.String())
 		}
 	}
 }

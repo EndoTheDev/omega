@@ -45,6 +45,13 @@ func (p *Plugin) Provides() []string { return []string{"prompt_sections", "tools
 // has no dependencies.
 func (p *Plugin) Requires() []string { return nil }
 
+// Toggleable opts the tools registry into the toggleable tier (0.17.3
+// tier re-law, card t_ee3a968b: "always on: agent-loop, provider and
+// logging; toggleable: the rest"). A disabled registry means the search
+// tools and the /tools surface leave together; the loop keeps whatever
+// other capsules contribute.
+func (p *Plugin) Toggleable() bool { return true }
+
 // MountWithAPI implements agent.APIPlugin. Registers the prompt
 // section and the /tools command. The /tools command stays the
 // display-toggle feature: it returns CommandResult with display-mode
@@ -65,8 +72,12 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 
 	steps := []func() error{
 		func() error {
+			// files.grep / files.glob: the search verbs keep their
+			// model-facing names (card t_ee3a968b: the tier re-law removed
+			// this capsule's built-in TIER exemption, not the vocabulary
+			// the prompt and the model already address)
 			for name, t := range p.search.Tools() {
-				if err := api.RegisterTool(name, t); err != nil {
+				if err := api.RegisterBuiltinTool(name, t); err != nil {
 					return err
 				}
 			}

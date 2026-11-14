@@ -1639,22 +1639,24 @@ func sameStrings(a, b []string) bool {
 	return true
 }
 
-// TestTerminalRemovalProof is the v0.15 arc's removal proof (card
-// t_55a3fc4b, Endo's ruling 2026-11-01: VS Code-style, no
-// restrictions). The terminal is the purest capsule yet: no seams, no
-// tools, no commands, no panels, no config section - its whole
-// surface is six /terminal routes + the lifecycle fence that owns the
-// shells. The two mounts are the proof:
+// TestShellRemovalProof is the shell capsule's removal proof (the v0.15
+// arc's terminal proof, card t_55a3fc4b, folded by the 0.17.3 modules
+// fold, card t_ee3a968b: the agent's tool family and the webui's
+// integrated terminal are ONE registration named "shell"). Its whole
+// surface is the four shell.* tools, six /terminal routes and the
+// lifecycle fence that owns the shells. The two mounts are the proof:
 //
-//  1. WITH terminal: the six routes claim the /terminal root, a
+//  1. WITH shell: the four tool verbs land on the one-tenant ledger, the
+//     six routes claim the /terminal root under the shell tenant, a
 //     claim+kill cycle works against a REAL pty shell (this box has
 //     /dev/ptmx; without one the spawn route answers 503 and the
 //     proof degrades to the route surface), and the lifecycle stop
 //     reaps every live shell (the toggle-off contract).
-//  2. WITHOUT terminal: no /terminal route is left registered - the
-//     webui's Terminal tab has no data path and 404s at the module
-//     mux.
-func TestTerminalRemovalProof(t *testing.T) {
+//  2. WITHOUT shell: no /terminal route is left registered and no
+//     shell.* tool survives - the webui's Terminal tab has no data path
+//     (404s at the module mux) and the model loses the verb family with
+//     it, one removal for both faces.
+func TestShellRemovalProof(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	cfg := DefaultConfig()
 
@@ -1670,10 +1672,13 @@ func TestTerminalRemovalProof(t *testing.T) {
 		}
 	}
 	if termPlugin == nil {
-		t.Fatal("FULL MOUNT: the terminal capsule is absent from buildPlugins")
+		t.Fatal("FULL MOUNT: the shell capsule is absent from buildPlugins")
+	}
+	if termPlugin.Name() != "shell" {
+		t.Fatalf("FULL MOUNT: the folded capsule is named %q, want %q", termPlugin.Name(), "shell")
 	}
 	if !termPlugin.Toggleable() {
-		t.Fatal("FULL MOUNT: the terminal capsule is not toggleable")
+		t.Fatal("FULL MOUNT: the shell capsule is not toggleable (the tier re-law made it opinionated)")
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
 	reg17, err := agent.MountAllAPI(plugins, ctx, nil, nil)
@@ -1691,16 +1696,28 @@ func TestTerminalRemovalProof(t *testing.T) {
 	}
 	got := map[string]bool{}
 	for _, rt := range ctx.ModuleRoutes {
-		if rt.Module == "terminal" {
+		if rt.Module == "shell" {
 			got[rt.Pattern] = true
 		}
 	}
 	for _, pattern := range wantRoutes {
 		if !got[pattern] {
-			t.Fatalf("FULL MOUNT: route %q is not registered", pattern)
+			t.Fatalf("FULL MOUNT: route %q is not registered under the shell tenant", pattern)
 		}
 	}
-	t.Log("PROOF mount=full: the six /terminal routes registered from the capsule alone")
+	// the tool face rides the same registration: one mount, both halves
+	toolNames := map[string]bool{}
+	for _, tp := range ctx.ToolProviders {
+		for name := range tp.Tools() {
+			toolNames[name] = true
+		}
+	}
+	for _, name := range []string{"shell.run", "shell.list", "shell.read", "shell.kill"} {
+		if !toolNames[name] {
+			t.Fatalf("FULL MOUNT: tool %q is not on the ledger (the fold's tool half)", name)
+		}
+	}
+	t.Log("PROOF mount=full: the six /terminal routes and the four shell.* tools registered from the one capsule")
 
 	// the live face against a REAL pty shell (skipped when this box
 	// cannot open one - the route surface above is unconditioned)
@@ -1746,17 +1763,17 @@ func TestTerminalRemovalProof(t *testing.T) {
 	// --- mount 2: the capsule removed ---
 	var removed []agent.Plugin
 	for _, p := range plugins {
-		if p.Name() == "terminal" {
+		if p.Name() == "shell" {
 			continue
 		}
 		removed = append(removed, p)
 	}
 	// no.Requires may name terminal: the capsule provides no seams,
-	// so nothing depends on it (the removal recipe's stop signal)
+	// the tool rail it rides is additive (RegisterTool), not an offer
 	for _, p := range removed {
 		for _, req := range p.Requires() {
-			if req == "terminal" {
-				t.Fatalf("REMOVED MOUNT precondition: %q requires %q (terminal provides no seams)", p.Name(), req)
+			if req == "shell" {
+				t.Fatalf("REMOVED MOUNT precondition: %q requires %q (shell provides no seam)", p.Name(), req)
 			}
 		}
 	}
@@ -1767,15 +1784,23 @@ func TestTerminalRemovalProof(t *testing.T) {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	for _, rt := range ctx2.ModuleRoutes {
-		if rt.Module == "terminal" {
+		if rt.Module == "shell" {
 			t.Fatalf("REMOVED MOUNT: route %q survived the removal", rt.Pattern)
 		}
 		if strings.HasPrefix(rt.Pattern, "/terminal") {
 			t.Fatalf("REMOVED MOUNT: a /terminal route survived with a foreign owner %q", rt.Pattern)
 		}
 	}
-	t.Log("PROOF removed: zero /terminal routes registered - the webui Terminal tab 404s; " +
-		"no seams, tools or commands ever rode this capsule, so nothing else can leak")
+	// the tool half: no shell.* verb may outlive the capsule
+	for _, tp := range ctx2.ToolProviders {
+		for name := range tp.Tools() {
+			if strings.HasPrefix(name, "shell.") {
+				t.Fatalf("REMOVED MOUNT: tool %q survived the removal", name)
+			}
+		}
+	}
+	t.Log("PROOF removed: zero /terminal routes and zero shell.* tools - the webui Terminal tab 404s " +
+		"and the model loses the verb family together; no seams or commands ever rode this capsule")
 }
 
 // TestApprovalRemovalProof is the smart-approval-capsule proof (card

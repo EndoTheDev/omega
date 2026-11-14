@@ -70,6 +70,12 @@ var censusNouns = []string{
 	"cron", "skills", "mcp", "files", "memory", "trust", "verdicts",
 	"store", "sessions", "agents", "insights", "provider", "compactor",
 	"prompt", "delegate", "process", "datadir",
+	// the 0.17.3 module folds (card t_ee3a968b) renamed two capsules:
+	// the folded logging+observability module and the folded
+	// shell+terminal module. Their names join the noun set so a future
+	// opinion file squatting in the base set is caught by the fold's
+	// names, not only by the pre-fold ones.
+	"observability", "shell",
 }
 
 func TestAPICensus(t *testing.T) {

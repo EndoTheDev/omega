@@ -40,6 +40,12 @@ func (p *Plugin) Provides() []string { return []string{"skills", "tools", "promp
 // into the log file. Logging must mount first or the edge is meaningless.
 func (p *Plugin) Requires() []string { return []string{"logger"} }
 
+// Toggleable opts skills into the toggleable tier (0.17.3 tier re-law,
+// card t_ee3a968b: "always on: agent-loop, provider and logging;
+// toggleable: the rest") - an agent with no skills is a legitimate
+// configuration, not a broken one.
+func (p *Plugin) Toggleable() bool { return true }
+
 // MountWithAPI implements agent.APIPlugin. Populates the skills seam,
 // the skills domain tool (read/write/update), the prompt section, and
 // the /skills command.

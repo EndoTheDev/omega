@@ -33,6 +33,13 @@ func (p *Plugin) Provides() []string { return []string{"prompt"} }
 // time, so it has no mount-order dependencies.
 func (p *Plugin) Requires() []string { return nil }
 
+// Toggleable opts the prompt builder into the toggleable tier (0.17.3
+// tier re-law, card t_ee3a968b: "always on: agent-loop, provider and
+// logging; toggleable: the rest"). A disabled builder leaves the loop on
+// the documented floor prompt (the provider's own default), which is a
+// legitimate configuration.
+func (p *Plugin) Toggleable() bool { return true }
+
 // MountWithAPI implements agent.APIPlugin: the prompt_builder seam,
 // one registration. The builder reads prompt section contributors
 // from the Context at build time.

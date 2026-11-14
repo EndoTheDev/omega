@@ -15,7 +15,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 	agentapi "github.com/EndoTheDev/omega/agent/api"
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/harness/logging"
+	"github.com/EndoTheDev/omega/harness/observability"
 )
 
 // The inspector endpoint surface (card t_db430fea, read-only v1):
@@ -356,7 +356,7 @@ func TestLogsMissingFileIs404(t *testing.T) {
 	}
 }
 
-// nopTestLogger mirrors harness/logging.NopLogger: LoggerProvider only.
+// nopTestLogger mirrors observability.NopLogger: LoggerProvider only.
 type nopTestLogger struct{}
 
 func (nopTestLogger) Printf(string, ...any) {}
@@ -522,7 +522,7 @@ func TestFollowLogsPublishesAppends(t *testing.T) {
 	if err := os.WriteFile(path, []byte("boot line\n"), 0o644); err != nil {
 		t.Fatalf("seed log: %v", err)
 	}
-	logger, err := logging.NewFileLogger(path)
+	logger, err := observability.NewFileLogger(path)
 	if err != nil {
 		t.Fatalf("logger: %v", err)
 	}

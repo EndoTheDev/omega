@@ -40,7 +40,7 @@ func (p *Plugin) Name() string { return "notifications" }
 
 // Description implements agent.Describer.
 func (p *Plugin) Description() string {
-	return "notifications: the finished-things store behind the bell (tasks, crons, chats)"
+	return "notifications: the finished-things store behind the dock's Notifications tab chip (tasks, crons, chats)"
 }
 
 // ConfigKey names the config section this plugin reads from

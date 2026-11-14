@@ -10,7 +10,7 @@ webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> llm (provi
 | Agent    | `agent`     | Multi-turn loop machinery + the loop's need-face declarations (`agent/seams.go`), Plugin system (Context alias, MountAllAPI, RouteConfigs), the ExtensionAPI registration surface (the universal mount, v0.12), TurnSink seam, canvas runtime, insights/caption/compaction helpers   |
 | LLM      | `llm`       | Shared provider infra: SSE streaming client, retry, the think-level ladder, image sniffing; the core wire-shape aliases (`llm.ToolSchema`, `llm.ModelInfo`) - it carries no provider contract (consumers declare their own faces) |
 | CLI      | `cmd/omega` | Entry point, CLI loop + setup, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                       |
-| Modules  | `harness/`  | In-process Go packages: provider, store, datadir, skills, compactor, logging, memory, prompt, tools, mcp, delegate, cron, verdict, approval, continuous, notifications, process, terminal, browser, kanban, trust + `datadir` (the imported leaf) |
+| Modules  | `harness/`  | In-process Go packages: provider, store, datadir, skills, compactor, observability (logging + the run-event ring, the 0.17.3 fold), memory, prompt, tools, mcp, delegate, cron, verdict, approval, continuous, notifications, terminal (the `shell` module: shell.run/list/read/kill + the terminal pane), browser, kanban, trust + `datadir` (the imported leaf) |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
@@ -196,7 +196,7 @@ is a design event, argued in a card:
 | `provider`  | the model client                | `harness/provider`              |
 | `store`     | session persistence             | `harness/store`                 |
 | `loop`      | the multi-turn loop             | `agent/loop` (the default; a capsule may replace it) |
-| `logger`    | operational logging             | `harness/logging`               |
+| `logger`    | operational logging             | `harness/observability` (the folded logging half) |
 | `compactor` | context compaction              | `harness/compactor`             |
 | `prompt`    | system prompt + guidelines      | `harness/prompt`                |
 | `nudger`    | the learning-loop reminder      | `harness/skills`                |

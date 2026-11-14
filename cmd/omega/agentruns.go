@@ -103,6 +103,19 @@ func (c *agentRuns) close() error {
 				first = fmt.Errorf("close agent %s log: %w", name, err)
 			}
 		}
+		// The store fallback is host-owned as well. Since the 0.17.3 tier
+		// re-law (card t_ee3a968b) a fresh agent home mounts the always-on
+		// trio only, so the store capsule is off unless the agent's
+		// toggles name it - the host then opens its own supply under the
+		// "store"/"host" offer. That handle is beyond the module journal;
+		// close it here or the home's db file stays locked.
+		if run.ctx != nil && run.ctx.Services().Owner("store") == "host" {
+			if c, ok := run.ctx.Services().Resolve("store").(interface{ Close() error }); ok {
+				if err := c.Close(); err != nil && first == nil {
+					first = fmt.Errorf("close agent %s store supply: %w", name, err)
+				}
+			}
+		}
 		delete(c.built, name)
 	}
 	return first

@@ -35,6 +35,15 @@ func (p *Plugin) ConfigKey() string { return "store" }
 func (p *Plugin) Provides() []string { return []string{"store", "tools"} }
 func (p *Plugin) Requires() []string { return nil }
 
+// Toggleable opts the store into the toggleable tier (0.17.3 tier
+// re-law, card t_ee3a968b: "always on: agent-loop, provider and
+// logging; toggleable: the rest"). It is opinionated, not
+// machine-critical - a disabled store means no persistence, which is a
+// legitimate host choice (the agent still runs on its in-memory floor),
+// and the Q3 edge check refuses the fold when a dependent still needs
+// the seam.
+func (p *Plugin) Toggleable() bool { return true }
+
 // Dismount releases the mounted store (the open sqlite handle):
 // beyond-Context state the journal cannot see. A handle left open
 // blocks the removal of the data directory on windows, so the host
@@ -111,13 +120,17 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	steps := []func() error{
 		func() error { return api.Offer("store", s) },
 		func() error {
+			// the sessions.* verb family predates the capsule tier and
+			// keeps its model-facing names (card t_ee3a968b: the tier
+			// re-law removed this capsule's built-in TIER exemption, not
+			// the vocabulary the prompt and the model already address)
 			for name, t := range search.Tools() {
-				if err := api.RegisterTool(name, t); err != nil {
+				if err := api.RegisterBuiltinTool(name, t); err != nil {
 					return err
 				}
 			}
 			for name, t := range hygiene.Tools() {
-				if err := api.RegisterTool(name, t); err != nil {
+				if err := api.RegisterBuiltinTool(name, t); err != nil {
 					return err
 				}
 			}

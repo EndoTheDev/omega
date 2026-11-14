@@ -20,15 +20,18 @@ var shellModules = map[string]bool{
 	"http_channel": true,
 }
 
-// alwaysOnModules is the load-bearing pair (card t_81d0901b): the mount
-// list's agent loop and provider are the two the process cannot serve
-// without, so the toggle endpoint refuses them AT THE SEAM - the refusal
-// is the guard, and the UI's non-toggleable always-on row only mirrors
-// it. (The frontend reads the pair off the introspection's toggleable
-// flag; it never carries a second copy of this list.)
+// alwaysOnModules is the always-on tier (0.17.3 tier re-law, card
+// t_ee3a968b; Endo verbatim: "always on: agent-loop, provider and
+// logging; toggleable: the rest" - logging is the folded observability
+// module). Those three are what the process cannot serve without, so the
+// toggle endpoint refuses them AT THE SEAM - the refusal is the guard,
+// and the UI's non-toggleable always-on row only mirrors it. (The
+// frontend reads the trio off the introspection's toggleable flag; it
+// never carries a second copy of this list.)
 var alwaysOnModules = map[string]bool{
-	"agent-loop": true,
-	"provider":   true,
+	"agent-loop":    true,
+	"provider":      true,
+	"observability": true,
 }
 
 // handleModules serves GET: the module list (introspection, shell

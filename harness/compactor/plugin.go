@@ -26,6 +26,13 @@ func (p *Plugin) ConfigKey() string { return "compactor" }
 func (p *Plugin) Provides() []string { return []string{"compactor"} }
 func (p *Plugin) Requires() []string { return []string{"provider"} }
 
+// Toggleable opts compaction into the toggleable tier (0.17.3 tier
+// re-law, card t_ee3a968b: "always on: agent-loop, provider and
+// logging; toggleable: the rest"). Without a compactor the loop runs on
+// its documented no-compaction floor; a long conversation then meets the
+// context window, which is the operator's call.
+func (p *Plugin) Toggleable() bool { return true }
+
 // MountWithAPI implements agent.APIPlugin. Reads CompactionConfig from
 // ctx.Configs, wires the provider from the already-mounted provider
 // slot (the Requires edge orders the read), registers the compactor

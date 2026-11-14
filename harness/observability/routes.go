@@ -21,13 +21,12 @@ import (
 // deliberately absent (ruling 4, deferred until the stream proves too
 // loud); session scope only when the parameter is present.
 //
-// The log tail is the module's own copy of the shell's /logs reader
-// (api/server_inspector.go). A capsule cannot import the shell ring
-// (module-imports-shell, the tier law) and the shell's tailer is
-// unexported, so the two are parallel by construction - the difference
-// is ownership: /logs belongs to the shell's Logs tab, these two routes
-// mount and die with this capsule, which is what lets the whole
-// observability view be removed whole.
+// The log tail is the shell's /logs reader's sibling (api/server_inspector.go).
+// A capsule cannot import the shell ring (module-imports-shell, the tier
+// law) and the shell's tailer is unexported, so the two are parallel by
+// construction - the difference is ownership: /logs is this capsule's
+// command surface (the logging half, since the 0.17.3 fold) while its
+// file logger is what both read, and these two routes are the webui view.
 
 // Page-size bounds for the two reads. The events page is capped at the
 // ring's own page ceiling; the log tail mirrors the shell's reader
@@ -99,7 +98,7 @@ type logsResponse struct {
 }
 
 // logPather is this capsule's own consumer face for the "logger" need
-// service: the file logger exposes its path (harness/logging.Path), a
+// service: the file logger exposes its path (FileLogger.Path), a
 // NopLogger does not - which is the honest "logging is disabled" answer.
 type logPather interface {
 	Path() string

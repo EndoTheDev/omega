@@ -138,10 +138,11 @@ step "ok: the one document renders every category ($docids) with $rows rows"
 # --- MODULES: the moved module surface (card t_81d0901b) ------------------
 # Module toggles are CONFIGURATION, not content: the secondary-pane cockpit
 # tab is gone, and this section carries its whole surface - the rows with
-# live toggles, the always-on pair as a CHIP (never a disabled switch), and
+# live toggles, the always-on tier as a CHIP (never a disabled switch), and
 # the expandable tools/commands/panels detail. The refusal itself lives at
-# the seam (PUT /modules/<name> on agent-loop|provider answers
-# "module <name> is always on").
+# the seam (PUT /modules/<name> on agent-loop|provider|observability answers
+# "module <name> is always on"; the 0.17.3 tier re-law, card t_ee3a968b,
+# keeps exactly those three).
 # Selection is by getAttribute, never a CSS attr selector: the backslash-free
 # probe is a fixed point of every agent-browser unescape pass (t_2454597e).
 mods_js='(()=>{const s=[...document.querySelectorAll(".settings-category")].find(x=>x.getAttribute("data-section")==="modules");if(!s) return "missing";return s.querySelectorAll(".extension-row").length+"/"+s.querySelectorAll(".module-toggle").length+"/"+s.querySelectorAll(".module-alwayson").length})()'
@@ -157,8 +158,8 @@ row_probe() {
   jsq "(()=>{const s=[...document.querySelectorAll('.settings-category')].find(x=>x.getAttribute('data-section')==='modules');if(!s) return 'missing||';const row=[...s.querySelectorAll('.extension-row')].find(r=>{const n=r.querySelector('.extension-name');return !!n&&n.textContent.trim()==='$1'});if(!row) return 'norow||';return (row.querySelector('.module-alwayson')?1:0)+'|'+(row.querySelector('.module-toggle')?1:0)+'|'+row.className})()" 2>&1 | plain
 }
 
-# the load-bearing pair: a VISIBLE row with the chip, and NO switch in it
-for pair in agent-loop provider; do
+# the always-on tier: a VISIBLE row with the chip, and NO switch in it
+for pair in agent-loop provider observability; do
   prow=$(row_probe "$pair")
   prows=${prow%%|*}; prest=${prow#*|}
   assert_eq "$prows" "1" "$pair renders its always-on chip"
@@ -184,15 +185,16 @@ if ! wait_js '(()=>{const s=[...document.querySelectorAll(".settings-category")]
 fi
 step "ok: an expanded module row lists its tools, commands and panels"
 
-# a removable module toggles OFF and back ON live, the row following the wire
-# (the first toggleable row carrying a disable label: the round trip leaves
-# the lane as it found it, so the recipe stays residue-free).
-# The label may carry the CONSEQUENCE hint t_d92a1f74 shipped ("disable
-# notifications - this also disables: cron"): the row is keyed by its NAME,
-# so the hint suffix is stripped here - the same read the panel performs,
-# never a bare prefix match (a prefix would also accept a longer row name).
-tog=$(jsq '(()=>{const s=[...document.querySelectorAll(".settings-category")].find(x=>x.getAttribute("data-section")==="modules");const pill=[...s.querySelectorAll(".module-toggle")].find(p=>/^disable /.test(p.getAttribute("aria-label")||""));if(!pill) return "missing";return (pill.getAttribute("aria-label")||"").replace(/^disable /,"").replace(/ - this also disables:.*$/,"")})()' 2>&1 | plain)
-[ "$tog" != "missing" ] || die "no toggleable module row carries a disable label"
+# a removable module toggles OFF and back ON live, the row following the wire.
+# The row is PINNED BY NAME (browser: no seam, no dependents, no data), never
+# "the first toggleable row": since the 0.17.3 tier re-law (card t_ee3a968b)
+# store/tools/skills/prompt/compactor are toggleable too, and mount order puts
+# store first - flipping the session database off mid-journey would take the
+# page's own fetches down with it. The round trip leaves the lane as it found
+# it, so the recipe stays residue-free.
+tog=browser
+tog_pill=$(jsq "(()=>{const s=[...document.querySelectorAll('.settings-category')].find(x=>x.getAttribute('data-section')==='modules');if(!s) return 0;const row=[...s.querySelectorAll('.extension-row')].find(r=>{const n=r.querySelector('.extension-name');return !!n&&n.textContent.trim()==='$tog'});return row&&row.querySelector('.module-toggle')?1:0})()" 2>&1 | plain)
+[ "${tog_pill:-0}" = "1" ] || die "the $tog row carries no live toggle (row: $(row_probe "$tog"))"
 click_toggle() {
   jsq "(()=>{const s=[...document.querySelectorAll('.settings-category')].find(x=>x.getAttribute('data-section')==='modules');if(!s) return 0;const row=[...s.querySelectorAll('.extension-row')].find(r=>{const n=r.querySelector('.extension-name');return !!n&&n.textContent.trim()==='$1'});const pill=row&&row.querySelector('.module-toggle');if(!pill) return 0;pill.click();return 1})()" 2>&1 | plain
 }
