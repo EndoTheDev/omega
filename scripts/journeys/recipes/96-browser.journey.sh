@@ -136,10 +136,10 @@ js 'localStorage.clear()' >/dev/null 2>&1
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
 
-# card t_d04a1c80: the empty-pane component menu is DELETED (the
-# never-zero-tabs ruling seats a "New Tab" placeholder instead), so the
-# tab opens through the command palette - the same opener the menus called,
-# and the surviving door to every dockable.
+# card t_d04a1c80: the empty-pane component menu is DELETED; card
+# t_9855a20e retired the "New Tab" placeholder it seated, so the tab opens
+# through the command palette - the same opener the menus called, and the
+# surviving door to every dockable.
 pal=$(jsq '(()=>{window.dispatchEvent(new KeyboardEvent("keydown",{key:"k",ctrlKey:true,bubbles:true}));return !!document.querySelector(".command-palette-input")?1:0})()')
 if [ "$pal" != "1" ]; then
   sleep 0.5
