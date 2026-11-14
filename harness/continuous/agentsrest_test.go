@@ -640,3 +640,72 @@ func TestAgentsRosterLastSessionID(t *testing.T) {
 		t.Errorf("detail last_session_id = %q, want sess-old", one.LastSessionID)
 	}
 }
+
+// TestAgentsDeleteRemovesTheWholeHome pins ruling 2 on the wire:
+// DELETE /agents/{name} removes the HOME (sessions included) and
+// answers the session count it took with it, so the panel's receipt
+// names the same number its confirm dialog promised. The main agent is
+// refused (its home is the daemon's home), a ghost 404s.
+func TestAgentsDeleteRemovesTheWholeHome(t *testing.T) {
+	srv, _, home := newAgentsFixture(t)
+	// two sessions in the agent's OWN store, the rows the delete takes
+	for i := 0; i < 2; i++ {
+		if res, err := postAny(t, srv.URL+"/agents/scout/sessions", map[string]any{}); err != nil || res != http.StatusCreated {
+			t.Fatalf("seed session %d = %d, %v", i, res, err)
+		}
+	}
+	req, err := http.NewRequest(http.MethodDelete, srv.URL+"/agents/scout", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("delete scout = %d: %s", res.StatusCode, body)
+	}
+	var receipt struct {
+		Deleted  string `json:"deleted"`
+		Sessions int    `json:"sessions"`
+	}
+	if err := json.Unmarshal(body, &receipt); err != nil {
+		t.Fatalf("decode receipt %s: %v", body, err)
+	}
+	if receipt.Deleted != "scout" || receipt.Sessions != 2 {
+		t.Fatalf("receipt = %+v, want {scout 2}", receipt)
+	}
+	// The home is gone and the roster no longer lists it - no orphan row.
+	if _, err := os.Stat(agent.AgentDir(home, "scout")); !os.IsNotExist(err) {
+		t.Fatalf("the agent home survived the DELETE (stat err = %v)", err)
+	}
+	code, roster := getJSON(t, srv.URL+"/agents")
+	if code != http.StatusOK {
+		t.Fatalf("roster after delete = %d", code)
+	}
+	if strings.Contains(string(roster), `"scout"`) {
+		t.Fatalf("the deleted agent still rides the roster: %s", roster)
+	}
+	// Refusals: the main agent's home is the daemon's home (409), a
+	// second delete of the same name finds nothing (404).
+	del := func(name string) int {
+		req, err := http.NewRequest(http.MethodDelete, srv.URL+"/agents/"+name, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		return res.StatusCode
+	}
+	if got := del("default"); got != http.StatusConflict {
+		t.Fatalf("delete default = %d, want 409", got)
+	}
+	if got := del("scout"); got != http.StatusNotFound {
+		t.Fatalf("delete of an already-deleted agent = %d, want 404", got)
+	}
+}

@@ -110,10 +110,14 @@ describe("the merge: one Agents tab (card t_c7222095, deletability law)", () => 
     assert.match(agentsPanel, /\/sleep`/, "the sleep button rides POST sleep");
   });
 
-  it("the create flow is the three-field form (name, directive, schedule) on the Agents tab", () => {
-    assert.match(agentsPanel, /contDirective/, "directive field");
-    assert.match(agentsPanel, /contSchedule/, "schedule field");
-    assert.match(agentsPanel, /fetch\("\/continuous",\s*\{[\s\S]*?method: "POST"/, "POST /continuous");
+  it("the ONE create door routes by the kind chosen inside it (ruling 1)", () => {
+    assert.match(agentsPanel, /create\.directive/, "directive field");
+    assert.match(agentsPanel, /create\.schedule/, "schedule field");
+    assert.match(agentsPanel, /createRequest\(/, "the routing is the pure createRequest");
+    assert.match(agentsPanel, /fetch\(req\.path,\s*\{[\s\S]*?method: "POST"/, "one POST, the path from the kind");
+    assert.match(agentsPanel, /aria-label="agent kind"/, "the kind choice lives INSIDE the form");
+    assert.match(src("../harness/continuous/ui/agentsRows.ts"), /path: "\/continuous"/, "the continuous kind targets POST /continuous");
+    assert.match(src("../harness/continuous/ui/agentsRows.ts"), /inherit_from: from/, "the clone kind targets the inherited-create door");
   });
 
   it("a rostered agent's wake strip keeps the wake/sleep + unread behavior", () => {
@@ -127,9 +131,13 @@ describe("the merge: one Agents tab (card t_c7222095, deletability law)", () => 
     assert.match(agentsPanel, /\/chat`\)/, "the expand fetches the canonical chat (mark-read parity)");
   });
 
-  it("a host without the module keeps the tab honest: no badge, no create form", () => {
+  it("a host without the module keeps the tab honest: no badge, no continuous kind", () => {
     assert.match(agentsPanel, /continuousAvailable/, "the availability gate exists");
-    assert.match(agentsPanel, /v-if="continuousAvailable"[\s\S]{0,160}class="agents-new band-tool"/, "the + hides without the module");
+    // ruling 1 (0.17.3): the ONE create door is a scaffold door first -
+    // the "+" always renders, and the CONTINUOUS KIND is what the missing
+    // module disables (it is the only kind that needs the capsule).
+    assert.match(agentsPanel, /kindNeedsContinuous\(k\) && !continuousAvailable/, "the continuous kind disables without the module");
+    assert.match(src("../harness/continuous/ui/agentsRows.ts"), /return kind === "continuous"/, "one predicate, one kind");
     assert.match(agentsPanel, /return c \? rowStatus\(c\) : ""/, "a config-only agent renders no badge");
   });
 });

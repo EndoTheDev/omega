@@ -39,7 +39,7 @@ const TABS: Array<{
   // configuration, so the surface moved into the settings tab's MODULES
   // section, and the settings pane carries NO band (card t_1cfb080a). No
   // entry here any more; band-breaks.test.ts pins the settings absence.
-  { file: "../harness/continuous/ui/AgentsPanel.vue", title: "Agents", scrollClass: "agents-body", actions: ["scaffold a new agent directory"] },
+  { file: "../harness/continuous/ui/AgentsPanel.vue", title: "Agents", scrollClass: "agents-body", actions: ["create an agent"] },
   { file: "../harness/store/ui/InsightsTab.vue", title: "Insights", scrollClass: "insights-scroll", actions: ["window in days, 0 = all time"] },
   // card t_6bebff18 (Endo ruling 2026-11-10, option B): settings LEFT the
   // band-search roster - the filter is the pane-top full-width bar, so the

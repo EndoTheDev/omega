@@ -455,3 +455,75 @@ func TestSkillsAllowlistRefusesAHostDisabledSkill(t *testing.T) {
 		t.Errorf("the refused allowlist reached disk:\n%s", body)
 	}
 }
+
+// TestDeleteAgentHomeTakesTheWholeHome pins ruling 2's delete verb: the
+// home goes ENTIRELY (definition, persona files, own skills, own session
+// store) so no orphan folder keeps registering an agent - folder
+// presence IS registration (profiles.go).
+func TestDeleteAgentHomeTakesTheWholeHome(t *testing.T) {
+	home := t.TempDir()
+	homeConfig(t, home)
+	if err := ScaffoldAgent(home, "scout", "probe duty"); err != nil {
+		t.Fatal(err)
+	}
+	dir := AgentDir(home, "scout")
+	// every part of the home the delete must take with it
+	for _, rel := range []string{"memory.md", "user.md", SoulFileName, filepath.Join("data", "omega.db")} {
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seedSkill(t, filepath.Join(dir, "skills"), "probe")
+
+	if err := DeleteAgentHome(home, "scout"); err != nil {
+		t.Fatalf("delete scout: %v", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("the home survived the delete (stat err = %v)", err)
+	}
+	// The agent is gone from the roster: no orphan row, no half home.
+	for _, p := range LoadProfiles(home) {
+		if p.Name == "scout" {
+			t.Fatalf("a deleted agent still reads as a profile row")
+		}
+	}
+	// The parent agents/ dir is NOT the agent's to delete - the next
+	// scaffold must land beside nothing instead of inside a missing dir.
+	if fi, err := os.Stat(filepath.Join(home, "agents")); err != nil || !fi.IsDir() {
+		t.Fatalf("the agents/ root went with the home (err = %v)", err)
+	}
+}
+
+// TestDeleteAgentHomeRefusals pins the verb's three refusal lanes: the
+// main agent's home is the daemon's home, an absent home is not a
+// no-op success, and a malformed name never becomes a path.
+func TestDeleteAgentHomeRefusals(t *testing.T) {
+	home := t.TempDir()
+	homeConfig(t, home)
+	if err := ScaffoldAgent(home, "scout", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := DeleteAgentHome(home, DefaultAgentName); !errors.Is(err, ErrAgentHomeLocked) {
+		t.Fatalf("deleting the main agent = %v, want ErrAgentHomeLocked", err)
+	}
+	if _, err := os.Stat(AgentConfigPath(home, DefaultAgentName)); err != nil {
+		t.Fatalf("the main agent's config went missing after the refused delete: %v", err)
+	}
+	if err := DeleteAgentHome(home, "ghost"); !errors.Is(err, ErrAgentNotExist) {
+		t.Fatalf("deleting an absent home = %v, want ErrAgentNotExist", err)
+	}
+	for _, bad := range []string{"../evil", "Scout", "with space", ""} {
+		var refusal *AgentConfigScaffoldError
+		if err := DeleteAgentHome(home, bad); !errors.As(err, &refusal) {
+			t.Fatalf("deleting %q = %v, want an AgentConfigScaffoldError", bad, err)
+		}
+	}
+	// The refused calls left the one real home alone.
+	if _, err := os.Stat(AgentDir(home, "scout")); err != nil {
+		t.Fatalf("a refused delete took the surviving home: %v", err)
+	}
+}

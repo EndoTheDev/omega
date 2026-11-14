@@ -34,6 +34,10 @@ package agent
 //     memory.md, one per agent (profiles.go owns the home shape).
 //  8. CLONE - a materialized full copy at birth (profiles.go).
 //  9. NAME - identity, set at create; there is no rename machinery.
+// 10. DELETE = delete the HOME - the definition, the persona files, the
+//     agent's own skills and its own session store go together, so no
+//     half-deleted folder keeps registering an agent. The main agent's
+//     home is the daemon's home and never deletes.
 //
 // The write is node-preserving: the file is parsed as a yaml.Node and
 // only the named fields are upserted, so comments, quoting and keys this
@@ -56,6 +60,16 @@ import (
 // agents surface must never write it. The endpoint maps it to 409 and
 // the tab renders the default row's detail read-only.
 var ErrAgentConfigLocked = errors.New("the default agent's config is the home config - it is not editable from the agents surface")
+
+// ErrAgentHomeLocked marks the main agent's DELETE: its home is the
+// daemon's home (the config, the store, the whole running instance), so
+// the delete verb refuses it. The endpoint maps it to 409.
+var ErrAgentHomeLocked = errors.New("the main agent's home is the daemon's home - it cannot be deleted; delete a secondary agent home instead")
+
+// ErrAgentNotExist marks a delete whose target home is not on disk. The
+// endpoint maps it to 404 - an unknown agent is the caller's miss, never
+// a server fault, and deleting an absent home is not "already done".
+var ErrAgentNotExist = errors.New("unknown agent")
 
 // AgentConfigScaffoldError marks a caller's-mistake field (an unknown
 // provider instance, a toggle the host has off): the 400 lane, not a
@@ -650,6 +664,48 @@ func UpdateAgentConfigLayer(home, name string, u AgentConfigUpdates) error {
 		return err
 	}
 	return MaterializeInheritance(home, name, final)
+}
+
+// DeleteAgentHome removes one secondary agent's HOME as one verb: the
+// definition file, the persona files, the agent's own skills and its own
+// session store (data/omega.db) all go together. Ruling 2 of the 0.17.3
+// make-over: delete means delete the home, sessions included - a
+// half-deleted agent that still registers by folder presence would be an
+// orphan home, and folder presence IS registration (profiles.go).
+//
+// The main agent refuses (ErrAgentHomeLocked): its home is the daemon's
+// home. A name with no home answers ErrAgentNotExist, and a malformed
+// name answers AgentConfigScaffoldError (the 400 lane) - the target is
+// re-derived from AgentDir and asserted to sit exactly at
+// <home>/agents/<name>, because a delete verb is the one place a path
+// bug cannot be undone.
+//
+// Callers that need the session count for their confirm dialog read it
+// BEFORE calling this (the counts are store business, and this package
+// stays store-free - profiles.go).
+func DeleteAgentHome(home, name string) error {
+	if name == DefaultAgentName {
+		return ErrAgentHomeLocked
+	}
+	if err := ValidAgentName(name); err != nil {
+		return &AgentConfigScaffoldError{Message: fmt.Sprintf("delete agent: %v", err)}
+	}
+	dir := AgentDir(home, name)
+	// Containment: the target must be a DIRECT child of <home>/agents/,
+	// named exactly by the validated name. AgentDir already guarantees
+	// that shape, so this only fires if a future change moves it.
+	root := filepath.Join(home, "agents")
+	if filepath.Dir(dir) != root || filepath.Base(dir) != name {
+		return &AgentConfigScaffoldError{Message: fmt.Sprintf("delete agent %q: refusing a target outside %s", name, root)}
+	}
+	fi, err := os.Stat(dir)
+	if err != nil || !fi.IsDir() {
+		return ErrAgentNotExist
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("delete agent %q: %w", name, err)
+	}
+	return nil
 }
 
 // rootMapping resolves the working yamlnode mapping under a parsed

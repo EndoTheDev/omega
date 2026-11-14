@@ -12,21 +12,34 @@
 // merged agent row carries the wake state).
 import { rowStatus, type OmegaContinuousRow } from "./continuousRows.ts";
 
+// The 0.17.3 make-over made the row SECRET-FREE (agent/configedit.go law
+// 2): an agent names a provider INSTANCE, never a type/host/key. The
+// retired provider_type column died with that law - a wire that still
+// carries one is a build of the old layer.
 export interface OmegaAgent {
   name: string;
   dir: string;
   description?: string;
-  provider_type?: string;
+  provider_instance?: string;
   model_name?: string;
+  /** the ENABLED capsule set - the always-off law: empty enables nothing */
+  toggles?: readonly string[];
+  /** the explicit skill allowlist - empty means NO skills */
+  skills_allow?: readonly string[];
+  /** the inherit-as-disabled kinds that are ON (skills/soul/user/memory) */
+  inherits?: readonly string[];
   skill_count: number;
   skills?: readonly string[];
   memory_size: number;
+  soul_size?: number;
   session_count: number;
   last_activity?: string;
   /** card t_81109e1c: the agent's MOST RECENT session - the id the
       roster row click binds a chat tab to (GET /agents, additive
       field). Absent for an agent with no sessions. */
   last_session_id?: string;
+  /** false for the main agent (the home root), true for agents/<name> */
+  continuous?: boolean;
 }
 
 export interface OmegaAgentSession {
@@ -75,6 +88,14 @@ export function agentSessionTitle(s: OmegaAgentSession): string {
   return s.label || s.id.slice(0, 12) + "...";
 }
 
+/** the provider voice (0.17.3 item 4): an agent REFERENCES an instance
+    that settings defines once, so the row names the reference and says
+    when there is none - the main agent's provider supplies it. */
+export function agentProviderText(a: OmegaAgent): string {
+  if (a.provider_instance) return a.provider_instance;
+  return a.name === "default" ? "(home config)" : "(main's provider)";
+}
+
 /** agentDetailLines builds the RegistryList row's expandable detail:
     the config summary, one line per fact, the ordering the old detail
     block used (model, provider, dir, skills, memory, last activity).
@@ -84,7 +105,7 @@ export function agentSessionTitle(s: OmegaAgentSession): string {
 export function agentDetailLines(a: OmegaAgent): string[] {
   return [
     `model: ${agentModelText(a) || "-"}`,
-    `provider: ${a.provider_type || "-"}`,
+    `provider: ${agentProviderText(a)}`,
     `dir: ${a.dir}`,
     `skills: ${agentSkillsText(a) || "none"}`,
     `memory: ${agentMemoryText(a)}`,
@@ -184,4 +205,370 @@ export function continuousIndex(
   const out: Record<string, OmegaContinuousRow> = {};
   for (const r of roster) out[r.name] = r;
   return out;
+}
+
+// --- the create door (0.17.3 rulings 1 + 6) --------------------------
+//
+// ONE "+" opens ONE form. The KIND is a choice inside that form, and the
+// kind decides the wire - that routing is pure, so the suite pins it
+// without a DOM:
+//
+//   scaffold    POST /agents        an empty, always-off home
+//   continuous  POST /continuous    home + canonical chat + wake schedule
+//   clone       POST /agents        {inherit_from}: a MATERIALIZED FULL
+//                                   COPY at birth (ruling 8 - the rename
+//                                   path is clone + delete, never a link)
+//
+// The "@" duplicate door and its near-identical second form died here.
+
+export const AGENT_KINDS = ["scaffold", "continuous", "clone"] as const;
+export type AgentKind = (typeof AGENT_KINDS)[number];
+
+/** AgentCreateDraft is the ONE form's shape: every kind's fields, all
+    strings so inputs bind directly. The routing below reads only the
+    fields its kind owns - an unused field is never sent. */
+export interface AgentCreateDraft {
+  name: string;
+  kind: AgentKind;
+  description: string;
+  directive: string;
+  schedule: string;
+  inherit_from: string;
+}
+
+export function emptyCreateDraft(): AgentCreateDraft {
+  return {
+    name: "",
+    kind: "scaffold",
+    description: "",
+    directive: "",
+    schedule: "",
+    inherit_from: "",
+  };
+}
+
+/** kindNeedsContinuous: only the continuous kind needs the continuous
+    capsule mounted. A host without it keeps the "+" and the other two
+    kinds - the create door is a scaffold door first. */
+export function kindNeedsContinuous(kind: AgentKind): boolean {
+  return kind === "continuous";
+}
+
+/** createRequest is the ONE door's routing: the endpoint and the body
+    the chosen kind puts on the wire. A clone with no source (or any
+    kind with no name) is the form's own incomplete state, reported as
+    null so the caller refuses instead of inventing an endpoint. */
+export function createRequest(
+  d: AgentCreateDraft,
+): { path: string; body: Record<string, string> } | null {
+  const name = d.name.trim();
+  if (!name) return null;
+  if (d.kind === "continuous") {
+    return {
+      path: "/continuous",
+      body: { name, directive: d.directive, schedule: d.schedule.trim() },
+    };
+  }
+  if (d.kind === "clone") {
+    const from = d.inherit_from.trim();
+    if (!from) return null;
+    return {
+      path: "/agents",
+      body: { name, description: d.description, inherit_from: from },
+    };
+  }
+  return { path: "/agents", body: { name, description: d.description } };
+}
+
+/** cloneSources: every OTHER agent home is a legal clone source (the
+    main agent included - "inherit from agent" must be able to copy the
+    home root). The name being created is excluded: a clone of itself is
+    a conflict the backend would answer anyway. */
+export function cloneSources(
+  profiles: readonly OmegaAgent[],
+  draftName: string,
+): OmegaAgent[] {
+  const name = draftName.trim();
+  return profiles.filter((p) => p.name !== name);
+}
+
+/** agentKindLabel: the kind's voice in the picker. The clone kind says
+    what it does at birth, because "inherit" reads like a live link and
+    the law is a copy (ruling 8). */
+export function agentKindLabel(kind: AgentKind): string {
+  switch (kind) {
+    case "continuous":
+      return "continuous agent (directive + wake schedule)";
+    case "clone":
+      return "inherit from an agent (full copy at birth)";
+    default:
+      return "plain scaffold (empty, always off)";
+  }
+}
+
+// --- delete = delete the HOME (0.17.3 ruling 2) ---------------------
+
+/** agentDeleteConfirm names what the trigger will take: the home and
+    its sessions, by count. The count is the ROW's session_count - the
+    same number the delete receipt answers - so the dialog can never
+    promise a different number than the delete delivers. An uncounted
+    row says so instead of inventing zero. */
+export function agentDeleteConfirm(name: string, sessions: number): string {
+  if (!Number.isFinite(sessions) || sessions < 0) {
+    return `delete ${name}? its home, including every session - the session count is unknown`;
+  }
+  const voice =
+    sessions === 0 ? "no sessions" : sessions === 1 ? "1 session" : `${sessions} sessions`;
+  return `delete ${name}? its home and ${voice} go with it - this cannot be undone`;
+}
+
+/** agentDeleteLabel: the trigger's own word, in the destructive voice -
+    never a bare "delete" that reads like a list-row toggle. */
+export function agentDeleteLabel(name: string): string {
+  return `delete ${name}'s home - sessions included`;
+}
+
+// --- the edit write (the draft diff) --------------------------------
+//
+// The panel's save sends only what CHANGED against the effective seed, so
+// an untouched inherited knob keeps inheriting (the layer law: an absent
+// key inherits, an explicitly empty one does not). The diff is pure and
+// lives here because it has one sharp edge the DOM hides: a
+// `<input type="number">` under v-model hands back a NUMBER, not the
+// string the draft declares - every read goes through String() so a
+// typed 7 cannot throw on .trim() at submit time.
+
+export const AGENT_INHERIT_KINDS = ["skills", "soul", "user", "memory"] as const;
+export type AgentInheritKind = (typeof AGENT_INHERIT_KINDS)[number];
+
+/** AgentEditDraft is the panel's edit form shape. max_turns is
+    deliberately `string | number`: the number input owns the value at
+    runtime and the seed writes a string. */
+export interface AgentEditDraft {
+  description: string;
+  system_prompt: string;
+  provider_instance: string;
+  model_name: string;
+  max_turns: string | number;
+  toggles: readonly string[];
+  skills_allow: readonly string[];
+  inherit: Record<AgentInheritKind, boolean>;
+}
+
+/** AgentEditTarget is the saved truth the draft diffs against. */
+export interface AgentEditTarget {
+  description?: string;
+  toggles?: readonly string[];
+  skills_allow?: readonly string[];
+  inherits?: readonly string[];
+}
+
+function sameSet(a: readonly string[], b: readonly string[]): boolean {
+  const left = [...a].sort();
+  const right = [...b].sort();
+  return left.length === right.length && left.every((v, i) => v === right[i]);
+}
+
+/** editRequest builds the PUT body for one draft - nil when nothing
+    changed (the panel's "no changes" beat, never an empty write). */
+export function editRequest(
+  d: AgentEditDraft,
+  saved: AgentEditTarget,
+  chips: readonly FieldChip[],
+): Record<string, unknown> | null {
+  const seed = (key: string): string => chipOf(chips, key)?.value ?? "";
+  const body: Record<string, unknown> = {};
+  const unset: string[] = [];
+  if (d.description !== (saved.description ?? "")) body.description = d.description.trim();
+  if (d.system_prompt !== seed("system_prompt")) body.system_prompt = d.system_prompt.trim();
+  if (d.provider_instance !== seed("provider.instance")) {
+    body.provider_instance = d.provider_instance.trim();
+  }
+  if (d.model_name !== seed("provider.model_name")) body.model_name = d.model_name.trim();
+  const turns = String(d.max_turns ?? "").trim();
+  if (turns !== seed("max_turns")) {
+    if (turns === "") unset.push("max_turns");
+    else body.max_turns = Number(turns);
+  }
+  if (!sameSet(d.toggles, saved.toggles ?? [])) body.toggles = [...d.toggles].sort();
+  if (!sameSet(d.skills_allow, saved.skills_allow ?? [])) {
+    body.skills_allow = [...d.skills_allow].sort();
+  }
+  const inheritChanged = AGENT_INHERIT_KINDS.some(
+    (kind) => d.inherit[kind] !== (saved.inherits ?? []).includes(kind),
+  );
+  if (inheritChanged) body.inherit = { ...d.inherit };
+  if (unset.length) body.unset = unset;
+  return Object.keys(body).length ? body : null;
+}
+
+// --- the inheritance chips (0.17.3 ruling 7) ------------------------
+//
+// ONE state machine, both surfaces: the cron editor's chain (card
+// t_7fb3b35a) and this panel ask the identical authored-vs-inherited
+// question, and both answer it the same way - the STATE is presence. A
+// knob the agent's layer file NAMES is authored, even when it names it
+// empty; a knob the file omits is INHERITED from main, and the chip
+// names that source. Each module keeps its own copy (the narrow.ts
+// precedent: module UI imports no other module's code).
+//
+// The wire that answers it is GET /settings' scopes - the same payload
+// the settings pane renders, whose `overridden` flag is structural. The
+// panel never re-parses yaml: one read, two surfaces.
+
+/** ScopeKnob is one knob inside an agent scope (core.SettingsScopeKnob):
+    the EFFECTIVE value plus whether the layer file names the key. */
+export interface ScopeKnob {
+  key: string;
+  value: unknown;
+  overridden: boolean;
+}
+
+export interface ScopeGroup {
+  key: string;
+  overridden: boolean;
+  knobs: ScopeKnob[];
+}
+
+export interface SettingsScope {
+  name: string;
+  groups: ScopeGroup[];
+  error?: string;
+}
+
+/** scopeIndex flattens one agent's scope into knob-by-key. An absent
+    scope (a home with no scope entry, or a /settings read that failed)
+    answers {} - every knob then reads as inherited, which is the layer's
+    own floor for a scaffolded agent. */
+export function scopeIndex(scope?: SettingsScope | null): Record<string, ScopeKnob> {
+  const out: Record<string, ScopeKnob> = {};
+  for (const g of scope?.groups ?? []) {
+    for (const k of g.knobs ?? []) out[k.key] = k;
+  }
+  return out;
+}
+
+/** FieldChip is one inheritable knob's state on the panel. */
+export interface FieldChip {
+  /** the dotted layer key - the SAME spelling the write lane's `unset`
+      vocabulary takes, so the chip's reset button and the write path
+      cannot drift */
+  key: string;
+  label: string;
+  /** true = the layer omits the key and main supplies the value */
+  inherited: boolean;
+  /** what the agent actually runs with */
+  value: string;
+  /** the chip's own word: "" when authored */
+  chip: string;
+  /** the one line beside the chip, naming the source and the value */
+  note: string;
+}
+
+/** the knobs a secondary agent INHERITS, in the panel's render order.
+    description is NOT here: main has no description knob, so there is no
+    source to inherit from - an empty description is honest empty.
+    Toggles and skills are not here either: the always-off law makes them
+    the agent's own set, never main's (rulings 4 and 5). */
+export const INHERITABLE_FIELDS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: "system_prompt", label: "system prompt" },
+  { key: "provider.instance", label: "provider" },
+  { key: "provider.model_name", label: "model" },
+  { key: "max_turns", label: "max turns" },
+];
+
+/** INHERIT_SOURCE is the chip's source word. Main is the only link an
+    agent has: an agent layers over the home config, never over another
+    agent ("inherit from agent" at CREATE is a copy, not a link). */
+export const INHERIT_SOURCE = "main";
+
+function knobText(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (Array.isArray(v)) return v.join(", ");
+  return String(v);
+}
+
+/** fieldChips resolves the inheritable knobs for one row. The
+    `overridden` flag decides authored-vs-inherited; the value rides both
+    ways so the panel seeds an input and renders its chip from one read. */
+export function fieldChips(scope?: SettingsScope | null): FieldChip[] {
+  const idx = scopeIndex(scope);
+  return INHERITABLE_FIELDS.map(({ key, label }) => {
+    const knob = idx[key];
+    const inherited = !knob?.overridden;
+    const value = knobText(knob?.value);
+    return {
+      key,
+      label,
+      inherited,
+      value,
+      chip: inherited ? `inherited from ${INHERIT_SOURCE}` : "",
+      note: inherited
+        ? value
+          ? `${label} inherited from ${INHERIT_SOURCE} (${value})`
+          : `${label} inherited from ${INHERIT_SOURCE}`
+        : "",
+    };
+  });
+}
+
+/** chipOf looks one knob up in a resolved list (the panel keys its
+    template by dotted key rather than index-matching). */
+export function chipOf(chips: readonly FieldChip[], key: string): FieldChip | undefined {
+  return chips.find((c) => c.key === key);
+}
+
+// --- the always-off law (0.17.3 rulings 4 + 5) -----------------------
+
+/** agentTogglesNote: the toggles list is the ENABLED set, so an empty
+    list is a real answer - "nothing enabled", never "inherits main's
+    features" (the ALWAYS OFF law). */
+export function agentTogglesNote(toggles: readonly string[]): string {
+  return toggles.length
+    ? `${toggles.length} enabled - an agent only runs what it names here`
+    : "nothing enabled - an agent never inherits main's feature set";
+}
+
+/** agentSkillsNote: the allowlist's own voice. Empty means NO skills; it
+    is never a silent inheritance of main's registry. */
+export function agentSkillsNote(allow: readonly string[]): string {
+  return allow.length
+    ? `${allow.length} allowed - the explicit allowlist that runs`
+    : "no skills - an empty allowlist means none, never main's registry";
+}
+
+/** lockedAgentModules mirrors agent.AlwaysOnAgentModules: the pair is not
+    in the toggleable tier at all, so the panel must not offer it. One
+    spelling per surface (the Go side refuses the same names). */
+export const LOCKED_AGENT_MODULES: readonly string[] = ["agent-loop", "provider"];
+
+/** toggleOptions: the capsule names an agent may switch on - the host's
+    MOUNTED, toggleable modules minus the locked pair. The subset law
+    starts here: a module the host has off is not offered, so the operator
+    never meets a refusal they could have avoided. */
+export function toggleOptions(
+  modules: ReadonlyArray<{ name: string; state?: string; toggleable?: boolean }>,
+): string[] {
+  return modules
+    .filter((m) => m.toggleable !== false && (m.state ?? "mounted") === "mounted")
+    .filter((m) => !LOCKED_AGENT_MODULES.includes(m.name))
+    .map((m) => m.name);
+}
+
+/** toggleChoices: the checkbox set for ONE agent - the offered capsules
+    PLUS whatever the agent's file already enables. The union matters: a
+    capsule the host switched off AFTER the agent enabled it is not
+    offered, and hiding it would leave an invisible enabled entry that
+    makes the next toggle save a 400 (the subset law refuses the name
+    the operator cannot see). Shown dim with a reason instead, so
+    unchecking it is a deliberate act, never a silent drop. */
+export function toggleChoices(offered: readonly string[], own: readonly string[]): string[] {
+  return [...new Set([...offered, ...own])].sort();
+}
+
+/** skillOptions: the allowlist's checkbox set is the agent's VISIBLE
+    registry (row.skills) - the same list the backend validates against,
+    so a name offered here can never be refused as unknown. */
+export function skillOptions(a: Pick<OmegaAgent, "skills">): string[] {
+  return [...(a.skills ?? [])];
 }

@@ -85,8 +85,17 @@ test("AgentsPanel expansion carries the edit affordance, not sessions", () => {
   const vue = read("webui", "..", "harness", "continuous", "ui", "AgentsPanel.vue");
   assert.match(vue, /class="agents-edit"/, "the edit form renders");
   assert.match(vue, /saveAgentEdit/, "the save affordance exists");
-  for (const field of ["agent description", "provider type", "model name", "api key", "system prompt"]) {
+  // 0.17.3 make-over (card t_df015e66): the field set is the definition
+  // layer's - description, system prompt, a REFERENCED provider
+  // instance, model, max turns, toggles, skills, the inherit flags.
+  for (const field of ["agent description", "system prompt", "provider instance", "model name", "max turns"]) {
     assert.match(vue, new RegExp(`aria-label="${field.replace(/ /g, "\\s")}"`), `the ${field} field is reachable`);
+  }
+  // SECRET-FREE (agent/configedit.go law 2): the old host / api key /
+  // provider type inputs died with the make-over - an agent file holds
+  // no secret, and a panel that offered one would write it.
+  for (const dead of ["aria-label=\"api key\"", "aria-label=\"provider host\"", "aria-label=\"provider type\""]) {
+    assert.ok(!vue.includes(dead), `the ${dead} field died with the secret-free law`);
   }
   // DEAD surfaces: the tab renders no session rows, no session
   // button, no session fetch - the API keeps /agents/{name}/sessions,
@@ -109,11 +118,18 @@ test("AgentsPanel coerces a 200/null body, never crashes the render", () => {
   const vue = read("webui", "..", "harness", "continuous", "ui", "AgentsPanel.vue");
   // Trust boundary: the backend used to answer a zero-session agent with
   // the literal body `null`, detailSessions.length threw, and the whole
-  // sidebar went blank. Every list fetch carries the ?? [] guard; the
-  // merge (t_c7222095) kept the roster/chat/evidence reads (t_2d8deb8c
-  // removed the sessions read + its guard): five guards now.
-  const guardCount = (src: string): number => (src.match(/\?\? \[\]/g) ?? []).length;
-  assert.equal(guardCount(vue), 5, "one ?? [] guard per list fetch (agents, roster, chat, evidence fetch + summary read)");
+  // sidebar went blank. Every LIST fetch carries its own ?? [] guard -
+  // pinned by shape per read (a bare count rots the moment an unrelated
+  // `?? []` default lands in the same file).
+  for (const guard of [
+    /\(\(await res\.json\(\)\) \?\? \[\]\) as OmegaAgent\[\]/,
+    /\(\(await res\.json\(\)\) \?\? \[\]\) as OmegaContinuousRow\[\]/,
+    /messages \?\? \[\]/,
+    /as OmegaEvidenceRow\[\]\) \?\? \[\]/,
+    /evidenceByAgent\[name\] \?\? \[\]/,
+  ]) {
+    assert.match(vue, guard, `every list read is guarded: ${guard}`);
+  }
 });
 
 // --- t_c7222095: the Agents/Continuous merge (one tab) ---
