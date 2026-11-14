@@ -665,6 +665,17 @@ dot, reset link, draft star, live note).
   remembered id is kept RAW and normalised against the live nav per
   render, so an agent scope that does not carry the remembered category
   falls back without clobbering the memory - switching back finds it again.
+- **A scope switch normalises both remembered ids** (card t_4e9559c8): the
+  highlight (which the scroll-spy moves on its own) and the section filter
+  (the only id the document obeys) are asked SEPARATELY whether the live
+  nav can resolve them. They disagree whenever a live query moves the
+  highlight onto a category the next scope carries while the filter stays
+  on the category the user clicked - a category only the old scope had.
+  Reading the highlight alone resolved, cleared nothing, and left the
+  document filtered to a category the live nav cannot render: the pane
+  answered "no settings here" and the address bar kept the hidden section.
+  Pinned by `webui/test/settingsnav.test.ts` and walked live by
+  `110-settings-scopes.journey.sh`.
 - **The accordion is deleted, not hidden**: no `isCollapsed`, no group
   heads, no `omega.settings-collapsed`, no `.settings-group-head` CSS.
   Pinned by `webui/test/settingsnav.test.ts` (the tree, the selection
