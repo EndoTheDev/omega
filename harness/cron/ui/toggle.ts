@@ -4,17 +4,23 @@
 // the click, module-UI style. The empty state stays pure in
 // emptyState.ts: no fetch.
 
-// CronJobWire is one GET /cron/jobs row (core.CronJobInfo's JSON
-// shape): name, 5-field schedule, enablement, the next fire in
-// RFC3339 when it fires, and the agent home owning the job (empty for
-// main's own jobs). agent is omitempty on the Go wire, so it reads as
-// undefined here.
+// CronJobWire is one GET /cron/jobs row (JobInfo's JSON shape): name,
+// 5-field schedule, enablement, the next fire in RFC3339 when it
+// fires, the agent the job fires under, and the file-ownership mark.
+// `agent` alone is ambiguous (card t_21824d98): on a loader-owned wake
+// row it is the owning HOME's name, on a main-home continuous-agent
+// job it is the AUTHORED agent - `agent_owned` is the only field that
+// tells the two apart. Both are omitempty on the Go wire, so they read
+// as undefined here.
 export interface CronJobWire {
   name: string;
   schedule: string;
   enabled: boolean;
   next: string;
   agent?: string;
+  // true when the job's yaml lives in an agent home's own
+  // config/crons.yaml (the loader's AgentOwned mark).
+  agent_owned?: boolean;
 }
 
 // setCronJobEnabled persists one job's enabled flag the ruled way:
@@ -48,7 +54,10 @@ export async function setCronJobEnabled(
 
 // cronKeyOf derives a job's StateKey from its wire row - the same
 // <agent>/<name> shape the Go state keys on (harness/cron/cron.go
-// StateKey).
+// StateKey). Only an agent-home row namespaces on its agent: a
+// main-home job keys on its own name whatever `agent:` it authors
+// (card t_21824d98 - keying those on the authored agent sent a
+// `ghost/pulse` toggle at a job the server knows as `pulse`, a 404).
 export function cronKeyOf(j: CronJobWire): string {
-  return j.agent ? `${j.agent}/${j.name}` : j.name;
+  return j.agent_owned && j.agent ? `${j.agent}/${j.name}` : j.name;
 }

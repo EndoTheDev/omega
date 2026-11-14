@@ -81,7 +81,7 @@ unchanged.
 | `/mcp/toggle`                         | POST       | the live MCP toggle through the module seam     |
 | `/mcp/save`                          | POST       | upsert one full MCP server entry into mcp.yaml (schema-validated, node-spliced, atomic), swap the live bridge; returns the fresh server list |
 | `/mcp/delete`                        | POST       | remove one MCP server entry from mcp.yaml and swap the bridge (the removed entry's connections close in the swap); unknown name 404 |
-| `/cron/jobs`                         | GET        | cron job list (empty when unmounted — not 501); rows carry the authored `prompt`, the fire-pinned `skills` and the last fire's `status` + `last` + `status_note` |
+| `/cron/jobs`                         | GET        | cron job list (empty when unmounted — not 501); rows carry the authored `prompt`, the fire-pinned `skills`, the last fire's `status` + `last` + `status_note`, and `agent_owned` (the file-ownership mark: true only on an agent home's own wake row) |
 | `/cron/save`                         | POST       | upsert one full job definition into the main crons.yaml (schema-validated, hot-reloaded); returns the fresh job set |
 | `/cron/delete`                       | POST       | remove one job from the main crons.yaml; unknown name 404 |
 | `/cron/toggle`                       | POST       | the row's toggle commit: writes the per-job `enabled:` flag only |
@@ -664,7 +664,13 @@ up edits without restart.
 - `GET /cron/jobs` — the job definitions (name, kind, schedule or
   minutes, resolved deliver target, agent, model, file, enabled, next
   fire time), sorted by name; an empty list when cron is unmounted (a
-  normal state, not 501).
+  normal state, not 501). `agent_owned` is the file-ownership mark:
+  true when the job's yaml lives in an agent home's own
+  `config/crons.yaml`. `agent` alone is ambiguous - the owning home's
+  name on a wake row, the authored `agent:` on a main-home job - so
+  the editor's read-only refusal and the toggle's state key
+  (`<agent>/<name>` for wakes, the bare name for main) both read the
+  mark.
 - `GET /skills` — name + description only; skill content, directories,
   and the prompt section never ride the wire.
 - `GET /logs?lines=N` — tail of the omega log (default 200, clamped
