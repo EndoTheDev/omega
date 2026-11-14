@@ -35,6 +35,15 @@
 # die now also carries dom/body/console evidence (switch_chip_miss_die)
 # so the next red answers Board.vue-never-mounted vs
 # fetch-died-before-chip vs SPA-never-rendered by itself.
+#
+# Card t_4e9559c8 (nightly 43586645271, red 98 on the 0.17.2 shipped
+# tree): the lane-rails card (t_50a8c145) did NOT break this seam - the
+# full recipe is GREEN locally on 06ef4ad6 under CI's own agent-browser,
+# a/b/c drags and the whole rails block included. The CI red was the
+# FIRST mid-drag order wait (6s, "last: false") and carried no witness,
+# so it read as a drag regression without proving one. The mid-drag
+# waits now die with drag_witness() (wait_dom_order_live): the dragged
+# card's live class, every column's x/width/rendered order, and the URL.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 BTAG="j98"
@@ -110,6 +119,34 @@ dom_order_expr() {
 # wait_dom_order <status> <ids> <timeout_s>: poll the rendered order.
 wait_dom_order() {
   wait_js "$(dom_order_expr "$1" "$2")" "$3"
+}
+
+# drag_witness: what a failed MID-DRAG read measured against (nightly
+# 43586645271 - 98 red on the 0.17.2 shipped tree at the FIRST mid-drag
+# order wait, 6s, "last: false", with no witness in the log). A bare
+# miss cannot separate the three branches: the press missed the card
+# (no drag ever started), the drag started but the optimistic reorder
+# never fired (a seam break in the pointer pipeline), or the lanes were
+# not in the shape the drag coordinates were measured against (rail
+# fold/auto-collapse moved a column between card_geo and the gesture).
+#   dragging - every card carrying the live-wrestled class: empty means
+#              the gesture never landed on a card;
+#   cols     - per column: x, width (a 36px rail reads as a rail), and
+#              the rendered id order the assert disagreed with;
+#   url      - which board view the read came from.
+drag_witness() {
+  local w
+  w=$(jsq '(()=>{const cols=[...document.querySelectorAll(".board-col")].map(c=>{const r=c.getBoundingClientRect();return (c.dataset.status||"?")+":x"+Math.round(r.x)+"w"+Math.round(r.width)+"["+[...c.querySelectorAll(".card")].map(k=>k.dataset.id).join(",")+"]"}).join(" ");const drag=[...document.querySelectorAll(".card.dragging")].map(k=>k.dataset.id).join(",");return "dragging=["+drag+"] cols=["+cols+"] url="+location.href})()' 2>&1 | tail -1 | tr -d '"')
+  printf '%s' "${w:-<browser silent>}"
+}
+
+# wait_dom_order_live <status> <ids> <timeout_s>: the MID-DRAG order wait
+# (the gesture is still down). On a miss the die carries drag_witness()
+# so the next red names its own branch instead of costing a probe cycle.
+wait_dom_order_live() {
+  local status="$1" ids="$2" t="${3:-6}"
+  poll_js "$(dom_order_expr "$status" "$ids")" "$t" && return 0
+  die "mid-drag order for $status never matched [$ids] in ${t}s | $(drag_witness)"
 }
 
 # assert_dragging <id>: the dragged card renders the live-wrestled state.
@@ -238,7 +275,7 @@ card_geo "$B"; atx=$CX; aty=$(( TOP + 6 ))   # B's top edge: the upper half
 drag_to "$afx" "$afy" "$atx" "$aty"
 
 # mid-drag: the pushed-around list IS the feedback
-wait_dom_order triage "$A $C $B" 6
+wait_dom_order_live triage "$A $C $B" 6
 assert_dragging "$C"
 step "ok: in-column drag reorders live while the gesture is down"
 
@@ -264,7 +301,7 @@ card_geo "$D"; btx=$CX; bty=$(( TOP + H - 6 ))   # D's bottom edge
 drag_to "$bfx" "$bfy" "$btx" "$bty"
 
 # mid-drag: the optimistic move already shows B below D in todo
-wait_dom_order todo "$D $B" 6
+wait_dom_order_live todo "$D $B" 6
 assert_dragging "$B"
 step "ok: cross-column drag reorders live while the gesture is down"
 
@@ -282,7 +319,7 @@ card_geo "$B"; ctx=$CX; cty=$(( TOP + 6 ))   # between d and b in todo
 drag_to "$cfx" "$cfy" "$ctx" "$cty"
 
 # mid-drag: the optimistic move shows a in the todo column
-wait_dom_order todo "$D $A $B" 6
+wait_dom_order_live todo "$D $A $B" 6
 assert_dragging "$A"
 step "ok: optimistic move renders the card in the target column"
 

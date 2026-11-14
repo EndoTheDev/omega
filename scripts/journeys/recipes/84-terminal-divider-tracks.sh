@@ -59,10 +59,15 @@ divx() {
   jsq "(()=>{const d=document.querySelectorAll('.dock-divider')[$1];if(!d)return -1;const r=d.getBoundingClientRect();return Math.round(r.x+r.width/2)})()" | tail -1
 }
 # drag_x <x> <to> <y>: a stepped press / move / release along x
+# DRAG_ACTIVE is the gesture's own witness (see geom_report): sampled while
+# the button is down, because the release clears the handle's `.active`.
+DRAG_ACTIVE=""
 drag_x() {
   local cur=$1 to=$2 y=$3
   ab mouse move "$cur" "$y" >/dev/null 2>&1
   ab mouse down >/dev/null 2>&1
+  sleep 0.1
+  DRAG_ACTIVE=$(jsq '(()=>{return [...document.querySelectorAll(".dock-divider")].filter(d=>d.classList.contains("active")).length})()' 2>&1 | tail -1 | tr -d '"')
   while [ "$cur" -ne "$to" ]; do
     if [ "$to" -gt "$cur" ]; then
       cur=$((cur + 10)); [ "$cur" -gt "$to" ] && cur=$to
@@ -75,11 +80,24 @@ drag_x() {
   ab mouse up >/dev/null 2>&1
   sleep 0.3
 }
+# geom_report: what a failed leg measured AGAINST - every divider's centre x
+# (a `*` marks the handle holding the pointer capture) plus every pane's
+# width. A leg that reads "no movement" is answered here: no `*` anywhere
+# means the gesture never landed on a handle (a press that missed, an
+# overlay in the way), while a `*` on the wrong divider means the handle
+# order moved. Nightly 43586645271 red on this recipe's first leg with no
+# way to tell those apart - the report is the missing witness.
+geom_report() {
+  local divs panes
+  divs=$(jsq '(()=>{return [...document.querySelectorAll(".dock-divider")].map(d=>{const r=d.getBoundingClientRect();return Math.round(r.x+r.width/2)+(d.classList.contains("active")?"*":"")}).join(",")})()' 2>&1 | tail -1 | tr -d '"')
+  panes=$(jsq '(()=>{return [...document.querySelectorAll("[data-pane-id]")].map(p=>((p.className.match(/kind-([a-z_]+)/)||[])[1]||"?")+":"+Math.round(p.getBoundingClientRect().width)).join(" ")})()' 2>&1 | tail -1 | tr -d '"')
+  printf 'gesture-active=%s dividers=[%s] panes=[%s]' "${DRAG_ACTIVE:-?}" "$divs" "$panes"
+}
 # near <got> <want> <tol> <name>
 near() {
   local d=$(( $1 - $2 ))
   [ "$d" -lt 0 ] && d=$(( -d ))
-  [ "$d" -le "$3" ] || die "${4:-near}: got [$1] want [$2] (tol $3)"
+  [ "$d" -le "$3" ] || die "${4:-near}: got [$1] want [$2] (tol $3) | $(geom_report)"
   step "ok: ${4:-near} ($1)"
 }
 

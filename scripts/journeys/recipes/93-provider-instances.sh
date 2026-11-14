@@ -38,6 +38,17 @@
 # proven live on this recipe). A backslash-free expr is a fixed
 # point of any unescape pass - it agrees on every CLI.
 #
+# SAVE ROW law (nightly 43586645271, red on the 0.17.2 shipped tree):
+# the pane's dirty signal is the ROW - `.settings-save-row` mounts only
+# while the diff is non-empty. A bare `document.querySelector
+# (".settings-save")` is NOT that signal any more: card t_a82d39c8 gave
+# the settings band an edit-as-yaml <dialog> whose own save button
+# carries the same class and is always parsed into the DOM (a closed
+# dialog still matches a selector), so the old "the save row cleared"
+# poll could never be true and the journey reded on a working save.
+# Every dirty probe below reads `.settings-save-row`; every click
+# targets `.settings-save-row .settings-save`.
+#
 # Lane note: the strand section pins a NEVER-configured instance name
 # - it works on every lane (with or without a pre-existing providers:
 # section), because the resolver answers not-found for any name the
@@ -294,13 +305,13 @@ step "ok: add instance appended a row"
 # API, a real key only ever enters through config.yaml.
 fill_row "instance $((wire_rows + 1)) name" "$PROV_NAME"
 
-if ! wait_js '!!document.querySelector(".settings-save")' 8; then
+if ! wait_js '!!document.querySelector(".settings-save-row")' 8; then
   die "save row never appeared after naming the new instance (nothing marked dirty)"
 fi
-jsq 'document.querySelector(".settings-save").click()' >/dev/null 2>&1
+jsq '(()=>{const b=document.querySelector(".settings-save-row .settings-save");if(!b) return 0;b.click();return 1})()' >/dev/null 2>&1
 # the save row unmounts when the diff lands (the refresh payload clears
 # dirty); a save ERROR keeps it - poll both ways and fail on the error
-if ! poll_js '!document.querySelector(".settings-save")' 20; then
+if ! poll_js '!document.querySelector(".settings-save-row")' 20; then
   err=$(jsq '(document.querySelector(".settings-error")||{}).textContent||""' 2>&1 | tail -1 | deq)
   die "instance save never cleared the save row (error: $err)"
 fi
@@ -353,10 +364,10 @@ if ! poll_js "$(row_present_js "$PROV_NAME")" 8; then
   die "the saved instance row never rendered (pane pin)"
 fi
 fill_row_key "$PROV_NAME" "$PLAIN_KEY"
-if ! wait_js '!!document.querySelector(".settings-save")' 8; then
+if ! wait_js '!!document.querySelector(".settings-save-row")' 8; then
   die "the plain-key edit never marked the pane dirty (save row missing)"
 fi
-jsq 'document.querySelector(".settings-save").click()' >/dev/null 2>&1
+jsq '(()=>{const b=document.querySelector(".settings-save-row .settings-save");if(!b) return 0;b.click();return 1})()' >/dev/null 2>&1
 door_in_pane='(()=>{const e=document.querySelector(".settings-error");return !!e && (e.textContent||"").indexOf("config.yaml is the only door") !== -1;})()'
 if ! poll_js "$door_in_pane" 15; then
   err=$(jsq '(document.querySelector(".settings-error")||{}).textContent||""' 2>&1 | tail -1 | deq)
@@ -364,7 +375,7 @@ if ! poll_js "$door_in_pane" 15; then
 fi
 step "ok: pane save with a plain api_key surfaces the door error"
 # the refusal keeps the dirty row - the config never moved
-assert_eq "$(jsq '!!document.querySelector(".settings-save")' 2>&1 | tail -1 | deq)" "true" \
+assert_eq "$(jsq '!!document.querySelector(".settings-save-row")' 2>&1 | tail -1 | deq)" "true" \
   "the refused pane save keeps the dirty save row"
 
 # reload: the refused write left no residue - the row persists, its
@@ -381,11 +392,11 @@ remove_row "$PROV_NAME"
 if ! wait_js "!($(row_present_js "$PROV_NAME"))" 8; then
   die "remove never dropped the row"
 fi
-if ! wait_js '!!document.querySelector(".settings-save")' 8; then
+if ! wait_js '!!document.querySelector(".settings-save-row")' 8; then
   die "save row never appeared after removing the instance"
 fi
-jsq 'document.querySelector(".settings-save").click()' >/dev/null 2>&1
-if ! poll_js '!document.querySelector(".settings-save")' 20; then
+jsq '(()=>{const b=document.querySelector(".settings-save-row .settings-save");if(!b) return 0;b.click();return 1})()' >/dev/null 2>&1
+if ! poll_js '!document.querySelector(".settings-save-row")' 20; then
   err=$(jsq '(document.querySelector(".settings-error")||{}).textContent||""' 2>&1 | tail -1 | deq)
   die "remove save never cleared the save row (error: $err)"
 fi
