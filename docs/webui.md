@@ -489,11 +489,42 @@ resolution mirror the one command law every surface follows:
   /disabled/agents` answers 409 for the default agent at the handler
   level and config.yaml stays untouched.
 - **Expansion = details + edit**: expanding a row seats the config
-  summary and the `PUT /agents/{name}` layer editor (description,
-  provider host/type/model_name/api_key, system_prompt; nil = leave
-  alone). Session ROWS are dead on this tab - the roster opens a
-  session's chat, it never lists sessions (the per-agent session
-  endpoints stay in the API, docs/api.md).
+  summary and the `PUT /agents/{name}` DEFINITION-layer editor - the
+  0.17.3 field set (description, system prompt, a REFERENCED provider
+  instance, model name, max turns, toggles, skills allowlist, the
+  inherit flags; nil = leave alone). Session ROWS are dead on this tab -
+  the roster opens a session's chat, it never lists sessions (the
+  per-agent session endpoints stay in the API, docs/api.md).
+- **The 0.17.3 make-over** (card t_df015e66, pinned by
+  `webui/test/agentsmakeover.test.ts`):
+  - **One create door.** A single `+` in the band opens ONE form whose
+    agent-kind choice decides the wire: `scaffold` (`POST /agents`),
+    `continuous` (`POST /continuous`, directive + wake schedule) or
+    `inherit from an agent` (`POST /agents` with `inherit_from` - the
+    CLONE law's materialized copy at birth, the rename path is clone
+    then delete). The old `@` duplicate door and its second form are
+    gone, and the `+` no longer depends on the continuous capsule -
+    only the continuous KIND does.
+  - **Delete = delete the home.** Each secondary agent's expansion ends
+    with a two-beat destructive lane: the trigger, then a confirm that
+    NAMES the session count (`DELETE /agents/{name}`, receipt carries
+    the same count). The main agent has no delete - its home is the
+    daemon's home.
+  - **No secret in the panel.** The provider is a `<select>` over the
+    instance names `GET /settings` defines; host, type and api key have
+    no field at all (an agent file holds none - `agent/configedit.go`).
+  - **Inheritance chips.** The four inheritable knobs (system prompt,
+    provider instance, model, max turns) carry an `inherited from main`
+    chip plus a one-line source note when the layer file OMITS the key,
+    and a reset button (the layer's `unset` verb) when it names one -
+    the same authored-vs-inherited state machine as the cron editor's
+    chain, fed by `GET /settings`' per-agent scopes. Toggles and skills
+    are never in it: they are the agent's own set.
+  - **Always off + explicit allowlist.** Toggles are checkboxes over the
+    host's mounted, toggleable capsules (never the locked pair, never
+    one the host has off) and an empty set says `nothing enabled`; the
+    skills allowlist is a checkbox set over the agent's visible registry
+    and an empty set says `no skills`.
 
 ## The kanban board (lane rails)
 

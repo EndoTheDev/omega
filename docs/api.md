@@ -55,7 +55,7 @@ unchanged.
 | `/sessions/{id}/verdicts`            | GET, POST  | one session's verdict cards / the answer POST  |
 | `/verdicts`                          | GET        | cross-session verdict listing (the bell count) |
 | `/agents`                            | GET        | agent homes (roster rows; each row carries `last_session_id`) |
-| `/agents/{name}`                     | GET, PUT   | detail / the node-preserving config layer editor |
+| `/agents/{name}`                     | GET, PUT, DELETE | detail / the node-preserving config layer editor / delete the home, sessions included |
 | `/agents/{name}/sessions`            | GET        | the agent's session list                       |
 | `/disabled`                          | GET        | the registry-browser folded state (skills/tools/agents namespaces) |
 | `/disabled/skills`, `/disabled/tools` | PUT       | registry-browser toggle fold (one entry per name) |
@@ -528,6 +528,19 @@ A host with no settings seam answers **501** on all three, like
   scaffold removes the destination: folder presence is registration, so a
   half-built home never becomes a phantom agent. There is no
   rename-in-place route.
+
+- `DELETE /agents/{name}` - delete the HOME (0.17.3 make-over ruling
+  2), sessions included: the definition file, the persona files, the
+  agent's own skill tree and its own store directory all go as one
+  step, so no half-deleted folder keeps registering an agent (folder
+  presence IS registration). The session count is read BEFORE the
+  removal and answered in the receipt - `{"deleted": "<name>",
+  "sessions": N}` - which is the number the panel's confirm dialog
+  named. The default agent answers **409** (its home is the daemon's
+  home), an unknown agent **404**, a malformed name **400**. A name
+  left behind in the host's `disabled: agents:` fold is config litter,
+  never an orphan home: it matches no directory, so it registers
+  nothing.
 
 ### /boards (multi-board registry)
 

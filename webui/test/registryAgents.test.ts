@@ -29,7 +29,7 @@ test("agentDetailLines renders the config summary honestly", () => {
     name: "bots/patrol",
     dir: "/home/x/.omega-dev/agents/bots_patrol",
     description: "patrol bot",
-    provider_type: "openai",
+    provider_instance: "work",
     model_name: "gpt-5.x",
     skill_count: 2,
     skills: ["a", "b"],
@@ -40,11 +40,21 @@ test("agentDetailLines renders the config summary honestly", () => {
   const lines = agentDetailLines(a);
   assert.deepEqual(lines.slice(0, 3), [
     "model: gpt-5.x",
-    "provider: openai",
+    "provider: work",
     `dir: ${a.dir}`,
   ]);
   assert.ok(lines.includes("skills: a, b"));
   assert.ok(lines.includes("memory: 2kb"));
+  // 0.17.3: an agent with no instance reference runs on main's provider -
+  // the line says which, never a phantom type (the row is secret-free)
+  const inherited: OmegaAgent = {
+    name: "newborn",
+    dir: "/home/x/.omega/agents/newborn",
+    skill_count: 0,
+    memory_size: 0,
+    session_count: 0,
+  };
+  assert.ok(agentDetailLines(inherited).includes("provider: (main's provider)"));
   // missing facts render "-": never a phantom empty row voice
   const bare: OmegaAgent = {
     name: "bots/patrol",
@@ -113,9 +123,13 @@ test("AgentsPanel expansion: config edit wire, no session surface", () => {
   assert.ok(panel.includes(`fetch(\`/agents/\${`), "the edit writes through the agents API");
   assert.ok(panel.includes('"PUT"'), "the edit is a PUT");
   assert.ok(panel.includes("saveAgentEdit"), "the save affordance exists");
-  for (const field of ["description", "provider_type", "model_name", "api_key", "system_prompt"]) {
-    assert.ok(panel.includes(`agents-edit-input`), `the ${field} affordance rides the draft form`);
+  // the definition layer's field set (0.17.3): every knob rides the draft
+  // form; the retired secret knobs are GONE, not merely empty.
+  for (const field of ["provider instance", "model name", "max turns", "system prompt", "agent description"]) {
+    assert.ok(panel.includes(`aria-label="${field}"`), `the ${field} affordance rides the draft form`);
   }
+  assert.ok(!panel.includes('aria-label="api key"'), "no api key input survives the secret-free law");
+  assert.ok(!panel.includes('aria-label="provider host"'), "no host input survives the secret-free law");
   assert.ok(!panel.includes("agents-sessions"), "the session list died");
   assert.ok(!panel.includes("new session as this agent"), "the new-session button died");
   assert.ok(!panel.includes("/sessions`"), "no session fetch rides the tab");
