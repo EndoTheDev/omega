@@ -893,11 +893,15 @@ func (r *Runner) Jobs() []JobInfo {
 			Minutes:  j.Minutes,
 			Deliver:  j.DeliverTarget(),
 			Agent:    j.Agent,
-			Model:    j.Model,
-			File:     j.File,
-			Prompt:   j.Prompt,
-			Skills:   j.Skills,
-			Enabled:  j.IsEnabled(),
+			// the ownership mark, never Agent alone: a main-home job's
+			// authored agent and a wake's owning home both put a name
+			// here (card t_21824d98).
+			AgentOwned: j.IsAgent(),
+			Model:      j.Model,
+			File:       j.File,
+			Prompt:     j.Prompt,
+			Skills:     j.Skills,
+			Enabled:    j.IsEnabled(),
 		}
 		// The last-status fields ride the same snapshot: the record
 		// survives restarts, so a fresh serve still shows the truth

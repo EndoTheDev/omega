@@ -5,10 +5,13 @@
 // log and pins the validation laws without compiling CronJobs.vue - the
 // SFC only wires the form and the buttons.
 //
-// Scope law: MAIN-home jobs only. A row with an `agent` (wake, owned by
-// the agent home's own config/crons.yaml) is read-only here - editing
-// it would write across a home boundary (the LoadAllConfigs law). The
-// toggle keeps working on those rows.
+// Scope law: MAIN-home jobs only. A row the agent home OWNS (its yaml
+// lives in that home's own config/crons.yaml) is read-only here -
+// editing it would write across a home boundary (the LoadAllConfigs
+// law). The toggle keeps working on those rows. Ownership rides the
+// wire as `agent_owned`, never inferred from `agent` (card
+// t_21824d98: a main-home job's AUTHORED `agent:` is main's file and
+// stays editable).
 
 import type { CronJobWire } from "./toggle";
 
@@ -20,6 +23,11 @@ export interface CronJobWireFull extends CronJobWire {
   file?: string; // the append-to-file target, home-relative
   prompt?: string; // the authored user message (the editor's whole-job upsert needs it)
   skills?: string[]; // the fire-pinned skill names
+  // agent_owned marks the job's FILE ownership (the loader's
+  // AgentOwned): true when the yaml lives in an agent home's own
+  // config/crons.yaml. Agent alone cannot carry this - a main-home
+  // job's authored `agent:` and a wake's owning home both set it.
+  agent_owned?: boolean;
   // the last fire's outcome: status "" (never fired) | ok | error, the
   // completion wall clock in RFC3339, and the capped error message.
   status?: string;
@@ -54,10 +62,12 @@ export const DELIVER_TARGETS = [
   "append-to-file",
 ] as const;
 
-// editableOf: agent-home (wake) rows are the agent's own file - the
-// editor refuses them by hiding the affordance.
+// editableOf: a row the agent home OWNS is the agent's own file - the
+// editor refuses it by hiding the affordance. The refusal reads the
+// ownership mark, never `agent`: a main-home job's AUTHORED `agent:`
+// lives in main's crons.yaml and keeps its pencil (card t_21824d98).
 export function editableOf(j: CronJobWireFull): boolean {
-  return !j.agent;
+  return !j.agent_owned;
 }
 
 // emptyDraft: a new job lands cron-kind, new-session, enabled - the
