@@ -584,7 +584,13 @@ dot, reset link, draft star, live note).
   a landing route (card t_6d6a6dc4) - a boot or a popstate on it opens the
   settings tab through the gear's own opener (a live instance focuses in
   place) and pauses the chat URL derivation until a chat tab takes the
-  path back. The view path sits ONE segment deeper than the knob API's
+  path back. Every chat focus hands it back - both openers (the sidebar's
+  row / new / new-ephemeral, the palette's recent-session switch, the
+  capsule `CHAT_SESSION_OPEN_EVENT` seam), a chat tab click and a popstate
+  into a chat entry - so the landing never outlives the landing, and the
+  release WRITES the path the pause held (a derivation suppressed while the
+  mark was up would otherwise stay stale when the focused chat does not
+  change). The view path sits ONE segment deeper than the knob API's
   exact `/settings` (agent/api/server.go owns that path; the SPA only gets
   the catch-all), so an address bar always lands the app, never the JSON.
   Nothing writes the path on open/close: settings stays a CLOSABLE

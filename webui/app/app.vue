@@ -1257,8 +1257,13 @@
   // /board, nothing WRITES the path on open/close - the settled URL ruling
   // keeps the pathname the focused chat session's (or the overlay's, while
   // one is up), and the landing only marks the route as up so the chat
-  // derivation below pauses and does not immediately reclaim it. Any chat
-  // focus (refocusFrom / a popstate into a chat entry) clears the mark.
+  // derivation below pauses and does not immediately reclaim it.
+  // EVERY chat focus clears the mark, or the landing would outlive the
+  // session-navigation gestures that return to chat: the two openers
+  // (openChatTab / openEphemeralTab - the sidebar's row / new /
+  // new-ephemeral, the palette's recent-session switch, the capsule
+  // CHAT_SESSION_OPEN_EVENT seam), refocusFrom's chat branch, and a
+  // popstate into a chat entry.
   const settingsRoute = ref(false);
 
   /** landSettingsRoute: the settings path is up - open (or focus) the
@@ -1592,6 +1597,11 @@
   // focus-existing rule above for opened sessions; only when no draft
   // tab lives anywhere does '+' mint a fresh one.
   function openChatTab(sessionId: string | null, paneId?: string) {
+    // a chat tab taking the focus is chat's claim on the URL again - the
+    // settings landing lets go here, before the focus branches return
+    // (the sidebar row / palette / capsule-seam opens all land here; the
+    // settings landing's own boot never does - t_6d6a6dc4)
+    settingsRoute.value = false;
     if (sessionId) {
       const found = dock.firstChatTab(sessionId);
       if (found?.tab.key) {
@@ -1632,6 +1642,8 @@
   // the tab. Always mints fresh (no draft reuse: a plain draft and an
   // ephemeral draft are different contracts and must not merge).
   function openEphemeralTab() {
+    // same claim as openChatTab: a fresh chat tab is chat focus
+    settingsRoute.value = false;
     const pane = dock.ensureMainPane();
     const key = nextTabKey();
     dock.openTab(pane, { component: "chat", sessionRef: EPHEMERAL_DRAFT_REF, key });
@@ -1700,6 +1712,19 @@
     if (mainView.value === "board") return;
     if (settingsRoute.value) return;
     history.replaceState({}, "", p);
+  });
+  // A released landing hands the URL back by WRITING what the pause held:
+  // while the mark was up every derivation was suppressed, so a release
+  // whose derived path did not CHANGE (a draft tab focused before and
+  // after - the sidebar's '+' on a landing) would otherwise leave the
+  // settings URL stale and a reload would land settings again (t_6d6a6dc4,
+  // vera round 1). The pathname check keeps the write to the case the
+  // landing actually owns: a popstate that already moved the URL off the
+  // settings path is not ours to overwrite.
+  watch(settingsRoute, (up) => {
+    if (up) return;
+    if (!isSettingsPath(window.location.pathname)) return;
+    history.replaceState({}, "", urlPath.value);
   });
   // structural changes never steal focus, but a gone focus re-resolves
   // (closeTab's neighbor-focus, DnD moves, toggle remove)
