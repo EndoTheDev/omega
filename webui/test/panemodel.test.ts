@@ -98,11 +98,11 @@ describe("gate: sidebar tabs unclosable", () => {
     // ...and the shell marker no longer hides tab chrome: a chat tab in a
     // sidebar keeps its X
     assert.doesNotMatch(src("app/assets/css/main.css"), /\.dock-pane\.pinned \.dock-tab-close/);
-    // every tab chip drags - the lock lives in the hit-test, not the chip.
-    // card t_d04a1c80: the new-tab placeholder is the ONE exception (a
-    // seat is not content), so the chip binds draggableTab(t)
-    assert.match(pane, /:draggable="draggableTab\(t\)"/);
-    assert.match(pane, /function draggableTab\(t: DockTab\): boolean \{[\s\S]*?isPlaceholderTab/);
+    // every tab chip drags - the lock lives in the hit-test, not the chip
+    // (card t_9855a20e retired the new-tab placeholder, the one tab that
+    // never dragged: the chip is plainly draggable again)
+    assert.match(pane, /:draggable="true"/);
+    assert.doesNotMatch(pane, /draggableTab/);
   });
   it("edge shells: no actions menu, no remove X, and no empty-pane refill menu", () => {
     const pane = src("app/components/DockPane.vue");

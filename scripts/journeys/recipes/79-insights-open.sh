@@ -97,26 +97,19 @@ step "ok: period header follows the 7-days switch"
 # the MAIN pane's '+' mints a session (Endo amendment 2026-10-26,
 # t_a582486d): no dropdown, no menu. openChatTab(null) FOCUSES an
 # existing draft chat tab before minting (app.vue: no duplicate
-# new-chat tab), so the mint path needs a draft-free dock: close the
-# boot draft tab, then open the seeded jrn session in the pane, then
-# the '+' must mint a FRESH draft tab. Catches the '+' going dead
-# (the invisible-to-gates family this journey exists for).
-# 1) close the boot draft tab (title "new chat", unsaved)
-draftclosed=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];const hit=ps.find(p=>!p.classList.contains("pinned")&&[...p.querySelectorAll(".dock-tab-title")].some(t=>/^new chat$/i.test((t.textContent||"").trim())));if(!hit) return 0;const t=[...hit.querySelectorAll(".dock-tab-title")].findIndex(x=>/^new chat$/i.test((x.textContent||"").trim()));if(t<0) return 0;const x=hit.querySelectorAll(".dock-tab-close")[t];if(!x) return 0;x.click();return 1})()')
-assert_eq "$draftclosed" "1" "boot draft chat tab closed"
-draftgone=0; guard=0
-while [ "$guard" -lt 20 ]; do
-  left=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];const hit=ps.find(p=>!p.classList.contains("pinned"));return hit?[...hit.querySelectorAll(".dock-tab-title")].filter(t=>/^new chat$/i.test((t.textContent||"").trim())).length:0})()')
-  [ "$left" = "0" ] && draftgone=1 && break
-  sleep 0.5; guard=$((guard + 1))
-done
-[ "$draftgone" = "1" ] || die "the draft chat tab never closed"
-# 2) open the seeded jrn session in the (now empty) main pane. The
-# open proof is the SESSION CONTENT in the pane, not the tab title:
-# an untitled session keeps the fallback title ("chat") and titling
-# needs a model call - the nightly's no-provider lane has none
-# (t_da6f294f). The session list lives in a PINNED shell, so seed text
-# inside a NON-pinned pane means the chat tab itself opened.
+# new-chat tab), so the mint path needs a draft-free dock. card
+# t_9855a20e (THE LOCKED LAST TAB): a pane's lone tab carries no close X
+# and refuses the close, so the boot draft must GAIN COMPANY before it can
+# go: open the seeded session first (draft + session = two tabs), close the
+# draft, then the '+' must mint a FRESH draft tab. Catches the '+' going
+# dead (the invisible-to-gates family this journey exists for), and the
+# close-through-company path with it.
+# 1) open the seeded jrn session in the main pane. The open proof is the
+# SESSION CONTENT in the pane, not the tab title: an untitled session keeps
+# the fallback title ("chat") and titling needs a model call - the
+# nightly's no-provider lane has none (t_da6f294f). The session list lives
+# in a PINNED shell, so seed text inside a NON-pinned pane means the chat
+# tab itself opened.
 seedrow=0
 for i in 1 2 3 4 5 6 7 8 9 10; do
   seedrow=$(jsq '(()=>{const rows=Array.from(document.querySelectorAll(".session-list li"));const r=rows.find(x=>/insights/i.test(x.innerText||""));if(!r) return 0;if(r.classList.contains("bucket-row")) return 0;r.click();return 1})()' 2>&1)
@@ -131,6 +124,17 @@ while [ "$guard" -lt 20 ]; do
   sleep 0.5; guard=$((guard + 1))
 done
 [ "$seedopen" = "1" ] || die "the seeded session never opened in the pane"
+# 2) close the boot draft tab (title "new chat", unsaved) - it now shares
+# the pane with the session tab, so its X renders
+draftclosed=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];const hit=ps.find(p=>!p.classList.contains("pinned")&&[...p.querySelectorAll(".dock-tab-title")].some(t=>/^new chat$/i.test((t.textContent||"").trim())));if(!hit) return 0;const t=[...hit.querySelectorAll(".dock-tab-title")].findIndex(x=>/^new chat$/i.test((x.textContent||"").trim()));if(t<0) return 0;const x=hit.querySelectorAll(".dock-tab-close")[t];if(!x) return 0;x.click();return 1})()')
+assert_eq "$draftclosed" "1" "boot draft chat tab closed"
+draftgone=0; guard=0
+while [ "$guard" -lt 20 ]; do
+  left=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];const hit=ps.find(p=>!p.classList.contains("pinned"));return hit?[...hit.querySelectorAll(".dock-tab-title")].filter(t=>/^new chat$/i.test((t.textContent||"").trim())).length:0})()')
+  [ "$left" = "0" ] && draftgone=1 && break
+  sleep 0.5; guard=$((guard + 1))
+done
+[ "$draftgone" = "1" ] || die "the draft chat tab never closed"
 before=$(jsq 'document.querySelectorAll(".dock-tab-title").length')
 mainJS='(()=>{const ps=[...document.querySelectorAll(".dock-pane")];
   const hit=ps.find(p=>!p.classList.contains("pinned")&&p.querySelector("button.dock-tab-new"));
