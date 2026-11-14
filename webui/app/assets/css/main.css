@@ -1289,7 +1289,12 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 20px;
+  /* the column tracks the composer (t_5063675a): the transcript's side
+     inset is the composer's 12px side margin (the ONE composer law,
+     t_1750a9e3), so every block's edge lands on the composer's edge
+     instead of 8px inside it. One number, all blocks - this is the
+     column edge, not a block width (the full-width ruling stands). */
+  padding: 16px 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1312,13 +1317,17 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
 
 /* ---- stacked chat appearance (card t_84e4653c) ----
    One turn = one block: the user message plus everything its run
-   produced. Blocks repeat the pane's internal rhythm (flex column,
-   12px gap) so the items render exactly as they did flat; the block
-   boundary is the pane gap - spacing only, no chrome. */
-.msg-block { display: flex; flex-direction: column; gap: 12px; }
+   produced. Blocks repeat the pane's internal rhythm (flex column) so
+   the items render as they did flat; the block boundary is the pane gap
+   - spacing only, no chrome. Inside a turn the gap is TIGHT (6px,
+   t_5063675a): the thinking and tool strips read as one running log
+   under their question, not as separate cards - Endo's in-app comment,
+   "adjust the height of those blocks ... so that the gaps between them
+   are smaller". The user message's own padding is not touched. */
+.msg-block { display: flex; flex-direction: column; gap: 6px; }
 
 /* stacked mode (card t_84e4653c, visual fix): the BETWEEN-turn gap must
-   outweigh the within-turn gap or the block grouping is invisible - 12px
+   outweigh the within-turn gap or the block grouping is invisible - 6px
    inside a turn (above), 28px between turns (here). Flat 'chat' keeps
    the uniform 12px chronology. */
 .messages.stacked { gap: 28px; }
@@ -3158,7 +3167,10 @@ labels stopped short of the right edge. */
      inside the in-app browser preview, unverifiable from the server side.
      Revisit from a real phone browser test before re-adding. */
 
-  .messages { padding: 12px; }
+  /* the column tracks the composer here too (t_5063675a): the mobile
+     composer insets 8px, so the transcript's side padding is the same 8px
+     instead of standing 4px inside it */
+  .messages { padding: 8px; }
   .bubble, .thinking, .toolcall, .toolgroup { max-width: 88%; }
 
   .composer { margin: 0 8px 8px; } /* full pane on mobile, tighter inset */
