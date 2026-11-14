@@ -27,6 +27,7 @@ import {
   deserialize,
   deserializeLayout,
   migrateLegacy,
+  EDGE_DEFAULT_PX,
   nextNodeId,
   syncIdSeed,
   findPane,
@@ -657,15 +658,15 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     assert.equal(root.children.length, 2, "main row + bottom shell");
     return asSplit(root.children[0]);
   }
-  it("always four panes: sidebar(240), chat, inspector-9(240 default), bottom(200, logs)", () => {
+  it("always four panes: sidebar(edge default), chat, inspector-9(same default), bottom(200, logs)", () => {
     const t = migrateLegacy(() => null);
     const row = mainRow(t);
     assert.equal(row.children.length, 3);
     assert.equal(asPane(row.children[0]).tabs[0].component, "sidebar");
-    assert.equal(asPane(row.children[0]).fixed, 240);
+    assert.equal(asPane(row.children[0]).fixed, EDGE_DEFAULT_PX.sidebar);
     assert.equal(asPane(row.children[1]).tabs[0].component, "chat");
     assert.equal(asPane(row.children[1]).fixed, null);
-    assert.equal(asPane(row.children[2]).fixed, 240);
+    assert.equal(asPane(row.children[2]).fixed, EDGE_DEFAULT_PX.inspector);
     assert.deepEqual(
       asPane(row.children[2]).tabs.map((x) => x.component),
       ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
@@ -694,13 +695,21 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     );
     assert.equal(asPane(mainRow(t).children[0]).fixed, 150);
   });
+  it("the edge-pane default carries the 0.17.3 strip bump (card t_d4443ab5)", () => {
+    // the sidebars' tab strip spans the PANE: the +24px strip widening is
+    // the default edge width. One tuning point - change the number here and
+    // in EDGE_DEFAULT_PX together (the rest of the suite derives from it).
+    assert.equal(EDGE_DEFAULT_PX.sidebar, 240 + 24, "sidebar: 240 -> 264");
+    assert.equal(EDGE_DEFAULT_PX.inspector, 240 + 24, "inspector: 240 -> 264");
+  });
+
   it("bad flag strings fall back to the default widths", () => {
     const t = migrateLegacy((k) =>
       k === LEGACY_WIDTH_KEYS.sidebar ? "abc" : k === LEGACY_WIDTH_KEYS.inspector ? "maybe" : null,
     );
     const row = mainRow(t);
-    assert.equal(asPane(row.children[0]).fixed, 240);
-    assert.equal(asPane(row.children[2]).fixed, 240);
+    assert.equal(asPane(row.children[0]).fixed, EDGE_DEFAULT_PX.sidebar);
+    assert.equal(asPane(row.children[2]).fixed, EDGE_DEFAULT_PX.inspector);
   });
 });
 
@@ -734,7 +743,7 @@ describe("pane-model reset", () => {
       asPane(out.children[0]).tabs.map((x) => x.component)[0],
       "sidebar",
     );
-    assert.equal(asPane(out.children[0]).fixed, 240);
+    assert.equal(asPane(out.children[0]).fixed, EDGE_DEFAULT_PX.sidebar);
   });
   it("ensurePinnedEdges re-inserts the inspector pane at the RIGHT edge", () => {
     const t: DockNode = makePane("chat");
@@ -744,7 +753,7 @@ describe("pane-model reset", () => {
       right.tabs.map((x) => x.component),
       ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
     );
-    assert.equal(right.fixed, 240);
+    assert.equal(right.fixed, EDGE_DEFAULT_PX.inspector);
   });
 
   it("a closed sidebar reopens ABOVE the bottom band, not beside it (card t_556ee727)", () => {

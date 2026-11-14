@@ -363,10 +363,26 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
     assert.ok(!app.includes("function openPalette("), "the one-way opener is gone");
   });
 
-  it("the overlay CSS reads the tokens, top-center above the menubar", () => {
+  it("the overlay CSS reads the tokens, and hangs from the top bar (card t_d4443ab5)", () => {
     assert.ok(css.includes(".command-palette {"), "the overlay has real CSS");
     const block = css.slice(css.indexOf(".command-palette {"), css.indexOf(".command-palette-input"));
     assert.ok(block.includes("position: fixed") && block.includes("top:"), "top-center fixed");
+    // VS Code quick-open geometry: the panel's top edge IS the top bar's
+    // lower edge (one --menubar-h for both), so it overlays the panes and
+    // never pushes them
+    assert.ok(
+      block.includes("top: var(--menubar-h)"),
+      "the panel hangs from the menubar's own height",
+    );
+    assert.ok(
+      /--menubar-h: 35px/.test(css),
+      "the menubar height is the one anchor number",
+    );
+    assert.ok(
+      /\.menubar\s*\{[^}]*height: var\(--menubar-h\)/.test(css),
+      "the bar itself reads the same number",
+    );
+    assert.ok(block.includes("width: 640px"), "the overlay carries the widened band");
     assert.ok(css.includes("background: var(--z2)"), "tokens carry it");
   });
 });

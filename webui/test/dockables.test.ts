@@ -26,6 +26,7 @@ import {
 import { withScratchSingleton } from "./scratchDockable.ts";
 import {
   DOCK_LAYOUT_KEY,
+  EDGE_DEFAULT_PX,
   createDock,
   focusTab,
   openTab,
@@ -671,7 +672,7 @@ describe("dock store: the pane-model reset", () => {
     assert.equal(panes(tree).length, 4, "sidebar + chat + inspector + bottom");
     const comps = panes(tree).map((p) => p.tabs[0]?.component);
     assert.deepEqual(comps[0], "sidebar");
-    assert.equal(panes(tree)[0]!.fixed, 240);
+    assert.equal(panes(tree)[0]!.fixed, EDGE_DEFAULT_PX.sidebar);
     assert.deepEqual(comps[3], "terminal", "the bottom shell holds the terminal");
   });
 

@@ -692,10 +692,18 @@ export function ensurePinnedEdges(
 ): DockNode {
   let result = deriveEdgeMarkers(tree, closed);
   if (!closed.includes("sidebar") && !findEdgePane(result, "sidebar")) {
-    result = insertRootEdge(result, "before", makePane("sidebar", 240, "left"));
+    result = insertRootEdge(
+      result,
+      "before",
+      makePane("sidebar", EDGE_DEFAULT_PX.sidebar, "left"),
+    );
   }
   if (!closed.includes("inspector") && !findEdgePane(result, "inspector")) {
-    result = insertRootEdge(result, "after", defaultInspectorPane(result, 240));
+    result = insertRootEdge(
+      result,
+      "after",
+      defaultInspectorPane(result, EDGE_DEFAULT_PX.inspector),
+    );
   }
   result = forceSessionsLeft(result);
   return restoreInspectorSet(result, stowed);
@@ -2893,12 +2901,12 @@ function readWidth(get: (k: string) => string | null, key: string): number | nul
 export function migrateLegacy(
   get: (k: string) => string | null,
 ): DockNode {
-  const fixedFor = (key: string): number => {
+  const fixedFor = (key: string, fallback: number): number => {
     const w = readWidth(get, key);
-    return w === null ? 240 : w;
+    return w === null ? fallback : w;
   };
-  const sw = fixedFor(LEGACY_WIDTH_KEYS.sidebar);
-  const iw = fixedFor(LEGACY_WIDTH_KEYS.inspector);
+  const sw = fixedFor(LEGACY_WIDTH_KEYS.sidebar, EDGE_DEFAULT_PX.sidebar);
+  const iw = fixedFor(LEGACY_WIDTH_KEYS.inspector, EDGE_DEFAULT_PX.inspector);
 
   const inspector: DockPane = {
     kind: "pane",
@@ -3144,10 +3152,15 @@ export const DOCK_TAB_TITLE_KEY: InjectionKey<(tab: DockTab) => string | null> =
   Symbol("omega-dock-tab-title");
 
 /** the persisted reopen sizes for edge panes (page-lifetime memory: closing
-    the sidebar and reopening restores the width the user had last) */
-const EDGE_DEFAULT_PX: Record<"sidebar" | "inspector", number> = {
-  sidebar: 240,
-  inspector: 240,
+    the sidebar and reopening restores the width the user had last).
+    card t_d4443ab5 (0.17.3 polish): the edge PANE's width IS its tab
+    strip's width - the strip spans the pane, and the 28px icon chips were
+    running out of room in 240 (the right shell hosts nine of them) - so
+    the fresh-boot default moves +24 to 264. A persisted layout keeps the
+    width its user set; this is the default, not a rewrite. */
+export const EDGE_DEFAULT_PX: Record<"sidebar" | "inspector", number> = {
+  sidebar: 264,
+  inspector: 264,
 };
 
 export function createDock(store: Storage): DockApi {
