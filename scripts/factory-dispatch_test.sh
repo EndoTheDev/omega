@@ -1252,6 +1252,102 @@ INSERT INTO tasks VALUES('t_doc2','ready','doc two','FILES: docs/other.md',NULL,
 printf "%s" "$out" | grep -qF 'pair: sanctioned (t_split t_doc2, classes docs+docs, FILES disjoint)' \
 	&& ok || bad "T23d: a bare FILES line beside one carrying paths read ABSENT - the union read is missing (out: $out)"
 
+# T24 (0.17.3 make-over): the tick SELF-HEALS its own configured board.
+# Three legs on a fake home whose <root>/kanban/current names a board whose
+# DB is GONE:
+#   (a) a live pass recreates it through `hermes kanban boards create` and
+#       says so in the pass report - never a silent fallback to the default
+#       board (the old chain settled on <root>/kanban.db and dispatched on
+#       somebody else's queue);
+#   (b) a DRY pass writes NOTHING, names what a live pass would recreate,
+#       and still refuses loudly (no verdicts from an absent board);
+#   (c) the default board heals the same way through `hermes kanban init`.
+FDHOME=$(mktemp -d); FDHOME_N=$(mixpath "$FDHOME")
+mkdir -p "$FDHOME/kanban/boards" "$FDHOME/bin"
+printf 'gone-board\n' >"$FDHOME/kanban/current"
+# the default board's DB DOES exist: the silent-fallback bug needed a
+# fallback target to land on
+sqlex "$FDHOME_N/kanban.db" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER);"
+cat >"$FDHOME/bin/hermes" <<'EOF'
+#!/usr/bin/env bash
+# stub: `kanban boards create <slug>` (the self-heal) and `kanban dispatch`
+log="${HERMES_STUB_LOG:?}"
+echo "$*" >>"$log"
+if [ "$1" = kanban ] && [ "$2" = boards ] && [ "$3" = create ]; then
+  mkdir -p "$HERMES_KANBAN_HOME/kanban/boards/$4"
+  py=$(command -v python3 || command -v python)
+  exec "$py" -c '
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1], timeout=10)
+con.execute("""CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT "", body TEXT DEFAULT "",
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER)""")
+con.commit(); con.close()' "$HERMES_KANBAN_HOME/kanban/boards/$4/kanban.db"
+fi
+if [ "$1" = kanban ] && [ "$2" = init ]; then
+  py=$(command -v python3 || command -v python)
+  exec "$py" -c '
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1], timeout=10)
+con.execute("""CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT "", body TEXT DEFAULT "",
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER)""")
+con.commit(); con.close()' "$HERMES_KANBAN_HOME/kanban.db"
+fi
+echo "Spawned: 0"
+EOF
+chmod +x "$FDHOME/bin/hermes"
+stub_log="$FDHOME/stub-calls.log"; : >"$stub_log"
+
+# (a) live pass heals the named board, reports it, and reads THAT board
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= \
+  PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T24a: the healing pass exited $rc (out: $out)"
+printf "%s" "$out" | grep -q "self-heal: board 'gone-board' was missing - recreated" \
+  && ok || bad "T24a: the self-heal was SILENT - no pass-report line (out: $out)"
+[ -f "$FDHOME/kanban/boards/gone-board/kanban.db" ] \
+  && ok || bad "T24a: the configured board was not recreated"
+grep -q "boards create gone-board" "$stub_log" \
+  && ok || bad "T24a: the heal did not go through \`hermes kanban boards create\` (stub log: $(cat "$stub_log"))"
+
+# (b) a dry pass writes nothing and says what a live pass would do
+rm -rf "$FDHOME/kanban/boards/gone-board"; : >"$stub_log"
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= \
+  PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --dry-run 2>&1)
+rc=$?
+[ "$rc" -ne 0 ] && ok || bad "T24b: a dry pass on a missing board exited 0 - verdicts from an absent board"
+printf "%s" "$out" | grep -q "self-heal: board 'gone-board' is missing - a live pass recreates it" \
+  && ok || bad "T24b: the dry run did not name the would-be heal (out: $out)"
+[ ! -f "$FDHOME/kanban/boards/gone-board/kanban.db" ] \
+  && ok || bad "T24b: a dry run WROTE a board - dry-run means no writes"
+[ ! -s "$stub_log" ] \
+  && ok || bad "T24b: a dry run invoked hermes ($(cat "$stub_log"))"
+printf "%s" "$out" | grep -q "board DB not found" \
+  && ok || bad "T24b: the missing board did not refuse loudly (out: $out)"
+
+# (c) the DEFAULT board heals through `hermes kanban init`
+rm -f "$FDHOME/kanban/current" "$FDHOME/kanban.db"; : >"$stub_log"
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= \
+  PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" 2>&1)
+rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T24c: the default-board healing pass exited $rc (out: $out)"
+printf "%s" "$out" | grep -q "self-heal: board 'default' was missing - recreated" \
+  && ok || bad "T24c: the default board heal was silent (out: $out)"
+[ -f "$FDHOME/kanban.db" ] && ok || bad "T24c: the default board DB was not recreated"
+grep -q "kanban init" "$stub_log" \
+  && ok || bad "T24c: the default heal did not go through \`hermes kanban init\` (stub log: $(cat "$stub_log"))"
+
+# (d) a PINNED db is the caller's file: never created, always refused
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB="$FDHOME_N/pinned.db" \
+  PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" 2>&1)
+rc=$?
+[ "$rc" -ne 0 ] && ok || bad "T24d: a missing PINNED db exited 0"
+[ ! -f "$FDHOME/pinned.db" ] && ok || bad "T24d: the tick created a pinned db (the pin means read exactly this)"
+rm -rf "$FDHOME"
+
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]

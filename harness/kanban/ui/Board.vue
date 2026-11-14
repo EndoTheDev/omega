@@ -8,24 +8,69 @@
          board switcher + count + remove ride the band now (the law: the
          tab's actions live in the band, not floating over the body).
          The board scroll columns start BELOW the band - scrolling never
-         moves it. -->
+         moves it.
+         0.17.3 make-over: the SELECTOR moved LEFT into the band's lead
+         seat, beside the title - the board names the panel, so its name
+         sits with the tab's name. The destructive pair (rename, remove)
+         stays far right. -->
     <TabBand title="Kanban">
-      <template
-        v-if="boards.length > 1 || boardName">
-        <span class="board-switch-label">board</span>
-        <!-- card t_acad02ec (audit M1): the switcher rides the themed
-             listbox (BandSelect) - a native select popup is OS chrome
-             over the pane -->
-        <BandSelect
-          class="board-switch-select"
-          :model-value="boardName"
-          :options="boardOptions"
-          label="board"
-          drop="down"
-          @update:model-value="switchBoard($event)" />
-        <span
-          v-if="boardName"
-          class="board-switch-count">{{ tasks.length }} card<template v-if="tasks.length !== 1">s</template></span>
+      <template #lead>
+        <template v-if="boards.length > 0">
+          <span class="board-switch-label">board</span>
+          <template v-if="renaming">
+            <input
+              v-model="renameDraft"
+              class="board-rename-input"
+              aria-label="new board name"
+              placeholder="new name"
+              @keydown.enter.prevent="submitRename"
+              @keydown.esc.prevent="cancelRename" />
+            <button
+              class="band-tool board-rename-save"
+              title="save the new name"
+              @click="submitRename">save</button>
+            <button
+              class="band-tool board-rename-cancel"
+              title="keep the old name"
+              @click="cancelRename">cancel</button>
+          </template>
+          <!-- card t_acad02ec (audit M1): the switcher rides the themed
+               listbox (BandSelect) - a native select popup is OS chrome
+               over the pane -->
+          <BandSelect
+            v-else
+            class="board-switch-select"
+            :model-value="boardName"
+            :options="boardOptions"
+            label="board"
+            drop="down"
+            @update:model-value="switchBoard($event)" />
+          <span
+            v-if="boardName && !renaming"
+            class="board-switch-count">{{ tasks.length }} card<template v-if="tasks.length !== 1">s</template></span>
+        </template>
+      </template>
+      <template v-if="boards.length > 0">
+        <!-- 0.17.3 make-over: ONE filter seat, TWO scopes -->
+        <input
+          v-model="query"
+          class="board-search"
+          type="search"
+          placeholder="filter cards"
+          aria-label="filter cards" />
+        <button
+          class="band-tool board-scope-btn"
+          :class="{ on: scope === 'all' }"
+          :title="scope === 'all'
+            ? 'filtering every board - click to filter this board only'
+            : 'filtering this board - click to filter every board'"
+          @click="toggleScope">
+          {{ scope === "all" ? "all boards" : "this board" }}
+        </button>
+        <button
+          class="band-tool board-rename-btn"
+          :title="`rename board ${boardName}`"
+          @click="startRename">rename</button>
         <button
           id="board-remove-btn"
           class="band-tool board-remove-btn"
@@ -44,9 +89,35 @@
       role="status">
       {{ notice }}
     </p>
+    <!-- the zero-board empty state (0.17.3 make-over): zero boards is a
+         LEGAL registry, so the panel must not render a grid over nothing -
+         it offers the one way back, a board name. -->
     <div
+      v-if="registryKnown && boards.length === 0"
+      class="board-empty">
+      <p class="board-empty-title">no boards</p>
+      <p class="board-empty-note">
+        A board holds the cards. Create one to start; every board can be
+        renamed or removed from the band above, and so can this one.
+      </p>
+      <form
+        class="board-empty-create"
+        @submit.prevent="submitCreateBoard">
+        <input
+          v-model="newBoardName"
+          class="board-empty-input"
+          placeholder="board name (a-z, 0-9, - or _)"
+          aria-label="new board name" />
+        <button
+          class="board-empty-btn"
+          type="submit"
+          :disabled="!newBoardName.trim()">create board</button>
+      </form>
+    </div>
+    <div
+      v-else
       class="board-scroll"
-      :key="boardName">
+      :key="`${boardName}:${scope}`">
       <div
         v-for="(col, i) in cols"
         :key="BOARD_STATUSES[i]"
@@ -60,10 +131,10 @@
              machinery resolves .board-col, so dropping on a rail needs no
              drop code of its own (the card lands at the top of the lane).
              The dot row sits at the header row's height, so dots line up
-             across the board whether a lane is folded or not. The rail
-             carries the same + the header does: an empty lane is a rail
-             forever (its click cannot unfold it), so the create form is
-             the ONLY way to grow a lane from nothing. -->
+             across the board whether a lane is folded or not. 0.17.3: a
+             click expands a collapsed lane whether it holds cards or not -
+             an empty lane opens to its create form instead of being a dead
+             strip. -->
         <div
           v-if="isLaneFolded(BOARD_STATUSES[i], col.length)"
           class="lane-rail-wrap">
@@ -71,9 +142,7 @@
             class="lane-rail"
             :aria-expanded="false"
             :aria-label="`unfold ${BOARD_STATUSES[i]} lane`"
-            :title="col.length
-              ? `unfold ${BOARD_STATUSES[i]} lane`
-              : `${BOARD_STATUSES[i]} is empty - an empty lane folds itself`"
+            :title="`unfold ${BOARD_STATUSES[i]} lane`"
             @click="toggleLane(BOARD_STATUSES[i], col.length)">
             <span class="lane-dot-row">
               <span
@@ -142,11 +211,53 @@
               class="col-create-body"
               placeholder="body (optional)"
               aria-label="new card body" />
-            <input
-              v-model="createAssignee"
-              class="col-create-assignee"
-              placeholder="assignee (optional)"
-              aria-label="new card assignee" />
+            <!-- 0.17.3 make-over: the assignee is a COMBOBOX fed by the
+                 agent registry - GET /agents, the same source the cron
+                 editor's agent field reads. Typing stays legal: a card may
+                 name a worker the registry no longer lists, and the form
+                 must never strand that card. A failed GET degrades to no
+                 options (the field stays a plain text input). -->
+            <div class="col-create-combo">
+              <input
+                v-model="createAssignee"
+                class="col-create-assignee"
+                role="combobox"
+                aria-label="new card assignee"
+                aria-autocomplete="list"
+                aria-controls="board-assignee-options"
+                :aria-expanded="comboOpen"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="assignee (optional)"
+                @focus="openAssigneeCombo"
+                @input="onAssigneeInput"
+                @keydown="onAssigneeKeydown"
+                @blur="closeAssigneeCombo" />
+              <ul
+                v-if="comboOpen"
+                id="board-assignee-options"
+                class="col-create-combo-list"
+                role="listbox">
+                <li
+                  v-for="(o, i) in assigneeRows"
+                  :key="o.value"
+                  class="col-create-combo-row"
+                  :class="{ active: i === comboIndex }"
+                  role="option"
+                  :aria-selected="i === comboIndex"
+                  @mousedown.prevent="pickAssignee(o.value)">
+                  <span class="col-create-combo-label">{{ o.label }}</span>
+                  <span
+                    v-if="o.hint"
+                    class="col-create-combo-hint">{{ o.hint }}</span>
+                </li>
+                <li
+                  v-if="!assigneeRows.length"
+                  class="col-create-combo-empty">
+                  {{ agentOptionsError || "no agents in the registry - typing a name still works" }}
+                </li>
+              </ul>
+            </div>
             <BandSelect
               class="col-create-prio"
               :model-value="createPriority"
@@ -187,6 +298,13 @@
               <!-- the meta row (card t_65ea61a1): assignee as a chip, the
                    running heartbeat, the age - the Hermes card grammar. -->
               <div class="card-meta">
+                <!-- the all-boards scope renders a mixed grid: a row says
+                     which board it came from, or the card would look like
+                     it lives in the lane's current board -->
+                <span
+                  v-if="scope === 'all' && t.board"
+                  class="card-board-chip"
+                  :title="`this card lives on board ${t.board}`">{{ t.board }}</span>
                 <span
                   v-if="t.assignee"
                   class="card-assignee-chip"
@@ -208,15 +326,18 @@
                   v-else
                   class="card-age">{{ age(t.created_at) }}</span>
                 <span class="card-moves">
+                  <!-- a mixed list (all-boards scope) is a READING surface:
+                       the arrows would move a card inside the wrong board,
+                       and the cross-board-move ban is the store's law -->
                   <button
-                    v-if="step(BOARD_STATUSES[i], -1)"
+                    v-if="scope !== 'all' && step(BOARD_STATUSES[i], -1)"
                     class="icon-btn"
                     :title="`move to ${step(BOARD_STATUSES[i], -1)}`"
                     @click.stop="moveBoard(t, step(BOARD_STATUSES[i], -1) as string)">
                     ◀
                   </button>
                   <button
-                    v-if="step(BOARD_STATUSES[i], +1)"
+                    v-if="scope !== 'all' && step(BOARD_STATUSES[i], +1)"
                     class="icon-btn"
                     :title="`move to ${step(BOARD_STATUSES[i], +1)}`"
                     @click.stop="moveBoard(t, step(BOARD_STATUSES[i], +1) as string)">
@@ -257,21 +378,25 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from "vue";
+  import { computed, onBeforeUnmount, onMounted, onUnmounted, ref } from "vue";
   import DetailDrawer from "./board/DetailDrawer.vue";
   import {
     BOARD_STATUSES,
+    BOARDS_PATH,
     CARD_CLAMP_LINES,
-    DEFAULT_BOARD_NAME,
     HEARTBEAT_TICK_MS,
     LANE_EASE_MS,
     LANE_RAIL_PX,
     age,
     boardDeletePath,
+    boardOf,
+    boardRenamePath,
     bodyPreview,
     canRemoveBoard,
     columns,
+    fetchAgentOptions,
     fetchBoardsRetry,
+    filterTasks,
     hasPriorityChip,
     heartbeatChip,
     isNarrowWidth,
@@ -280,18 +405,20 @@
     pickBootBoard,
     priorityLabel,
     priorityOptions,
-    reconcileLanePins,
     reorderAfter,
     step,
     taskDeletePath,
+    tasksPath,
     toggleLanePin,
     withBoard,
+    type AgentOption,
     type BoardComment,
     type BoardEvent,
     type BoardInfo,
     type BoardTask,
     type HeartbeatChip,
     type LanePins,
+    type SearchScope,
   } from "./board/boardLogic";
 
   // The module-owned board view: 9 hermes columns in one horizontal
@@ -305,11 +432,25 @@
   const error = ref("");
 
   // --- board switcher (card t_d7a7beaa): the dropdown rides GET
-  // /boards; "" means "server default" and renders no switcher when
-  // the capability is missing. The inspector (drawer) reads the same
-  // board - every call below goes through withBoard.
+  // /boards; "main" is only the seeded first board's name. "" means the
+  // registry has no board at all (0.17.3: a LEGAL state - the panel then
+  // renders its create-board empty state). The inspector (drawer) reads
+  // the same board - every call below goes through withBoard.
   const boards = ref<BoardInfo[]>([]);
   const boardName = ref("");
+  // registryKnown separates "the registry answered, and it is EMPTY" from
+  // "the registry never answered" - only the first one is the empty state,
+  // the second is the old silent degrade (the board still renders).
+  const registryKnown = ref(false);
+  const newBoardName = ref("");
+
+  // --- the filter seat (0.17.3 make-over) ------------------------------
+  // ONE input, TWO scopes: this board, or every board. The all-boards
+  // scope is a SERVER read (?scope=all) whose rows carry their board name,
+  // so a mixed grid still addresses each card correctly.
+  const query = ref("");
+  const scope = ref<SearchScope>("board");
+  const visibleTasks = computed(() => filterTasks(tasks.value, query.value));
 
   // the switcher's listbox options (BandSelect): one per board registry
   // row, the name as both value and face
@@ -326,15 +467,100 @@
     const fetched = await fetchBoardsRetry(fetch);
     if (!fetched) return; // absent capability or every attempt missed
     boards.value = fetched;
+    registryKnown.value = true;
     boardName.value = pickBootBoard(boards.value);
   }
 
   function switchBoard(name: string) {
-    if (name === boardName.value) return;
+    if (!name || name === boardName.value) return;
     disarmRemove(); // an armed confirm points at the old board: reset it
+    cancelRename();
     boardName.value = name;
     selected.value = null; // the drawer's card belongs to the old board
+    scope.value = "board"; // a switch answers "show me THAT board"
     fetchBoard();
+  }
+
+  function toggleScope() {
+    scope.value = scope.value === "all" ? "board" : "all";
+    selected.value = null; // the drawer's card belongs to the other scope
+    fetchBoard();
+  }
+
+  // --- create board (0.17.3): the empty state's only control -----------
+  async function submitCreateBoard() {
+    const name = newBoardName.value.trim();
+    if (!name) return;
+    try {
+      const res = await fetch(BOARDS_PATH, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        // the refusal text (illegal name, duplicate) is written for this line
+        const detail = await res.text().catch(() => `POST /boards: ${res.status}`);
+        setNotice(detail, true);
+        return;
+      }
+      newBoardName.value = "";
+      setNotice(`board "${name}" created`);
+      await fetchBoards();
+      boardName.value = name; // the new board is where the eye goes
+      await fetchBoard();
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e), true);
+    }
+  }
+
+  // --- rename (0.17.3): the band's rename control swaps the selector for
+  // an input; Enter/PATCH saves, Esc keeps the old name. The row keeps its
+  // id server-side, so the cards never move - only the name they are
+  // reached under.
+  const renaming = ref(false);
+  const renameDraft = ref("");
+
+  function startRename() {
+    if (!boardName.value) return;
+    disarmRemove();
+    renaming.value = true;
+    renameDraft.value = boardName.value;
+    requestAnimationFrame(() => {
+      boardEl.value?.querySelector<HTMLInputElement>(".board-rename-input")?.select();
+    });
+  }
+
+  function cancelRename() {
+    renaming.value = false;
+    renameDraft.value = "";
+  }
+
+  async function submitRename() {
+    const from = boardName.value;
+    const to = renameDraft.value.trim();
+    if (!from || !to || to === from) {
+      cancelRename();
+      return;
+    }
+    try {
+      const res = await fetch(boardRenamePath(from), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: to }),
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => `PATCH /boards/${from}: ${res.status}`);
+        setNotice(detail, true);
+        return;
+      }
+      cancelRename();
+      setNotice(`board "${from}" renamed to "${to}"`);
+      await fetchBoards();
+      boardName.value = to;
+      await fetchBoard();
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e), true);
+    }
   }
 
   // --- board removal (card t_95c5527f): destructive, so the confirm is
@@ -400,7 +626,10 @@
       } catch {
         boards.value = boards.value.filter((b) => b.name !== name);
       }
-      boardName.value = DEFAULT_BOARD_NAME; // selection falls back to the default board
+      // the selection falls to whatever survives the delete - and to
+      // NOTHING when the last board just left, which is the legal
+      // zero-board state (the panel renders its empty state)
+      boardName.value = pickBootBoard(boards.value);
       await fetchBoard();
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e), true);
@@ -521,8 +750,10 @@
     try {
       // status=all: the board grid carries the archived lane too (no
       // status is filtered out of the grid), so it can never default to
-      // the active-only view the list tool shows (t_02a8beea)
-      const res = await fetch(withBoard("/tasks?status=all", boardName.value));
+      // the active-only view the list tool shows (t_02a8beea).
+      // The scope picks the address: this board, or (0.17.3) every board
+      // in one answer whose rows each carry their board name.
+      const res = await fetch(tasksPath(boardName.value, scope.value));
       if (!res.ok) throw new Error(`GET /tasks: ${res.status}`);
       const body = await res.json();
       if (seq !== fetchSeq) return; // a newer read owns the list
@@ -537,7 +768,9 @@
     }
   }
 
-  const cols = computed(() => columns(tasks.value));
+  // the grid renders the FILTERED list; the counts in the band stay the
+  // board's own (a filter is a lens, not a second truth)
+  const cols = computed(() => columns(visibleTasks.value));
 
   // --- the running heartbeat chip (card t_65ea61a1): the board already
   // receives everything the chip needs (status, started_at, and
@@ -598,13 +831,12 @@
     resizeObs = null;
   });
 
-  // --- lane rails (card t_50a8c145): any lane folds to a rail, and an
-  // EMPTY lane folds itself. The two halves of the law live in
-  // boardLogic (pure, unit-pinned): laneFolded decides the state for one
-  // lane (reality outranks the override - an empty lane is folded pinned
-  // open or not), reconcileLanePins drops an override the moment its
-  // lane drains so a refilled lane comes back expanded instead of
-  // remembering an override reality already overruled.
+  // --- lane rails (card t_50a8c145, 0.17.3 make-over): any lane folds to
+  // a rail, and an EMPTY lane folds itself. The click is what outranks
+  // reality now: a collapsed lane - empty or not - EXPANDS on click, so
+  // the pin below is the only override and nothing reconciles it away
+  // (the old reconcile dropped a drained lane's pin, which would have
+  // re-folded the lane the user just opened).
   //
   // Pins are component state, not persisted: the lane set is a view of
   // the current board, and a pin that outlived its lane would be exactly
@@ -617,13 +849,6 @@
     });
     return counts;
   });
-  watch(
-    laneCounts,
-    (counts) => {
-      lanePins.value = reconcileLanePins(counts, lanePins.value);
-    },
-    { immediate: true },
-  );
 
   // A live drag FREEZES the lane fold state. The optimistic reorder seats
   // the dragged card in the lane under the pointer, which drains its
@@ -688,6 +913,8 @@
     createBody.value = "";
     createAssignee.value = "";
     createPriority.value = 0;
+    closeAssigneeCombo();
+    void ensureAgentOptions(); // the assignee's source, loaded on first use
     // focus the title once the form mounts (the ref array inside v-for
     // is messy; the scoped query by data-status is straight)
     requestAnimationFrame(() => {
@@ -723,17 +950,20 @@
     }
   }
 
-  // --- moves: arrow buttons and the drawer's status selector
+  // --- moves: arrow buttons and the drawer's status selector. The board a
+  // card is moved IN is the card's own (the all-boards read stamps it), not
+  // the board being viewed - the cross-board-move ban holds.
   async function moveBoard(t: BoardTask, status: string) {
+    const board = boardOf(t, boardName.value);
     try {
-      const res = await fetch(withBoard(`/tasks/${encodeURIComponent(t.id)}`, boardName.value), {
+      const res = await fetch(withBoard(`/tasks/${encodeURIComponent(t.id)}`, board), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
       if (!res.ok) throw new Error(`PATCH /tasks/${t.id}: ${res.status}`);
       await fetchBoard();
-      if (selected.value?.id === t.id) await loadDetail(t.id);
+      if (selected.value?.id === t.id) await loadDetail(t.id, board);
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e);
     }
@@ -799,6 +1029,7 @@
 
   function onCardPointerDown(ev: PointerEvent, t: BoardTask) {
     if (ev.button !== 0) return;
+    if (scope.value === "all") return; // a mixed list never drags: the move is a board op
     if ((ev.target as HTMLElement).closest("button, input")) return; // the meta buttons
     const sx = ev.clientX;
     const sy = ev.clientY;
@@ -887,12 +1118,12 @@
     selected.value = { ...t, body: t.body };
     detailComments.value = [];
     detailEvents.value = [];
-    loadDetail(t.id);
+    loadDetail(t.id, boardOf(t, boardName.value));
   }
 
-  async function loadDetail(id: string) {
+  async function loadDetail(id: string, board: string = boardName.value) {
     try {
-      const res = await fetch(withBoard(`/tasks/${encodeURIComponent(id)}`, boardName.value));
+      const res = await fetch(withBoard(`/tasks/${encodeURIComponent(id)}`, board));
       if (!res.ok) throw new Error(`GET /tasks/${id}: ${res.status}`);
       const d = await res.json();
       selected.value = d.task;
@@ -901,7 +1132,7 @@
       // fold the fresh detail back into the board row - a move in the
       // drawer must not wait for the next board read to leave the column
       const i = tasks.value.findIndex((x) => x.id === id);
-      if (i >= 0) tasks.value[i] = d.task;
+      if (i >= 0) tasks.value[i] = { ...d.task, board: tasks.value[i].board };
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e);
     }
@@ -910,15 +1141,16 @@
   // board-read drawer refresh: pull the drawn task's detail without
   // spinning the loading flag (the user may be typing a comment)
   async function applyDetailPatch(id: string) {
+    const board = selected.value ? boardOf(selected.value, boardName.value) : boardName.value;
     try {
-      const res = await fetch(withBoard(`/tasks/${encodeURIComponent(id)}`, boardName.value));
+      const res = await fetch(withBoard(`/tasks/${encodeURIComponent(id)}`, board));
       if (!res.ok) return;
       const d = await res.json();
       selected.value = d.task;
       detailComments.value = d.comments ?? [];
       detailEvents.value = d.events ?? [];
       const i = tasks.value.findIndex((x) => x.id === id);
-      if (i >= 0) tasks.value[i] = d.task;
+      if (i >= 0) tasks.value[i] = { ...d.task, board: tasks.value[i].board };
     } catch {
       // a failed patch read stays silent - the next board read retries
     }
@@ -929,8 +1161,9 @@
   async function onDrawerSave(patch: { title?: string; body?: string; priority?: number }) {
     if (!selected.value) return;
     const id = selected.value.id;
+    const board = boardOf(selected.value, boardName.value);
     try {
-      const res = await fetch(withBoard(`/tasks/${encodeURIComponent(id)}`, boardName.value), {
+      const res = await fetch(withBoard(`/tasks/${encodeURIComponent(id)}`, board), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
@@ -941,7 +1174,7 @@
         return;
       }
       await fetchBoard();
-      await loadDetail(id);
+      await loadDetail(id, board);
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e), true);
     }
@@ -955,10 +1188,11 @@
   async function onDrawerDelete() {
     if (!selected.value) return;
     const id = selected.value.id;
+    const board = boardOf(selected.value, boardName.value);
     selected.value = null;
     tasks.value = tasks.value.filter((t) => t.id !== id);
     try {
-      const res = await fetch(withBoard(taskDeletePath(id), boardName.value), {
+      const res = await fetch(withBoard(taskDeletePath(id), board), {
         method: "DELETE",
       });
       if (!res.ok) {
@@ -980,9 +1214,10 @@
 
   async function submitComment(body: string) {
     if (!selected.value || !body.trim()) return;
+    const board = boardOf(selected.value, boardName.value);
     try {
       const res = await fetch(
-        withBoard(`/tasks/${encodeURIComponent(selected.value.id)}/comments`, boardName.value),
+        withBoard(`/tasks/${encodeURIComponent(selected.value.id)}/comments`, board),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -990,9 +1225,90 @@
         },
       );
       if (!res.ok) throw new Error(`POST comments: ${res.status}`);
-      await loadDetail(selected.value.id);
+      await loadDetail(selected.value.id, board);
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  // --- the assignee combobox (0.17.3 make-over) ------------------------
+  // The create form's assignee reads the AGENT REGISTRY (GET /agents) - the
+  // same source the cron editor's agent field reads. Picking is the fast
+  // path; TYPING stays legal both ways: a card may name a worker the
+  // registry no longer lists, and the form must never strand that card.
+  // The source is loaded lazily (first create form open) and cached; a
+  // failed GET keeps the field a plain text input and says why.
+  const agentOptions = ref<AgentOption[]>([]);
+  const agentOptionsError = ref("");
+  let agentsInflight: Promise<void> | null = null;
+
+  function ensureAgentOptions(): Promise<void> {
+    if (agentsInflight) return agentsInflight;
+    if (agentOptions.value.length > 0) return Promise.resolve();
+    agentsInflight = fetchAgentOptions(fetch)
+      .then((opts) => {
+        agentOptions.value = opts;
+        agentOptionsError.value = "";
+      })
+      .catch((e: unknown) => {
+        agentOptions.value = [];
+        agentOptionsError.value = e instanceof Error ? e.message : String(e);
+      })
+      .finally(() => {
+        agentsInflight = null;
+      });
+    return agentsInflight;
+  }
+
+  const comboOpen = ref(false);
+  const comboIndex = ref(-1);
+  // the rows on offer: the registry filtered by what has been typed. An
+  // empty list is honest (the panel says so) - it never blocks the field.
+  const assigneeRows = computed(() => {
+    const q = createAssignee.value.trim().toLowerCase();
+    if (q === "") return agentOptions.value;
+    return agentOptions.value.filter((o) =>
+      `${o.value} ${o.hint}`.toLowerCase().includes(q),
+    );
+  });
+
+  function openAssigneeCombo() {
+    comboOpen.value = true;
+    comboIndex.value = -1;
+    void ensureAgentOptions();
+  }
+  function closeAssigneeCombo() {
+    comboOpen.value = false;
+    comboIndex.value = -1;
+  }
+  function onAssigneeInput() {
+    comboOpen.value = true;
+    comboIndex.value = -1;
+  }
+  function pickAssignee(name: string) {
+    createAssignee.value = name;
+    closeAssigneeCombo();
+  }
+  function onAssigneeKeydown(ev: KeyboardEvent) {
+    if (ev.key === "Escape") {
+      closeAssigneeCombo();
+      return;
+    }
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      const n = assigneeRows.value.length;
+      if (!comboOpen.value) comboOpen.value = true;
+      if (n === 0) return;
+      ev.preventDefault();
+      const dir = ev.key === "ArrowDown" ? 1 : -1;
+      comboIndex.value = (comboIndex.value + dir + n) % n;
+      return;
+    }
+    if (ev.key === "Enter") {
+      const rows = assigneeRows.value;
+      if (comboOpen.value && comboIndex.value >= 0 && comboIndex.value < rows.length) {
+        ev.preventDefault(); // pick, do not submit the form
+        pickAssignee(rows[comboIndex.value].value);
+      }
     }
   }
 
@@ -1050,6 +1366,96 @@
   .board-switch-count {
     font-size: 10.5px;
     opacity: 0.5;
+  }
+  /* 0.17.3 make-over: the rename seat takes the selector's place - the same
+     compact in-band rhythm, wide enough for a board name */
+  .board-rename-input {
+    font: inherit;
+    font-size: 11.5px;
+    color: inherit;
+    width: 116px;
+    padding: 2px 6px;
+    background: color-mix(in srgb, currentcolor 8%, transparent);
+    border: 1px solid color-mix(in srgb, currentcolor 22%, transparent);
+    border-radius: var(--r-chip);
+  }
+  /* the filter seat: one input, two scopes. The chip beside it says which
+     scope is live; the input itself is the seat (no icon expander). */
+  .board-search {
+    font: inherit;
+    font-size: 11.5px;
+    color: inherit;
+    width: 132px;
+    min-width: 96px;
+    padding: 2px 6px;
+    background: transparent;
+    border: 1px solid color-mix(in srgb, currentcolor 16%, transparent);
+    border-radius: var(--r-chip);
+  }
+  .board-search::placeholder {
+    opacity: 0.5;
+  }
+  .board-scope-btn.on {
+    border: 1px solid color-mix(in srgb, currentcolor 34%, transparent);
+    font-weight: 600;
+    opacity: 0.95;
+  }
+  /* the zero-board empty state (0.17.3): the panel's whole body when the
+     registry holds nothing - one sentence and the one way back */
+  .board-empty {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 16px 24px;
+  }
+  .board-empty-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    opacity: 0.7;
+  }
+  .board-empty-note {
+    margin: 0;
+    max-width: 46ch;
+    font-size: 11.5px;
+    line-height: 1.45;
+    opacity: 0.6;
+  }
+  .board-empty-create {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-top: 2px;
+  }
+  .board-empty-input {
+    font: inherit;
+    font-size: 12px;
+    color: inherit;
+    width: 200px;
+    padding: 4px 8px;
+    background: color-mix(in srgb, currentcolor 6%, transparent);
+    border: 1px solid color-mix(in srgb, currentcolor 18%, transparent);
+    border-radius: var(--r-card);
+  }
+  .board-empty-btn {
+    font: inherit;
+    font-size: 12px;
+    color: inherit;
+    cursor: pointer;
+    padding: 4px 10px;
+    border: 1px solid color-mix(in srgb, currentcolor 22%, transparent);
+    border-radius: var(--r-chip);
+    background: none;
+  }
+  .board-empty-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
   }
   /* card t_acad02ec: the remove action rides .band-tool (the shared
      action-button look); only the armed confirm state rides here - the
@@ -1223,6 +1629,63 @@
     min-height: 40px;
     resize: vertical;
   }
+  /* the assignee combobox (0.17.3 make-over): the input keeps the field
+     look; the list hangs under it like the cron editor's combo */
+  .col-create-combo {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .col-create-combo-list {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    margin: 0;
+    padding: 2px;
+    list-style: none;
+    max-height: 180px;
+    overflow-y: auto;
+    background: var(--z2, #26262a);
+    border: 1px solid var(--stroke, #2e2e31);
+    border-radius: var(--r-chip);
+    box-shadow: var(--shadow-2, 0 8px 30px rgba(0, 0, 0, 0.5));
+  }
+  .col-create-combo-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 3px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .col-create-combo-row.active {
+    background: color-mix(in srgb, currentcolor 18%, transparent);
+  }
+  .col-create-combo-label {
+    flex: none;
+    max-width: 60%;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .col-create-combo-hint {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 10.5px;
+    opacity: 0.55;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .col-create-combo-empty {
+    padding: 3px 6px;
+    font-size: 10.5px;
+    opacity: 0.55;
+  }
   .col-create-actions {
     display: flex;
     gap: 4px;
@@ -1367,6 +1830,20 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* the board a mixed-scope row came from (0.17.3): dimmer than the
+     assignee - it names a place, not a person */
+  .card-board-chip {
+    flex: none;
+    border: 1px dashed color-mix(in srgb, currentcolor 26%, transparent);
+    border-radius: var(--r-chip);
+    padding: 0 5px;
+    line-height: 1.6;
+    max-width: 84px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.8;
   }
   /* the running heartbeat chip (card t_65ea61a1): a dot that breathes
      while the worker beats, a flat red dot once it goes quiet. The tone
