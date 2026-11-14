@@ -664,7 +664,7 @@
     // t_e67c372b): the chips rebuild - and skill chips need the skills
     // snapshot the slash surface would otherwise only load on the next
     // "/" press
-    if (scanRefTokens(props.draft).some((t) => t.kind === "skill")) {
+    if (scanRefTokens(props.draft, CHIP_SCAN).some((t) => t.kind === "skill")) {
       void loadPaletteData();
     }
     syncEditor();
@@ -692,6 +692,11 @@
   // soon as its name is a loaded skill's (a shell verb like "/theme" is
   // a command, never a pill - the slash surface has already loaded the
   // skills snapshot for any "/"-draft)
+  // the editor's chip scan: a skill token chips at ANY word boundary here
+  // (the composer's slash palette is token-based, t_d1a2951d), while the
+  // transcript keeps the leading-invocation law - one token model, the
+  // composer passes the one surface switch (pills.ts ScanOpts)
+  const CHIP_SCAN = { inlineSkills: true } as const;
   const skillNames = computed(() => new Set(skillRows.value.map((s) => s.name)));
   const isPill = (t: RefToken): boolean =>
     t.kind === "file" || skillNames.value.has(t.name);
@@ -712,6 +717,7 @@
         dissolved: dissolvedChip.value,
       },
       isPill,
+      CHIP_SCAN,
     ),
   );
 
@@ -890,7 +896,7 @@
   function syncEditor(): void {
     const el = ta.value;
     if (!el) return;
-    const live = new Set(scanRefTokens(props.draft).map((t) => t.token));
+    const live = new Set(scanRefTokens(props.draft, CHIP_SCAN).map((t) => t.token));
     let swept = false;
     for (const setref of [forcedChip, dissolvedChip] as const) {
       let next: Set<string> | null = null;
@@ -953,7 +959,7 @@
     if (!el) return false;
     const caret = caretFromDom(el);
     if (caret === -1) return false;
-    const tok = tokenBeforeCaret(props.draft, caret);
+    const tok = tokenBeforeCaret(props.draft, caret, CHIP_SCAN);
     if (!tok || !isPill(tok)) return false;
     if (
       !chipFor(tok, {
@@ -1065,9 +1071,10 @@
       closePalette();
       // the fresh swallow (t_e67c372b): the completed token chips
       // immediately - `forced` holds the chip for this span until a
-      // dissolve releases it
+      // dissolve releases it. The key is the RAW token (chipKeyOf), so the
+      // skill row's bare name needs its slash.
       const forced = new Set(forcedChip.value);
-      forced.add(item.name);
+      forced.add("/" + item.name);
       forcedChip.value = forced;
       caretAt.value = next.caret;
       emit("update:draft", next.draft);

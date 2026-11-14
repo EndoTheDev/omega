@@ -57,6 +57,42 @@ describe("reference token scan (t_7f09bd0c)", () => {
     assert.deepEqual(scanRefTokens("the flag -/not-a-pill stays"), []);
   });
 
+  // card t_d4443ab5: the composer's chip editor reads skill tokens the way
+  // it reads @file tokens - anywhere a word starts - because its slash
+  // palette is token-based (t_d1a2951d accepts a completed /word mid-draft).
+  // The transcript keeps the leading-invocation law: one scan, one switch.
+  it("the composer scan pills an inline /skill; the transcript keeps it prose", () => {
+    const text = "say hi then /greet-writer write it";
+    const inline = scanRefTokens(text, { inlineSkills: true });
+    assert.equal(inline.length, 1);
+    assert.deepEqual(inline[0], {
+      kind: "skill",
+      token: "/greet-writer",
+      label: "greet-writer",
+      name: "greet-writer",
+      start: text.indexOf("/greet"),
+    });
+    assert.deepEqual(scanRefTokens(text), [], "the transcript surface: leading only");
+    // the leading form reads IDENTICALLY on both surfaces
+    assert.deepEqual(
+      scanRefTokens("/greet-writer x", { inlineSkills: true }),
+      scanRefTokens("/greet-writer x"),
+    );
+    // the boundary shape is the @ token's: a glued "/" stays prose
+    assert.deepEqual(scanRefTokens("flag -/not-a-pill", { inlineSkills: true }), []);
+    // and the chip plan follows the same switch
+    const chips = editorNodes(
+      text,
+      { caret: text.length, paletteOpen: false, forced: new Set(), dissolved: new Set() },
+      () => true,
+      { inlineSkills: true },
+    );
+    assert.deepEqual(
+      chips.map((p) => (p.type === "chip" ? "CHIP:" + p.token.token : p.text)),
+      ["say hi then ", "CHIP:/greet-writer", " write it"],
+    );
+  });
+
   it("a standalone @path is a file token, mid-word @ is an email", () => {
     const tokens = scanRefTokens("read @docs/readme.md then user@host.io");
     assert.equal(tokens.length, 1);
@@ -315,8 +351,8 @@ describe("composer chip law wiring (source-pinned, card t_e67c372b)", () => {
       "palette-open backspace edits the query char by char, dissolved spans delete a char",
     );
     assert.ok(
-      composer.includes("tokenBeforeCaret(props.draft, caret)"),
-      "the dissolve target is the token behind the caret",
+      composer.includes("tokenBeforeCaret(props.draft, caret, CHIP_SCAN)"),
+      "the dissolve target is the token behind the caret (the editor's chip scan)",
     );
     assert.ok(
       composer.includes("dissolvedChip.value = next") &&
@@ -325,8 +361,26 @@ describe("composer chip law wiring (source-pinned, card t_e67c372b)", () => {
     );
   });
 
+  it("every chip call site scans with the composer's inline-skill switch", () => {
+    assert.ok(
+      composer.includes("const CHIP_SCAN = { inlineSkills: true } as const;"),
+      "one surface switch, named",
+    );
+    assert.ok(
+      composer.includes("scanRefTokens(props.draft, CHIP_SCAN)"),
+      "the mount probe and the sync's live-key sweep",
+    );
+    assert.ok(
+      /editorNodes\([\s\S]{0,400}?isPill,\s*CHIP_SCAN,/.test(composer),
+      "the plan builds on the same scan",
+    );
+  });
+
   it("the accept path fresh-swallows: the completed token chips immediately", () => {
-    assert.ok(composer.includes("forced.add(item.name)"), "the skill accept");
+    assert.ok(
+      composer.includes('forced.add("/" + item.name)'),
+      "the skill accept keys the chip by its RAW token (chipKeyOf), not the bare name",
+    );
     assert.ok(composer.includes("forced.add(insertion)"), "the mention pick");
     assert.ok(composer.includes("const forced = new Set(forcedChip.value);"),
       "sets are replaced whole (the plan's computed re-runs)");

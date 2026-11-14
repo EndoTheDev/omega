@@ -246,6 +246,11 @@ describe("nav cluster wiring", () => {
     // CSS: the affordance reads as an input (token background + border)
     assert.match(css, /\.nav-palette-input\s*\{[^}]*var\(--z1\)/);
     assert.match(css, /\.nav-palette-input\s*\{[^}]*border: 1px solid var\(--stroke\)/);
+    // card t_d4443ab5: the top bar's command-palette SECTION was widened
+    // (200 -> 260) and capped so the centred cluster stays clear of the
+    // toggles on a narrow desktop window
+    assert.match(css, /\.nav-palette-input\s*\{[^}]*width: 260px/);
+    assert.match(css, /\.nav-palette-input\s*\{[^}]*max-width: 26vw/);
   });
 
   it("the NavCluster dims via :disabled and carries the Ctrl+K hint", () => {
