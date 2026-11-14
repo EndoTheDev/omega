@@ -605,7 +605,26 @@ dot, reset link, draft star, live note).
   section rides the in-app URL on the QUERY axis (`?settings=<id>`,
   replaceState only; the PATH still owns the focused chat session), so an
   in-app deep link lands the pane pre-filtered and outranks the
-  remembered anchor. The jump/clamp/spy mechanics are untouched: under a
+  remembered anchor. The PATH can also name the PANE: `/settings/view` is
+  a landing route (card t_6d6a6dc4) - a boot or a popstate on it opens the
+  settings tab through the gear's own opener (a live instance focuses in
+  place) and pauses the chat URL derivation until a chat tab takes the
+  path back. Every chat focus hands it back - both openers (the sidebar's
+  row / new / new-ephemeral, the palette's recent-session switch, the
+  capsule `CHAT_SESSION_OPEN_EVENT` seam), a chat tab click, a popstate
+  into a chat entry, and closing the settings tab itself (the dock's
+  neighbor-focus lands in the same re-focus path) - so the landing never
+  outlives the landing, and the release WRITES the path the pause held (a
+  derivation suppressed while the mark was up would otherwise stay stale
+  when the focused chat does not change). The view path sits ONE segment
+  deeper than the knob API's
+  exact `/settings` (agent/api/server.go owns that path; the SPA only gets
+  the catch-all), so an address bar always lands the app, never the JSON.
+  Nothing writes the path on open/close: settings stays a CLOSABLE
+  tab (t_00e4a784), so the route adds reload persistence, never a pinned
+  view. The two axes compose - `/settings/view?settings=<id>` reloads with
+  the tab open and the pane pre-filtered. The jump/clamp/spy mechanics are
+  untouched: under a
   filtered document the clamp's window and the document's own limits
   coincide, and the jump simply rests on the section it selected. The
   live filter is pinned by `webui/test/settingsnav.test.ts` and
@@ -709,8 +728,10 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
 ## Component map
 
 - `app.vue` — orchestrator: open/create routing (open in the main pane,
-  focus-existing), URL sync (`/chat/<id>` vs `/`), scroll pinning,
-  stacked-mode layout, live telemetry, tab-title spinner.
+  focus-existing), URL sync (`/chat/<id>` vs `/`, plus the READ-ONLY
+  landing routes `/settings/view` and `/board` - the app never writes
+  them), scroll pinning, stacked-mode layout, live telemetry, tab-title
+  spinner.
 - `composables/chat.ts` — the stream driver (per-tab state incl. image
   and file attachments: `attachments` = the base64 image lane,
   `files` = the /attach-file reference records).

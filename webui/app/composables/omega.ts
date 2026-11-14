@@ -1284,6 +1284,24 @@ export function sessionPath(id: string): string {
   return `/chat/${id}`;
 }
 
+// SETTINGS_PATH is the client path that names the settings tab (card
+// t_6d6a6dc4). It rides the SAME pathname scheme as /chat/<id> with no id
+// part: settings is a singleton tab, so the path names the VIEW, never a
+// target. ONE segment deeper than the bare noun on purpose - the server's
+// settings API owns exact `/settings` (agent/api/server.go), and the
+// catch-all only hands the SPA the paths that API pattern does not claim,
+// so `/settings` in an address bar answers the knob JSON, not the app.
+// Nothing writes the path (see app.vue) - a landing route, exactly like
+// /board.
+export const SETTINGS_PATH = "/settings/view";
+
+// isSettingsPath answers whether a client route path names the settings
+// tab. A trailing slash is the same route (/board accepts one too); a
+// deeper path is not.
+export function isSettingsPath(p: string): boolean {
+  return /^\/settings\/view\/?$/.test(p);
+}
+
 // Modules that ship a MAIN-pane view (a switcher destination, not an
 // inspector panel) claim it by module name - the shell mounts the panel
 // by lookup (app.vue) and never re-exports the module's ownership. The
