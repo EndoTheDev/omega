@@ -179,6 +179,11 @@ export interface MessageItem {
   time?: string;
   // server-measured response duration (restored history)
   finalMs?: number;
+  // elapsed-so-far of a STILL-STREAMING segment (the restore/merge
+  // anchor, card t_95385aba): the bubble's meter counts on from here
+  // instead of restarting at zero on a tab switch or reload. Absent on
+  // a segment this window saw from its first chunk.
+  elapsedMs?: number;
 }
 export interface ThinkingItem {
   kind: "thinking";
@@ -190,6 +195,9 @@ export interface ThinkingItem {
   streaming?: boolean;
   // server-measured thinking duration (restored history)
   finalMs?: number;
+  // elapsed-so-far of a still-streaming reasoning phase (card
+  // t_95385aba) - the thinking meter's anchor on a remount
+  elapsedMs?: number;
 }
 export interface ToolItem {
   kind: "tool";
@@ -287,8 +295,19 @@ export type TranscriptItem =
 // running tool line carries its elapsed-so-far in elapsed_ms.
 export type TranscriptWireItem =
   | { kind: "user"; id?: string; content: string; time?: string; images?: OmegaImage[]; attachments?: OmegaAttachment[] }
-  | { kind: "message"; id?: string; content: string; time?: string; response_ms?: number; running?: boolean }
-  | { kind: "thinking"; content: string; thinking_ms?: number; running?: boolean }
+  | {
+      kind: "message";
+      id?: string;
+      content: string;
+      time?: string;
+      response_ms?: number;
+      running?: boolean;
+      // a RUNNING segment's elapsed-so-far (card t_95385aba) - the
+      // response span burnt before this restore/remount, the same
+      // anchor a running tool_call carries in elapsed_ms
+      elapsed_ms?: number;
+    }
+  | { kind: "thinking"; content: string; thinking_ms?: number; running?: boolean; elapsed_ms?: number }
   | {
       kind: "tool_call";
       tool_call?: { id?: string; name?: string; arguments?: Record<string, unknown> };
@@ -362,8 +381,12 @@ export function renderTranscriptItems(
             finalMs: it.response_ms,
             id: it.id,
             // only the merge's live tail streams from restore - persisted
-            // items mount final (the driver adopts the streaming ones)
+            // items mount final (the driver adopts the streaming ones).
+            // A streaming segment also carries its elapsed-so-far: the
+            // remounted meter counts on from it instead of restarting at
+            // the mount moment (card t_95385aba).
             streaming: it.running ? true : undefined,
+            elapsedMs: it.running ? it.elapsed_ms : undefined,
           });
         break;
       case "thinking":
@@ -373,6 +396,7 @@ export function renderTranscriptItems(
             content: it.content,
             finalMs: it.thinking_ms,
             streaming: it.running ? true : undefined,
+            elapsedMs: it.running ? it.elapsed_ms : undefined,
           });
         break;
       case "tool_call": {
@@ -494,6 +518,12 @@ export interface ChatBlockWire {
   gate?: string; // the smart gate's decision record (card t_1b3e2a8b)
   elapsed_ms?: number;
   answer_ms?: number; // response-return duration (card t_e27c8347)
+  // a text/thinking block's own duration (card t_95385aba):
+  // response_ms/thinking_ms freeze a COMPLETED segment's label after a
+  // remount, elapsed_ms anchors a RUNNING segment's live meter at its
+  // elapsed-so-far - the transcript wire's two shapes, mirrored
+  response_ms?: number;
+  thinking_ms?: number;
 }
 
 // ChatRowWire mirrors core.ChatRow: one message row (role + its blocks
@@ -576,6 +606,9 @@ export function normalizeChatPayload(payload: unknown): ChatPayloadWire | null {
             is_error: b.is_error === true ? true : undefined,
             gate: typeof b.gate === "string" && b.gate ? b.gate : undefined,
             elapsed_ms: typeof b.elapsed_ms === "number" ? b.elapsed_ms : undefined,
+            answer_ms: typeof b.answer_ms === "number" ? b.answer_ms : undefined,
+            response_ms: typeof b.response_ms === "number" ? b.response_ms : undefined,
+            thinking_ms: typeof b.thinking_ms === "number" ? b.thinking_ms : undefined,
           });
         }
       }

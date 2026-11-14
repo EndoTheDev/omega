@@ -566,10 +566,15 @@ func chatRows(items []transcriptItem) []core.ChatRow {
 			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockText, Content: it.Content, Images: it.Images, Attachments: it.Attachments}}
 		case "message":
 			row.Role = core.ChatRoleAssistant
-			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockText, Content: it.Content}}
+			// the segment's duration rides the block (card t_95385aba):
+			// response_ms on a completed row freezes the label after a
+			// remount, elapsed_ms on a RUNNING row anchors the live
+			// meter at the answer's elapsed-so-far - the transcript
+			// wire's own two shapes, mirrored
+			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockText, Content: it.Content, Running: it.Running, ElapsedMs: it.ElapsedMs, ResponseMs: it.ResponseMs}}
 		case "thinking":
 			row.Role = core.ChatRoleAssistant
-			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockThinking, Content: it.Content}}
+			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockThinking, Content: it.Content, Running: it.Running, ElapsedMs: it.ElapsedMs, ThinkingMs: it.ThinkingMs}}
 		case "tool_call":
 			row.Role = core.ChatRoleAssistant
 			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockToolCall, Running: it.Running, ToolCall: it.ToolCall, ElapsedMs: it.ElapsedMs}}

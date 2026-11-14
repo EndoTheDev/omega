@@ -50,6 +50,10 @@
     // server-measured duration from restored history - wins over the
     // live meter (restored items mount final and never start one)
     finalMs?: number;
+    // elapsed-so-far of a reasoning phase still streaming here (card
+    // t_95385aba): a remounted open block counts on from the server's
+    // measurement, never from the mount moment
+    elapsedMs?: number;
     // this row's branch block when the thinking row is the branch's
     // active head (a text-less multi-row replay) - resolved by ChatTab
     variant?: VariantBlock | null;
@@ -61,10 +65,13 @@
 
   // Elapsed counter: ticks every second while the stream is live and
   // freezes at the final value when it ends - the collapsed summary keeps
-  // showing how long the run thought.
+  // showing how long the run thought. A block that remounts mid-stream
+  // (tab switch, reload) starts at the phase's elapsed-so-far (card
+  // t_95385aba), the same anchor a running tool row carries.
   const elapsedLabel = useElapsed(
     () => props.finalMs,
     () => props.streaming ?? false,
+    () => props.elapsedMs ?? 0,
   );
 
   // --- auto open/close (card t_428ed4fb, same shape as the tool rows)

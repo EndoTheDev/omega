@@ -1299,7 +1299,12 @@ export function createCanvasTranscript(): CanvasTranscript {
       // the variant switcher anchors on it, t_0df4efd8)
       it.id = row.id;
       it.streaming = running ? true : undefined;
-      it.finalMs = undefined;
+      // the duration rides the block both ways (card t_95385aba): a
+      // completed reasoning phase keeps its server-measured span, and a
+      // still-streaming one carries the elapsed-so-far its meter counts
+      // on from after a remount - never the mount moment
+      it.finalMs = block.thinking_ms;
+      it.elapsedMs = running ? block.elapsed_ms : undefined;
       cache.set(sig, it);
       return it;
     }
@@ -1412,15 +1417,19 @@ export function createCanvasTranscript(): CanvasTranscript {
     // prose (text block): one assistant bubble per response segment -
     // the backend composes the transcript's segment boundaries, the
     // renderer stays flat. Streaming is ROW-level truth: the open
-    // text/thinking rows carry status "streaming" (their blocks carry
-    // no running bit - the meter is a tool-row thing).
+    // text/thinking rows carry status "streaming". The block's own
+    // duration rides it (card t_95385aba): response_ms on a completed
+    // segment (the frozen label survives a remount) and elapsed_ms on
+    // the open one (the remounted meter counts on from the answer's
+    // elapsed-so-far, exactly like a running tool row).
     const it = (cache.get(sig) ?? reactive({ kind: "message", role: "assistant", content: "" })) as MessageItem;
     it.kind = "message";
     it.role = "assistant";
     it.content = block.content ?? "";
     it.streaming = running ? true : undefined;
     it.time = undefined;
-    it.finalMs = undefined;
+    it.finalMs = block.response_ms;
+    it.elapsedMs = running ? block.elapsed_ms : undefined;
     it.id = row.id;
     cache.set(sig, it);
     return it;

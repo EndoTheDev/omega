@@ -333,6 +333,13 @@ func appendRecordItems(items []transcriptItem, rec assistantRecord, open bool, n
 			// is the in-flight hint, not the record's life story
 			if rec.content == "" {
 				it.Running = true
+				// the open span's elapsed-so-far (card t_95385aba): a
+				// remounted thinking block counts on from the reasoning
+				// already burnt instead of restarting at the mount
+				// moment - the same anchor a running tool line carries
+				it.ElapsedMs = phaseElapsed(rec.thinkDur, rec.lastThink, rec.openAt, now)
+			} else {
+				it.ThinkingMs = rec.thinkDur.Milliseconds()
 			}
 		} else {
 			it.ThinkingMs = rec.thinkDur.Milliseconds()
@@ -344,6 +351,10 @@ func appendRecordItems(items []transcriptItem, rec assistantRecord, open bool, n
 		it.Running = open
 		if !open {
 			it.ResponseMs = rec.respDur.Milliseconds()
+		} else {
+			// the answer's elapsed-so-far (card t_95385aba) - the
+			// response twin of the thinking anchor above
+			it.ElapsedMs = phaseElapsed(rec.respDur, rec.lastResp, rec.openAt, now)
 		}
 		items = append(items, it)
 	}

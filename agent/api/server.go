@@ -1922,6 +1922,17 @@ func phaseDelta(last, open, now time.Time) time.Duration {
 	return 0
 }
 
+// phaseElapsed is a phase span's elapsed-so-far: the accumulated
+// chunk-to-chunk time plus the open span (last chunk -> now) - the
+// wall clock the final duration would carry if the phase ended right
+// now. It is the anchor a remounted meter counts on from (card
+// t_95385aba: a tab switch or reload mid-answer keeps the answer and
+// thinking durations where they were), the same shape the running
+// tool line already ships (now.Sub(callStart)). Pure.
+func phaseElapsed(acc time.Duration, last, open, now time.Time) int64 {
+	return (acc + phaseDelta(last, open, now)).Milliseconds()
+}
+
 // persistAssistant closes the run's persistence epilogue (the turn
 // copies themselves - assistants and tool results - the loop's sink
 // wrote while the turns completed, card t_471f6d4a). The ephemeral

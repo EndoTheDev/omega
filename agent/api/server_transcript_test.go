@@ -458,6 +458,74 @@ func TestLiveTranscriptItemsWireOrderShapesRunState(t *testing.T) {
 	}
 }
 
+// TestLiveTranscriptItemsCarryStreamingElapsed: the open record's
+// in-flight thinking/answer rows ship their elapsed-so-far (card
+// t_95385aba) - the anchor a remounted transcript item counts on from
+// after a tab switch or reload, the same shape a running tool line
+// carries. A reasoning phase the answer already ended ships its
+// measured span instead (it will never tick again).
+func TestLiveTranscriptItemsCarryStreamingElapsed(t *testing.T) {
+	now := time.Now()
+
+	// reasoning still open: 3s accumulated + a 2s open span
+	items := liveTranscriptItems(nil, assistantRecord{
+		thinking:  "deliberating",
+		thinkDur:  3 * time.Second,
+		lastThink: now.Add(-2 * time.Second),
+	}, now)
+	if len(items) != 1 || items[0].Kind != "thinking" || !items[0].Running {
+		t.Fatalf("open thinking = %+v", items)
+	}
+	if got := items[0].ElapsedMs; got < 4900 || got > 5100 {
+		t.Fatalf("thinking elapsed-so-far = %d, want ~5000", got)
+	}
+	if items[0].ThinkingMs != 0 {
+		t.Fatalf("a live phase must not ship a final span: %+v", items[0])
+	}
+
+	// the answer streams behind a finished reasoning phase
+	items = liveTranscriptItems(nil, assistantRecord{
+		thinking:  "done deliberating",
+		content:   "the answer so far",
+		thinkDur:  1500 * time.Millisecond,
+		respDur:   1200 * time.Millisecond,
+		lastResp:  now.Add(-800 * time.Millisecond),
+		lastThink: now.Add(-10 * time.Second), // closed by the answer's first chunk
+	}, now)
+	if len(items) != 2 || items[0].Kind != "thinking" || items[1].Kind != "message" {
+		t.Fatalf("open answer items = %+v", kindsOf(items))
+	}
+	if items[0].Running {
+		t.Fatalf("thinking is over once content started: %+v", items[0])
+	}
+	if items[0].ThinkingMs != 1500 {
+		t.Fatalf("finished thinking span = %d, want 1500", items[0].ThinkingMs)
+	}
+	if !items[1].Running {
+		t.Fatalf("the answer streams: %+v", items[1])
+	}
+	if got := items[1].ElapsedMs; got < 1900 || got > 2100 {
+		t.Fatalf("answer elapsed-so-far = %d, want ~2000", got)
+	}
+	if items[1].ResponseMs != 0 {
+		t.Fatalf("a live answer must not ship a final span: %+v", items[1])
+	}
+}
+
+// TestPhaseElapsedSpansTheBoundary: a phase that has not produced its
+// first chunk yet still bills the wait from the opening boundary (a
+// turn start or the last tool result) - otherwise a restored meter
+// would start at zero through the model's latency.
+func TestPhaseElapsedSpansTheBoundary(t *testing.T) {
+	now := time.Now()
+	if got := phaseElapsed(0, time.Time{}, now.Add(-3*time.Second), now); got < 2900 || got > 3100 {
+		t.Fatalf("boundary-only span = %d, want ~3000", got)
+	}
+	if got := phaseElapsed(0, time.Time{}, time.Time{}, now); got != 0 {
+		t.Fatalf("no boundary and no chunks = %d, want 0", got)
+	}
+}
+
 // TestLiveTranscriptItemsEmptyOpenRecord: a bare open record (no chunks,
 // no calls - a run sitting between turns) contributes nothing.
 func TestLiveTranscriptItemsEmptyOpenRecord(t *testing.T) {
@@ -517,6 +585,63 @@ func TestSessionTranscriptMergesLiveRun(t *testing.T) {
 	}
 	if tc.ElapsedMs < 4000 {
 		t.Fatalf("live tool item elapsed = %d, want ~5000", tc.ElapsedMs)
+	}
+}
+
+// TestSessionTranscriptStreamsTheAnswerElapsed (card t_95385aba): a
+// mid-run GET of the transcript - the tab-switch / reload path - serves
+// the open answer and thinking rows with their elapsed-so-far on the
+// wire, so the remounted meters count on instead of restarting at zero.
+// Same wire a running tool line has used since the reattach merge.
+func TestSessionTranscriptStreamsTheAnswerElapsed(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "s1", "", "Streaming"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := st.AppendMessage(ctx, "s1", core.NewUser("explain the loop")); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	run, ok := s.runs.start("s1")
+	if !ok {
+		t.Fatalf("start run")
+	}
+	// the run state a remount interrupts: reasoning 3s in, the answer
+	// 1.2s in behind it
+	s.runs.setTail(run, liveTranscriptItems(nil, assistantRecord{
+		thinking: "weighing options",
+		content:  "the answer so far",
+		thinkDur: 3 * time.Second,
+		respDur:  1200 * time.Millisecond,
+		lastResp: time.Now().Add(-800 * time.Millisecond),
+	}, time.Now()))
+
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sessions/s1/transcript", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Items []transcriptItem `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got, want := kindsOf(body.Items), []string{"user", "thinking", "message"}; len(got) != 3 {
+		t.Fatalf("items = %v, want %v", got, want)
+	}
+	think, answer := body.Items[1], body.Items[2]
+	if think.Kind != "thinking" || think.ThinkingMs != 3000 || think.Running {
+		t.Fatalf("the finished reasoning row carries its measured span: %+v", think)
+	}
+	if !answer.Running {
+		t.Fatalf("the answer streams: %+v", answer)
+	}
+	if answer.ElapsedMs < 1900 || answer.ElapsedMs > 2100 {
+		t.Fatalf("answer elapsed-so-far = %d, want ~2000 (1.2s accumulated + the open span)", answer.ElapsedMs)
+	}
+	if answer.ResponseMs != 0 {
+		t.Fatalf("a live answer ships no final span: %+v", answer)
 	}
 }
 

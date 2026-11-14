@@ -13,6 +13,7 @@
     :item-id="item.id"
     :variant="item.role === 'assistant' ? variant : null"
     :final-ms="item.finalMs"
+    :elapsed-ms="item.elapsedMs"
     :streaming="item.streaming"
     :retryable="retryable && item.role === 'assistant'"
     @select="(i) => item.id && variant && $emit('select', variant.message_id, i)"
@@ -22,6 +23,7 @@
     v-else-if="item.kind === 'thinking' && showThinking"
     :content="item.content"
     :final-ms="item.finalMs"
+    :elapsed-ms="item.elapsedMs"
     :streaming="item.streaming"
     :variant="variant"
     @select="(i) => variant && $emit('select', variant.message_id, i)" />
@@ -30,6 +32,7 @@
     :name="item.name"
     :status="item.status"
     :final-ms="item.finalMs"
+    :elapsed-ms="item.elapsedMs"
     :answer-ms="item.answerMs"
     :output="item.output"
     :result="item.result"

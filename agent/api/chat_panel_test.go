@@ -94,8 +94,8 @@ func chatRowRoles(rows []core.ChatRow) []string {
 func TestChatRowsMapTheTranscriptVocabulary(t *testing.T) {
 	rows := chatRows([]transcriptItem{
 		{Kind: "user", ID: "u1", Content: "hi", Images: []core.ImageContent{{MediaType: "image/png", Base64: "aGk="}}},
-		{Kind: "thinking", ID: "a1", Content: "hmm", Running: true},
-		{Kind: "message", ID: "a2", Content: "answer"},
+		{Kind: "thinking", ID: "a1", Content: "hmm", Running: true, ElapsedMs: 2600},
+		{Kind: "message", ID: "a2", Content: "answer", ResponseMs: 1800},
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}, Running: true, ElapsedMs: 5},
 		{Kind: "tool_result", ID: "r1", ToolCallID: "tcl", Content: "out", IsError: true, ElapsedMs: 7, AnswerMs: 9},
 	})
@@ -114,8 +114,19 @@ func TestChatRowsMapTheTranscriptVocabulary(t *testing.T) {
 	if rows[1].Role != core.ChatRoleAssistant || rows[1].Blocks[0].Type != core.ChatBlockThinking || rows[1].Status != core.ChatStatusStreaming {
 		t.Fatalf("thinking row = %+v", rows[1])
 	}
+	// the streaming reasoning row owns its meter anchor: the running
+	// hint plus the elapsed-so-far the client counts on from (card
+	// t_95385aba)
+	if !rows[1].Blocks[0].Running || rows[1].Blocks[0].ElapsedMs != 2600 {
+		t.Fatalf("thinking block anchor = %+v", rows[1].Blocks[0])
+	}
 	if rows[2].Status != core.ChatStatusComplete {
 		t.Fatalf("message status = %+v", rows[2])
+	}
+	// a completed answer row carries its measured span so a remount
+	// keeps the frozen duration
+	if rows[2].Blocks[0].ResponseMs != 1800 || rows[2].Blocks[0].Running {
+		t.Fatalf("message block span = %+v", rows[2].Blocks[0])
 	}
 	if rows[3].Role != core.ChatRoleAssistant || rows[3].Blocks[0].Type != core.ChatBlockToolCall || rows[3].Blocks[0].ToolCall == nil || rows[3].Blocks[0].ToolCall.Name != "shell.run" {
 		t.Fatalf("tool_call row = %+v", rows[3])

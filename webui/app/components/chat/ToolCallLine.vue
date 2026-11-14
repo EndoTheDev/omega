@@ -89,6 +89,10 @@
     // server-measured duration from restored history - wins over the
     // live meter (restored items mount final and never start one)
     finalMs?: number;
+    // elapsed-so-far of a call still running here (card t_95385aba
+    // family): a restored running line counts on from the server's
+    // measurement instead of restarting the call's clock at zero
+    elapsedMs?: number;
     // response-return duration (card t_e27c8347): the server-measured
     // wall clock from this call's result to the answer's completion -
     // the row's second number beside the call's own elapsed. No live
@@ -127,7 +131,7 @@
     () => props.status === "running" || props.status === "pending",
     // a restored STILL-RUNNING call counts on from the server's
     // elapsed-so-far (live-run merge) - not from the mount moment
-    () => props.elapsedMs,
+    () => props.elapsedMs ?? 0,
   );
 
   // the response-return half (card t_e27c8347): server-measured, never
