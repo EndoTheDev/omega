@@ -28,6 +28,11 @@ type KanbanTask struct {
 	StartedAt   string `json:"started_at"`
 	CompletedAt string `json:"completed_at"`
 	Position    int64  `json:"-"`
+	// Board is the NAME of the board the row lives on, filled only by
+	// the all-boards read (GET /tasks?scope=all): a mixed list must say
+	// which board a card belongs to, because every other route addresses
+	// a card by (board, id). Empty on a board-scoped read.
+	Board string `json:"board,omitempty"`
 }
 
 // KanbanComment is one comment in a task's thread.

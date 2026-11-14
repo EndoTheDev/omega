@@ -99,8 +99,8 @@ func TestBoardCRUDRows(t *testing.T) {
 	if err := s.CreateBoardRow("alpha"); err == nil {
 		t.Fatal("duplicate create accepted")
 	}
-	if err := s.CreateBoardRow(DefaultBoardName); err == nil {
-		t.Fatal("create main accepted")
+	if err := s.CreateBoardRow(DefaultBoardName); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("create of an existing board (main): %v", err)
 	}
 	if err := s.CreateBoardRow("Not A Name"); err == nil {
 		t.Fatal("illegal name accepted")
@@ -142,47 +142,164 @@ func TestDeleteGuards(t *testing.T) {
 	s := openRegistryStore(t, home)
 	ctx := context.Background()
 
-	if err := s.DeleteBoardRow(DefaultBoardName); err == nil {
-		t.Fatal("delete main accepted")
-	}
-	if err := s.DeleteBoardRow("beta"); err == nil {
-		t.Fatal("delete unknown accepted")
+	// 0.17.3 make-over: DELETE ALL BOARDS. The default board is not
+	// reserved any more - only the card precondition guards a delete.
+	if err := s.DeleteBoardRow("beta"); err == nil || !strings.Contains(err.Error(), "no such board") {
+		t.Fatalf("delete of unknown board: %v", err)
 	}
 	if err := s.CreateBoardRow("alpha"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateTask(ctx, "alpha", KanbanTask{Title: "held"}); err != nil {
+	held, err := s.CreateTask(ctx, "alpha", KanbanTask{Title: "held"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteBoardRow("alpha"); err == nil || !strings.Contains(err.Error(), "still holds") {
-		t.Fatalf("delete of non-empty: %v", err)
+	if err := s.DeleteBoardRow("alpha"); err == nil || !strings.Contains(err.Error(), "live card") {
+		t.Fatalf("delete of a board holding a live card: %v", err)
 	}
-	// the current board refuses even when it is empty
+
+	// the archive lane is the last stop: an archived card no longer
+	// blocks its board, and it rides out with the board (the row, its
+	// comments and its events go too - one transaction, children first).
+	if _, err := s.UpdateTask(ctx, "alpha", held.ID, KanbanPatch{Status: StatusArchived}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddComment(ctx, "alpha", held.ID, "web", "gone with the board"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteBoardRow("alpha"); err != nil {
+		t.Fatalf("delete of an all-archived board refused: %v", err)
+	}
+	if s.BoardExists("alpha") {
+		t.Fatal("board alpha survived its delete")
+	}
+	var orphans int
+	if err := s.db.QueryRow(`SELECT (SELECT COUNT(*) FROM tasks WHERE id = ?)
+		+ (SELECT COUNT(*) FROM task_comments WHERE task_id = ?)
+		+ (SELECT COUNT(*) FROM task_events WHERE task_id = ?)`, held.ID, held.ID, held.ID).Scan(&orphans); err != nil {
+		t.Fatal(err)
+	}
+	if orphans != 0 {
+		t.Fatalf("%d card/comment/event row(s) outlived their board", orphans)
+	}
+
+	// the CURRENT board is deletable; the pointer hands over to the
+	// earliest survivor
 	if err := s.CreateBoardRow("gamma"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetCurrentBoard("gamma"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteBoardRow("gamma"); err == nil || !strings.Contains(err.Error(), "current board") {
-		t.Fatalf("delete of the current board: %v", err)
+	if err := s.DeleteBoardRow("gamma"); err != nil {
+		t.Fatalf("delete of the current board refused: %v", err)
 	}
-	// switch away: gamma is empty and deletable; alpha still is not
-	if err := s.SetCurrentBoard(DefaultBoardName); err != nil {
+	if cur, err := s.CurrentBoard(); err != nil || cur != DefaultBoardName {
+		t.Fatalf("current after deleting the pointer holder = %q err %v, want %q", cur, err, DefaultBoardName)
+	}
+
+	// and main itself leaves - ZERO BOARDS is a legal state (0.17.3)
+	if err := s.DeleteBoardRow(DefaultBoardName); err != nil {
+		t.Fatalf("delete of the default board refused: %v", err)
+	}
+	boards, err := s.Boards(ctx)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteBoardRow("gamma"); err != nil {
-		t.Fatalf("delete of empty board refused: %v", err)
+	if len(boards) != 0 {
+		t.Fatalf("boards after deleting every board = %+v, want none", boards)
 	}
-	if err := s.DeleteBoardRow("alpha"); err == nil || !strings.Contains(err.Error(), "still holds") {
-		t.Fatalf("delete of non-empty accepted: %v", err)
+	if cur, err := s.CurrentBoard(); err != nil || cur != "" {
+		t.Fatalf("current on an empty registry = %q err %v, want empty", cur, err)
 	}
-	boards, _ := s.Boards(ctx)
-	if len(boards) != 2 || boards[0].Name != DefaultBoardName || boards[1].Name != "alpha" {
-		t.Fatalf("boards after delete = %+v", boards)
+	tasks, err := s.ListTasks(ctx, "", StatusAll)
+	if err != nil || len(tasks) != 0 {
+		t.Fatalf("board-less list = %v err %v, want an empty list and no error", tasks, err)
 	}
-	// archived tasks are still rows - there is no card deletion, so an
-	// emptiable board is one that never held a task
+	if _, err := s.CreateTask(ctx, "", KanbanTask{Title: "nowhere"}); err == nil {
+		t.Fatal("a card landed on a board-less registry")
+	}
+}
+
+// TestZeroBoardsSurviveRestart pins the other half of the zero-boards
+// law: the seed that creates "main" runs when the boards table is BORN,
+// not on every boot. A home whose user deleted every board must stay
+// empty across a restart - a resurrected board would be a silent undo.
+func TestZeroBoardsSurviveRestart(t *testing.T) {
+	home := tempHome(t)
+	s := openRegistryStore(t, home)
+	if err := s.DeleteBoardRow(DefaultBoardName); err != nil {
+		t.Fatalf("delete of the default board: %v", err)
+	}
+	s.Close()
+
+	again, err := MountRegistry(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	boards, err := again.Boards(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(boards) != 0 {
+		t.Fatalf("boards after restart = %+v, want none (the seed must not resurrect one)", boards)
+	}
+	// the first board back claims the pointer, or the views have no board
+	if err := again.CreateBoardRow("fresh"); err != nil {
+		t.Fatal(err)
+	}
+	if cur, err := again.CurrentBoard(); err != nil || cur != "fresh" {
+		t.Fatalf("current after the first create = %q err %v, want fresh", cur, err)
+	}
+	boards, _ = again.Boards(context.Background())
+	if len(boards) != 1 || !boards[0].Current {
+		t.Fatalf("boards after the first create = %+v, want [fresh current]", boards)
+	}
+}
+
+func TestRenameBoardRow(t *testing.T) {
+	home := tempHome(t)
+	s := openRegistryStore(t, home)
+	ctx := context.Background()
+
+	card, err := s.CreateTask(ctx, "", KanbanTask{Title: "survives the rename"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RenameBoardRow(DefaultBoardName, "workshop"); err != nil {
+		t.Fatalf("rename main: %v", err)
+	}
+	if s.BoardExists(DefaultBoardName) || !s.BoardExists("workshop") {
+		t.Fatal("the rename did not move the row")
+	}
+	// the row keeps its id: the cards stay put and the pointer follows
+	tasks, err := s.ListTasks(ctx, "", StatusAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != card.ID {
+		t.Fatalf("cards after the rename = %+v, want the one card", tasks)
+	}
+	if cur, err := s.CurrentBoard(); err != nil || cur != "workshop" {
+		t.Fatalf("current after the rename = %q err %v", cur, err)
+	}
+	// refusals: illegal names, duplicates, unknown boards; a no-op rename
+	if err := s.RenameBoardRow("workshop", "Not A Name"); err == nil {
+		t.Fatal("illegal rename target accepted")
+	}
+	if err := s.CreateBoardRow("taken"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RenameBoardRow("workshop", "taken"); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("rename onto an existing board: %v", err)
+	}
+	if err := s.RenameBoardRow("ghost", "haunt"); err == nil || !strings.Contains(err.Error(), "no such board") {
+		t.Fatalf("rename of an unknown board: %v", err)
+	}
+	if err := s.RenameBoardRow("taken", "taken"); err != nil {
+		t.Fatalf("a rename to the same name must be a no-op: %v", err)
+	}
 }
 
 func TestStoreBoardIsolation(t *testing.T) {

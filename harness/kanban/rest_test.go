@@ -223,7 +223,7 @@ func multiBoardCtx(t *testing.T) (*core.Context, string) {
 }
 
 func TestBoardsEndpointListsRegistry(t *testing.T) {
-	ctx, home := multiBoardCtx(t)
+	ctx, _ := multiBoardCtx(t)
 	ts := serveRoutes(t, ctx)
 	res, err := http.Get(ts.URL + "/boards")
 	if err != nil {
@@ -236,7 +236,7 @@ func TestBoardsEndpointListsRegistry(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	_ = home
+
 	if len(got.Boards) != 3 {
 		t.Fatalf("boards = %+v", got.Boards)
 	}
@@ -345,96 +345,181 @@ func TestBoardParamIsolation(t *testing.T) {
 }
 
 func TestBoardsDeleteEndpoint(t *testing.T) {
-	ctx, home := multiBoardCtx(t)
+	ctx, _ := multiBoardCtx(t)
 	ts := serveRoutes(t, ctx)
 
-	// DELETE an empty non-default board -> 200, and its rows are gone
-	res, err := do("DELETE", ts.URL+"/boards/beta", "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	// 0.17.3 make-over: every board leaves, main included, and a home may
+	// end on ZERO boards.
+	//
+	// a board holding a LIVE card refuses, naming the count
+	res, _ := http.Post(ts.URL+"/tasks?board=beta", "application/json", strings.NewReader(`{"title":"live"}`))
+	var created KanbanTask
+	json.NewDecoder(res.Body).Decode(&created)
 	res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("delete beta = %d, want 200", res.StatusCode)
+	res, _ = do("DELETE", ts.URL+"/boards/beta", "")
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "live card") {
+		t.Fatalf("delete of a board holding a live card = %d %q", res.StatusCode, string(body))
 	}
 
-	// the registry answer agrees: main + alpha only
+	// the archive lane is the last stop: archive the card and the board goes,
+	// taking the card's rows with it
+	res, _ = do("PATCH", ts.URL+"/tasks/"+created.ID+"?board=beta", `{"status":"archived"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("archive card = %d", res.StatusCode)
+	}
+	res, _ = do("DELETE", ts.URL+"/boards/beta", "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("delete of an all-archived board = %d", res.StatusCode)
+	}
+
+	// the default board is deletable now (it is the current one here): the
+	// pointer hands over to the earliest survivor
+	res, _ = do("DELETE", ts.URL+"/boards/main", "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("delete main = %d, want 200", res.StatusCode)
+	}
 	res, _ = http.Get(ts.URL + "/boards")
 	var got struct {
 		Boards []BoardInfo `json:"boards"`
 	}
 	json.NewDecoder(res.Body).Decode(&got)
 	res.Body.Close()
-	if len(got.Boards) != 2 || got.Boards[0].Name != DefaultBoardName || got.Boards[1].Name != "alpha" {
-		t.Fatalf("boards after delete = %+v", got.Boards)
+	if len(got.Boards) != 1 || got.Boards[0].Name != "alpha" || !got.Boards[0].Current {
+		t.Fatalf("boards after deleting main = %+v, want [alpha current]", got.Boards)
 	}
 
-	// the default board is refused -> 400 with the refusal text
-	res, err = do("DELETE", ts.URL+"/boards/main", "")
+	// unknown boards still refuse -> 400
+	res, _ = do("DELETE", ts.URL+"/boards/ghost", "")
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "no such board") {
+		t.Fatalf("delete ghost = %d %q", res.StatusCode, string(body))
+	}
+
+	// the last board leaves too: ZERO boards, an empty registry answer, and
+	// the board-less tasks read is an empty list (not an error)
+	res, _ = do("DELETE", ts.URL+"/boards/alpha", "")
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("delete of the last board = %d", res.StatusCode)
+	}
+	res, _ = http.Get(ts.URL + "/boards")
+	raw, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if strings.TrimSpace(string(raw)) != `{"boards":[]}` {
+		t.Fatalf("zero-board registry answer = %q", string(raw))
+	}
+	res, _ = http.Get(ts.URL + "/tasks?status=all")
+	raw, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || strings.TrimSpace(string(raw)) != `{"tasks":[]}` {
+		t.Fatalf("board-less tasks answer = %d %q", res.StatusCode, string(raw))
+	}
+
+	// and a create is the way back: the first board claims the pointer
+	res, _ = do("POST", ts.URL+"/boards", `{"name":"reborn"}`)
+	res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create after zero boards = %d", res.StatusCode)
+	}
+	res, _ = http.Get(ts.URL + "/boards")
+	json.NewDecoder(res.Body).Decode(&got)
+	res.Body.Close()
+	if len(got.Boards) != 1 || got.Boards[0].Name != "reborn" || !got.Boards[0].Current {
+		t.Fatalf("boards after the first create = %+v, want [reborn current]", got.Boards)
+	}
+}
+
+func TestBoardsRenameEndpoint(t *testing.T) {
+	ctx, _ := multiBoardCtx(t)
+	ts := serveRoutes(t, ctx)
+
+	// a rename renames the row in place: cards stay, the pointer follows
+	res, _ := http.Post(ts.URL+"/tasks?board=alpha", "application/json", strings.NewReader(`{"title":"kept"}`))
+	var created KanbanTask
+	json.NewDecoder(res.Body).Decode(&created)
+	res.Body.Close()
+
+	res, err := do("PATCH", ts.URL+"/boards/alpha", `{"name":"alpha-2"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	body, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != http.StatusBadRequest {
-		t.Fatalf("delete main = %d, want 400", res.StatusCode)
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"renamed":"alpha-2"`) {
+		t.Fatalf("rename alpha = %d %q", res.StatusCode, string(body))
 	}
-	if !strings.Contains(string(body), "refusing to delete the default board") {
-		t.Fatalf("delete main body = %q", string(body))
+	res, _ = http.Get(ts.URL + "/tasks?board=alpha-2&status=all")
+	var listed struct {
+		Tasks []KanbanTask `json:"tasks"`
 	}
-	if _, serr := os.Stat(datadir.DBPath(home, "kanban.db")); serr != nil {
-		t.Fatalf("main dsn vanished: %v", serr)
-	}
-
-	// unknown boards refused -> 400
-	res, _ = do("DELETE", ts.URL+"/boards/ghost", "")
+	json.NewDecoder(res.Body).Decode(&listed)
 	res.Body.Close()
-	if res.StatusCode != http.StatusBadRequest {
-		t.Fatalf("delete ghost = %d, want 400", res.StatusCode)
+	if len(listed.Tasks) != 1 || listed.Tasks[0].ID != created.ID {
+		t.Fatalf("cards after the rename = %+v", listed.Tasks)
 	}
 
-	// the current board is refused (switch first). The flag lives in
-	// the one database now: SetCurrentBoard through a second handle
-	// on the same file, the served routes see it (the row is the one
-	// truth).
-	reg, rerr := MountRegistry(home)
-	if rerr != nil {
-		t.Fatal(rerr)
-	}
-	if rerr := reg.SetCurrentBoard("alpha"); rerr != nil {
-		reg.Close()
-		t.Fatal(rerr)
-	}
-	reg.Close()
-	res, _ = do("DELETE", ts.URL+"/boards/alpha", "")
+	// refusals answer 400 with the store's text
+	res, _ = do("PATCH", ts.URL+"/boards/alpha-2", `{"name":"main"}`)
 	body, _ = io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "current board") {
-		t.Fatalf("delete current board = %d %q", res.StatusCode, string(body))
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "already exists") {
+		t.Fatalf("rename onto an existing board = %d %q", res.StatusCode, string(body))
 	}
-	// back to main: the pre-delete guard order the old pointer test
-	// walked
-	reg, err = MountRegistry(home)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := reg.SetCurrentBoard(DefaultBoardName); err != nil {
-		reg.Close()
-		t.Fatal(err)
-	}
-	reg.Close()
-
-	// a board holding tasks is refused
-	res, _ = http.Post(ts.URL+"/tasks?board=alpha", "application/json", strings.NewReader(`{"title":"stays"}`))
-	res.Body.Close()
-	if res.StatusCode != http.StatusCreated {
-		t.Fatalf("seed task = %d", res.StatusCode)
-	}
-	res, _ = do("DELETE", ts.URL+"/boards/alpha", "")
+	res, _ = do("PATCH", ts.URL+"/boards/ghost", `{"name":"haunt"}`)
 	body, _ = io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "still holds") {
-		t.Fatalf("delete non-empty = %d %q", res.StatusCode, string(body))
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "no such board") {
+		t.Fatalf("rename of an unknown board = %d %q", res.StatusCode, string(body))
+	}
+
+}
+
+func TestTasksAllBoardsScope(t *testing.T) {
+	ctx, _ := multiBoardCtx(t)
+	ts := serveRoutes(t, ctx)
+
+	for _, b := range []string{"main", "alpha", "beta"} {
+		res, _ := http.Post(ts.URL+"/tasks?board="+b, "application/json", strings.NewReader(`{"title":"on `+b+`"}`))
+		res.Body.Close()
+		if res.StatusCode != http.StatusCreated {
+			t.Fatalf("seed task on %s = %d", b, res.StatusCode)
+		}
+	}
+
+	res, _ := http.Get(ts.URL + "/tasks?scope=all&status=all")
+	var listed struct {
+		Tasks []KanbanTask `json:"tasks"`
+	}
+	json.NewDecoder(res.Body).Decode(&listed)
+	res.Body.Close()
+	if len(listed.Tasks) != 3 {
+		t.Fatalf("scope=all listed %d cards, want 3", len(listed.Tasks))
+	}
+	seen := map[string]bool{}
+	for _, task := range listed.Tasks {
+		if task.Board == "" {
+			t.Fatalf("scope=all row %s carries no board name", task.ID)
+		}
+		seen[task.Board] = true
+	}
+	for _, b := range []string{"main", "alpha", "beta"} {
+		if !seen[b] {
+			t.Fatalf("scope=all missed board %q (rows: %+v)", b, listed.Tasks)
+		}
+	}
+
+	// the board-scoped read still carries NO board field (byte-stable wire)
+	res, _ = http.Get(ts.URL + "/tasks?board=alpha&status=all")
+	raw, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if strings.Contains(string(raw), `"board":`) {
+		t.Fatalf("a board-scoped read grew a board field: %q", string(raw))
 	}
 }
 

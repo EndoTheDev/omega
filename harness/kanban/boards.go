@@ -29,6 +29,7 @@ package kanban
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,10 +39,19 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// DefaultBoardName is the default board: on a fresh install it exists
-// as the first row of the boards table, its data in the single
-// <home>/data/kanban.db. The name is reserved.
+// DefaultBoardName is the name the seeded first board carries on a
+// fresh install ("main"). It is a legal name like any other since
+// 0.17.3 - the board can be renamed and even deleted (zero boards is
+// a legal state), so nothing in the registry treats it specially any
+// more; the constant survives for the seed and for readers that need
+// to name the historical default.
 const DefaultBoardName = "main"
+
+// errNoBoards is the legal EMPTY registry (0.17.3 make-over: every
+// board may be deleted, main included). A board-less home has no
+// current row, so tasks reads answer an empty list instead of an
+// error; a create is the way back.
+var errNoBoards = errors.New("no boards - create one first")
 
 // boardNameRE governs registry names: lowercase, starts alphanumeric,
 // 1-64 chars, filesystem-safe (names were directory components in the
@@ -83,10 +93,18 @@ func registryStaleDSN(home, dsn string) bool {
 }
 
 // ensureBoardsTable creates the boards table + the one-current partial
-// index, and seeds the "main" row (current) when the table is fresh.
-// The tasks rebuild in migrate() backfills board_id against main's
-// id, so main must exist before any card row.
+// index, and seeds the "main" row once - when the table is BORN, not
+// on every boot. Zero boards is a legal state since 0.17.3: a home
+// whose user deleted every board must not have "main" resurrected
+// under it at the next start, and the seed is the only insert the
+// registry performs by itself. The tasks rebuild in migrate()
+// backfills board_id against main's id, so the fresh-database seed
+// must still land before any card row.
 func ensureBoardsTable(db *sql.DB) error {
+	var born int // 0 = the boards table did not exist before this call
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'boards'`).Scan(&born); err != nil {
+		return err
+	}
 	if _, err := db.Exec(`
 CREATE TABLE IF NOT EXISTS boards (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,6 +117,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_boards_one_current ON boards(is_current) W
 `); err != nil {
 		return err
 	}
+	if born > 0 {
+		return nil // an existing registry owns its rows - the seed already ran (or was deleted on purpose)
+	}
 	_, err := db.Exec(`INSERT OR IGNORE INTO boards (name, created_at, position, is_current) VALUES (?, ?, 0, 1)`,
 		DefaultBoardName, now())
 	return err
@@ -107,15 +128,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_boards_one_current ON boards(is_current) W
 // boardID resolves a board name to its row id: "" means the current
 // board (the is_current row), a name means that row - unknown or
 // illegal names error at the door, the registry never auto-creates.
-// Reads ride the statement surface (q), so a batch clone's board
-// resolution executes inside the batch transaction; the WRITE ops
-// below keep db directly (Begin/ATTACH cannot nest).
+// A board-less registry answers errNoBoards for "" (the legal empty
+// state, not a fault). Reads ride the statement surface (q), so a
+// batch clone's board resolution executes inside the batch
+// transaction; the WRITE ops below keep db directly (Begin/ATTACH
+// cannot nest).
 func (s *Store) boardID(board string) (int64, error) {
 	bg := context.Background()
 	if board == "" {
 		var id int64
 		row := s.q.QueryRowContext(bg, `SELECT id FROM boards WHERE is_current = 1 ORDER BY id LIMIT 1`)
 		if err := row.Scan(&id); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return 0, errNoBoards
+			}
 			return 0, fmt.Errorf("no current board row: %w", err)
 		}
 		return id, nil
@@ -165,16 +191,25 @@ func (s *Store) Boards(ctx context.Context) ([]BoardInfo, error) {
 	return out, rows.Err()
 }
 
-// CurrentBoard names the current board (the is_current row). Falls
-// back to "main" when no row claims the flag - main always exists and
-// the board must answer, a missing flag is not a boot failure.
+// CurrentBoard names the current board (the is_current row). When no
+// row claims the flag the earliest board answers instead - a registry
+// that lost its pointer still has an order, and the view must name
+// something. An EMPTY registry answers "" and no error: zero boards is
+// a legal state (0.17.3), not a boot failure.
 func (s *Store) CurrentBoard() (string, error) {
+	bg := context.Background()
 	var name string
-	err := s.q.QueryRowContext(context.Background(), `SELECT name FROM boards WHERE is_current = 1 ORDER BY id LIMIT 1`).Scan(&name)
-	if err == sql.ErrNoRows {
-		return DefaultBoardName, nil
+	err := s.q.QueryRowContext(bg, `SELECT name FROM boards WHERE is_current = 1 ORDER BY id LIMIT 1`).Scan(&name)
+	if err == nil {
+		return name, nil
 	}
-	if err != nil {
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+	if err := s.q.QueryRowContext(bg, `SELECT name FROM boards ORDER BY position, id LIMIT 1`).Scan(&name); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil // no boards at all: the legal empty registry
+		}
 		return "", err
 	}
 	return name, nil
@@ -205,34 +240,74 @@ func (s *Store) SetCurrentBoard(name string) error {
 	return tx.Commit()
 }
 
-// CreateBoardRow inserts the named board. Creating "main" or an
-// existing board is an error.
+// CreateBoardRow inserts the named board. A duplicate name errors.
+// "main" is not special since 0.17.3 - it can be deleted and created
+// again like any other name. A board created into an EMPTY registry
+// claims the pointer: with zero boards there is no current row, and the
+// first board back is the one the views must open on.
 func (s *Store) CreateBoardRow(name string) error {
-	if name == DefaultBoardName {
-		return fmt.Errorf("main is the default board and already exists")
-	}
 	if !ValidBoardName(name) {
 		return fmt.Errorf("illegal board name %q", name)
 	}
 	_, err := s.db.Exec(`INSERT INTO boards (name, created_at, position, is_current)
-		VALUES (?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM boards), 0)`, name, now())
+		VALUES (?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM boards),
+		        (SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM boards))`, name, now())
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return fmt.Errorf("board %q already exists", name)
 	}
 	return err
 }
 
-// DeleteBoardRow removes the named board's row, refusing: the default
-// board, unknown boards, the current board (the flag would dangle),
-// and any board that still holds tasks (archived tasks are still rows
-// - a card's only escape from a board is DELETE /tasks/{id}, so an
-// emptiable board is one that holds no task rows). Comments and events ride the tasks, so the task count
-// is the emptiness test. There is deliberately no force flag: the
-// guards are the safety net the webui and the journeys rest on.
-func (s *Store) DeleteBoardRow(name string) error {
-	if name == DefaultBoardName {
-		return fmt.Errorf("refusing to delete the default board")
+// RenameBoardRow renames a board (0.17.3: renaming joins the board's
+// own surface - the panel's band carries it beside the selector). The
+// new name obeys the same grammar and must be free; the row keeps its
+// id, so every card, comment and event stays where it was and the
+// is_current flag follows the row. Renaming a board to its own name is
+// a no-op, not an error.
+func (s *Store) RenameBoardRow(oldName, newName string) error {
+	if !ValidBoardName(oldName) {
+		return fmt.Errorf("illegal board name %q", oldName)
 	}
+	if !ValidBoardName(newName) {
+		return fmt.Errorf("illegal board name %q", newName)
+	}
+	if oldName == newName {
+		return nil
+	}
+	res, err := s.db.Exec(`UPDATE boards SET name = ? WHERE name = ?`, newName, oldName)
+	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+		return fmt.Errorf("board %q already exists", newName)
+	}
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		return fmt.Errorf("no such board %q", oldName)
+	}
+	return nil
+}
+
+// DeleteBoardRow removes a board and everything resting on it. The
+// 0.17.3 make-over ruling: DELETE ALL BOARDS, main included, and zero
+// boards is a legal state.
+//
+// Precondition: every card on the board is ARCHIVED or deleted. A live
+// card (any other status) refuses the delete by name and count - the
+// archive lane is the one place a card can wait without blocking its
+// board's removal. There is deliberately no force flag.
+//
+// The delete takes the board's rows with it: its archived cards, their
+// comments and their events, children first in one transaction. (The
+// schema declares ON DELETE CASCADE, but sqlite runs with
+// foreign_keys OFF here, so the rows are deleted explicitly rather than
+// trusted to a pragma nobody set.)
+//
+// The pointer: deleting the CURRENT board hands is_current to the
+// earliest survivor, because a registry with rows and no pointer would
+// leave the views with no board to open. Deleting the LAST board leaves
+// no pointer at all - the legal empty registry the panel renders as its
+// create-board empty state.
+func (s *Store) DeleteBoardRow(name string) error {
 	if !ValidBoardName(name) {
 		return fmt.Errorf("illegal board name %q", name)
 	}
@@ -245,23 +320,41 @@ func (s *Store) DeleteBoardRow(name string) error {
 	var cur int
 	row := tx.QueryRow(`SELECT id, is_current FROM boards WHERE name = ?`, name)
 	if err := row.Scan(&id, &cur); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("no such board %q", name)
 		}
 		return err
 	}
+	var live int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM tasks WHERE board_id = ? AND status != ?`, id, StatusArchived).Scan(&live); err != nil {
+		return err
+	}
+	if live > 0 {
+		return fmt.Errorf("board %q still holds %d live card(s) - archive or delete them first", name, live)
+	}
+	for _, stmt := range []string{
+		`DELETE FROM task_events WHERE board_id = ?`,
+		`DELETE FROM task_comments WHERE board_id = ?`,
+		`DELETE FROM tasks WHERE board_id = ?`,
+		`DELETE FROM boards WHERE id = ?`,
+	} {
+		if _, err := tx.Exec(stmt, id); err != nil {
+			return err
+		}
+	}
 	if cur == 1 {
-		return fmt.Errorf("board %q is the current board - switch first (kanban board use)", name)
-	}
-	var n int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM tasks WHERE board_id = ?`, id).Scan(&n); err != nil {
-		return err
-	}
-	if n > 0 {
-		return fmt.Errorf("board %q still holds %d task(s) - move or delete them first", name, n)
-	}
-	if _, err := tx.Exec(`DELETE FROM boards WHERE id = ?`, id); err != nil {
-		return err
+		var next string
+		err := tx.QueryRow(`SELECT name FROM boards ORDER BY position, id LIMIT 1`).Scan(&next)
+		switch {
+		case err == nil:
+			if _, err := tx.Exec(`UPDATE boards SET is_current = 1 WHERE name = ?`, next); err != nil {
+				return err
+			}
+		case errors.Is(err, sql.ErrNoRows):
+			// zero boards: no pointer to hand over - legal
+		default:
+			return err
+		}
 	}
 	return tx.Commit()
 }
