@@ -582,6 +582,7 @@
     Session,
     Appearance,
     ModelProviderSection,
+    PendingVerdictCard,
   } from "./composables/omega";
   import {
     useToolDisplay,
@@ -1320,6 +1321,16 @@
   // the kanban tab, and hands the board select to the module board
   // through the event seam. Chat content never changes on the click.
   function openNotification(n: OmegaNotification | unknown) {
+    // card t_a2ed8412: a pending APPROVAL rides this router too - the
+    // toast's payload is a verdict card (no feed record, no `kind`), and
+    // its answering surface is the notifications tab's pending list. Open
+    // (or focus) that dockable wherever it lives; the palette opener is
+    // the same route a click from the '+' menu takes.
+    const card = n as PendingVerdictCard | null;
+    if (card && typeof card.session_id === "string") {
+      paletteOpenDockable("notifications");
+      return;
+    }
     const rec = n as OmegaNotification;
     if (!rec || typeof rec.kind !== "string") return;
     switch (rec.kind) {
