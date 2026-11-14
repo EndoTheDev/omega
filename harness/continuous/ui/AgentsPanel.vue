@@ -100,6 +100,9 @@
       <p
         v-if="createError"
         class="settings-error agents-error">{{ createError }}</p>
+      <p
+        v-if="notice"
+        class="agents-status">{{ notice }}</p>
 
       <p
         v-if="loadError"
@@ -316,7 +319,7 @@
                   role="group"
                   aria-label="inherit from main">
                   <label
-                    v-for="kind in INHERIT_KINDS"
+                    v-for="kind in AGENT_INHERIT_KINDS"
                     :key="kind"
                     class="agents-check">
                     <input
@@ -437,6 +440,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import {
+  AGENT_INHERIT_KINDS,
   AGENT_KINDS,
   agentDeleteConfirm,
   agentDeleteLabel,
@@ -450,6 +454,7 @@ import {
   continuousIndex,
   createRequest,
   DefaultAgentName,
+  editRequest,
   emptyCreateDraft,
   fieldChips,
   kindNeedsContinuous,
@@ -457,7 +462,7 @@ import {
   skillOptions,
   toggleOptions,
 } from "./agentsRows.ts";
-import type { OmegaAgent, SettingsScope } from "./agentsRows.ts";
+import type { AgentEditDraft, AgentInheritKind, OmegaAgent, SettingsScope } from "./agentsRows.ts";
 import {
   evidenceSummary,
   rowStatus,
@@ -478,6 +483,9 @@ const continuousAvailable = ref(false);
 // loadError covers the LIST fetch; toggleError covers a refused toggle
 const loading = ref(false);
 const loadError = ref("");
+// notice is the panel's own receipt line (a delete's outcome, "deleted
+// scout's home - 3 sessions went with it") - never an error lane.
+const notice = ref("");
 // card t_87303e8f: `loaded` gates the empty-text beat in RegistryList.
 const loaded = ref(false);
 const toggleError = ref<string | null>(null);
@@ -524,7 +532,7 @@ async function submitCreate(): Promise<void> {
     if (!res.ok) throw new Error(await res.text());
     Object.assign(create, emptyCreateDraft());
     showCreate.value = false;
-    await load();
+    await load(true);
   } catch (e) {
     createError.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -544,19 +552,7 @@ const evidenceByAgent = reactive<Record<string, OmegaEvidenceRow[]>>({});
 // description, system prompt, provider INSTANCE, model, max turns,
 // toggles, skills allowlist, the inherit flags. host / api_key are NOT
 // here: the panel never carries a secret (law 2).
-interface EditDraft {
-  description: string;
-  system_prompt: string;
-  provider_instance: string;
-  model_name: string;
-  max_turns: string;
-  toggles: string[];
-  skills_allow: string[];
-  inherit: Record<InheritKind, boolean>;
-}
-const INHERIT_KINDS = ["skills", "soul", "user", "memory"] as const;
-type InheritKind = (typeof INHERIT_KINDS)[number];
-const editDraft = reactive<Record<string, EditDraft>>({});
+const editDraft = reactive<Record<string, AgentEditDraft>>({});
 const editMsg = reactive<Record<string, string>>({});
 const saving = ref<string | null>(null);
 
@@ -632,8 +628,8 @@ async function deleteHome(name: string): Promise<void> {
     deleting.value = null;
     delete editDraft[name];
     delete editMsg[name];
-    await load();
-    loadError.value = `deleted ${name}'s home - ${agentSessionReceipt(receipt.sessions)}`;
+    await load(true);
+    notice.value = `deleted ${name}'s home - ${agentSessionReceipt(receipt.sessions)}`;
   } catch (e) {
     deleteError[name] = e instanceof Error ? e.message : String(e);
   } finally {
@@ -783,8 +779,13 @@ async function loadModules(): Promise<void> {
   }
 }
 
-async function load(): Promise<void> {
-  loading.value = true;
+/** load refetches the roster's four reads. `quiet` reloads WITHOUT the
+    loading beat: a save, a reset or a delete must not swap the list out
+    for a "loading…" line, because the swap unmounts RegistryList and the
+    operator's expansion (with the form they were just using) collapses
+    under them. */
+async function load(quiet = false): Promise<void> {
+  if (!quiet) loading.value = true;
   loadError.value = "";
   try {
     const res = await fetch("/agents");
@@ -846,8 +847,8 @@ function seedEdit(name: string): void {
   if (!p) return;
   const chips = fieldChips(scopeOf(name));
   const effective = (key: string): string => chipOf(chips, key)?.value ?? "";
-  const inherit = {} as Record<InheritKind, boolean>;
-  for (const kind of INHERIT_KINDS) {
+  const inherit = {} as Record<AgentInheritKind, boolean>;
+  for (const kind of AGENT_INHERIT_KINDS) {
     inherit[kind] = (p.inherits ?? []).includes(kind);
   }
   editDraft[name] = {
@@ -971,35 +972,8 @@ async function saveAgentEdit(name: string): Promise<void> {
   const d = editDraft[name];
   const p = profiles.value.find((a) => a.name === name);
   if (!d || !p) return;
-  const chips = fieldChips(scopeOf(name));
-  const seed = (key: string): string => chipOf(chips, key)?.value ?? "";
-  const body: Record<string, unknown> = {};
-  const unset: string[] = [];
-  if (d.description !== (p.description ?? "")) body.description = d.description.trim();
-  if (d.system_prompt !== seed("system_prompt")) body.system_prompt = d.system_prompt.trim();
-  if (d.provider_instance !== seed("provider.instance")) {
-    body.provider_instance = d.provider_instance.trim();
-  }
-  if (d.model_name !== seed("provider.model_name")) body.model_name = d.model_name.trim();
-  if (d.max_turns !== seed("max_turns")) {
-    if (d.max_turns.trim() === "") unset.push("max_turns");
-    else body.max_turns = Number(d.max_turns);
-  }
-  const sameSet = (a: readonly string[], b: readonly string[]): boolean => {
-    const left = [...a].sort();
-    const right = [...b].sort();
-    return left.length === right.length && left.every((v, i) => v === right[i]);
-  };
-  if (!sameSet(d.toggles, p.toggles ?? [])) body.toggles = [...d.toggles].sort();
-  if (!sameSet(d.skills_allow, p.skills_allow ?? [])) {
-    body.skills_allow = [...d.skills_allow].sort();
-  }
-  const inheritChanged = INHERIT_KINDS.some(
-    (kind) => d.inherit[kind] !== (p.inherits ?? []).includes(kind),
-  );
-  if (inheritChanged) body.inherit = { ...d.inherit };
-  if (unset.length) body.unset = unset;
-  if (!Object.keys(body).length) {
+  const body = editRequest(d, p, fieldChips(scopeOf(name)));
+  if (!body) {
     editMsg[name] = "no changes";
     return;
   }
@@ -1012,7 +986,7 @@ async function saveAgentEdit(name: string): Promise<void> {
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(await res.text());
-    await load();
+    await load(true);
     seedEdit(name);
     editMsg[name] = "saved";
   } catch (e) {
@@ -1034,7 +1008,7 @@ async function resetField(name: string, key: string): Promise<void> {
       body: JSON.stringify({ unset: [key] }),
     });
     if (!res.ok) throw new Error(await res.text());
-    await load();
+    await load(true);
     seedEdit(name);
     editMsg[name] = `${key} inherits from main again`;
   } catch (e) {

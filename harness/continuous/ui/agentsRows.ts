@@ -328,6 +328,80 @@ export function agentDeleteLabel(name: string): string {
   return `delete ${name}'s home - sessions included`;
 }
 
+// --- the edit write (the draft diff) --------------------------------
+//
+// The panel's save sends only what CHANGED against the effective seed, so
+// an untouched inherited knob keeps inheriting (the layer law: an absent
+// key inherits, an explicitly empty one does not). The diff is pure and
+// lives here because it has one sharp edge the DOM hides: a
+// `<input type="number">` under v-model hands back a NUMBER, not the
+// string the draft declares - every read goes through String() so a
+// typed 7 cannot throw on .trim() at submit time.
+
+export const AGENT_INHERIT_KINDS = ["skills", "soul", "user", "memory"] as const;
+export type AgentInheritKind = (typeof AGENT_INHERIT_KINDS)[number];
+
+/** AgentEditDraft is the panel's edit form shape. max_turns is
+    deliberately `string | number`: the number input owns the value at
+    runtime and the seed writes a string. */
+export interface AgentEditDraft {
+  description: string;
+  system_prompt: string;
+  provider_instance: string;
+  model_name: string;
+  max_turns: string | number;
+  toggles: readonly string[];
+  skills_allow: readonly string[];
+  inherit: Record<AgentInheritKind, boolean>;
+}
+
+/** AgentEditTarget is the saved truth the draft diffs against. */
+export interface AgentEditTarget {
+  description?: string;
+  toggles?: readonly string[];
+  skills_allow?: readonly string[];
+  inherits?: readonly string[];
+}
+
+function sameSet(a: readonly string[], b: readonly string[]): boolean {
+  const left = [...a].sort();
+  const right = [...b].sort();
+  return left.length === right.length && left.every((v, i) => v === right[i]);
+}
+
+/** editRequest builds the PUT body for one draft - nil when nothing
+    changed (the panel's "no changes" beat, never an empty write). */
+export function editRequest(
+  d: AgentEditDraft,
+  saved: AgentEditTarget,
+  chips: readonly FieldChip[],
+): Record<string, unknown> | null {
+  const seed = (key: string): string => chipOf(chips, key)?.value ?? "";
+  const body: Record<string, unknown> = {};
+  const unset: string[] = [];
+  if (d.description !== (saved.description ?? "")) body.description = d.description.trim();
+  if (d.system_prompt !== seed("system_prompt")) body.system_prompt = d.system_prompt.trim();
+  if (d.provider_instance !== seed("provider.instance")) {
+    body.provider_instance = d.provider_instance.trim();
+  }
+  if (d.model_name !== seed("provider.model_name")) body.model_name = d.model_name.trim();
+  const turns = String(d.max_turns ?? "").trim();
+  if (turns !== seed("max_turns")) {
+    if (turns === "") unset.push("max_turns");
+    else body.max_turns = Number(turns);
+  }
+  if (!sameSet(d.toggles, saved.toggles ?? [])) body.toggles = [...d.toggles].sort();
+  if (!sameSet(d.skills_allow, saved.skills_allow ?? [])) {
+    body.skills_allow = [...d.skills_allow].sort();
+  }
+  const inheritChanged = AGENT_INHERIT_KINDS.some(
+    (kind) => d.inherit[kind] !== (saved.inherits ?? []).includes(kind),
+  );
+  if (inheritChanged) body.inherit = { ...d.inherit };
+  if (unset.length) body.unset = unset;
+  return Object.keys(body).length ? body : null;
+}
+
 // --- the inheritance chips (0.17.3 ruling 7) ------------------------
 //
 // ONE state machine, both surfaces: the cron editor's chain (card
