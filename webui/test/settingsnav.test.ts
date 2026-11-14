@@ -44,6 +44,7 @@ import {
   resolveSelection,
   sectionFilter,
   selectionId,
+  selectionLost,
   spyAnchorMayWrite,
   spyTargetIds,
   subgroupLabel,
@@ -1470,3 +1471,43 @@ test("the settings body reserves the pinned heading for native scrolls (SC 2.4.1
   assert.match(tab, /const clear = isBlock \? pinnedHeadingHeight\(node\) : 0;/, "the measured jump is untouched");
 });
 
+
+// --- gate: the scope switch normalises the FILTER too (card t_4e9559c8) -----
+// nightly 43586645271 (red 110): an agent tab's `description` selection
+// survived the switch to Main, whose nav carries no `description` - the
+// document was filtered to a category the live nav cannot resolve and the
+// pane answered "no settings here" (the URL still said ?settings=description).
+// Only the HIGHLIGHT was normalised, and a live query had moved it onto a
+// category Main DOES carry, so the highlight-only check resolved and cleared
+// nothing while the filter stood.
+test("a scope switch drops a SECTION FILTER the live nav cannot resolve", () => {
+  const mainNav = buildNav(
+    withSubgroups([group("provider", "provider", [knob("provider.model_name", "model name")])]),
+  );
+  // the highlight can name something the new nav carries ...
+  assert.notEqual(resolveSelection(mainNav, "provider"), null);
+  // ... while the FILTER names a category only the old scope had
+  assert.equal(resolveSelection(mainNav, "description"), null);
+  assert.equal(
+    selectionLost(mainNav, ["provider", "description"]),
+    true,
+    "the filter's own id decides - a highlight that resolves cannot save it",
+  );
+  // both resolvable (or nothing remembered) -> no spurious deselect
+  assert.equal(selectionLost(mainNav, ["provider", null]), false);
+  assert.equal(selectionLost(mainNav, [null, undefined]), false);
+  assert.equal(selectionLost(mainNav, [""]), false, "an empty id is no id");
+});
+
+test("the nav watcher asks the normalisation question of BOTH ids", () => {
+  assert.match(
+    tab,
+    /watch\(nav, \(next\) => \{\s*if \(!selectionLost\(next, \[selection\.value, clampId\.value\]\)\) return;/,
+    "the watcher normalises the highlight AND the section filter",
+  );
+  assert.doesNotMatch(
+    tab,
+    /const id = selection\.value;\s*if \(id && !resolveSelection\(next, id\)\) \{/,
+    "the highlight-only check (the blank-pane shape) is gone",
+  );
+});

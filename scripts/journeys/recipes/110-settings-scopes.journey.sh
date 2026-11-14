@@ -14,6 +14,17 @@
 #              carries exactly the four overridable categories (provider,
 #              system prompt, description, max turns) - no Commonly Used,
 #              no chat client state, no other registry domain (R3).
+#              Card t_81d0901b (0.17.2) PREPENDS a fifth entry, `modules`:
+#              module toggles are configuration over persisted module
+#              state, not a knob domain, so the entry exists on EVERY tab
+#              (the lifecycle surface heads the pane) and is knob-less -
+#              documentFor never emits it as a knob section, but the pane
+#              renders its own MODULES block (data-section="modules") at
+#              the head of the document, and a live query greys the nav
+#              entry like any no-hit category. R3 is pinned by naming the
+#              modules entry explicitly, never by counting four (nightly
+#              43586645271, red on the 0.17.2 shipped tree - the pin read
+#              4-and-provider-first and the entry had shipped).
 #   dots     - a knob the agent's own layer names carries the dot AND the
 #              reset affordance, and the dot names its base as MAIN; a
 #              knob the layer does not name inherits main and carries
@@ -150,11 +161,11 @@ assert_eq "$placement" "head" "the strip heads the CONTENT pane, above the scrol
 clicked=$(jsq "(()=>{const t=[...document.querySelectorAll('.settings-scopes .settings-scope-tab')].find(b=>(b.textContent||'').trim()==='$AGENT');if(!t) return 0;t.click();return 1})()" 2>&1 | tr -d '"')
 assert_eq "$clicked" "1" "the agent tab is clickable"
 
-if ! wait_js "(()=>{const g=[...document.querySelectorAll('.settings-nav-cat')].map(e=>(e.getAttribute('data-category')||''));return g.length===4&&g[0]==='provider'})()" 15; then
-  die "agent tab never rendered the four scope categories"
+if ! wait_js "(()=>{const g=[...document.querySelectorAll('.settings-nav-cat')].map(e=>(e.getAttribute('data-category')||''));return g.length===5&&g[0]==='modules'&&g.slice(1).join(',')==='provider,system_prompt,description,max_turns'})()" 15; then
+  die "agent tab never rendered the four scope categories (nav: $(jsq '(()=>{return [...document.querySelectorAll(".settings-nav-cat")].map(e=>e.getAttribute("data-category")).join(",")})()' 2>&1 | tr -d '"'))"
 fi
 cats=$(jsq '(()=>{return [...document.querySelectorAll(".settings-nav-cat .settings-nav-label")].map(e=>(e.textContent||"").trim()).join(",")})()' 2>&1 | tr -d '"')
-assert_eq "$cats" "provider,system prompt,description,max turns" "the agent tab's nav carries ONLY the four overridable categories"
+assert_eq "$cats" "modules,provider,system prompt,description,max turns" "the agent tab's nav carries modules + ONLY the four overridable categories"
 
 # the main-scope surfaces never ride an agent tab: not the curated
 # category, not the chat client-state category
@@ -183,7 +194,7 @@ doc_sections() {
   jsq '(()=>{return [...document.querySelectorAll(".settings-category")].map(x=>x.getAttribute("data-section")).join(",")})()' 2>&1 | tr -d '"'
 }
 
-assert_eq "$(doc_sections)" "provider,system_prompt,description,max_turns" "the agent tab's DOCUMENT carries only the four scope sections (the headings are the surface now - no stripe)"
+assert_eq "$(doc_sections)" "modules,provider,system_prompt,description,max_turns" "the agent tab's DOCUMENT carries modules + only the four scope sections (the headings are the surface now - no stripe)"
 
 assert_eq "$(navclick provider)" "1" "the provider category is in the agent nav"
 if ! wait_js "(()=>{return !!document.querySelector('.setting-item')})()" 10; then
@@ -264,9 +275,11 @@ case ",$hits," in
   *,model\ name,*) step "ok: the model row is the surviving hit" ;;
   *) die "the search hit list lost the model row (hits: $hits)" ;;
 esac
-# the nav keeps its four entries and greys the three with no hit
+# the nav keeps its five entries and greys the four with no hit (modules is
+# knob-less, so a query greys it too - card t_81d0901b's entry is a lifecycle
+# surface, never a search hit)
 navshape=$(jsq '(()=>{const all=document.querySelectorAll(".settings-nav-cat").length;const dim=document.querySelectorAll(".settings-nav-cat.dim").length;return all+"|"+dim})()' 2>&1 | tr -d '"')
-assert_eq "$navshape" "4|3" "the nav keeps its shape (4 entries) and greys the 3 with no hit"
+assert_eq "$navshape" "5|4" "the nav keeps its shape (5 entries) and greys the 4 with no hit"
 
 # --- back to Main: per-scope search + the tier-2b pane is untouched ---
 clicked=$(jsq "(()=>{const t=[...document.querySelectorAll('.settings-scopes .settings-scope-tab')].find(b=>(b.textContent||'').trim()==='Main');if(!t) return 0;t.click();return 1})()" 2>&1 | tr -d '"')
