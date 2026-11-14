@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1229,6 +1230,236 @@ func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
 
 func (s *omegaSettings) Save(values map[string]any) (*core.SettingsSchema, error) {
 	return saveSettings(s.path, s.pctx, s.setFilesWorkspace, s.setChannelWorkspace, s.setTerminalWorkspace, s.setAgentConfig, values)
+}
+
+// Raw returns the config FILE as YAML text for the pane's export and
+// edit-as-YAML surfaces (card t_a82d39c8). The bytes are the
+// operator's own document - comments, key order and style included -
+// with each api_key VALUE replaced by the pane's mask: the config file
+// is a credential's only home, so the unauthenticated wire never
+// carries one. A file that will not parse answers the parse error
+// instead of its text (an unmaskable document is a leak, not a read).
+func (s *omegaSettings) Raw() (string, error) {
+	data, err := os.ReadFile(s.path)
+	if err != nil {
+		return "", err
+	}
+	return maskConfigSecrets(string(data))
+}
+
+// SaveRaw validates a whole YAML document and persists it through the
+// same path a knob save rides: the same LoadConfig layer (built-in
+// defaults + the document + OMEGA_* overrides), the same Validate, the
+// same atomic writer, the same hot-apply. A submitted mask at a secret
+// path KEEPS the value already on disk (the provider.instances
+// round-trip law), so opening the editor from an export and saving it
+// back can never destroy a credential.
+func (s *omegaSettings) SaveRaw(text string) (*core.SettingsSchema, error) {
+	prev, err := LoadConfig(s.path)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := configFromYAML(text)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := documentConfig(text)
+	if err != nil {
+		return nil, err
+	}
+	// the credential config.yaml will hold: the document's own value, or
+	// the masked value the file already carries. Neither the env layer
+	// nor the mask itself ever lands on disk. An unreadable on-disk
+	// document is a REFUSAL, never a skip: with nothing to keep, a
+	// submitted mask would be persisted as the literal credential.
+	if err := settleSecretsFromDisk(s.path, &cfg, &doc); err != nil {
+		return nil, err
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	if err := writeConfigFile(s.path, &cfg); err != nil {
+		return nil, err
+	}
+	hotApply(cfg, prev.Server.DefaultWorkspace, s.pctx, s.setFilesWorkspace, s.setChannelWorkspace, s.setTerminalWorkspace, s.setAgentConfig)
+	return &core.SettingsSchema{
+		Groups: settingGroups(&cfg),
+		Scopes: settingsScopes(settingsScopeHome(s.path), &cfg, nil),
+	}, nil
+}
+
+// Reset restores every knob that HAS a default to it (card t_a82d39c8)
+// through saveSettings - the pane's own PUT path, so the write
+// validates, persists and hot-applies exactly like a hand save.
+func (s *omegaSettings) Reset() (*core.SettingsSchema, error) {
+	values, err := resetValues()
+	if err != nil {
+		return nil, err
+	}
+	return saveSettings(s.path, s.pctx, s.setFilesWorkspace, s.setChannelWorkspace, s.setTerminalWorkspace, s.setAgentConfig, values)
+}
+
+// resetGated are the knob paths a reset never writes: config.yaml is
+// their only door (provider.api_key, server.bind), and the named
+// instances' rows carry endpoints and secrets the API cannot set. A
+// reset must never delete a value the same API cannot put back.
+var resetGated = map[string]bool{
+	"provider.api_key":   true,
+	"server.bind":        true,
+	"provider.instances": true,
+}
+
+// resetValues is the write map the reset-to-default action ships: the
+// schema's own Default for every knob that has one, minus the gated
+// doors. The defaults come from settingGroups(defaultConfig()) - the
+// layer beneath the file, the same field the pane's per-knob reset
+// compares against - so no second default set exists anywhere.
+//
+// The map is normalized through JSON before it ships: applySettingValues
+// expects the shape a PUT body decodes to (numbers as float64), and the
+// struct-typed Go values in the schema are not that shape.
+func resetValues() (map[string]any, error) {
+	def := defaultConfig()
+	values := map[string]any{}
+	for _, g := range settingGroups(&def) {
+		for _, k := range g.Knobs {
+			if k.Default == nil || resetGated[k.Key] {
+				continue
+			}
+			values[k.Key] = k.Default
+		}
+	}
+	if len(values) == 0 {
+		return nil, fmt.Errorf("reset: the schema carries no default")
+	}
+	raw, err := json.Marshal(values)
+	if err != nil {
+		return nil, fmt.Errorf("encode defaults: %w", err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		return nil, fmt.Errorf("decode defaults: %w", err)
+	}
+	return wire, nil
+}
+
+// fileConfig loads the config FILE alone: the built-in defaults with
+// the document overlaid and NO environment layer. LoadConfig is the
+// wrong reader for the mask-keep law - it answers the effective value,
+// which may come from OMEGA_* rather than from the file.
+func fileConfig(path string) (Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, err
+	}
+	return documentConfig(string(data))
+}
+
+// documentConfig parses ONE YAML document over the built-in defaults,
+// with no environment layer: it answers what the text itself says.
+func documentConfig(text string) (Config, error) {
+	cfg := DefaultConfig()
+	if err := yaml.Unmarshal([]byte(text), &cfg); err != nil {
+		return Config{}, fmt.Errorf("parse config: %w", err)
+	}
+	return cfg, nil
+}
+
+// configFromYAML parses a submitted document exactly the way LoadConfig
+// parses the file: defaults, then the document, then the environment
+// overrides. Validate is the caller's, so the layer order stays in one
+// place.
+func configFromYAML(text string) (Config, error) {
+	cfg, err := documentConfig(text)
+	if err != nil {
+		return Config{}, err
+	}
+	applyEnv(&cfg)
+	return cfg, nil
+}
+
+// settleSecretsFromDisk pins the credential layer a raw save writes
+// against the document ON DISK. An unreadable document is an ERROR and
+// never a skip: with nothing to keep, a submitted mask ("****") would be
+// written out as the literal credential.
+func settleSecretsFromDisk(path string, cfg *Config, doc *Config) error {
+	onDisk, err := fileConfig(path)
+	if err != nil {
+		return fmt.Errorf("save config: cannot read the document on disk to resolve a masked secret: %w", err)
+	}
+	settleSecrets(cfg, doc, &onDisk)
+	return nil
+}
+
+// settleSecrets pins the credential layer a raw save writes: the
+// document's own value wins (a literal key typed in the editor), the
+// mask keeps what the file already holds, and an OMEGA_*-supplied
+// secret never lands in config.yaml - the variable is its source, and a
+// copy in the file would outlive it. Clearing the line therefore clears
+// the credential, the way a text editor would.
+func settleSecrets(cfg *Config, doc *Config, onDisk *Config) {
+	cfg.Provider.APIKey = secretLayerValue(doc.Provider.APIKey, onDisk.Provider.APIKey)
+	for name, inst := range cfg.Providers {
+		inst.APIKey = secretLayerValue(doc.Providers[name].APIKey, onDisk.Providers[name].APIKey)
+		cfg.Providers[name] = inst
+	}
+}
+
+// secretLayerValue is the one rule: the mask stands for the value on
+// disk, anything else is what the document says.
+func secretLayerValue(docValue, diskValue string) string {
+	if docValue == maskedSecret {
+		return diskValue
+	}
+	return docValue
+}
+
+// maskConfigSecrets renders a config document with every api_key value
+// masked, every other byte (comments, order, flow/block style) kept.
+// The walk is BY NAME, not by path: an api_key is a credential wherever
+// it sits, so a provider-shaped section added later cannot introduce an
+// unmasked one. An empty value stays empty - masking a missing key
+// would imply one exists.
+func maskConfigSecrets(text string) (string, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
+		return "", fmt.Errorf("parse config: %w", err)
+	}
+	if len(doc.Content) == 0 {
+		return text, nil // no document, no secret
+	}
+	maskSecretNodes(doc.Content[0])
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2) // the config file's own nesting: 2 spaces per level
+	if err := enc.Encode(doc.Content[0]); err != nil {
+		return "", fmt.Errorf("encode config: %w", err)
+	}
+	if err := enc.Close(); err != nil {
+		return "", fmt.Errorf("encode config: %w", err)
+	}
+	return buf.String(), nil
+}
+
+// maskSecretNodes masks every populated api_key scalar under n.
+func maskSecretNodes(n *yaml.Node) {
+	switch n.Kind {
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			k, v := n.Content[i], n.Content[i+1]
+			if k.Value == "api_key" && v.Kind == yaml.ScalarNode && v.Value != "" {
+				v.Value = maskedSecret
+				v.Tag = "!!str"
+				v.Style = 0
+				continue
+			}
+			maskSecretNodes(v)
+		}
+	case yaml.DocumentNode, yaml.SequenceNode:
+		for _, c := range n.Content {
+			maskSecretNodes(c)
+		}
+	}
 }
 
 // Compile-time assertion that omegaSettings implements core.Settings.

@@ -1,7 +1,10 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 )
 
@@ -69,6 +72,87 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleSettingsRaw is the whole-document door beside the knob door
+// (card t_a82d39c8): GET answers the config file as YAML text for the
+// pane's export and edit-as-YAML surfaces, PUT validates and persists
+// a submitted document through the host's own write path. It carries
+// no schema: the payload IS the file, so the pane can show what a text
+// editor would.
+func (s *Server) handleSettingsRaw(w http.ResponseWriter, r *http.Request) {
+	if s.settings == nil {
+		http.Error(w, "settings not configured", http.StatusNotImplemented)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		text, err := s.settings.Raw()
+		if err != nil {
+			http.Error(w, "load config: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write([]byte(text))
+	case http.MethodPut:
+		// The cap REJECTS, it never truncates: a YAML document cut at a
+		// top-level key boundary still parses, so a truncated body can
+		// pass Validate and be persisted as a silently PARTIAL config
+		// (a JSON body cannot - truncation always breaks the parse, which
+		// is why the house truncating reads are safe). Read one byte past
+		// the cap to tell "exactly at the cap" from "over it".
+		body, err := io.ReadAll(io.LimitReader(r.Body, maxRawConfigBytes+1))
+		if err != nil {
+			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if len(body) > maxRawConfigBytes {
+			http.Error(w, fmt.Sprintf("config document exceeds %d bytes", maxRawConfigBytes), http.StatusRequestEntityTooLarge)
+			return
+		}
+		if len(bytes.TrimSpace(body)) == 0 {
+			http.Error(w, "invalid request: body is empty", http.StatusBadRequest)
+			return
+		}
+		payload, err := s.settings.SaveRaw(string(body))
+		if err != nil {
+			// a document that will not parse or validate is the
+			// caller's text, not a server fault: 400 with the
+			// host's own sentence, exactly like the knob save
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeSettingsJSON(w, payload)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// maxRawConfigBytes caps the raw-config PUT body. A config.yaml is a
+// few KB (the shipped example is under 8 KB); the cap exists because
+// the route is unauthenticated loopback and read into memory.
+const maxRawConfigBytes = 1 << 20
+
+// handleSettingsReset restores the config defaults through the
+// host's Settings seam (card t_a82d39c8). POST because it is a
+// non-idempotent-looking write with no body: the defaults belong to
+// the host, so the client never assembles them.
+func (s *Server) handleSettingsReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.settings == nil {
+		http.Error(w, "settings not configured", http.StatusNotImplemented)
+		return
+	}
+	payload, err := s.settings.Reset()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeSettingsJSON(w, payload)
 }
 
 // writeSettingsJSON emits the schema payload with no-store caching:

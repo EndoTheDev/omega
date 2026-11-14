@@ -452,6 +452,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/commands", s.handleCommands)
 	mux.HandleFunc("/commands/dispatch", s.handleCommandDispatch)
 	mux.HandleFunc("/settings", s.handleSettings)
+	// the whole-document door beside the knob door (card t_a82d39c8):
+	// raw config YAML for export / edit-as-YAML, and the host-owned
+	// defaults for the pane's reset action.
+	mux.HandleFunc("/settings/raw", s.handleSettingsRaw)
+	mux.HandleFunc("/settings/reset", s.handleSettingsReset)
 	// GET /insights rode the store capsule out with wave 2 (a view over
 	// store data disclosed in the review comment).
 	// The /notifications finished-things surface (card t_5d9032d3: the
