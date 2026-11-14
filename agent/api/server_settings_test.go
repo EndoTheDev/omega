@@ -405,6 +405,41 @@ func TestSettingsRawPUTRefusals(t *testing.T) {
 	}
 }
 
+// TestSettingsRawPUTRejectsOverCapBodies pins the cap as a REFUSAL.
+// A truncating read would hand the host a YAML PREFIX, and a prefix cut
+// at a top-level key boundary can still parse and validate - a silently
+// partial config persisted and hot-applied. So an over-cap body is 413
+// and never reaches the seam, while a body inside the cap is the
+// caller's document.
+func TestSettingsRawPUTRejectsOverCapBodies(t *testing.T) {
+	fake := &fakeSettings{}
+	rec := httptest.NewRecorder()
+	over := strings.Repeat("# padding\n", maxRawConfigBytes/10+1)
+	if len(over) <= maxRawConfigBytes {
+		t.Fatalf("fixture is %d bytes, want more than the %d-byte cap", len(over), maxRawConfigBytes)
+	}
+	req, _ := http.NewRequest(http.MethodPut, "/settings/raw", strings.NewReader(over))
+	NewServer(nil, nil, nil, fake, nil, nil).Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("over-cap body: code %d, want 413", rec.Code)
+	}
+	if fake.savedRaw != "" {
+		t.Errorf("the seam received %d bytes - an over-cap body must never reach SaveRaw", len(fake.savedRaw))
+	}
+
+	doc := "provider:\n  model_name: m\n"
+	atCap := doc + strings.Repeat("# pad\n", (maxRawConfigBytes-len(doc))/6)
+	rec2 := httptest.NewRecorder()
+	req2, _ := http.NewRequest(http.MethodPut, "/settings/raw", strings.NewReader(atCap))
+	NewServer(nil, nil, nil, fake, nil, nil).Handler().ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("a %d-byte body (inside the %d-byte cap): code %d, want 200", len(atCap), maxRawConfigBytes, rec2.Code)
+	}
+	if fake.savedRaw != atCap {
+		t.Errorf("the seam received %d bytes, want the %d-byte document", len(fake.savedRaw), len(atCap))
+	}
+}
+
 // TestSettingsRawMethodsRestricted: the document door has exactly GET
 // and PUT - POST/DELETE answer 405 rather than reaching the seam.
 func TestSettingsRawMethodsRestricted(t *testing.T) {

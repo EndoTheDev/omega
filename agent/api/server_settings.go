@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 )
@@ -95,9 +96,19 @@ func (s *Server) handleSettingsRaw(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write([]byte(text))
 	case http.MethodPut:
-		body, err := io.ReadAll(io.LimitReader(r.Body, maxRawConfigBytes))
+		// The cap REJECTS, it never truncates: a YAML document cut at a
+		// top-level key boundary still parses, so a truncated body can
+		// pass Validate and be persisted as a silently PARTIAL config
+		// (a JSON body cannot - truncation always breaks the parse, which
+		// is why the house truncating reads are safe). Read one byte past
+		// the cap to tell "exactly at the cap" from "over it".
+		body, err := io.ReadAll(io.LimitReader(r.Body, maxRawConfigBytes+1))
 		if err != nil {
 			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if len(body) > maxRawConfigBytes {
+			http.Error(w, fmt.Sprintf("config document exceeds %d bytes", maxRawConfigBytes), http.StatusRequestEntityTooLarge)
 			return
 		}
 		if len(bytes.TrimSpace(body)) == 0 {
