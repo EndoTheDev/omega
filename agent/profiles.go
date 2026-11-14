@@ -478,21 +478,45 @@ func MaterializeInheritance(home, name string, lay AgentConfigLayer) error {
 	return nil
 }
 
+// StoreSnapshot copies one SQLite store file into a NEW destination
+// through SQLite itself, so a LIVE WAL-mode database yields a
+// consistent snapshot. It is a hook, not an implementation: this
+// package owns home shape and never touches SQLite (the host wires it
+// to harness/store, which owns the driver).
+//
+// A nil hook FAILS the clone loudly. Falling back to a byte copy is not
+// an option: the source store is open at clone time (main's is the
+// serving daemon's own; a wake child's is open while it runs), and a
+// byte copy of a live WAL database is a torn snapshot - committed rows
+// still in the -wal are missed or the file is corrupt (card
+// t_f47319d2 review, Important 1).
+var StoreSnapshot func(srcDSN, dstPath string) error
+
 // CloneAgent materializes a whole agent home at birth (the CLONE law):
-// the source's config layer, skill tree, persona files and session
-// store are COPIED into agents/<dst>, never linked. The clone diverges
+// the source's config directory, skill tree, persona files and stores
+// are COPIED into agents/<dst>, never linked. The clone diverges
 // freely afterwards, and deleting the source is legal - clone-then-
 // delete is the rename path, which is why no rename machinery exists.
 //
-// Cloning MAIN copies its skills and persona files but NOT the home
-// config: that file carries the host's provider secret, and an agent
-// file holds no secret ever (the clone starts on the shared scaffold
-// template, inheriting the host's provider by reference).
+// The enumeration is deliberately COMPLETE, because the rename path
+// leans on it: an agent home whose schedules or boards were left behind
+// is data the operator cannot regenerate (Important 2 of the same
+// review). See materializeClone for the list.
 //
-// The session store is copied as the omega.db file set (db + wal +
-// shm). Rows still carry the SOURCE agent tag - the caller re-tags them
-// (harness/store.RetagAgentSessions) because this package never touches
-// SQLite shape.
+// Cloning MAIN copies its skills, persona files, schedules and stores
+// but NOT the home config: that file carries the host's provider
+// secret, and an agent file holds no secret ever (the clone starts on
+// the shared scaffold template, inheriting the host's provider by
+// reference).
+//
+// A failure anywhere after the scaffold removes the destination: folder
+// presence IS registration, and the directory was born in this call
+// (pre-existence is refused above), so removal restores the pre-call
+// state instead of registering a phantom agent (Important 3).
+//
+// Rows in a copied store still carry the SOURCE agent tag - the caller
+// re-tags them (harness/store.RetagAgentSessions) because this package
+// never touches SQLite shape.
 func CloneAgent(home, src, dst, description string) error {
 	if err := ValidAgentName(dst); err != nil {
 		return err
@@ -516,20 +540,35 @@ func CloneAgent(home, src, dst, description string) error {
 	if err := ScaffoldAgent(home, dst, description); err != nil {
 		return err
 	}
-	// The config layer: a clone of a secondary agent copies its whole
-	// definition (toggles, allowlist, inherit flags, provider instance);
-	// a clone of main starts from the scaffold - same secret-free rule,
-	// and main's definition is the home config, which is not an agent
-	// file.
-	if src != DefaultAgentName {
-		data, err := os.ReadFile(AgentConfigPath(home, src))
-		if err == nil {
-			if err := WriteFileAtomic(AgentConfigPath(home, dst), data, 0o644); err != nil {
-				return fmt.Errorf("clone config: %w", err)
-			}
-		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("clone config: %w", err)
-		}
+	if err := materializeClone(home, src, dst, description); err != nil {
+		return discardHalfBuilt(dstDir, err)
+	}
+	return nil
+}
+
+// materializeClone is the copy half of the clone law. Everything it
+// names is a COPY, never a link:
+//
+//	config/      the whole directory - the definition layer AND the
+//	             hand-owned files beside it (crons.yaml schedules; per
+//	             the cron law the agent has no tool that can rewrite
+//	             them). Main's config.yaml is the one exclusion: it is
+//	             the host definition and carries the provider secret.
+//	skills/      the source's own skill tree
+//	personas     memory.md, user.md, soul.md
+//	data/*.db    every store the agent owns, snapshotted through SQLite:
+//	             omega.db (sessions), notifications.db, kanban.db and
+//	             ledger.db. The -wal/-shm sidecars are NOT copied; the
+//	             snapshot carries the wal's committed frames into the
+//	             destination file.
+//
+// A store copied here is the CLONE's own from that instant - main's
+// included: cloning main copies main's stores, which are the host's
+// boards and feed only because main IS the host.
+func materializeClone(home, src, dst, description string) error {
+	srcDir, dstDir := AgentDir(home, src), AgentDir(home, dst)
+	if err := cloneConfigDir(home, src, dst); err != nil {
+		return err
 	}
 	// Skills: the source's own tree (for main, home/skills minus the
 	// shared root every agent already sees).
@@ -560,20 +599,8 @@ func CloneAgent(home, src, dst, description string) error {
 			return fmt.Errorf("clone %s: %w", file, err)
 		}
 	}
-	// The session store: the db file set, so a WAL-side commit travels
-	// with the database it belongs to.
-	for _, suffix := range []string{"", "-wal", "-shm"} {
-		srcPath := filepath.Join(srcDir, "data", "omega.db"+suffix)
-		data, err := os.ReadFile(srcPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue // never ran: no store to copy
-			}
-			return fmt.Errorf("clone session store: %w", err)
-		}
-		if err := WriteFileAtomic(filepath.Join(dstDir, "data", "omega.db"+suffix), data, 0o644); err != nil {
-			return fmt.Errorf("clone session store: %w", err)
-		}
+	if err := cloneStores(srcDir, dstDir); err != nil {
+		return err
 	}
 	// A description on the create request replaces the source's, in the
 	// copied layer or the scaffold alike.
@@ -583,6 +610,128 @@ func CloneAgent(home, src, dst, description string) error {
 		}
 	}
 	return nil
+}
+
+// cloneConfigDir copies the source's whole config directory. Main's
+// config directory is the host's (home/config), and its config.yaml is
+// skipped: it is the host definition and carries the provider secret -
+// the clone keeps the scaffold template and references the host
+// provider by name. Every other file travels verbatim (crons.yaml above
+// all: hand-owned schedules with no tool to rewrite them; trust.yaml
+// too - the clone inherits the decisions and diverges from there, which
+// is what "materialize a copy" means for a hand-owned file).
+func cloneConfigDir(home, src, dst string) error {
+	srcCfg := filepath.Join(AgentDir(home, src), "config")
+	if src == DefaultAgentName {
+		srcCfg = filepath.Join(home, "config")
+	}
+	entries, err := os.ReadDir(srcCfg)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // no config dir: the scaffold's layer stands
+		}
+		return fmt.Errorf("clone config: %w", err)
+	}
+	dstCfg := filepath.Join(AgentDir(home, dst), "config")
+	for _, e := range entries {
+		if src == DefaultAgentName {
+			if e.Name() == "config.yaml" {
+				continue // the host definition: secret carrier, never an agent file
+			}
+			if e.Name() == "crons.yaml" {
+				// Main's schedules travel only when they can LIVE in an
+				// agent home; see cloneCronLegality.
+				if err := cloneCronLegality(filepath.Join(srcCfg, e.Name())); err != nil {
+					return err
+				}
+			}
+		}
+		if err := copyTree(filepath.Join(srcCfg, e.Name()), filepath.Join(dstCfg, e.Name())); err != nil {
+			return fmt.Errorf("clone config/%s: %w", e.Name(), err)
+		}
+	}
+	return nil
+}
+
+// cloneCronLegality reports why main's crons.yaml cannot live in an
+// agent home, or nil when it can. harness/cron owns these laws and
+// enforces them at LOAD time, where they are fatal - so copying main's
+// file verbatim would not merely duplicate schedules, it would break the
+// daemon's next boot. Refusing the clone names the offending job and the
+// way out; the alternative (silently dropping the schedules) is the data
+// loss the clone law exists to prevent.
+//
+// The two laws, mirrored from the loader: a job in an agent home may not
+// author `agent:` (the owning agent is the loader's, not the file's),
+// and may not carry a deliver target (a wake delivers into the agent's
+// own canonical chat).
+func cloneCronLegality(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // no schedules: nothing to carry
+		}
+		return fmt.Errorf("clone main's crons.yaml: %w", err)
+	}
+	var raw struct {
+		Jobs []struct {
+			Name    string `yaml:"name"`
+			Agent   string `yaml:"agent"`
+			Deliver string `yaml:"deliver"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("clone main's crons.yaml: it does not parse (%v) - a clone cannot carry a schedule file the cron loader will refuse", err)
+	}
+	for _, job := range raw.Jobs {
+		if job.Agent != "" {
+			return fmt.Errorf("clone main: job %q authors agent: %q, which an agent home's crons.yaml may not own - strip it from main's file (or clone a secondary agent), the schedules are not being silently dropped", job.Name, job.Agent)
+		}
+		if job.Deliver != "" && job.Deliver != "none" {
+			return fmt.Errorf("clone main: job %q delivers to %q, a main-home feature the cron loader refuses in an agent home - strip deliver: from that job (or clone a secondary agent), the schedules are not being silently dropped", job.Name, job.Deliver)
+		}
+	}
+	return nil
+}
+
+// cloneStores copies every store the source owns. data/ also holds
+// runtime scratch that means nothing in another home (the terminal
+// process registry is live PIDs), so the enumeration is the *.db set -
+// the stores the home shape names, plus any store a later capsule adds.
+func cloneStores(srcDir, dstDir string) error {
+	srcData := filepath.Join(srcDir, "data")
+	entries, err := os.ReadDir(srcData)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // never ran: no stores to copy
+		}
+		return fmt.Errorf("clone data: %w", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".db") {
+			continue // sidecars (-wal/-shm) and scratch are not stores
+		}
+		if StoreSnapshot == nil {
+			return fmt.Errorf("clone store %s: no store snapshot wired - the host wires harness/store's SQLite snapshot, and a byte copy of a live WAL store is not a copy", e.Name())
+		}
+		if err := StoreSnapshot(filepath.Join(srcData, e.Name()), filepath.Join(dstDir, "data", e.Name())); err != nil {
+			return fmt.Errorf("clone store %s: %w", e.Name(), err)
+		}
+	}
+	return nil
+}
+
+// discardHalfBuilt removes a destination this clone created but did not
+// finish. Registration is folder presence, so a half-built home would
+// list as an agent forever with no cleanup path; the caller's
+// pre-existence check guarantees the directory was born in this call.
+// A removal that fails is reported WITH the original cause (the operator
+// has to clean it by hand, and silent registration is worse than noise).
+func discardHalfBuilt(dir string, cause error) error {
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("%w - and the half-built %s could not be removed (%v); folder presence registers an agent, so delete it by hand", cause, dir, err)
+	}
+	return cause
 }
 
 // LoadProfiles scans the home's agent homes into profile records. The

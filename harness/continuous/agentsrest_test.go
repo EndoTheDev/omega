@@ -217,6 +217,36 @@ func TestCloneEndpoint(t *testing.T) {
 	}
 }
 
+// TestCloneEndpointRetagFailureLeavesNoPhantom pins Important 3 on the
+// wire: the clone door is ONE step. A copy that lands and then fails to
+// re-tag its rows must not leave a registered folder behind - the source's
+// rows would read as the source's session AND the roster would list an
+// agent nobody finished creating.
+func TestCloneEndpointRetagFailureLeavesNoPhantom(t *testing.T) {
+	srv, _, home := newAgentsFixture(t)
+	prev := retagAgentSessions
+	retagAgentSessions = func(string, string, ...string) error {
+		return io.ErrUnexpectedEOF
+	}
+	t.Cleanup(func() { retagAgentSessions = prev })
+
+	res, err := postAny(t, srv.URL+"/agents", map[string]any{"name": "probe", "inherit_from": "scout"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res != http.StatusInternalServerError {
+		t.Errorf("re-tag failure status = %d, want 500", res)
+	}
+	if _, statErr := os.Stat(agent.AgentDir(home, "probe")); !os.IsNotExist(statErr) {
+		t.Errorf("a failed clone left a registered phantom agent (%v)", statErr)
+	}
+	// The name is free again: a retry with a working re-tag succeeds.
+	retagAgentSessions = prev
+	if res, _ := postAny(t, srv.URL+"/agents", map[string]any{"name": "probe", "inherit_from": "scout"}); res != http.StatusCreated {
+		t.Errorf("retry after the failed clone = %d, want 201", res)
+	}
+}
+
 func TestAgentDetailEndpoint(t *testing.T) {
 	srv, _, _ := newAgentsFixture(t)
 	code, body := getJSON(t, srv.URL+"/agents/scout")

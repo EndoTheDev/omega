@@ -238,14 +238,12 @@ func (ar *agentRoutes) handleAgents(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimSpace(req.Name)
 		from := strings.TrimSpace(req.InheritFrom)
 		if from != "" {
-			if err := agent.CloneAgent(ar.home, from, name, req.Description); err != nil {
-				ar.httpError(w, http.StatusConflict, "clone agent: %v", err)
-				return
-			}
-			// The copied store carries the source's rows: re-tag them as
-			// the clone's own, or the roster reads the clone as empty.
-			if err := ar.retagClonedSessions(from, name); err != nil {
-				ar.httpError(w, http.StatusInternalServerError, "clone sessions: %v", err)
+			if err := ar.cloneAgent(from, name, req.Description); err != nil {
+				status := http.StatusConflict
+				if errors.Is(err, errCloneStoreTag) {
+					status = http.StatusInternalServerError
+				}
+				ar.httpError(w, status, "clone agent: %v", err)
 				return
 			}
 		} else if err := agent.ScaffoldAgent(ar.home, name, req.Description); err != nil {
@@ -263,15 +261,53 @@ func (ar *agentRoutes) handleAgents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// errCloneStoreTag marks a clone whose copy landed but whose store
+// re-tag failed. The destination has been removed by then (the request is
+// retryable and nothing was registered), so it is a server fault, never
+// the caller's conflict.
+var errCloneStoreTag = errors.New("re-tag cloned sessions")
+
+// retagAgentSessions is the clone's last SQLite step, swappable in tests
+// (a real re-tag failure is not inducible from a fixture: the copied
+// store is always writable).
+var retagAgentSessions = store.RetagAgentSessions
+
+// wireStoreSnapshot installs the SQLite-backed store copier the CLONE law
+// needs; agent owns home shape, harness/store owns the driver. Wired once
+// at package init so the hook is immutable while handlers run.
+func init() {
+	agent.StoreSnapshot = store.SnapshotStore
+}
+
+// cloneAgent runs the clone door's two halves as ONE step: the copy
+// (agent.CloneAgent, which removes its own half-built destination on
+// failure) and the store re-tag. A re-tag failure leaves exactly the
+// phantom a mid-copy failure does - a registered folder with the source's
+// rows still tagged to the source - so the destination is removed here
+// too. The folder did not exist before this request.
+func (ar *agentRoutes) cloneAgent(from, to, description string) error {
+	if err := agent.CloneAgent(ar.home, from, to, description); err != nil {
+		return err
+	}
+	if err := ar.retagClonedSessions(from, to); err != nil {
+		dir := agent.AgentDir(ar.home, to)
+		if rmErr := os.RemoveAll(dir); rmErr != nil {
+			return fmt.Errorf("%w: %v (and the half-built %s could not be removed: %v - delete it by hand, folder presence registers an agent)", errCloneStoreTag, err, dir, rmErr)
+		}
+		return fmt.Errorf("%w: %v", errCloneStoreTag, err)
+	}
+	return nil
+}
+
 // retagClonedSessions rewrites the copied store's agent tags to the
 // clone. Main's sessions may predate the agent column, so "" and
 // "default" are both real source tags.
 func (ar *agentRoutes) retagClonedSessions(from, to string) error {
 	dsn := filepath.Join(agent.AgentDir(ar.home, to), "data", "omega.db")
 	if from == agent.DefaultAgentName {
-		return store.RetagAgentSessions(dsn, to, agent.DefaultAgentName, "")
+		return retagAgentSessions(dsn, to, agent.DefaultAgentName, "")
 	}
-	return store.RetagAgentSessions(dsn, to, from)
+	return retagAgentSessions(dsn, to, from)
 }
 
 // handleAgent serves GET /agents/{name}: one agent, detail payload.

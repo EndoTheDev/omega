@@ -86,12 +86,19 @@ itself has enabled (the subset law). Skills are an explicit allowlist
 (empty = none), and main's skills, soul, user.md and memory.md are
 visible but inert until the agent enables that kind, which MATERIALIZES
 a copy into its own home. Creating an agent "from" another materializes
-a full clone (config, skills, toggles, persona files, session store) -
-copy, never link, so clone-then-delete is the rename path.
+a full clone - the whole `config/` directory (definition layer plus its
+hand-owned `crons.yaml`), the skill tree, persona files and every store
+in `data/`, each store copied through SQLite rather than as files, so a
+live WAL database cannot yield a torn copy. Copy, never link, so
+clone-then-delete is the rename path; a clone that fails mid-copy
+removes its half-built home, because folder presence is registration.
 
-A clone of main copies its skills and persona files but not the home
-config: that file carries the provider secret, and an agent file holds
-none.
+A clone of main copies its skills, persona files, schedules and stores
+but not the home config: that file carries the provider secret, and an
+agent file holds none. Main's `crons.yaml` is copied only when it is
+agent-home-legal - a job authoring `agent:` or carrying a `deliver:`
+target is refused by name, since the cron loader refuses such a file
+inside an agent home at boot.
 
 An agent home's config is read once, at build time, and the built agent
 is cached for the process lifetime: hand-editing

@@ -262,22 +262,30 @@ func LoadHostDefinition(home string) (HostDefinition, error) {
 	// DisabledNamespaces): the namespaced mapping this version writes,
 	// and the legacy flat sequence of module names. Both are host truth.
 	if raw.Disabled.Kind != 0 {
-		host.DisabledModules, host.DisabledSkills, host.DisabledTools, host.DisabledAgents = parseDisabledFold(&raw.Disabled)
+		modules, skills, tools, agents, err := parseDisabledFold(&raw.Disabled)
+		if err != nil {
+			return host, fmt.Errorf("host config %s: %w", path, err)
+		}
+		host.DisabledModules, host.DisabledSkills, host.DisabledTools, host.DisabledAgents = modules, skills, tools, agents
 	}
 	return host, nil
 }
 
-// parseDisabledFold decodes one disabled: node in either shape.
-func parseDisabledFold(node *yaml.Node) (modules, skills, tools, agents []string) {
+// parseDisabledFold decodes one disabled: node in either shape. A node
+// of neither shape, or one that will not decode, is an ERROR: a fold
+// that silently reads as "nothing disabled" would validate agent writes
+// against a phantom everything-enabled host - the wrong direction for a
+// law that refuses what the host has switched off.
+func parseDisabledFold(node *yaml.Node) (modules, skills, tools, agents []string, err error) {
 	if node.Kind == yaml.SequenceNode {
 		var flat []string
-		if err := node.Decode(&flat); err == nil {
-			return flat, nil, nil, nil
+		if err := node.Decode(&flat); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("disabled fold: %w", err)
 		}
-		return nil, nil, nil, nil
+		return flat, nil, nil, nil, nil
 	}
 	if node.Kind != yaml.MappingNode {
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, fmt.Errorf("disabled fold: node kind %d is neither a mapping nor a sequence", node.Kind)
 	}
 	var fold struct {
 		Modules []string `yaml:"modules"`
@@ -286,9 +294,9 @@ func parseDisabledFold(node *yaml.Node) (modules, skills, tools, agents []string
 		Agents  []string `yaml:"agents"`
 	}
 	if err := node.Decode(&fold); err != nil {
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, fmt.Errorf("disabled fold: %w", err)
 	}
-	return fold.Modules, fold.Skills, fold.Tools, fold.Agents
+	return fold.Modules, fold.Skills, fold.Tools, fold.Agents, nil
 }
 
 // LayerValue is one string knob as the layer file gives it: the value
@@ -472,7 +480,7 @@ func validateAgentUpdates(u AgentConfigUpdates, host HostDefinition, visible []s
 		if retired.value == nil {
 			continue
 		}
-		if strings.TrimSpace(*retired.value) == MaskedSecretPlaceholder {
+		if strings.TrimSpace(*retired.value) == MaskedSecretPlaceholder && retired.key == "provider.api_key" {
 			return &AgentConfigScaffoldError{Message: fmt.Sprintf("%s is the read mask, not a secret - agent configs hold no secrets at all", retired.key)}
 		}
 		return &AgentConfigScaffoldError{Message: fmt.Sprintf("%s is not an agent field - agent configs are secret-free: provider type, host and api_key are defined once in settings; reference an instance with provider.instance (unset: [\"%s\"] scrubs a legacy value)", retired.key, retired.key)}
@@ -509,7 +517,9 @@ func validateAgentUpdates(u AgentConfigUpdates, host HostDefinition, visible []s
 		}
 	}
 	// The allowlist names real, visible skills: a typo must not silently
-	// enable nothing forever.
+	// enable nothing forever, and the subset law binds here exactly as it
+	// does for toggles - a skill the host switched off is refused loudly
+	// at write, never accepted and then silently dropped at wake.
 	if u.SkillsAllow != nil {
 		for _, name := range *u.SkillsAllow {
 			name = strings.TrimSpace(name)
@@ -522,6 +532,9 @@ func validateAgentUpdates(u AgentConfigUpdates, host HostDefinition, visible []s
 					known = strings.Join(visible, ", ")
 				}
 				return &AgentConfigScaffoldError{Message: fmt.Sprintf("skill %q is not in this agent's visible registry (want one of: %s)", name, known)}
+			}
+			if !host.HostEnabledSkill(name) {
+				return &AgentConfigScaffoldError{Message: fmt.Sprintf("skill %q is off on the host - an agent can only enable what its host has enabled (subset law)", name)}
 			}
 		}
 	}

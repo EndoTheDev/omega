@@ -154,7 +154,14 @@ board, and evidence-ledger stores), `skills/`, `soul.md`, `user.md`,
 provider INSTANCE reference (never a secret), an enabled-capsule list
 that starts empty, and an explicit skills allowlist - see
 `docs/architecture.md` and `docs/api.md` (`PUT /agents/{name}`) for the
-laws. Data isolation re-points an unset store at the agent's
+laws. The subset law binds both lists at write time: a capsule the host
+switched off, and a skill the host's `disabled.skills` fold switched
+off, are both refused loudly rather than accepted and dropped at wake.
+Creating an agent "from" another copies that home whole (config
+directory, skills, persona files, every store in `data/`) - see
+`docs/api.md`; clone-then-delete is the rename path, so the copy must
+not leave schedules or stores behind. Data isolation re-points an
+unset store at the agent's
 own `data/omega.db`; an env-set `OMEGA_DB_PATH` is caller intent and is
 never re-pointed (the delegate child's store pin, see `docs/cli.md`
 `omega run --session`). Schedules ride the cron module's WHEN; the wake

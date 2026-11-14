@@ -401,3 +401,57 @@ func TestLoadHostDefinition(t *testing.T) {
 		t.Errorf("legacy fold = %v", hostLegacy.DisabledModules)
 	}
 }
+
+// TestMalformedDisabledFoldIsLoud pins Nit 2 of the review: a fold that
+// will not parse must not read as "nothing is disabled". That default
+// direction would validate an agent's write against a phantom
+// everything-enabled host.
+func TestMalformedDisabledFoldIsLoud(t *testing.T) {
+	home := t.TempDir()
+	// A mapping whose values are the wrong type: yaml accepts the node,
+	// decoding it into []string does not.
+	body := "providers:\n  work:\n    type: openai\ndisabled:\n  modules: not-a-list\n"
+	if err := WriteFileAtomic(AgentConfigPath(home, DefaultAgentName), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadHostDefinition(home); err == nil {
+		t.Fatalf("a malformed disabled fold loaded as an empty fold - the subset law would validate against a phantom host")
+	}
+	// A bare scalar is not a legal fold shape either.
+	scalar := t.TempDir()
+	if err := WriteFileAtomic(AgentConfigPath(scalar, DefaultAgentName), []byte("disabled: yes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadHostDefinition(scalar); err == nil {
+		t.Fatalf("a scalar disabled fold loaded as an empty fold")
+	}
+}
+
+// TestSkillsAllowlistRefusesAHostDisabledSkill pins Important 4: the
+// subset law binds skills exactly as it binds toggles. A host-disabled
+// skill used to be accepted 200 into the allowlist and then silently
+// dropped at wake - an enabled skill that never loads.
+func TestSkillsAllowlistRefusesAHostDisabledSkill(t *testing.T) {
+	home := t.TempDir()
+	homeConfig(t, home) // disabled.skills: [old-skill]
+	if err := ScaffoldAgent(home, "scout", ""); err != nil {
+		t.Fatal(err)
+	}
+	// The skill is on disk and VISIBLE to the agent - the host fold is
+	// the only thing that switches it off, which is exactly the pair the
+	// write lane must catch.
+	seedSkill(t, filepath.Join(home, "skills", "shared"), "old-skill")
+	allow := []string{"old-skill"}
+	err := UpdateAgentConfigLayer(home, "scout", AgentConfigUpdates{SkillsAllow: &allow})
+	var refusal *AgentConfigScaffoldError
+	if !errors.As(err, &refusal) {
+		t.Fatalf("host-disabled skill in the allowlist = %v, want an AgentConfigScaffoldError", err)
+	}
+	if !strings.Contains(refusal.Message, "subset law") {
+		t.Errorf("refusal message = %q, want the subset-law wording the toggle lane uses", refusal.Message)
+	}
+	// Nothing was half-written.
+	if body := readConfigBody(t, home, "scout"); strings.Contains(body, "old-skill") {
+		t.Errorf("the refused allowlist reached disk:\n%s", body)
+	}
+}
