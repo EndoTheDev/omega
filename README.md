@@ -10,7 +10,7 @@ omega is an AI assistant that reads files, runs
 commands, and edits code. It talks to LLM providers (Ollama, OpenAI,
 Anthropic) and streams responses in real time. Single binary, two
 faces: a plain CLI agent loop (first run walks you through setup) and
-a served webui — persistent sessions, context compaction, and an
+a served webui - persistent sessions, context compaction, and an
 in-process module system on both. No screen furniture in the
 terminal: the browser is the app.
 
@@ -18,7 +18,7 @@ The web interface is a VS Code-style dock: draggable panes with
 honest per-pane floors, live-streaming chat with retry and image
 attachments, sessions with search and pinning, settings, cron,
 logs, a file manager with image previews, a terminal pane, an
-embedded browser, the approval gate and a kanban board — all
+embedded browser, the approval gate and a kanban board - all
 embedded, no separate frontend to
 run (`omega serve`). Conversations branch: every retry is a sibling
 variant you can switch between. Agents can ask mid-run via verdict
@@ -28,7 +28,7 @@ ephemeral (in-memory only, nothing on disk), and multiple named
 agents run side by side.
 
 > **Warning:** The shell tool executes commands the LLM generates with
-> no sandboxing. Use Ollama for sensitive work — cloud providers
+> no sandboxing. Use Ollama for sensitive work - cloud providers
 > receive file contents and command output.
 
 ## Community
@@ -51,7 +51,7 @@ Or install via `go install`:
 go install github.com/EndoTheDev/omega/cmd/omega@latest
 ```
 
-`go install` puts the binary in `~/go/bin` (or `$GOBIN`) — add it to PATH
+`go install` puts the binary in `~/go/bin` (or `$GOBIN`) - add it to PATH
 if it isn't already:
 
 ```bash
@@ -65,7 +65,7 @@ embedded) at [github.com/EndoTheDev/omega/releases](https://github.com/EndoTheDe
 
 omega's home is the executable's directory (override with `OMEGA_HOME`).
 Installed into a `bin` directory (`go install`, `~/.local/bin`), the home
-moves to `~/.omega` — config, example configs, the session store and logs
+moves to `~/.omega` - config, example configs, the session store and logs
 live there. Update an installed copy with:
 
 ```bash

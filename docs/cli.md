@@ -2,7 +2,7 @@
 
 `omega` is a single binary. One global help covers all subcommands
 (`omega --help`); per-subcommand help appears as the subcommands gain
-flags. Everything below is generated from the parser in `cmd/omega` —
+flags. Everything below is generated from the parser in `cmd/omega` -
 if a flag is not in the code, it is not in this document.
 
 ## Usage
@@ -45,7 +45,7 @@ the project-path behavior.
 ### `omega` / `omega chat` (the CLI agent loop)
 
 No argument, `chat`, or a non-subcommand argument launches the CLI
-agent loop — plain readline in, streaming ANSI out, `ollama run`
+agent loop - plain readline in, streaming ANSI out, `ollama run`
 mental model. The loop never owns the screen (no alt-screen, no panes,
 no mouse); anything screen-shaped is the webui's job. A non-subcommand
 first argument is treated as a project path: omega chdirs there first,
@@ -61,7 +61,7 @@ The setup gate is the law: with no config, serve and run refuse and
 bare `omega` runs the setup wizard first. Loop commands: `/exit`,
 `/help`, `/session [id|new]`, `/workspace [dir]`, plus every mounted
 module command (`/logs`, `/verdict`, `/cron`, ...) and a `"""`
-multiline input block. On exit the loop prints the webui URL — the
+multiline input block. On exit the loop prints the webui URL - the
 browser is the app; the loop is the fallback.
 
 ### `omega serve`
@@ -344,7 +344,7 @@ bare `go build` reports `dev`.
 
 GETs `<host>:<port>/health` with a 5 s client timeout. `ok: <url>` on
 200; exit 1 with the failure otherwise. The host comes from
-`OMEGA_HEALTH_HOST` (default `localhost`), the port from config — so
+`OMEGA_HEALTH_HOST` (default `localhost`), the port from config - so
 `omega health --config <path>` checks the config's install, not
 whatever is on 8098.
 
@@ -401,7 +401,7 @@ Accepted before or after the subcommand:
 | `--help`, `-h`                | Print the global help                                                   |
 
 `--config` is the only flag with a value; both `--config <p>` and
-`--config=<p>` forms work. No subcommand has its own `--help` —
+`--config=<p>` forms work. No subcommand has its own `--help` -
 flags are per-subcommand documented here.
 
 ## Home resolution
@@ -410,16 +410,16 @@ omega runs everything out of one **home** directory (config, databases,
 skills, themes, memory files, logs). Resolution order:
 
 1. `OMEGA_HOME` when set.
-2. The binary's own directory for **release-folder installs** —
+2. The binary's own directory for **release-folder installs** -
    self-contained unpacks (also a repo checkout's `bin/`).
-3. `~/.omega` for **PATH-bin installs** — when the binary lives in a
+3. `~/.omega` for **PATH-bin installs** - when the binary lives in a
    known shared bin dir (`~/go/bin`, `~/.local/bin`, `~/bin`,
    `/usr/local/bin`), so config/db don't scatter among other programs'
    binaries.
 
 Inside the home: `config/` holds the yaml files (`config.yaml`,
 `mcp.yaml`, `crons.yaml`), `data/` holds the databases (`omega.db`,
-`kanban.db`) — a legacy home-root database moves into `data/` on first
+`kanban.db`) - a legacy home-root database moves into `data/` on first
 boot of the new version. `memory.md`, `user.md`, `skills/`, `themes/`,
 and the log live at the home root. First run seeds `config/` with the
 embedded `.example` files (never overwritten).
@@ -472,9 +472,9 @@ integers below their minimum are ignored (the YAML/default value stays).
 | `OMEGA_BIN`            | set       | The binary's own path, for the delegate extension's subagent spawns        |
 | `OMEGA_HEALTH_HOST`    | read      | Host for `omega health` (default `localhost`)                              |
 | `OMEGA_UPDATE_API_BASE`| read      | Test seam: overrides the GitHub API base during `omega update` (`https://api.github.com` by default). Never set in production |
-| `OMEGA_MAX_RETRIES`    | read      | Provider retry budget (`llm/retry.go`), default `3` — HTTP 429/5xx and Ollama `done_reason: load` retried with backoff |
+| `OMEGA_MAX_RETRIES`    | read      | Provider retry budget (`llm/retry.go`), default `3` - HTTP 429/5xx and Ollama `done_reason: load` retried with backoff |
 
 ## Related
 
-- [configuration.md](configuration.md) — full config.yaml reference
-- [api.md](api.md) — the HTTP surface `omega serve` exposes
+- [configuration.md](configuration.md) - full config.yaml reference
+- [api.md](api.md) - the HTTP surface `omega serve` exposes

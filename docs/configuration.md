@@ -69,7 +69,7 @@ disabled:
 
 A `disabled:` entry skips that capsule at boot (its routes answer 404).
 Machine-critical capsules (provider, store, loop, logging) and the
-serving shell (http_channel) are not on the list — booting with
+serving shell (http_channel) are not on the list - booting with
 them disabled fails loud. The v0.12 `omega.json` sidecar is folded
 into this key at boot and deleted; an unknown entry fails the boot
 naming it.
@@ -170,10 +170,10 @@ prompt as a full agent turn in a session labeled `cron:<name>`.
 | ----------- | ------------------------------------------------------------------------------------------- |
 | `name`      | required, unique, `[a-z0-9-]`                                                               |
 | `kind`      | `cron` (default) or `interval`                                                              |
-| `schedule`  | required iff kind `cron` — the 5-field cron grammar (minute hour day month weekday), server-local time; no seconds, no `@descriptors` |
-| `minutes`   | required iff kind `interval` — integer >= 1; the job fires every N minutes on the minute grid |
-| `agent`     | optional — the agent home the fire runs under                                               |
-| `model`     | optional — the provider model for this fire                                                 |
+| `schedule`  | required iff kind `cron` - the 5-field cron grammar (minute hour day month weekday), server-local time; no seconds, no `@descriptors` |
+| `minutes`   | required iff kind `interval` - integer >= 1; the job fires every N minutes on the minute grid |
+| `agent`     | optional - the agent home the fire runs under                                               |
+| `model`     | optional - the provider model for this fire                                                 |
 | `prompt`    | required, the user message the run sends                                                    |
 | `skills`    | optional list of skill names - their bodies ride the fire prompt ahead of the prompt (main-home jobs only; agent homes reject the field) |
 | `deliver`   | `new-session` (default) \| `continuous-agent` \| `append-to-file`                            |
@@ -183,7 +183,7 @@ prompt as a full agent turn in a session labeled `cron:<name>`.
 **The defaulting law** (t_ecec864e): an empty `agent` runs the fire
 under the default agent; an empty `model` uses the session's provider
 model. Empty = inherit, never an error. A bad agent name is a clear
-fire-time error in the job log — the scheduler keeps standing.
+fire-time error in the job log - the scheduler keeps standing.
 
 Deliver targets: `new-session` is a fresh session (the default);
 `continuous-agent` is a wake through the event spine into an existing
@@ -208,7 +208,7 @@ on the same `<agent>/<name>` state keys. The GET `/cron/jobs` rows, the
 Cron tab and the `/cron` table carry `status`, `last` (the completion
 wall clock, RFC3339) and `status_note`; the record survives restarts.
 A never-fired job carries no status. A pinned skill the skills capsule
-cannot read is a fire-time error — no run on a half-set table, the
+cannot read is a fire-time error - no run on a half-set table, the
 scheduler keeps standing.
 
 ## The approval gate
@@ -293,5 +293,5 @@ Ollama supports three connection modes:
 Provider changes (`provider.type`, `provider.api_key`,
 `providers:` instances) apply on restart. Per-run model changes ride
 the webui: the composer's model chip and each `/chat` request's
-`model` field build a provider copy for that run — the running
+`model` field build a provider copy for that run - the running
 sessions never share model state (see [api.md](api.md)).

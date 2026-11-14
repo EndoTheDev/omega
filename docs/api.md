@@ -3,7 +3,7 @@
 The surface `omega serve` exposes: SSE chat streaming, session CRUD +
 tree operations, the settings/theming/files/tasks surfaces, and the
 embedded webui SPA at `/`. This is the only network surface omega has and
-it is **unauthenticated** — there is no login, no token, no auth
+it is **unauthenticated** - there is no login, no token, no auth
 middleware anywhere in the tree. **Loopback only by default**; extra
 binds (e.g. a Tailscale IP for Traefik) are an explicit `server.bind`
 opt-in and stay unauthenticated, so whatever sits beyond loopback is
@@ -81,7 +81,7 @@ unchanged.
 | `/mcp/toggle`                         | POST       | the live MCP toggle through the module seam     |
 | `/mcp/save`                          | POST       | upsert one full MCP server entry into mcp.yaml (schema-validated, node-spliced, atomic), swap the live bridge; returns the fresh server list |
 | `/mcp/delete`                        | POST       | remove one MCP server entry from mcp.yaml and swap the bridge (the removed entry's connections close in the swap); unknown name 404 |
-| `/cron/jobs`                         | GET        | cron job list (empty when unmounted — not 501); rows carry the authored `prompt`, the fire-pinned `skills`, the last fire's `status` + `last` + `status_note`, and `agent_owned` (the file-ownership mark: true only on an agent home's own wake row) |
+| `/cron/jobs`                         | GET        | cron job list (empty when unmounted - not 501); rows carry the authored `prompt`, the fire-pinned `skills`, the last fire's `status` + `last` + `status_note`, and `agent_owned` (the file-ownership mark: true only on an agent home's own wake row) |
 | `/cron/save`                         | POST       | upsert one full job definition into the main crons.yaml (schema-validated, hot-reloaded); returns the fresh job set |
 | `/cron/delete`                       | POST       | remove one job from the main crons.yaml; unknown name 404 |
 | `/cron/toggle`                       | POST       | the row's toggle commit: writes the per-job `enabled:` flag only |
@@ -91,7 +91,7 @@ unchanged.
 | `/skills/delete`                     | POST       | remove one skill: backed up to `.curator/backups`, ledger row at `.curator/ledger.jsonl` (`actor: webui`), folder removed; unknown name 404 |
 | `/browser/last`, `/browser/frameable`| GET, PUT   | module REST (browser capsule): the resume URL + the embed-permission probe |
 | `/commands`                          | GET        | extension command registry (palette rows)      |
-| `/commands/dispatch`                 | POST       | run one command/skill locally — never the agent |
+| `/commands/dispatch`                 | POST       | run one command/skill locally - never the agent |
 | `/logs?lines=N`                      | GET        | omega.log tail (default 200, clamped 1..2000)  |
 | `/observability/events`              | GET        | structured run-event ring: `?session=`, `?level=error\|warn`, `?limit=` (newest N, oldest-first); 1024-record in-process cap |
 | `/observability/logs`                | GET        | omega.log tail from the observability capsule (`?lines=`, default 200, cap 2000); 404 without a log file |
@@ -129,25 +129,25 @@ Body: `{"messages": [...], "session_id": "...?", "model": "...?",
 - **`messages` is REQUIRED.** Each entry carries a `role` discriminator
   (`system`, `user`, `assistant`, or `tool`) plus its payload. A
   content-only payload (`{"content": "..."}` with no role) decodes to
-  nothing and produces an empty turn — Ollama ends it with
+  nothing and produces an empty turn - Ollama ends it with
   `done_reason "load"` (the load-without-generate path), which rides
   through to the client as `finish_reason: "load"`. Send real
   `{role, content}` entries.
 - **session_id semantics**: empty + a mounted store = the server
   AUTO-CREATES the session (generates the id, opens the run, persists
-  everything — the new id rides the first SSE `session` frame, so the
+  everything - the new id rides the first SSE `session` frame, so the
   create-then-send dance is dead). With `session_id` set, the
   conversation persists into that session. Without a store, runs stay
   ephemeral.
 - **Retry**: `{"retry": true, "session_id": ...}` re-runs the session's
-  LAST user turn as a SIBLING VARIANT — no messages accepted on the
+  LAST user turn as a SIBLING VARIANT - no messages accepted on the
   wire (400), the persisted history itself is the replay; nothing is
   appended, the fresh response heads to the same user message, and the
   prior response stays as a selectable variant.
 - **Fork**: `{"fork": "<message_id>", "session_id": ...}` re-plays at
   an arbitrary branch point. A user-turn target behaves like a retry
   pinned there (no messages); an assistant/tool target CONTINUES FROM
-  it — it takes the fork's user message and runs. Mutually exclusive
+  it - it takes the fork's user message and runs. Mutually exclusive
   with `retry` (400).
 - **`provider`** (card t_7dcd4280): the named provider INSTANCE the run
   serves through (a `providers:` config key; the webui provider picker
@@ -157,11 +157,11 @@ Body: `{"messages": [...], "session_id": "...?", "model": "...?",
   session like the model pin: the next send resolves the pinned name
   with no wire field, so removing the pin's instance strands the
   session (its next send 400s) until a new instance is selected.
-- **model**: per-run override via a provider copy — concurrent chats
+- **model**: per-run override via a provider copy - concurrent chats
   keep their own model, the default stays untouched. A session owned by
   an agent home is the exception: its home's config layer names the
   provider and model, so a wire `model`/`provider` pick (and one
-  remembered on the row) is ignored for that run — resolving a
+  remembered on the row) is ignored for that run - resolving a
   daemon-catalog name against another home's provider would answer as
   the wrong agent.
 - **thinking_level**: indexes the shared thinking ladder (0 = none = no
@@ -203,7 +203,7 @@ Response is `text/event-stream`; frames are `event: <name>\ndata:
 
 | Event             | Carries                                                     |
 | ----------------- | ----------------------------------------------------------- |
-| `session`         | `{"id": "<session id>"}` — first frame, the durable handle  |
+| `session`         | `{"id": "<session id>"}` - first frame, the durable handle  |
 | `agent_start`     | run start                                                   |
 | `turn_start`      | one agent turn begins                                       |
 | `thinking_chunk`  | incremental reasoning text                                  |
@@ -227,11 +227,11 @@ stream to ride: the catch-up is the snapshot below.
 ### GET /sessions
 
 List rows (`sessionPayload`): the session row plus read-time computed
-fields — `message_count` + `tool_count` (SQL counts at read time, no
+fields - `message_count` + `tool_count` (SQL counts at read time, no
 counters), `prompt_tokens` + `completion_tokens` (real usage persisted
 per turn; 0 for pre-usage sessions), `model` (last model change,
 omitted when none), `unread` (read-time from `updated_at` vs
-`last_read_at`), and `running` (from the run registry — the backend's
+`last_read_at`), and `running` (from the run registry - the backend's
 single truth for "streaming"; ALWAYS present, true or false, and
 survives page reloads). Archived sessions drop out of the default list;
 `GET /sessions?archived=include` returns them (the sidebar's archived
@@ -250,7 +250,7 @@ messages additionally carry `created_at` (store-level write time).
 
 ### PATCH /sessions/{id}
 
-List concerns only — accepts `{"pinned": true|false}`, `{"read":
+List concerns only - accepts `{"pinned": true|false}`, `{"read":
 true}`, `{"archived": true|false}`. All write the row WITHOUT touching
 `updated_at` (pinning, reading, archiving are not activity; the time
 buckets read `updated_at`). Pinned flag also via the row-actions;
@@ -264,7 +264,7 @@ Removes the session and its messages (the webui confirms first).
 ### GET /sessions/{id}/events
 
 SSE subscribe to the session's live run. **404 when not active** (never
-started or finished — the client renders settled history). Live-only:
+started or finished - the client renders settled history). Live-only:
 a subscriber attaching mid-run receives frames from attach time on;
 what already happened is readable from the history/transcript
 endpoints. Headers go out on attach, not on the first frame, so an
@@ -272,7 +272,7 @@ attach landing between two frames doesn't hang the fetch.
 
 ### GET /sessions/{id}/transcript
 
-The render-ready item stream — the backend's final answer to "what
+The render-ready item stream - the backend's final answer to "what
 does this session look like": items (user, assistant, thinking, tool
 blocks) already ordered, thinking merged, tool results attached. The
 client's restore path is "render items"; no reload-side
@@ -283,7 +283,7 @@ to address branch points; live-tail items carry none.
 
 Branch-point metadata for the variant switcher; the select action sets
 the active variant server-side (persisted via a `variant_select`
-bookkeeping entry — survives reload). The body's `message_id` is either
+bookkeeping entry - survives reload). The body's `message_id` is either
 a branch point (a message carrying sibling runs; an optional 0-based
 `select` picks that sibling) or any conversation message (then the
 selection resolves to the message's own run). Sessions without any
@@ -299,7 +299,7 @@ session.
 
 ### GET /sessions/{id}/export
 
-The session's ACTIVE PATH as JSONL — one `{"role","content"}` line per
+The session's ACTIVE PATH as JSONL - one `{"role","content"}` line per
 message, identical shape to `omega export`. Served as an attachment
 named `<session id>.jsonl`.
 
@@ -310,7 +310,7 @@ content, deduped to ONE hit per session (label hits ranked first, then
 summary hits, then content - each hit carries `title` or `summary` when
 it matched that index). The term is
 wrapped as the phrase-with-prefix
-`"term"*` per FTS5 string rules — progressive typing keeps hitting
+`"term"*` per FTS5 string rules - progressive typing keeps hitting
 `"fib"` finds `"fibonacci"`). `200 []` on a missing/empty `q`; **400**
 when FTS5 rejects the query itself; 501 without a store. Archived
 sessions are excluded by default; `archived=include` keeps them (the
@@ -336,7 +336,7 @@ has them.
 
 GET returns the knob schema + effective values (`agent.SettingsSchema`
 groups: provider, server, store, compaction, runtime, skills, memory,
-logging, approvals — the same surface the settings pane renders;
+logging, approvals - the same surface the settings pane renders;
 model slots ride typed pickers, approvals.mode is a select; no-store
 cache headers). `provider.api_key` is MASKED (`****`) and never
 round-trips.
@@ -390,11 +390,11 @@ The write path does not live here: every scope write goes through the
 agents REST edit endpoint (`PUT /agents/{name}`), unchanged.
 
 PUT applies a **diff-only** values map keyed by the schema's dotted
-knob paths (`provider.api_key`, `compaction.keep_first`, ...) — note
+knob paths (`provider.api_key`, `compaction.keep_first`, ...) - note
 these are not all literal yaml paths (the vision/title models are root
 yaml keys exposed as `provider.vision_model` / `provider.title_model`,
-and the four per-subsystem model slots — compaction, summarizer,
-skills curator, approvals — are the same shape as
+and the four per-subsystem model slots - compaction, summarizer,
+skills curator, approvals - are the same shape as
 `provider.*_model`);
 unknown keys are 400; `server.bind`, `provider.api_key` and a
 `provider.instances` row's host / api_key are gated - config.yaml is
@@ -410,13 +410,13 @@ Card t_a82d39c8 added the whole-document pair the settings band's
 `config` chip drives. Both ride the SAME host `Settings` seam the knob
 endpoints do, so there is one schema, one validator and one writer:
 
-- `GET /settings/raw` — the config file as YAML (`application/yaml`,
+- `GET /settings/raw` - the config file as YAML (`application/yaml`,
   no-store). Every `api_key` VALUE is MASKED (`****`), by NAME anywhere
   in the document, and every other byte is the operator's own file:
   comments, key order, flow/block style. A file that will not parse
   answers the parse error rather than its text (an unmaskable document
   is a leak, not a read). This is the export surface.
-- `PUT /settings/raw` — body: a whole YAML document, capped at 1 MiB
+- `PUT /settings/raw` - body: a whole YAML document, capped at 1 MiB
   (**413** above the cap, rejected before it is parsed or written: the
   cap refuses, it never truncates, because a YAML document cut at a
   top-level key boundary can still parse and would persist as a
@@ -426,21 +426,21 @@ endpoints do, so there is one schema, one validator and one writer:
   by the same atomic mode-preserving writer, and hot-applied. Answers
   the refreshed knob payload (the `/settings` PUT shape). A submitted
   `****` at a secret path KEEPS the value on disk (the
-  `provider.instances` round-trip law) — and a save whose on-disk
+  `provider.instances` round-trip law) - and a save whose on-disk
   document cannot be read is **400**, never a mask written out as the
-  credential — and an `OMEGA_*`-supplied secret
-  never lands in the file — clearing the line clears the credential, the
+  credential - and an `OMEGA_*`-supplied secret
+  never lands in the file - clearing the line clears the credential, the
   way a text editor would. Because the writer marshals the whole
   `Config`, a raw save is normalized like every other settings save:
   comments and key order are not preserved. A document that will not
   parse or validate is **400** with the host's own sentence and leaves
   the file untouched.
-- `POST /settings/reset` — restores the config defaults. The request
+- `POST /settings/reset` - restores the config defaults. The request
   carries NO body: the defaults are the host's (each knob's `default`,
   the same field the pane's per-knob reset compares against), so a
   client can never ship a second default set. Every knob that HAS a
   default is written through the knob save path, and the
-  config.yaml-only doors are KEPT — `provider.api_key`, `server.bind`,
+  config.yaml-only doors are KEPT - `provider.api_key`, `server.bind`,
   `provider.instances` (whose rows carry endpoints and secrets the API
   cannot set) and `provider.model_name` (required, so it has no
   default). Answers the refreshed knob payload.
@@ -450,23 +450,23 @@ A host with no settings seam answers **501** on all three, like
 
 ### The registry-browser toggles and the agent editor
 
-- `GET /disabled` — the folded state of the registry-browser
+- `GET /disabled` - the folded state of the registry-browser
   namespaces (skills, tools, agents) as the config `disabled:` fold
   carries them.
-- `PUT /disabled/skills|tools|agents` — body `{"name": ...,  "enabled":
+- `PUT /disabled/skills|tools|agents` - body `{"name": ...,  "enabled":
   true|false}`; the write lands in config.yaml's `disabled:` fold and a
   live toggle re-reads the seams. One refusal stands above the fold:
   `PUT /disabled/agents` for the default agent answers **409**
   ("the default agent cannot be disabled - it must always be on",
   t_2d8deb8c) and leaves config.yaml untouched.
-- `PUT /agents/{name}` — the node-preserving agent config layer
+- `PUT /agents/{name}` - the node-preserving agent config layer
   editor: description, the provider layer (type, model_name, host,
   api_key), system_prompt, max_turns. Absent/nil fields leave the layer
   untouched; the default agent answers 409 (`ErrAgentConfigLocked`). Sits
   beside the Agents tab's expansion editor.
 
   Settings tier 3b (t_53523d5b) added the two fields the scope tabs
-  need, both additive — an old body is unchanged in meaning:
+  need, both additive - an old body is unchanged in meaning:
 
   - `max_turns` (JSON **number**, not a string): written as a yaml int,
     because a wake unmarshals the layer straight into the runtime's int
@@ -479,7 +479,7 @@ A host with no settings seam answers **501** on all three, like
     Each named key pair is deleted from the layer file, every other key,
     comment and style stays byte-intact, and a `provider` block left with
     no sub-keys is removed with them. Deleting is what makes a scope fall
-    back to main — the settings payload's `overridden` flag is structural
+    back to main - the settings payload's `overridden` flag is structural
     (the file names the key), so writing main's value down would leave a
     permanent phantom override, and for `provider.api_key` would persist
     the read mask as the agent's secret. Unknown names, a group name
@@ -490,7 +490,7 @@ A host with no settings seam answers **501** on all three, like
 
 ### /boards (multi-board registry)
 
-- `GET /boards` — the board registry, the current board flagged.
+- `GET /boards` - the board registry, the current board flagged.
   `POST /boards` (`{"name": ...}`) creates one; `DELETE /boards/{name}`
   removes an empty, non-current, non-default board (guards refused
   with a 400 carrying the refusal text - there is no force).
@@ -506,16 +506,16 @@ A host with no settings seam answers **501** on all three, like
   endpoint: a PATCH moves a card inside its board only, switching
   boards is a pointer operation, never a card op.
 
-- `GET /tasks` — list rows in board order (the column's drag order,
+- `GET /tasks` - list rows in board order (the column's drag order,
   newest-first fallback); `?status=` filters. The EMPTY value lists the
   active board: every status but `archived` - the default list is not
   an archive dump (t_02a8beea A2). `?status=archived` lists the
   archive, `?status=all` lists everything. The board grid module UI
   requests `all` deliberately (it renders the archived column).
-- `POST /tasks` — create; `title` required, unspecified status defaults
+- `POST /tasks` - create; `title` required, unspecified status defaults
   to `triage` in the store. A fresh card lands on top of its column.
-- `GET /tasks/{id}` — the task plus its thread (comments + events).
-- `PATCH /tasks/{id}` — any legal status transition; PATCH pointer
+- `GET /tasks/{id}` - the task plus its thread (comments + events).
+- `PATCH /tasks/{id}` - any legal status transition; PATCH pointer
   fields distinguish "set to this value (possibly empty)" from "leave
   alone". An `after_id` body is the drag-order slot instead: the card
   moves to `status` ("" keeps the column) and lands after that sibling
@@ -523,7 +523,7 @@ A host with no settings seam answers **501** on all three, like
   order survives every reload. Requires the store to implement the
   `Reorderer` capability (the kanban store does; without it the PATCH
   answers 400 and the board refetches, the card snapping back).
-- `POST /tasks/{id}/comments` — add a comment; an ABSENT author is
+- `POST /tasks/{id}/comments` - add a comment; an ABSENT author is
   `"web"`, so the board can tell a human UI comment from an agent tool
   comment.
 
@@ -561,14 +561,14 @@ kanban.batch {operations: [
 
 ### Finished things (notifications)
 
-- `GET /notifications` — records newest-first (`?unread=1` filter,
+- `GET /notifications` - records newest-first (`?unread=1` filter,
   `?limit/?offset` paging, default 50, cap 200); the payload carries the
   live unread count over the whole set, not the page.
-- `POST /notifications/read` — mark one (`{"id": N}`; a ghost id 404s)
+- `POST /notifications/read` - mark one (`{"id": N}`; a ghost id 404s)
   or everything (`{"all": true}`).
-- `DELETE /notifications` — clear-all: every record drops (the webui
+- `DELETE /notifications` - clear-all: every record drops (the webui
   tab's button); the reply carries `{"ok":true,"cleared":N}`.
-- `GET /notifications/events` — SSE: each subsequent emit becomes one
+- `GET /notifications/events` - SSE: each subsequent emit becomes one
   `notification` frame.
 
 These routes STAY (settled Q6a): they are the capsule's public REST
@@ -588,7 +588,7 @@ paths answer 404 at the module mux), and neither exports anything - no
 OTLP, no exporter, no telemetry dependency (t_8de82cff; OTel is a
 future concern, deliberately out of v1).
 
-- `GET /observability/events` — the structured run-event stream, read
+- `GET /observability/events` - the structured run-event stream, read
   from a bounded in-process ring (1024 records, oldest dropped). Each
   row: `seq` (monotonic, the client's ordering key), `time`
   (RFC3339Nano UTC), `session`, `type` (`agent_start`, `turn_start`,
@@ -611,7 +611,7 @@ future concern, deliberately out of v1).
   errors, a `cancelled`/`max_turns` finish and a `length`-capped
   stream are warnings. Token-level stream chunks are not recorded -
   the ring stays structural.
-- `GET /observability/logs?lines=N` — the tail of the log the running
+- `GET /observability/logs?lines=N` - the tail of the log the running
   process writes (default 200 lines, clamped 1..2000, 512 KiB read
   window), as `{"path": ..., "lines": [...]}` with the lines verbatim.
   404 when there is no log file (logging disabled, or a logger without
@@ -686,7 +686,7 @@ webui never fetches cross-origin itself), sniffs the magic bytes, and
 answers `{media_type, base64}` in the AI image shape the client then
 rides through `/chat`. The internal-address guard (loopback, link-local
 incl. cloud metadata, RFC1918, Tailscale CGNAT) runs on the first hop
-AND on EVERY redirect hop — a public 302 pointing back into loopback or
+AND on EVERY redirect hop - a public 302 pointing back into loopback or
 the LAN aborts the fetch. 400 on non-http(s) URLs, oversize bodies, or
 a guard hit. IP-literal guard only; hostnames resolving internally are
 the known ceiling.
@@ -700,14 +700,14 @@ up edits without restart.
 
 ## Read-only inspector surfaces
 
-- `GET /tools` — the tool inventory (name + description). The bare
+- `GET /tools` - the tool inventory (name + description). The bare
   read is the agent's executable registry the chat loop consumes:
   disabled tools are absent. `?disabled=1` is the fold-aware
   management read the settings tab rides (t_5c9bb50a): the same union
   before the fold filters it, each entry stamped with the fold's
   verdict (`disabled: true`), so a disabled tool keeps its row and
   its re-enable toggle.
-- `GET /cron/jobs` — the job definitions (name, kind, schedule or
+- `GET /cron/jobs` - the job definitions (name, kind, schedule or
   minutes, resolved deliver target, agent, model, file, enabled, next
   fire time), sorted by name; an empty list when cron is unmounted (a
   normal state, not 501). `agent_owned` is the file-ownership mark:
@@ -717,48 +717,48 @@ up edits without restart.
   the editor's read-only refusal and the toggle's state key
   (`<agent>/<name>` for wakes, the bare name for main) both read the
   mark.
-- `GET /skills` — name + description only; skill content, directories,
+- `GET /skills` - name + description only; skill content, directories,
   and the prompt section never ride the wire.
-- `GET /logs?lines=N` — tail of the omega log (default 200, clamped
+- `GET /logs?lines=N` - tail of the omega log (default 200, clamped
   1..2000, 512 KiB read window); 404 when there is no log file
   (logging disabled).
-- `GET /files/browse` + `GET /files/read` — the process working
+- `GET /files/browse` + `GET /files/read` - the process working
   directory for the webui inspector: read-only, GET-only, 64 KiB
   preview cap, and the path guard is the traversal set (absolute
-  paths, empty segments and only `.` / `..` rejected — dotfiles list
+  paths, empty segments and only `.` / `..` rejected - dotfiles list
   and read like everything else; t_ccd4a000) plus
   symlink-containment. `/files/read` carries `mime` for every file
   (sniffed from the bytes) and `size` (the full size on disk,
   t_42c8aced); the viewer branches on the mime: `image/*` -> `<img>`,
   `application/pdf` -> the browser's native viewer in an iframe,
   otherwise text, with a binary flag keeping the no-preview state.
-- `GET /files/raw` (t_08d822bb, t_42c8aced) — the mime's byte face: raw
+- `GET /files/raw` (t_08d822bb, t_42c8aced) - the mime's byte face: raw
   bytes for `image/*` + `application/pdf`, under the read surface's
   exact root jail. `?download=1` is the download lane: any file serves
   as `Content-Disposition: attachment` (never rendered as a document).
   Anything still renderable-unfit answers 400, missing files 404; the
   response is `Content-Type: <mime>`, `nosniff`, byte-identical body.
-- `POST /files/write` + `POST /files/mkdir` — the Files tab toolbar's
+- `POST /files/write` + `POST /files/mkdir` - the Files tab toolbar's
   write half (add file / add folder), same root jail and guard,
   POST-only bodies.
 
 ## Commands (the slash palette's server surface)
 
 The webui's `/` command palette rides two endpoints (card t_07aed3f9).
-Slash commands run LOCALLY and never hit the agent — the command law,
+Slash commands run LOCALLY and never hit the agent - the command law,
 same registration seams:
 
-- `GET /commands` — the extension command registry
+- `GET /commands` - the extension command registry
   (`ctx.Commands`): name + description + args per row. Skills are NOT
-  here — they ride `/skills` and the palette renders them as
+  here - they ride `/skills` and the palette renders them as
   `/<skill-name>` rows itself.
-- `POST /commands/dispatch` — body `{"name": "/<command>"}` (plus
+- `POST /commands/dispatch` - body `{"name": "/<command>"}` (plus
   optional `"args"`). Resolution order: a
   registered extension command executes through the chain-on-miss
   `ctx.CommandHandler` (rewired at boot and on every live module
   toggle) and answers `{"kind":"command","text":...,"actions":[...]}`;
   if no command matches and the name resolves to a skill, it answers
-  `{"kind":"skill","name":...,"content":...}` — the content the client
+  `{"kind":"skill","name":...,"content":...}` - the content the client
   arms as a System preamble on its next send. Unknown names are 404,
   non-slash
   names 400, a missing handler 501. Dispatch is a local execution
@@ -770,11 +770,11 @@ The web half of the canvas contract (arc 3b): the webui loads the
 snapshot, then applies delta frames; actions go back through the pipe.
 The per-module REST routes stay; these two endpoints are additive.
 
-- `GET /ui/canvas` — the current panel snapshot of every mounted
+- `GET /ui/canvas` - the current panel snapshot of every mounted
   module, one JSON array of panel descriptors verbatim (`id`, `title`,
   `kind`, `payload`, `actions`). Mount order, panel ids sorted within
   a module. Nothing mounted is a 200 with `[]`, not an error.
-- `POST /ui/actions` — the one action pipe. Body: `{"module",
+- `POST /ui/actions` - the one action pipe. Body: `{"module",
   "action", "args"}` (module-qualified, `args` raw JSON verbatim).
   Routes through the canvas runtime to the capsule's registered
   handler - zero per-module code. **404** on unknown module or
@@ -964,7 +964,7 @@ until the gateway arc owns auth.
 
 Exact API patterns win over `/`. The catch-all serves real files, falls
 back to `index.html` for client routes (`/chat/<id>`), and still 404s
-asset-like misses (anything under `/_nuxt/` or a dotted path) — a bad
+asset-like misses (anything under `/_nuxt/` or a dotted path) - a bad
 asset URL is a bug a deep link must not mask.
 
 ## Yielded turns (async agent loop)
@@ -1008,6 +1008,6 @@ a plain user-row note in the conversation.
 
 ## Related
 
-- [cli.md](cli.md) — the binary behind this server
-- [configuration.md](configuration.md) — the knobs `/settings` serves
-- [webui.md](webui.md) — the SPA this wire serves
+- [cli.md](cli.md) - the binary behind this server
+- [configuration.md](configuration.md) - the knobs `/settings` serves
+- [webui.md](webui.md) - the SPA this wire serves

@@ -25,10 +25,10 @@ value map, `assets/css/main.css`:
 
 - Accent: `#E8833A` (the single accent).
 - Radii: 8px (panes) / 6px (cards) / 4px (chips).
-- Type: Public Sans (`--sans`) + JetBrains Mono (`--mono`) — tokens in
+- Type: Public Sans (`--sans`) + JetBrains Mono (`--mono`) - tokens in
   main.css `:root`. Body/UI base is 15px and every size is px: there is
-  no rem scale or hero heading style (UI text sits mostly at 12–13px,
-  mono at 10.5–12px; sizes are per-component, not tokens).
+  no rem scale or hero heading style (UI text sits mostly at 12-13px,
+  mono at 10.5-12px; sizes are per-component, not tokens).
 - The light ladder (the `html[data-theme='light']` block in main.css):
   `#ececec` z0 / `#f7f7f8` z1 / `#ededf0` z1-raised /
   `#ffffff` z2, stroke `#d5d5da`, text `#1a1a1d`, text-dim `#6a6a72`,
@@ -38,12 +38,12 @@ value map, `assets/css/main.css`:
 - Theme overrides: YAML files in `<home>/themes/` (one per theme,
   token overrides, `base:` + `name:`). Served by the HTTP channel
   (`GET /themes`, hot-reloaded from the folder poll), applied live from
-  the theme picker — tokens map 1:1 to module components' styling, so
+  the theme picker - tokens map 1:1 to module components' styling, so
   overrides recolor modules for free.
 
 ## Geometry contracts
 
-Constants in `main.css`. They are contracts, not suggestions — tuned
+Constants in `main.css`. They are contracts, not suggestions - tuned
 over many measured rounds, and changing one requires re-checking all
 the others:
 
@@ -81,12 +81,12 @@ the one exemption, so a click that opens cannot close on the way out).
 
 **Honest floors** (cards t_ae9ac5cf + t_8bcbe72e): the floor is a
 PER-COMPONENT registry fact, not a sidebar rule. `DOCKABLE_MIN_PX`
-(composables/dockables.ts) attaches every dockable's `minPx` — chat is
+(composables/dockables.ts) attaches every dockable's `minPx` - chat is
 the only 320px component (`CHAT_FLOOR_PX`), every tool component floors
 at the shared 128px pane minimum (`MIN_PANE_PX`). One floor law backs
 BOTH sides of every divider: the reveal's "no room" check and the
 divider drag clamps read the same number through `paneFloorOf` /
-`minDockPx` (composables/dock.ts) — a chat-holding pane keeps 320 on
+`minDockPx` (composables/dock.ts) - a chat-holding pane keeps 320 on
 both sides of a split; a tool pane keeps 128 from both sides. A reveal
 or split that cannot seat every pane's floor does not squeeze into a
 lie: it is refused and the shell surfaces the one-line toast
@@ -94,7 +94,7 @@ lie: it is refused and the shell surfaces the one-line toast
 
 The gutter divider (`PaneDivider`) retains its magnetic snap rebase
 mechanics. On a drag between two FLEXIBLE panes the shares re-derive
-from the frozen pre-drag baseline (c50b749) — the squeeze chain is
+from the frozen pre-drag baseline (c50b749) - the squeeze chain is
 dead: a divider never pushes a third pane around (t_6a74d5a1's
 wall-law). A divider with a FIXED pane on one side writes that pane's
 px and the ADJACENT neighbor absorbs the change 1:1 - every other
@@ -111,9 +111,9 @@ drag-and-drop runs ONE pure formula behind both the commit and the
 ghost preview. Dropping a tab on an EDGE zone splits the target pane
 and lands the dragged tab in the new half-pane; a drop on the CENTER
 zone focuses/reorders within the target's bar. A pane's OWN edge
-half-zones split that pane — center body drops stay focus-only.
+half-zones split that pane - center body drops stay focus-only.
 Refusals render the hatched-red ghost with the reason (a sidebar row
-zone, depth caps, a grown re-growth, the locked sessions tab — it
+zone, depth caps, a grown re-growth, the locked sessions tab - it
 never leaves the left shell).
 
 The universal panel band (`components/ui/TabBand.vue`) is a geometry
@@ -126,17 +126,17 @@ The band renders OUTSIDE the panel's scrollport, structurally pinned:
 scrolling the body never moves the band. Band action buttons use the
 shared `.band-tool` look (dimmed at rest, hover raises, disabled 0.4).
 The BAND POSITION CONTRACT (t_9ae4dea5): the tools/settings/insights
-tab roots stop sitting the band inside — the band is the host frame's
+tab roots stop sitting the band inside - the band is the host frame's
 top row, never a child of the scroll body (the 22/14 numbers above are
 the shared contract; a module panel that renders its own inner band is
 a review finding).
 
 **Frame rails** (t_bc321318 → t_97cece1e, amended t_064b1559 /
 t_e539ba29): a rail renders ONLY across a GUTTER between two
-horizontally-adjacent cards — the row divider's own top/bottom strokes,
+horizontally-adjacent cards - the row divider's own top/bottom strokes,
 spanning exactly the divider's 4px width, aligned to the cards' border
 rows. Nothing else strokes. The old whole-width pane-area strokes are
-dead: a stroke never appears where a surface's own border is not —
+dead: a stroke never appears where a surface's own border is not -
 one card means zero strokes, the card's border is the whole edge. The
 menubar keeps its border-bottom and the statusbar its border-top; the
 pane-area contributes no connecting stroke. Desktop law only.
@@ -155,7 +155,7 @@ same paddings. Shared definition in
 `assets/css/registry-row.css`, five consumers (cron, tools, skills,
 mcp, modules). Status dots speak dot + word: green active, dim
 sleeping (the agents roster's law); an enabled/disabled text label is
-dead — the control column rides the pill.
+dead - the control column rides the pill.
 
 **The toggle pill** (card t_d93864e7, `components/ui/TogglePill.vue`):
 the 26px rounded pill with the 11px state DOT inside (dot shifts,
@@ -181,9 +181,9 @@ agent cannot be disabled (api.md's 409).
 
 main.css's header states the law: "Motion: streaming cursor + message
 fade only." Three keyframes exist and nothing else moves via
-`animation` — `blink` (1s steps(2): streaming cursor + thinking-live
+`animation` - `blink` (1s steps(2): streaming cursor + thinking-live
 ink), `fade-in` (0.18s message arrival), and `status-pulse` (1.6s:
-session-row streaming status glyph — dot or star, not just color).
+session-row streaming status glyph - dot or star, not just color).
 Everything else animates through `transition`, not keyframes.
 
 ## The dock model
@@ -191,20 +191,20 @@ Everything else animates through `transition`, not keyframes.
 - **The shell is a pane tree, not fixed slots.** `composables/dock.ts`
   owns the persisted tree (splits + panes, under the desktop
   persistence key); `DockSplit`/`DockPane`/`DockDivider` render it. A
-  bare pane can be the tree root (all sidebars closed) — the renderer
+  bare pane can be the tree root (all sidebars closed) - the renderer
   has an explicit single-pane root branch. A tree with zero panes is a
   bug, not a state.
 - **Pane model**: left sidebar = sessions pane (pinned singleton, no
   X); right sidebar = inspector pane with the fixed module tabs (Files,
   Cron, Skills, Tools, Agents, Settings, Kanban, Modules, Insights,
-  MCP, Notifications — no X); the bottom panel under the main pane
+  MCP, Notifications - no X); the bottom panel under the main pane
   hosts the Logs tab (the structured event stream over a raw-tail
   chip, card t_e703180e; named "Logs" since card t_01c53e78 retired
   the old raw-tail pane) and the Terminal;
   middle = main pane. The LAST main pane never closes its
   PANE (Endo ruling, 2026-10-25, corrected t_b620f99d): `removePane`
   (and the move-out
-  auto-close) refuse it as a no-op — the main area never reaches zero
+  auto-close) refuse it as a no-op - the main area never reaches zero
   panes. The pane X shows on hover and only while another MAIN pane
   exists (pinned shells don't count toward that census). **The last tab of
   a pane never closes** (see THE LOCKED LAST TAB below): that is how the
@@ -230,44 +230,44 @@ Everything else animates through `transition`, not keyframes.
   content is gone, and the icons-bleeding-at-the-sidebar-bottom bug died
   with the element (no overflow fix was owed to a deleted element). The
   `dock-empty` body is a blank surface; do not build a replacement menu
-  there - the 0.17.3 canvas class-law + menu work is the future home for
+  there - the 0.17.4 canvas class-law + menu work is the future home for
   adding views. Until then the refill path is a tab drag (or the
   menubar/palette openers).
-- **Sessions lock to the primary sidebar** — open a session or hit `new`
+- **Sessions lock to the primary sidebar** - open a session or hit `new`
   and it opens in the MAIN pane, focusing the existing tab instead of
   reopening.
 - **Dockables** (`composables/dockables.ts`): the registry of openable
-  domains — the pinned shells (sessions sidebar left, the inspector
+  domains - the pinned shells (sessions sidebar left, the inspector
   tabs right, the bottom host under the main pane) plus the main-pane
   tabs: chat (multi, closable), the viewer (multi, closable,
-  row-click only), the browser (singleton main tab, closable — the
+  row-click only), the browser (singleton main tab, closable - the
   menu opener focuses the one instance), the terminal (bottom host,
   unclosable), the Logs tab (bottom host, unclosable - the
   structured run-event stream over the raw log tail; see its own
   section), the notifications feed (right pane, unclosable,
-  inbox glyph — the bell died). The `newtab` placeholder left the registry
+  inbox glyph - the bell died). The `newtab` placeholder left the registry
   with card t_9855a20e (legacy id only: persisted seats are retired on
   boot). `inspector` is legacy
   only: deserialization still accepts the persisted id and modernizes
   it, nothing opens one. `continuous`, the `canvas` host tab and the
-  modules cockpit tab left the registry — the continuous roster folded
+  modules cockpit tab left the registry - the continuous roster folded
   into the Agents tab, the canvas renderer into the settings MODULES
   section (`composables/canvas.ts` stays as the shared view-model store
-  — snapshot GET /ui/canvas, delta merge, the action pipe, the toast
+  - snapshot GET /ui/canvas, delta merge, the action pipe, the toast
   funnel), and the module lifecycle surface is CONFIGURATION, so it lives
   in the settings tab's MODULES section (card t_81d0901b: rows with live
   toggles, the expandable tools/commands/panels detail, the always-on pair
-  as a chip — the toggle endpoint refuses it at the seam; `/modules`,
+  as a chip - the toggle endpoint refuses it at the seam; `/modules`,
   `/extensions` and `/panels` open that section). Settings is an ON-DEMAND
   main tab (t_00e4a784): the menubar gear beside the right-sidebar
   toggle opens it, it closes like any tab, and the boot retires a
   persisted inspector seat (`retireInspectorSettings`). The `+` menu
-  still carries no settings entry — the gear is the entry point.
+  still carries no settings entry - the gear is the entry point.
 - **Closing an edge pane HIDES state, never deletes it** (t_9ed6cad7):
   a sidebar/bottom pane's collapse removes the host from the tree but
   keeps the domain's state (search text, selected tab, scroll) so the
   reveal puts it back exactly as it was.
-- **The give-away law** (t_66fa358e): pure window-narrow arithmetic —
+- **The give-away law** (t_66fa358e): pure window-narrow arithmetic -
   when the window cannot seat every fixed edge pane at its floor, the
   give-away squeezes the other edge roots to make room, but the
   component the user JUST revealed (the last request) is exempt: it
@@ -275,19 +275,19 @@ Everything else animates through `transition`, not keyframes.
   formula, so "no room" never fires while a give-away could seat the
   pane.
 - **Sessions panel order** (t_311fc40b as amended by t_7ee0a673):
-  the head row IS the universal band — tab title left, the search seats
+  the head row IS the universal band - tab title left, the search seats
   IN the band top right (band-tool slot, on the band's own 22px row;
   the separate search row below the band is dead), and the new-session
   control keeps its own full-width row under the band.
 - **Tab drag-and-drop** moves tabs between panes (edge zones split,
   see the geometry section); sessions stay in the sidebar.
 - **Boot repair** (t_841df625): a persisted dock shell from before a
-  built host's bottom-home addition is repaired at boot — new
+  built host's bottom-home addition is repaired at boot - new
   bottom-home registry members are injected into the persisted bottom
   shell with the persisted layout untouched (the repair count is
   logged), so a fresh tab host survives old shells.
 - **Module-owned UI (build-time composition)**: modules ship UI in
-  `harness/<name>/ui/`; `nuxt.config.ts` composes them by array —
+  `harness/<name>/ui/`; `nuxt.config.ts` composes them by array -
   `app/composables/module-panels.generated.ts` is generated at build
   time and there is NO runtime registry. `harness/tools/ui/ToolsList.vue`
   is the canary.
@@ -325,17 +325,17 @@ Everything else animates through `transition`, not keyframes.
 
 - Streaming renders **chronologically**. A tool phase ends the current
   response segment; text after tools is a fresh bubble (mirrors
-  `accumulateAssistant` in the backend — same boundary, both sides).
+  `accumulateAssistant` in the backend - same boundary, both sides).
   Thinking blocks accumulate per reasoning run; tool results attach to
   their calls by `tool_call_id`, not position.
 - Stack mode: every block renders full width on the background;
-  thinking strips de-card on dark. Order never changes — live-pin is
+  thinking strips de-card on dark. Order never changes - live-pin is
   scroll + sticky layout, not render order.
 - Statusbar telemetry is honest: the token counter ticks per chunk
   (chars/4 estimate, corrected by real usage at stream end); live
   chunks/s comes from real arrival times.
 - Scroll pinning follows only the stream whose session is being
-  viewed; the `pinned` flag changes only on real scroll events — never
+  viewed; the `pinned` flag changes only on real scroll events - never
   re-measure after appending.
 - Retry is regenerate-in-place via the server: the action row's retry
   chip (composer face retired, t_95d2bc34) dispatches the chat panel's
@@ -347,10 +347,10 @@ Everything else animates through `transition`, not keyframes.
   transcript surgery is RETIRED - never reintroduce it.
 - Vue reactivity trap (bit once, live-proven): after pushing an item
   into the reactive transcript, re-capture the reactive proxy
-  (`st.transcript[len-1]`) before mutating it — raw-ref mutations
+  (`st.transcript[len-1]`) before mutating it - raw-ref mutations
   bypass the proxy and never re-render. This is the stuck-cursor /
   ticking-timer bug class.
-- Error payloads in the SSE driver THROW (`composables/omega.ts`) — a
+- Error payloads in the SSE driver THROW (`composables/omega.ts`) - a
   swallowed stream error is an invisible dead stream.
 
 ## Ephemeral chat (card t_d96a5cd5)
@@ -365,18 +365,18 @@ Everything else animates through `transition`, not keyframes.
   kills; reload reattaches from server memory (transcript endpoint,
   same reattach machinery). Never a persisted-then-deleted shape.
 - **Invisible to every store-derived surface by law**: session lists,
-  search (FTS5), export, counts `/sessions` — the store never
+  search (FTS5), export, counts `/sessions` - the store never
   sees it. The `eph-` prefix is the namespace guard every endpoint
   routes on.
 - **Memory tool denied** (run-scoped, `agent.WithDeniedTools`, the
   loop filters post-merge so extension ToolProviders cannot
   reintroduce it). Ceiling: nothing blocks files/shell writes to
-  memory.md yet — that is the parked sandbox round's job; it does not
+  memory.md yet - that is the parked sandbox round's job; it does not
   block ephemeral.
 - **Close = gone** (v2 has no upgrade-to-persist; a persist action is
   a separate follow-up card). Closing the last tab on an `eph-` id
   DELETEs the registry record, even mid-run (the run cancels first).
-- Retry/fork/variants never exist on an ephemeral tab — the store
+- Retry/fork/variants never exist on an ephemeral tab - the store
   tree they replay is absent. The server 400s the flag combination.
 
 ## The composer's `/` palette and `@` mentions (card t_07aed3f9)
@@ -387,7 +387,7 @@ resolution mirror the one command law every surface follows:
 - **A `/` token at the caret opens the command palette** (t_d1a2951d:
   caret/token-based, mid-sentence included - the draft's leading word
   is just the boundary-free case). Rows: the webui's
-  shell commands (`composables/commands.ts` `WEBUI_SHELL_COMMANDS` —
+  shell commands (`composables/commands.ts` `WEBUI_SHELL_COMMANDS` -
   `/new` and `/sessions` plus the local-action set
   `/copy /modules /fork /help /panels /retry /theme /variant`;
   `/extensions` rides the palette as
@@ -399,7 +399,7 @@ resolution mirror the one command law every surface follows:
 - **Shell commands act LOCALLY and never hit the agent.** `/fork`,
   `/retry`, `/variant`, `/theme` and friends run through the app's own
   handler; extension commands and `/<skill-name>` go to
-  `POST /commands/dispatch` (host-local execution — a module command
+  `POST /commands/dispatch` (host-local execution - a module command
   returns its result text; a skill returns content the NEXT send arms
   as a system preamble). api.md's "Commands" section documents the
   wire.
@@ -407,7 +407,7 @@ resolution mirror the one command law every surface follows:
   token) lists workspace files plus the two prefix rows;
   `@session:` lists sessions, `@skill:` lists skills. Picking inserts
   the completed token at the caret. The picker only helps TYPE tokens
-  — expansion is SERVER-SIDE on the `/chat` submit path through the
+  - expansion is SERVER-SIDE on the `/chat` submit path through the
   one `core.ExpandAtMentions` law (`core/atmention.go`). The browser
   never reads or expands files;
   unresolvable tokens stay literal in the message.
@@ -415,15 +415,15 @@ resolution mirror the one command law every surface follows:
 ## The Files tab
 
 - **The tree is chevronless** (t_63582d1f): expand/collapse triangles
-  do not exist. The folder icon alone carries the state — the glyph
+  do not exist. The folder icon alone carries the state - the glyph
   flips `lucide-folder` / `lucide-folder-open` and the row carries
   `aria-expanded`. Keyboard parity: focus + Enter toggles. Hover
   indent guides: one hairline `::before` per nesting level, revealed
-  purely by CSS `:hover` on the root tree (0.15s opacity fade) — zero
+  purely by CSS `:hover` on the root tree (0.15s opacity fade) - zero
   listeners, zero layout shift; no narrow exemption.
 - **The path guard is the traversal set** (t_ccd4a000): every file
   surface (browse, read, raw) rejects absolute paths, empty segments,
-  and ONLY the `.` / `..` traversal segments — dotfiles and dot-folders
+  and ONLY the `.` / `..` traversal segments - dotfiles and dot-folders
   (`.git`, `.worktrees`, ...) list and read like everything else.
   Listed rows carry no error state; a failed read is a one-line
   notice, not a phantom row.
@@ -471,7 +471,7 @@ resolution mirror the one command law every surface follows:
 - The continuous roster folds into the same rows over
   `GET /continuous/roster`: the row law with a live dot + short word
   on the subtitle (green active, dim sleeping), the right-anchored
-  toggle per the pill law, and NO wake control anywhere — waking is
+  toggle per the pill law, and NO wake control anywhere - waking is
   the scheduler's job, the tab never spawns a wake.
 - **The default agent is locked** (t_2d8deb8c): it must always be on.
   The row's pill is locked-on and non-interactive; `PUT
@@ -480,7 +480,7 @@ resolution mirror the one command law every surface follows:
 - **Expansion = details + edit**: expanding a row seats the config
   summary and the `PUT /agents/{name}` layer editor (description,
   provider host/type/model_name/api_key, system_prompt; nil = leave
-  alone). Session ROWS are dead on this tab — the roster opens a
+  alone). Session ROWS are dead on this tab - the roster opens a
   session's chat, it never lists sessions (the per-agent session
   endpoints stay in the API, docs/api.md).
 
@@ -663,6 +663,16 @@ dot, reset link, draft star, live note).
   remembered selection, no-accordion proof) and
   `110-settings-scopes.journey.sh` (the tier-3 scope tabs, re-witnessed
   under the new bones).
+- **The whole-document band** (card t_a82d39c8): beside the knob rows, the
+  pane's band carries three config-document actions - `reset to defaults`
+  (POST `settings/reset`, the defaults belong to the host, so the client
+  never assembles them), `export to yaml` (downloads the live config as a
+  yaml file), and `edit as yaml` (a native `<dialog>` editing the document
+  as text; the save PUTs through `/settings/raw`, which validates and
+  persists via the host's own write path - the body is capped at 1 MiB, a
+  larger document is refused with 413). Scope-aware: the main tab edits
+  `config.yaml`; an agent scope tab edits its own layer. The endpoints are
+  documented in `api.md`.
 ## The Logs tab
 
 - The face of the observability capsule (`harness/observability`, the
@@ -735,23 +745,23 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
 
 ## Component map
 
-- `app.vue` — orchestrator: open/create routing (open in the main pane,
+- `app.vue` - orchestrator: open/create routing (open in the main pane,
   focus-existing), URL sync (`/chat/<id>` vs `/`, plus the settings claim
   `/settings/` - written on every open/focus of that tab and handed back on
   a chat focus - and the READ-ONLY `/board` landing: the app never writes
   that one), scroll pinning, stacked-mode layout, live telemetry, tab-title
   spinner.
-- `composables/chat.ts` — the stream driver (per-tab state incl. image
+- `composables/chat.ts` - the stream driver (per-tab state incl. image
   and file attachments: `attachments` = the base64 image lane,
   `files` = the /attach-file reference records).
-  `composables/omega.ts` — typed API client: SSE
+  `composables/omega.ts` - typed API client: SSE
   `parseFrame`/`handlePayload`, `streamChat` (throws
   `StreamInterruptedError` when the reader errors or ends without
   `agent_end`), sessions CRUD + pinned/read PATCH + archive/unarchive,
   search, transcript fetch, files browse/read, image attach
-  (`attachImageUrl`), non-image attach (`uploadAttachment` — the
+  (`attachImageUrl`), non-image attach (`uploadAttachment` - the
   multipart POST /attach-file, part order `session_id` then `file`),
-  `renderMarkdown` (markdown-it, `html: false` — the lib's default
+  `renderMarkdown` (markdown-it, `html: false` - the lib's default
   escaping is the sanitizer), `createRenderScheduler`.
 - Shell: `MenuBar` (the three seats, see the top-bar paragraph),
   `NavCluster` (back / forward / the fake-input palette affordance /
@@ -761,7 +771,7 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   popover the dot opens), `SearchInput`,
   `PaneDivider`, `TabBand` (the universal panel top bar: title left,
   actions right, outside every scrollport), `TogglePill` (the one
-  switch, see above), `BandSelect` (the themed select — chip button +
+  switch, see above), `BandSelect` (the themed select - chip button +
   role="listbox" pop, generalized over short option ladders: band
   toggles, the board switcher, the drawer status, settings knobs, the
   composer's reasoning-effort chip).
@@ -787,7 +797,7 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   [`.agents/DESIGN.md`](../.agents/DESIGN.md) (card t_1750a9e3),
   pinned by the 22-composer journey and
   `webui/test/composershape.test.ts`; `ModelSelect` + the shared `BandSelect` effort chip (the dedicated
-  ThinkingSelect retired — the BandSelect owns the select grammar; the
+  ThinkingSelect retired - the BandSelect owns the select grammar; the
   model+effort pair is one nowrap wrap unit), `ChatMessage`,
   `ThinkingBlock`, `ToolCallLine` (running/done/error, expandable
   result), `ToolGroup` (the tool-group RENDERING law, card t_e4280de7:
@@ -804,7 +814,7 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   branch/rename/export row actions, archived group, order law above).
 - Files: `FileTree` + `FilesTab` + `InspectorPanel` (module panels slot
   in). See the Files tab section below. Settings: `SettingsTab` (the
-  config knobs as a dock-tab singleton; the theme picker is TWO knobs —
+  config knobs as a dock-tab singleton; the theme picker is TWO knobs -
   color mode and the custom theme, t_a94b1cda; model slots ride
   `ModelField`, the BandSelect listbox with capability filters).
   Terminal view: `harness/terminal/ui/TerminalTab` (the bottom-host PTY
@@ -821,11 +831,11 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   event stream + the tail toggle over the observability capsule's two
   reads; the pure filter/format half is `ui/rows.ts`) - the tab the dock
   names "Logs" (card t_01c53e78).
-- Canvas (arc 3c): `composables/canvas.ts` is the store —
+- Canvas (arc 3c): `composables/canvas.ts` is the store -
   snapshot load (GET /ui/canvas) + view_model_delta merge (forwarded
   by the chat host's `canvasDelta` dep) + the action pipe POST
   (optimistic pending, error state on 4xx/5xx); the standalone
-  generic host tab (`components/canvas/CanvasPanel.vue`) is gone —
+  generic host tab (`components/canvas/CanvasPanel.vue`) is gone -
   folded into the settings MODULES section with the rest of the module
   surface (card t_81d0901b), the chat transcript renders FROM the
   canvas view-model.
@@ -833,7 +843,7 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
 ## Testing
 
 ```bash
-node --test "test/*.test.ts"        # from webui — node's built-in runner
+node --test "test/*.test.ts"        # from webui - node's built-in runner
 bash scripts/build.sh               # SPA generate + sync to api/static
 python3 scripts/stream_check.py http://127.0.0.1:8098   # transport probe (dev omega must run)
 ```
@@ -842,7 +852,7 @@ python3 scripts/stream_check.py http://127.0.0.1:8098   # transport probe (dev o
 (no incremental arrival), 2 no stream at all.
 
 **The test law: tests receive the signal shape production sends.** A
-unit test that unwraps a ref itself proves nothing — the auto-focus
+unit test that unwraps a ref itself proves nothing - the auto-focus
 lesson (2026-10-20): shipped 100% dead with every gate green, because
 the test compared a `Ref` against its `.value` string, a signal-shape
 mismatch that passes every gate including the health check. Same
@@ -865,18 +875,18 @@ transitions), `composer-retry.test.ts` (the morphing button), `panemodel.test.ts
   tracked, so `go install` and plain `go build` always produce the
   complete product. Webui cards commit **SOURCE ONLY**; the merge pass
   runs `scripts/embed-lane.sh`, which owns every `static/` commit.
-- `scripts/build.sh` runs `nuxt generate` (NOT `nuxt build` — an
+- `scripts/build.sh` runs `nuxt generate` (NOT `nuxt build` - an
   ssr:false `nuxt build` emits a nitro server; generate emits the
   static SPA) and syncs to `../api/static/`. Run it before
   `go build`.
-- Never hand-resolve `static/` conflicts — regenerate.
+- Never hand-resolve `static/` conflicts - regenerate.
 
 ### Poisoned-bundle diagnosis
 
 Conflict markers appearing in the SERVED UI = the SPA was built from
 conflicted/stash-poisoned source (the build gate refuses to ship that,
 but a manual build can slip one through). Diagnosis: grep the SERVED
-content, never source strings — `grep -r` over the served CSS/module
+content, never source strings - `grep -r` over the served CSS/module
 files (find-based, conflict-marker pattern), then regenerate via
 `scripts/build.sh`, re-serve, and verify the regenerated bundle came
 out clean. A grep against the `.vue` sources will lie to you.
@@ -886,12 +896,12 @@ out clean. A grep against the `.vue` sources will lie to you.
 - The visual feedback loop is the user's screenshots + the in-app
   comment system (headless-browser checks blocked on missing Chromium
   deps on the Pi; a real browser session works). In-app comment rounds
-  keep scope narrow — never split one DOM group across changes.
+  keep scope narrow - never split one DOM group across changes.
 - Verify SERVED content, never source strings.
 - Vite dev-server cache ghosts are real: on mismatch, restart the dev
   server and hard-refresh before debugging.
 
 ## Related
 
-- [api.md](api.md) — the HTTP wire the webui rides
-- [configuration.md](configuration.md) — the knobs the settings pane renders
+- [api.md](api.md) - the HTTP wire the webui rides
+- [configuration.md](configuration.md) - the knobs the settings pane renders
