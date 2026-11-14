@@ -17,6 +17,16 @@
     <span
       class="tab-band-title"
       :title="titleAttr ?? undefined">{{ title }}</span>
+    <!-- the LEAD seat (0.17.3 make-over, the kanban board selector): a
+         tab whose title NAMES a thing the user picks from (the board the
+         panel is showing) puts that control beside the title, where the
+         identity lives, and keeps the destructive actions far right. No
+         tab that does not fill the slot renders anything for it. -->
+    <div
+      v-if="$slots.lead"
+      class="tab-band-lead">
+      <slot name="lead" />
+    </div>
     <div
       v-if="$slots.default"
       class="tab-band-actions"
@@ -77,9 +87,23 @@
     gap: 2px;
     flex-shrink: 0;
   }
+  /* the lead seat sits BETWEEN the title and the actions, and it is what
+     eats the free space: title + lead stay left as a pair, the actions stay
+     right (justify-content: space-between would otherwise spread all three
+     apart). */
+  .tab-band-lead {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
   /* the ONE action-button look: FilesTab's files-tool contract promoted
-     to the band vocabulary - dimmed at rest, hover raises, disabled 0.4 */
-  .tab-band-actions :deep(.band-tool) {
+     to the band vocabulary - dimmed at rest, hover raises, disabled 0.4.
+     The LEAD seat's controls carry the same look (the kanban rename
+     save/cancel pair lives there). */
+  .tab-band-actions :deep(.band-tool),
+  .tab-band-lead :deep(.band-tool) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -118,6 +142,10 @@
     row-gap: 4px;
   }
   .tab-band-actions :deep(.band-tool:hover:not(:disabled)) {
+    background: var(--z2);
+    color: var(--text);
+  }
+  .tab-band-lead :deep(.band-tool:hover:not(:disabled)) {
     background: var(--z2);
     color: var(--text);
   }

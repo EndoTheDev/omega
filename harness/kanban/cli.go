@@ -31,7 +31,10 @@ const kanbanHelp = `omega kanban - the task board registry
 Usage:
   omega kanban board list                  all boards, task counts, current marker
   omega kanban board create <name>         create an empty board
-  omega kanban board delete <name>         delete a board (refuses non-empty)
+  omega kanban board rename <old> <new>    rename a board in place
+  omega kanban board delete <name>         delete a board (refuses while a
+                                           live card is on it; archived cards
+                                           ride out with it - zero boards is legal)
   omega kanban board use <name>            point the home at the board
   omega kanban board current               print the current board
   omega kanban list [--board <name>] [--status <status>]
@@ -253,6 +256,15 @@ func cmdKanbanBoard(args []string) error {
 			return err
 		}
 		fmt.Printf("created board %s\n", rest[0])
+		return nil
+	case "rename":
+		if len(rest) != 2 {
+			return fmt.Errorf("usage: omega kanban board rename <old> <new>")
+		}
+		if err := s.RenameBoardRow(rest[0], rest[1]); err != nil {
+			return err
+		}
+		fmt.Printf("renamed board %s -> %s\n", rest[0], rest[1])
 		return nil
 	case "delete":
 		if len(rest) != 1 {

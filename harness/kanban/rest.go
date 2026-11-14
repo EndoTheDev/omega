@@ -18,17 +18,23 @@ import (
 // (task + comments + events), PATCH /tasks/{id}, DELETE /tasks/{id}
 // (the TaskDeleter capability), POST /tasks/{id}/comments, GET /boards,
 // and - since the boards folded into the one database (t_feae19d3) -
-// POST /boards to create and DELETE /boards/{name} to remove an empty
-// non-default board. A disabled kanban answers 404 - no route
-// registered, nothing to degrade to (Q7: one mount path).
+// POST /boards to create, PATCH /boards/{name} to rename and DELETE
+// /boards/{name} to remove a board. A disabled kanban answers 404 - no
+// route registered, nothing to degrade to (Q7: one mount path).
 //
 // There is deliberately no cross-board mutation endpoint: a PATCH
 // moves a card inside its board only. Switching boards is the registry
 // is_current flag's job (omega kanban board use), never a card op.
 // Deleting is a registry op like switching, but destructive - the
-// handler keeps DeleteBoardRow's guards verbatim (default board,
-// unknown board, current flag holder, non-empty boards all refused)
-// and answers 400 with the refusal text.
+// handler keeps DeleteBoardRow's card precondition (a board holding a
+// live card refuses, naming the count; archived cards ride out with
+// the board) and answers 400 with the refusal text. Since 0.17.3 the
+// default and current boards are deletable too, and zero boards is a
+// legal registry.
+//
+// GET /tasks?scope=all lifts the list out of one board (the view's
+// all-boards search scope): every board's cards in one answer, each row
+// stamped with the board it lives on.
 
 // writeJSON encodes v and answers status, the envelope the
 // handlers before the move wrote.
@@ -41,6 +47,19 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // boardParam reads the ?board= picker from the request.
 func boardParam(r *http.Request) string {
 	return r.URL.Query().Get("board")
+}
+
+// scopeAll is the ?scope= value that lifts a tasks read out of one
+// board: every board's cards in one answer (0.17.3 make-over, the board
+// view's all-boards search scope). Any other value (or none) keeps the
+// read board-scoped.
+const scopeAll = "all"
+
+// allBoardLister is the optional capability behind ?scope=all - the same
+// shape as TaskDeleter: a store that cannot answer it serves a 400
+// instead of a silently empty list.
+type allBoardLister interface {
+	ListAllTasks(ctx context.Context, status string) ([]KanbanTask, error)
 }
 
 // deleteFromStore deletes through the optional TaskDeleter capability
@@ -92,13 +111,28 @@ func boardsHandler(store BoardLister) func(http.ResponseWriter, *http.Request) {
 }
 
 // tasksHandler serves GET /tasks (list; ?status= filters, the empty
-// value lists every status; ?board= picks the board) and POST /tasks
-// (create; title required, unspecified status defaults to triage in
-// the store).
+// value lists every status; ?board= picks the board; ?scope=all lists
+// EVERY board's cards in one answer - the board view's all-boards search
+// scope, each row carrying its board name) and POST /tasks (create;
+// title required, unspecified status defaults to triage in the store).
 func tasksHandler(store restProvider) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
+			if r.URL.Query().Get("scope") == scopeAll {
+				all, ok := any(store).(allBoardLister)
+				if !ok {
+					http.Error(w, "this kanban store cannot list every board", http.StatusBadRequest)
+					return
+				}
+				tasks, err := all.ListAllTasks(r.Context(), r.URL.Query().Get("status"))
+				if err != nil {
+					http.Error(w, "list tasks: "+err.Error(), http.StatusBadRequest)
+					return
+				}
+				writeJSON(w, http.StatusOK, map[string]any{"tasks": tasks})
+				return
+			}
 			tasks, err := store.ListTasks(r.Context(), boardParam(r), r.URL.Query().Get("status"))
 			if err != nil {
 				http.Error(w, "list tasks: "+err.Error(), http.StatusBadRequest)
@@ -281,17 +315,52 @@ func boardCreateHandler(store boardRegistry) func(http.ResponseWriter, *http.Req
 // registry is a store capability now, not a home-path op).
 type boardRegistry interface {
 	CreateBoardRow(name string) error
+	RenameBoardRow(oldName, newName string) error
 	DeleteBoardRow(name string) error
 }
 
+// boardRenameHandler serves PATCH /boards/{name} with {"name": "<new>"}:
+// the board is renamed in place (0.17.3 make-over - renaming joins the
+// delete-all surface, the same band the selector and the remove control
+// ride). The row keeps its id, so the cards do not move; the refusal
+// text (illegal name, duplicate name, unknown board) answers 400 and the
+// webui shows it verbatim.
+func boardRenameHandler(store boardRegistry) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		name := r.PathValue("name")
+		if name == "" {
+			http.Error(w, "missing board name", http.StatusBadRequest)
+			return
+		}
+		var body struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := store.RenameBoardRow(name, body.Name); err != nil {
+			http.Error(w, "rename board: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"renamed": body.Name, "from": name})
+	}
+}
+
 // boardDeleteHandler serves DELETE /boards/{name}: remove a board
-// through the registry's own DeleteBoardRow, keeping every guard (the
-// default board, the current board, unknown boards, and any board that
-// still holds tasks are refused with a 400 carrying the refusal text -
-// the webui surfaces it verbatim). There is no force: the guards are
-// the law. DeleteBoardRow is the irreversible step (the board's rows
-// are already gone; an empty board loses only its row); the webui's
-// confirm click is only a courtesy double-take, this handler is the law.
+// through the registry's own DeleteBoardRow. Since 0.17.3 every board
+// may leave - the default board and the current board included, and a
+// home may end up with ZERO boards (the panel's create-board empty
+// state). The one guard left is the card precondition: a board holding
+// a LIVE card refuses by name and count ("archive or delete them
+// first"), so the archive lane is the last stop before a board goes;
+// the archived cards, their comments and their events ride out with the
+// board. There is no force. The webui's confirm click is only a
+// courtesy double-take; this handler is the law.
 func boardDeleteHandler(store boardRegistry) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
@@ -399,6 +468,10 @@ func (p *Plugin) registerRoutes(api *agent.ExtensionAPI) error {
 				pattern string
 				handler func(http.ResponseWriter, *http.Request)
 			}{"POST /boards", p.pushAfterMutation(p.pushAll, boardCreateHandler(reg))})
+			rows = append(rows, struct {
+				pattern string
+				handler func(http.ResponseWriter, *http.Request)
+			}{"PATCH /boards/{name}", p.pushAfterMutation(p.pushAll, boardRenameHandler(reg))})
 			rows = append(rows, struct {
 				pattern string
 				handler func(http.ResponseWriter, *http.Request)

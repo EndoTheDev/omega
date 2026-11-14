@@ -13,6 +13,7 @@ import {
   BOARD_FETCH_BACKOFF_MS,
   BOARD_STATUSES,
   BOARD_PATH,
+  BOARDS_PATH,
   CARD_CLAMP_LINES,
   DEFAULT_BOARD_NAME,
   HEARTBEAT_STALE_MS,
@@ -23,9 +24,13 @@ import {
   age,
   bodyPreview,
   boardDeletePath,
+  boardOf,
+  boardRenamePath,
   canRemoveBoard,
   columns,
+  fetchAgentOptions,
   fetchBoardsRetry,
+  filterTasks,
   hasPriorityChip,
   heartbeatChip,
   isBoardPath,
@@ -35,12 +40,13 @@ import {
   pickBootBoard,
   priorityLabel,
   priorityOptions,
-  reconcileLanePins,
   reorderAfter,
   step,
   taskDeletePath,
+  tasksPath,
   toggleLanePin,
   withBoard,
+  type AgentOption,
   type BoardInfo,
   type BoardTask,
   type LanePins,
@@ -143,32 +149,30 @@ test("lane rails: ANY lane folds, not just the two settled ones", () => {
   assert.equal(laneFolded("archived", 2, {}), laneFolded("review", 2, {}));
 });
 
-test("lane rails: the auto-collapse law, and an override dies with its lane", () => {
-  // an EMPTY lane collapses to a rail - no pin can hold it open
+test("lane rails: a CLICK expands a collapsed lane - the empty lane too (0.17.3)", () => {
+  // an EMPTY lane still folds itself (reality: nothing to show)...
   assert.equal(laneFolded("triage", 0, {}), true);
-  assert.equal(laneFolded("triage", 0, { triage: "open" }), true, "reality outranks a pin");
   assert.equal(laneFolded("blocked", 0, { blocked: "collapsed" }), true);
+  // ...but a CLICK outranks reality now: the rail opens, empty or not
+  const opened = toggleLanePin("triage", 0, {});
+  assert.equal(opened.triage, "open", "a click on an empty rail writes an open pin");
+  assert.equal(laneFolded("triage", 0, opened), false, "an empty lane pinned open stays open");
+  // and the user can close it again
+  const closed = toggleLanePin("triage", 0, opened);
+  assert.equal(closed.triage, "collapsed");
+  assert.equal(laneFolded("triage", 0, closed), true);
 
   // a pin holds while the lane holds cards - both directions
   assert.equal(laneFolded("review", 1, { review: "open" }), false);
   assert.equal(laneFolded("review", 1, { review: "collapsed" }), true);
 
-  // the drop: only a DRAINED lane loses its override
-  const pins: LanePins = { review: "open", triage: "collapsed" };
-  const kept = reconcileLanePins({ review: 0, triage: 2 }, pins);
-  assert.equal("review" in kept, false, "the drained lane's override is dropped");
-  assert.equal(kept.triage, "collapsed", "a lane still holding cards keeps its pin");
-  assert.equal(pins.review, "open", "the input map is untouched (pure)");
-  // nothing drained: the very same map comes back (no needless churn)
-  assert.equal(reconcileLanePins({ review: 1, triage: 1 }, pins), pins);
-
-  // the whole law in one round trip: pinned open -> drains (override
-  // dropped, rail) -> refills (back to its DEFAULT, not the dead pin)
+  // the round trip that used to be vetoed: an empty lane opened by hand
+  // keeps its pin through a drain and a refill (no reconcile exists to
+  // take it back - the old one re-folded the lane the user just opened)
   let lanes: LanePins = { review: "open" };
   assert.equal(laneFolded("review", 2, lanes), false);
-  lanes = reconcileLanePins({ review: 0 }, lanes);
-  assert.equal(laneFolded("review", 0, lanes), true, "a drained lane is a rail even when it was pinned open");
-  assert.equal(laneFolded("review", 2, lanes), false, "a refilled lane comes back expanded - the pin did not survive the drain");
+  assert.equal(laneFolded("review", 0, lanes), false, "the pin survives the drain");
+  assert.equal(laneFolded("review", 2, lanes), false, "and the refill");
 
   // toggling writes the opposite of the state that stands
   const folded = toggleLanePin("todo", 2, {});
@@ -177,9 +181,6 @@ test("lane rails: the auto-collapse law, and an override dies with its lane", ()
   const unfolded = toggleLanePin("todo", 2, folded);
   assert.equal(unfolded.todo, "open", "a rail unfolds");
   assert.equal(laneFolded("todo", 2, unfolded), false);
-  // an empty lane cannot be opened - the click is a no-op, the rail stays
-  const empty: LanePins = { ready: "open" };
-  assert.equal(toggleLanePin("ready", 0, empty), empty);
 });
 
 test("lane rails: the per-lane dot tone is the Hermes status mapping", () => {
@@ -248,9 +249,12 @@ test("lane rails: every lane carries the fold control and no settled branch surv
   assert.doesNotMatch(boardVue, /settled:/, "no settled class rides the lane");
   // one fold state, two shapes: the rail and the column are the same element
   assert.match(boardVue, /:class="\{ folded: isLaneFolded\(BOARD_STATUSES\[i\], col\.length\) \}"/, "the lane's folded state is the one fold law");
-  // auto-collapse is wired, not re-implemented in the view
-  assert.match(boardVue, /lanePins\.value = reconcileLanePins\(counts, lanePins\.value\)/, "every list read reconciles the pins");
-  assert.match(boardVue, /\{ immediate: true \}/, "including the first render");
+  // the fold law is wired, not re-implemented in the view. 0.17.3: the
+  // click OWNS the fold (a collapsed lane expands, empty or not), so the
+  // old reconcile-on-every-read is gone - it would take back the pin the
+  // user just wrote on an empty lane.
+  assert.doesNotMatch(boardVue, /reconcileLanePins/, "no reconcile takes the click's pin back");
+  assert.doesNotMatch(logic, /export function reconcileLanePins/, "and the helper is gone, not orphaned");
   assert.match(boardVue, /lanePins\.value = toggleLanePin\(status, count, lanePins\.value\)/, "the click goes through the pure toggle");
   // an empty lane can still GROW: the rail carries the same + the header
   // does, and an open create form holds the lane in its column shape (a
@@ -351,10 +355,10 @@ test("pickBootBoard: current flagged row wins, first row is the fallback", () =>
 test("board view wires the switcher through every board call", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
   assert.match(boardVue, /<BandSelect/, "the switcher rides the shared themed listbox (card t_acad02ec)");
-  assert.match(boardVue, /fetch\(withBoard\("\/tasks\?status=all", boardName\.value\)\)/, "list calls carry ?board= (status=all: the board grid must see the archived column)");
+  assert.match(boardVue, /fetch\(tasksPath\(boardName\.value, scope\.value\)\)/, "list calls carry the board + scope through the pure path builder");
   assert.match(boardVue, /fetchBoards\(\)/, "boot reads the registry");
   assert.match(boardVue, /selected\.value = null/, "the drawer resets on board switch");
-  // every task fetch goes through withBoard - no raw /task path left behind
+  // every task fetch goes through withBoard/tasksPath - no raw /task path left behind
   const rawTaskFetches = boardVue.match(/fetch\(`?\/tasks/g) ?? [];
   assert.equal(rawTaskFetches.length, 0, "all fetches must be withBoard-wrapped");
   // the drawer (inspector) has no self-contained fetch: it receives props
@@ -375,37 +379,165 @@ test("board head keeps the fillet-tuck top spacing", () => {
     "the tuck-consumed 8px spacer stays out");
 });
 
-// --- board removal (card t_95c5527f): guarded delete beside the switcher
+// --- the board's own surface (card t_95c5527f; 0.17.3 make-over):
+// delete ALL boards (main included), rename in place, and the zero-board
+// empty state. The server keeps the card precondition; the view keeps the
+// armed confirm and the verbatim refusal line.
 
-test("canRemoveBoard + boardDeletePath: the default board never carries the control", () => {
+test("canRemoveBoard + the board paths: NOTHING is reserved any more (0.17.3)", () => {
   assert.equal(DEFAULT_BOARD_NAME, "main");
   assert.ok(canRemoveBoard("alpha"), "named boards are removable");
-  assert.ok(!canRemoveBoard("main"), "the default board is never removable");
-  assert.ok(!canRemoveBoard(""), "the empty registry selection is not removable");
+  assert.ok(canRemoveBoard("main"), "the default board is removable too - delete-all includes main");
+  assert.ok(!canRemoveBoard(""), "an empty selection has nothing to remove");
   assert.equal(boardDeletePath("alpha"), "/boards/alpha");
   assert.equal(boardDeletePath("my_2nd"), "/boards/my_2nd");
   // names are path-safe payloads: encoded, never raw
   assert.equal(boardDeletePath("a b"), "/boards/a%20b");
+  // the rename rides the board's own row
+  assert.equal(boardRenamePath("alpha"), "/boards/alpha");
+  assert.equal(boardRenamePath("a b"), "/boards/a%20b");
+  assert.equal(BOARDS_PATH, "/boards");
 });
 
-test("board view carries the remove control: armed confirm, DELETE route, notice, default fallback", () => {
+test("board view carries the board surface: armed remove, rename seat, zero-board empty state", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
-  assert.match(boardVue, /id="board-remove-btn"/, "the remove button exists beside the switcher");
+  assert.match(boardVue, /id="board-remove-btn"/, "the remove button exists");
   assert.match(
     boardVue,
     /:disabled="!canRemoveBoard\(boardName\)"/,
-    "the control keys off the removable name (default board disabled)",
+    "the control keys off the removable name",
   );
   assert.match(boardVue, /confirm remove/, "the armed click relabels: inline confirm row");
   assert.doesNotMatch(boardVue, /window\.confirm/, "no native confirm - the panel confirms inline");
   assert.match(boardVue, /method: "DELETE"/, "the removal fires the DELETE route");
   assert.match(boardVue, /boardDeletePath\(name\)/, "the delete goes to the encoded registry path");
   assert.match(boardVue, /board-notice/, "a visible notice reports the removal or refusal");
-  assert.match(boardVue, /DEFAULT_BOARD_NAME/, "selection falls back to the default board");
   assert.match(boardVue, /disarmRemove/, "board switches disarm an armed confirm");
+  // the selection falls to whatever SURVIVES - zero boards is legal and
+  // renders the empty state, so there is no hardcoded default fallback
+  assert.match(boardVue, /boardName\.value = pickBootBoard\(boards\.value\)/, "the post-delete selection comes from the registry");
+  assert.doesNotMatch(boardVue, /boardName\.value = DEFAULT_BOARD_NAME/, "no hardcoded default fallback");
+  // rename: the band control swaps the selector for an input, PATCHes the row
+  assert.match(boardVue, /class="band-tool board-rename-btn"/, "the rename control rides the band");
+  assert.match(boardVue, /method: "PATCH"/, "the rename PATCHes the board row");
+  assert.match(boardVue, /boardRenamePath\(from\)/, "through the pure path helper");
+  assert.match(boardVue, /@keydown\.enter\.prevent="submitRename"/, "Enter saves the rename");
+  assert.match(boardVue, /@keydown\.esc\.prevent="cancelRename"/, "Esc keeps the old name");
+  // the zero-board empty state: a sentence and the one way back
+  assert.match(boardVue, /v-if="registryKnown && boards\.length === 0"/, "the empty state renders only when the registry ANSWERED empty");
+  assert.match(boardVue, /class="board-empty"/, "the empty state block exists");
+  assert.match(boardVue, /@submit\.prevent="submitCreateBoard"/, "the empty state's create form");
+  assert.match(boardVue, /fetch\(BOARDS_PATH, \{/, "the create POSTs /boards");
 });
 
-// --- drag-and-drop reorder (card t_09b44af1)
+// --- the make-over's search seat (0.17.3): one input, two scopes ---------
+
+test("filterTasks: case-insensitive over title, body, assignee and id", () => {
+  const rows = [
+    task({ id: "t_aaa", title: "Fix the composer", body: "enter sends", assignee: "vera" }),
+    task({ id: "t_bbb", title: "Board rail", body: "empty lane opens", assignee: "cody" }),
+  ];
+  assert.equal(filterTasks(rows, "").length, 2, "an empty query is every card");
+  assert.equal(filterTasks(rows, "   ").length, 2, "whitespace is still empty");
+  assert.deepEqual(filterTasks(rows, "COMPOSER").map((t) => t.id), ["t_aaa"], "title, case-insensitive");
+  assert.deepEqual(filterTasks(rows, "empty lane").map((t) => t.id), ["t_bbb"], "body");
+  assert.deepEqual(filterTasks(rows, "cody").map((t) => t.id), ["t_bbb"], "assignee");
+  assert.deepEqual(filterTasks(rows, "t_aaa").map((t) => t.id), ["t_aaa"], "id");
+  assert.equal(filterTasks(rows, "nothing matches this").length, 0);
+});
+
+test("tasksPath: the board read vs the all-boards read", () => {
+  assert.equal(tasksPath("alpha", "board"), "/tasks?status=all&board=alpha");
+  assert.equal(tasksPath("", "board"), "/tasks?status=all");
+  assert.equal(tasksPath("alpha", "all"), "/tasks?status=all&scope=all", "the all-boards scope ignores the selection");
+});
+
+test("boardOf: a mixed row names its own board; a scoped row falls back to the view", () => {
+  assert.equal(boardOf(task({ board: "alpha" }), "main"), "alpha");
+  assert.equal(boardOf(task({ board: "" }), "main"), "main");
+  assert.equal(boardOf(task({}), "main"), "main");
+});
+
+test("board view carries the search seat: one input, a scope chip, and a mixed-scope board chip", () => {
+  const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
+  assert.match(boardVue, /class="board-search"/, "the filter seat");
+  assert.match(boardVue, /aria-label="filter cards"/, "the seat is labelled");
+  assert.match(boardVue, /@click="toggleScope"/, "the scope chip flips the scope");
+  assert.match(boardVue, /scope === "all" \? "all boards" : "this board"/, "the chip says which scope is live");
+  assert.match(boardVue, /const visibleTasks = computed\(\(\) => filterTasks\(tasks\.value, query\.value\)\)/, "the grid renders the filtered list");
+  assert.match(boardVue, /const cols = computed\(\(\) => columns\(visibleTasks\.value\)\)/, "columns bucket the filtered list");
+  assert.match(boardVue, /v-if="scope === 'all' && t\.board"/, "a mixed row shows which board it came from");
+  // a mixed list is read-only: no arrows, no drag (the cross-board-move ban)
+  assert.match(boardVue, /v-if="scope !== 'all' && step\(BOARD_STATUSES\[i\], -1\)"/, "no move arrows in the mixed scope");
+  assert.match(boardVue, /if \(scope\.value === "all"\) return;/, "no drag in the mixed scope");
+  // every drawer call addresses the card's OWN board
+  assert.match(boardVue, /const board = boardOf\(selected\.value, boardName\.value\)/, "the drawer reads/writes the card's board");
+});
+
+// --- the assignee combobox (0.17.3 make-over): the agents registry -------
+
+test("fetchAgentOptions: reads GET /agents, skips nameless rows, keeps the roster hints", async () => {
+  const stub = (rows: unknown) =>
+    (async (url: string) => {
+      assert.equal(url, "/agents", "one source: the agents registry");
+      return { ok: true, json: async () => rows } as unknown as Response;
+    }) as (u: string) => Promise<Response>;
+  const opts = await fetchAgentOptions(
+    stub([
+      { name: "default", description: "the main agent", continuous: false },
+      { name: "vera", continuous: true },
+      { name: "  ", description: "nameless" },
+      { description: "no name at all" },
+    ]),
+  );
+  assert.deepEqual(opts.map((o: AgentOption) => o.value), ["default", "vera"], "only named rows");
+  assert.equal(opts[0].hint, "the main agent", "the description rides as the hint");
+  assert.equal(opts[1].hint, "agent home", "a continuous home with no description says so");
+  // a failed GET is an error the view degrades on - never a fabricated list
+  await assert.rejects(
+    () =>
+      fetchAgentOptions(
+        (async () => ({ ok: false, status: 500, json: async () => [] }) as unknown as Response) as (
+          u: string,
+        ) => Promise<Response>,
+      ),
+    /GET \/agents: 500/,
+  );
+});
+
+test("board view carries the assignee combobox: registry-fed list, typing stays legal", () => {
+  const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
+  assert.match(boardVue, /fetchAgentOptions\(fetch\)/, "the create form reads the agents registry");
+  assert.match(boardVue, /role="combobox"/, "the assignee field is a combobox");
+  assert.match(boardVue, /role="listbox"/, "with a real listbox");
+  assert.match(boardVue, /@mousedown\.prevent="pickAssignee\(o\.value\)"/, "a row picks without stealing focus");
+  // typing stays legal: the input is BOUND to the free-text value, and a
+  // registry miss only empties the list (the field keeps what was typed)
+  assert.match(boardVue, /v-model="createAssignee"/, "the field's value IS what the user typed");
+  assert.match(boardVue, /typing a name still works/, "an empty registry says typing still works");
+  assert.doesNotMatch(boardVue, /disabled="[^"]*assignee/, "the assignee field is never disabled by the source");
+});
+
+// --- the band's lead seat (0.17.3): the selector moved LEFT --------------
+
+test("board head: the selector rides the band's LEAD seat, actions stay right", () => {
+  const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
+  const band = readFileSync(join(uiRoot, "app", "components", "ui", "TabBand.vue"), "utf8");
+  assert.match(band, /<slot name="lead"/, "the shared band grew the lead seat");
+  assert.match(band, /class="tab-band-lead"/, "and its container");
+  const leadAt = boardVue.indexOf("<template #lead>");
+  const actionsAt = boardVue.indexOf('class="band-tool board-rename-btn"');
+  assert.ok(leadAt > 0, "the board fills the lead seat");
+  assert.ok(leadAt < actionsAt, "the selector leads; the destructive pair stays in the actions slot");
+  const titleAt = boardVue.indexOf('<TabBand title="Kanban">');
+  assert.ok(titleAt >= 0 && titleAt < leadAt, "the lead seat follows the title");
+  // the selector itself lives INSIDE the lead template: it sits before the
+  // first actions-slot control
+  assert.ok(
+    boardVue.indexOf("<BandSelect", leadAt) < actionsAt,
+    "the board selector is inside the lead seat, not the actions",
+  );
+});
 
 test("reorderAfter: slots a card after a sibling inside the same column", () => {
   const list = [task({ id: "t_a", title: "a" }), task({ id: "t_b", title: "b" }), task({ id: "t_c", title: "c" })];
@@ -547,7 +679,7 @@ test("CRUD: the board builds cards from a full form, edits in the drawer, delete
   // edit: the drawer's save PATCHes; the board refetches both views
   assert.match(drawerVue, /\(e: "save", patch: \{ title\?: string; body\?: string; priority\?: number \}\)/, "the drawer reports save patches");
   assert.match(boardVue, /@save="onDrawerSave"/, "the board wires the drawer's saves");
-  assert.match(boardVue, /await loadDetail\(id\)/, "a save refetches the drawer view");
+  assert.match(boardVue, /await loadDetail\(id, board\)/, "a save refetches the drawer view on the card's own board");
   // events: the GET payload's events reach the drawer as a prop
   assert.match(boardVue, /:events="detailEvents"/);
   assert.match(boardVue, /detailEvents\.value = d\.events \?\? \[\]/, "the detail payload's events land in the drawer");

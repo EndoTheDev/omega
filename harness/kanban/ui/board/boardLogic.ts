@@ -63,48 +63,33 @@ export type LanePin = "open" | "collapsed";
 export type LanePins = Record<string, LanePin>;
 
 /**
- * laneFolded is the ONE fold law. Reality outranks the override: an
- * EMPTY lane is always folded to its rail, pinned open or not. A
- * non-empty lane follows its pin, and with no pin it stays expanded.
+ * laneFolded is the ONE fold law. A drained lane folds itself, a lane
+ * holding cards stays open - and a CLICK outranks both, because since
+ * the 0.17.3 make-over a collapsed lane expands on click whether it
+ * holds cards or not (the empty lane included: the rail carries the same
+ * + the header does, so an empty lane is a place to look, not a dead
+ * strip). The pin is the click's record; absent = no override.
  */
 export function laneFolded(status: string, count: number, pins: LanePins): boolean {
-  if (count <= 0) return true; // a drained lane collapses - the auto-collapse law
-  return pins[status] === "collapsed";
+  const pin = pins[status];
+  if (pin === "open") return false;
+  if (pin === "collapsed") return true;
+  return count <= 0; // a drained lane collapses - the auto-collapse law
 }
 
 /**
- * reconcileLanePins drops every override whose lane is now empty. This
- * is the second half of the auto-collapse law: a pin holds while the
- * lane holds cards, and dies the moment the lane drains - so a lane
- * that refills comes back to its default (expanded) instead of
- * remembering an override reality has already overruled. Call it once
- * per list read; it is pure (an unchanged map is returned as-is only
- * when nothing was dropped).
- */
-export function reconcileLanePins(
-  counts: Record<string, number>,
-  pins: LanePins,
-): LanePins {
-  let next: LanePins | null = null;
-  for (const status of Object.keys(pins)) {
-    if ((counts[status] ?? 0) > 0) continue;
-    if (next === null) next = { ...pins };
-    delete next[status];
-  }
-  return next ?? pins;
-}
-
-/**
- * toggleLanePin flips one lane between its rail and its column. An empty
- * lane cannot be opened - reality wins there too, so the click is a
- * no-op and no override is written (the rail stays the drop target).
+ * toggleLanePin flips one lane between its rail and its column. The flip
+ * reads the lane's CURRENT shape (law: a click on a collapsed lane
+ * expands it), so an EMPTY lane - folded by default - opens on the same
+ * click and keeps its open pin until the user folds it again. This is
+ * the 0.17.3 change: reality (count 0) no longer vetoes the click, so
+ * there is nothing to reconcile away later either.
  */
 export function toggleLanePin(
   status: string,
   count: number,
   pins: LanePins,
 ): LanePins {
-  if (count <= 0) return pins;
   const next = laneFolded(status, count, pins) ? "open" : "collapsed";
   return { ...pins, [status]: next };
 }
@@ -141,6 +126,12 @@ export interface BoardTask {
   started_at: string;
   completed_at: string;
   last_heartbeat_at?: string;
+  // board is the NAME of the board a row lives on. Only the all-boards
+  // read (GET /tasks?scope=all, the view's all-boards search scope)
+  // carries it: every other route addresses a card by (board, id), so a
+  // mixed list must say which board a row belongs to. Empty/absent on a
+  // board-scoped read.
+  board?: string;
 }
 
 // --- priority (the round t_f81e845e): an integer urgency tiebreak in
@@ -296,6 +287,59 @@ export function pickBootBoard(boards: BoardInfo[]): string {
   return cur ? cur.name : boards[0].name;
 }
 
+// --- the assignee source (0.17.3 make-over) ---------------------------
+// The create form's assignee control is a COMBOBOX fed by the SAME source
+// the cron editor's agent field reads: GET /agents (the roster inventory -
+// the main profile first, then every agents/<name> home, named `default`
+// for the home root). The fetcher is COPIED here rather than imported: a
+// module UI owns its own copy and imports no other module's code.
+//
+// Typing stays legal: a card may name a worker the registry no longer
+// lists (or never did), and the form must never strand that card. A failed
+// GET degrades to no options - the field stays a plain text input - never
+// to a blocked form.
+
+export interface AgentOption {
+  value: string;
+  label: string;
+  hint: string;
+}
+
+// agentRowWire is the subset of GET /agents this view reads (the roster
+// row shape the cron editor reads too).
+interface AgentRowWire {
+  name?: string;
+  description?: string;
+  continuous?: boolean;
+}
+
+/**
+ * fetchAgentOptions reads the agent registry. The fetch is a parameter so
+ * the node suite can stub it (the same shape fetchBoardsRetry uses).
+ */
+export async function fetchAgentOptions(
+  fetchImpl: BoardFetch = fetch,
+): Promise<AgentOption[]> {
+  const res = await fetchImpl("/agents");
+  if (!res.ok) throw new Error(`GET /agents: ${res.status}`);
+  const rows = (await res.json()) as AgentRowWire[];
+  const out: AgentOption[] = [];
+  for (const r of rows ?? []) {
+    const name = (r?.name ?? "").trim();
+    if (name === "") continue;
+    out.push({
+      value: name,
+      label: name,
+      hint:
+        r.description ||
+        (r.continuous
+          ? "agent home"
+          : "the main agent - in-process, never wakes"),
+    });
+  }
+  return out;
+}
+
 // One comment row (GET /tasks/{id} payload).
 export interface BoardComment {
   id: number;
@@ -345,22 +389,76 @@ export function step(status: string, dir: -1 | 1): string | null {
   return BOARD_STATUSES[j];
 }
 
-// --- board removal (card t_95c5527f): the remove control beside the
-// switcher. "main" is the legacy default board (DefaultBoardName on the
-// Go side); its control stays disabled and the API refuses it anyway -
-// DeleteBoard is the law, this is just the double-take before firing.
+// --- board removal / rename (card t_95c5527f; 0.17.3 make-over) -------
+// The board's own surface lives in the panel band: the selector, the
+// search seat, and the two destructive ops. Since 0.17.3 NOTHING is
+// reserved - main and the current board are removable, and a home may end
+// on zero boards (the panel then renders its create-board empty state).
+// The server is still the law about WHEN: a board holding a live card
+// refuses, naming the count, and the refusal text surfaces verbatim.
 
 export const DEFAULT_BOARD_NAME = "main";
 
-/** true when a named board may carry the remove control: anything but
- * the default board, and never the empty registry selection. */
+/** the create-board POST path (the empty state's only control). */
+export const BOARDS_PATH = "/boards";
+
+/** true when a named board may carry the remove control: any board the
+ * registry actually named. An empty selection has nothing to remove. */
 export function canRemoveBoard(name: string): boolean {
-  return name !== "" && name !== DEFAULT_BOARD_NAME;
+  return name !== "";
 }
 
 /** the DELETE path for a registry board (name always encoded). */
 export function boardDeletePath(name: string): string {
   return `/boards/${encodeURIComponent(name)}`;
+}
+
+/** the PATCH path a rename rides (same address as the delete: the board's
+ * own row). */
+export function boardRenamePath(name: string): string {
+  return boardDeletePath(name);
+}
+
+// --- search / filter (0.17.3 make-over) -------------------------------
+// One seat, TWO scopes: the board you are looking at, and every board.
+// The scope is a server read (?scope=all), not a client union of N
+// boards' lists - the store joins once and stamps each row with its
+// board, so a mixed result can still address a card (board, id).
+
+export type SearchScope = "board" | "all";
+
+/**
+ * filterTasks is the search itself: a case-insensitive substring over the
+ * fields a reader can see or type - title, body, assignee and card id.
+ * An empty query is every card (the seat is idle, not a filter).
+ */
+export function filterTasks(tasks: BoardTask[], query: string): BoardTask[] {
+  const q = (query ?? "").trim().toLowerCase();
+  if (q === "") return tasks;
+  return tasks.filter((t) =>
+    `${t.title ?? ""}\n${t.body ?? ""}\n${t.assignee ?? ""}\n${t.id ?? ""}`
+      .toLowerCase()
+      .includes(q),
+  );
+}
+
+/**
+ * tasksPath is the list read for one scope: the current board (the same
+ * URL the grid has always used) or every board at once. status=all rides
+ * both: the grid carries the archived lane too.
+ */
+export function tasksPath(board: string, scope: SearchScope): string {
+  if (scope === "all") return "/tasks?status=all&scope=all";
+  return withBoard("/tasks?status=all", board);
+}
+
+/**
+ * boardOf names the board a card belongs to: the row's own board when the
+ * all-boards read stamped one, else the board being viewed. Every drawer
+ * and mutation call addresses a card through this.
+ */
+export function boardOf(task: BoardTask, viewed: string): string {
+  return (task.board ?? "").trim() || viewed;
 }
 
 /**

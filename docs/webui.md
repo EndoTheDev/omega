@@ -529,19 +529,17 @@ one horizontal scroll strip, 236px columns.
   green `#34d399`, blocked red `#f87171`, review amber `#fbbf24`, done
   gray `#6f6f6f`, archived dim `#4a4a4a`.
 - **The auto-collapse law.** An EMPTY lane folds to its rail
-  automatically. A pin (`open` / `collapsed`) is the user's override
-  and wins while the lane holds cards - but the pin is DROPPED the
-  moment the lane drains (`reconcileLanePins`, run on every list read),
-  so a drained lane is a rail even when it was pinned open, and a lane
-  that refills returns to its default (expanded) instead of
-  remembering an override reality already overruled. Clicking an empty
-  rail is a no-op: `laneFolded` reads count 0 as folded regardless of
-  pins. Pins are component state, never persisted.
-- **A rail keeps the create control.** An empty lane can never be
-  unfolded (that is the law), so the rail carries the same `+` the
-  header does - otherwise a lane could never grow from nothing. Opening
-  the create form holds the lane in its column shape while the editor is
-  up; closing it on a still-empty lane folds the rail back.
+  automatically, and a lane holding cards stays open. A pin (`open` /
+  `collapsed`) is the user's override and is the ONLY override since the
+  0.17.3 make-over: a CLICK on a collapsed lane expands it - the empty
+  lane included, so an empty rail opens to its create form instead of
+  being a dead strip. Nothing reconciles a pin away any more (the old
+  `reconcileLanePins` dropped a drained lane's pin, which re-folded the
+  lane the user had just opened). Pins are component state, never
+  persisted.
+- **A rail keeps the create control.** The rail carries the same `+` the
+  header does, so a lane can always grow from nothing; opening the create
+  form holds the lane in its column shape while the editor is up.
 - **~180ms width ease** (`LANE_EASE_MS`, cubic-bezier(0.4, 0, 0.2, 1))
   on `flex-basis` - Hermes snaps, omega eases. The numbers ride CSS
   custom properties set from the constants, so the view and the logic

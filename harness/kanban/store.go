@@ -519,24 +519,18 @@ func describeNew(t KanbanTask) string {
 func (s *Store) ListTasks(ctx context.Context, board, status string) ([]KanbanTask, error) {
 	bid, err := s.boardID(board)
 	if err != nil {
+		if errors.Is(err, errNoBoards) {
+			return []KanbanTask{}, nil // zero boards is legal: the list is empty, not broken
+		}
 		return nil, err
 	}
 	query := `SELECT id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, priority, position FROM tasks WHERE board_id = ?`
-	args := []any{bid}
-	switch status {
-	case "":
-		// the default view is the active board: archived hides
-		query += " AND status != ?"
-		args = append(args, StatusArchived)
-	case StatusAll:
-		// include archived too - the full scan is explicit
-	default:
-		if !IsStatus(status) {
-			return nil, fmt.Errorf("illegal status %q", status)
-		}
-		query += " AND status = ?"
-		args = append(args, status)
+	where, args, err := statusFilter(status)
+	if err != nil {
+		return nil, err
 	}
+	query += where
+	args = append([]any{bid}, args...)
 	query += " ORDER BY position ASC, created_at DESC, id DESC"
 	rows, err := s.q.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -550,6 +544,59 @@ func (s *Store) ListTasks(ctx context.Context, board, status string) ([]KanbanTa
 			return nil, err
 		}
 		out = append(out, *t)
+	}
+	return out, rows.Err()
+}
+
+// statusFilter turns the ?status= argument into a WHERE fragment:
+// "" hides archived (the active view), StatusAll lists everything, and a
+// named status must be legal. Shared by the board read and the
+// all-boards read so the two can never drift.
+func statusFilter(status string) (string, []any, error) {
+	switch status {
+	case "":
+		// the default view is the active board: archived hides
+		return " AND status != ?", []any{StatusArchived}, nil
+	case StatusAll:
+		// include archived too - the full scan is explicit
+		return "", nil, nil
+	default:
+		if !IsStatus(status) {
+			return "", nil, fmt.Errorf("illegal status %q", status)
+		}
+		return " AND status = ?", []any{status}, nil
+	}
+}
+
+// ListAllTasks is the all-boards read behind the board view's "all
+// boards" search scope (0.17.3 make-over): every board's cards in one
+// list, each row carrying the board NAME it lives on (the view addresses
+// a card by (board, id), so a mixed list must say which board a row
+// belongs to). Ordered by board then column position, so the mixed list
+// groups the way the grid does.
+func (s *Store) ListAllTasks(ctx context.Context, status string) ([]KanbanTask, error) {
+	where, args, err := statusFilter(status)
+	if err != nil {
+		return nil, err
+	}
+	query := `SELECT t.id, t.title, t.body, t.assignee, t.status, t.session_id, t.source,
+		t.created_at, t.started_at, t.completed_at, t.priority, t.position, b.name
+		FROM tasks t JOIN boards b ON b.id = t.board_id WHERE 1 = 1` + where +
+		` ORDER BY b.position, b.id, t.position ASC, t.created_at DESC, t.id DESC`
+	rows, err := s.q.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []KanbanTask{}
+	for rows.Next() {
+		var t KanbanTask
+		if err := rows.Scan(&t.ID, &t.Title, &t.Body, &t.Assignee, &t.Status,
+			&t.SessionID, &t.Source, &t.CreatedAt, &t.StartedAt, &t.CompletedAt,
+			&t.Priority, &t.Position, &t.Board); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
 	}
 	return out, rows.Err()
 }

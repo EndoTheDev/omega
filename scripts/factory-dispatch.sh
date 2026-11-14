@@ -94,6 +94,14 @@ DB at <root>/kanban.db. The DB reader is the python sqlite3 module (the
 sqlite3 CLI is absent on some fleet hosts). A missing reader, module or
 board DB is a LOUD refusal (exit 3, message to stderr) - verdicts are
 never printed from empty lists.
+
+SELF-HEAL (0.17.3): the tick recreates its OWN configured board when that
+board is missing, lazily and LOUDLY - `self-heal: board '<name>' was
+missing - recreated (<db>)` lands in the pass report, never a silent
+fallback to a different board. The default board heals through `hermes
+kanban init`, a named board through `hermes kanban boards create`. A
+pinned HERMES_KANBAN_DB is the caller's file and is never created here; a
+dry-run writes nothing and says what a live pass would recreate.
 USAGE_EOF
 }
 usage_err() { echo "factory-dispatch.sh: $1" >&2; usage >&2; exit 2; }
@@ -122,20 +130,54 @@ resolve_hermes() {
   if [ -n "${LOCALAPPDATA:-}" ]; then ROOT="${LOCALAPPDATA//\\//}/hermes"; else ROOT="$HOME/.hermes"; fi
 }
 resolve_board() {  # HERMES_KANBAN_DB pins the file > HERMES_KANBAN_BOARD >
-                   # <root>/kanban/current (slug with a DB) > default board
+                   # <root>/kanban/current > default board
+  # 0.17.3: a NAMED candidate WINS even when its DB is missing. The old chain
+  # kept walking and settled on the default board's DB - the tick then read
+  # (and dispatched) somebody else's queue while the operator's board sat
+  # missing, silently. self_heal_board below is the one place that decides
+  # what a missing board means (recreate it, or refuse loudly).
   local cand
   if [ -n "${HERMES_KANBAN_DB:-}" ]; then DB="${HERMES_KANBAN_DB//\\//}"; BOARD="<pinned>"; return; fi
   for cand in "${HERMES_KANBAN_BOARD:-}" "$(cat "$ROOT/kanban/current" 2>/dev/null || true)"; do
     [ -n "$cand" ] || continue
     case "$cand" in *[/*\\]*) continue ;; esac   # malformed slug: fall through, never crash
     if [ "$cand" = default ]; then DB="$ROOT/kanban.db"; BOARD="$cand"; return; fi
-    if [ -f "$ROOT/kanban/boards/$cand/kanban.db" ]; then
-      DB="$ROOT/kanban/boards/$cand/kanban.db"; BOARD="$cand"; return
-    fi
+    DB="$ROOT/kanban/boards/$cand/kanban.db"; BOARD="$cand"; return
   done
   DB="$ROOT/kanban.db"; BOARD="default"
 }
 die() { echo "factory-dispatch.sh: $1" >&2; exit "${2:-3}"; }
+# self_heal_board (0.17.3 make-over) - the tick recreates its OWN configured
+# board when that board is missing. Two failures were possible before this:
+# the old resolution chain fell through to the DEFAULT board's DB when the
+# named board's file was gone (a silent dispatch on somebody else's queue),
+# and a home with no kanban.db at all died without saying it could be built.
+# The heal is LAZY (only while the file is absent) and LOUD (a pass-report
+# line naming the board and the fresh DB) on purpose: "never silent" is the
+# law, and the report is the only place the operator reads the tick.
+#
+#   default board -> `hermes kanban init`            (<root>/kanban.db)
+#   named board   -> `hermes kanban boards create`  (<root>/kanban/boards/<slug>/kanban.db)
+#
+# A pinned HERMES_KANBAN_DB is the CALLER's file: this script never creates
+# one (the pin means "read exactly this"). A dry-run writes nothing - it
+# names what a live pass would recreate and lets readers_up refuse.
+self_heal_board() {
+  [ -f "$DB" ] && return 0
+  local wanted="$BOARD"
+  [ "$wanted" = "<pinned>" ] && die "board DB not found at $DB (HERMES_KANBAN_DB is pinned - the tick never creates a pinned file)" 3
+  if [ "$DRY" = 1 ]; then
+    echo "self-heal: board '$wanted' is missing - a live pass recreates it ($DB)"
+    return 0
+  fi
+  if [ "$wanted" = default ]; then
+    hermes kanban init >/dev/null 2>&1 || true
+  else
+    hermes kanban boards create "$wanted" >/dev/null 2>&1 || true
+  fi
+  [ -f "$DB" ] || die "self-heal failed: board '$wanted' was missing and could not be recreated ($DB)" 3
+  echo "self-heal: board '$wanted' was missing - recreated ($DB)"
+}
 readers_up() {  # loud-refusal gate: no reader, no verdicts from empty lists
   # (FD_PY is a test/ops hook: pin the interpreter, or point it nowhere to
   # exercise the refusal path.)
@@ -211,6 +253,7 @@ while [ $# -gt 0 ]; do
 done
 resolve_hermes
 resolve_board
+self_heal_board
 readers_up
 CAP=$(config_cap)
 case "$CAP" in ''|*[!0-9]*|0) CAP=2 ;; esac

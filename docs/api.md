@@ -491,9 +491,16 @@ A host with no settings seam answers **501** on all three, like
 ### /boards (multi-board registry)
 
 - `GET /boards` - the board registry, the current board flagged.
-  `POST /boards` (`{"name": ...}`) creates one; `DELETE /boards/{name}`
-  removes an empty, non-current, non-default board (guards refused
-  with a 400 carrying the refusal text - there is no force).
+  `POST /boards` (`{"name": ...}`) creates one; `PATCH /boards/{name}`
+  (`{"name": "<new>"}`) renames it in place; `DELETE /boards/{name}`
+  removes a board **including the default and the current one** - the
+  only guard left is the card precondition: a board holding a live card
+  (any status but archived) is refused with a 400 carrying the count,
+  while archived cards ride out with the board. There is no force. Zero
+  boards is a legal registry: deleting the current board hands the
+  pointer to the earliest survivor, and deleting the last board leaves
+  none (the panel renders its create-board empty state, and the first
+  board created afterwards claims the pointer).
   Registered by the capsule while the module is mounted (see module
   REST above); an error from the handler is the capsule's own answer
   (single-board implementations stay legal).
@@ -512,6 +519,11 @@ A host with no settings seam answers **501** on all three, like
   an archive dump (t_02a8beea A2). `?status=archived` lists the
   archive, `?status=all` lists everything. The board grid module UI
   requests `all` deliberately (it renders the archived column).
+  `?scope=all` lifts the read out of one board: every board's cards in
+  one answer, each row carrying the `board` it lives on (the grid's
+  all-boards search scope - the board view addresses a card by
+  (board, id), so a mixed list must say which board a row belongs to).
+  A board-scoped read carries no `board` field at all.
 - `POST /tasks` - create; `title` required, unspecified status defaults
   to `triage` in the store. A fresh card lands on top of its column.
 - `GET /tasks/{id}` - the task plus its thread (comments + events).
