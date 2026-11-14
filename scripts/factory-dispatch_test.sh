@@ -1253,6 +1253,10 @@ printf "%s" "$out" | grep -qF 'pair: sanctioned (t_split t_doc2, classes docs+do
 	&& ok || bad "T23d: a bare FILES line beside one carrying paths read ABSENT - the union read is missing (out: $out)"
 
 # T24 (0.17.3 make-over): the tick SELF-HEALS its own configured board.
+# The worker shells carry HERMES_KANBAN_BOARD (the card's own board) in the
+# ambient env, and it OUTRANKS the pointer file in the resolution chain - so
+# every leg below clears it, or the fixture would heal the real board name
+# instead of the one it seeded.
 # Three legs on a fake home whose <root>/kanban/current names a board whose
 # DB is GONE:
 #   (a) a live pass recreates it through `hermes kanban boards create` and
@@ -1302,7 +1306,7 @@ chmod +x "$FDHOME/bin/hermes"
 stub_log="$FDHOME/stub-calls.log"; : >"$stub_log"
 
 # (a) live pass heals the named board, reports it, and reads THAT board
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= \
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
   PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T24a: the healing pass exited $rc (out: $out)"
@@ -1315,7 +1319,7 @@ grep -q "boards create gone-board" "$stub_log" \
 
 # (b) a dry pass writes nothing and says what a live pass would do
 rm -rf "$FDHOME/kanban/boards/gone-board"; : >"$stub_log"
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= \
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
   PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --dry-run 2>&1)
 rc=$?
 [ "$rc" -ne 0 ] && ok || bad "T24b: a dry pass on a missing board exited 0 - verdicts from an absent board"
@@ -1330,7 +1334,7 @@ printf "%s" "$out" | grep -q "board DB not found" \
 
 # (c) the DEFAULT board heals through `hermes kanban init`
 rm -f "$FDHOME/kanban/current" "$FDHOME/kanban.db"; : >"$stub_log"
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= \
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
   PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T24c: the default-board healing pass exited $rc (out: $out)"
@@ -1341,7 +1345,7 @@ grep -q "kanban init" "$stub_log" \
   && ok || bad "T24c: the default heal did not go through \`hermes kanban init\` (stub log: $(cat "$stub_log"))"
 
 # (d) a PINNED db is the caller's file: never created, always refused
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB="$FDHOME_N/pinned.db" \
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB="$FDHOME_N/pinned.db" HERMES_KANBAN_BOARD= \
   PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -ne 0 ] && ok || bad "T24d: a missing PINNED db exited 0"
