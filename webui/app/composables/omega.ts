@@ -2799,12 +2799,13 @@ export async function toggleModule(name: string, enabled: boolean): Promise<Modu
 }
 
 // toggleNote builds the consequence half of a toggle hint: not-toggleable
-// modules state their always-on law, dependents name what goes down with
-// the module (the Q3 semantics surfaced). The "disable x?" question is the
-// pill's own label, so it is not repeated here; the empty string means
-// there is no consequence to state.
+// modules state their always-on law (the 0.17.3 tier re-law: agent-loop,
+// provider and logging - the folded observability module), dependents
+// name what goes down with the module (the Q3 semantics surfaced). The
+// "disable x?" question is the pill's own label, so it is not repeated
+// here; the empty string means there is no consequence to state.
 export function toggleNote(m: ModuleRow, enable: boolean): string {
-  if (!m.toggleable) return `${m.name} is machine-critical or shell - always on`;
+  if (!m.toggleable) return `${m.name} is always on - the tier law: agent-loop, provider and logging`;
   if (enable) return "";
   if (m.dependents && m.dependents.length > 0)
     return `this also disables: ${m.dependents.join(", ")}`;

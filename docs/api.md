@@ -61,7 +61,7 @@ unchanged.
 | `/disabled/skills`, `/disabled/tools` | PUT       | registry-browser toggle fold (one entry per name) |
 | `/disabled/agents`                   | PUT        | registry-browser toggle; the DEFAULT agent answers 409 (it must always be on) |
 | `/modules`                           | GET        | mounted module capsules (introspection)         |
-| `/modules/{name}`                    | PUT        | the live module toggle (`disabled:` fold); `agent-loop` and `provider` answer 400 "module <name> is always on" (the seam's guard, card t_81d0901b) |
+| `/modules/{name}`                    | PUT        | the live module toggle (`disabled:` fold); the always-on tier - `agent-loop`, `provider` and `observability` (the folded logging module) - answers 400 "module <name> is always on" (the seam's guard, cards t_81d0901b + t_ee3a968b) |
 | `/themes`                            | GET        | user theme tokens (`<home>/themes/*.yaml`)      |
 | `/insights`                          | GET        | session usage analytics                        |
 | `/workspaces/browse`, `/workspaces/files` | GET   | the workspace surface (browsers + Files tab root) |
@@ -991,7 +991,7 @@ Every pushed frame is one JSON text message:
 | `canvas` | one `view_model_delta` panel descriptor | `CanvasEmit` - every mounted capsule's panel state, notifications toasts and board changes included. Panel state names itself in the payload, so the shell carries no capsule noun |
 | `runs` | `{active}` | the run slot: taken in `prepareRun`, released when the run's finish hook fires. This is the live-run truth `GET /sessions` used to be polled for |
 | `health` | `{status, uptime_seconds, version}` + the optional facts `{provider: {reachable, checked_at, detail?}, database: {healthy, detail?}, last_error: {message, at?}}` | the server heartbeat, every 5s. The same body `GET /health` serves |
-| `logs` | `{lines: string[]}` | the log follower (`api/server_inspector.go`): the lines appended to the log file since the previous frame, read by offset from the same path `GET /logs` tails (the write site is `harness/logging`'s `FileLogger`). A DELTA, never the tail - the pane's snapshot is `GET /logs`. Subscription-gated: nothing is read or published while no connection holds the topic, and a subscriber that did not ask receives nothing |
+| `logs` | `{lines: string[]}` | the log follower (`api/server_inspector.go`): the lines appended to the log file since the previous frame, read by offset from the same path `GET /logs` tails (the write site is `harness/observability`'s `FileLogger` (the folded logging half)). A DELTA, never the tail - the pane's snapshot is `GET /logs`. Subscription-gated: nothing is read or published while no connection holds the topic, and a subscriber that did not ask receives nothing |
 
 The `chips` topic is the one **lossy** topic: a consumer that falls
 behind drops frames rather than losing the wire (the tool result and

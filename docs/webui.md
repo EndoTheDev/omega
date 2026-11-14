@@ -267,8 +267,9 @@ Everything else animates through `transition`, not keyframes.
   - snapshot GET /ui/canvas, delta merge, the action pipe, the toast
   funnel), and the module lifecycle surface is CONFIGURATION, so it lives
   in the settings tab's MODULES section (card t_81d0901b: rows with live
-  toggles, the expandable tools/commands/panels detail, the always-on pair
-  as a chip - the toggle endpoint refuses it at the seam; `/modules`,
+  toggles, the expandable tools/commands/panels detail, the always-on tier
+  (agent-loop, provider, observability) as a chip - the toggle endpoint
+  refuses it at the seam; `/modules`,
   `/extensions` and `/panels` open that section). Settings is an ON-DEMAND
   main tab (t_00e4a784): the menubar gear beside the right-sidebar
   toggle opens it, it closes like any tab, and the boot retires a

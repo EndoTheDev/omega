@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/harness/logging"
+	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/harness/observability"
 	"github.com/EndoTheDev/omega/harness/skills"
 )
 
@@ -49,10 +49,10 @@ func TestBuildPromptWithSkillsSection(t *testing.T) {
 	ctx := &core.Context{
 		Configs: map[string]any{
 			"skills":  skills.Config{Dir: dir},
-			"logging": logging.Config{Enabled: false},
+			"logging": observability.Config{Enabled: false},
 		},
 	}
-	if _, err := agent.MountAllAPI([]agent.Plugin{logging.NewPlugin(), skills.NewPlugin(), NewPlugin()}, ctx, nil, nil); err != nil {
+	if _, err := agent.MountAllAPI([]agent.Plugin{observability.NewPlugin(), skills.NewPlugin(), NewPlugin()}, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
 	pb, pbOK := ctx.Services().Resolve("prompt").(agent.PromptBuilder)

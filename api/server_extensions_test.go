@@ -20,7 +20,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/compactor"
-	"github.com/EndoTheDev/omega/harness/logging"
+	"github.com/EndoTheDev/omega/harness/observability"
 	"github.com/EndoTheDev/omega/harness/provider"
 	"github.com/EndoTheDev/omega/harness/skills"
 	"github.com/EndoTheDev/omega/harness/store"
@@ -35,14 +35,14 @@ func mountRealRegistry(t *testing.T) *agent.Agent {
 	t.Helper()
 	home := t.TempDir()
 	plugins := []agent.Plugin{
-		logging.NewPlugin(),
+		observability.NewPlugin(),
 		&provider.Plugin{},
 		skills.NewPlugin(),
 		tools.NewPlugin(),
 		compactor.NewPlugin(),
 	}
 	cfgs := map[string]any{
-		"logging":   logging.Config{Enabled: true, File: filepath.Join(home, "omega.log")},
+		"logging":   observability.Config{Enabled: true, File: filepath.Join(home, "omega.log")},
 		"skills":    skills.Config{Dir: filepath.Join(home, "skills")},
 		"store":     store.Config{DBPath: filepath.Join(home, "sessions.db")},
 		"compactor": agent.CompactionConfig{},
@@ -98,7 +98,7 @@ func TestHandleExtensionsRealRegistry(t *testing.T) {
 	}
 
 	// Spot-check the loaded set against what these real modules declare.
-	wantNames := []string{"logging", "provider", "skills", "tools", "compactor"}
+	wantNames := []string{"observability", "provider", "skills", "tools", "compactor"}
 	for i, n := range wantNames {
 		if got[i].Name != n {
 			t.Fatalf("row %d: got %q, want %q", i, got[i].Name, n)

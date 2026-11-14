@@ -421,16 +421,18 @@ func (api *ExtensionAPI) claim(name string) error {
 // (Toggleable) registers its module.verb pairs ("kanban.list",
 // "memory.add" - every action-protocol domain is split, no flat
 // domain tool remains); a built-in
-// capsule (provider, store, tools, the loop - machine-critical, in
+// capsule (provider, the loop - in
 // the machine's vocabulary) registers its natural name ("shell.run",
-// "sessions.search"). Both land on the same one-tenant ledger; a
+// "web.search"). Pre-tier vocabulary that predates the capsule law
+// keeps its name through RegisterBuiltinTool below. Both land on the
+// same one-tenant ledger; a
 // second tenant on a held tool name is a fail-loud error (Q5), and a
 // same-tenant re-registration replaces (Q7, the clean-idempotent
 // remount). The payload contract is unchanged raw JSON (core.Tool.Run
 // takes map[string]any, Q9).
 func (api *ExtensionAPI) RegisterTool(name string, t core.Tool) error {
 	if api.builtin {
-		// Built-in vocabulary: the one-tenant ledger holds the name
+		// Built-in tier: the one-tenant ledger holds the name
 		// itself, no namespace pairing. Journaled for release.
 		if err := api.claimRecorded("tool:" + name); err != nil {
 			return err
@@ -444,6 +446,37 @@ func (api *ExtensionAPI) RegisterTool(name string, t core.Tool) error {
 	} else if err := api.claim(name); err != nil {
 		return err
 	}
+	api.landTool(name, t)
+	return nil
+}
+
+// RegisterBuiltinTool adds one tool on the built-in VOCABULARY rail: its
+// dotted name carries a domain verb that predates the capsule tier
+// ("files.grep"/"files.glob" from the tools capsule, "sessions.search"/
+// "sessions.hygiene" from the store), so the module-namespace claim would
+// refuse a registration the model, the prompt and the approval gate have
+// always addressed by that name.
+//
+// The tier re-law (0.17.3, card t_ee3a968b) is what makes this method
+// necessary: store and tools were built-in TIER capsules (no Toggleable)
+// and lost that exemption when they opted into the toggleable tier. The
+// exemption narrows to the NAME, never the capsule - the tool keeps its
+// one-tenant ledger slot (claimed as tool:<name>, journaled for release
+// exactly like RegisterTool's builtin branch), the capsule keeps its
+// toggle, and every NEW tool name stays module.verb. Renaming these four
+// verbs to store.* / tools.* is an API decision for Endo, not a fold side
+// effect.
+func (api *ExtensionAPI) RegisterBuiltinTool(name string, t core.Tool) error {
+	if err := api.claimRecorded("tool:" + name); err != nil {
+		return err
+	}
+	api.landTool(name, t)
+	return nil
+}
+
+// landTool assembles one registration into the provider the loop reads
+// and arms the Context slot on the first hit (the additive rail).
+func (api *ExtensionAPI) landTool(name string, t core.Tool) {
 	if api.tools == nil {
 		api.tools = make(map[string]core.Tool)
 	}
@@ -456,7 +489,6 @@ func (api *ExtensionAPI) RegisterTool(name string, t core.Tool) error {
 			func(c *core.Context) { c.ToolProviders = removeOne[core.ToolProvider](c.ToolProviders, provider) },
 		)
 	}
-	return nil
 }
 
 // toolMap is the assembled provider the registrations build; the map

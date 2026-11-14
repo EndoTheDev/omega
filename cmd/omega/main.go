@@ -31,7 +31,6 @@ import (
 	"github.com/EndoTheDev/omega/harness/delegate"
 	"github.com/EndoTheDev/omega/harness/files"
 	kanbanModule "github.com/EndoTheDev/omega/harness/kanban"
-	"github.com/EndoTheDev/omega/harness/logging"
 	"github.com/EndoTheDev/omega/harness/mcp"
 	"github.com/EndoTheDev/omega/harness/memory"
 	"github.com/EndoTheDev/omega/harness/notifications"
@@ -586,7 +585,14 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		mcpPlugin = mcp.NewPlugin(nil)
 	}
 	return []agent.Plugin{
-		logging.NewPlugin(),
+		// The observability capsule (0.17.3 modules fold, card
+		// t_ee3a968b): the logging + observability folds are ONE
+		// registration - the omega.log appender behind the `logger`
+		// seam AND the run-event ring + log tail behind the Logs tab.
+		// It keeps the pre-fold logging module's slot: the mount order
+		// is the /extensions row order and the prompt's tool-section
+		// tiebreak.
+		observability.NewPlugin(),
 		loop.NewPlugin(),
 		&provider.Plugin{},
 		store.NewPlugin(),
@@ -606,10 +612,19 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		// domain leaves the tools capsule - the files capsule is the
 		// files tool + the /files explorer routes (Toggleable: the
 		// disabled fold may name it), and the shell tool rides the
-		// terminal capsule's package (the builtin shell plugin). Both
-		// contribute the same additive tools rail the registry owns.
+		// terminal capsule's package. Both contribute the same additive
+		// tools rail the registry owns.
 		files.NewPlugin(),
-		terminal.NewShellPlugin(),
+		// The shell capsule (0.17.3 modules fold, card t_ee3a968b): ONE
+		// registration for both faces of the shell domain - the agent's
+		// tool family (shell.run/list/read/kill, ShellProvider) and the
+		// webui's integrated terminal pane (the /terminal pty routes +
+		// the lifecycle fence that owns the shells). It keeps the
+		// pre-fold shell plugin's slot so the prompt's tool section
+		// keeps its authoring order. The spawn fallback is the
+		// process's working directory; the default_workspace knob rides
+		// the constructor and the hot-apply hook (card t_62d72028).
+		terminal.NewPlugin(cwd(), cfg.Server.DefaultWorkspace),
 		// The process registry does not exist as its own module any
 		// more (card t_5a49790b): the registry machinery lives in
 		// harness/terminal underneath the one shell domain
@@ -640,18 +655,6 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		// The home passes through the host - exe-dir resolution is
 		// cmd/omega business, the capsule never re-guesses it.
 		continuous.NewPluginWithHome(omegaHome()),
-		// The terminal capsule (card t_55a3fc4b, Endo's ruling
-		// 2026-11-01): the webui's integrated shell - pty routes +
-		// lifecycle fence, no seams, no config, no gates. The spawn
-		// fallback is the process's working directory; the
-		// default_workspace knob rides the constructor and the
-		// hot-apply hook (card t_62d72028).
-		terminal.NewPlugin(cwd(), cfg.Server.DefaultWorkspace),
-		// The observability capsule (card t_8de82cff): the structured
-		// run-event ring + the omega.log tail behind the webui logging
-		// tab. No seam, no tool, no config - two read-only GETs, and a
-		// spine subscription the capsule owns.
-		observability.NewPlugin(),
 	}, nil
 }
 

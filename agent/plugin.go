@@ -55,9 +55,10 @@ type Describer interface {
 
 // Toggleable is an optional Plugin capability (the tier law, grill
 // Q1/Q13): only the opinionated capsules may appear in the disable
-// list. Machine-critical mounts (provider, store, loop, logging - the
-// behavior the machine needs to be a machine) and the shell's channel
-// (served by api/) never implement it, and disabling them fails
+// list. The always-on tier - agent-loop, provider and logging (the
+// folded observability module; 0.17.3 tier re-law, card t_ee3a968b) -
+// and the shell's channel (served by api/) never implement it, and
+// disabling them fails
 // the boot loud. Default is NOT toggleable: a plugin opts in.
 type Toggleable interface {
 	Toggleable() bool
@@ -86,7 +87,7 @@ func filterDisabled(plugins []Plugin, disabled []string) ([]Plugin, error) {
 			return nil, fmt.Errorf("disabled %q: no such module", name)
 		}
 		if t, ok := p.(Toggleable); !ok || !t.Toggleable() {
-			return nil, fmt.Errorf("module %q is not toggleable - the disable list only names the opinionated capsules, %q is machine-critical or shell", name, name)
+			return nil, fmt.Errorf("module %q is not toggleable - the disable list only names the opinionated capsules, %q is in the always-on tier (agent-loop, provider, logging)", name, name)
 		}
 		off[name] = true
 	}
@@ -158,7 +159,7 @@ func AlwaysOffDisabled(plugins []Plugin, enabled []string) ([]string, error) {
 			return nil, fmt.Errorf("agent toggle %q: no such module", name)
 		}
 		if t, ok := p.(Toggleable); !ok || !t.Toggleable() {
-			return nil, fmt.Errorf("agent toggle %q: the module is not toggleable - the locked pair (agent-loop + provider) is always on and cannot be toggled", name)
+			return nil, fmt.Errorf("agent toggle %q: the module is not toggleable - the always-on tier (agent-loop + provider + logging) is always on and cannot be toggled", name)
 		}
 		if !on[name] {
 			on[name] = true

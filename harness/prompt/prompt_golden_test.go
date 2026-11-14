@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
-	"github.com/EndoTheDev/omega/harness/logging"
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/files"
 	"github.com/EndoTheDev/omega/harness/memory"
+	"github.com/EndoTheDev/omega/harness/observability"
 	"github.com/EndoTheDev/omega/harness/skills"
 	"github.com/EndoTheDev/omega/harness/terminal"
 	"github.com/EndoTheDev/omega/harness/tools"
@@ -52,11 +52,11 @@ func wireContext(t *testing.T, skillDir string, memCfg memory.Config) *core.Cont
 		Configs: map[string]any{
 			"memory":  memCfg,
 			"skills":  skills.Config{Dir: skillDir},
-			"logging": logging.Config{Enabled: false},
+			"logging": observability.Config{Enabled: false},
 		},
 	}
 	plugins := []agent.Plugin{
-		logging.NewPlugin(),
+		observability.NewPlugin(),
 		memory.NewPlugin(),
 		skills.NewPlugin(),
 		tools.NewPlugin(),

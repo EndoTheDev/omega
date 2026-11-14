@@ -1,10 +1,11 @@
-// Package logging provides the logging seam (agent.LoggerProvider)
-// backed by a file logger that writes to OMEGA_HOME/omega.log.
+// The logging half of the observability capsule (0.17.3 modules fold,
+// card t_ee3a968b): the OUTBOUND direction - the file logger that
+// appends every run, tool call and error to OMEGA_HOME/omega.log.
 //
-// Seam: logging (exclusive).
+// Seam: logger (exclusive).
 //
 // When disabled, a NopLogger is used so callers never need nil checks.
-package logging
+package observability
 
 import (
 	"fmt"

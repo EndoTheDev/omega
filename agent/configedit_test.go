@@ -146,7 +146,7 @@ func TestUpdateAgentConfigLayerRefusals(t *testing.T) {
 		{"negative turns", AgentConfigUpdates{MaxTurns: func() *int { n := -1; return &n }()}, "negative"},
 		{"unknown unset", AgentConfigUpdates{Unset: []string{"provider.model"}}, "unknown unset key"},
 		{"set and unset", AgentConfigUpdates{SystemPrompt: strPtr("x"), Unset: []string{"system_prompt"}}, "both set and unset"},
-		{"toggling the locked pair", AgentConfigUpdates{Toggles: &[]string{"provider"}}, "locked pair"},
+		{"toggling the always-on tier", AgentConfigUpdates{Toggles: &[]string{"provider"}}, "always-on tier"},
 		{"toggling a host-off capsule", AgentConfigUpdates{Toggles: &[]string{"cron"}}, "subset law"},
 		{"unknown skill", AgentConfigUpdates{SkillsAllow: &[]string{"ghost"}}, "visible registry"},
 	} {

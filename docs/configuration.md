@@ -57,7 +57,8 @@ the pin restores the default. Send a run through an instance with the
 ## Module toggles
 
 The opinionated capsules (kanban, cron, delegate, verdict, mcp,
-trust, notifications, memory, continuous) are
+trust, notifications, memory, continuous, and since the 0.17.3 tier
+re-law store, skills, compactor, prompt, tools and shell) are
 toggleable: the webui settings pane's MODULES section flips them, or
 you can name them in config.yaml directly:
 
@@ -68,7 +69,8 @@ disabled:
 ```
 
 A `disabled:` entry skips that capsule at boot (its routes answer 404).
-Machine-critical capsules (provider, store, loop, logging) and the
+The always-on tier (agent-loop, provider and logging - the folded
+observability module) and the
 serving shell (http_channel) are not on the list - booting with
 them disabled fails loud. The v0.12 `omega.json` sidecar is folded
 into this key at boot and deleted; an unknown entry fails the boot

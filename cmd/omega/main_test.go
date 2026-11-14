@@ -9,8 +9,8 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/api"
-	"github.com/EndoTheDev/omega/harness/logging"
 	"github.com/EndoTheDev/omega/harness/memory"
+	"github.com/EndoTheDev/omega/harness/observability"
 	"github.com/EndoTheDev/omega/harness/provider"
 	"github.com/EndoTheDev/omega/harness/skills"
 	"github.com/EndoTheDev/omega/harness/store"
@@ -306,7 +306,7 @@ func TestConfigSectionTable(t *testing.T) {
 
 	// section name -> routing row. "" = the plugin reads no section.
 	tests := []struct{ plugin, section string }{
-		{"logging", "logging"},
+		{"observability", "logging"},
 		{"agent-loop", ""},
 		{"provider", "provider"},
 		{"store", "store"},
@@ -495,9 +495,9 @@ func TestBuildConfigs(t *testing.T) {
 	}
 
 	// logging: logging.Config{Enabled, File}
-	lc, ok := configs["logging"].(logging.Config)
+	lc, ok := configs["logging"].(observability.Config)
 	if !ok {
-		t.Fatalf("logging config is %T, want logging.Config", configs["logging"])
+		t.Fatalf("logging config is %T, want observability.Config", configs["logging"])
 	}
 	if lc.Enabled != cfg.Logging.Enabled {
 		t.Errorf("logging.Enabled = %v, want %v", lc.Enabled, cfg.Logging.Enabled)

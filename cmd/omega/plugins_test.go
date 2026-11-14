@@ -6,8 +6,8 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// TestBuildPlugins verifies buildPlugins returns all 18 in-process
-// extensions, no error, and every plugin is non-nil, when given a
+// TestBuildPlugins verifies buildPlugins returns every in-process
+// extension, no error, and every plugin is non-nil, when given a
 // default Config.
 func TestBuildPlugins(t *testing.T) {
 	cfg := DefaultConfig()
@@ -34,7 +34,11 @@ func TestBuildPlugins(t *testing.T) {
 	// verbs retired, the machinery stayed) = 23.
 	// +observability (t_8de82cff, the observability arc's engine half:
 	// the event ring + the log tail capsule) = 24.
-	const want = 24
+	// -logging -the builtin shell plugin (t_ee3a968b, the 0.17.3 modules
+	// fold: logging folds INTO observability, and the shell tool family
+	// folds into the terminal capsule's one "shell" registration -
+	// registration surgery, no code moved) = 22.
+	const want = 22
 	if len(plugins) != want {
 		t.Fatalf("buildPlugins returned %d plugins, want %d", len(plugins), want)
 	}

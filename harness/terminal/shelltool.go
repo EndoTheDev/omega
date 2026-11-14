@@ -30,10 +30,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/datadir"
-	"github.com/EndoTheDev/omega/harness/store"
 )
 
 // ShellProvider serves the shell verb family as an additive
@@ -446,58 +444,12 @@ func shorten(s string, n int) string {
 	return s[:n-3] + "..."
 }
 
-// ShellPlugin is the shell tool's registration face: a builtin-tier
-// capsule (no Toggleable) - its tool names keep their natural "shell.*"
-// spelling on the one-tenant ledger.
-type ShellPlugin struct {
-	provider *ShellProvider
-}
-
-// Name returns the extension name shown in /extensions and the prompt's
-// tools section (the shell tool's group).
-func (p *ShellPlugin) Name() string { return "shell" }
-
-// Description implements agent.Describer.
-func (p *ShellPlugin) Description() string {
-	return "built-in tools: shell.run / shell.list / shell.read / shell.kill"
-}
-
-// Provides lists seam names this plugin mounts: the additive tools
-// rail only (the shell family needs no other seam).
-func (p *ShellPlugin) Provides() []string { return []string{"tools"} }
-
-// Requires lists seam names that must be mounted first.
-func (p *ShellPlugin) Requires() []string { return nil }
-
-// ConfigKey names the config section this plugin reads from
-// ctx.Configs. The `process:` section is the shell registry's knobs
-// (log_max_bytes, kill_grace_seconds) - the section name is history,
-// the machinery is the shell domain's (card t_5a49790b).
-func (p *ShellPlugin) ConfigKey() string { return "process" }
-
-// MountWithAPI implements agent.APIPlugin: registers the shell verb
-// family over one registry. The guard is built from the store config
-// (the instance db path); the registry from the process section (its
-// home, log cap and kill grace).
-func (p *ShellPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
-	var guard *datadir.Guard
-	if c, ok := ctx.Configs["store"].(store.Config); ok {
-		guard = datadir.NewGuard(c.DBPath)
-	} else {
-		guard = datadir.NewGuard("")
-	}
-	cfg := RegistryConfig{}
-	if c, ok := ctx.Configs["process"].(RegistryConfig); ok {
-		cfg = c
-	}
-	p.provider = NewShellProvider(guard, NewRegistry(cfg))
-	for name, t := range p.provider.Tools() {
-		if err := api.RegisterTool(name, t); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// NewShellPlugin creates the shell tool plugin.
-func NewShellPlugin() *ShellPlugin { return &ShellPlugin{} }
+// ShellPlugin is gone (0.17.3 modules fold, card t_ee3a968b): the tool
+// family and the pane are ONE registration - Plugin (plugin.go) owns
+// both, named "shell", toggleable like every other opinionated capsule.
+// The tool names never moved: shell.run / shell.list / shell.read /
+// shell.kill stay the API surface the model and the approval gate know.
+//
+// NewShellPlugin is the test door onto that one registration: the shell
+// plugin with no workdir and no default workspace.
+func NewShellPlugin() *Plugin { return NewPlugin("", "") }

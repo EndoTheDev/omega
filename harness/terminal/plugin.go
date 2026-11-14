@@ -14,17 +14,27 @@ import (
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/harness/datadir"
+	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// Plugin adapts the terminal capsule into omega's plugin system. It
-// provides no seams of its own - no commands, no panels: the module's
-// whole surface is its REST routes (the pane streams those) plus the
-// lifecycle fence that owns the shells. (The model's shell verb family
-// rides the same package through the separate builtin shell plugin -
-// shelltool.go.) Mounts through the
-// ExtensionAPI exclusively; the trust-model ruling (the package
-// comment) is part of the design - the route surface is the whole
-// feature and it is unconditionally available like the files routes.
+// Plugin adapts the shell capsule into omega's plugin system. Since the
+// 0.17.3 modules fold (card t_ee3a968b) ONE registration carries both
+// faces of the shell domain: the agent's tool family (shell.run /
+// shell.list / shell.read / shell.kill, built by mountShellTools over the
+// process: section's registry) AND the webui's integrated terminal pane
+// (the /terminal pty routes + the lifecycle fence that owns the shells).
+// The two were always co-located in this package; the fold is the
+// REGISTRATION, not a move.
+//
+// The module is opinionated - it opts into the toggleable tier (the tier
+// re-law: "always on: agent-loop, provider and logging; toggleable: the
+// rest"), so a `disabled: [shell]` fold takes the tools, the routes and
+// every live shell with it.
+//
+// Mounts through the ExtensionAPI exclusively; the trust-model ruling
+// (the package comment) is part of the design - the route surface is the
+// whole feature and it is unconditionally available like the files routes.
 //
 // The routes (all under the module's own "/terminal" namespace):
 //
@@ -37,9 +47,12 @@ import (
 //	POST   /terminal/{id}/resize  - the pane's rows/cols (SIGWINCH)
 //	DELETE /terminal/{id}         - kill + forget the shell
 //
-// Removal proof: TestTerminalRemovalProof (cmd/omega/removal_test.go).
+// Removal proof: TestShellRemovalProof (cmd/omega/removal_test.go).
 type Plugin struct {
 	store *Store
+	// provider is the tool face (the shell verb family over the process
+	// registry); MountWithAPI builds it from the config sections.
+	provider *ShellProvider
 	// storeFn resolves the workspace-pin face LIVE per claim (the seam
 	// resolve per request - a toggle swaps the offer under the
 	// handlers' feet, exactly the Files tab's law). nil = the chain
@@ -79,42 +92,68 @@ func NewPluginWithStore(store *Store) *Plugin {
 // Store returns the plugin's store (the lifecycle fence drives it).
 func (p *Plugin) Store() *Store { return p.store }
 
-// Name returns the plugin name (the modules registry row, the
-// capsule namespace owner).
-func (p *Plugin) Name() string { return "terminal" }
+// Name returns the plugin name (the modules registry row, the capsule
+// namespace owner). Since the fold it is `shell` - the tool names never
+// moved (shell.run/list/read/kill are API surface), the module name
+// joins them.
+func (p *Plugin) Name() string { return "shell" }
 
-// Description implements agent.Describer.
+// Description implements agent.Describer: both faces on one line.
 func (p *Plugin) Description() string {
-	return "Terminal: the webui's integrated shell (xterm.js over a pty stream)"
+	return "shell: the agent's shell tool family (shell.run/list/read/kill) + the webui's integrated terminal (xterm.js over a pty stream)"
 }
 
-// Provides lists the seams this plugin mounts: none. The terminal is
-// a pure route capsule - no tools (the shell.run/list/read/kill family
-// rides the same package through the separate builtin shell plugin -
-// shelltool.go), no commands, no panels.
-func (p *Plugin) Provides() []string { return nil }
+// Provides lists the seam this plugin mounts: the additive tools rail
+// only (the pane's routes ride api.RegisterRoute, not a seam).
+func (p *Plugin) Provides() []string { return []string{"tools"} }
 
 // Requires lists seams that must mount before this plugin.
 func (p *Plugin) Requires() []string { return nil }
 
-// ConfigKey names the config section this plugin reads from
-// ctx.Configs. The terminal is restriction-free by ruling - no
-// config section exists.
-func (p *Plugin) ConfigKey() string { return "" }
+// ConfigKey names the config section this plugin reads from ctx.Configs:
+// `process:` is the shell registry's knobs (log_max_bytes,
+// kill_grace_seconds) - the section name is history, the machinery is
+// the shell domain's (card t_5a49790b). The tool face also reads the
+// `store` section (the instance-db guard); that section is routed by the
+// store capsule and read from the same map.
+func (p *Plugin) ConfigKey() string { return "process" }
 
-// Toggleable marks the terminal as a module capsule: the config.yaml
-// disabled: list may name it (the Modules tab's two-step toggle owns
-// the write, the lifecycle stop kills the shells).
+// Toggleable marks the shell as an opinionated module (0.17.3 tier
+// re-law, card t_ee3a968b): the config.yaml disabled: list may name it -
+// the toggle takes the tool family, the pane routes and the lifecycle
+// fence (the stop kills every shell) together.
 func (p *Plugin) Toggleable() bool { return true }
 
-// MountWithAPI implements agent.APIPlugin: the route surface + the
-// lifecycle fence (the pruning lives in the fence's start; the stop
-// kills every session - a toggle-off or a dismount reaps its shells).
-// The claim is the module name: /terminal here, cross-tenant claims
-// of the same route patterns are the registry's refusal.
+// MountWithAPI implements agent.APIPlugin: both faces, one registration.
+// The tool family first (guard from the store config, registry from the
+// process section), then the route surface + the lifecycle fence (the
+// pruning lives in the fence's start; the stop kills every session - a
+// toggle-off or a dismount reaps its shells). The claim is the module
+// name: /terminal here, cross-tenant claims of the same route patterns
+// are the registry's refusal.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
-	// the workspace-pin face resolves LIVE per claim (card t_62d72028):
-	// nil-safe absence rides - the chain falls through to the knob
+	// the tool face: the guard refuses any command that resolves into
+	// the instance database (Endo's law 2026-10-18)
+	var guard *datadir.Guard
+	if c, ok := ctx.Configs["store"].(store.Config); ok {
+		guard = datadir.NewGuard(c.DBPath)
+	} else {
+		guard = datadir.NewGuard("")
+	}
+	rcfg := RegistryConfig{}
+	if c, ok := ctx.Configs["process"].(RegistryConfig); ok {
+		rcfg = c
+	}
+	p.provider = NewShellProvider(guard, NewRegistry(rcfg))
+	for name, t := range p.provider.Tools() {
+		if err := api.RegisterTool(name, t); err != nil {
+			return err
+		}
+	}
+
+	// the pane face: the workspace-pin face resolves LIVE per claim (card
+	// t_62d72028) - nil-safe absence rides, the chain falls through to
+	// the knob
 	p.storeFn = func() sessionStores { return seam[sessionStores](ctx, "store") }
 	if err := api.RegisterRoute("GET /terminal/sessions", p.handleList); err != nil {
 		return err

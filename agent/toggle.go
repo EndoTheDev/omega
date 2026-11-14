@@ -175,7 +175,7 @@ func (r *Registry) toggleOff(ctx *core.Context, name string, deps core.StartDeps
 		return err
 	}
 	if !isToggleable(p) {
-		err := fmt.Errorf("module %q is not toggleable - the disable list only names the opinionated capsules, %q is machine-critical or shell", name, name)
+		err := fmt.Errorf("module %q is not toggleable - the disable list only names the opinionated capsules, %q is in the always-on tier (agent-loop, provider, logging)", name, name)
 		r.logRefusal(name, "toggle.disable", err)
 		return err
 	}

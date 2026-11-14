@@ -93,12 +93,13 @@ const MaskedSecretPlaceholder = "****"
 // mean two endpoints.
 const DefaultProviderInstance = "default"
 
-// AlwaysOnAgentModules is the locked pair, under the names the mount
-// machinery knows. Neither is in the toggleable tier (agent/plugin.go),
-// so neither can be switched off by an agent or by the host - the law is
-// structural - and naming one in toggles is refused so a file never
-// claims a choice it does not have.
-var AlwaysOnAgentModules = []string{"agent-loop", "provider"}
+// AlwaysOnAgentModules is the always-on tier, under the names the mount
+// machinery knows (0.17.3 tier re-law, card t_ee3a968b: agent-loop +
+// provider + logging, the folded observability module). None is in the
+// toggleable tier (agent/plugin.go), so none can be switched off by an
+// agent or by the host - the law is structural - and naming one in
+// toggles is refused so a file never claims a choice it does not have.
+var AlwaysOnAgentModules = []string{"agent-loop", "provider", "observability"}
 
 // AgentInherit is the inherit-as-disabled block: main's artifacts are
 // visible to every secondary agent and inert until the matching flag is
@@ -520,7 +521,7 @@ func validateAgentUpdates(u AgentConfigUpdates, host HostDefinition, visible []s
 				return &AgentConfigScaffoldError{Message: "toggles holds an empty name"}
 			}
 			if slices.Contains(AlwaysOnAgentModules, name) {
-				return &AgentConfigScaffoldError{Message: fmt.Sprintf("%q is one of the locked pair (agent-loop + provider) - it is always on and cannot be toggled", name)}
+				return &AgentConfigScaffoldError{Message: fmt.Sprintf("%q is in the always-on tier (agent-loop + provider + logging) - it is always on and cannot be toggled", name)}
 			}
 			if err := ValidAgentName(name); err != nil {
 				return &AgentConfigScaffoldError{Message: fmt.Sprintf("toggle %q is not a capsule name: %v", name, err)}
