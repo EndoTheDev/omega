@@ -15,8 +15,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 var _ agent.AgentSessionStore = (*Store)(nil)
@@ -119,7 +119,7 @@ func HandleAgentDetailCommand(ctx context.Context, st agent.StoreProvider, arg s
 		fmt.Fprintf(&sb, "  description: %s\n", p.Description)
 	}
 	fmt.Fprintf(&sb, "  dir:        %s\n", p.Dir)
-	fmt.Fprintf(&sb, "  provider:   %s\n", p.ProviderType)
+	fmt.Fprintf(&sb, "  provider:   %s\n", providerLabel(p.ProviderInstance))
 	fmt.Fprintf(&sb, "  model:      %s\n", p.ModelName)
 	fmt.Fprintf(&sb, "  skills:     %s\n", strings.Join(p.Skills, ", "))
 	fmt.Fprintf(&sb, "  memory:     %d bytes\n", p.MemorySize)
@@ -128,6 +128,17 @@ func HandleAgentDetailCommand(ctx context.Context, st agent.StoreProvider, arg s
 		fmt.Fprintf(&sb, "  last act:   %s\n", p.LastActivity)
 	}
 	return core.CommandResult{Text: sb.String()}, nil
+}
+
+// providerLabel renders the agent's provider reference for the CLI
+// detail view: the named instance settings defines, or the reserved
+// word for the host's own provider section. The agent file never
+// carries a type, host or key any more (the secret-free law).
+func providerLabel(instance string) string {
+	if instance == "" {
+		return agent.DefaultProviderInstance
+	}
+	return instance
 }
 
 // fillProfileSessions writes per-agent session counts and the most

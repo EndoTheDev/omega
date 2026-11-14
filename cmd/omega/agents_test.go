@@ -77,7 +77,7 @@ func TestApplyAgentLayerOverridesModel(t *testing.T) {
 	if err := agent.ScaffoldAgent(home, "scout", "probe duty"); err != nil {
 		t.Fatal(err)
 	}
-	layer := "provider:\n  type: openai\n  model_name: qwen3-coder\nsystem_prompt: \"You are scout.\"\n"
+	layer := "provider:\n  model_name: qwen3-coder\nsystem_prompt: \"You are scout.\"\n"
 	if err := os.WriteFile(agent.AgentConfigPath(home, "scout"), []byte(layer), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -88,14 +88,12 @@ func TestApplyAgentLayerOverridesModel(t *testing.T) {
 	if cfg.Provider.ModelName != "qwen3-coder" {
 		t.Errorf("model = %q, want the layer's qwen3-coder", cfg.Provider.ModelName)
 	}
-	if cfg.Provider.Type != "openai" {
-		t.Errorf("type = %q, want openai", cfg.Provider.Type)
-	}
 	if cfg.SystemPrompt != "You are scout." {
 		t.Errorf("system_prompt = %q", cfg.SystemPrompt)
 	}
-	// the layer does not touch api_key-less knobs it never set: host
-	// stays (provider sub-keys merge like yaml overlay).
+	// the layer does not touch knobs it never set: the host provider's
+	// type and host stand (a provider.instance reference is the only way
+	// an agent redirects them, and a secret can never ride the layer).
 	if cfg.Provider.Host != "http://localhost:11434" {
 		t.Errorf("host clobbered: %q", cfg.Provider.Host)
 	}
@@ -317,8 +315,12 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 		t.Fatalf("layer max_turns = %v, want 42", lay.MaxTurns)
 	}
 
-	// The wake's own overlay: the layer's int lands on cfg.
-	cfg := agentLayerBase()
+	// The wake's own overlay: the layer's int lands on cfg, and the
+	// provider.instance reference resolves against the host settings.
+	cfg, err := LoadConfig(mainConfigPath)
+	if err != nil {
+		t.Fatalf("load host config: %v", err)
+	}
 	cfg.MaxTurns = 11 // main's value, which the layer must win over
 	if err := ApplyAgentLayer(&cfg, home, "alpha"); err != nil {
 		t.Fatalf("apply layer: %v", err)
@@ -352,7 +354,10 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 	}
 
 	// The wake inherits main again.
-	cfg = agentLayerBase()
+	cfg, err = LoadConfig(mainConfigPath)
+	if err != nil {
+		t.Fatalf("load host config: %v", err)
+	}
 	cfg.MaxTurns = 11
 	cfg.SystemPrompt = "main prompt"
 	if err := ApplyAgentLayer(&cfg, home, "alpha"); err != nil {
@@ -380,11 +385,8 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 		t.Errorf("alpha system_prompt = %+v, want inherited main value + overridden=false", k)
 	}
 	// The knobs the reset did not name keep their overrides.
-	if k := scopeKnob(t, alpha, "provider.type"); !k.Overridden {
-		t.Errorf("provider.type = %+v, want the untouched override", k)
-	}
-	if k := scopeKnob(t, alpha, "provider.api_key"); !k.Overridden || k.Value != maskedSecret {
-		t.Errorf("provider.api_key = %+v, want the mask + overridden", k)
+	if k := scopeKnob(t, alpha, "provider.instance"); !k.Overridden || k.Value != "work" {
+		t.Errorf("provider.instance = %+v, want the untouched work override", k)
 	}
 
 	// --- a provider sub-key reset falls back for THAT knob only -----
@@ -398,7 +400,10 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("unset model_name: %v", err)
 	}
-	cfg = agentLayerBase()
+	cfg, err = LoadConfig(mainConfigPath)
+	if err != nil {
+		t.Fatalf("load host config: %v", err)
+	}
 	cfg.Provider.ModelName = "main-model"
 	if err := ApplyAgentLayer(&cfg, home, "alpha"); err != nil {
 		t.Fatalf("apply layer after model_name reset: %v", err)
@@ -406,8 +411,8 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 	if cfg.Provider.ModelName != "main-model" {
 		t.Errorf("model_name after the reset = %q, want main's main-model", cfg.Provider.ModelName)
 	}
-	if cfg.Provider.Type != "openai" {
-		t.Errorf("provider.type after the model_name reset = %q, want the layer's openai", cfg.Provider.Type)
+	if cfg.Provider.Type != "openai" || cfg.Provider.Host != "http://work-host:9000" || cfg.Provider.APIKey != "work-secret" {
+		t.Errorf("provider after the model_name reset = %+v, want the resolved work instance", cfg.Provider)
 	}
 	schema, err = settingsSchema(mainConfigPath)
 	if err != nil {
@@ -417,13 +422,13 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 	if k := scopeKnob(t, alpha, "provider.model_name"); k.Overridden {
 		t.Errorf("provider.model_name = %+v, want inherited after its reset", k)
 	}
-	if k := scopeKnob(t, alpha, "provider.type"); !k.Overridden || k.Value != "openai" {
-		t.Errorf("provider.type = %+v, want the untouched openai override", k)
+	if k := scopeKnob(t, alpha, "provider.instance"); !k.Overridden || k.Value != "work" {
+		t.Errorf("provider.instance = %+v, want the untouched work override", k)
 	}
 
 	// --- no path ever persists the read mask as the secret ----------
 	if err := agent.UpdateAgentConfigLayer(home, "alpha", agent.AgentConfigUpdates{
-		APIKey: testStrPtr(agent.MaskedSecretPlaceholder),
+		APIKey: testStrPtr(maskedSecret),
 	}); err == nil {
 		t.Error("the write lane accepted the read mask as an api_key")
 	}
@@ -433,5 +438,90 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 	}
 	if strings.Contains(string(raw), maskedSecret) {
 		t.Errorf("the layer carries the read mask:\n%s", raw)
+	}
+}
+
+// TestApplyAgentLayerDefinitionLaws pins the definition layer's runtime
+// half at the one place a wake reads it: the provider reference
+// resolves out of settings, the enabled capsule set rides cfg for the
+// mount, the skills allowlist becomes the disable list, and a legacy
+// secret in the file stops the wake loudly.
+func TestApplyAgentLayerDefinitionLaws(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+	writeScopeFile(t, filepath.Join(home, "config", "config.yaml"), scopeMainConfig)
+	if err := agent.ScaffoldAgent(home, "scout", "probe duty"); err != nil {
+		t.Fatal(err)
+	}
+	// two visible skills, one allowlisted
+	for _, skill := range []string{"alpha", "beta"} {
+		dir := filepath.Join(agent.AgentDir(home, "scout"), "skills", skill)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("# "+skill), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	layer := "provider:\n  instance: work\n  model_name: scout-model\ntoggles: [kanban]\nskills:\n  allow: [alpha]\n"
+	if err := os.WriteFile(agent.AgentConfigPath(home, "scout"), []byte(layer), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(filepath.Join(home, "config", "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplyAgentLayer(&cfg, home, "scout"); err != nil {
+		t.Fatalf("apply layer: %v", err)
+	}
+	// The instance resolves type/host/key out of settings - the agent
+	// file held none of them.
+	if cfg.Provider.Type != "openai" || cfg.Provider.Host != "http://work-host:9000" || cfg.Provider.APIKey != "work-secret" {
+		t.Errorf("provider = %+v, want the resolved work instance", cfg.Provider)
+	}
+	if cfg.Provider.ModelName != "scout-model" {
+		t.Errorf("model = %q, want the layer's scout-model", cfg.Provider.ModelName)
+	}
+	// The always-off set rides cfg for the mount to intersect.
+	if cfg.agentName != "scout" || strings.Join(cfg.agentToggles, ",") != "kanban" {
+		t.Errorf("agent scope = %q toggles %v, want scout/[kanban]", cfg.agentName, cfg.agentToggles)
+	}
+	// The allowlist is the only skill the agent may load - and an empty
+	// allowlist is SET, so it means none rather than "every skill".
+	if strings.Join(cfg.agentSkillsAllow, ",") != "alpha" || !cfg.agentSkillsAllowSet {
+		t.Errorf("skills allowlist = %v (set %v), want [alpha]", cfg.agentSkillsAllow, cfg.agentSkillsAllowSet)
+	}
+
+	// An empty allowlist means NO skills, never inherited.
+	if err := os.WriteFile(agent.AgentConfigPath(home, "scout"), []byte("description: probe duty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = LoadConfig(filepath.Join(home, "config", "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplyAgentLayer(&cfg, home, "scout"); err != nil {
+		t.Fatalf("apply layer (no allowlist): %v", err)
+	}
+	if len(cfg.agentSkillsAllow) != 0 || !cfg.agentSkillsAllowSet {
+		t.Errorf("allowlist = %v (set %v), want an explicit empty set (empty = NO skills)", cfg.agentSkillsAllow, cfg.agentSkillsAllowSet)
+	}
+	if len(cfg.agentToggles) != 0 {
+		t.Errorf("agent toggles = %v, want none (always off)", cfg.agentToggles)
+	}
+
+	// A legacy secret in the file is a law violation, not a fallback.
+	legacy := "provider:\n  type: openai\n  host: http://x\n  api_key: sk-old\n"
+	if err := os.WriteFile(agent.AgentConfigPath(home, "scout"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = ApplyAgentLayer(&Config{}, home, "scout")
+	if err == nil {
+		t.Fatal("a legacy secret in an agent file was accepted at wake")
+	}
+	for _, want := range []string{"secret-free", "provider.api_key"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal lost %q: %v", want, err)
+		}
 	}
 }

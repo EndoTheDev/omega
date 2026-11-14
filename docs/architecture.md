@@ -61,17 +61,37 @@ bin/              Build output + local runtime (gitignored; skills/ templates tr
   data/           Databases (boot migration moves legacy home-root dbs here)
     omega.db      Session database (gitignored)
     kanban.db      Task board database (gitignored)
-  user.md/memory.md  Main persona files (the home root IS the main agent)
+  user.md/memory.md/soul.md  Main persona files (the home root IS the main agent)
   skills/         Skill files
   agents/         Continuous-agent homes (folder presence = registration)
     <name>/
       config/     The agent's config.yaml layer + its own crons.yaml
       data/       The agent's stores (omega.db, notifications.db, kanban.db, ledger.db)
       skills/     The agent's own skills
+      soul.md     Persona file (behaviour/personality, one per agent)
       user.md     Persona file
       memory.md   The agent's memory
       <name>.log  The agent's wake log (stdout+stderr of wake children)
 ```
+
+An agent's `config/config.yaml` is its DEFINITION layer: the field set
+is the whole agent (name = the directory, description, system prompt,
+provider instance, model name, max turns, toggles, skills), and the
+laws are enforced on write. The provider is a REFERENCED instance -
+type, host and api_key live once in the home settings -
+so an agent file holds no secret, ever. Toggles are the ENABLED set and
+start empty: a secondary agent mounts the locked pair (agent-loop +
+provider) plus exactly the capsules it names, and only ones the host
+itself has enabled (the subset law). Skills are an explicit allowlist
+(empty = none), and main's skills, soul, user.md and memory.md are
+visible but inert until the agent enables that kind, which MATERIALIZES
+a copy into its own home. Creating an agent "from" another materializes
+a full clone (config, skills, toggles, persona files, session store) -
+copy, never link, so clone-then-delete is the rename path.
+
+A clone of main copies its skills and persona files but not the home
+config: that file carries the provider secret, and an agent file holds
+none.
 
 An agent home's config is read once, at build time, and the built agent
 is cached for the process lifetime: hand-editing

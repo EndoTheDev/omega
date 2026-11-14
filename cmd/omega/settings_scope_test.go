@@ -107,17 +107,21 @@ const scopeMainConfig = `provider:
   model_name: main-model
   host: http://main-host:11434
   api_key: main-secret
+providers:
+  work:
+    type: openai
+    host: http://work-host:9000
+    api_key: work-secret
 system_prompt: main prompt
 max_turns: 55
 `
 
-// alpha overrides: provider.type, provider.api_key, system_prompt,
-// description, max_turns. It leaves provider.model_name and
-// provider.host INHERITED - the mixed shape a group roll-up must catch.
+// alpha overrides: provider.instance, system_prompt, description,
+// max_turns. It leaves provider.model_name INHERITED - the mixed shape a
+// group roll-up must catch.
 const scopeAlphaConfig = `description: alpha agent
 provider:
-  type: openai
-  api_key: alpha-secret
+  instance: work
 system_prompt: alpha prompt
 max_turns: 7
 `
@@ -147,8 +151,8 @@ func TestSettingsScopesListsAgentHomes(t *testing.T) {
 		t.Fatalf("alpha groups = %v, want the four R2 groups in order", groupKeys)
 	}
 	// An overridden knob carries the layer's value.
-	if k := scopeKnob(t, alpha, "provider.type"); k.Value != "openai" || !k.Overridden {
-		t.Errorf("provider.type = %+v, want openai/overridden", k)
+	if k := scopeKnob(t, alpha, "provider.instance"); k.Value != "work" || !k.Overridden {
+		t.Errorf("provider.instance = %+v, want work/overridden", k)
 	}
 	// An INHERITED knob inside an overridden group: same value as main,
 	// no override flag.
@@ -159,12 +163,16 @@ func TestSettingsScopesListsAgentHomes(t *testing.T) {
 	if want := mainKnob(t, schema, "provider.model_name").Value; inherited.Value != want {
 		t.Errorf("provider.model_name = %v, want main's %v", inherited.Value, want)
 	}
-	if k := scopeKnob(t, alpha, "provider.host"); k.Overridden || k.Value != mainKnob(t, schema, "provider.host").Value {
-		t.Errorf("provider.host = %+v, want inherited from main", k)
-	}
-	// A layer secret never rides plaintext.
-	if k := scopeKnob(t, alpha, "provider.api_key"); k.Value != maskedSecret || !k.Overridden {
-		t.Errorf("provider.api_key = %+v, want the mask + overridden", k)
+	// The secret-free law on the wire: a scope carries the instance
+	// reference and the model, never a type, host or key.
+	for _, gone := range []string{"provider.type", "provider.host", "provider.api_key"} {
+		for _, g := range alpha.Groups {
+			for _, k := range g.Knobs {
+				if k.Key == gone {
+					t.Errorf("scope payload still carries %q - agent scopes are secret-free", gone)
+				}
+			}
+		}
 	}
 	if k := scopeKnob(t, alpha, "system_prompt"); k.Value != "alpha prompt" || !k.Overridden {
 		t.Errorf("system_prompt = %+v, want alpha prompt/overridden", k)
@@ -196,10 +204,16 @@ func TestSettingsScopesListsAgentHomes(t *testing.T) {
 			}
 		}
 	}
-	for _, key := range []string{"provider.type", "provider.model_name", "provider.host", "provider.api_key", "system_prompt", "max_turns"} {
+	for _, key := range []string{"provider.model_name", "system_prompt", "max_turns"} {
 		if got, want := scopeKnob(t, beta, key).Value, mainKnob(t, schema, key).Value; got != want {
 			t.Errorf("beta %s = %v, want main's %v", key, got, want)
 		}
+	}
+	// main has no instance of its own: an agent that names none reads the
+	// reserved word, which is exactly what ApplyAgentLayer resolves to the
+	// host's provider: section.
+	if k := scopeKnob(t, beta, "provider.instance"); k.Value != "default" || k.Overridden {
+		t.Errorf("beta provider.instance = %+v, want the reserved default / not overridden", k)
 	}
 	if k := scopeKnob(t, beta, "description"); k.Value != "" {
 		t.Errorf("beta description = %v, want the empty inherited base (main has no description knob)", k.Value)
@@ -316,7 +330,9 @@ func TestSettingsScopesSkipsMainAndMalformedDirs(t *testing.T) {
 
 func TestSettingsScopesReportsUnparsableLayer(t *testing.T) {
 	home := scopeHome(t, scopeMainConfig, map[string]string{
-		"broken": "max_turns: not-a-number\n",
+		// A mapping where a scalar belongs: a real parse failure, not a
+		// value the tolerant read can coerce.
+		"broken": "description:\n  nested: true\n",
 	})
 	schema, err := settingsSchema(filepath.Join(home, "config", "config.yaml"))
 	if err != nil {
@@ -346,17 +362,18 @@ func TestSettingsScopeHome(t *testing.T) {
 	}
 }
 
-func TestSettingsScopesEmptyAPIKeyStaysEmpty(t *testing.T) {
-	// An explicitly empty secret is an override with no key behind it:
-	// masked-empty stays empty (masking a missing key would imply one).
+func TestSettingsScopesEmptyInstanceStaysEmpty(t *testing.T) {
+	// An explicitly empty instance is an override with no instance behind
+	// it - the agent inherits the host's own provider by name, and the
+	// payload says so instead of guessing a name it does not have.
 	home := scopeHome(t, scopeMainConfig, map[string]string{
-		"alpha": "provider:\n  api_key: \"\"\n",
+		"alpha": "provider:\n  instance: \"\"\n",
 	})
 	schema, err := settingsSchema(filepath.Join(home, "config", "config.yaml"))
 	if err != nil {
 		t.Fatalf("settingsSchema: %v", err)
 	}
-	if k := scopeKnob(t, scopeByName(t, schema, "alpha"), "provider.api_key"); k.Value != "" || !k.Overridden {
-		t.Errorf("provider.api_key = %+v, want empty + overridden", k)
+	if k := scopeKnob(t, scopeByName(t, schema, "alpha"), "provider.instance"); k.Value != "" || !k.Overridden {
+		t.Errorf("provider.instance = %+v, want empty + overridden", k)
 	}
 }

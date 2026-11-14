@@ -212,7 +212,13 @@ func rosterRows(profiles []agent.Profile, last map[string]string) []agentRow {
 }
 
 // handleAgents serves GET /agents (the inventory) and POST /agents
-// (scaffold a new agent directory from the template).
+// (create an agent home).
+//
+// POST carries TWO doors, one wire (0.17.3 make-over, card t_f47319d2):
+// a bare create scaffolds an empty always-off home; a create with
+// inherit_from MATERIALIZES a clone of that source (the CLONE law - a
+// full copy at birth, never a live link). Clone-then-delete is the
+// rename path, so there is no separate duplicate endpoint.
 func (ar *agentRoutes) handleAgents(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -223,16 +229,30 @@ func (ar *agentRoutes) handleAgents(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Name        string `json:"name"`
 			Description string `json:"description"`
+			InheritFrom string `json:"inherit_from"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			ar.httpError(w, http.StatusBadRequest, "invalid request: %v", err)
 			return
 		}
-		if err := agent.ScaffoldAgent(ar.home, strings.TrimSpace(req.Name), req.Description); err != nil {
+		name := strings.TrimSpace(req.Name)
+		from := strings.TrimSpace(req.InheritFrom)
+		if from != "" {
+			if err := agent.CloneAgent(ar.home, from, name, req.Description); err != nil {
+				ar.httpError(w, http.StatusConflict, "clone agent: %v", err)
+				return
+			}
+			// The copied store carries the source's rows: re-tag them as
+			// the clone's own, or the roster reads the clone as empty.
+			if err := ar.retagClonedSessions(from, name); err != nil {
+				ar.httpError(w, http.StatusInternalServerError, "clone sessions: %v", err)
+				return
+			}
+		} else if err := agent.ScaffoldAgent(ar.home, name, req.Description); err != nil {
 			ar.httpError(w, http.StatusConflict, "scaffold agent: %v", err)
 			return
 		}
-		p, err := agent.LoadProfile(ar.home, strings.TrimSpace(req.Name))
+		p, err := agent.LoadProfile(ar.home, name)
 		if err != nil {
 			ar.httpError(w, http.StatusInternalServerError, "load agent: %v", err)
 			return
@@ -241,6 +261,17 @@ func (ar *agentRoutes) handleAgents(w http.ResponseWriter, r *http.Request) {
 	default:
 		ar.httpError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+// retagClonedSessions rewrites the copied store's agent tags to the
+// clone. Main's sessions may predate the agent column, so "" and
+// "default" are both real source tags.
+func (ar *agentRoutes) retagClonedSessions(from, to string) error {
+	dsn := filepath.Join(agent.AgentDir(ar.home, to), "data", "omega.db")
+	if from == agent.DefaultAgentName {
+		return store.RetagAgentSessions(dsn, to, agent.DefaultAgentName, "")
+	}
+	return store.RetagAgentSessions(dsn, to, from)
 }
 
 // handleAgent serves GET /agents/{name}: one agent, detail payload.
@@ -286,28 +317,39 @@ func (ar *agentRoutes) handleAgentUpdate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req struct {
-		Description  *string  `json:"description"`
-		ProviderType *string  `json:"provider_type"`
-		ModelName    *string  `json:"model_name"`
-		Host         *string  `json:"host"`
-		APIKey       *string  `json:"api_key"`
-		SystemPrompt *string  `json:"system_prompt"`
-		MaxTurns     *int     `json:"max_turns"`
-		Unset        []string `json:"unset"`
+		Description      *string             `json:"description"`
+		ProviderInstance *string             `json:"provider_instance"`
+		ModelName        *string             `json:"model_name"`
+		SystemPrompt     *string             `json:"system_prompt"`
+		MaxTurns         *int                `json:"max_turns"`
+		Toggles          *[]string           `json:"toggles"`
+		SkillsAllow      *[]string           `json:"skills_allow"`
+		Inherit          *agent.AgentInherit `json:"inherit"`
+		Unset            []string            `json:"unset"`
+		// Retired secret knobs: decoded only so the refusal is LOUD. A
+		// client written before the secret-free law gets the law spelled
+		// out (400), never a silent drop.
+		ProviderType *string `json:"provider_type"`
+		Host         *string `json:"host"`
+		APIKey       *string `json:"api_key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		ar.httpError(w, http.StatusBadRequest, "invalid request: %v", err)
 		return
 	}
 	updates := agent.AgentConfigUpdates{
-		Description:  req.Description,
-		ProviderType: req.ProviderType,
-		ModelName:    req.ModelName,
-		Host:         req.Host,
-		APIKey:       req.APIKey,
-		SystemPrompt: req.SystemPrompt,
-		MaxTurns:     req.MaxTurns,
-		Unset:        req.Unset,
+		Description:      req.Description,
+		ProviderInstance: req.ProviderInstance,
+		ModelName:        req.ModelName,
+		SystemPrompt:     req.SystemPrompt,
+		MaxTurns:         req.MaxTurns,
+		Toggles:          req.Toggles,
+		SkillsAllow:      req.SkillsAllow,
+		Inherit:          req.Inherit,
+		Unset:            req.Unset,
+		ProviderType:     req.ProviderType,
+		Host:             req.Host,
+		APIKey:           req.APIKey,
 	}
 	if err := agent.UpdateAgentConfigLayer(ar.home, name, updates); err != nil {
 		// A scaffold-law refusal (unknown provider type, the locked

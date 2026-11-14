@@ -109,3 +109,52 @@ func names(skills []Skill) []string {
 	}
 	return out
 }
+
+// TestAllowlistFiltersTheRegistry pins the skills allowlist (0.17.3
+// make-over): a SET allowlist is the whole registry - an unnamed skill
+// does not load at all - and an unset allowlist keeps the host's
+// every-skill behavior. Empty + set means NO skills, which is the
+// always-off default a secondary agent starts on.
+func TestAllowlistFiltersTheRegistry(t *testing.T) {
+	home := t.TempDir()
+	shared := filepath.Join(home, "skills", "shared")
+	own := filepath.Join(home, "agents", "scout", "skills")
+	writeSkill(t, shared, "deploy", "the shared deploy skill")
+	writeSkill(t, own, "probe", "scout's own probe skill")
+	writeSkill(t, own, "ghost", "not allowlisted")
+
+	// Unset: every skill loads (main's own mount).
+	sp := &SkillsProvider{Dir: own, SharedDir: shared}
+	all, err := sp.LoadSkills("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("unset allowlist loaded %v, want all three", names(all))
+	}
+
+	// Set: only the named skill exists for this agent.
+	sp = &SkillsProvider{Dir: own, SharedDir: shared, Allow: []string{"deploy"}, AllowSet: true}
+	got, err := sp.LoadSkills("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(names(got), ",") != "deploy" {
+		t.Fatalf("allowlist loaded %v, want only deploy", names(got))
+	}
+	// The reader tool answers the same registry, so an unnamed skill is
+	// not readable either.
+	if _, err := sp.ReadSkill("ghost"); err == nil {
+		t.Errorf("an allowlisted-out skill was still readable")
+	}
+
+	// Set + empty: no skills at all.
+	sp = &SkillsProvider{Dir: own, SharedDir: shared, AllowSet: true}
+	none, err := sp.LoadSkills("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(none) != 0 {
+		t.Fatalf("empty allowlist loaded %v, want none (empty = NO skills)", names(none))
+	}
+}

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // NewSkillsProvider creates a SkillsProvider configured to scan dir.
@@ -57,6 +57,10 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	sp := NewSkillsProvider(dir)
 	sp.SharedDir = cfg.SharedDir
 	sp.SetDisabled(cfg.Disabled)
+	// The explicit allowlist (0.17.3 make-over): an agent home's
+	// definition names what it may use, and an empty list means none.
+	// Unset stays the host mount's every-skill behavior.
+	sp.Allow, sp.AllowSet = cfg.Allow, cfg.AllowSet
 	// The curator reads the provider seam LIVE at consult time - the
 	// registry resolve, not a mount-time pin (toggles swap the offer).
 	sp.SetProviderFn(func() agent.Provider { return seam[agent.Provider](ctx, "provider") })
@@ -77,7 +81,10 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		// The skill viewer's content route rides the capsule too
 		// (shell-ring shrink wave 3, card t_b75df168): the viewer tab's
 		// reads mount and die with the provider they read.
-		func() error { p.routes = newRoutes(sp); return api.RegisterRoute("/skills/content", p.routes.handleSkillsContent) },
+		func() error {
+			p.routes = newRoutes(sp)
+			return api.RegisterRoute("/skills/content", p.routes.handleSkillsContent)
+		},
 		// The tab editor's write face (card t_0a108f16): create +
 		// rewrite on /skills/save, remove on /skills/delete - POST
 		// method-prefixed routes riding the SAME mounted provider, so a

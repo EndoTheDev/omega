@@ -197,3 +197,48 @@ func TestMigrateAgentRowsSkipsChildlessAgents(t *testing.T) {
 		t.Errorf("scout store file created for an agent that never wrote: %v", err)
 	}
 }
+
+// TestRetagAgentSessions pins the clone law's last step: a materialized
+// copy carries the source's rows, and re-tagging makes them the clone's
+// own - including the pre-column "" tag main's oldest rows carry.
+func TestRetagAgentSessions(t *testing.T) {
+	ctx := context.Background()
+	dsn := filepath.Join(t.TempDir(), "omega.db")
+	st, err := Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateAgentSession(ctx, "scout-sess", "", "probe", "scout"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateAgentSession(ctx, "legacy-sess", "", "old", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := RetagAgentSessions(dsn, "probe", "scout", "default", ""); err != nil {
+		t.Fatalf("retag: %v", err)
+	}
+	st, err = Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	rows, err := st.ListAgentSessions(ctx, "probe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("probe sessions = %d, want both copied rows", len(rows))
+	}
+	// The source agent owns nothing any more.
+	if rows, err := st.ListAgentSessions(ctx, "scout"); err != nil || len(rows) != 0 {
+		t.Errorf("scout still owns %d rows (err %v)", len(rows), err)
+	}
+	// A missing store is a no-op: a source that never ran has nothing to
+	// re-tag, and the clone must not create a database for it.
+	if err := RetagAgentSessions(filepath.Join(t.TempDir(), "ghost.db"), "probe", "scout"); err != nil {
+		t.Errorf("missing store answered %v, want a no-op", err)
+	}
+}

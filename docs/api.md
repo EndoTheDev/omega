@@ -466,34 +466,56 @@ A host with no settings seam answers **501** on all three, like
   `PUT /disabled/agents` for the default agent answers **409**
   ("the default agent cannot be disabled - it must always be on",
   t_2d8deb8c) and leaves config.yaml untouched.
-- `PUT /agents/{name}` - the node-preserving agent config layer
-  editor: description, the provider layer (type, model_name, host,
-  api_key), system_prompt, max_turns. Absent/nil fields leave the layer
-  untouched; the default agent answers 409 (`ErrAgentConfigLocked`). Sits
-  beside the Agents tab's expansion editor.
+- `PUT /agents/{name}` - the node-preserving agent DEFINITION layer
+  editor (0.17.3 make-over). The field set is the whole agent:
+  `description`, `system_prompt`, `provider` (`instance` + `model_name`),
+  `max_turns`, `toggles`, `skills_allow`, `inherit`. Absent/nil fields
+  leave the layer untouched; the default agent answers 409
+  (`ErrAgentConfigLocked`). Sits beside the Agents tab's expansion
+  editor.
 
-  Settings tier 3b (t_53523d5b) added the two fields the scope tabs
-  need, both additive - an old body is unchanged in meaning:
+  The laws the write lane enforces:
 
-  - `max_turns` (JSON **number**, not a string): written as a yaml int,
-    because a wake unmarshals the layer straight into the runtime's int
-    knob. `0` is a real value ("no cap"); omitting the field is what
-    means unset. Negative answers **400** (`max_turns must be >= 0`,
-    the same floor `config.yaml` validation applies).
-  - `unset` (array of dotted knob paths: `description`,
-    `system_prompt`, `provider.type`, `provider.model_name`,
-    `provider.host`, `provider.api_key`, `max_turns`): the RESET verb.
-    Each named key pair is deleted from the layer file, every other key,
-    comment and style stays byte-intact, and a `provider` block left with
-    no sub-keys is removed with them. Deleting is what makes a scope fall
-    back to main - the settings payload's `overridden` flag is structural
-    (the file names the key), so writing main's value down would leave a
-    permanent phantom override, and for `provider.api_key` would persist
-    the read mask as the agent's secret. Unknown names, a group name
-    (`provider` alone), and a key both set and unset in one request
-    answer **400**. Sending the read mask (`****`) as `api_key` is
-    **400** too: the reset verb for the secret is
-    `unset: ["provider.api_key"]`.
+  - **Secret-free provider.** `provider.instance` names an instance
+    from settings; `provider_type`, `host` and `api_key` are retired
+    fields and answer **400** with the law spelled out (an old client
+    fails loud instead of silently dropping a value).
+    `provider.instance: default` (or empty) is the host's own
+    `provider:` section.
+  - **Always off.** `toggles` is the ENABLED capsule list; an empty or
+    absent list enables nothing beyond the locked pair (agent-loop +
+    provider, which are not toggleable and are **400** if named).
+  - **Subset.** A capsule the host's `disabled:` fold names answers
+    **400** - an agent can only enable what its host has enabled.
+  - **Skills allowlist.** `skills_allow` names visible skills (own,
+    shared, and main's own when `inherit.skills` is on); an unknown
+    name answers **400**, and an empty or absent list means NO skills.
+  - **Inherit-as-disabled.** `inherit` (a block of `skills`, `soul`,
+    `user`, `memory`) is off by default; enabling a kind MATERIALIZES
+    a copy of main's artifact into the agent home and never clobbers a
+    file the agent owns.
+  - `max_turns` is a JSON **number** written as a yaml int (`0` = no
+    cap; absent = inherit); a negative answers **400**.
+  - `unset` is the RESET verb: an array of dotted knob paths
+    (`description`, `system_prompt`, `provider.instance`,
+    `provider.model_name`, `provider.type`, `provider.host`,
+    `provider.api_key`, `max_turns`, `toggles`, `skills.allow`,
+    `inherit`). Each named key pair is deleted from the layer file,
+    every other key, comment and style stays byte-intact, and a
+    `provider` block left with no sub-keys is removed with them. The
+    legacy secret keys stay in the vocabulary only as a scrub verb -
+    writing them is refused. Unknown names and a key both set and
+    unset in one request answer **400**.
+
+- `POST /agents` - create. A bare body (`name`, `description`)
+  scaffolds an empty always-off home; `inherit_from` names a source
+  agent (or `default`) and MATERIALIZES a clone instead: config layer,
+  skills, toggles, `user.md`, `memory.md`, `soul.md` and the session
+  store are copied, then the copied store's rows are re-tagged to the
+  clone. A clone of `default` starts on the scaffold template, never on
+  the home config - that file carries the provider secret, and an agent
+  file holds none. Clone-then-delete is the rename path; there is no
+  rename-in-place route.
 
 ### /boards (multi-board registry)
 

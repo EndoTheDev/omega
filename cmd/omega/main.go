@@ -680,7 +680,21 @@ func newAgent(cfg Config, configPath string, appendPrompts []string, trust trust
 	// The API mount honors the config.yaml disabled.modules toggle list
 	// (v0.12 E1, Q1): disabled capsules skip Mount, and a capsule
 	// depending on one fails the boot naming the edge (Q3).
-	reg, err := agent.MountAllAPI(plugins, ctx, nil, cfg.Disabled.Modules)
+	//
+	// ALWAYS OFF (0.17.3 make-over, card t_f47319d2): an agent home
+	// mounts the locked pair plus exactly the capsules its definition
+	// enables - everything else toggleable is off, whether or not main
+	// runs it. The host's own fold still applies (the subset law: an
+	// agent can never enable more than the host).
+	disabledModules := cfg.Disabled.Modules
+	if cfg.agentName != "" {
+		alwaysOff, err := agent.AlwaysOffDisabled(plugins, cfg.agentToggles)
+		if err != nil {
+			return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("agent %s toggles: %w", cfg.agentName, err)
+		}
+		disabledModules = append(append([]string{}, disabledModules...), alwaysOff...)
+	}
+	reg, err := agent.MountAllAPI(plugins, ctx, nil, disabledModules)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("mount extensions: %w", err)
 	}

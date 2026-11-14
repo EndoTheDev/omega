@@ -7,10 +7,10 @@
 package skills
 
 import (
-	"github.com/EndoTheDev/omega/agent"
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/EndoTheDev/omega/agent"
 	"os"
 	"path/filepath"
 	"sort"
@@ -34,6 +34,14 @@ type SkillsProvider struct {
 	// disableMu guards it: prompt builds read while the toggle seam
 	// swaps the list live.
 	Disabled []string
+
+	// Allow/AllowSet are the explicit allowlist (0.17.3 make-over):
+	// when AllowSet, ONLY the named skills load at all - not advertised,
+	// not listed, not readable. Empty + set = no skills, the always-off
+	// law's default for a secondary agent. Unset = the host's own mount
+	// and every skill loads.
+	Allow    []string
+	AllowSet bool
 
 	// Curator plumbing (card t_9972dfd0). providerFn reads the
 	// provider seam LIVE at every consult (api.Provider()) - a module
@@ -134,6 +142,23 @@ func (sp *SkillsProvider) LoadSkills(dir string) ([]Skill, error) {
 			seen[s.Name] = true
 			out = append(out, s)
 		}
+	}
+	// The explicit allowlist (0.17.3 make-over): a set allowlist is the
+	// whole registry for this agent - an unnamed skill does not load at
+	// all, so it is not advertised, not listed and not readable. An
+	// UNSET allowlist is the host's own mount and filters nothing.
+	if sp.AllowSet {
+		allowed := make(map[string]bool, len(sp.Allow))
+		for _, name := range sp.Allow {
+			allowed[name] = true
+		}
+		var keep []Skill
+		for _, s := range out {
+			if allowed[s.Name] {
+				keep = append(keep, s)
+			}
+		}
+		return keep, nil
 	}
 	return out, nil
 }
@@ -436,6 +461,11 @@ func (sp *SkillsProvider) writePatched(path, content string) (string, error) {
 // merge order (shared first, own second), so a name collision reads the
 // same winner the prompt listing and runRead use.
 func (sp *SkillsProvider) ReadSkill(name string) (Skill, error) {
+	// The explicit allowlist (0.17.3 make-over) is the agent's whole
+	// registry: a skill it does not name is not readable either.
+	if sp.AllowSet && !sp.allowed(name) {
+		return Skill{}, fmt.Errorf("skill %q is not enabled for this agent (its allowlist names %s)", name, sp.allowList())
+	}
 	skillFile, err := sp.resolveSkillFile(name)
 	if err != nil {
 		return Skill{}, err
@@ -447,6 +477,25 @@ func (sp *SkillsProvider) ReadSkill(name string) (Skill, error) {
 	s.Name = name
 	s.Dir = filepath.Dir(skillFile)
 	return s, nil
+}
+
+// allowed reports whether the explicit allowlist names a skill.
+func (sp *SkillsProvider) allowed(name string) bool {
+	for _, a := range sp.Allow {
+		if a == name {
+			return true
+		}
+	}
+	return false
+}
+
+// allowList renders the allowlist for a refusal message ("none" when the
+// agent enabled no skills at all).
+func (sp *SkillsProvider) allowList() string {
+	if len(sp.Allow) == 0 {
+		return "none"
+	}
+	return strings.Join(sp.Allow, ", ")
 }
 
 // resolveSkillFile finds a skill's SKILL.md by name in the scan order

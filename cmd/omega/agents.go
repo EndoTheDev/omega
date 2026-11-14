@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/EndoTheDev/omega/agent"
@@ -25,6 +26,31 @@ import (
 // scaffolded child processes are the only writers).
 func resolveAgentName() string {
 	return strings.TrimSpace(os.Getenv("OMEGA_AGENT"))
+}
+
+// providerInstanceNames renders the configured instance ids for an
+// error message, sorted so the text is stable.
+func providerInstanceNames(cfg *Config) string {
+	if len(cfg.Providers) == 0 {
+		return "none configured"
+	}
+	names := make([]string, 0, len(cfg.Providers))
+	for name := range cfg.Providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
+}
+
+// containsString is the small membership test the layer reads use (the
+// sets are tiny; a map allocation per lookup buys nothing).
+func containsString(list []string, want string) bool {
+	for _, v := range list {
+		if v == want {
+			return true
+		}
+	}
+	return false
 }
 
 // applyModelEnvOverride re-asserts the OMEGA_MODEL env table entry on a
@@ -88,6 +114,60 @@ func ApplyAgentLayer(cfg *Config, home, name string) error {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return fmt.Errorf("parse agent config %s: %w", name, err)
 	}
+	// The definition layer (0.17.3 make-over, card t_f47319d2). The raw
+	// overlay above is the host-config half (system_prompt, max_turns,
+	// path knobs); the laws below ride the definition-layer read.
+	lay, err := agent.ReadAgentConfigLayer(home, name)
+	if err != nil {
+		return err
+	}
+	// SECRET-FREE: a file that still names a provider type, host or
+	// api_key is a law violation, not a legacy nicety. The values were
+	// never read (the read lane drops them); the wake stops here and
+	// names the scrub verb.
+	if !lay.SecretFree() {
+		return fmt.Errorf("agent config %s carries %s - agent configs are secret-free: type, host and api_key are defined once in settings; reference an instance with provider.instance, and scrub the legacy keys with unset: [\"provider.api_key\"] etc.", name, strings.Join(lay.LegacySecrets, ", "))
+	}
+	// PROVIDER = A REFERENCED INSTANCE. "default" (or an empty value)
+	// keeps the host's own provider: section; any other name resolves
+	// type/host/api_key out of the settings where they live.
+	if lay.ProviderInstance.Set {
+		inst := lay.ProviderInstance.Value
+		if inst != "" && inst != agent.DefaultProviderInstance {
+			resolved, ok := cfg.Providers[inst]
+			if !ok {
+				return fmt.Errorf("agent config %s references provider instance %q, which settings does not define (want one of: %s, or %q)", name, inst, providerInstanceNames(cfg), agent.DefaultProviderInstance)
+			}
+			cfg.Provider = ProviderConfig{
+				Type:      resolved.Type,
+				Host:      resolved.Host,
+				APIKey:    resolved.APIKey,
+				ModelName: cfg.Provider.ModelName,
+			}
+		}
+	}
+	// INHERIT-AS-DISABLED: a hand-edited flag materializes the same way
+	// a written one does - idempotent, and it never clobbers a file the
+	// agent already owns.
+	if err := agent.MaterializeInheritance(home, name, lay); err != nil {
+		return err
+	}
+	// ALWAYS OFF / SKILL ALLOWLIST: record the enabled capsule set for
+	// the mount (newAgent intersects it with the plugin catalog) and the
+	// skills allowlist for the skills capsule. The allowlist is
+	// intersected with the host's disabled.skills fold (the subset law),
+	// and it is SET even when empty - empty means NO skills, never
+	// inherited.
+	cfg.agentName = name
+	cfg.agentToggles = lay.Toggles
+	allow := make([]string, 0, len(lay.SkillsAllow))
+	for _, skill := range lay.SkillsAllow {
+		if containsString(cfg.Disabled.SkillNames, skill) {
+			continue // the host (or this layer) has it off
+		}
+		allow = append(allow, skill)
+	}
+	cfg.agentSkillsAllow, cfg.agentSkillsAllowSet = allow, true
 	// Agent-scoped paths. Sessions, notifications, and boards resolve
 	// through the agent's own data/ (datadir.DataHome honors
 	// OMEGA_AGENT); everything the agent WRITES personal is scoped to

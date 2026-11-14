@@ -21,10 +21,10 @@ import (
 	kanbanModule "github.com/EndoTheDev/omega/harness/kanban"
 	"github.com/EndoTheDev/omega/harness/logging"
 	"github.com/EndoTheDev/omega/harness/memory"
-	"github.com/EndoTheDev/omega/harness/terminal"
 	"github.com/EndoTheDev/omega/harness/provider"
 	"github.com/EndoTheDev/omega/harness/skills"
 	"github.com/EndoTheDev/omega/harness/store"
+	"github.com/EndoTheDev/omega/harness/terminal"
 	"github.com/EndoTheDev/omega/harness/trust"
 	"gopkg.in/yaml.v3"
 	"time"
@@ -92,6 +92,22 @@ type Config struct {
 	// (the shape every earlier boot wrote) unmarshals into the modules
 	// namespace - older config.yaml keeps meaning the same thing.
 	Disabled DisabledNamespaces `yaml:"disabled"`
+
+	// agentName and agentToggles are the applied agent layer's runtime
+	// facts, never config file state (unexported: yaml.Marshal skips
+	// them, so a settings save can never persist them). ApplyAgentLayer
+	// sets both for a secondary agent home; newAgent then intersects the
+	// enabled set with the plugin catalog to mount the ALWAYS OFF set
+	// (0.17.3 make-over, card t_f47319d2). Empty agentName = no agent
+	// scope (main, the CLI, a module subcommand).
+	agentName    string
+	agentToggles []string
+	// agentSkillsAllow/agentSkillsAllowSet are the applied layer's
+	// explicit skills allowlist. The SET flag is what makes an empty
+	// list mean NO skills (a secondary agent's always-off default)
+	// rather than "every skill" (main's own mount).
+	agentSkillsAllow    []string
+	agentSkillsAllowSet bool
 }
 
 // DisabledNamespaces is the config.yaml `disabled:` fold shape: one
@@ -945,7 +961,12 @@ func sessionsSection(c Config) store.HygieneConfig {
 // t_f78acfd6: settings.go re-sends it on every save/reload, and the
 // curator consult slot flows through skillsSection(...).CuratorModel).
 func skillsSection(c Config) skills.Config {
-	return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.SkillNames), NudgeInterval: c.Skills.NudgeInterval, CuratorModel: c.SkillsModel}
+	return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.SkillNames), NudgeInterval: c.Skills.NudgeInterval, CuratorModel: c.SkillsModel,
+		// The definition layer's explicit allowlist (0.17.3 make-over):
+		// set only for a secondary agent home, where an empty list means
+		// NO skills. Main's own mount leaves it unset - every skill
+		// loads.
+		Allow: slices.Clone(c.agentSkillsAllow), AllowSet: c.agentSkillsAllowSet}
 }
 
 // webBaseURL returns the host the channel's web.search/web.fetch tools

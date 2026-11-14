@@ -15,6 +15,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 )
 
 // MigrateAgentRows moves agent-tagged rows out of mainDSN into their
@@ -148,6 +149,41 @@ func moveAgentRows(mainDSN, name, agentDSN string) error {
 	}
 	if _, err := conn.ExecContext(context.Background(), `DETACH DATABASE maindb`); err != nil {
 		return fmt.Errorf("agent rows migration: %s: detach: %w", name, err)
+	}
+	return nil
+}
+
+// RetagAgentSessions rewrites the agent tag of every session row in ONE
+// store (0.17.3 make-over, card t_f47319d2 - the clone law's last
+// step). A clone is a materialized copy: its store file carries the
+// SOURCE's sessions, and until they are re-tagged the roster reads them
+// as the source's own, which would make the clone look empty and the
+// source look doubled. agents/<dst>/data/omega.db is the destination;
+// from lists every tag the source could have written (main's rows
+// predate the agent column, so "" is a real tag, not a typo).
+//
+// A missing destination store is a no-op: a source that never ran has
+// nothing to re-tag, and the clone must not create a database it has no
+// rows for.
+func RetagAgentSessions(dsn, to string, from ...string) error {
+	if _, err := os.Stat(dsn); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("retag agent sessions: %w", err)
+	}
+	db, err := sql.Open("sqlite", dsn+"?_pragma=foreign_keys(1)&_journal_mode=WAL&_busy_timeout=5000")
+	if err != nil {
+		return fmt.Errorf("retag agent sessions: open: %w", err)
+	}
+	defer db.Close()
+	for _, src := range from {
+		if src == to {
+			continue
+		}
+		if _, err := db.Exec(`UPDATE sessions SET agent = ? WHERE agent = ?`, to, src); err != nil {
+			return fmt.Errorf("retag agent sessions %q -> %q: %w", src, to, err)
+		}
 	}
 	return nil
 }

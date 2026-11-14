@@ -41,7 +41,7 @@ func TestScaffoldAgent(t *testing.T) {
 			t.Errorf("scaffold missing dir %s: %v", want, err)
 		}
 	}
-	for _, absent := range []string{"memory.md", "user.md", "scout.log"} {
+	for _, absent := range []string{"memory.md", "user.md", SoulFileName, "scout.log"} {
 		if _, err := os.Stat(filepath.Join(home, "agents", "scout", absent)); !os.IsNotExist(err) {
 			t.Errorf("scaffold seeded %s (privacy law: homes start empty of content)", absent)
 		}
@@ -142,13 +142,22 @@ func TestLoadProfileParsesConfigLayer(t *testing.T) {
 	home := scratchHome(t)
 	os.MkdirAll(filepath.Join(home, "agents", "scout", "config"), 0o755)
 	os.WriteFile(filepath.Join(home, "agents", "scout", "config", "config.yaml"),
-		[]byte("description: probe duty\nprovider:\n  type: ollama\n  model_name: qwen3\n"), 0o644)
+		[]byte("description: probe duty\nprovider:\n  instance: work\n  model_name: qwen3\ntoggles: [kanban]\nskills:\n  allow: [omega-dev]\ninherit:\n  soul: true\n"), 0o644)
 	p, err := LoadProfile(home, "scout")
 	if err != nil {
 		t.Fatalf("LoadProfile: %v", err)
 	}
-	if p.ModelName != "qwen3" || p.ProviderType != "ollama" || p.Description != "probe duty" {
+	if p.ModelName != "qwen3" || p.ProviderInstance != "work" || p.Description != "probe duty" {
 		t.Errorf("profile parse off: %+v", p)
+	}
+	if len(p.Toggles) != 1 || p.Toggles[0] != "kanban" {
+		t.Errorf("profile toggles = %v", p.Toggles)
+	}
+	if len(p.SkillsAllow) != 1 || p.SkillsAllow[0] != "omega-dev" {
+		t.Errorf("profile allowlist = %v", p.SkillsAllow)
+	}
+	if len(p.Inherits) != 1 || p.Inherits[0] != "soul" {
+		t.Errorf("profile inherits = %v", p.Inherits)
 	}
 	if _, err := LoadProfile(home, "ghost"); err == nil {
 		t.Errorf("unknown agent returned no error")
@@ -331,5 +340,116 @@ func TestScanProfileSkillNames(t *testing.T) {
 	// dedupe: alpha appears in shared and own - exactly once.
 	if len(names) != 2 || names[0] != "alpha" || names[1] != "beta" {
 		t.Errorf("scan = %v, want [alpha beta]", names)
+	}
+}
+
+// TestCloneAgentMaterializesEverything pins the CLONE law: a clone is a
+// full copy at birth - definition, skills, persona files and the
+// session store - and it diverges freely, so deleting the source
+// afterwards is legal (clone + delete IS the rename path).
+func TestCloneAgentMaterializesEverything(t *testing.T) {
+	home := scratchHome(t)
+	if err := ScaffoldAgent(home, "scout", "probe duty"); err != nil {
+		t.Fatal(err)
+	}
+	seeded := "description: probe duty\nprovider:\n  instance: work\n  model_name: qwen3\ntoggles: [kanban]\nskills:\n  allow: [alpha]\n"
+	if err := WriteFileAtomic(AgentConfigPath(home, "scout"), []byte(seeded), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, skill := range []string{"alpha"} {
+		os.MkdirAll(filepath.Join(home, "agents", "scout", "skills", skill), 0o755)
+		os.WriteFile(filepath.Join(home, "agents", "scout", "skills", skill, "SKILL.md"), []byte("# "+skill), 0o644)
+	}
+	os.WriteFile(filepath.Join(home, "agents", "scout", "memory.md"), []byte("scout memory"), 0o644)
+	os.WriteFile(filepath.Join(home, "agents", "scout", "user.md"), []byte("scout user"), 0o644)
+	os.WriteFile(filepath.Join(home, "agents", "scout", SoulFileName), []byte("scout soul"), 0o644)
+	os.MkdirAll(filepath.Join(home, "agents", "scout", "data"), 0o755)
+	os.WriteFile(filepath.Join(home, "agents", "scout", "data", "omega.db"), []byte("sqlite-ish"), 0o644)
+
+	if err := CloneAgent(home, "scout", "probe", ""); err != nil {
+		t.Fatalf("clone: %v", err)
+	}
+	for _, want := range []string{
+		filepath.Join("config", "config.yaml"),
+		filepath.Join("skills", "alpha", "SKILL.md"),
+		"memory.md", "user.md", SoulFileName,
+		filepath.Join("data", "omega.db"),
+	} {
+		if _, err := os.Stat(filepath.Join(home, "agents", "probe", want)); err != nil {
+			t.Errorf("clone missing %s: %v", want, err)
+		}
+	}
+	p, err := LoadProfile(home, "probe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ProviderInstance != "work" || p.ModelName != "qwen3" || len(p.Toggles) != 1 {
+		t.Errorf("clone definition did not travel: %+v", p)
+	}
+	// Divergence, not a link: editing the clone never touches the source.
+	if err := UpdateAgentConfigLayer(home, "probe", AgentConfigUpdates{Description: strPtr("now a probe")}); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadProfile(home, "scout").Description; got != "probe duty" {
+		t.Errorf("clone edit leaked into the source (%q)", got)
+	}
+	// Clone + delete is the rename path: deleting the source leaves a
+	// complete agent behind.
+	if err := os.RemoveAll(filepath.Join(home, "agents", "scout")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadProfile(home, "probe"); err != nil {
+		t.Errorf("the clone did not survive deleting its source: %v", err)
+	}
+}
+
+// TestCloneAgentFromMainIsSecretFree pins the exception to "copy
+// everything": main's definition IS the home config, which carries the
+// provider secret - the clone starts on the scaffold instead and
+// references the host provider by name.
+func TestCloneAgentFromMainIsSecretFree(t *testing.T) {
+	home := scratchHome(t)
+	if err := WriteFileAtomic(AgentConfigPath(home, DefaultAgentName),
+		[]byte("provider:\n  type: openai\n  api_key: sk-live\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	os.MkdirAll(filepath.Join(home, "skills", "keeper"), 0o755)
+	os.WriteFile(filepath.Join(home, "skills", "keeper", "SKILL.md"), []byte("# keeper"), 0o644)
+	os.WriteFile(filepath.Join(home, "memory.md"), []byte("main memory"), 0o644)
+	os.WriteFile(filepath.Join(home, SoulFileName), []byte("main soul"), 0o644)
+
+	if err := CloneAgent(home, DefaultAgentName, "twin", "a twin"); err != nil {
+		t.Fatalf("clone main: %v", err)
+	}
+	body, err := os.ReadFile(AgentConfigPath(home, "twin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "sk-live") || hasYAMLKey(string(body), "api_key") {
+		t.Errorf("a clone of main carried the provider secret:\n%s", body)
+	}
+	if _, err := os.Stat(filepath.Join(home, "agents", "twin", "skills", "keeper", "SKILL.md")); err != nil {
+		t.Errorf("main's skills did not travel with the clone: %v", err)
+	}
+	if string(mustRead(t, filepath.Join(home, "agents", "twin", "memory.md"))) != "main memory" {
+		t.Errorf("main's memory.md did not travel with the clone")
+	}
+	if _, err := os.Stat(filepath.Join(home, "agents", "twin", SoulFileName)); err != nil {
+		t.Errorf("main's soul.md did not travel with the clone: %v", err)
+	}
+}
+
+// TestMigrateAgentHomesMovesSoulUp pins soul.md as a persona file: the
+// retired agents/default copy migrates to the home root like user.md and
+// memory.md.
+func TestMigrateAgentHomesMovesSoulUp(t *testing.T) {
+	home := scratchHome(t)
+	os.MkdirAll(filepath.Join(home, "agents", "default"), 0o755)
+	os.WriteFile(filepath.Join(home, "agents", "default", SoulFileName), []byte("old soul"), 0o644)
+	if err := MigrateAgentHomes(home); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if string(mustRead(t, filepath.Join(home, SoulFileName))) != "old soul" {
+		t.Errorf("soul.md did not migrate up")
 	}
 }
