@@ -196,7 +196,9 @@ The webui Cron tab edits every field through `POST /cron/save` +
 `/cron/delete` (schema-validated upserts) and the row toggle via
 `POST /cron/toggle`, which writes only the per-job `enabled:` flag
 (one click, card t_5051d523).
-An agent-home wake job is refused by the editor (the cross-home law).
+An agent-home wake job is refused by the editor (the cross-home law);
+the refusal reads the row's `agent_owned` mark, so a main-home job
+that authors its own `agent:` stays editable (t_21824d98).
 omega can propose jobs in conversation but never writes the file
 itself.
 

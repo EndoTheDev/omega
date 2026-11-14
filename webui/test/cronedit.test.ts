@@ -183,9 +183,21 @@ test("validateDraft mirrors the Go schema law exactly", () => {
 
 // --- the scope law + round-trips ---
 
-test("editableOf keeps agent-home wake rows read-only", () => {
+test("editableOf refuses agent-home rows, never rows that merely name an agent", () => {
+  // a plain main-home row: editable
   assert.equal(editableOf({ name: "x", schedule: "", enabled: true, next: "" }), true);
-  assert.equal(editableOf({ name: "x", schedule: "", enabled: true, next: "", agent: "scout" }), false);
+  // a main-home continuous-agent job with an AUTHORED agent: main's own
+  // crons.yaml owns it, so its pencil stays (card t_21824d98 - the agent
+  // combobox makes this row an ordinary case)
+  assert.equal(
+    editableOf({ name: "pulse", schedule: "", enabled: true, next: "", agent: "ghost", agent_owned: false }),
+    true,
+  );
+  // an agent-home wake row: that home's file owns it, read-only here
+  assert.equal(
+    editableOf({ name: "wake", schedule: "", enabled: true, next: "", agent: "scout", agent_owned: true }),
+    false,
+  );
 });
 
 test("draftOf round-trips the wire row into the form shape", () => {
