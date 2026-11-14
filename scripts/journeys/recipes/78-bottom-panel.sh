@@ -1,9 +1,11 @@
 #!/bin/bash
 # 78-bottom-panel - the bottom panel journey (t_67fc1905).
-# The horizontal pane pinned under the main panel, logs home:
+# The horizontal pane pinned under the main panel - the terminal + Logs
+# home:
 #   1  fresh load: the bottom shell renders (edge-bottom pane, 200 default
-#      rung) with the logs tab live and polling - and sits UNDER the main
-#      panel (geometry, not just presence)
+#      rung) seating the pinned roster Terminal, Logs (t_01c53e78's one
+#      logs surface), the Logs tab still streams its tail once activated,
+#      and the panel sits UNDER the main pane (geometry, not just presence)
 #   2  divider drag grows the bottom panel to the 50% cap (400 rung unreachable
 #      below half the content box - v0.14.4 card t_e539ba29 law, merge e36e555)
 #   3  reload persists the resized tree
@@ -14,7 +16,9 @@
 #      the desktop toggle STAYS VISIBLE at every breakpoint (the parity
 #      contract, 16ac10a - the toggle drives dock.toggleEdge directly
 #      below 768px too), and the logs view stays reachable on mobile
-#      the bottom-only way (logs is bottom-hosted, 3dbb9c5)
+#      the bottom-only way (logs is bottom-hosted, 3dbb9c5) - through the
+#      drawer's own Logs chip, since the drawer opens on the strip's first
+#      tab (the terminal since t_01c53e78)
 #
 # No model needed: pure shell UI. Runs against JOURNEY_BASE_URL.
 . "${JROOT:?run must export JROOT}/lib.sh"
@@ -40,20 +44,29 @@ tab=$(jsq '(() => {
   if (!pane) return "";
   return Array.from(pane.querySelectorAll(".dock-tab .dock-tab-title")).map((t) => t.textContent.trim()).join(",");
 })()' 2>/dev/null | tr -d '"')
-# the fresh bottom strip's pinned roster, in order: logs first (t_55a3fc4b
-# seated the terminal beside it), then observability - the third permanent
-# bottom tab card t_e703180e added (the observability arc's face half,
-# UNCLOSABLE like the other two: the pinned-bottom shape, so nothing here
-# can close a tab). Three tabs is the intended roster; a two-tab pin is the
-# stale shape.
-assert_eq "$tab" "Logs,Terminal,Observability" "the bottom strip seats the pinned tabs Logs, Terminal, Observability, logs first"
+# the fresh bottom strip's pinned roster, in order: the terminal first
+# (t_55a3fc4b seated it beside the logs home), then the Logs tab - card
+# t_01c53e78 (Endo ruling 2026-11-13) retires the raw-tail http_channel
+# pane and RENAMES the observability tab "Logs": one logs surface, two
+# tabs, terminal first. Both are unclosable (the pinned-bottom shape), so
+# nothing here can close a tab. A third "Observability" chip is the
+# RETIRED shape - strict equality keeps that regression (or a missing
+# tab) loud instead of silently green.
+assert_eq "$tab" "Terminal,Logs" "the bottom strip seats the pinned roster Terminal, Logs (t_01c53e78: the observability tab renamed Logs, the raw-tail pane retired), terminal first"
 
-# the logs body streams: it polls /logs every 2.5s - give one tick plus a
-# margin for the poll's first requests to fill the tail
-poll_js 'document.querySelectorAll(".dock-pane.edge-bottom .logs-line").length >= 1' 12 \
-  || die "logs tab shows no lines after polling (the tail read)"
-lines=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .logs-line").length')
-step "ok: logs tab live in the bottom panel ($lines lines)"
+# the Logs tab still streams: the surviving logs surface reads its raw
+# tail from /observability/logs behind the tab's tail chip (5s refresh,
+# the capsule's REFRESH_MS). The terminal is the ACTIVE tab on a fresh
+# strip, so the Logs view is not mounted yet - click its chip first, then
+# the tail chip, then let the read paint.
+js 'Array.from(document.querySelectorAll(".dock-pane.edge-bottom .dock-tab")).find((t) => (t.querySelector(".dock-tab-title")?.textContent || "").trim() === "Logs")?.click()' >/dev/null 2>&1
+poll_js 'document.querySelectorAll(".dock-pane.edge-bottom .obs-pane").length === 1' 12 \
+  || die "the Logs tab mounts no view (the observability capsule's obs-pane is missing)"
+js 'document.querySelector(".dock-pane.edge-bottom .obs-tail")?.click()' >/dev/null 2>&1
+poll_js 'document.querySelectorAll(".dock-pane.edge-bottom .obs-tail-line").length >= 1' 12 \
+  || die "the Logs tab shows no tail lines (the /observability/logs read painted nothing)"
+lines=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .obs-tail-line").length')
+step "ok: logs tab live in the bottom panel ($lines tail lines)"
 
 # under-ness: the bottom cell's top edge sits BELOW the main chat pane's
 # top edge and above the statusbar - a horizontal pane under the main one
@@ -97,11 +110,16 @@ ab wait --load networkidle >/dev/null 2>&1 || true
 sleep 1
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom")?.getBoundingClientRect().height ?? 0)')
 assert_eq "$height" "364" "reload restores the bottom panel at the capped height"
+# the ACTIVE tab, not the first chip: step 1 activated the Logs tab, and
+# the reload must restore that selection (the persisted strip's active
+# index). The first chip is the terminal since t_01c53e78.
 tab=$(jsq '(() => {
   const pane = document.querySelector(".dock-pane.edge-bottom");
-  return pane ? (pane.querySelector(".dock-tab")?.textContent.trim() ?? "") : "";
+  if (!pane) return "";
+  const active = Array.from(pane.querySelectorAll(".dock-tab")).find((t) => t.getAttribute("aria-selected") === "true");
+  return (active?.querySelector(".dock-tab-title")?.textContent ?? "").trim();
 })()' 2>/dev/null | tr -d '"')
-assert_eq "$tab" "Logs" "reload keeps logs the bottom panel's active tab"
+assert_eq "$tab" "Logs" "reload keeps the Logs tab the bottom panel's active tab"
 
 # --- 4: close/reopen round-trip (closure survives reload) ---------------
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b => b.getAttribute("aria-label") === "Toggle bottom panel").click()' >/dev/null 2>&1
@@ -153,8 +171,24 @@ bopen=$(jsq 'document.querySelector(".mobile-drawer.bottom.open")?1:0')
 bscrim=$(jsq 'document.querySelector(".scrim")?1:0')
 assert_eq "$bopen" "1" "mobile: the bottom toggle opens the bottom drawer (4bf1d5b7)"
 assert_eq "$bscrim" "1" "mobile: the bottom drawer renders over the scrim"
-poll_js 'document.querySelectorAll(".mobile-drawer.bottom.open .logs-line").length >= 1' 12 \
-  || die "mobile: the bottom drawer seats no logs tail (logs unreachable on mobile)"
+# the drawer's chip strip IS the bottom roster (one chip vocabulary,
+# icon-only, the name on aria-label) and it opens on the strip's first
+# tab - the terminal since t_01c53e78. The Logs body rides its own chip.
+drawertabs=$(jsq '(() => {
+  const d = document.querySelector(".mobile-drawer.bottom.open");
+  if (!d) return "";
+  return Array.from(d.querySelectorAll(".mobile-drawer-tab")).map((t) => (t.getAttribute("aria-label") || "").trim()).join(",");
+})()' 2>/dev/null | tr -d '"')
+assert_eq "$drawertabs" "Terminal,Logs" "mobile: the bottom drawer seats the pinned roster (Terminal, Logs)"
+js '(() => {
+  const d = document.querySelector(".mobile-drawer.bottom.open");
+  Array.from(d?.querySelectorAll(".mobile-drawer-tab") ?? []).find((t) => (t.getAttribute("aria-label") || "").trim() === "Logs")?.click();
+})()' >/dev/null 2>&1
+poll_js 'document.querySelectorAll(".mobile-drawer.bottom.open .obs-pane").length === 1' 12 \
+  || die "mobile: the bottom drawer seats no logs view (the Logs chip mounts nothing)"
+js 'document.querySelector(".mobile-drawer.bottom.open .obs-tail")?.click()' >/dev/null 2>&1
+poll_js 'document.querySelectorAll(".mobile-drawer.bottom.open .obs-tail-line").length >= 1' 12 \
+  || die "mobile: the bottom drawer seats no logs tail (the /observability/logs read painted nothing)"
 step "ok: mobile bottom drawer seats the live logs tail"
 # the right drawer never seats logs (3dbb9c5 stands) - chip names now
 # ride aria-label (icon-only chips, card t_4bf1d5b7)
