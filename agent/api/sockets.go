@@ -20,6 +20,7 @@ package api
 
 import (
 	"encoding/json"
+	"reflect"
 	"sync"
 
 	"github.com/EndoTheDev/omega/core"
@@ -389,4 +390,111 @@ func (s *Server) chipTap(sessionID string) core.RunOutputTap {
 			Truncated: chunk.Truncated,
 		})
 	}
+}
+
+// --- the verdict issuance push (card t_ce2162cd) -------------------------
+
+// verdictIssuedEvent is the chat-topic event name a card's ISSUANCE
+// rides. The SSE /chat event set and the ws chat topic share
+// vocabulary, so the name is claimed here and nowhere else: it is not
+// an agent event (no frame the loop emits carries it), it exists only
+// on the ws chat topic. The webui's hint set in app.vue names the same
+// string; webui/test/socket.test.ts pins the agreement across the
+// language boundary (the nuxt build does not typecheck Go).
+const verdictIssuedEvent = "verdict_issued"
+
+// verdictCardSource is the consumer-side face of the verdict capsule's
+// issuance notification (part 3, the seam constitution): just the one
+// registration call this server makes. The capsule's hub satisfies it
+// structurally, so agent/api carries no harness import and core/ gains
+// no module noun.
+type verdictCardSource interface {
+	OnCardRegistered(fn func(core.QuestionPrompt))
+}
+
+// verdictIssuedFrame is the issuance hint's payload: MINIMAL on purpose.
+// The frame is a HINT, state is truth - the webui re-reads GET /verdicts
+// on it, so the card's options/body/expiry come from the REST read and
+// never need duplicating here.
+type verdictIssuedFrame struct {
+	CardID    string `json:"card_id"`
+	SessionID string `json:"session_id"`
+	Title     string `json:"title"`
+}
+
+// subscribeVerdictCards wires the issuance push at serve boot and after
+// every live module rewire: resolve the verdicts service from the live
+// Context and, when it carries the notification face, subscribe. Nil
+// safe - a host without the verdict capsule (disabled, or never
+// mounted) subscribes nothing and boots clean.
+func (s *Server) subscribeVerdictCards(ctx *core.Context) {
+	if ctx == nil {
+		return
+	}
+	svc := ctx.Services().Resolve("verdicts")
+	if svc == nil {
+		return
+	}
+	src, ok := svc.(verdictCardSource)
+	if !ok {
+		// wrong-shaped offer: this is an optional consumer, so the
+		// push degrades (no hints) instead of panicking the boot - the
+		// mount machinery shape-asserts the NEEDS it owns, and this
+		// face is a consumer's own declaration.
+		return
+	}
+	if !s.claimVerdictSource(src) {
+		return // already subscribed to this very object (a rewire)
+	}
+	src.OnCardRegistered(s.publishVerdictIssued)
+}
+
+// claimVerdictSource records the source this server subscribed to and
+// reports whether it is a NEW one. RewireSeams runs at boot and after
+// every live toggle; without this, each rewire would register another
+// listener on the same hub and one issuance would publish N frames.
+func (s *Server) claimVerdictSource(src verdictCardSource) bool {
+	s.verdictMu.Lock()
+	defer s.verdictMu.Unlock()
+	if sameVerdictSource(s.verdictSrc, src) {
+		return false
+	}
+	s.verdictSrc = src
+	return true
+}
+
+// sameVerdictSource reports whether two offers name the same object.
+// Interface equality would be the obvious form and would PANIC on a
+// non-comparable dynamic type, so compare pointer-shaped values by
+// address and treat anything else as a new source (one extra
+// subscription is harmless; a panic at boot is not).
+func sameVerdictSource(a, b verdictCardSource) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	va, vb := reflect.ValueOf(a), reflect.ValueOf(b)
+	if va.Kind() != vb.Kind() {
+		return false
+	}
+	switch va.Kind() {
+	case reflect.Ptr, reflect.Chan, reflect.Map, reflect.Func, reflect.UnsafePointer:
+		return va.Pointer() == vb.Pointer()
+	}
+	return false
+}
+
+// publishVerdictIssued pushes one issued card onto the chat topic under
+// the card's own session. It runs on the issuing goroutine (the Ask
+// that registered the card), outside the hub's lock, and it is
+// deliberately fire-and-forget: with no subscriber the hub does no work
+// and nothing is buffered - the GET routes stay the truth.
+func (s *Server) publishVerdictIssued(card core.QuestionPrompt) {
+	if s.sockets == nil {
+		return
+	}
+	data, err := json.Marshal(verdictIssuedFrame{CardID: card.ID, SessionID: card.SessionID, Title: card.Title})
+	if err != nil {
+		return
+	}
+	s.sockets.PublishEvent(TopicChat, card.SessionID, verdictIssuedEvent, data)
 }

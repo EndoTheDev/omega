@@ -1,12 +1,13 @@
 package verdict
 
 import (
-	"github.com/EndoTheDev/omega/agent"
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/EndoTheDev/omega/agent"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -522,4 +523,70 @@ func TestPendingFiltersBySessionAndExcludesSettled(t *testing.T) {
 // containsStr kept from the original draft; superseded by strings.Contains.
 func containsStr(s, sub string) bool {
 	return strings.Contains(s, sub)
+}
+
+// TestOnCardRegisteredFiresOncePerIssuance pins the hub's issuance
+// notification seam (card t_ce2162cd): every registered listener is
+// called exactly once per Ask with the card as it was registered, the
+// card is already answerable when the listener runs, and neither the
+// answer path nor the expiry path notifies (the answer already has the
+// tool result as its shell hint).
+func TestOnCardRegisteredFiresOncePerIssuance(t *testing.T) {
+	h := NewHub(nil, nil)
+	notices := make(chan core.QuestionPrompt, 8)
+	h.OnCardRegistered(func(c core.QuestionPrompt) { notices <- c })
+	var second atomic.Int32
+	h.OnCardRegistered(func(core.QuestionPrompt) { second.Add(1) })
+	h.OnCardRegistered(nil) // a nil listener is a no-op, not a registration
+
+	ch := askAsync(t, h, core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "run it?", Options: vo("yes", "no")})
+	select {
+	case got := <-notices:
+		if got.ID != "c1" || got.SessionID != "s1" || got.Title != "run it?" {
+			t.Fatalf("notification = %+v, want the registered card c1/s1", got)
+		}
+	case <-time.After(testWaitTimeout):
+		t.Fatal("no issuance notification for the registering card")
+	}
+	if got := h.Pending("s1"); len(got) != 1 || got[0].ID != "c1" {
+		t.Fatalf("Pending at notification = %+v, want the card already answerable", got)
+	}
+
+	if _, err := h.Answer("s1", "c1", core.QuestionAnswer{OptionIndex: 1}); err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	if r := drain(t, ch); r.v.Option != "yes" {
+		t.Fatalf("verdict = %+v, want the 'yes' pick", r.v)
+	}
+	if n := second.Load(); n != 1 {
+		t.Fatalf("second listener fired %d times, want 1 (one notification per Ask)", n)
+	}
+	select {
+	case got := <-notices:
+		t.Fatalf("a second notification (%+v): Answer must not notify", got)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// the expiry path is silent too
+	h.deadline = 20 * time.Millisecond
+	expireCh := askAsync(t, h, core.QuestionPrompt{ID: "c2", SessionID: "s1", Title: "expire", Options: vo("y")})
+	select {
+	case got := <-notices:
+		if got.ID != "c2" {
+			t.Fatalf("issuance notification = %+v, want the expiring card c2", got)
+		}
+	case <-time.After(testWaitTimeout):
+		t.Fatal("no issuance notification for the card that expires")
+	}
+	if r := drainWithTimeout(t, expireCh, 5*time.Second); !r.v.Expired {
+		t.Fatalf("expiring Ask returned %+v, want Expired", r.v)
+	}
+	select {
+	case got := <-notices:
+		t.Fatalf("an expiry notified (%+v): only issuance notifies", got)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if n := second.Load(); n != 2 {
+		t.Fatalf("second listener fired %d times over two Ask calls, want 2", n)
+	}
 }

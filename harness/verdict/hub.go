@@ -14,13 +14,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // DefaultTimeout is the per-card default deadline (design Q5): twenty
@@ -70,6 +71,13 @@ type Hub struct {
 
 	mu    sync.Mutex
 	cards []*cardState
+	// listeners are the issuance notifications (card t_ce2162cd): every
+	// function registered through OnCardRegistered is called once per
+	// card, right after the card enters the pending list. They are
+	// collected under mu and fired OUTSIDE it (a listener publishes on
+	// the push channel; holding the card lock across that call would
+	// order this hub behind a socket write for no reason).
+	listeners []func(core.QuestionPrompt)
 }
 
 // cardState is one card's identity plus its answer race: exactly one
@@ -92,6 +100,29 @@ type cardState struct {
 // store-less hosts skip persistence); logger optional.
 func NewHub(store agent.StoreProvider, logger agent.LoggerProvider) *Hub {
 	return &Hub{store: store, logger: logger, deadline: DefaultTimeout}
+}
+
+// OnCardRegistered registers an issuance notification: fn is called
+// once per card, immediately after the card becomes pending (and
+// before Ask blocks), with the card as it was registered. It is the ONE
+// signal a surface needs to learn a card exists without polling -
+// answering surfaces pull Pending on it, and the serving shell pushes a
+// chat-topic hint from it (card t_ce2162cd: a smart-gate card registers
+// AFTER the tool-call hint window and the frozen run emits no further
+// frame, so issuance had no voice at all).
+//
+// Issuance only: Answer and expiry do not notify - the tool result on
+// the answer path already hints the shell. Listeners are called on the
+// Ask goroutine outside the hub lock, in registration order; a slow
+// listener delays that Ask's pause, so keep them cheap (the shell's
+// publish is one marshalled fan-out).
+func (h *Hub) OnCardRegistered(fn func(core.QuestionPrompt)) {
+	if fn == nil {
+		return
+	}
+	h.mu.Lock()
+	h.listeners = append(h.listeners, fn)
+	h.mu.Unlock()
 }
 
 // Close is the host shutdown hook: it settles every still-pending card
@@ -140,7 +171,16 @@ func (h *Hub) Ask(ctx context.Context, card core.QuestionPrompt) (core.QuestionA
 
 	h.mu.Lock()
 	h.cards = append(h.cards, state)
+	listeners := slices.Clone(h.listeners)
 	h.mu.Unlock()
+
+	// Issuance notification, OUTSIDE the lock: the card is answerable
+	// from here on, so every surface that watches for new cards may
+	// pull it. Fired before the pause below - Ask cannot answer itself,
+	// so a listener that reads Pending finds this card.
+	for _, fn := range listeners {
+		fn(card)
+	}
 
 	timer := time.AfterFunc(timeout, func() { h.expire(card.ID) })
 	defer timer.Stop()
