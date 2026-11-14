@@ -6,9 +6,10 @@ package continuous
 // capsule's design"). Moved whole from agent/api/server_agents.go:
 //
 //	GET  /agents                     profile inventory (the roster list)
-//	POST /agents                     scaffold a new agent directory
+//	POST /agents                     scaffold a new agent directory (or a clone)
 //	GET  /agents/{name}              one agent's detail
 //	PUT  /agents/{name}              the roster's edit affordance
+//	DELETE /agents/{name}            delete the HOME, sessions included
 //	GET  /agents/{name}/sessions     sessions bound to this agent
 //	POST /agents/{name}/sessions     create a session AS this agent
 //
@@ -153,6 +154,7 @@ func (ar *agentRoutes) registrationRows() []struct {
 		{"/agents", ar.handleAgents},
 		{"/agents/{name}", ar.handleAgent},
 		{"PUT /agents/{name}", ar.handleAgentUpdate},
+		{"DELETE /agents/{name}", ar.handleAgentDelete},
 		{"/agents/{name}/sessions", ar.handleAgentSessions},
 	}
 }
@@ -409,6 +411,55 @@ func (ar *agentRoutes) handleAgentUpdate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	ar.writeJSON(w, http.StatusOK, p)
+}
+
+// handleAgentDelete serves DELETE /agents/{name}: the delete verb of
+// the definition layer (0.17.3 make-over ruling 2) - the whole HOME
+// goes, sessions included, so no orphan home keeps registering an
+// agent. The session count is read BEFORE the removal and answered in
+// the response: the panel's confirm dialog names it before the trigger
+// fires, and the post-delete receipt is the same number.
+//
+// The main agent answers 409 (its home is the daemon's home), an
+// unknown agent 404, a malformed name 400 - one law, spelled once in
+// agent.DeleteAgentHome.
+func (ar *agentRoutes) handleAgentDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		ar.httpError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	name := r.PathValue("name")
+	if _, err := agent.LoadProfile(ar.home, name); err != nil {
+		ar.httpError(w, http.StatusNotFound, "unknown agent")
+		return
+	}
+	sessions := ar.sessionCount(r.Context(), name)
+	if err := agent.DeleteAgentHome(ar.home, name); err != nil {
+		var scaffold *agent.AgentConfigScaffoldError
+		switch {
+		case errors.Is(err, agent.ErrAgentHomeLocked):
+			ar.httpError(w, http.StatusConflict, "%s", err.Error())
+		case errors.Is(err, agent.ErrAgentNotExist):
+			ar.httpError(w, http.StatusNotFound, "unknown agent")
+		case errors.As(err, &scaffold):
+			ar.httpError(w, http.StatusBadRequest, "invalid request: %v", err)
+		default:
+			ar.httpError(w, http.StatusInternalServerError, "delete agent: %v", err)
+		}
+		return
+	}
+	ar.writeJSON(w, http.StatusOK, map[string]any{"deleted": name, "sessions": sessions})
+}
+
+// sessionCount is the delete receipt's number: how many session rows the
+// home's own store held when the delete ran. A store that will not open
+// answers 0 - the delete still happens, the receipt just cannot count.
+func (ar *agentRoutes) sessionCount(ctx context.Context, name string) int {
+	rows, err := ar.readAgentSessions(ctx, name)
+	if err != nil {
+		return 0
+	}
+	return len(rows)
 }
 
 // handleAgentSessions serves GET /agents/{name}/sessions (the agent's
