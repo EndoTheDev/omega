@@ -586,11 +586,13 @@ dot, reset link, draft star, live note).
   place) and pauses the chat URL derivation until a chat tab takes the
   path back. Every chat focus hands it back - both openers (the sidebar's
   row / new / new-ephemeral, the palette's recent-session switch, the
-  capsule `CHAT_SESSION_OPEN_EVENT` seam), a chat tab click and a popstate
-  into a chat entry - so the landing never outlives the landing, and the
-  release WRITES the path the pause held (a derivation suppressed while the
-  mark was up would otherwise stay stale when the focused chat does not
-  change). The view path sits ONE segment deeper than the knob API's
+  capsule `CHAT_SESSION_OPEN_EVENT` seam), a chat tab click, a popstate
+  into a chat entry, and closing the settings tab itself (the dock's
+  neighbor-focus lands in the same re-focus path) - so the landing never
+  outlives the landing, and the release WRITES the path the pause held (a
+  derivation suppressed while the mark was up would otherwise stay stale
+  when the focused chat does not change). The view path sits ONE segment
+  deeper than the knob API's
   exact `/settings` (agent/api/server.go owns that path; the SPA only gets
   the catch-all), so an address bar always lands the app, never the JSON.
   Nothing writes the path on open/close: settings stays a CLOSABLE

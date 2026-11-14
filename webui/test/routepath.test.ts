@@ -120,6 +120,33 @@ describe("/settings landing wiring (app.vue)", () => {
     assert.match(refocus, /settingsRoute\.value = false/);
   });
 
+  // the fallback branch (no chat tab in the clicked pane) also resolves a
+  // CHAT focus - closing the settings tab from a landing arrives here via
+  // the dock-tree watcher, and the mark must go or the URL freezes on
+  // /settings/view and a reload re-opens it (vera round 2)
+  it("the refocus FALLBACK releases the landing, on live dock state", () => {
+    const refocus = appSrc.match(/function refocusFrom\([\s\S]*?\n  \}\n/)?.[0] ?? "";
+    const fallback =
+      refocus.slice(refocus.indexOf("no chat focus in this gesture")) || "";
+    assert.ok(fallback.length > 0, "the fallback branch is where the release lives");
+    assert.match(fallback, /settingsRoute\.value = false/);
+    // live state, not a blanket clear: the same watcher runs right after the
+    // landing OPENS its tab (a mounted settings tab is not a release)
+    assert.match(fallback, /settingsRoute\.value && !settingsTabMounted\(\)/);
+    // the release adopts the tab the dock is SHOWING, so the URL names what
+    // the user is looking at and not the boot-resolved focus
+    assert.match(fallback, /dock\.activeChatTab\(\)/);
+    // the mark falls before the focus transition, so the focus watcher's
+    // composer gate (suppressed while the landing is up) sees it clear
+    const release = fallback.slice(fallback.indexOf("settingsTabMounted()"));
+    assert.ok(
+      release.indexOf("settingsRoute.value = false") < release.indexOf("focusedKey.value = showing"),
+      "the release clears the mark before adopting the showing focus",
+    );
+    const helper = appSrc.match(/function settingsTabMounted\(\)[^}]*\}/)?.[0] ?? "";
+    assert.match(helper, /findComponentTab\(dock\.tree\.value, "settings"\)/);
+  });
+
   // the sidebar's row click is the PRIMARY session-navigation gesture and it
   // routes straight into openChatTab (both the desktop and the mobile pane
   // bind @open), not through a dock-pane gesture - so the openers must clear
