@@ -275,9 +275,10 @@
                   role="group"
                   aria-label="toggles">
                   <label
-                    v-for="m in toggleNames"
+                    v-for="m in toggleChoicesFor(row.name)"
                     :key="m"
-                    class="agents-check">
+                    :class="['agents-check', { 'agents-check-off': !toggleNames.includes(m) }]"
+                    :title="toggleNames.includes(m) ? '' : `${m} is off on the host - uncheck it here, or re-enable the capsule in settings`">
                     <input
                       v-model="editDraft[row.name].toggles"
                       type="checkbox"
@@ -460,6 +461,7 @@ import {
   kindNeedsContinuous,
   mergedRowDetail,
   skillOptions,
+  toggleChoices,
   toggleOptions,
 } from "./agentsRows.ts";
 import type { AgentEditDraft, AgentInheritKind, OmegaAgent, SettingsScope } from "./agentsRows.ts";
@@ -566,6 +568,14 @@ const providerInstances = ref<string[]>([]);
 const modules = ref<Array<{ name: string; state?: string; toggleable?: boolean }>>([]);
 
 const toggleNames = computed<string[]>(() => toggleOptions(modules.value));
+
+/** toggleChoicesFor is the union of the offered capsules and the ones
+    this agent's file already enables (a host-side disable after the fact
+    must stay visible, dimmed, or the next toggle save is a 400 the
+    operator cannot explain). */
+function toggleChoicesFor(name: string): string[] {
+  return toggleChoices(toggleNames.value, editDraft[name]?.toggles ?? []);
+}
 
 function scopeOf(name: string): SettingsScope | undefined {
   return scopes.value.find((s) => s.name === name);
@@ -1192,7 +1202,10 @@ defineExpose({ load, profiles, fold, rows, roster, rowStatusOf, rowStatusVoice }
 .agents-reset:hover {
   color: var(--text);
 }
-/* the toggle + skills checkbox sets (the always-off law's surface) */
+/* the toggle + skills checkbox sets (the always-off law's surface).
+   agents-check-off = a capsule this agent enables that the HOST has
+   since switched off: shown dim with a reason, so unchecking it is a
+   deliberate act (the subset law would refuse an invisible entry). */
 .agents-check-list {
   display: flex;
   flex-direction: column;
@@ -1203,6 +1216,9 @@ defineExpose({ load, profiles, fold, rows, roster, rowStatusOf, rowStatusVoice }
   display: flex;
   font-size: 11px;
   gap: 6px;
+}
+.agents-check-off {
+  color: var(--text-dim, #8a8a92);
 }
 /* ruling 2: the delete lane. Destructive voice, two beats: arm, then
    the confirm that names what goes. */

@@ -555,6 +555,17 @@ export function toggleOptions(
     .map((m) => m.name);
 }
 
+/** toggleChoices: the checkbox set for ONE agent - the offered capsules
+    PLUS whatever the agent's file already enables. The union matters: a
+    capsule the host switched off AFTER the agent enabled it is not
+    offered, and hiding it would leave an invisible enabled entry that
+    makes the next toggle save a 400 (the subset law refuses the name
+    the operator cannot see). Shown dim with a reason instead, so
+    unchecking it is a deliberate act, never a silent drop. */
+export function toggleChoices(offered: readonly string[], own: readonly string[]): string[] {
+  return [...new Set([...offered, ...own])].sort();
+}
+
 /** skillOptions: the allowlist's checkbox set is the agent's VISIBLE
     registry (row.skills) - the same list the backend validates against,
     so a name offered here can never be refused as unknown. */

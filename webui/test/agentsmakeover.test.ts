@@ -40,6 +40,7 @@ import {
   LOCKED_AGENT_MODULES,
   scopeIndex,
   skillOptions,
+  toggleChoices,
   toggleOptions,
   type AgentCreateDraft,
   type OmegaAgent,
@@ -211,6 +212,17 @@ test("the toggles picker offers mounted, toggleable capsules and never the locke
   assert.deepEqual([...LOCKED_AGENT_MODULES], ["agent-loop", "provider"]);
 });
 
+test("a capsule the agent enables but the host has since disabled stays VISIBLE", () => {
+  // hiding it would leave an invisible enabled entry: the next toggle
+  // save carries the name and the subset law answers 400 with a refusal
+  // the operator cannot act on
+  assert.deepEqual(toggleChoices(["cron", "skills"], ["kanban"]), ["cron", "kanban", "skills"]);
+  assert.deepEqual(toggleChoices(["cron"], []), ["cron"]);
+  assert.deepEqual(toggleChoices([], ["kanban", "kanban"]), ["kanban"], "a set, not a list");
+  assert.ok(panelSrc.includes("agents-check-off"), "the off-host entry renders dim");
+  assert.match(panelSrc, /uncheck it here, or re-enable the capsule in settings/, "and says why");
+});
+
 test("an empty toggles set is a REAL answer, never main's feature set", () => {
   assert.match(agentTogglesNote([]), /nothing enabled/);
   assert.match(agentTogglesNote([]), /never inherits main's feature set/);
@@ -274,7 +286,7 @@ test("toggles and the skills allowlist render as explicit sets", () => {
   assert.match(panelSrc, /aria-label="skills"/);
   assert.match(panelSrc, /agentTogglesNote\(/, "the always-off note is the shared voice");
   assert.match(panelSrc, /agentSkillsNote\(/, "the allowlist note is the shared voice");
-  assert.match(panelSrc, /v-for="m in toggleNames"/);
+  assert.match(panelSrc, /v-for="m in toggleChoicesFor\(row\.name\)"/, "the union set (an off-host entry stays visible)");
   assert.match(panelSrc, /v-for="s in skillOptionsFor\(row\.name\)"/);
 });
 
