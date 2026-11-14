@@ -595,6 +595,15 @@ func TestCloneAgentFromMainRefusesMainOnlySchedules(t *testing.T) {
 			want: "authors agent",
 		},
 		{
+			// Skills pinning is the loader's third agent-home refusal
+			// (harness/cron: "skills pinning is a main-home feature") and
+			// the one a clone gate missed before - copying it 201'd and
+			// then took the WHOLE daemon down on the next boot.
+			name: "skills pinned",
+			body: "jobs:\n  - name: nightly\n    schedule: \"0 3 * * *\"\n    prompt: patrol\n    skills:\n      - omega-dev\n",
+			want: "pins skills",
+		},
+		{
 			name: "unparseable",
 			body: "jobs: not-a-list\n",
 			want: "does not parse",
@@ -628,6 +637,18 @@ func TestCloneAgentFromMainRefusesMainOnlySchedules(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(AgentDir(home, "twin"), "config", "crons.yaml")); err != nil {
 		t.Errorf("an agent-legal schedule file did not travel: %v", err)
+	}
+	// The loader normalizes skills before judging them, so a list of
+	// whitespace entries is NOT a pinned list and the file must still
+	// travel - the gate refuses what the loader refuses, not more.
+	home2 := scratchHome(t)
+	installStubSnapshot(t)
+	blank := "jobs:\n  - name: blank\n    schedule: \"0 9 * * *\"\n    prompt: write\n    skills:\n      - \"  \"\n"
+	if err := WriteFileAtomic(filepath.Join(home2, "config", "crons.yaml"), []byte(blank), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CloneAgent(home2, DefaultAgentName, "twin", ""); err != nil {
+		t.Fatalf("clone of main with a whitespace-only skills list (normalizes to empty): %v", err)
 	}
 }
 

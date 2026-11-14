@@ -661,10 +661,14 @@ func cloneConfigDir(home, src, dst string) error {
 // way out; the alternative (silently dropping the schedules) is the data
 // loss the clone law exists to prevent.
 //
-// The two laws, mirrored from the loader: a job in an agent home may not
-// author `agent:` (the owning agent is the loader's, not the file's),
-// and may not carry a deliver target (a wake delivers into the agent's
-// own canonical chat).
+// The three laws, mirrored from the loader: a job in an agent home may
+// not author `agent:` (the owning agent is the loader's, not the file's),
+// may not carry a deliver target (a wake delivers into the agent's own
+// canonical chat), and may not pin skills (a wake's fire prompt is the
+// continuous capsule's property - the agent's own skills stand). Every
+// one of them is a boot-fatal load error, so the gate has to mirror ALL
+// three: missing any one of them turns a legal main-home file into a
+// daemon that will not start.
 func cloneCronLegality(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -675,9 +679,10 @@ func cloneCronLegality(path string) error {
 	}
 	var raw struct {
 		Jobs []struct {
-			Name    string `yaml:"name"`
-			Agent   string `yaml:"agent"`
-			Deliver string `yaml:"deliver"`
+			Name    string   `yaml:"name"`
+			Agent   string   `yaml:"agent"`
+			Deliver string   `yaml:"deliver"`
+			Skills  []string `yaml:"skills"`
 		} `yaml:"jobs"`
 	}
 	if err := yaml.Unmarshal(data, &raw); err != nil {
@@ -690,8 +695,26 @@ func cloneCronLegality(path string) error {
 		if job.Deliver != "" && job.Deliver != "none" {
 			return fmt.Errorf("clone main: job %q delivers to %q, a main-home feature the cron loader refuses in an agent home - strip deliver: from that job (or clone a secondary agent), the schedules are not being silently dropped", job.Name, job.Deliver)
 		}
+		// The loader normalizes the list before it judges it (entries
+		// trim, empties drop), so `skills: [""]` is legal in an agent
+		// home. Mirror that, or the gate refuses a file that would load.
+		if pinsSkills(job.Skills) {
+			return fmt.Errorf("clone main: job %q pins skills, a main-home feature the cron loader refuses in an agent home (a wake's fire prompt follows the agent's own skills) - strip skills: from that job (or clone a secondary agent), the schedules are not being silently dropped", job.Name)
+		}
 	}
 	return nil
+}
+
+// pinsSkills mirrors harness/cron's normalizeSkills + the agent-home
+// skills law: whitespace entries trim and empty entries drop, and only a
+// non-empty remainder is a pinned list.
+func pinsSkills(in []string) bool {
+	for _, s := range in {
+		if strings.TrimSpace(s) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // cloneStores copies every store the source owns. data/ also holds

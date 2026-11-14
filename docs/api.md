@@ -521,11 +521,11 @@ A host with no settings seam answers **501** on all three, like
   of `default` is the same copy minus the home config - that file
   carries the provider secret, and an agent file holds none - so the
   clone starts on the scaffold template; main's `crons.yaml` travels only
-  when it is agent-home-legal (a job authoring `agent:` or carrying a
-  `deliver:` target is refused BY NAME, because the cron loader treats
-  such a file inside an agent home as a fatal load error - never copied
-  and then dropped silently). Any failure after the scaffold
-  removes the destination: folder presence is registration, so a
+  when it is agent-home-legal (a job authoring `agent:`, carrying a
+  `deliver:` target, or pinning `skills:` is refused BY NAME, because the
+  cron loader treats each of those inside an agent home as a fatal load
+  error - never copied and then dropped silently). Any failure after the
+  scaffold removes the destination: folder presence is registration, so a
   half-built home never becomes a phantom agent. There is no
   rename-in-place route.
 
