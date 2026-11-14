@@ -92,11 +92,12 @@ test("the settings pane renders the MODULES section and mounts the moved surface
     /class="settings-category settings-modules-category"[\s\S]{0,120}data-section="modules"/,
     "the section carries the category + data-section the spy and the clamp read",
   );
-  // the nav entry is PREPENDED, so the retired tab's reach survives the move
+  // the nav entry is APPENDED (card t_f05b1f28 item 1: the module list is
+  // the pane's tail, not its head)
   assert.match(
     settingsTab,
     /modulesNavCategory\(moduleCount\.value\)/,
-    "the MODULES entry heads the nav",
+    "the MODULES entry is the nav's last entry",
   );
   assert.match(settingsTab, /moduleCount = \$event/, "the section reports its row count");
   assert.match(settingsTab, /@open-module=/, "a has-UI row still opens its module tab");

@@ -161,11 +161,12 @@ assert_eq "$placement" "head" "the strip heads the CONTENT pane, above the scrol
 clicked=$(jsq "(()=>{const t=[...document.querySelectorAll('.settings-scopes .settings-scope-tab')].find(b=>(b.textContent||'').trim()==='$AGENT');if(!t) return 0;t.click();return 1})()" 2>&1 | tr -d '"')
 assert_eq "$clicked" "1" "the agent tab is clickable"
 
-if ! wait_js "(()=>{const g=[...document.querySelectorAll('.settings-nav-cat')].map(e=>(e.getAttribute('data-category')||''));return g.length===5&&g[0]==='modules'&&g.slice(1).join(',')==='provider,system_prompt,description,max_turns'})()" 15; then
+if ! wait_js "(()=>{const g=[...document.querySelectorAll('.settings-nav-cat')].map(e=>(e.getAttribute('data-category')||''));return g.length===5&&g.slice(0,4).join(',')==='provider,system_prompt,description,max_turns'&&g[4]==='modules'})()" 15; then
   die "agent tab never rendered the four scope categories (nav: $(jsq '(()=>{return [...document.querySelectorAll(".settings-nav-cat")].map(e=>e.getAttribute("data-category")).join(",")})()' 2>&1 | tr -d '"'))"
 fi
 cats=$(jsq '(()=>{return [...document.querySelectorAll(".settings-nav-cat .settings-nav-label")].map(e=>(e.textContent||"").trim()).join(",")})()' 2>&1 | tr -d '"')
-assert_eq "$cats" "modules,provider,system prompt,description,max turns" "the agent tab's nav carries modules + ONLY the four overridable categories"
+# card t_f05b1f28 item 1: the MODULES entry rides LAST (the pane's tail)
+assert_eq "$cats" "provider,system prompt,description,max turns,modules" "the agent tab's nav carries the four overridable categories + modules last"
 
 # the main-scope surfaces never ride an agent tab: not the curated
 # category, not the chat client-state category
@@ -194,7 +195,7 @@ doc_sections() {
   jsq '(()=>{return [...document.querySelectorAll(".settings-category")].map(x=>x.getAttribute("data-section")).join(",")})()' 2>&1 | tr -d '"'
 }
 
-assert_eq "$(doc_sections)" "modules,provider,system_prompt,description,max_turns" "the agent tab's DOCUMENT carries modules + only the four scope sections (the headings are the surface now - no stripe)"
+assert_eq "$(doc_sections)" "provider,system_prompt,description,max_turns,modules" "the agent tab's DOCUMENT carries the four scope sections then modules last (the headings are the surface now - no stripe)"
 
 assert_eq "$(navclick provider)" "1" "the provider category is in the agent nav"
 if ! wait_js "(()=>{return !!document.querySelector('.setting-item')})()" 10; then

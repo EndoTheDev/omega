@@ -65,6 +65,118 @@ export const MODULES_CATEGORY = "modules";
 /** client storage key for the remembered LAST ANCHOR (ruling 13 survives) */
 export const NAV_STORAGE_KEY = "omega.settings-category";
 
+// --- the surface classification (card t_f05b1f28) -------------------------
+//
+// The pane's sections are GROUPED, not flat-ordered: every schema section
+// carries a SURFACE CLASS and the renderer groups by it, so the document
+// reads "what this browser looks like" then "what the server does", each
+// under its own header. The classification is DATA - a table, never a
+// derivation from a key's spelling - exactly like the nesting table below:
+// Endo vetoes the mapping at review, and a veto edits ONE line here.
+//
+// Two of the four classes are NOT schema sections and carry no header.
+// Commonly Used is the curated all-view (its knobs are borrowed from every
+// domain, so it belongs to no domain), and MODULES is the lifecycle surface
+// (its rows are not knobs at all). SURFACE_ORDER is ALSO the document
+// order: the curated view heads the pane, the schema groups follow it, and
+// MODULES is pinned LAST (card t_f05b1f28 item 1 - the module list is the
+// pane's tail, not its head; card t_81d0901b had it first).
+export const SURFACE_FRONTEND = "frontend";
+export const SURFACE_BACKEND = "backend";
+export const SURFACE_CURATED = "curated";
+export const SURFACE_MODULES = "modules";
+
+export interface SettingSurface {
+  id: string;
+  /** the group header's text; empty for a class that carries no header */
+  label: string;
+  /** true = the renderer prints `label` above the group */
+  header: boolean;
+}
+
+/** THE render order. A surface missing from here still renders (its group
+    is appended, headed by the raw id) - a classification can never make a
+    section vanish. */
+export const SURFACE_ORDER: readonly SettingSurface[] = [
+  { id: SURFACE_CURATED, label: "", header: false },
+  { id: SURFACE_FRONTEND, label: "frontend", header: true },
+  { id: SURFACE_BACKEND, label: "backend", header: true },
+  { id: SURFACE_MODULES, label: "", header: false },
+];
+
+/** SECTION_SURFACES: section id -> surface class. THE mapping (card
+    t_f05b1f28). The two CLIENT-STATE domains are the frontend: their values
+    live in this browser (theme, dock width, turn display) and never reach
+    the server. Every server config domain is the backend. An undeclared
+    section is BACKEND - a new schema group describes server config until a
+    line here says otherwise (and a new CLIENT-STATE group must say so
+    explicitly, or it renders under the wrong header). */
+export const SECTION_SURFACES: Readonly<Record<string, string>> = {
+  // not schema sections: the curated all-view and the module lifecycle
+  [COMMON_CATEGORY]: SURFACE_CURATED,
+  [MODULES_CATEGORY]: SURFACE_MODULES,
+  // frontend - client state, persisted in the browser
+  chat: SURFACE_FRONTEND,
+  dock: SURFACE_FRONTEND,
+  // backend - server config
+  provider: SURFACE_BACKEND,
+  server: SURFACE_BACKEND,
+  store: SURFACE_BACKEND,
+  sessions: SURFACE_BACKEND,
+  compaction: SURFACE_BACKEND,
+  runtime: SURFACE_BACKEND,
+  skills: SURFACE_BACKEND,
+  memory: SURFACE_BACKEND,
+  logging: SURFACE_BACKEND,
+  approvals: SURFACE_BACKEND,
+};
+
+/** the surface a section renders under - the declared one, else backend */
+export function categorySurface(id: string): string {
+  return SECTION_SURFACES[id] ?? SURFACE_BACKEND;
+}
+
+export interface SurfaceGroup<T> {
+  surface: string;
+  label: string;
+  header: boolean;
+  items: T[];
+}
+
+/** groupBySurface buckets items by their surface class IN SURFACE_ORDER,
+    keeping each bucket's own order (callers pass nav/document order, so a
+    stable bucket is a stable group). A class SURFACE_ORDER does not name
+    still renders - appended, headed by the raw id - because a typo'd
+    classification must be LOUD, never a silently dropped section. */
+export function groupBySurface<T>(
+  items: readonly T[],
+  surfaceOf: (item: T) => string,
+): SurfaceGroup<T>[] {
+  const buckets = new Map<string, T[]>();
+  for (const item of items) {
+    const id = surfaceOf(item);
+    const bucket = buckets.get(id);
+    if (bucket) bucket.push(item);
+    else buckets.set(id, [item]);
+  }
+  const groups: SurfaceGroup<T>[] = [];
+  for (const surface of SURFACE_ORDER) {
+    const bucket = buckets.get(surface.id);
+    if (bucket === undefined || bucket.length === 0) continue;
+    groups.push({
+      surface: surface.id,
+      label: surface.label,
+      header: surface.header,
+      items: bucket,
+    });
+    buckets.delete(surface.id);
+  }
+  for (const [surface, bucket] of buckets) {
+    groups.push({ surface, label: surface, header: true, items: bucket });
+  }
+  return groups;
+}
+
 // --- the nesting data (ruling 2) -----------------------------------------
 
 /** KNOB_SUBGROUPS: knob key -> subgroup id. THE declaration. */
@@ -183,6 +295,9 @@ export interface NavCategory {
   label: string;
   /** flat = no children (the virtual Commonly Used category) */
   flat: boolean;
+  /** card t_f05b1f28: the surface class the nav/document groups this
+      section under (SURFACE_ORDER is the render order) */
+  surface: string;
   knobs: SettingKnob[];
   subgroups: NavSubgroup[];
   /** card t_81d0901b: the count a knob-less category reports (its rows).
@@ -197,17 +312,22 @@ export function categoryCount(cat: NavCategory): number {
 }
 
 /**
- * modulesNavCategory is the MODULES entry the settings pane PREPENDS to
- * the nav (card t_81d0901b): flat, knob-less, titled "modules", carrying
- * the live module-row count. Its document section is rendered by the
- * pane's own ModulesSection block, so documentFor (which walks knobs)
- * never emits it - the nav entry is what makes it a jump target.
+ * modulesNavCategory is the MODULES entry the settings pane APPENDS to the
+ * nav (card t_81d0901b): flat, knob-less, titled "modules", carrying the
+ * live module-row count. Its document section is rendered by the pane's own
+ * ModulesSection block, so documentFor (which walks knobs) never emits it -
+ * the nav entry is what makes it a jump target.
+ *
+ * card t_f05b1f28 item 1 REVERSES the placement: the entry is the pane's
+ * TAIL, not its head (SURFACE_MODULES is last in SURFACE_ORDER), so the
+ * document's last section is the module list.
  */
 export function modulesNavCategory(count = 0): NavCategory {
   return {
     id: MODULES_CATEGORY,
     label: "modules",
     flat: true,
+    surface: SURFACE_MODULES,
     knobs: [],
     subgroups: [],
     count,
@@ -236,11 +356,13 @@ export function buildNav(groups: SettingGroup[]): NavCategory[] {
   for (const group of groups) {
     if (group.knobs.length === 0) continue;
     const flat = group.key === COMMON_CATEGORY;
+    const surface = categorySurface(group.key);
     if (flat) {
       nav.push({
         id: group.key,
         label: group.label,
         flat: true,
+        surface,
         knobs: group.knobs,
         subgroups: [],
       });
@@ -265,6 +387,7 @@ export function buildNav(groups: SettingGroup[]): NavCategory[] {
       id: group.key,
       label: group.label,
       flat: false,
+      surface,
       knobs: group.knobs,
       subgroups: order.map((id) => ({
         id,
@@ -385,6 +508,10 @@ export interface DocSection {
   /** the category id - the section's jump target and its data-category */
   id: string;
   label: string;
+  /** card t_f05b1f28: the surface class the renderer groups this section
+      under (carried from the nav so the document and the nav can never
+      disagree about which group a section belongs to) */
+  surface: string;
   /** knobs this section renders right now (filtered) */
   count: number;
   blocks: DocBlock[];
@@ -448,6 +575,11 @@ export function sectionFilter(
     as headed blocks; a flat or one-child domain renders one unheaded
     list, because a heading that repeats the section title is noise.
 
+    card t_f05b1f28: every section carries its SURFACE CLASS through, and
+    the PANE groups the result with groupBySurface. The nav the pane hands
+    in is already surface-ordered, so the document's own order and the
+    rendered groups agree by construction.
+
     Search filters the document IN PLACE - the old cross-category hits
     view is gone, the filtered document IS the hits view - and a live
     query still skips the curated category: its knobs belong to other
@@ -491,7 +623,13 @@ export function documentFor(
     }
     const count = blocks.reduce((n, block) => n + block.knobs.length, 0);
     if (count === 0) continue;
-    sections.push({ id: category.id, label: category.label, count, blocks });
+    sections.push({
+      id: category.id,
+      label: category.label,
+      surface: category.surface,
+      count,
+      blocks,
+    });
   }
   return sections;
 }

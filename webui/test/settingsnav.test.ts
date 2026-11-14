@@ -675,7 +675,12 @@ test("the jump/clamp targets are SECTIONS first (card t_c4b42357)", () => {
 });
 
 test("the pane renders ONE document of every category", () => {
-  assert.match(tab, /v-for="section in docSections"/, "the document is the content pane");
+  // card t_f05b1f28: the document paints SURFACE GROUPS - each group's
+  // sections are its items, in SURFACE_ORDER (curated, frontend, backend,
+  // modules) - so the flat `docSections` walk is gone from the template,
+  // never from the builder.
+  assert.match(tab, /v-for="group in docGroups"/, "the document is grouped by surface class");
+  assert.match(tab, /v-for="section in group\.items"/, "and each section renders inside its group");
   assert.match(
     tab,
     /documentFor\(nav\.value, \{[\s\S]{0,220}hits: searchHits\.value/,
