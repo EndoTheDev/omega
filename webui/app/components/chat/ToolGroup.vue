@@ -32,6 +32,7 @@
           :name="item.name"
           :status="item.status"
           :final-ms="item.finalMs"
+          :elapsed-ms="item.elapsedMs"
           :answer-ms="item.answerMs"
           :output="item.output"
           :result="item.result"

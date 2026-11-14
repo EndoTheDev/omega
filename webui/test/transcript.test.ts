@@ -170,4 +170,27 @@ describe("renderTranscriptItems", () => {
     if (bubble.kind !== "message") return assert.fail("items[2] not message");
     assert.equal(bubble.streaming, true, "open response block streams from the restored item");
   });
+
+  // card t_95385aba: the streaming segment's elapsed-so-far is the
+  // meter's anchor - a remount (tab switch / reload) counts on from it
+  // instead of restarting the answer's clock at zero. Persisted rows
+  // never carry it: they mount final.
+  it("a running thinking/answer row carries the elapsed-so-far it counts on from", () => {
+    const items = renderTranscriptItems([
+      { kind: "thinking", content: "still going", running: true, elapsed_ms: 8400 },
+      { kind: "message", content: "partial answer", running: true, elapsed_ms: 2500 },
+      { kind: "message", content: "settled answer", response_ms: 4100, elapsed_ms: 9999 },
+    ]);
+    const think = items[0];
+    if (think.kind !== "thinking") return assert.fail("items[0] not thinking");
+    assert.equal(think.elapsedMs, 8400, "the thinking meter's anchor");
+    assert.equal(think.finalMs, undefined, "a live phase has no final span");
+    const live = items[1];
+    if (live.kind !== "message") return assert.fail("items[1] not message");
+    assert.equal(live.elapsedMs, 2500, "the answer meter's anchor");
+    const settled = items[2];
+    if (settled.kind !== "message") return assert.fail("items[2] not message");
+    assert.equal(settled.elapsedMs, undefined, "a persisted answer ignores the anchor");
+    assert.equal(settled.finalMs, 4100, "the server's measured span wins");
+  });
 });

@@ -183,6 +183,31 @@ describe("attachment references on the render wire (card t_8a569163)", () => {
     );
   });
 
+  // card t_95385aba: the panel payload's duration fields survive the
+  // normalizer - a dropped one is a duration that vanishes on the next
+  // repaint (the answer_ms loss this guard also closes).
+  it("normalizeChatPayload keeps the block durations", () => {
+    const payload = normalizeChatPayload({
+      rows: [
+        { role: "assistant", status: "streaming", blocks: [{ type: "text", content: "partial", running: true, elapsed_ms: 3100 }] },
+        { role: "assistant", status: "complete", blocks: [{ type: "thinking", content: "hmm", thinking_ms: 900 }] },
+        { role: "assistant", status: "complete", blocks: [{ type: "text", content: "answer", response_ms: 4200 }] },
+        { role: "tool", status: "complete", blocks: [{ type: "tool_result", tool_call_id: "t1", content: "out", elapsed_ms: 12, answer_ms: 34 }] },
+      ],
+    })!;
+    const blocks = payload.rows!.map((r) => r.blocks![0]!);
+    assert.equal(blocks[0]!.elapsed_ms, 3100);
+    assert.equal(blocks[1]!.thinking_ms, 900);
+    assert.equal(blocks[2]!.response_ms, 4200);
+    assert.equal(blocks[3]!.answer_ms, 34, "the response-return window rides the result");
+    // malformed durations never render a bogus label
+    const junk = normalizeChatPayload({
+      rows: [{ role: "assistant", status: "complete", blocks: [{ type: "text", content: "x", response_ms: "fast", thinking_ms: null }] }],
+    })!;
+    assert.equal(junk.rows![0]!.blocks![0]!.response_ms, undefined);
+    assert.equal(junk.rows![0]!.blocks![0]!.thinking_ms, undefined);
+  });
+
   it("normalizeChatPayload carries a user block's attachments", () => {
     const payload = normalizeChatPayload({
       rows: [
@@ -265,6 +290,48 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
     const stored = t.apply({ session: "s2", rows: rows("9") } as never);
     assert.equal(live[0], stored[0], "id-less -> ided keeps the bubble (keyed v-for stays stable)");
     assert.equal((stored[0] as { id?: string }).id, "9");
+  });
+
+  // card t_95385aba: a tab switch / reload rebuilds the pane from the
+  // panel payload. The answer and thinking rows carry their duration on
+  // the block both ways - elapsed-so-far while the segment streams (the
+  // remounted meter's anchor) and the measured span once it lands (the
+  // frozen label) - so the duration never snaps back to zero and never
+  // vanishes.
+  it("a streaming answer/thinking row carries its meter anchor, a settled one its span", () => {
+    const t = createCanvasTranscript();
+    const live = t.apply({
+      session: "s3",
+      running: true,
+      rows: [
+        { role: "assistant", status: "streaming", blocks: [{ type: "thinking", content: "hmm", running: true, elapsed_ms: 6100 }] },
+        { role: "assistant", status: "streaming", blocks: [{ type: "text", content: "partial", running: true, elapsed_ms: 2400 }] },
+      ],
+    } as never);
+    const think = live[0] as { kind: string; streaming?: boolean; elapsedMs?: number; finalMs?: number };
+    assert.equal(think.kind, "thinking");
+    assert.equal(think.streaming, true);
+    assert.equal(think.elapsedMs, 6100, "the thinking meter counts on from the elapsed-so-far");
+    assert.equal(think.finalMs, undefined);
+    const answer = live[1] as { kind: string; streaming?: boolean; elapsedMs?: number; finalMs?: number };
+    assert.equal(answer.elapsedMs, 2400, "the answer meter counts on the same way");
+    // the run lands: the same items now carry the measured spans, and
+    // the streaming anchors are spent
+    const done = t.apply({
+      session: "s3",
+      rows: [
+        { role: "assistant", status: "complete", blocks: [{ type: "thinking", content: "hmm", thinking_ms: 6100 }] },
+        { role: "assistant", status: "complete", blocks: [{ type: "text", content: "full answer", response_ms: 7200 }] },
+      ],
+    } as never);
+    assert.equal(done[0], live[0], "identity survives: the meter never restarts");
+    const settledThink = done[0] as { streaming?: boolean; elapsedMs?: number; finalMs?: number };
+    assert.equal(settledThink.streaming, undefined);
+    assert.equal(settledThink.elapsedMs, undefined);
+    assert.equal(settledThink.finalMs, 6100, "the frozen thinking span");
+    const settledAnswer = done[1] as { streaming?: boolean; elapsedMs?: number; finalMs?: number };
+    assert.equal(settledAnswer.elapsedMs, undefined);
+    assert.equal(settledAnswer.finalMs, 7200, "the frozen answer span");
   });
 
   it("a session switch resets the identity cache", () => {

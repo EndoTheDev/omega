@@ -279,6 +279,13 @@ client's restore path is "render items"; no reload-side
 reconstruction. Items carry the message's store row id (as a string)
 to address branch points; live-tail items carry none.
 
+Durations are the server's own measurements: a settled segment carries
+`response_ms` (answer) or `thinking_ms` (reasoning), and an in-flight
+one carries `elapsed_ms`, its elapsed-so-far. A client that remounts
+mid-stream (tab switch, reload) counts on from the anchor instead of
+restarting the meter at the mount moment; a running tool line has
+always carried the same field.
+
 ### GET /sessions/{id}/variants (+ POST/PATCH)
 
 Branch-point metadata for the variant switcher; the select action sets

@@ -145,6 +145,18 @@ type ChatBlock struct {
 	// result to the answer segment's completion, stamped beside
 	// the call's own elapsed on the row.
 	AnswerMs int64 `json:"answer_ms,omitempty"`
+	// ResponseMs rides a text block: the segment's server-measured
+	// response span (the transcript wire's response_ms). ThinkingMs
+	// is the reasoning twin (thinking_ms). A completed row renders
+	// its frozen duration from them, on a reload exactly as before
+	// it.
+	//
+	// A RUNNING text/thinking block carries ElapsedMs instead: the
+	// span's elapsed-so-far, the same field a running tool_call
+	// block already uses (card t_95385aba) - a remounted meter
+	// counts on from it instead of restarting at the mount moment.
+	ResponseMs int64 `json:"response_ms,omitempty"`
+	ThinkingMs int64 `json:"thinking_ms,omitempty"`
 }
 
 // ChatRow is one message row of a chat panel: role, its content

@@ -156,6 +156,11 @@
     // server-measured duration from restored history - wins over the
     // live meter (restored items mount final and never start one)
     finalMs?: number;
+    // elapsed-so-far of a segment that is STILL streaming here: a
+    // restored/remounted running answer counts on from the server's
+    // measurement instead of restarting its meter at the mount moment
+    // (card t_95385aba - the same anchor a running tool row carries)
+    elapsedMs?: number;
     // the run is IDLE and this bubble is the transcript's NEWEST
     // assistant response: the retry chip shows (ChatTab derives it -
     // the component does not know the transcript)
@@ -227,9 +232,13 @@
   // and render nothing. The transcript v-for keys on item identity
   // (createItemKeySource), so a component instance always belongs to one
   // item - no label ever leaks across a history rebuild or retry.
+  // A bubble that remounts MID-STREAM (tab switch, reload) starts its
+  // meter at the segment's elapsed-so-far (card t_95385aba): the
+  // duration keeps counting on instead of snapping back to zero.
   const elapsedLabel = useElapsed(
     () => props.finalMs,
     () => props.streaming ?? false,
+    () => props.elapsedMs ?? 0,
   );
 
   // Hover timestamp: an empty ref removes the title attribute entirely
