@@ -549,6 +549,7 @@
     parseSessionPath,
     sessionPath,
     isSettingsPath,
+    settingsAddress,
     pinSession,
     parseAppearance,
     renameSession,
@@ -1250,21 +1251,35 @@
   );
   const boardHostPane = ref<string>("");
 
-  // --- the settings landing route (card t_6d6a6dc4) -----------------------
-  // Settings is a CLOSABLE main tab (t_00e4a784), so the path cannot own a
-  // pinned view; it only adds reload persistence: a boot or a popstate on
-  // /settings/view re-opens the tab through the gear's own opener. Like
-  // /board, nothing WRITES the path on open/close - the settled URL ruling
-  // keeps the pathname the focused chat session's (or the overlay's, while
-  // one is up), and the landing only marks the route as up so the chat
-  // derivation below pauses and does not immediately reclaim it.
-  // EVERY chat focus clears the mark, or the landing would outlive the
-  // session-navigation gestures that return to chat: the two openers
-  // (openChatTab / openEphemeralTab - the sidebar's row / new /
-  // new-ephemeral, the palette's recent-session switch, the capsule
-  // CHAT_SESSION_OPEN_EVENT seam), both branches of refocusFrom, and a
-  // popstate into a chat entry.
+  // --- the settings path (card t_a5ef6340, on t_6d6a6dc4's landing) -------
+  // The address bar names the settings tab while it is up: SETTINGS_PATH
+  // (the trailing-slash SPA form - the bare noun is the knob API) is
+  // replaceState'd on every door that opens or focuses the tab, so a
+  // copied or bookmarked URL reloads into the same view, and the section
+  // rides the same URL's query axis (`?settings=<id>`, SettingsTab owns it).
+  // Settings is still a CLOSABLE main tab (t_00e4a784), so the claim is a
+  // FOCUS claim, never a pinned view: every chat focus hands the path back
+  // and the chat derivation below resumes.
+  // The mark below is that claim. It goes UP in claimSettingsPath (the
+  // gear/command opener, the palette's dockable opener, a settings chip
+  // click, and a boot/popstate landing on the path) and DOWN on every chat
+  // focus - the two openers (openChatTab / openEphemeralTab: the sidebar's
+  // row / new / new-ephemeral, the palette's recent-session switch, the
+  // capsule CHAT_SESSION_OPEN_EVENT seam), both branches of refocusFrom,
+  // and a popstate into a chat entry. While it is up the chat derivation
+  // pauses, so it does not reclaim the path a tick later.
   const settingsRoute = ref(false);
+
+  /** claimSettingsPath: the settings tab names the address bar now. The
+      write is the CLAIM, not a side effect of the open - a landing that
+      already arrived on the path writes nothing (its query carries the
+      deep-linked section, and that is SettingsTab's to keep), and
+      replaceState is the only history call: the app never grows the stack. */
+  function claimSettingsPath() {
+    settingsRoute.value = true;
+    if (isSettingsPath(window.location.pathname)) return;
+    history.replaceState({}, "", settingsAddress(window.location.search));
+  }
 
   /** settingsTabMounted: the landing's own view is still in the dock -
       the LIVE half of the landing, read the way the /board pause reads
@@ -1279,9 +1294,11 @@
       settings tab and hold the chat URL derivation until chat reclaims.
       mainView returns to chat for the same reason the board route sets it:
       the panes must render (a /board overlay left up by an earlier landing
-      would shadow the settings tab the path just opened). */
+      would shadow the settings tab the path just opened). The claim is a
+      no-op write here (the path is already the settings one) - it keeps the
+      mark in ONE writer, so a landing and a gear open cannot drift. */
   function landSettingsRoute() {
-    settingsRoute.value = true;
+    claimSettingsPath();
     mainView.value = "chat";
     openSettingsTab();
   }
@@ -1530,10 +1547,15 @@
         activeChatPaneId.value = paneId;
         focusedKey.value = tab.key;
         // a chat tab in focus is chat's claim on the URL again (the
-        // settings landing lets go of the pathname here, t_6d6a6dc4)
+        // settings tab lets go of the address bar here, t_a5ef6340)
         settingsRoute.value = false;
         return;
       }
+      // a settings CHIP click is the tab's own claim on the address bar
+      // (card t_a5ef6340): the same tab an opener just minted can be
+      // re-focused here, and a claim released by an earlier chat focus has
+      // to come back or the URL would name a chat the user left
+      if (tab?.component === "settings") claimSettingsPath();
     }
     // no chat focus in this gesture: keep a still-valid focus, else the
     // chat tab that is SHOWING (the active one - t_3e12c367), else the
@@ -1542,7 +1564,7 @@
     if (!keep) focusedKey.value = (dock.activeChatTab() ?? dock.firstChatTab())?.tab.key ?? null;
     // this branch too resolves a CHAT focus, so it is chat's claim on the
     // URL (t_6d6a6dc4, vera round 2): closing the settings tab from a
-    // /settings/view landing lands here (closeTab's neighbor-focus through
+    // /settings/ landing lands here (closeTab's neighbor-focus through
     // the dock-tree watcher) and must let the path go, or the paused
     // derivation freezes the URL on the landing and a reload re-opens it.
     // The release reads LIVE dock state - a landing whose settings tab is
@@ -1681,8 +1703,8 @@
   // focused (and read), otherwise a new chat tab opens in the active
   // pane - the same flow a reload of /chat/<id> takes
   async function onPop() {
-    // /settings/view lands the settings tab (card t_6d6a6dc4): the same
-    // landing a reload of that path takes; chat focus is untouched
+    // /settings/ lands the settings tab (card t_a5ef6340 on t_6d6a6dc4):
+    // the same landing a reload of that path takes; chat focus is untouched
     if (isSettingsPath(window.location.pathname)) {
       landSettingsRoute();
       return;
@@ -1733,19 +1755,19 @@
   watch(urlPath, (p) => {
     // /board is an overlay the URL owns while it is up - the focused
     // chat's path reclaims the URL on the way back to chat. The settings
-    // landing owns the path the same way (card t_6d6a6dc4): a reload of
-    // /settings/view must not turn into /chat/<id> a tick later.
+    // tab's claim owns the path the same way (card t_a5ef6340): a reload
+    // of /settings/ must not turn into /chat/<id> a tick later.
     if (mainView.value === "board") return;
     if (settingsRoute.value) return;
     history.replaceState({}, "", p);
   });
-  // A released landing hands the URL back by WRITING what the pause held:
+  // A released claim hands the URL back by WRITING what the pause held:
   // while the mark was up every derivation was suppressed, so a release
   // whose derived path did not CHANGE (a draft tab focused before and
-  // after - the sidebar's '+' on a landing) would otherwise leave the
+  // after - the sidebar's '+' on a claim) would otherwise leave the
   // settings URL stale and a reload would land settings again (t_6d6a6dc4,
   // vera round 1). The pathname check keeps the write to the case the
-  // landing actually owns: a popstate that already moved the URL off the
+  // claim actually owns: a popstate that already moved the URL off the
   // settings path is not ours to overwrite.
   watch(settingsRoute, (up) => {
     if (up) return;
@@ -2076,6 +2098,10 @@
   // first (the same route openNotification takes), a main dockable mints
   // into the active/ensured main pane.
   function paletteOpenDockable(id: DockComponentName) {
+    // the palette is a door of its own - it calls the dock store directly,
+    // so the settings tab's address-bar claim (card t_a5ef6340) rides here
+    // and not in openSettingsTab alone
+    if (id === "settings") claimSettingsPath();
     const area = DOCKABLES.find((d) => d.id === id)?.area ?? "main";
     if (area === "left" && !findEdgePane(dock.tree.value, "sidebar")) {
       dock.toggleEdge("sidebar", "after");
@@ -2103,6 +2129,9 @@
   // same focus memory "close current tab" uses - and falls back to the
   // first main pane (minted when the tree holds none).
   function openSettingsTab() {
+    // the tab names the address bar from here on (card t_a5ef6340): the
+    // claim precedes the open so the write is not chasing the dock's settle
+    claimSettingsPath();
     const found = findComponentTab(dock.tree.value, "settings");
     if (found) {
       dock.focus(found.paneId, found.index);
@@ -2590,8 +2619,8 @@
     // /board boots into the kanban view through the same door as the
     // popstate route (t_96844dcb: the foreground reclaims to chat - a
     // persisted browser pane must not shadow the board on a fresh boot).
-    // /settings/view boots the settings tab open the same way (card
-    // t_6d6a6dc4): one landing path, one door - the gear's opener.
+    // /settings/ boots the settings tab open the same way (cards
+    // t_6d6a6dc4, t_a5ef6340): one path, one door - the gear's opener.
     if (isSettingsPath(window.location.pathname)) {
       landSettingsRoute();
     } else if (/^\/board\/?$/.test(window.location.pathname)) {

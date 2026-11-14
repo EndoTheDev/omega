@@ -603,32 +603,40 @@ dot, reset link, draft star, live note).
   filter returns the moment the query clears. A scroll moves the
   highlight only; only a click (or a deep link) filters. The selected
   section rides the in-app URL on the QUERY axis (`?settings=<id>`,
-  replaceState only; the PATH still owns the focused chat session), so an
-  in-app deep link lands the pane pre-filtered and outranks the
-  remembered anchor. The PATH can also name the PANE: `/settings/view` is
-  a landing route (card t_6d6a6dc4) - a boot or a popstate on it opens the
-  settings tab through the gear's own opener (a live instance focuses in
-  place) and pauses the chat URL derivation until a chat tab takes the
-  path back. Every chat focus hands it back - both openers (the sidebar's
-  row / new / new-ephemeral, the palette's recent-session switch, the
-  capsule `CHAT_SESSION_OPEN_EVENT` seam), a chat tab click, a popstate
-  into a chat entry, and closing the settings tab itself (the dock's
-  neighbor-focus lands in the same re-focus path) - so the landing never
-  outlives the landing, and the release WRITES the path the pause held (a
-  derivation suppressed while the mark was up would otherwise stay stale
-  when the focused chat does not change). The view path sits ONE segment
-  deeper than the knob API's
-  exact `/settings` (agent/api/server.go owns that path; the SPA only gets
-  the catch-all), so an address bar always lands the app, never the JSON.
-  Nothing writes the path on open/close: settings stays a CLOSABLE
-  tab (t_00e4a784), so the route adds reload persistence, never a pinned
-  view. The two axes compose - `/settings/view?settings=<id>` reloads with
-  the tab open and the pane pre-filtered. The jump/clamp/spy mechanics are
+  replaceState only), so an in-app deep link lands the pane pre-filtered
+  and outranks the remembered anchor. The PATH names the PANE too:
+  `/settings/` is the settings route (cards t_6d6a6dc4, t_a5ef6340), and
+  the client WRITES it - every door that opens or focuses the tab (the
+  gear, the `/modules` family of commands, the palette's dockable entry, a
+  settings chip click) replaceStates the path, so a copied address bar
+  reloads into the same view. A boot or a popstate on the path opens the
+  tab through the gear's own opener (a live instance focuses in place).
+  Every chat focus hands the path back - both openers (the sidebar's row /
+  new / new-ephemeral, the palette's recent-session switch, the capsule
+  `CHAT_SESSION_OPEN_EVENT` seam), a chat tab click, a popstate into a
+  chat entry, and closing the settings tab itself (the dock's
+  neighbor-focus lands in the same re-focus path) - so the claim never
+  outlives the tab, and the release WRITES the path the pause held (a
+  derivation suppressed while the claim was up would otherwise stay stale
+  when the focused chat does not change). Settings stays a CLOSABLE tab
+  (t_00e4a784): the path is a focus claim, never a pinned view.
+  The TRAILING SLASH is the contract, not decoration - the knob API owns
+  the bare noun (agent/api/server.go registers exact `/settings`, beside
+  `/settings/raw` and `/settings/reset`) while `/settings/` misses every
+  API pattern and the catch-all hands it to the SPA shell, exactly the
+  split `/board/` has. So a deep link lands the app, never the JSON; the
+  bare form is the API and the client never writes it.
+  The two axes compose - `/settings/?settings=<id>` reloads with the tab
+  open and the pane pre-filtered, and a claim keeps whatever query the
+  section axis already carries. The jump/clamp/spy mechanics are
   untouched: under a
   filtered document the clamp's window and the document's own limits
   coincide, and the jump simply rests on the section it selected. The
   live filter is pinned by `webui/test/settingsnav.test.ts` and
-  walked by `scripts/journeys/recipes/113-settings-nav.journey.sh`.
+  walked by `scripts/journeys/recipes/113-settings-nav.journey.sh`; the
+  two-door path contract is pinned by `TestSettingsPathTwoDoorContract`
+  (api/server_test.go) and the claim/address-bar wiring by
+  `webui/test/routepath.test.ts`.
 - **Modified-only** is a pressed-state switch on the content bar (the
   VSCode affordance): it filters the rendered list with the SAME
   `isModified` test the row dots use, so the switch and the dots can never
@@ -728,9 +736,10 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
 ## Component map
 
 - `app.vue` — orchestrator: open/create routing (open in the main pane,
-  focus-existing), URL sync (`/chat/<id>` vs `/`, plus the READ-ONLY
-  landing routes `/settings/view` and `/board` - the app never writes
-  them), scroll pinning, stacked-mode layout, live telemetry, tab-title
+  focus-existing), URL sync (`/chat/<id>` vs `/`, plus the settings claim
+  `/settings/` - written on every open/focus of that tab and handed back on
+  a chat focus - and the READ-ONLY `/board` landing: the app never writes
+  that one), scroll pinning, stacked-mode layout, live telemetry, tab-title
   spinner.
 - `composables/chat.ts` — the stream driver (per-tab state incl. image
   and file attachments: `attachments` = the base64 image lane,

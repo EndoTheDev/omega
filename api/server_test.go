@@ -108,6 +108,46 @@ func TestSPAFallback(t *testing.T) {
 	}
 }
 
+// TestSettingsPathTwoDoorContract pins the split the settings deep link
+// rides (card t_a5ef6340): the BARE noun is the knob API (agent/api
+// registers it exactly), and the TRAILING-SLASH path belongs to the SPA -
+// it misses every API pattern and the catch-all hands it to spaHandler, the
+// same door /board/ uses. The shell writes the SPA form into the address bar
+// for exactly this reason: a copied or bookmarked URL must land the app,
+// never the JSON.
+func TestSettingsPathTwoDoorContract(t *testing.T) {
+	s := newTestServer()
+	h := s.Handler()
+
+	// the SPA's door: the shell, the way /chat/<id> or /board/ answers
+	req := httptest.NewRequest(http.MethodGet, "/settings/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/settings/ status = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("/settings/ content-type = %q, want text/html", ct)
+	}
+	if !strings.Contains(rec.Body.String(), "<!DOCTYPE html") {
+		t.Fatalf("/settings/ body is not the SPA shell")
+	}
+
+	// the API's door: unchanged, and never the shell. The JSON payload with
+	// a live seam is TestSettingsGET's pin (agent/api); this harness carries
+	// no settings seam, so the shape asserted here is the one the deep link
+	// depends on - the bare noun is the route, never the app
+	req = httptest.NewRequest(http.MethodGet, "/settings", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if ct := rec.Header().Get("Content-Type"); strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("/settings content-type = %q, want the API's own answer", ct)
+	}
+	if strings.Contains(rec.Body.String(), "<!DOCTYPE html") {
+		t.Fatalf("/settings answered the SPA shell, want the knob API")
+	}
+}
+
 func TestHealthMethodNotAllowed(t *testing.T) {
 	s := newTestServer()
 	req := httptest.NewRequest(http.MethodPost, "/health", nil)
