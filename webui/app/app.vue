@@ -548,6 +548,7 @@
     markSessionRead,
     parseSessionPath,
     sessionPath,
+    isSettingsPath,
     pinSession,
     parseAppearance,
     renameSession,
@@ -1249,6 +1250,42 @@
   );
   const boardHostPane = ref<string>("");
 
+  // --- the settings landing route (card t_6d6a6dc4) -----------------------
+  // Settings is a CLOSABLE main tab (t_00e4a784), so the path cannot own a
+  // pinned view; it only adds reload persistence: a boot or a popstate on
+  // /settings/view re-opens the tab through the gear's own opener. Like
+  // /board, nothing WRITES the path on open/close - the settled URL ruling
+  // keeps the pathname the focused chat session's (or the overlay's, while
+  // one is up), and the landing only marks the route as up so the chat
+  // derivation below pauses and does not immediately reclaim it.
+  // EVERY chat focus clears the mark, or the landing would outlive the
+  // session-navigation gestures that return to chat: the two openers
+  // (openChatTab / openEphemeralTab - the sidebar's row / new /
+  // new-ephemeral, the palette's recent-session switch, the capsule
+  // CHAT_SESSION_OPEN_EVENT seam), both branches of refocusFrom, and a
+  // popstate into a chat entry.
+  const settingsRoute = ref(false);
+
+  /** settingsTabMounted: the landing's own view is still in the dock -
+      the LIVE half of the landing, read the way the /board pause reads
+      mainView. Only a landing whose settings tab is GONE has handed the
+      view back: the dock-tree watcher reaches refocusFrom right after
+      the landing opens its tab too, and that is not a release. */
+  function settingsTabMounted(): boolean {
+    return findComponentTab(dock.tree.value, "settings") !== null;
+  }
+
+  /** landSettingsRoute: the settings path is up - open (or focus) the
+      settings tab and hold the chat URL derivation until chat reclaims.
+      mainView returns to chat for the same reason the board route sets it:
+      the panes must render (a /board overlay left up by an earlier landing
+      would shadow the settings tab the path just opened). */
+  function landSettingsRoute() {
+    settingsRoute.value = true;
+    mainView.value = "chat";
+    openSettingsTab();
+  }
+
   // a board card's transcript chip lands the user in that conversation
   function openBoardSession(id: string) {
     mainView.value = "chat";
@@ -1492,14 +1529,34 @@
       if (tab?.component === "chat" && tab.key) {
         activeChatPaneId.value = paneId;
         focusedKey.value = tab.key;
+        // a chat tab in focus is chat's claim on the URL again (the
+        // settings landing lets go of the pathname here, t_6d6a6dc4)
+        settingsRoute.value = false;
         return;
       }
     }
     // no chat focus in this gesture: keep a still-valid focus, else the
     // chat tab that is SHOWING (the active one - t_3e12c367), else the
     // first chat tab in the tree, else none (URL home)
-    if (focusedKey.value && dock.findChatTab(focusedKey.value)) return;
-    focusedKey.value = (dock.activeChatTab() ?? dock.firstChatTab())?.tab.key ?? null;
+    const keep = focusedKey.value && dock.findChatTab(focusedKey.value) ? focusedKey.value : null;
+    if (!keep) focusedKey.value = (dock.activeChatTab() ?? dock.firstChatTab())?.tab.key ?? null;
+    // this branch too resolves a CHAT focus, so it is chat's claim on the
+    // URL (t_6d6a6dc4, vera round 2): closing the settings tab from a
+    // /settings/view landing lands here (closeTab's neighbor-focus through
+    // the dock-tree watcher) and must let the path go, or the paused
+    // derivation freezes the URL on the landing and a reload re-opens it.
+    // The release reads LIVE dock state - a landing whose settings tab is
+    // still MOUNTED is the landing itself, not a release (that same
+    // watcher fires right after the landing opens its tab) - and it
+    // adopts the tab the dock is SHOWING (t_3e12c367), so the URL names
+    // the chat the user is looking at, never the boot-resolved one. The
+    // mark falls FIRST: the focus transition then reaches the composer
+    // gate below, exactly like the gear's own open/close.
+    if (settingsRoute.value && !settingsTabMounted()) {
+      settingsRoute.value = false;
+      const showing = dock.activeChatTab();
+      if (showing?.tab.key) focusedKey.value = showing.tab.key;
+    }
   }
 
   // clicks carry the pane focus: the document-level listener reads the
@@ -1566,6 +1623,11 @@
   // focus-existing rule above for opened sessions; only when no draft
   // tab lives anywhere does '+' mint a fresh one.
   function openChatTab(sessionId: string | null, paneId?: string) {
+    // a chat tab taking the focus is chat's claim on the URL again - the
+    // settings landing lets go here, before the focus branches return
+    // (the sidebar row / palette / capsule-seam opens all land here; the
+    // settings landing's own boot never does - t_6d6a6dc4)
+    settingsRoute.value = false;
     if (sessionId) {
       const found = dock.firstChatTab(sessionId);
       if (found?.tab.key) {
@@ -1606,6 +1668,8 @@
   // the tab. Always mints fresh (no draft reuse: a plain draft and an
   // ephemeral draft are different contracts and must not merge).
   function openEphemeralTab() {
+    // same claim as openChatTab: a fresh chat tab is chat focus
+    settingsRoute.value = false;
     const pane = dock.ensureMainPane();
     const key = nextTabKey();
     dock.openTab(pane, { component: "chat", sessionRef: EPHEMERAL_DRAFT_REF, key });
@@ -1617,6 +1681,12 @@
   // focused (and read), otherwise a new chat tab opens in the active
   // pane - the same flow a reload of /chat/<id> takes
   async function onPop() {
+    // /settings/view lands the settings tab (card t_6d6a6dc4): the same
+    // landing a reload of that path takes; chat focus is untouched
+    if (isSettingsPath(window.location.pathname)) {
+      landSettingsRoute();
+      return;
+    }
     // /board re-enters the kanban view without touching chat focus;
     // enterBoardRoute (t_96844dcb) reclaims the host pane's foreground
     if (/^\/board\/?$/.test(window.location.pathname)) {
@@ -1624,6 +1694,7 @@
       return;
     }
     mainView.value = "chat";
+    settingsRoute.value = false;
     const id = parseSessionPath(window.location.pathname);
     if (id) {
       const found = dock.firstChatTab(id);
@@ -1661,9 +1732,25 @@
   });
   watch(urlPath, (p) => {
     // /board is an overlay the URL owns while it is up - the focused
-    // chat's path reclaims the URL on the way back to chat
+    // chat's path reclaims the URL on the way back to chat. The settings
+    // landing owns the path the same way (card t_6d6a6dc4): a reload of
+    // /settings/view must not turn into /chat/<id> a tick later.
     if (mainView.value === "board") return;
+    if (settingsRoute.value) return;
     history.replaceState({}, "", p);
+  });
+  // A released landing hands the URL back by WRITING what the pause held:
+  // while the mark was up every derivation was suppressed, so a release
+  // whose derived path did not CHANGE (a draft tab focused before and
+  // after - the sidebar's '+' on a landing) would otherwise leave the
+  // settings URL stale and a reload would land settings again (t_6d6a6dc4,
+  // vera round 1). The pathname check keeps the write to the case the
+  // landing actually owns: a popstate that already moved the URL off the
+  // settings path is not ours to overwrite.
+  watch(settingsRoute, (up) => {
+    if (up) return;
+    if (!isSettingsPath(window.location.pathname)) return;
+    history.replaceState({}, "", urlPath.value);
   });
   // structural changes never steal focus, but a gone focus re-resolves
   // (closeTab's neighbor-focus, DnD moves, toggle remove)
@@ -1678,7 +1765,10 @@
   // request (openChatTab sets focusedKey synchronously) - its mount
   // re-checks the pending signal and delivers there.
   watch(focusedKey, (key) => {
-    if (key && mainView.value === "chat") composerFocus.request(key);
+    // the settings landing keeps the boot chat focus out of the way: the
+    // path names settings, so the chat pane must not grab the caret
+    // (card t_6d6a6dc4)
+    if (key && mainView.value === "chat" && !settingsRoute.value) composerFocus.request(key);
   });
 
   // type-to-capture: with the omega window focused, the first printable
@@ -2500,7 +2590,11 @@
     // /board boots into the kanban view through the same door as the
     // popstate route (t_96844dcb: the foreground reclaims to chat - a
     // persisted browser pane must not shadow the board on a fresh boot).
-    if (/^\/board\/?$/.test(window.location.pathname)) {
+    // /settings/view boots the settings tab open the same way (card
+    // t_6d6a6dc4): one landing path, one door - the gear's opener.
+    if (isSettingsPath(window.location.pathname)) {
+      landSettingsRoute();
+    } else if (/^\/board\/?$/.test(window.location.pathname)) {
       resolveBoardRoute();
     }
     const initial = parseSessionPath(window.location.pathname);
