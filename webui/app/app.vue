@@ -1262,9 +1262,18 @@
   // session-navigation gestures that return to chat: the two openers
   // (openChatTab / openEphemeralTab - the sidebar's row / new /
   // new-ephemeral, the palette's recent-session switch, the capsule
-  // CHAT_SESSION_OPEN_EVENT seam), refocusFrom's chat branch, and a
+  // CHAT_SESSION_OPEN_EVENT seam), both branches of refocusFrom, and a
   // popstate into a chat entry.
   const settingsRoute = ref(false);
+
+  /** settingsTabMounted: the landing's own view is still in the dock -
+      the LIVE half of the landing, read the way the /board pause reads
+      mainView. Only a landing whose settings tab is GONE has handed the
+      view back: the dock-tree watcher reaches refocusFrom right after
+      the landing opens its tab too, and that is not a release. */
+  function settingsTabMounted(): boolean {
+    return findComponentTab(dock.tree.value, "settings") !== null;
+  }
 
   /** landSettingsRoute: the settings path is up - open (or focus) the
       settings tab and hold the chat URL derivation until chat reclaims.
@@ -1529,8 +1538,25 @@
     // no chat focus in this gesture: keep a still-valid focus, else the
     // chat tab that is SHOWING (the active one - t_3e12c367), else the
     // first chat tab in the tree, else none (URL home)
-    if (focusedKey.value && dock.findChatTab(focusedKey.value)) return;
-    focusedKey.value = (dock.activeChatTab() ?? dock.firstChatTab())?.tab.key ?? null;
+    const keep = focusedKey.value && dock.findChatTab(focusedKey.value) ? focusedKey.value : null;
+    if (!keep) focusedKey.value = (dock.activeChatTab() ?? dock.firstChatTab())?.tab.key ?? null;
+    // this branch too resolves a CHAT focus, so it is chat's claim on the
+    // URL (t_6d6a6dc4, vera round 2): closing the settings tab from a
+    // /settings/view landing lands here (closeTab's neighbor-focus through
+    // the dock-tree watcher) and must let the path go, or the paused
+    // derivation freezes the URL on the landing and a reload re-opens it.
+    // The release reads LIVE dock state - a landing whose settings tab is
+    // still MOUNTED is the landing itself, not a release (that same
+    // watcher fires right after the landing opens its tab) - and it
+    // adopts the tab the dock is SHOWING (t_3e12c367), so the URL names
+    // the chat the user is looking at, never the boot-resolved one. The
+    // mark falls FIRST: the focus transition then reaches the composer
+    // gate below, exactly like the gear's own open/close.
+    if (settingsRoute.value && !settingsTabMounted()) {
+      settingsRoute.value = false;
+      const showing = dock.activeChatTab();
+      if (showing?.tab.key) focusedKey.value = showing.tab.key;
+    }
   }
 
   // clicks carry the pane focus: the document-level listener reads the
