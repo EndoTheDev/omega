@@ -3,7 +3,7 @@
 omega is a Go port of the Pi/Tau event-stream agent architecture: one
 binary, three layers with one job each, an in-process module system.
 External contributions are welcome. This page is the complete inbound
-process — what we take, how PRs are checked, and where the security
+process - what we take, how PRs are checked, and where the security
 line sits.
 
 ## Before you open a PR
@@ -26,7 +26,7 @@ Every PR passes the same admission rules, in plain words:
    politely even if the code is perfect. Fit with the roadmap or an
    accepted issue is decided before anything else.
 2. **Same gates as our own cards.** `go build ./...`, `go vet ./...`,
-   `go test ./...`, `-race`, and — when `webui` changes — an SPA
+   `go test ./...`, `-race`, and - when `webui` changes - an SPA
    regen through the embed lane (`webui/scripts/build.sh`, then
    commit the synced `api/static/`). These gates run
    in **GitHub CI, never on any private machine**. That is explicit
@@ -57,12 +57,12 @@ Every PR passes the same admission rules, in plain words:
    credential patterns, or key files is rejected outright, no
    discussion. `.env` is gitignored for a reason; secrets never
    enter the tree, in any format, redacted or not.
-8. **Tests for new behavior** — the same standard as our own cards.
+8. **Tests for new behavior** - the same standard as our own cards.
    New code paths get tests; changed behavior updates the tests that
    describe it. A PR that skips this is incomplete even when it works.
 9. **Authorship is stated.** The work is yours; AI-assisted work is
    fine as long as it's disclosed. Undisclosed AI-dump PRs get
-   skeptical review, not rubber-stamps. We read diffs — an honest
+   skeptical review, not rubber-stamps. We read diffs - an honest
    note in the description buys trust, omission buys scrutiny.
 
 The checklist version of these rules is the PR template you'll be
@@ -76,7 +76,7 @@ the maintainer's shell, GitHub tokens, signing keys, a home server
 running omega itself. Code that looks fine can be a probe of exactly
 those. The security boundary makes that a non-issue by construction:
 review diffs are read, CI runners execute, and nothing in between is
-trusted. Rule 3 isn't distrust of you — it's refusal to make the
+trusted. Rule 3 isn't distrust of you - it's refusal to make the
 honesty of review dependent on what any diff says about itself.
 
 The concrete bar for rule 4 is the `internalHostGuard` pattern in

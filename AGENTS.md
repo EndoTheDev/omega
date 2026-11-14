@@ -313,7 +313,10 @@ flake, because the debugging run always passes. Use the package's
   `<https://example.com>`.
 - No diary entries or TODO comments in this file. Keep it factual
   and contract-focused.
-- No emoji, no long dashes - use normal hyphens (`-`).
+- No emoji, no long dashes - use normal hyphens (`-`). This is a
+  STANDING RULE for public-facing docs (README, CONTRIBUTING, everything
+  under `docs/`): plain `-` only - never `—` (em-dash), `–` (en-dash) or
+  any other unicode dash. Applies to any agent updating those files.
 - Descriptive variable names in public APIs. Short names OK for
   local variables (Go convention).
 

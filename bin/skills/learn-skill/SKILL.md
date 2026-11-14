@@ -19,7 +19,7 @@ the same mistakes.
   a skill" and your description says "use when the user asks to
   create a skill," the model might miss it. Add variants.
 - Do not let the LLM write the skill for you. The first draft
-  will be generic mush — "handle errors appropriately, validate
+  will be generic mush - "handle errors appropriately, validate
   inputs." You bring the expertise; the model brings the typing.
 - Skills with overlapping trigger keywords will collide. The
   model loads the wrong one. Keep trigger domains distinct.
@@ -28,7 +28,7 @@ the same mistakes.
 
 The description is NOT a summary of what the skill does. It is the
 trigger that tells the model WHEN to load the skill. At startup, the
-agent only sees name + description — the body is loaded on demand.
+agent only sees name + description - the body is loaded on demand.
 
 - Say what the skill does AND when the agent should use it.
 - Models under-trigger. Oversell the description slightly.
@@ -37,7 +37,7 @@ agent only sees name + description — the body is loaded on demand.
 
 ## 2. Build from real expertise
 
-The whole point of a skill is YOUR specific way of doing a job —
+The whole point of a skill is YOUR specific way of doing a job -
 content the model cannot get from its training data. Two sources:
 walk through the task by hand and write down what actually worked
 (including every correction), or synthesize from artifacts (old
@@ -55,7 +55,7 @@ Only write down what the model would not know on its own.
 
 - Keep the body under ~500 lines / ~5,000 tokens.
 - When bigger, split into a `references/` subdirectory (progressive
-  disclosure — the agent only opens reference files when needed).
+  disclosure - the agent only opens reference files when needed).
 
 ## 4. Use deterministic scripts for fragile steps
 
@@ -66,7 +66,7 @@ Match prescriptiveness to fragility:
 
 The skill body just says "run this script." Scripts do not get loaded
 into context (saves tokens) and do not guess. Be explicit: say "run
-this script" vs "read this as reference" — do not leave it ambiguous.
+this script" vs "read this as reference" - do not leave it ambiguous.
 
 A test only catches what you already thought to check. For parts that
 must be right, take the guess out of the loop entirely.

@@ -1,7 +1,7 @@
 # The omega extraction recipe (split-ready criterion c)
 
 Status: DORMANT. Nothing below has fired. This is a recipe, not a
-plan in motion — phase 7 stays dormant until Endo's word moves it.
+plan in motion - phase 7 stays dormant until Endo's word moves it.
 
 SEA-CONSTITUTION RESYNC (2026-11-03, part 3 of the restructure): the
 seam inventory this recipe counts is superseded. Core no longer
@@ -25,11 +25,11 @@ differ from older notes are corrected here, not inherited.
 
 One repo becomes two:
 
-- The **engine (omega)** — the model runtime: message vocabulary, the
+- The **engine (omega)** - the model runtime: message vocabulary, the
   agent loop machinery, the seam contracts, the canvas runtime, the
   connector surfaces, the bare-minimum tools, and a minimal shell.
   Stays at `github.com/EndoTheDev/omega`.
-- The **harness (TigerClaw)** — every opinionated capsule: the
+- The **harness (TigerClaw)** - every opinionated capsule: the
   services and the opinions about how an agent's work is
   organized (boards, schedules, memory files, notifications, the
   provider choice, session persistence). New module path; a new repo.
@@ -54,14 +54,14 @@ direction: the harness depends on the engine, never the reverse.
 | `agent/loop` | The default LoopProvider implementation (the turn loop) | no opinions and no harness deps; rides the loop seam |
 | `harness/tools` | The bare-minimum tools: `shell.run`, the `files.grep`/`files.glob` search pair, /files browser, db deny-guard (the `files.read`/`files.write`/`files.edit`/`files.batch` set rides `harness/files`) | the north-star ruling; verdict tool status is separate (see §6) |
 | `http_channel` | The web connector: SSE/REST transport for the canvas, channels, runs, board/verdict/settings HTTP shapes | the connector/canvas runtime per the ruling |
-| `webui/` (checkout root) | The webui SPA shell source (Nuxt/TS, no Go) — build output embedded into http_channel's `static/` | part of the connector/canvas runtime (build material, not a module). (The `tui` connector this row once sat beside was retired 2026-11-01, t_0744eb8e — the webui is the only screen-shaped surface.) |
+| `webui/` (checkout root) | The webui SPA shell source (Nuxt/TS, no Go) - build output embedded into http_channel's `static/` | part of the connector/canvas runtime (build material, not a module). (The `tui` connector this row once sat beside was retired 2026-11-01, t_0744eb8e - the webui is the only screen-shaped surface.) |
 | `cmd/omega` (the shell parts) | main.go, config.go, home.go wire the engine packages into the minimal shell | see HURT-4: today's shell is NOT yet minimal |
 
 ### The harness side (moves to TigerClaw)
 
 Verified against `buildPlugins()` in cmd/omega/main.go (18 plugins
 since the v0.13 dissolution took the web capsule into the channel,
-order is data, not semantics — MountAll's topoSort is the only
+order is data, not semantics - MountAll's topoSort is the only
 ordering) plus the plugins' `Provides()` declarations:
 
 | Dir | Plugin name | Provides | ConfigKey |
@@ -83,17 +83,17 @@ ordering) plus the plugins' `Provides()` declarations:
 That is 14 capsules. (Older notes say 13 and omit skills; the
 registration above is the list that compiles, skills included.)
 
-`harness/verdict` (verdict, tools, prompt_sections — ConfigKey none)
+`harness/verdict` (verdict, tools, prompt_sections - ConfigKey none)
 is PENDING: the ruling leaves the verdict tool's home unresolved
 (§6). Today it sits in buildPlugins between tools and mcp.
 
 ### Not a capsule, moves with the store capsule
 
-- `harness/datadir/` — a no-import leaf (OMEGA_HOME resolution, db
+- `harness/datadir/` - a no-import leaf (OMEGA_HOME resolution, db
   path layout, `datadir.Migrate`). Five capsules import it today:
   store, kanban, notifications, tools, cmd/omega. Because the
   bare-minimum tools (engine) and the store capsule (harness) both
-  need it, its placement is a real decision, not mechanical — see HURT-3.
+  need it, its placement is a real decision, not mechanical - see HURT-3.
 
 ### The cross-check (paste)
 
@@ -110,7 +110,7 @@ became the checkout-root `webui/`):
 buildPlugins() registered, in authoring order: logging,
 provider, store, skills, compactor, memory, notifications, prompt,
 tools, verdict, mcp, delegate, web, http_channel, tui, trust, cron,
-kanban — 19.
+kanban - 19.
 
 Difference, accounted for: `datadir` and `ui` were not plugins
 (datadir is an imported leaf; ui was the SPA source, since moved to
@@ -138,7 +138,7 @@ rendering surfaces need them: `TurnSink` (agent/turnsink.go:17),
 
 `agent/plugin.go:84` declares 14 of them exclusive (two providers
 conflict); `tools` is additive. The split does not change a single
-one of these declarations — they are already layer-blind, which is
+one of these declarations - they are already layer-blind, which is
 precisely why the recipe can be mechanical.
 
 ## 2. What each side's go.mod says
@@ -179,7 +179,7 @@ llm/: nothing "lives" there by accident. After the split llm/ stays
 engine-side exactly as it is (imports core + stdlib only); the
 provider capsule (harness) and the loop (engine) both keep importing
 it. No file in llm/ moves. `core/message_types.go:277` documents why
-MessageRole had to land in core rather than ai — that history stays
+MessageRole had to land in core rather than ai - that history stays
 put too.
 
 ## 3. The module-boundary API
@@ -188,7 +188,7 @@ The harness is ALLOWED to import exactly three engine packages. Each
 is already layer-clean (imports core + stdlib only), so no engine
 file needs to move for this surface to hold:
 
-- **core** — the contracts: every seam interface (§1, 22 of them),
+- **core** - the contracts: every seam interface (§1, 22 of them),
   `Context` (core/context.go, the service container plugins mount
   into), message vocabulary (`Message`, `System`, `Assistant`,
   `ToolResult`, `MessageRole`, messagetree), `Agent`/`NewFromContext`
@@ -197,7 +197,7 @@ file needs to move for this surface to hold:
   `PanelAction`, `ViewModelDelta`, `ChatPayload`), `ExtensionInfo`,
   `Insights`, `Session`/`ActiveView`, kanban task vocabulary
   (core/kanban.go:11).
-- **agent** — the wiring: `Plugin` (agent/plugin.go:19, the contract
+- **agent** - the wiring: `Plugin` (agent/plugin.go:19, the contract
   every capsule implements), `Describer`/`ConfigSource`
   (agent/plugin.go:42,51), `RouteConfigs` (agent/plugin.go:61),
   `MountAll` (agent/plugin.go:106), `Context = core.Context`
@@ -206,16 +206,16 @@ file needs to move for this surface to hold:
   ctx helpers (`WithSessionID`, `SessionIDFromContext`, `WithDeniedTools`)
   (agent/sessionctx.go), the canvas runtime (agent/canvas.go),
   `FormatInsights` (agent/insights.go), caption helpers
-  (agent/caption.go — aliases of core types).
-- **ai** — the runtime plumbing: `llm.Provider` (the module-boundary
-  address of the provider contract — a Go alias of the same interface,
+  (agent/caption.go - aliases of core types).
+- **ai** - the runtime plumbing: `llm.Provider` (the module-boundary
+  address of the provider contract - a Go alias of the same interface,
   `type Provider = core.Provider`; not a second streaming contract),
   `llm.ToolSchema`,
   `llm.RetryHTTP`, thinking ladder helpers, image magic/type sniffing,
   and the fake provider for harness tests.
 
 Forbidden to the harness: importing anything else of the engine
-(notably `harness/...` after the move, `cmd/...` — nothing there is
+(notably `harness/...` after the move, `cmd/...` - nothing there is
 part of the surface). Forbidden to the engine: every harness
 package. Both directions are the same dep law the gate already
 checks; post-split it becomes two go.mod edges instead of an import
@@ -247,15 +247,15 @@ compiler-checkable end state.
    the harness sections and files deleted, and HURT-4's split of
    main.go applied.
 4. **Move `harness/datadir`** to the side HURT-3 decided (engine is
-   the default; the move is one `git mv` either way — everything that
+   the default; the move is one `git mv` either way - everything that
    imports it updates in step 5).
 5. **Update imports inside moved capsules.** Mechanical, per capsule:
    package paths change only where they referenced the old single
-   module — `github.com/EndoTheDev/omega/harness/<x>` becomes
+   module - `github.com/EndoTheDev/omega/harness/<x>` becomes
    the harness module path. Imports of `omega/core`, `omega/agent`,
    `omega/llm` are rewritten by the compiler pointing at the engine's
    require line (import lines stay literally the same path if the
-   replace directive is a filesystem path — that is the point of
+   replace directive is a filesystem path - that is the point of
    replace). `gofmt -w` + `go build` in both repos is the check.
    Expected count: a handful per capsule; the tests that cross
    capsules (http_channel's, cron's) move with their own capsule.
@@ -265,7 +265,7 @@ compiler-checkable end state.
    finding to file, not a hedge. Target state is zero.
 7. **Build and test both sides.** Engine: `go build ./...`,
    `go vet ./...`, `go test ./...`, plus `scripts/gate-deps.sh` (the dep law
-   gate keeps working verbatim — it reads go list, not directory
+   gate keeps working verbatim - it reads go list, not directory
    layout). Harness: the same four commands in the new repo.
 8. **Run the journeys against the rebuilt harness binary.**
    scripts/journeys/run.sh with JOURNEY_BASE_URL pointed at a lane
@@ -285,39 +285,39 @@ Places the recipe could not be written cleanly. Each is a finding,
 not a hedge. None is fixed by this card except where noted.
 
 1. **tui imports the store capsule for one helper function**
-   — engine/tui/tui.go:23 imports
+   - engine/tui/tui.go:23 imports
    `github.com/EndoTheDev/omega/harness/store`; the only
    package-qualified use is `store.SessionDisplayName(...)` at
    tui.go:1525 (the other `store.X` greps are calls through the
-   `core.StoreProvider` field at tui.go:305 — seam-clean). The helper
+   `core.StoreProvider` field at tui.go:305 - seam-clean). The helper
    (harness/store/commands.go:173-181) is an 8-line pure function.
    Trivial remedy, named here because the split itself must not fire
    first: move `SessionDisplayName` into core (the agent.FormatNumber
-   pattern — a label/id presentation helper) or inline it in the tui;
+   pattern - a label/id presentation helper) or inline it in the tui;
    either is a one-file change, and then tui imports only core/agent
    /llm. This is the ONLY prod import edge from an engine connector
    into a harness capsule.
 
 2. **tools reads the store capsule's config type**
-   — harness/tools/plugin.go:9 imports the store capsule and :41 does
+   - harness/tools/plugin.go:9 imports the store capsule and :41 does
    `ctx.Configs["store"].(store.Config)` to build the db deny-guard
    (harness/tools/dbguard.go, ENDO'S LAW 2026-10-18). tools stays
    engine-side (bare-minimum tools, §1); store moves harness-side. An
    engine capsule reading a harness capsule's config type crosses the
    forbidden direction the moment the split fires. The mechanical
    remedy is small and belongs to split day: the deny-guard's trigger
-   input is one string (`c.DBPath`) — route it through a ctx field or
+   input is one string (`c.DBPath`) - route it through a ctx field or
    make the guard resolve the standard layout itself (it already
    does, at dbguard.go:52-56). Trivial + one line, recorded because
    the config-shape choice (whose `db_path` field feeds the guard)
    is Endo's to settle at split time.
 
 3. **datadir is a cross-side shared leaf**
-   — harness/datadir imports nothing and is imported (prod) by
+   - harness/datadir imports nothing and is imported (prod) by
    harness/store/plugin.go:10, store_impl.go:17,
    harness/kanban/plugin.go:12 + boards.go:22 + store.go:16,
    harness/notifications/plugin.go:10 + notify.go:24, and
-   harness/tools/dbguard.go:9 + :52,56 — plus cmd/omega. Three of
+   harness/tools/dbguard.go:9 + :52,56 - plus cmd/omega. Three of
    those capsules are harness; one is engine; so the leaf cannot move
    "with its capsule": there is no single side. Remedy on split day:
    keep it in the engine and add it to the §3 allowed surface (it is
@@ -325,27 +325,27 @@ not a hedge. None is fixed by this card except where noted.
    per side. Default for the recipe: engine-side.
 
 4. **cmd/omega is not the minimal shell yet**
-   — the ruling gives the engine side a minimal shell; today's shell wires all
+   - the ruling gives the engine side a minimal shell; today's shell wires all
    19 plugins (main.go:308-351), hand-routes every capsule's config
    (config.go:324-355, a hand-written adapter that constructs each
    capsule's `Config` value), and carries harness CLI surfaces
    (kanban.go imports the kanban capsule; export.go and insights.go
    import the store capsule; settings.go rides the compactor). Step 3
    of the recipe splits this mechanically, but the split point is
-   "every file whose only engine role is wiring a harness capsule" —
+   "every file whose only engine role is wiring a harness capsule" -
    a per-file judgement, not a dir move. Named so the afternoon does
    not pretend cmd/omega is a clean `git mv`. Also the reason step 6
    exists. The engine-only binary after this split runs core+agent
-   +ai+tools+connectors with the provider capsule absent — the model
+   +ai+tools+connectors with the provider capsule absent - the model
    transport arrives with the harness assembly. If that reading of
    the ruling is wrong, the dir lists are unaffected; only step 3's
    file split changes.
 
 5. **the section-adapter switch is a duplicate of every capsule's
-   config shape** — cmd/omega/config.go:324-355 constructs
+   config shape** - cmd/omega/config.go:324-355 constructs
    `store.Config{DBPath: ...}` etc., while each capsule carries its
    own `harness/<x>/config.go` with the same fields. Not a boundary
-   break (the shell may know everything; see §3) — but it is the one
+   break (the shell may know everything; see §3) - but it is the one
    place where "moved a capsule" is not enough: step 3 must rewrite
    every case in the switch. Listed so the step's real size is
    visible: 10 cases, mechanical.
@@ -355,14 +355,14 @@ engine layers (core, agent, ai) import no module at all (go list
 verified, scripts/gate-deps.sh enforces), config routing is by name without
 type coupling except finding 2 (RouteConfigs → ConfigSection → the
 capsule types), and no two capsules share a file (datadir is a shared
-PACKAGE — separate directories, no file-level sharing anywhere).
+PACKAGE - separate directories, no file-level sharing anywhere).
 
 ## 6. Pending verdicts (not hedges)
 
 - **The verdict capsule.** buildPlugins registers
   `verdict.NewPlugin()` (verdicts seam, verdict tool, /verdict TUI
   command; requires store + logging seams). The ruling names
-  read/write/exec as the bare-minimum tools "pending verdict" — the
+  read/write/exec as the bare-minimum tools "pending verdict" - the
   tool is either the fourth member of the engine's minimal toolset or
   a harness capsule on the TigerClaw side; undecided. The recipe
   carries it both ways: buildPlugins' 19th entry moves or stays per
@@ -382,4 +382,4 @@ PACKAGE — separate directories, no file-level sharing anywhere).
 
 Both pendings are named where they affect the steps; neither is
 resolved here. This card's deliverable is the boundary as it stands
-at 2e9ae66 — v0.12 continues from there.
+at 2e9ae66 - v0.12 continues from there.
