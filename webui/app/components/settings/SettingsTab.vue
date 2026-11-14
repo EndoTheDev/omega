@@ -609,6 +609,7 @@
     resolveSelection,
     sectionFilter,
     selectionId,
+    selectionLost,
     spyAnchorMayWrite,
     spyTargetIds,
     buildSpyTargets,
@@ -2262,13 +2263,21 @@
   // Commonly Used) clears the HIGHLIGHT only - the stored anchor stays
   // raw for the next open. The clamp goes with it: a section that is not
   // in this pane's document cannot bound its scroll.
+  //
+  // card t_4e9559c8 (nightly 43586645271, red 110): the SECTION FILTER is
+  // asked on its OWN id. The spy moves `selection` onto whatever section is
+  // in band, so a live query on an agent tab leaves the highlight on a
+  // category Main also carries (provider) while `clampId` still names one
+  // Main does NOT (description / system_prompt / max_turns are agent-scope
+  // knobs). Reading `selection` alone resolved, cleared nothing, and left
+  // the filter standing on a category the live nav cannot render - the whole
+  // document emptied ("no settings here") and the URL kept a section the
+  // pane was not showing. selectionLost asks the question of both ids.
   watch(nav, (next) => {
-    const id = selection.value;
-    if (id && !resolveSelection(next, id)) {
-      selection.value = null;
-      clampId.value = null;
-      lockSpy();
-    }
+    if (!selectionLost(next, [selection.value, clampId.value])) return;
+    selection.value = null;
+    clampId.value = null;
+    lockSpy();
   });
 
   // the document's targets move with the query/scope: re-arm the spy and

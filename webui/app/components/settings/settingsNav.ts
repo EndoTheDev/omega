@@ -317,6 +317,25 @@ export function resolveSelection(
   return { category, subgroup: subgroup ?? null };
 }
 
+/** selectionLost is the pane's NORMALISATION question, asked of every id it
+    remembers. Two ids ride a scope switch: the HIGHLIGHT (`selection`, which
+    the scroll-spy moves on its own) and the SECTION FILTER (`clampId`, the
+    only id sectionFilter/documentFor obey). They can disagree - a live query
+    moves the highlight onto the matching section (a category the next scope
+    usually still carries) while the filter stays on the category the user
+    clicked, which an agent tab alone carries (description / system_prompt /
+    max_turns are scope knobs). Normalising the highlight ONLY left that
+    filter standing, and a document filtered to a category the live nav
+    cannot resolve renders NOTHING (the pane answers "no settings here", and
+    the URL keeps a section the pane is not showing). One question, both ids:
+    true when ANY remembered id has no home in this nav. */
+export function selectionLost(
+  nav: NavCategory[],
+  ids: readonly (string | null | undefined)[],
+): boolean {
+  return ids.some((id) => !!id && resolveSelection(nav, id) === null);
+}
+
 /** anchorSelection resolves the REMEMBERED value (ruling 13's client
     storage) into the id the pane opens scrolled to. There is no fallback
     selection any more: a pane opens with NOTHING selected (card
