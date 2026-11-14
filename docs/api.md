@@ -416,13 +416,19 @@ endpoints do, so there is one schema, one validator and one writer:
   comments, key order, flow/block style. A file that will not parse
   answers the parse error rather than its text (an unmaskable document
   is a leak, not a read). This is the export surface.
-- `PUT /settings/raw` — body: a whole YAML document (1 MiB cap). It is
+- `PUT /settings/raw` — body: a whole YAML document, capped at 1 MiB
+  (**413** above the cap, rejected before it is parsed or written: the
+  cap refuses, it never truncates, because a YAML document cut at a
+  top-level key boundary can still parse and would persist as a
+  silently partial config). It is
   parsed exactly as `config.yaml` is parsed (built-in defaults, then the
   document, then `OMEGA_*`), validated by the same `Validate`, persisted
   by the same atomic mode-preserving writer, and hot-applied. Answers
   the refreshed knob payload (the `/settings` PUT shape). A submitted
   `****` at a secret path KEEPS the value on disk (the
-  `provider.instances` round-trip law), and an `OMEGA_*`-supplied secret
+  `provider.instances` round-trip law) — and a save whose on-disk
+  document cannot be read is **400**, never a mask written out as the
+  credential — and an `OMEGA_*`-supplied secret
   never lands in the file — clearing the line clears the credential, the
   way a text editor would. Because the writer marshals the whole
   `Config`, a raw save is normalized like every other settings save:
@@ -442,7 +448,7 @@ endpoints do, so there is one schema, one validator and one writer:
 A host with no settings seam answers **501** on all three, like
 `/settings`.
 
-The registry-browser toggles and the agent editor
+### The registry-browser toggles and the agent editor
 
 - `GET /disabled` — the folded state of the registry-browser
   namespaces (skills, tools, agents) as the config `disabled:` fold

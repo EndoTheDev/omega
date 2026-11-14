@@ -1269,9 +1269,11 @@ func (s *omegaSettings) SaveRaw(text string) (*core.SettingsSchema, error) {
 	}
 	// the credential config.yaml will hold: the document's own value, or
 	// the masked value the file already carries. Neither the env layer
-	// nor the mask itself ever lands on disk.
-	if onDisk, derr := fileConfig(s.path); derr == nil {
-		settleSecrets(&cfg, &doc, &onDisk)
+	// nor the mask itself ever lands on disk. An unreadable on-disk
+	// document is a REFUSAL, never a skip: with nothing to keep, a
+	// submitted mask would be persisted as the literal credential.
+	if err := settleSecretsFromDisk(s.path, &cfg, &doc); err != nil {
+		return nil, err
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -1374,6 +1376,19 @@ func configFromYAML(text string) (Config, error) {
 	}
 	applyEnv(&cfg)
 	return cfg, nil
+}
+
+// settleSecretsFromDisk pins the credential layer a raw save writes
+// against the document ON DISK. An unreadable document is an ERROR and
+// never a skip: with nothing to keep, a submitted mask ("****") would be
+// written out as the literal credential.
+func settleSecretsFromDisk(path string, cfg *Config, doc *Config) error {
+	onDisk, err := fileConfig(path)
+	if err != nil {
+		return fmt.Errorf("save config: cannot read the document on disk to resolve a masked secret: %w", err)
+	}
+	settleSecrets(cfg, doc, &onDisk)
+	return nil
 }
 
 // settleSecrets pins the credential layer a raw save writes: the

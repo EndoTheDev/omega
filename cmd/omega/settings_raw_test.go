@@ -275,6 +275,23 @@ func TestSaveRawKeepsAnEnvOnlySecretOutOfTheFile(t *testing.T) {
 	}
 }
 
+// TestSettleSecretsRefusesAnUnreadableDocument: a submitted mask stands
+// for the value the FILE holds. When that document cannot be read there
+// is nothing to keep, so the save REFUSES instead of writing "****" out
+// as the literal credential.
+func TestSettleSecretsRefusesAnUnreadableDocument(t *testing.T) {
+	cfg := DefaultConfig()
+	doc := DefaultConfig()
+	doc.Provider.APIKey = maskedSecret
+	path := writeTestConfig(t, testConfigYAML) + ".absent"
+	if err := settleSecretsFromDisk(path, &cfg, &doc); err == nil {
+		t.Fatal("expected a refusal when the on-disk document cannot be read")
+	}
+	if cfg.Provider.APIKey == maskedSecret {
+		t.Errorf("the mask landed in the credential layer: %q", cfg.Provider.APIKey)
+	}
+}
+
 // TestOmegaSettingsRawOnMissingFile: the export read surfaces the read
 // error instead of an empty document.
 func TestOmegaSettingsRawOnMissingFile(t *testing.T) {

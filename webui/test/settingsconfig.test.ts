@@ -211,6 +211,27 @@ test("the config menu closes on an outside click and dies with the pane", () => 
   assert.match(tab, /function onDocumentClick\(event: MouseEvent\)[\s\S]{0,400}configMenuEl\.value/);
 });
 
+test("the config menu names its target and the editor takes cmd+enter", () => {
+  // The chip acts on the MAIN config.yaml while a scope tab shows an agent
+  // layer file, so the menu names the document and the label follows the
+  // active scope - a reset/edit from a scope tab must not look like it
+  // applies to the tab on screen.
+  const band = bandSlice();
+  assert.match(
+    band,
+    /<p class="settings-config-target">\{\{ configTargetLabel \}\}<\/p>/,
+    "the menu names the file the three actions write",
+  );
+  assert.match(
+    tab,
+    /const configTargetLabel = computed\(\(\) =>\s*activeScope\.value[\s\S]{0,160}main config\.yaml/,
+    "the target label follows the active scope tab",
+  );
+  // Keyboard save works on both modifier maps (Mac has no ctrl+enter).
+  assert.match(tab, /@keydown\.ctrl\.enter\.prevent="saveYaml\(\)"/, "ctrl+enter saves");
+  assert.match(tab, /@keydown\.meta\.enter\.prevent="saveYaml\(\)"/, "cmd+enter saves on mac");
+});
+
 test("the chip is a real button with its expanded state exposed", () => {
   const band = bandSlice();
   assert.match(band, /aria-haspopup="menu"/, "the chip announces the menu");

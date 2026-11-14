@@ -104,7 +104,7 @@
           :aria-expanded="configMenuOpen"
           aria-haspopup="menu"
           aria-label="config file actions"
-          title="config file actions"
+          :title="configChipHint"
           :disabled="configBusy"
           @click="toggleConfigMenu()">
           <span>config</span>
@@ -113,36 +113,46 @@
         <div
           v-if="configMenuOpen"
           class="settings-config-menu"
-          role="menu"
-          aria-label="config file actions"
           @click.stop>
-          <button
-            class="settings-config-item"
-            role="menuitem"
-            type="button"
-            :disabled="configBusy"
-            :title="resetHint"
-            @click="onResetToDefaults()">
-            {{ resetArmed ? "confirm: reset all?" : "reset to default" }}
-          </button>
-          <button
-            class="settings-config-item"
-            role="menuitem"
-            type="button"
-            :disabled="configBusy"
-            title="download the config as a yaml file"
-            @click="onExportYaml()">
-            export to yaml
-          </button>
-          <button
-            class="settings-config-item"
-            role="menuitem"
-            type="button"
-            :disabled="configBusy"
-            title="edit the config file as yaml"
-            @click="onEditYaml()">
-            edit as yaml
-          </button>
+          <!-- card t_a82d39c8 round 2: NAME the target, inside the menu
+               and in the chip's tooltip. All three actions act on the
+               MAIN config.yaml; an agent scope tab edits its own layer
+               file through the agent editor. Without the line, a chip
+               opened from a scope tab looked like it would change the
+               visible tab and silently did not. -->
+          <p class="settings-config-target">{{ configTargetLabel }}</p>
+          <div
+            class="settings-config-items"
+            role="menu"
+            aria-label="config file actions">
+            <button
+              class="settings-config-item"
+              role="menuitem"
+              type="button"
+              :disabled="configBusy"
+              :title="resetHint"
+              @click="onResetToDefaults()">
+              {{ resetArmed ? "confirm: reset all?" : "reset to default" }}
+            </button>
+            <button
+              class="settings-config-item"
+              role="menuitem"
+              type="button"
+              :disabled="configBusy"
+              title="download the config as a yaml file"
+              @click="onExportYaml()">
+              export to yaml
+            </button>
+            <button
+              class="settings-config-item"
+              role="menuitem"
+              type="button"
+              :disabled="configBusy"
+              title="edit the config file as yaml"
+              @click="onEditYaml()">
+              edit as yaml
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -492,7 +502,8 @@
       class="settings-yaml"
       aria-label="edit config yaml"
       @close="yamlOpen = false"
-      @keydown.ctrl.enter.prevent="saveYaml()">
+      @keydown.ctrl.enter.prevent="saveYaml()"
+      @keydown.meta.enter.prevent="saveYaml()">
       <div class="settings-yaml-head">
         <span class="settings-yaml-title">config.yaml</span>
         <button
@@ -525,7 +536,7 @@
           @click="yamlText = yamlLoaded">
           revert
         </button>
-        <span class="settings-yaml-hint">ctrl+enter saves</span>
+        <span class="settings-yaml-hint">ctrl+enter saves (cmd+enter on mac)</span>
       </div>
     </dialog>
   </aside>
@@ -2460,6 +2471,17 @@
       : "restore every knob that has a default; the api key, bind addresses and named instances are kept",
   );
 
+  // The chip and all three actions act on the MAIN config.yaml. An agent
+  // scope tab edits its OWN layer file through the agent editor, so a
+  // menu opened from that tab must say which document it is about -
+  // otherwise the reset/edit visibly does nothing to the tab on screen.
+  const configTargetLabel = computed(() =>
+    activeScope.value
+      ? `main config.yaml (not the ${activeScope.value} scope)`
+      : "main config.yaml",
+  );
+  const configChipHint = computed(() => `config file actions - ${configTargetLabel.value}`);
+
   function toggleConfigMenu() {
     configMenuOpen.value = !configMenuOpen.value;
     resetArmed.value = false;
@@ -2745,6 +2767,22 @@
     border: 1px solid var(--stroke);
     border-radius: 6px;
     box-shadow: var(--shadow-1);
+  }
+  /* the target line: the chip always acts on the MAIN config.yaml, so the
+     menu names the file it is about (a scope tab's own layer file is the
+     agent editor's). */
+  .settings-config-target {
+    margin: 0;
+    padding: 2px 8px 4px;
+    border-bottom: 1px solid var(--stroke);
+    color: var(--text-dim);
+    font-size: 10px;
+    white-space: nowrap;
+  }
+  .settings-config-items {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
   .settings-config-item {
     display: flex;
