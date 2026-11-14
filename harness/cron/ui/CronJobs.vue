@@ -104,12 +104,25 @@
              only in their source, placeholder and the note they carry.
              Picking is the fast path; TYPING stays legal both ways - a
              job may reference an agent home or a model that no longer
-             exists, and the editor never strands that edit. -->
+             exists, and the editor never strands that edit.
+             card t_7fb3b35a: an EMPTY field is the inheritance chain -
+             the agent inherits the main agent, the model inherits the
+             agent's own model (which itself may inherit). The chain
+             speaks through an "inherited" chip and its one-line note,
+             so an empty box names what the fire will use; typing a
+             value flips the field to authored and both go away. -->
         <div
           v-for="f in COMBO_FIELDS"
           :key="f.field"
           class="cron-editor-field">
-          <span>{{ f.label }}</span>
+          <div class="cron-field-head">
+            <span>{{ f.label }}</span>
+            <span
+              v-if="chainOf(f.field).inherited"
+              class="cron-inherited-chip"
+              :class="{ blocked: chainOf(f.field).blocked }"
+              :title="chainOf(f.field).note">inherited</span>
+          </div>
           <div class="cron-combo">
             <input
               v-model="editor.draft[f.field]"
@@ -150,6 +163,16 @@
               </li>
             </ul>
           </div>
+          <!-- the chain's own line: the source an inherited value comes
+               from, with the resolved value when the source names it
+               (the blocked chain - a wake leaning on the main agent -
+               speaks in the danger voice) -->
+          <p
+            v-if="chainOf(f.field).inherited"
+            class="cron-field-note cron-chain-note"
+            :class="{ blocked: chainOf(f.field).blocked }">
+            {{ chainOf(f.field).note }}
+          </p>
           <p
             v-if="unknownNote(f.field)"
             class="cron-field-note">{{ unknownNote(f.field) }}</p>
@@ -385,6 +408,7 @@
   // convention). The SFC only wires the form state and the buttons.
   import {
     DELIVER_TARGETS,
+    agentChain,
     cadenceOf,
     deleteCronJob,
     draftOf,
@@ -396,6 +420,8 @@
     filterFieldOptions,
     jobMeta,
     lastMeta,
+    mainAgentOf,
+    modelChain,
     moveComboIndex,
     optionKnown,
     parseSkills,
@@ -405,8 +431,11 @@
     validateDraft,
     withSkill,
     withoutSkill,
+    type ChainDraft,
+    type ChainValue,
     type FieldOption,
     type JobDraft,
+    type ModelCatalog,
   } from "./edit";
 
   // Module-owned UI (card t_db430fea): the cron scheduler's job set,
@@ -463,6 +492,11 @@
   const agentOptions = ref<FieldOption[]>([]);
   const modelOptions = ref<FieldOption[]>([]);
   const skillOptions = ref<FieldOption[]>([]);
+  // modelCurrent is the model this omega RUNS (GET /models' `current`):
+  // the chain's last link, the model the main agent fires on (card
+  // t_7fb3b35a). Empty when the catalog never answered - the chain then
+  // names the source without a value instead of inventing one.
+  const modelCurrent = ref("");
   const optionErrors = ref<Record<"agent" | "model" | "skills", string>>({
     agent: "",
     model: "",
@@ -488,6 +522,25 @@
     return false;
   }
 
+  // applyModelSource is applySource for the catalog answer, which
+  // carries the run model beside the option list (the chain's last
+  // link). A degraded catalog clears BOTH - a stale `current` under a
+  // failed fetch would name a model the lane no longer runs.
+  function applyModelSource(settled: PromiseSettledResult<ModelCatalog>): boolean {
+    if (settled.status === "fulfilled") {
+      modelOptions.value = settled.value.options;
+      modelCurrent.value = settled.value.current;
+      optionErrors.value.model = "";
+      return true;
+    }
+    modelOptions.value = [];
+    modelCurrent.value = "";
+    const reason = settled.reason;
+    optionErrors.value.model =
+      reason instanceof Error ? reason.message : String(reason);
+    return false;
+  }
+
   // ensureOptions loads the three sources once. A partial failure stays
   // degraded for that ONE control and is retried on the next editor
   // open: optionsReady latches only when every source answered.
@@ -502,7 +555,7 @@
       .then(([agents, models, skills]) => {
         const all =
           applySource(agents, agentOptions, "agent") &&
-          applySource(models, modelOptions, "model") &&
+          applyModelSource(models) &&
           applySource(skills, skillOptions, "skills");
         optionsReady.value = all;
       })
@@ -520,11 +573,11 @@
   // agents registry) and the model field (the settings knobs' catalog)
   // differ only in source, label and placeholder.
   const COMBO_FIELDS: { field: ComboField; label: string; placeholder: string }[] = [
-    { field: "agent", label: "agent", placeholder: "default when empty" },
+    { field: "agent", label: "agent", placeholder: "the main agent" },
     {
       field: "model",
       label: "model",
-      placeholder: "session model when empty",
+      placeholder: "the agent's model",
     },
   ];
 
@@ -625,6 +678,34 @@
     if (value === "" || options.length === 0) return "";
     if (optionKnown(options, value)) return "";
     return "not in the registry - kept as typed";
+  }
+
+  // --- the inheritance chain (card t_7fb3b35a) ------------------------
+  // ONE mechanism for both surfaces (the agents panel answers the same
+  // authored-vs-inherited question in its config layer): an empty
+  // field is INHERITED, and the chain names the link that supplies the
+  // value. The resolution is display data only - the draft keeps the
+  // field empty, so the write path (save.go's chainJob) keeps
+  // inheriting instead of pinning today's resolved value as authored.
+  const CHAIN_IDLE: ChainValue = {
+    inherited: false,
+    value: "",
+    source: "",
+    note: "",
+    blocked: false,
+  };
+
+  function chainOf(field: ComboField): ChainValue {
+    const draft = editor.value?.draft;
+    if (!draft) return CHAIN_IDLE;
+    const chain: ChainDraft = {
+      agent: draft.agent,
+      model: draft.model,
+      deliver: draft.deliver,
+    };
+    return field === "agent"
+      ? agentChain(chain, agentOptions.value)
+      : modelChain(chain, agentOptions.value, modelCurrent.value);
   }
 
   // --- the skills multi-select (ruling 3) ------------------------------
@@ -730,7 +811,13 @@
 
   async function commitEditor() {
     if (!editor.value || editor.value.busy) return;
-    const msg = validateDraft(editor.value.draft);
+    // the chain's law needs the roster's main agent (a wake may not
+    // lean on it); an unanswered GET /agents falls back to the Go
+    // constant inside validateDraft
+    const msg = validateDraft(
+      editor.value.draft,
+      mainAgentOf(agentOptions.value),
+    );
     if (msg) {
       editor.value.error = msg;
       return;
@@ -1040,6 +1127,37 @@
     margin: 2px 0 0;
     font-size: 10.5px;
     color: var(--text-dim, #8a8a92);
+  }
+  /* card t_7fb3b35a: the inheritance chain's visible half - the label
+     row carries an "inherited" chip when the field is absent from the
+     yaml, and the note under it names the link that supplies the value.
+     `blocked` is the chain the fire can never satisfy (a wake leaning
+     on the main agent, which never wakes) and speaks in the danger
+     voice, the same state save.go refuses. Tokens only. */
+  .cron-field-head {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+  }
+  .cron-editor-field .cron-inherited-chip {
+    flex: none;
+    font-size: 9.5px;
+    font-family: var(--mono, monospace);
+    line-height: 1.5;
+    color: var(--text-dim, #8a8a92);
+    background: var(--z1-raised, rgba(128, 128, 128, 0.14));
+    border: 1px solid var(--stroke, rgba(128, 128, 128, 0.25));
+    border-radius: var(--r-chip, 4px);
+    padding: 0 4px;
+    opacity: 1;
+  }
+  .cron-editor-field .cron-inherited-chip.blocked {
+    color: var(--danger, #e5484d);
+    border-color: var(--danger, #e5484d);
+  }
+  .cron-chain-note.blocked {
+    color: var(--danger, #e5484d);
   }
   .cron-combo {
     position: relative;

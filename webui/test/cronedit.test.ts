@@ -388,6 +388,12 @@ test("fetchAgentOptions reads GET /agents and keeps the roster rows", async () =
     // the main profile is named for the home root and SAYS what it is
     assert.equal(opts[0]!.hint, "the main agent - in-process, never wakes");
     assert.equal(opts[1]!.hint, "writes code");
+    // the inheritance chain's roster facts ride the same rows (card
+    // t_7fb3b35a): the main-vs-secondary mark and the agent's own
+    // model layer
+    assert.equal(opts[0]!.continuous, false, "the home root is the main agent");
+    assert.equal(opts[1]!.continuous, true, "an agents/<name> home is secondary");
+    assert.equal(opts[1]!.model, "", "a layer that authors no model inherits");
   } finally {
     restoreFetch();
   }
@@ -409,16 +415,19 @@ test("fetchModelOptions reads GET /models and offers BARE model names", async ()
       : { status: 404, payload: "wrong lane" },
   );
   try {
-    const opts = await fetchModelOptions();
+    const catalog = await fetchModelOptions();
     assert.deepEqual(calls.map((c) => c.url), ["/models"]);
     // deduped, wire order - and NO instance-qualified rows: a cron job's
     // model is consumed bare (runner.go WithModel / OMEGA_MODEL), so the
     // named provider sections must not leak into the option values
-    assert.deepEqual(opts.map((o) => o.value), ["clef:27b", "clef-flash"]);
+    assert.deepEqual(catalog.options.map((o) => o.value), ["clef:27b", "clef-flash"]);
     assert.ok(
-      opts.every((o) => !o.value.startsWith("work:")),
+      catalog.options.every((o) => !o.value.startsWith("work:")),
       "an instance:model pick would write a value every fire fails on",
     );
+    // the model this omega RUNS rides the same answer - the chain's
+    // last link (card t_7fb3b35a)
+    assert.equal(catalog.current, "clef:27b");
   } finally {
     restoreFetch();
   }

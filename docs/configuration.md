@@ -185,6 +185,21 @@ under the default agent; an empty `model` uses the session's provider
 model. Empty = inherit, never an error. A bad agent name is a clear
 fire-time error in the job log - the scheduler keeps standing.
 
+**The inheritance chain** (t_7fb3b35a) is that law read as two links,
+and the Cron tab's editor shows where each value comes from: an empty
+`agent` inherits the main agent, an empty `model` inherits the model of
+the agent the fire runs under (a wake child's own config layer answers
+first, and a layer that names no model inherits the main agent's, the
+model this omega runs). The editor marks an inherited field with an
+`inherited` chip plus the source link, and never writes the resolved
+value back into the file - an absent field is the inherit, so the chain
+keeps following the main agent. Two write-face rules fall out of it:
+an authored `agent: default` is written as an absent field (it means
+exactly what the absence means), and a `continuous-agent` job with no
+`agent` is refused at save with the reason - the main agent is the
+daemon and never wakes as a subprocess, so that job would persist and
+never fire.
+
 Deliver targets: `new-session` is a fresh session (the default);
 `continuous-agent` is a wake through the event spine into an existing
 continuous agent session (set `agent: <name>`); `append-to-file`

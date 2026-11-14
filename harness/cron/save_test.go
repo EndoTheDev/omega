@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/EndoTheDev/omega/agent"
 )
 
 const saveTestCrons = `# the human-authored file
@@ -182,6 +184,112 @@ func TestDeleteJobRemovesEntryUnknownIsLoud(t *testing.T) {
 	after, _ := os.ReadFile(path)
 	if string(before) != string(after) {
 		t.Error("unknown delete moved the file")
+	}
+}
+
+// --- the inheritance chain (card t_7fb3b35a) ---
+
+// A wake that inherits the main agent is a job that would persist and
+// never fire: the main agent is the daemon and never wakes as a
+// subprocess (runner.go's "main never wakes"). The write face refuses
+// it where the operator can fix it - and leaves the file untouched.
+func TestSaveJobRefusesWakeLeaningOnTheMainAgent(t *testing.T) {
+	r, path := newSaveTestRunner(t, saveTestCrons)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = r.SaveJob(Job{
+		Name:     "wake",
+		Schedule: "17 * * * *",
+		Prompt:   "patrol",
+		Deliver:  deliverContinuous,
+		Enabled:  boolPtr(),
+	})
+	if err == nil {
+		t.Fatal("a wake inheriting the main agent was accepted")
+	}
+	for _, want := range []string{"needs its own agent", "inherits the main agent", "never wakes"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want it to name %q", err, want)
+		}
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Errorf("a refused chain moved the file:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+	// the SAME job with its own agent lands (the chain is what was
+	// refused, not the wake)
+	if _, err := r.SaveJob(Job{
+		Name:     "wake",
+		Schedule: "17 * * * *",
+		Prompt:   "patrol",
+		Deliver:  deliverContinuous,
+		Agent:    "scout",
+		Enabled:  boolPtr(),
+	}); err != nil {
+		t.Fatalf("a wake with its own agent was refused: %v", err)
+	}
+}
+
+// An AUTHORED reference to the main agent is the chain's absence
+// written out ("the default IS the absence"): the combobox lists the
+// main row, and picking it must not pin a phantom override that means
+// exactly what an absent field means.
+func TestSaveJobWritesAnInheritedAgentAsAbsence(t *testing.T) {
+	r, path := newSaveTestRunner(t, saveTestCrons)
+	jobs, err := r.SaveJob(Job{
+		Name:     "pulse",
+		Schedule: "0 * * * *",
+		Prompt:   "tick",
+		Agent:    agent.DefaultAgentName,
+		Enabled:  boolPtr(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row := listingByKey(jobs)["pulse"]; row.Agent != "" {
+		t.Errorf("row agent = %q, want empty (inherited is the absence)", row.Agent)
+	}
+	text, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(text), "agent: default") {
+		t.Errorf("the write pinned a phantom main-agent override:\n%s", text)
+	}
+	// and the chain keeps resolving at fire time: the reloaded job
+	// inherits the main agent
+	for _, j := range r.jobsSnapshot() {
+		if j.Name == "pulse" && j.ResolveAgent() != agent.DefaultAgentName {
+			t.Errorf("pulse resolves to %q, want the main agent", j.ResolveAgent())
+		}
+	}
+}
+
+// A wake's own agent IS authored - the chain has nothing to inherit
+// there, and the file says so.
+func TestSaveJobKeepsAnAuthoredWakeAgent(t *testing.T) {
+	r, path := newSaveTestRunner(t, saveTestCrons)
+	if _, err := r.SaveJob(Job{
+		Name:     "pulse",
+		Schedule: "0 * * * *",
+		Prompt:   "tick",
+		Deliver:  deliverContinuous,
+		Agent:    "scout",
+		Enabled:  boolPtr(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	text, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(text), "agent: scout") {
+		t.Errorf("an authored wake agent was dropped:\n%s", text)
 	}
 }
 

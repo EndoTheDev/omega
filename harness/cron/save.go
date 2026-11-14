@@ -26,6 +26,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/EndoTheDev/omega/agent"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -77,6 +79,14 @@ func (w jobWire) toJob() Job {
 // crons.yaml obeys. An unknown or reload-failing write leaves the file
 // untouched - server truth never fakes a swap.
 func (r *Runner) SaveJob(job Job) ([]JobInfo, error) {
+	// The inheritance chain (card t_7fb3b35a) is applied to the
+	// editor's job BEFORE it is marshalled, so the file the operator
+	// reads carries the chain's own shape: an absent field where the
+	// value is inherited, never a resolved copy pinned as authored.
+	job, err := chainJob(job)
+	if err != nil {
+		return nil, err
+	}
 	data, err := yaml.Marshal(Config{Jobs: []Job{job}})
 	if err != nil {
 		return nil, fmt.Errorf("marshal job: %w", err)
@@ -102,6 +112,44 @@ func (r *Runner) SaveJob(job Job) ([]JobInfo, error) {
 		return nil, err
 	}
 	return r.reloadAfterWrite()
+}
+
+// chainJob applies the inheritance chain (card t_7fb3b35a) to a job
+// the editor is about to write.
+//
+// Two links, one law:
+//
+//	agent  empty -> inherits the main agent (agent.DefaultAgentName)
+//	model  empty -> inherits the model of the agent the fire runs under
+//
+// An empty field IS the inherit - the write never materializes a
+// resolved value, so the chain keeps inheriting when the main agent's
+// own model moves. Two consequences fall out of that:
+//
+//   - an AUTHORED reference to the main agent is the chain's absence
+//     written out ("the default IS the absence", jobinfo.go). The agent
+//     combobox lists the main row first, so picking it would otherwise
+//     pin a phantom override that means exactly what an absent field
+//     means - the same anti-phantom law the agents panel's unset
+//     vocabulary carries (agent/configedit.go). It is normalized away
+//     instead of refused: it asks for the right thing.
+//
+//   - a WAKE may not lean on that absence. deliver: continuous-agent
+//     into the main agent is a chain the fire can never satisfy - the
+//     main agent is the daemon and never wakes as a subprocess
+//     (runner.go logs "main never wakes", continuous/wake.go refuses the
+//     child) - so the job would persist and silently never run. The
+//     loader's own voice for that class of hole (an authored `agent:` in
+//     an agent home, `skills:` on a wake) is a loud rejection where the
+//     operator can fix it, and the editor's write face is that place.
+func chainJob(job Job) (Job, error) {
+	if job.Agent == agent.DefaultAgentName {
+		job.Agent = ""
+	}
+	if job.DeliverTarget() == deliverContinuous && job.Agent == "" {
+		return Job{}, fmt.Errorf("job %q: deliver continuous-agent needs its own agent - an empty agent inherits the main agent %q, which never wakes", job.Name, agent.DefaultAgentName)
+	}
+	return job, nil
 }
 
 // DeleteJob removes one job from the MAIN crons.yaml and hot-reloads.

@@ -109,7 +109,14 @@ export function draftOf(j: CronJobWireFull): JobDraft {
 // validateDraft returns "" when the draft obeys the schema laws the Go
 // loader enforces (the editor NEVER ships a job the loader would
 // reject - one validation law, mirrored), else the human error line.
-export function validateDraft(d: JobDraft): string {
+// The inheritance chain's law rides here too (chainViolation): a wake
+// that leans on the main agent would persist and never fire, so it
+// never leaves the editor either. mainAgent is the roster's main row;
+// an unanswered GET /agents falls back to the Go constant.
+export function validateDraft(
+  d: JobDraft,
+  mainAgent: string = MAIN_AGENT_FALLBACK,
+): string {
   const name = d.name.trim();
   if (name === "") return "name is required";
   if (!/^[a-z0-9-]+$/.test(name)) return "name must match [a-z0-9-]";
@@ -135,7 +142,9 @@ export function validateDraft(d: JobDraft): string {
     if (seenSkills.has(s)) return `duplicate skill ${s}`;
     seenSkills.add(s);
   }
-  return "";
+  // the chain's law last: a schema-broken draft names its schema
+  // problem first, never the chain
+  return chainViolation(d, mainAgent);
 }
 
 // parseSkills turns the comma-separated editor voice into the wire's
@@ -167,11 +176,19 @@ export function parseSkills(s: string): string[] {
 // FieldOption is one dropdown row in the editor's option sources.
 // `hint` is the secondary line (a description, "the main agent");
 // `group` labels the source family so a test can tell them apart.
+// `model` / `continuous` are ROSTER detail (card t_7fb3b35a): only the
+// agents source fills them, and only the inheritance chain reads them
+// - the combobox itself renders value + hint. `model` is the agent's
+// own provider model layer ("" = the layer authors nothing, so it
+// inherits the main agent's model); `continuous` is the roster's
+// main-vs-secondary mark (false = the home root, the main agent).
 export interface FieldOption {
   value: string;
   label: string;
   hint: string;
   group: string;
+  model?: string;
+  continuous?: boolean;
 }
 
 // agentRowWire is the subset of GET /agents this editor reads (the
@@ -180,6 +197,7 @@ interface AgentRowWire {
   name?: string;
   description?: string;
   continuous?: boolean;
+  model_name?: string;
 }
 
 // fetchAgentOptions reads the agents registry. Typing a name that is
@@ -209,6 +227,11 @@ export async function fetchAgentOptions(): Promise<FieldOption[]> {
           ? "agent home"
           : "the main agent - in-process, never wakes"),
       group: "agents",
+      // the chain's two roster facts (card t_7fb3b35a): the agent's own
+      // model layer and the main-vs-secondary mark. Both come straight
+      // off the profile the roster already renders.
+      model: (r.model_name ?? "").trim(),
+      continuous: r.continuous === true,
     });
   }
   return out;
@@ -219,6 +242,16 @@ interface ModelListWire {
   current?: string;
   models?: string[];
   providers?: { name: string; models?: string[]; error?: string }[];
+}
+
+// ModelCatalog is fetchModelOptions' answer: the offered bare names and
+// the model this omega RUNS (`current`, the daemon's own provider
+// model). The chain's last link reads `current` - an in-process fire
+// runs on this very provider, so it is the main agent's model in
+// practice (card t_7fb3b35a).
+export interface ModelCatalog {
+  options: FieldOption[];
+  current: string;
 }
 
 // fetchModelOptions reads the model catalog the settings knobs use.
@@ -235,19 +268,19 @@ interface ModelListWire {
 // `models` array the settings pickers fall back to); an operator who
 // needs another instance's model types it, exactly as before. The
 // grouped `providers` sections stay unread for the same reason.
-export async function fetchModelOptions(): Promise<FieldOption[]> {
+export async function fetchModelOptions(): Promise<ModelCatalog> {
   const res = await fetch("/models");
   if (!res.ok) throw new Error(`GET /models: ${res.status}`);
   const wire = (await res.json()) as ModelListWire;
   const seen = new Set<string>();
-  const out: FieldOption[] = [];
+  const options: FieldOption[] = [];
   for (const raw of wire.models ?? []) {
     const name = (raw ?? "").trim();
     if (name === "" || seen.has(name)) continue;
     seen.add(name);
-    out.push({ value: name, label: name, hint: "", group: "models" });
+    options.push({ value: name, label: name, hint: "", group: "models" });
   }
-  return out;
+  return { options, current: (wire.current ?? "").trim() };
 }
 
 // skillRowWire is one GET /skills row (name + description only).
@@ -309,6 +342,187 @@ export function moveComboIndex(
   if (length <= 0) return -1;
   if (index < 0) return delta > 0 ? 0 : length - 1;
   return (((index + delta) % length) + length) % length;
+}
+
+// --- the inheritance chain (card t_7fb3b35a) -------------------------
+//
+// ONE state machine, two links:
+//
+//   agent: ""       -> INHERITED from the main agent
+//   agent: "scout"  -> AUTHORED
+//   model: ""       -> INHERITED from the agent the fire resolves to
+//   model: "glm"    -> AUTHORED
+//
+// The STATE is presence - an absent field inherits, a present one is
+// authored - and the chain never writes a resolved value back into the
+// field (the pencil fix's law, t_21824d98: one field read two ways is
+// a bug waiting for its second reader). What the chain adds is the
+// DISPLAY: a chip that says "inherited" plus the link that supplies
+// the value, so an empty box stops being a mystery.
+//
+// The model link follows the agent the FIRE runs under, not the name
+// in the box: an in-process fire runs as the main agent
+// (runner.go's wrong-target law), so its model is the main agent's;
+// a wake runs inside the agent's own home, where the agent's config
+// layer answers and a layer that authors nothing inherits the main
+// again (agent/configedit.go's LayerValue presence law: "an
+// explicitly empty value is a real override" - for the chain, an
+// absent model_name is the inherit).
+//
+// The same state machine rules the agents panel (its config layer
+// carries the identical authored-vs-inherited question); each module
+// keeps its own copy, the narrow.ts precedent - module UI imports no
+// other module's code.
+
+// ChainValue is one field's chain state.
+export interface ChainValue {
+  // inherited is the STATE: true = the yaml omits the field and the
+  // chain supplies the value.
+  inherited: boolean;
+  // value is what the fire will use. "" when the chain cannot resolve
+  // it (an agent the registry does not list, or a model catalog that
+  // never answered).
+  value: string;
+  // source names the link that supplies an inherited value, in the
+  // editor's voice ("the main agent", "agent scout"). "" when authored.
+  source: string;
+  // note is the ONE line the editor renders beside the chip: the
+  // source, with the resolved value when there is one.
+  note: string;
+  // blocked marks a chain the fire can NEVER satisfy - a wake leaning
+  // on the main agent, which never wakes as a subprocess. The editor
+  // shows it in the danger voice and the save law refuses it
+  // (harness/cron/save.go, one law both sides).
+  blocked: boolean;
+}
+
+// ChainDraft is the slice of the form the chain reads. Kept structural
+// so JobDraft satisfies it and a test can pass a literal.
+export interface ChainDraft {
+  agent: string;
+  model: string;
+  deliver: string;
+}
+
+// MAIN_AGENT_FALLBACK mirrors the Go constant agent.DefaultAgentName:
+// the home root's agent. The roster names it, but GET /agents that
+// never answered must still render the chain honestly.
+export const MAIN_AGENT_FALLBACK = "default";
+
+// mainAgentOf reads the main agent's name off the roster: the row the
+// wire marks continuous === false (agent/profiles.go mainProfile; every
+// secondary home answers true).
+export function mainAgentOf(roster: FieldOption[]): string {
+  const main = roster.find((o) => o.continuous === false);
+  return main?.value ?? MAIN_AGENT_FALLBACK;
+}
+
+const CHAIN_AUTHORED: ChainValue = {
+  inherited: false,
+  value: "",
+  source: "",
+  note: "",
+  blocked: false,
+};
+
+// isWake reports whether the draft's deliver target fires into an
+// agent's own continuous session (the only target a non-main agent can
+// run under).
+function isWake(d: ChainDraft): boolean {
+  return d.deliver.trim() === "continuous-agent";
+}
+
+// agentChain resolves the agent link: absent = the main agent.
+export function agentChain(d: ChainDraft, roster: FieldOption[]): ChainValue {
+  const authored = d.agent.trim();
+  if (authored !== "") return { ...CHAIN_AUTHORED, value: authored };
+  const main = mainAgentOf(roster);
+  if (isWake(d)) {
+    // the chain resolves, but the fire cannot: the main agent is the
+    // daemon itself and never wakes as a subprocess (continuous/wake.go
+    // refuses it, runner.go logs "main never wakes")
+    return {
+      inherited: true,
+      value: main,
+      source: "the main agent",
+      note: `inherits the main agent (${main}), which never wakes`,
+      blocked: true,
+    };
+  }
+  return {
+    inherited: true,
+    value: main,
+    source: "the main agent",
+    note: `inherits the main agent (${main})`,
+    blocked: false,
+  };
+}
+
+// modelChain resolves the model link: absent = the model of the agent
+// the fire runs under. That agent's own layer answers first (a wake
+// child layers over the main home config); a layer that names no model
+// inherits the main agent's, which is the model this omega runs
+// (GET /models' `current`).
+export function modelChain(
+  d: ChainDraft,
+  roster: FieldOption[],
+  mainModel: string,
+): ChainValue {
+  const authored = d.model.trim();
+  if (authored !== "") return { ...CHAIN_AUTHORED, value: authored };
+  const agent = agentChain(d, roster);
+  const main = mainAgentOf(roster);
+  if (isWake(d) && agent.value !== main) {
+    const row = roster.find((o) => o.value === agent.value);
+    if (!row) {
+      return {
+        inherited: true,
+        value: "",
+        source: `agent ${agent.value}`,
+        note: `inherits agent ${agent.value} - not in the registry, so its model is unknown`,
+        blocked: false,
+      };
+    }
+    if (row.model) {
+      return {
+        inherited: true,
+        value: row.model,
+        source: `agent ${agent.value}`,
+        note: `inherits agent ${agent.value} (${row.model})`,
+        blocked: false,
+      };
+    }
+    return {
+      inherited: true,
+      value: mainModel,
+      source: `agent ${agent.value}, which inherits the main agent`,
+      note: mainModel
+        ? `inherits agent ${agent.value}, which inherits the main agent (${mainModel})`
+        : `inherits agent ${agent.value}, which inherits the main agent`,
+      blocked: false,
+    };
+  }
+  return {
+    inherited: true,
+    value: mainModel,
+    source: "the main agent",
+    note: mainModel
+      ? `inherits the main agent (${mainModel})`
+      : "inherits the main agent",
+    // a wake inheriting the main agent cannot fire at all; its model
+    // link carries that state up so the whole chain reads as blocked
+    blocked: agent.blocked,
+  };
+}
+
+// chainViolation is the chain's ONE law as the operator reads it: a
+// wake needs an agent of its own, because the chain's fallback (the
+// main agent) never wakes. "" when the chain is satisfiable.
+export function chainViolation(d: ChainDraft, mainAgent: string): string {
+  if (!isWake(d)) return "";
+  const agent = d.agent.trim();
+  if (agent !== "" && agent !== mainAgent) return "";
+  return `continuous-agent needs its own agent - an empty agent inherits the main agent (${mainAgent}), which never wakes`;
 }
 
 // --- the strict skills multi-select (ruling 3) -----------------------
