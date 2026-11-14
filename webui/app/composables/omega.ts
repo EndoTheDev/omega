@@ -2574,6 +2574,60 @@ export async function saveSettings(values: Record<string, unknown>): Promise<Set
   return normalizeSettingsPayload(await r.json());
 }
 
+// settingsFailure renders a /settings failure into one sentence: the
+// server's plain-text body when there is one (http.Error writes text,
+// not JSON), the status line otherwise.
+async function settingsFailure(r: Response, what: string): Promise<Error> {
+  let msg = `${what}: ${r.status}`;
+  try {
+    const text = (await r.text()).trim();
+    if (text) msg = text;
+  } catch {
+    // non-text failure body: the status-code message stands
+  }
+  return new Error(msg);
+}
+
+// fetchConfigYaml loads the config FILE as YAML text - the settings
+// pane's export and edit-as-YAML read (card t_a82d39c8). Secrets ride
+// masked: the server never sends a credential on the wire, and a mask
+// saved back means "keep the value on disk".
+export async function fetchConfigYaml(): Promise<string> {
+  const r = await fetch("/settings/raw");
+  if (!r.ok) throw await settingsFailure(r, "config read");
+  return await r.text();
+}
+
+// saveConfigYaml PUTs a whole YAML document through the server's config
+// write path (validate + atomic write + hot-apply) and returns the
+// refreshed knob payload, so the pane re-renders from one round trip.
+export async function saveConfigYaml(text: string): Promise<SettingsPayload> {
+  const r = await fetch("/settings/raw", {
+    method: "PUT",
+    headers: { "Content-Type": "application/yaml" },
+    body: text,
+  });
+  if (!r.ok) throw await settingsFailure(r, "config save");
+  return normalizeSettingsPayload(await r.json());
+}
+
+// resetSettings asks the server to restore the config defaults (card
+// t_a82d39c8). The defaults belong to the host - the request carries no
+// body, so the pane can never ship a second default set.
+export async function resetSettings(): Promise<SettingsPayload> {
+  const r = await fetch("/settings/reset", { method: "POST" });
+  if (!r.ok) throw await settingsFailure(r, "config reset");
+  return normalizeSettingsPayload(await r.json());
+}
+
+// configExportFilename names an exported config file: config-<date>.yaml,
+// so two exports land side by side instead of overwriting one another.
+export function configExportFilename(now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const day = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  return `config-${day}.yaml`;
+}
+
 // settingValueOf reads one knob's server-computed value out of a
 // settings payload ("", undefined otherwise). Card t_30137f67 users:
 // the app-level server.default_workspace read rides the SAME

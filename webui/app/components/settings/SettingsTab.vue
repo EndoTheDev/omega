@@ -90,6 +90,71 @@
         <Icon class="settings-jump-icon" name="chevron-down" :size="12" />
         <span>categories</span>
       </button>
+      <!-- card t_a82d39c8: the three config-file actions (reset to
+           default, export to yaml, edit as yaml) live in the BAND - the
+           pane's first row - never in the scroll body. They ride ONE
+           chip that opens a menu: this column is ~300px wide, and three
+           more band buttons would squeeze the filter to nothing. The
+           menu is anchored under its own chip (the .dock-menu shape),
+           not floating in the document. -->
+      <div ref="configMenuEl" class="settings-config">
+        <button
+          class="settings-config-btn"
+          type="button"
+          :aria-expanded="configMenuOpen"
+          aria-haspopup="menu"
+          aria-label="config file actions"
+          :title="configChipHint"
+          :disabled="configBusy"
+          @click="toggleConfigMenu()">
+          <span>config</span>
+          <Icon class="settings-config-caret" name="chevron-down" :size="10" />
+        </button>
+        <div
+          v-if="configMenuOpen"
+          class="settings-config-menu"
+          @click.stop>
+          <!-- card t_a82d39c8 round 2: NAME the target, inside the menu
+               and in the chip's tooltip. All three actions act on the
+               MAIN config.yaml; an agent scope tab edits its own layer
+               file through the agent editor. Without the line, a chip
+               opened from a scope tab looked like it would change the
+               visible tab and silently did not. -->
+          <p class="settings-config-target">{{ configTargetLabel }}</p>
+          <div
+            class="settings-config-items"
+            role="menu"
+            aria-label="config file actions">
+            <button
+              class="settings-config-item"
+              role="menuitem"
+              type="button"
+              :disabled="configBusy"
+              :title="resetHint"
+              @click="onResetToDefaults()">
+              {{ resetArmed ? "confirm: reset all?" : "reset to default" }}
+            </button>
+            <button
+              class="settings-config-item"
+              role="menuitem"
+              type="button"
+              :disabled="configBusy"
+              title="download the config as a yaml file"
+              @click="onExportYaml()">
+              export to yaml
+            </button>
+            <button
+              class="settings-config-item"
+              role="menuitem"
+              type="button"
+              :disabled="configBusy"
+              title="edit the config file as yaml"
+              @click="onEditYaml()">
+              edit as yaml
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="settings-split">
@@ -424,6 +489,56 @@
     </p>
       </section>
     </div>
+
+    <!-- card t_a82d39c8: the edit-as-yaml surface. A native <dialog>:
+       the top layer gives it focus trapping, Escape and backdrop for
+       free (no new dependency, no hand-rolled modal). The text IS the
+       config file; saving PUTs it through the server's own write path,
+       and the mask the GET served means "keep the stored secret".
+       Escape/backdrop close are the element's own - the pane only
+       tracks the open state for its aria wiring. -->
+    <dialog
+      ref="yamlDialogEl"
+      class="settings-yaml"
+      aria-label="edit config yaml"
+      @close="yamlOpen = false"
+      @keydown.ctrl.enter.prevent="saveYaml()"
+      @keydown.meta.enter.prevent="saveYaml()">
+      <div class="settings-yaml-head">
+        <span class="settings-yaml-title">config.yaml</span>
+        <button
+          class="settings-yaml-close"
+          type="button"
+          aria-label="close the config editor"
+          @click="closeYamlEditor()">
+          close
+        </button>
+      </div>
+      <textarea
+        v-model="yamlText"
+        class="settings-yaml-editor"
+        aria-label="config yaml"
+        spellcheck="false"
+        autocomplete="off" />
+      <p v-if="yamlError" class="settings-yaml-error">{{ yamlError }}</p>
+      <div class="settings-yaml-actions">
+        <button
+          class="settings-save"
+          type="button"
+          :disabled="yamlSaving || !yamlDirty"
+          @click="saveYaml()">
+          {{ yamlSaving ? "saving…" : "save" }}
+        </button>
+        <button
+          class="settings-revert"
+          type="button"
+          :disabled="yamlSaving || !yamlDirty"
+          @click="yamlText = yamlLoaded">
+          revert
+        </button>
+        <span class="settings-yaml-hint">ctrl+enter saves (cmd+enter on mac)</span>
+      </div>
+    </dialog>
   </aside>
 </template>
 
@@ -439,10 +554,14 @@
   } from "vue";
   import {
     DEFAULT_THEME_ID,
+    configExportFilename,
+    fetchConfigYaml,
     fetchSettings,
     filterSettingGroups,
     knobDiffersFromDefault,
     knobHasDefault,
+    resetSettings,
+    saveConfigYaml,
     saveSettings,
     scopeConfigDiff,
     scopeKnobDiffersFromMain,
@@ -648,6 +767,10 @@
   // server response the same way it did before.
   onMounted(() => {
     bindIntent(rootEl.value);
+    // card t_a82d39c8: the config menu closes on any click outside its
+    // own chip - one always-attached listener, guarded by the open
+    // state, so opening/closing never juggles registrations.
+    document.addEventListener("click", onDocumentClick);
     void reload();
   });
 
@@ -1641,6 +1764,7 @@
     unlockSpy();
     endPaneScroll();
     bindIntent(null);
+    document.removeEventListener("click", onDocumentClick);
     spyObserver?.disconnect();
     spyObserver = null;
     paneBoxObserver?.disconnect();
@@ -2323,6 +2447,173 @@
       saving.value = false;
     }
   }
+
+  // --- the config-file actions (card t_a82d39c8) ----------------------
+  //
+  // Three actions ride the band's `config` chip: reset to default,
+  // export to yaml, edit as yaml. All three talk to the SAME config
+  // surface the knobs do - /settings for the knob payload, /settings/raw
+  // for the document, /settings/reset for the host's own defaults - so
+  // none of them carries a second config model.
+
+  /** the chip + menu wrapper, for the outside-click test */
+  const configMenuEl = ref<HTMLElement | null>(null);
+  const configMenuOpen = ref(false);
+  /** the reset action's arm: the FIRST click asks, the second applies
+      (the module-toggle discipline - a whole-config reset is not a
+      one-click accident) */
+  const resetArmed = ref(false);
+  const configBusy = ref(false);
+
+  const resetHint = computed(() =>
+    resetArmed.value
+      ? "click again to restore every knob that has a default"
+      : "restore every knob that has a default; the api key, bind addresses and named instances are kept",
+  );
+
+  // The chip and all three actions act on the MAIN config.yaml. An agent
+  // scope tab edits its OWN layer file through the agent editor, so a
+  // menu opened from that tab must say which document it is about -
+  // otherwise the reset/edit visibly does nothing to the tab on screen.
+  const configTargetLabel = computed(() =>
+    activeScope.value
+      ? `main config.yaml (not the ${activeScope.value} scope)`
+      : "main config.yaml",
+  );
+  const configChipHint = computed(() => `config file actions - ${configTargetLabel.value}`);
+
+  function toggleConfigMenu() {
+    configMenuOpen.value = !configMenuOpen.value;
+    resetArmed.value = false;
+  }
+
+  function closeConfigMenu() {
+    configMenuOpen.value = false;
+    resetArmed.value = false;
+  }
+
+  /** onDocumentClick closes the menu on any click outside it: the chip's
+      own clicks are contained, the menu's own clicks stop propagation
+      (and their handlers close it explicitly). */
+  function onDocumentClick(event: MouseEvent) {
+    if (!configMenuOpen.value) return;
+    const el = configMenuEl.value;
+    if (el && event.target instanceof Node && el.contains(event.target)) return;
+    closeConfigMenu();
+  }
+
+  /** onResetToDefaults restores the host's defaults. The client ships NO
+      values: the defaults are the host's (the same `default` field the
+      per-knob reset already compares against), so a reset can never
+      drift from them. */
+  async function onResetToDefaults() {
+    if (!resetArmed.value) {
+      resetArmed.value = true;
+      return;
+    }
+    resetArmed.value = false;
+    configBusy.value = true;
+    saveError.value = null;
+    try {
+      applyPayload(await resetSettings());
+      closeConfigMenu();
+    } catch (err) {
+      saveError.value = err instanceof Error ? err.message : String(err);
+    } finally {
+      configBusy.value = false;
+    }
+  }
+
+  /** onExportYaml downloads the config document. The server answers the
+      file with its secrets masked, so an export is safe to share and the
+      mask round-trips back as "keep the stored key". */
+  async function onExportYaml() {
+    closeConfigMenu();
+    configBusy.value = true;
+    saveError.value = null;
+    try {
+      downloadText(configExportFilename(), await fetchConfigYaml());
+    } catch (err) {
+      saveError.value = err instanceof Error ? err.message : String(err);
+    } finally {
+      configBusy.value = false;
+    }
+  }
+
+  /** downloadText hands text to the browser as a file download. A Blob
+      URL + a synthetic anchor is the no-dependency shape; the URL is
+      revoked on the next task so a slow start is not cancelled. */
+  function downloadText(name: string, text: string) {
+    const url = URL.createObjectURL(new Blob([text], { type: "application/yaml" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  // --- edit as yaml (the document editor) ---
+
+  const yamlDialogEl = ref<HTMLDialogElement | null>(null);
+  const yamlOpen = ref(false);
+  const yamlText = ref("");
+  /** what the server last handed us: the dirty test's base */
+  const yamlLoaded = ref("");
+  const yamlSaving = ref(false);
+  const yamlError = ref<string | null>(null);
+  const yamlDirty = computed(() => yamlText.value !== yamlLoaded.value);
+
+  /** onEditYaml opens the document editor on the file's own text. A read
+      failure stays in the pane's error line: an editor opened on nothing
+      would look like an empty config. */
+  async function onEditYaml() {
+    closeConfigMenu();
+    saveError.value = null;
+    yamlError.value = null;
+    configBusy.value = true;
+    try {
+      const text = await fetchConfigYaml();
+      yamlText.value = text;
+      yamlLoaded.value = text;
+    } catch (err) {
+      saveError.value = err instanceof Error ? err.message : String(err);
+      return;
+    } finally {
+      configBusy.value = false;
+    }
+    yamlOpen.value = true;
+    await nextTick();
+    yamlDialogEl.value?.showModal();
+  }
+
+  function closeYamlEditor() {
+    yamlDialogEl.value?.close();
+    yamlOpen.value = false;
+    yamlError.value = null;
+  }
+
+  /** saveYaml writes the document through the server's config path, then
+      re-reads it: the writer normalizes the file (one settings save
+      materializes every key), so the editor shows what actually landed
+      instead of the text that was typed. */
+  async function saveYaml() {
+    if (yamlSaving.value || !yamlDirty.value) return;
+    yamlSaving.value = true;
+    yamlError.value = null;
+    try {
+      applyPayload(await saveConfigYaml(yamlText.value));
+      const persisted = await fetchConfigYaml();
+      yamlText.value = persisted;
+      yamlLoaded.value = persisted;
+    } catch (err) {
+      yamlError.value = err instanceof Error ? err.message : String(err);
+    } finally {
+      yamlSaving.value = false;
+    }
+  }
 </script>
 
 <style scoped>
@@ -2424,6 +2715,187 @@
   }
   .settings-jump-icon {
     transform: rotate(90deg);
+  }
+  /* card t_a82d39c8: the config-file chip and its menu. The chip wears
+     the band's own chip shape (the settings-jump voice); the menu rides
+     under it - the .dock-menu geometry, this pane's tokens - so the
+     three actions never push the filter row wider than the column. */
+  .settings-config {
+    flex: none;
+    position: relative;
+  }
+  .settings-config-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    border: 1px solid var(--stroke);
+    border-radius: var(--r-chip);
+    background: var(--z0);
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 10.5px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .settings-config-btn:hover,
+  .settings-config-btn[aria-expanded="true"] {
+    color: var(--text);
+    border-color: var(--accent);
+  }
+  .settings-config-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .settings-config-caret {
+    transform: rotate(0deg);
+  }
+  .settings-config-btn[aria-expanded="true"] .settings-config-caret {
+    transform: rotate(180deg);
+  }
+  .settings-config-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 40;
+    min-width: 150px;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    background: var(--z1-raised);
+    border: 1px solid var(--stroke);
+    border-radius: 6px;
+    box-shadow: var(--shadow-1);
+  }
+  /* the target line: the chip always acts on the MAIN config.yaml, so the
+     menu names the file it is about (a scope tab's own layer file is the
+     agent editor's). */
+  .settings-config-target {
+    margin: 0;
+    padding: 2px 8px 4px;
+    border-bottom: 1px solid var(--stroke);
+    color: var(--text-dim);
+    font-size: 10px;
+    white-space: nowrap;
+  }
+  .settings-config-items {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .settings-config-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: 11.5px;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .settings-config-item:hover {
+    background: var(--z2);
+  }
+  .settings-config-item:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  /* the edit-as-yaml surface: a native dialog in the top layer. The
+     editor is a monospace textarea sized to the viewport rather than to
+     the ~300px pane - a config document needs width. */
+  .settings-yaml {
+    width: min(760px, 92vw);
+    max-height: 86vh;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--stroke);
+    border-radius: 8px;
+    background: var(--z1-raised);
+    color: var(--text);
+    box-shadow: var(--shadow-1);
+  }
+  .settings-yaml:not([open]) {
+    display: none;
+  }
+  .settings-yaml::backdrop {
+    background: rgba(0, 0, 0, 0.5);
+  }
+  .settings-yaml-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--stroke);
+  }
+  .settings-yaml-title {
+    flex: 1;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .settings-yaml-close {
+    flex: none;
+    padding: 2px 6px;
+    border: 1px solid var(--stroke);
+    border-radius: var(--r-chip);
+    background: var(--z0);
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 10.5px;
+    cursor: pointer;
+  }
+  .settings-yaml-close:hover {
+    color: var(--text);
+  }
+  .settings-yaml-editor {
+    flex: 1;
+    min-height: 320px;
+    margin: 8px 10px;
+    padding: 8px;
+    border: 1px solid var(--stroke);
+    border-radius: 6px;
+    background: var(--z0);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.45;
+    tab-size: 2;
+    resize: vertical;
+  }
+  .settings-yaml-editor:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+  }
+  .settings-yaml-error {
+    flex: none;
+    margin: 0 10px 6px;
+    color: var(--err, var(--accent));
+    font-size: 11px;
+  }
+  .settings-yaml-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px 10px;
+  }
+  /* the pane's .settings-save/.settings-revert are flex:1 (they fill the
+     save row); inside the dialog's action row they must keep their own
+     width instead of stretching across it */
+  .settings-yaml-actions > button {
+    flex: none;
+    min-width: 88px;
+  }
+  .settings-yaml-hint {
+    margin-left: auto;
+    color: var(--text-dim);
+    font-size: 10.5px;
   }
   /* the knob select is the shared BandSelect chip - inline (the
      composer's listbox pattern), never wider than its row */

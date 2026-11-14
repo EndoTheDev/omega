@@ -96,6 +96,8 @@ unchanged.
 | `/observability/events`              | GET        | structured run-event ring: `?session=`, `?level=error\|warn`, `?limit=` (newest N, oldest-first); 1024-record in-process cap |
 | `/observability/logs`                | GET        | omega.log tail from the observability capsule (`?lines=`, default 200, cap 2000); 404 without a log file |
 | `/settings`                          | GET, PUT   | config knobs schema / diff-only save (`GET ?key=<dotted path>` = one knob, 404 on a miss) |
+| `/settings/raw`                      | GET, PUT   | the config file as YAML, secrets masked / write a whole document through the same validator + writer + hot-apply |
+| `/settings/reset`                    | POST       | restore the host's defaults for every knob that has one (the config.yaml-only doors are kept) |
 | `/themes`                            | GET        | user theme tokens (`<home>/themes/*.yaml`)     |
 | `/`                                  | GET        | embedded SPA catch-all (history-mode fallback) |
 
@@ -401,6 +403,50 @@ pane; the endpoint and the secret are not settable over the API). Knob
 help lines note which apply on
 restart vs hot-apply live (http timeout + compaction hot-apply; context
 window help reports what startup auto-probed).
+
+#### the config-file doors (`/settings/raw`, `/settings/reset`)
+
+Card t_a82d39c8 added the whole-document pair the settings band's
+`config` chip drives. Both ride the SAME host `Settings` seam the knob
+endpoints do, so there is one schema, one validator and one writer:
+
+- `GET /settings/raw` — the config file as YAML (`application/yaml`,
+  no-store). Every `api_key` VALUE is MASKED (`****`), by NAME anywhere
+  in the document, and every other byte is the operator's own file:
+  comments, key order, flow/block style. A file that will not parse
+  answers the parse error rather than its text (an unmaskable document
+  is a leak, not a read). This is the export surface.
+- `PUT /settings/raw` — body: a whole YAML document, capped at 1 MiB
+  (**413** above the cap, rejected before it is parsed or written: the
+  cap refuses, it never truncates, because a YAML document cut at a
+  top-level key boundary can still parse and would persist as a
+  silently partial config). It is
+  parsed exactly as `config.yaml` is parsed (built-in defaults, then the
+  document, then `OMEGA_*`), validated by the same `Validate`, persisted
+  by the same atomic mode-preserving writer, and hot-applied. Answers
+  the refreshed knob payload (the `/settings` PUT shape). A submitted
+  `****` at a secret path KEEPS the value on disk (the
+  `provider.instances` round-trip law) — and a save whose on-disk
+  document cannot be read is **400**, never a mask written out as the
+  credential — and an `OMEGA_*`-supplied secret
+  never lands in the file — clearing the line clears the credential, the
+  way a text editor would. Because the writer marshals the whole
+  `Config`, a raw save is normalized like every other settings save:
+  comments and key order are not preserved. A document that will not
+  parse or validate is **400** with the host's own sentence and leaves
+  the file untouched.
+- `POST /settings/reset` — restores the config defaults. The request
+  carries NO body: the defaults are the host's (each knob's `default`,
+  the same field the pane's per-knob reset compares against), so a
+  client can never ship a second default set. Every knob that HAS a
+  default is written through the knob save path, and the
+  config.yaml-only doors are KEPT — `provider.api_key`, `server.bind`,
+  `provider.instances` (whose rows carry endpoints and secrets the API
+  cannot set) and `provider.model_name` (required, so it has no
+  default). Answers the refreshed knob payload.
+
+A host with no settings seam answers **501** on all three, like
+`/settings`.
 
 ### The registry-browser toggles and the agent editor
 
