@@ -887,8 +887,11 @@ observability tab's 5s ring read, see above). The `chips` topic feeds
 the pending chip's live tail; `runs`
 edges clear the pulse and wake an awaiting yielded call; `canvas` feeds
 the panel store and the toast funnel; the verdict list has no topic of
-its own and is refetched on chat call/turn edges, run edges and
-reconnect.
+its own and is refetched on the `verdict_issued` issuance frame, chat
+call/turn edges, run edges and reconnect (the issuance frame is what
+makes a smart-gate card visible at all: the gate registers its card
+after the call-edge window and the frozen run emits no further edge
+until the answer - card t_ce2162cd).
 
 The sixth topic, `logs`, is **subscription-gated** (card t_0e7bc0bb) and
 has NO client consumer. It carries only the lines appended to the log
@@ -919,7 +922,9 @@ Every pushed frame is one JSON text message:
   global topics (`canvas`, `health`, `logs`).
 - `event` - the chat topic's SSE event name (`response_chunk`,
   `tool_call`, `tool_result`, `turn_end`, `agent_end`, `error`,
-  `view_model_delta`...). Absent elsewhere: the topic is the type and
+  `view_model_delta`...) plus `verdict_issued`, the one chat-topic name
+  that is not an agent event: the verdict hub pushes it when a card
+  REGISTERS (see below). Absent elsewhere: the topic is the type and
   `data` is a typed payload.
 - `seq` - the hub's monotonic frame counter, one publish order across
   all topics. It is diagnostic, not a loss detector: a subscriber to a
@@ -934,7 +939,7 @@ Every pushed frame is one JSON text message:
 
 | Topic | Payload | Source (the broadcast seam) |
 | ----- | ------- | -------------------------- |
-| `chat` | the run's SSE frame verbatim | the run broadcast funnel - every frame `launchRun` broadcasts (token/thinking deltas, `tool_call`, `tool_result`, `turn_end`, `agent_end`, `error`). Wake turns launch through the same pipe, so yielded results stream on the same topic |
+| `chat` | the run's SSE frame verbatim, plus the verdict issuance hint `{card_id, session_id, title}` | the run broadcast funnel - every frame `launchRun` broadcasts (token/thinking deltas, `tool_call`, `tool_result`, `turn_end`, `agent_end`, `error`). Wake turns launch through the same pipe, so yielded results stream on the same topic. **`verdict_issued`** (card t_ce2162cd) is the one frame on this topic that is NOT an agent event: the verdict hub fires its registration listeners the moment a card becomes pending (`harness/verdict`'s `OnCardRegistered`), and the serving shell publishes that as one chat-topic frame scoped to the card's session. It is a HINT only - the client re-reads `GET /verdicts` for the card's shape, expiry and options |
 | `chips` | `{call_id, tool, fill, text, content, truncated, is_error, timeout, elapsed_ms}` | `fill` false: the run output tap - a tool's live output as it lands (the shell's capped buffer). `fill` true: the pending chip settles (`wakeHome`, the one settle entry point) |
 | `canvas` | one `view_model_delta` panel descriptor | `CanvasEmit` - every mounted capsule's panel state, notifications toasts and board changes included. Panel state names itself in the payload, so the shell carries no capsule noun |
 | `runs` | `{active}` | the run slot: taken in `prepareRun`, released when the run's finish hook fires. This is the live-run truth `GET /sessions` used to be polled for |

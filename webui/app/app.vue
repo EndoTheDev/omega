@@ -1860,9 +1860,10 @@
 
   // hintNotifications pulls the finished-things + pending-verdict truth
   // on an event hint, debounced: the verdict hub has no topic of its own
-  // (issuance and the answer ride chat), and a burst of run frames must
-  // not stampede the REST routes. One pull per 1.5s window is plenty for
-  // a human-paced question.
+  // (issuance rides the verdict_issued chat frame, the answer rides
+  // tool_result), and a burst of run frames must not stampede the REST
+  // routes. One pull per 1.5s window is plenty for a human-paced
+  // question.
   let notificationsHint: ReturnType<typeof setTimeout> | null = null;
   function hintNotifications() {
     if (notificationsHint !== null) return;
@@ -2558,12 +2559,17 @@
         host.noteSocketChat(session, event, payload);
         // the verdict gap (t_896cf5a8): issuance and the answer ride the
         // chat topic's structural frames - a chatty token delta is not a
-        // signal, so only the call/turn edges pull the pending list
+        // signal, so only the call/turn edges pull the pending list.
+        // verdict_issued (t_ce2162cd) is the issuance frame itself: a
+        // smart-gate card registers AFTER the tool_call window and the
+        // frozen run emits no further edge until it is answered, so
+        // without this name nothing would ever pull that card.
         if (
           event === "tool_call" ||
           event === "tool_result" ||
           event === "turn_end" ||
-          event === "agent_end"
+          event === "agent_end" ||
+          event === "verdict_issued"
         )
           hintNotifications();
       },

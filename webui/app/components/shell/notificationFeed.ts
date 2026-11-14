@@ -23,16 +23,17 @@
 //
 // card t_a2ed8412: the store owns THREE emitters now, and the third one
 // is the approval surface. A pending verdict reaches this store through
-// the ordinary event hints (a chat frame's call/turn edge, a runs edge,
-// a reconnect catch-up - the chat topic fans out EVERY run to EVERY
-// page, measured on a private lane: a verdict issued by a session the
-// page never opened toasted 1.5s after its tool_call frame), so the
-// badge has always counted an approval from a background session. What
-// it never had was a VOICE: the badge rides the notifications chip,
-// which is invisible when that tab is not on screen, so an approval from
-// a session the page never opened looked like nothing happening until
-// the panel's activation read. A newly pending card now toasts through
-// the same stack as a finished thing.
+// the ordinary event hints (a card's verdict_issued issuance frame, a
+// chat frame's call/turn edge, a runs edge, a reconnect catch-up - the
+// chat topic fans out EVERY run to EVERY page, measured on a private
+// lane: a verdict issued by a session the page never opened toasted 1.5s
+// after its tool_call frame), so the badge has always counted an
+// approval from a background session. What it never had was a VOICE: the
+// badge rides the notifications chip, which is invisible when that tab
+// is not on screen, so an approval from a session the page never opened
+// looked like nothing happening until the panel's activation read. A
+// newly pending card now toasts through the same stack as a finished
+// thing.
 
 import { computed, ref } from "vue";
 import {
@@ -279,13 +280,15 @@ let releaseFeed: (() => void) | null = null;
 // Idempotent; every mount calls it, only the first one pays.
 //
 // The 15s verdict poll RETIRED with the push channel (card t_896cf5a8):
-// the shell pulls this store on event hints instead - a chat frame's
-// call/turn edge (verdict issuance and its answer ride the chat topic),
-// a runs-topic edge, a canvas toast, a reconnect catch-up, and the
-// panel's own activation read. Nothing polls. The chat topic is NOT
-// pane-scoped: the hub fans every run out to every page, so an approval
-// from a session this page never opened still arrives as a call edge
-// (measured, card t_a2ed8412) - and the arrival toasts on the spot.
+// the shell pulls this store on event hints instead - the issuance
+// frame a card's registration now pushes (verdict_issued, card
+// t_ce2162cd: a smart-gate card registers after the tool_call window and
+// the frozen run emits nothing else), a chat frame's call/turn edge (the
+// answer side), a runs-topic edge, a canvas toast, a reconnect
+// catch-up, and the panel's own activation read. Nothing polls. The chat
+// topic is NOT pane-scoped: the hub fans every run out to every page, so
+// an approval from a session this page never opened still arrives as a
+// frame (measured, card t_a2ed8412) - and the arrival toasts on the spot.
 export function startNotificationFeed(): void {
   if (started) return;
   started = true;

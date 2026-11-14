@@ -5,13 +5,19 @@
 // GET /verdicts (cross-session pending listing, the bell's count) +
 // /sessions/{id}/verdicts (one session's listing, and the answering
 // POST - card t_2ecf9c51's answer surface, the message guidance of
-// card t_63204dfd). The card itself renders live from the existing
-// tool_call / tool_result SSE frames (the verdict tool's args carry
-// title/options/timeout; the result carries the verdict JSON) - these
-// endpoints are the ANSWER path only. They hold the Hub the mount
-// offered under "verdicts", and a disabled capsule answers 404 at the
-// module mux - the routes mount and die with their capsule, so the
-// chat bell empties with the feature instead of polling a dead seam.
+// card t_63204dfd). These endpoints are the ANSWER path AND the
+// client's truth: the push channel's issuance frame (verdict_issued,
+// card t_ce2162cd) is only a HINT that a card exists, so a surface
+// reads the card's shape from here. The old belief that the card
+// "renders live from the tool_call / tool_result SSE frames" was false
+// for gate cards: an escalated shell.run's tool_call carries no card,
+// and the gate registers its card after a reviewer round trip, so
+// issuance needed a frame of its own (harness/verdict/hub.go
+// OnCardRegistered -> agent/api's chat-topic push). The routes hold the
+// Hub the mount offered under "verdicts", and a disabled capsule
+// answers 404 at the module mux - the routes mount and die with their
+// capsule, so the chat bell empties with the feature instead of polling
+// a dead seam.
 package verdict
 
 import (

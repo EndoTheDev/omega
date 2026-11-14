@@ -48,10 +48,17 @@ type Server struct {
 	// eph is the no-persist (ephemeral) session registry: `eph-` ids
 	// live here, never in the store - invisible to every store-derived
 	// surface, gone at restart (card t_d96a5cd5).
-	eph      ephRegistry
-	store    agent.StoreProvider
-	sockets  *SocketHub
-	settings core.Settings
+	eph     ephRegistry
+	store   agent.StoreProvider
+	sockets *SocketHub
+	// verdictSrc + verdictMu are the verdict issuance push's
+	// subscription record (card t_ce2162cd): the object the server
+	// subscribed to, so a live rewire of the SAME hub does not register
+	// a second listener. Written by RewireSeams after it releases the
+	// seams lock (subscribing takes the capsule hub's own mutex).
+	verdictMu  sync.Mutex
+	verdictSrc verdictCardSource
+	settings   core.Settings
 	// modules is the optional module-toggle seam (v0.12 E2): the
 	// /modules endpoints serve registry introspection + live toggles
 	// through it; a nil value answers 501.
@@ -271,6 +278,11 @@ func (s *Server) RewireSeams(ctx *core.Context, modmux *http.ServeMux, roots map
 	s.seams.commands = append([]core.ExtensionCommand(nil), ctx.Commands...)
 	s.seams.commandHandler = ctx.CommandHandler
 	s.seams.mu.Unlock()
+	// The verdict issuance push follows the same Context-stays-source-
+	// of-truth law (card t_ce2162cd): resolved here, and here only, so
+	// boot wires it and a live toggle moves it with the capsule. Called
+	// after the seams unlock - subscribing takes the hub's own mutex.
+	s.subscribeVerdictCards(ctx)
 	if s.agent != nil {
 		s.agent.RefreshToolProviders(ctx)
 		s.agent.RefreshDisabledTools(ctx)
