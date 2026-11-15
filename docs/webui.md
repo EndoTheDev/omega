@@ -341,14 +341,14 @@ Everything else animates through `transition`, not keyframes.
   Thinking blocks accumulate per reasoning run; tool results attach to
   their calls by `tool_call_id`, not position.
 - Stack mode: every block renders full width on the background. The
-  assistant answer keeps the full column width but insets its text 18px
+  assistant answer keeps the full column width but insets its text 8px
   from the turn's left edge, and the branch-anchor chips sit at left 4px
-  / right 6px (Endo's tuned numbers out of the chat-spacing tuner,
-  2026-11-15 - the numbers are law). Within a turn the strips sit on a
-  4px gap in 32px rows (the panels that reuse those rows keep their 44px
-  click floor); the 48px turn boundary is the dominant gap. Thinking
-  strips de-card on dark. Order never changes - live-pin is scroll +
-  sticky layout, not render order.
+  / right 8px (Endo's tuned numbers out of the chat-spacing tuner,
+  2026-11-15, round 2 - the numbers are law). Within a turn the strips
+  sit flush on a 0px gap in 24px rows (the panels that reuse those rows
+  keep their 44px click floor); the 32px turn boundary is the dominant
+  gap. Thinking strips de-card on dark. Order never changes - live-pin
+  is scroll + sticky layout, not render order.
 - Statusbar telemetry is honest: the token counter ticks per chunk
   (chars/4 estimate, corrected by real usage at stream end); live
   chunks/s comes from real arrival times.
