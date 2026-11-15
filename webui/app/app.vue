@@ -655,6 +655,7 @@
     CHAT_SESSION_OPEN_EVENT,
     DEFAULT_CHAT_STATE,
     EPHEMERAL_DRAFT_REF,
+    FOCUSED_SESSION_EVENT,
     createChatHost,
     type ChatState,
   } from "./composables/chat";
@@ -1465,6 +1466,26 @@
   );
   // the sidebar's active-session highlight follows the focused chat tab
   const focusedSessionId = computed(() => focusedChatState.value.sessionId);
+
+  // card t_db378a0d: the focused session is broadcast to module-owned
+  // panels (the Agents tab's active row) - module UI imports no shell
+  // code, so the shell announces the id it is showing and the panel
+  // mirrors it. "" = no chat tab holds the focus (the panel clears its
+  // active row). The watch rides the computed, so a tab switch, a new
+  // session adopting an id and a close all announce.
+  function announceFocusedSession(id: string | null | undefined): void {
+    window.dispatchEvent(
+      new CustomEvent(FOCUSED_SESSION_EVENT, { detail: id ?? "" }),
+    );
+  }
+  watch(focusedSessionId, (id) => announceFocusedSession(id), {
+    flush: "post",
+  });
+  // the OPENING announcement: a panel that mounts while a session already
+  // has the focus never sees a change. Vue mounts children before the
+  // parent's own mounted hook, so this lands after every panel listener
+  // is registered.
+  onMounted(() => announceFocusedSession(focusedSessionId.value));
 
   // card t_a5f9d185: the focused-session seam - the Files tab (and the
   // viewer it mints) send this ID with every /files request; the server

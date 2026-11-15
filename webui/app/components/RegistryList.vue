@@ -20,7 +20,9 @@
        the one right control (journey 92's button.registry-toggle
        selector). The row's own geometry lives in the anatomy file --
        this stylesheet keeps only the row's specifics. -->
-  <section class="registry-list">
+  <section
+    class="registry-list"
+    :class="{ 'feel-sessions': feel === 'sessions' }">
     <p
       v-if="error"
       class="settings-error registry-error">{{ error }}</p>
@@ -31,15 +33,35 @@
         v-for="r in rows"
         :key="rowKey(r)"
         class="reg-row registry-row"
-        :class="{ 'registry-off': r.disabled }">
-        <div class="reg-row-head">
+        :class="{
+          'registry-off': r.disabled,
+          'registry-row-open': openableRow(r),
+          'reg-row-active': activeName === r.name,
+        }">
+        <div
+          class="reg-row-head"
+          @click="onHeadClick($event, r)">
           <button
             v-if="hasDetail(r)"
             class="registry-expander reg-row-lead"
             type="button"
             :aria-expanded="isExpanded(r.name)"
             :aria-label="isExpanded(r.name) ? `collapse ${r.name}` : `expand ${r.name}`"
-            @click.stop="flipExpand(r)">{{ isExpanded(r.name) ? "▾" : "▸" }}</button>
+            @click.stop="flipExpand(r)">
+            <!-- card t_db378a0d: the expander glyph is the CONSUMER's - the
+                 registry family keeps the text chevron it has always
+                 rendered, and a tab adopting the sessions vocabulary asks
+                 for `expander="chevron"` (the sessions sidebar's lucide
+                 chevron-right, 12px, stroke, currentColor) which rotates
+                 90deg while open. -->
+            <Icon
+              v-if="expander === 'chevron'"
+              class="registry-expander-icon"
+              :class="{ open: isExpanded(r.name) }"
+              name="chevron-right"
+              :size="12" />
+            <template v-else>{{ isExpanded(r.name) ? "▾" : "▸" }}</template>
+          </button>
           <div class="reg-row-main">
             <button
               v-if="openableRow(r)"
@@ -86,20 +108,20 @@
                button whose state comes from the reactive model carries
                no :checked prop for Vue's prop diff to skip (t_87303e8f),
                so the checkbox revision-remount machinery is gone with
-               it. A LOCKED row (card t_2d8deb8c, the default agent):
-               permanently on, non-interactive - the pill renders
-               locked-on, the handler never emits. -->
+               it. A NO-TOGGLE row (card t_db378a0d, the default agent)
+               renders NO control at all, and the consumer's own badge
+               says why - a switch that can never legitimately move is
+               noise, not a safeguard. -->
           <TogglePill
-            v-if="toggleable"
+            v-if="toggleable && !r.noToggle"
             class="registry-toggle reg-row-ctrl"
-            :class="{ 'toggle-locked': r.locked }"
             :state="!r.disabled"
-            :disabled="busy !== null || !!r.locked"
-            :label="lockedLabel(r)"
+            :disabled="busy !== null"
+            :label="toggleLabel(r)"
             :hint="toggleHint(r)"
             @click="onToggle(r)" />
           <span
-            v-else-if="showState"
+            v-else-if="showState && !r.noToggle"
             class="registry-state reg-row-ctrl"
             :aria-label="`${r.disabled ? 'enable' : 'disable'} ${r.name}`">{{ r.disabled ? "disabled" : "on" }}</span>
         </div>
@@ -137,6 +159,7 @@
 
 <script setup lang="ts">
   import { ref } from "vue";
+  import Icon from "./ui/Icon.vue";
   import {
     registryNote,
     type RegistryKind,
@@ -163,8 +186,41 @@
           chat only for a row whose agent has a session to bind, so the
           rows without one stay plain spans instead of dead buttons. */
       openable?: boolean | ((row: RegistryRow) => boolean);
+      /** card t_db378a0d: the row's INTERACTION vocabulary. "quiet" (the
+          default) is the ROW LAW's plain list - hierarchy by typography,
+          one hairline, no boxes - and keeps every registry tab that has
+          not taken its theming round byte-identical. "sessions" adopts
+          the sessions sidebar's row feel for THIS consumer: chip radius,
+          the z1-raised hover, the name brightening to the full text
+          colour, the hairline fading out from under the raised chip, the
+          whole HEAD line as the open surface, and an active row (see
+          `activeName`). Round 1 = the agents tab only; cron / tools /
+          skills / mcp / modules follow in their own rounds. */
+      feel?: "quiet" | "sessions";
+      /** the row that carries the sessions ACTIVE treatment - the one the
+          operator has OPEN (the agents tab passes the agent whose session
+          is the focused chat). "" = no row is active. Only meaningful
+          under feel="sessions"; the quiet list ignores it. */
+      activeName?: string;
+      /** the expander glyph: "text" renders the registry's own ▸ / ▾,
+          "chevron" the sessions sidebar's lucide chevron-right (12px,
+          stroke, currentColor) rotating 90deg while open. Per consumer,
+          because the registry family's five tabs take the vocabulary one
+          round at a time. */
+      expander?: "text" | "chevron";
     }>(),
-    { busy: null, error: null, loaded: false, toggleable: false, showState: true, emptyText: "nothing registered", openable: false },
+    {
+      busy: null,
+      error: null,
+      loaded: false,
+      toggleable: false,
+      showState: true,
+      emptyText: "nothing registered",
+      openable: false,
+      feel: "quiet",
+      activeName: "",
+      expander: "text",
+    },
   );
 
   const openableRow = (r: RegistryRow): boolean =>
@@ -198,18 +254,17 @@
   // fold write re-renders the rows from the response.
   function onToggle(r: RegistryRow) {
     if (props.busy !== null) return;
-    if (r.locked) return; // card t_2d8deb8c: the locked pill never emits
+    // card t_db378a0d: a no-toggle row never renders a pill; the guard
+    // stays so a consumer cannot reach the write path by another door.
+    if (r.noToggle) return;
     // the target direction IS the row's disabled flag: a disabled row
     // emits enabled=true (the fold write re-renders from the response)
     emit("toggle", r.name, r.disabled);
   }
 
-  // lockedLabel (card t_2d8deb8c): a locked row's steady aria states
-  // the law instead of offering a toggle that would refuse.
-  const lockedLabel = (r: RegistryRow) =>
-    r.locked
-      ? `${r.name} is locked on - the default agent cannot be disabled`
-      : `${r.disabled ? "enable" : "disable"} ${r.name}`;
+  // toggleLabel is the pill's accessible name: the move it offers.
+  const toggleLabel = (r: RegistryRow) =>
+    `${r.disabled ? "enable" : "disable"} ${r.name}`;
 
   // toggleHint (card t_5051d523): the consequence text ("excluded from
   // the session prompt build") used to gate the second click. It now
@@ -217,7 +272,22 @@
   // speaks the consequence only; the title already carries the request
   // ("disable x") through the label.
   const toggleHint = (r: RegistryRow) =>
-    r.locked ? "" : registryNote(props.kind, r.disabled);
+    r.noToggle ? "" : registryNote(props.kind, r.disabled);
+
+  // --- the sessions feel's open surface (card t_db378a0d) ---
+  // Under feel="sessions" the whole HEAD line is the open surface (the
+  // sessions row's read), not just the name button. A control inside the
+  // head already owns its own action - the name button and the expander
+  // stop propagation themselves, and the pill's click is skipped here so
+  // a toggle never opens a chat. The DETAIL below the head is never a
+  // click surface: it carries the agent's edit form.
+  function onHeadClick(e: MouseEvent, r: RegistryRow) {
+    if (props.feel !== "sessions") return;
+    if (!openableRow(r)) return;
+    const el = e.target as Element | null;
+    if (el && el.closest("button, a, input, select, textarea, label")) return;
+    emit("open", r);
+  }
 
   // --- expandable detail: per-row, click-driven, one set per mount ---
   const expanded = ref<Record<string, boolean>>({});
@@ -275,6 +345,57 @@
   }
   .registry-expander:hover {
     opacity: 0.9;
+  }
+  /* card t_db378a0d: the sessions expander glyph - the sidebar's lucide
+     chevron, closed at rest and rotated a quarter turn while the row is
+     open (main.css .bucket-chevron's transition verbatim). Only a
+     consumer that asked for `expander="chevron"` renders it. */
+  .registry-expander-icon {
+    display: block;
+    transition: transform 0.12s ease;
+  }
+  .registry-expander-icon.open {
+    transform: rotate(90deg);
+  }
+  /* --- card t_db378a0d: THE SESSIONS FEEL -------------------------------
+     The agents tab's opt-in interaction vocabulary, lifted from the
+     sessions sidebar's row law (main.css: .session-list li / li:hover /
+     li.active / li.active .session-title) so the two lists read as one
+     language. Every rule is gated on .feel-sessions: the quiet list -
+     cron, tools, skills, mcp, modules - keeps the ROW LAW's plain render
+     until its own round, byte for byte. The anatomy itself does not move:
+     two lines, one right control, semibold name over a dim subtitle, one
+     hairline at rest. */
+  .registry-list.feel-sessions .registry-row {
+    border-radius: var(--r-chip);
+    /* the raised chip reaches past the text column so the row reads as
+       ONE surface; the negative margin keeps the name on the list's own
+       left edge, so nothing shifts when the hover lands */
+    margin: 0 -8px;
+    padding: 5px 8px;
+    transition:
+      background-color 0.12s ease,
+      border-color 0.12s ease;
+  }
+  .registry-list.feel-sessions .registry-row-open {
+    cursor: pointer;
+  }
+  .registry-list.feel-sessions .registry-row:hover,
+  .registry-list.feel-sessions .registry-row.reg-row-active {
+    background: var(--z1-raised);
+    /* his fork ruling ("try first"): the hairline under a raised chip
+       fades, so the chip never crosses a seam. One-line revert if it
+       reads wrong: drop this border-color declaration, nothing else. */
+    border-bottom-color: transparent;
+  }
+  .registry-list.feel-sessions .registry-row:hover:not(.registry-off) .reg-row-name {
+    /* the rest opacity is 0.9; hover takes the name to the full text */
+    opacity: 1;
+  }
+  /* the active row is the one the operator has OPEN - the sessions
+     sidebar's li.active, name and all */
+  .registry-list.feel-sessions .registry-row.reg-row-active .reg-row-name {
+    color: var(--accent);
   }
   .registry-state {
     font-size: 10px;

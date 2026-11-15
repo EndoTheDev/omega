@@ -6,8 +6,9 @@
        (scaffold / continuous / clone). The "@" duplicate button and its
        near-identical form died with ruling 1. -->
   <!-- card t_2d8deb8c (Endo's three rulings): 1) the DEFAULT agent
-       CANNOT be disabled - its row carries the locked pill (permanently
-       on, no arm step) and the backend refuses a curl; 2) the rows
+       CANNOT be disabled - card t_db378a0d sharpened it into a NO-TOGGLE
+       row (the switch is simply absent, its `main` badge says why) and
+       the backend refuses a curl; 2) the rows
        ride the cron row law - two-line anatomy, the right-anchored
        pill, the live dot + status word on the subtitle line; 3) the
        expansion shows the agent's DETAILS + EDIT, and session rows are
@@ -144,6 +145,9 @@
         :loaded="loaded"
         :toggleable="toggleable"
         :openable="rowHasChat"
+        feel="sessions"
+        expander="chevron"
+        :active-name="activeAgentName"
         empty-text="no agents registered"
         @toggle="onToggle"
         @open="openAgentChat"
@@ -151,12 +155,15 @@
         <!-- card t_81109e1c (ruling 3): the main agent rides the roster
              like every other home and its row says which one it is - the
              badge sits beside the name, so it survives a host that
-             serves no toggle seam (where the locked pill never renders). -->
+             serves no toggle seam (where no pill renders at all).
+             card t_db378a0d: the default agent carries NO toggle - the
+             badge is also the reason, so the absence reads as a law
+             rather than a missing control. -->
         <template #side="{ row }">
           <span
             v-if="row.name === DefaultAgentName"
             class="agents-main-badge"
-            title="the main agent - the home at the daemon's root">main</span>
+            title="the main agent - the home at the daemon's root, always on, so it carries no toggle">main</span>
         </template>
         <template #detail="{ row }">
           <!-- the expansion: the agent's details + edit (card t_2d8deb8c
@@ -464,7 +471,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import {
   AGENT_INHERIT_KINDS,
   AGENT_KINDS,
@@ -696,7 +703,7 @@ const rows = computed<RegistryRow[]>(() => {
       description: agentRosterSubtitle(a),
       detail: mergedRowDetail(a, c),
       disabled: a.name === DefaultAgentName ? false : set.has(a.name),
-      locked: a.name === DefaultAgentName,
+      noToggle: a.name === DefaultAgentName,
       ...(agentStatusFor(c) ? { status: agentStatusFor(c) } : {}),
     };
   });
@@ -715,6 +722,33 @@ const rows = computed<RegistryRow[]>(() => {
 // composables/chat.ts (CHAT_SESSION_OPEN_EVENT) - the agents chat test
 // pins both spellings identical.
 const CHAT_SESSION_OPEN_EVENT = "omega:open-chat-session";
+
+// card t_db378a0d: the ACTIVE row - the shell broadcasts the session id
+// its focused chat tab is showing (the focusedSessionId it already
+// derives for the sessions sidebar's highlight), and the row whose agent
+// holds that session as its most recent one takes the sessions active
+// treatment. The reverse direction of the event above, same seam shape
+// and the same law: module UI imports no shell code, so THE LITERAL IS
+// COPIED from composables/chat.ts (FOCUSED_SESSION_EVENT) - the agents
+// feel test pins both spellings identical.
+const FOCUSED_SESSION_EVENT = "omega:focused-session";
+const focusedSessionId = ref("");
+
+function onFocusedSession(e: Event): void {
+  const detail = (e as CustomEvent).detail;
+  focusedSessionId.value = typeof detail === "string" ? detail : "";
+}
+
+/** activeAgentName is the roster row that wears the active treatment:
+    the agent whose last-session is the session the shell is showing.
+    "" = nothing is open (or the open session belongs to no agent on this
+    roster - a default-roster session, an ephemeral draft). */
+const activeAgentName = computed<string>(() => {
+  const id = focusedSessionId.value;
+  if (!id) return "";
+  const p = profiles.value.find((a) => a.last_session_id === id);
+  return p?.name ?? "";
+});
 
 function sessionOf(name: string): string {
   const p = profiles.value.find((a) => a.name === name);
@@ -963,9 +997,9 @@ async function sleep(name: string): Promise<void> {
 // the soft toggle: PUT /disabled/agents never touches agent home data;
 // the response carries the fresh fold when it landed cleanly, a failure
 // falls back to the GET so the rows re-render from persisted truth.
-// The default agent never reaches here: its pill is locked
-// (RegistryList skips the emit for a locked row) and the handler
-// refuses a curl - the UI lock is a mirror of the backend law.
+// The default agent never reaches here: its row carries NO toggle
+// (card t_db378a0d - the `main` badge explains the absence); the
+// handler refuses a curl too - the UI law mirrors the backend law.
 async function onToggle(name: string, enabled: boolean): Promise<void> {
   if (busy.value !== null) return;
   if (name === DefaultAgentName && !enabled) return; // never
@@ -1051,15 +1085,23 @@ async function resetField(name: string, key: string): Promise<void> {
   }
 }
 
-onMounted(load);
+onMounted(() => {
+  window.addEventListener(FOCUSED_SESSION_EVENT, onFocusedSession);
+  void load();
+});
+onUnmounted(() => {
+  window.removeEventListener(FOCUSED_SESSION_EVENT, onFocusedSession);
+});
 
 defineExpose({ load, profiles, fold, rows, roster, rowStatusOf, rowStatusVoice });
 </script>
 
 <style scoped>
 /* card t_81109e1c: the main-agent row badge - a quiet chip on line 1,
-   beside the name (the locked pill marks the same row when the toggle
-   seam exists; the badge survives a host that serves none). */
+   beside the name. card t_db378a0d: the default agent's toggle is GONE,
+   so the badge is also the reason it has none ("always on, so it carries
+   no toggle" on the title) - the row says why instead of leaving a hole
+   where every other row's pill sits. */
 .agents-main-badge {
   align-self: center;
   background: var(--z2, rgba(128, 128, 128, 0.12));

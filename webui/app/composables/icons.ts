@@ -18,6 +18,7 @@ import {
   Brain,
   ChartColumn,
   ChevronDown,
+  ChevronRight,
   Clock,
   Database,
   Download,
@@ -112,6 +113,7 @@ export const ICONS = {
   mailOpen: MailOpen, // the mark-all-read action (the notifications band tool)
   brain: Brain, // the thinking block
   "chevron-down": ChevronDown, // collapsers (rotated per state)
+  "chevron-right": ChevronRight, // row expanders: closed at rest, rotate 90deg when open
   star: Star, // pinned sessions
   download: Download, // session export
   copy: Copy, // the row's copy-session-id action (card t_61cc8762)
