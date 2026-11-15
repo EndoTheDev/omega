@@ -160,10 +160,24 @@ test("the density/indent law pins the tuned step, base and rhythm", () => {
     "the loading row tracks the row indent (8 + 4d) plus 14px",
   );
   // whole-rule pins: a value drifting back toward the old geometry is a red
+  // the ROOT ul keeps its untouched inline padding (8px both sides) - the
+  // contract names the per-level left pad only, never the container rhythm.
   assert.match(
     css,
+    /\.files-tree \{\n  list-style: none;\n  margin: 0;\n  padding: 0 8px;\n\}/,
+    "the root tree ul keeps its 8px inline padding",
+  );
+  assert.match(
+    css,
+    /\.files-tree \.files-tree \{\n  padding-left: 4px;\n\}/,
+    "only a nested level ul pads 4px left - the per-level indent",
+  );
+  // the root rule must not be the nesting rule (no shorthand smuggling the
+  // 4px onto the root's left or onto any level's right edge)
+  assert.doesNotMatch(
+    css,
     /\.files-tree \{\n  list-style: none;\n  margin: 0;\n  padding: 0 4px;\n\}/,
-    "the nest ul pads 4px per level",
+    "the per-level pad never rides the root container shorthand",
   );
   assert.match(
     css,

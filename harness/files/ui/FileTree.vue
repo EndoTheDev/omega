@@ -127,18 +127,19 @@
   }
 
   // card t_856a1faa: Endo's tuned 2026-11-15 numbers - a 4px indent step
-  // over an 8px base (card t_3bf6420b's 10px step is retired). The nest ul
-  // pads 4px per level (main.css .files-tree), so one nesting level shifts
-  // a row 8px total.
+  // over an 8px base (card t_3bf6420b's 10px step is retired). Only a
+  // nested ul pads left, 4px per level (main.css `.files-tree .files-tree`;
+  // the root keeps its untouched 8px inline padding), so one nesting level
+  // shifts a row 8px total.
   const indent = computed(() => `${props.depth * 4 + 8}px`);
 
   // t_63582d1f hover indent guides: every level ul carries ONE hairline
   // as an absolutely-positioned ::before overlay (never flow content -
   // the reveal is opacity-only, zero layout shift). The per-level ul
-  // padding (4px x nesting depth, main.css) already sits inside the
-  // containing block, so depth*4 + 6px (the t_856a1faa guide offset)
-  // from the level ul's edge puts the line just before that level's
-  // first glyph.
+  // padding (4px x nesting depth on nested uls only, main.css
+  // `.files-tree .files-tree`) already sits inside the containing block,
+  // so depth*4 + 6px (the t_856a1faa guide offset) from the level ul's
+  // edge puts the line just before that level's first glyph.
   const guideStyle = computed(() =>
     props.depth > 0
       ? ({ "--guide-x": `${props.depth * 4 + 6}px` } as Record<string, string>)
