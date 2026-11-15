@@ -11,6 +11,8 @@ import { dirname, join, resolve } from "node:path";
 import {
   BOARD_FETCH_ATTEMPTS,
   BOARD_FETCH_BACKOFF_MS,
+  BOARD_MENU_REMOVE,
+  BOARD_MENU_RENAME,
   BOARD_STATUSES,
   BOARD_PATH,
   BOARDS_PATH,
@@ -23,7 +25,10 @@ import {
   LANE_TONES,
   age,
   bodyPreview,
+  boardCount,
   boardDeletePath,
+  boardMenuOptions,
+  boardMenuPick,
   boardOf,
   boardRenamePath,
   canRemoveBoard,
@@ -401,24 +406,21 @@ test("canRemoveBoard + the board paths: NOTHING is reserved any more (0.17.3)", 
 
 test("board view carries the board surface: armed remove, rename seat, zero-board empty state", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
-  assert.match(boardVue, /id="board-remove-btn"/, "the remove button exists");
-  assert.match(
-    boardVue,
-    /:disabled="!canRemoveBoard\(boardName\)"/,
-    "the control keys off the removable name",
-  );
+  // card t_2b644603: the pair lives in the board dropdown now, so the pins
+  // name the MENU rows and the guard the click still runs.
   assert.match(boardVue, /confirm remove/, "the armed click relabels: inline confirm row");
   assert.doesNotMatch(boardVue, /window\.confirm/, "no native confirm - the panel confirms inline");
   assert.match(boardVue, /method: "DELETE"/, "the removal fires the DELETE route");
   assert.match(boardVue, /boardDeletePath\(name\)/, "the delete goes to the encoded registry path");
+  assert.match(boardVue, /if \(!canRemoveBoard\(boardName\.value\)\) return;/, "the remove row keys off the removable name");
   assert.match(boardVue, /board-notice/, "a visible notice reports the removal or refusal");
   assert.match(boardVue, /disarmRemove/, "board switches disarm an armed confirm");
   // the selection falls to whatever SURVIVES - zero boards is legal and
   // renders the empty state, so there is no hardcoded default fallback
   assert.match(boardVue, /boardName\.value = pickBootBoard\(boards\.value\)/, "the post-delete selection comes from the registry");
   assert.doesNotMatch(boardVue, /boardName\.value = DEFAULT_BOARD_NAME/, "no hardcoded default fallback");
-  // rename: the band control swaps the selector for an input, PATCHes the row
-  assert.match(boardVue, /class="band-tool board-rename-btn"/, "the rename control rides the band");
+  // rename: the menu row swaps the selector for an input, PATCHes the row
+  assert.match(boardVue, /:options="boardMenu"/, "rename + remove are rows of the board dropdown");
   assert.match(boardVue, /method: "PATCH"/, "the rename PATCHes the board row");
   assert.match(boardVue, /boardRenamePath\(from\)/, "through the pure path helper");
   assert.match(boardVue, /@keydown\.enter\.prevent="submitRename"/, "Enter saves the rename");
@@ -428,6 +430,52 @@ test("board view carries the board surface: armed remove, rename seat, zero-boar
   assert.match(boardVue, /class="board-empty"/, "the empty state block exists");
   assert.match(boardVue, /@submit\.prevent="submitCreateBoard"/, "the empty state's create form");
   assert.match(boardVue, /fetch\(BOARDS_PATH, \{/, "the create POSTs /boards");
+});
+
+// the dropdown's VERB rows (card t_2b644603): the ladder is boards + the
+// two commands, and a pick classifies as a switch or a verb - never both.
+
+test("boardMenuOptions + boardMenuPick: the verbs ride the board ladder", () => {
+  const boards = [
+    { name: "main", current: true },
+    { name: "alpha", current: false },
+  ] as BoardInfo[];
+  const menu = boardMenuOptions(boards);
+  assert.deepEqual(
+    menu.map((o) => o.value),
+    ["main", "alpha", BOARD_MENU_RENAME, BOARD_MENU_REMOVE],
+    "the boards first, the verbs last (the list the user picks boards from stays on top)",
+  );
+  assert.equal(menu[2]!.label, "rename board");
+  assert.equal(menu[3]!.label, "remove board");
+  assert.equal(menu[3]!.cls, undefined, "an unarmed remove row carries no marker class");
+  // the armed row: same VALUE (the pick still reads it), relabelled + marked
+  const armed = boardMenuOptions(boards, true);
+  assert.equal(armed[3]!.value, BOARD_MENU_REMOVE);
+  assert.equal(armed[3]!.label, "confirm remove");
+  assert.equal(armed[3]!.cls, "armed");
+  // classification: exact sentinels only - anything else is a board
+  assert.deepEqual(boardMenuPick("alpha"), { kind: "board", name: "alpha" });
+  assert.deepEqual(boardMenuPick(BOARD_MENU_RENAME), { kind: "rename" });
+  assert.deepEqual(boardMenuPick(BOARD_MENU_REMOVE), { kind: "remove" });
+  assert.deepEqual(boardMenuPick("!renamed"), { kind: "board", name: "!renamed" }, "a near-miss is a board name, never a verb");
+  assert.deepEqual(boardMenuPick(""), { kind: "board", name: "" });
+  // the sentinels cannot collide with a board name: the server's name
+  // grammar starts every name with [a-z0-9]
+  for (const sentinel of [BOARD_MENU_RENAME, BOARD_MENU_REMOVE]) {
+    assert.doesNotMatch(sentinel, /^[a-z0-9]/, "a verb sentinel is outside the board-name grammar");
+  }
+  // every row is addressable: the ladder carries no duplicate values
+  const values = menu.map((o) => o.value);
+  assert.equal(new Set(values).size, values.length, "no duplicate rows in the ladder");
+});
+
+test("boardCount: the whole board at rest, the match tally while filtering", () => {
+  assert.equal(boardCount(12, 12, false), "12 cards");
+  assert.equal(boardCount(1, 1, false), "1 card");
+  assert.equal(boardCount(0, 0, false), "0 cards");
+  assert.equal(boardCount(3, 12, true), "3/12", "a live filter reports the matches");
+  assert.equal(boardCount(0, 12, true), "0/12");
 });
 
 // --- the make-over's search seat (0.17.3): one input, two scopes ---------
@@ -458,12 +506,17 @@ test("boardOf: a mixed row names its own board; a scoped row falls back to the v
   assert.equal(boardOf(task({}), "main"), "main");
 });
 
-test("board view carries the search seat: one input, a scope chip, and a mixed-scope board chip", () => {
+test("board view carries the search seat: one input, a scope chip that rides the query", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
   assert.match(boardVue, /class="board-search"/, "the filter seat");
   assert.match(boardVue, /aria-label="filter cards"/, "the seat is labelled");
   assert.match(boardVue, /@click="toggleScope"/, "the scope chip flips the scope");
   assert.match(boardVue, /scope === "all" \? "all boards" : "this board"/, "the chip says which scope is live");
+  // card t_2b644603: the scope UI is GATED on the query - an empty seat
+  // spends no band space on an all-boards question nobody asked
+  assert.match(boardVue, /v-if="filtering"[\s\S]{0,120}board-scope-chip/, "the scope chip renders only while a query runs");
+  assert.match(boardVue, /const filtering = computed\(\(\) => query\.value\.trim\(\) !== ""\)/, "one predicate for the chip + the count");
+  assert.match(boardVue, /watch\(query,/, "clearing the seat returns the read to this board");
   assert.match(boardVue, /const visibleTasks = computed\(\(\) => filterTasks\(tasks\.value, query\.value\)\)/, "the grid renders the filtered list");
   assert.match(boardVue, /const cols = computed\(\(\) => columns\(visibleTasks\.value\)\)/, "columns bucket the filtered list");
   assert.match(boardVue, /v-if="scope === 'all' && t\.board"/, "a mixed row shows which board it came from");
@@ -518,25 +571,46 @@ test("board view carries the assignee combobox: registry-fed list, typing stays 
   assert.doesNotMatch(boardVue, /disabled="[^"]*assignee/, "the assignee field is never disabled by the source");
 });
 
-// --- the band's lead seat (0.17.3): the selector moved LEFT --------------
+// --- the band's lead seat (0.17.3), re-settled to the family contract
+// (card t_2b644603): title + board chip + count | filter, and nothing else.
 
-test("board head: the selector rides the band's LEAD seat, actions stay right", () => {
+test("board band: title + chip + count | filter - the cron/agents family shape", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
   const band = readFileSync(join(uiRoot, "app", "components", "ui", "TabBand.vue"), "utf8");
   assert.match(band, /<slot name="lead"/, "the shared band grew the lead seat");
   assert.match(band, /class="tab-band-lead"/, "and its container");
+
+  const bandAt = boardVue.indexOf('<TabBand title="Kanban">');
+  const bandEndAt = boardVue.indexOf("</TabBand>");
   const leadAt = boardVue.indexOf("<template #lead>");
-  const actionsAt = boardVue.indexOf('class="band-tool board-rename-btn"');
-  assert.ok(leadAt > 0, "the board fills the lead seat");
-  assert.ok(leadAt < actionsAt, "the selector leads; the destructive pair stays in the actions slot");
-  const titleAt = boardVue.indexOf('<TabBand title="Kanban">');
-  assert.ok(titleAt >= 0 && titleAt < leadAt, "the lead seat follows the title");
-  // the selector itself lives INSIDE the lead template: it sits before the
-  // first actions-slot control
-  assert.ok(
-    boardVue.indexOf("<BandSelect", leadAt) < actionsAt,
-    "the board selector is inside the lead seat, not the actions",
-  );
+  assert.ok(bandAt >= 0 && leadAt > bandAt && leadAt < bandEndAt, "the board fills the lead seat");
+  // the lead seat holds the switcher chip and the count, in that order
+  const chipAt = boardVue.indexOf('<BandSelect', leadAt);
+  const countAt = boardVue.indexOf('class="board-switch-count"', leadAt);
+  assert.ok(chipAt > leadAt && chipAt < bandEndAt, "the board selector is inside the lead seat");
+  assert.ok(countAt > chipAt, "the count follows the chip (name, then how many)");
+
+  // the actions slot: the filter seat and nothing else persistent - the
+  // destructive pair and the scope toggle are NOT band controls any more
+  const actionsAt = boardVue.indexOf('class="board-search"');
+  assert.ok(actionsAt > leadAt && actionsAt < bandEndAt, "the filter is the band's only action seat");
+  for (const gone of [
+    "board-rename-btn",
+    "board-remove-btn",
+    "board-scope-btn",
+    "board-switch-label",
+  ]) {
+    assert.ok(
+      !boardVue.slice(bandAt, bandEndAt).includes(gone),
+      `no permanent "${gone}" control in the band (card t_2b644603)`,
+    );
+  }
+  // ... and the verbs really live in the dropdown, under the board rows
+  assert.match(boardVue, /boardMenuOptions\(boards\.value, confirmingRemove\.value\)/, "the ladder carries the verbs + the armed state");
+  assert.match(boardVue, /if \(want\.kind === "rename"\) \{[\s\S]{0,40}startRename\(\)/, "the rename row starts the inline rename");
+  assert.match(boardVue, /if \(want\.kind === "remove"\) \{[\s\S]{0,40}removeBoardClick\(\)/, "the remove row runs the armed confirm");
+  // the count is a value, not inline markup: it has two forms
+  assert.match(boardVue, /\{\{ countLabel \}\}/, "the lead count renders the computed label");
 });
 
 test("reorderAfter: slots a card after a sibling inside the same column", () => {

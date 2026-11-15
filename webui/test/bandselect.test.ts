@@ -37,6 +37,9 @@ test("BandSelect is the listbox grammar, not a native select", () => {
   assert.match(bandSelect, /emit\("update:modelValue"/, "a pick emits the model update");
   assert.match(bandSelect, /pointerdown/, "outside-pointerdown closes the pop (the native behavior)");
   assert.match(bandSelect, /generic="V extends string \| number"/, "generic over the value type");
+  // card t_2b644603: a host may mark its OWN rows (the kanban board
+  // dropdown's armed remove) - the pop still owns the row look
+  assert.match(bandSelect, /o\.cls/, "an option's host marker class reaches its row");
   // the component itself renders no native select - that was the bug
   assert.doesNotMatch(bandSelect, /<select[\s>]/);
 });
@@ -58,7 +61,9 @@ const SITES = [
   {
     file: join(repo, "harness", "kanban", "ui", "Board.vue"),
     label: "the board switcher",
-    select: /<BandSelect[\s\S]*?:options="boardOptions"/,
+    // card t_2b644603: the ladder is boards + the two board VERBS (rename,
+    // remove) - one popup for the switcher and its commands
+    select: /<BandSelect[\s\S]*?:options="boardMenu"/,
     labelProp: /@update:model-value="switchBoard\(\$event\)"/,
   },
   {

@@ -419,6 +419,68 @@ export function boardRenamePath(name: string): string {
   return boardDeletePath(name);
 }
 
+// --- the board dropdown's VERBS (card t_2b644603) ---------------------
+// The band holds title + board chip + count | filter and nothing else:
+// rename and remove are rows of the board dropdown, below the board
+// list. They ride the SAME ladder as the boards (one roving tabindex,
+// one keyboard law - no second popup grammar), so a verb is an option
+// value that cannot collide with a board name: the server's boardNameRE
+// starts every name with [a-z0-9]. The values are exact-match only, so
+// a stray `!`-prefixed board name from any other source switches to a
+// board and never fires a verb.
+
+/** the dropdown row that starts the inline rename. */
+export const BOARD_MENU_RENAME = "!rename";
+
+/** the dropdown row that removes the current board (armed, click again). */
+export const BOARD_MENU_REMOVE = "!remove";
+
+/** what a dropdown pick means: the board to switch to, or a verb. */
+export type BoardMenuPick =
+  | { kind: "board"; name: string }
+  | { kind: "rename" }
+  | { kind: "remove" };
+
+/**
+ * boardMenuPick classifies a BandSelect value: the two verb sentinels are
+ * exact matches, everything else is a board name (the switcher's value).
+ */
+export function boardMenuPick(value: string): BoardMenuPick {
+  if (value === BOARD_MENU_RENAME) return { kind: "rename" };
+  if (value === BOARD_MENU_REMOVE) return { kind: "remove" };
+  return { kind: "board", name: value };
+}
+
+/**
+ * boardMenuOptions is the dropdown ladder: every board, then the two
+ * verbs. `armed` relabels the remove row (the confirm rides the menu item
+ * - the band keeps no destructive control).
+ */
+export function boardMenuOptions(
+  boards: BoardInfo[],
+  armed = false,
+): { value: string; label: string; cls?: string }[] {
+  return [
+    ...boards.map((b) => ({ value: b.name, label: b.name })),
+    { value: BOARD_MENU_RENAME, label: "rename board" },
+    {
+      value: BOARD_MENU_REMOVE,
+      label: armed ? "confirm remove" : "remove board",
+      cls: armed ? "armed" : undefined,
+    },
+  ];
+}
+
+/**
+ * boardCount is the band's lead count: the whole board when the seat is
+ * idle ("12 cards"), the match tally while a filter runs ("3/12" - the
+ * filter's answer, and short enough for a 318px pane).
+ */
+export function boardCount(shown: number, total: number, filtering: boolean): string {
+  if (filtering) return `${shown}/${total}`;
+  return `${total} card${total === 1 ? "" : "s"}`;
+}
+
 // --- search / filter (0.17.3 make-over) -------------------------------
 // One seat, TWO scopes: the board you are looking at, and every board.
 // The scope is a server read (?scope=all), not a client union of N
