@@ -316,8 +316,8 @@ func (s *Server) serveEphemeralTranscript(w http.ResponseWriter, id string) bool
 		return true
 	}
 	items := s.eph.snapshotItems(id)
-	if tail, live := s.runs.tailItems(id); live {
-		items = append(items, tail...)
+	if tail, builtAt, live := s.runs.tailSnapshot(id); live {
+		items = append(items, freshenRunningCalls(tail, time.Since(builtAt))...)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session": eph.session(),

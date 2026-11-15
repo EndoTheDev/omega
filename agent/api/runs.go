@@ -43,6 +43,12 @@ type activeRun struct {
 	// a fresh slice, never mutated in place), so a reader racing the next
 	// rebuild sees either the old or the new complete slice.
 	tail []transcriptItem
+	// tailAt is the instant tail was built: the wall clock its running
+	// anchors were measured against. A snapshot AGES - a tool call emits
+	// no further events, so its baked elapsed_ms stops at the call-open
+	// anchor; readers add the age back (freshenRunningCalls, card
+	// t_6bad9f6f). Guarded by h.mu like the slices it stamps.
+	tailAt time.Time
 	// openTail is the run's OPEN segment only (the accumulator's
 	// in-flight record, rebuilt after each event) - the chat panel's
 	// composition (chat_panel.go): persisted history + the open
@@ -51,6 +57,9 @@ type activeRun struct {
 	// which a full-tail merge would double-render. Same h.mu, same
 	// replace semantics.
 	openTail []transcriptItem
+	// openTailAt is openTail's build instant - the same aging stamp
+	// tailAt carries, for the panel's composition.
+	openTailAt time.Time
 	// branch pins the run head's parent row id ("" for plain sends:
 	// retry and fork-of-user pin it, t_19c100dd) with the session's
 	// max store row id at run start as the floor. The chat panel's
@@ -126,40 +135,45 @@ func (h *RunHub) active(id string) bool {
 }
 
 // setTail stores the run's live transcript tail (the accumulator's
-// snapshot after the current event). The cur == run guard makes a late
-// setTail a no-op once another run re-registered the same session id.
-// Called from the run's own goroutine; the build happened OUTSIDE the
-// lock (liveTranscriptItems reads callStarts, which only that goroutine
-// mutates).
-func (h *RunHub) setTail(run *activeRun, items []transcriptItem) {
+// snapshot after the current event) and the instant it was built. The
+// cur == run guard makes a late setTail a no-op once another run
+// re-registered the same session id. Called from the run's own
+// goroutine; the build happened OUTSIDE the lock (liveTranscriptItems
+// reads callStarts, which only that goroutine mutates).
+func (h *RunHub) setTail(run *activeRun, items []transcriptItem, builtAt time.Time) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if cur, ok := h.runs[run.id]; ok && cur == run {
 		run.tail = items
+		run.tailAt = builtAt
 	}
 }
 
 // setOpenTail stores the run's open-segment items (the chat panel's
-// composition source; runs.go comment on activeRun.openTail). The same
-// cur == run guard.
-func (h *RunHub) setOpenTail(run *activeRun, items []transcriptItem) {
+// composition source; runs.go comment on activeRun.openTail) with
+// their build instant. The same cur == run guard.
+func (h *RunHub) setOpenTail(run *activeRun, items []transcriptItem, builtAt time.Time) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if cur, ok := h.runs[run.id]; ok && cur == run {
 		run.openTail = items
+		run.openTailAt = builtAt
 	}
 }
 
-// openItems returns the session's live run's open-segment items. ok is
-// false when no run holds the session's slot.
-func (h *RunHub) openItems(id string) ([]transcriptItem, bool) {
+// openSnapshot returns the session's live run's open-segment items and
+// the instant they were built (the aging stamp freshenRunningCalls
+// needs - card t_6bad9f6f). ok is false when no run holds the
+// session's slot. One lock for both: two lookups could pair a fresh
+// slice with a stale stamp.
+func (h *RunHub) openSnapshot(id string) ([]transcriptItem, time.Time, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	run, ok := h.runs[id]
 	if !ok {
-		return nil, false
+		return nil, time.Time{}, false
 	}
-	return run.openTail, true
+	return run.openTail, run.openTailAt, true
 }
 
 // setBranch pins the run's branch-parent row and the pre-run row-id
@@ -204,17 +218,19 @@ func (h *RunHub) firstActive() (string, bool) {
 	return first, first != ""
 }
 
-// tailItems returns the session's live run's transcript tail, for the
-// transcript endpoint's reattach merge. ok is false when no run holds
-// the session's slot - the endpoint then serves persisted history only.
-func (h *RunHub) tailItems(id string) ([]transcriptItem, bool) {
+// tailSnapshot returns the session's live run's transcript tail and the
+// instant it was built, for the transcript endpoint's reattach merge
+// (freshenRunningCalls ages the running tool lines by it). ok is false
+// when no run holds the session's slot - the endpoint then serves
+// persisted history only.
+func (h *RunHub) tailSnapshot(id string) ([]transcriptItem, time.Time, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	run, ok := h.runs[id]
 	if !ok {
-		return nil, false
+		return nil, time.Time{}, false
 	}
-	return run.tail, true
+	return run.tail, run.tailAt, true
 }
 
 // get returns the session's live run, for subscribing.
@@ -412,9 +428,13 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 			// persisted yet. Built on this goroutine after accumulate;
 			// the hub only swaps the slice. The open segment rides the
 			// same rebuild into the hub (runs.go openTail) - the chat
-			// panel composes persisted history + open.
-			s.runs.setTail(run, liveTranscriptItems(recs, rec, time.Now()))
-			s.runs.setOpenTail(run, liveTranscriptItems(nil, rec, time.Now()))
+			// panel composes persisted history + open. The build instant
+			// rides along too: a running tool call emits no further
+			// events, so its baked elapsed_ms ages until a reader adds
+			// the age back (freshenRunningCalls, t_6bad9f6f).
+			now := time.Now()
+			s.runs.setTail(run, liveTranscriptItems(recs, rec, now), now)
+			s.runs.setOpenTail(run, liveTranscriptItems(nil, rec, now), now)
 			// Usage arrives on each stream_end; sum every turn of the run.
 			if se, ok := event.(core.StreamEvent); ok {
 				if end, ok := se.Event.(core.StreamEnd); ok {

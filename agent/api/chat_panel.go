@@ -271,8 +271,8 @@ func (c *ChatCapsule) sessionItems(session string, running bool) []transcriptIte
 	if isEphemeralID(session) {
 		items := c.srv.Load().eph.snapshotItems(session)
 		if running {
-			if tail, live := c.srv.Load().runs.tailItems(session); live {
-				items = append(items, tail...)
+			if tail, builtAt, live := c.srv.Load().runs.tailSnapshot(session); live {
+				items = append(items, freshenRunningCalls(tail, time.Since(builtAt))...)
 			}
 		}
 		return items
@@ -294,11 +294,13 @@ func (c *ChatCapsule) sessionItems(session string, running bool) []transcriptIte
 	if !running {
 		return persisted
 	}
-	open, live := c.srv.Load().runs.openItems(session)
+	open, builtAt, live := c.srv.Load().runs.openSnapshot(session)
 	if !live || len(open) == 0 {
 		return persisted
 	}
-	return composeItems(persisted, open)
+	// the open segment is a snapshot: its running tool line ages with it
+	// (a call emits no events until its result, t_6bad9f6f)
+	return composeItems(persisted, freshenRunningCalls(open, time.Since(builtAt)))
 }
 
 // composeItems merges the persisted items and the open-record items
@@ -390,6 +392,14 @@ func (c *ChatCapsule) beginRun(session string) {
 // (t_877f4bce - see ChatCapsule.paintMu): a tick that is past takeDirty
 // must never push a running=true panel after endRun's exit flush.
 // Exits when endRun closes the watch.
+//
+// An OPEN TOOL CALL answers dirty on its own (t_6bad9f6f): a tool run
+// emits no event between the call opening and its result, so the token
+// batch never re-arms, the panel would keep the call-open anchor
+// (elapsed_ms ~0) for the whole call, and a tab-switch remount would
+// restart the visible meter at zero. Re-pushing at the cadence keeps
+// the payload's anchor on the call's true elapsed-so-far
+// (freshenRunningCalls), which is what a remount counts on from.
 func (c *ChatCapsule) batchLoop(watch <-chan struct{}, session string) {
 	ticker := time.NewTicker(c.batch)
 	defer ticker.Stop()
@@ -399,12 +409,35 @@ func (c *ChatCapsule) batchLoop(watch <-chan struct{}, session string) {
 			return
 		case <-ticker.C:
 			c.paintMu.Lock()
-			if c.takeDirty(session) {
+			if c.takeDirty(session) || c.hasRunningCall(session) {
 				c.push(c.buildPanel(session, true))
 			}
 			c.paintMu.Unlock()
 		}
 	}
+}
+
+// hasRunningCall reports whether the session's live run carries a tool
+// call its results have not answered yet - the batcher's second dirty
+// source. Reads the open snapshot (a call's running bit is set at the
+// call event and cleared by the result, so the snapshot is current
+// between them) and answers false once the run's slot is gone, which is
+// what keeps a post-endRun tick from pushing.
+func (c *ChatCapsule) hasRunningCall(session string) bool {
+	srv := c.srv.Load()
+	if srv == nil {
+		return false
+	}
+	open, _, live := srv.runs.openSnapshot(session)
+	if !live {
+		return false
+	}
+	for _, it := range open {
+		if it.Kind == "tool_call" && it.Running {
+			return true
+		}
+	}
+	return false
 }
 
 // takeDirty consumes the pending token batch for one session.

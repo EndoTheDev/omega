@@ -579,10 +579,11 @@ func TestSessionTranscriptMergesLiveRun(t *testing.T) {
 	}
 	// what launchRun snaps after each event: the open thinking block and
 	// the running tool call
+	builtAt := time.Now()
 	s.runs.setTail(run, liveTranscriptItems(nil, assistantRecord{
 		toolCalls:  []core.ToolCall{{ID: "tcl", Name: "shell.run"}},
 		callStarts: map[string]time.Time{"tcl": time.Now().Add(-5 * time.Second)},
-	}, time.Now()))
+	}, builtAt), builtAt)
 
 	req := httptest.NewRequest(http.MethodGet, "/sessions/s1/transcript", nil)
 	rec := httptest.NewRecorder()
@@ -635,6 +636,7 @@ func TestSessionTranscriptStreamsTheAnswerElapsed(t *testing.T) {
 	}
 	// the run state a remount interrupts: reasoning 3s in, the answer
 	// 1.2s in behind it
+	builtAt := time.Now()
 	s.runs.setTail(run, liveTranscriptItems(nil, assistantRecord{
 		thinking: "weighing options",
 		content:  "the answer so far",
@@ -642,7 +644,7 @@ func TestSessionTranscriptStreamsTheAnswerElapsed(t *testing.T) {
 		respDur:  1200 * time.Millisecond,
 		lastResp: time.Now().Add(-800 * time.Millisecond),
 		openAt:   time.Now().Add(-800 * time.Millisecond),
-	}, time.Now()))
+	}, builtAt), builtAt)
 
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sessions/s1/transcript", nil))
@@ -670,6 +672,93 @@ func TestSessionTranscriptStreamsTheAnswerElapsed(t *testing.T) {
 	}
 	if answer.ResponseMs != 0 {
 		t.Fatalf("a live answer ships no final span: %+v", answer)
+	}
+}
+
+// TestFreshenRunningCallsAgesOnlyTheCall (card t_6bad9f6f): a snapshot's
+// running tool line counts on by the snapshot's age, so a reader that
+// serves the snapshot anchors at the call's true elapsed. A frozen
+// thinking/answer span keeps the measurement the server stopped at (a
+// tool call closes the phase's window - its wall clock bills to nobody),
+// and the stored snapshot is never mutated in place.
+func TestFreshenRunningCallsAgesOnlyTheCall(t *testing.T) {
+	snapshot := []transcriptItem{
+		{Kind: "thinking", Content: "weighing", Running: true, ElapsedMs: 3000},
+		{Kind: "message", Content: "so far", Running: true, ElapsedMs: 1200},
+		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}, Running: true, ElapsedMs: 100},
+		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "answered", Name: "files.read"}},
+	}
+	aged := freshenRunningCalls(snapshot, 2*time.Second)
+	if aged[0].ElapsedMs != 3000 || aged[1].ElapsedMs != 1200 {
+		t.Fatalf("frozen spans aged: thinking=%d answer=%d, want 3000/1200", aged[0].ElapsedMs, aged[1].ElapsedMs)
+	}
+	if aged[2].ElapsedMs != 2100 {
+		t.Fatalf("running call = %d, want 2100 (100ms anchor + 2s snapshot age)", aged[2].ElapsedMs)
+	}
+	if aged[3].Running || aged[3].ElapsedMs != 0 {
+		t.Fatalf("an answered call must not age: %+v", aged[3])
+	}
+	if snapshot[2].ElapsedMs != 100 {
+		t.Fatalf("the snapshot was mutated in place: %d, want the stored 100", snapshot[2].ElapsedMs)
+	}
+	// a stamp from the future (clock skew) never subtracts from the anchor
+	if got := freshenRunningCalls(snapshot, -time.Second)[2].ElapsedMs; got != 100 {
+		t.Fatalf("negative age = %d, want the anchor untouched", got)
+	}
+}
+
+// TestSessionTranscriptAgesTheRunningCall (card t_6bad9f6f): the
+// reattach tail is a SNAPSHOT, rebuilt per event - and a tool call emits
+// no event until its result. A reload mid-call therefore reads a tail
+// frozen at the call-open anchor (~0) and must be served the anchor aged
+// by the snapshot's age, or the restored meter restarts at 0:00.
+func TestSessionTranscriptAgesTheRunningCall(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "s1", "", "Mid-call reload"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := st.AppendMessage(ctx, "s1", core.NewUser("run the suite")); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	run, ok := s.runs.start("s1")
+	if !ok {
+		t.Fatalf("start run")
+	}
+	// the snapshot the loop built AT the call event: the call had just
+	// opened, so its baked anchor is ~0 - the value the pre-fix wire
+	// served for the whole call
+	builtAt := time.Now().Add(-3 * time.Second)
+	s.runs.setTail(run, liveTranscriptItems(nil, assistantRecord{
+		toolCalls:  []core.ToolCall{{ID: "tcl", Name: "shell.run"}},
+		callStarts: map[string]time.Time{"tcl": builtAt},
+	}, builtAt), builtAt)
+
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sessions/s1/transcript", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Items []transcriptItem `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got, want := kindsOf(body.Items), []string{"user", "tool_call"}; len(got) != 2 {
+		t.Fatalf("items = %v, want %v", got, want)
+	}
+	tc := body.Items[1]
+	if !tc.Running {
+		t.Fatalf("the call still runs: %+v", tc)
+	}
+	if tc.ElapsedMs < 2900 || tc.ElapsedMs > 3300 {
+		t.Fatalf("elapsed = %d, want ~3000 (the snapshot's age added to its call-open anchor)", tc.ElapsedMs)
+	}
+	// the hub keeps serving the same snapshot: the aging read never
+	// rewrote it
+	if tail, _, live := s.runs.tailSnapshot("s1"); !live || tail[0].ElapsedMs != 0 {
+		t.Fatalf("stored tail mutated: %+v", tail)
 	}
 }
 

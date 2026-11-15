@@ -325,6 +325,181 @@ func TestChatPanelCadenceFlushesTokenBatches(t *testing.T) {
 	s.chat.endRun("sess-panel")
 }
 
+// TestChatPanelRunningCallRepushesFreshElapsed (card t_6bad9f6f): a tool
+// run emits NO event between the call opening and its result, so the
+// token batch never re-arms and only the batcher can keep the panel's
+// running row honest. The row must re-push at the cadence carrying the
+// call's true elapsed-so-far (the snapshot's anchor plus the snapshot's
+// age) - that anchor is what a tab-switch remount counts on from, and
+// without it the remount restarted the visible meter at 0:00.
+func TestChatPanelRunningCallRepushesFreshElapsed(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	if err := st.CreateSession(context.Background(), "sess-tool", "", "Tool run"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	s.chat.batch = 20 * time.Millisecond
+	var mu sync.Mutex
+	var panels []core.Panel
+	s.chat.SetPanelUpdate(func(p core.Panel) error {
+		mu.Lock()
+		panels = append(panels, p)
+		mu.Unlock()
+		return nil
+	})
+	run, ok := s.runs.start("sess-tool")
+	if !ok {
+		t.Fatalf("start run")
+	}
+	s.chat.beginRun("sess-tool")
+	// the loop's snapshot at the call event: the call had just opened
+	// (anchor ~0), and no event follows it until the result lands
+	builtAt := time.Now().Add(-2 * time.Second)
+	s.runs.setOpenTail(run, []transcriptItem{
+		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}, Running: true, ElapsedMs: 5},
+	}, builtAt)
+
+	toolElapsed := func(p core.Panel) int64 {
+		payload := chatPanelPayload(t, p)
+		for _, row := range payload.Rows {
+			for _, b := range row.Blocks {
+				if b.Type == core.ChatBlockToolCall {
+					return b.ElapsedMs
+				}
+			}
+		}
+		return -1
+	}
+	// NO run event: the batcher alone must re-push, and each push must
+	// carry the aged anchor (>= 2s), not the call-open 5ms
+	deadline := time.Now().Add(testWaitTimeout)
+	seen := int64(-1) // the newest push's call anchor (-1 = no row)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		last, n := lastPanel(panels)
+		mu.Unlock()
+		if n > 0 {
+			seen = toolElapsed(last)
+			if seen >= 1900 {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if seen < 1900 {
+		t.Fatalf("the panel never re-pushed a fresh call anchor while the call ran: newest elapsed = %d, want >= 1900", seen)
+	}
+	s.chat.endRun("sess-tool")
+	// the aging read copies: the hub's snapshot still carries its own
+	// anchor for the next rebuild
+	if open, _, live := s.runs.openSnapshot("sess-tool"); live && len(open) > 0 && open[0].ElapsedMs != 5 {
+		t.Fatalf("the stored snapshot was mutated in place: %d, want 5", open[0].ElapsedMs)
+	}
+}
+
+// lastPanel returns the newest recorded panel and the count (zero value
+// and 0 when nothing was pushed yet).
+func lastPanel(panels []core.Panel) (core.Panel, int) {
+	if len(panels) == 0 {
+		return core.Panel{}, 0
+	}
+	return panels[len(panels)-1], len(panels)
+}
+
+// slowCallLoop mirrors the real loop around ONE tool call: the call
+// event, then the tool's own wall clock (nothing lands on the event
+// spine until it returns), then its result - the window the panel used
+// to freeze in.
+type slowCallLoop struct{}
+
+func (slowCallLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
+	opts.Events <- core.AgentStart{Type: "agent_start"}
+	opts.Events <- core.TurnStart{Type: "turn_start", Turn: 1}
+	call := core.ToolCall{ID: "c1", Name: "slow"}
+	opts.Events <- core.StreamEvent{Event: core.ToolCallEvent{Type: "tool_call", ToolCall: call}}
+	opts.Events <- core.StreamEvent{Event: core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"}}
+	result, err := opts.Tools["slow"].Run(ctx, call.Arguments)
+	if err != nil {
+		opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: core.NewToolResult(err.Error(), call.ID, true)}
+	} else {
+		opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: core.NewToolResult(result, call.ID, false)}
+	}
+	answer := core.NewAssistant("done")
+	opts.Events <- core.AssistantMessageEvent{Type: "assistant_message", Message: answer}
+	opts.Events <- core.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 1}
+	opts.Events <- core.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop", Message: answer}
+	return nil
+}
+
+// TestChatPanelToolRowStaysFreshThroughTheCall (card t_6bad9f6f): the
+// end-to-end shape of the live repro - a run blocked in a tool call,
+// with the panel payload the tab-switch remount rebuilds from. The
+// payload must keep re-pushing during the call carrying the row's true
+// elapsed-so-far; before the fix the canvas held the call-open anchor
+// (~0) for the whole call and the remounted meter restarted at 0:00.
+func TestChatPanelToolRowStaysFreshThroughTheCall(t *testing.T) {
+	a := agent.NewAgent(newMockProvider("mock", scripted()), nil, 0)
+	a.SetLoopProvider(slowCallLoop{})
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	s := NewServer(a, map[string]core.Tool{
+		"slow": {
+			Description: "blocks until the test releases it",
+			Run: func(context.Context, map[string]any) (string, error) {
+				close(entered)
+				<-release
+				return "done", nil
+			},
+		},
+	}, st, nil, nil, nil)
+	s.chat.batch = 20 * time.Millisecond
+	if err := s.newCanvas(&core.Context{PanelProviders: []core.PanelProvider{s.chat}}); err != nil {
+		t.Fatalf("newCanvas: %v", err)
+	}
+	ts := httptest2.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	createSession(t, ts, "t1")
+	muteTitles(t, st, "t1")
+
+	resp, cancel, _ := postChatStream(t, ts, "t1")
+	defer cancel()
+	defer resp.Body.Close()
+	select {
+	case <-entered:
+	case <-time.After(testWaitTimeout):
+		t.Fatal("the run never reached its tool call")
+	}
+
+	// the canvas snapshot is what a remounted pane rebuilds its items
+	// from (the last pushed payload) - read it while the tool blocks
+	toolElapsed := func() int64 {
+		for _, p := range s.canvas.Snapshot() {
+			if p.Kind != core.PanelKindChat {
+				continue
+			}
+			payload := chatPanelPayload(t, p)
+			for _, row := range payload.Rows {
+				for _, b := range row.Blocks {
+					if b.Type == core.ChatBlockToolCall && b.Running {
+						return b.ElapsedMs
+					}
+				}
+			}
+		}
+		return -1
+	}
+	waitFor(t, "the running tool row on the canvas", func() bool { return toolElapsed() >= 0 })
+	first := toolElapsed()
+	waitFor(t, "the panel to re-push a grown call anchor", func() bool { return toolElapsed() > first })
+
+	close(release)
+	waitRunQuiescent(t, s, "t1")
+}
+
 // TestChatPanelStaleRunNeverPaints: a run whose session lost focus (a
 // newer run took the panel over) stops pushing; the focus session
 // keeps painting.
