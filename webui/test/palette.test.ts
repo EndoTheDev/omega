@@ -8,7 +8,7 @@
 // the signal shape production sends).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -384,5 +384,34 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
     );
     assert.ok(block.includes("width: 640px"), "the overlay carries the widened band");
     assert.ok(css.includes("background: var(--z2)"), "tokens carry it");
+  });
+
+  // card t_d83b54b8: ONE geometry, two doors. The trigger click and Ctrl+K
+  // ride ONE toggle into ONE overlay, so ONE rule anchors the panel - at
+  // the top, under the bar. The way this breaks on one path only is a
+  // SECOND anchor rule (a media query, a late override) re-seating the
+  // panel mid-screen, which the block-contents test above cannot see:
+  // it reads the first block and stops. Pin the count across every
+  // stylesheet instead.
+  it("one anchor rule for the panel - a second one could re-seat it (card t_d83b54b8)", () => {
+    const cssDir = join(here, "../app/assets/css");
+    const sheets = readdirSync(cssDir).filter((f: string) => f.endsWith(".css"));
+    const anchor = /\.command-palette\s*\{/g;
+    const homes = sheets.filter(
+      (f: string) => (readFileSync(join(cssDir, f), "utf8").match(anchor) ?? []).length > 0,
+    );
+    assert.deepEqual(homes, ["main.css"], "the panel's geometry lives in main.css alone");
+    const total = homes.reduce(
+      (n: number, f: string) => n + (readFileSync(join(cssDir, f), "utf8").match(anchor) ?? []).length,
+      0,
+    );
+    assert.equal(total, 1, "exactly one .command-palette anchor rule, never a second");
+    // and that one rule is the fixed, top-hanging, centred band
+    const one = css.slice(css.indexOf(".command-palette {"));
+    const block = one.slice(0, one.indexOf("}"));
+    assert.match(block, /position:\s*fixed/, "the one rule is the fixed overlay");
+    assert.match(block, /top:\s*var\(--menubar-h\)/, "anchored at the bar's lower edge");
+    assert.match(block, /left:\s*50%/, "centred on the bar");
+    assert.match(block, /transform:\s*translateX\(-50%\)/, "centred on the bar");
   });
 });
