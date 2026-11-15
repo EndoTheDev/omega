@@ -230,11 +230,28 @@ describe("gate: pane tabs carry a readable min-width", () => {
     assert.match(css, /\.dock-tabs \{[^}]*overflow-x: auto/, "the strip scrolls, never crushes");
   });
 
-  it("the 28px icon chip keeps its own floor (min-width beats width)", () => {
+  it("the 32px icon chip keeps its own floor (min-width beats width)", () => {
     const css = src("app/assets/css/main.css");
     const rule = css.match(/\.dock-pane\.pinned \.dock-tab\.ic-only\s*\{[^}]*\}/);
     assert.ok(rule, "the icon chip rule exists");
-    assert.match(rule[0], /min-width: 28px/, "the chip's floor matches its width");
+    assert.match(rule[0], /min-width: 32px/, "the chip's floor matches its width");
+  });
+
+  it("the pinned strip keeps its tuned 34px / zero-gap geometry (t_b53dc6e0)", () => {
+    const css = src("app/assets/css/main.css");
+    // the base contract stands for main/bottom panes
+    const base = css.match(/(?:^|\n)\.dock-tabbar\s*\{[^}]*\}/);
+    assert.ok(base, "the base tabbar rule exists");
+    assert.match(base[0], /height: 35px/, "main/bottom keep the 35px strip");
+    assert.match(base[0], /gap: 2px/, "main/bottom keep the 2px chip gap");
+    // the tuned numbers ride the PINNED scope only
+    const pinned = css.match(/\.dock-pane\.pinned \.dock-tabbar\s*\{[^}]*\}/);
+    assert.ok(pinned, "the pinned tabbar override exists");
+    assert.match(pinned[0], /height: 34px/, "the pinned strip is 34px");
+    assert.match(pinned[0], /gap: 0(?:px)?;/, "the pinned chips sit edge-to-edge");
+    // geometry only: no visual treatment is added or removed here
+    assert.doesNotMatch(pinned[0], /border|background|color|radius|shadow|font|padding/,
+      "the override carries geometry, nothing else");
   });
 
   it("a pane resize re-runs the active-tab resolver (no stranded selection)", () => {

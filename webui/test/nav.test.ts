@@ -247,9 +247,10 @@ describe("nav cluster wiring", () => {
     assert.match(css, /\.nav-palette-input\s*\{[^}]*var\(--z1\)/);
     assert.match(css, /\.nav-palette-input\s*\{[^}]*border: 1px solid var\(--stroke\)/);
     // card t_d4443ab5: the top bar's command-palette SECTION was widened
-    // (200 -> 260) and capped so the centred cluster stays clear of the
-    // toggles on a narrow desktop window
-    assert.match(css, /\.nav-palette-input\s*\{[^}]*width: 260px/);
+    // (200 -> 260, then 420 with the 2026-11-15 tuned numbers) and capped
+    // so the centred cluster stays clear of the toggles on a narrow
+    // desktop window
+    assert.match(css, /\.nav-palette-input\s*\{[^}]*width: 420px/);
     assert.match(css, /\.nav-palette-input\s*\{[^}]*max-width: 26vw/);
   });
 
