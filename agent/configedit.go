@@ -286,6 +286,18 @@ func LoadHostDefinition(home string) (HostDefinition, error) {
 	return host, nil
 }
 
+// disabledFold is the namespaced shape of the host config's disabled:
+// fold. NAMED, not inline: an anonymous struct spells its yaml tags into
+// the type symbols the linker emits, and this fold's tags name three
+// capsules (skills, tools, agents) - see agentLayerFile for the law
+// (card t_61ad4490, pinned by symbolvocab_test.go).
+type disabledFold struct {
+	Modules []string `yaml:"modules"`
+	Skills  []string `yaml:"skills"`
+	Tools   []string `yaml:"tools"`
+	Agents  []string `yaml:"agents"`
+}
+
 // parseDisabledFold decodes one disabled: node in either shape. A node
 // of neither shape, or one that will not decode, is an ERROR: a fold
 // that silently reads as "nothing disabled" would validate agent writes
@@ -302,12 +314,7 @@ func parseDisabledFold(node *yaml.Node) (modules, skills, tools, agents []string
 	if node.Kind != yaml.MappingNode {
 		return nil, nil, nil, nil, fmt.Errorf("disabled fold: node kind %d is neither a mapping nor a sequence", node.Kind)
 	}
-	var fold struct {
-		Modules []string `yaml:"modules"`
-		Skills  []string `yaml:"skills"`
-		Tools   []string `yaml:"tools"`
-		Agents  []string `yaml:"agents"`
-	}
+	var fold disabledFold
 	if err := node.Decode(&fold); err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("disabled fold: %w", err)
 	}
@@ -352,6 +359,48 @@ type AgentConfigLayer struct {
 // law.
 func (l AgentConfigLayer) SecretFree() bool { return len(l.LegacySecrets) == 0 }
 
+// agentLayerFile is the presence-aware decode of one agent layer file.
+// Pointers carry presence: nil = the key is absent, a pointer to "" = the
+// file explicitly set the knob empty. MaxTurns is decoded loosely on
+// purpose: a hand-quoted "42" must not make the whole layer unreadable -
+// the write path exists to correct exactly that node.
+//
+// It is a NAMED type, never an inline `var raw struct { ... }`. The
+// compiler spells an ANONYMOUS struct's field tags into the type
+// descriptor and equality symbols it emits for it, and go1.26 prints them
+// whole: `type:.eq.struct { ... Provider *struct { ... } "yaml:\"provider\"" ... }`.
+// A capsule noun in a host-owned symbol survives that capsule's removal -
+// the nm-purity red this file filed (card t_61ad4490: the provider
+// rotation failed on master while the scrub and the build were clean).
+// A named type's symbol is its name, so the tags never reach the binary.
+type agentLayerFile struct {
+	Description  *string                  `yaml:"description"`
+	SystemPrompt *string                  `yaml:"system_prompt"`
+	MaxTurns     any                      `yaml:"max_turns"`
+	Provider     *agentLayerProviderBlock `yaml:"provider"`
+	Toggles      *[]string                `yaml:"toggles"`
+	Skills       *agentLayerSkillsBlock   `yaml:"skills"`
+	Inherit      *AgentInherit            `yaml:"inherit"`
+}
+
+// agentLayerProviderBlock is the layer's provider block: the instance
+// reference this law allows, its model name, and the three RETIRED
+// secret keys, read for PRESENCE only - their values never leave the
+// read.
+type agentLayerProviderBlock struct {
+	Instance  *string `yaml:"instance"`
+	ModelName *string `yaml:"model_name"`
+	Type      *string `yaml:"type"`
+	Host      *string `yaml:"host"`
+	APIKey    *string `yaml:"api_key"`
+}
+
+// agentLayerSkillsBlock is the layer's skills block: the explicit
+// allowlist over the visible registry.
+type agentLayerSkillsBlock struct {
+	Allow *[]string `yaml:"allow"`
+}
+
 // ReadAgentConfigLayer reads one agent's layer with presence. A missing
 // (or empty) file is the empty layer - a scaffolded agent whose config
 // was deleted still reads, it simply enables nothing. A file that will
@@ -376,28 +425,7 @@ func ReadAgentConfigLayer(home, name string) (AgentConfigLayer, error) {
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return lay, nil
 	}
-	// Pointers carry presence: nil = the key is absent, a pointer to ""
-	// = the file explicitly set the knob empty.
-	var raw struct {
-		Description  *string `yaml:"description"`
-		SystemPrompt *string `yaml:"system_prompt"`
-		// MaxTurns is decoded loosely on purpose: a hand-quoted "42"
-		// must not make the whole layer unreadable - the write path
-		// exists to correct exactly that node.
-		MaxTurns any `yaml:"max_turns"`
-		Provider *struct {
-			Instance  *string `yaml:"instance"`
-			ModelName *string `yaml:"model_name"`
-			Type      *string `yaml:"type"`
-			Host      *string `yaml:"host"`
-			APIKey    *string `yaml:"api_key"`
-		} `yaml:"provider"`
-		Toggles *[]string `yaml:"toggles"`
-		Skills  *struct {
-			Allow *[]string `yaml:"allow"`
-		} `yaml:"skills"`
-		Inherit *AgentInherit `yaml:"inherit"`
-	}
+	var raw agentLayerFile
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return lay, fmt.Errorf("parse agent config %s: %w", name, err)
 	}

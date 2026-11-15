@@ -653,6 +653,24 @@ func cloneConfigDir(home, src, dst string) error {
 	return nil
 }
 
+// cronCloneFile is the shape cloneCronLegality reads out of main's
+// crons.yaml. NAMED, not inline: an anonymous struct spells its yaml tags
+// into the type symbols the linker emits, and the job tag names the skills
+// capsule - see agentLayerFile for the law (card t_61ad4490, pinned by
+// symbolvocab_test.go).
+type cronCloneFile struct {
+	Jobs []cronCloneJob `yaml:"jobs"`
+}
+
+// cronCloneJob is one entry of that file: only the keys the clone gate
+// inspects.
+type cronCloneJob struct {
+	Name    string   `yaml:"name"`
+	Agent   string   `yaml:"agent"`
+	Deliver string   `yaml:"deliver"`
+	Skills  []string `yaml:"skills"`
+}
+
 // cloneCronLegality reports why main's crons.yaml cannot live in an
 // agent home, or nil when it can. harness/cron owns these laws and
 // enforces them at LOAD time, where they are fatal - so copying main's
@@ -677,14 +695,7 @@ func cloneCronLegality(path string) error {
 		}
 		return fmt.Errorf("clone main's crons.yaml: %w", err)
 	}
-	var raw struct {
-		Jobs []struct {
-			Name    string   `yaml:"name"`
-			Agent   string   `yaml:"agent"`
-			Deliver string   `yaml:"deliver"`
-			Skills  []string `yaml:"skills"`
-		} `yaml:"jobs"`
-	}
+	var raw cronCloneFile
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return fmt.Errorf("clone main's crons.yaml: it does not parse (%v) - a clone cannot carry a schedule file the cron loader will refuse", err)
 	}
