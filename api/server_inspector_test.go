@@ -416,8 +416,8 @@ func readLogFrame(t *testing.T, sub *agentapi.SocketSub) agentapi.SocketMessage 
 			t.Fatalf("decode frame: %v", err)
 		}
 		return msg
-	case <-time.After(2 * time.Second):
-		t.Fatal("no logs frame within 2s")
+	case <-time.After(testWaitTimeout):
+		t.Fatalf("no logs frame within %s", testWaitTimeout)
 		return agentapi.SocketMessage{}
 	}
 }
