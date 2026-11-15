@@ -499,15 +499,20 @@ resolution mirror the one command law every surface follows:
   stays untouched. Every non-default row keeps its pill.
 - **The agents rows speak the sessions vocabulary** (t_db378a0d, round 1
   of the unified theming language): chip radius, the `--z1-raised` hover,
-  the name brightening to full text, the hairline fading under the raised
-  row, the whole head line as the open surface, and the row whose agent
-  holds the FOCUSED chat session wearing the active treatment
-  (`--z1-raised` plus the name in `--accent`; the shell announces the
-  focused id over `omega:focused-session`, the panel copies the literal).
-  The expander is the sessions lucide chevron (12px, rotating 90deg in
-  0.12s). It is a CONSUMER OPT-IN - `RegistryList` takes `feel` /
-  `expander` / `activeName` and the other four registry tabs keep the
-  quiet list until their own round.
+  the name brightening to full text, the hairlines ABOVE and BELOW the
+  raised row fading, the whole head line as the open surface, and the row
+  whose agent holds the FOCUSED chat session wearing the active treatment
+  (`--z1-raised` plus the name in `--accent`). The chip is a hover/active
+  DRESS - at rest the row is the row law's own box, so the resting
+  separator keeps its width. The focus seam is both a push and a PULL: the
+  shell announces the focused id over `omega:focused-session` on every
+  change and a panel mounted later asks over
+  `omega:query-focused-session` (the dock renders only the active tab's
+  pane slot, so the panel unmounts on switch-away; the literals are
+  copied into the capsule). The expander is the sessions lucide chevron
+  (12px, rotating 90deg in 0.12s). It is a CONSUMER OPT-IN - `RegistryList`
+  takes `feel` / `expander` / `activeName` and the other four registry tabs
+  keep the quiet list until their own round.
 - **Expansion = details + edit**: expanding a row seats the config
   summary and the `PUT /agents/{name}` DEFINITION-layer editor - the
   0.17.3 field set (description, system prompt, a REFERENCED provider

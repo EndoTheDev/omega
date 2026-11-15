@@ -365,17 +365,20 @@
      cron, tools, skills, mcp, modules - keeps the ROW LAW's plain render
      until its own round, byte for byte. The anatomy itself does not move:
      two lines, one right control, semibold name over a dim subtitle, one
-     hairline at rest. */
+     hairline at rest.
+
+     The chip is a DRESS, not a box: at rest the row is the row law's own
+     element, so the resting hairline keeps its exact width, its ends and
+     its position. Round 1 wore the negative margin at rest too, which
+     widened the quiet list's separator ~16px - "exactly as today" is
+     literal (review round 1, nit 3). Only the raise carries geometry. */
   .registry-list.feel-sessions .registry-row {
-    border-radius: var(--r-chip);
-    /* the raised chip reaches past the text column so the row reads as
-       ONE surface; the negative margin keeps the name on the list's own
-       left edge, so nothing shifts when the hover lands */
-    margin: 0 -8px;
-    padding: 5px 8px;
     transition:
       background-color 0.12s ease,
-      border-color 0.12s ease;
+      border-color 0.12s ease,
+      border-radius 0.12s ease,
+      margin 0.12s ease,
+      padding 0.12s ease;
   }
   .registry-list.feel-sessions .registry-row-open {
     cursor: pointer;
@@ -383,9 +386,26 @@
   .registry-list.feel-sessions .registry-row:hover,
   .registry-list.feel-sessions .registry-row.reg-row-active {
     background: var(--z1-raised);
+    border-radius: var(--r-chip);
+    /* the raised chip reaches past the text column so the row reads as
+       ONE surface; the negative margin and the matching padding cancel
+       each other, so the name never shifts - only the chip's edges grow */
+    margin: 0 -8px;
+    padding: 5px 8px;
     /* his fork ruling ("try first"): the hairline under a raised chip
        fades, so the chip never crosses a seam. One-line revert if it
        reads wrong: drop this border-color declaration, nothing else. */
+    border-bottom-color: transparent;
+  }
+  /* ...and so does the seam ABOVE it: the preceding row's border-bottom
+     IS the raised chip's top edge (round 1 faded only the row's own, so
+     the chip still crossed a drawn seam above - review round 1, finding
+     2). `:has` is fine here - the journeys run Chrome. The row law gives
+     the LAST row no border, so on a last-row hover this rule matches a
+     border that draws nothing: harmless, and the row below is what the
+     sibling rule above already handles. */
+  .registry-list.feel-sessions .registry-row:has(+ .registry-row:hover),
+  .registry-list.feel-sessions .registry-row:has(+ .registry-row.reg-row-active) {
     border-bottom-color: transparent;
   }
   .registry-list.feel-sessions .registry-row:hover:not(.registry-off) .reg-row-name {

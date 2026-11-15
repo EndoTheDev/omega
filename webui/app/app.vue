@@ -656,6 +656,7 @@
     DEFAULT_CHAT_STATE,
     EPHEMERAL_DRAFT_REF,
     FOCUSED_SESSION_EVENT,
+    FOCUSED_SESSION_QUERY_EVENT,
     createChatHost,
     type ChatState,
   } from "./composables/chat";
@@ -1486,6 +1487,24 @@
   // parent's own mounted hook, so this lands after every panel listener
   // is registered.
   onMounted(() => announceFocusedSession(focusedSessionId.value));
+
+  // card t_db378a0d round 2: the MOUNT-TIME PULL, the half neither the
+  // watch nor the opening announcement could reach. The dock renders only
+  // the ACTIVE tab's pane slot (DockPane's v-if), so AgentsPanel unmounts
+  // the moment the agents tab loses the pane and mounts again later - by
+  // then both announcements are long spent and the fresh panel would
+  // render no active row until the focus happened to move. So a panel
+  // ASKS on mount and the shell answers with the id it is showing now.
+  function onFocusedSessionQuery(): void {
+    announceFocusedSession(focusedSessionId.value);
+  }
+  window.addEventListener(FOCUSED_SESSION_QUERY_EVENT, onFocusedSessionQuery);
+  onUnmounted(() =>
+    window.removeEventListener(
+      FOCUSED_SESSION_QUERY_EVENT,
+      onFocusedSessionQuery,
+    ),
+  );
 
   // card t_a5f9d185: the focused-session seam - the Files tab (and the
   // viewer it mints) send this ID with every /files request; the server

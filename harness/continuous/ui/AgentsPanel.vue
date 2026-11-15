@@ -734,6 +734,16 @@ const CHAT_SESSION_OPEN_EVENT = "omega:open-chat-session";
 const FOCUSED_SESSION_EVENT = "omega:focused-session";
 const focusedSessionId = ref("");
 
+// card t_db378a0d round 2: the MOUNT-TIME PULL. This pane is unmounted
+// whenever the agents tab is not the dock pane's ACTIVE tab (DockPane
+// renders only that slot), so on the way back it hears no announcement -
+// the shell's watch fired while it was gone and the shell's own mount
+// announce had already run. It ASKS on mount and the shell answers with
+// the id it is showing right now. Same seam shape, same law: THE LITERAL
+// IS COPIED from composables/chat.ts (FOCUSED_SESSION_QUERY_EVENT) - the
+// agents feel test pins both spellings identical.
+const FOCUSED_SESSION_QUERY_EVENT = "omega:query-focused-session";
+
 function onFocusedSession(e: Event): void {
   const detail = (e as CustomEvent).detail;
   focusedSessionId.value = typeof detail === "string" ? detail : "";
@@ -1086,7 +1096,10 @@ async function resetField(name: string, key: string): Promise<void> {
 }
 
 onMounted(() => {
+  // the listener FIRST, then the pull: the shell answers synchronously,
+  // so a dispatch before the registration would be answered to nobody.
   window.addEventListener(FOCUSED_SESSION_EVENT, onFocusedSession);
+  window.dispatchEvent(new CustomEvent(FOCUSED_SESSION_QUERY_EVENT));
   void load();
 });
 onUnmounted(() => {
