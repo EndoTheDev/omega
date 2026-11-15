@@ -513,14 +513,16 @@ export function age(iso: string, now: Date = new Date()): string {
 }
 
 // --- the mounted /boards fetch retry (nightlies 42268953671 and
-// 42260775149, cards t_7cdac186 / t_82e5d149): the board switcher chip
-// gates on `boards.length > 1 || boardName`, and fetchBoards() runs
-// ONCE per mount - a fetch that misses under CI suite load left no
-// chip for the whole page life. Bounded retry: a few attempts with a
-// short backoff; a 404 exits immediately (single-board installs will
-// not heal on a wait); a final miss keeps the old behavior - silent,
-// the board still renders, the journey's reload fallback stays the
-// last resort. Lives here so the stubbed-fetch test can pin it.
+// 42260775149, cards t_7cdac186 / t_82e5d149): Board.vue gates the
+// switcher chip on `boards.length > 0` (0.17.3 make-over; the
+// pre-make-over gate was `boards.length > 1 || boardName`, so the chip
+// is a MORE present control now, never less), and the fetch runs ONCE
+// per mount - a fetch that misses under CI suite load leaves no chip
+// for the whole page life. Bounded retry: a few attempts with a short
+// backoff; a 404 exits immediately (single-board installs will not heal
+// on a wait); a final miss keeps the old behavior - silent, the board
+// still renders, the journey's reload fallback stays the last resort.
+// Lives here so the stubbed-fetch test can pin it.
 
 export const BOARD_FETCH_ATTEMPTS = 3;
 export const BOARD_FETCH_BACKOFF_MS = 300;

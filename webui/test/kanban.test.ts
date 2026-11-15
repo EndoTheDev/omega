@@ -589,10 +589,12 @@ test("board view drives drag reorder through the pointer + the server slot", () 
 });
 
 // --- the mounted /boards fetch retry (nightlies 42268953671 and
-// 42260775149, cards t_7cdac186 / t_82e5d149): the switcher chip gates
-// on `boards.length > 1 || boardName`, so a fetch that misses under
-// suite load left no chip for the whole page life. The retry is pure
-// logic in boardLogic - the fetch is stubbed, the sleep is injectable.
+// 42260775149, cards t_7cdac186 / t_82e5d149): Board.vue gates the
+// switcher chip on `boards.length > 0`, and the fetch runs once per
+// mount, so a fetch that misses under suite load leaves no chip for the
+// whole page life. The retry is pure logic in boardLogic
+// (fetchBoardsRetry: 3 attempts, 300ms backoff) - the fetch is stubbed,
+// the sleep is injectable. The gate itself is not under test here.
 
 function boardsResponse(boards: unknown, status = 200): Response {
   return {
