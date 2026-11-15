@@ -537,6 +537,21 @@ body {
 .dock-tab:hover .dock-tab-close,
 .dock-tab-close:focus-visible { opacity: 1; }
 .dock-tab-close:hover { background: var(--z2); color: var(--text); }
+/* card t_b72a4ee3 (Endo ruling 2026-11-14, superseding t_9855a20e's NO-X
+   surface): the pane's LONE tab keeps its X - DISABLED and DIMMED, so the
+   locked-last-tab refusal is VISIBLE instead of absent. It is the one X
+   that does not wait for hover: it sits at its dim opacity at rest, and
+   hover neither brightens it nor paints the hover pill. The click/focus
+   guards live in the template (aria-disabled + tabindex -1 + the handler),
+   the hard refusal in dock.ts closeTab. The hover selector must be spelled
+   out - .dock-tab:hover .dock-tab-close outranks a single-class rule. */
+.dock-tab-close.locked,
+.dock-tab:hover .dock-tab-close.locked {
+  opacity: 0.3;
+  background: none;
+  color: var(--text-dim);
+  cursor: default;
+}
 /* card t_80775d15: the pinned TEXT strip (the bottom pane's tabs) keeps
    the base 72px floor - a strip that runs out of room SCROLLS (the
    t_aca53fee pattern: .dock-tabs overflow-x + DockPane's active-tab

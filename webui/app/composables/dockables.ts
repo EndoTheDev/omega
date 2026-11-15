@@ -117,10 +117,10 @@ export type DockComponentName = (typeof DOCK_COMPONENTS)[number];
 // placeholder (card t_d04a1c80) a close seated in a pane's last-tab slot;
 // Endo's 2026-11-14 ruling retired the approach - the blank "New Tab"
 // body WAS the empty bad looking space, and the law it carried is now THE
-// LOCKED LAST TAB (dock.ts closeTab refuses; DockPane renders no X on a
-// lone tab). Records persisted while the placeholder lived still parse
-// here, and the loader's repairPaneSeats converts such a seat into a
-// fresh new-chat tab on boot.
+// LOCKED LAST TAB (dock.ts closeTab refuses; DockPane renders the lone
+// tab's X disabled + dimmed since t_b72a4ee3). Records persisted while the
+// placeholder lived still parse here, and the loader's repairPaneSeats
+// converts such a seat into a fresh new-chat tab on boot.
 export const LEGACY_DOCK_COMPONENTS = ["inspector", "newtab"] as const;
 
 export type DockInstancePolicy = "singleton" | "multi";
@@ -517,7 +517,10 @@ export function isLockedTab(id: DockComponentName): boolean {
     settings). Unknown ids get no X. card t_9855a20e: this is the
     COMPONENT half of the X law; the PANE half (a pane's lone tab renders
     no X - THE LOCKED LAST TAB) lives where the tab count is known
-    (DockPane's tabClosable + dock.ts closeTab, which refuses the close). */
+    (DockPane's tabClosable + dock.ts closeTab, which refuses the close).
+    card t_b72a4ee3: the pane half no longer REMOVES the affordance - a lone
+    tab's X renders disabled + dimmed over this same component test, and
+    dock.ts lastTabLocked is the one condition guard and surface share. */
 export function isClosableTab(id: DockComponentName): boolean {
   const d = safeEntry(id);
   return d !== null && d.closable;
