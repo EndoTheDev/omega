@@ -271,8 +271,8 @@ func (c *ChatCapsule) sessionItems(session string, running bool) []transcriptIte
 	if isEphemeralID(session) {
 		items := c.srv.Load().eph.snapshotItems(session)
 		if running {
-			if tail, live := c.srv.Load().runs.tailItems(session); live {
-				items = append(items, tail...)
+			if tail, builtAt, live := c.srv.Load().runs.tailSnapshot(session); live {
+				items = append(items, freshenRunningCalls(tail, time.Since(builtAt))...)
 			}
 		}
 		return items
@@ -294,11 +294,13 @@ func (c *ChatCapsule) sessionItems(session string, running bool) []transcriptIte
 	if !running {
 		return persisted
 	}
-	open, live := c.srv.Load().runs.openItems(session)
+	open, builtAt, live := c.srv.Load().runs.openSnapshot(session)
 	if !live || len(open) == 0 {
 		return persisted
 	}
-	return composeItems(persisted, open)
+	// the open segment is a snapshot: its running tool line ages with it
+	// (a call emits no events until its result, t_6bad9f6f)
+	return composeItems(persisted, freshenRunningCalls(open, time.Since(builtAt)))
 }
 
 // composeItems merges the persisted items and the open-record items
@@ -317,18 +319,40 @@ func (c *ChatCapsule) sessionItems(session string, running bool) []transcriptIte
 // tool call ids across a re-run (some providers mint colliding ids)
 // can hide the re-run's rows until their content diverges - a v1
 // cosmetics race, the persisted truth is never wrong.
+//
+// A RUNNING twin still donates its anchor (card t_6bad9f6f). The loop
+// persists the assistant row (calls included) BEFORE the calls
+// execute, so mid-call both copies of the call exist and the persisted
+// row is the one the renderer keeps - served bare it carries no
+// running bit and no elapsed, and a remounted pane restarted the
+// call's meter at zero. The persisted row adopts the open twin's
+// running state and elapsed-so-far instead.
 func composeItems(persisted, open []transcriptItem) []transcriptItem {
-	seen := map[string]bool{}
-	for _, it := range persisted {
+	seen := map[string]int{}
+	// copied: the caller's slices stay untouched (adoption below writes
+	// into the composed rows, and both inputs are read by other goroutines
+	// - the panel's persisted build races nothing, the rule just holds)
+	out := make([]transcriptItem, len(persisted), len(persisted)+len(open))
+	copy(out, persisted)
+	for i, it := range out {
 		if sig, ok := itemSignature(it); ok {
-			seen[sig] = true
+			seen[sig] = i
 		}
 	}
-	out := persisted
 	for _, it := range open {
-		if sig, ok := itemSignature(it); ok && seen[sig] {
+		sig, ok := itemSignature(it)
+		if !ok {
+			out = append(out, it)
 			continue
 		}
+		if i, dup := seen[sig]; dup {
+			if it.Running && out[i].Kind == "tool_call" {
+				out[i].Running = true
+				out[i].ElapsedMs = it.ElapsedMs
+			}
+			continue
+		}
+		seen[sig] = len(out)
 		out = append(out, it)
 	}
 	return out
@@ -390,6 +414,16 @@ func (c *ChatCapsule) beginRun(session string) {
 // (t_877f4bce - see ChatCapsule.paintMu): a tick that is past takeDirty
 // must never push a running=true panel after endRun's exit flush.
 // Exits when endRun closes the watch.
+//
+// An OPEN TOOL CALL answers dirty on its own (t_6bad9f6f): a tool run
+// emits no event between the call opening and its result, so the token
+// batch never re-arms, the panel would keep the call-open anchor
+// (elapsed_ms ~0) for the whole call, and a tab-switch remount would
+// restart the visible meter at zero. Re-pushing at the cadence keeps
+// the payload's anchor on the call's true elapsed-so-far
+// (freshenRunningCalls), which is what a remount counts on from. That
+// arm is lifecycle-gated (tick, watching): it must never paint for a
+// session the panel no longer owns.
 func (c *ChatCapsule) batchLoop(watch <-chan struct{}, session string) {
 	ticker := time.NewTicker(c.batch)
 	defer ticker.Stop()
@@ -398,13 +432,67 @@ func (c *ChatCapsule) batchLoop(watch <-chan struct{}, session string) {
 		case <-watch:
 			return
 		case <-ticker.C:
-			c.paintMu.Lock()
-			if c.takeDirty(session) {
-				c.push(c.buildPanel(session, true))
-			}
-			c.paintMu.Unlock()
+			c.tick(session)
 		}
 	}
+}
+
+// tick is one cadence: rebuild and push when the session has a pending
+// token batch or an open tool call. paintMu is held across the decision
+// and the push (t_877f4bce - see ChatCapsule.paintMu), so a tick can
+// never land a running=true panel after endRun's exit flush.
+//
+// Both dirty sources are gated on the panel's lifecycle, not just on
+// the hub (t_6bad9f6f review round 1): the token arm's dirtied flag is
+// only reachable through runEvent, which early-returns for a session
+// that lost focus, and the call arm is gated the same way - watching()
+// requires this session to still be the focus AND to still hold its
+// batcher watch. Without it an unfocused session mid-call repainted the
+// single ChatPanelID every tick (stomping the focus session's payload),
+// and a tick that got past the select before endRun could push
+// running=true after the exit flush once the hub slot outlived the
+// watch (endRun runs before the run's finish, LIFO). endRun deletes the
+// watch before flushing, so the post-flush window answers quiet.
+func (c *ChatCapsule) tick(session string) {
+	c.paintMu.Lock()
+	defer c.paintMu.Unlock()
+	if c.takeDirty(session) || (c.watching(session) && c.hasRunningCall(session)) {
+		c.push(c.buildPanel(session, true))
+	}
+}
+
+// watching reports whether the session still owns the panel's batcher:
+// it is the focus session and its watch is registered. Read under c.mu;
+// endRun deletes the watch (before its exit flush) and beginRun moves
+// the focus, so both sides of the gate close as the run's ownership
+// ends.
+func (c *ChatCapsule) watching(session string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.focusID == session && c.watch[session] != nil
+}
+
+// hasRunningCall reports whether the session's live run carries a tool
+// call its results have not answered yet - the batcher's second dirty
+// source. Reads the open snapshot (a call's running bit is set at the
+// call event and cleared by the result, so the snapshot is current
+// between them) and answers false once the run's slot is gone, which is
+// what keeps a post-endRun tick from pushing.
+func (c *ChatCapsule) hasRunningCall(session string) bool {
+	srv := c.srv.Load()
+	if srv == nil {
+		return false
+	}
+	open, _, live := srv.runs.openSnapshot(session)
+	if !live {
+		return false
+	}
+	for _, it := range open {
+		if it.Kind == "tool_call" && it.Running {
+			return true
+		}
+	}
+	return false
 }
 
 // takeDirty consumes the pending token batch for one session.

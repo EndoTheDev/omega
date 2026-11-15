@@ -125,9 +125,15 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 	// merges BEHIND the persisted history in wire order: the restored
 	// view shows the in-flight tool row with its elapsed meter and the
 	// attached result lands on it, instead of the refresh dropping the
-	// run - the "transcript is gone, but it says streaming" report.
-	if tail, live := s.runs.tailItems(id); live {
-		items = append(items, tail...)
+	// run - the "transcript is gone, but it says streaming" report. The
+	// tail is a SNAPSHOT (rebuilt per event), so its running tool line
+	// ages with the snapshot: a reload mid-call must anchor the meter at
+	// the call's true elapsed, not the call-open anchor the last event
+	// baked (t_6bad9f6f). composeItems is the panel's own merge law - a
+	// row the store already carries is served ONCE, and a running twin
+	// donates its anchor onto it.
+	if tail, builtAt, live := s.runs.tailSnapshot(id); live {
+		items = composeItems(items, freshenRunningCalls(tail, time.Since(builtAt)))
 	}
 	if len(view.Branches) > 0 {
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -316,6 +322,38 @@ func liveTranscriptItems(closed []assistantRecord, open assistantRecord, now tim
 		items = appendRecordItems(items, rec, false, now)
 	}
 	return appendRecordItems(items, open, true, now)
+}
+
+// freshenRunningCalls advances a snapshot's running tool lines by the
+// snapshot's age. A tool run emits NO event between the call opening
+// (ToolCallEvent) and its result, so the snapshot froze each unanswered
+// call's elapsed_ms at the instant of the last rebuild - the call-open
+// anchor, ~0 - and the panel (or the transcript's reattach merge) would
+// serve that lie for the whole call: a tab-switch remount restarted the
+// visible meter at 0:00 (card t_6bad9f6f). Adding the age puts the
+// anchor back on the wall clock the call actually started at: the
+// snapshot's now.Sub(callStart) plus (now - snapshot) is now-callStart.
+//
+// Only RUNNING CALLS age. A thinking/answer span freezes at its last
+// chunk the moment a tool call opens (phaseElapsed's zero open
+// boundary - the tool's wall clock bills to nobody), so aging one would
+// overstate a duration the server already stopped measuring.
+//
+// Copies on the way out: a stored snapshot is replaced, never mutated in
+// place, and readers race the next rebuild. Pure.
+func freshenRunningCalls(items []transcriptItem, age time.Duration) []transcriptItem {
+	if age <= 0 {
+		return items
+	}
+	out := make([]transcriptItem, len(items))
+	copy(out, items)
+	for i := range out {
+		if out[i].Kind != "tool_call" || !out[i].Running {
+			continue
+		}
+		out[i].ElapsedMs += age.Milliseconds()
+	}
+	return out
 }
 
 // appendRecordItems flattens one accumulator record into wire items:

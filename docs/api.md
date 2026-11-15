@@ -284,7 +284,10 @@ Durations are the server's own measurements: a settled segment carries
 one carries `elapsed_ms`, its elapsed-so-far. A client that remounts
 mid-stream (tab switch, reload) counts on from the anchor instead of
 restarting the meter at the mount moment; a running tool line has
-always carried the same field.
+always carried the same field, and a tool call emits no event of its
+own, so the snapshot's age is added back to it on the way out - the
+served anchor is the call's true elapsed-so-far, never the call-open
+anchor the last event baked.
 
 ### GET /sessions/{id}/variants (+ POST/PATCH)
 
@@ -856,7 +859,13 @@ streams: its payload is the focus session's message rows (`session`,
 `running`, `rows` - role, content block, status per row), snapshots
 cover the newest 40 rows, streaming tokens batch onto
 `view_model_delta` at the cadence and structural stream events flush
-immediately. Its actions (`stop`, `retry`, module `http_channel`) route
+immediately. A running tool call re-pushes on the cadence on its own
+(the call emits no event until its result): its row carries a fresh
+`elapsed_ms` throughout, so a remounted pane anchors at the call's true
+elapsed. That repaint answers only for the session that owns the panel -
+it stops the moment another conversation takes the panel over, and it
+stops before the exit flush, so a finished run never repaints a running
+panel. Its actions (`stop`, `retry`, module `http_channel`) route
 through the pipe and serve the same faces the REST routes serve. The
 registration is Start-gated: the panel exists only once a channel
 actually starts - a process that never serves carries no dead http
