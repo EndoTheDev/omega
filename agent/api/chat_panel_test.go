@@ -170,6 +170,37 @@ func TestComposeItemsDropsPersistedTwins(t *testing.T) {
 	}
 }
 
+// TestComposeItemsAdoptsTheRunningAnchor (card t_6bad9f6f): the loop
+// persists the assistant row with its calls BEFORE the calls execute, so
+// mid-call the composition holds the call twice - the persisted row (no
+// running bit, no elapsed) and the accumulator's running twin. The
+// persisted row keeps its place in the stream and adopts the twin's
+// anchor; without that the rendered row carries no anchor at all and a
+// remount restarted the meter at zero.
+func TestComposeItemsAdoptsTheRunningAnchor(t *testing.T) {
+	persisted := []transcriptItem{
+		{Kind: "user", ID: "u1", Content: "run it"},
+		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}},
+	}
+	composed := composeItems(persisted, []transcriptItem{
+		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}, Running: true, ElapsedMs: 4200},
+	})
+	if len(composed) != 2 {
+		t.Fatalf("composed = %d items, want the twin folded into its persisted row", len(composed))
+	}
+	call := composed[1]
+	if !call.Running || call.ElapsedMs != 4200 {
+		t.Fatalf("persisted call row = %+v, want running with the 4200ms anchor", call)
+	}
+	// a settled twin donates nothing: the settled row stays settled
+	composed = composeItems(persisted, []transcriptItem{
+		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}},
+	})
+	if composed[1].Running || composed[1].ElapsedMs != 0 {
+		t.Fatalf("a settled twin must not move the row: %+v", composed[1])
+	}
+}
+
 // TestChatPanelSnapshotDeclaresNewestSession: the load-time catch-up
 // names the module's panel kind, its actions and the most recent
 // conversation's rows.
@@ -405,18 +436,30 @@ func lastPanel(panels []core.Panel) (core.Panel, int) {
 	return panels[len(panels)-1], len(panels)
 }
 
-// slowCallLoop mirrors the real loop around ONE tool call: the call
-// event, then the tool's own wall clock (nothing lands on the event
-// spine until it returns), then its result - the window the panel used
-// to freeze in.
+// slowCallLoop mirrors the real loop around ONE tool call: the
+// streamed call, the assistant turn persisted WITH its call (the real
+// loop's order - the row is in the store before the tool runs, which
+// is why the panel holds two copies of the call mid-run), then the
+// tool's own wall clock (nothing lands on the event spine until it
+// returns), then its result.
 type slowCallLoop struct{}
 
 func (slowCallLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
+	sink := agent.RunTurnSink(ctx)
+	persist := func(msg core.Message) {
+		if sink != nil {
+			_ = sink.AppendTurnMessage(context.WithoutCancel(ctx), msg)
+		}
+	}
 	opts.Events <- core.AgentStart{Type: "agent_start"}
 	opts.Events <- core.TurnStart{Type: "turn_start", Turn: 1}
 	call := core.ToolCall{ID: "c1", Name: "slow"}
 	opts.Events <- core.StreamEvent{Event: core.ToolCallEvent{Type: "tool_call", ToolCall: call}}
 	opts.Events <- core.StreamEvent{Event: core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"}}
+	assistant := core.NewAssistant("")
+	assistant.ToolCalls = []core.ToolCall{call}
+	persist(assistant)
+	opts.Events <- core.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
 	result, err := opts.Tools["slow"].Run(ctx, call.Arguments)
 	if err != nil {
 		opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: core.NewToolResult(err.Error(), call.ID, true)}
@@ -424,7 +467,6 @@ func (slowCallLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		opts.Events <- core.ToolResultEvent{Type: "tool_result", Message: core.NewToolResult(result, call.ID, false)}
 	}
 	answer := core.NewAssistant("done")
-	opts.Events <- core.AssistantMessageEvent{Type: "assistant_message", Message: answer}
 	opts.Events <- core.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 1}
 	opts.Events <- core.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop", Message: answer}
 	return nil

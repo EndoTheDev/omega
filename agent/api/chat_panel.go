@@ -319,18 +319,40 @@ func (c *ChatCapsule) sessionItems(session string, running bool) []transcriptIte
 // tool call ids across a re-run (some providers mint colliding ids)
 // can hide the re-run's rows until their content diverges - a v1
 // cosmetics race, the persisted truth is never wrong.
+//
+// A RUNNING twin still donates its anchor (card t_6bad9f6f). The loop
+// persists the assistant row (calls included) BEFORE the calls
+// execute, so mid-call both copies of the call exist and the persisted
+// row is the one the renderer keeps - served bare it carries no
+// running bit and no elapsed, and a remounted pane restarted the
+// call's meter at zero. The persisted row adopts the open twin's
+// running state and elapsed-so-far instead.
 func composeItems(persisted, open []transcriptItem) []transcriptItem {
-	seen := map[string]bool{}
-	for _, it := range persisted {
+	seen := map[string]int{}
+	// copied: the caller's slices stay untouched (adoption below writes
+	// into the composed rows, and both inputs are read by other goroutines
+	// - the panel's persisted build races nothing, the rule just holds)
+	out := make([]transcriptItem, len(persisted), len(persisted)+len(open))
+	copy(out, persisted)
+	for i, it := range out {
 		if sig, ok := itemSignature(it); ok {
-			seen[sig] = true
+			seen[sig] = i
 		}
 	}
-	out := persisted
 	for _, it := range open {
-		if sig, ok := itemSignature(it); ok && seen[sig] {
+		sig, ok := itemSignature(it)
+		if !ok {
+			out = append(out, it)
 			continue
 		}
+		if i, dup := seen[sig]; dup {
+			if it.Running && out[i].Kind == "tool_call" {
+				out[i].Running = true
+				out[i].ElapsedMs = it.ElapsedMs
+			}
+			continue
+		}
+		seen[sig] = len(out)
 		out = append(out, it)
 	}
 	return out

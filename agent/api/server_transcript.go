@@ -129,9 +129,11 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 	// tail is a SNAPSHOT (rebuilt per event), so its running tool line
 	// ages with the snapshot: a reload mid-call must anchor the meter at
 	// the call's true elapsed, not the call-open anchor the last event
-	// baked (t_6bad9f6f).
+	// baked (t_6bad9f6f). composeItems is the panel's own merge law - a
+	// row the store already carries is served ONCE, and a running twin
+	// donates its anchor onto it.
 	if tail, builtAt, live := s.runs.tailSnapshot(id); live {
-		items = append(items, freshenRunningCalls(tail, time.Since(builtAt))...)
+		items = composeItems(items, freshenRunningCalls(tail, time.Since(builtAt)))
 	}
 	if len(view.Branches) > 0 {
 		writeJSON(w, http.StatusOK, map[string]any{

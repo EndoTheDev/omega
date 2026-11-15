@@ -762,6 +762,59 @@ func TestSessionTranscriptAgesTheRunningCall(t *testing.T) {
 	}
 }
 
+// TestSessionTranscriptServesOneAnchoredCallRow (card t_6bad9f6f):
+// mid-call the store already carries the assistant row WITH its call
+// (the loop persists the turn before the tools execute) and the live
+// tail carries the same call while it runs. The wire serves the call
+// ONCE with the running anchor on it - a reload must render one row,
+// not two, and that row must not restart its meter at zero.
+func TestSessionTranscriptServesOneAnchoredCallRow(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "s1", "", "Mid-call"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := st.AppendMessage(ctx, "s1", core.NewUser("run it")); err != nil {
+		t.Fatalf("append user: %v", err)
+	}
+	assistant := core.NewAssistant("")
+	assistant.ToolCalls = []core.ToolCall{{ID: "tcl", Name: "shell.run"}}
+	if err := st.AppendMessage(ctx, "s1", assistant); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+	run, ok := s.runs.start("s1")
+	if !ok {
+		t.Fatalf("start run")
+	}
+	builtAt := time.Now().Add(-2 * time.Second)
+	s.runs.setTail(run, liveTranscriptItems(nil, assistantRecord{
+		toolCalls:  []core.ToolCall{{ID: "tcl", Name: "shell.run"}},
+		callStarts: map[string]time.Time{"tcl": builtAt},
+	}, builtAt), builtAt)
+
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sessions/s1/transcript", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Items []transcriptItem `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got, want := kindsOf(body.Items), []string{"user", "tool_call"}; len(got) != 2 {
+		t.Fatalf("items = %v, want %v (the tail's twin folded into its persisted row)", got, want)
+	}
+	tc := body.Items[1]
+	if !tc.Running {
+		t.Fatalf("the served call row lost its running bit: %+v", tc)
+	}
+	if tc.ElapsedMs < 1900 || tc.ElapsedMs > 2300 {
+		t.Fatalf("elapsed = %d, want ~2000 (the snapshot's age on the call's anchor)", tc.ElapsedMs)
+	}
+}
+
 // TestTranscriptItemsUserImages (scope add 2026-10-20): persisted user
 // images ride the restore - thumbnails survive a reload.
 func TestTranscriptItemsUserImages(t *testing.T) {
