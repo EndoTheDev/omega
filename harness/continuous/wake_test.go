@@ -103,9 +103,10 @@ func TestWakeSpawnContract(t *testing.T) {
 		t.Fatalf("Wake: %v", err)
 	}
 	data := waitFile(t, out, func(d string) bool { return strings.Contains(d, "ARGV:run") })
-	// Args: the run is bound to the canonical chat (the M5 contract).
-	if !strings.Contains(data, "--session "+CanonicalSessionID) {
-		t.Errorf("child not bound to canonical chat:\n%s", data)
+	// Args: the run is bound to the canonical chat (the M5 contract),
+	// under the agent's own qualified id (card t_5df01d0f).
+	if !strings.Contains(data, "--session "+CanonicalSessionIDFor("scout")) {
+		t.Errorf("child not bound to the agent's canonical chat:\n%s", data)
 	}
 	// Env: root home + agent isolation + the per-wake budget riding
 	// OMEGA_MAX_TURNS (rulings 4, 17).

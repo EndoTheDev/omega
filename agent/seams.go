@@ -227,6 +227,23 @@ type SessionOwnerStore interface {
 	SessionOwner(sessionID string) string
 }
 
+// AgentHomeForgetter is the optional release surface the roster's
+// DELETE verb asks for (card t_5df01d0f). Serving an agent-owned
+// session opens that home's store file through the routing handle and
+// keeps it open for the process's lifetime - which is what makes a
+// chat run cheap and what keeps the home's omega.db locked on Windows.
+// Deleting the home with the handle still open leaves a half-removed
+// directory behind ("Device or resource busy") and the roster keeps
+// listing the ghost. The delete verb therefore releases the home
+// BEFORE it removes it. A store with no routing answers false and the
+// delete behaves exactly as it did.
+type AgentHomeForgetter interface {
+	// ForgetHome closes and evicts the cached store handle for one
+	// agent home, reporting whether one was open. Reads after the
+	// call re-open the home (or answer not-found once it is gone).
+	ForgetHome(agentName string) bool
+}
+
 // SessionContextStore is the optional session-context surface (card
 // t_9de5b009): the per-session pinned model and working folder. The
 // store's default surface stays untouched so every fake keeps

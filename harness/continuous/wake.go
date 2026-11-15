@@ -142,8 +142,9 @@ func (m *Machine) runWake(p agent.Profile, message, model string) {
 	}
 	// The child runs ONE loop bound to the canonical chat: the flag
 	// makes it persist input + report into the session instead of
-	// printing and dropping (the run --session contract).
-	args := []string{"run", "--session", CanonicalSessionID}
+	// printing and dropping (the run --session contract). The id is the
+	// home's own agent-qualified one (card t_5df01d0f).
+	args := []string{"run", "--session", CanonicalSessionIDFor(p.Name)}
 	if message != "" {
 		args = append(args, message)
 	}

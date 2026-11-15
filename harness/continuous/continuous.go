@@ -118,7 +118,9 @@ func (m *Machine) CreateHome(name, directive, schedule string) error {
 		}
 	}
 	// The one permanent chat, in the agent's OWN store (rulings 4+6):
-	// full data isolation starts on creation day.
+	// full data isolation starts on creation day. The id is
+	// agent-qualified (card t_5df01d0f) so the daemon's ONE session
+	// handle can tell two homes' chats apart by the id alone.
 	st, err := store.Open(filepath.Join(dir, "data", "omega.db"))
 	if err != nil {
 		return fmt.Errorf("open %s store: %w", name, err)
@@ -126,7 +128,7 @@ func (m *Machine) CreateHome(name, directive, schedule string) error {
 	defer st.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
 	defer cancel()
-	if err := st.CreateAgentSession(ctx, CanonicalSessionID, "", CanonicalSessionID, name); err != nil {
+	if err := st.CreateAgentSession(ctx, CanonicalSessionIDFor(name), "", CanonicalSessionID, name); err != nil {
 		return fmt.Errorf("create canonical chat: %w", err)
 	}
 	return nil
@@ -193,7 +195,7 @@ func (m *Machine) Roster() []RosterRow {
 			continue // soft-disabled: excluded from the roster
 		}
 		row := RosterRow{Profile: p}
-		row.LastReport, row.LastReportAt, row.Unread = m.canonicalPreview(p.Dir)
+		row.LastReport, row.LastReportAt, row.Unread = m.canonicalPreview(p.Dir, p.Name)
 		row.NextWake = nextWakeFor(filepath.Join(p.Dir, "config", "crons.yaml"))
 		rows = append(rows, row)
 	}
@@ -211,7 +213,9 @@ func canonicalView(agentDir string) (agent.StoreProvider, error) {
 // canonical chat: the closing message's text (ruling 10 - the run's
 // closing message IS the report), when it landed, and the unread flag
 // (updated_at newer than last_read_at - output the human has not seen).
-func (m *Machine) canonicalPreview(agentDir string) (preview, reportAt string, unread bool) {
+// It reads the id the home's chat actually carries, which for a
+// non-default agent is agent-qualified (card t_5df01d0f).
+func (m *Machine) canonicalPreview(agentDir, agentName string) (preview, reportAt string, unread bool) {
 	st, err := canonicalView(agentDir)
 	if err != nil {
 		return "", "", false // empty row beats a broken pane
@@ -219,11 +223,12 @@ func (m *Machine) canonicalPreview(agentDir string) (preview, reportAt string, u
 	defer st.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
 	defer cancel()
-	sess, err := st.GetSession(ctx, CanonicalSessionID)
+	id := CanonicalSessionIDFor(agentName)
+	sess, err := st.GetSession(ctx, id)
 	if err != nil {
 		return "", "", false // never created: nothing to preview
 	}
-	msgs, err := st.GetMessages(ctx, CanonicalSessionID)
+	msgs, err := st.GetMessages(ctx, id)
 	if err != nil {
 		return "", sess.UpdatedAt, false
 	}
@@ -258,18 +263,19 @@ func (m *Machine) CanonicalChat(name string) (ChatView, error) {
 	defer st.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
 	defer cancel()
-	sess, err := st.GetSession(ctx, CanonicalSessionID)
+	id := CanonicalSessionIDFor(name)
+	sess, err := st.GetSession(ctx, id)
 	if err != nil {
 		return ChatView{}, fmt.Errorf("%s canonical chat: %w", name, err)
 	}
-	msgs, err := st.GetMessages(ctx, CanonicalSessionID)
+	msgs, err := st.GetMessages(ctx, id)
 	if err != nil {
 		return ChatView{}, fmt.Errorf("%s canonical history: %w", name, err)
 	}
 	if len(msgs) > chatMessagesTail {
 		msgs = msgs[len(msgs)-chatMessagesTail:]
 	}
-	if err := st.SetSessionRead(ctx, CanonicalSessionID); err != nil {
+	if err := st.SetSessionRead(ctx, id); err != nil {
 		return ChatView{}, err
 	}
 	return ChatView{Name: name, Session: sess, Messages: msgs}, nil

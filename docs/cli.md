@@ -117,6 +117,12 @@ is caller intent and survives the agent layer.
 omega run --session canonical "check the deploy queue"   # the wake child's shape
 ```
 
+An agent-home wake child binds the home's OWN chat id, `canonical` for
+the default agent and `<agent>-canonical` for every other home
+(`CanonicalSessionIDFor`): the daemon serves all agent sessions through
+one store handle that resolves an id across the homes, so a bare id in
+two homes would answer the wrong agent's chat.
+
 ### `omega export`
 
 Writes a session's messages as JSONL (one `{"role","content"}` object

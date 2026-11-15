@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
@@ -213,6 +214,122 @@ func TestRouterSeesAgentHomeCreatedAfterStart(t *testing.T) {
 	}
 	if sess, err := router.GetSession(ctx, "sess-late"); err != nil || sess.ID != "sess-late" {
 		t.Fatalf("GetSession(late) = %+v, %v", sess, err)
+	}
+}
+
+// TestRouterTwoHomesChatsAreTwoIDs pins the invariant the per-agent
+// canonical id exists for (card t_5df01d0f): routing answers by ID, so
+// two homes' permanent chats must be two ids. The negative half - one
+// id seeded in both files - is the pre-fix shape: the local row wins and
+// the second home's chat is unreachable through the daemon's handle,
+// which is why the roster row opened the wrong agent's conversation.
+func TestRouterTwoHomesChatsAreTwoIDs(t *testing.T) {
+	ctx := context.Background()
+	home := t.TempDir()
+	mainDSN := datadir.DBPath(home, "omega.db")
+	main, err := Open(mainDSN)
+	if err != nil {
+		t.Fatalf("open main: %v", err)
+	}
+	if err := main.CreateSession(ctx, "canonical", "", "canonical"); err != nil {
+		t.Fatalf("main canonical: %v", err)
+	}
+	if err := main.AppendMessage(ctx, "canonical", core.NewUser("daemon chat")); err != nil {
+		t.Fatalf("main message: %v", err)
+	}
+	if err := main.Close(); err != nil {
+		t.Fatalf("close main: %v", err)
+	}
+	for _, name := range []string{"scout", "cora"} {
+		dsn := datadir.DBPath(filepath.Join(home, "agents", name), "omega.db")
+		st, err := Open(dsn)
+		if err != nil {
+			t.Fatalf("open %s: %v", name, err)
+		}
+		if err := st.CreateSession(ctx, name+"-canonical", "", "canonical"); err != nil {
+			t.Fatalf("%s canonical: %v", name, err)
+		}
+		if err := st.AppendMessage(ctx, name+"-canonical", core.NewUser(name+" chat")); err != nil {
+			t.Fatalf("%s message: %v", name, err)
+		}
+		if err := st.Close(); err != nil {
+			t.Fatalf("close %s: %v", name, err)
+		}
+	}
+	router, err := Open(mainDSN)
+	if err != nil {
+		t.Fatalf("open router: %v", err)
+	}
+	router.SetHome(home)
+	defer router.Close()
+
+	// Each id answers its OWN home: the chat, its messages and the agent
+	// a run would be served by.
+	for _, name := range []string{"scout", "cora"} {
+		id := name + "-canonical"
+		if got := router.SessionOwner(id); got != name {
+			t.Errorf("SessionOwner(%s) = %q, want %q", id, got, name)
+		}
+		msgs, err := router.GetMessages(ctx, id)
+		if err != nil || len(msgs) != 1 {
+			t.Fatalf("GetMessages(%s) = %d msgs, %v; want 1", id, len(msgs), err)
+		}
+		if got := agent.MessageText(msgs[0]); got != name+" chat" {
+			t.Errorf("GetMessages(%s) answered %q - another home's chat", id, got)
+		}
+	}
+	// The daemon's own chat is still the local row.
+	if got := router.SessionOwner("canonical"); got != "" {
+		t.Errorf("SessionOwner(canonical) = %q, want empty (the daemon's own store)", got)
+	}
+}
+
+// TestForgetHomeReleasesTheHandle pins the DELETE verb's release face
+// (card t_5df01d0f): serving an agent session opens its home's store and
+// caches the handle, so removing the home requires closing it first. On
+// windows a live handle makes the file removal fail - that is the
+// assertion here, and it holds on every host because the row is gone
+// from the reopened store.
+func TestForgetHomeReleasesTheHandle(t *testing.T) {
+	ctx := context.Background()
+	home, _, scoutDSN := agentHomeFixture(t)
+	router, err := Open(datadir.DBPath(home, "omega.db"))
+	if err != nil {
+		t.Fatalf("open router: %v", err)
+	}
+	router.SetHome(home)
+	defer router.Close()
+
+	// A read routes into the agent home and caches its handle.
+	if _, err := router.GetSession(ctx, "sess-scout-2"); err != nil {
+		t.Fatalf("GetSession(scout): %v", err)
+	}
+	if _, ok := router.agents["scout"]; !ok {
+		t.Fatal("the routed read left no cached handle - the fixture no longer exercises the lock")
+	}
+	// Refusals: nothing to release for the default agent or a stranger.
+	if router.ForgetHome("") || router.ForgetHome("cora") {
+		t.Error("ForgetHome answered true with no handle to drop")
+	}
+	if !router.ForgetHome("scout") {
+		t.Fatal("ForgetHome(scout) = false, want true (a handle was cached)")
+	}
+	if router.ForgetHome("scout") {
+		t.Error("the second ForgetHome still reported a handle")
+	}
+	// Released: the home's directory can be removed, and the router no
+	// longer answers its sessions (the cache entry and the routes went).
+	if err := os.RemoveAll(filepath.Join(home, "agents", "scout")); err != nil {
+		t.Fatalf("remove released home: %v", err)
+	}
+	if _, err := router.GetSession(ctx, "sess-scout-2"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetSession after the home is gone = %v, want ErrNotFound", err)
+	}
+	if got := router.SessionOwner("sess-scout-2"); got != "" {
+		t.Fatalf("SessionOwner after the home is gone = %q, want empty", got)
+	}
+	if _, err := os.Stat(scoutDSN); !os.IsNotExist(err) {
+		t.Fatalf("the released store file survived removal (%v)", err)
 	}
 }
 
