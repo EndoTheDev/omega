@@ -87,8 +87,12 @@ describe("the transcript column tracks the composer (t_5063675a)", () => {
       within < between,
       `inside-turn ${within}px must stay below the ${between}px turn boundary or the blocks stop grouping`,
     );
-    // and the contrast has to be visible, not a hairline apart
-    assert.ok(between >= within * 3, "the turn boundary must read as a boundary, not a nudge");
+    // and the contrast has to be visible, not a hairline apart. Endo's tuned
+    // pair (4px within / 8px between, chat-spacing round 3) is a 2x step; the
+    // older 3x clause was authored while the within-turn gap was 0, where any
+    // boundary at all cleared it.
+    assert.ok(between >= within * 2, "the turn boundary must read as a boundary, not a nudge");
+    assert.ok(between - within >= 4, "the turn boundary needs at least a 4px step over the within-turn gap");
   });
 
   it("flat 'chat' keeps its uniform chronology (this law is the stacked column's)", () => {
@@ -106,8 +110,9 @@ describe("the transcript column tracks the composer (t_5063675a)", () => {
 // blocks could also be smaller/compacter"). Round 1 shipped the 92% inset;
 // t_f146ad97 was HIS OWN tuned numbers out of the chat-spacing tuner;
 // t_f70de6e6 is HIS round-2 retune of the same dials (gap 0, strips 24px,
-// sides 4/8, answer 8px inset, turn gap 32px) - the numbers are law, the
-// tests follow them.
+// sides 4/8, answer 8px inset, turn gap 32px) and t_dd0bd19e is HIS
+// round-3 retune (gap 4, strips 32px, sides 4/8, answer 4px inset, turn
+// gap 8) - the numbers are law, the tests follow them.
 //
 // Two things carry the sweep: the strip rows tighten inside the turn block
 // (while the panels that reuse those rows keep their click floor) and the
@@ -115,10 +120,10 @@ describe("the transcript column tracks the composer (t_5063675a)", () => {
 describe("the tuned chat spacing keeps the transcript a document (t_b25df7b0 + t_f146ad97)", () => {
   const pct = (body: string, prop: string) =>
     Number(body.match(new RegExp(`${prop}:\\s*(\\d+)%`))![1]);
-  /** `0 0 0 8px` -> { top, right, bottom, left } */
+  /** `0 0 0 4px` -> { top, right, bottom, left } */
   const pad = (body: string) => sides(body.match(/padding:\s*([^;]+);/)![1]);
 
-  it("the stacked assistant answer runs the full width with an 8px left inset", () => {
+  it("the stacked assistant answer runs the full width with a 4px left inset", () => {
     const bubble = rule(".messages.stacked .msg.assistant .bubble");
     assert.equal(
       pct(bubble, "max-width"),
@@ -126,7 +131,7 @@ describe("the tuned chat spacing keeps the transcript a document (t_b25df7b0 + t
       "the answer keeps the full column width - the tuned inset moved to the left edge",
     );
     const p = pad(bubble);
-    assert.equal(parseFloat(p.left), 8, "the answer text starts 8px inside the turn's left edge");
+    assert.equal(parseFloat(p.left), 4, "the answer text starts 4px inside the turn's left edge");
     assert.equal(parseFloat(p.right), 0, "the right edge stays on the column - the answer is not re-capped");
   });
 
@@ -152,7 +157,7 @@ describe("the tuned chat spacing keeps the transcript a document (t_b25df7b0 + t
     assert.ok(scoped, "the turn block's strip-row min-height rule is missing from main.css");
     const tight = Number(scoped![1]);
     assert.ok(tight < base, `the strip rows did not tighten (${tight}px vs the ${base}px base)`);
-    assert.ok(tight >= 24, `the strip rows collapsed below HIS tuned strip height (${tight}px)`);
+    assert.ok(tight >= 32, `the strip rows collapsed below HIS tuned strip height (${tight}px)`);
   });
 });
 
@@ -161,13 +166,13 @@ describe("the tuned chat spacing keeps the transcript a document (t_b25df7b0 + t
 // taste number that only ever drifts silently is the bug this suite exists
 // to catch - changing one of these is a new spec from him, so the change
 // has to touch this test on purpose.
-describe("Endo's tuned chat spacing - the six declarations (t_f70de6e6 round 2)", () => {
+describe("Endo's tuned chat spacing - the six declarations (t_dd0bd19e round 3)", () => {
   it("the within-turn rhythm, strip height and chip insets are exactly as dialled", () => {
-    assert.match(rule(".msg-block"), /gap:\s*0px/, "inside-turn gap is 0px - the strips sit flush");
+    assert.match(rule(".msg-block"), /gap:\s*4px/, "inside-turn gap is 4px - the strips keep one log with a breath");
     assert.match(
       css,
-      /\.msg-block \.thinking summary,\s*\n\.msg-block \.toolcall summary,\s*\n\.msg-block \.toolgroup summary \{\s*min-height:\s*24px/,
-      "every turn strip is a 24px row",
+      /\.msg-block \.thinking summary,\s*\n\.msg-block \.toolcall summary,\s*\n\.msg-block \.toolgroup summary \{\s*min-height:\s*32px/,
+      "every turn strip is a 32px row",
     );
     assert.match(rule(".thinking .thinking-variant"), /margin-inline:\s*4px 8px/, "thinking chip sides: left 4 / right 8");
     assert.match(rule(".thinking .thinking-variant"), /margin-block:\s*4px 8px/, "thinking chip keeps its block margins (top 4 / bottom 8)");
@@ -178,18 +183,18 @@ describe("Endo's tuned chat spacing - the six declarations (t_f70de6e6 round 2)"
   it("the answer width and the turn boundary are exactly as dialled", () => {
     const bubble = rule(".messages.stacked .msg.assistant .bubble");
     assert.match(bubble, /max-width:\s*100%/, "the answer is full width");
-    assert.match(bubble, /padding:\s*0 0 0 8px/, "and its text insets 8px from the left");
+    assert.match(bubble, /padding:\s*0 0 0 4px/, "and its text insets 4px from the left");
     assert.equal(
       Number(rule(".messages.stacked").match(/gap:\s*(\d+)px/)![1]),
-      32,
-      "the stacked turn boundary is 32px",
+      8,
+      "the stacked turn boundary is 8px",
     );
   });
 
   it("the narrow breakpoint carries the same tuned answer", () => {
     assert.match(
       mobileBlock(),
-      /\.messages\.stacked \.msg\.assistant \.bubble \{ max-width: 100%; padding-left: 8px; \}/,
+      /\.messages\.stacked \.msg\.assistant \.bubble \{ max-width: 100%; padding-left: 4px; \}/,
       "the mobile 88% family cap must not re-cap the stacked answer",
     );
   });

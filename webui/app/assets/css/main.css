@@ -1347,24 +1347,26 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
    One turn = one block: the user message plus everything its run
    produced. Blocks repeat the pane's internal rhythm (flex column) so
    the items render as they did flat; the block boundary is the pane gap
-   - spacing only, no chrome. Inside a turn the gap is TIGHT and, as of
-   round 3 of his tuned numbers (2026-11-15, chat-spacing tuner round 2),
-   ZERO: the thinking and tool strips sit flush against each other and
-   against the question, reading as one running log, not as separate
-   cards - Endo's in-app comments, "adjust the height of those blocks ...
-   so that the gaps between them are smaller", then "the gaps between
-   thinking and tool calls blocks could also be smaller/compacter", then
-   the tuner spec itself: `.msg-block { gap: 0px; }`. The user message's
-   own padding is not touched. */
-.msg-block { display: flex; flex-direction: column; gap: 0px; }
+   - spacing only, no chrome. Inside a turn the gap is TIGHT: round 2 of
+   his tuned numbers (2026-11-15) dialled it to ZERO so the thinking and
+   tool strips sat flush against each other and against the question,
+   reading as one running log; round 3 (2026-11-15, t_dd0bd19e) restored
+   a 4px breath between the strips while keeping them one log - Endo's
+   in-app comments, "adjust the height of those blocks ... so that the
+   gaps between them are smaller", then "the gaps between thinking and
+   tool calls blocks could also be smaller/compacter", then his tuner
+   specs: `.msg-block { gap: 0px; }`, then `.msg-block { gap: 4px; }`.
+   The user message's own padding is not touched. */
+.msg-block { display: flex; flex-direction: column; gap: 4px; }
 
 /* stacked mode (card t_84e4653c, visual fix): the BETWEEN-turn gap must
-   outweigh the within-turn gap or the block grouping is invisible - 0px
-   inside a turn (above), 32px between turns (here; Endo re-tuned the
-   number in the chat-spacing tuner, round 2, 2026-11-15 - the turn
-   boundary is what makes the flush strips read as one turn each). Flat
-   'chat' keeps the uniform 12px chronology. */
-.messages.stacked { gap: 32px; }
+   outweigh the within-turn gap or the block grouping is invisible - 4px
+   inside a turn (above), 8px between turns (here). Endo re-tuned the
+   number in the chat-spacing tuner: 32px in round 2, 8px in round 3
+   (2026-11-15, t_dd0bd19e) - the turn boundary is still the wider of the
+   two, and that contrast is what makes the strips read as one turn each.
+   Flat 'chat' keeps the uniform 12px chronology. */
+.messages.stacked { gap: 8px; }
 
 /* stacked = the document language (Endo 2026-10-20: "each block should
    be full width - thats what stacked means"): user messages stop being
@@ -1396,19 +1398,19 @@ labels stopped short of the right edge. */
 /* card t_e4280de7: the group rides the same stacked law as the rows */
 .messages.stacked .toolgroup { max-width: 100%; }
 
-/* compactness sweep (2026-11-15): the 4px within-turn gap above is half
-   the story - each strip row also carries ~13px of vertical slack above
-   and below its label, because the row is a 44px click target. That
-   slack is what made the running log read airy, so the transcript rows
-   took the second notch (44px -> 36px, still a comfortable click row),
-   and Endo then dialled the final number in his chat-spacing tuner
-   (2026-11-15): 32px -> 24px in round 2 of his sweep, one strip height
-   for every turn row. Trimming the padding instead would have changed
-   nothing - min-height is the binding constraint. Scoped to the turn
-   block: the panels that reuse these rows keep the 44px floor. */
+/* compactness sweep (2026-11-15): each strip row carries ~13px of
+   vertical slack above and below its label, because the row is a 44px
+   click target. That slack is what made the running log read airy, so
+   the transcript rows took the second notch (44px -> 36px, still a
+   comfortable click row), and Endo then dialled the final number in his
+   chat-spacing tuner (2026-11-15): 32px -> 24px in round 2, and back up
+   to 32px in round 3 (t_dd0bd19e) - one strip height for every turn row.
+   Trimming the padding instead would have changed nothing - min-height is
+   the binding constraint. Scoped to the turn block: the panels that reuse
+   these rows keep the 44px floor. */
 .msg-block .thinking summary,
 .msg-block .toolcall summary,
-.msg-block .toolgroup summary { min-height: 24px; }
+.msg-block .toolgroup summary { min-height: 32px; }
 
 
 /* the assistant answer (Endo 2026-11-15, round 2 of the compactness sweep:
@@ -1416,7 +1418,8 @@ labels stopped short of the right edge. */
    spec - "the numbers are law"). Round 1 inset the answer's right edge at
    92%; round 2 dropped that cap back to the full width and moved the
    inset to the LEFT instead; round 3 (chat-spacing round 2) halved that
-   left inset to 8px. So: max-width 100% + 8px of left padding - the
+   left inset to 8px, and round 4 (chat-spacing round 3, t_dd0bd19e)
+   halved it again to 4px. So: max-width 100% + 4px of left padding - the
    answer text starts one small step inside the turn's left edge while
    the codeblocks and rules still run the full column. The 2026-10-20
    full-width law holds for the user rows, the thinking strips and the tool
@@ -1426,7 +1429,7 @@ labels stopped short of the right edge. */
   max-width: 100%;
   background: none;
   border: none;
-  padding: 0 0 0 8px;
+  padding: 0 0 0 4px;
 }
 /* The LIVE-RUN pin (card t_5bb319f6, replacing the two-region split of
    t_c40164cf): while a stacked run streams, its user row sticks to the
@@ -3238,9 +3241,10 @@ labels stopped short of the right edge. */
   /* the tuned stacked answer (2026-11-15 chat-spacing spec) survives the
      breakpoint: the 88% family cap above is the classic-chat shape. The
      stacked rules outrank it on specificity today, so this is the explicit
-     pin - full width + the 8px left inset at every pane width, and any
-     future reshuffle of the family rule cannot silently re-cap the answer. */
-  .messages.stacked .msg.assistant .bubble { max-width: 100%; padding-left: 8px; }
+     pin - full width + the 4px left inset (round 3, t_dd0bd19e) at every
+     pane width, and any future reshuffle of the family rule cannot
+     silently re-cap the answer. */
+  .messages.stacked .msg.assistant .bubble { max-width: 100%; padding-left: 4px; }
 
   .composer { margin: 0 8px 8px; } /* full pane on mobile, tighter inset */
   .activity-line { margin: 0 8px 4px; }
