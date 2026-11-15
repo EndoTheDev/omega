@@ -9,7 +9,8 @@
 #
 # Usage:
 #   scripts/journeys/run.sh                    # full suite vs $JOURNEY_BASE_URL
-#   scripts/journeys/run.sh --base <url>       # other lane (seed-broken.sh uses this)
+#   scripts/journeys/run.sh --base <url>       # other lane (overrides
+#                                              # $JOURNEY_BASE_URL)
 #   scripts/journeys/run.sh <journey-name>...  # subset (e.g. 20-chat-send-response)
 #   scripts/journeys/run.sh --regression       # ONLY the named regression set
 #                                              # (regression.list - the
@@ -17,6 +18,11 @@
 #   JOURNEY_JSON=1 run.sh                      # machine summary on the final line
 #   JOURNEY_LOCK_WAIT=600 run.sh               # queue behind a live suite
 #                                              # instead of refusing
+#
+# Every argument is accounted for: an unknown option, a --base with no URL,
+# or a journey name no recipe matches is a loud exit 2. Nothing is dropped
+# silently - a suite that quietly falls back to the default lane is a green
+# about the wrong binary (card t_2a9be842).
 #
 # Exit codes: 0 all green, 1 at least one journey red, 2 lane/browser
 # infra dead (nothing about the product is asserted in that state),
@@ -166,8 +172,45 @@ EVID="$(mktemp -d "${TMPDIR:-/tmp}/omega-journeys-evidence.XXXXXX")"
 # dead worker debug sessions) before anything here can attach to them
 bash "$JROOT/sweep-chromes.sh" -q 2>/dev/null || true
 
+# --- args --------------------------------------------------------------------
+# --base <url> IS the documented way to point the suite at a lane other than
+# the dev default, and it must be parsed HERE: the subset filter below keeps
+# only recognized journey names, so an unparsed flag used to be dropped in
+# silence and the suite then ran against :8098 - green about whatever binary
+# happened to be serving the dev lane (card t_2a9be842, reproduced live).
+# The same trap catches a stray URL or a mistyped flag, so an argument this
+# script does not understand exits 2 by name instead of being ignored.
+journey_usage_die() { # $1: what was wrong
+  printf 'journeys: %s\n' "$1" >&2
+  printf '  usage: run.sh [--base <url>] [--regression] [<journey-name>...]\n' >&2
+  journey_lock_release
+  exit 2
+}
+JOURNEY_BASE_FLAG=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --base)
+      case "${2:-}" in
+        ""|-*) journey_usage_die "--base needs a URL (got '${2:-}')" ;;
+      esac
+      [ -n "$JOURNEY_BASE_FLAG" ] && journey_usage_die "--base given twice (${JOURNEY_BASE_FLAG} then $2)"
+      JOURNEY_BASE_FLAG="$2"
+      shift 2 ;;
+    --base=*)
+      case "${1#--base=}" in
+        ""|-*) journey_usage_die "--base needs a URL (got '${1#--base=}')" ;;
+      esac
+      [ -n "$JOURNEY_BASE_FLAG" ] && journey_usage_die "--base given twice (${JOURNEY_BASE_FLAG} then ${1#--base=})"
+      JOURNEY_BASE_FLAG="${1#--base=}"
+      shift ;;
+    --regression) break ;;   # handled by the pick-journeys section below
+    -*) journey_usage_die "unknown option: $1" ;;
+    *) break ;;              # first journey name: everything after is names
+  esac
+done
+
 # --- env -------------------------------------------------------------------
-JOURNEY_BASE_URL="${JOURNEY_BASE_URL:-http://127.0.0.1:8098}"
+JOURNEY_BASE_URL="${JOURNEY_BASE_FLAG:-${JOURNEY_BASE_URL:-http://127.0.0.1:8098}}"
 JOURNEY_CHROME_PORT="${JOURNEY_CHROME_PORT:-9333}"
 JOURNEY_TIMEOUT="${JOURNEY_TIMEOUT:-300}"
 JOURNEY_JSON="${JOURNEY_JSON:-0}"
@@ -356,6 +399,7 @@ all=$(find "$JROOT/recipes" -name '*.sh' | sort)
 # an ERROR (exit 2) - a rotting entry reads as deleted proof.
 if [ "${1:-}" = "--regression" ]; then
   shift
+  [ "$#" -gt 0 ] && journey_usage_die "--regression takes no journey names (got: $*)"
   want=""
   while read -r regname _ || [ -n "$regname" ]; do
     case "$regname" in ""|\#*) continue ;; esac
@@ -377,16 +421,19 @@ elif [ "$#" -eq 0 ]; then
 else
   want=""
   for name in "$@"; do
+    matched=0
     for cand in $all; do
       case "$(basename "$cand")" in
-        *"$name"*) want="$want $cand" ;;
+        *"$name"*) want="$want $cand"; matched=1 ;;
       esac
     done
+    if [ "$matched" = "0" ]; then
+      # the silent-drop trap: a name that matches nothing used to be ignored,
+      # so `run.sh --base <url> <journey>` ran the journey against the DEFAULT
+      # lane and read green (card t_2a9be842). Name it and exit.
+      journey_usage_die "no recipe matches: $name"
+    fi
   done
-  if [ -z "$want" ]; then
-    echo "journeys: no recipe matches: $*" >&2
-    exit 2
-  fi
 fi
 
 # --- run ---------------------------------------------------------------------
