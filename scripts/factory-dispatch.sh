@@ -55,24 +55,41 @@ Applies the same-file law at dispatch time: computes each running card's
 write surface, holds every ready candidate whose surface collides, then
 dispatches the legal remainder through the fence-stamped inner dispatcher
 (OMEGA_WORKER=1, repo git shims on PATH). Legal/hold verdicts print per
-candidate, followed by the PAIR verdict for the would-spawn head set
-(cap minus running, in dispatch order) - `pair: sanctioned|forbidden
-(<ids>, <why>)` - so the --max decision reads off the log instead of
-judgment. A forbidden pair means at most one of those cards may run, and
-the guard ENFORCES it: a live `--max N` (N>1) against a forbidden head
-pair is clamped to one card, loudly, with the ids it declined to pair.
-A card with NO `FILES:` line is UNPROVABLE for a pair (its prose
-tokens still make it legal for a single dispatch) - the verdict names it.
-The pass ends with a handoff report (wanted/after/over-run).
+candidate, followed by the head verdict for the would-spawn set (cap
+minus running, in dispatch order) - `pair: sanctioned|forbidden (<ids>,
+<why>)` for two head cards, `trio: sanctioned|clamped (<ids>, <why>)`
+for three - so the --max decision reads off the log instead of judgment.
+A trio may run together ONLY when all three surfaces are provable (a
+FILES: line, no bare-directory word, tokens on every side) and no pair
+of them overlaps; a clamped trio falls back to its oldest pair, or to
+one card when that pair is forbidden too. A forbidden pair means at
+most one of those cards may run, and the guard ENFORCES both verdicts:
+a live pass against a forbidden pair or a clamped trio is clamped to the
+sanctioned count, loudly, with the ids it declined. A card with NO
+`FILES:` line is UNPROVABLE for a multi-card spawn (its prose tokens
+still make it legal for a single dispatch) - the verdict names it.
+
+FACTORY SEATS (HIS ruling 2026-11-15): 3 implementation seats + 1 review
+lane = 4 concurrent runs maximum. The config knob
+kanban.max_in_progress_per_profile is ONE scalar shared by every
+profile, so the 3+1 asymmetry cannot live there - this guard enforces
+it. The implementation seats are that knob (clamped to 3: the factory
+never runs more), and the review lane is hard-capped at ONE review run.
+A second review candidate is HELD - parked, not merely reported - while
+a review run is live or while an earlier review candidate claims this
+pass, and released the moment the live review finishes.
 
 The inner dispatcher claims TWO lanes: ready cards, and review-state
 cards whose claim_lock is free (`claim_review_task`, review -> running).
 The pass gates its dispatch call on exactly that claimable work, so a
 board whose ready queue is empty but whose review lane is not still
 dispatches the review. The dry-run names both lanes: `candidates: N
-ready, unclaimed` and `review candidates: N unclaimed (ids)`. Review
-rows are not candidates - they take no hold, no pair slot and no
-surface verdict (the inner claims them in its own lane).
+ready, unclaimed`, `review candidates: N unclaimed (ids)` and the
+`review lane:` state line (live runs, the one review this pass may
+spawn, the ids held back). Review rows are not candidates - they take
+no surface verdict and no pair/trio slot (the inner claims them in its
+own lane, inside the same budget).
+
 
 Flags:
   --dry-run   evaluate and print verdicts only; no dispatch, no writes
@@ -513,21 +530,114 @@ for r in "${RUNNING[@]:-}"; do
 done
 RUN_HAS_SURFACE=$(grep -q . "$SURF" && echo 1 || echo 0)
 
-# -- slot math: ONE number, shared by the pair verdict and the dispatch call --
-# SLOTS is this pass's add-capacity in the guard's own accounting: the cap
-# minus the post-reclaim running snapshot (bug #8's snapshot side). The
-# dry-run's pair verdict reads it, and the dispatch call below budgets from
-# it - a pair verdict computed against a different cap than the pass would
-# use is worse than no verdict at all. Explicit --max N bounds TRUE
-# concurrency (N total, not N new), so it subtracts the running set the same
-# way; without --max the pass never adds more than 2 (the pairing law).
-if [ "$MAXARG" -gt 0 ]; then
-  SLOTS=$(( MAXARG - ${#RUNNING[@]} ))
-else
-  SLOTS=$(( CAP - ${#RUNNING[@]} ))
-  [ "$SLOTS" -gt 2 ] && SLOTS=2   # deliberate pairing: max 2 spawns per pass
+# -- review lane: live runs + claimable rows (read BEFORE the slot math) ------
+# `hermes kanban dispatch` never only drained the ready queue: dispatch_once
+# enumerates _lane_rows(conn,"review") - `status='review' AND claim_lock IS
+# NULL` (hermes_cli/kanban_db_dispatch.py:2296, review loop at 2448) - and
+# claims each row through claim_review_task (same file:2125 -> kanban_db.py:
+# 2213, an atomic review->running CAS whose `claimed` event carries
+# source_status="review"). PROBED for card t_3b13064e (2026-11-11) on a
+# scratch board holding ONE review card, zero ready, zero running:
+# dispatch_once(dry_run=True) answered spawned=[('t_082b9c1e','vera','')], and
+# the live call flipped the row to running with worker_pid set. A free review
+# card is therefore claimable work for THIS pass - and the gate below could
+# not see it, so on a quiet board (workers hand off together, nothing ready,
+# the review lane holds the only work) the pass printed `no dispatch` and the
+# reviews could never spawn from it. The gate widens; the law does not: review
+# rows are NOT candidates - no per-candidate surface verdict, no hold, no
+# pair/trio slot (the inner claims them in its own lane after ready).
+#
+# The AGGREGATE review count is not the cap. The 3+1 factory ruling
+# (2026-11-15) makes the review lane a SINGLE seat, and it is read from the
+# board, not from a caller: a REVIEW RUN is a running card whose CURRENT run
+# was opened by claim_review_task. kanban_db._claim_and_open_run(...,"review",
+# ...) stamps the run's `claimed` event with source_status="review"
+# (kanban_db.py:2236) and _retry_status_for_run (kanban_db.py:2246) reads
+# exactly that field to tell a reviewer run from an implementation run, so
+# task_events is the one honest witness - the status column alone cannot tell
+# (both lanes end in status='running'). A board with no task_events table
+# (test fixtures, pre-event boards) cannot prove a review run at all: the lane
+# then reads as free and the pass SAYS SO in its state line, rather than
+# holding every review on a guess.
+REV_RAW=$(dbq "SELECT id FROM tasks WHERE status='review' AND claim_lock IS NULL ORDER BY priority DESC, created_at;")
+REV=()
+[ -n "$REV_RAW" ] && mapfile -t REV <<<"$REV_RAW"
+RUNREV_RAW=$(dbq "SELECT DISTINCT t.id FROM tasks t JOIN task_events e ON e.task_id=t.id AND e.kind='claimed' AND e.run_id=t.current_run_id WHERE t.status='running' AND REPLACE(e.payload,' ','') LIKE '%\"source_status\":\"review\"%';" 2>/dev/null) \
+  || RUNREV_RAW="__unprovable__"
+REV_LANE_NOTE=""
+case "$RUNREV_RAW" in
+  __unprovable__) RUNREV_RAW=""; REV_LANE_NOTE=" (no task_events read - live review runs unprovable)";;
+esac
+RUNREV=()
+[ -n "$RUNREV_RAW" ] && mapfile -t RUNREV <<<"$RUNREV_RAW"
+RUNREV_N=${#RUNREV[@]}
+RUNREV_IDS="${RUNREV[*]:-none}"
+RUNIMPL_N=$(( ${#RUNNING[@]} - RUNREV_N ))
+[ "$RUNIMPL_N" -lt 0 ] && RUNIMPL_N=0
+
+# -- factory seats (HIS ruling 2026-11-15): 3 implementation + 1 review ------
+# The knob is a CONCURRENCY scalar for every profile, so the asymmetry lives
+# here. Implementation seats = the knob, clamped to 3: a config value of 4
+# must not buy a fourth implementation card (the total would be 5 with the
+# review lane), and the clamp is LOUD rather than silent.
+IMPL_SEATS="$CAP"; SEAT_NOTE=""
+if [ "$IMPL_SEATS" -gt 3 ]; then
+  IMPL_SEATS=3
+  SEAT_NOTE="config cap $CAP > 3 - implementation seats clamped to 3"
 fi
+REVIEW_SEATS=1
+TOTAL_SEATS=$(( IMPL_SEATS + REVIEW_SEATS ))
+
+# -- review-lane cap 1: ONE review run at a time ----------------------------
+# Enforced by PARKING, not by reporting: the review lane's claim filter is
+# `claim_lock IS NULL`, so a sentinel lock hides a row from it exactly the way
+# it hides a ready collider from the ready lane. Held rows are released by the
+# EXIT trap below, so the next pass (after the live review finishes) sees them
+# again - the release is not a timer, it is the absence of a live review run.
+REV_SPAWN=""; REVHOLD=""; REV_HOLD_WHY=""
+if [ "${#REV[@]}" -gt 0 ]; then
+  if [ "$RUNREV_N" -gt 0 ]; then
+    REVHOLD="${REV[*]}"
+    REV_HOLD_WHY="live review run ($RUNREV_IDS) - one review at a time"
+  else
+    REV_SPAWN="${REV[0]}"
+    if [ "${#REV[@]}" -gt 1 ]; then
+      REVHOLD="${REV[*]:1}"
+      REV_HOLD_WHY="lane cap 1 - only $REV_SPAWN may claim a review this pass"
+    fi
+  fi
+fi
+
+# -- slot math: ONE number, shared by the head verdict and the dispatch call --
+# BUDGET is this pass's add-capacity under the 3+1 invariant: --max N stays a
+# TRUE concurrency cap (running + spawns), a bare pass fills the factory seats
+# ($TOTAL_SEATS). The review seat is reserved FIRST because the inner does the
+# same (dispatch_once narrows ready_budget to spawn_budget - 1 while spawnable
+# review work exists), so an implementation backlog can never starve the
+# reviewer; the implementation slots are then bounded both by what is left of
+# the budget and by the implementation seats the running set leaves free.
+if [ "$MAXARG" -gt 0 ]; then
+  BUDGET=$(( MAXARG - ${#RUNNING[@]} ))
+else
+  BUDGET=$(( TOTAL_SEATS - ${#RUNNING[@]} ))
+fi
+[ "$BUDGET" -lt 0 ] && BUDGET=0
+REV_SLOTS=0
+[ -n "$REV_SPAWN" ] && REV_SLOTS=1
+[ "$REV_SLOTS" -gt "$BUDGET" ] && REV_SLOTS=0   # no seat left: the review waits too
+IMPL_ROOM=$(( IMPL_SEATS - RUNIMPL_N ))
+[ "$IMPL_ROOM" -lt 0 ] && IMPL_ROOM=0
+SLOTS=$(( BUDGET - REV_SLOTS ))
+[ "$SLOTS" -gt "$IMPL_ROOM" ] && SLOTS=$IMPL_ROOM
+[ "$SLOTS" -gt 3 ] && SLOTS=3   # the trio is the widest verdict this guard states
 [ "$SLOTS" -lt 0 ] && SLOTS=0
+# A review candidate with no seat left is HELD, not promised: the state line
+# must never name a spawn the budget cannot fund (verdict-beside-the-action is
+# exactly the failure this factory closed on the pair clamp).
+if [ -n "$REV_SPAWN" ] && [ "$REV_SLOTS" -eq 0 ]; then
+  REVHOLD="${REV[*]}"; REV_SPAWN=""
+  REV_HOLD_WHY="no seat left this pass (running ${#RUNNING[@]} of $TOTAL_SEATS factory seats)"
+fi
 
 # -- candidates, PRIORITY FIRST then oldest: guard bug #5 (2026-10-26) --
 # the sort was pure creation order, so an urgent bug card could never
@@ -618,28 +728,24 @@ corpse_readout() {
 corpse_readout
 
 echo "candidates: ${#CAND[@]} ready, unclaimed"
-# -- review lane: the SAME inner call claims review-state cards ---------------
-# `hermes kanban dispatch` never only drained the ready queue: dispatch_once
-# enumerates _lane_rows(conn,"review") - `status='review' AND claim_lock IS
-# NULL` (hermes_cli/kanban_db_dispatch.py:2296, review loop at 2448) - and
-# claims each row through claim_review_task (same file:2125 -> kanban_db.py:
-# 2213, an atomic review->running CAS whose `claimed` event carries
-# source_status="review"). PROBED for this card (t_3b13064e, 2026-11-11) on a
-# scratch board holding ONE review card, zero ready, zero running:
-# dispatch_once(dry_run=True) answered spawned=[('t_082b9c1e','vera','')], and
-# the live call flipped the row to running with worker_pid set. A free review
-# card is therefore claimable work for THIS pass - and the gate below could
-# not see it, so on a quiet board (workers hand off together, nothing ready,
-# the review lane holds the only work) the pass printed `no dispatch` and the
-# reviews could never spawn from it. The gate widens; the law does not: review
-# rows are NOT candidates - no per-candidate surface verdict, no hold, no pair
-# slot (the inner claims them in its own lane after ready).
-REV_RAW=$(dbq "SELECT id FROM tasks WHERE status='review' AND claim_lock IS NULL ORDER BY priority DESC, created_at;")
-REV=()
-[ -n "$REV_RAW" ] && mapfile -t REV <<<"$REV_RAW"
+# review-lane state: the live review runs, the ONE review this pass may spawn,
+# and the rows held back by the lane cap (read above, before the slot math).
 REVIDS=""
 [ "${#REV[@]}" -gt 0 ] && REVIDS=" (${REV[*]})"
 echo "review candidates: ${#REV[@]} unclaimed$REVIDS"
+if [ "$RUNREV_N" -gt 0 ]; then
+  echo "review lane: live=$RUNREV_N ($RUNREV_IDS) cap=1 - a second review is HELD (3 implementation + 1 review = 4 max)"
+elif [ -n "$REV_SPAWN" ]; then
+  echo "review lane: live=0 cap=1 - spawn: $REV_SPAWN$REV_LANE_NOTE"
+else
+  echo "review lane: live=0 cap=1 - spawn: none$REV_LANE_NOTE"
+fi
+[ -n "$REVHOLD" ] && echo "review lane hold: $REVHOLD ($REV_HOLD_WHY)"
+if [ -n "$SEAT_NOTE" ]; then
+  echo "seats: $SEAT_NOTE (3 implementation + 1 review = 4 max)"
+else
+  echo "seats: $IMPL_SEATS implementation + 1 review = $TOTAL_SEATS max (config cap $CAP)"
+fi
 PARKED=(); LEGAL=0
 
 # guard bug #4 (2026-10-25) is RETIRED (2026-11-09): hermes kanban
@@ -654,6 +760,13 @@ PARKED=(); LEGAL=0
 # (vera's structural starvation, root-caused 2026-11-09). Review cards
 # stay unparked: the ready lane cannot touch them (CAS), the review
 # lane must see them.
+#
+# The ONE park that survives (2026-11-15, 3+1 ruling) is the lane CAP, not
+# the old race: a second review candidate is held behind the sentinel while a
+# review run is live (or while an earlier review candidate claims this pass),
+# and released by the EXIT trap. That is a capacity hold - the ready lane still
+# cannot touch a review row - and it is the only machine enforcement of
+# "vera runs at most 1 review at a time".
 PASS_SURF=$(mktemp); : >"$PASS_SURF"   # surfaces of candidates already marked legal THIS pass (pairwise)
 PASSGO_SURF=$(mktemp); : >"$PASSGO_SURF"   # go-class legal candidates only - the same-pass disjointness proof
 PASSGO_CARDS=0; PASSGO_TOKENED=0; PASSGO_IMPRECISE=0; PASSGO_NOFILES=""
@@ -780,7 +893,7 @@ for c in "${CAND[@]:-}"; do
 done
 rm -f "$SURF" "$PASS_SURF"
 
-# ---- pair verdict: the pairing law over the would-spawn head set -----------
+# ---- head verdict: the pairing law over the would-spawn head set -----------
 # THE incident this card cites (tick 2026-11-07 15:36): running=0, two go
 # head cards, `--max 2` - every candidate read legal because each was
 # compared against the EMPTY running set only, and the pass spawned a Go+Go
@@ -788,7 +901,8 @@ rm -f "$SURF" "$PASS_SURF"
 # question the --max decision actually asks ("is the PAIR at the head
 # legal?"), so the run states it outright:
 #
-#   pair: sanctioned|forbidden (<ids>, <why>)
+#   pair: sanctioned|forbidden (<ids>, <why>)        two head cards
+#   trio: sanctioned|clamped   (<ids>, <why>)        three head cards
 #
 # HEAD is the head of the LEGAL set - the first SLOTS candidates this pass did
 # NOT hold, which is exactly what the inner dispatcher takes once the held
@@ -805,73 +919,136 @@ rm -f "$SURF" "$PASS_SURF"
 # head cards' exact token files against each other - the check that caught the
 # aggregate-surface bug (T16i). A hole in the same-pass accounting still reds
 # here.
-# The verdict errs on the safe side: a forbidden head pair means at most ONE
-# of those cards may run, so the tick's mechanical reply is --max 1 (SLOTS
-# 1); a sanctioned pair may pass --max 2.
-PAIRV=sanctioned; PAIRWHY=""; PAIRIDS=""
-if [ "${#HEAD[@]}" -eq 0 ]; then
-  PAIRIDS="none"; PAIRWHY="empty would-spawn set"
-elif [ "${#HEAD[@]}" -eq 1 ]; then
-  PAIRIDS="${HEAD[0]}"; PAIRWHY="single would-spawn candidate"
-else
-  PAIRIDS="${HEAD[*]}"
-  PAIRCLS=$(printf '%s+' "${HEADCLS[@]}"); PAIRCLS="${PAIRCLS%+}"
-  PAIRWHY="classes $PAIRCLS, FILES disjoint"
-  for ((pi = 0; pi < ${#HEAD[@]}; pi++)); do
-    for ((pj = pi + 1; pj < ${#HEAD[@]}; pj++)); do
-      # ABSENT-FILES rule (card t_2d0d48ac, 2026-11-11): a card with no usable
-      # `FILES:` line declares NO write surface. The prose fallback may still
-      # make that card legal on its own (single dispatch), but prose tokens
-      # never authorize a PAIR - the surface is unproven, so the pair is
-      # forbidden and the verdict names the card that must grow a FILES line.
-      # This leg runs BEFORE the class laws and covers EVERY class pair, which
-      # is the incident shape: t_cfc2aa58 (no FILES line at all) beside the
-      # webui card t_b5784de3 read `sanctioned ... FILES disjoint` because the
-      # absence was mistaken for proof. The bare-directory rule above is
-      # untouched - a bare token stays a go+go-only blocker.
-      if files_line_absent "${HEAD[pi]}"; then
-        PAIRV=forbidden; PAIRWHY="no FILES: line on ${HEAD[pi]} - unprovable surface, never a pair"
-        break 2
+#
+# THE TRIO (2026-11-15, HIS 3+1 ruling) generalizes the sanctioned go+go pair
+# to three concurrent implementation cards. Three cards may run together ONLY
+# when ALL THREE surfaces are PROVABLE and mutually disjoint - every member
+# carries a `FILES:` line, no member names a bare directory word, every member
+# resolves to tokens, and no token of any pair overlaps. That is stricter than
+# the pair law on purpose: a pair only demands the bare-dir/token proof when
+# both sides are go, while a trio demands it of all three whatever their
+# classes (three cards editing at once is where an unprovable surface stops
+# being a rounding error). Any unprovable leg clamps the trio.
+#
+# The verdict CLAMPS the spawn (machine-enforced, never merely printed):
+#   sanctioned pair / sanctioned trio -> that many cards may spawn
+#   clamped trio                      -> its oldest PAIR, when that pair is
+#                                        sanctioned, else ONE card
+#   forbidden pair                    -> ONE card
+# The reduced set is what the inner dispatcher is budgeted, and the head cards
+# the verdict declined are parked so a skipped head card cannot let the inner
+# fall through to a card no verdict cleared.
+WHYLEG=""; TRIOWHY=""
+head_leg_ok() {  # $1 $2 head indexes -> 0 provable+disjoint, 1 with WHYLEG said
+  local pi="$1" pj="$2" ptok a b
+  a="${HEAD[pi]}"; b="${HEAD[pj]}"
+  # ABSENT-FILES rule (card t_2d0d48ac, 2026-11-11): a card with no usable
+  # `FILES:` line declares NO write surface. The prose fallback may still make
+  # that card legal on its own (single dispatch), but prose tokens never
+  # authorize a multi-card spawn - the surface is unproven, so the leg is
+  # forbidden and the verdict names the card that must grow a FILES line. This
+  # leg runs BEFORE the class laws and covers EVERY class pair: t_cfc2aa58 (no
+  # FILES line at all) beside the webui card t_b5784de3 read `sanctioned ...
+  # FILES disjoint` because the absence was mistaken for proof.
+  files_line_absent "$a" && { WHYLEG="no FILES: line on $a - unprovable surface, never a pair"; return 1; }
+  files_line_absent "$b" && { WHYLEG="no FILES: line on $b - unprovable surface, never a pair"; return 1; }
+  # class law BEFORE the token check for EVERY pair: a go+go pair is forbidden
+  # unless the surfaces are provably disjoint (2026-11-10 ruling - before it,
+  # class alone forbade the pair). A pair only demands this proof when BOTH
+  # sides are go; the trio ladder above demands it of all three.
+  if [ "${HEADCLS[pi]}" = go ] && [ "${HEADCLS[pj]}" = go ]; then
+    if ! { [ -s "$HEADDIR/$((pi + 1))" ] && [ -s "$HEADDIR/$((pj + 1))" ] \
+           && ! imprecise_surface "$a" && ! imprecise_surface "$b" \
+           && ! overlaps "$HEADDIR/$((pi + 1))" "$HEADDIR/$((pj + 1))"; }; then
+      WHYLEG="go+go with unproven surface (disjoint go pairs are sanctioned since 2026-11-10)"
+      return 1
+    fi
+  fi
+  if overlaps "$HEADDIR/$((pi + 1))" "$HEADDIR/$((pj + 1))"; then
+    WHYLEG="same-file"
+    while read -r ptok; do
+      [ -n "$ptok" ] || continue
+      ptok="${ptok%/}"
+      if grep -qE "^${ptok}(/|$)" "$HEADDIR/$((pj + 1))"; then
+        WHYLEG="same-file: $ptok"; break
       fi
-      if files_line_absent "${HEAD[pj]}"; then
-        PAIRV=forbidden; PAIRWHY="no FILES: line on ${HEAD[pj]} - unprovable surface, never a pair"
-        break 2
-      fi
-      # class law BEFORE the token check for EVERY pair: a go+go head is
-      # forbidden unless the surfaces are provably disjoint (2026-11-10
-      # ruling - before it, class alone forbade the pair).
-      if [ "${HEADCLS[pi]}" = go ] && [ "${HEADCLS[pj]}" = go ]; then
-        # go+go SANCTIONED 2026-11-10 (Endo ruling) when both head cards carry
-        # tokens and none overlap; an unprovable surface keeps the pair
-        # forbidden. The same-file check below still runs for a sanctioned
-        # pair, so a shared file reds it anyway.
-        if [ -s "$HEADDIR/$((pi + 1))" ] && [ -s "$HEADDIR/$((pj + 1))" ] \
-           && ! imprecise_surface "${HEAD[pi]}" && ! imprecise_surface "${HEAD[pj]}" \
-           && ! overlaps "$HEADDIR/$((pi + 1))" "$HEADDIR/$((pj + 1))"; then
-          :   # provably disjoint go pair - fall through to the token check
-        else
-          PAIRV=forbidden; PAIRWHY="go+go with unproven surface (disjoint go pairs are sanctioned since 2026-11-10)"
-          break 2
-        fi
-      fi
-      if overlaps "$HEADDIR/$((pi + 1))" "$HEADDIR/$((pj + 1))"; then
-        PAIRV=forbidden; PAIRWHY="same-file"
-        while read -r ptok; do
-          [ -n "$ptok" ] || continue
-          ptok="${ptok%/}"
-          if grep -qE "^${ptok}(/|$)" "$HEADDIR/$((pj + 1))"; then
-            PAIRWHY="same-file: $ptok"; break
-          fi
-        done <"$HEADDIR/$((pi + 1))"
-        break 2
-      fi
+    done <"$HEADDIR/$((pi + 1))"
+    return 1
+  fi
+  return 0
+}
+
+head_trio_ok() {  # 0 = all three provable AND mutually disjoint; else TRIOWHY says why
+  local k pi pj
+  for k in 0 1 2; do
+    files_line_absent "${HEAD[k]}" \
+      && { TRIOWHY="no FILES: line on ${HEAD[k]} - unprovable surface, never a trio"; return 1; }
+    imprecise_surface "${HEAD[k]}" \
+      && { TRIOWHY="bare-directory token on ${HEAD[k]} - unprovable surface, never a trio"; return 1; }
+    [ -s "$HEADDIR/$((k + 1))" ] \
+      || { TRIOWHY="no surface tokens on ${HEAD[k]} - unprovable surface, never a trio"; return 1; }
+  done
+  for pi in 0 1 2; do
+    for pj in 0 1 2; do
+      [ "$pj" -le "$pi" ] && continue
+      head_leg_ok "$pi" "$pj" || { TRIOWHY="$WHYLEG"; return 1; }
     done
   done
+  return 0
+}
+
+PAIRV=sanctioned; PAIRWHY=""; PAIRIDS=""
+TRIOV=""; TRIOWHY=""; TRIOIDS=""
+# VERDICT_CAP = the most implementation cards the verdict sanctions this pass;
+# CLAMP_* describe the reduction for the LIVE clamp line only (the dry-run
+# prints the verdict itself and never a clamp - see the dry block below).
+VERDICT_CAP=$SLOTS; CLAMP_REASON=""; CLAMP_NOUN=""; CLAMP_DECLINED=""
+if [ "${#HEAD[@]}" -eq 0 ]; then
+  PAIRIDS="none"; PAIRWHY="empty would-spawn set"
+  echo "pair: $PAIRV ($PAIRIDS, $PAIRWHY)"
+elif [ "${#HEAD[@]}" -eq 1 ]; then
+  PAIRIDS="${HEAD[0]}"; PAIRWHY="single would-spawn candidate"
+  echo "pair: $PAIRV ($PAIRIDS, $PAIRWHY)"
+elif [ "${#HEAD[@]}" -eq 2 ]; then
+  PAIRIDS="${HEAD[*]}"
+  PAIRCLS=$(printf '%s+' "${HEADCLS[@]}"); PAIRCLS="${PAIRCLS%+}"
+  if head_leg_ok 0 1; then
+    PAIRWHY="classes $PAIRCLS, FILES disjoint"
+  else
+    PAIRV=forbidden; PAIRWHY="$WHYLEG"; VERDICT_CAP=1
+    CLAMP_REASON="pair: $PAIRV - $PAIRWHY"
+    CLAMP_NOUN="declined to pair: "; CLAMP_DECLINED="$PAIRIDS"
+  fi
+  echo "pair: $PAIRV ($PAIRIDS, $PAIRWHY)"
+else
+  # SLOTS is capped at 3, so HEAD holds exactly three here.
+  TRIOIDS="${HEAD[*]}"
+  TRIOCLS=$(printf '%s+' "${HEADCLS[@]}"); TRIOCLS="${TRIOCLS%+}"
+  if head_trio_ok; then
+    TRIOV=sanctioned; TRIOWHY="classes $TRIOCLS, FILES disjoint"
+  else
+    TRIOV=clamped   # TRIOWHY carries the leg that failed
+  fi
+  echo "trio: $TRIOV ($TRIOIDS, $TRIOWHY)"
+  if [ "$TRIOV" != sanctioned ]; then
+    # Fall back to the OLDEST pair of the three, exactly as a forbidden pair
+    # falls back to one card: the clamp may only lower the request, never
+    # promote a card the trio leg refused.
+    if head_leg_ok 0 1; then
+      VERDICT_CAP=2
+      CLAMP_REASON="trio: clamped - $TRIOWHY"
+      CLAMP_NOUN="declined: "; CLAMP_DECLINED="${HEAD[2]}"
+    else
+      VERDICT_CAP=1; PAIRV=forbidden; PAIRWHY="$WHYLEG"; PAIRIDS="${HEAD[0]} ${HEAD[1]}"
+      CLAMP_REASON="trio: clamped - $TRIOWHY; pair: forbidden - $WHYLEG"
+      CLAMP_NOUN="declined to pair: "; CLAMP_DECLINED="$PAIRIDS"
+    fi
+  fi
 fi
 # HEAD carries no held cards (they are filtered at collection), so no "held
 # this pass" caveat can arise - the members named above are all spawnable.
-echo "pair: $PAIRV ($PAIRIDS, $PAIRWHY)"
 rm -rf "$HEADDIR"
+
 
 [ "$DRY" = 1 ] && { echo "cap=$CAP"; echo "(dry-run: no dispatch)"; exit 0; }
 
@@ -920,6 +1097,16 @@ done <<<"$HOLDSRAW"
 # and an '' lock left the card invisible to every later dispatch (Spawned: 0, all buckets empty).
 park()   { local p; for p in "$@"; do [ -n "$p" ] || continue; dbx "UPDATE tasks SET claim_lock='pibtw:dispatch-hold' WHERE id='$p' AND (claim_lock IS NULL OR claim_lock='');"; done; }
 unpark() { local p; for p in "$@"; do [ -n "$p" ] || continue; dbx "UPDATE tasks SET claim_lock=NULL WHERE id='$p' AND claim_lock='pibtw:dispatch-hold';"; done; }
+# The review-lane hold and the verdict's declined head cards join the same
+# sentinel park. Both are CAPACITY holds, enforced in the spawn path: the
+# review lane's filter is `claim_lock IS NULL`, so a held review row cannot be
+# claimed this pass even if the caller's --max would have room for it, and a
+# declined head card cannot be taken when the inner skips an earlier one. The
+# EXIT trap releases both, so nothing outlives the pass.
+if [ -n "$REVHOLD" ]; then PARKED+=($REVHOLD); fi
+if [ "${#HEAD[@]}" -gt "${VERDICT_CAP:-0}" ]; then
+  for ((vd = VERDICT_CAP; vd < ${#HEAD[@]}; vd++)); do PARKED+=("${HEAD[vd]}"); done
+fi
 park "${PARKED[@]:-}"
 trap 'unpark "${PARKED[@]:-}"' EXIT
 # -- claimable-work gate ------------------------------------------------------
@@ -934,40 +1121,55 @@ trap 'unpark "${PARKED[@]:-}"' EXIT
 # the park/restore of named holds, the pair verdict and the fence stamp are
 # untouched, and review rows never enter the candidate/pair accounting.
 CLAIMABLE=$(dbq "SELECT (SELECT COUNT(*) FROM tasks WHERE status='ready') + (SELECT COUNT(*) FROM tasks WHERE status='review' AND claim_lock IS NULL);")
-if [ "${#RUNNING[@]}" -lt "$CAP" ] && [ "$CLAIMABLE" -gt 0 ]; then
+# The gate's ceiling is the FACTORY SEATS, not the implementation knob: with
+# 3 implementation cards running, a fourth run may still be the review lane's
+# one seat (3 + 1 = 4). Past TOTAL_SEATS nothing can spawn, whatever the
+# claimable count says.
+if [ "${#RUNNING[@]}" -lt "$TOTAL_SEATS" ] && [ "$CLAIMABLE" -gt 0 ]; then
   DOUT=$(mktemp)
-  if [ "$MAXARG" -gt 0 ]; then
-    # an explicit --max N bounds TRUE concurrency: pass N through unchanged.
-    # The inner dispatcher counts running AFTER its reclaim phase (guard bug #8),
-    # so budgeting from this pre-pass snapshot over-counts zombies: still
-    # 'running' here, already claimable there. Proven 2026-10-28: --max 1 with
-    # 2 zombie-running made B below zero, SLOTS kept its cap-derived 2, the
-    # inner got --max 4 on a reclaim-emptied pool and spawned 4.
-    DISPATCH_MAX="$MAXARG"
-  else
-    DISPATCH_MAX=$(( ${#RUNNING[@]} + SLOTS ))
+  # BUDGET-derived, and CLAMPED below by the head verdict: an explicit --max N
+  # is a TRUE concurrency cap (running + spawns), a bare pass fills the factory
+  # seats - either way the ask here is running + sanctioned spawns, and the
+  # inner dispatcher counts running AFTER its reclaim phase (guard bug #8), so
+  # budgeting from this pre-pass snapshot over-counts zombies: still 'running'
+  # here, already claimable there. Proven 2026-10-28: --max 1 with 2
+  # zombie-running made B below zero, SLOTS kept its cap-derived 2, the inner
+  # got --max 4 on a reclaim-empty pool and spawned 4.
+  WANTED=$(( ${#RUNNING[@]} + SLOTS + REV_SLOTS ))
+  SPAWN_CAP=$VERDICT_CAP
+  if [ "${#HEAD[@]}" -gt 0 ] && [ "${#HEAD[@]}" -lt "$SPAWN_CAP" ]; then
+    SPAWN_CAP=${#HEAD[@]}
   fi
-  # CLAMP (card t_8a1a46e1): the pair verdict above is computed on THIS path
-  # too - it was merely printed, and the caller was trusted to read it. On
+  # CLAMP (card t_8a1a46e1): the head verdict is computed on THIS path too - it
+  # was once merely printed, and the caller was trusted to read it. On
   # 2026-11-11 a tick batched the dry-run and the real dispatch into one
   # terminal call, so `pair: forbidden` printed and this very `--max 2`
   # spawned both cards anyway (surfaces happened to be disjoint: luck, not
-  # law). The verdict is a gate now: a forbidden head pair caps a live pass
-  # at ONE card, said out loud with the ids it declined to pair. A sanctioned
-  # pair passes N through untouched. The dry-run output stays byte-identical
-  # (the clamp sits below the dry exit, and a dry-run never spawns).
-  # It sits BELOW the --max branch on purpose: a BARE pass (no --max) computes
-  # its own slot count and can equal 2 - leaving it unclamped would keep the
-  # hole open behind the "always pass an explicit --max" ritual this card
-  # exists to delete.
-  if [ "$DISPATCH_MAX" -gt 1 ] && [ "$PAIRV" != sanctioned ]; then
+  # law). The verdict is a gate now: a forbidden pair caps a live pass at ONE
+  # card, a clamped trio at its sanctioned pair (or one card), said out loud
+  # with the ids it declined. The dry-run output stays byte-identical (the
+  # clamp sits below the dry exit, and a dry-run never spawns).
+  # It sits BELOW the budget computation on purpose: a BARE pass (no --max)
+  # computes its own slot count and can exceed 1 - leaving it unclamped would
+  # keep the hole open behind the "always pass an explicit --max" ritual this
+  # card exists to delete.
+  DISPATCH_MAX=$(( ${#RUNNING[@]} + SPAWN_CAP + REV_SLOTS ))
+  # The line is for a VERDICT clamp only: a pass that simply has fewer legal
+  # cards than slots (SPAWN_CAP trimmed to the head size) clamped nothing and
+  # must stay silent - a `clamp:` with no reason reads as a defect.
+  if [ "$SPAWN_CAP" -lt "$SLOTS" ] && [ -n "$CLAMP_REASON" ]; then
     if [ "$MAXARG" -gt 0 ]; then
-      echo "clamp: --max $MAXARG -> 1 (pair: $PAIRV - $PAIRWHY) - declined to pair: $PAIRIDS"
+      echo "clamp: --max $MAXARG -> $DISPATCH_MAX ($CLAMP_REASON) - $CLAMP_NOUN$CLAMP_DECLINED"
     else
-      echo "clamp: wanted $DISPATCH_MAX -> 1 (pair: $PAIRV - $PAIRWHY) - declined to pair: $PAIRIDS"
+      echo "clamp: wanted $WANTED -> $DISPATCH_MAX ($CLAMP_REASON) - $CLAMP_NOUN$CLAMP_DECLINED"
     fi
-    DISPATCH_MAX=1
   fi
+  # SEATS CLAMP: an explicit --max larger than the factory can ever run is
+  # narrowed to the seats, loudly - the 3+1 invariant is not a caller option.
+  if [ "$MAXARG" -gt 0 ] && [ "$MAXARG" -gt "$DISPATCH_MAX" ] && [ "$DISPATCH_MAX" -eq "$WANTED" ]; then
+    echo "clamp: --max $MAXARG -> $DISPATCH_MAX (factory seats: $IMPL_SEATS implementation + $REVIEW_SEATS review = $TOTAL_SEATS max)"
+  fi
+  SLOTS=$(( SPAWN_CAP + REV_SLOTS ))   # the handoff echoes what this pass really asked for
   # FENCE STAMP (card t_8b32a09a, Endo ruling 2026-11-02 "bake + fence"):
   # every worker spawned through this call is stamped OMEGA_WORKER=1 and
   # gets repo bin/shims at the FRONT of PATH, so bare `git` inside a

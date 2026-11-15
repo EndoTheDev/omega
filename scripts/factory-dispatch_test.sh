@@ -578,6 +578,8 @@ PAIRRUN() {  # $1 = seed SQL, rest = extra guard args; prints the dry-run
   home=$(mktemp -d)
   mkdir -p "$home/kanban/boards/project-omega"
   printf 'project-omega\n' >"$home/kanban/current"
+  # PAIR_CONFIG declares the seats for the case (the trio cases need cap 3).
+  if [ -n "${PAIR_CONFIG:-}" ]; then printf '%s\n' "$PAIR_CONFIG" >"$home/config.yaml"; fi
   db="$(mixpath "$home")/kanban/boards/project-omega/kanban.db"
   sqlex "$db" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
   claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
@@ -852,6 +854,10 @@ SPAWNRUN() {  # $1 = case tag (names its board dir), $2 = seed SQL, rest = guard
   hn=$(mixpath "$home")
   hu="$SPAWN_BASE_U/$tag"
   printf 'project-omega\n' >"$home/kanban/current"
+  # SPAWN_CONFIG writes the home's config.yaml for the case: the factory seats
+  # come from kanban.max_in_progress_per_profile, so a trio case must declare 3
+  # (the knob is still 2 on the live lanes until the config flip lands).
+  if [ -n "${SPAWN_CONFIG:-}" ]; then printf '%s\n' "$SPAWN_CONFIG" >"$home/config.yaml"; fi
   : >"$(splog "$tag")"
   sqlex "$(spdb "$tag")" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
   claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
@@ -868,6 +874,12 @@ mx = int(args[args.index("--max") + 1]) if "--max" in args else 0
 open(log, "a", newline="").write(" ".join(args) + "\n")  # newline="": no CRLF translation
 con = sqlite3.connect(db, timeout=10)
 order = "ORDER BY priority DESC, created_at"
+# --max is a TOTAL concurrency cap (running + spawns), exactly as the real
+# inner reads it: _tick_spawn_budget subtracts the post-reclaim running count,
+# so the stub must too or a case with a running card would spawn past the ask
+# and its assertion would blame the guard for the stub's arithmetic.
+running = con.execute("SELECT COUNT(*) FROM tasks WHERE status='running'").fetchone()[0]
+room = max(mx - running, 0)
 rows = [r[0] for r in con.execute(
     "SELECT id FROM tasks WHERE status='ready' AND claim_lock IS NULL " + order)]
 # the review lane: dispatch_once claims `status='review' AND claim_lock IS
@@ -875,8 +887,8 @@ rows = [r[0] for r in con.execute(
 # after the ready lane. Mirrored here so a review-only board's spawn is real.
 revs = [r[0] for r in con.execute(
     "SELECT id FROM tasks WHERE status='review' AND claim_lock IS NULL " + order)]
-take = rows[:mx]
-rev_take = revs[:max(mx - len(take), 0)]
+take = rows[:room]
+rev_take = revs[:max(room - len(take), 0)]
 for cid in take:
     con.execute("UPDATE tasks SET status='running', claim_lock='pibtw:9', worker_pid=1 WHERE id=?", (cid,))
 for cid in rev_take:
@@ -1429,6 +1441,218 @@ rc=$?
 [ "$rc" -ne 0 ] && ok || bad "T24d: a missing PINNED db exited 0"
 [ ! -f "$FDHOME/pinned.db" ] && ok || bad "T24d: the tick created a pinned db (the pin means read exactly this)"
 rm -rf "$FDHOME"
+
+# T25 (local + CI): the TRIO VERDICT - the 2026-11-15 3+1 ruling generalizes
+# the sanctioned GO+GO pair to three concurrent implementation cards. The law:
+# three cards may run together ONLY when ALL THREE surfaces are provable (a
+# FILES: line, no bare-directory word, tokens on every side) and no pair
+# overlaps; any unprovable leg CLAMPS the spawn. Shapes pinned:
+#   T25a  three provably disjoint go cards at cap 3 -> `trio: sanctioned` and
+#         all three legal (a pair line is NOT printed - the trio line answers
+#         the same question for three);
+#   T25b  the LIVE pass spawns THREE (--max 3 through, Spawned: 3);
+#   T25c  one implementation card already running -> two spawnable (the seat
+#         math, not the old "2 spawns per pass" cap);
+#   T25d  a trio with a NO-FILES member -> clamped, and the fallback pair
+#         (which is forbidden too) clamps the live pass to ONE card, naming
+#         the ids it declined;
+#   T25e  a trio with a bare-directory FILES token -> clamped, fallback pair
+#         sanctioned -> the live pass spawns TWO and the declined card is
+#         released (park is a capacity hold, never a leak);
+#   T25f  a config knob of 4 cannot buy a fourth implementation seat - the
+#         seats are clamped to 3, LOUDLY, and the trio still governs.
+TRIOCFG='kanban:
+  max_in_progress_per_profile: 3'
+TRIG1="INSERT INTO tasks VALUES('t_tg1','ready','go one','FILES: scripts/factory-dispatch.sh',NULL,NULL,5,'2026-11-15T09:00',NULL,NULL);"
+TRIG2="INSERT INTO tasks VALUES('t_tg2','ready','go two','FILES: harness/cron/runner.go',NULL,NULL,5,'2026-11-15T09:01',NULL,NULL);"
+TRIG3="INSERT INTO tasks VALUES('t_tg3','ready','go three','FILES: cmd/omega/loop.go',NULL,NULL,5,'2026-11-15T09:02',NULL,NULL);"
+
+# T25a: dry-run, cap 3, three disjoint go cards, nothing running.
+PAIR_CONFIG="$TRIOCFG"
+out=$(PAIRRUN "$TRIG1
+$TRIG2
+$TRIG3")
+PAIR_CONFIG=""
+printf "%s" "$out" | grep -qF 'trio: sanctioned (t_tg1 t_tg2 t_tg3, classes go+go+go, FILES disjoint)' \
+	&& ok || bad "T25a: three provably disjoint go cards were not sanctioned as a trio (out: $out)"
+printf "%s" "$out" | grep -q "^legal: t_tg3" \
+	&& ok || bad "T25a: the third disjoint card must stay legal (out: $out)"
+printf "%s" "$out" | grep -q "^pair: " \
+	&& bad "T25a: a three-card head printed a PAIR line - the trio verdict replaces it (out: $out)" || ok
+printf "%s" "$out" | grep -qF 'seats: 3 implementation + 1 review = 4 max (config cap 3)' \
+	&& ok || bad "T25a: the seats line did not state 3+1=4 (out: $out)"
+
+# T25b: the LIVE trio - --max 3 reaches the inner dispatcher and three spawn.
+SPAWN_BASE=$(mktemp -d); SPAWN_BASE_N=$(mixpath "$SPAWN_BASE")
+SPAWN_BASE_U=$(cygpath -u "$SPAWN_BASE" 2>/dev/null || printf '%s' "$SPAWN_BASE")
+SPAWN_CONFIG="$TRIOCFG"
+out=$(SPAWNRUN trio-live "$TRIG1
+$TRIG2
+$TRIG3")
+printf "%s" "$out" | grep -qF 'trio: sanctioned (t_tg1 t_tg2 t_tg3, classes go+go+go, FILES disjoint)' \
+	&& ok || bad "T25b: the live path lost the trio verdict (out: $out)"
+printf "%s" "$out" | grep -q "clamp:" \
+	&& bad "T25b: a sanctioned trio was clamped (out: $out)" || ok
+grep -qxF 'kanban dispatch --max 3' "$(splog trio-live)" \
+	&& ok || bad "T25b: the inner dispatcher was not handed --max 3 (got: $(tr '\n' ';' <"$(splog trio-live)"))"
+printf "%s" "$out" | grep -qF 'Spawned: 3 (t_tg1 t_tg2 t_tg3)' \
+	&& ok || bad "T25b: three sanctioned cards must spawn (out: $out)"
+
+# T25c: one implementation card already running -> two of the trio spawnable.
+out=$(SPAWNRUN trio-one-running "INSERT INTO tasks VALUES('t_trun','running','docs bits','FILES: docs/running.md','pibtw:5',NULL,5,'2026-11-15T08:00',NULL,NULL);
+$TRIG1
+$TRIG2
+$TRIG3")
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_tg1 t_tg2, classes go+go, FILES disjoint)' \
+	&& ok || bad "T25c: with one card running the head holds two - expected a sanctioned pair (out: $out)"
+grep -qxF 'kanban dispatch --max 3' "$(splog trio-one-running)" \
+	&& ok || bad "T25c: running=1 + two slots must hand --max 3 (got: $(tr '\n' ';' <"$(splog trio-one-running)"))"
+printf "%s" "$out" | grep -qF 'Spawned: 2 (t_tg1 t_tg2)' \
+	&& ok || bad "T25c: exactly two cards may spawn beside the running one (out: $out)"
+nrun=$(sql "$(spdb trio-one-running)" "SELECT COUNT(*) FROM tasks WHERE status='running';")
+[ "$nrun" = "3" ] && ok || bad "T25c: $nrun cards running (expected 3: the running one + two spawns)"
+
+# T25d: an unprovable trio member clamps the LIVE pass to ONE card. The trio is
+# (no-FILES webui card, go card, webui card): every candidate is legal on its
+# own, so the trio verdict is the only thing that refuses all three - and the
+# fallback PAIR is forbidden as well (the no-FILES card leads), so one spawns.
+out=$(SPAWNRUN trio-clamp-one "INSERT INTO tasks VALUES('t_tnf','ready','webui tweak','the fix lands in webui/app/pages/y.vue and its test',NULL,NULL,5,'2026-11-15T09:00',NULL,NULL);
+$TRIG1
+INSERT INTO tasks VALUES('t_tw1','ready','webui one','FILES: webui/app/pages/a.vue',NULL,NULL,5,'2026-11-15T09:02',NULL,NULL);")
+printf "%s" "$out" | grep -qF 'trio: clamped (t_tnf t_tg1 t_tw1, no FILES: line on t_tnf - unprovable surface, never a trio)' \
+	&& ok || bad "T25d: a FILES-less trio member must clamp the trio and be named (out: $out)"
+printf "%s" "$out" | grep -qF 'clamp: wanted 3 -> 1 (trio: clamped - no FILES: line on t_tnf - unprovable surface, never a trio; pair: forbidden - no FILES: line on t_tnf - unprovable surface, never a pair) - declined to pair: t_tnf t_tg1' \
+	&& ok || bad "T25d: the clamp line lost the trio reason, the pair reason or the declined ids (out: $out)"
+grep -qxF 'kanban dispatch --max 1' "$(splog trio-clamp-one)" \
+	&& ok || bad "T25d: a clamped trio must reach the inner as --max 1 (got: $(tr '\n' ';' <"$(splog trio-clamp-one)"))"
+printf "%s" "$out" | grep -qF 'Spawned: 1 (t_tnf)' \
+	&& ok || bad "T25d: exactly one card may spawn under the clamped trio (out: $out)"
+
+# T25e: a bare-directory FILES token clamps the trio, but the oldest PAIR is
+# sanctioned -> two spawn and the declined third is released, not stranded.
+out=$(SPAWNRUN trio-clamp-two "$TRIG1
+INSERT INTO tasks VALUES('t_tw2','ready','webui two','FILES: webui/app/pages/b.vue components',NULL,NULL,5,'2026-11-15T09:01',NULL,NULL);
+INSERT INTO tasks VALUES('t_tw3','ready','webui three','FILES: webui/test/c.test.ts',NULL,NULL,5,'2026-11-15T09:02',NULL,NULL);")
+printf "%s" "$out" | grep -qF 'trio: clamped (t_tg1 t_tw2 t_tw3, bare-directory token on t_tw2 - unprovable surface, never a trio)' \
+	&& ok || bad "T25e: a bare-directory FILES token must clamp the trio and name the card (out: $out)"
+printf "%s" "$out" | grep -qF 'clamp: wanted 3 -> 2 (trio: clamped - bare-directory token on t_tw2 - unprovable surface, never a trio) - declined: t_tw3' \
+	&& ok || bad "T25e: the clamped trio did not fall back to its sanctioned pair (out: $out)"
+grep -qxF 'kanban dispatch --max 2' "$(splog trio-clamp-two)" \
+	&& ok || bad "T25e: the clamped trio must reach the inner as --max 2 (got: $(tr '\n' ';' <"$(splog trio-clamp-two)"))"
+printf "%s" "$out" | grep -qF 'Spawned: 2 (t_tg1 t_tw2)' \
+	&& ok || bad "T25e: the sanctioned pair of the trio must spawn (out: $out)"
+s=$(sql "$(spdb trio-clamp-two)" "SELECT status||'|'||coalesce(claim_lock,'NULL') FROM tasks WHERE id='t_tw3';")
+[ "$s" = "ready|NULL" ] && ok || bad "T25e: the declined card was not released by the pass ('$s') - the park must not outlive it"
+
+# T25f: the knob cannot buy a fourth seat - clamped to 3, said out loud.
+PAIR_CONFIG='kanban:
+  max_in_progress_per_profile: 4'
+out=$(PAIRRUN "$TRIG1
+$TRIG2
+$TRIG3")
+PAIR_CONFIG=""
+printf "%s" "$out" | grep -qF 'seats: config cap 4 > 3 - implementation seats clamped to 3 (3 implementation + 1 review = 4 max)' \
+	&& ok || bad "T25f: a config cap of 4 must be clamped to 3 implementation seats, loudly (out: $out)"
+printf "%s" "$out" | grep -qF 'trio: sanctioned (t_tg1 t_tg2 t_tg3, classes go+go+go, FILES disjoint)' \
+	&& ok || bad "T25f: the trio must still govern at the clamped seat count (out: $out)"
+rm -rf "$SPAWN_BASE"; SPAWN_CONFIG=""
+PAIR_CONFIG=""
+
+# T26 (local + CI): the REVIEW-LANE CAP - 3 implementation seats + 1 review
+# lane = 4 concurrent runs maximum (2026-11-15 ruling). vera runs at most ONE
+# review at a time, and the guard enforces it by PARKING the second review
+# candidate (the review lane's claim filter is `claim_lock IS NULL`), never by
+# printing a verdict beside the action.
+# A live review run is only provable from the board: a running card whose
+# CURRENT run was opened by claim_review_task carries a `claimed` event with
+# source_status="review" (kanban_db.py:2236). The fixtures therefore carry the
+# full tasks shape (current_run_id) plus task_events - the same witness
+# _retry_status_for_run reads.
+# Shapes pinned:
+#   T26a  a second review while one is live -> HELD (dry-run names the hold);
+#   T26b  the LIVE pass proves the enforcement: the ready card spawns, the
+#         held review row is still `review` with a free lock afterwards, and
+#         the inner dispatcher is budgeted around the reserved seat;
+#   T26c  the lane is RELEASED by the finish, not by a timer: flip the live
+#         review run to done and the waiting review spawns on the next pass;
+#   T26d  two waiting reviews with a free lane -> exactly ONE spawns, the
+#         other is parked for the pass and released with a NULL lock.
+SPAWN_BASE=$(mktemp -d); SPAWN_BASE_N=$(mixpath "$SPAWN_BASE")
+SPAWN_BASE_U=$(cygpath -u "$SPAWN_BASE" 2>/dev/null || printf '%s' "$SPAWN_BASE")
+REVDDL="ALTER TABLE tasks ADD COLUMN current_run_id INTEGER;
+CREATE TABLE task_events(id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT, run_id INTEGER, kind TEXT, payload TEXT, created_at INTEGER);"
+REVRUN() {  # $1 tag, $2 seed, $3 config, rest = guard args -> guard output
+  local tag="$1" seed="$2" cfg="$3"
+  shift 3
+  SPAWN_CONFIG="$cfg" SPAWNRUN "$tag" "$REVDDL
+$seed" "$@"
+}
+REV_LIVE="INSERT INTO tasks(id,status,title,body,claim_lock,claim_expires,priority,created_at,worker_pid,last_heartbeat_at,current_run_id)
+VALUES('t_rvr','running','review in flight','a review is running','pibtw:777',NULL,5,'2026-11-15T10:00',NULL,NULL,777);
+INSERT INTO task_events(task_id,run_id,kind,payload,created_at)
+VALUES('t_rvr',777,'claimed','{\"lock\": \"pibtw:777\", \"expires\": 0, \"run_id\": 777, \"source_status\": \"review\"}',0);"
+REV_WAIT="INSERT INTO tasks(id,status,title,body,claim_lock,claim_expires,priority,created_at,worker_pid,last_heartbeat_at,current_run_id)
+VALUES('t_rev2','review','waiting review','the review of the batch',NULL,NULL,5,'2026-11-15T10:05',NULL,NULL,NULL);"
+REV_READY="INSERT INTO tasks(id,status,title,body,claim_lock,claim_expires,priority,created_at,worker_pid,last_heartbeat_at,current_run_id)
+VALUES('t_w1','ready','webui one','FILES: webui/app/pages/a.vue',NULL,NULL,5,'2026-11-15T10:06',NULL,NULL,NULL);"
+
+# T26a: dry-run - the live review run holds the lane and the hold is NAMED.
+out=$(REVRUN rev-hold-dry "$REV_LIVE
+$REV_WAIT
+$REV_READY" "" --dry-run)
+printf "%s" "$out" | grep -qF 'review candidates: 1 unclaimed (t_rev2)' \
+	&& ok || bad "T26a: the waiting review was not counted (out: $out)"
+printf "%s" "$out" | grep -qF 'review lane: live=1 (t_rvr) cap=1 - a second review is HELD (3 implementation + 1 review = 4 max)' \
+	&& ok || bad "T26a: the review-lane state line did not report the live run / the cap (out: $out)"
+printf "%s" "$out" | grep -qF 'review lane hold: t_rev2 (live review run (t_rvr) - one review at a time)' \
+	&& ok || bad "T26a: the held review was not named with its reason (out: $out)"
+printf "%s" "$out" | grep -q "dry-run: no dispatch" \
+	&& ok || bad "T26a: the dry-run dispatched (out: $out)"
+
+# T26b: LIVE - the ready card spawns, the held review does NOT, and it is
+# released afterwards. This is the enforcement leg: the inner dispatcher was
+# called (so the hold, not the claimable gate, is what protected the lane).
+out=$(REVRUN rev-hold-live "$REV_LIVE
+$REV_WAIT
+$REV_READY" "")
+grep -qxF 'kanban dispatch --max 2' "$(splog rev-hold-live)" \
+	&& ok || bad "T26b: with one review running and one impl seat free the inner must be handed --max 2 (got: $(tr '\n' ';' <"$(splog rev-hold-live)"))"
+printf "%s" "$out" | grep -qF 'Spawned: 1 (t_w1)' \
+	&& ok || bad "T26b: the ready card must spawn and the held review must not (out: $out)"
+s=$(sql "$(spdb rev-hold-live)" "SELECT status||'|'||coalesce(claim_lock,'NULL') FROM tasks WHERE id='t_rev2';")
+[ "$s" = "review|NULL" ] && ok || bad "T26b: the held review row changed shape ('$s') - it must stay review with a FREE lock after the pass"
+
+# T26c: the finish releases the lane - no timer, no manual unlock. The board
+# carries the FINISHED review run (status done, its claimed event still saying
+# source_status=review): the lane is held by a LIVE run only, so the waiting
+# review spawns on this very pass.
+REV_DONE="INSERT INTO tasks(id,status,title,body,claim_lock,claim_expires,priority,created_at,worker_pid,last_heartbeat_at,current_run_id)
+VALUES('t_rvr','done','finished review','the review finished','pibtw:777',NULL,5,'2026-11-15T10:00',NULL,NULL,777);
+INSERT INTO task_events(task_id,run_id,kind,payload,created_at)
+VALUES('t_rvr',777,'claimed','{\"lock\": \"pibtw:777\", \"expires\": 0, \"run_id\": 777, \"source_status\": \"review\"}',0);"
+out=$(REVRUN rev-release "$REV_DONE
+$REV_WAIT" "")
+printf "%s" "$out" | grep -qF 'review lane: live=0 cap=1 - spawn: t_rev2' \
+	&& ok || bad "T26c: a finished review run must free the lane and name the spawnable review (out: $out)"
+printf "%s" "$out" | grep -qF 'Spawned: 1 (t_rev2)' \
+	&& ok || bad "T26c: the waiting review must spawn once the lane is free (out: $out)"
+s=$(sql "$(spdb rev-release)" "SELECT status FROM tasks WHERE id='t_rev2';")
+[ "$s" = "running" ] && ok || bad "T26c: the released review is '$s' (expected running - claim_review_task flips review -> running)"
+
+# T26d: two waiting reviews, free lane -> ONE spawns, the other holds for the pass
+# and is released with a NULL lock (never stranded behind the sentinel).
+out=$(REVRUN rev-two "INSERT INTO tasks(id,status,title,body,claim_lock,claim_expires,priority,created_at,worker_pid,last_heartbeat_at,current_run_id)
+VALUES('t_rev1','review','first review','the first review',NULL,NULL,5,'2026-11-15T10:04',NULL,NULL,NULL);
+$REV_WAIT" "")
+printf "%s" "$out" | grep -qF 'review lane: live=0 cap=1 - spawn: t_rev1' \
+	&& ok || bad "T26d: the free lane must name exactly one spawnable review (out: $out)"
+printf "%s" "$out" | grep -qF 'review lane hold: t_rev2 (lane cap 1 - only t_rev1 may claim a review this pass)' \
+	&& ok || bad "T26d: the second review was not held for the pass (out: $out)"
+printf "%s" "$out" | grep -qF 'Spawned: 1 (t_rev1)' \
+	&& ok || bad "T26d: exactly ONE review may claim in a pass (out: $out)"
+s=$(sql "$(spdb rev-two)" "SELECT status||'|'||coalesce(claim_lock,'NULL') FROM tasks WHERE id='t_rev2';")
+[ "$s" = "review|NULL" ] && ok || bad "T26d: the held review must be released to review|NULL after the pass ('$s')"
+rm -rf "$SPAWN_BASE"
 
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
