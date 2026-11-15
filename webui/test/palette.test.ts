@@ -382,7 +382,7 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
       /\.menubar\s*\{[^}]*height: var\(--menubar-h\)/.test(css),
       "the bar itself reads the same number",
     );
-    assert.ok(block.includes("width: 640px"), "the overlay carries the widened band");
+    assert.ok(block.includes("width: 420px"), "the overlay matches the trigger's band");
     assert.ok(css.includes("background: var(--z2)"), "tokens carry it");
   });
 

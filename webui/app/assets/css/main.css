@@ -144,14 +144,15 @@ body {
    only search field), one click = the ctrl+k intent. Its placeholder is
    the LIVE clock NavCluster re-renders on each minute boundary.
    card t_d4443ab5: the affordance is the top bar's command-palette SECTION
-   and it carries the section's max width (200 -> 260); the 26vw cap keeps
+   and it carries the section's max width (200 -> 260 -> 420, the tuned
+   2026-11-15 number); the 26vw cap keeps
    the centred cluster clear of the edge toggles on a narrow desktop
-   window. The overlay it opens is the wider band (640, below). */
+   window. The overlay it opens is the same band (420, below). */
 .nav-palette-input {
   display: inline-flex;
   align-items: center;
   box-sizing: border-box;
-  width: 260px;
+  width: 420px;
   max-width: 26vw;
   height: 24px;
   margin: 0 4px;
@@ -189,7 +190,7 @@ body {
   top: var(--menubar-h);
   left: 50%;
   transform: translateX(-50%);
-  width: 640px;
+  width: 420px;
   max-width: calc(100vw - 24px);
   display: flex;
   flex-direction: column;
@@ -564,6 +565,17 @@ body {
   padding: 0 4px 0 8px;
   font-size: 12px;
 }
+/* card t_b53dc6e0: the PINNED strip's tuned geometry (Endo's 2026-11-15
+   numbers): 1px shorter than the base contract and edge-to-edge chips.
+   Gap 0 is deliberate - the icon chips sit flush and their hover/active
+   fills read as one continuous band (no padding or border is added to
+   "fix" it). SCOPE: .dock-pane.pinned only - every pinned pane takes it
+   (the two edge stripes AND the bottom terminal strip); the main panes
+   keep the base 35px / 2px contract above. */
+.dock-pane.pinned .dock-tabbar {
+  height: 34px;
+  gap: 0px;
+}
 .dock-tab-new, .dock-tab-btn {
   flex: 0 0 auto;
   width: 26px;
@@ -737,17 +749,18 @@ body {
 .dock-tab-ic { flex: none; opacity: 0.75; }
 .dock-tab.active .dock-tab-ic, .dock-tab:hover .dock-tab-ic { opacity: 1; }
 /* card t_a3b28c37: the icon-only sidebar chip gets its own shape - a fixed
-   28px chip with the glyph optically centered (zero padding, centered
+   32px chip (the tuned 2026-11-15 number; it was 28px) with the glyph
+   optically centered (zero padding, centered
    packing). Scoped to .ic-only so the pinned text-tab rules above (the
    shrink + ellipsis shape main/bottom tabs wear) stay untouched. The
-   tabbar's 2px gap + four chips still fit a 320px column with room. */
+   tabbar's zero gap + four chips still fit a 320px column with room. */
 .dock-pane.pinned .dock-tab.ic-only {
   flex: none;
-  width: 28px;
+  width: 32px;
   /* card t_80775d15: the icon chip's own floor. The base .dock-tab's
-     72px min-width would otherwise override the 28px width (min-width
+     72px min-width would otherwise override the 32px width (min-width
      beats width on the used value) and blow the chip shape open. */
-  min-width: 28px;
+  min-width: 32px;
   padding: 0;
   justify-content: center;
 }
