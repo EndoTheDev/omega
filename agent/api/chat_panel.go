@@ -346,6 +346,13 @@ func composeItems(persisted, open []transcriptItem) []transcriptItem {
 			continue
 		}
 		if i, dup := seen[sig]; dup {
+			if out[i].Kind == "tool_call" && it.StartedAt != "" {
+				// the persisted twin adopts the open row's start
+				// stamp too: the row the renderer keeps is the one
+				// that must carry the clock (round 3 - the stamp is
+				// the only anchor that survives a cached payload)
+				out[i].StartedAt = it.StartedAt
+			}
 			if it.Running && out[i].Kind == "tool_call" {
 				out[i].Running = true
 				out[i].ElapsedMs = it.ElapsedMs
@@ -665,7 +672,12 @@ func chatRows(items []transcriptItem) []core.ChatRow {
 			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockThinking, Content: it.Content, Running: it.Running, ElapsedMs: it.ElapsedMs, ThinkingMs: it.ThinkingMs}}
 		case "tool_call":
 			row.Role = core.ChatRoleAssistant
-			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockToolCall, Running: it.Running, ToolCall: it.ToolCall, ElapsedMs: it.ElapsedMs}}
+			// an unanswered call rides its open wall clock (card
+			// t_6bad9f6f round 3): the reader derives the row's
+			// meter from it, so a payload that outlives its build
+			// (the yield window pushes no delta) can never hand a
+			// remounted pane a stale anchor
+			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockToolCall, Running: it.Running, ToolCall: it.ToolCall, ElapsedMs: it.ElapsedMs, StartedAt: it.StartedAt}}
 		case "tool_result":
 			row.Role = core.ChatRoleTool
 			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockToolResult, Content: it.Content, ToolCallID: it.ToolCallID, IsError: it.IsError, Gate: it.Gate, ElapsedMs: it.ElapsedMs, AnswerMs: it.AnswerMs}}

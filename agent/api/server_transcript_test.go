@@ -707,6 +707,46 @@ func TestFreshenRunningCallsAgesOnlyTheCall(t *testing.T) {
 	}
 }
 
+// TestBuildTranscriptItemsStampsTheUnansweredCall (card t_6bad9f6f
+// round 3): history renders an unanswered call as the pending row, and
+// that row carries the assistant turn's write time as its start stamp -
+// the only anchor that survives a cached payload. An answered call
+// carries no stamp (its result's final duration is the row's number),
+// whether the answer is an inline tool result or a yield-class wake
+// result.
+func TestBuildTranscriptItemsStampsTheUnansweredCall(t *testing.T) {
+	assistant := func(calls ...core.ToolCall) core.Assistant {
+		a := core.NewAssistant("")
+		a.ToolCalls = calls
+		return a
+	}
+	msgs := []core.StoredMessage{
+		{ID: 1, Message: core.NewUser("run both"), CreatedAt: "2026-11-15T10:00:00Z"},
+		{ID: 2, Message: assistant(
+			core.ToolCall{ID: "answered", Name: "files.read"},
+			core.ToolCall{ID: "yielded", Name: "shell.run"},
+			core.ToolCall{ID: "waiting", Name: "shell.run"},
+		), CreatedAt: "2026-11-15T10:00:02Z"},
+		{ID: 3, Message: core.NewToolResult("ok", "answered", false)},
+		{ID: 4, Message: core.YieldResult{ToolCallID: "yielded", Content: "async done"}},
+	}
+	items := buildTranscriptItems(msgs)
+	byID := map[string]transcriptItem{}
+	for _, it := range items {
+		if it.Kind == "tool_call" && it.ToolCall != nil {
+			byID[it.ToolCall.ID] = it
+		}
+	}
+	for _, id := range []string{"answered", "yielded"} {
+		if got := byID[id].StartedAt; got != "" {
+			t.Fatalf("%s is answered: started_at = %q, want none", id, got)
+		}
+	}
+	if got := byID["waiting"].StartedAt; got != "2026-11-15T10:00:02Z" {
+		t.Fatalf("the unanswered call's started_at = %q, want the assistant row's write time", got)
+	}
+}
+
 // TestSessionTranscriptAgesTheRunningCall (card t_6bad9f6f): the
 // reattach tail is a SNAPSHOT, rebuilt per event - and a tool call emits
 // no event until its result. A reload mid-call therefore reads a tail

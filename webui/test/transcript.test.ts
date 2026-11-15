@@ -155,6 +155,30 @@ describe("renderTranscriptItems", () => {
     assert.equal(settled[0].elapsedMs, undefined);
   });
 
+  it("a pending call meters from its started_at, not from the restore's build instant", () => {
+    const started = new Date(Date.now() - 9_000).toISOString();
+    const now = Date.now();
+    const items = renderTranscriptItems([
+      { kind: "tool_call", tool_call: { id: "tc1", name: "shell.run" }, elapsed_ms: 300, started_at: started },
+    ]);
+    if (items[0].kind !== "tool") return;
+    assert.equal(items[0].status, "pending");
+    assert.ok(
+      items[0].elapsedMs !== undefined && items[0].elapsedMs >= 8_500 && items[0].elapsedMs <= Date.now() - now + 9_500,
+      `the restored row anchors on the call's start (got ${items[0].elapsedMs})`,
+    );
+    // an answered call never carries a live offset - its result's final
+    // duration is the row's number
+    const settled = renderTranscriptItems([
+      { kind: "tool_call", tool_call: { id: "tc1", name: "shell.run" }, started_at: started },
+      { kind: "tool_result", tool_call_id: "tc1", content: "done", elapsed_ms: 9_100 },
+    ]);
+    if (settled[0].kind !== "tool") return;
+    assert.equal(settled[0].status, "done");
+    assert.equal(settled[0].elapsedMs, undefined);
+    assert.equal(settled[0].finalMs, 9_100);
+  });
+
   it("running thinking and message blocks render streaming (the attach adopts them)", () => {
     const items = renderTranscriptItems([
       { kind: "message", content: "pre", time: "t0", response_ms: 100 },
