@@ -309,6 +309,17 @@ whole of the call even though the record is still open for the result
 (card t_484cbb27): the tool's wall clock bills to nobody, and a
 remounted row must not tick off a window the accumulator closed.
 
+An UNANSWERED tool line (the running call, and the yielded call whose
+result re-enters as a later wake turn) also carries `started_at`, the
+call's open wall clock (RFC 3339, UTC). A duration only describes the
+instant the payload was built, and a yielded call emits nothing between
+its conversion and its wake - the pane keeps that payload, so every
+rebuild measured from the payload's build instant restarted the meter.
+`started_at` cannot go stale: the reader derives `now - started_at` at
+paint time (a reader whose clock sits behind the server's clamps at 0
+rather than rendering a negative meter). Answered calls carry their
+final durations and no stamp.
+
 ### GET /sessions/{id}/variants (+ POST/PATCH)
 
 Branch-point metadata for the variant switcher; the select action sets
@@ -885,7 +896,14 @@ immediately. A running tool call re-pushes on the cadence on its own
 elapsed. That repaint answers only for the session that owns the panel -
 it stops the moment another conversation takes the panel over, and it
 stops before the exit flush, so a finished run never repaints a running
-panel. Its actions (`stop`, `retry`, module `http_channel`) route
+panel. A YIELDED call (past the loop's inline budget) is the one row
+with no repaint at all - its run ended, so nothing re-pushes the panel
+until the wake - and its row therefore carries `started_at` (the call's
+open clock) beside `running: false`: the reader derives the meter from
+that stamp at paint time, so a pane rebuilt from the still-cached
+payload (a dock-tab switch) counts on instead of restarting at zero.
+
+Its actions (`stop`, `retry`, module `http_channel`) route
 through the pipe and serve the same faces the REST routes serve. The
 registration is Start-gated: the panel exists only once a channel
 actually starts - a process that never serves carries no dead http

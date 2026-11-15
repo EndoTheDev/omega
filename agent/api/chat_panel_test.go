@@ -183,7 +183,7 @@ func TestComposeItemsAdoptsTheRunningAnchor(t *testing.T) {
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}},
 	}
 	composed := composeItems(persisted, []transcriptItem{
-		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}, Running: true, ElapsedMs: 4200},
+		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}, Running: true, ElapsedMs: 4200, StartedAt: "2026-11-15T10:00:00Z"},
 	})
 	if len(composed) != 2 {
 		t.Fatalf("composed = %d items, want the twin folded into its persisted row", len(composed))
@@ -192,11 +192,17 @@ func TestComposeItemsAdoptsTheRunningAnchor(t *testing.T) {
 	if !call.Running || call.ElapsedMs != 4200 {
 		t.Fatalf("persisted call row = %+v, want running with the 4200ms anchor", call)
 	}
+	// the start stamp rides the same adoption: the row the renderer
+	// keeps is the one that must carry the clock (round 3 - a duration
+	// goes stale in a cached payload, the stamp does not)
+	if call.StartedAt != "2026-11-15T10:00:00Z" {
+		t.Fatalf("persisted call row started_at = %q, want the twin's stamp", call.StartedAt)
+	}
 	// a settled twin donates nothing: the settled row stays settled
 	composed = composeItems(persisted, []transcriptItem{
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}},
 	})
-	if composed[1].Running || composed[1].ElapsedMs != 0 {
+	if composed[1].Running || composed[1].ElapsedMs != 0 || composed[1].StartedAt != "" {
 		t.Fatalf("a settled twin must not move the row: %+v", composed[1])
 	}
 }
@@ -383,11 +389,14 @@ func TestChatPanelRunningCallRepushesFreshElapsed(t *testing.T) {
 	}
 	s.chat.beginRun("sess-tool")
 	// the loop's snapshot at the call event: the call had just opened
-	// (anchor ~0), and no event follows it until the result lands
+	// (anchor ~0), and no event follows it until the result lands. Built
+	// through the production flattener so the snapshot carries what the
+	// hub really stores - the aged anchor AND the call's start stamp.
 	builtAt := time.Now().Add(-2 * time.Second)
-	s.runs.setOpenTail(run, []transcriptItem{
-		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}, Running: true, ElapsedMs: 5},
-	}, builtAt)
+	s.runs.setOpenTail(run, liveTranscriptItems(nil, assistantRecord{
+		toolCalls:  []core.ToolCall{{ID: "tcl", Name: "shell.run"}},
+		callStarts: map[string]time.Time{"tcl": builtAt},
+	}, builtAt), builtAt)
 
 	toolElapsed := func(p core.Panel) int64 {
 		payload := chatPanelPayload(t, p)
@@ -419,11 +428,20 @@ func TestChatPanelRunningCallRepushesFreshElapsed(t *testing.T) {
 	if seen < 1900 {
 		t.Fatalf("the panel never re-pushed a fresh call anchor while the call ran: newest elapsed = %d, want >= 1900", seen)
 	}
+	// the same row carries the call's start STAMP: the anchor a pane
+	// rebuilt from a cached payload derives from (round 3)
+	mu.Lock()
+	last, _ := lastPanel(panels)
+	mu.Unlock()
+	stamp := toolStartStamp(t, last)
+	if got, err := time.Parse(time.RFC3339Nano, stamp); err != nil || got.After(time.Now()) || got.Before(builtAt.Add(-time.Second)) {
+		t.Fatalf("running call started_at = %q (parse err %v), want the call's open clock ~%v", stamp, err, builtAt)
+	}
 	s.chat.endRun("sess-tool")
 	// the aging read copies: the hub's snapshot still carries its own
 	// anchor for the next rebuild
-	if open, _, live := s.runs.openSnapshot("sess-tool"); live && len(open) > 0 && open[0].ElapsedMs != 5 {
-		t.Fatalf("the stored snapshot was mutated in place: %d, want 5", open[0].ElapsedMs)
+	if open, _, live := s.runs.openSnapshot("sess-tool"); live && len(open) > 0 && open[0].ElapsedMs != 0 {
+		t.Fatalf("the stored snapshot was mutated in place: %d, want the call-open 0", open[0].ElapsedMs)
 	}
 }
 
@@ -434,6 +452,13 @@ func lastPanel(panels []core.Panel) (core.Panel, int) {
 		return core.Panel{}, 0
 	}
 	return panels[len(panels)-1], len(panels)
+}
+
+// toolStartStamp reads the single tool_call block's started_at out of a
+// recorded panel.
+func toolStartStamp(t *testing.T, p core.Panel) string {
+	t.Helper()
+	return toolCallBlock(t, chatPanelPayload(t, p)).StartedAt
 }
 
 // slowCallLoop mirrors the real loop around ONE tool call: the
@@ -1312,6 +1337,111 @@ func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 	if s.runs.active(sessionID) {
 		t.Fatal("no run should hold the slot")
 	}
+}
+
+// TestChatPanelPendingCallCarriesItsStart (card t_6bad9f6f round 3):
+// a YIELD-class call (past the loop's inline budget) persists its
+// assistant turn with the call and no result - the session goes idle
+// and both wires serve the bare pending row. The idle payload emits no
+// delta at all (no run, so no batcher), so the pane keeps that payload
+// until something else changes the panel: a duration measured at build
+// time would freeze the row's clock at whatever it was then, and a
+// dock-tab remount would restart the visible meter. The row therefore
+// carries the call's own START stamp, which the client derives from at
+// every paint.
+func TestChatPanelPendingCallCarriesItsStart(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "sess-yield", "", "Yielded run"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := st.AppendMessage(ctx, "sess-yield", core.NewUser("run the suite")); err != nil {
+		t.Fatalf("append user: %v", err)
+	}
+	assistant := core.NewAssistant("")
+	assistant.ToolCalls = []core.ToolCall{{ID: "cyield", Name: "shell.run", Arguments: map[string]any{"command": "sleep 30"}}}
+	if err := st.AppendMessage(ctx, "sess-yield", assistant); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+	// the run that opened the call is gone: the ledger holds the
+	// dispatch, the panel holds the call
+	panels := s.chat.Panels()
+	if len(panels) != 1 {
+		t.Fatalf("panels = %d, want 1", len(panels))
+	}
+	payload := chatPanelPayload(t, panels[0])
+	if payload.Running {
+		t.Fatalf("no run is live: %+v", payload)
+	}
+	block := toolCallBlock(t, payload)
+	if block.Running {
+		t.Fatalf("the persisted pending row is not a running block: %+v", block)
+	}
+	if block.StartedAt == "" {
+		t.Fatalf("the pending row carries no start stamp: %+v", block)
+	}
+	start, err := time.Parse(time.RFC3339Nano, block.StartedAt)
+	if err != nil {
+		t.Fatalf("start stamp %q does not parse: %v", block.StartedAt, err)
+	}
+	// the anchor is the assistant row's write time - the instant the
+	// loop persisted the turn that carries the call (the calls execute
+	// right after it)
+	msgs, err := st.GetActiveView(ctx, "sess-yield")
+	if err != nil {
+		t.Fatalf("active view: %v", err)
+	}
+	var persisted string
+	for _, sm := range msgs.Path {
+		if _, ok := sm.Message.(core.Assistant); ok {
+			persisted = sm.CreatedAt
+		}
+	}
+	if persisted == "" {
+		t.Fatal("no persisted assistant row")
+	}
+	want, err := time.Parse(time.RFC3339Nano, persisted)
+	if err != nil {
+		t.Fatalf("persisted stamp %q does not parse: %v", persisted, err)
+	}
+	if !start.Equal(want) {
+		t.Fatalf("start stamp = %v, want the assistant row's write time %v", start, want)
+	}
+	// the transcript wire answers the same row for a reload
+	rec := httptest2.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest2.NewRequest(http.MethodGet, "/sessions/sess-yield/transcript", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("transcript status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Items []transcriptItem `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode transcript: %v", err)
+	}
+	var wire *transcriptItem
+	for i := range body.Items {
+		if body.Items[i].Kind == "tool_call" {
+			wire = &body.Items[i]
+		}
+	}
+	if wire == nil || wire.StartedAt != block.StartedAt {
+		t.Fatalf("transcript call row = %+v, want started_at %q", wire, block.StartedAt)
+	}
+}
+
+// toolCallBlock pulls the single tool_call block out of a panel payload.
+func toolCallBlock(t *testing.T, payload core.ChatPayload) core.ChatBlock {
+	t.Helper()
+	for _, row := range payload.Rows {
+		for _, b := range row.Blocks {
+			if b.Type == core.ChatBlockToolCall {
+				return b
+			}
+		}
+	}
+	t.Fatalf("the payload carries no tool_call block: %+v", payload)
+	return core.ChatBlock{}
 }
 
 // TestUIActionRetryOnLiveRunIsA409: handleUIActions passes a runError's

@@ -313,6 +313,10 @@ export type TranscriptWireItem =
       tool_call?: { id?: string; name?: string; arguments?: Record<string, unknown> };
       running?: boolean;
       elapsed_ms?: number;
+      // an UNANSWERED call's open wall clock (card t_6bad9f6f round 3) -
+      // the meter derives from it at paint time, so a payload that was
+      // built minutes ago still anchors the row on its true elapsed
+      started_at?: string;
     }
   | {
       kind: "tool_result";
@@ -327,6 +331,30 @@ export type TranscriptWireItem =
       // beside the call's elapsed: the answer segment's response span
       answer_ms?: number;
     };
+
+// toolCallAnchorMs derives a tool row's meter offset at PAINT time -
+// the one anchor that survives a cached payload (card t_6bad9f6f
+// round 3). ElapsedMs is a duration measured when the payload was
+// built; the canvas store keeps that payload until the next delta, and
+// a YIELDED call (past the loop's inline budget) emits none between its
+// conversion and its wake - so a pane rebuilt from the store restarted
+// the call's meter at zero on every dock-tab switch. The wire's
+// started_at is the call's own open clock: now - started_at is the true
+// elapsed-so-far no matter how old the payload is. Falls back to the
+// built duration when the row carries no stamp (id-less calls, rows
+// served before the stamp existed). Always non-negative - a reader
+// clock behind the server's (a remote bind) degrades to 0, never to a
+// negative meter.
+export function toolCallAnchorMs(
+  startedAt: string | undefined,
+  elapsedMs: number | undefined,
+): number | undefined {
+  if (startedAt) {
+    const start = Date.parse(startedAt);
+    if (!Number.isNaN(start)) return Math.max(0, Date.now() - start);
+  }
+  return elapsedMs;
+}
 
 // renderTranscriptItems maps a transcript payload into the components'
 // item shapes. user/message/thinking become bubbles; a tool_call opens
@@ -408,19 +436,29 @@ export function renderTranscriptItems(
         // orphaned done line. The live tail's running bit outranks
         // both (the run still owns the call); an id-less call keeps
         // today's done shape (nothing to match a result against).
+        const pending = !!cid && !resultIds.has(cid);
         const t: ToolItem = {
           kind: "tool",
           name: it.tool_call?.name || "tool",
           callId: cid || undefined,
           status:
             it.running ? "running"
-            : cid && !resultIds.has(cid) ? "pending"
+            : pending ? "pending"
             : "done",
           output:
             it.tool_call?.arguments ?
               JSON.stringify(it.tool_call.arguments, null, 2)
             : undefined,
-          elapsedMs: it.running ? (it.elapsed_ms ?? 0) : undefined,
+          // a RUNNING or PENDING call meters from its open wall clock
+          // when the wire carries one (card t_6bad9f6f round 3): a
+          // yielded call pushes no delta, so a restored payload is
+          // arbitrarily old and its elapsed_ms only tells how long the
+          // call had run when the payload was built - the stamp makes
+          // the row count on from the call's real start at every paint
+          elapsedMs:
+            it.running || pending ?
+              toolCallAnchorMs(it.started_at, it.elapsed_ms)
+            : undefined,
         };
         if (it.tool_call?.id) toolById.set(it.tool_call.id, t);
         // a verdict call (the bare domain tool, the one-domain law
@@ -517,6 +555,11 @@ export interface ChatBlockWire {
   is_error?: boolean;
   gate?: string; // the smart gate's decision record (card t_1b3e2a8b)
   elapsed_ms?: number;
+  // an UNANSWERED tool_call's open wall clock (card t_6bad9f6f round
+  // 3) - core.ChatBlock.StartedAt verbatim: the meter derives from it
+  // at paint time, so a payload built minutes ago still anchors the
+  // row on the call's true elapsed instead of restarting at zero
+  started_at?: string;
   answer_ms?: number; // response-return duration (card t_e27c8347)
   // a text/thinking block's own duration (card t_95385aba):
   // response_ms/thinking_ms freeze a COMPLETED segment's label after a
@@ -606,6 +649,7 @@ export function normalizeChatPayload(payload: unknown): ChatPayloadWire | null {
             is_error: b.is_error === true ? true : undefined,
             gate: typeof b.gate === "string" && b.gate ? b.gate : undefined,
             elapsed_ms: typeof b.elapsed_ms === "number" ? b.elapsed_ms : undefined,
+            started_at: typeof b.started_at === "string" && b.started_at ? b.started_at : undefined,
             answer_ms: typeof b.answer_ms === "number" ? b.answer_ms : undefined,
             response_ms: typeof b.response_ms === "number" ? b.response_ms : undefined,
             thinking_ms: typeof b.thinking_ms === "number" ? b.thinking_ms : undefined,

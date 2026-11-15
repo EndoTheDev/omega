@@ -140,6 +140,16 @@ type ChatBlock struct {
 	// the call's own row. Empty = no machine decision.
 	Gate      string `json:"gate,omitempty"`
 	ElapsedMs int64  `json:"elapsed_ms,omitempty"`
+	// StartedAt rides an UNANSWERED tool_call block (card t_6bad9f6f):
+	// the call's own open wall clock, RFC 3339. ElapsedMs is a
+	// duration measured when the payload was BUILT, so a payload that
+	// outlives its build (the canvas store holds it until the next
+	// delta, and a yielded call emits none) hands a remounted pane an
+	// anchor older than the call - the meter restarted. A start stamp
+	// cannot go stale: the reader derives now - StartedAt at the
+	// moment it paints. Empty on every answered call (ElapsedMs +
+	// ResponseMs carry those) and on rows served without a clock.
+	StartedAt string `json:"started_at,omitempty"`
 	// AnswerMs rides a tool_result block (card t_e27c8347): the
 	// response-return duration - the wall clock from the call's
 	// result to the answer segment's completion, stamped beside

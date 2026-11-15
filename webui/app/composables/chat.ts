@@ -53,6 +53,7 @@ import {
   StreamInterruptedError,
   fetchTranscript,
   runActive,
+  toolCallAnchorMs,
   transcriptHasPending,
   type OmegaMessage,
 } from "./omega.ts";
@@ -1402,15 +1403,24 @@ export function createCanvasTranscript(): CanvasTranscript {
       // a call with its result row anywhere in the payload (wire
       // order: right after the call's turn) is settled. An id-less
       // call keeps the done shape - nothing to match a result
-      // against, and the elapsed offset survives the running ->
-      // pending flip so the meter never restarts mid-call.
+      // against.
       it.status =
         blockRunning ? "running"
         : callId && !resultIds.has(callId) ? "pending"
         : "done";
-      // elapsed already consumed by a STILL-RUNNING restored call (the
-      // persisted history's live-run merge): the meter counts on
-      if (blockRunning) it.elapsedMs = block.elapsed_ms ?? 0;
+      // a RUNNING or PENDING call meters from its open wall clock
+      // (card t_6bad9f6f round 3): started_at is re-derived at every
+      // paint, so a pane rebuilt from a payload whose last delta
+      // predates the call's yield (the store keeps it - a yielded call
+      // emits nothing until its wake) still counts from the call's
+      // real start instead of zero. The built duration is only the
+      // fallback for a block the server served without a stamp; an
+      // already-set offset survives when neither is present (the
+      // running -> pending flip on a live payload).
+      if (it.status === "running" || it.status === "pending") {
+        const anchor = toolCallAnchorMs(block.started_at, block.elapsed_ms);
+        if (anchor !== undefined) it.elapsedMs = anchor;
+      }
       cache.set(csig, it);
       return it;
     }

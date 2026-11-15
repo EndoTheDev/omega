@@ -194,6 +194,90 @@ test("canvas siblings: settled beside pending in one payload", () => {
   assert.equal(tools[1]!.status, "pending", "the still-pending sibling chips in history");
 });
 
+// --- the pending chip's clock (card t_6bad9f6f round 3) ------------------
+//
+// A yielded call emits NO delta between its conversion and its wake, so
+// the canvas store hands a rebuilt pane a payload whose last build
+// predates the call's yield. A duration (elapsed_ms) therefore anchors a
+// remount on the wrong instant - the round-3 defect: every dock-tab
+// switch restarted the meter at 0. The wire's started_at is the call's
+// own open clock; the reader derives now - started_at at paint time.
+
+test("a pending chip meters from started_at, not from the payload's build instant", () => {
+  const started = new Date(Date.now() - 12_000).toISOString();
+  const ct = createCanvasTranscript();
+  const items = ct.apply({
+    session: "s1",
+    running: false,
+    rows: [
+      wireRow("2", "assistant", {
+        type: "tool_call",
+        tool_call: { id: "c1", name: "shell.run", arguments: { command: "sleep 30" } },
+        // the build-time duration is 2s stale by law (the payload is
+        // the yield flush) - the stamp must outrank it
+        elapsed_ms: 500,
+        started_at: started,
+      }),
+    ],
+  });
+  const tool = items.find((i) => i.kind === "tool") as { status: string; elapsedMs?: number };
+  assert.equal(tool.status, "pending");
+  assert.ok(
+    tool.elapsedMs !== undefined && tool.elapsedMs >= 11_500 && tool.elapsedMs < 12_500,
+    `the meter anchors on the call's true elapsed (got ${tool.elapsedMs})`,
+  );
+});
+
+test("a dock-tab rebuild of the SAME cached payload keeps the meter monotonic", () => {
+  const started = new Date(Date.now() - 12_000).toISOString();
+  const payload = {
+    session: "s1",
+    running: false,
+    rows: [
+      wireRow("2", "assistant", {
+        type: "tool_call",
+        tool_call: { id: "c1", name: "shell.run", arguments: {} },
+        started_at: started,
+      }),
+    ],
+  };
+  const first = createCanvasTranscript()
+    .apply(payload)
+    .find((i) => i.kind === "tool") as { elapsedMs?: number };
+  const firstAnchor = first.elapsedMs ?? -1;
+  assert.ok(firstAnchor >= 11_500, `anchored on the call's start (got ${firstAnchor})`);
+  // the switch away and back: the pane's identity cache is gone (a
+  // remount), the store payload is the same object it left - only the
+  // clock moved
+  const realNow = Date.now;
+  try {
+    Date.now = () => realNow() + 7_000;
+    const second = createCanvasTranscript()
+      .apply(payload)
+      .find((i) => i.kind === "tool") as { elapsedMs?: number };
+    assert.ok(
+      second.elapsedMs !== undefined && second.elapsedMs >= firstAnchor + 6_500,
+      `the rebuilt meter counts on (${firstAnchor} -> ${second.elapsedMs}), never restarts`,
+    );
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test("a stamp-less pending row keeps the old shape (no meter offset)", () => {
+  const ct = createCanvasTranscript();
+  const items = ct.apply({
+    session: "s1",
+    running: false,
+    rows: [
+      wireRow("2", "assistant", { type: "tool_call", tool_call: { id: "c1", name: "shell.run", arguments: {} } }),
+    ],
+  });
+  const tool = items.find((i) => i.kind === "tool") as { status: string; elapsedMs?: number };
+  assert.equal(tool.status, "pending");
+  assert.equal(tool.elapsedMs, undefined, "nothing to anchor on - documented degradation");
+});
+
 // --- handlePayload: the agent_end finish_reason reaches the transport -----
 
 test("agent_end yields its finish_reason to onRunEnd - the watcher's arming signal", () => {

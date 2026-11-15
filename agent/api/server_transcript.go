@@ -64,6 +64,16 @@ type transcriptItem struct {
 	// running line with elapsed-so-far - the same shapes the live SSE
 	// path paints. Persisted items never carry it.
 	Running bool `json:"running,omitempty"`
+	// StartedAt is an UNANSWERED tool_call's open wall clock, RFC 3339
+	// (card t_6bad9f6f round 3). The client derives the row's clock
+	// from it (now - StartedAt) instead of from ElapsedMs, a duration
+	// measured when the payload was built: a YIELDED call emits no
+	// delta between its conversion and its wake, so the canvas store
+	// kept serving the build-time duration - and a pane rebuilt from
+	// that payload (a dock-tab switch) restarted the meter at zero.
+	// A start stamp cannot go stale, however long the payload is
+	// cached. Answered calls carry their final durations instead.
+	StartedAt string `json:"started_at,omitempty"`
 }
 
 // handleSessionTranscript serves GET /sessions/{id}/transcript: the
@@ -172,6 +182,7 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 // nothing.
 func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 	items := make([]transcriptItem, 0, len(msgs))
+	answered := answeredCalls(msgs)
 	for i, sm := range msgs {
 		id := core.MsgID(sm.ID)
 		switch m := sm.Message.(type) {
@@ -221,7 +232,16 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 			}
 			for i := range m.ToolCalls {
 				tc := m.ToolCalls[i]
-				items = append(items, transcriptItem{Kind: "tool_call", ToolCall: &tc})
+				it := transcriptItem{Kind: "tool_call", ToolCall: &tc}
+				// an unanswered call is the pending/yield shape: stamp
+				// its open wall clock (the assistant row that carries
+				// the calls is persisted right before they execute) so
+				// every reader derives the row's clock instead of
+				// restarting it (card t_6bad9f6f round 3)
+				if !answered[tc.ID] {
+					it.StartedAt = transcriptTime(sm.CreatedAt, m.Timestamp)
+				}
+				items = append(items, it)
 			}
 		case core.ToolResult:
 			if m.ToolCallID == "" {
@@ -263,6 +283,37 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 		}
 	}
 	return items
+}
+
+// answeredCalls collects the call ids history holds a result row for -
+// tool results and yield-class wake results alike (both render as the
+// call's result). An unanswered call is the pending/yield row, the one
+// that carries its open wall clock. Pure.
+func answeredCalls(msgs []core.StoredMessage) map[string]bool {
+	answered := make(map[string]bool, len(msgs))
+	for _, sm := range msgs {
+		switch m := sm.Message.(type) {
+		case core.ToolResult:
+			if m.ToolCallID != "" {
+				answered[m.ToolCallID] = true
+			}
+		case core.YieldResult:
+			if m.ToolCallID != "" {
+				answered[m.ToolCallID] = true
+			}
+		}
+	}
+	return answered
+}
+
+// callStartStamp renders a call's open wall clock for the wire (the
+// StartedAt shape): RFC 3339 with nanoseconds, UTC, the same clock
+// core.NowISO writes - so a caller can parse it back losslessly.
+func callStartStamp(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339Nano)
 }
 
 // answerWindowMs looks ahead from a tool result's position for the
@@ -411,6 +462,10 @@ func appendRecordItems(items []transcriptItem, rec assistantRecord, open bool, n
 			it.Running = true
 			if start, ok := rec.callStarts[tc.ID]; ok && !start.IsZero() {
 				it.ElapsedMs = now.Sub(start).Milliseconds()
+				// the same clock as a start STAMP: a payload rebuilt
+				// from a snapshot (or served after the run ended)
+				// derives the row's elapsed instead of restarting it
+				it.StartedAt = callStartStamp(start)
 			}
 		}
 		items = append(items, it)
