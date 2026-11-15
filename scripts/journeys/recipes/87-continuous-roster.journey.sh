@@ -122,6 +122,38 @@ if [ -n "$dead" ]; then die "the under-row preview line is dead (ruling 3) - ren
 deadbadge=$(row_cell ".agents-badge")
 if [ -n "$deadbadge" ]; then die "the inline badge is dead (ruling 3) - rendered [$deadbadge]"; fi
 
+# --- card t_db378a0d: the raised chip and the seams it crosses -----------
+# HIS fork ruling: the hairlines ABOVE and BELOW a raised agents row fade,
+# so the chip never crosses a seam. CSS :hover cannot be faked from eval,
+# so the REAL pointer drives it (ab hover), and the law is read back as
+# computed styles: rest quiet -> raised with both seams clear -> quiet
+# again. The default agent always renders, so two rows are guaranteed.
+nrows=$(jsq 'document.querySelectorAll(".pane.agents .registry-row").length' 2>&1 | tail -1)
+[ "${nrows:-0}" -ge 2 ] 2>/dev/null || die "the Agents tab rendered $nrows rows - the hover seam law needs two"
+RAISE_READ='(()=>{
+  const rows=[...document.querySelectorAll(".pane.agents .registry-row")];
+  const r=rows[1], prev=rows[0];
+  if(!r||!prev) return "no-second-row";
+  const clear=(el)=>getComputedStyle(el).backgroundColor==="rgba(0, 0, 0, 0)";
+  const drawn=(el)=>getComputedStyle(el).borderBottomColor!=="rgba(0, 0, 0, 0)";
+  const seam=(el)=>getComputedStyle(el).borderBottomColor==="rgba(0, 0, 0, 0)";
+  const raised=!clear(r), own=seam(r), above=seam(prev);
+  if(clear(r)&&drawn(prev)) return "rest";
+  if(raised&&own&&above) return "raised";
+  return "raised="+raised+" own="+own+" above="+above+" bg="+getComputedStyle(r).backgroundColor+" seam="+getComputedStyle(prev).borderBottomColor;
+})()'
+rest=$(jsq "$RAISE_READ" 2>&1 | tail -1 | tr -d '"')
+assert_eq "$rest" "rest" "at rest the agents rows carry no raise and the seam above them is drawn"
+ab hover ".pane.agents .registry-row:nth-child(2)" >/dev/null 2>&1
+sleep 0.5
+hovered=$(jsq "$RAISE_READ" 2>&1 | tail -1 | tr -d '"')
+assert_eq "$hovered" "raised" "hover raises the row as one chip and fades BOTH its seams (own + the preceding row's)"
+ab hover ".dock-pane.edge-bottom .dock-tab" >/dev/null 2>&1 || ab hover "body" >/dev/null 2>&1
+sleep 0.5
+back=$(jsq "$RAISE_READ" 2>&1 | tail -1 | tr -d '"')
+assert_eq "$back" "rest" "the pointer leaving restores the quiet list exactly"
+step "ok: the agents chip raises, both seams fade, and rest comes back"
+
 # --- the wake strip opens on expand (never wakes) ---
 jsq '(name => [...document.querySelectorAll(".pane.agents .registry-row")]
   .find(r => [...r.querySelectorAll(".reg-row-name")].some(n => n.textContent.trim() === name))

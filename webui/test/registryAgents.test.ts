@@ -103,18 +103,19 @@ test("agentStatusFor: pulse is on, sleeping is dim, config-only is undefined", (
   assert.equal(agentStatusFor(null), undefined, "config-only: no invented state");
 });
 
-// the locked law: the default row never renders a disable affordance.
-test("AgentsPanel locks the default agent (no disabled render, no arm path)", () => {
+// the no-toggle law (card t_db378a0d, sharpening t_2d8deb8c): the default
+// row never renders a disable affordance - it renders no switch at all.
+test("AgentsPanel gives the default agent no toggle (no disabled render, no write path)", () => {
   const panel = readFileSync(join(root, "harness", "continuous", "ui", "AgentsPanel.vue"), "utf8");
   const list = readFileSync(join(root, "webui", "app", "components", "RegistryList.vue"), "utf8");
-  assert.ok(panel.includes("locked: a.name === DefaultAgentName"), "the default row is locked");
+  assert.ok(panel.includes("noToggle: a.name === DefaultAgentName"), "the default row is the no-toggle row");
   assert.ok(panel.includes('a.name === DefaultAgentName ? false : set.has(a.name)'), "the default row never renders disabled");
-  assert.ok(list.includes("r.locked"), "RegistryList seats the locked flag");
-  assert.ok(list.includes("if (r.locked) return;"), "the arm step never arms a locked row");
-  assert.ok(list.includes("!!r.locked"), "the pill renders non-interactive");
+  assert.ok(list.includes("r.noToggle"), "RegistryList seats the no-toggle flag");
+  assert.ok(list.includes("if (r.noToggle) return;"), "the write path refuses a no-toggle row by another door");
+  assert.ok(list.includes('v-if="toggleable && !r.noToggle"'), "the pill never renders for it");
   // the backend mirror: the handler refuses a curl too (the Go gate
-  // pins it; this is the UI-side anchor to the same law text).
-  assert.ok(list.includes("cannot be disabled"), "the locked aria states the law");
+  // pins it; this is the UI-side anchor to the same law).
+  assert.ok(panel.includes("if (name === DefaultAgentName && !enabled) return;"), "the toggle handler refuses the default agent");
 });
 
 // ruling 3: the expansion is details + edit; zero session rows.

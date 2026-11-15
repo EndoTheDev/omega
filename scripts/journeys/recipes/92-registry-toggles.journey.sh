@@ -236,31 +236,39 @@ for ns in skills tools agents; do
 done
 step "ok: (c) unknown-name toggles refused 404, nothing persisted"
 
-# (c, visible half) the LOCKED default agent (card t_2d8deb8c, Endo
-# verbatim "it cannot be disabled EVER!"). The Agents tab renders the
-# default row's pill locked-on: the aria states the law, the DOM
-# disables the button, and clicking it writes nothing - the aria never
-# becomes an enable request. The curl must hit the same wall.
+# (c, visible half) the NO-TOGGLE default agent (card t_db378a0d,
+# superseding t_2d8deb8c's locked pill, Endo verbatim "default agent
+# does not need to have the toggle at all"). The Agents tab renders NO
+# switch on the default row: the `main` badge says which row it is and
+# why it carries none, and the count law holds for the rest of the
+# roster - every NON-default row keeps its pill. The curl must hit the
+# same wall the absent control does.
 open_tab Agents
 wait_js '(()=>{return document.querySelector(".pane.agents .registry-rows")?true:false})()' 10 \
   || die "the Agents tab never rendered rows"
-locked=$(jsq '(()=>{const b=[...document.querySelectorAll(".pane.agents button.registry-toggle")]
-  .find(x=>(x.getAttribute("aria-label")||"").includes("locked on"));
-  return b ? (b.disabled ? "locked-disabled" : "LOCKED-NOT-DISABLED") : "MISSING"})()' 2>&1 | tail -1 | tr -d '"')
-assert_eq "$locked" "locked-disabled" "the default row's pill renders locked-on and non-interactive"
-inert=$(jsq '(()=>{const b=[...document.querySelectorAll(".pane.agents button.registry-toggle")]
-  .find(x=>(x.getAttribute("aria-label")||"").includes("locked on"));
-  if(!b){return "MISSING"} b.click(); return "clicked"})()' 2>&1 | tail -1 | tr -d '"')
-assert_eq "$inert" "clicked" "the default pill was clicked"
-# one click commits for every other row (card t_5051d523), so the
-# locked row's refusal is the aria holding still: it stays "locked on"
-# and never turns into an enable/disable request.
-after=$(jsq '(()=>{const b=[...document.querySelectorAll(".pane.agents button.registry-toggle")]
-  .find(x=>(x.getAttribute("aria-label")||"").includes("locked on"));
-  return b ? "still-locked" : "RELABELED"})()' 2>&1 | tail -1 | tr -d '"')
-assert_eq "$after" "still-locked" "the locked pill never turns into a switch (clicking it does nothing)"
-# the wire: a curl hits the same wall the pill renders - refusal 409,
-# the reason text states the law, nothing persists.
+# the row census: the default row is the one wearing the main badge.
+# verdict is a NUMBER (the 0.26.0/0.41.x quote law): 1 = the law holds.
+notoggle=$(jsq '(()=>{
+  const rows=[...document.querySelectorAll(".pane.agents .registry-row")];
+  if(!rows.length) return 0;
+  let mainRows=0, pills=0, badMainPill=0;
+  for(const r of rows){
+    const isMain = !!r.querySelector(".agents-main-badge");
+    const pill = r.querySelector("button.registry-toggle");
+    if(isMain){ mainRows++; if(pill) badMainPill++; }
+    if(pill) pills++;
+  }
+  if(mainRows !== 1) return 0;                      // exactly one main row
+  if(badMainPill !== 0) return 0;                   // and it carries no toggle
+  if(pills !== rows.length - mainRows) return 0;    // every other row does
+  return 1;
+})()' 2>&1 | tail -1 | tr -d '"')
+assert_eq "$notoggle" "1" "the default row renders NO toggle; every other row keeps one"
+# the badge still says which row it is (and the title answers the absence)
+badge=$(jsq '(()=>document.querySelector(".pane.agents .agents-main-badge")?.textContent?.trim()||"")()' 2>&1 | tail -1 | tr -d '"')
+assert_eq "$badge" "main" "the default row still carries the main tag"
+# the wire: a curl hits the same wall the absent control does - refusal
+# 409, the reason text states the law, nothing persists.
 code=$(curl -s -o "$JOURNEY_WORKTMP/omega-jrn-disable-default.$$" -w '%{http_code}' -X PUT "$JOURNEY_BASE_URL/disabled/agents" \
   -H 'Content-Type: application/json' -d '{"name": "default", "enabled": false}')
 body=$(cat "$JOURNEY_WORKTMP/omega-jrn-disable-default.$$" 2>/dev/null)
@@ -268,7 +276,7 @@ rm -f "$JOURNEY_WORKTMP/omega-jrn-disable-default.$$"
 assert_eq "$code" "409" "the default-agent disable PUT is refused 409"
 printf '%s' "$body" | grep -q "cannot be disabled" || die "the refusal text lost the law: $body"
 case "$(disabled_names agents)" in *"default"*) die "the default agent landed in the fold (refusal bypassed)" ;; esac
-step "ok: (c) the default agent is locked on the pill AND on the wire"
+step "ok: (c) the default agent carries NO toggle, the roster keeps its pills, the wire refuses"
 
 # --- (d) re-enable clears the fold -----------------------------------------
 open_tab Skills

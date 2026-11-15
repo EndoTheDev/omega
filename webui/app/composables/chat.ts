@@ -340,6 +340,28 @@ export const CHAT_HOST_KEY: InjectionKey<ChatHost> = Symbol("omega-chat-host");
     both spellings identical. Detail payload: the session id string. */
 export const CHAT_SESSION_OPEN_EVENT = "omega:open-chat-session";
 
+/** the shell->module FOCUSED-SESSION event (card t_db378a0d, the Agents
+    tab's active row): the shell owns the focused chat tab, so it
+    broadcasts the session id it is showing whenever that changes and a
+    module-owned panel mirrors it (the agents roster marks the agent
+    whose session is the focused one). The reverse direction of
+    CHAT_SESSION_OPEN_EVENT, same seam shape: window CustomEvent, the
+    literal COPIED in harness/continuous/ui/AgentsPanel.vue and pinned
+    identical by the agents feel test. Detail payload: the session id
+    string, "" when no chat tab holds the focus. */
+export const FOCUSED_SESSION_EVENT = "omega:focused-session";
+
+/** the module->shell PULL for that same id (card t_db378a0d round 2):
+    the dock renders only the ACTIVE tab's pane slot (DockPane's v-if),
+    so a module panel UNMOUNTS on switch-away and mounts again with no
+    announcement to hear - the shell's watch fired while it was gone and
+    its own mount announce had already run. So the panel ASKS on mount and
+    the shell answers with FOCUSED_SESSION_EVENT carrying the id it is
+    showing right now. Same seam shape and the same copied-literal law;
+    the literal is COPIED in harness/continuous/ui/AgentsPanel.vue and
+    pinned identical by the agents feel test. Detail payload: none. */
+export const FOCUSED_SESSION_QUERY_EVENT = "omega:query-focused-session";
+
 // --- the ONE composer button's face (t_357cbe9c; retry left in
 // t_95d2bc34) ---
 //

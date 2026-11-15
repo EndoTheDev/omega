@@ -146,11 +146,15 @@ test("the busy lock survives: a stacked click cannot overlap two writes", () => 
   }
 });
 
-test("the locked default agent still refuses: its row emits nothing, one click or two", () => {
+test("the no-toggle row still refuses: its row emits nothing, one click or two", () => {
+  // card t_db378a0d: the default agent's switch is GONE rather than
+  // locked - the shared list renders no pill for a noToggle row, and the
+  // handler refuses the write for anything that reaches it anyway.
   const src = read(...["webui", "app", "components", "RegistryList.vue"]);
   const body = fnBody(src, "onToggle");
-  assert.match(body, /if \(r\.locked\) return;/, "the locked row never writes (card t_2d8deb8c)");
-  assert.match(src, /locked on - the default agent cannot be disabled/, "the locked aria still states the law");
+  assert.match(body, /if \(r\.noToggle\) return;/, "a no-toggle row never writes");
+  assert.ok(src.includes('v-if="toggleable && !r.noToggle"'), "and it renders no pill at all");
+  assert.ok(!src.includes("toggle-locked"), "the locked pill is dead, not parked");
 });
 
 test("the consequence text is still reachable: the two informed hosts pass it as a hint", () => {

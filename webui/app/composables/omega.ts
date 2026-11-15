@@ -3805,10 +3805,14 @@ export interface DisabledLists {
 // row reveals on expand; empty = no expansion), and the fold state.
 // `value` is the read-only stat row's number (the insights consumer's
 // bars and counts read it; toggle-less rows never set it).
-// `locked` (card t_2d8deb8c) is the permanently-on, non-interactive
-// toggle: the DEFAULT agent's pill renders locked-on, the arm/confirm
-// path never runs, the emit never fires - the backend refuses a curl,
-// the row does not offer the flip at all.
+// `noToggle` (card t_db378a0d, the t_2d8deb8c lock's successor) is the
+// row that OFFERS NO SWITCH AT ALL: the DEFAULT agent is on by
+// definition (it is the home config the daemon loads) and it is also
+// the home every other agent falls back to, so a switch on its row asks
+// the operator to answer a question that has no other answer - the
+// panel renders no pill, no state text, and says why with its `main`
+// badge. The backend still refuses a curl (409): the UI and the wire
+// agree, one of them by omission and one by refusal.
 // `status` (card t_2d8deb8c, Endo's status-vocabulary ruling) is the
 // live dot + short word riding the SUBTITLE line: on (green dot) for
 // an active agent, dim for the sleeping one. Cron's row voice - the
@@ -3819,7 +3823,7 @@ export interface RegistryRow {
   detail?: string[];
   disabled: boolean;
   value?: number;
-  locked?: boolean;
+  noToggle?: boolean;
   status?: { on: boolean; label: string };
 }
 
