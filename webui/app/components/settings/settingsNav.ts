@@ -37,8 +37,9 @@
 // ONE document of every category, and the nav is still jump links - but a
 // REAL section selection now narrows what that document RENDERS to the
 // selected section plus its subsections (the VS Code read), and a
-// deselect (or Commonly Used, the curated all-view) gives the whole
-// document back. Search outranks the selection: a live query is GLOBAL,
+// deselect gives the whole document back. Every category narrows,
+// Commonly Used included - it was the lone exemption until card
+// t_6fb4ddc6. Search outranks the selection: a live query is GLOBAL,
 // so the filter stands down while it is up and returns when it clears.
 // The filter is a VIEW filter - no knob, no config, no row changes.
 //
@@ -543,15 +544,21 @@ function keeper(input: ContentInput): (knob: SettingKnob) => boolean {
 }
 
 /** sectionFilter is the CATEGORY the pane's document is narrowed to, from
-    the pane's own state (card t_cd9952a3). Three rules, in order:
+    the pane's own state (card t_cd9952a3). Two rules, in order:
 
     1. a live query stands the filter DOWN - search is one global filter
        across every section, so the selection is ignored while it is up
        (and it comes back the moment the query clears);
-    2. no selection is the all-view;
-    3. Commonly Used is the curated ALL-VIEW entry: its knobs are borrowed
-       from every domain, so selecting it restores the whole document
-       rather than narrowing to a list that duplicates the rest.
+    2. no selection is the all-view.
+
+    Commonly Used filters like EVERY OTHER category (card t_6fb4ddc6,
+    Endo's 2026-11-15 eyeball round): the curated group is a real nav entry
+    with its own section, so selecting it narrows the pane to that one
+    section - the same one-category answer every domain gives. It used to
+    be exempted as a "curated all-view" (its knobs are borrowed from every
+    domain, so the narrowing looked like a duplicate list); the exemption
+    read as a broken filter, because every category narrowed except this
+    one, which left the whole document on screen.
 
     A subsection id resolves to its CATEGORY: "provider/models" filters to
     provider (which renders that block), never to a section that does not
@@ -562,9 +569,7 @@ export function sectionFilter(
 ): string | null {
   if (searching) return null;
   if (!selected) return null;
-  const { category } = parseSelection(selected);
-  if (category === COMMON_CATEGORY) return null;
-  return category;
+  return parseSelection(selected).category;
 }
 
 /** documentFor is the pane's whole body: EVERY category, in nav order, as

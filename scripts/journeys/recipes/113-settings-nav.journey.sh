@@ -25,10 +25,12 @@
 #               releases it in the same frame, and the boundary follows the
 #               section's box when the pane resizes.
 #   filter    - card t_cd9952a3: selecting a section FILTERS the document to
-#               that section and its subsections (only its rows render),
-#               Commonly Used and a deselect restore the all-view, and a
-#               search query OVERRIDES the filter (global match) until it
-#               clears. A scroll moves the highlight and never filters.
+#               that section and its subsections (only its rows render), a
+#               deselect restores the all-view, and a search query OVERRIDES
+#               the filter (global match) until it clears. A scroll moves the
+#               highlight and never filters. Card t_6fb4ddc6: Commonly Used
+#               filters like any other category - it used to be exempt as the
+#               curated "all-view", which left the whole document on screen.
 #   url       - card t_cd9952a3 part 3: the in-app URL carries the selected
 #               section (?settings=<id> on the current path), and a deep
 #               link lands the pane PRE-FILTERED - it outranks the
@@ -317,10 +319,10 @@ for flatcat in common dock store; do
   if ! poll_js "(()=>{const a=document.querySelector('.settings-nav-cat.active,.settings-nav-sub.active');return !!a&&a.getAttribute('data-category')==='$flatcat'})()" 15; then
     die "the nav click did not select $flatcat (active: $(active_id))"
   fi
-  # card t_cd9952a3: Commonly Used is the curated ALL-VIEW entry, so
-  # selecting it restores the whole document; dock and store narrow it to
-  # themselves (one section, its own rows, nothing else on screen)
-  if [ "$flatcat" = "common" ]; then wantdoc="$all_ids"; else wantdoc="$flatcat"; fi
+  # card t_cd9952a3 + card t_6fb4ddc6: every flat category narrows the
+  # document to ITSELF - Commonly Used included (it was the curated
+  # "all-view" and rendered everything, which read as a broken filter)
+  wantdoc="$flatcat"
   if ! poll_js "(()=>{const ids=[...document.querySelectorAll('.settings-category')].map(e=>e.getAttribute('data-category')).join(',');return ids==='$wantdoc'})()" 15; then
     die "selecting $flatcat did not set the document to [$wantdoc] (now: $(doc_ids))"
   fi

@@ -637,8 +637,9 @@ dot, reset link, draft star, live note).
 - **Selecting a section FILTERS the pane** (card t_cd9952a3, the VS Code
   read; it narrows what the one document RENDERS and reverses nothing).
   A nav click renders that category and its subsections and nothing else -
-  the pane's row count equals the section's own. A deselect, or selecting
-  Commonly Used (the curated all-view entry), restores the whole document.
+  the pane's row count equals the section's own. A deselect restores the
+  whole document. Commonly Used filters like every other category (card
+  t_6fb4ddc6): its curated section is the one thing on screen.
   It is a VIEW filter: no knob changes, no config is written. A live
   search OVERRIDES it - one global match across every section - and the
   filter returns the moment the query clears. A scroll moves the
