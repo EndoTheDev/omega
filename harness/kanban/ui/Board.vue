@@ -5,18 +5,21 @@
     :class="{ narrow: narrow }"
     :style="{ '--card-clamp': `${CARD_CLAMP_LINES}` }">
     <!-- card t_308e6d9b: the UNIVERSAL band (the shared TabBand) - the
-         board switcher + count + remove ride the band now (the law: the
-         tab's actions live in the band, not floating over the body).
+         board switcher + count ride the band now (the law: the tab's
+         actions live in the band, not floating over the body).
          The board scroll columns start BELOW the band - scrolling never
          moves it.
-         0.17.3 make-over: the SELECTOR moved LEFT into the band's lead
-         seat, beside the title - the board names the panel, so its name
-         sits with the tab's name. The destructive pair (rename, remove)
-         stays far right. -->
+         card t_2b644603 (Endo's narrow-pane ruling): the band keeps the
+         TabBand FAMILY contract - title + board chip + count | filter,
+         the shape the cron and agents bands hold. Gone from the band:
+         the "board" switch-label (the chip already names the board), the
+         permanent rename/remove pair (they are rows of the chip's
+         dropdown, under the board list) and the standalone scope toggle
+         (the all-boards scope is a chip that only exists while a filter
+         query runs). -->
     <TabBand title="Kanban">
       <template #lead>
         <template v-if="boards.length > 0">
-          <span class="board-switch-label">board</span>
           <template v-if="renaming">
             <input
               v-model="renameDraft"
@@ -36,22 +39,26 @@
           </template>
           <!-- card t_acad02ec (audit M1): the switcher rides the themed
                listbox (BandSelect) - a native select popup is OS chrome
-               over the pane -->
+               over the pane. card t_2b644603: its ladder ends with the
+               board VERBS (rename board, remove board) - one popup, one
+               keyboard law, no band space spent on the destructive pair -->
           <BandSelect
             v-else
             class="board-switch-select"
             :model-value="boardName"
-            :options="boardOptions"
+            :options="boardMenu"
             label="board"
             drop="down"
             @update:model-value="switchBoard($event)" />
           <span
             v-if="boardName && !renaming"
-            class="board-switch-count">{{ tasks.length }} card<template v-if="tasks.length !== 1">s</template></span>
+            class="board-switch-count">{{ countLabel }}</span>
         </template>
       </template>
       <template v-if="boards.length > 0">
-        <!-- 0.17.3 make-over: ONE filter seat, TWO scopes -->
+        <!-- ONE filter seat, TWO scopes - the scope is a chip ON the seat
+             and it appears with the query: an unfiltered board has no
+             "all boards" question to ask, so it spends no band space. -->
         <input
           v-model="query"
           class="board-search"
@@ -59,26 +66,14 @@
           placeholder="filter cards"
           aria-label="filter cards" />
         <button
-          class="band-tool board-scope-btn"
+          v-if="filtering"
+          class="band-tool board-scope-chip"
           :class="{ on: scope === 'all' }"
           :title="scope === 'all'
             ? 'filtering every board - click to filter this board only'
             : 'filtering this board - click to filter every board'"
           @click="toggleScope">
           {{ scope === "all" ? "all boards" : "this board" }}
-        </button>
-        <button
-          class="band-tool board-rename-btn"
-          :title="`rename board ${boardName}`"
-          @click="startRename">rename</button>
-        <button
-          id="board-remove-btn"
-          class="band-tool board-remove-btn"
-          :class="{ armed: confirmingRemove }"
-          :disabled="!canRemoveBoard(boardName)"
-          :title="confirmingRemove ? 'click again to remove this board' : 'remove this board'"
-          @click="removeBoardClick">
-          {{ confirmingRemove ? "confirm remove" : "remove" }}
         </button>
       </template>
     </TabBand>
@@ -98,7 +93,7 @@
       <p class="board-empty-title">no boards</p>
       <p class="board-empty-note">
         A board holds the cards. Create one to start; every board can be
-        renamed or removed from the band above, and so can this one.
+        renamed or removed from the board menu above, and so can this one.
       </p>
       <form
         class="board-empty-create"
@@ -378,7 +373,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onBeforeUnmount, onMounted, onUnmounted, ref } from "vue";
+  import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from "vue";
   import DetailDrawer from "./board/DetailDrawer.vue";
   import {
     BOARD_STATUSES,
@@ -388,7 +383,10 @@
     LANE_EASE_MS,
     LANE_RAIL_PX,
     age,
+    boardCount,
     boardDeletePath,
+    boardMenuOptions,
+    boardMenuPick,
     boardOf,
     boardRenamePath,
     bodyPreview,
@@ -444,19 +442,25 @@
   const registryKnown = ref(false);
   const newBoardName = ref("");
 
-  // --- the filter seat (0.17.3 make-over) ------------------------------
+  // the filter seat (0.17.3 make-over) ------------------------------
   // ONE input, TWO scopes: this board, or every board. The all-boards
   // scope is a SERVER read (?scope=all) whose rows carry their board name,
   // so a mixed grid still addresses each card correctly.
   const query = ref("");
   const scope = ref<SearchScope>("board");
   const visibleTasks = computed(() => filterTasks(tasks.value, query.value));
-
-  // the switcher's listbox options (BandSelect): one per board registry
-  // row, the name as both value and face
-  const boardOptions = computed(() =>
-    boards.value.map((b) => ({ value: b.name, label: b.name })),
+  // card t_2b644603: the scope UI exists only while the seat holds a
+  // query - and so does the count's match form ("3/12").
+  const filtering = computed(() => query.value.trim() !== "");
+  const countLabel = computed(() =>
+    boardCount(visibleTasks.value.length, tasks.value.length, filtering.value),
   );
+
+  // the chip's dropdown ladder (BandSelect): one row per board registry
+  // entry, then the two board VERBS (card t_2b644603). The verb rows are
+  // sentinels, so no board name can ever mean one (boardLogic.boardMenuPick
+  // owns the classification, and it is exact-match only).
+  const boardMenu = computed(() => boardMenuOptions(boards.value, confirmingRemove.value));
 
   async function fetchBoards() {
     // The mounted fetch runs ONCE, so a miss under suite load left no
@@ -471,7 +475,19 @@
     boardName.value = pickBootBoard(boards.value);
   }
 
-  function switchBoard(name: string) {
+  function switchBoard(pick: string) {
+    // card t_2b644603: the dropdown carries the board VERBS too - a verb
+    // is not a selection, so it dispatches before the switch guard.
+    const want = boardMenuPick(pick);
+    if (want.kind === "rename") {
+      startRename();
+      return;
+    }
+    if (want.kind === "remove") {
+      removeBoardClick();
+      return;
+    }
+    const name = want.name;
     if (!name || name === boardName.value) return;
     disarmRemove(); // an armed confirm points at the old board: reset it
     cancelRename();
@@ -486,6 +502,14 @@
     selected.value = null; // the drawer's card belongs to the other scope
     fetchBoard();
   }
+
+  // card t_2b644603: the scope chip only RENDERS while a query runs, so an
+  // emptied seat must not leave the read widened with nothing on screen
+  // saying so - clearing the filter returns the read to THIS board.
+  watch(query, (q) => {
+    if (q.trim() !== "" || scope.value === "board") return;
+    toggleScope();
+  });
 
   // --- create board (0.17.3): the empty state's only control -----------
   async function submitCreateBoard() {
@@ -525,7 +549,10 @@
     disarmRemove();
     renaming.value = true;
     renameDraft.value = boardName.value;
-    requestAnimationFrame(() => {
+    // the menu pick that starts this UNMOUNTS the chip and mounts the
+    // input, so the focus move must wait for the patch (nextTick) - an rAF
+    // raced the render and left the name unselected about half the time
+    void nextTick(() => {
       boardEl.value?.querySelector<HTMLInputElement>(".board-rename-input")?.select();
     });
   }
@@ -564,15 +591,22 @@
   }
 
   // --- board removal (card t_95c5527f): destructive, so the confirm is
-  // an armed second click on the same button (inline relabel, matching
+  // an armed second click on the same control (inline relabel, matching
   // the module toggle arm/apply pattern - no native confirm dialog). The
   // server is the law: DeleteBoard refuses the default board, the
   // current pointer target and boards still holding tasks, and the
   // refusal text surfaces verbatim in the notice line.
+  // card t_2b644603: the control is the dropdown's remove row now, so the
+  // arm closes the popup with it - the notice line names the second click
+  // (the one trail the closed popup cannot show) and the window is wide
+  // enough to reopen the menu.
+  const REMOVE_ARM_MS = 10000;
   const confirmingRemove = ref(false);
   const notice = ref("");
   const noticeErr = ref(false);
   let disarmTimer: ReturnType<typeof setTimeout> | undefined;
+  /** the arm hint currently on the notice line (cleared with the arm) */
+  let armNotice = "";
 
   function setNotice(text: string, isErr = false) {
     notice.value = text;
@@ -585,16 +619,24 @@
       clearTimeout(disarmTimer);
       disarmTimer = undefined;
     }
+    // the arm's own hint must not outlive the arm (a stale "click again"
+    // over a disarmed row reads as a live instruction)
+    if (armNotice && notice.value === armNotice) setNotice("");
+    armNotice = "";
   }
 
   function removeBoardClick() {
     if (!canRemoveBoard(boardName.value)) return;
     if (!confirmingRemove.value) {
       confirmingRemove.value = true;
+      // the arm rides the notice line too: the menu row relabels, but the
+      // popup closes with the pick, so the trail must outlive it
+      armNotice = `click "confirm remove" in the board menu again to remove "${boardName.value}"`;
+      setNotice(armNotice);
       // disarm on timeout: the second click lands only while the
       // warning still shows
       if (disarmTimer) clearTimeout(disarmTimer);
-      disarmTimer = setTimeout(disarmRemove, 6000);
+      disarmTimer = setTimeout(disarmRemove, REMOVE_ARM_MS);
       return;
     }
     disarmRemove();
@@ -1346,15 +1388,16 @@
   }
   /* card t_308e6d9b: the head row is the shared TabBand now - the
      band's own padding/lead replace the old .board-head geometry; only
-     the action-group spacing rides here (the band look is shared). */
+     the action-group spacing rides here (the band look is shared).
+     card t_2b644603: the slot holds exactly two things - the filter seat
+     and its scope chip - so the gap is the chip's HUG, and the SLOT is
+     the flexible one: the chip is fixed, the input gives up the width.
+     (TabBand ships flex-shrink: 0 for tabs whose actions are buttons; a
+     band that grows an inline seat must let the seat absorb the pane.) */
   .board :deep(.tab-band-actions) {
-    gap: 8px;
-  }
-  .board-switch-label {
-    font-size: 10.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    opacity: 0.5;
+    gap: 3px;
+    flex-shrink: 1;
+    min-width: 0;
   }
   /* card t_acad02ec: the switcher is the shared BandSelect chip - the
      band's dim look (no box at rest, like .band-tool) */
@@ -1363,9 +1406,28 @@
     font-size: 11.5px;
     background: transparent;
   }
+  /* card t_2b644603: the dropdown's ladder ends with the board VERBS -
+     one hairline separates the board list from the commands (the rows
+     carry the pop's own look, the second-to-last is "rename board") */
+  .board-switch-select :deep(.model-list li:nth-last-child(2)) {
+    border-top: 1px solid color-mix(in srgb, currentcolor 12%, transparent);
+  }
+  /* the armed remove ROW: the marker class rides BandSelect's `cls` seam,
+     and the tint is the second-click warning the band used to carry */
+  .board-switch-select :deep(.model-list li.armed) {
+    color: var(--err);
+    font-weight: 600;
+  }
   .board-switch-count {
     font-size: 10.5px;
     opacity: 0.5;
+  }
+  /* a NARROW pane with a live filter: the count steps aside - the lanes
+     carry their own counts, and the chip + the seat are what the eye is
+     after. This is the width where "title + chip + count | filter + chip"
+     cannot all be one row (card t_2b644603). */
+  .board.narrow:has(.board-scope-chip) .board-switch-count {
+    display: none;
   }
   /* 0.17.3 make-over: the rename seat takes the selector's place - the same
      compact in-band rhythm, wide enough for a board name */
@@ -1380,13 +1442,17 @@
     border-radius: var(--r-chip);
   }
   /* the filter seat: one input, two scopes. The chip beside it says which
-     scope is live; the input itself is the seat (no icon expander). */
+     scope is live, and it exists only while the seat holds a query
+     (card t_2b644603) - so the input is the seat's whole width at rest and
+     gives up just enough to the chip while filtering. */
   .board-search {
     font: inherit;
     font-size: 11.5px;
     color: inherit;
     width: 132px;
-    min-width: 96px;
+    max-width: 132px;
+    min-width: 72px;
+    flex: 1 1 auto;
     padding: 2px 6px;
     background: transparent;
     border: 1px solid color-mix(in srgb, currentcolor 16%, transparent);
@@ -1395,8 +1461,16 @@
   .board-search::placeholder {
     opacity: 0.5;
   }
-  .board-scope-btn.on {
-    border: 1px solid color-mix(in srgb, currentcolor 34%, transparent);
+  /* the scope chip: the family .band-tool look, tightened, and no wrap -
+     "all boards" is the widest thing the band ever holds in a 318px pane */
+  .board-scope-chip {
+    flex: none;
+    font-size: 10.5px;
+    padding: 0 5px;
+    white-space: nowrap;
+  }
+  .board-scope-chip.on {
+    background: var(--z1-raised);
     font-weight: 600;
     opacity: 0.95;
   }
@@ -1456,13 +1530,6 @@
   .board-empty-btn:disabled {
     opacity: 0.35;
     cursor: default;
-  }
-  /* card t_acad02ec: the remove action rides .band-tool (the shared
-     action-button look); only the armed confirm state rides here - the
-     tinge is the second-click warning */
-  .board-remove-btn.armed {
-    border: 1px solid color-mix(in srgb, currentcolor 40%, transparent);
-    font-weight: 600;
   }
   .board-notice {
     margin: 0;

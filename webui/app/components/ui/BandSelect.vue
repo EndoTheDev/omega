@@ -44,7 +44,7 @@
           role="option"
           :tabindex="i === activeSeat ? 0 : -1"
           :aria-selected="o.value === modelValue"
-          :class="{ current: o.value === modelValue, active: i === activeSeat }"
+          :class="[{ current: o.value === modelValue, active: i === activeSeat }, o.cls ?? '']"
           :ref="(el) => setRowEl(i, el)"
           @focus="seatOn(i)"
           @click="pick(o.value)"
@@ -69,7 +69,10 @@
   // encodes the up case (the composer's grammar); this overrides down.
   const props = withDefaults(
     defineProps<{
-      options: { value: V; label: string }[];
+      /** `cls` is a host-owned marker class (the kanban board dropdown's
+          armed-remove row): the pop styles its ROWS, the host styles its
+          OWN verb states without a second popup grammar. */
+      options: { value: V; label: string; cls?: string }[];
       modelValue: V;
       /** the chip's tooltip AND the listbox's aria-label: what this picks */
       label: string;

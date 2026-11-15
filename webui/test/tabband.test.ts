@@ -34,7 +34,12 @@ const TABS: Array<{
   // observability capsule's view now (band title follows the dock title)
   { file: "../harness/observability/ui/ObservabilityTab.vue", title: "Logs", scrollClass: "obs-body", actions: ["toggle errors only", "toggle raw log tail"] },
   { file: "../harness/mcp/ui/McpServers.vue", title: "MCP", scrollClass: "mcp-body", actions: ["refresh mcp servers", "Search MCP servers"] },
-  { file: "../harness/kanban/ui/Board.vue", title: "Kanban", scrollClass: "board-scroll", actions: ["board-remove-btn"] },
+  // card t_2b644603 (Endo's narrow-pane ruling): the band keeps the
+  // family shape - title + board chip + count | filter. The destructive
+  // pair and the scope toggle left the band (dropdown rows and a chip on
+  // the filter seat), so the ONE action this tab owns in the band is the
+  // filter seat itself.
+  { file: "../harness/kanban/ui/Board.vue", title: "Kanban", scrollClass: "board-scroll", actions: ["filter cards"] },
   // card t_81d0901b: the Modules tab retired - module toggles are
   // configuration, so the surface moved into the settings tab's MODULES
   // section, and the settings pane carries NO band (card t_1cfb080a). No
