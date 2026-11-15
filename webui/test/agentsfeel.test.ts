@@ -27,7 +27,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { FOCUSED_SESSION_EVENT } from "../app/composables/chat.ts";
+import { FOCUSED_SESSION_EVENT, FOCUSED_SESSION_QUERY_EVENT } from "../app/composables/chat.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (...parts: string[]) => readFileSync(join(root, ...parts), "utf8");
@@ -121,7 +121,7 @@ test("the hairline fades under the raised chip and is untouched at rest", () => 
   // ROW LAW's border-bottom declaration itself is never re-defined here
   assert.match(
     listSrc,
-    /\.registry-row:hover,\n\s*\.registry-list\.feel-sessions \.registry-row\.reg-row-active \{\n\s*background: var\(--z1-raised\);[\s\S]{0,400}?border-bottom-color: transparent/,
+    /\.registry-row:hover,\n\s*\.registry-list\.feel-sessions \.registry-row\.reg-row-active \{\n\s*background: var\(--z1-raised\);[\s\S]{0,900}?border-bottom-color: transparent/,
     "the seam fades out from under the raised chip",
   );
   const restBorder = listSrc.match(/\.registry-list\.feel-sessions \.registry-row \{[^}]*\}/);
@@ -130,6 +130,48 @@ test("the hairline fades under the raised chip and is untouched at rest", () => 
     !restBorder![0].includes("border-bottom"),
     "the rest state never re-declares the hairline - the anatomy owns it",
   );
+});
+
+test("the seam ABOVE the raised chip fades too - the chip crosses no border", () => {
+  // round 1 faded only the row's own border-bottom, so the preceding
+  // row's seam stayed drawn across the chip's top edge (review finding 2)
+  const seam = listSrc.match(
+    /\.registry-list\.feel-sessions \.registry-row:has\(\+ \.registry-row:hover\),\n\s*\.registry-list\.feel-sessions \.registry-row:has\(\+ \.registry-row\.reg-row-active\) \{\n\s*border-bottom-color: transparent;/,
+  );
+  assert.ok(
+    seam,
+    "the preceding sibling's seam fades for BOTH raises (hover and the permanently raised active row)",
+  );
+  // and every :has() rule rides the consumer gate like the rest of the feel
+  const hasRules = listSrc.match(/[^{}]*:has\([^{}]*\{[^}]*\}/g) ?? [];
+  assert.ok(hasRules.length > 0, "the sibling-seam rule is a real rule");
+  for (const rule of hasRules) {
+    assert.ok(
+      rule.includes(".feel-sessions"),
+      `an ungated :has rule would repaint the other four tabs: ${rule.trim().slice(0, 60)}`,
+    );
+  }
+});
+
+test("the chip is a DRESS: the resting row keeps the row law's own box", () => {
+  // round 1 wore the negative margin at rest, widening the quiet list's
+  // separator ~16px - "at rest the hairline is untouched" is literal
+  const restRule = listSrc.match(/\.registry-list\.feel-sessions \.registry-row \{[^}]*\}/);
+  assert.ok(restRule, "the rest rule exists");
+  for (const decl of ["margin:", "padding:", "border-radius:"]) {
+    assert.ok(
+      !restRule![0].includes(decl),
+      `rest must not carry ${decl.trim()}`,
+    );
+  }
+  // the raise is where the geometry lives
+  const raise = listSrc.slice(
+    listSrc.indexOf(".registry-list.feel-sessions .registry-row:hover,"),
+    listSrc.indexOf(".registry-list.feel-sessions .registry-row:hover:not("),
+  );
+  for (const decl of ["border-radius: var(--r-chip)", "margin: 0 -8px", "padding: 5px 8px"]) {
+    assert.ok(raise.includes(decl), `the raise carries ${decl}`);
+  }
 });
 
 test("the active row is the open one: raised surface, accent name", () => {
@@ -248,5 +290,54 @@ test("the focused-session event spells the same in the shell and the panel", () 
     appSrc,
     /onMounted\(\(\) => announceFocusedSession\(focusedSessionId\.value\)\)/,
     "the shell announces once on mount too",
+  );
+});
+
+test("the seam has a PULL: a panel that mounts late asks for the id", () => {
+  // The dock renders only the ACTIVE tab's pane slot (DockPane's v-if),
+  // so AgentsPanel unmounts on switch-away and mounts again later - both
+  // pushes above are spent by then. The panel asks; the shell answers
+  // (review round 1, finding 1).
+  assert.equal(FOCUSED_SESSION_QUERY_EVENT, "omega:query-focused-session");
+  assert.match(chatSrc, /FOCUSED_SESSION_QUERY_EVENT = "omega:query-focused-session"/);
+  assert.match(
+    panelSrc,
+    /FOCUSED_SESSION_QUERY_EVENT = "omega:query-focused-session"/,
+    "the panel copies the literal (module UI imports no shell code)",
+  );
+  // the pull is dispatched AFTER the listener is up: the shell answers
+  // synchronously, so an early ask is answered to nobody
+  const mount = panelSrc.slice(
+    panelSrc.indexOf("onMounted(() => {"),
+    panelSrc.indexOf("onUnmounted(() => {"),
+  );
+  const listen = mount.indexOf(
+    "window.addEventListener(FOCUSED_SESSION_EVENT, onFocusedSession)",
+  );
+  const ask = mount.indexOf(
+    "window.dispatchEvent(new CustomEvent(FOCUSED_SESSION_QUERY_EVENT))",
+  );
+  assert.ok(listen >= 0, "the panel listens on mount");
+  assert.ok(ask > listen, "and asks on mount, listener first");
+  // the shell answers with what it is showing right now
+  assert.match(
+    appSrc,
+    /import \{[\s\S]*?FOCUSED_SESSION_QUERY_EVENT,[\s\S]*?\} from "\.\/composables\/chat";/,
+    "the shell imports the query literal (one spelling, not a second copy)",
+  );
+  assert.match(
+    appSrc,
+    /window\.addEventListener\(FOCUSED_SESSION_QUERY_EVENT, onFocusedSessionQuery\)/,
+    "the shell answers the pull",
+  );
+  assert.match(
+    appSrc,
+    /function onFocusedSessionQuery\(\): void \{\n\s*announceFocusedSession\(focusedSessionId\.value\);/,
+    "the answer is the live focused id, not a cached one",
+  );
+  assert.match(
+    appSrc,
+    /window\.removeEventListener\(\s*FOCUSED_SESSION_QUERY_EVENT,\s*onFocusedSessionQuery,?\s*\)/,
+    "and stops answering when the shell unmounts",
   );
 });
