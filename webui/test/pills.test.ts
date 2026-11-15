@@ -104,12 +104,31 @@ describe("reference token scan (t_7f09bd0c)", () => {
     assert.equal(tok.start, 5);
   });
 
-  it("a directory token (trailing slash) has no basename - no pill", () => {
-    // the drill form never renders as a pill; it is a list state, not a pill
-    assert.deepEqual(
-      scanRefTokens("look at @src/ for it").filter((t) => t.token.includes("/")),
-      [],
-    );
+  it("a trailing-slash @path is a DIR token - the folder pins like a file", () => {
+    // t_c3fe4ea6: the slash is the discriminator. The pill shows the
+    // folder's name, addresses its bare path (the viewer ref) and keeps
+    // the slash in the TOKEN (the draft stays the expansion's exact
+    // source: the model reads "@artifacts_mmo/").
+    const text = "please move the json into @artifacts_mmo/ folder";
+    const [tok] = scanRefTokens(text);
+    assert.deepEqual(tok, {
+      kind: "dir",
+      token: "@artifacts_mmo/",
+      label: "artifacts_mmo",
+      name: "artifacts_mmo",
+      start: text.indexOf("@artifacts"),
+    });
+    // a nested folder: the label is the last segment, the name the path
+    const [nested] = scanRefTokens("@docs/deep/");
+    assert.equal(nested!.kind, "dir");
+    assert.equal(nested!.label, "deep");
+    assert.equal(nested!.name, "docs/deep");
+    assert.equal(nested!.token, "@docs/deep/");
+    // a no-name token ("@/") is not a reference
+    assert.deepEqual(scanRefTokens("at @/ here"), []);
+    // and the file rule is untouched by the dir rule: no slash = a file
+    const [file] = scanRefTokens("@docs/readme.md");
+    assert.equal(file!.kind, "file");
   });
 
   it("an @ token after an open paren still counts; the file pill rides any position", () => {
@@ -212,7 +231,7 @@ describe("chipFor - the chip rule per token", () => {
 
 describe("editorNodes - the editor's DOM plan", () => {
   const pillable = (t: { kind: string; name: string }): boolean =>
-    t.kind === "file" || t.name === "greet";
+    t.kind === "file" || t.kind === "dir" || t.name === "greet";
   const opts = (caret: number) => ({
     caret,
     paletteOpen: false,
@@ -253,6 +272,28 @@ describe("editorNodes - the editor's DOM plan", () => {
     assert.equal(nodes.length, 1);
     assert.equal(nodes[0]!.type, "text");
   });
+
+  // t_c3fe4ea6: a folder reference is a chip exactly like a file's - the
+  // plan carries the raw "@dir/" token (the draft's exact source) and
+  // renders one chip node for it.
+  it("a dir token chips with its trailing slash intact", () => {
+    const draft = "move it into @artifacts_mmo/ please";
+    const nodes = editorNodes(draft, opts(draft.length), pillable);
+    assert.deepEqual(
+      nodes.map((n) => (n.type === "chip" ? "CHIP:" + n.token.token : "TEXT:" + n.text)),
+      ["TEXT:move it into ", "CHIP:@artifacts_mmo/", "TEXT: please"],
+    );
+    // the running query: while the palette sits at the token end the
+    // folder stays raw (the drill) - leaving it finalizes the chip
+    assert.equal(
+      editorNodes("@artifacts_mmo/", { ...opts(15), paletteOpen: true }, pillable)[0]!.type,
+      "text",
+    );
+    assert.equal(
+      editorNodes("@artifacts_mmo/", opts(15), pillable)[0]!.type,
+      "chip",
+    );
+  });
 });
 
 // --- the backspace law ------------------------------------------------
@@ -264,6 +305,16 @@ describe("token delete (backspace on a chip dissolves it to its text)", () => {
     assert.equal(tokenBeforeCaret("x @a.md", 7)!.token, "@a.md");
     assert.equal(tokenBeforeCaret("x @a.md", 6), null); // one char inside the token
     assert.equal(tokenBeforeCaret("", 0), null);
+  });
+
+  // t_c3fe4ea6: the dissolve law covers folders - the caret parked behind
+  // "@dir/" dissolves the folder chip to its raw text like a file chip.
+  it("a dir token behind the caret is the dissolve target", () => {
+    const text = "into @artifacts_mmo/ folder";
+    const end = text.indexOf("@artifacts") + "@artifacts_mmo/".length;
+    assert.equal(tokenBeforeCaret(text, end)!.token, "@artifacts_mmo/");
+    assert.equal(tokenBeforeCaret(text, end)!.kind, "dir");
+    assert.equal(tokenBeforeCaret(text, end - 1), null, "one char inside the token");
   });
 
   it("deleteTokenAt (the chip x's outright remove) cuts the span and parks the caret at the cut", () => {
@@ -294,6 +345,23 @@ describe("@ autocomplete paths (dirs first, drill-in)", () => {
     assert.equal(mentionDirOf("@docs/re"), "docs/");
     assert.equal(mentionLeafQuery("@docs/read"), "read");
     assert.equal(mentionLeafQuery("@"), "");
+  });
+
+  // t_c3fe4ea6: a DIR token's drill. The dir keeps its trailing slash
+  // (mentionDirOf feeds the INSERTION, "@" + dir + name), but the READ
+  // must be the bare path - /files/browse answers 400 "empty path
+  // segment" for "docs//", which is why the folder token's own listing
+  // came back empty in the lane.
+  it("a folder token drills on its bare path (the insertion keeps the slash)", () => {
+    const tok = "@artifacts_mmo/";
+    assert.equal(mentionDirOf(tok), "artifacts_mmo/", "the insertion's dir keeps the slash");
+    assert.equal(mentionDirOf(tok).replace(/\/+$/, ""), "artifacts_mmo", "the read's dir drops it");
+    assert.equal(mentionLeafQuery(tok), "", "a folder token's leaf is empty - its children list");
+    assert.equal(
+      filterMentionRows(tok, mentionRows([{ name: "openapi.json", is_dir: false }])).length,
+      1,
+      "the folder's child row survives the filter",
+    );
   });
 
   it("filterMentionRows filters on the leaf under a drill, the whole leaf bare", () => {
@@ -384,6 +452,59 @@ describe("composer chip law wiring (source-pinned, card t_e67c372b)", () => {
     assert.ok(composer.includes("forced.add(insertion)"), "the mention pick");
     assert.ok(composer.includes("const forced = new Set(forcedChip.value);"),
       "sets are replaced whole (the plan's computed re-runs)");
+  });
+
+  // t_c3fe4ea6: folder pins. The chip gate carries the dir kind, the
+  // palette accept PINS a dir row (one closePalette lane for both row
+  // kinds - no bare-text drill), and the pill's icon/label and the
+  // viewer's folder body host the ref.
+  it("a dir token is pill-eligible and the dir row accept pins it", () => {
+    assert.ok(
+      composer.includes('t.kind === "file" || t.kind === "dir" || skillNames.value.has(t.name)'),
+      "isPill carries the dir kind",
+    );
+    assert.ok(
+      composer.includes('(isDir ? "/" : "")'),
+      "the dir row completes to the trailing-slash token",
+    );
+    // the pin: the accept closes the palette and force-chips the
+    // inserted token for BOTH kinds - the drill is the token's own law
+    const accept = composer.slice(composer.indexOf("const isDir = item.kind === \"dir\";"));
+    const lane = accept.slice(0, accept.indexOf("caretAt.value = next.caret;"));
+    assert.ok(lane.includes("closePalette()"), "the accept closes the palette (pin)");
+    assert.ok(lane.includes("forced.add(insertion)"), "and fresh-swallows the chip");
+    assert.ok(!/if \(!isDir\)/.test(lane), "no bare-text dir lane survives");
+    assert.ok(
+      composer.includes("typing past the slash relists the folder"),
+      "the drill stays the token's law (typing deeper)",
+    );
+  });
+
+  it("the pill hosts a folder: folder glyph, folder title, dir ref to the viewer", () => {
+    assert.ok(
+      pill.includes("'dir' ? 'folder'"),
+      "the dir pill rides the iconset's folder glyph",
+    );
+    assert.ok(pill.includes("- open the folder"), "the dir pill's hover title");
+    assert.ok(
+      composer.includes("openViewerRef?.({ kind: t.kind, name: t.name })"),
+      "the dir chip hands kind dir + the bare path to the viewer",
+    );
+  });
+
+  // t_c3fe4ea6: the drill's READ strips the trailing slash the insertion
+  // keeps - /files/browse 400s on "docs//", so the folder token's own
+  // listing came back empty until this strip landed.
+  it("the drill read strips the dir's trailing slash (the browse 400)", () => {
+    assert.ok(
+      composer.includes('const clean = dir.replace(/\\/+$/, "")'),
+      "the read's dir is the bare path",
+    );
+    assert.ok(composer.includes("fetchFilesBrowse(clean)"), "and rides the browse read");
+    assert.ok(
+      composer.includes('props.workspace + (clean ? "/" + clean : "")'),
+      "the workspace reader takes the same clean path",
+    );
   });
 
   it("the editor sync rebuilds only on disagreement; typing never churns the caret", () => {

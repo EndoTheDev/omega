@@ -4,8 +4,9 @@
      component non-editable where the token span was (the pill REPLACES
      the text it represents). A pill is pure data (pills.ts RefToken);
      the icon is the iconset's (icons.ts), never an emoji or a library.
-     Click opens the target - a file in the Files-pane viewer, a skill's
-     SKILL.md: one renderer, skills are files. The component emits
+     Click opens the target - a file in the viewer, a skill's SKILL.md, a
+     folder's listing (card t_c3fe4ea6): one renderer, skills and folders
+     are addresses like files. The component emits
      "open"; the surface decides how (both inject the app's viewer
      open). -->
 <template>
@@ -16,7 +17,7 @@
     :title="title"
     @click="emit('open')">
     <Icon
-      :name="pill.kind === 'skill' ? 'zap' : 'file-generic'"
+      :name="pill.kind === 'skill' ? 'zap' : pill.kind === 'dir' ? 'folder' : 'file-generic'"
       :size="12" />
     <span class="ref-pill-name">{{ pillName }}</span>
   </button>
@@ -30,14 +31,14 @@
   const props = defineProps<{ pill: RefToken }>();
   const emit = defineEmits<{ (e: "open"): void }>();
 
-  // skill pills read "/name" (the invocation form); file pills read the
-  // basename - the full relative path is the hover title
+  // skill pills read "/name" (the invocation form); file and dir pills
+  // read the basename - the full relative path is the hover title
   const pillName = computed(() =>
     props.pill.kind === "skill" ? "/" + props.pill.name : props.pill.label,
   );
-  const title = computed(() =>
-    props.pill.kind === "skill" ?
-      "open SKILL.md"
-    : props.pill.name + " - open in the Files pane",
-  );
+  const title = computed(() => {
+    if (props.pill.kind === "skill") return "open SKILL.md";
+    if (props.pill.kind === "dir") return props.pill.name + " - open the folder";
+    return props.pill.name + " - open in the Files pane";
+  });
 </script>

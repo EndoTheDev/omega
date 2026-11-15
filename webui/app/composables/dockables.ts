@@ -443,32 +443,34 @@ export const DOCKABLES: readonly DockableComponent[] = DOCKABLE_INVENTORY.map(
 
 /** card t_36ceb99b: WHAT a viewer tab shows. `kind` "file" reads the
     name as a working-directory relative path (GET /files/read), "skill"
-    as a skill folder name (GET /skills/content). The tab's identity for
-    focus-reuse: the same ref focuses the existing tab, never mints a
-    duplicate. PURE plain data - the dock serializes it with the
-    tree. */
+    as a skill folder name (GET /skills/content), "dir" as a folder path
+    (GET /files/browse - the folder listing, card t_c3fe4ea6). The tab's
+    identity for focus-reuse: the same ref focuses the existing tab,
+    never mints a duplicate. PURE plain data - the dock serializes it
+    with the tree. */
 export interface ViewerRef {
-  kind: "file" | "skill";
-  /** file: a relative path from the workspace root; skill: the folder name */
+  kind: "file" | "skill" | "dir";
+  /** file: a relative path from the workspace root; skill: the folder
+      name; dir: the relative folder path (no trailing slash) */
   name: string;
 }
 
 /** validate a persisted viewer payload (the strict reader's law): kind
-    one of the two, name a non-empty string; anything else is invalid */
+    one of the three, name a non-empty string; anything else is invalid */
 export function validViewerRef(
   raw: unknown,
 ): raw is ViewerRef {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
   const v = raw as { kind?: unknown; name?: unknown };
   return (
-    (v.kind === "file" || v.kind === "skill") &&
+    (v.kind === "file" || v.kind === "skill" || v.kind === "dir") &&
     typeof v.name === "string" &&
     v.name !== ""
   );
 }
 
-/** a viewer tab's chip title: the base name (a file's last path
-    segment, VS Code's read; a skill's name has no segments). Pure. */
+/** a viewer tab's chip title: the base name (a file's or a folder's last
+    path segment, VS Code's read; a skill's name has no segments). Pure. */
 export function viewerTabTitle(v: ViewerRef): string {
   if (v.kind === "skill") return v.name;
   const base = v.name.split("/").pop() ?? "";

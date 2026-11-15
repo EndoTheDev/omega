@@ -25,7 +25,7 @@
         class="viewer-status viewer-error" role="alert">{{ error }}</p>
       <p
         v-else-if="loading"
-        class="viewer-status">loading{{ viewer.kind === "skill" ? " skill" : " file" }}…</p>
+        class="viewer-status">loading{{ viewer.kind === "skill" ? " skill" : viewer.kind === "dir" ? " folder" : " file" }}…</p>
       <template v-else>
         <p
           v-if="notice"
@@ -33,6 +33,43 @@
         <p
           v-if="skillDesc"
           class="viewer-skill-desc">{{ skillDesc }}</p>
+        <!-- the FOLDER body (card t_c3fe4ea6): a dir ref lists one
+             directory (/files/browse, the same listing the Files tab
+             browses); rows drill to another folder tab or open a file
+             tab. No preview, no sizes for folders - the tree's row
+             vocabulary, flat. -->
+        <div
+          v-if="isDir"
+          class="viewer-dir"
+          role="list"
+          :aria-label="viewer.name">
+          <p
+            v-if="!dirEntries.length"
+            class="viewer-status">empty folder</p>
+          <button
+            v-for="e in dirEntries"
+            :key="e.name"
+            class="viewer-dir-row"
+            :class="{ 'is-dir': e.is_dir }"
+            type="button"
+            role="listitem"
+            :title="dirChildPath(e)"
+            @click="openEntry(e)">
+            <Icon
+              :name="e.is_dir ? 'folder' : glyphIcon(glyphKindFor(e.name))"
+              :size="13" />
+            <span class="viewer-dir-name"
+              >{{ e.name
+              }}<span
+                v-if="e.is_dir"
+                class="dir-mark">/</span
+              ></span
+            >
+            <span
+              v-if="!e.is_dir"
+              class="viewer-dir-size">{{ e.size_bytes }}</span>
+          </button>
+        </div>
         <!-- ONE body per content class (t_42c8aced): the sniffed mime
              decides pdf/image, an .md/.markdown file or the skill body
              renders markdown, a non-UTF-8 file keeps the honest
@@ -77,7 +114,7 @@
           aria-label="markdown preview"
           v-html="renderedMd"></div>
         <div
-          v-else
+          v-else-if="!isDir"
           class="viewer-body"
           role="document"
           :aria-label="viewer.name">
@@ -110,16 +147,21 @@
   import { computed, inject, nextTick, onMounted, ref, watch } from "vue";
   import type { ViewerRef } from "../composables/dockables";
   import {
+    DOCK_VIEWER_OPEN_KEY,
     FOCUSED_SESSION_KEY,
     fetchSkillContent,
   } from "../composables/viewer";
   import { decorateCodeblocks } from "../composables/codeblocks";
   import {
     bytesLabel,
+    fetchFilesBrowse,
     fetchFilesRead,
     fileViewKind,
     filesRawUrl,
+    joinRelPath,
     renderMarkdown,
+    sortFileEntries,
+    type FileEntry,
     type FileViewKind,
   } from "../composables/omega";
   import Icon from "./ui/Icon.vue";
@@ -143,6 +185,21 @@
   const mime = ref("");
   const size = ref<number | undefined>(undefined);
   const skillDesc = ref("");
+  // the FOLDER body's rows (card t_c3fe4ea6): one directory listing, the
+  // same /files/browse read the Files tab rides
+  const dirEntries = ref<FileEntry[]>([]);
+  const isDir = computed(() => props.viewer?.kind === "dir");
+
+  // the viewer's own opener: a folder row drills to another folder tab,
+  // a file row opens a file tab - the same focus-reuse the chip rides
+  const openViewerRef = inject(DOCK_VIEWER_OPEN_KEY, null);
+  function dirChildPath(e: FileEntry): string {
+    return joinRelPath(props.viewer?.name ?? "", e.name);
+  }
+  function openEntry(e: FileEntry): void {
+    openViewerRef?.({ kind: e.is_dir ? "dir" : "file", name: dirChildPath(e) });
+  }
+
   // a refetch when the same tab instance is handed a DIFFERENT viewer
   // (the outlet reuses the component; only the remount fetches fresh)
   watch(
@@ -160,12 +217,18 @@
     mime.value = "";
     size.value = undefined;
     skillDesc.value = "";
+    dirEntries.value = [];
     try {
       if (props.viewer.kind === "skill") {
         const data = await fetchSkillContent(props.viewer.name);
         content.value = data.content;
         truncated.value = data.truncated;
         skillDesc.value = data.description;
+      } else if (props.viewer.kind === "dir") {
+        // the folder body: /files/browse under the SAME root resolution
+        // the Files tab browsed with (t_a5f9d185)
+        const data = await fetchFilesBrowse(props.viewer.name, focusedSession?.value ?? undefined);
+        dirEntries.value = sortFileEntries(data.entries ?? []);
       } else {
         // t_a5f9d185: the read roots on the focused session's resolved
         // root - the SAME resolution the Files tab browsed under, so a
@@ -189,10 +252,12 @@
 
   // ONE view class per content kind. A skill's body IS markdown (the
   // loader hands the parsed body); files decide by the sniffed mime and
-  // the extension (fileViewKind, t_42c8aced).
+  // the extension (fileViewKind, t_42c8aced); a folder has no body class
+  // - its listing is the isDir branch (t_c3fe4ea6).
   const view = computed<FileViewKind>(() => {
     if (!props.viewer) return "code";
     if (props.viewer.kind === "skill") return "markdown";
+    if (props.viewer.kind === "dir") return "code";
     return fileViewKind(props.viewer.name, mime.value, binary.value);
   });
 
@@ -230,9 +295,13 @@
       ? "file-generic"
       : props.viewer.kind === "skill"
         ? "skills"
-        : glyphIcon(glyphKindFor(props.viewer.name)),
+        : props.viewer.kind === "dir"
+          ? "folder"
+          : glyphIcon(glyphKindFor(props.viewer.name)),
   );
-  const kindLabel = computed(() => (props.viewer?.kind === "skill" ? "skill" : ""));
+  const kindLabel = computed(() =>
+    props.viewer?.kind === "skill" ? "skill" : props.viewer?.kind === "dir" ? "folder" : "",
+  );
   const rawSrc = computed(() =>
     props.viewer && props.viewer.kind === "file"
       ? filesRawUrl(props.viewer.name, focusedSession?.value ?? undefined)
@@ -305,6 +374,45 @@
     padding: 6px 12px 0;
     font-size: 11px;
     opacity: 0.65;
+  }
+  /* the folder body (t_c3fe4ea6): the tree's row vocabulary, flat -
+     one row per entry, the folder glyph leading, folders marked with
+     their trailing slash. The rows are buttons (a click opens the ref). */
+  .viewer-dir {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 4px 6px 12px;
+  }
+  .viewer-dir-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 3px 6px;
+    border: 0;
+    border-radius: var(--r-chip);
+    background: transparent;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .viewer-dir-row:hover {
+    background: var(--z1-raised);
+    color: var(--text);
+  }
+  .viewer-dir-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .viewer-dir-size {
+    flex-shrink: 0;
+    opacity: 0.55;
   }
   .viewer-body {
     flex: 1;

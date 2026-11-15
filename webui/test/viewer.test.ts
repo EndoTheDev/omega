@@ -62,6 +62,7 @@ function viewerCount(t: DockNode): number {
 
 const fileRef = (name = "README.md"): ViewerRef => ({ kind: "file", name });
 const skillRef = (name = "worker-onboarding"): ViewerRef => ({ kind: "skill", name });
+const dirRef = (name = "artifacts_mmo"): ViewerRef => ({ kind: "dir", name });
 
 // --- the registry contract -----------------------------------------------------
 
@@ -90,9 +91,10 @@ describe("the viewer dockable (t_36ceb99b)", () => {
 // --- the payload + focus-reuse ---------------------------------------------------
 
 describe("the viewer tab payload (focus-reuse, t_36ceb99b fix 4)", () => {
-  it("validViewerRef: the two kinds with a non-empty name; everything else invalid", () => {
+  it("validViewerRef: the three kinds with a non-empty name; everything else invalid", () => {
     assert.ok(validViewerRef({ kind: "file", name: "a/b.go" }));
     assert.ok(validViewerRef({ kind: "skill", name: "x" }));
+    assert.ok(validViewerRef(dirRef("artifacts_mmo")), "a folder ref validates (t_c3fe4ea6)");
     for (const bad of [null, undefined, "x", {}, { kind: "file" }, { name: "x" }, { kind: "sheet", name: "x" }, { kind: "file", name: "" }]) {
       assert.equal(validViewerRef(bad), false, JSON.stringify(bad) + " is invalid");
     }
@@ -102,6 +104,8 @@ describe("the viewer tab payload (focus-reuse, t_36ceb99b fix 4)", () => {
     assert.ok(viewerRefEq(fileRef("a"), fileRef("a")));
     assert.ok(!viewerRefEq(fileRef("a"), fileRef("b")));
     assert.ok(!viewerRefEq(fileRef("a"), skillRef("a")));
+    assert.ok(!viewerRefEq(dirRef("a"), fileRef("a")), "a folder is not its file twin");
+    assert.ok(viewerRefEq(dirRef("a"), dirRef("a")));
     assert.ok(viewerRefEq(undefined, undefined));
     assert.ok(!viewerRefEq(fileRef("a"), undefined));
   });
@@ -198,6 +202,23 @@ describe("the viewer payload persists (card 3's tab record laws)", () => {
     assert.equal(viewerTabTitle(fileRef("notes.txt")), "notes.txt");
     assert.equal(viewerTabTitle(skillRef("worker-onboarding")), "worker-onboarding");
     assert.equal(viewerTabTitle(fileRef("")), "");
+    // a folder tab is named by its last segment (t_c3fe4ea6)
+    assert.equal(viewerTabTitle(dirRef("artifacts_mmo")), "artifacts_mmo");
+    assert.equal(viewerTabTitle(dirRef("docs/deep")), "deep");
+  });
+
+  // t_c3fe4ea6: a folder ref opens a folder TAB - its own listing,
+  // drilled from /files/browse, with rows that open the child refs.
+  it("a dir ref mints its own viewer tab (focus-reuse, never a file tab)", () => {
+    const pane = makePane("chat", null);
+    const first = openViewerTab(pane, dirRef("artifacts_mmo"), pane.id);
+    assert.equal(first.action, "created");
+    const again = openViewerTab(first.tree, dirRef("artifacts_mmo"), pane.id);
+    assert.equal(again.action, "focused", "the same folder focuses its tab");
+    assert.equal(viewerCount(again.tree), 1);
+    const child = openViewerTab(again.tree, dirRef("artifacts_mmo/nested"), pane.id);
+    assert.equal(child.action, "created", "a nested folder is its own tab");
+    assert.equal(viewerCount(child.tree), 2);
   });
 });
 
@@ -221,9 +242,24 @@ describe("the viewer wiring contracts", () => {
     assert.match(viewer, /viewer-skill-desc/, "the skill's description line");
   });
 
+  // t_c3fe4ea6: the folder body - the third viewer kind. The listing is
+  // /files/browse (the tree's own read), rows open the child refs.
+  it("ViewerTab hosts a folder body: browse rows that open child refs", () => {
+    assert.match(viewer, /fetchFilesBrowse\(/, "the folder tab lists /files/browse");
+    assert.match(viewer, /class="viewer-dir"/, "the folder body");
+    assert.match(viewer, /viewer-dir-row/, "one row per entry");
+    assert.match(
+      viewer,
+      /openViewerRef\?\.\(\{ kind: e\.is_dir \? "dir" : "file", name: dirChildPath\(e\) \}\)/,
+      "a row opens the child ref (folder -> folder tab, file -> file tab)",
+    );
+    assert.match(viewer, /empty folder/, "the empty-folder state");
+  });
+
   it("DockPane's chip icon follows the CONTENT type", () => {
     assert.match(pane, /tab\.component === "viewer" && tab\.viewer/);
     assert.match(pane, /kind === "skill"\s*\?\s*"skills"/, "skill rows -> the book");
+    assert.match(pane, /kind === "dir"\) return "folder"/, "folder rows -> the folder glyph");
     assert.match(pane, /glyphIcon\(glyphKindFor\(tab\.viewer\.name\)\)/, "file rows -> the extension glyph");
   });
 

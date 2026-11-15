@@ -15,14 +15,18 @@ import type { PaletteItem } from "./commands.ts";
 
 export interface RefToken {
   // skill = an injected-content invocation ("/name"); file = a path
-  // reference ("@path") the model reads with its own tools
-  kind: "skill" | "file";
-  // the raw token text ("/greet", "@docs/readme.md")
+  // reference ("@path") the model reads with its own tools; dir = a
+  // FOLDER reference ("@path/") - the trailing slash is the
+  // discriminator, so a folder pins exactly like a file (t_c3fe4ea6)
+  kind: "skill" | "file" | "dir";
+  // the raw token text ("/greet", "@docs/readme.md", "@docs/")
   token: string;
-  // what the pill shows: the skill name, the file's basename
+  // what the pill shows: the skill name, the file's basename, the
+  // folder's name (a dir token's last segment)
   label: string;
   // how the pill is addressed: the skill name (the SKILL.md folder), the
-  // file's relative path (the viewer ref + hover title)
+  // file's relative path (the viewer ref + hover title), the folder's
+  // path WITHOUT its trailing slash (the viewer's folder listing)
   name: string;
   // the token's start index in the scanned text
   start: number;
@@ -71,7 +75,13 @@ export interface ScanOpts {
 //   file   - a standalone "@path" (text start, or after whitespace or an
 //            open paren). A mid-word @ - user@host - is an email, not a
 //            file reference (the server's AtFilePattern law). A token
-//            with no basename ("@dir/") drills, never renders a pill.
+//            with no basename ("@dir/") is a DIR token, never a file:
+//            the trailing slash names a folder (t_c3fe4ea6).
+//   dir    - a standalone "@path/" (the same boundaries as a file token).
+//            The pill shows the folder's name and addresses its path
+//            (trailing slash dropped); the raw token keeps the slash -
+//            the exact-source law: the model reads "@artifacts_mmo/" and
+//            follows it with its own tools.
 export function scanRefTokens(text: string, opts: ScanOpts = {}): RefToken[] {
   const out: RefToken[] = [];
   if (opts.inlineSkills) {
@@ -107,6 +117,22 @@ export function scanRefTokens(text: string, opts: ScanOpts = {}): RefToken[] {
     // the pill's path is the clean token ("@docs/x.md," opens x.md)
     const token = ("@" + m[2]).replace(/[.,;:!?]+$/, "");
     const name = token.slice(1);
+    // the trailing slash is the dir discriminator (t_c3fe4ea6): a folder
+    // reference pins like a file. The ADDRESSED path drops the slash
+    // (the viewer's folder listing takes a bare path); the TOKEN keeps
+    // it (the draft is the server expansion's exact source).
+    if (name.endsWith("/")) {
+      const path = name.replace(/\/+$/, "");
+      if (!isBasename(path)) continue; // "@" or "@//" - not a reference
+      out.push({
+        kind: "dir",
+        token,
+        label: path.split("/").pop() ?? path,
+        name: path,
+        start,
+      });
+      continue;
+    }
     if (!isBasename(name)) continue;
     out.push({
       kind: "file",
@@ -278,8 +304,10 @@ export function mentionLeafQuery(token: string): string {
 }
 
 // mentionRows orders a directory listing for the @ list: directories
-// first, each alphabetical (the card's law). Dir rows drill (kind "dir"),
-// file rows complete to a pill token.
+// first, each alphabetical (the card's law). Both row kinds complete to
+// a PILL token - a file row to "@path", a dir row to "@path/" (the
+// folder pin, t_c3fe4ea6). Drilling deeper is the token itself: typing
+// past the slash relists the folder (mentionDirOf).
 export function mentionRows(
   entries: { name: string; is_dir: boolean }[],
 ): PaletteItem[] {
@@ -290,7 +318,7 @@ export function mentionRows(
   return [
     ...dirs.map((d) => ({
       name: d.name,
-      description: "folder - drill in",
+      description: "reference this folder",
       kind: "dir" as const,
     })),
     ...files.map((f) => ({
