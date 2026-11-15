@@ -288,7 +288,11 @@ Everything else animates through `transition`, not keyframes.
   settings MODULES section and the gate, so the two can never disagree: one
   boot read plus the toggle responses, no polling timer. The `off` set is
   cached (`omega.modules-off`) and hydrated synchronously before the first
-  render, so a reload with a module disabled never paints its chip. Shell
+  render, so a reload with a module disabled never paints its chip. Every
+  path that REINTRODUCES a strip re-runs the gate afterwards - the undo
+  restore and both reveal paths (`toggleEdge`, `toggleBottom`): a seat
+  parked while its strip sat closed has no live pane to reseat into, so
+  the reveal is the tick that brings the chip back. Shell
   panes (sessions, chat, viewer, agents, insights, settings) are not module
   ids and are never gated; `shell` (the capsule behind the Terminal tab) has
   no manifest id match yet, so its chip is not gated either.

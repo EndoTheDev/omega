@@ -27,6 +27,7 @@ import {
   MODULE_STASH_KEY,
   createDock,
   findComponentTab,
+  findEdgePane,
   findPane,
   makeSplit,
   parseParkedTabs,
@@ -316,6 +317,65 @@ describe("createDock: the gate is part of the store", () => {
     const dock = createDock(store as unknown as Storage);
     dock.setModuleGate(EMPTY_MODULE_GATE);
     assert.equal(JSON.parse(store.getItem(MODULE_STASH_KEY) ?? "[]").length, 0);
+  });
+});
+
+// --- 6b. the reintroduction paths re-run the gate ---------------------------
+
+describe("a reveal reintroduces a strip: the gate re-runs there too", () => {
+  it("a seat parked behind a CLOSED edge reseats on reveal", () => {
+    const store = new MemoryStorage();
+    store.setItem(DOCK_LAYOUT_KEY, serialize(shell(), []));
+    const dock = createDock(store as unknown as Storage);
+    const strip = findEdgePane(dock.tree.value, "inspector")!;
+    assert.ok(strip, "boot seats the inspector shell");
+    const before = tabIds(dock.tree.value, strip.id);
+
+    // 1. cron off while the inspector is open: the chip parks
+    dock.setModuleGate(gateOf(["cron"], ["cron"]));
+    assert.equal(findComponentTab(dock.tree.value, "cron"), null);
+    // 2. the inspector closes - the strip (cron already gone) stows
+    dock.toggleEdge("inspector", "after");
+    assert.equal(findEdgePane(dock.tree.value, "inspector"), null, "the edge is closed");
+    // 3. cron comes back while the strip is hidden: no live pane hosts it,
+    //    so the seat STAYS parked rather than being dropped
+    dock.setModuleGate(gateOf(["cron"], []));
+    assert.equal(findComponentTab(dock.tree.value, "cron"), null, "still parked behind the closed edge");
+    assert.deepEqual(
+      parseParkedTabs(store.getItem(MODULE_STASH_KEY)).map((p) => p.component),
+      ["cron"],
+      "the seat survived the while-hidden remount",
+    );
+    // 4. the inspector reopens: the reveal re-runs the live gate, so the
+    //    live module's chip is back in the strip in the same tick
+    dock.toggleEdge("inspector", "after");
+    const back = findEdgePane(dock.tree.value, "inspector")!;
+    assert.ok(back, "the panel is back");
+    assert.deepEqual(tabIds(dock.tree.value, back.id), before, "the chip is back in its old seat");
+    assert.deepEqual(parseParkedTabs(store.getItem(MODULE_STASH_KEY)), [], "the seat is consumed");
+  });
+
+  it("a seat parked while the BOTTOM panel was closed reseats on reopen", () => {
+    const store = new MemoryStorage();
+    const dock = createDock(store as unknown as Storage);
+    const strip = findEdgePane(dock.tree.value, "bottom")!;
+    assert.ok(strip, "boot grafts the bottom shell");
+    const before = tabIds(dock.tree.value, strip.id);
+    assert.ok(before.includes("terminal"), "the bottom home hosts the terminal chip");
+
+    dock.setModuleGate(gateOf(["terminal"], ["terminal"]));
+    assert.equal(findComponentTab(dock.tree.value, "terminal"), null);
+    dock.toggleBottom();
+    assert.equal(findEdgePane(dock.tree.value, "bottom"), null, "the panel is closed");
+
+    dock.setModuleGate(gateOf(["terminal"], []));
+    assert.equal(findComponentTab(dock.tree.value, "terminal"), null, "parked while hidden");
+
+    dock.toggleBottom();
+    const back = findEdgePane(dock.tree.value, "bottom")!;
+    assert.ok(back, "the panel is back");
+    assert.deepEqual(tabIds(dock.tree.value, back.id), before, "the chip is back in its seat");
+    assert.deepEqual(parseParkedTabs(store.getItem(MODULE_STASH_KEY)), []);
   });
 });
 

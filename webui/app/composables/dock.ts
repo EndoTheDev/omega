@@ -3788,6 +3788,13 @@ export function createDock(store: Storage): DockApi {
       // is exempt from the give-away there (last-requested wins).
       revealPending = component;
       applyLayout(tree.value, res.tree);
+      // card t_103e30a6 (round 2): a reveal REINTRODUCES the stowed strip -
+      // the same reintroduction class as undo's snapshot restore. A seat
+      // parked while this edge was closed (its module came back with the
+      // strip hidden) reseats only against a live pane, so the gate re-runs
+      // here or the strip disagrees with GET /modules until the next
+      // module-state change of any kind.
+      syncModuleGate(liveGate);
     }
   };
 
@@ -3808,6 +3815,10 @@ export function createDock(store: Storage): DockApi {
       const stowed = hiddenState.bottom ?? null;
       delete hiddenState.bottom;
       applyLayout(tree.value, revealBottomPanel(tree.value, store, stowed));
+      // card t_103e30a6 (round 2): the same reintroduction class as the
+      // edge reveal above - the restacked bottom strip re-runs the gate, or
+      // a seat parked while the panel was closed never comes back.
+      syncModuleGate(liveGate);
     }
   };
 
