@@ -465,8 +465,8 @@ resolution mirror the one command law every surface follows:
   per agent home, the main agent included. The subtitle line carries
   the facts the tab is for - description, model, session count, last
   activity - and the main row additionally carries a `main` badge
-  beside its name (the locked pill marks it too when the host serves
-  the toggle seam; the badge survives a host that serves none).
+  beside its name (the badge also explains why that row carries no
+  toggle - it is the home config, always on).
 - **A row click opens the agent's chat** (card t_81109e1c): the name
   is a button that hands the agent's MOST RECENT session id
   (`last_session_id` on the roster row, newest by `updated_at`) to the
@@ -491,10 +491,23 @@ resolution mirror the one command law every surface follows:
   on the subtitle (green active, dim sleeping), the right-anchored
   toggle per the pill law, and NO wake control anywhere - waking is
   the scheduler's job, the tab never spawns a wake.
-- **The default agent is locked** (t_2d8deb8c): it must always be on.
-  The row's pill is locked-on and non-interactive; `PUT
-  /disabled/agents` answers 409 for the default agent at the handler
-  level and config.yaml stays untouched.
+- **The default agent carries NO toggle** (t_db378a0d, superseding the
+  t_2d8deb8c locked pill): it is on by definition - the home config the
+  daemon loads - so its row renders no switch and no state text at all;
+  the `main` badge explains the absence. `PUT /disabled/agents` still
+  answers 409 for the default agent at the handler level and config.yaml
+  stays untouched. Every non-default row keeps its pill.
+- **The agents rows speak the sessions vocabulary** (t_db378a0d, round 1
+  of the unified theming language): chip radius, the `--z1-raised` hover,
+  the name brightening to full text, the hairline fading under the raised
+  row, the whole head line as the open surface, and the row whose agent
+  holds the FOCUSED chat session wearing the active treatment
+  (`--z1-raised` plus the name in `--accent`; the shell announces the
+  focused id over `omega:focused-session`, the panel copies the literal).
+  The expander is the sessions lucide chevron (12px, rotating 90deg in
+  0.12s). It is a CONSUMER OPT-IN - `RegistryList` takes `feel` /
+  `expander` / `activeName` and the other four registry tabs keep the
+  quiet list until their own round.
 - **Expansion = details + edit**: expanding a row seats the config
   summary and the `PUT /agents/{name}` DEFINITION-layer editor - the
   0.17.3 field set (description, system prompt, a REFERENCED provider

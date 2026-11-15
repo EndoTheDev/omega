@@ -393,9 +393,12 @@
     opacity: 1;
   }
   /* the active row is the one the operator has OPEN - the sessions
-     sidebar's li.active, name and all */
+     sidebar's li.active, name and all (the accent at the row law's
+     resting 0.9 would read as a dimmed accent, so the open row carries
+     the name at full strength) */
   .registry-list.feel-sessions .registry-row.reg-row-active .reg-row-name {
     color: var(--accent);
+    opacity: 1;
   }
   .registry-state {
     font-size: 10px;
