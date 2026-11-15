@@ -1639,10 +1639,10 @@ func sameStrings(a, b []string) bool {
 	return true
 }
 
-// TestShellRemovalProof is the shell capsule's removal proof (the v0.15
+// TestTerminalRemovalProof is the terminal capsule's removal proof (the v0.15
 // arc's terminal proof, card t_55a3fc4b, folded by the 0.17.3 modules
 // fold, card t_ee3a968b: the agent's tool family and the webui's
-// integrated terminal are ONE registration named "shell"). Its whole
+// integrated terminal are ONE registration named "terminal"). Its whole
 // surface is the four shell.* tools, six /terminal routes and the
 // lifecycle fence that owns the shells. The two mounts are the proof:
 //
@@ -1656,7 +1656,7 @@ func sameStrings(a, b []string) bool {
 //     shell.* tool survives - the webui's Terminal tab has no data path
 //     (404s at the module mux) and the model loses the verb family with
 //     it, one removal for both faces.
-func TestShellRemovalProof(t *testing.T) {
+func TestTerminalRemovalProof(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	cfg := DefaultConfig()
 
@@ -1672,13 +1672,13 @@ func TestShellRemovalProof(t *testing.T) {
 		}
 	}
 	if termPlugin == nil {
-		t.Fatal("FULL MOUNT: the shell capsule is absent from buildPlugins")
+		t.Fatal("FULL MOUNT: the terminal capsule is absent from buildPlugins")
 	}
-	if termPlugin.Name() != "shell" {
-		t.Fatalf("FULL MOUNT: the folded capsule is named %q, want %q", termPlugin.Name(), "shell")
+	if termPlugin.Name() != "terminal" {
+		t.Fatalf("FULL MOUNT: the folded capsule is named %q, want %q", termPlugin.Name(), "terminal")
 	}
 	if !termPlugin.Toggleable() {
-		t.Fatal("FULL MOUNT: the shell capsule is not toggleable (the tier re-law made it opinionated)")
+		t.Fatal("FULL MOUNT: the terminal capsule is not toggleable (the tier re-law made it opinionated)")
 	}
 	ctx := &core.Context{Configs: agent.RouteConfigs(plugins, cfg)}
 	reg17, err := agent.MountAllAPI(plugins, ctx, nil, nil)
@@ -1696,13 +1696,13 @@ func TestShellRemovalProof(t *testing.T) {
 	}
 	got := map[string]bool{}
 	for _, rt := range ctx.ModuleRoutes {
-		if rt.Module == "shell" {
+		if rt.Module == "terminal" {
 			got[rt.Pattern] = true
 		}
 	}
 	for _, pattern := range wantRoutes {
 		if !got[pattern] {
-			t.Fatalf("FULL MOUNT: route %q is not registered under the shell tenant", pattern)
+			t.Fatalf("FULL MOUNT: route %q is not registered under the terminal tenant", pattern)
 		}
 	}
 	// the tool face rides the same registration: one mount, both halves
@@ -1763,7 +1763,7 @@ func TestShellRemovalProof(t *testing.T) {
 	// --- mount 2: the capsule removed ---
 	var removed []agent.Plugin
 	for _, p := range plugins {
-		if p.Name() == "shell" {
+		if p.Name() == "terminal" {
 			continue
 		}
 		removed = append(removed, p)
@@ -1772,7 +1772,7 @@ func TestShellRemovalProof(t *testing.T) {
 	// the tool rail it rides is additive (RegisterTool), not an offer
 	for _, p := range removed {
 		for _, req := range p.Requires() {
-			if req == "shell" {
+			if req == "terminal" {
 				t.Fatalf("REMOVED MOUNT precondition: %q requires %q (shell provides no seam)", p.Name(), req)
 			}
 		}
@@ -1784,7 +1784,7 @@ func TestShellRemovalProof(t *testing.T) {
 		t.Fatalf("mount removed set: %v", err)
 	}
 	for _, rt := range ctx2.ModuleRoutes {
-		if rt.Module == "shell" {
+		if rt.Module == "terminal" {
 			t.Fatalf("REMOVED MOUNT: route %q survived the removal", rt.Pattern)
 		}
 		if strings.HasPrefix(rt.Pattern, "/terminal") {

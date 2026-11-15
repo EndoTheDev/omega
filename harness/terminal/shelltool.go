@@ -2,9 +2,11 @@
 // wave 1, Endo: "bash could go into the terminal capsule"). The Tool's
 // NAME is builtin vocabulary: "shell.run" parses as the module.verb
 // pair ("shell", "run") and was the built-in tools capsule's natural
-// name - so it registers through its own non-toggleable shell plugin
-// (isBuiltin: machine-critical vocabulary, not module toggleable),
-// keeping the model-facing name and the approval/gate hooks byte-exact.
+// name - so it registers on the built-in VOCABULARY rail
+// (api.RegisterBuiltinTool: machine-critical vocabulary the prompt and
+// the approval gate address byte-exact, not a module-namespaced verb),
+// keeping the model-facing name unchanged across the 0.17.3 modules
+// fold and the capsule's rename to `terminal` (card t_9ae9a25a).
 // The capsule law still holds: the tool's SOURCE is harness/terminal,
 // and deleting the capsule removes the tool and the terminal pane
 // together (the removal proof).
@@ -464,9 +466,10 @@ func shorten(s string, n int) string {
 
 // ShellPlugin is gone (0.17.3 modules fold, card t_ee3a968b): the tool
 // family and the pane are ONE registration - Plugin (plugin.go) owns
-// both, named "shell", toggleable like every other opinionated capsule.
-// The tool names never moved: shell.run / shell.list / shell.read /
-// shell.kill stay the API surface the model and the approval gate know.
+// both, named `terminal` like its package dir (card t_9ae9a25a),
+// toggleable like every other opinionated capsule. The tool names never
+// moved: shell.run / shell.list / shell.read / shell.kill stay the API
+// surface the model and the approval gate know.
 //
 // NewShellPlugin is the test door onto that one registration: the shell
 // plugin with no workdir and no default workspace.

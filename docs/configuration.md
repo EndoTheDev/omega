@@ -58,7 +58,7 @@ the pin restores the default. Send a run through an instance with the
 
 The opinionated capsules (kanban, cron, delegate, verdict, mcp,
 trust, notifications, memory, continuous, and since the 0.17.3 tier
-re-law store, skills, compactor, prompt, tools and shell) are
+re-law store, skills, compactor, prompt, tools and terminal) are
 toggleable: the webui settings pane's MODULES section flips them, or
 you can name them in config.yaml directly:
 
