@@ -529,16 +529,23 @@
   // /files/browse (the resolved root + relative dir). The cached dir
   // skips refetches of the same listing; a mention close resets it so a
   // reopen sees the workspace that is bound NOW.
+  //
+  // The drill's dir keeps its trailing slash (mentionDirOf feeds the
+  // INSERTION too), but the READ takes the bare path: /files/browse
+  // answers 400 "empty path segment" for "docs//" - the folder token's
+  // own drill listed nothing until this strip (t_c3fe4ea6, the
+  // "@folder/" token made the broken drill reachable by typing).
   const fileDir = ref<string | null>(null);
   const fileLoading = ref(false);
   async function loadFileRows(dir: string) {
-    if (fileDir.value === dir || fileLoading.value) return;
-    fileDir.value = dir;
+    const clean = dir.replace(/\/+$/, "");
+    if (fileDir.value === clean || fileLoading.value) return;
+    fileDir.value = clean;
     fileLoading.value = true;
     try {
       const payload = props.workspace ?
-        await fetchWorkspaceFiles(props.workspace + (dir ? "/" + dir.replace(/\/$/, "") : ""))
-      : await fetchFilesBrowse(dir);
+        await fetchWorkspaceFiles(props.workspace + (clean ? "/" + clean : ""))
+      : await fetchFilesBrowse(clean);
       fileRows.value = (payload.entries ?? []) as FileEntry[];
     } catch {
       fileRows.value = [];

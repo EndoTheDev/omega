@@ -347,6 +347,23 @@ describe("@ autocomplete paths (dirs first, drill-in)", () => {
     assert.equal(mentionLeafQuery("@"), "");
   });
 
+  // t_c3fe4ea6: a DIR token's drill. The dir keeps its trailing slash
+  // (mentionDirOf feeds the INSERTION, "@" + dir + name), but the READ
+  // must be the bare path - /files/browse answers 400 "empty path
+  // segment" for "docs//", which is why the folder token's own listing
+  // came back empty in the lane.
+  it("a folder token drills on its bare path (the insertion keeps the slash)", () => {
+    const tok = "@artifacts_mmo/";
+    assert.equal(mentionDirOf(tok), "artifacts_mmo/", "the insertion's dir keeps the slash");
+    assert.equal(mentionDirOf(tok).replace(/\/+$/, ""), "artifacts_mmo", "the read's dir drops it");
+    assert.equal(mentionLeafQuery(tok), "", "a folder token's leaf is empty - its children list");
+    assert.equal(
+      filterMentionRows(tok, mentionRows([{ name: "openapi.json", is_dir: false }])).length,
+      1,
+      "the folder's child row survives the filter",
+    );
+  });
+
   it("filterMentionRows filters on the leaf under a drill, the whole leaf bare", () => {
     const rows = mentionRows([{ name: "read.md", is_dir: false }, { name: "ref.md", is_dir: false }]);
     assert.equal(filterMentionRows("@docs/re", rows).length, 2); // "re" matches both
@@ -472,6 +489,21 @@ describe("composer chip law wiring (source-pinned, card t_e67c372b)", () => {
     assert.ok(
       composer.includes("openViewerRef?.({ kind: t.kind, name: t.name })"),
       "the dir chip hands kind dir + the bare path to the viewer",
+    );
+  });
+
+  // t_c3fe4ea6: the drill's READ strips the trailing slash the insertion
+  // keeps - /files/browse 400s on "docs//", so the folder token's own
+  // listing came back empty until this strip landed.
+  it("the drill read strips the dir's trailing slash (the browse 400)", () => {
+    assert.ok(
+      composer.includes('const clean = dir.replace(/\\/+$/, "")'),
+      "the read's dir is the bare path",
+    );
+    assert.ok(composer.includes("fetchFilesBrowse(clean)"), "and rides the browse read");
+    assert.ok(
+      composer.includes('props.workspace + (clean ? "/" + clean : "")'),
+      "the workspace reader takes the same clean path",
     );
   });
 
