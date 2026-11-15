@@ -48,15 +48,19 @@
          stay reachable.
 
          card t_cd9952a3 (Endo, 2026-11-12) - THE SECTION FILTER - narrows
-         the document to the SELECTED section: a real nav selection renders
+         the document to the SELECTED section: a nav selection renders
          that category and its subsections and nothing else (the VS Code
-         read), and a deselect - or Commonly Used, the curated all-view -
-         gives the whole document back. It is a VIEW filter: no knob moves,
-         no config is written. Search outranks it (one global filter across
-         every section), and the in-app URL carries the selection
-         (`?settings=provider` in the address bar) so a deep link lands
-         pre-filtered. The jump, the clamp and the spy are unchanged - only
-         the document they measure is shorter.
+         read), and a deselect gives the whole document back. It is a VIEW
+         filter: no knob moves, no config is written. Search outranks it
+         (one global filter across every section), and the in-app URL
+         carries the selection (`?settings=provider` in the address bar) so
+         a deep link lands pre-filtered. The jump, the clamp and the spy are
+         unchanged - only the document they measure is shorter.
+
+         card t_6fb4ddc6 (Endo, 2026-11-15): Commonly Used is one of those
+         sections. It used to be exempt (the curated all-view) and rendered
+         the whole document while every other category narrowed, which read
+         as the filter being broken exactly there.
 
          Narrow panes are the SAME document with the nav as a drawer that
          jumps and closes - there is nothing to drill into, so the two-screen

@@ -284,14 +284,16 @@ test("spyTargetIds lists each section then its blocks, in document order", () =>
 // --- the SECTION FILTER (card t_cd9952a3) ---------------------------------
 //
 // Part 1: a nav selection FILTERS the right pane to that section plus its
-// subsections; a deselect - or Commonly Used, the curated all-view -
-// restores the whole document. Part 2: a search query OVERRIDES the
-// selection (one global filter across every section) and clearing it gives
-// the filter back. Part 3: the in-app URL carries the selected section, so
-// a deep link lands pre-filtered. The click's live behaviour is journey
-// 113's job; the rules and the URL are pure and pinned here.
+// subsections; a deselect restores the whole document. Commonly Used is a
+// section like any other (card t_6fb4ddc6) - selecting it narrows to the
+// curated group, never back to the all-view. Part 2: a search query
+// OVERRIDES the selection (one global filter across every section) and
+// clearing it gives the filter back. Part 3: the in-app URL carries the
+// selected section, so a deep link lands pre-filtered. The click's live
+// behaviour is journey 113's job; the rules and the URL are pure and
+// pinned here.
 
-test("the filter is the selected CATEGORY - and Commonly Used is the all-view", () => {
+test("the filter is the selected CATEGORY - and Commonly Used is one too", () => {
   assert.equal(sectionFilter(null, false), null, "nothing selected = the all-view");
   assert.equal(sectionFilter("provider", false), "provider");
   assert.equal(
@@ -301,14 +303,34 @@ test("the filter is the selected CATEGORY - and Commonly Used is the all-view", 
   );
   assert.equal(
     sectionFilter(COMMON_CATEGORY, false),
-    null,
-    "Commonly Used is the curated ALL-VIEW entry, never a filter",
+    COMMON_CATEGORY,
+    "Commonly Used is a SECTION, not the all-view - it filters to its own curated key",
   );
+  assert.equal(COMMON_CATEGORY, "common", "the curated key the filter hands back");
   assert.equal(
     sectionFilter("provider/models", true),
     null,
     "a live query stands the selection down - search is global",
   );
+  assert.equal(
+    sectionFilter(COMMON_CATEGORY, true),
+    null,
+    "and a query stands the curated selection down the same way",
+  );
+});
+
+test("selecting Commonly Used renders ONLY the curated section", () => {
+  const nav = buildNav(withSubgroups([commonGroup(), providerGroup(), logGroup()]));
+  const doc = documentFor(nav, { only: sectionFilter(COMMON_CATEGORY, false) });
+  assert.deepEqual(
+    doc.map((section) => section.id),
+    [COMMON_CATEGORY],
+    "one section on screen - the curated group, nothing else",
+  );
+  assert.equal(doc[0].count, 1, "every curated knob is shown");
+  assert.equal(doc[0].blocks.length, 1);
+  assert.equal(doc[0].blocks[0].id, COMMON_CATEGORY, "its flat list answers to its own id");
+  assert.deepEqual(spyTargetIds(doc), [COMMON_CATEGORY], "the spy has one target");
 });
 
 test("a selected section shows its rows and hides every other section", () => {
