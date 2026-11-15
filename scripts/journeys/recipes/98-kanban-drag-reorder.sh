@@ -214,10 +214,13 @@ switch_to_board() {
   # the pop, then pick the pinned board by exact option text.
   #
   # The chip rides ONE mounted fetch: Board.vue gates the switcher on
-  # `boards.length > 1 || boardName` and fetchBoards() runs once per
-  # mount with no retry - a fetch that misses (lane hiccup under suite
-  # load: nightly run 42166671721 red at the hard wait here, unrepro on
-  # two zero-provider full-suite runs) leaves no chip for the whole page
+  # `boards.length > 0` (0.17.3 make-over; the pre-make-over gate was
+  # `boards.length > 1 || boardName`, so the chip is a MORE present
+  # control now, never less) and fetchBoards() runs once per mount
+  # behind boardLogic's bounded retry (3 attempts, 300ms backoff) - a
+  # fetch that misses for the whole budget (lane hiccup under suite load:
+  # nightly run 42166671721 red at the hard wait here, unrepro on two
+  # zero-provider full-suite runs) leaves no chip for the whole page
   # life. So: poll first; on a miss reload - a fresh mount re-fetches -
   # and poll again; die only naming what the registry answered, so the
   # next red carries its own diagnosis instead of a blind timeout.

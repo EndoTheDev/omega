@@ -1149,18 +1149,78 @@ rm -rf "$T21REPO" "$T21HOME"
 # refused probe (the first live run of this readout printed a corpse for two
 # LIVE cards because tasklist refused `//FI`; a false corpse is worse than no
 # readout). It is also read-only: the card keeps its cap slot and its status.
+#
+# THE FIXTURE PROVES THE DEATH THROUGH THE GUARD'S OWN PROBE (card t_c3a2a830,
+# 2026-11-15). This block redded 2 of 164 in a loaded full-suite run while it
+# passed 5/5 standalone, because it assumed kill+wait leaves the winpid reading
+# GONE the instant it returns. On a loaded host it does not have to: tasklist
+# can still answer for that pid for a moment (reap lag), refuse a single call,
+# or the freed pid can be recycled onto somebody else's process - and the
+# readout is CORRECT to stay silent on every one of those (an unproven death is
+# not a corpse). So the fixture re-rolls a victim and polls `pid_state` until it
+# answers GONE, retries the readout only while that proof still holds, and the
+# gate assertions name a probe that never settles instead of blaming the readout
+# for the silence its own law prescribes.
+# The probe is the GUARD'S OWN (same idiom as T23b's class_of extract): a copy
+# here would let the fixture and the readout disagree about the same pid, which
+# is the whole failure this block exists to catch.
+source <(sed -n '/^pid_state()/,/^}/p' "$GUARD")
+command -v pid_state >/dev/null 2>&1 || {
+  echo "factory-dispatch_test: the guard's pid_state() no longer extracts from $GUARD - the corpse fixture and the readout must share ONE probe, so a renamed or reshaped probe is a guard regression, not a test gap" >&2
+  exit 2
+}
+# t22_state <pid> <want> <poll_ms>: the guard-probe verdict, polled up to
+# poll_ms and printed whatever it is. One refused call under load is retried -
+# it must not read as a verdict - and the LAST answer is what the caller judges.
+t22_state() {
+  local pid="$1" want="$2" budget="${3:-5000}" waited=0 st=unknown
+  while :; do
+    st=$(pid_state "$pid")
+    [ "$st" = "$want" ] && break
+    [ "$waited" -ge "$budget" ] && break
+    sleep 0.2; waited=$((waited + 200))
+  done
+  printf '%s' "$st"
+}
+# t22_dead_pid -> "<last probe verdict>|<pid>". kill+wait reaps the MSYS job, so
+# the winpid is polled for GONE: 1s of ALIVE means the freed pid came back as
+# somebody else's process (re-roll, never wait on it), and 5s of anything else
+# means the host cannot prove a death at all (re-roll). Five victims, then give
+# up and let the gate assertion report the last verdict.
+t22_dead_pid() {
+  local attempt v wp al waited st
+  st=unknown
+  for attempt in 1 2 3 4 5; do
+    sleep 60 & v=$!
+    wp=$(cat "/proc/$v/winpid" 2>/dev/null || echo "$v")
+    kill "$v" 2>/dev/null || true
+    wait "$v" 2>/dev/null || true
+    al=0; waited=0
+    while :; do
+      st=$(pid_state "$wp")
+      if [ "$st" = gone ]; then printf 'gone|%s' "$wp"; return 0; fi
+      if [ "$st" = alive ]; then al=$((al + 200)); else al=0; fi
+      [ "$al" -ge 1000 ] && break
+      [ "$waited" -ge 5000 ] && break
+      sleep 0.2; waited=$((waited + 200))
+    done
+  done
+  printf '%s|' "$st"
+  return 1
+}
 T22REPO=$(mktemp -d); T22HOME=$(mktemp -d)
 mkdir -p "$T22REPO/scripts" "$T22HOME/kanban/boards/project-omega"
 cp "$GUARD" "$T22REPO/scripts/factory-dispatch.sh"
 printf 'project-omega\n' >"$T22HOME/kanban/current"
 T22DB_N="$(mixpath "$T22HOME")/kanban/boards/project-omega/kanban.db"
-# A live pid the host can prove (this test shell) and a pid that is really
-# gone: spawn a sleeper, read its host pid, kill it, reap it.
+# A live pid the host can prove (this test shell) and a pid the guard's own
+# probe proves GONE. An unprovable victim seeds NULL: the readout skips a card
+# with no registered pid (its law), so the assertions below judge nothing rather
+# than judge a lie - the two gate lines carry the diagnosis.
 LIVE_PID=$(cat /proc/$$/winpid 2>/dev/null || echo $$)
-sleep 60 & T22VICTIM=$!
-VICTIM_PID=$(cat "/proc/$T22VICTIM/winpid" 2>/dev/null || echo "$T22VICTIM")
-kill "$T22VICTIM" 2>/dev/null || true
-wait "$T22VICTIM" 2>/dev/null || true
+T22V=$(t22_dead_pid) || true
+T22_LAST_STATE=${T22V%%|*}
+VICTIM_PID=${T22V#*|}
 T22NOW=$(date +%s)
 sqlex "$T22DB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
   claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
@@ -1168,11 +1228,29 @@ sqlex "$T22DB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT ''
 CREATE TABLE task_runs(id INTEGER PRIMARY KEY, task_id TEXT, profile TEXT, status TEXT);
 INSERT INTO task_runs VALUES(4242,'t_dead','cody','running');
 INSERT INTO task_runs VALUES(4243,'t_alive','vera','running');
-INSERT INTO tasks VALUES('t_dead','running','dead worker','FILES: scripts/x.sh',NULL,$((T22NOW + 900)),5,'2026-11-12T19:00',$VICTIM_PID,$((T22NOW - 45)),4242);
+INSERT INTO tasks VALUES('t_dead','running','dead worker','FILES: scripts/x.sh',NULL,$((T22NOW + 900)),5,'2026-11-12T19:00',${VICTIM_PID:-NULL},$((T22NOW - 45)),4242);
 INSERT INTO tasks VALUES('t_alive','running','live worker','FILES: scripts/y.sh',NULL,$((T22NOW + 900)),5,'2026-11-12T19:01',$LIVE_PID,$((T22NOW - 5)),4243);"
 T22RUN() { ( cd "$T22REPO" && HOME="$T22HOME" HERMES_HOME= HERMES_KANBAN_HOME="$(mixpath "$T22HOME")" \
     HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= bash scripts/factory-dispatch.sh --dry-run 2>&1 ); }
-out=$(T22RUN); rc=$?
+# The gates FIRST: the corpse assertion only means something over a PROVEN
+# death, and the silence assertion only over a pid the host proves LIVE.
+[ "$T22_LAST_STATE" = gone ] && ok \
+	|| bad "T22a-probe: the guard's own probe never answered GONE for the fixture's victim pid (last verdict: '$T22_LAST_STATE' over five roll-kill-wait victims) - reap lag, a refused tasklist call and a recycled pid all leave the readout silent BY LAW, so a red on the corpse line below would be judging that law, not the readout"
+T22_LIVE_STATE=$(t22_state "$LIVE_PID" alive 5000)
+[ "$T22_LIVE_STATE" = alive ] && ok \
+	|| bad "T22b-probe: the fixture's live pid $LIVE_PID never read ALIVE through the guard's own probe (last verdict: '$T22_LIVE_STATE') - a silent readout on a pid the host cannot prove live proves nothing"
+# The readout itself. A missing corpse line is retried ONLY while the death is
+# still proven: under load one tasklist call inside the guard can refuse, and
+# the readout is right to stay silent then. A pid that reads ALIVE now was
+# recycled, so there is nothing left to retry.
+T22ATTEMPT=0
+while :; do
+  T22ATTEMPT=$((T22ATTEMPT + 1))
+  out=$(T22RUN); rc=$?
+  printf "%s" "$out" | grep -q "corpse: t_dead run 4242 (cody) worker pid $VICTIM_PID is GONE" && break
+  [ "$T22ATTEMPT" -lt 3 ] || break
+  [ "$(pid_state "$VICTIM_PID")" = gone ] || break
+done
 [ "$rc" -eq 0 ] && ok || bad "T22: the corpse readout killed the pass (exit $rc, out: $out)"
 printf "%s" "$out" | grep -q "corpse: t_dead run 4242 (cody) worker pid $VICTIM_PID is GONE" \
 	&& ok || bad "T22a: a running card with a dead worker pid printed no corpse line (out: $out)"
@@ -1182,7 +1260,7 @@ printf "%s" "$out" | grep -q "corpse: t_alive" \
 	&& bad "T22b: a LIVE worker pid read as a corpse - a false corpse makes every later corpse line untrustworthy (out: $out)" \
 	|| ok
 s=$(sql "$T22DB_N" "SELECT status||'|'||coalesce(worker_pid,0)||'|'||current_run_id FROM tasks WHERE id='t_dead';")
-[ "$s" = "running|$VICTIM_PID|4242" ] && ok || bad "T22c: the readout MUTATED the dead card ('$s') - it must be read-only"
+[ "$s" = "running|$VICTIM_PID|4242" ] && ok || bad "T22c: the readout MUTATED the dead card ('$s', expected 'running|${VICTIM_PID:-<no provable victim>}|4242') - it must be read-only"
 rm -rf "$T22REPO" "$T22HOME"
 
 # T23 (local + CI): EVERY `FILES:` line is the write surface (card t_5389fd95,
