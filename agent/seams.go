@@ -78,6 +78,14 @@ type LoopOptions struct {
 	YieldLedger  YieldLedger
 	YieldWake    func(sessionID string, res core.YieldResult)
 	YieldTimeout time.Duration
+	// Stop is the run's user-stop latch (core.RunStop, card t_caa67135),
+	// read off the run context by agent.Run. A dispatched call drops the
+	// run context's cancellation (it outlives the turn by design) but NOT
+	// this latch: a user stop cancels it with core.ErrUserStopped, and a
+	// settled result never wakes a home the human just killed. Nil = a run
+	// no human can stop (cron, one-shot, the CLI loop) - the documented
+	// degradation, identical to the old behavior.
+	Stop *core.RunStop
 }
 
 // CompactionProvider handles context compaction when the token budget

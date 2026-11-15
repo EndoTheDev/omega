@@ -288,8 +288,11 @@ func (s *Server) serveEphemeralDetail(w http.ResponseWriter, r *http.Request, id
 	case http.MethodDelete:
 		// Close = gone, even mid-run: a live run is cancelled first so
 		// nothing keeps writing into a dropped record. The hub's finish
-		// path is a no-op for the gone id (cur==run guard misses).
-		s.runs.stop(id)
+		// path is a no-op for the gone id (cur==run guard misses). The
+		// hard stop (card t_caa67135) also latches and abandons the
+		// session's pending calls - the record is being deleted, so
+		// nothing may settle into a wake run for it either.
+		s.stopRun(id)
 		s.eph.drop(id)
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodPatch:

@@ -76,6 +76,17 @@ func (h *wakeHub) pop(sessionID string) (core.YieldResult, bool) {
 	return res, true
 }
 
+// dropQueued throws away every queued result for the home and reports
+// how many it dropped - the user-stop path (card t_caa67135): a stopped
+// home re-enters nothing, so its FIFO is emptied rather than drained.
+func (h *wakeHub) dropQueued(sessionID string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := len(h.byID[sessionID])
+	delete(h.byID, sessionID)
+	return n
+}
+
 // reset clears the guard state - a user message (or the operator's
 // hand) re-arms the home (ruling 12).
 func (h *wakeHub) reset(sessionID string) {
@@ -191,6 +202,18 @@ func (l sessionTypedLedger) All() []agent.PendingCall {
 // dispatched executor through agent.SetYieldWake) and tries to drain
 // the home.
 func (s *Server) wakeHome(sessionID string, res core.YieldResult) {
+	// A stopped home never re-enters (card t_caa67135). The user ended
+	// the conversation: a result that settles afterwards - the call the
+	// stop was meant to kill, or one that was already in flight - is
+	// dropped here, before it can fill a chip or launch a wake turn. The
+	// loop's own gate (deliverYieldResult) drops most of these at the
+	// source; this is the belt for every other writer of the shape.
+	if s.runs.userStopped(sessionID) {
+		if lgr := s.Logger(); lgr != nil {
+			lgr.Printf("wake result for %s (%s) dropped: session %s was stopped by the user", res.ToolName, res.ToolCallID, sessionID)
+		}
+		return
+	}
 	// The pending chip fills on the push channel (card t_7624bab1): every
 	// settled out-of-band call passes here (immediate-yield dispatches and
 	// budget escalations alike), so the chips topic's fill needs no second
@@ -215,6 +238,19 @@ func (s *Server) drainWakes(sessionID string) {
 	for {
 		res, ok := s.wakes.pop(sessionID)
 		if !ok {
+			return
+		}
+		if s.runs.userStopped(sessionID) {
+			// The user stopped this home (card t_caa67135): the work the
+			// queued results belong to is ended. Drop them - a wake turn
+			// here would restart the conversation the human killed, which
+			// is exactly the bug this drain gate exists for. DropQueued
+			// clears the rest in one pass.
+			if n := s.wakes.dropQueued(sessionID); n > 0 {
+				if lgr := s.Logger(); lgr != nil {
+					lgr.Printf("session %s stopped by the user: dropped %d queued wake results", sessionID, n+1)
+				}
+			}
 			return
 		}
 		if s.wakes.parkedNow(sessionID) {
@@ -311,11 +347,20 @@ func (w *wakeNoteSink) AppendTurnMessage(ctx context.Context, msg core.Message) 
 		if agent.IsEmptyAssistant(a) {
 			if !w.noted {
 				w.noted = true
-				name := wakeToolName(ctx)
-				if lgr := w.s.Logger(); lgr != nil {
-					lgr.Printf("wake turn for session %s (%s) ended with no output - note persisted", w.id, name)
+				if w.stoppedByUser() {
+					// The user stopped this run (card t_caa67135): the
+					// note is written for a wake turn nobody answered, and
+					// "send a message to continue" would be a lie about a
+					// conversation the human just ended. Say so in the log,
+					// leave the transcript alone.
+					w.logSuppressedNote("empty")
+				} else {
+					name := wakeToolName(ctx)
+					if lgr := w.s.Logger(); lgr != nil {
+						lgr.Printf("wake turn for session %s (%s) ended with no output - note persisted", w.id, name)
+					}
+					w.s.appendSessionBookkeeping(w.id, core.NewUser(wakeEmptyNoteText(name)))
 				}
-				w.s.appendSessionBookkeeping(w.id, core.NewUser(wakeEmptyNoteText(name)))
 			}
 		} else {
 			// An assistant row is the turn's own output. The run's
@@ -363,11 +408,35 @@ func (w *wakeNoteSink) noteStoppedEnd(ctx context.Context, reason string) {
 		return
 	}
 	w.noted = true
+	if w.stoppedByUser() {
+		// Same law as the empty note (card t_caa67135): a user stop is
+		// not a provider error and not the run cap, so neither wording
+		// belongs on the transcript - and "send a message to continue"
+		// least of all, on a conversation the human just ended.
+		w.logSuppressedNote(reason)
+		return
+	}
 	name := wakeToolName(ctx)
 	if lgr := w.s.Logger(); lgr != nil {
 		lgr.Printf("wake turn for session %s (%s) stopped without a turn (%s) - note persisted", w.id, name, reason)
 	}
 	w.s.appendSessionBookkeeping(w.id, core.NewUser(wakeStopNoteText(reason, name)))
+}
+
+// stoppedByUser reports whether this wake run belongs to a home the user
+// stopped (card t_caa67135). Every note path consults it: the notes
+// exist to explain a wake turn nobody drove, and a stopped home's turn
+// was driven - by the human's stop, on purpose.
+func (w *wakeNoteSink) stoppedByUser() bool {
+	return w.s != nil && w.s.runs.userStopped(w.id)
+}
+
+// logSuppressedNote records that a note was withheld, so the reason a
+// stopped run left no transcript row is still diagnosable from the log.
+func (w *wakeNoteSink) logSuppressedNote(why string) {
+	if lgr := w.s.Logger(); lgr != nil {
+		lgr.Printf("wake turn for session %s ended with no note (%s): the user stopped the run", w.id, why)
+	}
 }
 
 // launchWake starts one wake run: the settled result re-enters through
@@ -425,6 +494,27 @@ func (s *Server) appendSessionBookkeeping(sessionID string, msg core.Message) {
 	defer cancel()
 	if err := s.store.AppendMessage(ctx, sessionID, msg); err != nil && lgr != nil {
 		lgr.Errorf("park note for %s: %v", sessionID, err)
+	}
+}
+
+// abandonPending ends every piece of work the home had in flight at a
+// user stop (card t_caa67135): each pending call is settled without a
+// result (nothing re-enters a conversation the human ended), and the
+// wake FIFO is emptied so a queued settlement cannot launch either.
+// Settling is not cosmetic - the never-fold law and the pending
+// placeholders both read this table, and a row left behind would pin
+// the compactor's boundary on a conversation that is over.
+func (s *Server) abandonPending(sessionID string) {
+	lgr := s.Logger()
+	if l := s.yieldLedger; l != nil {
+		for _, pc := range l.Pending(sessionID) {
+			if err := l.Settle(pc.SessionID, pc.CallID); err != nil && lgr != nil {
+				lgr.Errorf("stop settle %s (%s): %v", pc.ToolName, pc.CallID, err)
+			}
+		}
+	}
+	if n := s.wakes.dropQueued(sessionID); n > 0 && lgr != nil {
+		lgr.Printf("session %s stopped by the user: dropped %d queued wake results", sessionID, n)
 	}
 }
 

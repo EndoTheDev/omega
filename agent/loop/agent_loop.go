@@ -454,6 +454,13 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			// core.EmitToolOutput and the chunk must name WHICH call it
 			// belongs to - the loop is the only place that knows.
 			ex.ctx = core.WithToolCall(ex.ctx, ex.call.ID, ex.call.Name)
+			if ex.cancel != nil {
+				// The user-stop latch (card t_caa67135) cuts this call
+				// too, and it stays registered past the run's end: an
+				// escalated call is a pending dispatch by then, and a
+				// human stop must still kill the work it started.
+				ex.offStop = opts.Stop.OnStop(ex.cancel)
+			}
 			go ex.run()
 		}
 		if yieldReady && len(inlineExecs) > 0 {
@@ -614,6 +621,11 @@ type inlineExec struct {
 	// false = converted to a pending dispatch (the wake carries the
 	// result later).
 	done chan bool
+	// offStop deregisters the user-stop hook the loop attaches to this
+	// call's detached ctx (card t_caa67135). It stays registered for the
+	// call's whole life - a converted call outlives the run, and the
+	// human's stop must still cut it.
+	offStop func()
 }
 
 // run executes the call: the smart-approval gate (card t_c2b52cb5 -
@@ -623,6 +635,9 @@ type inlineExec struct {
 // settle-then-inject (a converted call keeps executing here; its
 // completion rides out-of-band).
 func (ex *inlineExec) run() {
+	if ex.offStop != nil {
+		defer ex.offStop()
+	}
 	var gateLine string
 	if ex.opts.Approvals != nil {
 		line, gerr := ex.opts.Approvals.Gate(ex.ctx, ex.call.Name, ex.call.Arguments)
@@ -791,7 +806,19 @@ func pendingPlaceholderContent(tool string) string {
 // two steps errs toward losing a result's re-entry instead of a duplicate
 // injection on the next boot.
 func dispatchYieldCall(runCtx context.Context, call core.ToolCall, tool core.Tool, sessionID string, timeout time.Duration, opts agent.LoopOptions) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(runCtx), timeout)
+	// A dispatched call outlives the RUN on purpose (the turn ended by
+	// dispatching it), so its ctx drops the run context's cancellation -
+	// but NOT the user's stop (card t_caa67135): the run's stop latch
+	// cuts the call too, with core.ErrUserStopped as the cause. Without
+	// it a stopped turn left its shell running to settle into a wake
+	// turn minutes later - the loop resurrected a conversation the
+	// human had already ended.
+	callCtx, cancelCall := context.WithCancelCause(context.WithoutCancel(runCtx))
+	defer cancelCall(nil)
+	if off := opts.Stop.OnStop(func() { cancelCall(core.ErrUserStopped) }); off != nil {
+		defer off()
+	}
+	ctx, cancel := context.WithTimeout(callCtx, timeout)
 	defer cancel()
 	// Call identity for the run output tap (push channel, t_7624bab1):
 	// a dispatched call streams its live output just like an inline one.
@@ -853,6 +880,18 @@ func dispatchYieldCall(runCtx context.Context, call core.ToolCall, tool core.Too
 func deliverYieldResult(opts agent.LoopOptions, sessionID string, res core.YieldResult) {
 	if err := opts.YieldLedger.Settle(sessionID, res.ToolCallID); err != nil && opts.Logger != nil {
 		opts.Logger.Errorf("pending-call settle %s (%s): %v", res.ToolName, res.ToolCallID, err)
+	}
+	if opts.Stop.Stopped() {
+		// The user ended this turn (card t_caa67135). The settled call is
+		// an ORPHAN: its result never re-enters, because a wake turn here
+		// would resurrect the conversation the human just stopped (and,
+		// on a shell, feed the log of a process that should have died
+		// with the turn). The row is settled FIRST so the never-fold law
+		// and the pending placeholders both see a dry home.
+		if opts.Logger != nil {
+			opts.Logger.Printf("yield result for %s (%s) discarded: the run was stopped by the user", res.ToolName, res.ToolCallID)
+		}
+		return
 	}
 	if opts.Logger != nil {
 		opts.Logger.Printf("yield result for %s (%s) re-enters session %s", res.ToolName, res.ToolCallID, sessionID)
