@@ -275,6 +275,27 @@ Everything else animates through `transition`, not keyframes.
   toggle opens it, it closes like any tab, and the boot retires a
   persisted inspector seat (`retireInspectorSettings`). The `+` menu
   still carries no settings entry - the gear is the entry point.
+- **The runtime module gate** (card t_103e30a6): a dockable whose pane body
+  ships from a capsule's `ui/` dir is MODULE-OWNED, and the set is DERIVED
+  from the composition manifests (`modulePanels` + `moduleTabs`, the
+  generated capsule scans) - never a second hardcoded list. When
+  `GET /modules` reports that module disabled, the chip leaves the strip,
+  the `+`/palette inventory and the mobile drawer in the same tick the
+  settings row flips: the dock PARKS the tab (`parkGatedTabs`) - out of the
+  layout record, its seat saved under `omega.dock-module-stash` - and
+  `setModuleGate` re-seats it where it sat when the module mounts again.
+  One module-state store (`composables/moduleState.ts`) serves both the
+  settings MODULES section and the gate, so the two can never disagree: one
+  boot read plus the toggle responses, no polling timer. The `off` set is
+  cached (`omega.modules-off`) and hydrated synchronously before the first
+  render, so a reload with a module disabled never paints its chip. Every
+  path that REINTRODUCES a strip re-runs the gate afterwards - the undo
+  restore and both reveal paths (`toggleEdge`, `toggleBottom`): a seat
+  parked while its strip sat closed has no live pane to reseat into, so
+  the reveal is the tick that brings the chip back. Shell
+  panes (sessions, chat, viewer, agents, insights, settings) are not module
+  ids and are never gated; `shell` (the capsule behind the Terminal tab) has
+  no manifest id match yet, so its chip is not gated either.
 - **Closing an edge pane HIDES state, never deletes it** (t_9ed6cad7):
   a sidebar/bottom pane's collapse removes the host from the tree but
   keeps the domain's state (search text, selected tab, scroll) so the
@@ -822,6 +843,10 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   multipart POST /attach-file, part order `session_id` then `file`),
   `renderMarkdown` (markdown-it, `html: false` - the lib's default
   escaping is the sanitizer), `createRenderScheduler`.
+  `composables/moduleState.ts` - the one live module-state store (card
+  t_103e30a6): the settings MODULES rows and the dock's runtime gate read
+  the same payload, one boot read plus the toggle responses, the disabled
+  set cached for the synchronous boot hydrate.
 - Shell: `MenuBar` (the three seats, see the top-bar paragraph),
   `NavCluster` (back / forward / the fake-input palette affordance /
   the Ctrl+K trigger, dead center; the affordance's placeholder is a

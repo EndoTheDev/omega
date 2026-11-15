@@ -160,7 +160,7 @@
          response, so a rejected toggle shows its ledger entry right under
          the list it was refused from. -->
     <p
-      v-for="r in refusals"
+      v-for="r in moduleRefusals"
       :key="r.at + r.module"
       class="module-refusal">
       {{ r.module }}: {{ r.err }}
@@ -188,13 +188,21 @@
   import { computed, ref, watch } from "vue";
   import {
     fetchExtensions,
-    fetchModules,
-    toggleModule,
     toggleNote,
-    type ModuleRefusal,
     type ModuleRow,
     type OmegaExtension,
   } from "../../composables/omega";
+  // card t_103e30a6: the live module state is the SHARED store now - the
+  // dock's runtime gate reads the same copy, so a row's flip and the
+  // strip's chip can never disagree (one GET at boot + the toggle
+  // responses; this section neither owns nor re-fetches the state).
+  import {
+    commitModuleToggle,
+    loadModules,
+    moduleRefusals,
+    moduleRows,
+    modulesKnown,
+  } from "../../composables/moduleState";
   import {
     extensionsRows,
     extensionsSummary,
@@ -220,8 +228,6 @@
   }>();
 
   const extensions = ref<OmegaExtension[]>([]);
-  const modules = ref<ModuleRow[]>([]);
-  const refusals = ref<ModuleRefusal[]>([]);
   const loading = ref(false);
   const error = ref("");
   const toggleError = ref<string | null>(null);
@@ -242,7 +248,7 @@
   );
 
   const rows = computed(() =>
-    extensionsRows(extensions.value, panelRefs.value, modules.value),
+    extensionsRows(extensions.value, panelRefs.value, moduleRows.value),
   );
   const summary = computed(() => extensionsSummary(rows.value));
   watch(
@@ -304,11 +310,6 @@
     return "";
   };
 
-  function apply(payload: { modules: ModuleRow[]; refusals: ModuleRefusal[] }) {
-    modules.value = payload.modules;
-    refusals.value = payload.refusals;
-  }
-
   type ToggleRow = {
     name: string;
     state: string;
@@ -321,13 +322,15 @@
     busy.value = row.name;
     toggleError.value = null;
     try {
-      apply(await toggleModule(row.name, checked));
+      // the store applies the refreshed introspection itself - the dock's
+      // gate repaints from the same payload in the same tick
+      await commitModuleToggle(row.name, checked);
     } catch (err) {
       toggleError.value = err instanceof Error ? err.message : String(err);
       // Refresh anyway: the refusal ledger is the visible event (Q12)
       // even when the response body carried no fresh list.
       try {
-        apply(await fetchModules());
+        await loadModules();
       } catch {
         // the list stays; the error line stands
       }
@@ -349,11 +352,13 @@
       loading.value = false;
     }
     try {
-      apply(await fetchModules());
+      await loadModules();
       seamAvailable.value = true;
       stateNote.value = "";
     } catch (e) {
-      seamAvailable.value = false;
+      // a warm store (the boot read landed) still serves the rows; only a
+      // cold failure means this host has no toggle seam to show
+      seamAvailable.value = modulesKnown.value;
       stateNote.value = e instanceof Error && e.message.includes("501")
         ? "module state unavailable - no toggle seam"
         : `module state unavailable: ${

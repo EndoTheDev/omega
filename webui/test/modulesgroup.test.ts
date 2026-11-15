@@ -125,8 +125,16 @@ test("a knob filter never pretends a module row is a hit", () => {
 // --- 3. the row law survived the move ---------------------------------------
 
 test("the rows still merge the registry introspection (GET /modules)", () => {
-  assert.match(section, /fetchModules\(\)/, "the shared /modules client serves the live state");
-  assert.match(section, /toggleModule\(row\.name, checked\)/, "the toggle round-trips the shared client");
+  // card t_103e30a6: the live state rides the SHARED store (one boot fetch +
+  // every toggle response), because the dock's runtime gate reads the same
+  // copy - the settings row and the strip's chip can never disagree
+  assert.match(section, /loadModules\(\)/, "the shared module store serves the live state");
+  assert.match(
+    section,
+    /commitModuleToggle\(row\.name, checked\)/,
+    "the toggle round-trips the store's one write path",
+  );
+  assert.doesNotMatch(section, /fetchModules/, "no second /modules fetch of its own");
   assert.match(section, /seamAvailable/, "a 501 toggle seam degrades the rows, never the inventory");
   assert.match(
     rowModel,

@@ -46,6 +46,10 @@ export interface PaletteCommandDeps {
   openRecentSession: () => void;
   reloadLayout: () => void;
   clearSavedLayout: () => void;
+  /** card t_103e30a6: the runtime module gate - a dockable whose module the
+      runtime reports OFF gets no "open <title>" command (a module-off
+      surface is gone, not merely unreachable). Absent = nothing hidden. */
+  hiddenDockable?: (id: DockComponentName) => boolean;
 }
 
 // the openable dockable set: sidebar is the locked tab (the toggle owns
@@ -72,6 +76,8 @@ export function buildPaletteCommands(deps: PaletteCommandDeps): PaletteCommand[]
   for (const id of paletteOpenableIds()) {
     const d = DOCKABLES.find((x) => x.id === id);
     if (!d) continue;
+    // card t_103e30a6: a gated dockable has no surface to open
+    if (deps.hiddenDockable?.(id)) continue;
     if (id === "chat") {
       // multi: "open chat" would duplicate the sidebar's '+' semantics -
       // the command is the fresh tab, labeled honestly
