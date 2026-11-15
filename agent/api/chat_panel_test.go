@@ -580,6 +580,120 @@ func TestChatPanelStaleRunNeverPaints(t *testing.T) {
 	s.chat.endRun("sess-second")
 }
 
+// TestChatPanelStaleBatcherNeverRepaints (card t_6bad9f6f, review round
+// 1): the running-call dirty arm reads the RunHub, so it must also be
+// gated on the panel's lifecycle. A session that lost the panel while
+// mid-call (a newer run took it over) keeps its batcher until endRun,
+// and the single ChatPanelID has one owner - the stale session must
+// never paint it again.
+func TestChatPanelStaleBatcherNeverRepaints(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	for _, id := range []string{"sess-stale", "sess-focus"} {
+		if err := st.CreateSession(context.Background(), id, "", "Panel "+id); err != nil {
+			t.Fatalf("create session %q: %v", id, err)
+		}
+	}
+	s.chat.batch = 20 * time.Millisecond // a real batcher per session
+	var mu sync.Mutex
+	var panels []core.Panel
+	s.chat.SetPanelUpdate(func(p core.Panel) error {
+		mu.Lock()
+		panels = append(panels, p)
+		mu.Unlock()
+		return nil
+	})
+	run, ok := s.runs.start("sess-stale")
+	if !ok {
+		t.Fatalf("start run")
+	}
+	s.chat.beginRun("sess-stale")
+	// the stale session sits in a tool call: its run is live with an
+	// unanswered call, so the hub alone would answer dirty every tick
+	s.runs.setOpenTail(run, []transcriptItem{
+		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl-stale", Name: "shell.run"}, Running: true, ElapsedMs: 5},
+	}, time.Now())
+	// a second session takes the panel over (beginRun moves the focus)
+	s.chat.beginRun("sess-focus")
+	mu.Lock()
+	mark := len(panels)
+	mu.Unlock()
+	if mark == 0 {
+		t.Fatalf("no panel pushes recorded - the harness never started")
+	}
+	last, _ := lastPanel(panels)
+	if payload := chatPanelPayload(t, last); payload.Session != "sess-focus" {
+		t.Fatalf("the focus change did not take the panel: last payload = %+v", payload)
+	}
+	// several cadences of the stale session's batcher
+	time.Sleep(6 * s.chat.batch)
+	mu.Lock()
+	stale := panels[mark:]
+	mu.Unlock()
+	if len(stale) != 0 {
+		t.Fatalf("a stale session repainted the panel %d time(s): first = %+v", len(stale), stale[0].Payload)
+	}
+	s.chat.endRun("sess-stale")
+	s.chat.endRun("sess-focus")
+}
+
+// TestChatPanelTickAfterTheExitFlushStaysQuiet (card t_6bad9f6f, review
+// round 1): endRun runs before the run's finish (LIFO in launchRun) -
+// its own comment says so. A run that ended with an unanswered call
+// (cancel mid-call) therefore leaves a hub slot whose open tail still
+// reads Running=true, while endRun has already deleted the watch and
+// flushed the finished panel. A batcher tick that got past its select
+// before endRun must stay quiet in that window: a running=true push
+// after the exit flush is the t_877f4bce failure the paint lock exists
+// to prevent.
+func TestChatPanelTickAfterTheExitFlushStaysQuiet(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	if err := st.CreateSession(context.Background(), "sess-cancel", "", "Cancelled run"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	s.chat.batch = 0 // no background batcher: the tick under test is the only one
+	var mu sync.Mutex
+	var panels []core.Panel
+	s.chat.SetPanelUpdate(func(p core.Panel) error {
+		mu.Lock()
+		panels = append(panels, p)
+		mu.Unlock()
+		return nil
+	})
+	run, ok := s.runs.start("sess-cancel")
+	if !ok {
+		t.Fatalf("start run")
+	}
+	s.chat.beginRun("sess-cancel")
+	// the call opened and the run was cancelled before its result: the
+	// open tail still says running
+	s.runs.setOpenTail(run, []transcriptItem{
+		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl-cancel", Name: "shell.run"}, Running: true, ElapsedMs: 5},
+	}, time.Now())
+	s.chat.endRun("sess-cancel")
+	if !s.runs.active("sess-cancel") {
+		t.Fatalf("the harness must leave the hub slot held - that IS the window")
+	}
+	if !s.chat.hasRunningCall("sess-cancel") {
+		t.Fatalf("the unresolved call must still read running - the harness did not stage the window")
+	}
+	mu.Lock()
+	before := len(panels)
+	mu.Unlock()
+	// the tick the window's race would run once the flush releases the
+	// paint lock
+	s.chat.tick("sess-cancel")
+	mu.Lock()
+	after, _ := lastPanel(panels)
+	n := len(panels)
+	mu.Unlock()
+	if n != before {
+		t.Fatalf("a tick after the exit flush pushed again: %d -> %d panels", before, n)
+	}
+	if payload := chatPanelPayload(t, after); payload.Running {
+		t.Fatalf("the panel ends running=true with no live run: %+v", payload)
+	}
+}
+
 // TestChatActionStopThroughThePipe: the pipe's stop verb cancels the
 // run - the same face POST /sessions/{id}/stop serves - and the run's
 // exit flush paints the completed state.

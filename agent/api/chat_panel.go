@@ -421,7 +421,9 @@ func (c *ChatCapsule) beginRun(session string) {
 // (elapsed_ms ~0) for the whole call, and a tab-switch remount would
 // restart the visible meter at zero. Re-pushing at the cadence keeps
 // the payload's anchor on the call's true elapsed-so-far
-// (freshenRunningCalls), which is what a remount counts on from.
+// (freshenRunningCalls), which is what a remount counts on from. That
+// arm is lifecycle-gated (tick, watching): it must never paint for a
+// session the panel no longer owns.
 func (c *ChatCapsule) batchLoop(watch <-chan struct{}, session string) {
 	ticker := time.NewTicker(c.batch)
 	defer ticker.Stop()
@@ -430,13 +432,44 @@ func (c *ChatCapsule) batchLoop(watch <-chan struct{}, session string) {
 		case <-watch:
 			return
 		case <-ticker.C:
-			c.paintMu.Lock()
-			if c.takeDirty(session) || c.hasRunningCall(session) {
-				c.push(c.buildPanel(session, true))
-			}
-			c.paintMu.Unlock()
+			c.tick(session)
 		}
 	}
+}
+
+// tick is one cadence: rebuild and push when the session has a pending
+// token batch or an open tool call. paintMu is held across the decision
+// and the push (t_877f4bce - see ChatCapsule.paintMu), so a tick can
+// never land a running=true panel after endRun's exit flush.
+//
+// Both dirty sources are gated on the panel's lifecycle, not just on
+// the hub (t_6bad9f6f review round 1): the token arm's dirtied flag is
+// only reachable through runEvent, which early-returns for a session
+// that lost focus, and the call arm is gated the same way - watching()
+// requires this session to still be the focus AND to still hold its
+// batcher watch. Without it an unfocused session mid-call repainted the
+// single ChatPanelID every tick (stomping the focus session's payload),
+// and a tick that got past the select before endRun could push
+// running=true after the exit flush once the hub slot outlived the
+// watch (endRun runs before the run's finish, LIFO). endRun deletes the
+// watch before flushing, so the post-flush window answers quiet.
+func (c *ChatCapsule) tick(session string) {
+	c.paintMu.Lock()
+	defer c.paintMu.Unlock()
+	if c.takeDirty(session) || (c.watching(session) && c.hasRunningCall(session)) {
+		c.push(c.buildPanel(session, true))
+	}
+}
+
+// watching reports whether the session still owns the panel's batcher:
+// it is the focus session and its watch is registered. Read under c.mu;
+// endRun deletes the watch (before its exit flush) and beginRun moves
+// the focus, so both sides of the gate close as the run's ownership
+// ends.
+func (c *ChatCapsule) watching(session string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.focusID == session && c.watch[session] != nil
 }
 
 // hasRunningCall reports whether the session's live run carries a tool

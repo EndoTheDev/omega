@@ -862,7 +862,10 @@ cover the newest 40 rows, streaming tokens batch onto
 immediately. A running tool call re-pushes on the cadence on its own
 (the call emits no event until its result): its row carries a fresh
 `elapsed_ms` throughout, so a remounted pane anchors at the call's true
-elapsed. Its actions (`stop`, `retry`, module `http_channel`) route
+elapsed. That repaint answers only for the session that owns the panel -
+it stops the moment another conversation takes the panel over, and it
+stops before the exit flush, so a finished run never repaints a running
+panel. Its actions (`stop`, `retry`, module `http_channel`) route
 through the pipe and serve the same faces the REST routes serve. The
 registration is Start-gated: the panel exists only once a channel
 actually starts - a process that never serves carries no dead http
