@@ -975,6 +975,14 @@ type assistantRecord struct {
 	thinkDur, respDur   time.Duration
 	lastThink, lastResp time.Time
 	openAt              time.Time
+	// segDone marks the record's CURRENT segment as finished: a tool
+	// call followed text this record already accumulated, so that text
+	// will never grow again (the next chunk splits into a fresh record)
+	// and its phase window is closed. The record stays open - it still
+	// takes the call's result and the split - but its thinking/answer
+	// rows are settled history, not streaming ones, and must not ship a
+	// running bit while the tool runs (card t_484cbb27).
+	segDone bool
 	// call dispatch times by tool call id; the matching ToolResult
 	// reads and clears its entry when it arrives.
 	callStarts map[string]time.Time
@@ -1889,6 +1897,7 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 			*recs = append(*recs, *rec)
 			*rec = assistantRecord{openAt: rec.openAt}
 		}
+		rec.segDone = false
 		rec.thinking += ev.Content
 		rec.thinkDur += phaseDelta(rec.lastThink, rec.openAt, now)
 		rec.lastThink = now
@@ -1901,11 +1910,20 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 			*recs = append(*recs, *rec)
 			*rec = assistantRecord{openAt: rec.openAt}
 		}
+		rec.segDone = false
 		rec.content += ev.Content
 		rec.respDur += phaseDelta(rec.lastResp, rec.openAt, now)
 		rec.lastResp = now
 		rec.openAt = now
 	case core.ToolCallEvent:
+		// the call ends the segment it follows: text already in this
+		// record will never grow again (the next chunk splits into a
+		// fresh record), so its rows settle - a remount mid-call must
+		// render the measured span, never a still-streaming row
+		// (card t_484cbb27)
+		if rec.thinking != "" || rec.content != "" {
+			rec.segDone = true
+		}
 		rec.toolCalls = append(rec.toolCalls, ev.ToolCall)
 		// a tool call closes both spans - the gap while the tool runs
 		// belongs to nobody
