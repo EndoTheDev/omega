@@ -103,20 +103,29 @@ describe("the transcript column tracks the composer (t_5063675a)", () => {
 // The 2026-11-15 compactness sweep (Endo, in-app on chat efd2b0f1, 946px
 // lane: "the assistance response is a little too wide ... just a little.
 // make it less wide ... and the gaps between thinking and tool calls
-// blocks could also be smaller/compacter"). Two numbers carry it, and
-// both are taste-with-a-floor: the answer text insets its right edge but
-// must stay a document block (never a messenger pill), and the strip rows
-// tighten inside the turn block while the reused rows keep their click
-// floor.
-describe("the compactness sweep keeps the transcript a document (t_b25df7b0)", () => {
+// blocks could also be smaller/compacter"). Round 1 shipped the 92% inset;
+// round 2 (t_f146ad97) is HIS OWN tuned numbers out of the chat-spacing
+// tuner, pasted as a spec - the numbers are law, the tests follow them.
+//
+// Two things carry the sweep: the strip rows tighten inside the turn block
+// (while the panels that reuse those rows keep their click floor) and the
+// between-turn gap widens so each dense turn reads as one block.
+describe("the tuned chat spacing keeps the transcript a document (t_b25df7b0 + t_f146ad97)", () => {
   const pct = (body: string, prop: string) =>
     Number(body.match(new RegExp(`${prop}:\\s*(\\d+)%`))![1]);
+  /** `0 0 0 18px` -> { top, right, bottom, left } */
+  const pad = (body: string) => sides(body.match(/padding:\s*([^;]+);/)![1]);
 
-  it("the assistant answer is a little narrower than the pane", () => {
+  it("the stacked assistant answer runs the full width with an 18px left inset", () => {
     const bubble = rule(".messages.stacked .msg.assistant .bubble");
-    const max = pct(bubble, "max-width");
-    assert.ok(max < 100, `the answer text is still full width (${max}%)`);
-    assert.ok(max >= 85, `the answer text became a pill (${max}%) - he asked for a little`);
+    assert.equal(
+      pct(bubble, "max-width"),
+      100,
+      "the answer keeps the full column width - the tuned inset moved to the left edge",
+    );
+    const p = pad(bubble);
+    assert.equal(parseFloat(p.left), 18, "the answer text starts 18px inside the turn's left edge");
+    assert.equal(parseFloat(p.right), 0, "the right edge stays on the column - the answer is not re-capped");
   });
 
   it("every other stacked row stays full width (the 2026-10-20 law still stands)", () => {
@@ -142,5 +151,41 @@ describe("the compactness sweep keeps the transcript a document (t_b25df7b0)", (
     const tight = Number(scoped![1]);
     assert.ok(tight < base, `the strip rows did not tighten (${tight}px vs the ${base}px base)`);
     assert.ok(tight >= 32, `the strip rows collapsed below a comfortable click row (${tight}px)`);
+  });
+});
+
+// HIS tuned numbers (t_f146ad97): the six declarations Endo dialled in the
+// chat-spacing tuner, pinned exactly. A taste number that only ever drifts
+// silently is the bug this suite exists to catch - changing one of these is
+// a new spec from him, so the change has to touch this test on purpose.
+describe("Endo's tuned chat spacing - the six declarations (t_f146ad97)", () => {
+  it("the within-turn rhythm, strip height and chip insets are exactly as dialled", () => {
+    assert.match(rule(".msg-block"), /gap:\s*4px/, "inside-turn gap is 4px");
+    assert.match(
+      css,
+      /\.msg-block \.thinking summary,\s*\n\.msg-block \.toolcall summary,\s*\n\.msg-block \.toolgroup summary \{\s*min-height:\s*32px/,
+      "every turn strip is a 32px row",
+    );
+    assert.match(rule(".thinking .thinking-variant"), /margin:\s*4px 6px 8px 4px/, "thinking chip: left 4 / right 6 / top 4 / bottom 8");
+    assert.match(rule(".toolcall .tool-variant"), /margin:\s*4px 6px 4px 4px/, "tool chip: left 4 / right 6 / top 4 / bottom 4");
+  });
+
+  it("the answer width and the turn boundary are exactly as dialled", () => {
+    const bubble = rule(".messages.stacked .msg.assistant .bubble");
+    assert.match(bubble, /max-width:\s*100%/, "the answer is full width");
+    assert.match(bubble, /padding:\s*0 0 0 18px/, "and its text insets 18px from the left");
+    assert.equal(
+      Number(rule(".messages.stacked").match(/gap:\s*(\d+)px/)![1]),
+      48,
+      "the stacked turn boundary is 48px",
+    );
+  });
+
+  it("the narrow breakpoint carries the same tuned answer", () => {
+    assert.match(
+      mobileBlock(),
+      /\.messages\.stacked \.msg\.assistant \.bubble \{ max-width: 100%; padding-left: 18px; \}/,
+      "the mobile 88% family cap must not re-cap the stacked answer",
+    );
   });
 });
