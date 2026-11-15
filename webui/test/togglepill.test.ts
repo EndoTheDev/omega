@@ -31,7 +31,7 @@ const PILL = ["webui", "app", "components", "ui", "TogglePill.vue"] as const;
 // section (card t_81d0901b: the ExtensionsTab is gone), crons, mcp servers)
 const HOSTS: { name: string; path: readonly string[]; apply: string }[] = [
   { name: "RegistryList", path: ["webui", "app", "components", "RegistryList.vue"], apply: 'emit("toggle"' },
-  { name: "ModulesSection", path: ["webui", "app", "components", "settings", "ModulesSection.vue"], apply: "toggleModule(" },
+  { name: "ModulesSection", path: ["webui", "app", "components", "settings", "ModulesSection.vue"], apply: "commitModuleToggle(" },
   { name: "CronJobs", path: ["harness", "cron", "ui", "CronJobs.vue"], apply: "apply(j" },
   { name: "McpServers", path: ["harness", "mcp", "ui", "McpServers.vue"], apply: "apply(s" },
 ];

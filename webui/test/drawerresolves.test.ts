@@ -74,13 +74,15 @@ const DRAWERS = {
   right: {
     shell: "inspector",
     activeRef: "inspectorDrawerActiveId",
-    floorArg: `drawerTabsFor("inspector", INSPECTOR_TAB_COMPONENTS)`,
+    // card t_103e30a6: the floor is the gate-filtered one now (a disabled
+    // module owns no drawer chip either)
+    floorArg: `drawerTabsFor("inspector", inspectorFloor.value)`,
     floor: INSPECTOR_TAB_COMPONENTS,
   },
   bottom: {
     shell: "bottom",
     activeRef: "bottomDrawerActiveId",
-    floorArg: `drawerTabsFor("bottom", defaultHostTabs("bottom"))`,
+    floorArg: `drawerTabsFor("bottom", bottomFloor.value)`,
     floor: defaultHostTabs("bottom"),
   },
 } as const;

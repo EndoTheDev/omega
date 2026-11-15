@@ -33,6 +33,7 @@ import {
 import {
   DOCK_COMPONENTS,
   DOCKABLES,
+  EMPTY_MODULE_GATE,
   INSPECTOR_TAB_COMPONENTS,
   LEGACY_DOCK_COMPONENTS,
   MAIN_DOCKABLES,
@@ -44,9 +45,11 @@ import {
   dockableMinPx,
   isClosableTab,
   isLockedTab,
+  moduleGated,
   validViewerRef,
   type DockableComponentLike,
   type DockComponentName,
+  type ModuleGate,
   type ViewerRef,
 } from "./dockables.ts";
 // the openable component universe, the menus' refill inventory and the
@@ -420,6 +423,177 @@ export function repairPaneSeats(tree: DockNode): DockNode {
       n.active = Math.max(0, real.indexOf(focus));
     }
   });
+}
+
+// --- THE MODULE GATE (card t_103e30a6) --------------------------------------
+// The runtime dismounts a module live (PUT /modules/:name -> the mount
+// registry, no restart). The architecture bar then says the module's
+// surfaces are GONE, so a module-owned dockable whose module is off leaves
+// the strip: its tab is PARKED - taken out of the tree and remembered, not
+// deleted - and re-seated exactly where it sat when the module mounts
+// again. The gate itself (owned + off) is dockables.ts's moduleGated; this
+// section is the tree mechanics + the stash that survives a reload.
+//
+// Parked tabs ride their own key, never the layout record: the record stays
+// what is LIVE (no ghost pane in omega.dock-layout), the stash is what is
+// merely unhosted. Deleting and re-creating tabs instead would lose the
+// user's seat (a tab dragged into a main pane must come back there).
+
+/** the parked-tab stash (a module-off dockable's saved seat) */
+export const MODULE_STASH_KEY = "omega.dock-module-stash";
+
+/** one parked tab: WHAT it hosted, WHERE it sat (pane id + seat index) */
+export interface ParkedTab {
+  component: string;
+  pane: string;
+  index: number;
+}
+
+export interface GateResult {
+  tree: DockNode;
+  parked: ParkedTab[];
+  /** false = the SAME tree object came back (the gate hid nothing) */
+  changed: boolean;
+}
+
+/** the stash reader: lenient like every persisted reader - junk entries
+    are dropped, never thrown. */
+export function parseParkedTabs(raw: string | null): ParkedTab[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return []; // a corrupt stash is no stash: the layout is the truth
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out: ParkedTab[] = [];
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== "object") continue;
+    const r = entry as Record<string, unknown>;
+    if (typeof r.component !== "string" || r.component === "") continue;
+    const index =
+      typeof r.index === "number" && Number.isInteger(r.index) && r.index >= 0
+        ? r.index
+        : 0;
+    out.push({
+      component: r.component,
+      pane: typeof r.pane === "string" ? r.pane : "",
+      index,
+    });
+  }
+  return out;
+}
+
+/** park every gated tab: the tab leaves its pane's strip, the seat is
+    recorded. Idempotent; a tree with nothing gated comes back as the SAME
+    object (the store's identity no-op checks depend on that). Pure. */
+export function parkGatedTabs(tree: DockNode, gate: ModuleGate): GateResult {
+  const parked: ParkedTab[] = [];
+  let changed = false;
+  const next = cloneTreeWith(tree, (n) => {
+    if (!isPane(n)) return;
+    const kept: DockTab[] = [];
+    let active = 0;
+    let hid = 0;
+    n.tabs.forEach((tab, i) => {
+      if (moduleGated(tab.component, gate)) {
+        hid++;
+        parked.push({ component: tab.component, pane: n.id, index: kept.length });
+        return;
+      }
+      if (i === n.active) active = kept.length;
+      kept.push(tab);
+    });
+    if (hid === 0) return;
+    changed = true;
+    n.tabs = kept;
+    // the focus follows whatever held it; a gated ACTIVE tab lands on the
+    // seat's first survivor (a pane the gate emptied is left to the seat
+    // repair, exactly like any zero-tab pane)
+    n.active = Math.max(0, Math.min(active, kept.length - 1));
+  });
+  return { tree: changed ? next : tree, parked, changed };
+}
+
+/** insert a tab at `index` WITHOUT stealing the focus - the reseat
+    restores a seat, it is not an open act. */
+function insertTabAt(
+  tree: DockNode,
+  paneId: string,
+  index: number,
+  tab: DockTab,
+): DockNode {
+  if (!findPane(tree, paneId)) return tree;
+  return cloneTreeWith(tree, (n) => {
+    if (!isPane(n) || n.id !== paneId) return;
+    n.tabs.splice(Math.max(0, Math.min(index, n.tabs.length)), 0, tab);
+  });
+}
+
+/** where a parked tab goes back: its own old pane when it still exists,
+    else the pane its registry `area` pins to. A main-area tab with no main
+    pane stays parked - the gate never mints panes (opening the dockable
+    from a menu does). */
+function reseatTarget(
+  tree: DockNode,
+  parked: ParkedTab,
+  id: DockComponentName,
+): { paneId: string; index: number } | null {
+  const own = findPane(tree, parked.pane);
+  if (own) return { paneId: own.id, index: parked.index };
+  const area = DOCKABLES.find((d) => d.id === id)?.area;
+  if (area === "left" || area === "right" || area === "bottom") {
+    const edge = findEdgePane(tree, area === "left" ? "sidebar" : area === "right" ? "inspector" : "bottom");
+    return edge ? { paneId: edge.id, index: parked.index } : null;
+  }
+  const main = firstMainPaneId(tree);
+  return main ? { paneId: main, index: parked.index } : null;
+}
+
+/** re-seat every parked tab whose module is live again; the ones the gate
+    still hides (or whose component the registry no longer hosts, or that
+    are already hosted somewhere) stay/leave the parked list. Pure. */
+export function reseatParkedTabs(
+  tree: DockNode,
+  parked: readonly ParkedTab[],
+  gate: ModuleGate,
+): { tree: DockNode; parked: ParkedTab[] } {
+  let t = tree;
+  const still: ParkedTab[] = [];
+  for (const p of parked) {
+    if (moduleGated(p.component, gate)) {
+      still.push(p);
+      continue;
+    }
+    if (!(DOCK_COMPONENTS as readonly string[]).includes(p.component)) continue;
+    const id = p.component as DockComponentName;
+    // a singleton already hosted (re-opened from a menu, restored by the
+    // boot's inspector repair) absorbs the parked seat - one instance, no
+    // duplicate
+    if (findComponentTab(t, id)) continue;
+    const seat = reseatTarget(t, p, id);
+    if (!seat) {
+      still.push(p);
+      continue;
+    }
+    t = insertTabAt(t, seat.paneId, seat.index, { component: id });
+  }
+  return { tree: t, parked: still };
+}
+
+/** one parked seat per component (module-owned dockables are singletons:
+    a second park of the same chip would be a duplicate seat) */
+function mergeParked(
+  existing: readonly ParkedTab[],
+  incoming: readonly ParkedTab[],
+): ParkedTab[] {
+  const out = [...existing];
+  for (const p of incoming) {
+    if (out.some((x) => x.component === p.component)) continue;
+    out.push(p);
+  }
+  return out;
 }
 
 /** every node, depth-first, root first. Descends into a grown root's
@@ -3148,6 +3322,13 @@ export interface DockApi {
       toggle stayed closed, zero churn). The UI surfaces the one-line
       "no room" hint and clears it; null = nothing refused. */
   revealRefused: Ref<"sidebar" | "inspector" | null>;
+  /** card t_103e30a6: THE RUNTIME MODULE GATE. The shell hands the two
+      facts (the composition manifests' module ids + the live GET /modules
+      off set) and the store parks every gated tab out of the tree, or
+      re-seats the parked ones whose module came back. Idempotent, safe to
+      call on every module-state change; the parked seats persist under
+      MODULE_STASH_KEY. */
+  setModuleGate: (gate: ModuleGate) => void;
 }
 
 export const DOCK_API_KEY: InjectionKey<DockApi> = Symbol("omega-dock-api");
@@ -3198,6 +3379,13 @@ export function createDock(store: Storage): DockApi {
   // carried it. Chat-tab keys in the stows must seed the tab-key counter
   // too (nextTabKey never mints a key a hidden pane already holds).
   const hiddenState: HiddenEdgeState = {};
+  // card t_103e30a6: the module gate's parked seats - a module-off
+  // dockable's tab, held OUT of the tree but not deleted. The stash is its
+  // own record (MODULE_STASH_KEY), so the layout record never carries a
+  // ghost pane; the shell applies the gate below (setModuleGate) as soon as
+  // it has the runtime facts.
+  let parkedTabs: ParkedTab[] = parseParkedTabs(store.getItem(MODULE_STASH_KEY));
+  let liveGate: ModuleGate = EMPTY_MODULE_GATE;
   // card t_66fa358e: the component of the toggle's last reveal - the next
   // narrowSqueeze protects it (last-requested wins), then clears it
   let revealPending: "sidebar" | "inspector" | null = null;
@@ -3320,6 +3508,36 @@ export function createDock(store: Storage): DockApi {
     { deep: true },
   );
 
+  /** card t_103e30a6: apply the runtime module gate. Three passes, in
+      order, because a re-seat must not be parked in the same tick:
+        1. park every gated tab in the LIVE tree (its seat is recorded);
+        2. park them in the CLOSED shells' stows too - a hidden inspector
+           must not reveal a dead tab later (the settings-seat precedent);
+        3. re-seat every parked tab whose module came back.
+      A park that empties a pane is left to repairPaneSeats, the same
+      never-blank law every other boot repair obeys. The stash writes on
+      every call (it is tiny and idempotent). */
+  const syncModuleGate = (gate: ModuleGate) => {
+    liveGate = gate;
+    let t = tree.value;
+    const parked = parkGatedTabs(t, gate);
+    t = parked.tree;
+    if (parked.parked.length) parkedTabs = mergeParked(parkedTabs, parked.parked);
+    for (const comp of Object.keys(hiddenState) as DockEdgeComponent[]) {
+      const stowed = hiddenState[comp];
+      if (!stowed) continue;
+      const gated = parkGatedTabs(stowed, gate);
+      if (gated.parked.length === 0) continue;
+      parkedTabs = mergeParked(parkedTabs, gated.parked);
+      hiddenState[comp] = gated.tree as DockPane;
+    }
+    const reseat = reseatParkedTabs(t, parkedTabs, gate);
+    t = reseat.tree;
+    parkedTabs = reseat.parked;
+    if (t !== tree.value) tree.value = repairPaneSeats(t);
+    store.setItem(MODULE_STASH_KEY, JSON.stringify(parkedTabs));
+  };
+
   /** the closed-edge marking helper, idempotent - toggles, drag-closes
       and the narrow give-way all route through it */
   const setClosed = (comp: DockEdgeComponent, closed: boolean) => {
@@ -3389,6 +3607,10 @@ export function createDock(store: Storage): DockApi {
       Object.assign(hiddenState, rec.hiddenEdges);
     }
     tree.value = restored;
+    // card t_103e30a6: a snapshot predates the gate - a module parked since
+    // then rides the snapshot back in. Re-apply the live gate so undo can
+    // never resurrect a chip whose module is off.
+    syncModuleGate(liveGate);
     endGesture(); // undo mid-gesture: the record's indices are pre-restore
     return true;
   };
@@ -3657,5 +3879,6 @@ export function createDock(store: Storage): DockApi {
     narrowSqueeze,
     revealRefused,
     undoLayout, beginResize: () => undoPush(tree.value),
+    setModuleGate: syncModuleGate,
   };
 }
