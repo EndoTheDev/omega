@@ -41,6 +41,12 @@ const SKILL_LEADING = /^\/([A-Za-z0-9_-]+)/;
 // paren): "flag -/not-a-pill" stays prose.
 const SKILL_ANYWHERE = /(^|[\s(])\/([A-Za-z0-9_-]+)/g;
 const FILE_TOKEN = /(^|[\s(])@([^\s)]+)/g;
+// the @ palette's two PREFIX rows (card t_620a3edf): "@skill:<name>" and
+// "@session:<id>" are the content injections core/atmention.go expands on
+// submit (its grammar: a "skill:" / "session:" prefix on the token's inner
+// text). They are never paths, so they never read as file references.
+const SKILL_PREFIX = /^skill:(.+)$/;
+const SESSION_PREFIX = /^session:/;
 
 const isBasename = (name: string): boolean => {
   const base = name.split("/").pop() ?? "";
@@ -72,6 +78,14 @@ export interface ScanOpts {
 //            open paren). A mid-word @ - user@host - is an email, not a
 //            file reference (the server's AtFilePattern law). A token
 //            with no basename ("@dir/") drills, never renders a pill.
+//   skill  - also "@skill:<name>": the @ palette's own prefix row is the
+//            OTHER door to the skill injection the server expands, so it
+//            wears the skill pill (zap + "/name", its click opens
+//            SKILL.md) instead of a path pill. The raw token never
+//            changes - the draft is the server expansion's exact source.
+//   (none) - "@session:<id>" is an injection too, but an opaque id has no
+//            reference shape and no viewer: it stays literal text, never
+//            a chip (a file pill there opened a "not found" tab).
 export function scanRefTokens(text: string, opts: ScanOpts = {}): RefToken[] {
   const out: RefToken[] = [];
   if (opts.inlineSkills) {
@@ -107,6 +121,23 @@ export function scanRefTokens(text: string, opts: ScanOpts = {}): RefToken[] {
     // the pill's path is the clean token ("@docs/x.md," opens x.md)
     const token = ("@" + m[2]).replace(/[.,;:!?]+$/, "");
     const name = token.slice(1);
+    // the prefix rows are INJECTIONS, not paths (t_620a3edf): classify
+    // before the path branches so "@skill:pill-demo" never reads as a
+    // file named "skill:pill-demo" (that pill wore a document glyph and
+    // its click opened a Files tab answering "not found").
+    const skillInjection = name.match(SKILL_PREFIX);
+    if (skillInjection) {
+      const skillName = skillInjection[1]!;
+      out.push({
+        kind: "skill",
+        token,
+        label: skillName,
+        name: skillName,
+        start,
+      });
+      continue;
+    }
+    if (SESSION_PREFIX.test(name)) continue;
     if (!isBasename(name)) continue;
     out.push({
       kind: "file",

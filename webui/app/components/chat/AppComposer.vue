@@ -1141,10 +1141,12 @@
       const next = replaceSlashToken(props.draft, caretAt.value, slash.value.token, item.name);
       emit("update:draft", next.draft);
       caretAt.value = next.caret;
-      // the completion chips a fresh skill token (t_e67c372b)
+      // the completion chips a fresh skill token (t_e67c372b); the key is
+      // the RAW token (chipKeyOf), so the row's bare name needs its slash
+      // (t_620a3edf: the bare name never matched a chip key)
       if (item.kind === "skill") {
         const forced = new Set(forcedChip.value);
-        forced.add(item.name);
+        forced.add("/" + item.name);
         forcedChip.value = forced;
       }
       closePalette();

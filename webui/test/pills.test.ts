@@ -135,6 +135,56 @@ describe("reference token scan (t_7f09bd0c)", () => {
       ["greet", "a.md", "b.ts"],
     );
   });
+
+  // card t_620a3edf: the @ palette's two prefix rows insert the SAME
+  // injections the server expands on submit (core/atmention.go). They are
+  // content, never paths - a file pill for "@skill:x" wore the document
+  // glyph and its click opened a Files tab titled "skill:x" that answered
+  // "not found". One token model, one classification.
+  it("@skill:<name> wears the SKILL pill - the other door to the same injection", () => {
+    const [tok] = scanRefTokens("@skill:greet-writer go");
+    assert.deepEqual(tok, {
+      kind: "skill",
+      // the draft keeps the RAW token: it is the server expansion's source
+      token: "@skill:greet-writer",
+      // the pill renders the invocation form ("/name"), like a typed /name
+      label: "greet-writer",
+      name: "greet-writer",
+      start: 0,
+    });
+    // it chips mid-draft on the transcript surface too (an @ token has no
+    // leading-only law - only the slash token does)
+    const mid = scanRefTokens("note @skill:greet-writer first");
+    assert.equal(mid.length, 1);
+    assert.equal(mid[0]!.start, 5);
+    assert.equal(mid[0]!.kind, "skill");
+  });
+
+  it("the prefix skill token chips in the editor when the snapshot knows it", () => {
+    const text = "@skill:greet-writer go";
+    const plan = editorNodes(
+      text,
+      { caret: text.length, paletteOpen: false, forced: new Set(), dissolved: new Set() },
+      (t) => t.kind === "skill",
+    );
+    assert.deepEqual(
+      plan.map((p) => (p.type === "chip" ? "CHIP:" + p.token.token : p.text)),
+      ["CHIP:@skill:greet-writer", " go"],
+    );
+  });
+
+  it("@session:<id> never chips - an opaque id is not a path reference", () => {
+    assert.deepEqual(scanRefTokens("@session:abc123 hi"), []);
+    assert.deepEqual(splitRefSegments("@session:abc123 hi"), [{ text: "@session:abc123 hi" }]);
+  });
+
+  it("the prefix classification does not disturb an ordinary @path beside it", () => {
+    const toks = scanRefTokens("@skill:greet-writer @notes.md");
+    assert.deepEqual(
+      toks.map((t) => t.kind + ":" + t.token),
+      ["skill:@skill:greet-writer", "file:@notes.md"],
+    );
+  });
 });
 
 describe("sent-message pill render (t_7f09bd0c)", () => {
@@ -381,6 +431,14 @@ describe("composer chip law wiring (source-pinned, card t_e67c372b)", () => {
       composer.includes('forced.add("/" + item.name)'),
       "the skill accept keys the chip by its RAW token (chipKeyOf), not the bare name",
     );
+    // the Tab path (accept without submit) keys the SAME way - one law,
+    // both accept paths (card t_620a3edf: the bare name never matched)
+    const tabPath = composer.slice(composer.indexOf("function acceptActive"));
+    assert.ok(
+      tabPath.includes('forced.add("/" + item.name)'),
+      "the Tab completion keys the raw token too",
+    );
+    assert.ok(!/forced\.add\(item\.name\)/.test(composer), "no bare-name key survives");
     assert.ok(composer.includes("forced.add(insertion)"), "the mention pick");
     assert.ok(composer.includes("const forced = new Set(forcedChip.value);"),
       "sets are replaced whole (the plan's computed re-runs)");
