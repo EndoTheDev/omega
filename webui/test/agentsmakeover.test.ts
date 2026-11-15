@@ -27,6 +27,7 @@ import {
   agentDeleteConfirm,
   agentDeleteLabel,
   agentKindLabel,
+  agentKindOption,
   agentSkillsNote,
   agentTogglesNote,
   AGENT_KINDS as KINDS,
@@ -78,6 +79,17 @@ test("the kinds are the three the ONE door offers, and only one needs the capsul
     assert.ok(agentKindLabel(kind).length > 0, `${kind} has a voice`);
   }
   assert.match(agentKindLabel("clone"), /full copy at birth/, "the clone says COPY, never a live link");
+});
+
+test("the kind picker's option line is the label's lead, never the clipped parenthetical", () => {
+  for (const kind of AGENT_KINDS) {
+    const option = agentKindOption(kind);
+    assert.equal(option, agentKindLabel(kind).split(" (")[0], `${kind}: derived, one voice`);
+    assert.ok(!option.includes("("), `${kind}: nothing left for the closed select to clip`);
+    assert.ok(agentKindLabel(kind).startsWith(option), `${kind}: the full voice still leads with it`);
+  }
+  assert.match(agentKindOption("clone"), /inherit from an agent/);
+  assert.match(agentKindOption("continuous"), /continuous agent/);
 });
 
 test("a scaffold create posts to /agents with its name and description", () => {
@@ -248,6 +260,35 @@ test("the band carries exactly ONE create door and no @ duplicate", () => {
   assert.ok(!panelSrc.includes("showContCreate"), "the second create form died");
   assert.match(panelSrc, /title="create an agent"/, "the one door says what it does");
   assert.match(panelSrc, /aria-label="agent kind"/, "the kind choice lives inside the one form");
+});
+
+// card t_961e81da: Endo's eyeball pass asked for the CRON tab's editor
+// (the one form he ruled "looks good") - title, captioned fields, the
+// error and the actions row, above the scrolling rows. Only the form's
+// STRUCTURE moved: the door, the kind logic and the wire are pinned above.
+test("the create form is the cron editor pattern - a title and a captioned grid", () => {
+  assert.match(panelSrc, /class="agents-create"/, "still the ONE form (count pinned above)");
+  assert.match(panelSrc, /class="agents-editor-title">add agent</, "a title, like cron's 'add cron job'");
+  assert.match(panelSrc, /class="agents-editor-grid"/);
+  // every field carries a CAPTION above its input: the field still says
+  // what it is once the placeholder is typed away
+  const captions = panelSrc.match(/<span>(name|kind|description|directive|wake schedule|copy from)<\/span>/g) ?? [];
+  assert.equal(captions.length, 6, "name / kind / description plus the kind-conditional fields");
+  // the editor sits ABOVE the scroll body, the way cron's does
+  const formAt = panelSrc.indexOf('class="agents-create"');
+  const bodyAt = panelSrc.indexOf('class="agents-body"');
+  assert.ok(formAt > 0 && bodyAt > formAt, "band -> editor -> scrolling rows");
+  // the error line and the actions row live inside the panel
+  assert.match(panelSrc, /class="agents-editor-error"/);
+  assert.match(panelSrc, /class="agents-editor-actions"/);
+  // the spacing mirrors the cron editor's (module UI keeps its own copy,
+  // so the VALUES are the pin - .cron-editor / .cron-editor-grid)
+  assert.match(panelSrc, /padding: 8px 12px;/, "the editor's seat, cron's");
+  assert.match(panelSrc, /gap: 6px 10px;/, "the field grid's gutters, cron's");
+  // two columns while there is room, one below it (cron's narrow flip,
+  // reached by auto-fit here because this panel owns no narrow measure)
+  assert.match(panelSrc, /grid-template-columns: repeat\(auto-fit, minmax\(170px, 1fr\)\)/);
+  assert.match(panelSrc, /\.agents-editor-wide \{\s*grid-column: 1 \/ -1;/);
 });
 
 test("the panel DELETEs the home and names the count before the trigger", () => {

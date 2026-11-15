@@ -30,56 +30,77 @@
           @click="toggleCreate">+</button>
       </div>
     </TabBand>
-    <div class="agents-body">
-      <!-- THE ONE CREATE DOOR (ruling 1): one form, the kind inside. -->
-      <form
-        v-if="showCreate"
-        class="agents-create"
-        @submit.prevent="submitCreate">
-        <input
-          v-model="create.name"
-          class="agents-create-name"
-          placeholder="agent name (lowercase, hyphens ok)"
-          aria-label="agent name" />
-        <select
-          v-model="create.kind"
-          class="agents-create-name"
-          aria-label="agent kind">
-          <option
-            v-for="k in AGENT_KINDS"
-            :key="k"
-            :value="k"
-            :disabled="kindNeedsContinuous(k) && !continuousAvailable">{{ agentKindLabel(k) }}</option>
-        </select>
-        <input
-          v-model="create.description"
-          class="agents-create-desc"
-          placeholder="one-line description (optional)"
-          aria-label="agent description" />
+    <!-- THE ONE CREATE DOOR (ruling 1): one form, the kind inside.
+         card t_961e81da (Endo's eyeball pass): the form adopts the CRON
+         tab's editor pattern - a title, a captioned field grid, the
+         error line and an actions row - and sits ABOVE the scroll body
+         exactly where cron's job editor sits, so band -> editor ->
+         scrolling rows reads as one family across the two panels. The
+         door, the kind logic and the wire are untouched: this is
+         structure and captions only. -->
+    <form
+      v-if="showCreate"
+      class="agents-create"
+      @submit.prevent="submitCreate">
+      <p class="agents-editor-title">add agent</p>
+      <div class="agents-editor-grid">
+        <label class="agents-editor-field">
+          <span>name</span>
+          <input
+            v-model="create.name"
+            placeholder="scout"
+            aria-label="agent name" />
+        </label>
+        <label class="agents-editor-field">
+          <span>kind</span>
+          <select
+            v-model="create.kind"
+            aria-label="agent kind">
+            <option
+              v-for="k in AGENT_KINDS"
+              :key="k"
+              :value="k"
+              :disabled="kindNeedsContinuous(k) && !continuousAvailable">{{ agentKindOption(k) }}</option>
+          </select>
+        </label>
+        <label class="agents-editor-field agents-editor-wide">
+          <span>description</span>
+          <input
+            v-model="create.description"
+            placeholder="one line about what this agent is for (optional)"
+            aria-label="agent description" />
+        </label>
         <template v-if="create.kind === 'continuous'">
-          <input
-            v-model="create.directive"
-            class="agents-create-desc"
-            placeholder="directive (standing intent)"
-            aria-label="directive" />
-          <input
-            v-model="create.schedule"
-            class="agents-create-desc"
-            placeholder="wake schedule (cron, e.g. 17 * * * *)"
-            aria-label="wake schedule" />
+          <label class="agents-editor-field agents-editor-wide">
+            <span>directive</span>
+            <input
+              v-model="create.directive"
+              placeholder="the standing intent this agent wakes to"
+              aria-label="directive" />
+          </label>
+          <label class="agents-editor-field">
+            <span>wake schedule</span>
+            <input
+              v-model="create.schedule"
+              placeholder="17 * * * *"
+              aria-label="wake schedule" />
+          </label>
         </template>
         <template v-else-if="create.kind === 'clone'">
-          <select
-            v-model="create.inherit_from"
-            class="agents-create-name"
-            aria-label="inherit from agent">
-            <option value="">choose the agent to copy</option>
-            <option
-              v-for="p in cloneCandidates"
-              :key="p.name"
-              :value="p.name">{{ p.name }}</option>
-          </select>
-          <p class="agents-create-note">
+          <label class="agents-editor-field">
+            <span>copy from</span>
+            <select
+              v-model="create.inherit_from"
+              aria-label="inherit from agent">
+              <option value="">choose the agent to copy</option>
+              <option
+                v-for="p in cloneCandidates"
+                :key="p.name"
+                :value="p.name">{{ p.name }}</option>
+            </select>
+          </label>
+          <p
+            class="agents-editor-note agents-editor-wide">
             a full materialized copy at birth - definition, skills, toggles,
             persona files and the session store. The copy diverges freely and
             the source may be deleted afterwards: clone + delete IS the rename
@@ -88,18 +109,22 @@
         </template>
         <p
           v-else
-          class="agents-create-note">
+          class="agents-editor-note agents-editor-wide">
           an empty home: nothing enabled, no skills - an agent never inherits
           main's feature set.
         </p>
-        <button
-          class="agents-create-go"
-          :disabled="!create.name.trim() || creating"
-          type="submit">{{ creating ? "creating…" : "create" }}</button>
-      </form>
+      </div>
       <p
         v-if="createError"
-        class="settings-error agents-error">{{ createError }}</p>
+        class="agents-editor-error">{{ createError }}</p>
+      <div class="agents-editor-actions">
+        <button
+          class="agents-editor-btn primary"
+          type="submit"
+          :disabled="!create.name.trim() || creating">{{ creating ? "creating…" : "create agent" }}</button>
+      </div>
+    </form>
+    <div class="agents-body">
       <p
         v-if="notice"
         class="agents-status">{{ notice }}</p>
@@ -445,7 +470,7 @@ import {
   AGENT_KINDS,
   agentDeleteConfirm,
   agentDeleteLabel,
-  agentKindLabel,
+  agentKindOption,
   agentRosterSubtitle,
   agentSkillsNote,
   agentStatusFor,
@@ -1065,7 +1090,13 @@ defineExpose({ load, profiles, fold, rows, roster, rowStatusOf, rowStatusVoice }
   padding: 4px 12px 14px;
 }
 /* card t_df015e66: the ONE create door. One "+" in the band, one form -
-   the kind select decides which endpoint follows. */
+   the kind select decides which endpoint follows.
+   card t_961e81da: the form is the CRON tab's editor pattern (see
+   harness/cron/ui/CronJobs.vue's .cron-editor block) - title, captioned
+   field grid, error line, actions row - rendered ABOVE the scroll body
+   the way cron's editor is. Module UI keeps its own copy of the values
+   (no shell or cross-module import); they mirror cron's so the two
+   panels read as one family. */
 .agents-actions {
   display: flex;
   gap: 4px;
@@ -1073,39 +1104,90 @@ defineExpose({ load, profiles, fold, rows, roster, rowStatusOf, rowStatusVoice }
 .agents-create {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  margin: 4px 0 8px;
-  max-width: 420px;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.25));
 }
-.agents-create-name,
-.agents-create-desc {
-  background: var(--z2, rgba(128, 128, 128, 0.12));
-  border: 1px solid var(--z3, rgba(128, 128, 128, 0.3));
-  border-radius: 6px;
-  color: var(--text);
-  font: inherit;
-  min-width: 0;
-  padding: 4px 8px;
-}
-.agents-create-note {
-  color: var(--text-dim, #8a8a92);
-  font-size: 10px;
-  line-height: 1.4;
+.agents-editor-title {
   margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.85;
 }
-.agents-create-go {
-  align-self: flex-start;
-  background: var(--z2, rgba(128, 128, 128, 0.12));
-  border: 1px solid var(--z3, rgba(128, 128, 128, 0.3));
-  border-radius: 6px;
-  color: var(--text);
-  cursor: pointer;
+/* two captioned columns while there is room, one below it. auto-fit (not
+   a fixed 1fr 1fr) collapses to a single column on the narrow inspector
+   pane the way cron's `.narrow .cron-editor-grid` rule does, without a
+   ResizeObserver this panel does not own; a lone half field and a
+   `-wide` span both keep working under the collapse. */
+.agents-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 6px 10px;
+}
+.agents-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 11px;
+}
+.agents-editor-wide {
+  grid-column: 1 / -1;
+}
+.agents-editor-field span {
+  opacity: 0.6;
+}
+.agents-editor-field input,
+.agents-editor-field select {
   font: inherit;
-  padding: 4px 10px;
+  color: inherit;
+  background: var(--bg-elev, rgba(128, 128, 128, 0.08));
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+  border-radius: 4px;
+  padding: 3px 6px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.agents-editor-note {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-dim, #8a8a92);
+}
+.agents-editor-error {
+  margin: 0;
+  font-size: 11px;
+  color: var(--danger, #e5484d);
+}
+.agents-editor-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.agents-editor-btn {
+  font: inherit;
+  font-size: 11px;
+  color: inherit;
+  background: none;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.agents-editor-btn:hover {
+  border-color: var(--text, currentColor);
+}
+.agents-editor-btn.primary {
+  background: var(--bg-elev, rgba(128, 128, 128, 0.12));
+}
+.agents-editor-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 /* card t_2d8deb8c: the edit affordance - the layer's field set,
-   label/input pairs, the same token-voiced inputs the create flow
-   uses. The default agent renders the read-only note instead. */
+   label/input pairs in the panel's own token voice (the create flow
+   above rides the cron editor's). The default agent renders the
+   read-only note instead. */
 .agents-readonly-note {
   color: var(--text-dim, #8a8a92);
   font-size: 11px;
