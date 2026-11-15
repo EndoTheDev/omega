@@ -76,12 +76,22 @@ type activeRun struct {
 type RunHub struct {
 	mu   sync.Mutex
 	runs map[string]*activeRun
+	// stops holds each session's user-stop latch (core.RunStop, card
+	// t_caa67135). It OUTLIVES the run it belongs to: a stop must keep
+	// holding after the run's slot frees, because the work the run left
+	// in motion (dispatched yield calls, their shells) settles later and
+	// must not wake the home. A human send re-arms with a fresh latch
+	// (rearm); a wake launch never does - a cancelled home stays
+	// cancelled until a human speaks again.
+	stops map[string]*core.RunStop
 }
 
 // start registers a new run for the session. ok is false when the
 // session already has a live run - a second /chat for the same session
 // is rejected (the webui per-session busy gate normally prevents it;
-// this is the server-side backstop).
+// this is the server-side backstop). The session's stop latch is
+// created here when it has none: a fresh session starts armed, and a
+// stopped one keeps its latch until a human send re-arms (rearm).
 func (h *RunHub) start(id string) (*activeRun, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -91,9 +101,50 @@ func (h *RunHub) start(id string) (*activeRun, bool) {
 	if _, exists := h.runs[id]; exists {
 		return nil, false
 	}
+	if h.stops == nil {
+		h.stops = map[string]*core.RunStop{}
+	}
+	if h.stops[id] == nil {
+		h.stops[id] = core.NewRunStop()
+	}
 	run := &activeRun{id: id, subs: map[chan runFrame]struct{}{}}
 	h.runs[id] = run
 	return run, true
+}
+
+// stopSignal returns the session's user-stop latch (nil when the
+// session never acquired a run slot). The run context carries it so
+// every tool and dispatched call can read the intent.
+func (h *RunHub) stopSignal(id string) *core.RunStop {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.stops[id]
+}
+
+// rearm re-arms the session's stop latch after a human send - the mirror
+// of the runaway guard's reset, for the same reason: a stop is a human
+// withdrawal, and only a human re-arms it. An ARMED latch is kept as is
+// (the same object, not a fresh one): dispatched calls left running by
+// earlier turns of this session registered their cancellation on it, and
+// swapping the object would silently orphan them - the very bug this
+// latch exists to fix.
+func (h *RunHub) rearm(id string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.stops == nil {
+		h.stops = map[string]*core.RunStop{}
+	}
+	if sig := h.stops[id]; sig != nil && !sig.Stopped() {
+		return
+	}
+	h.stops[id] = core.NewRunStop()
+}
+
+// userStopped reports whether the session's work was stopped by the
+// user and no human send has re-armed it since. The wake path and the
+// wake note read it: nothing the stop killed may re-enter the home.
+func (h *RunHub) userStopped(id string) bool {
+	return h.stopSignal(id).Stopped()
 }
 
 // registerCancel stores the run's internal ctx cancel, making the run
@@ -113,17 +164,28 @@ func (h *RunHub) registerCancel(run *activeRun, cancel context.CancelFunc) {
 // second start->launchRun window) - the endpoint answers 409; the run
 // unwinds on its own right after. Cancelling the run ctx is idempotent,
 // so a repeated stop on the same winding-down run is a clean no-op 200.
+//
+// The stop LATCHES first (core.RunStop, card t_caa67135), then cancels
+// the run ctx. Order matters: the run's spawned work observes the ctx
+// dropping, and it decides what to do by asking the latch - a shell that
+// saw the cancel before the intent was recorded would treat a human stop
+// as the run cap and leave its child detached.
 func (h *RunHub) stop(id string) (ok bool, cancellable bool) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	run, found := h.runs[id]
 	if !found {
+		h.mu.Unlock()
 		return false, false
 	}
-	if run.cancel != nil {
-		run.cancel()
+	sig := h.stops[id]
+	cancel := run.cancel
+	h.mu.Unlock()
+	if cancel == nil {
+		return true, false
 	}
-	return true, run.cancel != nil
+	sig.Stop()
+	cancel()
+	return true, true
 }
 
 // active reports whether the session has a live run.
@@ -372,6 +434,11 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		// detached runs carry the session id too: task tools in the detached
 		// loop link to the same conversation the request started
 		ctx = agent.WithSessionID(ctx, req.SessionID)
+		// The user-stop latch (card t_caa67135): the run ctx carries it so
+		// every tool and every dispatched call can tell a human stop from
+		// the run's own ends - a spawned shell kills its child on the
+		// former and stays detached on the latter.
+		ctx = core.WithRunStop(ctx, s.runs.stopSignal(req.SessionID))
 		// Session workspace (card t_9de5b009, hand-off fix t_74428a10):
 		// prepareRun resolved req.workspace (the session's pin or the
 		// default_workspace knob) and its trust-gated AGENTS.md context -

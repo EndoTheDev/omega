@@ -1081,6 +1081,15 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	if !live {
 		return nil, &runError{http.StatusConflict, "session already running"}
 	}
+	// A human send re-arms the session's stop latch (card t_caa67135):
+	// the same law the runaway guard's reset follows, for the same
+	// reason - only the human who stopped the home may start it again.
+	// A WAKE launch never re-arms: a cancelled home stays cancelled
+	// until a human speaks, so a late settlement cannot restart the
+	// conversation the stop ended.
+	if !req.wake {
+		s.runs.rearm(req.SessionID)
+	}
 	// Live-run truth on the push channel (card t_7624bab1): the slot was
 	// just taken - human sends and wake launches (launchWake calls
 	// prepareRun too) both land here, so the runs topic's "active" edge
@@ -1535,6 +1544,12 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 // cancel yet (the start->launchRun window). A repeat stop on a
 // winding-down run is a clean 200 - cancelling an already-cancelled ctx
 // is a no-op.
+//
+// This is a HARD stop (card t_caa67135), not just a stopped stream: the
+// session's stop latch fires (so the work the run left running - its
+// dispatched yield calls and their shells - dies with the turn), and
+// every pending call is abandoned, so nothing settles into a wake turn
+// for a conversation the user ended.
 func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1545,7 +1560,7 @@ func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing session id", http.StatusBadRequest)
 		return
 	}
-	ok, cancellable := s.runs.stop(id)
+	ok, cancellable := s.stopRun(id)
 	if !ok {
 		http.Error(w, "session not active", http.StatusNotFound)
 		return
@@ -1557,6 +1572,19 @@ func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"cancelling"}`)) // constant body
+}
+
+// stopRun is the user hard stop, in one place for every surface that
+// issues it (the stop endpoint and the ephemeral session's DELETE).
+// The latch and the run cancellation ride the hub; what the RUN left in
+// motion is abandoned here, because the hub knows nothing about the
+// yield harness.
+func (s *Server) stopRun(id string) (ok, cancellable bool) {
+	ok, cancellable = s.runs.stop(id)
+	if ok && cancellable {
+		s.abandonPending(id)
+	}
+	return ok, cancellable
 }
 
 // sessionHistory loads the session's persisted history and returns it

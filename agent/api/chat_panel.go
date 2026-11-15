@@ -611,10 +611,12 @@ func (c *ChatCapsule) HandleAction(call core.ActionCall) (any, error) {
 	}
 	switch call.Action {
 	case ChatActionStop:
-		// The same face POST /sessions/{id}/stop serves: cancel the
-		// live run's context; the loop unwinds through its normal
-		// path and the run's exit hook paints the completed state.
-		ok, cancellable := c.srv.Load().runs.stop(args.Session)
+		// The same face POST /sessions/{id}/stop serves: the user hard
+		// stop - latch the session, cancel the live run's context, and
+		// abandon the work that run left running. The loop unwinds
+		// through its normal path and the run's exit hook paints the
+		// completed state.
+		ok, cancellable := c.srv.Load().stopRun(args.Session)
 		if !ok {
 			return nil, fmt.Errorf("session not active")
 		}

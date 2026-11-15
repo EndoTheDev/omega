@@ -657,6 +657,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			YieldLedger:        yieldLedger,
 			YieldWake:          yieldWake,
 			YieldTimeout:       a.yieldTimeout,
+			Stop:               core.RunStopFrom(ctx),
 		})
 	}()
 	return events

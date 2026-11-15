@@ -47,7 +47,7 @@ unchanged.
 | `/sessions/search?q=`                | GET        | FTS5 content+label search                      |
 | `/sessions/{id}`                     | GET, PATCH, DELETE | detail / flags / remove                |
 | `/sessions/{id}/events`              | GET        | SSE reattach to a live run                     |
-| `/sessions/{id}/stop`                | POST       | cancel the live run                            |
+| `/sessions/{id}/stop`                | POST       | hard stop: cancel the run, kill its spawned shells, abandon its pending calls |
 | `/sessions/{id}/transcript`          | GET        | render-ready items (restore + live contract)   |
 | `/sessions/{id}/variants`            | GET, POST, PATCH | branch points + active-variant select    |
 | `/sessions/{id}/branch`              | POST       | fork a child session (store-linked)                    |
@@ -195,6 +195,22 @@ disconnect never cancels the run, and `server.run_timeout` (default
 1800 s) walls off hung runs. Repeat `POST /sessions/{id}/stop` while a
 run winds down is a clean 200; stop is 404 when idle, 409 in the rare
 pre-launch window.
+
+**Stop is a hard stop, not a stopped stream.** The endpoint latches the
+session's run stop (`core.RunStop`), then cancels the run context. The
+latch is what carries the human's intent to the work the run left in
+motion: a dispatched yield call outlives its turn by design, so its
+context drops the run's cancellation - but not the latch, which cancels
+the call itself. A `shell.run` cut by the latch KILLS the shell it
+spawned (the one exception to the detachment contract, which still
+holds for every other interruption); the call's result is discarded
+rather than re-entering. The session's pending calls are abandoned
+(settled without a result) and its queued wake results dropped, so a
+cancelled home launches no wake turn - not from a result that settled
+before the cancel, not from one that settles afterwards, and not from
+a call the stop killed. Only a human send re-arms the latch; a wake
+launch never does. A stopped wake run also leaves no "send a message to
+continue" note on the transcript: it was answered, by the stop.
 
 ### SSE event stream
 
@@ -1064,6 +1080,10 @@ persists with store role `yield_result` (render role tool), the same
 shape any future out-of-process executor writes. A home parked by the
 runaway guard (25 consecutive wake turns with no human input) carries
 a plain user-row note in the conversation.
+
+A human stop ends that chain: the session's stop latch cancels the
+outstanding calls and drops their results, so a cancelled home goes
+quiet instead of waking on the next settlement.
 
 ## Provider quirks that leak onto the wire
 

@@ -263,7 +263,9 @@ func tapLog(ctx context.Context, e *Entry) {
 // here, but a run cancellation (run timeout, or a converted call's
 // yield deadline) never kills the shell - detachment is the contract:
 // the call returns naming the id, the shell keeps running, and
-// shell.read / shell.kill reach it.
+// shell.read / shell.kill reach it. ONE exception, the user's hard
+// stop (core.RunStop, card t_caa67135): the human ended the turn, so
+// the child dies with it rather than settling into a wake turn.
 func (p *ShellProvider) RunShell(ctx context.Context, args map[string]any) (string, error) {
 	command, err := argString(args, "command")
 	if err != nil {
@@ -301,10 +303,26 @@ func (p *ShellProvider) RunShell(ctx context.Context, args map[string]any) (stri
 	case <-e.done:
 		// The reaper records the exit code before it closes done.
 	case <-ctx.Done():
+		out, total, _ := readLogHead(e.LogPath)
+		if core.RunStopped(ctx) {
+			// The user pressed stop (card t_caa67135): a hard stop ends
+			// the WORK, not just the stream. The shell this call spawned
+			// dies with the turn instead of settling into a wake turn
+			// nobody asked for - the agent's own "restarted?" moment was
+			// this shell outliving the cancel.
+			note := "the shell was killed with the turn"
+			if msg, kerr := p.reg.Kill(e.ID); kerr != nil {
+				note = "killing the shell failed: " + kerr.Error()
+			} else if msg != "" {
+				note = msg
+			}
+			return shellOutput(out, total, e.ID), fmt.Errorf(
+				"shell %s stopped: the user ended the turn (%v) - %s; the log stays readable (shell.read id=%s)",
+				e.ID, ctx.Err(), note, e.ID)
+		}
 		// The call was cut short (a run timeout, or the converted
 		// call's yield deadline). The shell is detached by design: it
 		// keeps running and stays addressable.
-		out, total, _ := readLogHead(e.LogPath)
 		return shellOutput(out, total, e.ID), fmt.Errorf(
 			"shell %s is still running (pid %d): the call was interrupted (%v) - the shell outlives it; shell.read id=%s tails it, shell.kill id=%s stops it",
 			e.ID, e.PID, ctx.Err(), e.ID, e.ID)
