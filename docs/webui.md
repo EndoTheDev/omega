@@ -844,7 +844,14 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   its caret-based slash palette accepts) and the chip is the one
   `ReferencePill` renderer, so a skill wears the zap + `/name` and a file
   the document glyph + basename. The transcript keeps the
-  leading-invocation scan, where arbitrary prose "/" stays text.
+  leading-invocation scan, where arbitrary prose "/" stays text. The
+  `@` palette's two PREFIX rows insert the server's own injections
+  (`@skill:<name>`, `@session:<id>`, core/atmention.go), and the scan
+  classifies them by that prefix rather than as paths: an
+  `@skill:<name>` token wears the SAME skill pill whichever door
+  injected it (its click opens SKILL.md), while an opaque
+  `@session:<id>` stays literal text - neither is a file reference
+  (card t_620a3edf).
   Shift+Enter writes the newline as a
   text node (the editor claims every Enter - plain sends), and Chromium
   hangs a block-final newline in pre-wrap, so every write settles one
