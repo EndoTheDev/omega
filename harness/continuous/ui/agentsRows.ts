@@ -306,6 +306,18 @@ export function agentKindLabel(kind: AgentKind): string {
   }
 }
 
+/** agentKindOption: the CLOSED option's line in the create form's kind
+    select (card t_961e81da). The form's grid gives the select half a row
+    (or a narrow inspector's full one), where the label's parenthetical
+    clips mid-word - and a selected option is the row an operator reads
+    back. The parenthetical consequence is never lost: the kind's note
+    under the grid speaks it (the scaffold's empty home, the clone's
+    materialized copy) and the continuous kind's own directive/schedule
+    fields appear with it. */
+export function agentKindOption(kind: AgentKind): string {
+  return agentKindLabel(kind).split(" (")[0];
+}
+
 // --- delete = delete the HOME (0.17.3 ruling 2) ---------------------
 
 /** agentDeleteConfirm names what the trigger will take: the home and
