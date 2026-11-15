@@ -37,8 +37,9 @@
 // ONE document of every category, and the nav is still jump links - but a
 // REAL section selection now narrows what that document RENDERS to the
 // selected section plus its subsections (the VS Code read), and a
-// deselect (or Commonly Used, the curated all-view) gives the whole
-// document back. Search outranks the selection: a live query is GLOBAL,
+// deselect gives the whole document back. Every category narrows,
+// Commonly Used included - it was the lone exemption until card
+// t_6fb4ddc6. Search outranks the selection: a live query is GLOBAL,
 // so the filter stands down while it is up and returns when it clears.
 // The filter is a VIEW filter - no knob, no config, no row changes.
 //

@@ -2026,8 +2026,8 @@
   // narrowed to. It reads the REAL selection (clampId, the pane's own
   // record of a user click) and never the spy's highlight - a scroll must
   // not collapse the document under the hand that is scrolling it. A live
-  // query stands it down and Commonly Used is the all-view; the rule
-  // itself is the pure sectionFilter.
+  // query stands it down; every category narrows, Commonly Used included
+  // (card t_6fb4ddc6). The rule itself is the pure sectionFilter.
   const filterSection = computed<string | null>(() =>
     sectionFilter(clampId.value, searching.value),
   );
