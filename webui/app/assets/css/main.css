@@ -1206,23 +1206,40 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
   padding-bottom: 8px;
 }
 
+/* card t_856a1faa: the file explorer takes Endo's tuned 2026-11-15
+   numbers. ONLY a nested level ul pads 4px left (it was 8): the root ul
+   is not a "nest / each level" surface, so its own inline padding (8px
+   both sides) and every level's padding-right stay exactly as they were.
+   The row is 24px tall (it was 26: 5px block padding over a 16px line
+   box), the icon-to-label gap 6px (it was 7), and the status list
+   carries 6px of margin below it (the gap above the tree). Row font
+   stays 12px. The indent (8px base + a 4px step) and the guide offset
+   (6px) live in harness/files/ui/FileTree.vue. */
 .files-tree {
   list-style: none;
   margin: 0;
   padding: 0 8px;
 }
 
+/* the per-level indent: nested uls only, left side only. Guide geometry
+   rides this same 4px left pad (the --guide-x overlay sits relative to
+   the level ul's own box), so the 6px guide-to-glyph distance holds. */
+.files-tree .files-tree {
+  padding-left: 4px;
+}
+
 .files-list {
   list-style: none;
-  margin: 0;
+  margin: 0 0 6px;
   padding: 0 8px;
 }
 
 .tree-row {
   display: flex;
   align-items: baseline;
-  gap: 7px;
-  padding-block: 5px;
+  gap: 6px;
+  height: 24px;
+  padding-block: 4px;
   padding-inline-end: 10px;
   border-radius: var(--r-chip);
   font-size: 12px;

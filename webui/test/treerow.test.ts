@@ -119,7 +119,7 @@ test("indent guides are overlay hairlines revealed by :hover only", () => {
   );
   assert.match(
     tree,
-    /"\-\-guide-x": `\$\{props\.depth \* 10 \+ 12\}px`/,
+    /"\-\-guide-x": `\$\{props\.depth \* 4 \+ 6\}px`/,
     "each level ul positions its own line from the depth step",
   );
   // layout-shift guard: the overlay never participates in flow
@@ -135,21 +135,58 @@ test("indent guides are overlay hairlines revealed by :hover only", () => {
   );
 });
 
-// --- the indent law as of card t_3bf6420b (2026-11-05, Endo): the
-// subfolder indent STEP moved 14px -> 10px so nested branches read
-// tighter. Base unchanged; guides keep their 6px-before-glyph offset. ---
+// --- the indent law as of card t_856a1faa (2026-11-15, Endo's tuned
+// numbers from the files tuner): row height 26 -> 24, base 10 -> 8,
+// step 10 -> 4, level pad 8 -> 4, guide offset 12 -> 6, icon gap 7 -> 6,
+// list gap 8 -> 6. The reading size stays 12px. His numbers outrank the
+// old pins - this test carries the NEW contract, at full strength. ---
 
-test("the density/indent law pins the current step, base and rhythm", () => {
-  // the 10px step and the +10 base remain the indent math on BOTH sides
-  assert.match(tree, /props\.depth \* 10 \+ 10}px`/, "row indent math unchanged");
+test("the density/indent law pins the tuned step, base and rhythm", () => {
+  // the 4px step and the +8 base remain the indent math on BOTH sides
   assert.match(
     tree,
-    /props\.depth \* 10 \+ 12}px`/,
-    "guide-x rides the same 10px step, 6px before the glyph",
+    /props\.depth \* 4 \+ 8}px`/,
+    "row indent math is 8px base + a 4px step",
   );
+  assert.match(
+    tree,
+    /props\.depth \* 4 \+ 6}px`/,
+    "guide-x rides the same 4px step, 6px before the glyph column",
+  );
+  // the loading row sits one glyph column past its level's row indent
+  assert.match(
+    tree,
+    /`\$\{depth \* 4 \+ 22\}px`/,
+    "the loading row tracks the row indent (8 + 4d) plus 14px",
+  );
+  // whole-rule pins: a value drifting back toward the old geometry is a red
+  // the ROOT ul keeps its untouched inline padding (8px both sides) - the
+  // contract names the per-level left pad only, never the container rhythm.
   assert.match(
     css,
     /\.files-tree \{\n  list-style: none;\n  margin: 0;\n  padding: 0 8px;\n\}/,
-    "the tree container's rhythm is untouched",
+    "the root tree ul keeps its 8px inline padding",
+  );
+  assert.match(
+    css,
+    /\.files-tree \.files-tree \{\n  padding-left: 4px;\n\}/,
+    "only a nested level ul pads 4px left - the per-level indent",
+  );
+  // the root rule must not be the nesting rule (no shorthand smuggling the
+  // 4px onto the root's left or onto any level's right edge)
+  assert.doesNotMatch(
+    css,
+    /\.files-tree \{\n  list-style: none;\n  margin: 0;\n  padding: 0 4px;\n\}/,
+    "the per-level pad never rides the root container shorthand",
+  );
+  assert.match(
+    css,
+    /\.tree-row \{\n  display: flex;\n  align-items: baseline;\n  gap: 6px;\n {2}height: 24px;\n {2}padding-block: 4px;\n {2}padding-inline-end: 10px;\n {2}border-radius: var\(--r-chip\);\n {2}font-size: 12px;\n {2}cursor: pointer;\n\}/,
+    "the row is 24px tall with a 6px icon gap and a 12px reading size",
+  );
+  assert.match(
+    css,
+    /\.files-list \{\n  list-style: none;\n  margin: 0 0 6px;\n  padding: 0 8px;\n\}/,
+    "the status list keeps its 6px gap above the tree",
   );
 });
