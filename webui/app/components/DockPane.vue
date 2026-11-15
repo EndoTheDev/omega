@@ -377,9 +377,10 @@
   function tabIcon(tab: DockTab): string | null {
     // card t_36ceb99b: the viewer's chip icon follows the CONTENT type -
     // file rows keep the extension-glyph vocabulary (rowicon), skill rows
-    // the skills book; the registry entry's "file-text" is only the bare
-    // viewer fallback
+    // the skills book, folder rows the folder glyph (t_c3fe4ea6); the
+    // registry entry's "file-text" is only the bare viewer fallback
     if (tab.component === "viewer" && tab.viewer) {
+      if (tab.viewer.kind === "dir") return "folder";
       return tab.viewer.kind === "skill"
         ? "skills"
         : glyphIcon(glyphKindFor(tab.viewer.name));

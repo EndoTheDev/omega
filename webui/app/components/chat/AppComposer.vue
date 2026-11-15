@@ -53,13 +53,13 @@
         @click="$emit('clear-fork')">&times;</button>
     </div>
     <!-- the reference CHIPS (card t_e67c372b): the draft's /skill and
-         @file tokens render INLINE in the editor - a pill REPLACES the
-         text it represents (chip replaces text), the raw draft string
-         keeps the tokens throughout. The chip is non-editable; click
-         opens the target, its x removes the token, Backspace with the
-         caret behind it dissolves the chip back to the raw token text
-         (the dissolve law). The strip is gone: pills sit beside their
-         text was the whole complaint. -->
+         @file / @folder tokens render INLINE in the editor - a pill
+         REPLACES the text it represents (chip replaces text), the raw
+         draft string keeps the tokens throughout. The chip is
+         non-editable; click opens the target, its x removes the token,
+         Backspace with the caret behind it dissolves the chip back to
+         the raw token text (the dissolve law). The strip is gone: pills
+         sit beside their text was the whole complaint. -->
     <div class="composer-row">
       <button
         v-if="!expanded"
@@ -688,10 +688,11 @@
   // same text the strip-era flow posted (the server-side at-mention
   // expansion is the consumer of that exact string).
 
-  // chip eligibility: a file token stands as-is; a skill token chips as
-  // soon as its name is a loaded skill's (a shell verb like "/theme" is
-  // a command, never a pill - the slash surface has already loaded the
-  // skills snapshot for any "/"-draft)
+  // chip eligibility: a file or dir token stands as-is (a folder pins
+  // exactly like a file - t_c3fe4ea6, the trailing slash is the kind);
+  // a skill token chips as soon as its name is a loaded skill's (a
+  // shell verb like "/theme" is a command, never a pill - the slash
+  // surface has already loaded the skills snapshot for any "/"-draft)
   // the editor's chip scan: a skill token chips at ANY word boundary here
   // (the composer's slash palette is token-based, t_d1a2951d), while the
   // transcript keeps the leading-invocation law - one token model, the
@@ -699,7 +700,7 @@
   const CHIP_SCAN = { inlineSkills: true } as const;
   const skillNames = computed(() => new Set(skillRows.value.map((s) => s.name)));
   const isPill = (t: RefToken): boolean =>
-    t.kind === "file" || skillNames.value.has(t.name);
+    t.kind === "file" || t.kind === "dir" || skillNames.value.has(t.name);
 
   // fresh swallows (the accept path) and dissolved reveals (the
   // Backspace law). Keys ride chipKeyOf's token identity; reactive Set
@@ -861,8 +862,9 @@
     wrap.addEventListener("mousedown", (e) => e.preventDefault());
     wrap.addEventListener("dragstart", (e) => e.preventDefault());
     // chip click (t_7f09bd0c's law): a file opens in the Files pane, a
-    // skill opens its SKILL.md. The x keeps the old strip's outright
-    // removal; Backspace is the dissolve.
+    // skill opens its SKILL.md, a FOLDER opens the viewer's listing for
+    // it (t_c3fe4ea6). The x keeps the old strip's outright removal;
+    // Backspace is the dissolve.
     const vnode = h("span", { class: "ref-chip-body" }, [
       h(ReferencePill, { pill: t, onOpen: () => openRef(t) }),
       h(
@@ -1101,21 +1103,23 @@
     }
     // the insert (t_07aed3f9's replace law): a file or dir row's name is
     // the entry's own - the completed token carries the token's dir part
-    // (t_7f09bd0c), so a drilled pick is the full relative path. A dir
-    // row DRILLS: the token keeps its trailing slash, the list refetches
-    // and the palette stays open.
+    // (t_7f09bd0c), so a drilled pick is the full relative path.
+    // BOTH row kinds PIN (t_c3fe4ea6): a file completes to "@path", a
+    // dir to "@path/" - the folder's trailing slash IS the reference
+    // shape, so the accept closes the palette and fresh-swallows the
+    // pill instead of leaving bare text. Drilling stays the TOKEN's own
+    // law, not the accept's: typing past the slash relists the folder
+    // (mentionDirOf), so a dir row picked deeper still drills.
     const isDir = item.kind === "dir";
     const dir = mentionDirOf(mention.value.token);
     const insertion = "@" + dir + item.name + (isDir ? "/" : "");
     const next = replaceMentionToken(props.draft, caretAt.value, mention.value.token, insertion);
-    if (!isDir) {
-      closePalette();
-      // the fresh swallow (t_e67c372b): a completed file token chips
-      // immediately (dir rows drill; they are never a pill)
-      const forced = new Set(forcedChip.value);
-      forced.add(insertion);
-      forcedChip.value = forced;
-    }
+    closePalette();
+    // the fresh swallow (t_e67c372b): the completed token chips
+    // immediately (a file's path, a folder's path + slash)
+    const forced = new Set(forcedChip.value);
+    forced.add(insertion);
+    forcedChip.value = forced;
     caretAt.value = next.caret;
     emit("update:draft", next.draft);
     active.value = -1;
