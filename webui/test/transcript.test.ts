@@ -193,4 +193,32 @@ describe("renderTranscriptItems", () => {
     assert.equal(settled.elapsedMs, undefined, "a persisted answer ignores the anchor");
     assert.equal(settled.finalMs, 4100, "the server's measured span wins");
   });
+
+  // card t_484cbb27: a segment a tool call ended ships SETTLED on the
+  // live tail too - no running bit, its measured span in
+  // response_ms/thinking_ms - so a remount mid-call paints the frozen
+  // label instead of a meter ticking off a closed window, and the
+  // landing turn has nothing to snap. No client change is needed: the
+  // item shape rides the same two fields a persisted row already uses.
+  it("a tool call that ended the segment settles its text rows on the live tail", () => {
+    const items = renderTranscriptItems([
+      { kind: "thinking", content: "considered", thinking_ms: 2200 },
+      { kind: "message", content: "calling the checker", response_ms: 900 },
+      { kind: "tool_call", tool_call: { id: "c1", name: "shell.run" }, running: true, elapsed_ms: 5000 },
+    ]);
+    const think = items[0];
+    if (think.kind !== "thinking") return assert.fail("items[0] not thinking");
+    assert.equal(think.streaming, undefined, "a finished thinking row never streams");
+    assert.equal(think.elapsedMs, undefined, "and carries no meter anchor");
+    assert.equal(think.finalMs, 2200, "it carries its measured span");
+    const answer = items[1];
+    if (answer.kind !== "message") return assert.fail("items[1] not message");
+    assert.equal(answer.streaming, undefined, "a finished answer row never streams");
+    assert.equal(answer.elapsedMs, undefined, "and carries no meter anchor");
+    assert.equal(answer.finalMs, 900, "it carries its measured span");
+    const call = items[2];
+    if (call.kind !== "tool") return assert.fail("items[2] not tool");
+    assert.equal(call.status, "running", "the call itself keeps streaming");
+    assert.equal(call.elapsedMs, 5000);
+  });
 });

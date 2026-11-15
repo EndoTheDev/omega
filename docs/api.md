@@ -287,7 +287,11 @@ restarting the meter at the mount moment; a running tool line has
 always carried the same field, and a tool call emits no event of its
 own, so the snapshot's age is added back to it on the way out - the
 served anchor is the call's true elapsed-so-far, never the call-open
-anchor the last event baked.
+anchor the last event baked. A text segment a tool call FOLLOWS is
+finished, so it ships settled - measured span, no running bit - for the
+whole of the call even though the record is still open for the result
+(card t_484cbb27): the tool's wall clock bills to nobody, and a
+remounted row must not tick off a window the accumulator closed.
 
 ### GET /sessions/{id}/variants (+ POST/PATCH)
 

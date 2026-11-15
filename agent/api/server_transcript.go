@@ -362,23 +362,24 @@ func freshenRunningCalls(items []transcriptItem, age time.Duration) []transcript
 // Running is true only on the open record's still-in-flight parts: its
 // thinking streams while no content has started, its content streams,
 // and every call the results have not answered is the running tool
-// line. Pure.
+// line. A record whose segment a tool call already ended (segDone)
+// ships its text rows SETTLED - measured spans, no running bit - even
+// though the record is still open for the call's result: the tool's
+// wall clock belongs to nobody, and the text can no longer grow (card
+// t_484cbb27). Pure.
 func appendRecordItems(items []transcriptItem, rec assistantRecord, open bool, now time.Time) []transcriptItem {
 	if rec.thinking != "" {
 		it := transcriptItem{Kind: "thinking", Content: rec.thinking}
-		if open {
-			// the reasoning phase is over once content started - running
-			// is the in-flight hint, not the record's life story
-			if rec.content == "" {
-				it.Running = true
-				// the open span's elapsed-so-far (card t_95385aba): a
-				// remounted thinking block counts on from the reasoning
-				// already burnt instead of restarting at the mount
-				// moment - the same anchor a running tool line carries
-				it.ElapsedMs = phaseElapsed(rec.thinkDur, rec.lastThink, rec.openAt, now)
-			} else {
-				it.ThinkingMs = rec.thinkDur.Milliseconds()
-			}
+		// the reasoning phase is over once content started or a tool
+		// call closed the segment - running is the in-flight hint, not
+		// the record's life story
+		if open && !rec.segDone && rec.content == "" {
+			it.Running = true
+			// the open span's elapsed-so-far (card t_95385aba): a
+			// remounted thinking block counts on from the reasoning
+			// already burnt instead of restarting at the mount
+			// moment - the same anchor a running tool line carries
+			it.ElapsedMs = phaseElapsed(rec.thinkDur, rec.lastThink, rec.openAt, now)
 		} else {
 			it.ThinkingMs = rec.thinkDur.Milliseconds()
 		}
@@ -386,13 +387,16 @@ func appendRecordItems(items []transcriptItem, rec assistantRecord, open bool, n
 	}
 	if rec.content != "" {
 		it := transcriptItem{Kind: "message", Content: rec.content}
-		it.Running = open
-		if !open {
-			it.ResponseMs = rec.respDur.Milliseconds()
-		} else {
+		it.Running = open && !rec.segDone
+		if it.Running {
 			// the answer's elapsed-so-far (card t_95385aba) - the
 			// response twin of the thinking anchor above
 			it.ElapsedMs = phaseElapsed(rec.respDur, rec.lastResp, rec.openAt, now)
+		} else {
+			// a finished segment's measured span: the same number the
+			// persisted row will carry, so the landing turn never
+			// snaps the label and a remount mid-call never ticks it
+			it.ResponseMs = rec.respDur.Milliseconds()
 		}
 		items = append(items, it)
 	}

@@ -516,20 +516,111 @@ func TestLiveTranscriptItemsCarryStreamingElapsed(t *testing.T) {
 	}
 
 	// the answer ended and its tool is running: the tool call closed
-	// the phase window, so the anchor is the measured span - the tool's
-	// wall clock never bills to the answer a remount restores
+	// the phase window AND finished the segment (segDone), so the row
+	// ships its measured span as a SETTLED row - no running bit, no
+	// ticking meter anchored at the frozen window, no snap when the run
+	// lands (card t_484cbb27). The frozen anchor itself is
+	// phaseElapsed's law, pinned by TestPhaseElapsedSpansTheBoundary.
 	items = liveTranscriptItems(nil, assistantRecord{
 		content:    "answered, now calling",
 		respDur:    1500 * time.Millisecond,
 		lastResp:   now.Add(-20 * time.Second),
+		segDone:    true,
 		toolCalls:  []core.ToolCall{{ID: "c1", Name: "shell.run"}},
 		callStarts: map[string]time.Time{"c1": now.Add(-19 * time.Second)},
 	}, now)
 	if len(items) != 2 || items[0].Kind != "message" || items[1].Kind != "tool_call" {
 		t.Fatalf("answer-plus-tool items = %+v", kindsOf(items))
 	}
-	if items[0].ElapsedMs != 1500 {
-		t.Fatalf("a closed answer window anchors at its measured 1500, got %d", items[0].ElapsedMs)
+	if items[0].Running || items[0].ElapsedMs != 0 || items[0].ResponseMs != 1500 {
+		t.Fatalf("a finished segment ships its measured 1500 as a settled row: %+v", items[0])
+	}
+	if !items[1].Running {
+		t.Fatalf("the call itself still runs: %+v", items[1])
+	}
+}
+
+// TestSegmentFinishedBoundarySettlesTheTextRows: a tool call that
+// follows accumulated text FINISHES the segment it followed. The
+// record stays open (it takes the call, the result, then splits), but
+// its thinking/answer rows are settled history on both wires: measured
+// spans, no running bit - a remount mid-call renders the frozen span
+// instead of a meter ticking off a closed window, and nothing snaps
+// when the run lands (card t_484cbb27).
+func TestSegmentFinishedBoundarySettlesTheTextRows(t *testing.T) {
+	s, _ := newTestServerWithStore(t)
+	var recs []assistantRecord
+	var rec assistantRecord
+	req := chatRequest{SessionID: "segdone"}
+	feed := func(ev core.Event) { s.accumulateAssistant(&recs, &rec, ev, req) }
+
+	feed(core.StreamEvent{Event: core.ThinkingChunk{Content: "considering"}})
+	feed(core.StreamEvent{Event: core.ResponseChunk{Content: "calling the checker"}})
+	if rec.segDone {
+		t.Fatalf("a live segment is not finished: %+v", rec)
+	}
+	// the answer is still streaming while nothing followed it
+	live := liveTranscriptItems(nil, rec, time.Now())
+	if len(live) != 2 || live[1].Kind != "message" || !live[1].Running {
+		t.Fatalf("live answer must stream: %+v", live)
+	}
+
+	feed(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{ID: "c1", Name: "shell.run"}}})
+	if !rec.segDone {
+		t.Fatal("a tool call after text must finish the segment")
+	}
+
+	// the wire shape both surfaces read, durations deterministic (the
+	// accumulator's ms spans under a same-millisecond feed are 0)
+	settled := liveTranscriptItems(nil, assistantRecord{
+		thinking:   "considering",
+		content:    "calling the checker",
+		thinkDur:   2200 * time.Millisecond,
+		respDur:    900 * time.Millisecond,
+		lastResp:   time.Now().Add(-30 * time.Second),
+		segDone:    true,
+		toolCalls:  []core.ToolCall{{ID: "c1", Name: "shell.run"}},
+		callStarts: map[string]time.Time{"c1": time.Now().Add(-5 * time.Second)},
+	}, time.Now())
+	if len(settled) != 3 {
+		t.Fatalf("items = %v, want thinking, message, tool_call", kindsOf(settled))
+	}
+	if settled[0].Running || settled[0].ElapsedMs != 0 || settled[0].ThinkingMs != 2200 {
+		t.Fatalf("finished thinking must settle at its span: %+v", settled[0])
+	}
+	if settled[1].Running || settled[1].ElapsedMs != 0 || settled[1].ResponseMs != 900 {
+		t.Fatalf("finished answer must settle at its span: %+v", settled[1])
+	}
+	if !settled[2].Running {
+		t.Fatalf("the unanswered call still runs: %+v", settled[2])
+	}
+
+	// the panel wire mirrors the same rows: the text rows are complete
+	// (no streaming status, no meter anchor), the call row streams
+	rows := chatRows(settled)
+	if len(rows) != 3 {
+		t.Fatalf("panel rows = %d, want 3", len(rows))
+	}
+	if rows[0].Status != core.ChatStatusComplete || rows[0].Blocks[0].Running || rows[0].Blocks[0].ThinkingMs != 2200 || rows[0].Blocks[0].ElapsedMs != 0 {
+		t.Fatalf("panel thinking row = %+v", rows[0].Blocks[0])
+	}
+	if rows[1].Status != core.ChatStatusComplete || rows[1].Blocks[0].Running || rows[1].Blocks[0].ResponseMs != 900 || rows[1].Blocks[0].ElapsedMs != 0 {
+		t.Fatalf("panel answer row = %+v", rows[1].Blocks[0])
+	}
+	if rows[2].Status != core.ChatStatusStreaming || !rows[2].Blocks[0].Running {
+		t.Fatalf("panel call row = %+v", rows[2].Blocks[0])
+	}
+
+	// the next segment is live again: the chunk after the result splits
+	// into a fresh record that streams (the flag never leaks forward)
+	feed(core.ToolResultEvent{Message: core.NewToolResult("PASS", "c1", false)})
+	feed(core.StreamEvent{Event: core.ResponseChunk{Content: "the verdict"}})
+	if len(recs) != 1 || rec.segDone {
+		t.Fatalf("fresh segment must be live: recs=%d segDone=%v", len(recs), rec.segDone)
+	}
+	next := liveTranscriptItems(nil, rec, time.Now())
+	if len(next) != 1 || next[0].Kind != "message" || !next[0].Running {
+		t.Fatalf("the new answer streams: %+v", next)
 	}
 }
 
