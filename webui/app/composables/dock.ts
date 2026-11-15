@@ -345,9 +345,11 @@ export function isSplit(n: DockNode): n is DockSplit {
 // t_d04a1c80, commit 8eabefc7) a close used to seat in the emptied pane.
 //
 // One law, three sentences:
-//   - a pane's LAST tab never closes: closeTab refuses the request and
-//     DockPane renders no X on it. The lock IS how the pane stays
-//     non-empty - nothing has to be seated in its place;
+//   - a pane's LAST tab never closes: closeTab refuses the request, and the
+//     X on that tab renders DISABLED and DIMMED instead of vanishing (card
+//     t_b72a4ee3 supersedes t_9855a20e's invisible refusal - the lock is
+//     VISIBLE now, the law itself unchanged). The lock IS how the pane
+//     stays non-empty - nothing has to be seated in its place;
 //   - nothing is minted to fill an empty pane. A pane emptied by a GESTURE
 //     (a split, a tab dragged out of a pane that cannot close) renders the
 //     bar-less empty state DockPane already had and a drop refills it; the
@@ -360,6 +362,14 @@ export function isSplit(n: DockNode): n is DockSplit {
 // A GROWN root's classic bar is not a pane for this law (v0.14.4 ruling 1):
 // its content lives in the local leaves, its own cell stays empty by
 // design.
+
+/** card t_b72a4ee3: THE LOCKED LAST TAB's single condition - a pane down to
+    its last tab refuses every close that would empty it. closeTab guards on
+    this predicate and DockPane's dimmed X reads it through the same one, so
+    the surface can never drift from the refusal. */
+export function lastTabLocked(pane: DockPane): boolean {
+  return pane.tabs.length <= 1;
+}
 
 /** card t_9855a20e: the retired never-zero placeholder id - LEGACY now
     (dockables.ts). No op mints it; the boot repair below removes it. */
@@ -1598,10 +1608,12 @@ export function openTab(tree: DockNode, paneId: string, tab: DockTab): DockNode 
 }
 
 /** close a tab. card t_9855a20e (Endo ruling 2026-11-14, THE LOCKED LAST
-    TAB): a pane's LAST tab never closes - the request is refused and the
-    tab renders no X (DockPane's tabClosable). That refusal is the whole
-    never-zero law now: no close can empty a pane, so nothing is seated in
-    its place (the 8eabefc7 "new tab" placeholder is retired).
+    TAB): a pane's LAST tab never closes - the request is refused. card
+    t_b72a4ee3 keeps that guard and changes only the SURFACE: the X renders
+    on that tab too, disabled and dimmed (DockPane reads lastTabLocked), so
+    the refusal is visible instead of absent. That refusal is the whole
+    never-zero law: no close can empty a pane, so nothing is seated in its
+    place (the 8eabefc7 "new tab" placeholder is retired).
     card t_4ae27e0d: an UNCLOSEABLE tab refuses too - the pinned sidebars'
     tabs have no X at all. Endo ruling 2026-10-25, corrected t_b620f99d:
     the last-main-pane law protects the PANE (removePane), not the tabs -
@@ -1613,7 +1625,7 @@ export function closeTab(tree: DockNode, paneId: string, index: number): DockNod
   const pane = findPane(tree, paneId);
   const tab = pane?.tabs[index];
   if (!pane || !tab || !isClosableTab(tab.component)) return tree;
-  if (pane.tabs.length <= 1) return tree; // the locked last tab
+  if (lastTabLocked(pane)) return tree; // the locked last tab
   return cloneTreeWith(tree, (n) => {
     if (isPane(n) && n.id === paneId) {
       if (n.tabs.length <= index) return;
@@ -3031,7 +3043,8 @@ export interface DockApi {
   focus: (paneId: string, index: number) => void;
   /** card 2 tabs: open a NEW tab of a component in the pane, activating it */
   openTab: (paneId: string, tab: DockTab) => void;
-  /** card 2 tabs: close a tab (last one empties the pane - it stays alive) */
+  /** card 2 tabs: close a tab - a pane's LAST tab refuses (lastTabLocked);
+      card t_b72a4ee3: the X on that tab renders disabled + dimmed */
   closeTab: (paneId: string, index: number) => void;
   /** card 2 DnD: move a tab (same-pane reorder or between panes) */
   moveTab: (fromPaneId: string, fromIndex: number, toPaneId: string, toIndex: number) => void;

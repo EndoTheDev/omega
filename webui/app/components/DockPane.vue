@@ -81,18 +81,27 @@
             <span
               v-if="!iconTabs"
               class="dock-tab-title">{{ tabTitle(t) }}</span>
-            <!-- the close X: closable components only (chat today) AND only
-                 while the pane hosts another tab - card t_9855a20e's
-                 LOCKED LAST TAB: the tab left alone in a pane carries no X,
-                 because closing it would leave the pane empty. It surfaces
-                 on hover (CSS) wherever the tab lives - pane identity no
-                 longer decides tab chrome (t_d6b657a7) -->
+            <!-- the close X: every closable-class tab carries one (chat,
+                 viewer, browser, settings). card t_b72a4ee3 (Endo ruling
+                 2026-11-14, superseding t_9855a20e's INVISIBLE refusal):
+                 the pane's LONE tab keeps its X too - DISABLED and DIMMED,
+                 because closing it would empty the pane (closeTab still
+                 refuses it; lastTabLocked is the one condition both read).
+                 aria-disabled + tabindex -1 rather than the native disabled
+                 attribute: a natively disabled button fires no mouse events
+                 in Chrome, which would kill the title explaining the lock
+                 and make the refusal invisible again. It surfaces on hover
+                 (CSS) wherever the tab lives - pane identity no longer
+                 decides tab chrome (t_d6b657a7) -->
             <button
               v-if="tabClosable(t)"
               class="dock-tab-close"
+              :class="{ locked: lastTabLocked }"
+              :aria-disabled="lastTabLocked || undefined"
+              :tabindex="lastTabLocked ? -1 : undefined"
               :aria-label="'close ' + tabTitle(t) + ' tab'"
-              title="close tab"
-              @click.stop="api.closeTab(node.id, i)">
+              :title="lastTabLocked ? 'the last tab cannot close' : 'close tab'"
+              @click.stop="onTabClose(i)">
               ×
             </button>
           </div>
@@ -184,9 +193,10 @@
          DELETED - with it the icons-bleeding-at-the-sidebar-bottom bug
          (the overflow came from the element, not from a fix). card
          t_9855a20e: the pane a close could empty is gone too (THE LOCKED
-         LAST TAB - the lone tab carries no X and closeTab refuses), so
-         this surface now renders only for a pane a GESTURE left empty: a
-         fresh split group, or a shell whose last tab was dragged out.
+         LAST TAB - closeTab refuses; card t_b72a4ee3 dimmed the X instead
+         of removing it), so this surface now renders only for a pane a
+         GESTURE left empty: a fresh split group, or a shell whose last tab
+         was dragged out.
          Do NOT build a replacement menu here - the 0.17.3 canvas
          class-law + menu work is the future home for adding views; until
          then a drop (or the menubar/palette openers) refills the pane. -->
@@ -252,6 +262,9 @@
     DOCK_API_KEY,
     DOCK_CHAT_OPEN_KEY,
     DOCK_TAB_TITLE_KEY,
+    // card t_b72a4ee3: the LOCKED LAST TAB's one condition - imported under
+    // a local name so the pane's computed does not shadow the pure helper
+    lastTabLocked as lastTabLockedIn,
     type DockPane as DockPaneNode,
     type DockTab,
   } from "../composables/dock";
@@ -311,15 +324,25 @@
   // may live here or leave (drop into / out of this bar freely), the only
   // lock is sessions leaving "left".
   const pinned = computed(() => props.node.edge !== undefined);
+  // card t_b72a4ee3: the X renders on EVERY closable-class tab - the pane's
+  // population no longer decides whether the affordance exists, only
+  // whether it is LIVE or dimmed (lastTabLocked, right below). card
+  // t_9855a20e superseded: its refusal was invisible (no X at all), and
+  // this card makes it visible while the LAW it locked stays - closeTab
+  // still refuses the close that would empty the pane. Endo ruling
+  // 2026-10-25, corrected t_b620f99d, stands: the last-main-pane law
+  // protects the PANE (removePane), never the tabs - the census feeds no X.
   function tabClosable(t: DockTab): boolean {
-    // Endo ruling 2026-10-25, corrected t_b620f99d: the last-main-pane
-    // law protects the PANE, not the tabs - every tab's X renders
-    // whatever the census says. card t_9855a20e (Endo ruling 2026-11-14,
-    // THE LOCKED LAST TAB): a pane's LAST tab carries no X at all - the
-    // close that would empty the pane is not offered (closeTab refuses
-    // it too), so the closed tab never had to come back as a blank
-    // "New Tab" placeholder.
-    return isClosableTab(t.component) && props.node.tabs.length > 1;
+    return isClosableTab(t.component);
+  }
+  // the SAME condition closeTab's guard reads (dock.ts lastTabLocked) - one
+  // predicate, so the dimmed surface can never drift from the refusal
+  const lastTabLocked = computed(() => lastTabLockedIn(props.node));
+  // the X's click path: the hard guard is closeTab's (it refuses the same
+  // case); this one keeps the dimmed affordance inert without a request
+  function onTabClose(index: number) {
+    if (lastTabLocked.value) return;
+    api.closeTab(props.node.id, index);
   }
 
   const outletName = computed(() => {

@@ -8,14 +8,15 @@
 // panes; the empty launcher pane IS a main pane and stays.
 //
 // TAB close is a separate computation: a pane's LAST tab is LOCKED. It
-// renders no X (DockPane's tabClosable) and `closeTab` refuses the
-// request, so no close can empty a pane - which is exactly how the pane
-// stays non-empty. Nothing is seated in its place: the never-zero
-// placeholder of commit 8eabefc7 (card t_d04a1c80) is retired as the
-// blank "empty bad looking space" Endo closed his last chat into. The two
-// dead states it can leave on disk - a persisted placeholder seat, a
-// zero-tab pane from an older record - are repaired at boot onto a fresh
-// new-chat tab (`repairPaneSeats`).
+// keeps its X - disabled and dimmed (card t_b72a4ee3 superseded
+// t_9855a20e's no-X surface) and `closeTab` refuses the request, so no
+// close can empty a pane - which is exactly how the pane stays non-empty.
+// Nothing is seated in its place: the never-zero placeholder of commit
+// 8eabefc7 (card t_d04a1c80) is retired as the blank "empty bad looking
+// space" Endo closed his last chat into. The two dead states it can leave
+// on disk - a persisted placeholder seat, a zero-tab pane from an older
+// record - are repaired at boot onto a fresh new-chat tab
+// (`repairPaneSeats`).
 //
 // Render-free; node's built-in test runner.
 import { describe, it } from "node:test";
@@ -27,6 +28,7 @@ import {
   closeTab,
   findPane,
   isLastMainPane,
+  lastTabLocked,
   mainPaneCount,
   makePane,
   makeSplit,
@@ -166,6 +168,14 @@ describe("case 1: a single main pane - pane X hidden, its tabs locked", () => {
     assert.equal(main.tabs.length, 1);
     assert.equal(closeTab(t, main.id, 0), t, "the last tab never closes");
     assert.deepEqual(comps(asPaneOf(t, main.id)), ["chat"], "the tab is still there");
+  });
+  it("lastTabLocked is the guard's own condition (card t_b72a4ee3)", () => {
+    // one predicate: closeTab guards on it, DockPane's dimmed X reads it
+    const { main } = shellTree();
+    assert.equal(lastTabLocked(main), true, "a lone tab is locked");
+    assert.equal(lastTabLocked(shellTreeTwoTabs().main), false, "a tab with company is free");
+    const empty: DockPane = { ...main, tabs: [] };
+    assert.equal(lastTabLocked(empty), true, "an empty pane has nothing to close");
   });
   it("a tab WITH company still closes; the survivor is then locked", () => {
     const { t, main } = shellTreeTwoTabs();
@@ -375,9 +385,9 @@ describe("the pane-seat repair through reload (card t_9855a20e)", () => {
 });
 
 describe("the chrome wiring (DockPane source pins)", () => {
-  it("the tab X rides component closability AND the pane's tab count", () => {
+  it("the tab X rides component closability ALONE - population no longer removes it", () => {
     const pane = src("app/components/DockPane.vue");
-    // the tab close button renders behind tabClosable - NO census term
+    // the tab close button still renders behind tabClosable - NO census term
     // (t_b620f99d: the pane law must not feed the tab-close rendering)
     assert.match(pane, /v-if="tabClosable\(t\)"/);
     assert.doesNotMatch(
@@ -385,13 +395,61 @@ describe("the chrome wiring (DockPane source pins)", () => {
       /tabClosable.*isLastMainPane/,
       "the census never feeds the tab X",
     );
-    // card t_9855a20e: THE LOCKED LAST TAB - the lone tab renders no X
+    // card t_b72a4ee3: THE LOCKED LAST TAB's surface flipped - the X exists
+    // on every closable-class tab (the COMPONENT half only)
     assert.match(
       pane,
-      /function tabClosable\(t: DockTab\): boolean \{[\s\S]*?isClosableTab\(t\.component\) && props\.node\.tabs\.length > 1/,
-      "a pane's last tab carries no close X",
+      /function tabClosable\(t: DockTab\): boolean \{\s*return isClosableTab\(t\.component\);\s*\}/,
+      "a pane's lone tab keeps its X",
+    );
+    assert.doesNotMatch(
+      pane,
+      /isClosableTab\(t\.component\) && props\.node\.tabs\.length/,
+      "the pane population never decides whether the X exists",
     );
     // the pane remove paths ride the store's census-guarded read
     assert.match(pane, /v-if="api\.canRemovePane\(node\.id\)"/);
+  });
+  it("the lone tab's X is disabled + dimmed over the guard's OWN predicate", () => {
+    const pane = src("app/components/DockPane.vue");
+    const dock = src("app/composables/dock.ts");
+    // ONE condition: dock.ts exports it, closeTab guards with it, the pane
+    // computes from it (no second copy of the population test in the SFC)
+    assert.match(
+      dock,
+      /export function lastTabLocked\(pane: DockPane\): boolean \{\s*return pane\.tabs\.length <= 1;\s*\}/,
+    );
+    assert.match(dock, /if \(lastTabLocked\(pane\)\) return tree;/);
+    assert.match(pane, /lastTabLocked as lastTabLockedIn/);
+    assert.match(pane, /const lastTabLocked = computed\(\(\) => lastTabLockedIn\(props\.node\)\);/);
+    // the surface: dimmed class, aria-disabled, OUT of the tab order (a
+    // keyboard focus must never reach a close that cannot happen)
+    assert.match(pane, /:class="\{ locked: lastTabLocked \}"/);
+    assert.match(pane, /:aria-disabled="lastTabLocked \|\| undefined"/);
+    assert.match(pane, /:tabindex="lastTabLocked \? -1 : undefined"/);
+    assert.match(
+      pane,
+      /:title="lastTabLocked \? 'the last tab cannot close' : 'close tab'"/,
+      "the lock explains itself on hover",
+    );
+    // the click path refuses before it asks the store, and the live X keeps
+    // its old request
+    assert.match(
+      pane,
+      /function onTabClose\(index: number\) \{\s*if \(lastTabLocked\.value\) return;\s*api\.closeTab\(props\.node\.id, index\);\s*\}/,
+    );
+    // the locked X is NOT the native disabled attribute: a natively
+    // disabled button fires no mouse events in Chrome, which would kill the
+    // title that explains the lock
+    assert.doesNotMatch(pane, /:disabled="lastTabLocked/, "aria-disabled keeps the tooltip alive");
+  });
+  it("the locked X is the one X that does not wait for hover (css)", () => {
+    const css = src("app/assets/css/main.css");
+    assert.match(
+      css,
+      /\.dock-tab-close\.locked,[\s\S]{0,80}\.dock-tab:hover \.dock-tab-close\.locked \{[\s\S]*?opacity: 0?\.\d+/,
+      "dimmed at rest, and hover cannot brighten it",
+    );
+    assert.match(css, /\.dock-tab-close\.locked[\s\S]*?cursor: default/);
   });
 });
