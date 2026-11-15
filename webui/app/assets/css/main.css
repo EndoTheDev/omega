@@ -1334,15 +1334,17 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
    One turn = one block: the user message plus everything its run
    produced. Blocks repeat the pane's internal rhythm (flex column) so
    the items render as they did flat; the block boundary is the pane gap
-   - spacing only, no chrome. Inside a turn the gap is TIGHT (6px,
-   t_5063675a): the thinking and tool strips read as one running log
-   under their question, not as separate cards - Endo's in-app comment,
-   "adjust the height of those blocks ... so that the gaps between them
-   are smaller". The user message's own padding is not touched. */
-.msg-block { display: flex; flex-direction: column; gap: 6px; }
+   - spacing only, no chrome. Inside a turn the gap is TIGHT (4px,
+   t_5063675a then the 2026-11-15 compactness sweep): the thinking and
+   tool strips read as one running log under their question, not as
+   separate cards - Endo's in-app comments, "adjust the height of those
+   blocks ... so that the gaps between them are smaller", and later "the
+   gaps between thinking and tool calls blocks could also be smaller/
+   compacter". The user message's own padding is not touched. */
+.msg-block { display: flex; flex-direction: column; gap: 4px; }
 
 /* stacked mode (card t_84e4653c, visual fix): the BETWEEN-turn gap must
-   outweigh the within-turn gap or the block grouping is invisible - 6px
+   outweigh the within-turn gap or the block grouping is invisible - 4px
    inside a turn (above), 28px between turns (here). Flat 'chat' keeps
    the uniform 12px chronology. */
 .messages.stacked { gap: 28px; }
@@ -1377,10 +1379,32 @@ labels stopped short of the right edge. */
 /* card t_e4280de7: the group rides the same stacked law as the rows */
 .messages.stacked .toolgroup { max-width: 100%; }
 
+/* compactness sweep (2026-11-15): the 4px within-turn gap above is half
+   the story - each strip row also carries ~13px of vertical slack above
+   and below its label, because the row is a 44px click target. That
+   slack is what made the running log read airy, so the transcript rows
+   take the second notch here: 44px -> 36px, which is still a
+   comfortable click row. Trimming the padding instead would have
+   changed nothing - min-height was the binding constraint. Scoped to
+   the turn block: the panels that reuse these rows keep the 44px
+   floor. */
+.msg-block .thinking summary,
+.msg-block .toolcall summary,
+.msg-block .toolgroup summary { min-height: 36px; }
 
+
+/* the assistant text block is the ONE row that stops a little short of
+   the pane (Endo 2026-11-15, in-app on chat efd2b0f1, 946px lane: "the
+   assistance response is a little too wide ... just a little. make it
+   less wide"). The 2026-10-20 full-width law still holds for the user
+   rows, the thinking strips and the tool rows - only the answer text
+   insets its right edge, so the column stays left-aligned and the
+   measure gets a touch shorter without becoming a messenger pill. 92%
+   keeps it proportional: ~74px short on his pane, and it never inverts
+   on a narrow one. */
 .messages.stacked .msg.assistant .bubble {
   width: 100%;
-  max-width: 100%;
+  max-width: 92%;
   background: none;
   border: none;
   padding: 0;

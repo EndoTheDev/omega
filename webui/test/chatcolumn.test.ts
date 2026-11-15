@@ -99,3 +99,48 @@ describe("the transcript column tracks the composer (t_5063675a)", () => {
     );
   });
 });
+
+// The 2026-11-15 compactness sweep (Endo, in-app on chat efd2b0f1, 946px
+// lane: "the assistance response is a little too wide ... just a little.
+// make it less wide ... and the gaps between thinking and tool calls
+// blocks could also be smaller/compacter"). Two numbers carry it, and
+// both are taste-with-a-floor: the answer text insets its right edge but
+// must stay a document block (never a messenger pill), and the strip rows
+// tighten inside the turn block while the reused rows keep their click
+// floor.
+describe("the compactness sweep keeps the transcript a document (t_b25df7b0)", () => {
+  const pct = (body: string, prop: string) =>
+    Number(body.match(new RegExp(`${prop}:\\s*(\\d+)%`))![1]);
+
+  it("the assistant answer is a little narrower than the pane", () => {
+    const bubble = rule(".messages.stacked .msg.assistant .bubble");
+    const max = pct(bubble, "max-width");
+    assert.ok(max < 100, `the answer text is still full width (${max}%)`);
+    assert.ok(max >= 85, `the answer text became a pill (${max}%) - he asked for a little`);
+  });
+
+  it("every other stacked row stays full width (the 2026-10-20 law still stands)", () => {
+    const user = rule(".messages.stacked .msg.user .bubble");
+    assert.match(user, /width:\s*100%;/, "user rows are documents, not pills");
+    assert.equal(pct(user, "max-width"), 100);
+    // these are single-line rules; the answer's inset is the only exception
+    for (const line of [
+      ".messages.stacked .toolcall { max-width: 100%; }",
+      ".messages.stacked .thinking { max-width: 100%; }",
+      ".messages.stacked .toolgroup { max-width: 100%; }",
+    ]) {
+      assert.ok(css.includes(line), `${line} is missing - every non-answer stacked row stays full width`);
+    }
+  });
+
+  it("the transcript strip rows tighten, the reused rows keep their click floor", () => {
+    const base = Number(rule(".thinking summary").match(/min-height:\s*(\d+)px/)![1]);
+    const scoped = css.match(
+      /\.msg-block \.thinking summary,\s*\n\.msg-block \.toolcall summary,\s*\n\.msg-block \.toolgroup summary \{\s*min-height:\s*(\d+)px/,
+    );
+    assert.ok(scoped, "the turn block's strip-row min-height rule is missing from main.css");
+    const tight = Number(scoped![1]);
+    assert.ok(tight < base, `the strip rows did not tighten (${tight}px vs the ${base}px base)`);
+    assert.ok(tight >= 32, `the strip rows collapsed below a comfortable click row (${tight}px)`);
+  });
+});

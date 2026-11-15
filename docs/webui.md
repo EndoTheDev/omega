@@ -340,9 +340,14 @@ Everything else animates through `transition`, not keyframes.
   `accumulateAssistant` in the backend - same boundary, both sides).
   Thinking blocks accumulate per reasoning run; tool results attach to
   their calls by `tool_call_id`, not position.
-- Stack mode: every block renders full width on the background;
-  thinking strips de-card on dark. Order never changes - live-pin is
-  scroll + sticky layout, not render order.
+- Stack mode: every block renders full width on the background; the
+  assistant TEXT block alone stops a little short of the right edge
+  (92%, ~74px on a 946px pane - Endo 2026-11-15: "the assistance
+  response is a little too wide ... just a little"). Within a turn the
+  strips sit on a 4px gap in 36px rows (the panels that reuse those rows
+  keep their 44px click floor); the 28px turn boundary stays the
+  dominant gap. Thinking strips de-card on dark. Order never changes -
+  live-pin is scroll + sticky layout, not render order.
 - Statusbar telemetry is honest: the token counter ticks per chunk
   (chars/4 estimate, corrected by real usage at stream end); live
   chunks/s comes from real arrival times.
