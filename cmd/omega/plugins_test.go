@@ -36,7 +36,8 @@ func TestBuildPlugins(t *testing.T) {
 	// the event ring + the log tail capsule) = 24.
 	// -logging -the builtin shell plugin (t_ee3a968b, the 0.17.3 modules
 	// fold: logging folds INTO observability, and the shell tool family
-	// folds into the terminal capsule's one "shell" registration -
+	// folds into the terminal capsule's one registration (the module
+	// is named `terminal` since t_9ae9a25a; the shell.* tool names stay) -
 	// registration surgery, no code moved) = 22.
 	const want = 22
 	if len(plugins) != want {

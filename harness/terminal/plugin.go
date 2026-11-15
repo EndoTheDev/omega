@@ -18,9 +18,9 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// Plugin adapts the shell capsule into omega's plugin system. Since the
-// 0.17.3 modules fold (card t_ee3a968b) ONE registration carries both
-// faces of the shell domain: the agent's tool family (shell.run /
+// Plugin adapts the terminal capsule into omega's plugin system. Since
+// the 0.17.3 modules fold (card t_ee3a968b) ONE registration carries
+// both faces of the shell domain: the agent's tool family (shell.run /
 // shell.list / shell.read / shell.kill, built by mountShellTools over the
 // process: section's registry) AND the webui's integrated terminal pane
 // (the /terminal pty routes + the lifecycle fence that owns the shells).
@@ -29,8 +29,19 @@ import (
 //
 // The module is opinionated - it opts into the toggleable tier (the tier
 // re-law: "always on: agent-loop, provider and logging; toggleable: the
-// rest"), so a `disabled: [shell]` fold takes the tools, the routes and
-// every live shell with it.
+// rest"), so a `disabled: [terminal]` fold takes the tools, the routes
+// and every live shell with it.
+//
+// IDENTITY (card t_9ae9a25a): the module name IS the package/capsule
+// name. The webui's composition manifests derive each dockable id from
+// the capsule's ui/ dir (`harness/<name>/ui` -> `{ module: "<name>" }`)
+// and the dock's runtime gate joins those ids against the live module
+// list, so plugin Name(), the package dir and the ui dir agree by
+// construction. The capsule answered "shell" while its dir and dockable
+// id said "terminal", and the Terminal chip therefore survived a
+// module toggle-off. The model-facing tool names stay `shell.*` - that
+// is pre-tier API vocabulary, not the module identity (see
+// RegisterBuiltinTool).
 //
 // Mounts through the ExtensionAPI exclusively; the trust-model ruling
 // (the package comment) is part of the design - the route surface is the
@@ -47,7 +58,7 @@ import (
 //	POST   /terminal/{id}/resize  - the pane's rows/cols (SIGWINCH)
 //	DELETE /terminal/{id}         - kill + forget the shell
 //
-// Removal proof: TestShellRemovalProof (cmd/omega/removal_test.go).
+// Removal proof: TestTerminalRemovalProof (cmd/omega/removal_test.go).
 type Plugin struct {
 	store *Store
 	// provider is the tool face (the shell verb family over the process
@@ -93,10 +104,13 @@ func NewPluginWithStore(store *Store) *Plugin {
 func (p *Plugin) Store() *Store { return p.store }
 
 // Name returns the plugin name (the modules registry row, the capsule
-// namespace owner). Since the fold it is `shell` - the tool names never
-// moved (shell.run/list/read/kill are API surface), the module name
-// joins them.
-func (p *Plugin) Name() string { return "shell" }
+// namespace owner). It is `terminal`: the package dir, this name and
+// the webui's dockable id are ONE identity (card t_9ae9a25a - the
+// dock's module gate joins the registry row against the composition
+// manifest, so a second name for the same capsule leaves its chip
+// ungated). The tool names never moved (shell.run/list/read/kill are
+// API surface, registered on the built-in vocabulary rail).
+func (p *Plugin) Name() string { return "terminal" }
 
 // Description implements agent.Describer: both faces on one line.
 func (p *Plugin) Description() string {
@@ -145,8 +159,17 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		rcfg = c
 	}
 	p.provider = NewShellProvider(guard, NewRegistry(rcfg))
+	// the shell.* verb family predates the capsule tier and keeps its
+	// model-facing names (the prompt, the approval gate and every
+	// transcript address them): the module-namespace claim would refuse
+	// `shell.run` from a capsule named `terminal`, so the names ride the
+	// built-in VOCABULARY rail exactly like the store's sessions.* and
+	// the tools capsule's files.grep/glob (RegisterBuiltinTool). The
+	// module identity is the capsule (`terminal`); the tool namespace is
+	// API surface, and renaming it is an Endo decision, not a rename
+	// side effect (card t_9ae9a25a).
 	for name, t := range p.provider.Tools() {
-		if err := api.RegisterTool(name, t); err != nil {
+		if err := api.RegisterBuiltinTool(name, t); err != nil {
 			return err
 		}
 	}
