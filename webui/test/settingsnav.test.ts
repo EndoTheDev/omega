@@ -31,6 +31,7 @@ import {
   SUBGROUP_LABELS,
   anchorSelection,
   buildNav,
+  clampEndFollow,
   clampedRange,
   documentFor,
   expandedCategoryIds,
@@ -1006,6 +1007,45 @@ test("a section at the very end answers a REACHABLE window", () => {
   );
 });
 
+test("the END follows a section that GROWS under a pane resting on it", () => {
+  // card t_9e2aaca7, the nightly's clamp witness: the pane rested at 810
+  // while its own end measured 814, and every later pass found 810 legal,
+  // so the 4px never healed. The clamp records the end it left the pane on;
+  // a pass that measures a LONGER end answers the new one.
+  assert.equal(
+    clampEndFollow(810, { at: 810, max: 810 }, 814),
+    814,
+    "a pane resting on the end is carried to the grown end",
+  );
+  // the same in the lane's own numbers (dev tip: end 772 -> 776)
+  assert.equal(clampEndFollow(772, { at: 772, max: 772 }, 776), 776);
+});
+
+test("a pane parked INSIDE the section never follows a grown end", () => {
+  // the clamp bounds where the pane may rest; it is not a rubber band. A
+  // user who stopped 40px above the end keeps their place.
+  assert.equal(
+    clampEndFollow(730, { at: 730, max: 810 }, 814),
+    null,
+    "a parked pane is never dragged down",
+  );
+  // and a scroll that moved OFF the recorded end clears the follow - the
+  // record is about the position, not the section
+  assert.equal(clampEndFollow(808, { at: 810, max: 810 }, 814), null);
+});
+
+test("the follow never fights the bound or repeats itself", () => {
+  // a SHRUNK end is the bound's job (min(now, max) pulls the pane up) -
+  // the follow answers null so the two rules can never disagree
+  assert.equal(clampEndFollow(810, { at: 810, max: 810 }, 806), null);
+  // already on the new end: no write (a write fires another scroll event)
+  assert.equal(clampEndFollow(814, { at: 814, max: 814 }, 814), null);
+  // a sub-pixel wobble is not a grown end
+  assert.equal(clampEndFollow(810, { at: 810, max: 810 }, 810.4), null);
+  // no record (a fresh selection, a parked pane) - nothing to follow
+  assert.equal(clampEndFollow(810, null, 814), null);
+});
+
 test("only a REAL selection clamps, measured fresh, on the scroll event", () => {
   // the arithmetic lives in settingsNav (asserted above); a second copy in
   // the component is the drift this pins out
@@ -1064,6 +1104,25 @@ test("only a REAL selection clamps, measured fresh, on the scroll event", () => 
     tab,
     /syncSpy\(\);\s*observeClamp\(\);\s*applyClamp\(\);/,
     "a rebuilt document re-arms and re-measures the clamp",
+  );
+  // card t_9e2aaca7: the END is the side the bound cannot follow both ways,
+  // so the pass asks the pure follow rule and records the end it left the
+  // pane on - a second copy of that decision in the component is the drift
+  // the assertions above pin out
+  assert.match(
+    tab,
+    /const follow = clampEndFollow\(now, clampHold, max\);\s*const next = follow \?\? Math\.min\(Math\.max\(now, min\), max\);/,
+    "the clamp follows a grown end through the pure rule",
+  );
+  assert.match(
+    tab,
+    /clampHold = Math\.abs\(next - max\) < 1 \? \{ at: next, max \} : null;/,
+    "the clamp remembers only the end it is resting ON",
+  );
+  assert.match(
+    tab,
+    /watch\(clampId, \(\) => \{\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*clampHold = null;/,
+    "a new selection drops the old section's end",
   );
 });
 
