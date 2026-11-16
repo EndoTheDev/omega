@@ -63,6 +63,39 @@ url_section() { jsq '(()=>{return new URL(window.location.href).searchParams.get
 sec_geom() {
   jsq "(()=>{const root=document.querySelector('.settings-body');const el=document.querySelector('.settings-category[data-category=\"$1\"]');if(!root||!el) return '';const top=Math.round(el.getBoundingClientRect().top-root.getBoundingClientRect().top+root.scrollTop);return [top,Math.round(el.offsetHeight),Math.round(root.clientHeight),Math.round(root.scrollHeight)].join('|')})()" 2>&1 | plain
 }
+# rest_probe <id>: "<scrollTop>|<top>|<height>|<viewport>|<content>" - the same
+# four window inputs sec_geom reads, with the pane's OWN rest position beside
+# them, all in one frame. card t_7a06e8aa (nightly 43877173510): grading the
+# pane against a window measured BEFORE the gesture cannot tell a clamp that
+# went stale from a box that moved in between - the two numbers have to come
+# from the same frame or the red names nothing.
+rest_probe() {
+  jsq "(()=>{const root=document.querySelector('.settings-body');const el=document.querySelector('.settings-category[data-category=\"$1\"]');if(!root||!el) return '';const top=Math.round(el.getBoundingClientRect().top-root.getBoundingClientRect().top+root.scrollTop);return [Math.round(root.scrollTop),top,Math.round(el.offsetHeight),Math.round(root.clientHeight),Math.round(root.scrollHeight)].join('|')})()" 2>&1 | plain
+}
+# push_to_end <id>: land the pane on the section's END the way a HAND does.
+# card t_7a06e8aa (nightly 43877173510: "scrollTop: 810, want 814"): a single
+# `scrollTop = 1e6` is ONE pass, and a pass that measures a box still in motion
+# parks the pane short of the end that box settles on - and nothing measures
+# again, because nothing scrolls again (the clamp's box observer answers a
+# CONTENT resize of the section, not a window a pass read early). A hand keeps
+# pushing: every further scroll event is another pass over the LIVE box. Bounded
+# at three pushes. Answers "<pushes>|<scrollTop>|<top>|<height>|<viewport>|<content>"
+# from ONE frame, successful or not - the caller grades it.
+push_to_end() {
+  local i
+  for i in 1 2 3; do
+    if [ "$i" = "1" ]; then
+      assert_eq "$(force_scroll 999999)" "1" "the pane accepts a scroll while a section is selected"
+    else
+      force_scroll 999999 >/dev/null 2>&1
+    fi
+    if poll_js "(()=>{const b=document.querySelector('.settings-body');const el=document.querySelector('.settings-category[data-category=\"$1\"]');if(!b||!el) return false;return Math.abs(b.scrollTop-Math.round(el.offsetHeight-b.clientHeight))<=2})()" 10; then
+      printf '%s|%s' "$i" "$(rest_probe "$1")"
+      return 0
+    fi
+  done
+  printf '3|%s' "$(rest_probe "$1")"
+}
 # sec_range <top> <height> <viewport> <content>: the "<min>|<max>" window the
 # card's clamp allows. The RECIPE's own arithmetic - the pane's answer is
 # never taken as its own witness (the pure maths is pinned in the node suite).
@@ -512,36 +545,41 @@ lo=${range%%|*}; hi=${range##*|}
 assert_eq "$top" "0" "the selected section heads the filtered document"
 step "ok: $target is selected and its window is [$lo, $hi] (top $top, height $h, pane $vp, content $content)"
 
-# BELOW the end: ask for the document's bottom, land on the section's bottom
-assert_eq "$(force_scroll 999999)" "1" "the pane accepts a scroll while a section is selected"
-if ! poll_js "(()=>{const b=document.querySelector('.settings-body');return !!b&&Math.abs(b.scrollTop-$hi)<=2})()" 10; then
-  # card t_9e2aaca7: the red must say WHICH disagreement it saw. Two different
-  # bugs produce this shape - a clamp number that went stale (the LIVE box
-  # still answers the window computed above, the pane rests short of it) and a
-  # window computed from a document that had not settled (the live box no
-  # longer answers $hi). The live measurement, in the same frame as the red,
-  # is what tells them apart; the assertion itself stays exact.
-  live=$(sec_geom "$target")
-  if [ -n "$live" ]; then
-    ltop=${live%%|*}; lrest=${live#*|}
-    lh=${lrest%%|*}; lrest=${lrest#*|}
-    lvp=${lrest%%|*}; lcontent=${lrest##*|}
-    livedetail="live box top/height/pane/content $ltop/$lh/$lvp/$lcontent -> live clamp end $((lh - lvp)), live document end $((lcontent - lvp))"
-  else
-    livedetail="the $target section is not in the document any more"
-  fi
-  die "scrolling past the section's end did not stop at its bottom (scrollTop: $(scroll_top), want $hi, document end $((content - vp)); $livedetail)"
-fi
-pastend=$(scroll_top)
+# BELOW the end: ask for the document's bottom, land on the section's bottom.
+#
+# card t_7a06e8aa (nightly 43877173510: "scrollTop: 810, want 814"): ONE
+# request is not a hand. A single `scrollTop = 1e6` gives the clamp one pass,
+# and a pass that measures a box still in motion parks the pane short of the
+# end that box settles on - and nothing measures again, because nothing
+# scrolls again (the clamp's own box observer answers a CONTENT resize, not a
+# window the pass read early). A real hand keeps pushing: every further scroll
+# event is another pass, and every pass measures the live box. So this block
+# pushes, polls the window the box answers, pushes again while the pane is
+# short of it (bounded), and then grades the pane against the end measured in
+# the SAME frame as its rest position - never against the number read before
+# the gesture.
+prewin="[$lo, $hi]"
+pregeom="top $top, height $h, pane $vp, content $content"
+res=$(push_to_end "$target")
+pushes=${res%%|*}; rest=${res#*|}
+[ -n "$rest" ] || die "the $target section is not in the document at the red frame"
+pastend=${rest%%|*}; lrest=${rest#*|}
+ltop=${lrest%%|*}; lrest=${lrest#*|}
+lh=${lrest%%|*}; lrest=${lrest#*|}
+lvp=${lrest%%|*}; lcontent=${lrest##*|}
+lrange=$(sec_range "$ltop" "$lh" "$lvp" "$lcontent")
+lo=${lrange%%|*}; hi=${lrange##*|}
 # card t_cd9952a3: under the filter the document IS the section, so the
-# clamp's end is the section's OWN bottom - measured live at 763 here,
-# against the document's limit of 767 (the scrollport's 4px of body padding
-# is the only document left below the selected section). Both numbers are
-# pinned: the pane must rest on the CLAMP's number, and that number must
-# still be short of the document's own limit.
-assert_eq "$pastend" "$hi" "the pane rests exactly on the clamp's computed END (the section's own bottom)"
-[ "${pastend:-0}" -lt "$((content - vp))" ] 2>/dev/null || die "the clamp never bit: the pane reached the document's bottom ($pastend of $((content - vp)))"
-step "ok: the selected section stops the pane at its END (scrollTop $pastend == clamp end $hi < document end $((content - vp)))"
+# clamp's end is the section's OWN bottom - measured live at 763 here, against
+# the document's limit of 767 (the scrollport's 4px of body padding is the only
+# document left below the selected section). Both numbers are graded in ONE
+# frame: the pane must rest on the CLAMP's number, and that number must still
+# be short of the document's own limit.
+if [ "$pastend" != "$hi" ]; then
+  die "scrolling past the section's end did not rest on its bottom after $pushes push(es) (scrollTop: $pastend, live clamp end $hi, live document end $((lcontent - lvp)); live box top/height/pane/content $ltop/$lh/$lvp/$lcontent; the window measured before the gesture was $prewin from $pregeom)"
+fi
+[ "${pastend:-0}" -lt "$((lcontent - lvp))" ] 2>/dev/null || die "the clamp never bit: the pane reached the document's bottom ($pastend of $((lcontent - lvp)))"
+step "ok: the selected section stops the pane at its END (scrollTop $pastend == live clamp end $hi < document end $((lcontent - lvp)), $pushes push(es))"
 
 # ABOVE the start: ask for the document's top, land on the section's top
 assert_eq "$(force_scroll 0)" "1" "the pane still accepts a scroll while a section is selected"
@@ -592,11 +630,16 @@ assert_eq "$(navclick "$target")" "1" "re-selecting $target for the resize witne
 if ! poll_js "(()=>{const ids=[...document.querySelectorAll('.settings-category')].map(e=>e.getAttribute('data-category')).join(',');const a=document.querySelector('.settings-nav-cat.active,.settings-nav-sub.active');return ids==='$target'&&!!a&&a.getAttribute('data-category')==='$target'})()" 15; then
   die "re-selecting $target did not filter the document to it (doc: $(doc_ids), active: $(active_id))"
 fi
-assert_eq "$(force_scroll 999999)" "1" "scroll to the section's end again"
-if ! poll_js "(()=>{const b=document.querySelector('.settings-body');return !!b&&Math.abs(b.scrollTop-$hi)<=2})()" 10; then
-  die "the section's end moved on the re-selection (scrollTop: $(scroll_top), want $hi)"
-fi
-held=$(scroll_top)
+res=$(push_to_end "$target")
+push2=${res%%|*}; rest=${res#*|}
+[ -n "$rest" ] || die "the $target section is not in the document on the re-selection"
+held=${rest%%|*}; lrest=${rest#*|}
+wtop=${lrest%%|*}; lrest=${lrest#*|}
+wh=${lrest%%|*}; lrest=${lrest#*|}
+wvp=${lrest%%|*}; wcontent=${lrest##*|}
+wrange=$(sec_range "$wtop" "$wh" "$wvp" "$wcontent")
+whi=${wrange##*|}
+[ "$held" = "$whi" ] || die "the section's end did not hold on the re-selection after $push2 push(es) (scrollTop: $held, live clamp end $whi, live document end $((wcontent - wvp)); the end graded above was $hi)"
 ab set viewport 1280 900 >/dev/null 2>&1
 if ! poll_js "(()=>{const b=document.querySelector('.settings-body');return !!b&&Math.round(b.clientHeight)>$vp})()" 10; then
   die "the pane never took the taller viewport (clientHeight: $(jsq '(()=>{const b=document.querySelector(".settings-body");return Math.round(b.clientHeight)})()' 2>&1 | plain), was $vp)"

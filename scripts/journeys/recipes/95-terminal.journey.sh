@@ -6,7 +6,10 @@
 # node-law+pinned in webui/test (terminal.test.ts). Pins:
 #
 #   claim   - POST /terminal/sessions answers an id (the pane's open;
-#             reattach-else-spawn is Go-gated in the store tests).
+#             reattach-else-spawn is Go-gated in the store tests). The store
+#             is READ first: a cap refusal means the suite left attached
+#             sessions behind, so the recipe clears them and retries once
+#             (card t_7a06e8aa) - a refusal on a cleared store still dies.
 #   stream  - GET /terminal/{id}/stream is a live SSE: the replay 'o'
 #             frame carries the pty's own bytes (b64), input POSTs come
 #             back as 'o' frames, pings keep the stream warm.
@@ -23,8 +26,44 @@ B="${JOURNEY_BASE_URL:?}"
 runtag=$(date +%s)
 
 # --- claim: POST /terminal/sessions --------------------------------------
+#
+# card t_7a06e8aa (nightly 43877173510: 'claim answered no id: {"error":
+# "terminal: session cap reached; close a terminal pane first"}'): the cap law
+# refuses a spawn when the store already holds `maxSessions` shells that are
+# ALL attached - and a REST recipe owns no pane, so a refusal here means the
+# SUITE left attached sessions behind, not that a user has four terminals
+# open. The store is read first (the refusal's own witness), the claim is
+# retried ONCE after those leftovers are killed, and the step line names how
+# many were cleared - so the next nightly says which recipe leaked them
+# instead of only that the claim was refused. A refusal with a store this
+# recipe already cleared is a real defect and still dies.
+list_sessions() { curl -s "$B/terminal/sessions"; }
+session_ids() { printf '%s' "$1" | grep -oE '"id": ?"[a-f0-9-]+"' | sed 's/.*"\([a-f0-9-]*\)".*/\1/'; }
+claim_id() { printf '%s' "$1" | grep -oE '"id": ?"[a-f0-9-]+"' | head -1 | sed 's/.*"\([a-f0-9-]*\)".*/\1/'; }
+
+before=$(list_sessions)
+held=$(session_ids "$before" | grep -c . 2>/dev/null || true)
 claim=$(curl -s -X POST "$B/terminal/sessions")
-tid=$(printf '%s' "$claim" | grep -oE '"id": ?"[a-f0-9-]+"' | head -1 | sed 's/.*"\([a-f0-9-]*\)".*/\1/')
+tid=$(claim_id "$claim")
+if [ -z "$tid" ]; then
+  case "$claim" in
+    *"session cap reached"*)
+      leftovers=$(session_ids "$before" | tr '\n' ' ')
+      [ "${held:-0}" -gt 0 ] || die "the claim hit the session cap but the store listed nothing to clear: $claim"
+      for lid in $(session_ids "$before"); do
+        curl -s -X DELETE "$B/terminal/$lid" >/dev/null 2>&1 || true
+      done
+      still=$(list_sessions)
+      claim=$(curl -s -X POST "$B/terminal/sessions")
+      tid=$(claim_id "$claim")
+      [ -n "$tid" ] || die "claim answered no id after clearing $held leftover session(s) [$leftovers] (store still lists: $still): $claim"
+      step "ok: cleared $held leftover terminal session(s) the suite had left attached [$leftovers], then claimed $tid"
+      ;;
+    *) die "claim answered no id: $claim" ;;
+  esac
+else
+  [ "${held:-0}" -eq 0 ] || step "ok: the store already held $held session(s); the claim reattached (store: $before)"
+fi
 [ -n "$tid" ] || die "claim answered no id: $claim"
 trap 'curl -s -X DELETE "$B/terminal/$tid" >/dev/null 2>&1 || true' EXIT
 step "ok: claimed terminal session $tid"
