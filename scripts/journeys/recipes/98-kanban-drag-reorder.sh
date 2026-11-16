@@ -377,7 +377,9 @@ step "ok: an API create lands on the idle board by push (no reload, no poll)"
 # line, the name in vertical-rl uppercase, the count when it holds cards. The
 # rail is a BUTTON (click unfolds) and a DROP TARGET (the drag machinery
 # resolves .board-col, and the rail renders inside it). An EMPTY lane folds
-# itself, and its override dies with it. Rails are a horizontal-scroll
+# itself (the auto-collapse law), but a PIN survives the drain and the
+# refill - the click on the rail is the only thing that takes it back
+# (0.17.3). Rails are a horizontal-scroll
 # affordance: open_app sets the 1280x800 desktop viewport, so the narrow
 # stack (where rails do not exist at all) never applies here.
 #
@@ -523,7 +525,7 @@ st="$(lane_state scheduled)"
 [ "$st" = "folded|0|rail|scheduled|-" ] || die "drained rail shape wrong (got [$st] want [folded|0|rail|scheduled|-])"
 step "ok: the drained lane is a rail with no count, even though it was pinned collapsed"
 
-step "e4: the dropped override does not come back when the lane refills"
+step "e4: a collapsed pin survives the drain AND the refill - only the click takes it back"
 scroll_start todo
 card_inview "$D"; rfx=$CX; rfy=$CY
 rail_geo scheduled
@@ -532,10 +534,26 @@ drag_release
 sleep 1
 [ "$(col_ids scheduled)" = "$D" ] || die "the refill drop did not land in scheduled (got [$(col_ids scheduled)])"
 st="$(lane_state scheduled)"
-# a surviving 'collapsed' pin would keep this a rail; the override died with
-# the empty lane, so the refilled lane takes its DEFAULT shape (expanded)
-[ "$st" = "open|1|no-rail|-|-" ] || die "a refilled lane kept a dead override (got [$st] want [open|1|no-rail|-|-])"
-step "ok: the refilled lane came back expanded - no override outlived its empty lane"
+# 0.17.3 lane-click law: 169b1c77 deleted reconcileLanePins, so a pin is
+# FINAL. The collapsed pin written while the lane held a card survives the
+# drain and the refill - the refilled lane wears the rail it was pinned in
+[ "$st" = "folded|1|rail|scheduled|1" ] || die "the collapsed pin did not survive the drain and refill (got [$st] want [folded|1|rail|scheduled|1])"
+step "ok: the refilled lane is still the rail - the collapsed pin survived the drain"
+
+# the click law that replaced the reconcile: a click on the rail expands the
+# lane, and the open pin holds while the lane holds cards
+unfold_lane scheduled
+wait_js "!$(lane_folded_expr scheduled)" 6
+sleep 0.4
+st="$(lane_state scheduled)"
+[ "$st" = "open|1|no-rail|-|-" ] || die "a click on the rail did not expand the refilled lane (got [$st] want [open|1|no-rail|-|-])"
+w="$(lane_width scheduled)"
+[ "$w" = "236" ] || die "the expanded refilled lane is not a 236px column (got ${w}px)"
+# and it HOLDS: nothing reconciles the open pin away while cards sit in the lane
+sleep 0.8
+st="$(lane_state scheduled)"
+[ "$st" = "open|1|no-rail|-|-" ] || die "the open pin did not hold on a card-holding lane (got [$st] want [open|1|no-rail|-|-])"
+step "ok: the rail click expanded the lane and the open pin holds while it holds cards"
 
 # the card seeded for this section is this recipe's to clean up (the trap
 # above owns the others)
