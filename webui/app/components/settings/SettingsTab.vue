@@ -629,6 +629,7 @@
     anchorSelection,
     buildNav,
     categoryCount,
+    clampEndFollow,
     clampedRange,
     documentFor,
     expandedCategoryIds,
@@ -650,6 +651,7 @@
     targetSection,
     withSettingsSection,
     withSubgroups,
+    type ClampHold,
     type DocSection,
     type NavCategory,
     type NavSubgroup,
@@ -1674,6 +1676,12 @@
   const clampId = ref<string | null>(null);
   let clampObserver: ResizeObserver | null = null;
   let clampFrame = 0;
+  // card t_9e2aaca7: the end the clamp last left the pane ON (and where it
+  // left it). The bound itself is one-way, so a section that GROWS under a
+  // pane resting on its bottom would leave the pane short of it forever;
+  // clampEndFollow carries such a pane with the end. Cleared on every
+  // selection change - the next section's end is a different end.
+  let clampHold: ClampHold | null = null;
 
   /** the section a selection clamps to - its CATEGORY section, which is
       the box carrying the sticky heading; a block jump inside it still
@@ -1723,7 +1731,18 @@
       content: root.scrollHeight,
     });
     const now = root.scrollTop;
-    const next = Math.min(Math.max(now, min), max);
+    // card t_9e2aaca7: the end is the ONE side of the window the bound
+    // cannot follow BOTH ways (a shrunk end pulls the pane up, a grown one
+    // leaves it short), so a pass that measures a LONGER end under a pane
+    // resting on the old one carries the pane down with it. Not a new
+    // primitive: the same "the boundary follows the section's box" law as
+    // step 3 of card t_a6b794b5, in the other direction.
+    const follow = clampEndFollow(now, clampHold, max);
+    const next = follow ?? Math.min(Math.max(now, min), max);
+    // the pane rests ON the end (or was put there by this pass): remember
+    // where, so the next pass can follow that end if the box grows. Any
+    // other resting place clears the record - a parked pane never follows.
+    clampHold = Math.abs(next - max) < 1 ? { at: next, max } : null;
     // COMPARE BEFORE ASSIGNING: a write fires another scroll event, and an
     // unguarded handler loops. Sub-pixel positions never settle exactly.
     if (Math.abs(next - now) < 1) return;
@@ -1802,6 +1821,9 @@
   }
 
   watch(clampId, () => {
+    // a different section owns a different end: the record of the end the
+    // clamp last held the pane on belongs to the OLD one
+    clampHold = null;
     void nextTick(() => {
       observeClamp();
       applyClamp();

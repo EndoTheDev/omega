@@ -515,7 +515,22 @@ step "ok: $target is selected and its window is [$lo, $hi] (top $top, height $h,
 # BELOW the end: ask for the document's bottom, land on the section's bottom
 assert_eq "$(force_scroll 999999)" "1" "the pane accepts a scroll while a section is selected"
 if ! poll_js "(()=>{const b=document.querySelector('.settings-body');return !!b&&Math.abs(b.scrollTop-$hi)<=2})()" 10; then
-  die "scrolling past the section's end did not stop at its bottom (scrollTop: $(scroll_top), want $hi, document end $((content - vp)))"
+  # card t_9e2aaca7: the red must say WHICH disagreement it saw. Two different
+  # bugs produce this shape - a clamp number that went stale (the LIVE box
+  # still answers the window computed above, the pane rests short of it) and a
+  # window computed from a document that had not settled (the live box no
+  # longer answers $hi). The live measurement, in the same frame as the red,
+  # is what tells them apart; the assertion itself stays exact.
+  live=$(sec_geom "$target")
+  if [ -n "$live" ]; then
+    ltop=${live%%|*}; lrest=${live#*|}
+    lh=${lrest%%|*}; lrest=${lrest#*|}
+    lvp=${lrest%%|*}; lcontent=${lrest##*|}
+    livedetail="live box top/height/pane/content $ltop/$lh/$lvp/$lcontent -> live clamp end $((lh - lvp)), live document end $((lcontent - lvp))"
+  else
+    livedetail="the $target section is not in the document any more"
+  fi
+  die "scrolling past the section's end did not stop at its bottom (scrollTop: $(scroll_top), want $hi, document end $((content - vp)); $livedetail)"
 fi
 pastend=$(scroll_top)
 # card t_cd9952a3: under the filter the document IS the section, so the

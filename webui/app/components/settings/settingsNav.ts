@@ -751,6 +751,52 @@ export function clampedRange(input: ClampGeometry): [number, number] {
   return [min, max];
 }
 
+// --- the end follows the box (card t_9e2aaca7) ----------------------------
+//
+// clampedRange bounds a position: every pass pulls a pane that is OUTSIDE
+// the window back in. That makes the START follow its box in both
+// directions (it is enforced with max(now, min), so a section whose top
+// moves DOWN drags the pane with it) and the END follow it in only ONE
+// (min(now, max) pulls a pane UP when the end shrinks, but a section that
+// GROWS under a pane resting on its bottom leaves that pane short of it for
+// as long as nothing scrolls again - the nightly's clamp witness rested at
+// 810 while its own end measured 814, and every later pass found 810 a
+// legal position, so the 4px never healed).
+//
+// So the clamp records where it last left the pane and the end it measured
+// then. A later pass that measures a LONGER end while the pane still rests
+// exactly there answers the new end; every other pass answers null and the
+// pane keeps its place. Only a pane ON the end follows - one parked
+// anywhere inside the section is never moved.
+
+export interface ClampHold {
+  /** the scrollTop the clamp last left the pane at */
+  at: number;
+  /** the window's end at that measurement */
+  max: number;
+}
+
+/** clampEndFollow answers the scrollTop a pane must take when the window's
+    END grew under it while it still rests where the clamp last left it.
+    Null means "leave the pane alone": it is not on that end, the end did
+    not grow, or it already sits on the new one. */
+export function clampEndFollow(
+  now: number,
+  hold: ClampHold | null,
+  max: number,
+): number | null {
+  if (hold === null) return null;
+  // the record only means anything when the pane WAS on that end
+  if (Math.abs(hold.at - hold.max) > 1) return null;
+  // the pane is no longer where the clamp left it - the user's own scroll
+  if (Math.abs(now - hold.at) > 1) return null;
+  // the end did not grow: nothing to follow (a SHRUNK end is the bound's)
+  if (max <= hold.max + 0.5) return null;
+  // already resting on the new end
+  if (Math.abs(max - now) < 1) return null;
+  return max;
+}
+
 // --- the pane's OWN scrolls (card t_e7404b84) -----------------------------
 //
 // The clamp and the scroll-spy are suppressed for exactly ONE reason: a
