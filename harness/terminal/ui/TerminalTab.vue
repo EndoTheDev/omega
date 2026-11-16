@@ -286,6 +286,16 @@
     flex-direction: column;
     height: 100%;
     min-height: 120px;
+    /* card t_5b269761: the flex shrink guard. The pane is a `.pane` (flex: 1)
+       inside `.dock-content`, so without a min-width of its own its AUTOMATIC
+       MINIMUM is the xterm's min-content width - the 78-column grid the
+       FitAddon last fitted (624px). The pane then refuses to shrink below
+       that, the xterm (638px wide in a 220px pane) paints OVER the
+       terminal->files divider, and the divider is dead for the whole band it
+       covers. overflow: hidden clips the pre-refit grid so the divider is
+       reachable even on the frame before fit() runs. */
+    min-width: 0;
+    overflow: hidden;
     background: var(--z1, #1a1a1c);
   }
   .terminal-toolbar {
@@ -316,6 +326,12 @@
   .terminal-host {
     flex: 1 1 auto;
     min-height: 0;
+    /* card t_5b269761: the same guard one level down - the host reports the
+       pane's real inner width (the ResizeObserver refit's input) instead of
+       stretching to the grid it contains, and clips the stale grid until the
+       fit lands. */
+    min-width: 0;
+    overflow: hidden;
     padding: 4px 6px;
   }
   .terminal-host :deep(.xterm) {
