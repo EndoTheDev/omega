@@ -696,7 +696,10 @@
     type SocketStatus,
   } from "./composables/socket";
   import { ingestChipFrame } from "./composables/chips";
-  import { refreshNotifications } from "./components/shell/notificationFeed";
+  import {
+    notificationFeedSettled,
+    refreshNotifications,
+  } from "./components/shell/notificationFeed";
   import ChatTab from "./components/ChatTab.vue";
   // card t_6215474b: the command palette overlay (Ctrl+K) + the nav
   // history composable + its command registry
@@ -2708,43 +2711,66 @@
       noteHealthFacts(h);
     }
     // the health interval is GONE (card t_896cf5a8): the health topic
-    // pushes the same body every 5s, and a reconnect does one plain read
-    // the models fetch does NOT block boot: a slow or stalled provider
-    // /models round-trip (shared keypool stall) used to hold the whole
-    // sidebar hostage. Fire it off and let the picker fill in when it
-    // lands - the session list renders independent of provider reachability.
-    void refreshModels()
-      .then((m) => {
-        selectedModel.value = m.current;
-      })
-      .catch(() => {
-        // models are decoration until a chat runs
-      });
-    // card t_30137f67: the boot read of server.default_workspace - the
-    // SAME /settings payload the Settings tab renders (shared
-    // fetchSettings read, no second config path). It feeds the shared
-    // signal SettingsTab's reads keep fresh, and seedDefaultWorkspace
-    // backfills the unbound drafts born before this resolved. A host
-    // without the settings seam (501) or a failed read leaves "" - the
-    // unconfigured behavior, the chip starts blank.
-    void fetchSettings()
-      .then((p) => {
-        setDefaultWorkspace(settingValueOf(p, DEFAULT_WORKSPACE_KNOB));
-        if (defaultWorkspaceNow()) host.seedDefaultWorkspace(defaultWorkspaceNow());
-      })
-      .catch(() => {
-        // no settings seam or unreachable server: no default known
-      });
-    refreshSessions();
-    // the running-state poll is GONE (card t_896cf5a8): the runs topic
-    // pushes one session's live-run truth on every run-slot edge, and
-    // onRunEdge folds it into the pulse + the sidebar row
-    // the canvas snapshot: the load-time catch-up (settled Q3b) - the
-    // panels mounted before this page loaded arrive here; everything
-    // later rides the canvas topic's deltas, so the 15s between-runs
-    // poll is gone too (a toast or a board change now reaches an idle
-    // page). The snapshot stays the cold-load read.
-    void canvas.refresh();
+    // pushes the same body every 5s, and a reconnect does one plain read.
+    // --- the boot-read group + the boot-settled marker (card t_a071ee45) --
+    // Nothing here blocks boot (the models read used to hold the whole
+    // sidebar hostage on a stalled provider), but the group is COLLECTED
+    // so the page can say when it has all landed. That is the marker's
+    // whole job: a journey recipe cannot tell a boot read from a poller
+    // (`ab wait --load networkidle` returns during hydration - measured
+    // 1.5-2.3s of network quiet between the last static resource and the
+    // first app fetch at 8x CPU throttle), so the shell publishes the
+    // state instead of leaving the witness to guess. Set only after every
+    // read RESOLVES - issued is not settled, which is exactly the
+    // distinction that produced three nightly reds of 111-socket-push.
+    // The marker rides <html>'s dataset (not a window global): the recipe
+    // reads the same expression a human types into devtools.
+    const bootReads: Promise<unknown>[] = [
+      // the notifications store's boot pair (/notifications, /verdicts):
+      // NotificationToasts' mount starts it, and that mount lands before
+      // this one
+      notificationFeedSettled(),
+      // the models fetch does NOT block boot: a slow or stalled provider
+      // /models round-trip (shared keypool stall) used to hold the whole
+      // sidebar hostage. Fire it off and let the picker fill in when it
+      // lands - the session list renders independent of provider
+      // reachability.
+      refreshModels()
+        .then((m) => {
+          selectedModel.value = m.current;
+        })
+        .catch(() => {
+          // models are decoration until a chat runs
+        }),
+      // card t_30137f67: the boot read of server.default_workspace - the
+      // SAME /settings payload the Settings tab renders (shared
+      // fetchSettings read, no second config path). It feeds the shared
+      // signal SettingsTab's reads keep fresh, and seedDefaultWorkspace
+      // backfills the unbound drafts born before this resolved. A host
+      // without the settings seam (501) or a failed read leaves "" - the
+      // unconfigured behavior, the chip starts blank.
+      fetchSettings()
+        .then((p) => {
+          setDefaultWorkspace(settingValueOf(p, DEFAULT_WORKSPACE_KNOB));
+          if (defaultWorkspaceNow()) host.seedDefaultWorkspace(defaultWorkspaceNow());
+        })
+        .catch(() => {
+          // no settings seam or unreachable server: no default known
+        }),
+      refreshSessions(),
+      // the running-state poll is GONE (card t_896cf5a8): the runs topic
+      // pushes one session's live-run truth on every run-slot edge, and
+      // onRunEdge folds it into the pulse + the sidebar row.
+      // The canvas snapshot: the load-time catch-up (settled Q3b) - the
+      // panels mounted before this page loaded arrive here; everything
+      // later rides the canvas topic's deltas, so the 15s between-runs
+      // poll is gone too (a toast or a board change now reaches an idle
+      // page). The snapshot stays the cold-load read.
+      canvas.refresh(),
+    ];
+    void Promise.allSettled(bootReads).then(() => {
+      document.documentElement.dataset.omegaBooted = "1";
+    });
 
     // boot focus: the URL's session owns it ("reload lands on the
     // focused session") - an existing chat tab bound to that id is

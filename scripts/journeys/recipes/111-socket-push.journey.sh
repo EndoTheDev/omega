@@ -26,43 +26,53 @@ open_app
 step "ok: app open"
 
 # --- 1: nothing polls beside the socket ----------------------------------
-# install the recorder AFTER boot (the boot fetches are legitimate: the
-# dot, the sidebar, the canvas snapshot all read once before the socket
-# carries the truth). From here on, every fetch is a poller or a user
-# action - and this recipe performs neither.
+# THE BOOT BOUNDARY (card t_a071ee45): wait for the shell's OWN boot-settled
+# marker before installing the recorder. `open_app`'s networkidle is NOT a
+# boot boundary - it returns during hydration, while the app's boot reads
+# are still waiting to be issued, and the quiet gap in between is unbounded
+# on a loaded host (measured 1.5s at 8x CPU throttle, 2.3s on the review's
+# run). Three nightlies red'd this recipe by installing the recorder inside
+# that gap: the boot pair /notifications + /verdicts then landed after the
+# install and the window graded a legitimate boot read as a poller
+# (43807490891, 43845134289, 43908179838). app.vue sets the marker only
+# after its boot reads RESOLVE (Promise.allSettled over the health,
+# sessions, canvas, settings+models group and the notifications store's
+# own boot pair), so "the marker is up" is the state, not a guess.
+wait_js 'document.documentElement.dataset.omegaBooted==="1"' 30
+step "ok: the page's boot reads settled (omegaBooted marker)"
+
 rec=$(jsq '(()=>{window.__fetchLog=[];const of=window.fetch.bind(window);window.fetch=(...a)=>{try{const u=a[0]&&a[0].url?a[0].url:String(a[0]);window.__fetchLog.push(u)}catch{};return of(...a)};return 1})()' 2>&1 | tail -1 | tr -d '"\r')
 assert_eq "$rec" "1" "fetch recorder installed on the live page"
 
-# ... but "after boot" is a claim, not a measurement: the recorder installs
-# when `open_app`'s networkidle returns, while the app's OWN boot reads are
-# async and can still be in flight on a slow host. Measured on this
-# recipe's CI red (nightly 43807490891, "got [2] want [0]"): a recorder
-# installed at exactly this point on a cold load caught
-# `/sessions?archived=include` and `/ui/canvas` - the TAIL of the boot set
-# (app.vue's onMounted: fetchHealthInfo, refreshSessions, canvas.refresh,
-# refreshNotifications), not a poller. Reproduced twice on the dev lane
-# (browser-level A/B: the same install point sees 2 matching reads, and the
-# steady-state window right after sees 0). Nothing in the shell polls those
-# routes (the pollers died with t_896cf5a8; only a spinner tick and a
-# verdict card's local ticker use setInterval), so the window below is the
-# STEADY state and opens only once the page's own boot traffic has gone
-# QUIET - no new recorded fetch for 1s, bounded at 4s, so a boot read that
-# already landed before the recorder costs the grace and nothing else. A
-# one-shot pane-mount read (the terminal pane's `/terminal/sessions`) is
-# excluded by the same signal; a real poller cannot be, because its cadence
-# is seconds and the window that follows is 17s.
+# The marker is the shell's claim about reads IT issued; the recorder a
+# moment later is a second, independent witness. So the window still opens
+# only once the recorded log has been UNCHANGED across two consecutive 0.5s
+# samples - a full 1s of quiet - bounded at 8 samples (4s). That is the
+# belt to the marker's braces: a late pane-mount read (the terminal pane's
+# `/terminal/sessions`) landing between the two is excluded by the same
+# signal. Nothing in the shell polls the tracked routes (the pollers died
+# with t_896cf5a8; only a spinner tick and a verdict card's local ticker
+# use setInterval), and a real poller cannot hide in the grace either:
+# its cadence is seconds and the window that follows is 17s.
 _i=0
 _prev=-1
+_quiet=0
 while [ "$_i" -lt 8 ]; do
   _len=$(jsq '(()=>{return (window.__fetchLog||[]).length})()' 2>&1 | tail -1 | tr -d '"\r')
-  [ "$_len" = "$_prev" ] && break
-  _prev="$_len"
+  case "$_len" in ''|*[!0-9]*) die "fetch log length is garbage: $_len" ;; esac
+  if [ "$_len" = "$_prev" ]; then
+    _quiet=$((_quiet + 1))
+    if [ "$_quiet" -ge 2 ]; then break; fi   # two unchanged 0.5s samples = 1s quiet
+  else
+    _quiet=0
+    _prev=$_len
+  fi
   sleep 0.5
   _i=$((_i + 1))
 done
 # name what the boot tail was (kept for the die below), then open the window
 jsq '(()=>{window.__bootTail=(window.__fetchLog||[]).slice();window.__fetchLog=[];return 1})()' >/dev/null 2>&1
-step "boot reads settled (${_i} x 0.5s) - the poller window opens now"
+step "boot reads quiet (${_i} x 0.5s, ${_quiet} unchanged samples) - the poller window opens now"
 
 step "holding still 17s (every deleted cadence is inside this window)"
 sleep 17
