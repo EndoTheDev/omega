@@ -495,12 +495,27 @@ func TestPushLogDelta(t *testing.T) {
 		t.Fatalf("delta = %v, want exactly [half a line]", delta.Lines)
 	}
 
-	// no new bytes: no frame (the follower is silent, never repetitive)
+	// no new bytes: no frame (the follower is silent, never repetitive).
+	// The absence window is deliberate and cadence-derived, not a hang
+	// bound: two full logPushInterval ticks, the rate the logs topic
+	// publishes at, so a stray frame landing a whole tick late on a
+	// loaded machine still fails here. A 100ms glance asserted nothing
+	// on a busy host and stayed green (t_a5f8c170). Clamped to
+	// testWaitTimeout so the absence wait can never outlive the
+	// package's hang bound.
+	absence := 2 * logPushInterval
+	if absence > testWaitTimeout {
+		absence = testWaitTimeout
+	}
+	before := off
 	off, carry = s.pushLogDelta(path, off, carry)
+	if off != before || carry != "" {
+		t.Fatalf("no-op tick = (%d, %q), want the offset held at %d and no carry", off, carry, before)
+	}
 	select {
 	case raw := <-sub.Messages():
 		t.Fatalf("frame with no appended bytes: %s", raw)
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(absence):
 	}
 
 	// truncation/rotation resyncs to the end instead of replaying
