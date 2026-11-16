@@ -289,11 +289,26 @@ let releaseFeed: (() => void) | null = null;
 // topic is NOT pane-scoped: the hub fans every run out to every page, so
 // an approval from a session this page never opened still arrives as a
 // frame (measured, card t_a2ed8412) - and the arrival toasts on the spot.
+// bootRead: the boot refresh ITSELF, held as a promise so the shell's
+// boot-settled marker (card t_a071ee45) waits for the /notifications and
+// /verdicts reads to RESOLVE instead of for the moment they were issued.
+// refresh() never rejects (each half catches to null), so a broken route
+// can strand neither the read nor the marker that awaits it.
+let bootRead: Promise<void> | null = null;
+
 export function startNotificationFeed(): void {
   if (started) return;
   started = true;
-  void refresh();
+  bootRead = refresh();
   releaseFeed = onToastPanel(ingest);
+}
+
+// notificationFeedSettled: the boot refresh's promise. Resolves at once
+// when the feed never started (a shell with no toast host has no boot
+// read to wait on). It never RE-triggers the read - exactly one boot pull
+// per page, the same one the panel and the hints then keep fresh.
+export function notificationFeedSettled(): Promise<void> {
+  return bootRead ?? Promise.resolve();
 }
 
 // stopNotificationFeed: drop the funnel + toast timers so a store lit
@@ -304,6 +319,7 @@ export function stopNotificationFeed(): void {
   releaseFeed?.();
   releaseFeed = null;
   started = false;
+  bootRead = null;
   announcedVerdicts.clear();
   verdictsSeeded = false;
   for (const id of timers) clearTimeout(id);
