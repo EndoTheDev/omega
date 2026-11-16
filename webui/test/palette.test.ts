@@ -332,7 +332,7 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
       "the listener dies with the component",
     );
     assert.ok(
-      overlay.includes("rootEl.value.contains(target as Node)"),
+      overlay.includes("rootEl.value?.contains(target as Node)"),
       "only clicks OUTSIDE the surface close it",
     );
     assert.ok(overlay.includes('emit("close")'), "the close rides the existing @close seam");
@@ -413,5 +413,131 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
     assert.match(block, /top:\s*var\(--menubar-h\)/, "anchored at the bar's lower edge");
     assert.match(block, /left:\s*50%/, "centred on the bar");
     assert.match(block, /transform:\s*translateX\(-50%\)/, "centred on the bar");
+  });
+});
+
+// --- card t_cc6d0920: the TAKEOVER -------------------------------------
+// HIS 2026-11-16 reconfirmation: the palette was never meant to hang its
+// own input box above the bar - the top bar's time field IS the input, in
+// place. The field element is TELEPORTED into the cluster's seat (one
+// element, one focus path - never a second copy), the panel below is the
+// results dropdown alone (the merged t_d83b54b8 geometry, untouched), and
+// the bar's other chrome (arrows + the Ctrl+K toggle) hides by
+// VISIBILITY so the seat cannot slide while the field is up.
+describe("the palette takeover (t_cc6d0920)", () => {
+  const overlay = readFileSync(
+    join(here, "../app/components/nav/CommandPalette.vue"),
+    "utf8",
+  );
+  const cluster = readFileSync(
+    join(here, "../app/components/nav/NavCluster.vue"),
+    "utf8",
+  );
+  const menubar = readFileSync(
+    join(here, "../app/components/shell/MenuBar.vue"),
+    "utf8",
+  );
+  const app = readFileSync(join(here, "../app/app.vue"), "utf8");
+  const css = readFileSync(join(here, "../app/assets/css/main.css"), "utf8");
+
+  it("the panel TELEPORTS its field into the bar's seat - one element, never a copy", () => {
+    assert.equal(
+      (overlay.match(/<input/g) ?? []).length,
+      1,
+      "exactly one input: the takeover moves the field, it never clones it",
+    );
+    assert.match(overlay, /<Teleport[\s\S]{0,120}to="#nav-palette-slot"/);
+    assert.match(
+      overlay,
+      /:disabled="!inPlace"/,
+      "below the drawer breakpoint there is no seat - the field falls back into the panel",
+    );
+    assert.match(
+      overlay,
+      /inPlace \? 'nav-palette-input is-live' : 'command-palette-input'/,
+      "one field, two seats: the bar's chip or the panel's own row",
+    );
+    // the field is not a descendant of the panel root, so the outside-click
+    // close must exempt it by ref
+    assert.ok(
+      overlay.includes("inputEl.value?.contains(target)"),
+      "a pointerdown in the teleported field never closes the palette",
+    );
+    assert.match(overlay, /inPlace: boolean/, "the seat bit is a declared prop");
+    // a live breakpoint cross re-mounts the field in the other seat (the
+    // Teleport flips `disabled`) - the caret rides along, or the field on
+    // screen would swallow typing
+    assert.match(
+      overlay,
+      /watch\(\s*\(\) => props\.inPlace,[\s\S]{0,160}inputEl\.value\?\.focus\(\)/,
+      "the field keeps its caret when the seat moves",
+    );
+  });
+
+  it("the cluster IS the seat: the clock button stands down, the slot takes its box", () => {
+    assert.match(cluster, /id="nav-palette-slot"/, "the teleport target exists");
+    assert.match(cluster, /class="nav-palette-slot"/);
+    assert.match(
+      cluster,
+      /v-if="!paletteOpen"[\s\S]{0,200}class="nav-palette-input"/,
+      "the clock yields to the field - they are never up together",
+    );
+    assert.match(
+      cluster,
+      /:class="\{ 'palette-open': paletteOpen \}"/,
+      "the cluster knows the palette is up",
+    );
+    assert.match(cluster, /paletteOpen: boolean/, "and declares the bit");
+    // display: contents is what makes the seat transparent to the flex row:
+    // the teleported field is a flex item exactly as the button was
+    assert.match(css, /\.nav-palette-slot\s*\{[^}]*display:\s*contents/);
+    // and the field carries the affordance's own seat geometry
+    assert.match(css, /\.nav-palette-input\.is-live\s*\{/);
+    assert.match(
+      css,
+      /\.nav-palette-input\.is-live\s*\{[^}]*cursor:\s*text/,
+      "the seat is a text field while it holds one",
+    );
+  });
+
+  it("the bar's other chrome HIDES without moving the seat", () => {
+    const hide = css.slice(css.indexOf(".nav-cluster.palette-open .nav-btn"));
+    const block = hide.slice(hide.indexOf("{"), hide.indexOf("}"));
+    assert.match(block, /visibility:\s*hidden/, "hidden, not removed");
+    assert.match(block, /pointer-events:\s*none/, "a hidden control never takes a click");
+    assert.doesNotMatch(
+      block,
+      /display:\s*none/,
+      "display:none would drop the arrows + toggle from the row and slide the seat sideways",
+    );
+  });
+
+  it("app.vue feeds the ONE open bit to both halves", () => {
+    assert.match(app, /:palette-open="paletteOpen"/, "the cluster reads the one state");
+    assert.match(app, /:in-place="!isMobile"/, "below 768px the seat does not exist");
+    assert.match(menubar, /:palette-open="paletteOpen"/, "MenuBar passes it down");
+    assert.match(menubar, /paletteOpen: boolean/, "MenuBar declares it");
+    // the field is a REAL input now, so a click in it keeps the caret: the
+    // shell's pane-focus click pass must not claim the gesture and hand the
+    // caret to the composer (live: the first click after boot lost it)
+    assert.ok(
+      app.includes('.closest(".command-palette, #nav-palette-slot")'),
+      "a click in the palette's own surfaces is not a pane gesture",
+    );
+    // the clock keeps ticking while it is hidden (the timer is the
+    // component's, not the button's) - Esc brings back a current time
+    assert.match(
+      cluster,
+      /onMounted\(armClock\)/,
+      "the clock timer outlives the button's v-if",
+    );
+  });
+
+  it("the results panel keeps the merged anchor geometry (t_d83b54b8)", () => {
+    const one = css.slice(css.indexOf(".command-palette {"));
+    const block = one.slice(0, one.indexOf("}"));
+    assert.match(block, /top:\s*var\(--menubar-h\)/, "the list drops from the bar's edge");
+    assert.match(block, /width:\s*420px/, "the tuned band");
+    assert.match(block, /z-index:\s*200/, "over the panes, above every chrome");
   });
 });

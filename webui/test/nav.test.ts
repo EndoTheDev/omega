@@ -209,7 +209,11 @@ describe("nav cluster wiring", () => {
   });
 
   // ruling 3: the palette "input" is a BUTTON dressed as one - pure
-  // affordance, and its placeholder is a LIVE clock.
+  // affordance, and its placeholder is a LIVE clock. card t_cc6d0920
+  // (the takeover) keeps this true of the CLUSTER's own markup: the real
+  // field is not written here, the palette teleports it into the seat
+  // (`#nav-palette-slot`) while it is open - one element, one focus path,
+  // and the seat's geometry is the affordance's (see palette.test.ts).
   it("the palette affordance is a button with a ticking clock, never an input", () => {
     const nav = readFileSync(
       join(here, "../app/components/nav/NavCluster.vue"),

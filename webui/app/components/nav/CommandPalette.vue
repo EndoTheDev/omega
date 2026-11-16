@@ -4,23 +4,38 @@
        the whole point is reaching a pane WITHOUT closing anything).
        Input + filtered list + keybinding-hint column. Hand-rolled: the
        three shipped search boxes are the pattern, keyboard nav rides
-       clampIndex (the composer palette's arithmetic). -->
+       clampIndex (the composer palette's arithmetic).
+       card t_cc6d0920 (the TAKEOVER): the field no longer lives in this
+       panel - it TELEPORTS into the top bar's palette seat
+       (`#nav-palette-slot`, the box the clock button fills), so opening
+       the palette turns the time field into the input IN PLACE. The
+       panel keeps the merged anchor geometry (card t_d83b54b8: top =
+       --menubar-h, 420 wide, centred) and now hangs BELOW the bar as
+       the results dropdown alone. -->
   <div
     ref="rootEl"
     v-if="open"
     class="command-palette"
     role="dialog"
     aria-label="Command palette">
-    <input
-      ref="inputEl"
-      class="command-palette-input"
-      :value="query"
-      type="text"
-      placeholder="Type a command..."
-      autocomplete="off"
-      aria-label="Command palette search"
-      @input="onInput"
-      @keydown="onKey" />
+    <!-- the seat swap. `disabled` is the mobile fallback: below 768px the
+         nav cluster is display:none (the drawer handles rule, nav.test),
+         so there is no seat to fill - the input renders here, in the
+         panel, exactly as it did before the takeover. -->
+    <Teleport
+      to="#nav-palette-slot"
+      :disabled="!inPlace">
+      <input
+        ref="inputEl"
+        :class="inPlace ? 'nav-palette-input is-live' : 'command-palette-input'"
+        :value="query"
+        type="text"
+        placeholder="Type a command..."
+        autocomplete="off"
+        aria-label="Command palette search"
+        @input="onInput"
+        @keydown="onKey" />
+    </Teleport>
     <ul
       ref="listEl"
       class="command-palette-list"
@@ -52,7 +67,15 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+  import {
+    Teleport,
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    watch,
+  } from "vue";
   import {
     clampIndex,
     filterPaletteCommands,
@@ -62,6 +85,11 @@
   const props = defineProps<{
     open: boolean;
     commands: readonly PaletteCommand[];
+    // card t_cc6d0920: the top bar's palette seat is real estate this panel
+    // borrows for its field. True on desktop (the cluster renders there);
+    // false below the drawer breakpoint, where the cluster is display:none
+    // and the field must stay in the panel.
+    inPlace: boolean;
   }>();
 
   const emit = defineEmits<{
@@ -87,6 +115,18 @@
       if (!o) return;
       query.value = "";
       active.value = 0;
+      void nextTick(() => inputEl.value?.focus());
+    },
+  );
+
+  // crossing the drawer breakpoint moves the field between the bar's seat
+  // and the panel (the Teleport's `disabled` flips, re-mounting the input),
+  // so the palette carries its caret across with it - a live resize must
+  // never leave a field on screen that typing cannot reach.
+  watch(
+    () => props.inPlace,
+    () => {
+      if (!props.open) return;
       void nextTick(() => inputEl.value?.focus());
     },
   );
@@ -138,12 +178,17 @@
   // shell's trigger button (`data-palette-trigger`, the nav cluster's
   // Ctrl+K button): its own click toggles the palette, so closing it here
   // on pointerdown would flicker closed-then-reopened.
+  // card t_cc6d0920: the live field is TELEPORTED into the bar, so it is not
+  // a descendant of rootEl - it is the palette's own surface all the same,
+  // and a pointerdown landing in it (a caret grab, a selection drag) must
+  // never close the palette it belongs to.
   function onDocPointer(e: PointerEvent) {
-    if (!props.open || !rootEl.value) return;
+    if (!props.open) return;
     const target = e.target as Element | null;
     if (target instanceof Element && target.closest("[data-palette-trigger]"))
       return;
-    if (rootEl.value.contains(target as Node)) return;
+    if (target instanceof Element && inputEl.value?.contains(target)) return;
+    if (rootEl.value?.contains(target as Node)) return;
     emit("close");
   }
 

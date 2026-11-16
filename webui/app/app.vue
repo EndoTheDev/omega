@@ -6,6 +6,7 @@
       :inspector-open="isMobile ? inspectorOpen : inspectorDocked"
       :can-back="canBack"
       :can-forward="canForward"
+      :palette-open="paletteOpen"
       @back="nav.back()"
       @forward="nav.forward()"
       @toggle-sidebar="toggleSidebar"
@@ -448,9 +449,15 @@
     </MobileDrawer>
 
     <!-- card t_6215474b: the command palette (Ctrl+K / cluster button) -
-         fixed top-center above every chrome; it never touches the agent -->
+         fixed top-center above every chrome; it never touches the agent.
+         card t_cc6d0920: its FIELD is not rendered here - it teleports into
+         the top bar's palette seat (the in-place takeover), leaving this
+         panel as the results dropdown that hangs below the bar.
+         `in-place` is false below the drawer breakpoint, where the nav
+         cluster is display:none and the field falls back into the panel. -->
     <CommandPalette
       :open="paletteOpen"
+      :in-place="!isMobile"
       :commands="paletteCommands"
       @close="paletteOpen = false" />
 
@@ -1677,6 +1684,17 @@
   // into that pane (VSCode's active-editor-group read, card t_00e4a784).
   const lastPaneId = ref<string | null>(null);
   function onDocClick(e: MouseEvent) {
+    // card t_cc6d0920: the palette's field is not a pane gesture. It lives
+    // in the top bar's palette seat (and, below the drawer breakpoint, in
+    // the palette panel), and both are outside every dock pane - running
+    // the pane-focus pass on a click that lands in there hands the caret to
+    // the composer through the focusedKey transition, so the first click on
+    // the field after boot would drop the caret behind the palette.
+    if (
+      e.target instanceof Element &&
+      e.target.closest(".command-palette, #nav-palette-slot")
+    )
+      return;
     const el = e.target instanceof Element ?
       e.target.closest("[data-pane-id]") :
       null;
