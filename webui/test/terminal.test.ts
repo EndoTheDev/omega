@@ -4,7 +4,7 @@
 // the module's own routes, the pane never gates (the owner's ruling:
 // no restrictions), and the outlet unmount drops the SSE, never the
 // shell.
-import { test } from "node:test";
+import { describe, it, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -165,4 +165,50 @@ test("the outlet unmount drops the SSE, never the shell", () => {
     /onBeforeUnmount[\s\S]*closeStream[\s\S]*\}/,
     "stream teardown happens in the unmount hook",
   );
+});
+
+// --- the flex shrink guard (card t_5b269761) ----------------------------
+// The pane root renders as `.terminal-pane pane` inside `.dock-content`, so
+// the shell's `.dock-content > .pane { flex: 1 }` makes it a flex item with
+// flex-shrink 1 - but a flex item's AUTOMATIC MINIMUM is its min-content
+// width, and the xterm's min-content is the column grid the FitAddon last
+// confirmed. Without an explicit min-width: 0 the pane floors at ~640px
+// inside a 220px pane, the xterm paints over the terminal->files divider,
+// and the divider is dead for the whole band it covers (journey 84).
+// The node suite has no DOM, so this is the settings-nav pin shape: a source
+// assertion on the rule. The geometry witness is journey 84.
+describe("the terminal pane can shrink under its xterm (t_5b269761)", () => {
+  const rule = (name: string) => {
+    const m = tabVue.match(new RegExp(`\\.${name}\\s*\\{([^}]*)\\}`));
+    assert.ok(m, `.${name} rule exists`);
+    return m[1];
+  };
+
+  it("the tab root carries min-width: 0 - no min-content floor", () => {
+    const pane = rule("terminal-pane");
+    assert.match(pane, /min-width:\s*0/, "the flex shrink guard");
+    // a px floor here re-creates the defect: the pane would refuse to shrink
+    // below it no matter what the divider says
+    assert.doesNotMatch(pane, /min-width:\s*[0-9]+px/, "no px floor on the pane");
+  });
+
+  it("both guards clip - the stale grid never paints over the divider", () => {
+    assert.match(rule("terminal-pane"), /overflow:\s*hidden/, "the pane clips");
+    assert.match(
+      rule("terminal-host"),
+      /overflow:\s*hidden/,
+      "the host clips until the ResizeObserver refit lands",
+    );
+    assert.match(
+      rule("terminal-host"),
+      /min-width:\s*0/,
+      "the host reports the pane's real width to fit(), not its grid's",
+    );
+  });
+
+  it("the refit path survives: the observer still drives fit()", () => {
+    assert.match(tabVue, /new ResizeObserver\(/, "the host is observed");
+    assert.match(tabVue, /observer\.observe\(host\.value\)/, "observed on the host box");
+    assert.match(tabVue, /f\.fit\(\)/, "the fit addon refits on every size change");
+  });
 });
