@@ -709,3 +709,58 @@ func TestAgentsDeleteRemovesTheWholeHome(t *testing.T) {
 		t.Fatalf("delete of an already-deleted agent = %d, want 404", got)
 	}
 }
+
+// forgetRecorder is a store that remembers the delete verb's release
+// call (card t_5df01d0f). The routing handle is what locks an agent
+// home's files, so the delete verb must release it before removing the
+// directory - asserted here without depending on the host's file
+// locking.
+type forgetRecorder struct {
+	*store.Store
+	forgot []string
+}
+
+func (f *forgetRecorder) ForgetHome(name string) bool {
+	f.forgot = append(f.forgot, name)
+	return true
+}
+
+func TestAgentsDeleteReleasesTheHomeHandle(t *testing.T) {
+	home := t.TempDir()
+	if err := agent.ScaffoldAgent(home, "scout", "probe duty"); err != nil {
+		t.Fatal(err)
+	}
+	inner, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { inner.Close() })
+	rec := &forgetRecorder{Store: inner}
+	ctx := &core.Context{}
+	ctx.ApplyOffer("store", "test", rec)
+	mux := http.NewServeMux()
+	for _, row := range (&agentRoutes{home: home, ctx: ctx}).registrationRows() {
+		mux.HandleFunc(row.pattern, row.handler)
+	}
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	req, err := http.NewRequest(http.MethodDelete, srv.URL+"/agents/scout", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("delete scout = %d", res.StatusCode)
+	}
+	if len(rec.forgot) != 1 || rec.forgot[0] != "scout" {
+		t.Fatalf("ForgetHome calls = %v, want [scout] (the delete must release the home's store handle first)", rec.forgot)
+	}
+	if _, err := os.Stat(agent.AgentDir(home, "scout")); !os.IsNotExist(err) {
+		t.Fatalf("the agent home survived the DELETE (stat err = %v)", err)
+	}
+}

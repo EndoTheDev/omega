@@ -189,3 +189,40 @@ func (s *Store) closeHomes() error {
 	s.routes = nil
 	return first
 }
+
+// Compile-time assertion for the delete verb's release face.
+var _ agent.AgentHomeForgetter = (*Store)(nil)
+
+// ForgetHome implements the agent.AgentHomeForgetter need face the
+// roster's DELETE verb reads (card t_5df01d0f): close and evict the one
+// cached handle for agentName, and drop every session route pointing at
+// it. Reports whether a handle was open.
+//
+// The close is what matters: on windows a live SQLite handle keeps the
+// home's data file locked, so removing the directory fails half-way and
+// the roster keeps a ghost row. A later read of the same id simply
+// re-opens the home (or answers not-found once the directory is gone).
+func (s *Store) ForgetHome(agentName string) bool {
+	if agentName == "" {
+		return false
+	}
+	s.routeMu.Lock()
+	defer s.routeMu.Unlock()
+	st, ok := s.agents[agentName]
+	if !ok {
+		return false
+	}
+	delete(s.agents, agentName)
+	for id, target := range s.routes {
+		if target == st {
+			delete(s.routes, id)
+		}
+	}
+	if st != nil && st != s {
+		// The error is the operating system's complaint about closing a
+		// handle; the caller is about to remove the directory anyway, and
+		// a close that failed has already dropped the cache entry.
+		_ = st.Close()
+	}
+	return true
+}

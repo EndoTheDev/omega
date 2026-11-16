@@ -434,6 +434,15 @@ func (ar *agentRoutes) handleAgentDelete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	sessions := ar.sessionCount(r.Context(), name)
+	// card t_5df01d0f: release the home's cached store handle BEFORE the
+	// removal. Serving this agent's chat opened that handle and keeps it
+	// open for the process's lifetime, so on windows the data files stay
+	// locked and RemoveAll leaves a half-deleted home that keeps
+	// registering the agent. A store without the routing face has nothing
+	// to release.
+	if forget, ok := ar.mountedStore().(agent.AgentHomeForgetter); ok {
+		forget.ForgetHome(name)
+	}
 	if err := agent.DeleteAgentHome(ar.home, name); err != nil {
 		var scaffold *agent.AgentConfigScaffoldError
 		switch {

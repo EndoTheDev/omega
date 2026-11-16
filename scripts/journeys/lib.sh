@@ -310,11 +310,21 @@ print(" ".join(t["id"] for t in rows
     curl -s -X DELETE "${JOURNEY_BASE_URL}/tasks/${id}" >/dev/null 2>&1 || true
     reaped=$((reaped + 1))
   done
-  # roster agent homes (only when the lane home is known)
+  # roster agent homes (only when the lane home is known). The DELETE
+  # rides the product's own verb first (card t_5df01d0f): once an agent's
+  # chat has been served the daemon holds that home's store open, and on
+  # windows a held handle makes the data files unremovable - RemoveAll
+  # would leave a half-deleted home that keeps registering the agent. The
+  # verb releases the handle; the rm below stays for a lane whose route
+  # never answered.
   if [ -n "${OMEGA_HOME:-}" ] && [ -d "${OMEGA_HOME}/agents" ]; then
     for d in "${OMEGA_HOME}"/agents/jrn-*; do
       case "$d" in
-        */agents/jrn-*) [ -d "$d" ] && { rm -rf "$d"; reaped=$((reaped + 1)); } ;;
+        */agents/jrn-*)
+          [ -d "$d" ] || continue
+          curl -s -X DELETE "${JOURNEY_BASE_URL}/agents/${d##*/}" >/dev/null 2>&1 || true
+          [ -d "$d" ] && { rm -rf "$d"; reaped=$((reaped + 1)); }
+          ;;
       esac
     done
   fi

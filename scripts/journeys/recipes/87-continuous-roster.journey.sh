@@ -18,6 +18,14 @@
 #   detail   - expanding the row opens the wake strip (wake/sleep
 #              buttons + the wake message input). The agent is NEVER
 #              woken - a browser journey does not spend provider turns.
+#   chats    - card t_5df01d0f: TWO seeded agents, one click each. Each
+#              agent home carries its own permanent chat, and clicking a
+#              row must open THAT agent's chat: the URL follows the
+#              clicked agent's own session id, a second tab is minted
+#              (no dedupe onto the first agent's), and the accent row
+#              follows the open agent. Before the fix both chats carried
+#              the bare id "canonical" and the second row opened the
+#              first agent's conversation.
 #
 # Residue-free: the seeded name carries the jrn- prefix and the EXIT
 # trap removes its home folder - ruling 2 makes folder presence the
@@ -37,22 +45,57 @@ JRN_ID="$CONT_NAME" # cleanup_journey_residue's fast path is a no-op; the trap b
 # seeded_dir: capture the agent home's absolute dir from the roster row
 # (the lane's OMEGA_HOME is the caller's business) once into globals.
 clean_seeded_agent() {
-  if [ -n "${SEED_DIR:-}" ]; then
-    case "$SEED_DIR" in
-      */agents/jrn-*) rm -rf "$SEED_DIR" ;;
+  # card t_5df01d0f: the homes go through the PRODUCT's delete verb
+  # first. Serving an agent's chat opens that home's store through the
+  # daemon's routing handle, and on windows a held handle makes the data
+  # files unremovable ("Device or resource busy") - the delete verb
+  # releases it before removing the directory. The rm stays as the
+  # fallback for a lane whose /agents route never answered.
+  for name in "${CONT_NAME:-}" "${CONT_NAME2:-}"; do
+    [ -n "$name" ] || continue
+    curl -s -X DELETE "${JOURNEY_BASE_URL}/agents/${name}" >/dev/null 2>&1 || true
+  done
+  for d in "${SEED_DIR:-}" "${SEED_DIR2:-}"; do
+    [ -n "$d" ] || continue
+    case "$d" in
+      */agents/jrn-*) [ -d "$d" ] && rm -rf "$d" ;;
       *) : ;; # a malformed dir is never rm'd blind
     esac
-  fi
+  done
 }
 trap 'clean_seeded_agent; cleanup_journey_residue' EXIT
+
+# created_ok <response body> <agent name>: the create flow answered with
+# THIS agent's name (the wire's {"created": "<name>"} row).
+created_ok() {
+  printf '%s' "$1" | python3 -c '
+import json,sys
+try:
+    row = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+sys.exit(0 if str(row.get("created") or "") == sys.argv[1] else 1)' "$2" 2>/dev/null
+}
 
 # --- seed: the product's create flow ---
 resp=$(curl -s -X POST "${JOURNEY_BASE_URL}/continuous" \
        -H 'Content-Type: application/json' \
        -d "{\"name\": \"${CONT_NAME}\", \"directive\": \"(journey) roster seed agent\", \"schedule\": \"17 8 * * *\"}")
-printf '%s' "$resp" | grep -q "\"created\": ?\"${CONT_NAME}\"\|\"created\":\"${CONT_NAME}\"\|\"created\": \"${CONT_NAME}\"" || \
-  die "POST /continuous failed: $resp"
+created_ok "$resp" "$CONT_NAME" || die "POST /continuous failed: $resp"
 step "ok: created $CONT_NAME"
+
+# card t_5df01d0f: a SECOND agent home. Two agent chats are two chats
+# only if their session IDs differ, and the id is what the roster row
+# opens, the store router resolves and the shell's dedupe keys on - so
+# the pair IS the fixture for the collision below. The name differs in
+# its first 8 characters (the chat tab title's id prefix) so the two
+# chips are told apart by the same text an operator reads.
+CONT_NAME2="jrn-b-${runtag}"
+resp2=$(curl -s -X POST "${JOURNEY_BASE_URL}/continuous" \
+        -H 'Content-Type: application/json' \
+        -d "{\"name\": \"${CONT_NAME2}\", \"directive\": \"(journey) second roster agent\", \"schedule\": \"23 9 * * *\"}")
+created_ok "$resp2" "$CONT_NAME2" || die "POST /continuous (second agent) failed: $resp2"
+step "ok: created $CONT_NAME2"
 
 # --- the roster REST row answers with name + wake state ---
 roster=$(curl -s "${JOURNEY_BASE_URL}/continuous/roster")
@@ -72,7 +115,14 @@ import json,sys
 (rows,) = json.load(sys.stdin)
 print(rows.get('dir') or '')" 2>/dev/null)
 [ -n "$SEED_DIR" ] || die "roster row lost the dir: $row"
-step "ok: roster row answers (dir $SEED_DIR)"
+# the second home's dir rides the same roster payload (its row answered by
+# the same create flow); captured so the EXIT trap can reap it too
+SEED_DIR2=$(printf '%s' "$roster" | python3 -c '
+import json,sys
+rows = json.load(sys.stdin)
+print(next((r.get("dir") or "" for r in rows if r.get("name") == sys.argv[1]), ""))' "$CONT_NAME2" 2>/dev/null)
+[ -n "$SEED_DIR2" ] || die "roster lost the second agent's dir: $roster"
+step "ok: roster row answers (dirs $SEED_DIR + $SEED_DIR2)"
 
 # --- the served webui ---
 open_app
@@ -164,6 +214,80 @@ assert_eq "$wakes" "2" "the expanded row carries the wake/sleep buttons"
 msg=$(jsq '!!document.querySelector(".pane.agents .agents-cont-message")' 2>&1 | tail -1)
 assert_eq "$msg" "true" "the wake message input rides the strip"
 step "ok: wake strip opened for $CONT_NAME"
+
+# --- card t_5df01d0f: each agent's row opens THAT agent's chat ----------
+# Two agent homes carry one permanent chat each. Before the fix both
+# chats carried the BARE id "canonical": the roster row handed that id to
+# the shell, the shell's opener deduped the second click onto the first
+# agent's tab (one session, one tab), the store router answered the first
+# home that held the id, and the accent's match (last_session_id ===
+# focused id) always found the first agent. The id is agent-qualified at
+# the source now, so this pass proves the whole operator path: click A,
+# then B - the URL, the tab census and the accent all follow B, and A's
+# chat stays open beside it.
+agents=$(curl -s "${JOURNEY_BASE_URL}/agents")
+chat_ref() {
+  printf '%s' "$agents" | python3 -c '
+import json,sys
+rows = json.load(sys.stdin)
+print(next((r.get("last_session_id") or "" for r in rows if r.get("name") == sys.argv[1]), ""))' "$1" 2>/dev/null
+}
+ID_A=$(chat_ref "$CONT_NAME")
+ID_B=$(chat_ref "$CONT_NAME2")
+[ -n "$ID_A" ] && [ -n "$ID_B" ] || die "a roster row lost its last_session_id (A=[$ID_A] B=[$ID_B]): $agents"
+case "$ID_A" in "$CONT_NAME"-*) ;; *) die "A's chat id [$ID_A] is not agent-qualified" ;; esac
+case "$ID_B" in "$CONT_NAME2"-*) ;; *) die "B's chat id [$ID_B] is not agent-qualified" ;; esac
+assert_ne "$ID_A" "$ID_B" "two agents' permanent chats are two session ids"
+step "ok: both agent chats are openable and their ids are agent-qualified"
+
+# active_row: the roster row wearing the accent ("the open agent's row"),
+# "" when none does.
+active_row() {
+  jsq '(() => { const r = document.querySelector(".pane.agents .registry-row.reg-row-active .reg-row-name"); return r ? r.textContent.trim() : ""; })()' 2>&1 | tail -1 | tr -d '"'
+}
+dock_tabs() { jsq 'document.querySelectorAll(".dock-pane .dock-tab").length' 2>&1 | tail -1; }
+# open_agent_row <name>: the row's own open affordance (the name button)
+open_agent_row() {
+  jsq '(name => {
+    const row = [...document.querySelectorAll(".pane.agents .registry-row")]
+      .find(r => [...r.querySelectorAll(".reg-row-name")].some(n => n.textContent.trim() === name));
+    const b = row?.querySelector("button.registry-open");
+    if (!b) return "no-open";
+    b.click();
+    return "ok";
+  })("'"$1"'")' 2>&1 | tail -1 | tr -d '"'
+}
+
+tabs0=$(dock_tabs)
+got=$(open_agent_row "$CONT_NAME")
+assert_eq "$got" "ok" "A's roster row offers the chat open affordance"
+wait_js "location.pathname === \"/chat/$ID_A\"" 15
+tabsA=$(dock_tabs)
+assert_eq "$tabsA" "$((tabs0 + 1))" "A's row opens ONE chat tab bound to A's session"
+assert_eq "$(active_row)" "$CONT_NAME" "A's row wears the accent once its chat is open"
+step "ok: A ($CONT_NAME) opened its own chat ($ID_A)"
+
+got=$(open_agent_row "$CONT_NAME2")
+assert_eq "$got" "ok" "B's roster row offers the chat open affordance"
+# THE acceptance law: B's click must move the shell to B's chat, not
+# focus A's tab (the pre-fix dedupe) - and it must MINT a tab.
+wait_js "location.pathname === \"/chat/$ID_B\"" 15
+tabsB=$(dock_tabs)
+assert_eq "$tabsB" "$((tabsA + 1))" "B's row mints its OWN chat tab (no dedupe onto A's)"
+assert_eq "$(active_row)" "$CONT_NAME2" "the accent follows the open agent - B's row, not A's"
+step "ok: B ($CONT_NAME2) opened its own chat ($ID_B)"
+
+# Both agent chats are open, one chip each: the tab title falls back to
+# the session id's prefix for a session the sidebar list does not carry,
+# and the two names differ in their first eight characters by design.
+prefix_a=$(printf '%s' "$ID_A" | cut -c1-8)
+prefix_b=$(printf '%s' "$ID_B" | cut -c1-8)
+both=$(jsq '(() => {
+  const titles = [...document.querySelectorAll(".dock-pane .dock-tab")].map(x =>
+    ((x.getAttribute("aria-label") || "") || x.title || x.querySelector(".dock-tab-title")?.textContent || x.textContent || "").trim());
+  return (titles.some(s => s.startsWith("'"$prefix_a"'")) && titles.some(s => s.startsWith("'"$prefix_b"'"))) ? 1 : 0;
+})()' 2>&1 | tail -1)
+assert_eq "$both" "1" "both agent chats stay open, one dock chip each ($prefix_a + $prefix_b)"
 
 assert_no_console_errors
 step "GREEN: continuous roster (merged Agents tab) journey"

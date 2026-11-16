@@ -61,7 +61,8 @@ func TestCreateHomeScaffoldsAndSeeds(t *testing.T) {
 		t.Errorf("schedule not seeded:\n%s", crons)
 	}
 	// The canonical chat exists in the agent's OWN store (ruling 6),
-	// bound to the agent.
+	// bound to the agent, under the home's OWN id (card t_5df01d0f:
+	// agent-qualified, so two homes' chats are two ids).
 	st, err := store.Open(filepath.Join(dir, "data", "omega.db"))
 	if err != nil {
 		t.Fatalf("agent store: %v", err)
@@ -69,12 +70,21 @@ func TestCreateHomeScaffoldsAndSeeds(t *testing.T) {
 	defer st.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
 	defer cancel()
-	sess, err := st.GetSession(ctx, CanonicalSessionID)
+	sess, err := st.GetSession(ctx, CanonicalSessionIDFor("scout"))
 	if err != nil {
 		t.Fatalf("canonical chat: %v", err)
 	}
+	if sess.ID != "scout-canonical" {
+		t.Errorf("canonical chat id = %q, want scout-canonical", sess.ID)
+	}
 	if sess.Agent != "scout" {
 		t.Errorf("canonical chat agent = %q, want scout", sess.Agent)
+	}
+	// The bare id never exists in an agent home: it is the id the
+	// daemon's own store answers, and a second copy of it in a home is
+	// the collision this card fixes.
+	if _, err := st.GetSession(ctx, CanonicalSessionID); err == nil {
+		t.Error("agent home carries the BARE canonical id - two homes would collide again")
 	}
 }
 
@@ -132,11 +142,12 @@ func TestCanonicalPreviewUnreadFlow(t *testing.T) {
 	defer cancel()
 	// First the report (assistant) lands - the wake ran while the human
 	// slept. Unread because last_read_at is empty.
-	if err := st.AppendMessage(ctx, CanonicalSessionID, core.Assistant{Content: "patrol complete, 0 anomalies"}); err != nil {
+	id := CanonicalSessionIDFor("scout")
+	if err := st.AppendMessage(ctx, id, core.Assistant{Content: "patrol complete, 0 anomalies"}); err != nil {
 		t.Fatalf("append report: %v", err)
 	}
 	st.Close()
-	preview, at, unread := m.canonicalPreview(dir)
+	preview, at, unread := m.canonicalPreview(dir, "scout")
 	if !unread {
 		t.Error("report without a read is marked read")
 	}
@@ -150,7 +161,7 @@ func TestCanonicalPreviewUnreadFlow(t *testing.T) {
 	if _, err := m.CanonicalChat("scout"); err != nil {
 		t.Fatalf("CanonicalChat: %v", err)
 	}
-	if _, _, unread := m.canonicalPreview(dir); unread {
+	if _, _, unread := m.canonicalPreview(dir, "scout"); unread {
 		t.Error("viewed chat still unread")
 	}
 }

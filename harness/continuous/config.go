@@ -10,12 +10,42 @@
 // not tool-writable), and the roster shape.
 package continuous
 
-// CanonicalSessionID is the fixed id of the one permanent chat every
-// agent home carries (ruling 6). The home's own store holds exactly it
-// plus the wake runs that ride it; compaction folds it in place - the
-// id never changes, the wake subprocess re-joins via
-// `omega run --session canonical`.
+import "github.com/EndoTheDev/omega/agent"
+
+// CanonicalSessionID is the fixed id of the DEFAULT agent's one
+// permanent chat (ruling 6). Every AGENT HOME's chat carries the
+// qualified id CanonicalSessionIDFor(name) instead - see below.
+//
+// The home's own store holds its chat plus the wake runs that ride it;
+// compaction folds it in place - the id never changes, so the wake
+// subprocess re-joins the same row.
 const CanonicalSessionID = "canonical"
+
+// CanonicalSessionIDFor returns the id of agentName's one permanent
+// chat. An agent home's id is AGENT-QUALIFIED; the default agent keeps
+// the bare one.
+//
+// Why the qualification exists (card t_5df01d0f): the daemon serves
+// every agent session through ONE store handle, and that handle
+// resolves an id by probing the home's agent stores for the row
+// (harness/store/router.go). A bare "canonical" seeded in two homes is
+// one id twice, and the probe answers the FIRST home that holds it - so
+// the second agent's roster row opened the first agent's chat, the
+// run typed into it executed on the wrong home (SessionOwner resolves
+// by the same probe), and the roster's active-row match
+// (last_session_id === focused id) always took the first agent. A
+// per-home id makes the id itself the owner, and every one of those
+// three readers is correct without learning about agents.
+//
+// The default agent's sessions live in the home's MAIN store and
+// nothing else competes for the bare id there, so it stays exactly as
+// it was - `omega run --session canonical` keeps working.
+func CanonicalSessionIDFor(agentName string) string {
+	if agentName == "" || agentName == agent.DefaultAgentName {
+		return CanonicalSessionID
+	}
+	return agentName + "-" + CanonicalSessionID
+}
 
 // Config is the continuous capsule's config section (continuous: in
 // config.yaml). Cost ruling 17: the ONLY budget is the per-wake turn

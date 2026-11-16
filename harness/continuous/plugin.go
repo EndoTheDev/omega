@@ -82,6 +82,14 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	machine := NewMachine(home, cfg)
 	p.machine = machine
 	p.ctx = ctx
+	// The canonical-id migration (card t_5df01d0f): agent homes created
+	// before the chat id became agent-qualified still carry the bare
+	// "canonical", which is the collision this capsule's roster rows
+	// tripped over. Idempotent, so every mount may run it; it touches
+	// only files this capsule owns (agents/<name>/data/omega.db).
+	if err := machine.MigrateCanonicalIDs(); err != nil {
+		return err
+	}
 	// The evidence ledger (ruling 11): runtime-owned, spine-fed, and
 	// NEVER tool-writable - it subscribes through AddEventObserver, a
 	// surface no tool registry reaches. Per-agent stores fall out of
