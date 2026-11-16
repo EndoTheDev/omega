@@ -18,6 +18,7 @@
     <NavCluster
       :can-back="canBack"
       :can-forward="canForward"
+      :palette-open="paletteOpen"
       @back="$emit('back')"
       @forward="$emit('forward')"
       @open-palette="$emit('open-palette')" />
@@ -131,6 +132,10 @@
     // the nav history's end states (app.vue's computeds) - the arrows dim
     canBack: boolean;
     canForward: boolean;
+    // card t_cc6d0920: the palette's open state rides down to the cluster -
+    // the takeover hides the arrows + the Ctrl+K toggle while the field is
+    // up (the cluster keeps their layout, so the seat never moves).
+    paletteOpen: boolean;
   }>();
 
   defineEmits<{

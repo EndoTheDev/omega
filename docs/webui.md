@@ -68,27 +68,37 @@ widths are; never spacer-balanced. The EDGE TOGGLES (left / bottom /
 right) and the settings gear stay pinned far right. Back/forward dim via
 the REAL `disabled` attribute, never a lookalike. Below the 768px
 breakpoint the CLUSTER HIDES and the toggles STAY - they are the drawer
-handles. The palette affordance (`.nav-palette-input`, 260x24, `26vw`
-cap) is a BUTTON dressed as an input: pure affordance, no typing, no
-second focus path (the dialog owns the only search field), one click =
-the ctrl+k intent, and its "placeholder" is a LIVE `HH:MM` clock
-re-rendered on each minute boundary (the `nav-palette-clock` span is
-decorative - `aria-hidden` - so the affordance's name stays the
-command-palette hint). Both palette doors ride app.vue's ONE
-`paletteOpen` state, and a
-pointerdown anywhere outside the overlay closes it (the scrimless
-overlay listens on the document; the `data-palette-trigger` markers are
-the one exemption, so a click that opens cannot close on the way out).
+handles. The palette SEAT (`.nav-palette-input`, 420x24, `26vw` cap)
+holds the live `HH:MM` clock while the palette is closed - a button
+dressed as an input, one click = the ctrl+k intent, the `nav-palette-clock`
+span decorative (`aria-hidden`) so the affordance's name stays the
+command-palette hint. **Opening the palette takes the seat over in place**
+(card t_cc6d0920, HIS 2026-11-16): the palette's own field teleports into
+`#nav-palette-slot` (a `display: contents` anchor inside the cluster, so
+the field is a flex item in exactly the box the clock filled), the clock
+button stands down, and the bar's other chrome - the back/forward arrows
+and the Ctrl+K toggle - hides by `visibility` (never `display`), which
+keeps their layout so the seat cannot slide sideways mid-takeover. Esc
+closes the palette and the clock returns, still ticking (the timer belongs
+to the cluster, not to the button). Both palette doors ride app.vue's ONE
+`paletteOpen` state, so both land on the identical state, and a
+pointerdown anywhere outside the palette closes it (the scrimless
+overlay listens on the document; the `data-palette-trigger` markers and
+the teleported field itself are the exemptions, so a click that opens
+cannot close on the way out).
 
 **The command palette's geometry** (card t_d4443ab5, VS Code
 quick-open): the panel HANGS from the top bar. Its top edge is
 `var(--menubar-h)` - the same number the bar's own height reads - so the
-affordance you clicked and the panel it opens read as one control, and
-it is centred on that absolute-center section (640px wide, capped at
+seat you took over and the results below it read as one control, and it
+is centred on that absolute-center section (420px wide, capped at
 `100vw - 24px`). `position: fixed`, z 200: it overlays the panes and
 never pushes them, with no scrim (the panes stay readable behind it).
-Both open paths - the trigger click and Ctrl+K - ride ONE toggle, so
-they land on ONE geometry.
+Card t_cc6d0920 keeps that anchor exactly as merged (t_d83b54b8: both
+open paths land on x/y 505/35, 420 wide) but the panel is now the results
+dropdown ALONE - the field lives in the bar's seat, so the list drops
+from the bar's lower edge. Both open paths - the seat click and Ctrl+K -
+ride ONE toggle, so they land on ONE geometry.
 
 **Honest floors** (cards t_ae9ac5cf + t_8bcbe72e): the floor is a
 PER-COMPONENT registry fact, not a sidebar rule. `DOCKABLE_MIN_PX`
@@ -866,9 +876,9 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   the same payload, one boot read plus the toggle responses, the disabled
   set cached for the synchronous boot hydrate.
 - Shell: `MenuBar` (the three seats, see the top-bar paragraph),
-  `NavCluster` (back / forward / the fake-input palette affordance /
-  the Ctrl+K trigger, dead center; the affordance's placeholder is a
-  live clock), `StatusBar` (health dot,
+  `NavCluster` (back / forward / the palette seat - clock closed, the
+  palette's own field open, in place - / the Ctrl+K trigger, dead
+  center), `StatusBar` (health dot,
   token/ctx/rate telemetry, build version; uptime lives in the health
   popover the dot opens), `SearchInput`,
   `PaneDivider`, `TabBand` (the universal panel top bar: title left,

@@ -124,7 +124,8 @@ body {
 /* ---- card t_20fd8745 (Endo ruling 2026-11-13): the nav cluster seats
    DEAD CENTER on the menubar's FULL width - the absolute-middle trick the
    deleted 'Omega' wordmark used (robust to any left/right width), now the
-   cluster's seat: back / forward / the fake-input palette affordance /
+   cluster's seat: back / forward / the palette SEAT (clock closed, the
+   palette's own field open, in place - card t_cc6d0920) /
    the Ctrl+K trigger. Below the drawer breakpoint the cluster HIDES - the
    three edge toggles are the drawer handles there. The ends dim via the
    real disabled attribute - VS Code states. */
@@ -135,19 +136,29 @@ body {
   display: flex;
   align-items: center;
   gap: 2px;
+  /* card t_cc6d0920: the row is NOT symmetric - two arrows on the left of
+     the seat, ONE Ctrl+K toggle on its right - so the cluster's own center
+     sat 13px right of its middle element, and the palette's field (the
+     seat) floated off the bar's axis while the results panel below it is
+     bar-centred. This padding is the balance: 24px of toggle + the 2px
+     row gap. With it the SEAT is the bar's absolute middle, so the field
+     and the list it opens share one axis - in both states, closed and
+     open, so the takeover still never moves the seat. */
+  padding-right: 26px;
 }
 @media (max-width: 768px) {
   .nav-cluster { display: none; }
 }
-/* card t_20fd8745: the palette AFFORDANCE - a button dressed as an input.
-   Pure affordance: no typing, no second focus path (the dialog owns the
-   only search field), one click = the ctrl+k intent. Its placeholder is
-   the LIVE clock NavCluster re-renders on each minute boundary.
-   card t_d4443ab5: the affordance is the top bar's command-palette SECTION
+/* card t_20fd8745: the palette SEAT - closed, a button dressed as an input
+   whose placeholder is the LIVE clock NavCluster re-renders on each minute
+   boundary; open, the palette's real field teleports into this same box
+   (card t_cc6d0920, `.is-live` below). One seat, one geometry: the field
+   lands exactly where the clock was, so the takeover never moves it.
+   card t_d4443ab5: the seat is the top bar's command-palette SECTION
    and it carries the section's max width (200 -> 260 -> 420, the tuned
    2026-11-15 number); the 26vw cap keeps
    the centred cluster clear of the edge toggles on a narrow desktop
-   window. The overlay it opens is the same band (420, below). */
+   window. The panel it opens is the same band (420, below). */
 .nav-palette-input {
   display: inline-flex;
   align-items: center;
@@ -167,6 +178,34 @@ body {
   cursor: pointer;
 }
 .nav-palette-input:hover { color: var(--text); border-color: var(--accent); }
+/* card t_cc6d0920 (the takeover): while the palette is open the SAME seat
+   holds the palette's real field - CommandPalette teleports its input in
+   here wearing this class. One box, two states: the affordance's geometry
+   is the field's geometry, so the field lands exactly where the clock was.
+   A text input lays its own caret out, so it is a block rather than the
+   flex box the button was, and the line-height centers the glyphs in the
+   24px chip (24 - 2 x 1px border). */
+.nav-palette-input.is-live {
+  display: block;
+  border-color: var(--accent);
+  color: var(--text);
+  line-height: 22px;
+  cursor: text;
+  outline: none;
+}
+.nav-palette-input.is-live::placeholder { color: var(--text-dim); }
+/* the teleport seat (the live field's mount point): transparent to the
+   cluster's flex layout, so the teleported field is a flex item exactly as
+   the button it replaced was and the bar's geometry is identical open and
+   closed. Empty while closed = no box, no gap. */
+.nav-palette-slot { display: contents; }
+/* card t_cc6d0920: while the field is up the bar's other chrome HIDES -
+   visibility, not display: the arrows and the Ctrl+K toggle keep their
+   layout, so hiding them cannot slide the seat sideways mid-takeover. */
+.nav-cluster.palette-open .nav-btn {
+  visibility: hidden;
+  pointer-events: none;
+}
 .nav-palette-clock { font-variant-numeric: tabular-nums; }
 .nav-btn:disabled {
   opacity: 0.35;
@@ -176,15 +215,18 @@ body {
 }
 .nav-btn:hover:disabled { background: transparent; }
 
-/* the palette overlay (card t_d4443ab5: VS Code quick-open geometry): it
-   HANGS from the top bar's lower edge - the panel's top IS --menubar-h, so
-   the input you just clicked and the panel it opens read as one control -
-   centred on the top bar's absolute-center section (the affordance the
-   cluster seats there), and overlays the panes below (position: fixed,
-   above every chrome: menubar z 40, panel 200). It never pushes content:
-   the panes keep their geometry while it is up, and it carries no scrim -
-   the panes stay readable behind it. Both open paths (the trigger click,
-   Ctrl+K) ride ONE toggle and therefore this ONE geometry. */
+/* the palette panel (card t_d4443ab5: VS Code quick-open geometry): it
+   HANGS from the top bar's lower edge - the panel's top IS --menubar-h,
+   so the field you just took over and the panel it opens read as one
+   control - centred on the top bar's absolute-center section (the seat the
+   cluster holds), and overlays the panes below (position: fixed, above
+   every chrome: menubar z 40, panel 200). It never pushes content: the
+   panes keep their geometry while it is up, and it carries no scrim - the
+   panes stay readable behind it. Both open paths (the seat click,
+   Ctrl+K) ride ONE toggle and therefore this ONE geometry.
+   card t_cc6d0920: the panel is the results dropdown ALONE - the field
+   lives in the bar's seat (teleported out of this subtree), so what hangs
+   below the bar is the list. */
 .command-palette {
   position: fixed;
   top: var(--menubar-h);
@@ -201,6 +243,10 @@ body {
   z-index: 200;
   overflow: hidden;
 }
+/* card t_cc6d0920: the in-panel field is the MOBILE FALLBACK only (below
+   the drawer breakpoint the nav cluster is display:none, so there is no
+   seat to take over); on desktop the field wears .nav-palette-input
+   .is-live in the bar itself. */
 .command-palette-input {
   width: 100%;
   box-sizing: border-box;
