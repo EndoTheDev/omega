@@ -336,9 +336,18 @@ stop_chrome() {
 trap 'journey_lock_release; stop_chrome' EXIT
 
 # --- lane health -------------------------------------------------------------
-if ! curl -s "$JOURNEY_BASE_URL/health" 2>/dev/null | grep -q '"ok"'; then
+# -m 10 bounds the lane HTTP calls. A lane that ACCEPTS the connection but
+# never answers (a frozen single-threaded server, a socket nobody services)
+# used to park this curl - and with it the run lock - forever, before a single
+# recipe ran; every later suite then refused or queued behind a suite that
+# would never finish (witnessed live 2026-11-16, card t_91615fe6). A dead lane
+# now reports "not healthy" in seconds instead of hanging. One fetch, reused by
+# the diagnosis below: the old follow-up curl doubled the wait on a dead lane
+# and could re-hang on a lane that froze after the first attempt.
+lane_health="$(curl -s -m 10 "$JOURNEY_BASE_URL/health" 2>/dev/null)"
+if ! printf '%s' "$lane_health" | grep -q '"ok"'; then
   echo "journeys: lane $JOURNEY_BASE_URL is not healthy (infra, not product)" >&2
-  curl -s "$JOURNEY_BASE_URL/health" >&2 || true
+  printf '%s\n' "$lane_health" >&2 || true
   exit 2
 fi
 
@@ -437,6 +446,32 @@ else
 fi
 
 # --- run ---------------------------------------------------------------------
+# proc_alive <pid>: alive means still RUNNING. /proc/<pid>/stat state 'Z' is a
+# dead process whose parent has not reaped it yet - kill -0 says yes to it, and
+# a poll built on kill -0 alone would wait its whole budget out on every kill
+# and then report a "survivor" that is a corpse. No /proc (or no stat entry for
+# a pid the kernel still knows, as MSYS does) falls back to kill -0.
+proc_alive() {
+  local st
+  st="$(cat "/proc/$1/stat" 2>/dev/null)" || { kill -0 "$1" 2>/dev/null; return; }
+  case "${st##*) }" in Z*) return 1 ;; esac
+  return 0
+}
+
+# proc_child_pids <pid>: every live descendant, depth-first over /proc ppid
+# links. pgrep is not on every lane host (winbtw ships no procps), so the walk
+# reads stat field 4 directly - the same comm-name caution as
+# chrome_procs_matching: a comm containing a space would shift the fields.
+proc_child_pids() {
+  local want="$1" p pid
+  for p in /proc/[0-9]*; do
+    pid="${p#/proc/}"
+    [ "$(awk '{print $4}' "$p/stat" 2>/dev/null)" = "$want" ] || continue
+    printf '%s\n' "$pid"
+    proc_child_pids "$pid"
+  done
+}
+
 export JOURNEY_BASE_URL JOURNEY_CHROME_PORT JOURNEY_TIMEOUT JOURNEY_JSON JOURNEY_CDP_ATTACHED
 export JROOT
 export AB
@@ -448,7 +483,7 @@ export AB
 # says nothing about the presentation. The nightly CI lane without model
 # creds runs green with skips; the dev lane runs everything.
 lane_has_models() {
-  curl -s "$JOURNEY_BASE_URL/models" | grep -q '"models":\[[^]]'
+  curl -s -m 10 "$JOURNEY_BASE_URL/models" | grep -q '"models":\[[^]]'
 }
 NEEDS_MODEL_PROBE_DONE=0
 NEEDS_MODEL_PROBE_RESULT=0
@@ -500,7 +535,28 @@ for recipe in $want; do
   ) > "$log" 2>&1 9>&- &
   rpid=$!
   (sleep "$JOURNEY_TIMEOUT" && {
+    # TERM first: a recipe between steps (or one carrying a trap) leaves on it.
     kill "$rpid" 2>/dev/null
+    # ... but a subshell blocked inside a foreground child - an agent-browser
+    # call that never returns - defers TERM until that child exits, which may
+    # be never: `wait "$rpid"` below then holds the run lock forever and every
+    # later suite refuses or queues behind a suite that cannot finish
+    # (witnessed live 2026-11-16, card t_91615fe6). Poll briefly, then
+    # hard-kill the subshell and every descendant we can see, so the wall cap
+    # is a cap and not a hint. Residue: a SIGKILLed recipe skips its EXIT-trap
+    # cleanup; the next suite's pre-clean reaps it (as after a crashed run).
+    i=0
+    while [ "$i" -lt 25 ] && proc_alive "$rpid"; do
+      sleep 0.2
+      i=$((i + 1))
+    done
+    if proc_alive "$rpid"; then
+      for cpid in $(proc_child_pids "$rpid"); do
+        kill -9 "$cpid" 2>/dev/null
+      done
+      kill -9 "$rpid" 2>/dev/null
+      printf 'journeys: %s survived TERM (blocked child) - SIGKILLed\n' "$name" >> "$log"
+    fi
     printf 'journeys: %s exceeded %ss wall cap\n' "$name" "$JOURNEY_TIMEOUT" >> "$log"
   }) 9>&- &
   watchdog=$!
