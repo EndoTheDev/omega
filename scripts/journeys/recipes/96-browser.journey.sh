@@ -140,13 +140,34 @@ ab wait --load networkidle >/dev/null 2>&1 || true
 # t_9855a20e retired the "New Tab" placeholder it seated, so the tab opens
 # through the command palette - the same opener the menus called, and the
 # surviving door to every dockable.
-pal=$(jsq '(()=>{window.dispatchEvent(new KeyboardEvent("keydown",{key:"k",ctrlKey:true,bubbles:true}));return !!document.querySelector(".command-palette-input")?1:0})()')
+#
+# card t_cc6d0920 (the in-place takeover) owns the field's CLASS: above the
+# 768px drawer breakpoint the palette teleports its real input into the
+# top bar's seat (#nav-palette-slot) wearing `.nav-palette-input is-live`,
+# and `.command-palette-input` exists only BELOW the breakpoint (the mobile
+# fallback - CommandPalette.vue:30, the Teleport's :disabled="!inPlace").
+# A class-scoped selector therefore only holds on one side of the
+# breakpoint: witness the panel by `.command-palette` and the field by its
+# aria-label, which both branches carry.
+PAL_FIELD='input[aria-label="Command palette search"]'
+pal=$(jsq '(()=>{window.dispatchEvent(new KeyboardEvent("keydown",{key:"k",ctrlKey:true,bubbles:true}));return !!document.querySelector(".command-palette")?1:0})()')
 if [ "$pal" != "1" ]; then
   sleep 0.5
-  pal=$(jsq '!!document.querySelector(".command-palette-input")?1:0')
+  pal=$(jsq '!!document.querySelector(".command-palette")?1:0')
 fi
 assert_eq "$pal" "1" "the command palette opened (ctrl+k)"
-ab fill '.command-palette-input' 'browser' >/dev/null 2>&1
+# the field really mounted (either branch) - a fill on an absent selector
+# would otherwise only surface 10s later as "Browser never opened"
+palf=$(jsq '(()=>{const p=document.querySelector(".command-palette");const i=document.querySelector("input[aria-label=\"Command palette search\"]");return (p&&i)?1:0})()')
+assert_eq "$palf" "1" "the palette field is mounted (aria-label, both breakpoints)"
+ab fill "$PAL_FIELD" 'browser' >/dev/null 2>&1
+filled=0
+for i in $(seq 1 20); do
+  fv=$(jsq '(()=>{const i=document.querySelector("input[aria-label=\"Command palette search\"]");return i?(i.value||""):""})()' | tr -d '"')
+  case "$fv" in *browser*) filled=1; break ;; esac
+  sleep 0.3
+done
+assert_eq "$filled" "1" "the palette field took the query (fill landed)"
 bopen=0
 for i in $(seq 1 20); do
   b=$(jsq '(()=>{const r=[...document.querySelectorAll(".command-palette-list li")].find(x=>/^Open Browser$/i.test((x.querySelector(".command-title")||{}).textContent?.trim()||""));if(!r) return 0;r.click();return 1})()')
