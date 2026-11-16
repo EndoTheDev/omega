@@ -225,8 +225,10 @@ drag_to() {
     ab mouse up >/dev/null 2>&1
     sleep 0.2
     step "input-fault: the press at ($fx,$fy) never reached the page (pointerdowns frozen at $n0) - re-pressing once"
-    press_card "$fx" "$fy" "$n0" || \
+    press_card "$fx" "$fy" "$n0" || {
+      ab mouse up >/dev/null 2>&1
       die "the press never reaches the page on this lane (2 presses at ($fx,$fy), pointerdowns frozen at $n0) - a browser input fault, not a board regression | $(drag_witness)"
+    }
   fi
   x=$(( fx + dx )); y=$(( fy + dy ))
   i=1

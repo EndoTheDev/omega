@@ -136,8 +136,10 @@ press_or_die() {
   fi
   case "$rc" in
     0) return 0 ;;
-    2) die "the press never reaches the page on this lane (2 presses at ($x,$y), pointerdowns frozen at $(ptr_n), owns=[$(hit_at "$x" "$y")]) - a browser input fault, not a divider regression | $(geom_report)" ;;
-    *) die "a pointerdown reached the page at ($x,$y) but no handle took it (owns=[$(hit_at "$x" "$y")]) | $(geom_report)" ;;
+    2) ab mouse up >/dev/null 2>&1
+       die "the press never reaches the page on this lane (2 presses at ($x,$y), pointerdowns frozen at $(ptr_n), owns=[$(hit_at "$x" "$y")]) - a browser input fault, not a divider regression | $(geom_report)" ;;
+    *) ab mouse up >/dev/null 2>&1
+       die "a pointerdown reached the page at ($x,$y) but no handle took it (owns=[$(hit_at "$x" "$y")]) | $(geom_report)" ;;
   esac
 }
 drag_x() {
