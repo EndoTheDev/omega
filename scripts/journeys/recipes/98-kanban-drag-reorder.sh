@@ -51,6 +51,26 @@
 # saw is a LANE input fault (re-pressed once, bounded), and a second loss
 # dies naming the lane; a press that landed stays a board question and the
 # mid-drag assert answers it.
+#
+# Card t_44f55a54 (nightly 43851771718): the press coordinates were read
+# MID-UNFOLD. laneFolded() (boardLogic.ts) folds a lane at count <= 0, and
+# on mount `tasks` is [] until the first /tasks read lands - so every lane
+# opens life as a 36px rail and then unfolds over the 0.18s ease this
+# recipe asserts at e1. A card measured inside that window is a ~22px box
+# whose centre sits ~20px into the lane; by the time the stored point was
+# pressed (a CLI round trip later) the lane had finished opening and the
+# point owned `board-col` - `card_owns` had PASSED on that same coordinate.
+# Two rules now hold the measure->press gap:
+#   - a card is never measured off a lane that is still MOVING: lane_settled
+#     samples the source lane's width twice ~150ms apart and refuses until
+#     two samples agree and the lane is not folded (lanes are gated before
+#     every card measure, target lanes included);
+#   - the owns verdict is re-asserted on the press frame: press_card grades
+#     elementFromPoint at the very point it is about to press, immediately
+#     before `ab mouse down`. A point that lost its card re-aims ONCE from a
+#     fresh measure (the pointerdown receipt's own bounded-retry shape); a
+#     second loss dies naming the drift. A press that landed still reds on
+#     the board - the receipt grading is untouched.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 BTAG="j98"
@@ -117,17 +137,53 @@ card_geo() {
   [ "$CX" != "0" ] || die "card $1 not rendered (geo: $v)"
 }
 
-# card_owns <id>: the press point must BELONG to the card (elementFromPoint).
-# A gesture pressed at a point something else owns never reaches the card,
-# and the overnight red then reads as "the drag did not engage" with no way
-# to tell a stale coordinate from a dead pipeline (nightly 43807490891:
-# dragging=[] with the lanes exactly as seeded, so nothing was stale).
-card_owns() {
-  local id="$1" owner
-  owner=$(jsq "(()=>{const c=[...document.querySelectorAll('.card')].find(x=>x.dataset.id==='$id');if(!c) return 'missing';const e=document.elementFromPoint($CX,$CY);if(!e) return 'none';return c===e||c.contains(e)?'card':String((e.className&&String(e.className))||e.tagName)})()" 2>&1 | tail -1 | tr -d '"')
-  case "$owner" in
+# lane_settled <status> [timeout_s]: the lane is SETTLED - unfolded, and its
+# rendered width equal across two samples ~150ms apart. Nothing may be
+# measured off a lane that is still moving: on mount `tasks` is [] until the
+# first /tasks read lands, laneFolded() folds at count <= 0, so every lane
+# renders as a 36px rail and then eases open over LANE_EASE_MS (180ms). A
+# card measured inside that window is a narrow box whose centre sits inside
+# the lane, not the card, once the lane finishes opening (card t_44f55a54,
+# nightly 43851771718). Sets LANE_W to the settled width. Dies naming both
+# samples: a lane that never settles is the board's answer, not a timeout.
+lane_settled() {
+  local status="$1" t="${2:-8}" i=0 a b
+  while [ "$i" -lt $((t * 3)) ]; do
+    a=$(jsq "(function(){var c=document.querySelector('.board-col[data-status=$status]');if(!c) return 'missing';var r=c.getBoundingClientRect();return (c.classList.contains('folded')?'folded':'open')+'|'+Math.round(r.width)})()" 2>&1 | tail -1 | tr -d "\"'")
+    sleep 0.15
+    b=$(jsq "(function(){var c=document.querySelector('.board-col[data-status=$status]');if(!c) return 'missing';var r=c.getBoundingClientRect();return (c.classList.contains('folded')?'folded':'open')+'|'+Math.round(r.width)})()" 2>&1 | tail -1 | tr -d "\"'")
+    case "$a" in
+      open\|*)
+        if [ "$a" = "$b" ]; then LANE_W="${a#*|}"; return 0; fi
+        ;;
+    esac
+    sleep 0.1
+    i=$((i + 1))
+  done
+  die "lane $status never settled (two samples 150ms apart: [$a] then [$b]) - a card measured off a lane mid-unfold moves out from under the press (card t_44f55a54) | $(drag_witness)"
+}
+
+# card_press_geo <id>: the card's press point in ONE eval - centre (CX CY),
+# top and height (TOP H), and what OWNS that exact point (OWNS via
+# elementFromPoint, same frame). The verdict and the coordinate it grades
+# must never come from two round trips: that gap is exactly what let a lane
+# finish unfolding between the measure and the press (t_44f55a54).
+card_press_geo() {
+  local v
+  v=$(jsq "(function(){var c=[...document.querySelectorAll('.card')].find(function(x){return x.dataset.id==='$1'});if(!c) return '0,0,0,0,missing';var r=c.getBoundingClientRect();var x=Math.round(r.x+r.width/2),y=Math.round(r.y+r.height/2);var e=document.elementFromPoint(x,y);var o=!e?'none':(c===e||c.contains(e)?'card':String((e.className&&String(e.className))||e.tagName));return x+','+y+','+Math.round(r.y)+','+Math.round(r.height)+','+o})()" 2>&1 | tail -1 | tr -d '"')
+  CX="${v%%,*}"; CY="$(echo "$v" | cut -d, -f2)"; TOP="$(echo "$v" | cut -d, -f3)"; H="$(echo "$v" | cut -d, -f4)"; OWNS="$(echo "$v" | cut -d, -f5-)"
+  [ "$CX" != "0" ] || die "card $1 not rendered (geo: $v)"
+}
+
+# require_card_owns <id>: grade the OWNS verdict card_press_geo captured. A
+# gesture pressed at a point something else owns never reaches the card, and
+# the red then reads as "the drag did not engage" with no way to tell a stale
+# coordinate from a dead pipeline (nightly 43807490891: dragging=[] with the
+# lanes exactly as seeded, so nothing was stale).
+require_card_owns() {
+  case "$OWNS" in
     card) ;;
-    *) die "card $id's centre ($CX,$CY) is owned by [$owner], not the card - the press cannot reach it | $(drag_witness)" ;;
+    *) die "card $1's centre ($CX,$CY) is owned by [$OWNS], not the card - the press cannot reach it | $(drag_witness)" ;;
   esac
 }
 
@@ -193,15 +249,24 @@ ptr_n() {
   jsq '(()=>{return (window.__ptrLog||[]).length})()' 2>&1 | tail -1 | tr -d '"'
 }
 
-# press_card <x> <y>: press the point and grade its receipt.
+# press_card <x> <y> <n0> [srcCard]: press the point and grade its receipt.
 #   0 landed  - the DOCUMENT saw a pointerdown
 #   1 lost    - it did not: the input never reached the page (a lane fault)
+#   2 drifted - the point no longer belongs to [srcCard]: never pressed
 # Only the LOST case is retried (once, bounded): a press that landed is the
 # product's answer, and the mid-drag assert below reds on it.
+# The ownership re-assert rides the PRESS FRAME (card t_44f55a54): the point
+# and its elementFromPoint verdict are graded in the eval IMMEDIATELY before
+# `ab mouse down`, so a box that moved since the measure is caught here and
+# never pressed. [srcCard] empty (a rail press) skips the grade.
 press_card() {
-  local x=$1 y=$2 n0=$3 n1
+  local x=$1 y=$2 n0=$3 src="${4:-}" n1 owner
   ab mouse move "$x" "$y" >/dev/null 2>&1
   sleep 0.1
+  if [ -n "$src" ]; then
+    owner=$(jsq "(function(){var c=[...document.querySelectorAll('.card')].find(function(k){return k.dataset.id==='$src'});var e=document.elementFromPoint($x,$y);if(!e) return 'none';return (c&&(c===e||c.contains(e)))?'card':String((e.className&&String(e.className))||e.tagName)})()" 2>&1 | tail -1 | tr -d '"')
+    if [ "$owner" != "card" ]; then PRESS_OWNER="$owner"; return 2; fi
+  fi
   ab mouse down >/dev/null 2>&1
   sleep 0.1
   n1=$(ptr_n)
@@ -209,27 +274,44 @@ press_card() {
   return 1
 }
 
-# drag_to <fromX> <fromY> <toX> <toY>: press, walk the pointer in six
-# steps, settle on the target. The release is separate - a mid-drag
+# drag_to <fromX> <fromY> <toX> <toY> [srcCard]: press, walk the pointer in
+# six steps, settle on the target. The release is separate - a mid-drag
 # assert needs the gesture still live. The press point is stashed for
 # drag_witness (elementFromPoint there names a stale coordinate). The press
 # itself is verified against the input receipt: a lost press is re-pressed
 # ONCE and a second loss dies naming the lane fault, never the board.
+# With [srcCard], the press frame re-grades the point against that card: a
+# point that lost it re-aims ONCE from a fresh measure (card_press_geo, one
+# frame) and a second loss dies naming the drift - a settled lane must never
+# move a card box out from under a measured point (card t_44f55a54).
 drag_to() {
-  local fx="$1" fy="$2" tx="$3" ty="$4" dx dy x y i n0
-  dx=$(( (tx - fx) / 6 )); dy=$(( (ty - fy) / 6 ))
-  [ "$dx" -ne 0 ] || [ "$dy" -ne 0 ] || die "drag target equals source ($fx,$fy)"
-  jsq "(()=>{window.__pressAt='$fx,$fy';return 1})()" >/dev/null 2>&1
-  n0=$(ptr_n)
-  if ! press_card "$fx" "$fy" "$n0"; then
-    ab mouse up >/dev/null 2>&1
-    sleep 0.2
-    step "input-fault: the press at ($fx,$fy) never reached the page (pointerdowns frozen at $n0) - re-pressing once"
-    press_card "$fx" "$fy" "$n0" || {
-      ab mouse up >/dev/null 2>&1
-      die "the press never reaches the page on this lane (2 presses at ($fx,$fy), pointerdowns frozen at $n0) - a browser input fault, not a board regression | $(drag_witness)"
-    }
-  fi
+  local fx="$1" fy="$2" tx="$3" ty="$4" src="${5:-}" dx dy x y i n0 rc aim=0 lost=0
+  while :; do
+    dx=$(( (tx - fx) / 6 )); dy=$(( (ty - fy) / 6 ))
+    [ "$dx" -ne 0 ] || [ "$dy" -ne 0 ] || die "drag target equals source ($fx,$fy)"
+    jsq "(()=>{window.__pressAt='$fx,$fy';return 1})()" >/dev/null 2>&1
+    n0=$(ptr_n)
+    rc=0
+    press_card "$fx" "$fy" "$n0" "$src" || rc=$?
+    case "$rc" in
+      0) break ;;
+      2)
+        aim=$(( aim + 1 ))
+        [ "$aim" -lt 2 ] ||
+          die "the press point ($fx,$fy) stopped owning card $src twice (last owner [${PRESS_OWNER:-?}]) - the card box moved under a settled measure | $(drag_witness)"
+        step "press-drift: ($fx,$fy) no longer owns $src (owner [${PRESS_OWNER:-?}]) - re-aiming once from a fresh measure"
+        card_press_geo "$src"; fx=$CX; fy=$CY
+        ;;
+      1)
+        lost=$(( lost + 1 ))
+        ab mouse up >/dev/null 2>&1
+        sleep 0.2
+        [ "$lost" -lt 2 ] ||
+          die "the press never reaches the page on this lane (2 presses at ($fx,$fy), pointerdowns frozen at $n0) - a browser input fault, not a board regression | $(drag_witness)"
+        step "input-fault: the press at ($fx,$fy) never reached the page (pointerdowns frozen at $n0) - re-pressing once"
+        ;;
+    esac
+  done
   x=$(( fx + dx )); y=$(( fy + dy ))
   i=1
   while [ "$i" -lt 6 ]; do
@@ -340,10 +422,11 @@ switch_to_board
 step "ok: seeded triage a/b/c, todo d on $BOARD"
 
 # ---- a: drag C into the gap between A and B (in-column) --------------------
-card_geo "$C"; afx=$CX; afy=$CY
-card_owns "$C"
+lane_settled triage                     # never measure a card mid-unfold (t_44f55a54)
+card_press_geo "$C"; afx=$CX; afy=$CY
+require_card_owns "$C"
 card_geo "$B"; atx=$CX; aty=$(( TOP + 6 ))   # B's top edge: the upper half
-drag_to "$afx" "$afy" "$atx" "$aty"
+drag_to "$afx" "$afy" "$atx" "$aty" "$C"
 
 # mid-drag: the pushed-around list IS the feedback
 wait_dom_order_live triage "$A $C $B" 6
@@ -367,10 +450,12 @@ wait_dom_order triage "$A $C $B" 8
 step "ok: order survives a reload"
 
 # ---- b: drag B into the todo column, below D (cross-column) -----------------
-card_geo "$B"; bfx=$CX; bfy=$CY
-card_owns "$B"
+lane_settled triage
+card_press_geo "$B"; bfx=$CX; bfy=$CY
+require_card_owns "$B"
+lane_settled todo                       # the drop slot's box must be settled too
 card_geo "$D"; btx=$CX; bty=$(( TOP + H - 6 ))   # D's bottom edge
-drag_to "$bfx" "$bfy" "$btx" "$bty"
+drag_to "$bfx" "$bfy" "$btx" "$bty" "$B"
 
 # mid-drag: the optimistic move already shows B below D in todo
 wait_dom_order_live todo "$D $B" 6
@@ -386,10 +471,12 @@ wait_dom_order todo "$D $B" 8
 step "ok: cross-column drop rides one PATCH (status+after_id) and lands at the slot"
 
 # ---- c: release a drag off the board - revert, no server change ------------
-card_geo "$A"; cfx=$CX; cfy=$CY
-card_owns "$A"
+lane_settled triage
+card_press_geo "$A"; cfx=$CX; cfy=$CY
+require_card_owns "$A"
+lane_settled todo
 card_geo "$B"; ctx=$CX; cty=$(( TOP + 6 ))   # between d and b in todo
-drag_to "$cfx" "$cfy" "$ctx" "$cty"
+drag_to "$cfx" "$cfy" "$ctx" "$cty" "$A"
 
 # mid-drag: the optimistic move shows a in the todo column
 wait_dom_order_live todo "$D $A $B" 6
@@ -508,16 +595,18 @@ rail_box() {
   jsq "(function(){var c=document.querySelector('.board-col[data-status=$1]');var r=c&&c.querySelector('.lane-rail');if(!r) return '0|0';var b=r.getBoundingClientRect();return Math.round(b.x)+'|'+Math.round(b.width)})()" 2>&1 | tail -1 | tr -d "\"'"
 }
 
-# card_inview <id>: sets CX CY like card_geo, and DIES unless that centre
-# is inside the board's scroll port. A card scrolled behind the sidebar is
+# card_inview <id>: the card's press point (card_press_geo: centre + the
+# owns verdict from ONE frame) and DIES unless that centre is inside the
+# board's scroll port. A card scrolled behind the sidebar is
 # still in the DOM with a plausible rect, but a pointer press there lands on
 # the pane painted over it - the drag then starts on the wrong element and
 # the recipe measures a gesture nobody made.
 card_inview() {
-  card_geo "$1"
+  card_press_geo "$1"
   local ok
   ok=$(jsq "(function(){var p=document.querySelector('.board-scroll').getBoundingClientRect();return $CX>Math.round(p.x)&&$CX<Math.round(p.x+p.width)&&$CY>Math.round(p.y)&&$CY<Math.round(p.y+p.height)})()" 2>&1 | tail -1)
   [ "$ok" = "true" ] || die "card $1 is not inside the board's scroll port at ($CX,$CY) - scroll the SOURCE lane first"
+  require_card_owns "$1"
 }
 
 step "e1: folding a card-holding lane renders the rail (dot + vertical name + count)"
@@ -549,10 +638,11 @@ step "e2: the rail is a live drop target, and a live drag never reshapes the str
 # card scrolled out of the pane is not draggable - its rect sits behind a
 # sidebar and the gesture starts on whatever is painted there)
 scroll_start triage
+lane_settled triage
 card_inview "$A"; afx=$CX; afy=$CY
 rail_geo todo
 box_before="$(rail_box todo)"
-drag_to "$afx" "$afy" "$RX" "$RY"
+drag_to "$afx" "$afy" "$RX" "$RY" "$A"
 box_mid="$(rail_box todo)"
 [ "$box_mid" = "$box_before" ] || die "the strip reshaped under the cursor mid-drag (rail $box_before -> $box_mid) - the drop would land on a neighbour"
 drag_release
@@ -597,9 +687,10 @@ step "ok: the drained lane is a rail with no count, even though it was pinned co
 
 step "e4: a collapsed pin survives the drain AND the refill - only the click takes it back"
 scroll_start todo
+lane_settled todo
 card_inview "$D"; rfx=$CX; rfy=$CY
 rail_geo scheduled
-drag_to "$rfx" "$rfy" "$RX" "$RY"
+drag_to "$rfx" "$rfy" "$RX" "$RY" "$D"
 drag_release
 sleep 1
 [ "$(col_ids scheduled)" = "$D" ] || die "the refill drop did not land in scheduled (got [$(col_ids scheduled)])"
