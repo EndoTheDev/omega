@@ -44,6 +44,13 @@
 # so it read as a drag regression without proving one. The mid-drag
 # waits now die with drag_witness() (wait_dom_order_live): the dragged
 # card's live class, every column's x/width/rendered order, and the URL.
+#
+# Card t_6a6c3355 (nightly 43807490891): drag_witness still could not say
+# whether the press was ever DELIVERED. Every drag now grades its press
+# against the document-level pointerdown receipt: a press the page never
+# saw is a LANE input fault (re-pressed once, bounded), and a second loss
+# dies naming the lane; a press that landed stays a board question and the
+# mid-drag assert answers it.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 BTAG="j98"
@@ -177,19 +184,50 @@ assert_dragging() {
   [ "$out" = "true" ] || die "card $1 does not render mid-drag state (got: $out)"
 }
 
-# drag_to <fromX> <fromY> <toX> <toY>: press, walk the pointer in six
-# steps, settle on the target. The release is separate - a mid-drag
-# assert needs the gesture still live. The press point is stashed for
-# drag_witness (elementFromPoint there names a stale coordinate).
-drag_to() {
-  local fx="$1" fy="$2" tx="$3" ty="$4" dx dy x y i
-  dx=$(( (tx - fx) / 6 )); dy=$(( (ty - fy) / 6 ))
-  [ "$dx" -ne 0 ] || [ "$dy" -ne 0 ] || die "drag target equals source ($fx,$fy)"
-  jsq "(()=>{window.__pressAt='$fx,$fy';return 1})()" >/dev/null 2>&1
-  ab mouse move "$fx" "$fy" >/dev/null 2>&1
+# ptr_n: how many pointerdowns the DOCUMENT has seen so far (the receipt
+# switch_to_board installs). A press that leaves this number unchanged never
+# reached the page at all - the distinction nightly 43807490891's red could
+# not make (card t_6a6c3355): "the drag did not engage" was printed for a
+# gesture that was never delivered.
+ptr_n() {
+  jsq '(()=>{return (window.__ptrLog||[]).length})()' 2>&1 | tail -1 | tr -d '"'
+}
+
+# press_card <x> <y>: press the point and grade its receipt.
+#   0 landed  - the DOCUMENT saw a pointerdown
+#   1 lost    - it did not: the input never reached the page (a lane fault)
+# Only the LOST case is retried (once, bounded): a press that landed is the
+# product's answer, and the mid-drag assert below reds on it.
+press_card() {
+  local x=$1 y=$2 n0=$3 n1
+  ab mouse move "$x" "$y" >/dev/null 2>&1
   sleep 0.1
   ab mouse down >/dev/null 2>&1
   sleep 0.1
+  n1=$(ptr_n)
+  [ "$n1" != "$n0" ] && return 0
+  return 1
+}
+
+# drag_to <fromX> <fromY> <toX> <toY>: press, walk the pointer in six
+# steps, settle on the target. The release is separate - a mid-drag
+# assert needs the gesture still live. The press point is stashed for
+# drag_witness (elementFromPoint there names a stale coordinate). The press
+# itself is verified against the input receipt: a lost press is re-pressed
+# ONCE and a second loss dies naming the lane fault, never the board.
+drag_to() {
+  local fx="$1" fy="$2" tx="$3" ty="$4" dx dy x y i n0
+  dx=$(( (tx - fx) / 6 )); dy=$(( (ty - fy) / 6 ))
+  [ "$dx" -ne 0 ] || [ "$dy" -ne 0 ] || die "drag target equals source ($fx,$fy)"
+  jsq "(()=>{window.__pressAt='$fx,$fy';return 1})()" >/dev/null 2>&1
+  n0=$(ptr_n)
+  if ! press_card "$fx" "$fy" "$n0"; then
+    ab mouse up >/dev/null 2>&1
+    sleep 0.2
+    step "input-fault: the press at ($fx,$fy) never reached the page (pointerdowns frozen at $n0) - re-pressing once"
+    press_card "$fx" "$fy" "$n0" || \
+      die "the press never reaches the page on this lane (2 presses at ($fx,$fy), pointerdowns frozen at $n0) - a browser input fault, not a board regression | $(drag_witness)"
+  fi
   x=$(( fx + dx )); y=$(( fy + dy ))
   i=1
   while [ "$i" -lt 6 ]; do
