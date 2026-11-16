@@ -52,6 +52,12 @@ type Server struct {
 	// health body then carries no provider fact at all.
 	healthMu       sync.Mutex
 	healthProvider *agentapi.HealthProvider
+	// logSeeded is test observability, nil in production: followLogs
+	// closes it once the offset baseline exists (its first successful
+	// tick). A test appends only after that baseline, so it cannot race
+	// the seed and watch its line get swallowed (t_56a3ba27). Set before
+	// the follower starts; read once, never written back.
+	logSeeded chan struct{}
 }
 
 // NewServer creates the shell server: base surface first, then the

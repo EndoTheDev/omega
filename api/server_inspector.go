@@ -310,7 +310,8 @@ func (s *Server) followLogs(ctx context.Context) {
 	if path == "" {
 		return // logging disabled (NopLogger): there is no file to tail
 	}
-	offset := int64(-1) // -1: no baseline yet, seed to the file's end
+	seeded := s.logSeeded // test observability: closed once offset >= 0, nil in production
+	offset := int64(-1)   // -1: no baseline yet, seed to the file's end
 	carry := ""
 	ticker := time.NewTicker(logPushInterval)
 	defer ticker.Stop()
@@ -320,6 +321,12 @@ func (s *Server) followLogs(ctx context.Context) {
 			return
 		case <-ticker.C:
 			offset, carry = s.pushLogDelta(path, offset, carry)
+			// The baseline is what makes the next append publishable; a
+			// failed open keeps offset at -1 and retries next tick.
+			if seeded != nil && offset >= 0 {
+				close(seeded)
+				seeded = nil
+			}
 		}
 	}
 }
