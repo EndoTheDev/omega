@@ -102,6 +102,18 @@ stderr) before anything happens - it must never fall through to a real
 dispatch. Without --max the cap is the LIVE config knob
 kanban.max_in_progress_per_profile; it is never hardcoded.
 
+The cap read REFUSES rather than defaulting (exit 3, one greppable
+`CONFIG CAP READ FAILED:` line naming the resolved root and the file it
+tried): a dispatch with an unknown cap is a dispatch with an unknown
+guard. Every pass that reads it prints `config: cap N from <file>`, and
+the seats line names the cap's SOURCE (`config cap N` or `--max N`) so a
+caller override can never be read as a config value.
+FD_ALLOW_MISSING_CONFIG=1 is the sandbox/CI hook: a throwaway home that
+carries no hermes config at all gets the documented floor of 2, loudly
+(`CONFIG CAP DEFAULTED:`). It covers an ABSENT file only - a present
+config that is unreadable, carries no numeric knob, or names a
+non-positive value refuses in every mode.
+
 Hermes home + board follow the hermes CLI's own resolution:
 HERMES_KANBAN_DB (pins the DB file) > HERMES_KANBAN_BOARD /
 HERMES_KANBAN_HOME > HERMES_HOME (a profiles/<name> home names its
@@ -155,7 +167,20 @@ resolve_board() {  # HERMES_KANBAN_DB pins the file > HERMES_KANBAN_BOARD >
   # what a missing board means (recreate it, or refuse loudly).
   local cand
   if [ -n "${HERMES_KANBAN_DB:-}" ]; then DB="${HERMES_KANBAN_DB//\\//}"; BOARD="<pinned>"; return; fi
-  for cand in "${HERMES_KANBAN_BOARD:-}" "$(cat "$ROOT/kanban/current" 2>/dev/null || true)"; do
+  # <root>/kanban/current is the CLI's own pointer file: ABSENT means the
+  # default board (documented, mirrored from kanban_home/get_current_board).
+  # An EXISTING pointer that cannot be read is a broken home, never a default -
+  # the old `cat ... 2>/dev/null || true` swallowed exactly that and settled on
+  # the default board's DB with no word (reader-block audit, card t_0303d69d).
+  local ptr=""
+  if [ -e "$ROOT/kanban/current" ]; then
+    if [ ! -f "$ROOT/kanban/current" ] || [ ! -r "$ROOT/kanban/current" ]; then
+      die "board pointer '$ROOT/kanban/current' exists but is not a readable file - refusing to fall back to the default board ($ROOT/kanban.db)" 3
+    fi
+    ptr=$(cat "$ROOT/kanban/current") \
+      || die "board pointer '$ROOT/kanban/current' could not be read - refusing to fall back to the default board ($ROOT/kanban.db)" 3
+  fi
+  for cand in "${HERMES_KANBAN_BOARD:-}" "$ptr"; do
     [ -n "$cand" ] || continue
     case "$cand" in *[/*\\]*) continue ;; esac   # malformed slug: fall through, never crash
     if [ "$cand" = default ]; then DB="$ROOT/kanban.db"; BOARD="$cand"; return; fi
@@ -245,14 +270,67 @@ dbx() { "$PY" -c "$DBPY" "$DB" x "$1"; }
 # never a hardcode: a hardcode drifted
 # from the law (CAP=4 while the config said 2) and the guard could spawn
 # past the sanctioned concurrency when the queue held several legal
-# candidates. grep/sed only - no yq dependence. Falls back to 2 when the
-# key or the file is absent (sandbox homes, CI runners).
-config_cap() {
-  local f="$ROOT/config.yaml"
-  [ -f "$f" ] || return 0
-  sed -n '/^kanban:/,/^[^[:space:]#]/p' "$f" \
+# candidates. grep/sed only - no yq dependence.
+#
+# NEVER A SILENT DEFAULT (card t_0303d69d). The old reader answered "" for
+# every failure (`[ -f "$f" ] || return 0`) and the caller's `case "" -> CAP=2`
+# turned "the cap could not be read" into "the cap is 2" without a word. The
+# ticket's tightest live receipt (2026-11-17 03:03 vs 03:07, SAME shell, same
+# cwd, no config edit): the dry-run printed `seats: 3 implementation + 1 review
+# = 4 max (config cap 3)` and the `--max 1` pass four minutes later printed
+# `seats: 1 implementation + 1 review = 2 max (config cap 1)`. Both reads
+# returned 3 - the seats line LABELLED the caller's --max as a config cap, so an
+# override and a lost read were the same text, and an operator lost an
+# implementation seat chasing a read that never failed. Two laws answer both
+# halves:
+#   1. a failed read REFUSES (one greppable `CONFIG CAP READ FAILED:` line
+#      naming the resolved ROOT and the file it tried, exit 3, no dispatch) -
+#      a dispatch with an unknown cap is a dispatch with an unknown guard;
+#   2. a successful read is NAMED in the log block (`config: cap N from <file>`)
+#      and the seats line states the cap's SOURCE (`config cap N` vs `--max N`).
+# FD_ALLOW_MISSING_CONFIG=1 is the SANDBOX hook (test/ops, same shape as FD_PY):
+# fixtures and CI runners keep a board under a throwaway home with no hermes
+# config at all, and there the floor of 2 is the documented behavior - never on
+# a live factory host. It covers an ABSENT file ONLY: a present config that is
+# unreadable, carries no numeric knob, or names a non-positive value is DRIFT
+# and refuses in every mode.
+#
+# READER-BLOCK AUDIT (same card): every other read in this block feeds a PATH,
+# not a guard number, and each already has a loud door - self_heal_board()
+# recreates a missing board by name or refuses, readers_up() refuses a missing
+# DB or reader, and resolve_board() settles on the default board only when the
+# pointer file is ABSENT (the CLI's own default-board signal). The one silent
+# read left in that chain - an EXISTING <root>/kanban/current that cannot be
+# read - now refuses in place (see resolve_board).
+CONFIG_CAP_FAILED='CONFIG CAP READ FAILED:'
+config_cap() {  # -> the cap on stdout; nonzero when it cannot be named (caller exits 3)
+  local f="${ROOT%/}/config.yaml" val
+  if [ -z "${ROOT:-}" ] || [ ! -d "$ROOT" ]; then
+    echo "$CONFIG_CAP_FAILED root '${ROOT:-<unset>}' is not a directory - no config to read (tried '$f')" >&2
+    return 3
+  fi
+  if [ ! -e "$f" ]; then
+    if [ "${FD_ALLOW_MISSING_CONFIG:-}" = 1 ]; then
+      echo "CONFIG CAP DEFAULTED: '$f' is absent (FD_ALLOW_MISSING_CONFIG=1) - sandbox floor cap 2" >&2
+      printf '2'
+      return 0
+    fi
+    echo "$CONFIG_CAP_FAILED '$f' is absent (root '$ROOT') - a dispatch with an unknown cap is a dispatch with an unknown guard" >&2
+    return 3
+  fi
+  if [ ! -f "$f" ] || [ ! -r "$f" ]; then
+    echo "$CONFIG_CAP_FAILED '$f' is not a readable regular file (root '$ROOT') - a dispatch with an unknown cap is a dispatch with an unknown guard" >&2
+    return 3
+  fi
+  val=$(sed -n '/^kanban:/,/^[^[:space:]#]/p' "$f" \
     | grep -E '^[[:space:]]*max_in_progress_per_profile:' \
-    | head -1 | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d "\"'[:space:]"
+    | head -1 | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d "\"'[:space:]")
+  case "$val" in
+    ''|*[!0-9]*|0)
+      echo "$CONFIG_CAP_FAILED '$f' carries no usable kanban.max_in_progress_per_profile (read '${val:-<empty>}') - a dispatch with an unknown cap is a dispatch with an unknown guard" >&2
+      return 3 ;;
+  esac
+  printf '%s' "$val"
 }
 
 DRY=0; MAXARG=0
@@ -272,9 +350,22 @@ resolve_hermes
 resolve_board
 self_heal_board
 readers_up
-CAP=$(config_cap)
-case "$CAP" in ''|*[!0-9]*|0) CAP=2 ;; esac
-[ "$MAXARG" -gt 0 ] && CAP="$MAXARG"   # --max overrides: N stays a live concurrency cap
+# The cap read REFUSES rather than defaulting (config_cap: one
+# `CONFIG CAP READ FAILED:` line naming ROOT and the file it tried, exit 3
+# here) - a pass that cannot name its cap does not dispatch, and it names the
+# file it DID read on the success path (the `config:` log line below).
+CAPFILE="${ROOT%/}/config.yaml"
+CFG_CAP=$(config_cap) || exit 3
+# The sandbox floor names its own absence: the log must never claim a file it did
+# not read (config_cap already said so on stderr; this keeps the report honest).
+CAPFROM="$CAPFILE"
+if [ ! -e "$CAPFILE" ]; then
+  CAPFROM="<absent: $CAPFILE> (sandbox floor, FD_ALLOW_MISSING_CONFIG=1)"
+fi
+CAP="$CFG_CAP"; CAPSRC="config cap $CFG_CAP"
+if [ "$MAXARG" -gt 0 ]; then
+  CAP="$MAXARG"; CAPSRC="--max $MAXARG"   # --max overrides: N stays a live concurrency cap
+fi
 
 move_paths() {  # stdin -> both sides of every move-shaped line, path tokens only
   # A MOVE card writes BOTH sides of every move it declares: the target and
@@ -583,7 +674,10 @@ RUNIMPL_N=$(( ${#RUNNING[@]} - RUNREV_N ))
 IMPL_SEATS="$CAP"; SEAT_NOTE=""
 if [ "$IMPL_SEATS" -gt 3 ]; then
   IMPL_SEATS=3
-  SEAT_NOTE="config cap $CAP > 3 - implementation seats clamped to 3"
+  # CAPSRC, not the bare number: under --max the clamp is the CALLER's number,
+  # and calling it `config cap` is how the 2026-11-16 ticket read an override as
+  # a lost config read.
+  SEAT_NOTE="$CAPSRC > 3 - implementation seats clamped to 3"
 fi
 REVIEW_SEATS=1
 TOTAL_SEATS=$(( IMPL_SEATS + REVIEW_SEATS ))
@@ -741,10 +835,20 @@ else
   echo "review lane: live=0 cap=1 - spawn: none$REV_LANE_NOTE"
 fi
 [ -n "$REVHOLD" ] && echo "review lane hold: $REVHOLD ($REV_HOLD_WHY)"
+# The cap PROVENANCE line (card t_0303d69d): every pass names the file the cap
+# came from, so the next "cap 3 here, cap 1 there" ticket is diagnosable from
+# the log alone. Under --max the seats line names the CALLER as the source - the
+# old text said `config cap $CAP` either way, which is exactly the confusion the
+# ticket was filed on.
+if [ "$MAXARG" -gt 0 ]; then
+  echo "config: cap $CFG_CAP from $CAPFROM (--max $MAXARG overrides this pass)"
+else
+  echo "config: cap $CFG_CAP from $CAPFROM"
+fi
 if [ -n "$SEAT_NOTE" ]; then
   echo "seats: $SEAT_NOTE (3 implementation + 1 review = 4 max)"
 else
-  echo "seats: $IMPL_SEATS implementation + 1 review = $TOTAL_SEATS max (config cap $CAP)"
+  echo "seats: $IMPL_SEATS implementation + 1 review = $TOTAL_SEATS max ($CAPSRC)"
 fi
 PARKED=(); LEGAL=0
 
