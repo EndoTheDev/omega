@@ -21,8 +21,17 @@ import (
 // scheduler is a normal state, not a missing feature.
 // The /cron command reads the runner's own job list (the capsule is
 // its only consumer; the webui tab reads the same rows over the wire).
+//
+// chain-on-miss is the command seam's contract (agent.RegisterCommand):
+// the wrapper falls through to the next module when a handler returns
+// an error, so a handler MUST reject a foreign name. Answering every
+// name with a nil error swallows the whole chain and every later
+// command (the /cron-answers-/models defect, card t_d923b50a).
 func cronHandler(p *Plugin) func(context.Context, string, string) (core.CommandResult, error) {
-	return func(_ context.Context, _ string, _ string) (core.CommandResult, error) {
+	return func(_ context.Context, name, _ string) (core.CommandResult, error) {
+		if name != "/cron" {
+			return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+		}
 		jobs := []JobInfo{}
 		if p.runner != nil {
 			if got := p.runner.Jobs(); got != nil {

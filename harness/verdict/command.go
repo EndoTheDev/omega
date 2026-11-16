@@ -24,8 +24,16 @@ import (
 //	/verdict N y        y/n shortcuts map to the first two options
 //	/verdict N skip     record a skip
 //	/verdict N <text>   free text (only when the card allows it)
+//
+// A foreign name is a chain MISS: the command seam's wrapper falls
+// through to the next module only on an error, so this handler answers
+// /verdict alone (card t_d923b50a - an unconditional answer here
+// swallowed every command registered earlier in the chain).
 func verdictHandler(p *Plugin) func(context.Context, string, string) (core.CommandResult, error) {
-	return func(_ context.Context, _ string, args string) (core.CommandResult, error) {
+	return func(_ context.Context, name, args string) (core.CommandResult, error) {
+		if name != "/verdict" {
+			return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+		}
 		if p.hub == nil {
 			return core.CommandResult{}, fmt.Errorf("verdicts seam not mounted")
 		}

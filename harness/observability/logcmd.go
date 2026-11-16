@@ -26,8 +26,16 @@ const defaultLogLines = 200
 // the no-op logger of a logging-disabled install) has none and /logs
 // reports that. The closure captures the mount-time context so the
 // handler reads the live logger seam.
+//
+// A foreign name is a chain MISS, not a /logs request: the command
+// seam's wrapper falls through on an error, so answering every name
+// here would swallow every command registered earlier in the chain
+// (card t_d923b50a).
 func logsHandler(ctx *core.Context) func(context.Context, string, string) (core.CommandResult, error) {
-	return func(_ context.Context, _ string, args string) (core.CommandResult, error) {
+	return func(_ context.Context, name, args string) (core.CommandResult, error) {
+		if name != "/logs" {
+			return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+		}
 		path := ""
 		if ctx != nil {
 			if p, ok := ctx.Services().Resolve("logger").(interface{ Path() string }); ok {
