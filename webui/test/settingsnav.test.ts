@@ -38,6 +38,7 @@ import {
   knobSubgroup,
   matchingCategoryIds,
   paneScrollIsUser,
+  paneScrollOwns,
   paneScrollSettle,
   paneScrollSettled,
   parseSelection,
@@ -1087,11 +1088,31 @@ test("only a REAL selection clamps, measured fresh, on the scroll event", () => 
   // step 5: ONE suppression - a scroll the PANE issued itself, never the
   // spy's intent-event lock: a scrollbar drag, an AT scroll and a
   // programmatic scrollTop dispatch no intent event at all, and gating on
-  // them left those scrolls unclamped (card t_e7404b84)
+  // them left those scrolls unclamped (card t_e7404b84).
+  //
+  // card t_b8f64550 refines WHICH pane scroll that is: the window is
+  // measured from the LIVE box first and the suppression is asked LAST, so a
+  // pass is never dropped on a window it did not look at, and only the pane's
+  // own DELIBERATE landing (paneScrollOwns) stands the clamp down - the
+  // clamp's own re-snap does not, because its dropped pass leaves a window
+  // measured from a box that has since moved in place for good.
+  assert.ok(
+    tab.indexOf("const [min, max] = clampedRange({") <
+      tab.indexOf("if (paneScrollOwns(paneScroll)) return;"),
+    "the pass measures the LIVE window before it asks the suppression",
+  );
   assert.match(
     tab,
-    /if \(!paneScrollSettled\(paneScroll\)\) return;/,
-    "the pane's own scroll is the clamp's only suppression",
+    /if \(paneScrollOwns\(paneScroll\)\) return;/,
+    "only the pane's own DELIBERATE scroll is the clamp's suppression",
+  );
+  const clampBody = tab.slice(
+    tab.indexOf("function applyClamp()"),
+    tab.indexOf("function scheduleClamp()"),
+  );
+  assert.ok(
+    !/paneScrollSettled\(paneScroll\)/.test(clampBody),
+    "the coarse 'any pane scroll' guard no longer drops a pass unmeasured",
   );
   assert.ok(
     !/if \(spyLocked\) return;[\s\S]{0,400}function scheduleClamp/.test(tab),
@@ -1154,13 +1175,17 @@ test("only a REAL selection clamps, measured fresh, on the scroll event", () => 
 test("a scroll the pane did not issue is clamped and ends the suppression (t_e7404b84)", () => {
   const GRACE = 200;
   // the pane issued a jump: until its events stop arriving, they are its own
-  const travelling: PaneScrollState = { target: 1813, graceUntil: 0 };
+  const travelling: PaneScrollState = { target: 1813, graceUntil: 0, intent: true };
   assert.equal(paneScrollSettled(travelling), false, "an animation in flight is not settled");
   assert.equal(paneScrollIsUser(travelling, 1000), false, "nor is it the user's scroll");
   // the events stop -> settle -> its last repeats stay the pane's (a
   // deselect must not re-select the section its return-to-top just passed)
   const settled = paneScrollSettle(1000, GRACE);
-  assert.deepEqual(settled, { target: null, graceUntil: 1200 }, "the pane's own scroll ended");
+  assert.deepEqual(
+    settled,
+    { target: null, graceUntil: 1200, intent: false },
+    "the pane's own scroll ended",
+  );
   assert.equal(paneScrollSettled(settled), true, "the clamp may run again");
   assert.equal(paneScrollIsUser(settled, 1100), false, "a trailing repeat is still the pane's");
   // and past the settle window EVERY scroll is the user's: the probe's
@@ -1171,7 +1196,58 @@ test("a scroll the pane did not issue is clamped and ends the suppression (t_e74
     true,
     "a scroll with no pane animation behind it is the user's - clamped, spy released",
   );
-  assert.equal(paneScrollIsUser({ target: null, graceUntil: 0 }, 0), true, "a fresh pane has no suppression at all");
+  assert.equal(
+    paneScrollIsUser({ target: null, graceUntil: 0, intent: false }, 0),
+    true,
+    "a fresh pane has no suppression at all",
+  );
+});
+
+// --- card t_b8f64550: WHO asked decides whether a pass may be dropped -----
+//
+// The nightly held the pane to 816 while the settled box answered 814
+// (`got [816] want [814]`), and the dev-tip probes found the other face: an
+// overshoot left the pane resting on `content - clientHeight` (the document's
+// own end, 4px past the section's) across eight 0.5s samples because every
+// pass that could have corrected it was dropped by the coarse
+// `!paneScrollSettled` guard - the clamp's own re-snap still counted as "the
+// pane's scroll in flight", so the pass measured nothing and nothing re-ran
+// it. Two rules follow, and the first is pure:
+//
+//   1. WHO asked decides the suppression. The pane's DELIBERATE landing (a
+//      jump, a restore, a deselect) is exempt while it travels - a filtered
+//      document leaves the pane's old position just past the section's end,
+//      so enforcing there would cancel the animation a few px in and the pane
+//      would never reach the section it was sent to. The clamp's own re-snap
+//      is NOT exempt: its target is already a window answer, so a pass that
+//      measures over it can only agree, and dropping it is what let a window
+//      measured from a transient box stand.
+//   2. A gesture that fires no scroll event (a same-value request: `scrollTop
+//      = 1e6` at the document's end, a nudge past the end) still measures -
+//      the intent event is its own trigger (pinned on the source above).
+test("only the pane's own DELIBERATE scroll stands the clamp down (t_b8f64550)", () => {
+  const jump: PaneScrollState = { target: 1813, graceUntil: 0, intent: true };
+  assert.equal(paneScrollOwns(jump), true, "a jump in flight owns the pane");
+  // the clamp's own re-snap is tracked too (the spy's anchor gate needs it) -
+  // but it never owns the pane
+  const snap: PaneScrollState = { target: 1151, graceUntil: 0, intent: false };
+  assert.equal(paneScrollOwns(snap), false, "the clamp's own re-snap does not");
+  // nothing in flight: every pass runs
+  assert.equal(paneScrollOwns({ target: null, graceUntil: 0, intent: false }), false);
+  assert.equal(
+    paneScrollOwns({ target: null, graceUntil: 200, intent: false }),
+    false,
+    "the settle grace after a scroll ends does not own the pane either",
+  );
+  // an intent scroll's settle ends the exemption: the window is re-measured
+  // the moment the animation is over
+  assert.equal(paneScrollOwns(paneScrollSettle(1000, 200)), false);
+  // and the window it must then be held to is the LIVE one. The nightly's own
+  // numbers: the section's bottom at 814 while the pane sat at 816 and the
+  // document continued to 818 (its 4px of body padding)
+  const nightly = { top: 0, height: 1237, viewport: 423, content: 1241 };
+  assert.deepEqual(clampedRange(nightly), [0, 814], "the live window ends at the section's bottom");
+  assert.equal(nightly.content - nightly.viewport, 818, "the document's own end is 4 further");
 });
 
 test("the clamp rides the scroll event and never the intent-event lock", () => {
@@ -1185,8 +1261,8 @@ test("the clamp rides the scroll event and never the intent-event lock", () => {
   assert.match(tab, /requestAnimationFrame\(\(\) => \{/, "and again on the next frame, for momentum");
   assert.match(
     tab,
-    /if \(!paneScrollSettled\(paneScroll\)\) return;/,
-    "the clamp's ONE suppression is the pane's own scroll",
+    /if \(paneScrollOwns\(paneScroll\)\) return;/,
+    "the clamp's ONE suppression is the pane's own DELIBERATE scroll (t_b8f64550)",
   );
   assert.match(
     tab,
@@ -1197,14 +1273,33 @@ test("the clamp rides the scroll event and never the intent-event lock", () => {
     !/if \(spyLocked\) return;[\s\S]{0,400}function scheduleClamp/.test(tab),
     "the clamp no longer rides the spy's intent-event lock",
   );
-  // the pane tracks the target of every scroll it issues itself
-  assert.match(tab, /function notePaneScroll\(root: HTMLElement, top: number\)/, "the track exists");
-  assert.match(tab, /notePaneScroll\(root, root\.scrollTop \+ delta - clear\)/, "a jump tracks its landing");
-  assert.match(tab, /notePaneScroll\(root, 0\);/, "a deselect's return to top tracks its landing");
+  // the pane tracks the target of every scroll it issues itself, and says
+  // WHO asked (card t_b8f64550): the clamp's own re-snap is tracked without
+  // claiming intent, so a later pass may measure straight over it
   assert.match(
     tab,
-    /notePaneScroll\(node, top\);/,
-    "a cleared query's give-back tracks its landing",
+    /function notePaneScroll\(root: HTMLElement, top: number, intent = false\)/,
+    "the track exists and carries the intent flag",
+  );
+  assert.match(
+    tab,
+    /notePaneScroll\(root, root\.scrollTop \+ delta - clear, true\)/,
+    "a jump tracks its landing as a DELIBERATE scroll",
+  );
+  assert.match(tab, /notePaneScroll\(root, 0, true\);/, "a deselect's return to top is deliberate");
+  assert.match(
+    tab,
+    /notePaneScroll\(node, top, true\);/,
+    "a cleared query's give-back tracks its landing as deliberate",
+  );
+  assert.match(tab, /notePaneScroll\(root, next\);/, "the clamp's own re-snap claims no intent");
+  // and the intent path is the trigger a scroll EVENT cannot give: a request
+  // that lands on the value the pane already holds fires none (t_720c9cff),
+  // so the gesture itself measures the window (card t_b8f64550)
+  assert.match(
+    tab,
+    /const noteUserIntent = \(\) => \{[\s\S]{0,900}?if \(clampId\.value\) scheduleClamp\(\);/,
+    "a user gesture measures the pane even when its scroll fires no event",
   );
   // and an interrupted animation cannot strand the pane outside its section
   assert.match(
@@ -1326,7 +1421,7 @@ test("a scroll inside the lock window is clamped when the lock ends (t_720c9cff)
   // the swallowed state is DECIDABLE: nothing is in flight, the pane is just
   // never re-measured - which is why the clamp is allowed to run the moment a
   // lock lifts (the t_e7404b84 gate answers "yes, settled")
-  const swallowed: PaneScrollState = { target: null, graceUntil: 0 };
+  const swallowed: PaneScrollState = { target: null, graceUntil: 0, intent: false };
   assert.equal(
     paneScrollSettled(swallowed),
     true,

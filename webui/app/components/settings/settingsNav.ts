@@ -819,6 +819,12 @@ export interface PaneScrollState {
   target: number | null;
   /** the settle window after that scroll ENDED (absolute ms) */
   graceUntil: number;
+  /** card t_b8f64550: WHO asked for that scroll. `true` = the pane's own
+      DELIBERATE landing (a jump, a restore, a deselect's return to top, a
+      drawer jump, a cleared query's give-back); `false` = the clamp's own
+      re-snap. Only the deliberate one may stand the clamp down - see
+      paneScrollOwns. */
+  intent: boolean;
 }
 
 /** paneScrollSettled: the pane's own scroll is over - its animation landed,
@@ -826,6 +832,26 @@ export interface PaneScrollState {
     section again from here. */
 export function paneScrollSettled(state: PaneScrollState): boolean {
   return state.target === null;
+}
+
+/** paneScrollOwns: the ONE scroll the clamp may not measure over - a
+    DELIBERATE landing the pane itself asked for (card t_b8f64550).
+
+    The suppression exists so a jump's smooth scroll is never cut short: the
+    pane is travelling to a position it chose, and the window it passes
+    through on the way is not the clamp's business (a filtered document puts
+    the pane's old position just past the section's end, so the FIRST frame
+    of a jump is often outside the live window - enforcing there would cancel
+    the animation a few px in and the pane would never reach its section).
+
+    The clamp's own re-snap is NOT that. Its target is already a position the
+    live window produced, so a pass that measures while it settles is
+    consistent by construction - and dropping it is how a window measured
+    from a transient box became the last word: a dropped pass does not
+    re-run (card t_b8f64550's nightly: the pane held to 816 while the
+    settled box answered 814). */
+export function paneScrollOwns(state: PaneScrollState): boolean {
+  return state.target !== null && state.intent;
 }
 
 /** paneScrollIsUser: this scroll event is the USER's - no pane scroll in
@@ -839,7 +865,7 @@ export function paneScrollIsUser(state: PaneScrollState, now: number): boolean {
 /** paneScrollSettle: the pane's own scroll ended at `now` - open the settle
     window the next scroll event is judged against. */
 export function paneScrollSettle(now: number, graceMs: number): PaneScrollState {
-  return { target: null, graceUntil: now + graceMs };
+  return { target: null, graceUntil: now + graceMs, intent: false };
 }
 
 // --- the anchor is the USER's (card t_63c699ce) ---------------------------
