@@ -535,14 +535,24 @@ func TestFollowLogsPublishesAppends(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+	// The first tick seeds the offset to the current end (the socket
+	// never replays history), so the append must land AFTER that
+	// baseline: an append racing the seed would be swallowed forever
+	// (pushLogDelta resyncs past it), and no frame deadline could save
+	// the test. Wait for the seed signal instead of sleeping a tick -
+	// a starved first tick under the parallel suite made the sleep a
+	// coin flip (t_56a3ba27).
+	seeded := make(chan struct{})
+	s.logSeeded = seeded
 	go func() {
 		defer close(done)
 		s.followLogs(ctx)
 	}()
-	// the first tick seeds the offset to the current end (the socket
-	// never replays history) - let it pass before appending the line
-	// this test expects to be pushed
-	time.Sleep(logPushInterval + 200*time.Millisecond)
+	select {
+	case <-seeded:
+	case <-time.After(testWaitTimeout):
+		t.Fatal("followLogs never seeded its offset (first tick did not complete)")
+	}
 
 	appendLog(t, path, "pushed line\n")
 	msg := readLogFrame(t, sub)
