@@ -21,6 +21,14 @@
 # Residue: the terminal pane claims a pty on mount; the trap DELETEs every
 # session id this run minted (the before/after diff of GET
 # /terminal/sessions) so the suite leaves no shell behind.
+#
+# Card t_6a6c3355: nightly 43807490891 read "the terminal did not shrink"
+# with the panes still at the seeded 200/440/220/400 - i.e. the press never
+# engaged a handle, and nothing said whether the pointer event was ever
+# DELIVERED. The recipe now grades every press against the document-level
+# pointerdown receipt before it drags: a press the page never saw is a LANE
+# input fault (retried ONCE, then it dies saying so), while a pointerdown
+# that landed without a handle taking it stays a divider regression.
 . "${JROOT:?run must export JROOT}/lib.sh"
 B="${JOURNEY_BASE_URL:?}"
 
@@ -83,14 +91,62 @@ assert_press_target() {
 # the button is down, because the release clears the handle's `.active`.
 DRAG_ACTIVE=""
 PRESS_AT=""
+PRESS_ACK=""
+# ptr_n: how many pointerdowns the DOCUMENT has seen so far (the receipt
+# installed before leg 1). A press that leaves this number unchanged never
+# reached the page at all.
+ptr_n() {
+  jsq '(()=>{return (window.__ptrLog||[]).length})()' 2>&1 | tail -1 | tr -d '"'
+}
+# press_verify <x> <y>: press the point and grade what came back.
+#   0 (engaged) - the handle took the gesture (some divider is `.active`)
+#   1 (refused) - a pointerdown LANDED but no handle took it: an overlay,
+#                 a dead handler, a product question
+#   2 (lost)    - no pointerdown at all: the INPUT never reached the page,
+#                 which is a lane/browser fault, not a divider regression
+# The distinction is the whole point of nightly 43807490891 (card
+# t_6a6c3355): that red read "the pane did not move" and could not say
+# whether the gesture was never delivered.
+press_verify() {
+  local x=$1 y=$2 n0 n1
+  n0=$(ptr_n)
+  ab mouse move "$x" "$y" >/dev/null 2>&1
+  ab mouse down >/dev/null 2>&1
+  sleep 0.1
+  DRAG_ACTIVE=$(jsq '(()=>{return [...document.querySelectorAll(".dock-divider")].filter(d=>d.classList.contains("active")).length})()' 2>&1 | tail -1 | tr -d '"')
+  n1=$(ptr_n)
+  PRESS_ACK="pointerdowns=$n0->$n1"
+  [ "$DRAG_ACTIVE" = "0" ] || return 0
+  [ "$n1" = "$n0" ] && return 2
+  return 1
+}
+# press_or_die <x> <y>: one press, one bounded retry when the input was
+# LOST (a lane input fault may drop a single press; a lost press must not
+# read as a broken divider), and a loud lane-fault verdict when even the
+# second press never arrives. A press that LANDED is never retried: that
+# is the product's answer and the recipe reds on it.
+press_or_die() {
+  local x=$1 y=$2 rc
+  press_verify "$x" "$y"; rc=$?
+  if [ "$rc" = "2" ]; then
+    ab mouse up >/dev/null 2>&1
+    sleep 0.2
+    step "input-fault: the press at ($x,$y) never reached the page ($PRESS_ACK) - re-pressing once"
+    press_verify "$x" "$y"; rc=$?
+  fi
+  case "$rc" in
+    0) return 0 ;;
+    2) ab mouse up >/dev/null 2>&1
+       die "the press never reaches the page on this lane (2 presses at ($x,$y), pointerdowns frozen at $(ptr_n), owns=[$(hit_at "$x" "$y")]) - a browser input fault, not a divider regression | $(geom_report)" ;;
+    *) ab mouse up >/dev/null 2>&1
+       die "a pointerdown reached the page at ($x,$y) but no handle took it (owns=[$(hit_at "$x" "$y")]) | $(geom_report)" ;;
+  esac
+}
 drag_x() {
   local cur=$1 to=$2 y=$3
   PRESS_AT="$cur,$y"
   assert_press_target "$cur" "$y"
-  ab mouse move "$cur" "$y" >/dev/null 2>&1
-  ab mouse down >/dev/null 2>&1
-  sleep 0.1
-  DRAG_ACTIVE=$(jsq '(()=>{return [...document.querySelectorAll(".dock-divider")].filter(d=>d.classList.contains("active")).length})()' 2>&1 | tail -1 | tr -d '"')
+  press_or_die "$cur" "$y"
   while [ "$cur" -ne "$to" ]; do
     if [ "$to" -gt "$cur" ]; then
       cur=$((cur + 10)); [ "$cur" -gt "$to" ] && cur=$to
