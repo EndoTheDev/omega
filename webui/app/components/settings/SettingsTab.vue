@@ -637,6 +637,7 @@
     matchingCategoryIds,
     modulesNavCategory,
     paneScrollIsUser,
+    paneScrollOwns,
     paneScrollSettle,
     paneScrollSettled,
     parseSelection,
@@ -1394,7 +1395,7 @@
   // release a deselect's suppression (the pane would re-select the section
   // its return-to-top just passed)
   const PANE_SETTLE_GRACE_MS = 200;
-  let paneScroll: PaneScrollState = { target: null, graceUntil: 0 };
+  let paneScroll: PaneScrollState = { target: null, graceUntil: 0, intent: false };
   let paneScrollTimer: ReturnType<typeof setTimeout> | undefined;
   function nowMs(): number {
     return typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -1416,14 +1417,19 @@
     }, PANE_SCROLL_GAP_MS);
   }
   function endPaneScroll() {
-    paneScroll = { target: null, graceUntil: 0 };
+    paneScroll = { target: null, graceUntil: 0, intent: false };
     if (paneScrollTimer !== undefined) clearTimeout(paneScrollTimer);
     paneScrollTimer = undefined;
   }
-  /** notePaneScroll: the pane is about to scroll ITSELF to `top` */
-  function notePaneScroll(root: HTMLElement, top: number) {
+  /** notePaneScroll: the pane is about to scroll ITSELF to `top`. `intent`
+      says WHO asked (card t_b8f64550): a DELIBERATE landing (a jump, a
+      restore, a deselect's return to top) may stand the clamp down while it
+      travels; the clamp's own re-snap may not - its target is already a
+      window answer, so a pass that measures while it settles is consistent
+      by construction. */
+  function notePaneScroll(root: HTMLElement, top: number, intent = false) {
     const limit = Math.max(root.scrollHeight - root.clientHeight, 0);
-    paneScroll = { target: Math.min(Math.max(top, 0), limit), graceUntil: 0 };
+    paneScroll = { target: Math.min(Math.max(top, 0), limit), graceUntil: 0, intent };
     armPaneSettle();
   }
   /** paneOwnScroll: true while a scroll event still belongs to a scroll the
@@ -1488,7 +1494,7 @@
       ? spyNodes.get(id) ?? spyNodes.get(parseSelection(id).category)
       : null;
     if (!node) {
-      notePaneScroll(root, 0);
+      notePaneScroll(root, 0, true);
       root.scrollTo({ top: 0, behavior });
       return;
     }
@@ -1506,7 +1512,7 @@
     // the pane's own scroll, tracked by its landing position: the clamp may
     // not fight it on the way (card t_e7404b84), the user's next scroll is
     // again the user's
-    notePaneScroll(root, root.scrollTop + delta - clear);
+    notePaneScroll(root, root.scrollTop + delta - clear, true);
     root.scrollTo({ top: root.scrollTop + delta - clear, behavior });
   }
 
@@ -1622,6 +1628,15 @@
     // for, it is the user's scroll now
     endPaneScroll();
     unlockSpy();
+    // card t_b8f64550: the gesture is ALSO the trigger a scroll EVENT cannot
+    // give. A request that lands on the value the pane already holds fires no
+    // scroll event at all - a `scrollTop = 1e6` at the document's end, a
+    // +40px nudge past a clamp end - so nothing would ever measure the pane
+    // again and a window left over from a box that has since moved stays the
+    // last word. The pass runs against the position the gesture starts from,
+    // and again on the frame after it (scheduleClamp), which is where a
+    // request that DID move the pane lands.
+    if (clampId.value) scheduleClamp();
   };
   function bindIntent(el: HTMLElement | null) {
     if (intentTarget === el) return;
@@ -1705,7 +1720,19 @@
   /** applyClamp holds scrollTop inside the selected section's range. The
       maths is the pure clampedRange (settingsNav.ts); the component only
       measures. The range is in DOCUMENT coordinates, so it does not move
-      as the pane scrolls - only the pane's window does. */
+      as the pane scrolls - only the pane's window does.
+
+      card t_b8f64550 - THE PASS LAW. The window is measured from the LIVE
+      box on EVERY pass, and the suppression is asked LAST, after the
+      measurement: a pass the clamp's own re-snap interrupted is no longer
+      dropped (its target is already a window answer, so measuring while it
+      settles is consistent), and only a scroll the pane DELIBERATELY asked
+      for - a jump, a restore, a deselect - may stand the clamp down while
+      it travels (paneScrollOwns). A dropped pass never re-runs, so a window
+      computed from a box that was still moving used to be the last word the
+      pane was held to (the nightly's 816 against the settled 814), and a
+      gesture that produced no scroll event at all left nothing holding it
+      (noteUserIntent is the other trigger). */
   function applyClamp() {
     // a programmatic jump is intent, not the user's hand: the pane's OWN
     // scroll (tracked by its landing position) is the ONE suppression (step
@@ -1717,7 +1744,6 @@
     // of those paths ever released).
     const root = bodyEl.value;
     if (!root) return;
-    if (!paneScrollSettled(paneScroll)) return;
     const id = clampId.value;
     if (!id) return;
     // a section a live query or `modified only` filtered out of the
@@ -1731,6 +1757,10 @@
       content: root.scrollHeight,
     });
     const now = root.scrollTop;
+    // the suppression, asked AFTER the live measurement (card t_b8f64550):
+    // only the pane's own DELIBERATE landing is exempt - never the clamp's
+    // own re-snap, whose dropped pass would leave a stale window in place
+    if (paneScrollOwns(paneScroll)) return;
     // card t_9e2aaca7: the end is the ONE side of the window the bound
     // cannot follow BOTH ways (a shrunk end pulls the pane up, a grown one
     // leaves it short), so a pass that measures a LONGER end under a pane
@@ -1751,6 +1781,8 @@
     // user's hand, so the scroll event it fires must not arm an anchor write.
     // Until now the clamp wrote scrollTop bare, so its own snap read as a
     // USER scroll - which is how a resize kept re-persisting a stale anchor.
+    // It is NOT an intent scroll (card t_b8f64550): the target is this pass's
+    // own window answer, so the next pass may measure straight over it.
     notePaneScroll(root, next);
     root.scrollTop = next;
   }
@@ -2383,7 +2415,7 @@
         // offset points past its end - the give-back is the section's top
         // instead (the pane stays where the filter says it is).
         const top = filterSection.value === null ? lastDocScrollTop : 0;
-        notePaneScroll(node, top);
+        notePaneScroll(node, top, true);
         node.scrollTop = top;
       }
       syncSpy();
