@@ -58,12 +58,35 @@ hostw() {
 divx() {
   jsq "(()=>{const d=document.querySelectorAll('.dock-divider')[$1];if(!d)return -1;const r=d.getBoundingClientRect();return Math.round(r.x+r.width/2)})()" | tail -1
 }
+# hit_at <x> <y>: what OWNS the press point - the answer a missed gesture
+# needs and cannot get from a pane-width reading. tag.class of the element
+# under the point, "none" for nothing.
+hit_at() {
+  jsq "(()=>{const e=document.elementFromPoint($1,$2);if(!e)return 'none';const c=(e.className&&String(e.className))||e.tagName;return (c+'').split(' ').slice(0,3).join('.')})()" 2>&1 | tail -1 | tr -d '"'
+}
+# the press point must OWN a divider before the gesture starts: a red that
+# says "the pane did not move" cannot tell a missed press from a dead
+# drag, and the overnight 43807490891 red was exactly that (gesture-active=0
+# with the panes still at their seeded 200/440/220/400 - the layout the
+# recipe asked for, so nothing was stale). This precondition turns the next
+# such red into the thing that blocked the press.
+assert_press_target() {
+  local x=$1 y=$2 hit
+  hit=$(hit_at "$x" "$y")
+  case "$hit" in
+    *dock-divider*) return 0 ;;
+  esac
+  die "the press point ($x,$y) is not a divider - it is owned by [$hit] | $(geom_report)"
+}
 # drag_x <x> <to> <y>: a stepped press / move / release along x
 # DRAG_ACTIVE is the gesture's own witness (see geom_report): sampled while
 # the button is down, because the release clears the handle's `.active`.
 DRAG_ACTIVE=""
+PRESS_AT=""
 drag_x() {
   local cur=$1 to=$2 y=$3
+  PRESS_AT="$cur,$y"
+  assert_press_target "$cur" "$y"
   ab mouse move "$cur" "$y" >/dev/null 2>&1
   ab mouse down >/dev/null 2>&1
   sleep 0.1
@@ -88,10 +111,16 @@ drag_x() {
 # order moved. Nightly 43586645271 red on this recipe's first leg with no
 # way to tell those apart - the report is the missing witness.
 geom_report() {
-  local divs panes
+  local divs panes ptr
   divs=$(jsq '(()=>{return [...document.querySelectorAll(".dock-divider")].map(d=>{const r=d.getBoundingClientRect();return Math.round(r.x+r.width/2)+(d.classList.contains("active")?"*":"")}).join(",")})()' 2>&1 | tail -1 | tr -d '"')
   panes=$(jsq '(()=>{return [...document.querySelectorAll("[data-pane-id]")].map(p=>((p.className.match(/kind-([a-z_]+)/)||[])[1]||"?")+":"+Math.round(p.getBoundingClientRect().width)).join(" ")})()' 2>&1 | tail -1 | tr -d '"')
-  printf 'gesture-active=%s dividers=[%s] panes=[%s]' "${DRAG_ACTIVE:-?}" "$divs" "$panes"
+  # ptr: how many pointerdowns the DOCUMENT has seen, and the last one's
+  # point. 0 next to a divider-owned press point = the input never reached
+  # the page (a lane/browser input fault); >0 with gesture-active=0 = the
+  # event landed but the handle did not take it (an overlay, a dead handler).
+  ptr=$(jsq '(()=>{const l=window.__ptrLog||[];const last=l[l.length-1];return l.length+(last?"@"+Math.round(last.x)+","+Math.round(last.y)+"->"+last.tgt:"")})()' 2>&1 | tail -1 | tr -d '"')
+  printf 'gesture-active=%s press=[%s] pointerdowns=[%s] dividers=[%s] panes=[%s]' \
+    "${DRAG_ACTIVE:-?}" "${PRESS_AT:-?}" "${ptr:-?}" "$divs" "$panes"
 }
 # near <got> <want> <tol> <name>
 near() {
@@ -117,6 +146,12 @@ HOST0=$(hostw)
 [ "$TERM0" -gt 150 ] || die "the terminal pane rendered ${TERM0}px (want > 150)"
 [ "$CHAT0" -gt 400 ] || die "the chat pane rendered ${CHAT0}px (want > 400)"
 step "ok: seeded dock [sidebar 200, chat $CHAT0, terminal $TERM0, inspector $INSP0]"
+
+# the gesture's input receipt (see geom_report): every pointerdown the
+# DOCUMENT sees, with its point and owning element. Installed once, before
+# the first press, on the capture phase so a pane-level stopPropagation
+# cannot hide it.
+jsq '(()=>{window.__ptrLog=[];document.addEventListener("pointerdown",function(e){var t=e.target||{};var c=(t.className&&String(t.className))||t.tagName||"?";window.__ptrLog.push({x:e.clientX,y:e.clientY,tgt:c.split(" ").slice(0,3).join(".")})},true);return 1})()' >/dev/null 2>&1
 
 # --- leg 1: the terminal's RIGHT divider, INWARD (the reported break) ------
 # drag LEFT 60: the inspector grows 60, the terminal gives exactly 60

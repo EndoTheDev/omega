@@ -110,6 +110,20 @@ card_geo() {
   [ "$CX" != "0" ] || die "card $1 not rendered (geo: $v)"
 }
 
+# card_owns <id>: the press point must BELONG to the card (elementFromPoint).
+# A gesture pressed at a point something else owns never reaches the card,
+# and the overnight red then reads as "the drag did not engage" with no way
+# to tell a stale coordinate from a dead pipeline (nightly 43807490891:
+# dragging=[] with the lanes exactly as seeded, so nothing was stale).
+card_owns() {
+  local id="$1" owner
+  owner=$(jsq "(()=>{const c=[...document.querySelectorAll('.card')].find(x=>x.dataset.id==='$id');if(!c) return 'missing';const e=document.elementFromPoint($CX,$CY);if(!e) return 'none';return c===e||c.contains(e)?'card':String((e.className&&String(e.className))||e.tagName)})()" 2>&1 | tail -1 | tr -d '"')
+  case "$owner" in
+    card) ;;
+    *) die "card $id's centre ($CX,$CY) is owned by [$owner], not the card - the press cannot reach it | $(drag_witness)" ;;
+  esac
+}
+
 # dom_order_expr <status> <ids>: JS returning true when the rendered
 # card id order inside that column matches.
 dom_order_expr() {
@@ -131,12 +145,19 @@ wait_dom_order() {
 # fold/auto-collapse moved a column between card_geo and the gesture).
 #   dragging - every card carrying the live-wrestled class: empty means
 #              the gesture never landed on a card;
+#   press    - the point the gesture was aimed at, and what OWNS it
+#              (elementFromPoint): a point that is not the card says the
+#              coordinates were stale, not the pipeline;
+#   pointerdowns - how many pointerdowns the DOCUMENT saw, and the last
+#              one's point/target: 0 = the input never reached the page
+#              (lane/browser input fault), >0 with dragging empty = it
+#              landed but the card did not take it;
 #   cols     - per column: x, width (a 36px rail reads as a rail), and
 #              the rendered id order the assert disagreed with;
 #   url      - which board view the read came from.
 drag_witness() {
   local w
-  w=$(jsq '(()=>{const cols=[...document.querySelectorAll(".board-col")].map(c=>{const r=c.getBoundingClientRect();return (c.dataset.status||"?")+":x"+Math.round(r.x)+"w"+Math.round(r.width)+"["+[...c.querySelectorAll(".card")].map(k=>k.dataset.id).join(",")+"]"}).join(" ");const drag=[...document.querySelectorAll(".card.dragging")].map(k=>k.dataset.id).join(",");return "dragging=["+drag+"] cols=["+cols+"] url="+location.href})()' 2>&1 | tail -1 | tr -d '"')
+  w=$(jsq '(()=>{const cols=[...document.querySelectorAll(".board-col")].map(c=>{const r=c.getBoundingClientRect();return (c.dataset.status||"?")+":x"+Math.round(r.x)+"w"+Math.round(r.width)+"["+[...c.querySelectorAll(".card")].map(k=>k.dataset.id).join(",")+"]"}).join(" ");const drag=[...document.querySelectorAll(".card.dragging")].map(k=>k.dataset.id).join(",");const l=(window.__ptrLog||[]);const last=l[l.length-1];const ptr=l.length+(last?"@"+Math.round(last.x)+","+Math.round(last.y)+"->"+last.tgt:"");const p=(window.__pressAt||"");const hit=p?(()=>{const xy=p.split(",");const e=document.elementFromPoint(Number(xy[0]),Number(xy[1]));if(!e)return "none";const c=(e.className&&String(e.className))||e.tagName;return (c+"").split(" ").slice(0,3).join(".")})():"?";return "dragging=["+drag+"] press=["+p+"] owns=["+hit+"] pointerdowns=["+ptr+"] cols=["+cols+"] url="+location.href})()' 2>&1 | tail -1 | tr -d '"')
   printf '%s' "${w:-<browser silent>}"
 }
 
@@ -158,11 +179,13 @@ assert_dragging() {
 
 # drag_to <fromX> <fromY> <toX> <toY>: press, walk the pointer in six
 # steps, settle on the target. The release is separate - a mid-drag
-# assert needs the gesture still live.
+# assert needs the gesture still live. The press point is stashed for
+# drag_witness (elementFromPoint there names a stale coordinate).
 drag_to() {
   local fx="$1" fy="$2" tx="$3" ty="$4" dx dy x y i
   dx=$(( (tx - fx) / 6 )); dy=$(( (ty - fy) / 6 ))
   [ "$dx" -ne 0 ] || [ "$dy" -ne 0 ] || die "drag target equals source ($fx,$fy)"
+  jsq "(()=>{window.__pressAt='$fx,$fy';return 1})()" >/dev/null 2>&1
   ab mouse move "$fx" "$fy" >/dev/null 2>&1
   sleep 0.1
   ab mouse down >/dev/null 2>&1
@@ -234,6 +257,10 @@ switch_to_board() {
   wait_js "(()=>{return [...document.querySelectorAll('.board-switch-select .model-list li')].some(l=>(l.textContent||'').trim()==='$BOARD')})()" 15
   js "$(printf '(()=>{const o=[...document.querySelectorAll(".board-switch-select .model-list li")].find(l=>(l.textContent||"").trim()==="%s");if(!o) return 0;o.click();return 1})()' "$BOARD")" >/dev/null
   wait_js "(()=>{return document.body.textContent.includes('$TAG')})()" 15
+  # the gesture's input receipt (see drag_witness): every pointerdown the
+  # DOCUMENT sees, capture phase. Installed here because a reload wipes it
+  # and every drag leg runs after a switch_to_board.
+  jsq '(()=>{if(window.__ptrLog) return 1;window.__ptrLog=[];document.addEventListener("pointerdown",function(e){var t=e.target||{};var c=(t.className&&String(t.className))||t.tagName||"?";window.__ptrLog.push({x:e.clientX,y:e.clientY,tgt:c.split(" ").slice(0,3).join(".")})},true);return 1})()' >/dev/null 2>&1
 }
 
 step "pinning board: $BOARD"
@@ -274,6 +301,7 @@ step "ok: seeded triage a/b/c, todo d on $BOARD"
 
 # ---- a: drag C into the gap between A and B (in-column) --------------------
 card_geo "$C"; afx=$CX; afy=$CY
+card_owns "$C"
 card_geo "$B"; atx=$CX; aty=$(( TOP + 6 ))   # B's top edge: the upper half
 drag_to "$afx" "$afy" "$atx" "$aty"
 
@@ -300,6 +328,7 @@ step "ok: order survives a reload"
 
 # ---- b: drag B into the todo column, below D (cross-column) -----------------
 card_geo "$B"; bfx=$CX; bfy=$CY
+card_owns "$B"
 card_geo "$D"; btx=$CX; bty=$(( TOP + H - 6 ))   # D's bottom edge
 drag_to "$bfx" "$bfy" "$btx" "$bty"
 
@@ -318,6 +347,7 @@ step "ok: cross-column drop rides one PATCH (status+after_id) and lands at the s
 
 # ---- c: release a drag off the board - revert, no server change ------------
 card_geo "$A"; cfx=$CX; cfy=$CY
+card_owns "$A"
 card_geo "$B"; ctx=$CX; cty=$(( TOP + 6 ))   # between d and b in todo
 drag_to "$cfx" "$cfy" "$ctx" "$cty"
 

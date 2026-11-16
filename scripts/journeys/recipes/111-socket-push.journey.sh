@@ -33,10 +33,47 @@ step "ok: app open"
 rec=$(jsq '(()=>{window.__fetchLog=[];const of=window.fetch.bind(window);window.fetch=(...a)=>{try{const u=a[0]&&a[0].url?a[0].url:String(a[0]);window.__fetchLog.push(u)}catch{};return of(...a)};return 1})()' 2>&1 | tail -1 | tr -d '"\r')
 assert_eq "$rec" "1" "fetch recorder installed on the live page"
 
+# ... but "after boot" is a claim, not a measurement: the recorder installs
+# when `open_app`'s networkidle returns, while the app's OWN boot reads are
+# async and can still be in flight on a slow host. Measured on this
+# recipe's CI red (nightly 43807490891, "got [2] want [0]"): a recorder
+# installed at exactly this point on a cold load caught
+# `/sessions?archived=include` and `/ui/canvas` - the TAIL of the boot set
+# (app.vue's onMounted: fetchHealthInfo, refreshSessions, canvas.refresh,
+# refreshNotifications), not a poller. Reproduced twice on the dev lane
+# (browser-level A/B: the same install point sees 2 matching reads, and the
+# steady-state window right after sees 0). Nothing in the shell polls those
+# routes (the pollers died with t_896cf5a8; only a spinner tick and a
+# verdict card's local ticker use setInterval), so the window below is the
+# STEADY state and opens only once the page's own boot traffic has gone
+# QUIET - no new recorded fetch for 1s, bounded at 4s, so a boot read that
+# already landed before the recorder costs the grace and nothing else. A
+# one-shot pane-mount read (the terminal pane's `/terminal/sessions`) is
+# excluded by the same signal; a real poller cannot be, because its cadence
+# is seconds and the window that follows is 17s.
+_i=0
+_prev=-1
+while [ "$_i" -lt 8 ]; do
+  _len=$(jsq '(()=>{return (window.__fetchLog||[]).length})()' 2>&1 | tail -1 | tr -d '"\r')
+  [ "$_len" = "$_prev" ] && break
+  _prev="$_len"
+  sleep 0.5
+  _i=$((_i + 1))
+done
+# name what the boot tail was (kept for the die below), then open the window
+jsq '(()=>{window.__bootTail=(window.__fetchLog||[]).slice();window.__fetchLog=[];return 1})()' >/dev/null 2>&1
+step "boot reads settled (${_i} x 0.5s) - the poller window opens now"
+
 step "holding still 17s (every deleted cadence is inside this window)"
 sleep 17
 polled=$(jsq '(()=>{const re=/\/(sessions|health|ui\/canvas|notifications|verdicts)(\?|$)/;return (window.__fetchLog||[]).filter(u=>re.test(u)).length})()' 2>&1 | tail -1 | tr -d '"\r')
-assert_eq "$polled" "0" "no polling fetch in 17s (health/sessions/canvas/notifications/verdicts)"
+if [ "$polled" != "0" ]; then
+  # the URLs are the evidence: a poller repeats a route, a boot read does not
+  polled_urls=$(jsq '(()=>{const re=/\/(sessions|health|ui\/canvas|notifications|verdicts)(\?|$)/;return (window.__fetchLog||[]).filter(u=>re.test(u)).join(",")})()' 2>&1 | tail -1 | tr -d '"\r')
+  boot_tail=$(jsq '(()=>{return (window.__bootTail||[]).join(",")})()' 2>&1 | tail -1 | tr -d '"\r')
+  die "polling fetches in 17s (health/sessions/canvas/notifications/verdicts): got [$polled] want [0] | urls: $polled_urls | boot tail (excluded): ${boot_tail:-none}"
+fi
+step "ok: no polling fetch in 17s (health/sessions/canvas/notifications/verdicts)"
 
 # the socket is actually alive: the health topic pushes every 5s, so the
 # health popover's uptime row climbs without a single fetch. Uptime is the
