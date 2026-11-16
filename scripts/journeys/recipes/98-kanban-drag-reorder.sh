@@ -501,7 +501,7 @@ st="$(lane_state todo)"
 case "$st" in open\|3\|no-rail*) ;; *) die "unfolded lane shape wrong (got [$st])" ;; esac
 step "ok: the rail is the unfold control (todo back to a 236px column)"
 
-step "e3: an empty lane folds itself and its override dies with it"
+step "e3: an empty lane folds itself - the auto-collapse law; the pin is still there"
 S=$(card_id scheduled s)
 [ -n "$S" ] || die "scheduled-card seeding failed"
 trap 'archive_cards "$A" "$B" "$C" "$D" "$E" "$S"' EXIT
