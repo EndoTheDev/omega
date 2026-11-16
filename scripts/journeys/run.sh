@@ -34,8 +34,9 @@
 #     through the agent-browser CLI. The nss/nspr libs ride LD_LIBRARY_PATH
 #     (assembled chromium-libs dir), never a system package.
 #   - CI nightly: agent-browser auto-launches its own Chrome - install
-#     once with `npm i -g agent-browser && agent-browser install`, run
-#     the same suite against the built artifact.
+#     once with `npm i -g agent-browser@0.42.0 && agent-browser install`
+#     (the version is PINNED - see the agent-browser version pin block
+#     below), run the same suite against the built artifact.
 #
 # Every write-journey creates a throwaway session (id prefix jrn-, label
 # prefix "(journey)") and deletes it on exit; the suite leaves no
@@ -222,6 +223,29 @@ JOURNEY_JSON="${JOURNEY_JSON:-0}"
 # single-run behavior; concurrent workers export distinct names.
 JOURNEY_SESSION="${JOURNEY_SESSION:-omega-journey}"
 
+# --- agent-browser version pin (card t_a1fe9f84) -----------------------------
+# agent-browser is a GATE DEPENDENCY, not an incidental tool: the
+# gesture-class recipes (84 divider drag, 98 board drag) drive real pointer
+# input through it, and nothing a recipe does through eval can substitute
+# for that. A floating version therefore silently changes what the gate
+# measures. The receipt: nightlies 43795957657 and 43797271512 (2026-11-16)
+# came back with IDENTICAL gesture reds twice - 84 "right divider inward:
+# got [220] want [160] | gesture-active=0" and 98 "mid-drag order for
+# triage never matched in 6s | dragging=[]" - while the same tree was green
+# on 2026-11-12 (run 43210278632) under 0.42.0. The runner installed
+# unpinned, so the suite silently moved to 0.43.0 and its drag input
+# synthesis stopped engaging at all.
+#
+# 0.42.0 is the version the recipes are written and green against. 0.43.0's
+# gesture path is the known break; adapting the recipes to it is a separate
+# decision, not this pin. nightly.yml installs agent-browser@0.42.0 and sets
+# JOURNEY_AB_REQUIRE_VERSION=1; both numbers move together or not at all.
+# A non-CI host may legitimately differ (the Pi lane carries 0.26.0), so a
+# mismatch is a loud warning by default and a refusal only when the caller
+# says the version IS the gate.
+JOURNEY_AB_VERSION="${JOURNEY_AB_VERSION:-0.42.0}"
+JOURNEY_AB_REQUIRE_VERSION="${JOURNEY_AB_REQUIRE_VERSION:-0}"
+
 # --- agent-browser binary ----------------------------------------------------
 AB="$(command -v agent-browser 2>/dev/null | head -1)"
 if [ -z "$AB" ]; then
@@ -237,8 +261,23 @@ if [ -z "$AB" ]; then
 fi
 if [ -z "$AB" ]; then
   echo "journeys: agent-browser CLI not found (PATH or ~/.hermes/tools)" >&2
-  echo "  install: npm i -g agent-browser && agent-browser install" >&2
+  echo "  install: npm i -g agent-browser@$JOURNEY_AB_VERSION && agent-browser install" >&2
   exit 2
+fi
+
+# version gate: parse "agent-browser X.Y.Z" out of --version. An unreadable
+# version is not silently a pass - it prints as "unknown" and takes the same
+# mismatch path, so a wrapped shim that cannot report itself shows up in the
+# log instead of looking pinned.
+ab_version="$("$AB" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+if [ "$ab_version" != "$JOURNEY_AB_VERSION" ]; then
+  printf 'journeys: agent-browser %s, PINNED %s (the 0.43.0 gesture break is why the pin exists)\n' \
+    "${ab_version:-unknown}" "$JOURNEY_AB_VERSION" >&2
+  if [ "$JOURNEY_AB_REQUIRE_VERSION" = "1" ]; then
+    printf 'journeys: JOURNEY_AB_REQUIRE_VERSION=1 - refusing to run the gate on an unpinned browser\n' >&2
+    journey_lock_release
+    exit 2
+  fi
 fi
 
 # --- chrome launch (Pi lane) -------------------------------------------------

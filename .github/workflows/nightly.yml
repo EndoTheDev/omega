@@ -94,10 +94,22 @@ jobs:
       - name: Validation journeys
         run: |
           set -o pipefail
-          npm i -g agent-browser && agent-browser install
+          # agent-browser is PINNED (card t_a1fe9f84). The gesture-class
+          # recipes (84 divider drag, 98 board drag) drive real pointer
+          # input through this CLI; 0.43.0 broke that path and the gate
+          # silently moved with the float - nightlies 43795957657 and
+          # 43797271512 (2026-11-16) returned IDENTICAL gesture reds twice
+          # ("gesture-active=0", "dragging=[]") while the same tree was
+          # green on 2026-11-12 under 0.42.0. A floating dependency in a
+          # gate is a defect: this number and scripts/journeys/run.sh's
+          # JOURNEY_AB_VERSION move together. run.sh refuses to run when
+          # the installed version differs (JOURNEY_AB_REQUIRE_VERSION=1).
+          npm i -g agent-browser@0.42.0 && agent-browser install
+          agent-browser --version
           scripts/journeys/run.sh 2>&1 | tee "$RUNNER_TEMP/journeys-stdout.log"
         env:
           JOURNEY_BASE_URL: http://127.0.0.1:8098
+          JOURNEY_AB_REQUIRE_VERSION: "1"
 
       - name: Journey evidence to the run summary (on red)
         # Two channels: the run summary (signed-in view) and error
