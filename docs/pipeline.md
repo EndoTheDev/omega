@@ -162,6 +162,17 @@ bisects to the landing that shipped it.
 - (b) the worker onboarding skill is live - hermes-side, pending. Until
   it lands, the cap stays at 2 and the flip is recorded, not applied.
 
+The dispatch guard (`scripts/factory-dispatch.sh`, `config_cap`) treats
+the knob as a guard number, never as a hint: a pass whose cap cannot be
+read REFUSES to dispatch (one `CONFIG CAP READ FAILED:` line naming the
+resolved root and the file it tried, exit 3), and every pass that reads
+it prints `config: cap N from <file>` - with the seats line naming the
+SOURCE (`config cap N` vs `--max N`, since `--max` overrides for the
+pass). A sandbox or CI home that carries no hermes config at all opts
+into the documented floor of 2 with `FD_ALLOW_MISSING_CONFIG=1`, loudly;
+that hook covers an ABSENT file only, so a present config with a missing
+or non-positive knob still refuses.
+
 # Round 4: nightly channel, drift gate, soak automation
 
 The loop that makes stable releases cheap. Patch releases are nearly

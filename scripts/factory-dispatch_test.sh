@@ -30,6 +30,17 @@ set -uo pipefail
 
 GUARD="$(cd "$(dirname "$0")" && pwd)/factory-dispatch.sh"
 
+# ---- SANDBOX CONFIG OPT-IN (card t_0303d69d) --------------------------------
+# The guard now REFUSES to dispatch when it cannot name its cap (one
+# `CONFIG CAP READ FAILED:` line, exit 3) instead of silently defaulting, and
+# every fixture home below is a throwaway tree with no hermes config at all.
+# FD_ALLOW_MISSING_CONFIG=1 is the guard's own sandbox/CI hook - it keeps the
+# documented floor of 2 for a home that carries no config - so the whole suite
+# declares it once here. It covers an ABSENT file only; an existing config with
+# a bad or missing knob still refuses. The refusal path itself is pinned by T27,
+# which clears the variable per call.
+export FD_ALLOW_MISSING_CONFIG=1
+
 # ---- FENCE ROOT (card t_8ff31265) ------------------------------------------
 # Every LIVE pass ends in `hermes kanban dispatch` behind the FENCE STAMP: the
 # guard cds to `dirname "$0"/..` and refuses to dispatch at all (exit 1,
@@ -144,6 +155,11 @@ rc=$?
 if printf '%s' "$out" | grep -q "board DB not found"; then
   [ "$rc" -ne 0 ] && ok || bad "T2: missing live board refused with exit 0 - the silent-empty signature"
   echo "T2: skipped (no live board DB resolved; refusal was loud, exit $rc)"
+elif printf '%s' "$out" | grep -q "CONFIG CAP READ FAILED:"; then
+  # A runner home can resolve a board and still carry no hermes config: the cap
+  # read refuses (card t_0303d69d). Loud and nonzero is the law here too.
+  [ "$rc" -ne 0 ] && ok || bad "T2: an unreadable cap refused with exit 0"
+  echo "T2: skipped (a board resolved but the cap read refused loudly, exit $rc)"
 else
   [ "$rc" -eq 0 ] && ok || bad "T2: dry-run exited $rc (expected 0)"
   [ -n "$out" ] && ok || bad "T2: dry-run printed nothing (exit $rc) - the empty-RUNNING kill signature"
@@ -381,7 +397,9 @@ rm -rf "$FDHOME"
 # kanban.max_in_progress_per_profile, not a hardcode (CAP=4 drifted from
 # the law: the config said 2, the guard could spawn past the sanctioned
 # concurrency). Pinned here: sandbox home with the key -> CAP reads it;
-# key absent or file absent -> fallback 2; --max overrides the config.
+# key absent or file absent -> floor 2 (card t_0303d69d: reachable only
+# through the suite's FD_ALLOW_MISSING_CONFIG=1 opt-in, and loudly - see
+# T27 for the refusal that a LIVE home gets); --max overrides the config.
 # The config is read from the resolved ROOT (<hermes-home>/config.yaml -
 # the LIVE config the tick reads), never a $HOME/.hermes hardcode.
 CFHOME=$(mktemp -d); CFHOME_N=$(mixpath "$CFHOME")
@@ -1653,6 +1671,169 @@ printf "%s" "$out" | grep -qF 'Spawned: 1 (t_rev1)' \
 s=$(sql "$(spdb rev-two)" "SELECT status||'|'||coalesce(claim_lock,'NULL') FROM tasks WHERE id='t_rev2';")
 [ "$s" = "review|NULL" ] && ok || bad "T26d: the held review must be released to review|NULL after the pass ('$s')"
 rm -rf "$SPAWN_BASE"
+
+# T27 (local + CI): the CAP READ NEVER DEFAULTS (card t_0303d69d). The pre-fix
+# reader answered "" for every failure (`[ -f "$f" ] || return 0`) and the
+# caller's `case "" -> CAP=2` turned "the cap could not be read" into "the cap is
+# 2" with no word anywhere; the seats line then printed `config cap N` even when
+# N was the CALLER's --max, so a lost read and an override were the same text.
+# Live receipt (2026-11-17 03:03 vs 03:07, same shell, same cwd, no config edit):
+# the dry-run printed `seats: 3 implementation + 1 review = 4 max (config cap 3)`
+# and the `--max 1` pass printed `seats: 1 implementation + 1 review = 2 max
+# (config cap 1)` - both reads returned 3, so the label was the lie and a seat
+# was lost chasing it. The guard's law now: a pass that cannot name its cap does
+# not dispatch, and a pass that can NAME it says where from.
+# Shapes pinned:
+#   T27a  a resolved home with a board but NO config -> REFUSE: exit 3, one
+#         `CONFIG CAP READ FAILED:` line naming root + file, no verdicts, the
+#         inner dispatcher never called, the board untouched;
+#   T27b  the same read refuses a --dry-run (it sits before any verdict prints);
+#   T27c  the success path NAMES its evidence - `config: cap 3 from <file>` and
+#         a seats line carrying the config cap;
+#   T27d  --max is named as the CALLER's number, never as a config cap - the
+#         exact text the ticket misread;
+#   T27e  the sandbox opt-in still reaches the floor of 2, LOUDLY
+#         (`CONFIG CAP DEFAULTED:`);
+#   T27f  an EXISTING config without the knob is drift -> refuse even with the
+#         opt-in set (the hook covers an absent file, never a bad one);
+#   T27g  a non-positive or non-numeric knob value -> refuse;
+#   T27h  a bogus ROOT (a pinned DB under a home that is not a directory) ->
+#         refuse and name the root it could not read;
+#   T27i  the reader-block audit's other silent read: an EXISTING board pointer
+#         that is not a readable file refuses, never a silent default-board
+#         fallback.
+CAPBASE=$(mktemp -d); CAPBASE_N=$(mixpath "$CAPBASE")
+CAPBASE_U=$(cygpath -u "$CAPBASE" 2>/dev/null || printf '%s' "$CAPBASE")
+capfixture() {  # $1 = case tag: a home with a board, one ready card, a logging stub hermes
+  local tag="$1" home
+  home="$CAPBASE/$tag"
+  mkdir -p "$home/kanban/boards/project-omega" "$home/bin"
+  printf 'project-omega\n' >"$home/kanban/current"
+  sqlex "$CAPBASE_N/$tag/kanban/boards/project-omega/kanban.db" "
+CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
+  claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
+  worker_pid INTEGER, last_heartbeat_at INTEGER);
+INSERT INTO tasks VALUES('t_cap','ready','webui fix','FILES: webui/app/pages/a.vue',NULL,NULL,5,'2026-11-16T20:00',NULL,NULL);"
+  cat >"$home/bin/hermes" <<'EOF'
+#!/usr/bin/env bash
+echo "[STUB CALLED] $*" >>"${HERMES_STUB_LOG:?}"   # ANY invocation = a spawn side effect
+echo "Spawned: 0"
+EOF
+  chmod +x "$home/bin/hermes"
+}
+CAPRUN() {  # $1 = case tag, rest = guard args; sets OUT (stdout+stderr) and CAPRC
+  # Never `out=$(CAPRUN ...)`: a command substitution is a SUBSHELL, so CAPRC
+  # would vanish and `set -u` would red on the caller (proven in this suite's
+  # first T27 run).
+  local tag="$1"
+  shift
+  : >"$CAPBASE_N/$tag/calls.log"
+  HOME="$CAPBASE/$tag" HERMES_HOME= HERMES_KANBAN_HOME="$CAPBASE_N/$tag" \
+    HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= FD_ALLOW_MISSING_CONFIG="${CAPOPT:-}" \
+    PATH="$CAPBASE_U/$tag/bin:$PATH" HERMES_STUB_LOG="$CAPBASE_N/$tag/calls.log" \
+    bash "$GUARD" "$@" >"$CAPBASE_N/$tag/out.log" 2>&1
+  CAPRC=$?
+  OUT=$(cat "$CAPBASE_N/$tag/out.log")
+}
+CAPOPT=""
+
+# T27a: no config at all -> the pass REFUSES, names root + file, dispatches nothing.
+capfixture no-config
+CAPRUN no-config; rc=$CAPRC; out=$OUT
+[ "$rc" -eq 3 ] && ok || bad "T27a: a home with no config must refuse with exit 3 (got $rc, out: $out)"
+printf "%s" "$out" | grep -qF "CONFIG CAP READ FAILED: '$CAPBASE_N/no-config/config.yaml' is absent (root '$CAPBASE_N/no-config')" \
+	&& ok || bad "T27a: the refusal did not name the root and the file it tried (out: $out)"
+printf "%s" "$out" | grep -qE "^(legal|hold):" \
+	&& bad "T27a: verdicts printed on a refused pass (out: $out)" || ok
+printf "%s" "$out" | grep -q "Spawned" && bad "T27a: the refused pass spawned (out: $out)" || ok
+[ ! -s "$CAPBASE_N/no-config/calls.log" ] && ok \
+	|| bad "T27a: the inner dispatcher was invoked by a refused pass ($(cat "$CAPBASE_N/no-config/calls.log"))"
+s=$(sql "$CAPBASE_N/no-config/kanban/boards/project-omega/kanban.db" "SELECT status||'|'||coalesce(claim_lock,'NULL') FROM tasks WHERE id='t_cap';")
+[ "$s" = "ready|NULL" ] && ok || bad "T27a: the refused pass touched the card ('$s')"
+
+# T27b: the dry-run path refuses identically - the read sits BEFORE the verdicts,
+# so a dry-run can never report a cap it did not read.
+CAPRUN no-config --dry-run; rc=$CAPRC; out=$OUT
+[ "$rc" -eq 3 ] && ok || bad "T27b: a dry-run on an unreadable cap must refuse with exit 3 (got $rc, out: $out)"
+printf "%s" "$out" | grep -qF "CONFIG CAP READ FAILED:" \
+	&& ok || bad "T27b: the dry-run refusal is not greppable (out: $out)"
+printf "%s" "$out" | grep -q "cap=" \
+	&& bad "T27b: a refused dry-run printed a cap (out: $out)" || ok
+
+# T27c: the success path names the file and the cap.
+capfixture with-config
+printf 'kanban:\n  max_in_progress_per_profile: 3\n' >"$CAPBASE/with-config/config.yaml"
+CAPRUN with-config --dry-run; rc=$CAPRC; out=$OUT
+[ "$rc" -eq 0 ] && ok || bad "T27c: a readable cap must not refuse (exit $rc, out: $out)"
+printf "%s" "$out" | grep -qF "config: cap 3 from $CAPBASE_N/with-config/config.yaml" \
+	&& ok || bad "T27c: the pass did not name the file it read the cap from (out: $out)"
+printf "%s" "$out" | grep -qF 'seats: 3 implementation + 1 review = 4 max (config cap 3)' \
+	&& ok || bad "T27c: the seats line lost the config cap (out: $out)"
+printf "%s" "$out" | grep -q "cap=3" && ok || bad "T27c: the dry-run cap is wrong (out: $out)"
+
+# T27d: --max is the CALLER's number - named as such, never as `config cap`.
+CAPRUN with-config --max 1 --dry-run; rc=$CAPRC; out=$OUT
+[ "$rc" -eq 0 ] && ok || bad "T27d: a --max pass exited $rc (out: $out)"
+printf "%s" "$out" | grep -qF "config: cap 3 from $CAPBASE_N/with-config/config.yaml (--max 1 overrides this pass)" \
+	&& ok || bad "T27d: the config line dropped the config value or the override (out: $out)"
+printf "%s" "$out" | grep -qF 'seats: 1 implementation + 1 review = 2 max (--max 1)' \
+	&& ok || bad "T27d: the seats line must name --max as the source (out: $out)"
+printf "%s" "$out" | grep -q "config cap 1" \
+	&& bad "T27d: a --max pass still calls the caller's number a config cap - the exact text the ticket misread (out: $out)" || ok
+
+# T27e: the sandbox opt-in reaches the floor of 2 - LOUDLY, never silently.
+capfixture optin
+CAPOPT=1
+CAPRUN optin --dry-run; rc=$CAPRC; out=$OUT
+CAPOPT=""
+[ "$rc" -eq 0 ] && ok || bad "T27e: the sandbox opt-in must keep the floor reachable (exit $rc, out: $out)"
+printf "%s" "$out" | grep -qF "CONFIG CAP DEFAULTED: '$CAPBASE_N/optin/config.yaml' is absent (FD_ALLOW_MISSING_CONFIG=1)" \
+	&& ok || bad "T27e: the sandbox floor was taken SILENTLY (out: $out)"
+printf "%s" "$out" | grep -qF "config: cap 2 from <absent: $CAPBASE_N/optin/config.yaml> (sandbox floor, FD_ALLOW_MISSING_CONFIG=1)" \
+	&& ok || bad "T27e: the log claimed a file it never read - the floor must name its own absence (out: $out)"
+printf "%s" "$out" | grep -q "cap=2" && ok || bad "T27e: the documented floor is 2 (out: $out)"
+
+# T27f: an EXISTING config with no knob is drift - refuses even with the opt-in.
+capfixture drift
+printf 'provider:\n  model_name: glm-5.3\n' >"$CAPBASE/drift/config.yaml"
+CAPOPT=1
+CAPRUN drift --dry-run; rc=$CAPRC; out=$OUT
+CAPOPT=""
+[ "$rc" -eq 3 ] && ok || bad "T27f: a config without the knob must refuse even with the opt-in (exit $rc, out: $out)"
+printf "%s" "$out" | grep -qF "carries no usable kanban.max_in_progress_per_profile" \
+	&& ok || bad "T27f: the drift refusal did not name the missing knob (out: $out)"
+
+# T27g: a non-positive or non-numeric knob value is drift too.
+for bad_val in 0 three; do
+  capfixture "bad-$bad_val"
+  printf 'kanban:\n  max_in_progress_per_profile: %s\n' "$bad_val" >"$CAPBASE/bad-$bad_val/config.yaml"
+  CAPRUN "bad-$bad_val" --dry-run; rc=$CAPRC; out=$OUT
+  [ "$rc" -eq 3 ] && ok || bad "T27g: a knob value of '$bad_val' must refuse (exit $rc, out: $out)"
+  printf "%s" "$out" | grep -qF "CONFIG CAP READ FAILED:" \
+	&& ok || bad "T27g: the '$bad_val' refusal is not greppable (out: $out)"
+done
+
+# T27h: a bogus ROOT (pinned DB under a home that is not a directory).
+out=$(HOME="$CAPBASE" HERMES_HOME= HERMES_KANBAN_HOME="$CAPBASE_N/no-such-home" \
+  HERMES_KANBAN_DB="$CAPBASE_N/no-config/kanban/boards/project-omega/kanban.db" HERMES_KANBAN_BOARD= \
+  FD_ALLOW_MISSING_CONFIG= bash "$GUARD" --dry-run 2>&1); rc=$?
+[ "$rc" -eq 3 ] && ok || bad "T27h: a bogus ROOT must refuse (exit $rc, out: $out)"
+printf "%s" "$out" | grep -qF "CONFIG CAP READ FAILED: root '$CAPBASE_N/no-such-home' is not a directory" \
+	&& ok || bad "T27h: the refusal did not name the root it could not read (out: $out)"
+
+# T27i: an EXISTING board pointer that is not a readable file refuses - the old
+# `cat ... 2>/dev/null || true` settled on the DEFAULT board in silence.
+capfixture pointer
+printf 'kanban:\n  max_in_progress_per_profile: 3\n' >"$CAPBASE/pointer/config.yaml"
+rm -f "$CAPBASE/pointer/kanban/current"
+mkdir "$CAPBASE/pointer/kanban/current"
+CAPRUN pointer --dry-run; rc=$CAPRC; out=$OUT
+[ "$rc" -eq 3 ] && ok || bad "T27i: a broken board pointer must refuse (exit $rc, out: $out)"
+printf "%s" "$out" | grep -qF "board pointer '$CAPBASE_N/pointer/kanban/current' exists but is not a readable file" \
+	&& ok || bad "T27i: the pointer refusal did not name the file (out: $out)"
+printf "%s" "$out" | grep -qF "refusing to fall back to the default board" \
+	&& ok || bad "T27i: the pointer refusal did not say why the fallback is refused (out: $out)"
+rm -rf "$CAPBASE"
 
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
