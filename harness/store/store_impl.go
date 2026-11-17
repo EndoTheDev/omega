@@ -448,17 +448,21 @@ func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) 
 	var parent, delegate sql.NullString
 	var pinned int
 	var archived int
+	var listed int
 	var lastRun string
 	if err := scanner.Scan(&sess.ID, &parent, &delegate, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt,
 		&sess.PromptTokens, &sess.CompletionTokens, &pinned, &archived,
 		&sess.TitleState, &sess.LastReadAt, &sess.Agent, &lastRun, &sess.Model, &sess.ProviderName, &sess.Workspace,
-		&sess.Summary); err != nil {
+		&sess.Summary, &listed); err != nil {
 		return core.Session{}, err
 	}
 	sess.ParentID = parent.String
 	sess.DelegateParent = delegate.String
 	sess.Pinned = pinned != 0
 	sess.Archived = archived != 0
+	// The `listed` column is the human's session list, so its zero is
+	// the MACHINERY's row: an agent's canonical chat (card t_10ac04f0).
+	sess.MachineOwned = listed == 0
 	// Normalize: the row default is 'default', but a session written
 	// by an older writer that left the column empty still belongs to
 	// the default agent. omitempty then never hides the binding.
@@ -477,7 +481,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) 
 }
 
 // sessionColumns is the projection shared by GetSession and ListSessions.
-const sessionColumns = "id, parent_id, delegate_parent, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, agent, last_run, model, provider, workspace, summary"
+const sessionColumns = "id, parent_id, delegate_parent, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, agent, last_run, model, provider, workspace, summary, listed"
 
 // SetSessionLastRun writes the last-run stats block (JSON) on the
 // session's row, or clears it when stats is nil. It is a telemetry

@@ -47,10 +47,12 @@ import (
 
 // agentRoutes is the roster REST face, built on the plugin's root home
 // and mount context. One value per mount; every handler reads the
-// same pair.
+// same pair. The machine is the capsule's own machinery: the canonical
+// mint (POST /agents/{name}/canonical) is its law, not a second copy.
 type agentRoutes struct {
-	home string
-	ctx  *core.Context
+	home    string
+	ctx     *core.Context
+	machine *Machine
 }
 
 // mountedStore resolves the daemon's store seam per request (the
@@ -61,39 +63,49 @@ func (ar *agentRoutes) mountedStore() agent.StoreProvider {
 	return st
 }
 
-// readAgentSessions reads ONE agent's sessions from the store that
-// OWNS them (card t_81109e1c). Per-agent data isolation means main's
+// agentStoreFor resolves the store that OWNS agentName's sessions plus a
+// closer for it (card t_81109e1c). Per-agent data isolation means main's
 // sessions live in the daemon's store and every agent home's sessions
-// live in its own data/omega.db - the same file the capsule's
-// cross-home reads and the wake child open. Reading the daemon's store
-// for an agent home answers zero rows after the boot migration moved
-// them, which would strand the roster's counts and the tab's chat
-// binding. A home that never ran has no store file: an empty list,
-// never a created database.
-func (ar *agentRoutes) readAgentSessions(ctx context.Context, name string) ([]core.Session, error) {
+// live in its own data/omega.db. A nil store with a nil error means
+// "nothing to read": no seam mounted, or a home that never ran (no store
+// file). The daemon's store resolves agent-home rows by id through its
+// router, so a caller that only needs ONE row can pass a name and still
+// read through it.
+func (ar *agentRoutes) agentStoreFor(name string) (agent.StoreProvider, func(), error) {
 	st := ar.mountedStore()
 	if st == nil {
-		return nil, nil
+		return nil, func() {}, nil
 	}
 	if name == agent.DefaultAgentName {
-		as, _ := st.(agent.AgentSessionStore)
-		if as == nil {
-			return nil, nil
-		}
-		return as.ListAgentSessions(ctx, name)
+		return st, func() {}, nil
 	}
 	path := filepath.Join(agent.AgentDir(ar.home, name), "data", "omega.db")
 	if _, err := os.Stat(path); err != nil {
-		return nil, nil // never ran: no store, no sessions
+		return nil, func() {}, nil // never ran: no store, no sessions
 	}
 	ast, err := store.Open(path)
 	if err != nil {
+		return nil, func() {}, err
+	}
+	return ast, func() { _ = ast.Close() }, nil
+}
+
+// readAgentSessions reads ONE agent's sessions from the store that
+// OWNS them. A home that never ran has no store file: an empty list,
+// never a created database.
+func (ar *agentRoutes) readAgentSessions(ctx context.Context, name string) ([]core.Session, error) {
+	st, closeFn, err := ar.agentStoreFor(name)
+	if err != nil || st == nil {
 		return nil, err
 	}
-	defer ast.Close()
+	defer closeFn()
+	as, _ := st.(agent.AgentSessionStore)
+	if as == nil {
+		return nil, nil
+	}
 	cctx, cancel := context.WithTimeout(ctx, storeTimeout)
 	defer cancel()
-	return ast.ListAgentSessions(cctx, name)
+	return as.ListAgentSessions(cctx, name)
 }
 
 // writeAgentSession creates a session in the store that will OWN it:
@@ -155,60 +167,106 @@ func (ar *agentRoutes) registrationRows() []struct {
 		{"/agents/{name}", ar.handleAgent},
 		{"PUT /agents/{name}", ar.handleAgentUpdate},
 		{"DELETE /agents/{name}", ar.handleAgentDelete},
+		{"POST /agents/{name}/canonical", ar.handleAgentCanonical},
 		{"/agents/{name}/sessions", ar.handleAgentSessions},
 	}
 }
 
 // agentRow is one roster row on the wire: the profile facts plus the
-// agent's most-recent session id - the id the Agents tab binds a chat
-// tab to when its row is clicked. The embedded Profile flattens into
-// the SAME flat object the endpoint always emitted, so the extra field
-// is additive to every existing reader (the webui decodes the union;
-// nothing nests).
+// agent's CANONICAL chat id - the one conversation the Agents tab opens
+// when its row is clicked (card t_10ac04f0). The most-recent session id
+// is gone as a rule: it was a moving target, re-picked by every run, and
+// it was usually a conversation the human owned in the sessions tab. An
+// agent with no live canonical answers an empty id - its click MINTS
+// one (POST /agents/{name}/canonical), so the field being absent never
+// makes a row unclickable.
+//
+// The two preview fields are ruling 5 of the same card: the newest
+// assistant message of that canonical chat and when it landed, so the
+// row name carries one line of what the agent last said.
+//
+// The embedded Profile flattens into the SAME flat object the endpoint
+// always emitted, so the extra fields are additive to every existing
+// reader (the webui decodes the union; nothing nests).
 type agentRow struct {
 	agent.Profile
-	LastSessionID string `json:"last_session_id,omitempty"`
+	CanonicalSessionID string `json:"canonical_session_id,omitempty"`
+	LastReport         string `json:"last_report,omitempty"`
+	LastReportAt       string `json:"last_report_at,omitempty"`
+}
+
+// agentFacts is what the roster needs from outside the profile: the
+// live canonical chat id and its one-line preview.
+type agentFacts struct {
+	canonical string
+	report    string
+	reportAt  string
 }
 
 // fillAgentSessions writes session counts and last activity into
 // profiles from the store that owns each agent's sessions, and returns
-// each agent's MOST RECENT session id (the last_session_id column). A
-// missing store leaves the zero row - an agent with zero ATTRIBUTABLE
-// sessions is the honest row.
-func (ar *agentRoutes) fillAgentSessions(ctx context.Context, profiles []agent.Profile) map[string]string {
+// each agent's live canonical chat plus its preview. A missing store
+// leaves the zero row - an agent with zero ATTRIBUTABLE sessions is the
+// honest row.
+func (ar *agentRoutes) fillAgentSessions(ctx context.Context, profiles []agent.Profile) map[string]agentFacts {
 	if ar.mountedStore() == nil {
 		return nil
 	}
-	last := make(map[string]string, len(profiles))
+	facts := make(map[string]agentFacts, len(profiles))
 	for i := range profiles {
 		sessions, err := ar.readAgentSessions(ctx, profiles[i].Name)
 		if err != nil {
 			continue
 		}
 		profiles[i].SessionCount = len(sessions)
-		bestAt := ""
 		for _, sess := range sessions {
 			if sess.UpdatedAt > profiles[i].LastActivity {
 				profiles[i].LastActivity = sess.UpdatedAt
 			}
-			// The store orders by created_at, so ">=" leaves a tie in
-			// updated_at on the LATER-created session - the newest one
-			// an operator would call "most recent".
-			if bestAt == "" || sess.UpdatedAt >= bestAt {
-				bestAt = sess.UpdatedAt
-				last[profiles[i].Name] = sess.ID
-			}
 		}
+		// The canonical chat, NOT the newest row: the click's target
+		// must not move when a worker run lands (card t_10ac04f0).
+		cur, ok := CurrentCanonicalSession(sessions, profiles[i].Name)
+		if !ok {
+			continue // never minted, or retired: the click mints anew
+		}
+		f := agentFacts{canonical: cur.ID, reportAt: cur.UpdatedAt}
+		f.report = ar.canonicalPreview(ctx, profiles[i].Name, cur.ID)
+		facts[profiles[i].Name] = f
 	}
-	return last
+	return facts
 }
 
-// rosterRows pairs each profile with its most-recent session id. No
-// session map (no store) = the profiles alone, the field omitted.
-func rosterRows(profiles []agent.Profile, last map[string]string) []agentRow {
+// canonicalPreview reads one canonical chat's one-line preview off the
+// store that owns it. A dead read answers "" - the row renders without
+// a preview, never with an invented one.
+func (ar *agentRoutes) canonicalPreview(ctx context.Context, name, id string) string {
+	st, closeFn, err := ar.agentStoreFor(name)
+	if err != nil || st == nil {
+		return ""
+	}
+	defer closeFn()
+	cctx, cancel := context.WithTimeout(ctx, storeTimeout)
+	defer cancel()
+	msgs, err := st.GetMessages(cctx, id)
+	if err != nil {
+		return ""
+	}
+	return previewOf(msgs)
+}
+
+// rosterRows pairs each profile with its canonical chat facts. No facts
+// map (no store) = the profiles alone, the fields omitted.
+func rosterRows(profiles []agent.Profile, facts map[string]agentFacts) []agentRow {
 	rows := make([]agentRow, 0, len(profiles))
 	for _, p := range profiles {
-		rows = append(rows, agentRow{Profile: p, LastSessionID: last[p.Name]})
+		f := facts[p.Name]
+		rows = append(rows, agentRow{
+			Profile:            p,
+			CanonicalSessionID: f.canonical,
+			LastReport:         f.report,
+			LastReportAt:       f.reportAt,
+		})
 	}
 	return rows
 }
@@ -469,6 +527,35 @@ func (ar *agentRoutes) sessionCount(ctx context.Context, name string) int {
 		return 0
 	}
 	return len(rows)
+}
+
+// handleAgentCanonical serves POST /agents/{name}/canonical: the roster
+// row's click (card t_10ac04f0). It answers the agent's canonical chat,
+// MINTING it when the home holds none - a fresh agent, or one whose only
+// canonical was archived (archive = retire: the next click mints the
+// next generation, and the retired row stays archived and unreachable
+// from the roster). The answer is the session row the chat tab binds
+// to, so the panel never guesses an id.
+func (ar *agentRoutes) handleAgentCanonical(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		ar.httpError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	name := r.PathValue("name")
+	if _, err := agent.LoadProfile(ar.home, name); err != nil {
+		ar.httpError(w, http.StatusNotFound, "unknown agent")
+		return
+	}
+	if ar.machine == nil {
+		ar.httpError(w, http.StatusNotImplemented, "canonical chats need the continuous machinery")
+		return
+	}
+	sess, err := ar.machine.EnsureCanonical(name)
+	if err != nil {
+		ar.httpError(w, http.StatusInternalServerError, "open canonical chat: %v", err)
+		return
+	}
+	ar.writeJSON(w, http.StatusOK, sess)
 }
 
 // handleAgentSessions serves GET /agents/{name}/sessions (the agent's

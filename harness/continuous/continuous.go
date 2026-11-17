@@ -193,13 +193,14 @@ func (m *Machine) EnsureCanonical(name string) (core.Session, error) {
 	if err := m.createCanonical(name, id); err != nil {
 		return core.Session{}, fmt.Errorf("mint %s canonical chat: %w", name, err)
 	}
-	return core.Session{ID: id, Label: store.CanonicalChatLabel, Agent: name, CreatedAt: core.NowISO(), UpdatedAt: core.NowISO()}, nil
+	now := core.NowISO()
+	return core.Session{ID: id, Label: store.CanonicalChatLabel, Agent: name, CreatedAt: now, UpdatedAt: now, LastReadAt: now, MachineOwned: true}, nil
 }
 
 // createCanonical writes one canonical chat row in the store that OWNS
 // the home: the daemon's store for main, the agent's own file for an
 // agent home. The row is hidden from the user's session list by the
-// store's listed bit.
+// store's visibility bit.
 func (m *Machine) createCanonical(name, id string) error {
 	if name == agent.DefaultAgentName {
 		st := m.mountStore()
@@ -212,7 +213,13 @@ func (m *Machine) createCanonical(name, id string) error {
 		}
 		return w.CreateCanonicalChat(context.Background(), id, name)
 	}
-	ast, err := store.Open(filepath.Join(agent.AgentDir(m.home, name), "data", "omega.db"))
+	path := filepath.Join(agent.AgentDir(m.home, name), "data", "omega.db")
+	// A home scaffolded but never run has no data dir; the mint is the
+	// first write, so it is the write's job to make the directory.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	ast, err := store.Open(path)
 	if err != nil {
 		return err
 	}
@@ -224,6 +231,19 @@ func (m *Machine) createCanonical(name, id string) error {
 		return fmt.Errorf("store cannot create a canonical chat")
 	}
 	return w.CreateCanonicalChat(ctx, id, name)
+}
+
+// previewOf renders a canonical chat's one-line preview: the newest
+// assistant message, whitespace collapsed to single spaces and capped
+// (the roster row is ONE line under the name). "" when the
+// conversation has no reply yet - never a fabricated placeholder.
+func previewOf(msgs []core.Message) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if core.MessageRole(msgs[i]) == "assistant" {
+			return truncateRunes(strings.Join(strings.Fields(agent.MessageText(msgs[i])), " "), previewRuneCap)
+		}
+	}
+	return ""
 }
 
 // NewMachine builds the machinery for the omega home.
@@ -390,13 +410,7 @@ func (m *Machine) canonicalPreview(agentDir, agentName string) (preview, reportA
 	if err != nil {
 		return "", sess.UpdatedAt, false
 	}
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msg := msgs[i]; core.MessageRole(msg) == "assistant" {
-			preview = truncateRunes(agent.MessageText(msg), previewRuneCap)
-			break
-		}
-	}
-	return preview, sess.UpdatedAt, sess.LastReadAt == "" || sess.UpdatedAt > sess.LastReadAt
+	return previewOf(msgs), sess.UpdatedAt, sess.LastReadAt == "" || sess.UpdatedAt > sess.LastReadAt
 }
 
 // ChatView is the canonical chat surface (ruling 5, the second

@@ -30,6 +30,15 @@ type Session struct {
 	// to unarchived; baked data is never rewritten.
 	Archived bool `json:"archived"`
 
+	// MachineOwned marks a conversation the MACHINERY owns rather than
+	// the human: an agent's canonical chat is one (card t_10ac04f0).
+	// Such a row opens from its owner's surface and never appears in
+	// the human's own session list, and a /new on it folds the
+	// conversation in place instead of forking a new one - a bot keeps
+	// one conversation, its context is what restarts. The store column
+	// is `listed`, inverted: the human's list is the default state.
+	MachineOwned bool `json:"machine_owned,omitempty"`
+
 	// LastReadAt is the time the session's output was last seen by the
 	// user (empty on rows created before the column existed - the
 	// migration backfills it to updated_at so nothing old turns unread).

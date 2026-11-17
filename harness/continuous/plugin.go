@@ -79,6 +79,10 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if home == "" {
 		return fmt.Errorf("continuous: no home resolvable (set OMEGA_HOME)")
 	}
+	// Pin the RESOLVED home: the route builders run later and read it,
+	// and an agent route reading "" would resolve agents/ against the
+	// process's cwd (the roster and the canonical mint both walk it).
+	p.home = home
 	machine := NewMachine(home, cfg)
 	p.machine = machine
 	p.ctx = ctx
@@ -178,7 +182,7 @@ func (p *Plugin) routes() []routeRow {
 		{"GET /continuous/{name}/evidence", evidenceHandler(m)},
 		{"POST /continuous/{name}/sleep", sleepHandler(m)},
 	}
-	for _, r := range (&agentRoutes{home: p.home, ctx: p.ctx}).registrationRows() {
+	for _, r := range (&agentRoutes{home: p.home, ctx: p.ctx, machine: m}).registrationRows() {
 		rows = append(rows, routeRow{pattern: r.pattern, handler: r.handler})
 	}
 	return rows
