@@ -23,6 +23,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
+import { effect, nextTick, stop } from "vue";
+
 import { createCanvasTranscript } from "../app/composables/chat.ts";
 import type { ChatPayloadWire, ChatRowWire } from "../app/composables/omega.ts";
 
@@ -178,18 +180,44 @@ test("an id-less live tail keeps its slot across a head slide", () => {
   assert.equal((second[38] as { content: string }).content, "streaming…", "and carries its live content");
 });
 
-test("the live -> persisted transition adopts the slot object (no swap on an id)", () => {
+test("the live -> persisted transition adopts the slot object (no swap on an id)", async () => {
   const t = createCanvasTranscript();
   const before = t.apply(
     payload([userRow("1", "q"), thinkingRow(undefined, "hmm", true), textRow(undefined, "par", true)], true),
   );
+
+  // REACTIVE-PROXY LAW (t_078a2c35), re-bound here under the row-id address
+  // by t_494639c8: the item a row paints into is a reactive PROXY and the
+  // paint mutates it IN PLACE - the adoption writes `it.id = row.id` onto
+  // the very object the row streamed in, and a streaming delta writes
+  // `it.content`. A render effect that read those fields must be
+  // invalidated by those writes (vue's default scheduler: the re-run lands
+  // on the microtask queue, hence the nextTick below). Strip `reactive()`
+  // from the make() lambdas and every object-identity assertion in this
+  // test still passes while this reader sits on its first snapshot for
+  // ever: the pane paints the pre-adoption id and the previous delta.
+  const seen: Array<readonly [string | undefined, string]> = [];
+  const reader = effect(() => {
+    const item = before[2] as { id?: string; content: string };
+    seen.push([item.id, item.content] as const);
+  });
+
   const after = t.apply(
     payload([userRow("1", "q"), thinkingRow("9", "hmm"), textRow("10", "partial")]),
   );
+  await nextTick();
+  stop(reader);
+
   assert.equal(after[1], before[1], "the thinking row keeps its object when the store names it");
   assert.equal(after[2], before[2], "the answer row keeps its object when the store names it");
   assert.equal((after[1] as { id?: string }).id, "9");
   assert.equal((after[2] as { id?: string }).id, "10");
+
+  // the in-place writes invalidated the reader, and its LAST reading is the
+  // adopted id AND the streaming delta (both ride the same object)
+  assert.deepEqual(seen[0], [undefined, "par"], "the reader first sees the live row");
+  assert.ok(seen.length > 1, `the in-place write invalidated the reader (ran ${seen.length}x)`);
+  assert.deepEqual(seen[seen.length - 1], ["10", "partial"], "and it saw the adopted id and the delta");
 });
 
 test("a fresh tail row never adopts a live row's object", () => {
