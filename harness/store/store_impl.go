@@ -218,7 +218,9 @@ CREATE TABLE IF NOT EXISTS sessions (
 	provider TEXT NOT NULL DEFAULT '',
 	workspace TEXT NOT NULL DEFAULT '',
 	summary TEXT NOT NULL DEFAULT '',
-	listed    INTEGER NOT NULL DEFAULT 1
+	listed    INTEGER NOT NULL DEFAULT 1,
+	context_start   TEXT NOT NULL DEFAULT '',
+	context_summary TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS messages (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -334,6 +336,8 @@ END;
 		`ALTER TABLE sessions ADD COLUMN workspace TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN summary TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`,
+		`ALTER TABLE sessions ADD COLUMN context_start TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN context_summary TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			// SQLite error for duplicate column: "duplicate column name"
@@ -453,7 +457,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) 
 	if err := scanner.Scan(&sess.ID, &parent, &delegate, &sess.Label, &sess.CreatedAt, &sess.UpdatedAt,
 		&sess.PromptTokens, &sess.CompletionTokens, &pinned, &archived,
 		&sess.TitleState, &sess.LastReadAt, &sess.Agent, &lastRun, &sess.Model, &sess.ProviderName, &sess.Workspace,
-		&sess.Summary, &listed); err != nil {
+		&sess.Summary, &listed, &sess.ContextStart, &sess.ContextSummary); err != nil {
 		return core.Session{}, err
 	}
 	sess.ParentID = parent.String
@@ -481,7 +485,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) 
 }
 
 // sessionColumns is the projection shared by GetSession and ListSessions.
-const sessionColumns = "id, parent_id, delegate_parent, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, agent, last_run, model, provider, workspace, summary, listed"
+const sessionColumns = "id, parent_id, delegate_parent, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, agent, last_run, model, provider, workspace, summary, listed, context_start, context_summary"
 
 // SetSessionLastRun writes the last-run stats block (JSON) on the
 // session's row, or clears it when stats is nil. It is a telemetry
@@ -500,6 +504,20 @@ func (s *Store) SetSessionLastRun(ctx context.Context, sessionID string, stats *
 	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET last_run = ? WHERE id = ?`, encoded, sessionID)
+	return err
+}
+
+// SetSessionContextStart moves the conversation's provider-facing
+// context boundary (card t_10ac04f0): the next run's history starts at
+// message id `start`, and `summary` (may be empty) heads it. The
+// transcript keeps every row - this is a context concern, not a delete,
+// and updated_at is untouched (a fold is not activity).
+func (s *Store) SetSessionContextStart(ctx context.Context, sessionID, start, summary string) error {
+	if o := s.owner(ctx, sessionID); o != nil {
+		return o.SetSessionContextStart(ctx, sessionID, start, summary)
+	}
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET context_start = ?, context_summary = ? WHERE id = ?`, start, summary, sessionID)
 	return err
 }
 

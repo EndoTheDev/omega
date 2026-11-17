@@ -95,7 +95,7 @@ func (c *Compactor) Compact(ctx context.Context, messages []core.Message) ([]cor
 
 	result := make([]core.Message, 0, keepFirst+len(messages)-end+1)
 	result = append(result, messages[:keepFirst]...)
-	result = append(result, core.NewSystem("[compacted: "+summary+"]"))
+	result = append(result, core.NewSystem(core.ContextFoldPrefix+summary+core.ContextFoldSuffix))
 	result = append(result, messages[end:]...)
 	return result, nil
 }

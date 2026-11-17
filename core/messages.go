@@ -1,5 +1,14 @@
 package core
 
+// ContextFoldPrefix and ContextFoldSuffix wrap the summary that heads a
+// folded conversation's context (card t_10ac04f0). The compactor writes
+// the message; the session row stores the bare text. One pair of markers,
+// so a fold's summary is recognizable wherever it is read.
+const (
+	ContextFoldPrefix = "[compacted: "
+	ContextFoldSuffix = "]"
+)
+
 // Session is a persisted conversation with optional parent linking
 // for branching.
 type Session struct {
@@ -39,6 +48,19 @@ type Session struct {
 	// is `listed`, inverted: the human's list is the default state.
 	MachineOwned bool `json:"machine_owned,omitempty"`
 
+	// ContextStart is the message id the PROVIDER-FACING context begins
+	// at (card t_10ac04f0: /new in a machinery-owned conversation folds
+	// it). The transcript keeps every row - a human scrolls the whole
+	// record - while the next run's context starts here. Empty = the
+	// conversation's beginning, the normal case.
+	ContextStart string `json:"context_start,omitempty"`
+
+	// ContextSummary is what survives a fold: the summary the compactor
+	// produced when the pre-boundary history was folded. It heads the
+	// next run's context so a restart costs context size, not the
+	// lessons in it. Empty on a conversation that was never folded, or
+	// folded too small for a summary to be worth a model call.
+	ContextSummary string `json:"context_summary,omitempty"`
 	// LastReadAt is the time the session's output was last seen by the
 	// user (empty on rows created before the column existed - the
 	// migration backfills it to updated_at so nothing old turns unread).
