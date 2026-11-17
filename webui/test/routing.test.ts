@@ -10,12 +10,14 @@ import {
   DOCK_LAYOUT_KEY,
   allNodes,
   createDock,
+  edgeOfArea,
   findEdgePane,
   findPane,
   isPinnedPane,
   makePane,
   makeSplit,
   migrateLegacy,
+  moveTab,
   openTab,
   serialize,
   setPaneComponent,
@@ -123,5 +125,37 @@ describe("the seat map is the dnd legality check (canvas C1)", () => {
     // chat is main-only; the sessions list is primary-only (its standing lock)
     assert.deepEqual([...zonesOf("chat")], ["main"]);
     assert.deepEqual([...zonesOf("sidebar")], ["left"]);
+  });
+
+  it("edgeOfArea: the ONE zone -> shell adapter (a zone name is never a shell name)", () => {
+    assert.equal(edgeOfArea("left"), "sidebar", "the primary sidebar's shell");
+    assert.equal(edgeOfArea("right"), "inspector", "the secondary sidebar's shell");
+    assert.equal(edgeOfArea("bottom"), "bottom");
+    assert.equal(edgeOfArea("main"), null, "the main column carries no shell marker");
+  });
+
+  it("moveTab reads the seat map: a main member never lands in a sidebar, a sidebar view visits the main pane", () => {
+    const tree = makeSplit("row", [
+      makePane("sidebar", 240, "left"),
+      makePane("chat"),
+      makePane("files", 240, "right"),
+    ]);
+    const left = tree.children[0] as DockPane;
+    const main = tree.children[1] as DockPane;
+    const right = tree.children[2] as DockPane;
+    // the root cause this card kills: a chat dragged into the primary sidebar
+    assert.equal(moveTab(tree, main.id, 0, left.id, 0), tree, "chat never enters the sidebar");
+    // sessions is locked to its own home - not even the main pane
+    assert.equal(moveTab(tree, left.id, 0, main.id, 0), tree, "the sessions list never leaves its home");
+    // a sidebar view MAY visit the main pane (the temporary promote - the
+    // visit is not a move-out: its registry home stands, later cards make
+    // close return it)
+    const filesIdx = right.tabs.findIndex((t) => t.component === "files");
+    const promoted = moveTab(tree, right.id, filesIdx, main.id, main.tabs.length);
+    assert.notEqual(promoted, tree, "the promote is legal");
+    assert.deepEqual(
+      (findPane(promoted, main.id) as DockPane).tabs.map((t) => t.component),
+      ["chat", "files"],
+    );
   });
 });

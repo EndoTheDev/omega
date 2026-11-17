@@ -56,6 +56,7 @@ import {
   seatAllowsIn,
   validViewerRef,
   zonesOf,
+  type DockArea,
   type DockableComponentLike,
   type DockComponentName,
   type ModuleGate,
@@ -555,8 +556,9 @@ function reseatTarget(
   const own = findPane(tree, parked.pane);
   if (own) return { paneId: own.id, index: parked.index };
   const area = DOCKABLES.find((d) => d.id === id)?.area;
-  if (area === "left" || area === "right" || area === "bottom") {
-    const edge = findEdgePane(tree, area === "left" ? "sidebar" : area === "right" ? "inspector" : "bottom");
+  const shell = area ? edgeOfArea(area) : null;
+  if (shell) {
+    const edge = findEdgePane(tree, shell);
     return edge ? { paneId: edge.id, index: parked.index } : null;
   }
   const main = firstMainPaneId(tree);
@@ -914,10 +916,14 @@ export function ensurePinnedEdges(
     relocated sidebar tabs is never grabbed - and a side the record says
     the user closed is never minted either (a main pane hosting dragged-in
     sidebar tabs would otherwise be claimed by the closed shell's
-    reappearance, card t_aa9dbada). canvas C1: the fingerprint IS the class
-    law - a pane whose first classified tab is a primary-sidebar view is the
-    left shell, a secondary-sidebar view the right. Idempotent; no-op
-    returns the SAME tree. */
+    reappearance, card t_aa9dbada). canvas C1: the fingerprint reads the
+    class law. The PRIMARY shell is anchored by its class's LOCKED view
+    (sessions - the one view that can never leave it, so a pane hosting it
+    IS that shell) and never by a visiting class companion (agents, cron
+    may sit anywhere, so their presence says nothing about which pane is
+    the shell). The SECONDARY shell is read by class membership - its views
+    are free content and the right shell is their first home. Idempotent;
+    no-op returns the SAME tree. */
 export function deriveEdgeMarkers(
   tree: DockNode,
   closed: readonly DockEdgeComponent[] = [],
@@ -928,6 +934,7 @@ export function deriveEdgeMarkers(
   }
   if (claimed.left && claimed.right) return tree;
   const classOf = (t: DockTab) => dockableClass(t.component);
+  const primaryAnchor = PRIMARY_TAB_COMPONENTS.find((c) => isLockedTab(c)) ?? "sidebar";
   const copy = clone(tree);
   let changed = false;
   for (const n of allNodes(copy)) {
@@ -935,7 +942,7 @@ export function deriveEdgeMarkers(
     if (
       !claimed.left &&
       !closed.includes("sidebar") &&
-      n.tabs.some((t) => classOf(t) === "primary-sidebar")
+      n.tabs.some((t) => t.component === primaryAnchor)
     ) {
       n.edge = "left";
       claimed.left = true;
@@ -1314,6 +1321,26 @@ function prunePane(tree: DockNode, paneId: string): DockNode {
 // tightly-guarded route so hide/reopen survives the reset's invariants.
 // card t_d6b657a7: shells are identified by their `edge` MARKER now -
 // content is free, so the old tab fingerprint cannot survive.
+
+/** THE CLASS <-> SHELL ADAPTER (canvas C1): the edge component a home zone
+    names. `edge` markers, the toggles and findEdgePane speak the shell
+    vocabulary ("sidebar" / "inspector" / "bottom"); a registry entry speaks
+    the zone ("left" / "right"). ONE map - handing a zone name to
+    findEdgePane silently answers the bottom pane, so no caller may spell
+    the translation itself. null = the main column, which carries no marker
+    and no toggle of its own. */
+export function edgeOfArea(area: DockArea): DockEdgeComponent | null {
+  switch (area) {
+    case "left":
+      return "sidebar";
+    case "right":
+      return "inspector";
+    case "bottom":
+      return "bottom";
+    case "main":
+      return null;
+  }
+}
 
 /** the dedicated pinned shell for `component`: the pane carrying the
     matching edge marker (sessions = "left", inspector = "right",

@@ -613,6 +613,7 @@
   import { copyText } from "./composables/clipboard";
   import {
     createDock,
+    edgeOfArea,
     findPane,
     findEdgePane,
     findComponentTab,
@@ -2176,19 +2177,22 @@
     clampDrawerTab(bottomDrawerTabs.value, mobileBottomTab.value)?.id,
   );
 
-  // card t_14f73742: a has-ui extension row routes to the module's
-  // inspector tab - focus its live instance, open it if the strip
-  // dropped one (the loader restores the full set anyway). The guard is
-  // honest against malformed endpoint payloads: an id outside the
-  // registry never reaches the dock.
+  // card t_14f73742: a has-ui extension row and a notification's target
+  // both come through here - a wire payload naming a view. canvas C1: WHERE
+  // it opens follows the seat map, not this function - the class assigns the
+  // home shell, so a primary-sidebar view (cron, agents) lands in the left
+  // shell exactly like an inspector view lands in the right one. Main-class
+  // ids keep their own doors (the chat opener, the gear) - a wire payload
+  // never mints those. The guard is honest against malformed endpoint
+  // payloads: an id outside the registry never reaches the dock.
   // card t_103e30a6: a module the runtime reports OFF has no surface to
   // open - the gate refuses the route instead of minting a dead pane.
   function openModuleTab(moduleId: string) {
-    if (!(INSPECTOR_TAB_COMPONENTS as readonly string[]).includes(moduleId)) return;
+    const entry = DOCKABLES.find((d) => d.id === moduleId);
+    if (!entry) return;
     if (moduleGated(moduleId, currentModuleGate())) return;
-    const pane = findEdgePane(dock.tree.value, "inspector");
-    if (!pane) return;
-    dock.openSingleton(pane.id, moduleId as DockComponentName);
+    if (edgeOfArea(entry.area) === null) return;
+    paletteOpenDockable(entry.id);
   }
 
   // the menubar toggle route: one decision point for all three edges -
@@ -2250,11 +2254,16 @@
     // and not in openSettingsTab alone
     if (id === "settings") claimSettingsPath();
     const area = DOCKABLES.find((d) => d.id === id)?.area ?? "main";
-    if (area === "left" && !findEdgePane(dock.tree.value, "sidebar")) {
+    // canvas C1: the view's HOME decides the reveal and the seat - through
+    // ONE adapter (edgeOfArea), never a raw zone name handed to
+    // findEdgePane (which speaks shell components; a zone name would answer
+    // the bottom pane)
+    const shell = edgeOfArea(area);
+    if (shell === "sidebar" && !findEdgePane(dock.tree.value, "sidebar")) {
       dock.toggleEdge("sidebar", "after");
-    } else if (area === "right" && !findEdgePane(dock.tree.value, "inspector")) {
+    } else if (shell === "inspector" && !findEdgePane(dock.tree.value, "inspector")) {
       dock.toggleEdge("inspector", "after");
-    } else if (area === "bottom" && !findEdgePane(dock.tree.value, "bottom")) {
+    } else if (shell === "bottom" && !findEdgePane(dock.tree.value, "bottom")) {
       dock.toggleBottom();
     }
     const tree = dock.tree.value;
@@ -2263,9 +2272,9 @@
       dock.focus(found.paneId, found.index);
       return;
     }
-    const paneId = area === "main"
-      ? dock.ensureMainPane()
-      : (findEdgePane(tree, area)?.id ?? dock.ensureMainPane());
+    const paneId = shell
+      ? (findEdgePane(tree, shell)?.id ?? dock.ensureMainPane())
+      : dock.ensureMainPane();
     dock.openSingleton(paneId, id);
   }
 

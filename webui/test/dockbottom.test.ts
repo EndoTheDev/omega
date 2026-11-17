@@ -408,7 +408,7 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
   });
 
   it("a default parked ELSEWHERE (a main pane) is never duplicated", () => {
-    // the whole-tree read (the restoreInspectorSet precedent): the
+    // the whole-tree read (the restoreSeatSet precedent): the
     // singleton lives in a main pane, the strip seats the REST -
     // strip-only membership would clone the singleton onto the shell
     const main = makePane(null);
@@ -423,7 +423,7 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
       "the singleton stays in the main pane");
   });
 
-  it("a GROWN bottom root seats the strip in its hosting leaf (the restoreInspectorSet read)", () => {
+  it("a GROWN bottom root seats the strip in its hosting leaf (the restoreSeatSet read)", () => {
     const shell = makePane(null, null, "bottom");
     shell.tabs = []; // the classic bar is empty while grown (by law)
     const leaf = makePane(null); // the shell's original content leaf
