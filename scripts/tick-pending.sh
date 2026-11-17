@@ -25,12 +25,19 @@
 #   4. any card whose body/latest comment carries an UNSETTLED ruling request
 #      (`PENDING (Endo): <question>`, or a `RULING (` block with no verdict)
 #
-# WHAT IS NEVER PENDING: a card whose body or comments carry a `RULING (...)`
-# marker reading SETTLED (or HOLD / ARCHIVED - the two other decided markers;
-# the skill's two markers are opposite meanings and HOLD is DECIDED). Those
-# print as `SETTLED <id>` under the settled header, and --check answers 0.
-# Re-opening a settled card needs an edit that drops the decided word, or a
-# fresh card - a settled marker is final for its card by construction.
+# WHAT IS NEVER PENDING: a card whose NEWEST marker reads settled (a `RULING
+# (...)` block saying SETTLED, or HOLD / ARCHIVED - the two other decided
+# markers; the skill's two markers are opposite meanings and HOLD is DECIDED).
+# Those print as `SETTLED <id>` under the settled header, and --check answers 0.
+#
+# MARKER RECENCY (the round-1 review finding): the NEWEST marker owns the card's
+# state - a settled marker is NOT final by construction. Markers read oldest to
+# newest (the body first: it is the card's opening statement and carries no
+# mtime to order; comments then by (created_at, id)), and the last one decides.
+# So a later `PENDING (Endo):` re-ask re-opens a previously ruled card (it is
+# the skill's own marker for an owed question, and the shape appears the first
+# time a worker asks again on a ruled card), while a later settled marker closes
+# an older open question. A settled marker that is not superseded still vetoes.
 #
 # Output (greppable, one line per card):
 #     PENDING <id> <one-line reason>
@@ -79,6 +86,12 @@ else
       echo "tick-pending.sh: board pointer '$ROOT/kanban/current' could not be read - refusing to guess a board" >&2
       exit 3
     }
+    # A CRLF-written pointer keeps a trailing CR (and a hand-edited one a stray
+    # blank), which would resolve to a board that does not exist. Strip both
+    # before the slug test below - the pointer names one board and nothing else.
+    PTR="${PTR//$'\r'/}"
+    PTR="${PTR#"${PTR%%[![:space:]]*}"}"
+    PTR="${PTR%"${PTR##*[![:space:]]}"}"
   fi
   for cand in "${HERMES_KANBAN_BOARD:-}" "$PTR"; do
     [ -n "$cand" ] || continue
@@ -101,7 +114,7 @@ while [ $# -gt 0 ]; do
     --check=*)
       MODE=check; WANT="${1#--check=}"; shift ;;
     -h|--help)
-      sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+      awk 'NR>1 && /^set /{exit} NR>1{sub(/^# ?/, ""); print}' "$0"; exit 0 ;;
     *)
       die "unknown argument '$1' (usage: tick-pending.sh [--check <id>])" ;;
   esac
@@ -249,12 +262,18 @@ def markers(body):
 
 
 def comments_for(task_id):
+    """[(created_at, body)] oldest first - the marker-recency order."""
     try:
         return list(cur.execute(
-            "SELECT body FROM task_comments WHERE task_id=? ORDER BY created_at, id",
+            "SELECT created_at, body FROM task_comments WHERE task_id=? ORDER BY created_at, id",
             (task_id,)))
-    except sqlite3.Error:
-        return []
+    except sqlite3.Error as exc:
+        # A swallowed comment error degrades the derivation to body-only, which
+        # silently hides a comment-carried re-ask. Refuse loud, like every other
+        # board read: a list derived from half the evidence reads as "nothing".
+        sys.stderr.write("tick-pending.sh: comment read failed (%s): %s\n"
+                         % (task_id, exc))
+        sys.exit(3)
 
 
 def event_reason(task_id, kinds):
@@ -263,8 +282,10 @@ def event_reason(task_id, kinds):
             "SELECT payload FROM task_events WHERE task_id=? AND kind IN (%s) ORDER BY id DESC LIMIT 1"
             % ",".join("?" * len(kinds)),
             (task_id,) + tuple(kinds)).fetchone()
-    except sqlite3.Error:
-        return ""
+    except sqlite3.Error as exc:
+        sys.stderr.write("tick-pending.sh: event read failed (%s): %s\n"
+                         % (task_id, exc))
+        sys.exit(3)
     if not row:
         return ""
     raw = text(row[0]) or "{}"
@@ -283,27 +304,35 @@ def event_reason(task_id, kinds):
 
 def derive(status, body, comments, task_reason):
     """(state, why) where state is pending | settled | nomarker."""
+    # Markers oldest -> newest. The body is the card's opening statement and
+    # carries no mtime to order it, so it sorts before every comment; comments
+    # follow in (created_at, id) order as read.
     all_marks = []
     for verdict, excerpt in markers(body):
         all_marks.append((verdict, excerpt))
-    for (cbody,) in comments:
+    for _created, cbody in comments:
         for verdict, excerpt in markers(cbody):
             all_marks.append((verdict, excerpt))
 
-    # The settled veto: a card carrying a decided marker is NEVER pending.
-    for verdict, excerpt in all_marks:
+    # RECENCY: the NEWEST marker owns the card's state. A settled marker vetoes
+    # only while nothing newer contradicts it - a later `PENDING (Endo):` re-ask
+    # re-opens a ruled card, and a later settled marker closes an open question.
+    pending = []
+    if all_marks:
+        verdict, excerpt = all_marks[-1]
         if verdict == "settled":
             return "settled", excerpt
-
-    pending = []
-    for verdict, excerpt in all_marks:
         if verdict == "pending":
             pending.append("PENDING (Endo) marker: " + excerpt)
         else:
             pending.append("ruling marker with no verdict (unsettled): " + excerpt)
+        reopened = sum(1 for v, _ in all_marks[:-1] if v == "settled")
+        if reopened:
+            pending.append("re-opened over %d settled marker%s"
+                           % (reopened, "" if reopened == 1 else "s"))
 
     if status == "triage":
-        hay = text(body) + "\n" + "\n".join(text(c) for (c,) in comments)
+        hay = text(body) + "\n" + "\n".join(text(cbody) for (_c, cbody) in comments)
         hit = ASKS.search(hay)
         if hit:
             pending.append('triage card asks for a ruling (matched "%s")'

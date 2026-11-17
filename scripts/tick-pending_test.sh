@@ -109,6 +109,28 @@ PENDING (Endo): does the second tab ride the same fold?',112);
 
 -- 14. archived: invisible even with an owed marker
 INSERT INTO tasks VALUES('t_archived_owed','archived','archived','PENDING (Endo): never mind.',113);
+
+-- 15. REOPENED: a settled comment at 500, a newer owed comment at 900. The
+-- newest marker wins (round-1 review finding) - this is the card a re-ask
+-- lands on the first time a worker asks again on a ruled card.
+INSERT INTO tasks VALUES('t_reopened','ready','ruled, then re-asked','BODY: option C shipped.',115);
+INSERT INTO task_comments(task_id,author,body,created_at) VALUES('t_reopened','default',
+  'RULING (2026-11-17): SETTLED - option C, both halves.',500);
+INSERT INTO task_comments(task_id,author,body,created_at) VALUES('t_reopened','default',
+  'PENDING (Endo): new evidence - does option C still hold for the second tab?',900);
+
+-- 16. the same shape where the settled marker is in the BODY (body sorts
+-- oldest: it has no mtime to order)
+INSERT INTO tasks VALUES('t_body_then_ask','ready','body ruled, comment re-asks',
+  'RULING (2026-11-17): SETTLED - option A.',116);
+INSERT INTO task_comments(task_id,author,body,created_at) VALUES('t_body_then_ask','default',
+  'PENDING (Endo): the fold question reopened by the merge.',901);
+
+-- 17. the CONTROL direction: asked first, answered later. Settled still wins.
+INSERT INTO tasks VALUES('t_ask_then_settled','ready','asked, then answered',
+  'PENDING (Endo): does the dock fold before the sort?',117);
+INSERT INTO task_comments(task_id,author,body,created_at) VALUES('t_ask_then_settled','default',
+  'RULING (2026-11-17): SETTLED - option B, fold first.',902);
 "
 
 # A BLOB body carrying a settled marker (8 live rows carry BLOB bodies; a TEXT
@@ -168,13 +190,36 @@ has "$out" "PENDING t_unsettled_ruling ruling marker with no verdict" && ok \
 has "$out" "PENDING t_done_open" && ok \
   || bad "T3h: an open decision on a DONE card was swallowed - the finished-build case"
 
+# -- marker recency: the newest marker owns the state ---------------------
+# A settled marker is NOT final by construction. A later owed marker wins
+# (round-1 review finding: an old SETTLED vetoed a newer `PENDING (Endo):`
+# re-ask, hiding it from BOTH the report and --check).
+has "$out" "PENDING t_reopened PENDING (Endo) marker" && ok \
+  || bad "T9a: a newer owed comment did not re-open a settled card (out: $out)"
+hasnt "$out" "SETTLED t_reopened" && ok \
+  || bad "T9b: the re-opened card still printed SETTLED - the doubly-suppressed shape"
+has "$out" "PENDING t_body_then_ask PENDING (Endo) marker" && ok \
+  || bad "T9c: a comment re-ask lost to a body settled marker (out: $out)"
+hasnt "$out" "SETTLED t_body_then_ask" && ok || bad "T9d: the body-ruled re-ask printed SETTLED"
+has "$out" "SETTLED t_ask_then_settled" && ok \
+  || bad "T9e: the control direction (asked, then answered) did not settle (out: $out)"
+hasnt "$out" "PENDING t_ask_then_settled" && ok \
+  || bad "T9f: an answered question stayed pending - recency runs both ways"
+out=$(run_check t_reopened); rc=$?
+[ "$rc" -eq 1 ] && ok || bad "T9g: --check on the re-opened card exited $rc, not 1 (a block decision would read it as settled)"
+cout=$(run_check t_body_then_ask); rc=$?
+[ "$rc" -eq 1 ] && ok || bad "T9h: --check on the body-ruled re-ask exited $rc, not 1"
+cout=$(run_check t_ask_then_settled); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T9i: --check on the answered card exited $rc, not 0"
+out=$(run_list)  # T4/T5 below read the LIST output; --check clobbered it above
+
 # -- what must NOT be a marker --------------------------------------------
 hasnt "$out" "SETTLED t_prose" && ok || bad "T4a: prose mentioning the marker counted as one"
 hasnt "$out" "NOMARKER" && ok || bad "T4b: NOMARKER belongs to --check only"
 hasnt "$out" "t_archived_owed" && ok || bad "T4c: an archived card appeared in the derivation"
 
 # -- summary line and counts ----------------------------------------------
-has "$out" "TICK-PENDING: 6 pending, 4 settled, 15 cards read" && ok \
+has "$out" "TICK-PENDING: 8 pending, 5 settled, 18 cards read" && ok \
   || bad "T5: the summary line is wrong or missing (out: $out)"
 
 # -- --check: 0 settled, 1 pending, 2 no evidence -------------------------
@@ -205,6 +250,49 @@ printf '%s\n' "$out" | grep -q 'lacks the sqlite3 module\|no python on PATH' && 
 out=$( bash "$SCRIPT" --bogus 2>&1 ); rc=$?
 [ "$rc" -eq 3 ] && ok || bad "T7e: an unknown argument exited $rc, not 3"
 
+# -- a CRLF board pointer still resolves (nit: PTR=$(cat) kept the CR) ----
+# Two shapes: a CRLF pointer (the real writer's shape - this bash strips the
+# trailing CRLF in command substitution, so it is the no-regression guard) and
+# a BARE CR with no closing LF (nothing strips that one - it is the pin: the
+# old read handed the CR straight into the board path).
+CR_HOME=$(mktemp -d)
+mkdir -p "$CR_HOME/kanban/boards/project-omega"
+printf 'project-omega\r\n' >"$CR_HOME/kanban/current"
+CR2_HOME=$(mktemp -d)
+mkdir -p "$CR2_HOME/kanban/boards/project-omega"
+printf 'project-omega\r' >"$CR2_HOME/kanban/current"
+for h in "$CR_HOME" "$CR2_HOME"; do
+  sqlex "$(mixpath "$h")/kanban/boards/project-omega/kanban.db" \
+    "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT, body TEXT);
+CREATE TABLE task_comments(id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT, body TEXT, created_at INTEGER);
+CREATE TABLE task_events(id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT, kind TEXT, payload TEXT, created_at INTEGER);" \
+    && ok || bad "T10a: could not build the CR-pointer fixture board ($h)"
+  cout=$( cd "$(dirname "$SCRIPT")" && env HOME="$h" HERMES_HOME= \
+          HERMES_KANBAN_HOME="$(mixpath "$h")" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
+          bash "$SCRIPT" 2>&1 ); rc=$?
+  [ "$rc" -eq 0 ] && ok || bad "T10b: a CR-carrying board pointer did not resolve (rc $rc, out: $cout)"
+  printf '%s\n' "$cout" | grep -qx 'PENDING none' && ok \
+    || bad "T10c: the CR pointer did not reach the board (out: $cout)"
+done
+
+# -- a half-read board refuses loud (nit: comments_for/event_reason
+#    swallowed sqlite3.Error, so a failed comment read degraded the
+#    derivation to body-only - silently hiding a comment-carried re-ask) ----
+HALF_HOME=$(mktemp -d)
+mkdir -p "$HALF_HOME/kanban/boards/project-omega"
+printf 'project-omega\n' >"$HALF_HOME/kanban/current"
+sqlex "$(mixpath "$HALF_HOME")/kanban/boards/project-omega/kanban.db" \
+  "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT, body TEXT);
+INSERT INTO tasks VALUES('t_half','ready','half a board','BODY.');" \
+  && ok || bad "T11a: could not build the half-read fixture board"
+cout=$( cd "$(dirname "$SCRIPT")" && env HOME="$HALF_HOME" HERMES_HOME= \
+        HERMES_KANBAN_HOME="$(mixpath "$HALF_HOME")" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
+        bash "$SCRIPT" 2>&1 ); rc=$?
+[ "$rc" -eq 3 ] && ok \
+  || bad "T11b: a board with no comment table exited $rc, not 3 - a silent body-only read reads as 'nothing owed'"
+printf '%s\n' "$cout" | grep -q 'comment read failed' && ok \
+  || bad "T11c: the half-read failure was not named (out: $cout)"
+
 # -- an all-clear is stated, never an empty page -------------------------
 EMPTY_HOME=$(mktemp -d)
 EMPTY_DB="$(mixpath "$EMPTY_HOME")/empty.db"
@@ -216,7 +304,7 @@ out=$( cd "$(dirname "$SCRIPT")" && env HOME="$TPHOME" HERMES_HOME= \
         HERMES_KANBAN_DB="$EMPTY_DB" bash "$SCRIPT" 2>&1 ); rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T8b: an empty board exited $rc"
 printf '%s\n' "$out" | grep -qx 'PENDING none' && ok || bad "T8c: an empty board printed no explicit all-clear (out: $out)"
-rm -rf "$TPHOME" "$EMPTY_HOME"
+rm -rf "$TPHOME" "$EMPTY_HOME" "$CR_HOME" "$CR2_HOME" "$HALF_HOME"
 
 echo
 echo "tick-pending_test: $pass ok, $fail fail"
