@@ -102,6 +102,13 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err := machine.MigrateCanonicalIDs(); err != nil {
 		return err
 	}
+	// The visibility repair (card t_10ac04f0): homes created before the
+	// canonical seed went through the machinery-owned door carry their
+	// chat as a LISTED row, which /new forks instead of folding. Boot-
+	// time, idempotent, hides canonical-id rows only.
+	if err := machine.MigrateCanonicalVisibility(); err != nil {
+		return err
+	}
 	// The evidence ledger (ruling 11): runtime-owned, spine-fed, and
 	// NEVER tool-writable - it subscribes through AddEventObserver, a
 	// surface no tool registry reaches. Per-agent stores fall out of

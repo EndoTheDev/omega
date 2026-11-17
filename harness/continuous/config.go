@@ -63,16 +63,27 @@ func CanonicalSessionIDFor(agentName string) string {
 // be a positive integer so an unrelated session that happens to start
 // with the base string is never mistaken for one.
 func IsCanonicalSessionID(agentName, id string) bool {
+	return canonicalGeneration(agentName, id) > 0
+}
+
+// canonicalGeneration answers which generation of agentName's canonical
+// chat id names: 1 for the base id, n for "base-n", 0 for anything
+// else. The number (not the string) is what orders two generations
+// minted in the same second - "base-10" is later than "base-2".
+func canonicalGeneration(agentName, id string) int {
 	base := CanonicalSessionIDFor(agentName)
 	if id == base {
-		return true
+		return 1
 	}
 	suffix, ok := strings.CutPrefix(id, base+"-")
 	if !ok {
-		return false
+		return 0
 	}
 	n, err := strconv.Atoi(suffix)
-	return err == nil && n >= 2
+	if err != nil || n < 2 {
+		return 0
+	}
+	return n
 }
 
 // NextCanonicalSessionID returns the id a NEW canonical mint takes: the

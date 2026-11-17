@@ -129,7 +129,9 @@ func (m *Machine) sessionRows(name string) ([]core.Session, error) {
 		if as == nil {
 			return nil, fmt.Errorf("store does not support agent sessions")
 		}
-		return as.ListAgentSessions(context.Background(), name)
+		ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
+		defer cancel()
+		return as.ListAgentSessions(ctx, name)
 	}
 	path := filepath.Join(agent.AgentDir(m.home, name), "data", "omega.db")
 	if _, err := os.Stat(path); err != nil {
@@ -157,11 +159,13 @@ func CurrentCanonicalSession(sessions []core.Session, agentName string) (core.Se
 		if sess.Archived || !IsCanonicalSessionID(agentName, sess.ID) {
 			continue
 		}
-		// newest by created_at, then by generation (the later mint wins
-		// a same-second tie - the store writes ISO stamps with second
-		// resolution).
+		// newest by created_at, then by generation NUMBER (the later
+		// mint wins a same-second tie - the store writes ISO stamps with
+		// second resolution). Comparing ids would order "scout-canonical-10"
+		// before "scout-canonical-2".
 		if !found || sess.CreatedAt > best.CreatedAt ||
-			(sess.CreatedAt == best.CreatedAt && sess.ID > best.ID) {
+			(sess.CreatedAt == best.CreatedAt &&
+				canonicalGeneration(agentName, sess.ID) > canonicalGeneration(agentName, best.ID)) {
 			best, found = sess, true
 		}
 	}
@@ -171,9 +175,11 @@ func CurrentCanonicalSession(sessions []core.Session, agentName string) (core.Se
 // EnsureCanonical answers agentName's canonical chat, MINTING it when
 // the home holds no live one (card t_10ac04f0: a session-less agent's
 // click mints its canonical; a retired one mints the next generation).
-// Every path that needs the agent's one permanent conversation - the
-// roster row's click, a wake child's session binding - goes through
-// here, so there is exactly one mint law.
+// Its one caller is the roster's canonical route
+// (POST /agents/{name}/canonical), so there is exactly one mint law.
+// A wake child does NOT come through here: it binds the row CreateHome
+// seeded (omega run --session <qualified id>), and a mint while a wake
+// is the only writer would just follow the same rule anyway.
 func (m *Machine) EnsureCanonical(name string) (core.Session, error) {
 	if _, err := agent.LoadProfile(m.home, name); err != nil {
 		return core.Session{}, err
@@ -211,7 +217,11 @@ func (m *Machine) createCanonical(name, id string) error {
 		if !ok {
 			return fmt.Errorf("store cannot create a canonical chat")
 		}
-		return w.CreateCanonicalChat(context.Background(), id, name)
+		// The main store is remote from this capsule (the daemon's own
+		// handle), so it gets the same wedge fence the home files do.
+		ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
+		defer cancel()
+		return w.CreateCanonicalChat(ctx, id, name)
 	}
 	path := filepath.Join(agent.AgentDir(m.home, name), "data", "omega.db")
 	// A home scaffolded but never run has no data dir; the mint is the
@@ -281,6 +291,13 @@ func (m *Machine) CreateHome(name, directive, schedule string) error {
 	// full data isolation starts on creation day. The id is
 	// agent-qualified (card t_5df01d0f) so the daemon's ONE session
 	// handle can tell two homes' chats apart by the id alone.
+	//
+	// It is seeded through the MACHINERY-OWNED door, not the ordinary
+	// agent-session one (round-1 finding): the `listed = 0` bit is what
+	// makes the row machine-owned, and the /new fold keys on exactly
+	// that bit. A seeded row written as listed = 1 answers "fork" on
+	// /new, which forks the relationship - ruling 2 - on the path every
+	// scaffold-created agent takes.
 	st, err := store.Open(filepath.Join(dir, "data", "omega.db"))
 	if err != nil {
 		return fmt.Errorf("open %s store: %w", name, err)
@@ -288,7 +305,7 @@ func (m *Machine) CreateHome(name, directive, schedule string) error {
 	defer st.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
 	defer cancel()
-	if err := st.CreateAgentSession(ctx, CanonicalSessionIDFor(name), "", CanonicalSessionID, name); err != nil {
+	if err := st.CreateCanonicalChat(ctx, CanonicalSessionIDFor(name), name); err != nil {
 		return fmt.Errorf("create canonical chat: %w", err)
 	}
 	return nil

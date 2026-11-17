@@ -80,6 +80,13 @@ func TestCreateHomeScaffoldsAndSeeds(t *testing.T) {
 	if sess.Agent != "scout" {
 		t.Errorf("canonical chat agent = %q, want scout", sess.Agent)
 	}
+	// The row /new reads must be MACHINE-OWNED: handleSessionNew
+	// (agent/api) folds exactly when it is, and answers "fork" otherwise
+	// - which forks the agent relationship (ruling 2) on the create path
+	// every scaffold-created agent takes.
+	if !sess.MachineOwned {
+		t.Error("the seeded canonical chat is not machine-owned - /new would fork the relationship instead of compacting it")
+	}
 	// The bare id never exists in an agent home: it is the id the
 	// daemon's own store answers, and a second copy of it in a home is
 	// the collision this card fixes.

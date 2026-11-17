@@ -711,6 +711,85 @@ func TestAgentsRosterCanonicalChat(t *testing.T) {
 	}
 }
 
+// TestCreateHomeSeedsTheRosterCanonical pins the round-1 fix (card
+// t_10ac04f0) on the path a real agent takes: POST /continuous runs
+// CreateHome, and the chat it seeds is BOTH what the roster row hands
+// the click AND what /new folds. The fold keys on the machine-owned bit
+// (agent/api's handleSessionNew answers "fork" otherwise), so a seed
+// written as an ordinary listed row forked the relationship - ruling 2 -
+// for every created agent.
+func TestCreateHomeSeedsTheRosterCanonical(t *testing.T) {
+	home := t.TempDir()
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	ctx := &core.Context{}
+	ctx.ApplyOffer("store", "test", st)
+	machine := NewMachine(home, Default())
+	machine.SetStoreResolver(func() agent.StoreProvider { return st })
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /continuous", createHandler(machine))
+	mux.HandleFunc("/agents", (&agentRoutes{home: home, ctx: ctx, machine: machine}).handleAgents)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res, err := http.Post(srv.URL+"/continuous", "application/json",
+		strings.NewReader(`{"name":"runner","directive":"watch the door","schedule":"*/5 * * * *"}`))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("create status %d: %s", res.StatusCode, body)
+	}
+
+	// The roster row hands the seeded chat, with no mint needed.
+	code, rosterBody := getJSON(t, srv.URL+"/agents")
+	if code != http.StatusOK {
+		t.Fatalf("roster status %d: %s", code, rosterBody)
+	}
+	var rows []struct {
+		Name      string `json:"name"`
+		Canonical string `json:"canonical_session_id"`
+	}
+	if err := json.Unmarshal(rosterBody, &rows); err != nil {
+		t.Fatalf("decode roster: %v", err)
+	}
+	found := false
+	for _, row := range rows {
+		if row.Name != "runner" {
+			continue
+		}
+		found = true
+		if row.Canonical != "runner-canonical" {
+			t.Errorf("runner canonical = %q, want the seeded runner-canonical", row.Canonical)
+		}
+	}
+	if !found {
+		t.Fatalf("created agent missing from the roster: %s", rosterBody)
+	}
+
+	// The seeded row is machinery-owned and out of the human's list.
+	ast, err := store.Open(filepath.Join(agent.AgentDir(home, "runner"), "data", "omega.db"))
+	if err != nil {
+		t.Fatalf("runner store: %v", err)
+	}
+	defer ast.Close()
+	row, err := ast.GetSession(context.Background(), "runner-canonical")
+	if err != nil {
+		t.Fatalf("seeded canonical: %v", err)
+	}
+	if !row.MachineOwned {
+		t.Error("the created agent's chat is not machine-owned - /new would fork it instead of compacting it")
+	}
+	if sessions, err := ast.ListSessions(context.Background()); err != nil || len(sessions) != 0 {
+		t.Errorf("created agent's store lists %d sessions, %v - its chat belongs to the roster, not the sidebar", len(sessions), err)
+	}
+}
+
 // TestAgentsDeleteRemovesTheWholeHome pins ruling 2 on the wire:
 // DELETE /agents/{name} removes the HOME (sessions included) and
 // answers the session count it took with it, so the panel's receipt

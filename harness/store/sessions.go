@@ -95,6 +95,24 @@ func (s *Store) CreateCanonicalChat(ctx context.Context, id, agentName string) e
 	return err
 }
 
+// SetSessionListed sets a session's list-visibility bit (card
+// t_10ac04f0). `listed = 1` is the human's own session list; `listed =
+// 0` marks a machinery-owned conversation (an agent's canonical chat),
+// which opens from the agents roster and never from the sidebar.
+//
+// The CREATE path never needs this (CreateCanonicalChat writes the bit
+// itself). The boot backfill uses it to repair rows an older build
+// seeded as listed = 1: a canonical chat that is listed forks on /new
+// instead of folding, because the fold keys on the same bit.
+func (s *Store) SetSessionListed(ctx context.Context, id string, listed bool) error {
+	v := 0
+	if listed {
+		v = 1
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET listed = ? WHERE id = ?`, v, id)
+	return err
+}
+
 // CanonicalChatLabel is the label a canonical chat's row carries. It is
 // the session's display voice in the surfaces that show one (the
 // roster's preview, the chat tab's title), and it is what a human sees
