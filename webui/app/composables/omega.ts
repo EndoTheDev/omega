@@ -3825,6 +3825,14 @@ export interface RegistryRow {
   value?: number;
   noToggle?: boolean;
   status?: { on: boolean; label: string };
+  /** card t_10ac04f0 ruling 5: the one-line preview under the row name -
+      the newest thing the subject said (an agent's canonical chat reply),
+      already collapsed to a single line by the consumer. Empty = no
+      preview line at all (a subject that never spoke has nothing to
+      say). */
+  preview?: string;
+  /** the preview's age, rendered right of the text ("2h ago"). */
+  previewAt?: string;
 }
 
 // normalizeDisabledPayload never trusts the wire: any non-list-of-

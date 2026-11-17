@@ -34,10 +34,17 @@ export interface OmegaAgent {
   soul_size?: number;
   session_count: number;
   last_activity?: string;
-  /** card t_81109e1c: the agent's MOST RECENT session - the id the
-      roster row click binds a chat tab to (GET /agents, additive
-      field). Absent for an agent with no sessions. */
-  last_session_id?: string;
+  /** card t_10ac04f0: the agent's CANONICAL chat - the ONE conversation
+      the roster row click opens, stable across runs. Absent when the
+      home holds no live one (a fresh agent, or a retired canonical):
+      the click mints it (POST /agents/{name}/canonical), so the row is
+      clickable either way. */
+  canonical_session_id?: string;
+  /** card t_10ac04f0 ruling 5: the newest assistant message of that
+      canonical chat - the one-line preview under the row name - and
+      when it landed. */
+  last_report?: string;
+  last_report_at?: string;
   /** false for the main agent (the home root), true for agents/<name> */
   continuous?: boolean;
 }
@@ -182,6 +189,19 @@ export function agentRosterSubtitle(a: OmegaAgent, now: Date = new Date()): stri
   const activity = agentActivityText(a.last_activity, now);
   if (activity) parts.push(`last ${activity}`);
   return parts.join(" · ");
+}
+
+/** agentPreview (card t_10ac04f0 ruling 5): the roster row's one-line
+    preview - the newest thing the agent said in its canonical chat,
+    whitespace collapsed so it can never be two lines, plus the age of
+    that reply. No reply yet = no preview line (never a placeholder). */
+export function agentPreview(
+  a: OmegaAgent,
+  now: Date = new Date(),
+): { text: string; at: string } {
+  const text = (a.last_report ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return { text: "", at: "" };
+  return { text, at: agentActivityText(a.last_report_at, now) };
 }
 
 /** mergedRowDetail (card t_c7222095): the merged agent row's detail -

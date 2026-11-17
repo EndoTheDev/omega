@@ -38,8 +38,8 @@ const CanonicalSessionID = "canonical"
 // one id twice, and the probe answers the FIRST home that holds it - so
 // the second agent's roster row opened the first agent's chat, the
 // run typed into it executed on the wrong home (SessionOwner resolves
-// by the same probe), and the roster's active-row match
-// (last_session_id === focused id) always took the first agent. A
+// by the same probe), and the roster's active-row match (the focused id
+// against the row's canonical id) always took the first agent. A
 // per-home id makes the id itself the owner, and every one of those
 // three readers is correct without learning about agents.
 //
