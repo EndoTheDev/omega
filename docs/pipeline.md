@@ -25,6 +25,7 @@ gate + soak automation.
    That builds `.worktrees/review-<task-id>`, computes the merge-base
    with dev, and hands over the commit list + full cold diff. Review is
    read-only (see CONTRIBUTING.md). Approval closes the card: done.
+
 3. **Train** picks the oldest done card whose branch still carries
    commits not on dev:
 
@@ -155,12 +156,14 @@ bisects to the landing that shipped it.
 
 ## Cap raise (workers per profile)
 
-`kanban.max_in_progress_per_profile` moves 2 -> 4 only after both gates:
-
-- (a) two parallel webui cards landed back-to-back clean via the embed
-  lane - MET (pipeline v2 proof A + proof B).
-- (b) the worker onboarding skill is live - hermes-side, pending. Until
-  it lands, the cap stays at 2 and the flip is recorded, not applied.
+`kanban.max_in_progress_per_profile` moved 2 -> 3 with the 3+1 capacity
+ruling (2026-11-15): 3 cody implementation seats + 1 vera review lane = 4
+concurrent runs max, enforced by the dispatch guard (`t_ce6eea14`, merged
+`60cb462a`) - the per-profile config knob alone cannot express the 3+1
+asymmetry, so the invariant lives guard-side. Both original gates were
+met before the flip: (a) two parallel webui cards landed back-to-back
+clean via the embed lane (pipeline v2 proof A + proof B); (b) the worker
+onboarding skill went live.
 
 The dispatch guard (`scripts/factory-dispatch.sh`, `config_cap`) treats
 the knob as a guard number, never as a hint: a pass whose cap cannot be
@@ -260,17 +263,17 @@ stable channel from ever seeing a nightly.
 
 ## The wiring pieces
 
-| Piece                | Job                                                     |
-| -------------------- | ------------------------------------------------------- |
-| `docs/release-gate.md` | the gate's operating law: round cap, noise tags, lens brief, regression set |
-| `scripts/embed-lane.sh` | the ONE owner of committed `api/static/` |
-| `scripts/train-pass.sh` | one mechanical landing per pass + marker refs + strikes |
-| `scripts/train-bisect.sh` | the marker-chain walk: --list, or bisect by check   |
-| `scripts/review-at-close.sh` | fresh review worktree + cold diff vs merge-base |
-| `scripts/train-dry-run.sh` | stale wt/* sweep preview (stage 1, report/apply)   |
-| `scripts/drift-gate.sh` | hard-fail drift check, dev vs master (10 commits / 7 days) |
-| `scripts/release-suggest.sh` | suggested bump + evidence commits, never tags |
-| `.github/workflows/nightly.yml` | nightly prerelease tag on green dev tip + the soak ff |
+| Piece                           | Job                                                                         |
+| ------------------------------- | --------------------------------------------------------------------------- |
+| `docs/release-gate.md`          | the gate's operating law: round cap, noise tags, lens brief, regression set |
+| `scripts/embed-lane.sh`         | the ONE owner of committed `api/static/`                                    |
+| `scripts/train-pass.sh`         | one mechanical landing per pass + marker refs + strikes                     |
+| `scripts/train-bisect.sh`       | the marker-chain walk: --list, or bisect by check                           |
+| `scripts/review-at-close.sh`    | fresh review worktree + cold diff vs merge-base                             |
+| `scripts/train-dry-run.sh`      | stale wt/\* sweep preview (stage 1, report/apply)                           |
+| `scripts/drift-gate.sh`         | hard-fail drift check, dev vs master (10 commits / 7 days)                  |
+| `scripts/release-suggest.sh`    | suggested bump + evidence commits, never tags                               |
+| `.github/workflows/nightly.yml` | nightly prerelease tag on green dev tip + the soak ff                       |
 
 Journeys (run 3b) wire their suite in as `scripts/journeys/run.sh`;
 train-pass already calls that path when it exists.
