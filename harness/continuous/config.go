@@ -10,7 +10,13 @@
 // not tool-writable), and the roster shape.
 package continuous
 
-import "github.com/EndoTheDev/omega/agent"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/EndoTheDev/omega/agent"
+)
 
 // CanonicalSessionID is the fixed id of the DEFAULT agent's one
 // permanent chat (ruling 6). Every AGENT HOME's chat carries the
@@ -32,8 +38,8 @@ const CanonicalSessionID = "canonical"
 // one id twice, and the probe answers the FIRST home that holds it - so
 // the second agent's roster row opened the first agent's chat, the
 // run typed into it executed on the wrong home (SessionOwner resolves
-// by the same probe), and the roster's active-row match
-// (last_session_id === focused id) always took the first agent. A
+// by the same probe), and the roster's active-row match (the focused id
+// against the row's canonical id) always took the first agent. A
 // per-home id makes the id itself the owner, and every one of those
 // three readers is correct without learning about agents.
 //
@@ -45,6 +51,56 @@ func CanonicalSessionIDFor(agentName string) string {
 		return CanonicalSessionID
 	}
 	return agentName + "-" + CanonicalSessionID
+}
+
+// IsCanonicalSessionID reports whether id names one of agentName's
+// canonical chats: the base id, or a RETIRE generation of it
+// (base-2, base-3, ... - card t_10ac04f0, archive = retire).
+//
+// The shape is the whole identity: a canonical chat is resolved from
+// the id alone wherever a home's row is read (the roster payload, the
+// preview, the webui's "is this an agent chat" test). A suffix has to
+// be a positive integer so an unrelated session that happens to start
+// with the base string is never mistaken for one.
+func IsCanonicalSessionID(agentName, id string) bool {
+	return canonicalGeneration(agentName, id) > 0
+}
+
+// canonicalGeneration answers which generation of agentName's canonical
+// chat id names: 1 for the base id, n for "base-n", 0 for anything
+// else. The number (not the string) is what orders two generations
+// minted in the same second - "base-10" is later than "base-2".
+func canonicalGeneration(agentName, id string) int {
+	base := CanonicalSessionIDFor(agentName)
+	if id == base {
+		return 1
+	}
+	suffix, ok := strings.CutPrefix(id, base+"-")
+	if !ok {
+		return 0
+	}
+	n, err := strconv.Atoi(suffix)
+	if err != nil || n < 2 {
+		return 0
+	}
+	return n
+}
+
+// NextCanonicalSessionID returns the id a NEW canonical mint takes: the
+// base id while no row carries it, else the lowest free generation.
+// Only a retire (an archived canonical) asks for this - a live
+// canonical is simply opened, never re-minted.
+func NextCanonicalSessionID(agentName string, taken map[string]bool) string {
+	base := CanonicalSessionIDFor(agentName)
+	if !taken[base] {
+		return base
+	}
+	for n := 2; ; n++ {
+		id := fmt.Sprintf("%s-%d", base, n)
+		if !taken[id] {
+			return id
+		}
+	}
 }
 
 // Config is the continuous capsule's config section (continuous: in

@@ -27,6 +27,15 @@ import (
 // make; a wedged agent store must never wedge the roster route.
 const storeTimeout = 5 * time.Second
 
+// canonicalChatWriter is the store surface that creates a canonical
+// chat HIDDEN from the user's session list (harness/store's own
+// `listed = 0` visibility bit). Consumer-owned, declared here - the
+// store knows nothing about agents' canonical chats, it knows that
+// some rows are machinery-owned and out of the list.
+type canonicalChatWriter interface {
+	CreateCanonicalChat(ctx context.Context, id, agentName string) error
+}
+
 // chatMessagesTail is the chat view's message cap: the roster pane and
 // the detail strip render tails, not archives. v1 ships the last 100
 // messages per read; nothing else about the store crosses.
@@ -56,6 +65,13 @@ type Machine struct {
 	// spawnExe resolves the binary a wake child runs. os.Executable is
 	// the law; tests swap it so a wake never executes the test binary.
 	spawnExe func() (string, error)
+	// storeFn resolves the mounted store seam (card t_10ac04f0). main's
+	// canonical chat lives in the daemon's MAIN store - only an agent
+	// home has a data/omega.db of its own - so the mint/open path needs
+	// the seam, resolved per call (the live re-wire law). Nil = no store
+	// capsule mounted: main's canonical chat cannot be minted, and the
+	// roster row's click answers the error.
+	storeFn func() agent.StoreProvider
 }
 
 // SetDisabledAgents swaps the soft-disable list live (the host's
@@ -84,6 +100,160 @@ func (m *Machine) agentDisabled(name string) bool {
 // setSpawnExe swaps the child-binary resolver (tests only).
 func (m *Machine) setSpawnExe(fn func() (string, error)) {
 	m.spawnExe = fn
+}
+
+// SetStoreResolver wires the store seam (the host's mount passes the
+// live per-request resolver; card t_10ac04f0).
+func (m *Machine) SetStoreResolver(fn func() agent.StoreProvider) {
+	m.storeFn = fn
+}
+
+// mountStore resolves the store seam for one call, or nil.
+func (m *Machine) mountStore() agent.StoreProvider {
+	if m.storeFn == nil {
+		return nil
+	}
+	return m.storeFn()
+}
+
+// sessionRows lists the sessions a home holds: main's from the daemon
+// store, an agent home's from its own data/omega.db. A home that never
+// ran has no store file - an empty list, never a created database.
+func (m *Machine) sessionRows(name string) ([]core.Session, error) {
+	st := m.mountStore()
+	if name == agent.DefaultAgentName {
+		if st == nil {
+			return nil, fmt.Errorf("no store seam mounted - main's canonical chat needs the daemon store")
+		}
+		as, _ := st.(agent.AgentSessionStore)
+		if as == nil {
+			return nil, fmt.Errorf("store does not support agent sessions")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
+		defer cancel()
+		return as.ListAgentSessions(ctx, name)
+	}
+	path := filepath.Join(agent.AgentDir(m.home, name), "data", "omega.db")
+	if _, err := os.Stat(path); err != nil {
+		return nil, nil // never ran: no sessions, no database
+	}
+	ast, err := store.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer ast.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
+	defer cancel()
+	return ast.ListAgentSessions(ctx, name)
+}
+
+// CurrentCanonicalSession picks agentName's live canonical chat out of
+// a home's session rows: the newest UNARCHIVED canonical generation
+// (card t_10ac04f0 - archive is retire, and the retired row stays in
+// the store, unreachable from the roster). False when the home holds
+// none: a fresh agent, or every generation retired.
+func CurrentCanonicalSession(sessions []core.Session, agentName string) (core.Session, bool) {
+	var best core.Session
+	found := false
+	for _, sess := range sessions {
+		if sess.Archived || !IsCanonicalSessionID(agentName, sess.ID) {
+			continue
+		}
+		// newest by created_at, then by generation NUMBER (the later
+		// mint wins a same-second tie - the store writes ISO stamps with
+		// second resolution). Comparing ids would order "scout-canonical-10"
+		// before "scout-canonical-2".
+		if !found || sess.CreatedAt > best.CreatedAt ||
+			(sess.CreatedAt == best.CreatedAt &&
+				canonicalGeneration(agentName, sess.ID) > canonicalGeneration(agentName, best.ID)) {
+			best, found = sess, true
+		}
+	}
+	return best, found
+}
+
+// EnsureCanonical answers agentName's canonical chat, MINTING it when
+// the home holds no live one (card t_10ac04f0: a session-less agent's
+// click mints its canonical; a retired one mints the next generation).
+// Its one caller is the roster's canonical route
+// (POST /agents/{name}/canonical), so there is exactly one mint law.
+// A wake child does NOT come through here: it binds the row CreateHome
+// seeded (omega run --session <qualified id>), and a mint while a wake
+// is the only writer would just follow the same rule anyway.
+func (m *Machine) EnsureCanonical(name string) (core.Session, error) {
+	if _, err := agent.LoadProfile(m.home, name); err != nil {
+		return core.Session{}, err
+	}
+	sessions, err := m.sessionRows(name)
+	if err != nil {
+		return core.Session{}, fmt.Errorf("read %s sessions: %w", name, err)
+	}
+	if cur, ok := CurrentCanonicalSession(sessions, name); ok {
+		return cur, nil
+	}
+	taken := make(map[string]bool, len(sessions))
+	for _, sess := range sessions {
+		taken[sess.ID] = true
+	}
+	id := NextCanonicalSessionID(name, taken)
+	if err := m.createCanonical(name, id); err != nil {
+		return core.Session{}, fmt.Errorf("mint %s canonical chat: %w", name, err)
+	}
+	now := core.NowISO()
+	return core.Session{ID: id, Label: store.CanonicalChatLabel, Agent: name, CreatedAt: now, UpdatedAt: now, LastReadAt: now, MachineOwned: true}, nil
+}
+
+// createCanonical writes one canonical chat row in the store that OWNS
+// the home: the daemon's store for main, the agent's own file for an
+// agent home. The row is hidden from the user's session list by the
+// store's visibility bit.
+func (m *Machine) createCanonical(name, id string) error {
+	if name == agent.DefaultAgentName {
+		st := m.mountStore()
+		if st == nil {
+			return fmt.Errorf("no store seam mounted")
+		}
+		w, ok := st.(canonicalChatWriter)
+		if !ok {
+			return fmt.Errorf("store cannot create a canonical chat")
+		}
+		// The main store is remote from this capsule (the daemon's own
+		// handle), so it gets the same wedge fence the home files do.
+		ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
+		defer cancel()
+		return w.CreateCanonicalChat(ctx, id, name)
+	}
+	path := filepath.Join(agent.AgentDir(m.home, name), "data", "omega.db")
+	// A home scaffolded but never run has no data dir; the mint is the
+	// first write, so it is the write's job to make the directory.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	ast, err := store.Open(path)
+	if err != nil {
+		return err
+	}
+	defer ast.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
+	defer cancel()
+	w, ok := agent.StoreProvider(ast).(canonicalChatWriter)
+	if !ok {
+		return fmt.Errorf("store cannot create a canonical chat")
+	}
+	return w.CreateCanonicalChat(ctx, id, name)
+}
+
+// previewOf renders a canonical chat's one-line preview: the newest
+// assistant message, whitespace collapsed to single spaces and capped
+// (the roster row is ONE line under the name). "" when the
+// conversation has no reply yet - never a fabricated placeholder.
+func previewOf(msgs []core.Message) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if core.MessageRole(msgs[i]) == "assistant" {
+			return truncateRunes(strings.Join(strings.Fields(agent.MessageText(msgs[i])), " "), previewRuneCap)
+		}
+	}
+	return ""
 }
 
 // NewMachine builds the machinery for the omega home.
@@ -121,6 +291,13 @@ func (m *Machine) CreateHome(name, directive, schedule string) error {
 	// full data isolation starts on creation day. The id is
 	// agent-qualified (card t_5df01d0f) so the daemon's ONE session
 	// handle can tell two homes' chats apart by the id alone.
+	//
+	// It is seeded through the MACHINERY-OWNED door, not the ordinary
+	// agent-session one (round-1 finding): the `listed = 0` bit is what
+	// makes the row machine-owned, and the /new fold keys on exactly
+	// that bit. A seeded row written as listed = 1 answers "fork" on
+	// /new, which forks the relationship - ruling 2 - on the path every
+	// scaffold-created agent takes.
 	st, err := store.Open(filepath.Join(dir, "data", "omega.db"))
 	if err != nil {
 		return fmt.Errorf("open %s store: %w", name, err)
@@ -128,7 +305,7 @@ func (m *Machine) CreateHome(name, directive, schedule string) error {
 	defer st.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
 	defer cancel()
-	if err := st.CreateAgentSession(ctx, CanonicalSessionIDFor(name), "", CanonicalSessionID, name); err != nil {
+	if err := st.CreateCanonicalChat(ctx, CanonicalSessionIDFor(name), name); err != nil {
 		return fmt.Errorf("create canonical chat: %w", err)
 	}
 	return nil
@@ -209,6 +386,17 @@ func canonicalView(agentDir string) (agent.StoreProvider, error) {
 	return store.Open(filepath.Join(agentDir, "data", "omega.db"))
 }
 
+// agentSessions lists agentName's rows off an open store provider. The
+// agent-scoped list is the optional upgrade (agent.AgentSessionStore);
+// a provider without it holds no agent rows and answers an empty list.
+func agentSessions(ctx context.Context, st agent.StoreProvider, agentName string) ([]core.Session, error) {
+	as, ok := st.(agent.AgentSessionStore)
+	if !ok {
+		return nil, nil
+	}
+	return as.ListAgentSessions(ctx, agentName)
+}
+
 // canonicalPreview returns the roster's preview facts from the agent's
 // canonical chat: the closing message's text (ruling 10 - the run's
 // closing message IS the report), when it landed, and the unread flag
@@ -223,22 +411,23 @@ func (m *Machine) canonicalPreview(agentDir, agentName string) (preview, reportA
 	defer st.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
 	defer cancel()
-	id := CanonicalSessionIDFor(agentName)
-	sess, err := st.GetSession(ctx, id)
+	// The id the home's chat actually carries: agent-qualified for a
+	// non-default agent (card t_5df01d0f), and one RETIRE generation
+	// along once the human archived the previous one (card t_10ac04f0).
+	// A home with no live canonical has nothing to preview.
+	sessions, err := agentSessions(ctx, st, agentName)
 	if err != nil {
-		return "", "", false // never created: nothing to preview
+		return "", "", false
 	}
-	msgs, err := st.GetMessages(ctx, id)
+	sess, ok := CurrentCanonicalSession(sessions, agentName)
+	if !ok {
+		return "", "", false // never created, or retired: nothing to preview
+	}
+	msgs, err := st.GetMessages(ctx, sess.ID)
 	if err != nil {
 		return "", sess.UpdatedAt, false
 	}
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msg := msgs[i]; core.MessageRole(msg) == "assistant" {
-			preview = truncateRunes(agent.MessageText(msg), previewRuneCap)
-			break
-		}
-	}
-	return preview, sess.UpdatedAt, sess.LastReadAt == "" || sess.UpdatedAt > sess.LastReadAt
+	return previewOf(msgs), sess.UpdatedAt, sess.LastReadAt == "" || sess.UpdatedAt > sess.LastReadAt
 }
 
 // ChatView is the canonical chat surface (ruling 5, the second
@@ -263,11 +452,18 @@ func (m *Machine) CanonicalChat(name string) (ChatView, error) {
 	defer st.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
 	defer cancel()
-	id := CanonicalSessionIDFor(name)
-	sess, err := st.GetSession(ctx, id)
+	// A read never mints: the roster's click and a wake do (EnsureCanonical).
+	// A home whose only canonical was archived answers "none" here - the
+	// retired row is not resurrected by a GET.
+	sessions, err := agentSessions(ctx, st, name)
 	if err != nil {
-		return ChatView{}, fmt.Errorf("%s canonical chat: %w", name, err)
+		return ChatView{}, fmt.Errorf("%s sessions: %w", name, err)
 	}
+	sess, ok := CurrentCanonicalSession(sessions, name)
+	if !ok {
+		return ChatView{}, fmt.Errorf("%s has no canonical chat yet", name)
+	}
+	id := sess.ID
 	msgs, err := st.GetMessages(ctx, id)
 	if err != nil {
 		return ChatView{}, fmt.Errorf("%s canonical history: %w", name, err)

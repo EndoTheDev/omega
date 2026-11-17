@@ -79,7 +79,19 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if home == "" {
 		return fmt.Errorf("continuous: no home resolvable (set OMEGA_HOME)")
 	}
+	// Pin the RESOLVED home: the route builders run later and read it,
+	// and an agent route reading "" would resolve agents/ against the
+	// process's cwd (the roster and the canonical mint both walk it).
+	p.home = home
 	machine := NewMachine(home, cfg)
+	// The store seam, resolved PER CALL (the live re-wire law): main's
+	// canonical chat lives in the daemon's own store, and only the seam
+	// knows which handle that is after a settings reload. An agent
+	// home's chat opens its own file and never touches this.
+	machine.SetStoreResolver(func() agent.StoreProvider {
+		st, _ := ctx.Services().Resolve("store").(agent.StoreProvider)
+		return st
+	})
 	p.machine = machine
 	p.ctx = ctx
 	// The canonical-id migration (card t_5df01d0f): agent homes created
@@ -88,6 +100,13 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// tripped over. Idempotent, so every mount may run it; it touches
 	// only files this capsule owns (agents/<name>/data/omega.db).
 	if err := machine.MigrateCanonicalIDs(); err != nil {
+		return err
+	}
+	// The visibility repair (card t_10ac04f0): homes created before the
+	// canonical seed went through the machinery-owned door carry their
+	// chat as a LISTED row, which /new forks instead of folding. Boot-
+	// time, idempotent, hides canonical-id rows only.
+	if err := machine.MigrateCanonicalVisibility(); err != nil {
 		return err
 	}
 	// The evidence ledger (ruling 11): runtime-owned, spine-fed, and
@@ -178,7 +197,7 @@ func (p *Plugin) routes() []routeRow {
 		{"GET /continuous/{name}/evidence", evidenceHandler(m)},
 		{"POST /continuous/{name}/sleep", sleepHandler(m)},
 	}
-	for _, r := range (&agentRoutes{home: p.home, ctx: p.ctx}).registrationRows() {
+	for _, r := range (&agentRoutes{home: p.home, ctx: p.ctx, machine: m}).registrationRows() {
 		rows = append(rows, routeRow{pattern: r.pattern, handler: r.handler})
 	}
 	return rows

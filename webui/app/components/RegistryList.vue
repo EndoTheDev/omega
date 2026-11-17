@@ -93,6 +93,19 @@
                   aria-hidden="true"></i>{{ r.status.label }}
               </span>
             </span>
+            <!-- card t_10ac04f0 ruling 5: THE PREVIEW LINE - one line of
+                 what the subject last said, with its age at the right
+                 edge. Its own line under the subtitle, so the facts line
+                 keeps its exact shape; a row without a preview renders
+                 byte-identically to before. -->
+            <span
+              v-if="r.preview"
+              class="reg-row-sub reg-row-preview">
+              <span class="registry-preview">{{ r.preview }}</span>
+              <span
+                v-if="r.previewAt"
+                class="registry-preview-at">{{ r.previewAt }}</span>
+            </span>
           </div>
           <!-- the generic row side: numbers, bars, badges - things the
                plain name/desc stack doesn't express; seated on line 1
@@ -125,11 +138,13 @@
             class="registry-state reg-row-ctrl"
             :aria-label="`${r.disabled ? 'enable' : 'disable'} ${r.name}`">{{ r.disabled ? "disabled" : "on" }}</span>
         </div>
-        <!-- card t_2d8deb8c: the under-row preview line DIED with it
-             (ruling 3) - the two-line anatomy is the law, the status
-             word rides the subtitle. Card t_5051d523: the armed
-             confirm note died with the arm step - the same consequence
-             text rides the pill's title (toggleHint). -->
+        <!-- card t_2d8deb8c: the under-row note line is gone (ruling 3) -
+             the two-line anatomy is the law, the status word rides the
+             subtitle. Card t_10ac04f0 ruling 5 brought back exactly ONE
+             under-row line (the preview above) for the consumer that has
+             something to say. Card t_5051d523: the armed confirm note
+             died with the arm step - the same consequence text rides the
+             pill's title (toggleHint). -->
         <template v-if="isExpanded(r.name)">
           <ul
             v-if="hasDetail(r)"
@@ -431,8 +446,25 @@
   .registry-desc {
     min-width: 0;
   }
-  /* card t_2d8deb8c: the under-row preview DIED (ruling 3) - the
-     under-row lines are the note line above only. */
+  /* card t_10ac04f0 ruling 5: the preview line. One line, ellipsized - a
+     long report never grows the row - with its age pinned right. */
+  .reg-row-preview {
+    margin-top: 1px;
+  }
+  .registry-preview {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .registry-preview-at {
+    flex: none;
+    opacity: 0.7;
+  }
+  /* card t_2d8deb8c: the under-row detail lines are the note line above
+     only. card t_10ac04f0 ruling 5 REVIVED one line - the agent's
+     canonical-chat preview - and it is its own anatomy (.reg-row-preview
+     above), not a detail line. */
   .registry-detail {
     list-style: none;
     margin: 2px 0 2px 10px;

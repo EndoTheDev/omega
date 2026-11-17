@@ -93,13 +93,15 @@ describe("the merge: one Agents tab (card t_c7222095, deletability law)", () => 
 
   it("the merged row renders config + status word in the row-law anatomy", () => {
     // t_2d8deb8c: the status vocabulary - dot + short word riding the
-    // SUBTITLE line; the inline badge and the under-row preview died.
+    // SUBTITLE line; the inline badge died there. Card t_10ac04f0
+    // ruling 5 brought back ONE under-row line (the agent's canonical
+    // preview) and the shared list renders it.
     assert.doesNotMatch(agentsPanel, /agents-badge/, "the inline badge died");
-    assert.doesNotMatch(agentsPanel, /preview\s*:/, "the row carries no preview");
+    assert.match(agentsPanel, /agentPreview\(a\)/, "the preview is the canonical-chat read");
     assert.match(agentsPanel, /agentStatusFor\(/, "the status word is the roster voice");
     assert.match(registryList, /reg-row-status/, "RegistryList seats the subtitle status");
     assert.match(registryList, /reg-row-dot/, "the live dot rides the row law's css");
-    assert.doesNotMatch(registryList, /registry-preview/, "RegistryList lost the under-row preview");
+    assert.match(registryList, /registry-preview/, "RegistryList seats the preview line");
   });
 
   it("the merged AgentsPanel rides the continuous REST surface exactly (ruling 5 + 11)", () => {

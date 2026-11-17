@@ -134,16 +134,20 @@ test("AgentsPanel coerces a 200/null body, never crashes the render", () => {
 
 // --- t_c7222095: the Agents/Continuous merge (one tab) ---
 
-test("AgentsPanel merges the continuous roster into the rows (status word, no preview)", () => {
+test("AgentsPanel merges the continuous roster into the rows (status word + the canonical preview)", () => {
   const vue = read("webui", "..", "harness", "continuous", "ui", "AgentsPanel.vue");
   assert.match(vue, /fetch\("\/continuous\/roster"\)/, "the roster loads with the agents");
   assert.match(vue, /continuousIndex\(roster\.value\)/, "the roster joins by name");
   assert.match(vue, /mergedRowDetail\(a, c\)/, "the detail carries the wake line");
   // t_2d8deb8c: the status vocabulary - the dot+word rides the row
   // law's SUBTITLE line through RegistryRow.status; the old inline
-  // badge and the under-row preview line died with ruling 3.
+  // badge died with ruling 3.
   assert.doesNotMatch(vue, /agents-badge/, "the inline badge died");
-  assert.doesNotMatch(vue, /preview:/, "the under-row preview died");
+  // card t_10ac04f0 ruling 5: exactly ONE under-row line came back - the
+  // agent's canonical-chat preview (never the old continuous report
+  // line, which is what previewLine was).
+  assert.match(vue, /agentPreview\(a\)/, "the preview is the canonical-chat read");
+  assert.match(vue, /preview: pv\.text/, "the row carries the preview line");
   assert.match(vue, /agentStatusFor\(/, "the status word is the roster voice");
   assert.doesNotMatch(vue, /import ContinuousPanel|<ContinuousPanel/, "no panel import or mount survives");
 });

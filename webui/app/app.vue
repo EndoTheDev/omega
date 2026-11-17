@@ -1239,6 +1239,34 @@
         return true;
       }
       case "/new": {
+        // card t_10ac04f0: /new never forks a conversation the MACHINERY
+        // owns (an agent's canonical chat) - the relationship is the
+        // point, so the server folds its context in place and the tab
+        // stays bound to the same session. The human's own conversations
+        // fork exactly as they always did: a fresh tab.
+        const id = focusedSessionId.value;
+        if (id) {
+          try {
+            const res = await fetch(`/sessions/${encodeURIComponent(id)}/new`, {
+              method: "POST",
+            });
+            if (res.ok) {
+              const body = (await res.json()) as { kind?: string; folded?: number; summary?: boolean };
+              if (body.kind === "compacted") {
+                note(
+                  body.summary
+                    ? "compacted this conversation - the summary heads the next context"
+                    : "compacted this conversation - its context starts fresh here",
+                );
+                await canvas.refresh();
+                return true;
+              }
+            }
+          } catch {
+            /* a fold that never landed falls through to the fork: the
+               human asked for a new start, and refusing it helps nobody */
+          }
+        }
         openChatTab(null);
         return true;
       }

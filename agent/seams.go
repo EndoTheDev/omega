@@ -263,6 +263,11 @@ type SessionContextStore interface {
 	// existing directory - validated at the surface). Empty clears it:
 	// relative file operations root at the process working directory.
 	SetSessionWorkspace(ctx context.Context, sessionID, workspace string) error
+	// SetSessionContextStart moves the provider-facing context boundary
+	// (card t_10ac04f0): the next run's history begins at message id
+	// `start`, headed by `summary` when the fold produced one. The
+	// transcript keeps every row; only the model's context restarts.
+	SetSessionContextStart(ctx context.Context, sessionID, start, summary string) error
 }
 
 // DelegateSessionStore is the optional delegate-lineage surface (card

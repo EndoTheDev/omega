@@ -43,7 +43,9 @@ func newAgentsFixture(t *testing.T) (*httptest.Server, *store.Store, string) {
 	t.Cleanup(func() { st.Close() })
 	ctx := &core.Context{}
 	ctx.ApplyOffer("store", "test", st)
-	ar := &agentRoutes{home: home, ctx: ctx}
+	machine := NewMachine(home, Default())
+	machine.SetStoreResolver(func() agent.StoreProvider { return st })
+	ar := &agentRoutes{home: home, ctx: ctx, machine: machine}
 	mux := http.NewServeMux()
 	for _, row := range ar.registrationRows() {
 		mux.HandleFunc(row.pattern, row.handler)
@@ -533,13 +535,13 @@ func TestAgentUpdateEndpointUnset(t *testing.T) {
 	}
 }
 
-// TestAgentsRosterLastSessionID pins the field the Agents tab binds a
-// chat to (card t_81109e1c): every roster row carries the agent's MOST
-// RECENT session id - most recent by updated_at, ties to the
-// later-created session - and the DEFAULT (main) agent rides the same
-// roster with Continuous set. A row with no sessions omits the field
-// rather than inventing an id.
-func TestAgentsRosterLastSessionID(t *testing.T) {
+// TestAgentsRosterCanonicalChat pins the field the Agents tab binds a
+// chat to (card t_10ac04f0): every roster row carries the agent's
+// CANONICAL chat - one stable conversation, never the most recent
+// session - and the DEFAULT (main) agent rides the same roster with
+// Continuous set. A home with no live canonical omits the field: the
+// click mints one, so the absence never makes a row unclickable.
+func TestAgentsRosterCanonicalChat(t *testing.T) {
 	srv, st, home := newAgentsFixture(t)
 
 	// The store that OWNS scout's sessions: the agent home's own db
@@ -550,13 +552,14 @@ func TestAgentsRosterLastSessionID(t *testing.T) {
 		t.Fatalf("open scout store: %v", err)
 	}
 	t.Cleanup(func() { scoutStore.Close() })
-	// main's sessions ride the mounted store (the fixture's seam store).
 
 	type row struct {
-		Name          string `json:"name"`
-		SessionCount  int    `json:"session_count"`
-		LastSessionID string `json:"last_session_id"`
-		Continuous    bool   `json:"continuous"`
+		Name         string `json:"name"`
+		SessionCount int    `json:"session_count"`
+		Canonical    string `json:"canonical_session_id"`
+		LastReport   string `json:"last_report"`
+		LastReportAt string `json:"last_report_at"`
+		Continuous   bool   `json:"continuous"`
 	}
 	roster := func() map[string]row {
 		t.Helper()
@@ -574,8 +577,20 @@ func TestAgentsRosterLastSessionID(t *testing.T) {
 		}
 		return out
 	}
+	mint := func(name string) (int, row) {
+		t.Helper()
+		res, err := http.Post(srv.URL+"/agents/"+name+"/canonical", "application/json", nil)
+		if err != nil {
+			t.Fatalf("POST canonical %s: %v", name, err)
+		}
+		defer res.Body.Close()
+		body, _ := io.ReadAll(res.Body)
+		var one row
+		_ = json.Unmarshal(body, &one)
+		return res.StatusCode, one
+	}
 
-	// A fresh home: main is in the roster, nothing to bind yet.
+	// A fresh home: the rows are there, no canonical exists yet.
 	first := roster()
 	main, ok := first[agent.DefaultAgentName]
 	if !ok {
@@ -585,46 +600,101 @@ func TestAgentsRosterLastSessionID(t *testing.T) {
 		t.Errorf("default continuous = true, want false - Continuous marks a WAKE home; the main marker is the name (the webui's DefaultAgentName)")
 	}
 	if scout := first["scout"]; !scout.Continuous {
-		t.Errorf("scout continuous = false, want true (a agents/<name> wake home)")
+		t.Errorf("scout continuous = false, want true (an agents/<name> wake home)")
 	}
-	if main.LastSessionID != "" {
-		t.Errorf("default last_session_id = %q before any session, want empty", main.LastSessionID)
+	if main.Canonical != "" {
+		t.Errorf("default canonical = %q before any mint, want empty", main.Canonical)
 	}
-	if scout := first["scout"]; scout.LastSessionID != "" {
-		t.Errorf("scout last_session_id = %q with zero sessions, want empty", scout.LastSessionID)
+	if scout := first["scout"]; scout.Canonical != "" {
+		t.Errorf("scout canonical = %q with no canonical chat, want empty", scout.Canonical)
 	}
 
-	// Two sessions as scout: the newer one is the tab's click target.
+	// The click MINTS on a home that holds none: the id is the agent's
+	// one permanent conversation, stable across clicks.
+	if code, _ := mint("scout"); code != http.StatusOK {
+		t.Fatalf("mint scout canonical status %d, want 200", code)
+	}
+	minted := roster()["scout"].Canonical
+	if minted != "scout-canonical" {
+		t.Fatalf("scout canonical = %q, want scout-canonical (the seeded stable id)", minted)
+	}
+	// ...and a second click opens the SAME conversation: no re-mint.
+	if code, _ := mint("scout"); code != http.StatusOK {
+		t.Fatalf("second mint status %d, want 200", code)
+	}
+	if again := roster()["scout"].Canonical; again != minted {
+		t.Errorf("canonical moved on a second click: %q -> %q", minted, again)
+	}
+
+	// A worker run lands (a NEWER session, the most recently touched
+	// one): the click target does not move. This is the whole card.
 	ctx := context.Background()
-	if err := scoutStore.CreateAgentSession(ctx, "sess-old", "", "", "scout"); err != nil {
+	if err := scoutStore.CreateAgentSession(ctx, "sess-run", "", "", "scout"); err != nil {
 		t.Fatal(err)
 	}
-	if err := scoutStore.CreateAgentSession(ctx, "sess-new", "", "", "scout"); err != nil {
+	if err := scoutStore.UpdateSession(ctx, "sess-run", "worker run"); err != nil {
+		t.Fatal(err)
+	}
+	if got := roster()["scout"].Canonical; got != minted {
+		t.Fatalf("canonical = %q after a worker run, want %q (most-recent is dead as a rule)", got, minted)
+	}
+
+	// The preview line: the newest assistant reply in the canonical chat.
+	if err := scoutStore.AppendMessage(ctx, minted, core.NewAssistant("patrol complete,\n0 anomalies")); err != nil {
 		t.Fatal(err)
 	}
 	scout := roster()["scout"]
-	if scout.SessionCount != 2 {
-		t.Fatalf("scout session_count = %d, want 2", scout.SessionCount)
+	if scout.LastReport != "patrol complete, 0 anomalies" {
+		t.Errorf("last_report = %q, want the reply collapsed to ONE line", scout.LastReport)
 	}
-	if scout.LastSessionID != "sess-new" {
-		t.Errorf("scout last_session_id = %q, want sess-new (newest)", scout.LastSessionID)
+	if scout.LastReportAt == "" {
+		t.Error("last_report_at is empty - the preview line carries no age")
 	}
 
-	// ACTIVITY wins over creation order: touching the old session moves
-	// the click target (the continuous session is the one being used).
-	if err := scoutStore.UpdateSession(ctx, "sess-old", "touched"); err != nil {
+	// ARCHIVE = RETIRE: the retired canonical leaves the roster and the
+	// next click mints the next generation. The old row stays archived.
+	if err := scoutStore.SetSessionArchived(ctx, minted, true); err != nil {
 		t.Fatal(err)
 	}
-	if got := roster()["scout"].LastSessionID; got != "sess-old" {
-		t.Errorf("scout last_session_id = %q after touching sess-old, want sess-old", got)
+	if got := roster()["scout"].Canonical; got != "" {
+		t.Fatalf("canonical = %q after archiving it, want empty (the roster never resurrects a retired chat)", got)
+	}
+	if code, _ := mint("scout"); code != http.StatusOK {
+		t.Fatalf("mint after retire status %d, want 200", code)
+	}
+	if got := roster()["scout"].Canonical; got != "scout-canonical-2" {
+		t.Errorf("canonical after retire = %q, want scout-canonical-2", got)
+	}
+	old, err := scoutStore.GetSession(ctx, minted)
+	if err != nil {
+		t.Fatalf("retired row: %v", err)
+	}
+	if !old.Archived {
+		t.Error("the retired canonical is not archived - retire means it stays archived")
 	}
 
-	// The main agent binds too - it is a roster row like any other.
+	// The main agent binds too - and its canonical is MACHINERY-owned, so
+	// it never joins the human's session list.
+	if code, _ := mint(agent.DefaultAgentName); code != http.StatusOK {
+		t.Fatalf("mint main canonical status %d, want 200", code)
+	}
+	if got := roster()[agent.DefaultAgentName].Canonical; got != CanonicalSessionID {
+		t.Errorf("default canonical = %q, want the bare id", got)
+	}
 	if err := st.CreateSession(ctx, "sess-main", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if got := roster()[agent.DefaultAgentName].LastSessionID; got != "sess-main" {
-		t.Errorf("default last_session_id = %q, want sess-main", got)
+	listed, err := st.ListSessions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sess := range listed {
+		if sess.ID == CanonicalSessionID {
+			t.Error("main's canonical chat is in the human's session list - the roster's chat must stay out of it")
+		}
+	}
+	if got := roster()[agent.DefaultAgentName].Canonical; got != CanonicalSessionID {
+		t.Errorf("default canonical moved when a human session landed: got %q", got)
 	}
 
 	// GET /agents/{name} answers the same row shape.
@@ -636,8 +706,87 @@ func TestAgentsRosterLastSessionID(t *testing.T) {
 	if err := json.Unmarshal(body, &one); err != nil {
 		t.Fatal(err)
 	}
-	if one.LastSessionID != "sess-old" {
-		t.Errorf("detail last_session_id = %q, want sess-old", one.LastSessionID)
+	if one.Canonical != "scout-canonical-2" {
+		t.Errorf("detail canonical = %q, want scout-canonical-2", one.Canonical)
+	}
+}
+
+// TestCreateHomeSeedsTheRosterCanonical pins the round-1 fix (card
+// t_10ac04f0) on the path a real agent takes: POST /continuous runs
+// CreateHome, and the chat it seeds is BOTH what the roster row hands
+// the click AND what /new folds. The fold keys on the machine-owned bit
+// (agent/api's handleSessionNew answers "fork" otherwise), so a seed
+// written as an ordinary listed row forked the relationship - ruling 2 -
+// for every created agent.
+func TestCreateHomeSeedsTheRosterCanonical(t *testing.T) {
+	home := t.TempDir()
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	ctx := &core.Context{}
+	ctx.ApplyOffer("store", "test", st)
+	machine := NewMachine(home, Default())
+	machine.SetStoreResolver(func() agent.StoreProvider { return st })
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /continuous", createHandler(machine))
+	mux.HandleFunc("/agents", (&agentRoutes{home: home, ctx: ctx, machine: machine}).handleAgents)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res, err := http.Post(srv.URL+"/continuous", "application/json",
+		strings.NewReader(`{"name":"runner","directive":"watch the door","schedule":"*/5 * * * *"}`))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("create status %d: %s", res.StatusCode, body)
+	}
+
+	// The roster row hands the seeded chat, with no mint needed.
+	code, rosterBody := getJSON(t, srv.URL+"/agents")
+	if code != http.StatusOK {
+		t.Fatalf("roster status %d: %s", code, rosterBody)
+	}
+	var rows []struct {
+		Name      string `json:"name"`
+		Canonical string `json:"canonical_session_id"`
+	}
+	if err := json.Unmarshal(rosterBody, &rows); err != nil {
+		t.Fatalf("decode roster: %v", err)
+	}
+	found := false
+	for _, row := range rows {
+		if row.Name != "runner" {
+			continue
+		}
+		found = true
+		if row.Canonical != "runner-canonical" {
+			t.Errorf("runner canonical = %q, want the seeded runner-canonical", row.Canonical)
+		}
+	}
+	if !found {
+		t.Fatalf("created agent missing from the roster: %s", rosterBody)
+	}
+
+	// The seeded row is machinery-owned and out of the human's list.
+	ast, err := store.Open(filepath.Join(agent.AgentDir(home, "runner"), "data", "omega.db"))
+	if err != nil {
+		t.Fatalf("runner store: %v", err)
+	}
+	defer ast.Close()
+	row, err := ast.GetSession(context.Background(), "runner-canonical")
+	if err != nil {
+		t.Fatalf("seeded canonical: %v", err)
+	}
+	if !row.MachineOwned {
+		t.Error("the created agent's chat is not machine-owned - /new would fork it instead of compacting it")
+	}
+	if sessions, err := ast.ListSessions(context.Background()); err != nil || len(sessions) != 0 {
+		t.Errorf("created agent's store lists %d sessions, %v - its chat belongs to the roster, not the sidebar", len(sessions), err)
 	}
 }
 

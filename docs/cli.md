@@ -123,6 +123,18 @@ the default agent and `<agent>-canonical` for every other home
 one store handle that resolves an id across the homes, so a bare id in
 two homes would answer the wrong agent's chat.
 
+That chat is one conversation with generations. Archiving it RETIRES
+it: the retired row stays archived and unreachable from the agents
+roster, and the next roster click mints `<agent>-canonical-2` (then
+`-3`, ...) in its place. `omega run --session canonical` always binds
+the base id - a wake that must land in a retired chat's successor
+names the generation explicitly.
+
+`/new` inside an agent chat does not fork the relationship: the webui
+folds that conversation's context (the transcript stays whole, the next
+run starts at the fold's boundary under the compactor's summary) and
+the session id never changes.
+
 ### `omega export`
 
 Writes a session's messages as JSONL (one `{"role","content"}` object

@@ -185,8 +185,8 @@ test("the active row is the open one: raised surface, accent name", () => {
   assert.match(panelSrc, /:active-name="activeAgentName"/, "the panel passes the open agent");
   assert.match(
     panelSrc,
-    /a\.last_session_id === id/,
-    "the active row is the agent holding the focused session",
+    /canonicalOf\(a\.name\) === id/,
+    "the active row is the agent whose CANONICAL chat is focused (card t_10ac04f0 - not the latest session)",
   );
 });
 

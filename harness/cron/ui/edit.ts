@@ -192,7 +192,8 @@ export interface FieldOption {
 }
 
 // agentRowWire is the subset of GET /agents this editor reads (the
-// roster row: agent.Profile + last_session_id).
+// roster row: agent.Profile facts; the canonical chat id rides the row
+// but the cron editor never opens chats).
 interface AgentRowWire {
   name?: string;
   description?: string;

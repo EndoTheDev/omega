@@ -144,7 +144,7 @@
         :error="toggleError"
         :loaded="loaded"
         :toggleable="toggleable"
-        :openable="rowHasChat"
+        :openable="true"
         feel="sessions"
         expander="chevron"
         :active-name="activeAgentName"
@@ -464,6 +464,33 @@
               v-else
               class="agents-status">no tool calls recorded</p>
           </template>
+
+          <!-- card t_10ac04f0 ruling 4: FULL SEPARATION. An agent's work
+               sessions live here, not in the sessions sidebar - that list
+               is the maintainer's own conversations, period. A crashed
+               worker run is inspected from this row. -->
+          <template v-if="sessionsByAgent[row.name]">
+            <h4 class="agents-cont-sub">sessions</h4>
+            <p
+              v-if="!sessionsByAgent[row.name]?.length"
+              class="agents-status">no sessions</p>
+            <ol
+              v-else
+              class="agents-session-list"
+              role="list">
+              <li
+                v-for="s in sessionsByAgent[row.name]"
+                :key="s.id"
+                class="agents-session-row">
+                <button
+                  type="button"
+                  class="agents-session-open"
+                  :title="`open ${s.id}`"
+                  @click="openSession(s.id)">{{ agentSessionTitle(s) }}</button>
+                <span class="agents-session-when">{{ agentActivityText(s.updated_at) }}</span>
+              </li>
+            </ol>
+          </template>
         </template>
       </RegistryList>
     </div>
@@ -475,10 +502,13 @@ import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import {
   AGENT_INHERIT_KINDS,
   AGENT_KINDS,
+  agentActivityText,
   agentDeleteConfirm,
   agentDeleteLabel,
   agentKindOption,
+  agentPreview,
   agentRosterSubtitle,
+  agentSessionTitle,
   agentSkillsNote,
   agentStatusFor,
   agentTogglesNote,
@@ -496,7 +526,13 @@ import {
   toggleChoices,
   toggleOptions,
 } from "./agentsRows.ts";
-import type { AgentEditDraft, AgentInheritKind, OmegaAgent, SettingsScope } from "./agentsRows.ts";
+import type {
+  AgentEditDraft,
+  AgentInheritKind,
+  OmegaAgent,
+  OmegaAgentSession,
+  SettingsScope,
+} from "./agentsRows.ts";
 import {
   evidenceSummary,
   rowStatus,
@@ -524,6 +560,12 @@ const notice = ref("");
 const loaded = ref(false);
 const toggleError = ref<string | null>(null);
 const busy = ref<string | null>(null);
+// card t_10ac04f0: the row whose canonical open is in flight (the mint
+// round trip), and the agent WORK sessions the expansion lists - the
+// roster is their inspection surface now that they left the sessions
+// sidebar.
+const opening = ref<string | null>(null);
+const sessionsByAgent = reactive<Record<string, OmegaAgentSession[]>>({});
 
 // --- the ONE create door (ruling 1 + 6) -------------------------------
 const showCreate = ref(false);
@@ -696,6 +738,7 @@ const rows = computed<RegistryRow[]>(() => {
   const idx = continuousIndex(roster.value);
   return profiles.value.map((a) => {
     const c = idx[a.name] ?? null;
+    const pv = agentPreview(a);
     return {
       name: a.name,
       // card t_81109e1c: the subtitle carries the roster's facts -
@@ -704,18 +747,26 @@ const rows = computed<RegistryRow[]>(() => {
       detail: mergedRowDetail(a, c),
       disabled: a.name === DefaultAgentName ? false : set.has(a.name),
       noToggle: a.name === DefaultAgentName,
+      // card t_10ac04f0 ruling 5: what the agent last SAID, one line
+      // under the row name - the roster reads as a conversation list.
+      ...(pv.text ? { preview: pv.text, previewAt: pv.at } : {}),
       ...(agentStatusFor(c) ? { status: agentStatusFor(c) } : {}),
     };
   });
 });
 
-// --- card t_81109e1c: the row click opens the agent's chat ------------
-// Ruling 1: a click opens a FULL interactive chat on the agent's
-// session (the ordinary ChatTab, a different session id). Ruling 2: it
-// lands on the agent's MOST RECENT session - the id the roster payload
-// carries (last_session_id). Ruling 4 is the shell's: app.vue's
-// openChatTab focuses a tab already bound to that session instead of
-// minting a second one, so this panel never needs its own dedupe.
+// --- card t_10ac04f0: the row click opens the CANONICAL chat -----------
+// The click's target is the agent's ONE permanent conversation: the
+// seeded canonical id when the home holds a live one, a freshly MINted
+// one when it holds none (a fresh agent, or a canonical the human
+// retired by archiving it - archive = retire, and the retired row stays
+// archived and unreachable from this roster). The most-recent session
+// is dead as a rule: it was a moving target, re-picked by every run, and
+// it was usually a conversation the human owned in the sessions tab.
+//
+// The mint is a POST because it WRITES on the paths that need it, and
+// the answer is the session row the chat tab binds to - the panel never
+// guesses an id.
 //
 // Module UI imports no shell code (the Board precedent), so the open
 // rides a window CustomEvent. THE LITERAL IS COPIED from
@@ -750,32 +801,54 @@ function onFocusedSession(e: Event): void {
 }
 
 /** activeAgentName is the roster row that wears the active treatment:
-    the agent whose last-session is the session the shell is showing.
-    "" = nothing is open (or the open session belongs to no agent on this
-    roster - a default-roster session, an ephemeral draft). */
+    the agent whose CANONICAL chat is the session the shell is showing.
+    "" = nothing is open (or the open session is no agent's canonical -
+    the maintainer's own conversation, a work session opened from this
+    roster's expansion, an ephemeral draft). */
 const activeAgentName = computed<string>(() => {
   const id = focusedSessionId.value;
   if (!id) return "";
-  const p = profiles.value.find((a) => a.last_session_id === id);
+  const p = profiles.value.find((a) => canonicalOf(a.name) === id);
   return p?.name ?? "";
 });
 
-function sessionOf(name: string): string {
-  const p = profiles.value.find((a) => a.name === name);
-  return p?.last_session_id ?? "";
+/** the canonical ids this panel has opened (or just minted). The
+    payload's canonical_session_id is a snapshot, so a click that mints
+    updates it here - otherwise the active row would need a reload. */
+const openedCanonical = ref<Record<string, string>>({});
+
+/** canonicalOf is the id a row's click targets: the live canonical from
+    the payload, or the one this panel just opened. "" = the home holds
+    none yet - the click mints it. */
+function canonicalOf(name: string): string {
+  const opened = openedCanonical.value[name];
+  if (opened) return opened;
+  return profiles.value.find((a) => a.name === name)?.canonical_session_id ?? "";
 }
 
-/** the roster's openable predicate: only a row with a session to bind
-    is clickable - an agent with none keeps the plain name span rather
-    than a button that would do nothing. */
-function rowHasChat(row: RegistryRow): boolean {
-  return sessionOf(row.name) !== "";
-}
-
-function openAgentChat(row: RegistryRow): void {
-  const id = sessionOf(row.name);
-  if (!id) return;
-  window.dispatchEvent(new CustomEvent(CHAT_SESSION_OPEN_EVENT, { detail: id }));
+/** openAgentChat is the click: bind the chat tab to the agent's
+    canonical chat, minting it when the home holds none. A failed mint
+    renders on the panel's own status line - never a silent no-op. */
+async function openAgentChat(row: RegistryRow): Promise<void> {
+  if (opening.value) return; // one mint at a time - a double click must not race two opens
+  const name = row.name;
+  opening.value = name;
+  try {
+    const res = await fetch(`/agents/${encodeURIComponent(name)}/canonical`, {
+      method: "POST",
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const sess = (await res.json()) as { id?: string };
+    const id = sess.id ?? "";
+    if (!id) throw new Error("the canonical chat came back without an id");
+    openedCanonical.value = { ...openedCanonical.value, [name]: id };
+    notice.value = "";
+    window.dispatchEvent(new CustomEvent(CHAT_SESSION_OPEN_EVENT, { detail: id }));
+  } catch (e) {
+    notice.value = `open ${name}'s chat failed: ${e instanceof Error ? e.message : String(e)}`;
+  } finally {
+    opening.value = null;
+  }
 }
 
 function rosterOf(name: string): OmegaContinuousRow | null {
@@ -913,8 +986,37 @@ async function loadRoster(): Promise<void> {
 function onExpand(row: RegistryRow): void {
   if (row.name !== DefaultAgentName) seedEdit(row.name);
   const name = row.name;
+  // card t_10ac04f0 ruling 4: the expanded row is where an agent's WORK
+  // sessions are inspected - they left the sessions sidebar. Main's
+  // sessions ARE the maintainer's own list, so its row offers none.
+  void loadAgentSessions(name);
   if (!rosterOf(name)) return;
   void loadContinuousDetail(name);
+}
+
+/** loadAgentSessions fetches one agent's own session rows - the crashed
+    worker run a human needs to look at. A dead read renders the empty
+    beat, never a stale list. */
+async function loadAgentSessions(name: string): Promise<void> {
+  if (name === DefaultAgentName) {
+    sessionsByAgent[name] = [];
+    return;
+  }
+  try {
+    const res = await fetch(`/agents/${encodeURIComponent(name)}/sessions`);
+    if (!res.ok) throw new Error(await res.text());
+    const rows = (await res.json()) as OmegaAgentSession[];
+    sessionsByAgent[name] = Array.isArray(rows) ? rows : [];
+  } catch {
+    sessionsByAgent[name] = [];
+  }
+}
+
+/** openSession binds a chat tab to one of the agent's own sessions - the
+    inspection read for a worker run, which no longer has a sidebar row. */
+function openSession(id: string): void {
+  if (!id) return;
+  window.dispatchEvent(new CustomEvent(CHAT_SESSION_OPEN_EVENT, { detail: id }));
 }
 
 /** seedEdit fills one draft from the effective layer: an omitted knob
@@ -1455,6 +1557,46 @@ defineExpose({ load, profiles, fold, rows, roster, rowStatusOf, rowStatusVoice }
   font-size: 11px;
   padding: 3px 0;
   white-space: pre-wrap;
+}
+/* card t_10ac04f0 ruling 4: the agent's OWN sessions, inspected from the
+   expanded row (the sessions sidebar is the maintainer's list). One row
+   per session: the open affordance left, the age right. */
+.agents-session-list {
+  list-style: none;
+  margin: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 0;
+}
+.agents-session-row {
+  align-items: baseline;
+  border-bottom: 1px solid var(--z2);
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+.agents-session-open {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agents-session-open:hover {
+  color: var(--accent);
+}
+.agents-session-when {
+  color: var(--text-dim);
+  flex: none;
+  font-size: 10px;
 }
 .agents-cont-evidence-row {
   display: flex;

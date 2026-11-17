@@ -452,6 +452,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/sessions/{id}/stop", s.handleSessionStop)
 	mux.HandleFunc("/sessions/{id}/transcript", s.handleSessionTranscript)
 	mux.HandleFunc("/sessions/{id}/variants", s.handleSessionVariants)
+	mux.HandleFunc("/sessions/{id}/new", s.handleSessionNew)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	// The workspace PICKER + @ intent walk rode the files capsule out
 	// with wave 3 (card t_b75df168): a filesystem listing face is the
@@ -1634,13 +1635,21 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 	if s.store == nil || req.SessionID == "" {
 		return incoming, nil
 	}
-	if _, err := s.store.GetSession(ctx, req.SessionID); err != nil {
+	sessionRow, err := s.store.GetSession(ctx, req.SessionID)
+	if err != nil {
 		return nil, &runError{http.StatusNotFound, "session not found: " + err.Error()}
 	}
 	view, err := s.store.GetActiveView(ctx, req.SessionID)
 	if err != nil {
 		return nil, &runError{http.StatusInternalServerError, "load history: " + err.Error()}
 	}
+	// The /new fold (card t_10ac04f0): a machinery-owned conversation
+	// restarts its CONTEXT without losing its transcript. Everything
+	// before the boundary stays on record; the provider sees the
+	// boundary onward, headed by the fold's summary when one was made.
+	// Retry and fork ride the same folded path - a re-run continues from
+	// where the conversation's context actually is.
+	view.Path = foldPath(view.Path, sessionRow.ContextStart)
 	if req.Retry {
 		end := -1
 		for i := len(view.Path) - 1; i >= 0; i-- {
@@ -1693,7 +1702,35 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 		}
 	}
 	req.persistInput = incoming
-	return append(storedMessages(view.Path), incoming...), nil
+	return append(foldSummaryPrefix(sessionRow.ContextSummary), append(storedMessages(view.Path), incoming...)...), nil
+}
+
+// foldPath cuts the active path at a folded conversation's context
+// boundary (card t_10ac04f0): everything before the boundary stays in
+// the store and in the transcript, and none of it reaches the provider.
+// An unknown boundary (the row it names was deleted) folds nothing - the
+// conversation heals to a full context rather than to an empty one.
+func foldPath(path []core.StoredMessage, start string) []core.StoredMessage {
+	if start == "" {
+		return path
+	}
+	for i, sm := range path {
+		if core.MsgID(sm.ID) == start {
+			return path[i:]
+		}
+	}
+	return path
+}
+
+// foldSummaryPrefix heads a folded conversation's context with its
+// summary (card t_10ac04f0). No summary (a fold too small to earn one,
+// or a compactor that was not mounted) leaves the context exactly as
+// the boundary left it.
+func foldSummaryPrefix(summary string) []core.Message {
+	if summary == "" {
+		return nil
+	}
+	return []core.Message{core.NewSystem(core.ContextFoldPrefix + summary + core.ContextFoldSuffix)}
 }
 
 // storedMessages strips the tree view down to plain provider context.
@@ -2248,6 +2285,116 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// compactorFace is the compaction face the /new fold holds. A
+// consumer-owned local interface (the compactor capsule never knows its
+// callers); the loop's own contract lives in agent/seams.go, and this
+// file asks the same mounted service for the same fold.
+type compactorFace interface {
+	Compact(ctx context.Context, messages []core.Message) ([]core.Message, error)
+}
+
+func (s *Server) compactor() compactorFace {
+	svc, _ := s.LiveServices().Resolve("compactor").(compactorFace)
+	return svc
+}
+
+// handleSessionNew serves POST /sessions/{id}/new: the human pressed
+// /new while looking at this conversation (card t_10ac04f0).
+//
+// A conversation the HUMAN owns answers "fork" - the shell opens a fresh
+// tab, exactly what /new always did. A conversation the MACHINERY owns
+// (an agent's canonical chat) NEVER forks: the relationship is the
+// point, so /new folds it instead. The transcript keeps every row - the
+// human scrolls the whole record - while the next run's context begins
+// at the current tail, headed by the compactor's summary when the
+// pre-fold history was large enough to earn one.
+//
+// The boundary and the summary ride the session row, not a transcript
+// message: a fold is a context fact, and the chat view renders rows.
+func (s *Server) handleSessionNew(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.store == nil {
+		http.Error(w, "store not mounted", http.StatusNotImplemented)
+		return
+	}
+	id := r.PathValue("id")
+	if isEphemeralID(id) {
+		// No row, no fold: an ephemeral conversation is already one
+		// run's context - /new on it forks, the ordinary path.
+		writeJSON(w, http.StatusOK, map[string]any{"kind": "fork", "session": id})
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	row, err := s.store.GetSession(ctx, id)
+	if err != nil {
+		http.Error(w, "session not found: "+err.Error(), http.StatusNotFound)
+		return
+	}
+	if !row.MachineOwned {
+		writeJSON(w, http.StatusOK, map[string]any{"kind": "fork", "session": id})
+		return
+	}
+	scx, ok := s.store.(agent.SessionContextStore)
+	if !ok {
+		http.Error(w, "store cannot fold a conversation", http.StatusNotImplemented)
+		return
+	}
+	view, err := s.store.GetActiveView(ctx, id)
+	if err != nil {
+		http.Error(w, "load history: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// The fold happens on the ACTIVE PATH (the variant branches are not
+	// context), and the boundary keeps the tail message: a fresh context
+	// with a foothold, never an empty one.
+	path := storedMessages(view.Path)
+	start := ""
+	if n := len(view.Path); n > 0 {
+		start = core.MsgID(view.Path[n-1].ID)
+	}
+	summary := ""
+	if c := s.compactor(); c != nil && len(path) > 0 {
+		if folded, ferr := c.Compact(ctx, path); ferr == nil && len(folded) < len(path) {
+			summary = foldSummary(folded)
+		}
+		// A compactor that refuses (no provider, a dead upsteam) leaves
+		// the fold without a summary - the context still restarts. A
+		// fold that costs context is the point; it never costs the run.
+	}
+	if err := scx.SetSessionContextStart(ctx, id, start, summary); err != nil {
+		http.Error(w, "fold conversation: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"kind":    "compacted",
+		"session": id,
+		"folded":  len(path),
+		"summary": summary != "",
+	})
+}
+
+// foldSummary pulls the summary out of a compacted message list: the
+// compactor's fold is one system message wrapped in the core's fold
+// markers.
+func foldSummary(folded []core.Message) string {
+	for _, m := range folded {
+		sys, ok := m.(core.System)
+		if !ok {
+			continue
+		}
+		if s, found := strings.CutPrefix(sys.Content, core.ContextFoldPrefix); found {
+			if s, found := strings.CutSuffix(s, core.ContextFoldSuffix); found {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 // handleSessionByID serves GET /sessions/{id} (session + messages) and

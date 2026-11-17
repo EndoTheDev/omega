@@ -118,8 +118,12 @@ test("AgentsPanel gives the default agent no toggle (no disabled render, no writ
   assert.ok(panel.includes("if (name === DefaultAgentName && !enabled) return;"), "the toggle handler refuses the default agent");
 });
 
-// ruling 3: the expansion is details + edit; zero session rows.
-test("AgentsPanel expansion: config edit wire, no session surface", () => {
+// ruling 3: the expansion is details + edit. Card t_10ac04f0 ruling 4
+// ADDS one section and reverses the sessions half: an agent's WORK
+// sessions are inspected HERE now (they left the human's sessions
+// sidebar), so the tab reads `/agents/<name>/sessions` - the agent's own
+// store - and never the human's `/sessions` list.
+test("AgentsPanel expansion: config edit wire, plus the agent's OWN sessions", () => {
   const panel = readFileSync(join(root, "harness", "continuous", "ui", "AgentsPanel.vue"), "utf8");
   assert.ok(panel.includes(`fetch(\`/agents/\${`), "the edit writes through the agents API");
   assert.ok(panel.includes('"PUT"'), "the edit is a PUT");
@@ -131,9 +135,17 @@ test("AgentsPanel expansion: config edit wire, no session surface", () => {
   }
   assert.ok(!panel.includes('aria-label="api key"'), "no api key input survives the secret-free law");
   assert.ok(!panel.includes('aria-label="provider host"'), "no host input survives the secret-free law");
-  assert.ok(!panel.includes("agents-sessions"), "the session list died");
-  assert.ok(!panel.includes("new session as this agent"), "the new-session button died");
-  assert.ok(!panel.includes("/sessions`"), "no session fetch rides the tab");
+  assert.ok(!panel.includes("agents-sessions"), "the old embedded session list stays dead");
+  assert.ok(!panel.includes("new session as this agent"), "the new-session button stays dead");
+  // card t_10ac04f0: the per-agent sessions read is the inspection surface
+  assert.ok(
+    panel.includes("`/agents/${encodeURIComponent(name)}/sessions`"),
+    "the expansion reads the agent's own sessions",
+  );
+  assert.ok(
+    !panel.includes('fetch("/sessions'),
+    "the human's own session list is never fetched from this tab",
+  );
   // the detail facts lost the sessions line (ruling 3)
   const rows = readFileSync(join(root, "harness", "continuous", "ui", "agentsRows.ts"), "utf8");
   assert.ok(!rows.includes("`sessions: ${"), "the sessions count line died from the detail");

@@ -71,6 +71,54 @@ func (s *Store) ListAgentSessions(ctx context.Context, agentName string) ([]core
 	return out, rows.Err()
 }
 
+// CreateCanonicalChat creates a session that is an agent's canonical
+// chat (card t_10ac04f0): a permanent conversation the AGENTS ROSTER
+// opens, never a row in the maintainer's own session list. The `listed
+// = 0` bit is the store's own visibility law - ListSessions surfaces
+// the user's conversations, and a machinery-owned chat is not one of
+// them (so main's canonical chat cannot appear in the sessions
+// sidebar as if the maintainer had started it).
+//
+// The row is otherwise an ordinary agent-bound session: same columns,
+// same reads (GetSession, ListAgentSessions, the transcript, the
+// router's id -> owning home probe), so the chat floor serves it with
+// no knowledge of this verb.
+func (s *Store) CreateCanonicalChat(ctx context.Context, id, agentName string) error {
+	if agentName == "" {
+		agentName = agent.DefaultAgentName
+	}
+	now := core.NowISO()
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO sessions (id, parent_id, label, created_at, updated_at, last_read_at, agent, listed)
+		 VALUES (?, NULL, ?, ?, ?, ?, ?, 0)`,
+		id, CanonicalChatLabel, now, now, now, agentName)
+	return err
+}
+
+// SetSessionListed sets a session's list-visibility bit (card
+// t_10ac04f0). `listed = 1` is the human's own session list; `listed =
+// 0` marks a machinery-owned conversation (an agent's canonical chat),
+// which opens from the agents roster and never from the sidebar.
+//
+// The CREATE path never needs this (CreateCanonicalChat writes the bit
+// itself). The boot backfill uses it to repair rows an older build
+// seeded as listed = 1: a canonical chat that is listed forks on /new
+// instead of folding, because the fold keys on the same bit.
+func (s *Store) SetSessionListed(ctx context.Context, id string, listed bool) error {
+	v := 0
+	if listed {
+		v = 1
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET listed = ? WHERE id = ?`, v, id)
+	return err
+}
+
+// CanonicalChatLabel is the label a canonical chat's row carries. It is
+// the session's display voice in the surfaces that show one (the
+// roster's preview, the chat tab's title), and it is what a human sees
+// before the first run renames anything.
+const CanonicalChatLabel = "canonical"
+
 // aiNowISO removed: core.NowISO is the store-wide timestamp helper.
 
 // HandleAgentsCommand renders the /agents table: the profile

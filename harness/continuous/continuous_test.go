@@ -80,6 +80,13 @@ func TestCreateHomeScaffoldsAndSeeds(t *testing.T) {
 	if sess.Agent != "scout" {
 		t.Errorf("canonical chat agent = %q, want scout", sess.Agent)
 	}
+	// The row /new reads must be MACHINE-OWNED: handleSessionNew
+	// (agent/api) folds exactly when it is, and answers "fork" otherwise
+	// - which forks the agent relationship (ruling 2) on the create path
+	// every scaffold-created agent takes.
+	if !sess.MachineOwned {
+		t.Error("the seeded canonical chat is not machine-owned - /new would fork the relationship instead of compacting it")
+	}
 	// The bare id never exists in an agent home: it is the id the
 	// daemon's own store answers, and a second copy of it in a home is
 	// the collision this card fixes.
@@ -125,6 +132,32 @@ func TestRosterSkipsMainAndShowsWakes(t *testing.T) {
 		t.Errorf("after default residue, roster rows = %v", rows)
 	}
 	_ = m2
+}
+
+// TestCurrentCanonicalPicksTheHighestGenerationOnASecondTie pins the
+// same-second tie-break: the store writes ISO stamps with second
+// resolution, so two generations minted inside one second resolve by
+// the generation NUMBER, never by the id string ("-10" sorts before
+// "-2"). Archived generations never win, and a non-canonical id that
+// merely starts with the base never competes.
+func TestCurrentCanonicalPicksTheHighestGenerationOnASecondTie(t *testing.T) {
+	at := "2026-11-17T10:00:00Z"
+	rows := []core.Session{
+		{ID: "scout-canonical", CreatedAt: at},
+		{ID: "scout-canonical-2", CreatedAt: at},
+		{ID: "scout-canonical-10", CreatedAt: at},
+		{ID: "scout-canonicalish", CreatedAt: at},
+	}
+	if got, ok := CurrentCanonicalSession(rows, "scout"); !ok || got.ID != "scout-canonical-10" {
+		t.Fatalf("current canonical = %q (found=%v), want scout-canonical-10", got.ID, ok)
+	}
+	rows[2].Archived = true
+	if got, ok := CurrentCanonicalSession(rows, "scout"); !ok || got.ID != "scout-canonical-2" {
+		t.Fatalf("current canonical after retiring -10 = %q (found=%v), want scout-canonical-2", got.ID, ok)
+	}
+	if _, ok := CurrentCanonicalSession([]core.Session{{ID: "scout-canonical-1"}}, "scout"); ok {
+		t.Error("scout-canonical-1 resolved as canonical - generation 1 is the base id only")
+	}
 }
 
 func TestCanonicalPreviewUnreadFlow(t *testing.T) {
