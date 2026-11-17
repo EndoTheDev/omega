@@ -97,7 +97,7 @@ wait_js '!document.querySelector(".health-pop")' 10 || die "the health popover n
 
 # --- 5. narrow: health dot + workdir only ----------------------------------
 ab set viewport 700 800 >/dev/null 2>&1
-sleep 1
+wait_layout   # the width cross re-lays out the bar: settle before probing
 probe_narrow() {
   jsq '(()=>{const bar=document.querySelector(".statusbar");if(!bar)return 0;const hidden=e=>getComputedStyle(e).display==="none";const shown=[...bar.querySelectorAll(".hide-sm")];if(!shown.length)return 0;for(const e of shown){if(!hidden(e))return 0}const dot=bar.querySelector(".seg.seg-btn.health .dot");if(!dot||hidden(dot))return 0;const ws=bar.querySelector(".ws-btn");if(!ws||hidden(ws))return 0;return 1})()'
 }

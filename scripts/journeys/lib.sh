@@ -78,7 +78,7 @@ console_scope_begin() {
 die() {
   printf '%s [journey RED] %s\n' "$(date +%H:%M:%S)" "$*" >&2
   ab screenshot 2>/dev/null | tail -1 >&2
-  cleanup_journey_residue || true
+  journey_exit_cleanup || true
   exit 1
 }
 
@@ -150,15 +150,178 @@ poll_js() {
   return 1
 }
 
+# --- the determinism contract (card t_fdd12843) -----------------------------
+# A recipe asserts on STATE, never on elapsed time. Four gate reds in three
+# nights were one root class: a press read mid-unfold (t_44f55a54), an h+4
+# clamp offset (113-settings-nav), a poller counted inside a fixed 17s window
+# (111-socket-push), a browser-state leak (95-terminal). scripts/recipe-lint.sh
+# holds the contract over the corpus; these are the primitives it expects a
+# wait to be built from.
+#
+# Three shapes, and nothing else:
+#   poll_js / wait_js     - a predicate that becomes true (an EVENT)
+#   wait_settled          - a VALUE that stops changing (a SETTLE: geometry,
+#                           computed style, a pane chasing a drag)
+#   watch_absent          - a predicate that must stay false for a cadence's
+#                           worth of time (an ABSENCE; the only assertion that
+#                           needs a duration, so the window lives here, watched
+#                           sample by sample, never slept through)
+# A plain `sleep` between an action and a read is none of the three: it is a
+# guess about how long the machine takes, and it is what the lint flags.
+
+# wait_booted [timeout_s]: the shell publishes document.documentElement
+# .dataset.omegaBooted="1" once its boot reads have RESOLVED (app.vue), which
+# `ab wait --load networkidle` does NOT mean - networkidle returns during
+# hydration, with 1.5-2.3s of quiet before the first app fetch on a loaded
+# host, and three nightlies red'd a recipe that installed its recorder inside
+# that gap (t_a071ee45).
+# Never dies: boot-settled is a PRECONDITION, not the assertion. A stalled
+# /models holds the marker (it is inside the boot group), and a recipe must
+# not red for provider infra. Sets JOURNEY_BOOT_SETTLED=1/0 and says so; a
+# recipe that genuinely needs the boundary (a poller window, a transcript
+# read) waits for the marker itself.
+wait_booted() {
+  JOURNEY_BOOT_SETTLED=0
+  if poll_js 'document.documentElement.dataset.omegaBooted==="1"' "${1:-25}"; then
+    JOURNEY_BOOT_SETTLED=1
+    return 0
+  fi
+  step "WARN: the boot marker never appeared in ${1:-25}s - the page's boot reads have not resolved (a stalled /models?)"
+  return 1
+}
+
+# wait_settled <js-expr> <timeout_s> [stable_samples]: poll a js VALUE until it
+# stops changing - two consecutive equal samples means the thing SETTLED. This
+# is the measurement law for anything that animates: a smooth scroll, a CSS
+# transition, a pane width chasing a divider drag, a lane unfolding a card
+# under a press. Read once, after the value repeats; never mid-flight (the
+# 22px ghost against the 218px settled pane).
+# The expression must answer a VALUE (string or number), not a boolean: two
+# equal `true`s say nothing about the geometry behind them.
+wait_settled() {
+  local expr="$1" t="${2:-15}" need="${3:-2}" i=0 prev="" out same=0
+  while [ "$i" -lt $((t * 2)) ]; do
+    out=$(jsq "$expr" 2>&1 | tail -1)
+    if [ -n "$out" ] && [ "$out" = "$prev" ]; then
+      same=$((same + 1))
+      if [ "$same" -ge "$need" ]; then return 0; fi
+    else
+      same=0
+      prev="$out"
+    fi
+    sleep 0.5
+    i=$((i + 1))
+  done
+  die "wait_settled timed out after ${t}s: $expr never held still (last: [$out])"
+}
+
+# wait_layout [timeout_s]: the dock tree has stopped re-laying out. A viewport
+# cross, a divider drag, a pane prune or a re-keyed tree re-renders over a
+# frame or three, and nothing publishes when it is done - so the observable is
+# the geometry itself: every pane's id in DOM order with its rounded box. This
+# is the settle shape for gestures that change LAYOUT rather than state; a
+# state change (a drawer opened, a pane closed) is an EVENT and belongs on
+# wait_js.
+wait_layout() {
+  wait_settled '(()=>[...document.querySelectorAll("[data-pane-id]")].map(p=>p.dataset.paneId+"@"+Math.round(p.getBoundingClientRect().width)+"x"+Math.round(p.getBoundingClientRect().height)+"+"+Math.round(p.getBoundingClientRect().x)+"+"+Math.round(p.getBoundingClientRect().y)).join(","))()' "${1:-10}"
+}
+
+# watch_absent <js-expr> <window_s> <what> [evidence-expr]: the absence witness.
+# Sample a BOOLEAN js expression every 0.5s for the whole window and die at the
+# FIRST sample that sees it true. An "it never happened" claim needs a duration
+# - a poller's cadence is seconds and a fixed sleep is the only honest way to
+# span it - so the window is named here, watched sample by sample, and a
+# violation fails with the window named instead of being discovered by a count
+# afterwards. The optional evidence expression is read on the hit and printed
+# with the red, so the judgement carries its own diagnosis.
+watch_absent() {
+  local expr="$1" t="${2:-10}" what="${3:-the condition}" i=0 out ev=""
+  while [ "$i" -lt $((t * 2)) ]; do
+    out=$(jsq "$expr" 2>&1 | tail -1)
+    case "$out" in
+      true)
+        if [ -n "${4:-}" ]; then
+          ev=$(jsq "$4" 2>&1 | tail -1 | tr -d '"\r')
+        fi
+        die "$what became true inside the ${t}s watched window${ev:+ | evidence: $ev}"
+        ;;
+    esac
+    sleep 0.5
+    i=$((i + 1))
+  done
+  step "ok: $what never happened across ${t}s of sampling"
+}
+
+# poll_grep <file> <pattern> <timeout_s>: poll a file for a pattern - a stream
+# that arrives over its own socket, a log a background process appends to.
+# Bounded; returns 1 on timeout (the caller names the red).
+poll_grep() {
+  local f="$1" pat="$2" t="${3:-20}" i=0
+  while [ "$i" -lt $((t * 2)) ]; do
+    grep -q "$pat" "$f" 2>/dev/null && return 0
+    sleep 0.5
+    i=$((i + 1))
+  done
+  return 1
+}
+
+# journey_clean_room: reset the CLIENT state a journey can mutate, so nothing
+# it did becomes the next journey's baseline. This is the cross-journey law
+# (t_81d0901b: 77-mobile-drawer closed both sidebars and opened a settings tab,
+# then 70-dock-panes-dnd read "7 tabs missing" on a bundle that was fine).
+#   - the viewport, back to desktop (a recipe that died at 420px)
+#   - localStorage: the dock tree (every pane, its slot and its closed edges),
+#     the settings anchor, the theme and every other omega.* knob a recipe
+#     flips
+#   - sessionStorage: the SPA's route/focus memory
+# A no-op until this recipe has opened a page: a REST-only journey must not
+# spawn a chrome on its way out.
+JOURNEY_PAGE_OPENED=${JOURNEY_PAGE_OPENED:-0}
+journey_clean_room() {
+  [ "$JOURNEY_PAGE_OPENED" = "1" ] || return 0
+  ab set viewport 1280 800 >/dev/null 2>&1 || true
+  jsq '(()=>{try{localStorage.clear();sessionStorage.clear();return 1}catch(e){return 0}})()' \
+    >/dev/null 2>&1 || true
+}
+
+# journey_exit_cleanup: the ONE exit path. run.sh's recipe subshell installs it
+# as its EXIT trap, die() calls it, and a recipe that sets its own trap chains
+# to it. Residue (sessions, board cards, agent homes) plus the client state.
+journey_exit_cleanup() {
+  journey_clean_room
+  cleanup_journey_residue
+}
+
 # open_app: fresh SPA load in the journey session + console hook. The
 # viewport resets to desktop FIRST: a recipe that died mid-way leaves
 # its mobile viewport on the tab (77-mobile-drawer crosses to 420px and
 # dies at mobile), and the next recipe must not inherit it.
+# The ENTRY CLEAN ROOM: once the page has an origin, a recipe clears the state
+# the previous one left and reloads ONLY when there was something to clear (a
+# virgin profile costs no second load). FIRST open_app of the recipe only: a
+# recipe that re-opens the app mid-journey (a reload pass, a mid-run refresh)
+# is asserting on state IT planted, so the clean room must not run again.
+# Then the boot marker is the load boundary - networkidle is not one
+# (t_a071ee45).
 open_app() {
   ab set viewport 1280 800 >/dev/null 2>&1 || true
   ab open "$JOURNEY_BASE_URL/" >/dev/null 2>&1 || \
     { JOURNEY_CDP_ATTACHED=0; ab open "$JOURNEY_BASE_URL/" >/dev/null 2>&1 || die "cannot open $JOURNEY_BASE_URL"; }
+  JOURNEY_PAGE_OPENED=1
   ab wait --load networkidle >/dev/null 2>&1 || true
+  if [ "${JOURNEY_CLEAN_DONE:-0}" = "0" ]; then
+    JOURNEY_CLEAN_DONE=1
+    had=$(jsq '(()=>{try{const n=localStorage.length+sessionStorage.length;localStorage.clear();sessionStorage.clear();return n}catch(e){return 0}})()' 2>&1 | tail -1 | tr -d '"')
+    case "$had" in
+      ''|*[!0-9]*) had=0 ;;
+    esac
+    if [ "$had" != "0" ]; then
+      step "clean room: cleared $had client key(s) a previous journey left, reloading"
+      ab reload >/dev/null 2>&1 || true
+      ab wait --load networkidle >/dev/null 2>&1 || true
+    fi
+  fi
+  wait_booted
   step "open: $JOURNEY_BASE_URL"
 }
 

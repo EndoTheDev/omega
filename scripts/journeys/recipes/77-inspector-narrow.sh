@@ -59,7 +59,10 @@ assert_eq "$found" "1" "inspector pane found by its tab set"
 # handlers drive moveTab from it).
 geared=$(jsq '(()=>{const b=document.querySelector("header.menubar button[aria-label=\"Open settings\"]"); if(!b) return 0; b.click(); return 1})()')
 assert_eq "$geared" "1" "settings gear rendered in the menubar"
-sleep 2
+# the gear's chip is an EVENT: wait for the settings tab to be in a dock pane
+# (a 2s pause was a guess at the mount, card t_fdd12843)
+wait_js '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();return [...document.querySelectorAll(".dock-pane")].some(p=>[...p.querySelectorAll(".dock-tab")].some(t=>/settings/i.test(name(t))))})()' 15 \
+  || die "the settings chip never appeared in a dock pane after the gear click"
 moved=$(jsq '(() => {
   const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
   const panes=[...document.querySelectorAll(".dock-pane")];
@@ -78,7 +81,9 @@ moved=$(jsq '(() => {
   return 1;
 })()')
 assert_eq "$moved" "1" "settings chip dragged into the inspector bar"
-sleep 1
+# the drop is an EVENT: wait for the inspector bar to host the chip
+wait_js '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();return [...document.querySelectorAll(".dock-pane.pinned")].some(p=>[...p.querySelectorAll(".dock-tab")].some(t=>/settings/i.test(name(t))))})()' 15 \
+  || die "the inspector bar never hosted the dragged settings tab"
 hosted=$(jsq '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
  const p=[...document.querySelectorAll(".dock-pane.pinned")].find(x=>[...x.querySelectorAll(".dock-tab")].some(t=>/settings/i.test(name(t))));
  return p?1:0})()')
@@ -101,14 +106,24 @@ tab_narrow() {
     tab.click(); return 2;
   })()")
   [ "$out" = "2" ] 2>/dev/null || die "tab /$1/ not found in the dock"
-  sleep 2.5 # mount + mount-measure + one rAF delivery (+ nuxt dev first compile)
-  code=$(jsq "(() => {
-    const root=document.querySelector('$2');
-    if(!root) return 0;
-    if(!root.classList.contains('narrow')) return 1;
-    try { if(!($3)) return 3; } catch (e) { return 4; }
-    return 4;
-  })()")
+  # the verdict is POLLED, never slept for: the panel mounts, measures its own
+  # container on the first rAF and only then flips the class. 0 (no root yet)
+  # and 1 (root, class not flipped yet) are WAITING states; 3 and 4 are the
+  # product's answers and end the poll at once (card t_fdd12843).
+  code=""
+  _i=0
+  while [ "$_i" -lt 40 ]; do
+    code=$(jsq "(() => {
+      const root=document.querySelector('$2');
+      if(!root) return 0;
+      if(!root.classList.contains('narrow')) return 1;
+      try { if(!($3)) return 3; } catch (e) { return 4; }
+      return 4;
+    })()")
+    case "$code" in 3|4) break ;; esac
+    sleep 0.5
+    _i=$((_i + 1))
+  done
   case "$code" in
     4) step "ok: $1 narrow geometry applies";;
     3) die "$1: narrow class present but its geometry did NOT apply";;
@@ -149,7 +164,8 @@ ab mouse move "$divx" 400 >/dev/null 2>&1
 ab mouse down >/dev/null 2>&1
 x=-10; while [ "$x" -ge -160 ]; do ab mouse move "$((divx+x))" 400 >/dev/null 2>&1; sleep 0.03; x=$((x-10)); done
 ab mouse up >/dev/null 2>&1
-sleep 0.6
+# the drag resizes the pane: read once the geometry holds still
+wait_layout
 
 # the drag may re-key the pane tree; re-find the inspector by its tab set
 wide=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];
@@ -158,7 +174,9 @@ wide=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];
  return insp?Math.round(insp.getBoundingClientRect().width):-1})()')
 [ "$wide" -ge 380 ] 2>/dev/null || die "inspector did not widen (width $wide)"
 step "ok: inspector widens to ${wide}px"
-sleep 1 # settle: the drag re-keys the pane; let the tabbar re-render
+# settle: the drag re-keys the pane tree, so the tabbar re-renders - wait for
+# the pane geometry to hold still instead of a guessed second
+wait_layout
 
 # click through every tab: only the active tab keeps an outlet mounted.
 wide_drop() {
@@ -174,12 +192,20 @@ wide_drop() {
   })()")
   out=${out//\"/} # jsq returns JSON quotes around string results
   [ "$out" = "clicked" ] 2>/dev/null || die "tab /$1/ wide-pass click failed (out=[${out:-EMPTY}])"
-  sleep 2.5 # mount at the wide width (+ nuxt dev first compile)
-  out=$(jsq "(() => {
-    const root=document.querySelector('$2');
-    return root&&!root.classList.contains('narrow')?4:(root?3:0);
-  })()")
-  [ "$out" = "4" ] 2>/dev/null || die "$1: narrow class did not drop at ${wide}px"
+  # poll the verdict: the mount at the wide width is an event, and only the
+  # class actually dropping (4) or the root existing still narrow (3) answers
+  out=""
+  _i=0
+  while [ "$_i" -lt 40 ]; do
+    out=$(jsq "(() => {
+      const root=document.querySelector('$2');
+      return root&&!root.classList.contains('narrow')?4:(root?3:0);
+    })()")
+    case "$out" in 3|4) break ;; esac
+    sleep 0.5
+    _i=$((_i + 1))
+  done
+  [ "$out" = "4" ] 2>/dev/null || die "$1: narrow class did not drop at ${wide}px (last verdict $out)"
 }
 
 wide_drop 'files'   '.inspector-panel'
@@ -195,6 +221,6 @@ ab mouse move "$((divx-160))" 400 >/dev/null 2>&1
 ab mouse down >/dev/null 2>&1
 x=-150; while [ "$x" -le 0 ]; do ab mouse move "$((divx+x))" 400 >/dev/null 2>&1; sleep 0.03; x=$((x+10)); done
 ab mouse up >/dev/null 2>&1
-sleep 0.6
+wait_layout
 tab_narrow 'cron' '.cron-list' 'getComputedStyle(document.querySelector(".cron-list .cron-body")).paddingLeft==="8px"'
 step "ok: dragging back narrow re-applies the adaptation (live observer)"

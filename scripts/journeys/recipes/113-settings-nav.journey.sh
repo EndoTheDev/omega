@@ -329,19 +329,9 @@ assert_eq "$stored" "" "a DESELECT persists as NO anchor"
 # row starts at or below the pinned heading's bottom edge - never a pixel
 # constant.
 #
-# wait_settled: the jump is a SMOOTH scroll, so measure only once the pane's
-# scrollTop has stopped moving (two equal samples 200ms apart).
-wait_settled() {
-  local last=-1 now i=0
-  while [ "$i" -lt 75 ]; do
-    now=$(scroll_top)
-    if [ "$now" = "$last" ]; then return 0; fi
-    last=$now
-    sleep 0.2
-    i=$((i + 1))
-  done
-  return 1
-}
+# wait_settled (lib.sh): the jump is a SMOOTH scroll, so measure only once the
+# pane's scrollTop has stopped moving - the shared settle primitive (the value
+# repeats across samples), never a fixed pause (card t_fdd12843).
 # first_row_clear <id>: "<verdict>|<rowTop>|<headingBottom>" - viewport
 # coordinates, so both rects come from the same frame
 first_row_clear() {
@@ -359,7 +349,8 @@ for flatcat in common dock store; do
   if ! poll_js "(()=>{const ids=[...document.querySelectorAll('.settings-category')].map(e=>e.getAttribute('data-category')).join(',');return ids==='$wantdoc'})()" 15; then
     die "selecting $flatcat did not set the document to [$wantdoc] (now: $(doc_ids))"
   fi
-  wait_settled || die "the $flatcat jump never settled (scrollTop: $(scroll_top))"
+  # the jump is a smooth scroll: grade it once the pane's position holds still
+  wait_settled '(()=>{const b=document.querySelector(".settings-body");return b?Math.round(b.scrollTop):"none"})()' 15
   measured=$(first_row_clear "$flatcat")
   state=${measured%%|*}; rest=${measured#*|}; rowtop=${rest%%|*}; headbottom=${rest##*|}
   assert_eq "$state" "clear" "$flatcat's first knob row starts BELOW its pinned heading (row top $rowtop, heading bottom $headbottom)"

@@ -42,7 +42,12 @@ scoped_wait() {
 # reload_page: an explicit reload, then re-focus the journey row
 reload_page() {
   jsq 'location.reload()' >/dev/null 2>&1 || true
-  sleep 1.5
+  # a reload drops the boot marker with the old document, so wait for it to go
+  # before waiting for the fresh one - otherwise the OLD page's marker answers
+  # and the reload is graded before it happened (card t_fdd12843)
+  poll_js '!document.documentElement.dataset.omegaBooted' 10 || true
+  ab wait --load networkidle >/dev/null 2>&1 || true
+  wait_booted   # the reload is done when the shell says its boot reads resolved
   open_journey_row "(journey) composer $TAG"
 }
 

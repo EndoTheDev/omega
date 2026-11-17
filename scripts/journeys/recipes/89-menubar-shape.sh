@@ -105,7 +105,7 @@ step "ok: the trigger opens / Escape closes (one open state)"
 
 # --- 4. the SAME shape at a narrower desktop width -------------------------
 ab set viewport 880 720 >/dev/null 2>&1
-sleep 0.3
+wait_layout   # the width cross re-lays out the bar: settle before probing
 check_menubar "narrow desktop probe (880x720)"
 step "ok: 880x720 - the same seats, no left/right skew"
 

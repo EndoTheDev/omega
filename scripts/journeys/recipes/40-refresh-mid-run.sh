@@ -15,7 +15,8 @@ open_app
 open_journey_row "(journey) refresh-midrun $TAG"
 ab find placeholder "message omega" click >/dev/null
 ab keyboard type "Write 15 numbered lines. Each line is exactly: journey line N (N is 1 to 15)"
-sleep 1
+wait_js '(()=>{return [...document.querySelectorAll("textarea,[contenteditable=true]")].some(e=>(e.value||e.textContent||"").includes("numbered lines"))})()' 10 \
+  || die "the typed prompt never landed in the composer draft"
 ab press Enter
 ab press Enter
 step "sent long prompt"
@@ -37,7 +38,8 @@ else
   step "stream finished too fast to catch - restarting wider"
   ab find placeholder "message omega" click >/dev/null
   ab keyboard type "Write 30 numbered lines. Each line is exactly: journey line N (N is 1 to 30)"
-  sleep 1
+  wait_js '(()=>{return [...document.querySelectorAll("textarea,[contenteditable=true]")].some(e=>(e.value||e.textContent||"").includes("numbered lines"))})()' 10 \
+    || die "the wider prompt never landed in the composer draft"
   ab press Enter
   ab press Enter
   poll_js '!!document.querySelector(".msg .cursor")' 15 \

@@ -18,6 +18,8 @@
 #                command both read) - present module, mounted seam.
 #
 # Residue-free: read-only GETs only.
+# recipe-lint: allow no-browser - this recipe drives the module REST surface and never opens a page; its only residue is a
+# journey session, reaped by cleanup_journey_residue in run.sh's EXIT trap.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 # --- lane alive: the inventory endpoint answers a JSON array ---

@@ -67,7 +67,9 @@ done
 [ "$rows" -ge 2 ] 2>/dev/null || die "control row missing from the sidebar (rows=$rows)"
 before=$rows
 ab type 'input[placeholder="Search sessions"]' "sessions-reload $TAG" >/dev/null
-sleep 2
+# the filter's effect IS the observable: poll for the visible row count to drop
+poll_js "(()=>{const lis=Array.from(document.querySelectorAll('.session-list li:not(.bucket-row):not(.bucket-empty)')).filter(li=>li.getClientRects().length>0);return lis.length<$before})()" 10 \
+  || die "the search never narrowed the list (rows before=$before)"
 vis=$(jsq '(()=>{const lis=Array.from(document.querySelectorAll(".session-list li:not(.bucket-row):not(.bucket-empty)")); return lis.filter(li=>li.getClientRects().length>0).length;})()' 2>&1)
 [ "$vis" -lt "$before" ] 2>/dev/null || die "search did not narrow: rows before=$before after=$vis"
 ours=$(jsq '(()=>{const lis=Array.from(document.querySelectorAll(".session-list li:not(.bucket-row):not(.bucket-empty)")); const vis = lis.filter(li => li.getClientRects().length > 0); return vis.some(x => (x.innerText || "").includes("(journey) sessions-reload"))?1:0;})()' 2>&1)

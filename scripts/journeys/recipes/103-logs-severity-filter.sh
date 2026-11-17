@@ -80,7 +80,7 @@ ab set viewport 1280 800 >/dev/null 2>&1
 js 'localStorage.clear()' >/dev/null 2>&1
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
-sleep 1
+wait_booted
 
 # the bottom strip is the Logs tab's home (t_01c53e78: the observability tab
 # renamed "Logs", the raw-tail http_channel pane retired)
@@ -210,7 +210,9 @@ js 'window.__tailBefore = Array.from(document.querySelectorAll(".dock-pane.edge-
 js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-errors")?.click()' >/dev/null 2>&1
 poll_js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-errors")?.getAttribute("aria-pressed") === "true"' 5 \
   || die "the errors-only chip never flips on while the tail is up"
-sleep 0.6
+# the filtered re-render is the observable: wait for the tail's line count to
+# hold still, then compare the lines (card t_fdd12843)
+wait_settled 'document.querySelectorAll(".dock-pane.edge-bottom .obs-tail-line").length' 10
 tailkept=$(jsq '(() => {
   const now = Array.from(document.querySelectorAll(".dock-pane.edge-bottom .obs-tail-line")).map((l) => l.textContent);
   const before = window.__tailBefore || [];

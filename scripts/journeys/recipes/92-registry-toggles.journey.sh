@@ -149,7 +149,7 @@ open_app
 js 'localStorage.clear()' >/dev/null 2>&1
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
-sleep 1
+wait_booted
 
 # the right sidebar (inspector) is open before the tab chip is clicked
 side=$(jsq 'document.querySelector(".dock-pane.kind-files")?1:0' 2>/dev/null | tail -1)
@@ -209,7 +209,7 @@ step "ok: (a) fold persisted on the wire and in config.yaml"
 # (b) the persisted fold drives the render: reload, re-open, row off
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
-sleep 1
+wait_booted
 open_tab skills
 wait_js "(()=>{const r=[...document.querySelectorAll('.skills-list .registry-row')].find(x=>x.querySelector('.reg-row-name').textContent.trim()==='$SKILL'); const b=r&&r.querySelector('button.registry-toggle'); return !!r&&r.classList.contains('registry-off')&&!!b&&b.getAttribute('aria-label')==='enable $SKILL'})()" 10 \
   || die "after reload the seeded row does not render the persisted off state"

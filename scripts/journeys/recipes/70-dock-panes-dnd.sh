@@ -40,7 +40,7 @@ titled=$(jsq 'document.querySelectorAll(".dock-pane.pinned:not(.edge-bottom):not
 # none)
 clicked=$(jsq '(()=>{const t=[...document.querySelectorAll(".dock-pane.pinned .dock-tab")].find(b=>((b.getAttribute("aria-label")||"")||b.title).trim()==="Files");if(!t) return 0;t.click();return 1})()' 2>&1)
 assert_eq "$clicked" "1" "Files tab clickable by its name"
-sleep 1
+wait_js '!!document.querySelector(".inspector-files")' 10
 files=$(jsq 'document.querySelector(".inspector-files")?1:0' 2>&1)
 assert_eq "$files" "1" "Files tab renders the file tree"
 
@@ -49,7 +49,9 @@ assert_eq "$files" "1" "Files tab renders the file tree"
 # the shell: pane count stable, session list alive afterwards
 before=$(jsq 'document.querySelectorAll("[data-pane-id]").length' 2>&1)
 js '(()=>{const dt = new DataTransfer(); const pane = document.querySelector("[data-pane-id]"); const tab = pane && pane.querySelector(".dock-tab"); if (!tab) return; const target = document.querySelector("[data-pane-id]") && document.querySelector("[data-pane-id]").querySelector(".dock-tab"); tab.dispatchEvent(new DragEvent("dragstart", {dataTransfer: dt, bubbles: true})); if (target) { target.dispatchEvent(new DragEvent("dragover", {dataTransfer: dt, bubbles: true, clientX: 10, clientY: 200})); target.dispatchEvent(new DragEvent("drop", {dataTransfer: dt, bubbles: true, clientX: 10, clientY: 200})); } tab.dispatchEvent(new DragEvent("dragend", {dataTransfer: dt, bubbles: true}));})()' >/dev/null 2>&1 || true
-sleep 1
+# a synthetic gesture that must NOT change the layout has no event to wait
+# for: wait for the tree to stop moving, then grade the count (t_fdd12843)
+wait_layout
 after=$(jsq 'document.querySelectorAll("[data-pane-id]").length' 2>&1)
 alive=$(jsq 'document.querySelector(".sessions .session-list") ? 1 : 0' 2>&1)
 assert_eq "$alive" "1" "session list alive after drag attempt"
@@ -81,7 +83,7 @@ split=$(jsq '(() => {
   return "split";
 })()' 2>&1)
 assert_eq "$split" "\"split\"" "a zone-drop splits the main pane around Files"
-sleep 1
+wait_js "(()=>{return document.querySelectorAll('[data-pane-id]').length===$((before+1))})()" 10
 mid=$(jsq 'document.querySelectorAll("[data-pane-id]").length' 2>&1)
 [ "$mid" = "$((before+1))" ] || die "the zone split did not mint a pane (before $before, mid $mid)"
 fresh=$(jsq '[...document.querySelectorAll("[data-pane-id]")].filter(p=>!p.classList.contains("pinned")&&!p.querySelector(".composer")&&p.querySelectorAll(".dock-tab").length===1&&((p.querySelector(".dock-tab-title")?.textContent||"").trim()==="Files")).length' 2>&1)
@@ -106,7 +108,7 @@ trip=$(jsq '(() => {
   return "moved";
 })()' 2>&1)
 assert_eq "$trip" "\"moved\"" "the return trip lands Files in the inspector bar"
-sleep 1
+wait_js "(()=>{return document.querySelectorAll('[data-pane-id]').length===$before})()" 10
 after=$(jsq 'document.querySelectorAll("[data-pane-id]").length' 2>&1)
 assert_eq "$after" "$before" "the emptied source pane closed (back to $before panes)"
 empty=$(jsq '[...document.querySelectorAll("[data-pane-id]")].filter(p=>!p.classList.contains("pinned")&&p.querySelectorAll(".dock-tab").length===0).length' 2>&1)

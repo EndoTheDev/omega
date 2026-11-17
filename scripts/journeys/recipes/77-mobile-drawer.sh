@@ -61,9 +61,9 @@ step "ok: bottom-home strip captured: $bottom_strip"
 
 # --- REPRO 1 setup: desktop-close BOTH sidebars (prune the pinned panes) ---
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle left sidebar").click()' >/dev/null 2>&1
-sleep 0.3
+wait_layout   # the prune re-renders the tree: wait for it to stop moving
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle right sidebar").click()' >/dev/null 2>&1
-sleep 0.3
+wait_layout
 panes=$(jsq 'document.querySelectorAll("[data-pane-id]").length')
 # card t_67fc1905: the fresh dock tree is column [main row, bottom shell]
 # - 4 panes total. The desktop-close prunes BOTH SIDEBARS, not the
@@ -75,7 +75,7 @@ assert_eq "$panes" "2" "desktop-close prunes both sidebars (main + bottom left)"
 #     matchMedia change listener; NO reload - a reload would re-assert the
 #     fixed shape via ensurePinnedEdges and undo the desktop-close) ---
 ab set viewport 420 840 >/dev/null 2>&1
-sleep 1.2
+wait_layout   # the breakpoint cross re-lays out the tree: settle, never pause
 
 # the drawer handles are GONE by design (16ac10a, card t_aca53fee):
 # one set of menubar edge toggles serves every width - below 768px they
@@ -97,7 +97,7 @@ assert_eq "$visible" "1" "mobile: the menubar edge toggles render under 768px (t
 # opens WITH content (not a bare scrim) even though the edge pane was
 # pruned at desktop
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle left sidebar").click()' >/dev/null 2>&1
-sleep 0.7
+wait_js '!!document.querySelector(".mobile-drawer.left.open")' 10   # the drawer opening is the event
 scrim=$(jsq 'document.querySelector(".scrim")?1:0')
 open=$(jsq 'document.querySelector(".mobile-drawer.left.open")?1:0')
 content=$(jsq 'document.querySelector(".mobile-drawer.left .session-list")?1:0')
@@ -109,7 +109,7 @@ step "ok: REPRO 1 - desktop-close -> mobile -> drawer opens with content"
 # --- REPRO 2: the inspector drawer shows its tab bar and tabs switch ---
 # the right drawer opens via the menubar inspector toggle (16ac10a)
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle right sidebar").click()' >/dev/null 2>&1
-sleep 0.7
+wait_js '!!document.querySelector(".mobile-drawer.right.open")' 10
 open=$(jsq 'document.querySelector(".mobile-drawer.right.open")?1:0')
 assert_eq "$open" "1" "REPRO 2: inspector drawer opens (right.open)"
 # card t_4bf1d5b7 (report 2, Endo ruling: ICONS): the drawer chips are
@@ -136,7 +136,7 @@ assert_eq "$files" "1" "REPRO 2: Files tab renders the file tree"
 
 # switch to Skills -> the content swaps to the skills module panel
 js 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).find(t=>(t.getAttribute("aria-label")||"").trim()==="Skills").click()' >/dev/null 2>&1
-sleep 0.6
+wait_js '(()=>{const a=document.querySelector(".mobile-drawer.right .mobile-drawer-tab.active");return !!a&&(a.getAttribute("aria-label")||"").trim()==="Skills"})()' 10
 active=$(jsq 'document.querySelector(".mobile-drawer.right .mobile-drawer-tab.active")?.getAttribute("aria-label")?.trim()')
 active=${active#\"}; active=${active%\"}
 assert_eq "$active" "Skills" "REPRO 2: clicking Skills activates it"
@@ -148,7 +148,7 @@ assert_eq "$skills" "1" "REPRO 2: Skills tab renders the module panel (content s
 # configuration now - the settings tab's MODULES section), so this step
 # walks the strip's other shell-owned branch instead.
 js 'Array.from(document.querySelectorAll(".mobile-drawer.right .mobile-drawer-tab")).find(t=>(t.getAttribute("aria-label")||"").trim()==="Insights").click()' >/dev/null 2>&1
-sleep 0.6
+wait_js '(()=>{const a=document.querySelector(".mobile-drawer.right .mobile-drawer-tab.active");return !!a&&(a.getAttribute("aria-label")||"").trim()==="Insights"})()' 10
 active=$(jsq 'document.querySelector(".mobile-drawer.right .mobile-drawer-tab.active")?.getAttribute("aria-label")?.trim()')
 active=${active#\"}; active=${active%\"}
 assert_eq "$active" "Insights" "REPRO 2: clicking Insights activates it"
@@ -163,9 +163,9 @@ step "ok: REPRO 2 - drawer tab bar switches content (Files -> Skills -> Insights
 # breakpoint it opens settings as a MAIN tab (the one surface that never
 # collapses to a drawer), never as an inspector drawer tab.
 js 'document.querySelector(".scrim")?.click()' >/dev/null 2>&1
-sleep 0.4
+wait_js '!document.querySelector(".scrim")' 10
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Open settings").click()' >/dev/null 2>&1
-sleep 1.2
+wait_js '[...document.querySelectorAll(".dock-tab")].filter(t=>t.title==="Settings").length===1' 15
 gtab=$(jsq '[...document.querySelectorAll(".dock-tab")].filter(t=>t.title==="Settings").length')
 assert_eq "$gtab" "1" "REPRO 2b: the menubar gear opens a settings TAB on mobile"
 gpanel=$(jsq 'document.querySelector(".settings")?1:0')
@@ -177,11 +177,11 @@ step "ok: REPRO 2b - the gear reaches settings from every pane context on mobile
 # out of flow regardless of tree state - the toggle must drive the BOTTOM
 # DRAWER (side="bottom"), and the desktop tree must survive the round-trip.
 js 'document.querySelector(".scrim")?.click()' >/dev/null 2>&1
-sleep 0.4
+wait_js '!document.querySelector(".scrim")' 10
 bottom_pane=$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0')
 [ "$bottom_pane" = "1" ] || die "no edge-bottom pane in the tree before the bottom-drawer repro"
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle bottom panel").click()' >/dev/null 2>&1
-sleep 0.7
+wait_js '!!document.querySelector(".mobile-drawer.bottom.open")' 10
 bscrim=$(jsq 'document.querySelector(".scrim")?1:0')
 bdrawer=$(jsq 'document.querySelector(".mobile-drawer.bottom.open")?1:0')
 brect=$(jsq 'JSON.stringify((r=>({w:Math.round(r.width),h:Math.round(r.height),bottom:Math.round(r.bottom)}))(document.querySelector(".mobile-drawer.bottom.open")?.getBoundingClientRect()||{width:0,height:0,bottom:0}))')
@@ -227,25 +227,25 @@ bterm=$(jsq 'document.querySelector(".mobile-drawer.bottom.open .terminal-pane")
 assert_eq "$bterm" "0" "REPRO 3: the previous view unmounts (content actually switched)"
 # close: the same toggle closes the drawer again
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle bottom panel").click()' >/dev/null 2>&1
-sleep 0.5
+wait_js '!document.querySelector(".mobile-drawer.bottom.open")' 10
 bclosed=$(jsq 'document.querySelector(".mobile-drawer.bottom.open")?1:0')
 assert_eq "$bclosed" "0" "REPRO 3: the toggle closes the bottom drawer again"
 step "ok: REPRO 3 - mobile bottom toggle opens the bottom drawer over a scrim, closes, tree untouched"
 
 # --- desktop regression: the toggles still hide/show sidebars at desktop ---
 js 'document.querySelector(".scrim")?.click()' >/dev/null 2>&1
-sleep 0.3
+wait_js '!document.querySelector(".scrim")' 10
 ab set viewport 1200 800 >/dev/null 2>&1
-sleep 1.0
+wait_layout
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle left sidebar").click()' >/dev/null 2>&1
-sleep 0.4
+wait_js '!!document.querySelector(".dock-pane .sessions")' 10
 after_close=$(jsq 'document.querySelector(".dock-pane .sessions")?1:0')
 assert_eq "$after_close" "1" "desktop: reopen left sidebar (boot re-asserted edges on the breakpoint cross; toggle closes)"
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle left sidebar").click()' >/dev/null 2>&1
-sleep 0.4
+wait_layout
 # closing again prunes; reopening brings it back
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle left sidebar").click()' >/dev/null 2>&1
-sleep 0.4
+wait_js '!!document.querySelector(".dock-pane .sessions")' 10
 final=$(jsq 'document.querySelector(".dock-pane .sessions")?1:0')
 assert_eq "$final" "1" "desktop: toggle hide/show round-trips the sidebar"
 step "ok: desktop toggle hide/show unchanged"

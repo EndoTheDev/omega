@@ -563,7 +563,11 @@ for recipe in $want; do
   # fd 9 in watchdog sleeps + the resident agent-browser daemon held
   # the lock after a finished run; later suites refused).
   (
-    trap 'cleanup_journey_residue' EXIT
+    # the ONE exit path: residue (sessions, board cards, agent homes) plus the
+    # client state a journey mutated - panes, viewport, localStorage - so no
+    # journey inherits the last one's baseline (the determinism contract,
+    # card t_fdd12843; lib.sh journey_exit_cleanup).
+    trap 'journey_exit_cleanup' EXIT
     . "$JROOT/lib.sh"
     # scope the console record to THIS recipe (t_6654bc60): the daemon's
     # buffer outlives the page, the reload and the chrome, so a transient

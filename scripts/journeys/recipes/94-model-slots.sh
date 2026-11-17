@@ -12,6 +12,8 @@
 # browser steps: the pickers' slot behavior is pinned by the webui
 # node tests, modelcatalog.test.ts); the values this recipe writes are
 # restored by the EXIT trap.
+# recipe-lint: allow no-browser - this recipe drives PUT /settings and the config file and never opens a page; its only residue is a
+# journey session, reaped by cleanup_journey_residue in run.sh's EXIT trap.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 SIDTAG=$(date +%H%M%S)

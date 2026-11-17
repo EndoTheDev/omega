@@ -23,7 +23,8 @@ open_app
 open_journey_row "(journey) tail-follow $TAG"
 ab find placeholder "message omega" click >/dev/null
 ab keyboard type "Write 60 numbered lines. Each line is exactly: follow tail test line N (N goes from 1 to 60)."
-sleep 1
+wait_js '(()=>{return [...document.querySelectorAll("textarea,[contenteditable=true]")].some(e=>(e.value||e.textContent||"").includes("numbered lines"))})()' 10 \
+  || die "the typed prompt never landed in the composer draft"
 ab press Enter
 ab press Enter
 step "sent long prompt"
@@ -60,10 +61,13 @@ step "ok: pinned view rode the growing tail ($bottom_count/6 samples)"
 #    tail must not yank the view back (the shrink-clamp/resumesFollow law
 #    runs both directions - an unpinned view stays unpinned)
 jsq 'document.querySelector(".messages").scrollTop = 0' >/dev/null
-sleep 1
 poll_js '!!document.querySelector(".jump-live")' 10 \
   || die "jump-to-live pill never showed after scrolling up"
-sleep 2
+# the no-yank claim is an ABSENCE: watch it sample by sample instead of
+# pausing two seconds and reading once (card t_fdd12843)
+watch_absent '(()=>{const m=document.querySelector(".messages");return !!m&&m.scrollTop>200})()' 2 \
+  "the live tail yanking the view back after a scroll-up" \
+  '(()=>{const m=document.querySelector(".messages");return "scrollTop="+(m?Math.round(m.scrollTop):"missing")})()'
 yank=$(num_jsq 'document.querySelector(".messages")?.scrollTop ?? -1')
 case "$yank" in ''|*[!0-9-]*) die "yank probe garbage: $yank" ;; esac
 [ "$yank" -gt 200 ] && die "view yanked back to the tail after scroll-up (scrollTop=$yank)"

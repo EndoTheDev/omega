@@ -21,6 +21,9 @@
 #             the residue is one dead pid, gone by construction.
 #
 # Residue-free: the trap kills the claimed session.
+# recipe-lint: allow no-browser - this journey is REST/SSE only: it never opens
+# a page, so there is no client state (panes, viewport, localStorage) to clean;
+# its one runtime actor (the claimed shell) dies in the EXIT trap below.
 . "${JROOT:?run must export JROOT}/lib.sh"
 B="${JOURNEY_BASE_URL:?}"
 runtag=$(date +%s)
@@ -65,7 +68,7 @@ else
   [ "${held:-0}" -eq 0 ] || step "ok: the store already held $held session(s); the claim reattached (store: $before)"
 fi
 [ -n "$tid" ] || die "claim answered no id: $claim"
-trap 'curl -s -X DELETE "$B/terminal/$tid" >/dev/null 2>&1 || true' EXIT
+trap 'curl -s -X DELETE "$B/terminal/$tid" >/dev/null 2>&1 || true; journey_exit_cleanup' EXIT
 step "ok: claimed terminal session $tid"
 
 # --- the shell is on the list (GET /terminal/sessions) --------------------
@@ -78,11 +81,12 @@ step "ok: session listed"
 ssetmp=$(mktemp "$JOURNEY_WORKTMP/jrn-term-stream.XXXXXX")
 curl -sN --max-time 25 "$B/terminal/$tid/stream" > "$ssetmp" &
 curpid=$!
-head -1 "$ssetmp" | grep -qF 'data: {"t":"o"' || sleep 2
-sed -n 1p "$ssetmp" | grep -qF 'data: {"t":"o"' || {
-  sleep 2
-  grep -qF 'data: {"t":"o"' "$ssetmp" || die "no replay output frame on the stream: $(head -c 200 "$ssetmp")"
-}
+# the replay frame is an EVENT, not a duration: poll the stream file (it grows
+# as the socket delivers) and name the red on a real timeout (card t_fdd12843
+# - this used to be two blind 2s sleeps, so a loaded host read an empty file
+# as "no replay frame").
+poll_grep "$ssetmp" 'data: {"t":"o"' 20 || \
+  die "no replay output frame on the stream after 20s: $(head -c 200 "$ssetmp")"
 step "ok: the stream replays the shell's own bytes (b64 'o' frames)"
 
 # --- input: the pty echoes through the stream -----------------------------

@@ -193,8 +193,16 @@ step "ok: the confirm names the card ($A + its title)"
 js_click '.drawer-confirm-actions .drawer-delete'
 wait_js "(()=>{return !document.querySelector('.drawer')})()" 8
 wait_js "(()=>{return ![...document.querySelectorAll('.card')].some(x=>x.dataset.id==='$A')})()" 8
-sleep 1
-code=$(curl -s -o /dev/null -w '%{http_code}' "${JOURNEY_BASE_URL}/tasks/${A}?board=${BOARD}")
+# the DELETE is a write the server applies: poll its own answer, never a
+# guessed second (card t_fdd12843)
+code=""
+_i=0
+while [ "$_i" -lt 20 ]; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${JOURNEY_BASE_URL}/tasks/${A}?board=${BOARD}")
+  [ "$code" = "404" ] && break
+  sleep 0.5
+  _i=$((_i + 1))
+done
 [ "$code" = "404" ] || die "deleted card still answers GET $code (task $A)"
 step "ok: the confirmed delete removes the card (drawer closes, server 404s)"
 

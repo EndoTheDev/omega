@@ -102,7 +102,7 @@ step "ok: aligned mode restored"
 # card t_00e4a784: settings is a normal closable tab - close it again so the
 # main pane is back on chat (the reload checks below read the composer).
 jsq '(()=>{const t=[...document.querySelectorAll(".dock-tab")].find(x=>x.title==="Settings"); const c=t&&t.querySelector(".dock-tab-close"); if(!c) return 0; c.click(); return 1})()' >/dev/null 2>&1 || true
-sleep 0.6
+wait_js '![...document.querySelectorAll(".dock-tab")].some(x=>x.title==="Settings")' 10   # the close is an event
 
 # --- card t_aa9dbada: pane visibility persists WITH the layout -----------
 # Close BOTH sidebars via the menubar toggles, reload: the panes stay
@@ -111,10 +111,10 @@ sleep 0.6
 # reopen persists the same way.
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle left sidebar").click()' >/dev/null 2>&1
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle right sidebar").click()' >/dev/null 2>&1
-sleep 0.5
+wait_layout
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
-sleep 1
+wait_booted
 closed_left=$(jsq 'document.querySelector(".sessions .session-list")?0:1')
 assert_eq "$closed_left" "1" "RELOAD: the closed sessions sidebar STAYS closed"
 # the right edge no longer carries an edge-right class (t_d6b657a7 pane
@@ -128,7 +128,7 @@ assert_eq "$closed_right" "1" "RELOAD: the closed inspector sidebar STAYS closed
 alive=$(jsq 'document.querySelector(".composer")?1:0')
 assert_eq "$alive" "1" "the main pane still renders under both closed sidebars"
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b=>b.getAttribute("aria-label")==="Toggle left sidebar").click()' >/dev/null 2>&1
-sleep 0.6
+wait_js '!!document.querySelector(".sessions .session-list")' 10
 back=$(jsq 'document.querySelector(".sessions .session-list")?1:0')
 assert_eq "$back" "1" "the reopen persists too (state the user left)"
 step "ok: sidebar closure persists across reload (t_aa9dbada)"
