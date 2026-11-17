@@ -759,6 +759,318 @@ else
 fi
 rm -rf "$TESTDIR" "$SCRUBPY"
 
+# 16. the named-instance merge strands (card t_388a2884, the nightly red
+# on dev tip adee09ca). The provider merge (245cf0ef) grew host wires no
+# scrub rule modelled, and the scrubbed tree refused to compile with all
+# eight at once:
+#   - `providerSection` RETURNS the capsule's Config, so its own
+#     signature is the wire and the declaration dies whole - while its
+#     call sites (`return providerSection(c), true`) carry no module
+#     word and survived: "undefined: providerSection".
+#   - `defaultInstance` / `foldLegacyProviders` are host METHODS whose
+#     bodies died reading the capsule's config; the emptied-body rule
+#     buried the declarations but every `.name()` call site survived:
+#     "type Config has no field or method ...".
+#   - the consumer-face interface line `SetConfig(provider.Config)`
+#     dies as module wire; the host's `pp.SetConfig(...)` block must
+#     die with it or the interface is left with no such method.
+#   - TEETH: a consumer face naming NO capsule type is host
+#     vocabulary and must SURVIVE (`runTimeoutSetter.SetRunTimeout`,
+#     the cron fire cap) - a scrubber that kills every setter method
+#     deletes live behavior to make the proof green.
+#   - TEETH: the host aggregate `type Config struct` keeps its NAME even
+#     when the capsule-typed field under it dies, and so does every live
+#     signature carrying it (`func section(c Config)`, `func load(c
+#     *Config)`). Killing the struct took the whole live caller with it -
+#     the emptied-declaration rule belongs to funcs and interfaces only.
+TESTDIR="$(mktemp -d)"
+cat > "$TESTDIR/config.go" <<'EOF'
+package main
+
+type ProviderConfig struct {
+	Type string
+}
+
+type ProviderInstance struct {
+	Name string
+	Host string
+}
+
+type Config struct {
+	Provider  ProviderConfig            `yaml:"provider"`
+	Providers map[string]ProviderConfig `yaml:"providers"`
+	Server    string                    `yaml:"server"`
+}
+
+func (c Config) defaultInstance() (ProviderInstance, bool) {
+	return ProviderInstance{Name: c.Provider.Type, Host: c.Server}, true
+}
+
+func (c *Config) foldLegacyProviders() {
+	if len(c.Providers) == 0 {
+		return
+	}
+	c.Providers = nil
+}
+EOF
+cat > "$TESTDIR/sections.go" <<'EOF'
+package main
+
+func section(c Config) (any, bool) {
+	switch "provider" {
+	case "provider":
+		return providerSection(c), true
+	case "server":
+		return c.Server, true
+	}
+	return nil, false
+}
+
+func providerSection(c Config) provider.Config {
+	primary, _ := c.defaultInstance()
+	return provider.Config{Type: primary.Name}
+}
+EOF
+cat > "$TESTDIR/settings.go" <<'EOF'
+package main
+
+type runTimeoutSetter interface {
+	SetRunTimeout(d int)
+}
+
+type providerConfigSetter interface {
+	SetConfig(provider.Config)
+}
+
+func hotApply(cfg Config) {
+	if pp, ok := lookup("provider").(providerConfigSetter); ok {
+		pp.SetConfig(providerSection(cfg))
+	}
+	if rt, ok := lookup("cron").(runTimeoutSetter); ok {
+		rt.SetRunTimeout(cfg.Server)
+	}
+}
+
+func load(c *Config) *Config {
+	next := *c
+	next.foldLegacyProviders()
+	primary, _ := c.defaultInstance()
+	_ = primary
+	return &next
+}
+EOF
+SCRUBPY="$(mktemp)"
+awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
+scrub "config.go,sections.go,settings.go" provider >/dev/null || bad "scrub pass exited nonzero (named-instance fixture) - see stderr above"
+if ! grep -q 'providerSection' "$TESTDIR/sections.go" \
+  && ! grep -q 'case "provider"' "$TESTDIR/sections.go" \
+  && ! grep -q 'defaultInstance\|foldLegacyProviders' "$TESTDIR/config.go" \
+  && ! grep -q 'foldLegacyProviders()' "$TESTDIR/settings.go" \
+  && ! grep -q '\.defaultInstance()' "$TESTDIR/settings.go" \
+  && ! grep -q 'pp.SetConfig' "$TESTDIR/settings.go" \
+  && grep -q 'SetRunTimeout(d int)' "$TESTDIR/settings.go" \
+  && grep -q 'rt.SetRunTimeout(cfg.Server)' "$TESTDIR/settings.go" \
+  && grep -q 'type Config struct' "$TESTDIR/config.go" \
+  && grep -q 'func section(c Config)' "$TESTDIR/sections.go" \
+  && grep -q 'func load(c \*Config)' "$TESTDIR/settings.go"; then
+  ok
+else
+  bad "the named-instance strands survived or a live consumer face was eaten: $(cat "$TESTDIR/sections.go" "$TESTDIR/settings.go" 2>/dev/null)"
+fi
+for f in "$TESTDIR/config.go" "$TESTDIR/sections.go" "$TESTDIR/settings.go"; do
+  if ! gofmt -e "$f" > /dev/null 2>"$TESTDIR/gofmt.err"; then
+    bad "scrubbed fixture does not parse: $(cat "$TESTDIR/gofmt.err")"
+  else
+    ok
+  fi
+done
+rm -rf "$TESTDIR" "$SCRUBPY"
+
+# 17. the fixture-vocabulary strand (card t_388a2884): a `_test.go`
+# double is not host vocabulary. The provider double's field is typed
+# `provider.Config`, so the seed collected its NAME file-wide; the cron
+# double happened to carry a field of the same name, its method body
+# died as a "wire", the emptied-body rule buried the live face name
+# SetRunTimeout, and the carried pass deleted the HOST interface method
+# in settings.go - "rt.SetRunTimeout undefined (type runTimeoutSetter
+# has no field or method SetRunTimeout)". A double's names stay in the
+# double.
+TESTDIR="$(mktemp -d)"
+cat > "$TESTDIR/config.go" <<'EOF'
+package main
+
+type ProviderConfig struct {
+	Type string
+}
+
+type Config struct {
+	Provider ProviderConfig `yaml:"provider"`
+}
+EOF
+cat > "$TESTDIR/settings.go" <<'EOF'
+package main
+
+type runTimeoutSetter interface {
+	SetRunTimeout(d int)
+}
+
+func pushRunTimeout(cfg Config) {
+	if rt, ok := lookup("cron").(runTimeoutSetter); ok {
+		rt.SetRunTimeout(5)
+	}
+}
+EOF
+cat > "$TESTDIR/settings_test.go" <<'EOF'
+package main
+
+type recordingProviderConfig struct {
+	got    provider.Config
+	pushed bool
+}
+
+func (r *recordingProviderConfig) SetConfig(c provider.Config) { r.got, r.pushed = c, true }
+
+type recordingRunTimeout struct {
+	got    int
+	pushed bool
+}
+
+func (rr *recordingRunTimeout) SetRunTimeout(d int) {
+	rr.got, rr.pushed = d, true
+}
+EOF
+SCRUBPY="$(mktemp)"
+awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
+scrub "config.go,settings.go,settings_test.go" provider >/dev/null || bad "scrub pass exited nonzero (fixture-vocabulary fixture) - see stderr above"
+if grep -q 'SetRunTimeout(d int)' "$TESTDIR/settings.go" \
+  && grep -q 'rt.SetRunTimeout(5)' "$TESTDIR/settings.go"; then
+  ok
+else
+  bad "a test double's field name leaked into the host vocabulary and buried a live consumer face: $(cat "$TESTDIR/settings.go" 2>/dev/null)"
+fi
+rm -rf "$TESTDIR" "$SCRUBPY"
+
+# 18. the write-only local strand (card t_388a2884): applyEnv's
+# `overridden` flag is only ever ASSIGNED (`overridden = true` inside
+# three env branches); its one READER is the folded primary's
+# setDefaultInstance push, which dies as a wire. Go refuses a local that
+# is declared and never read, so the flag's declaration and its write
+# sites - with the branches they headed - must go in the same cascade.
+TESTDIR="$(mktemp -d)"
+cat > "$TESTDIR/config.go" <<'EOF'
+package main
+
+type ProviderConfig struct {
+	Type string
+}
+
+type ProviderInstance struct {
+	Type string
+}
+
+type Config struct {
+	Provider ProviderConfig `yaml:"provider"`
+}
+
+func (c Config) defaultInstance() (ProviderInstance, bool) {
+	return ProviderInstance{Type: c.Provider.Type}, true
+}
+
+func (c *Config) setDefaultInstance(inst ProviderInstance) {
+	c.Provider.Type = inst.Type
+}
+EOF
+cat > "$TESTDIR/env.go" <<'EOF'
+package main
+
+import "os"
+
+func applyEnv(cfg *Config) {
+	primary, _ := cfg.defaultInstance()
+	envProvider := primary
+	overridden := false
+	if v := os.Getenv("OMEGA_PROVIDER"); v != "" {
+		envProvider.Type = v
+		overridden = true
+	}
+	if overridden {
+		cfg.setDefaultInstance(envProvider)
+	}
+}
+EOF
+SCRUBPY="$(mktemp)"
+awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
+scrub "config.go,env.go" provider >/dev/null || bad "scrub pass exited nonzero (write-only fixture) - see stderr above"
+if ! grep -q 'overridden' "$TESTDIR/env.go" \
+  && ! grep -q 'envProvider' "$TESTDIR/env.go" \
+  && ! grep -q '\bprimary\b' "$TESTDIR/env.go" \
+  && ! grep -q 'OMEGA_PROVIDER' "$TESTDIR/env.go"; then
+  ok
+else
+  bad "a write-only local outlived its reader (declared and not used): $(cat "$TESTDIR/env.go" 2>/dev/null)"
+fi
+for f in "$TESTDIR/config.go" "$TESTDIR/env.go"; do
+  if ! gofmt -e "$f" > /dev/null 2>"$TESTDIR/gofmt.err"; then
+    bad "scrubbed fixture does not parse: $(cat "$TESTDIR/gofmt.err")"
+  else
+    ok
+  fi
+done
+rm -rf "$TESTDIR" "$SCRUBPY"
+
+# 19. an emptied host STRUCT keeps its name (the teeth of 16's class,
+# card t_388a2884). The capsule-typed field under `type Config struct`
+# dies as module vocabulary; the struct itself is host vocabulary and an
+# empty struct body is legal Go. The emptied-declaration rule is for a
+# nil-bodied func ("missing return") and a hollow interface (an empty
+# `interface {}` any value satisfies) - applied to a struct it deletes
+# the aggregate name, and every live signature carrying it follows.
+TESTDIR="$(mktemp -d)"
+cat > "$TESTDIR/config.go" <<'EOF'
+package main
+
+type MemoryConfig struct {
+	Enabled bool
+}
+
+type Config struct {
+	Memory MemoryConfig
+}
+EOF
+cat > "$TESTDIR/knobs.go" <<'EOF'
+package main
+
+func knobs(cfg *Config) []int {
+	_ = cfg
+	return nil
+}
+EOF
+SCRUBPY="$(mktemp)"
+awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
+scrub "config.go,knobs.go" memory >/dev/null || bad "scrub pass exited nonzero (emptied-struct fixture) - see stderr above"
+if ! grep -q 'MemoryConfig' "$TESTDIR/config.go" \
+  && grep -q 'type Config struct' "$TESTDIR/config.go"; then
+  ok
+else
+  bad "the emptied host struct lost its name: $(cat "$TESTDIR/config.go" 2>/dev/null)"
+fi
+# the live caller survives whole (the aggregate kept its name); a chunk
+# that empties out with its dead field accesses may also leave - never a
+# stranded signature, which would not compile.
+if grep -q 'func knobs(cfg \*Config)' "$TESTDIR/knobs.go"; then
+  ok
+else
+  bad "the emptied host struct pulled a live caller apart: $(cat "$TESTDIR/knobs.go" 2>/dev/null)"
+fi
+for f in "$TESTDIR/config.go" "$TESTDIR/knobs.go"; do
+  if ! gofmt -e "$f" > /dev/null 2>"$TESTDIR/gofmt.err"; then
+    bad "scrubbed fixture does not parse: $(cat "$TESTDIR/gofmt.err")"
+  else
+    ok
+  fi
+done
+rm -rf "$TESTDIR" "$SCRUBPY"
+
 if [ "$fail" -gt 0 ]; then
   echo "nm-purity_test: $pass ok, $fail FAIL" >&2
   exit 1

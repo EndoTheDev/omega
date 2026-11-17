@@ -97,6 +97,15 @@ def seed_shared(names, files):
         SharedTypes.setdefault(name, set())
         SharedFields.setdefault(name, set())
         for fname in files:
+            # `_test.go` is FIXTURE vocabulary, not host vocabulary: a
+            # double's field name describes a test struct the host never
+            # reads, so seeding it file-wide invents a wire (t_388a2884
+            # - the provider double's `got provider.Config` seeded the
+            # field name `got`, whose access sites inside the cron
+            # double's body emptied that body, buried the live
+            # SetRunTimeout face, and red the provider proof).
+            if fname.endswith("_test.go"):
+                continue
             with open(fname) as f:
                 text = f.read()
             # strip line comments: a doc comment naming the struct is
@@ -128,6 +137,16 @@ def scrub(text, modules, carried=None):
     lines = text.split("\n")
     dead_ids = set()
     dead_fields = set()
+    # dead_members: func/method NAMES whose declaration the cascade
+    # removed. The deleted DECLARATION leaves its call sites orphaned -
+    # `cfg.defaultInstance()` refuses to compile once the method is
+    # gone - and a call site carries no module word of its own, so none
+    # of the rules below reach it: only a member sighting (`.name`) is
+    # the wire (t_388a2884: the named-instance merge's
+    # foldLegacyProviders and defaultInstance bodies died reading the
+    # capsule's config, and every caller of both survived into the
+    # scrubbed tree).
+    dead_members = set()
 
     # the module itself, plus its host config vocabulary (the
     # <Noun>Config struct type and the aggregate field naming it)
@@ -137,6 +156,9 @@ def scrub(text, modules, carried=None):
         dead_fields.update(SharedFields.get(name, ()))
     if carried:
         dead_ids.update(carried)
+        # a name carried in from ANOTHER file's cascade is a removed
+        # declaration there, so its member sites here are wires too
+        dead_members.update(carried)
 
     # 1. import lines + alias discovery (file-level)
     keep = []
@@ -234,6 +256,12 @@ def scrub(text, modules, carried=None):
         for ident in dead_fields:
             if re.search(r"\." + re.escape(ident) + r"\b", body):
                 return True
+        # a removed func/method's access sites are wires: the cascade
+        # took the declaration, so `.name(` reads a symbol Go no longer
+        # has (t_388a2884)
+        for ident in dead_members:
+            if re.search(r"\." + re.escape(ident) + r"\b", body):
+                return True
         stripped = ln.strip()
         # a bare identifier or identifier list (list items, re-assigns).
         # The bare MODULE name is excluded (see the value rule below):
@@ -304,6 +332,11 @@ def scrub(text, modules, carried=None):
         for ident in sorted(dead_fields):
             if re.search(r"\." + re.escape(ident) + r"\b", body):
                 return ident
+        # the same for a removed func/method: a chunk whose only wire is
+        # a `.name(` call must still enter the fixpoint (t_388a2884)
+        for ident in sorted(dead_members):
+            if re.search(r"\." + re.escape(ident) + r"\b", body):
+                return ident
         return None
 
     def scrub_chunk(chunk):
@@ -330,7 +363,7 @@ def scrub(text, modules, carried=None):
             dead_ids.clear()
             dead_ids.update(base_dead)
 
-    def scrub_chunk_inner(chunk):
+    def scrub_chunk_inner(chunk, depth=0):
         removed = set()
         # a chunk untouched by the module keeps every line
         if not any(dead_word(ln) or mark_word(ln) for ln in chunk):
@@ -378,6 +411,17 @@ def scrub(text, modules, carried=None):
                         # under it is unreachable wiring. Inner
                         # declarations die with the block (their
                         # orphaned references cascade after).
+                        # A func/method DECLARATION whose own signature
+                        # carries the wire (providerSection returns the
+                        # capsule's Config, t_388a2884) dies here too -
+                        # and takes its NAME with it: the call sites
+                        # elsewhere carry no module word, so the name
+                        # joins the dead vocabulary exactly like the
+                        # emptied-body path below and the re-run collects
+                        # every caller.
+                        fm = re.match(r"^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)", ln)
+                        if fm:
+                            removed.add(fm.group(1))
                         j2 = i + 1
                         d3 = delta
                         while d3 > 0 and j2 < n:
@@ -535,6 +579,32 @@ def scrub(text, modules, carried=None):
             body = re.sub(r"//[^\n]*", "", body)
             return body
 
+        # a name that is never READ but only ever assigned is
+        # "declared and not used" in Go exactly like one with no
+        # sighting at all, and once its last reader died its write
+        # sites are wires too (t_388a2884: applyEnv's `overridden`
+        # flag, whose only reader was the folded primary's
+        # setDefaultInstance push - the scrubbed tree kept the writes
+        # and refused the build). Collected per chunk: the write sites
+        # die on the wire loop's re-walk below, not here.
+        write_only = set()
+
+        def reads_name(name, text):
+            """True when any sighting of `name` in `text` is a READ.
+            A sighting followed by an assignment operator (`=` but not
+            `==`) is a write; a dot-adjacent one is another
+            identifier's member. Everything else - a comparison, a
+            call argument, an increment, a second short declaration -
+            reads the name (conservative: an over-kept declaration is
+            a noise finding, a false kill is a build red)."""
+            for mt in re.finditer(r"\b" + re.escape(name) + r"\b", text):
+                if mt.start() > 0 and text[mt.start() - 1] == ".":
+                    continue
+                if re.match(r"[ \t]*(\+|-|\*|/|%|\||&|\^|<<|>>)?=(?!=)", text[mt.end():]):
+                    continue
+                return True
+            return False
+
         for _pass in range(16):
             changed = False
 
@@ -560,10 +630,12 @@ def scrub(text, modules, carried=None):
                 others = "\n".join(code_text(x) for x in chunk[:idx] + chunk[idx + 1:])
                 unused = [n for n in names
                           if n != "_" and not re.search(r"\b" + re.escape(n) + r"\b", others)]
-                if not unused:
+                written_only = [n for n in names
+                                if n != "_" and n not in unused and not reads_name(n, others)]
+                if not unused and not written_only:
                     continue
                 head = bool(re.match(r"^\s*(if|for|switch)\b", ln))
-                if not head and len(unused) == len(names):
+                if not head and len(unused) + len(written_only) == len(names):
                     # every name unread: the whole declaration dies. A
                     # multi-line RHS (a map/slice literal head ending in
                     # "{") dies WITH its balanced block - killing the
@@ -578,8 +650,13 @@ def scrub(text, modules, carried=None):
                         chunk = chunk[:idx] + chunk[e5 + 1:]
                     else:
                         chunk = chunk[:idx] + chunk[idx + 1:]
+                    write_only.update(written_only)
                     changed = True
                     break
+                if not unused:
+                    # a write-only name keeps its declaration; only its
+                    # WRITES die, and only on the re-walk below
+                    continue
                 lhs = ", ".join("_" if n in unused else n for n in names)
                 newline = ln[:m.start(1)] + lhs + ln[m.end(1):]
                 keep = [n for n in names if n not in unused]
@@ -595,18 +672,43 @@ def scrub(text, modules, carried=None):
                 break
             if not changed:
                 break
-        # a func whose body emptied in the cascade dies whole: a
+        # a write-only name's declaration is gone but its WRITES remain
+        # (`overridden = true` in three branches): the name is dead
+        # vocabulary now, so each assignment site is a wire and the
+        # block it headed empties out with it - both rules live in the
+        # wire loop, so re-walk the chunk with the names dead. Each
+        # round strictly shrinks the chunk (a write line dies, nothing
+        # is added), so the bounded depth cannot spin.
+        if write_only and len(chunk) < start_len and depth < 4:
+            dead_ids.update(write_only)
+            chunk, rm3 = scrub_chunk_inner(chunk, depth + 1)
+            removed |= rm3
+        # a DECLARATION whose body emptied in the cascade dies whole: a
         # nil-bodied func with a non-error return refuses to compile
-        # ("missing return"), so its callers must follow. The name
-        # joins the dead vocabulary and scrub() re-runs the file so
-        # EARLIER chunks (the call sites) see it. Only a chunk that
-        # actually deleted something fires this rule - an always-empty
-        # live stub keeps its lines.
+        # ("missing return"), and an interface whose every method was
+        # module wire is module VOCABULARY - left behind, it is an empty
+        # `interface {}` that ANY type satisfies, still named for the
+        # capsule (`providerConfigSetter` in the provider proof,
+        # t_388a2884). The name joins the dead vocabulary and scrub()
+        # re-runs the file so EARLIER chunks (the call sites) see it.
+        # A STRUCT is NOT in this class: `type Config struct {}` is legal
+        # Go, and the host's aggregate keeps its name for every live
+        # signature that carries it (`func knobs(cfg *Config)`) - killing
+        # it took the whole live caller with it (t_388a2884, the empties).
+        # Only a chunk that actually deleted something fires this rule -
+        # an always-empty live stub keeps its lines.
         if len(chunk) != start_len:
             scan = 0
             while scan < len(chunk):
                 ln2 = chunk[scan]
-                if not re.match(r"^\s*func\b", ln2) or not ln2.rstrip().endswith("{"):
+                decl = None
+                if ln2.rstrip().endswith("{"):
+                    decl = re.match(
+                        r"^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)", ln2)
+                    if not decl:
+                        decl = re.match(
+                            r"^\s*type\s+([A-Za-z_]\w*)\s+interface\b", ln2)
+                if not decl:
                     scan += 1
                     continue
                 d6 = ln2.count("{") - ln2.count("}")
@@ -620,9 +722,7 @@ def scrub(text, modules, carried=None):
                 interior = [x for x in chunk[scan + 1:e6]
                             if x.strip() and not x.strip().startswith("//")]
                 if not interior:
-                    nm = re.match(r"^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)", ln2)
-                    if nm:
-                        removed.add(nm.group(1))
+                    removed.add(decl.group(1))
                     s3 = scan
                     while s3 > 0 and chunk[s3 - 1].lstrip().startswith("//"):
                         s3 -= 1
@@ -647,6 +747,7 @@ def scrub(text, modules, carried=None):
     while removed and rounds < 8:
         rounds += 1
         dead_ids.update(removed)
+        dead_members.update(removed)
         removed = set()
         out2 = []
         for ch in split_chunks(out):
@@ -729,6 +830,13 @@ if __name__ == "__main__":
                 text = f.read()
             text2, rem = scrub(text, modspecs, carried)
             fresh = rem - carried
+            # a `_test.go` file's removed names are FIXTURE vocabulary:
+            # the host never calls a double, so a name one buries must
+            # not cross into the production files' dead vocabulary
+            # (t_388a2884 - the cron double's SetRunTimeout burial killed
+            # the live face's interface method in settings.go).
+            if fresh and fname.endswith("_test.go"):
+                fresh = set()
             if fresh:
                 grew = True
                 carried |= fresh
