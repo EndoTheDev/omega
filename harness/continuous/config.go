@@ -10,7 +10,13 @@
 // not tool-writable), and the roster shape.
 package continuous
 
-import "github.com/EndoTheDev/omega/agent"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/EndoTheDev/omega/agent"
+)
 
 // CanonicalSessionID is the fixed id of the DEFAULT agent's one
 // permanent chat (ruling 6). Every AGENT HOME's chat carries the
@@ -45,6 +51,45 @@ func CanonicalSessionIDFor(agentName string) string {
 		return CanonicalSessionID
 	}
 	return agentName + "-" + CanonicalSessionID
+}
+
+// IsCanonicalSessionID reports whether id names one of agentName's
+// canonical chats: the base id, or a RETIRE generation of it
+// (base-2, base-3, ... - card t_10ac04f0, archive = retire).
+//
+// The shape is the whole identity: a canonical chat is resolved from
+// the id alone wherever a home's row is read (the roster payload, the
+// preview, the webui's "is this an agent chat" test). A suffix has to
+// be a positive integer so an unrelated session that happens to start
+// with the base string is never mistaken for one.
+func IsCanonicalSessionID(agentName, id string) bool {
+	base := CanonicalSessionIDFor(agentName)
+	if id == base {
+		return true
+	}
+	suffix, ok := strings.CutPrefix(id, base+"-")
+	if !ok {
+		return false
+	}
+	n, err := strconv.Atoi(suffix)
+	return err == nil && n >= 2
+}
+
+// NextCanonicalSessionID returns the id a NEW canonical mint takes: the
+// base id while no row carries it, else the lowest free generation.
+// Only a retire (an archived canonical) asks for this - a live
+// canonical is simply opened, never re-minted.
+func NextCanonicalSessionID(agentName string, taken map[string]bool) string {
+	base := CanonicalSessionIDFor(agentName)
+	if !taken[base] {
+		return base
+	}
+	for n := 2; ; n++ {
+		id := fmt.Sprintf("%s-%d", base, n)
+		if !taken[id] {
+			return id
+		}
+	}
 }
 
 // Config is the continuous capsule's config section (continuous: in

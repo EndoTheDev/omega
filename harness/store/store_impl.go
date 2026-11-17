@@ -217,7 +217,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 	model TEXT NOT NULL DEFAULT '',
 	provider TEXT NOT NULL DEFAULT '',
 	workspace TEXT NOT NULL DEFAULT '',
-	summary TEXT NOT NULL DEFAULT ''
+	summary TEXT NOT NULL DEFAULT '',
+	listed    INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS messages (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -332,6 +333,7 @@ END;
 		`ALTER TABLE sessions ADD COLUMN provider TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN workspace TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN summary TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			// SQLite error for duplicate column: "duplicate column name"
@@ -563,14 +565,17 @@ func storeAgentIdentity() string {
 
 // ListSessions returns the sessions visible to this store, ordered by
 // creation time. For main (no OMEGA_AGENT) that is the default agent's
-// sessions only - the binding that keeps the pre-agent session list,
-// tree, and insights exactly what they were (card t_7e2b7002). For a
+// LISTED sessions only - the binding that keeps the pre-agent session
+// list, tree, and insights exactly what they were (card t_7e2b7002).
+// `listed = 0` rows are machinery-owned conversations that are never the
+// maintainer's own (an agent's canonical chat, card t_10ac04f0): they
+// open from the agents roster and have no sidebar row. For a
 // continuous agent's isolated store (card t_72ecca67, ruling 4) the
 // whole file belongs to that one agent, so the filter stays off: its
 // canonical chat and wake sessions all carry the agent column, and a
 // filter would hide its own history from itself.
 func (s *Store) ListSessions(ctx context.Context) ([]core.Session, error) {
-	query := `SELECT ` + sessionColumns + ` FROM sessions WHERE agent = 'default' ORDER BY created_at`
+	query := `SELECT ` + sessionColumns + ` FROM sessions WHERE agent = 'default' AND listed = 1 ORDER BY created_at`
 	if s.identity != "" {
 		query = `SELECT ` + sessionColumns + ` FROM sessions ORDER BY created_at`
 	}
