@@ -84,6 +84,14 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// process's cwd (the roster and the canonical mint both walk it).
 	p.home = home
 	machine := NewMachine(home, cfg)
+	// The store seam, resolved PER CALL (the live re-wire law): main's
+	// canonical chat lives in the daemon's own store, and only the seam
+	// knows which handle that is after a settings reload. An agent
+	// home's chat opens its own file and never touches this.
+	machine.SetStoreResolver(func() agent.StoreProvider {
+		st, _ := ctx.Services().Resolve("store").(agent.StoreProvider)
+		return st
+	})
 	p.machine = machine
 	p.ctx = ctx
 	// The canonical-id migration (card t_5df01d0f): agent homes created
