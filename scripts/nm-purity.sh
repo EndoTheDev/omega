@@ -691,6 +691,10 @@ def scrub(text, modules, carried=None):
         # capsule (`providerConfigSetter` in the provider proof,
         # t_388a2884). The name joins the dead vocabulary and scrub()
         # re-runs the file so EARLIER chunks (the call sites) see it.
+        # A STRUCT is NOT in this class: `type Config struct {}` is legal
+        # Go, and the host's aggregate keeps its name for every live
+        # signature that carries it (`func knobs(cfg *Config)`) - killing
+        # it took the whole live caller with it (t_388a2884, the empties).
         # Only a chunk that actually deleted something fires this rule -
         # an always-empty live stub keeps its lines.
         if len(chunk) != start_len:
@@ -700,7 +704,10 @@ def scrub(text, modules, carried=None):
                 decl = None
                 if ln2.rstrip().endswith("{"):
                     decl = re.match(
-                        r"^\s*(?:func\s+(?:\([^)]*\)\s*)?|type\s+)([A-Za-z_]\w*)", ln2)
+                        r"^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)", ln2)
+                    if not decl:
+                        decl = re.match(
+                            r"^\s*type\s+([A-Za-z_]\w*)\s+interface\b", ln2)
                 if not decl:
                     scan += 1
                     continue

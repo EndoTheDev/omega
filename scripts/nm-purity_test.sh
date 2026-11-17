@@ -778,6 +778,11 @@ rm -rf "$TESTDIR" "$SCRUBPY"
 #     vocabulary and must SURVIVE (`runTimeoutSetter.SetRunTimeout`,
 #     the cron fire cap) - a scrubber that kills every setter method
 #     deletes live behavior to make the proof green.
+#   - TEETH: the host aggregate `type Config struct` keeps its NAME even
+#     when the capsule-typed field under it dies, and so does every live
+#     signature carrying it (`func section(c Config)`, `func load(c
+#     *Config)`). Killing the struct took the whole live caller with it -
+#     the emptied-declaration rule belongs to funcs and interfaces only.
 TESTDIR="$(mktemp -d)"
 cat > "$TESTDIR/config.go" <<'EOF'
 package main
@@ -859,12 +864,15 @@ awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBP
 scrub "config.go,sections.go,settings.go" provider >/dev/null || bad "scrub pass exited nonzero (named-instance fixture) - see stderr above"
 if ! grep -q 'providerSection' "$TESTDIR/sections.go" \
   && ! grep -q 'case "provider"' "$TESTDIR/sections.go" \
-  && grep -q 'defaultInstance\|foldLegacyProviders' "$TESTDIR/config.go" \
+  && ! grep -q 'defaultInstance\|foldLegacyProviders' "$TESTDIR/config.go" \
   && ! grep -q 'foldLegacyProviders()' "$TESTDIR/settings.go" \
   && ! grep -q '\.defaultInstance()' "$TESTDIR/settings.go" \
   && ! grep -q 'pp.SetConfig' "$TESTDIR/settings.go" \
   && grep -q 'SetRunTimeout(d int)' "$TESTDIR/settings.go" \
-  && grep -q 'rt.SetRunTimeout(cfg.Server)' "$TESTDIR/settings.go"; then
+  && grep -q 'rt.SetRunTimeout(cfg.Server)' "$TESTDIR/settings.go" \
+  && grep -q 'type Config struct' "$TESTDIR/config.go" \
+  && grep -q 'func section(c Config)' "$TESTDIR/sections.go" \
+  && grep -q 'func load(c \*Config)' "$TESTDIR/settings.go"; then
   ok
 else
   bad "the named-instance strands survived or a live consumer face was eaten: $(cat "$TESTDIR/sections.go" "$TESTDIR/settings.go" 2>/dev/null)"
@@ -1002,6 +1010,59 @@ else
   bad "a write-only local outlived its reader (declared and not used): $(cat "$TESTDIR/env.go" 2>/dev/null)"
 fi
 for f in "$TESTDIR/config.go" "$TESTDIR/env.go"; do
+  if ! gofmt -e "$f" > /dev/null 2>"$TESTDIR/gofmt.err"; then
+    bad "scrubbed fixture does not parse: $(cat "$TESTDIR/gofmt.err")"
+  else
+    ok
+  fi
+done
+rm -rf "$TESTDIR" "$SCRUBPY"
+
+# 19. an emptied host STRUCT keeps its name (the teeth of 16's class,
+# card t_388a2884). The capsule-typed field under `type Config struct`
+# dies as module vocabulary; the struct itself is host vocabulary and an
+# empty struct body is legal Go. The emptied-declaration rule is for a
+# nil-bodied func ("missing return") and a hollow interface (an empty
+# `interface {}` any value satisfies) - applied to a struct it deletes
+# the aggregate name, and every live signature carrying it follows.
+TESTDIR="$(mktemp -d)"
+cat > "$TESTDIR/config.go" <<'EOF'
+package main
+
+type MemoryConfig struct {
+	Enabled bool
+}
+
+type Config struct {
+	Memory MemoryConfig
+}
+EOF
+cat > "$TESTDIR/knobs.go" <<'EOF'
+package main
+
+func knobs(cfg *Config) []int {
+	_ = cfg
+	return nil
+}
+EOF
+SCRUBPY="$(mktemp)"
+awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
+scrub "config.go,knobs.go" memory >/dev/null || bad "scrub pass exited nonzero (emptied-struct fixture) - see stderr above"
+if ! grep -q 'MemoryConfig' "$TESTDIR/config.go" \
+  && grep -q 'type Config struct' "$TESTDIR/config.go"; then
+  ok
+else
+  bad "the emptied host struct lost its name: $(cat "$TESTDIR/config.go" 2>/dev/null)"
+fi
+# the live caller survives whole (the aggregate kept its name); a chunk
+# that empties out with its dead field accesses may also leave - never a
+# stranded signature, which would not compile.
+if grep -q 'func knobs(cfg \*Config)' "$TESTDIR/knobs.go"; then
+  ok
+else
+  bad "the emptied host struct pulled a live caller apart: $(cat "$TESTDIR/knobs.go" 2>/dev/null)"
+fi
+for f in "$TESTDIR/config.go" "$TESTDIR/knobs.go"; do
   if ! gofmt -e "$f" > /dev/null 2>"$TESTDIR/gofmt.err"; then
     bad "scrubbed fixture does not parse: $(cat "$TESTDIR/gofmt.err")"
   else
