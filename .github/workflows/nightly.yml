@@ -65,6 +65,20 @@ jobs:
         # which the last-touch times and the release counts need.
         run: scripts/docs-health.sh
 
+      - name: Dependency drift report (advisory)
+        # A pinned dependency rots silently (card t_5a2d18f7). agent-browser
+        # floated 0.42.0 -> 0.43.0 and broke three nightly rounds before anyone
+        # could name the cause; this compares what is declared against what
+        # upstream ships so the next one reads as "0.43 released Tuesday".
+        # Two sources: the go module graph (`go list -m -u`) and webui/ (npm
+        # outdated resolved against package-lock.json). Findings exit 0 - a
+        # DEP DRIFT line never blocks this tag, exactly like the docs-health
+        # step above (advisory, the signal is the greppable line). The table
+        # lands on the run page through GITHUB_STEP_SUMMARY. Only a dead tool
+        # exits non-zero: no go/npm/node, an unreachable registry, a missing
+        # package-lock.json.
+        run: scripts/dep-drift.sh
+
       - name: Binary-purity rotation (every capsule must leave the binary whole)
         run: scripts/nm-purity.sh --all
 
