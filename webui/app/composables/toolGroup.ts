@@ -65,6 +65,26 @@ export function groupToolRuns(
   return out;
 }
 
+// toolChildKey: the v-for key for a group's CHILD rows (card
+// t_64212867). The container is keyed by its head item, so a container
+// can survive while its membership shifts - a variant anchor split, or
+// a paint that re-serves an older head object. An index key then hands
+// one call's ToolCallLine instance (its fold pin, its running meter) to
+// a DIFFERENT call: the F1 mis-assignment one level down. Key on the
+// call's own identity instead:
+// - the tool call id (the chips join key and the canvas cache key - a
+//   row that survives a paint keeps this one);
+// - else the store row id (a live canvas row always carries one,
+//   t_0df4efd8; the REST restore path carries call ids only);
+// - else the slot. An item with NO identity has nothing stable to key
+//   on, so the slot is the honest floor - and the prefixes keep that
+//   floor from ever colliding with a real call id. Pure.
+export function toolChildKey(item: ToolItem, index: number): string {
+  if (item.callId) return `call:${item.callId}`;
+  if (item.id) return `row:${item.id}`;
+  return `slot:${index}`;
+}
+
 // toolGroupWantOpen: the pure mode+state -> open mapping for a group
 // the user has NOT pinned. Auto keeps the group open while the run is
 // live (calls still streaming in - closing per call would yoyo) or any

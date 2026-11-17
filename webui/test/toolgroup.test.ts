@@ -10,8 +10,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { groupToolRuns, isToolRun, toolGroupWantOpen } from "../app/composables/toolGroup.ts";
-import type { TranscriptItem } from "../app/composables/omega.ts";
+import { groupToolRuns, isToolRun, toolChildKey, toolGroupWantOpen } from "../app/composables/toolGroup.ts";
+import type { ToolItem, TranscriptItem } from "../app/composables/omega.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "app");
 const src = (p: string) => readFileSync(join(root, p), "utf8");
@@ -114,6 +114,48 @@ test("auto keeps the group open while the run is live or any row runs", () => {
   assert.equal(toolGroupWantOpen(false, false, "auto"), false, "settled collapses");
 });
 
+// --- toolChildKey: the group's children key on the CALL, not the slot ---
+
+// callRow mirrors what the two producers mint: the canvas path stamps
+// callId AND the store row id, the REST restore path stamps callId only
+const callRow = (name: string, callId?: string, rowId?: string): ToolItem => ({
+  kind: "tool",
+  name,
+  status: "done",
+  callId,
+  id: rowId,
+});
+
+test("a group that loses its head keeps every remaining child's key", () => {
+  const a = callRow("shell.run", "t1");
+  const b = callRow("shell.run", "t2");
+  const c = callRow("files.read", "t3");
+  const before = [a, b, c].map((it, i) => toolChildKey(it, i));
+  // the head leaves the run (a variant anchor splits it): the SAME two
+  // remaining items now sit at slots 0 and 1 - their keys must ride the
+  // items, so their ToolCallLine instances (fold pin, running meter)
+  // stay with their own call
+  const after = [b, c].map((it, i) => toolChildKey(it, i));
+  assert.deepEqual(after, before.slice(1));
+  // and the old slot-0 instance is NOT handed to b: slot 0 changed hands
+  assert.notEqual(after[0], before[0]);
+});
+
+test("distinct calls in one group never share a key", () => {
+  const rows = [callRow("a", "t1"), callRow("b", "t2"), callRow("c", undefined, "r3")];
+  const keys = rows.map((it, i) => toolChildKey(it, i));
+  assert.equal(new Set(keys).size, keys.length);
+});
+
+test("identity ladder: call id, then store row id, then the slot", () => {
+  assert.equal(toolChildKey(callRow("a", "t1", "r1"), 7), "call:t1");
+  assert.equal(toolChildKey(callRow("a", undefined, "r1"), 7), "row:r1");
+  assert.equal(toolChildKey(callRow("a"), 7), "slot:7");
+  // an id-less row falls to its slot, and the prefix keeps that floor
+  // from colliding with a numeric call id
+  assert.notEqual(toolChildKey(callRow("a"), 0), toolChildKey(callRow("a", "0"), 0));
+});
+
 // --- structural wiring: the card's must-haves ---
 
 test("ChatTab renders the group at BOTH sites and keys on item identity", () => {
@@ -151,6 +193,11 @@ test("ToolGroup mirrors the row/block fold: shared mode, pin click, child passth
   // their own fold + gate card, a group is a container not a re-render
   assert.match(g, /<ToolCallLine/);
   assert.match(g, /<GateCard/);
+  // children key on the CALL's identity, never the slot (card
+  // t_64212867): an index key hands a surviving row's instance to a
+  // different call once the group's membership shifts
+  assert.match(g, /:key="toolChildKey\(item, i\)"/);
+  assert.doesNotMatch(g, /:key="i"/);
   // aggregate status rides the existing wrench glyph (one name one meaning)
   assert.match(g, /name="tools"/);
 });
