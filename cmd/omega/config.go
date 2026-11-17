@@ -347,6 +347,13 @@ func (p *ProviderConfig) UnmarshalYAML(node *yaml.Node) error {
 		return err
 	}
 	out := ProviderConfig{ModelName: raw.ModelName, Instances: prev.Instances}
+	// An absent model_name keeps the value already held: the caller
+	// decodes over DefaultConfig (or over the host config, for an
+	// agent layer), and yaml's "leave absent fields alone" law is the
+	// one a custom unmarshaler has to re-implement.
+	if out.ModelName == "" {
+		out.ModelName = prev.ModelName
+	}
 	if raw.Instances != nil {
 		out.Instances = raw.Instances
 	}
@@ -1212,6 +1219,10 @@ func approvalSlot(c Config) (host, key, model string) {
 		return host, key, m
 	}
 	if inst, ok := c.Provider.instance(name); ok {
+		// A prefix with no model part names an ENDPOINT only (an
+		// instance carries no model of its own): the consult has no
+		// model to ask, so the slot fails closed and the gate
+		// escalates, exactly like an empty one.
 		host = inst.Host
 		key = inst.APIKey
 		model = m

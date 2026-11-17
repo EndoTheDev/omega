@@ -54,23 +54,27 @@ func TestInstanceResolution(t *testing.T) {
 	if !ok {
 		t.Fatal("mounted provider must satisfy agent.ProviderInstanceNames")
 	}
-	if got := names.InstanceNames(); len(got) != 1 || got[0] != "backup" {
-		t.Fatalf("InstanceNames() = %v, want [backup]", got)
+	if got := names.InstanceNames(); len(got) != 2 || got[0] != DefaultInstance || got[1] != "backup" {
+		t.Fatalf("InstanceNames() = %v, want [default backup]", got)
 	}
-	// no configured instances: unknown names stay (nil, false), the
-	// names list answers nil
+	// the primary IS an instance: "default" resolves to the receiver
+	if self, ok := inst.Instance(DefaultInstance); !ok || self == nil {
+		t.Fatal("the primary row must resolve by name like any other instance")
+	}
+	// no configured instances: unknown names stay (nil, false), and the
+	// primary is still the one name that answers
 	bare := (&Plugin{}).mountForTest(t, Config{Type: "ollama", ModelName: "main"})
 	if ir, ok := bare.(agent.ProviderInstances); ok {
 		if got, ok2 := ir.Instance("anything"); ok2 || got != nil {
-			t.Fatal("instance-free provider must not resolve anything")
+			t.Fatal("instance-free provider must not resolve anything but the primary")
 		}
 	}
 	bareNames, ok := bare.(agent.ProviderInstanceNames)
 	if !ok {
 		t.Fatal("instance-free provider must still satisfy ProviderInstanceNames")
 	}
-	if got := bareNames.InstanceNames(); got != nil {
-		t.Fatalf("instance-free InstanceNames() = %v, want nil", got)
+	if got := bareNames.InstanceNames(); len(got) != 1 || got[0] != DefaultInstance {
+		t.Fatalf("instance-free InstanceNames() = %v, want [default]", got)
 	}
 }
 
