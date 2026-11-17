@@ -2,7 +2,6 @@ package skills
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
@@ -121,7 +120,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 				if err := api.RegisterCommand(cmd.Name, cmd.Description, cmd.Args,
 					func(c context.Context, name, args string) (core.CommandResult, error) {
 						if name != cmd.Name {
-							return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+							return core.CommandResult{}, core.CommandMiss(name)
 						}
 						out, err := sp.HandleCommand(c, name, args)
 						if err == nil {

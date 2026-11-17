@@ -30,7 +30,7 @@ import (
 func cronHandler(p *Plugin) func(context.Context, string, string) (core.CommandResult, error) {
 	return func(_ context.Context, name, _ string) (core.CommandResult, error) {
 		if name != "/cron" {
-			return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+			return core.CommandResult{}, core.CommandMiss(name)
 		}
 		jobs := []JobInfo{}
 		if p.runner != nil {

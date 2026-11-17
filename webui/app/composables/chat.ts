@@ -1088,7 +1088,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       return true;
     }
     try {
-      const res = await dispatchCommand(name, args);
+      // the tab's own session rides the dispatch: session-scoped
+      // commands (/export, /label, /branch) act on THIS tab
+      const res = await dispatchCommand(name, args, st.sessionId || "");
       if (res.kind === "skill") {
         st.pendingSkill = { name: res.name || name.slice(1), content: res.content || "" };
         if (send) {
@@ -1099,8 +1101,16 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         }
         st.statusLine = `[skill: ${st.pendingSkill!.name}] armed - the next send carries it`;
       } else {
-        const line = (res.text || `${name}: done`).split("\n")[0]!;
-        st.statusLine = line.length > 160 ? line.slice(0, 157) + "..." : line;
+        // the first line that carries TEXT: several session commands
+        // (/tree, /sessions, /agents) open their table with a blank line,
+        // and a blank status line reads exactly like nothing happened
+        // (t_d1fe01da)
+        const first =
+          (res.text || `${name}: done`)
+            .split("\n")
+            .map((l) => l.trim())
+            .find((l) => l !== "") ?? `${name}: done`;
+        st.statusLine = first.length > 160 ? first.slice(0, 157) + "..." : first;
       }
     } catch (e) {
       st.statusLine = `${name}: ${e instanceof Error ? e.message : String(e)}`;

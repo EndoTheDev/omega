@@ -1,0 +1,131 @@
+// omega webui: the palette's dispatch contract (card t_d1fe01da).
+// Two laws, both behavioural - the host is the real chat host with the
+// wire stubbed:
+//   - the invoking tab's session rides the dispatch body, so a
+//     session-scoped command (/export, /label, /branch) acts on the tab
+//     the operator typed in;
+//   - what the status line shows is the SERVER's answer - a refusal
+//     arrives in its own words, and a table answer that opens with a
+//     blank line still shows its header line instead of nothing.
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+
+import { createChatHost, type ChatHostDeps } from "../app/composables/chat.ts";
+
+function deps(over: Partial<ChatHostDeps> = {}): ChatHostDeps {
+  return {
+    setTabSessionRef: () => {},
+    refreshSessions: () => {},
+    sessionRow: () => undefined,
+    markRead: () => {},
+    isFocused: () => false,
+    ...over,
+  };
+}
+
+type Captured = { url: string; body: Record<string, unknown> | null };
+
+function stubFetch(reply: () => Response): { calls: Captured[]; restore: () => void } {
+  const saved = globalThis.fetch;
+  const calls: Captured[] = [];
+  globalThis.fetch = (async (input: unknown, init?: { body?: unknown }) => {
+    calls.push({
+      url: String(input),
+      body: init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null,
+    });
+    return reply();
+  }) as typeof fetch;
+  return { calls, restore: () => (globalThis.fetch = saved) };
+}
+
+const json = (body: unknown, status = 200): Response =>
+  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+
+describe("palette dispatch: the tab's session rides the wire", () => {
+  it("a bound tab sends its own session with the command", async () => {
+    const wire = stubFetch(() =>
+      json({ kind: "command", text: "[exported 0 messages to s-1.jsonl]" }),
+    );
+    try {
+      const host = createChatHost(deps());
+      host.ensureState("c1", "s-1");
+      await host.command("c1", "/export");
+      assert.equal(wire.calls.length, 1, "one dispatch, no agent round trip");
+      assert.equal(wire.calls[0]!.url, "/commands/dispatch");
+      assert.deepEqual(
+        wire.calls[0]!.body,
+        { name: "/export", args: "", session_id: "s-1" },
+        "the body names the command and the tab's session",
+      );
+      assert.match(
+        host.states.get("c1")!.statusLine,
+        /exported 0 messages to s-1\.jsonl/,
+        "the answer is the server's own text",
+      );
+    } finally {
+      wire.restore();
+    }
+  });
+
+  it("an unsaved tab sends no session - the args keep their own shape", async () => {
+    const wire = stubFetch(() => json({ kind: "command", text: "\n NAME MSGS\n" }));
+    try {
+      const host = createChatHost(deps());
+      host.ensureState("c1"); // no session bound yet
+      await host.command("c1", "/tree");
+      assert.deepEqual(
+        wire.calls[0]!.body,
+        { name: "/tree", args: "" },
+        "no session_id key at all when the tab has none",
+      );
+    } finally {
+      wire.restore();
+    }
+  });
+
+  it("args ride through beside the session", async () => {
+    const wire = stubFetch(() => json({ kind: "command", text: "[label: mine]" }));
+    try {
+      const host = createChatHost(deps());
+      host.ensureState("c1", "s-1");
+      await host.command("c1", "/label mine");
+      assert.deepEqual(wire.calls[0]!.body, {
+        name: "/label",
+        args: "mine",
+        session_id: "s-1",
+      });
+    } finally {
+      wire.restore();
+    }
+  });
+
+  it("a refusal lands in the owner's words, never as an invented miss", async () => {
+    const wire = stubFetch(() => new Response("command failed: no active session to export\n", { status: 500 }));
+    try {
+      const host = createChatHost(deps());
+      host.ensureState("c1");
+      await host.command("c1", "/export");
+      const line = host.states.get("c1")!.statusLine;
+      assert.match(line, /no active session to export/, "the server's refusal is what the operator reads");
+      assert.doesNotMatch(line, /no handler/, "the client never manufactures a miss");
+    } finally {
+      wire.restore();
+    }
+  });
+
+  it("a table answer opening with a blank line still shows its header", async () => {
+    const wire = stubFetch(() =>
+      json({ kind: "command", text: "\n  #    NAME      MSGS  SESSION ID\n  1    alpha        0  s-1\n" }),
+    );
+    try {
+      const host = createChatHost(deps());
+      host.ensureState("c1", "s-1");
+      await host.command("c1", "/tree");
+      const line = host.states.get("c1")!.statusLine;
+      assert.ok(line.length > 0, "a blank status line reads as nothing happened");
+      assert.match(line, /#\s+NAME/, "the first line that carries text is the header");
+    } finally {
+      wire.restore();
+    }
+  });
+});

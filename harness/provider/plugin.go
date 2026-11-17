@@ -159,7 +159,7 @@ func (p *Plugin) handleCommand(prov *Provider, name, args string) (core.CommandR
 			Text: fmt.Sprintf("provider: %s\nmodel: %s", prov.typ, prov.ModelName()),
 		}, nil
 	}
-	return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+	return core.CommandResult{}, core.CommandMiss(name)
 }
 
 // NewPlugin returns a provider Plugin instance.

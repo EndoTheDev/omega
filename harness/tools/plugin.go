@@ -110,7 +110,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 // display state via a set_tool_display action.
 func handleToolsCommand(ctx *core.Context, name, args string) (core.CommandResult, error) {
 	if name != "/tools" {
-		return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+		return core.CommandResult{}, core.CommandMiss(name)
 	}
 	arg := strings.TrimSpace(args)
 	if arg == "" || arg == "list" {

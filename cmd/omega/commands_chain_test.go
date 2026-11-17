@@ -28,7 +28,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 	"testing"
 
@@ -49,7 +49,7 @@ func (commandCanary) MountWithAPI(_ *core.Context, api *agent.ExtensionAPI) erro
 	return api.RegisterCommand("/zz-canary", "the chain's innermost probe", nil,
 		func(_ context.Context, name, _ string) (core.CommandResult, error) {
 			if name != "/zz-canary" {
-				return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+				return core.CommandResult{}, core.CommandMiss(name)
 			}
 			return core.CommandResult{Text: "[canary] answered"}, nil
 		})
@@ -196,5 +196,27 @@ func TestCLILoopCommandReachesTheOwningModule(t *testing.T) {
 	}
 	if !strings.Contains(out, "[cron]") {
 		t.Fatalf("/cron printed %q, want the cron listing", out)
+	}
+}
+
+// TestChainSurfacesTheOwnersRefusal (card t_d1fe01da): the second half
+// of the chain contract. A module that owns a name and refuses for want
+// of a session - /export with no active one - must have its refusal
+// heard. Before the miss sentinel the chain walked past it and reported
+// the name as unclaimed, so "no active session to export" reached the
+// operator as "no handler for /export".
+func TestChainSurfacesTheOwnersRefusal(t *testing.T) {
+	t.Setenv("OMEGA_HOME", t.TempDir())
+	ctx := mountCommandChain(t, fullPlugins(t))
+
+	_, err := ctx.CommandHandler(context.Background(), "/export", "")
+	if err == nil {
+		t.Fatal("/export answered with no session bound: want the owner's refusal")
+	}
+	if !strings.Contains(err.Error(), "no active session to export") {
+		t.Fatalf("/export = %q, want the owner's own words", err)
+	}
+	if errors.Is(err, core.ErrCommandMiss) {
+		t.Fatal("/export read as an unclaimed name: an honest refusal must never look like a miss")
 	}
 }

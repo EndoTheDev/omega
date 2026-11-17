@@ -60,9 +60,13 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
    | notifications capture (`ctx.Notifications`, nil-guarded) | `RegisterEmitter`                                                                                                           |
 
    `RegisterCommand` builds the chain-on-miss wrapper for you: each
-   handler answers only its own command name and returns an error for
-   anything else - the wrapper falls through to the previous handler
+   handler answers only its own command name and returns
+   `core.CommandMiss(name)` for anything else - the wrapper falls
+   through to the previous handler on that miss and on nothing else,
    exactly like the hand-built `prev := ctx.CommandHandler` capture.
+   Any OTHER error is the handler's own answer ("no active session to
+   export"): it stops the chain and reaches the caller with its own
+   words, so a refusal never reads as an unknown command.
    One registration per command keeps the table order stable.
 
 3. **Name the machine-facing identities for their domain.** Dotted

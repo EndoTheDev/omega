@@ -233,18 +233,26 @@ export async function fetchPaletteSkills(): Promise<{ name: string; description:
   return r.json();
 }
 
+// dispatchCommand POSTs one extension command (or /<skill-name>). The
+// sessionId is the invoking tab's own session: a session-scoped command
+// (/export, /label, /branch) acts on the tab that ran it instead of
+// demanding the id in its args. It stays off the body when the tab has
+// no session yet, so the command's own args keep their legacy shape.
 export async function dispatchCommand(
   name: string,
   args = "",
+  sessionId = "",
 ): Promise<CommandDispatchWire> {
+  const body: { name: string; args: string; session_id?: string } = { name, args };
+  if (sessionId) body.session_id = sessionId;
   const r = await fetch("/commands/dispatch", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, args }),
+    body: JSON.stringify(body),
   });
   if (!r.ok) {
-    const body = await r.text();
-    throw new Error(body || `${r.status}`);
+    const detail = await r.text();
+    throw new Error(detail || `${r.status}`);
   }
   return r.json();
 }
