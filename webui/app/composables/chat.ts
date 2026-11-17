@@ -39,6 +39,7 @@ import {
   type CanvasPanel,
   type ChatPayloadWire,
   type ChatRowWire,
+  type ChatBlockWire,
   type OmegaAttachment,
   type OmegaImage,
   type Session,
@@ -1265,21 +1266,45 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
 // panel: it maps the payload's rows onto the components' item shapes,
 // KEEPING ITEM IDENTITY across deltas (a 250ms repaint must not remount
 // every bubble - the tool elapsed meters, the verdict countdowns and
-// the keyed v-for all read identity). Cached per row signature (the
-// store row id when persisted, else the stable role/type slot), mutated
-// in place, reused in the rebuilt array.
+// the keyed v-for all read identity). Cached per row ADDRESS (the store
+// row id when persisted, else an explicit id-less slot), mutated in
+// place, reused in the rebuilt array.
 //
-// REACTIVE ITEMS (t_078a2c35). The positional sig folds the sibling
-// variant rows onto ONE cached item: variant-2's row 392 and variant-1's
-// row 391 share `assistant:1:1`, so a select's refetch mutates the SAME
-// cached object's fields in place (it.id among them - the switcher's
-// label and the fork/copy targets ride item.id). The items flow into
-// ChatItem through the keyed v-for as the same object reference, so the
-// child's own props compare equal and the patch skips it - a plain
-// object's in-place mutation can never invalidate anything. The render
-// effects that read the fields (ChatItem's :item-id, ChatMessage's
-// variantLabel) must see the mutation: cache items are reactive
-// proxies, so every in-place write invalidates exactly its readers.
+// IDENTITY LAW (card t_494639c8). A prose row's address is its STORE
+// ROW ID, never its position. The payload is a sliding window - the
+// newest 40 rows (agent/api/chat_panel.go) - so one append past the
+// window shifts every surviving index by one. A positional key missed
+// on every surviving row (each one re-minted, each one a fresh key to
+// the keyed v-for: destroy + re-create) and, worse, let the incoming
+// tail row inherit an EXISTING row's cached object - a row wearing
+// another row's meter anchor, fold pin and streaming bit. The id is the
+// row's own address: it rides the slide, so a surviving row keeps its
+// object and its component instance, and a row that was never on the
+// canvas can never pick up another row's.
+//
+// THE ID-LESS CASE, stated: a stream's in-flight rows are not persisted
+// yet, so the wire carries no id for them (core.ChatRow.ID - "a live
+// stream's in-flight rows carry none"). Those rows get an explicit SLOT
+// address built from what the wire does promise: role, block type and
+// the row's ordinal among the payload's id-less rows of that shape -
+// `live:assistant:text:0`. The ordinal counts ID-LESS rows only, so a
+// head slide (which drops a persisted row) never moves it; the open
+// tail grows at the END, so it does not move on an append either. When
+// the row persists and arrives with an id, its slot item is ADOPTED
+// onto the id address - the live -> persisted transition must not swap
+// the object either (omega.test.ts pins the user turn doing this). A
+// slot dies with the payload that stopped carrying its row
+// (sweepSlots), so an id-less row that left the canvas leaves no object
+// behind for a later row to inherit.
+//
+// REACTIVE ITEMS (t_078a2c35). Cache items are reactive proxies: an
+// in-place write (a delta mutating content/streaming/elapsedMs)
+// invalidates exactly the render effects that read those fields
+// (ChatItem's :item-id, ChatMessage's variantLabel). Under the id law a
+// sibling variant is a DIFFERENT store row - its own address, its own
+// item, no in-place rewrite across variants (the positional fold that
+// wrote one variant's id onto the other's item is what this card
+// retired).
 
 export interface CanvasTranscript {
   apply(payload: ChatPayloadWire): TranscriptItem[];
@@ -1287,22 +1312,121 @@ export interface CanvasTranscript {
 
 export function createCanvasTranscript(): CanvasTranscript {
   let session = "";
+  // persisted rows: one entry per STORE ROW ID (`row:<id>`) or per stable
+  // wire identity (a call id)
   const cache = new Map<string, TranscriptItem>();
+  // id-less rows: one entry per SLOT address (`live:<role>:<block type>:<n>`),
+  // swept at the end of every paint (an id-less row's object dies with the
+  // payload that stopped carrying its row)
+  const slots = new Map<string, TranscriptItem>();
   // the verdict countdowns anchor on first sight of the card (a live
   // card repaints every delta; issuedAt = first paint, the countdown
   // ticks once, settled by the result row's later delta)
   const issuedAt = new Map<string, number>();
 
-  function item(row: ChatRowWire, index: number, panelRunning: boolean, resultIds: ReadonlySet<string>): TranscriptItem | null {
+  // paint is one apply()'s working set: the panel's own flags plus the
+  // per-payload slot bookkeeping (an ordinal counts what THIS payload
+  // carries, so it starts over every paint)
+  interface Paint {
+    panelRunning: boolean;
+    resultIds: ReadonlySet<string>;
+    ordinals: Map<string, number>;
+    usedSlots: Set<string>;
+    // shape ("role:block type") -> the payload index of its LAST
+    // ID-BEARING row: the only row of that shape allowed to adopt a live
+    // slot
+    lastIdOfShape: ReadonlyMap<string, number>;
+  }
+
+  // liveAddress is an id-less row's slot address. consume=true hands
+  // out the next ordinal for the shape (a row being painted);
+  // consume=false PEEKS at the ordinal such a row would get - the
+  // adoption path, where a just-persisted row looks for the slot its own
+  // live object sits in.
+  function liveAddress(row: ChatRowWire, block: ChatBlockWire, ctx: Paint, consume: boolean): string {
+    const shape = `${row.role}:${block.type}`;
+    const ordinal = ctx.ordinals.get(shape) ?? 0;
+    if (consume) ctx.ordinals.set(shape, ordinal + 1);
+    return `live:${shape}:${ordinal}`;
+  }
+
+  // rowAddress: the store id when the row is persisted, else its slot
+  function rowAddress(row: ChatRowWire, block: ChatBlockWire, ctx: Paint): string {
+    if (row.id) return `row:${row.id}`;
+    return liveAddress(row, block, ctx, true);
+  }
+
+  // lookup returns the item a prose row paints into: its own cached
+  // object, its own live slot, or - across the live -> persisted
+  // transition - the slot object adopted onto the row's id. A row never
+  // receives another row's object: the id path reads only its own key,
+  // adoption is limited to the shape's last ID-BEARING row in the
+  // payload (the store persists the open tail last, so a row that just
+  // gained an id is its shape's newest id-bearing row - an earlier row
+  // of that shape is a different row and never takes the object), the
+  // adopted entry is always an ID-LESS slot (a persisted item is never
+  // parked in `slots`), and sweepSlots drops a slot the moment its row
+  // leaves the payload.
+  function lookup<T extends TranscriptItem>(
+    row: ChatRowWire,
+    block: ChatBlockWire,
+    index: number,
+    ctx: Paint,
+    make: () => T,
+  ): T {
+    const address = rowAddress(row, block, ctx);
+    if (!row.id) {
+      const live = peek<T>(address, true, ctx);
+      if (live) return live;
+      const fresh = make();
+      put(address, true, fresh);
+      return fresh;
+    }
+    const hit = cache.get(address) as T | undefined;
+    if (hit) return hit;
+    const shape = `${row.role}:${block.type}`;
+    if (ctx.lastIdOfShape.get(shape) === index) {
+      const slot = liveAddress(row, block, ctx, false);
+      const adopted = slots.get(slot) as T | undefined;
+      if (adopted) {
+        // the same logical row, now carrying its store id
+        slots.delete(slot);
+        cache.set(address, adopted);
+        return adopted;
+      }
+    }
+    const fresh = make();
+    cache.set(address, fresh);
+    return fresh;
+  }
+
+  // peek/put: the tool, verdict and result rows are addressed by the same
+  // law (a call id when the wire carries one, else the row's own address).
+  // A persisted item sits in the cache; an ID-LESS one sits in `slots`, so
+  // the sweep below retires it with the payload that stopped carrying its
+  // row - an id-less row must not hand its object to a later row of its
+  // shape either. `live` is passed explicitly, never derived from the key,
+  // because a call id is a stable wire identity even on an id-less row.
+  function peek<T extends TranscriptItem>(key: string, live: boolean, ctx: Paint): T | undefined {
+    if (!live) return cache.get(key) as T | undefined;
+    ctx.usedSlots.add(key);
+    return slots.get(key) as T | undefined;
+  }
+
+  function put(key: string, live: boolean, item: TranscriptItem): void {
+    if (live) slots.set(key, item);
+    else cache.set(key, item);
+  }
+
+  function item(row: ChatRowWire, index: number, ctx: Paint): TranscriptItem | null {
     const block = row.blocks?.[0];
     if (!block) return null;
     const running = row.status === "streaming";
     const blockRunning = running && block.running;
-    // the identity sig: stable across a row's live->persisted transition
-    // (ids arrive when the row persists - the object must not swap then)
-    const sig = `${row.role}:${index}:${row.blocks?.length ?? 0}`;
+    const panelRunning = ctx.panelRunning;
+    const resultIds = ctx.resultIds;
     if (row.role === "user") {
-      const it = (cache.get(sig) ?? reactive({ kind: "message", role: "user", content: "" })) as MessageItem;
+      const it = lookup(row, block, index, ctx, () => reactive({ kind: "message", role: "user", content: "" }) as MessageItem);
       it.kind = "message";
       it.role = "user";
       it.content = block.content ?? "";
@@ -1311,11 +1435,10 @@ export function createCanvasTranscript(): CanvasTranscript {
       // t_8a569163) - the live turn renders the same chips the restore does
       it.attachments = block.attachments;
       it.id = row.id;
-      cache.set(sig, it);
       return it;
     }
     if (row.role === "assistant" && block.type === "thinking") {
-      const it = (cache.get(sig) ?? reactive({ kind: "thinking", content: "" })) as ThinkingItem;
+      const it = lookup(row, block, index, ctx, () => reactive({ kind: "thinking", content: "" }) as ThinkingItem);
       it.kind = "thinking";
       it.content = block.content ?? "";
       // the store id rides the row (a run head can be a thinking row -
@@ -1328,7 +1451,6 @@ export function createCanvasTranscript(): CanvasTranscript {
       // on from after a remount - never the mount moment
       it.finalMs = block.thinking_ms;
       it.elapsedMs = running ? block.elapsed_ms : undefined;
-      cache.set(sig, it);
       return it;
     }
     if (row.role === "tool") {
@@ -1364,7 +1486,9 @@ export function createCanvasTranscript(): CanvasTranscript {
       }
       // orphan result (the call row left the newest-40 window): render
       // the bare line rather than erase the tool's work
-      const it = (cache.get(`result:${index}:${sig}`) ?? reactive({ kind: "tool", name: "tool", status: "done" })) as ToolItem;
+      const rkey = `result:${rowAddress(row, block, ctx)}`;
+      const live = !row.id;
+      const it = peek<ToolItem>(rkey, live, ctx) ?? (reactive({ kind: "tool", name: "tool", status: "done" }) as ToolItem);
       it.kind = "tool";
       it.name = it.name || "tool";
       it.status = block.is_error ? "error" : "done";
@@ -1372,7 +1496,7 @@ export function createCanvasTranscript(): CanvasTranscript {
       if (block.gate) it.gate = block.gate;
       it.finalMs = block.elapsed_ms;
       it.answerMs = block.answer_ms;
-      cache.set(`result:${index}:${sig}`, it);
+      put(rkey, live, it);
       return it;
     }
     // role assistant:
@@ -1382,8 +1506,11 @@ export function createCanvasTranscript(): CanvasTranscript {
       // t_e06b38bc) render as cards (the card IS the surface, no
       // plain tool line - the matching result row settles it)
       if (block.tool_call?.name === "verdict") {
-        const vsig = callId ? `verdict:${callId}` : sig;
-        const cached = cache.get(vsig) as VerdictItem | undefined;
+        // a card without a call id has nothing to settle it: the row's
+        // own address keeps it stable across repaints anyway
+        const live = !callId && !row.id;
+        const vsig = callId ? `verdict:${callId}` : `verdict:${rowAddress(row, block, ctx)}`;
+        const cached = peek<VerdictItem>(vsig, live, ctx);
         if (cached) {
           // the card is issued; only the stale bit moves. The run is
           // the truth: a pending card under a LIVE panel run is
@@ -1401,11 +1528,16 @@ export function createCanvasTranscript(): CanvasTranscript {
           card.issuedAt = issuedAt.get(callId) ?? Date.now();
           issuedAt.set(callId, card.issuedAt);
         }
-        cache.set(vsig, card);
+        put(vsig, live, card);
         return card;
       }
-      const csig = callId ? `tc:${callId}` : `tc:${index}`;
-      const it = (cache.get(csig) ?? reactive({ kind: "tool", name: "tool" })) as ToolItem;
+      // the call row is keyed by its CALL id whenever the wire carries one
+      // (the result row merges onto it there); a call with neither a call
+      // id nor a store id gets its own slot - a payload index is never an
+      // address (the slide moves every index, t_494639c8)
+      const live = !callId && !row.id;
+      const csig = callId ? `tc:${callId}` : `tc:${rowAddress(row, block, ctx)}`;
+      const it = peek<ToolItem>(csig, live, ctx) ?? (reactive({ kind: "tool", name: "tool" }) as ToolItem);
       it.kind = "tool";
       it.name = block.tool_call?.name || "tool";
       // the chips topic's join key (card t_896cf5a8): the pending chip's
@@ -1443,7 +1575,7 @@ export function createCanvasTranscript(): CanvasTranscript {
         const anchor = toolCallAnchorMs(block.started_at, block.elapsed_ms);
         if (anchor !== undefined) it.elapsedMs = anchor;
       }
-      cache.set(csig, it);
+      put(csig, live, it);
       return it;
     }
     // prose (text block): one assistant bubble per response segment -
@@ -1454,7 +1586,7 @@ export function createCanvasTranscript(): CanvasTranscript {
     // segment (the frozen label survives a remount) and elapsed_ms on
     // the open one (the remounted meter counts on from the answer's
     // elapsed-so-far, exactly like a running tool row).
-    const it = (cache.get(sig) ?? reactive({ kind: "message", role: "assistant", content: "" })) as MessageItem;
+    const it = lookup(row, block, index, ctx, () => reactive({ kind: "message", role: "assistant", content: "" }) as MessageItem);
     it.kind = "message";
     it.role = "assistant";
     it.content = block.content ?? "";
@@ -1463,7 +1595,6 @@ export function createCanvasTranscript(): CanvasTranscript {
     it.finalMs = block.response_ms;
     it.elapsedMs = running ? block.elapsed_ms : undefined;
     it.id = row.id;
-    cache.set(sig, it);
     return it;
   }
 
@@ -1491,16 +1622,46 @@ export function createCanvasTranscript(): CanvasTranscript {
       // worthless across sessions - the cache resets
       session = payload.session ?? "";
       cache.clear();
+      slots.clear();
       issuedAt.clear();
     }
+    // the shape's LAST ID-BEARING row is the only row that may adopt a
+    // live slot (see lookup): the store persists the open tail last, so a
+    // row that just gained its id is its shape's newest ID-BEARING row -
+    // the live rows after it are the new open tail. An earlier row of
+    // that shape is a different row and must never take the object.
+    const lastIdOfShape = new Map<string, number>();
+    rows.forEach((row, i) => {
+      const b = row.blocks?.[0];
+      if (b && row.id) lastIdOfShape.set(`${row.role}:${b.type}`, i);
+    });
+    const ctx: Paint = {
+      panelRunning: !!payload.running,
+      resultIds,
+      ordinals: new Map<string, number>(),
+      usedSlots: new Set<string>(),
+      lastIdOfShape,
+    };
     for (let i = 0; i < rows.length; i++) {
-      const it = item(rows[i]!, i, !!payload.running, resultIds);
+      const it = item(rows[i]!, i, ctx);
       if (it && !pushed.has(it)) {
         out.push(it);
         pushed.add(it);
       }
     }
+    // sweepSlots: a slot lives only while its row is in the payload. A
+    // leftover slot would be an object a later row of the same shape
+    // could inherit although its own row is long gone - the very defect
+    // this card removes, one row down. (The live -> persisted adoption
+    // above runs first, in the payload where the row still arrives.)
+    sweepSlots(ctx);
     return out;
+  }
+
+  function sweepSlots(ctx: Paint): void {
+    for (const key of slots.keys()) {
+      if (!ctx.usedSlots.has(key)) slots.delete(key);
+    }
   }
 
   return { apply };
