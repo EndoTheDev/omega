@@ -50,13 +50,15 @@ unchanged.
 | `/sessions/{id}/stop`                     | POST               | hard stop: cancel the run, kill its spawned shells, abandon its pending calls                                                                                                                                                                               |
 | `/sessions/{id}/transcript`               | GET                | render-ready items (restore + live contract)                                                                                                                                                                                                                |
 | `/sessions/{id}/variants`                 | GET, POST, PATCH   | branch points + active-variant select                                                                                                                                                                                                                       |
+| `/sessions/{id}/new`                      | POST               | `/new` on one conversation: `{"kind":"fork"}` for the human's own row (the shell opens a fresh tab), `{"kind":"compacted"}` for a machinery-owned one (an agent's canonical chat folds in place - same id, the next run's context starts at the fold's boundary under the compactor's summary) |
 | `/sessions/{id}/branch`                   | POST               | fork a child session (store-linked)                                                                                                                                                                                                                         |
 | `/sessions/{id}/export`                   | GET                | active path as JSONL attachment                                                                                                                                                                                                                             |
 | `/sessions/{id}/verdicts`                 | GET, POST          | one session's verdict cards / the answer POST                                                                                                                                                                                                               |
 | `/verdicts`                               | GET                | cross-session verdict listing (the bell count)                                                                                                                                                                                                              |
-| `/agents`                                 | GET                | agent homes (roster rows; each row carries `last_session_id`)                                                                                                                                                                                               |
+| `/agents`                                 | GET                | agent homes (roster rows; each row carries `canonical_session_id` - the one conversation its click opens - plus `last_report`/`last_report_at`, the newest reply and its time)                                                                               |
 | `/agents/{name}`                          | GET, PUT, DELETE   | detail / the node-preserving config layer editor / delete the home, sessions included                                                                                                                                                                       |
-| `/agents/{name}/sessions`                 | GET                | the agent's session list                                                                                                                                                                                                                                    |
+| `/agents/{name}/canonical`                | POST               | the roster row's click: answer the agent's canonical chat, MINTING the next generation when the home holds none (a fresh agent, or a retired canonical)                                                                                                      |
+| `/agents/{name}/sessions`                 | GET                | the agent's session list (the expanded row's inspection surface; these rows never enter the human's session list)                                                                                                                                            |
 | `/disabled`                               | GET                | the registry-browser folded state (skills/tools/agents namespaces)                                                                                                                                                                                          |
 | `/disabled/skills`, `/disabled/tools`     | PUT                | registry-browser toggle fold (one entry per name)                                                                                                                                                                                                           |
 | `/disabled/agents`                        | PUT                | registry-browser toggle; the DEFAULT agent answers 409 (it must always be on)                                                                                                                                                                               |
@@ -545,6 +547,16 @@ true|false}`; the write lands in config.yaml's `disabled:` fold and a
     writing them is refused. Unknown names and a key both set and
     unset in one request answer **400**.
 
+- `POST /agents/{name}/canonical` - the roster row's click. It answers
+  the agent's CANONICAL chat - the one permanent conversation the id
+  names (`canonical` for the default agent, `<agent>-canonical` for a
+  home) - and MINTS the next generation when the home holds no live one,
+  either because the agent never ran or because the human archived the
+  last canonical. Archive is RETIRE: the retired row stays archived and
+  unreachable from the roster, and `-2`, `-3`, ... take its place. The
+  most-recent session is never the target: it moved with every run and
+  was usually a conversation the human owned in their own session list.
+
 - `POST /agents` - create. A bare body (`name`, `description`)
   scaffolds an empty always-off home; `inherit_from` names a source
   agent (or `default`) and MATERIALIZES a clone instead. The clone is
@@ -566,6 +578,17 @@ true|false}`; the write lands in config.yaml's `disabled:` fold and a
   scaffold removes the destination: folder presence is registration, so a
   half-built home never becomes a phantom agent. There is no
   rename-in-place route.
+
+- `POST /sessions/{id}/new` - what `/new` means for ONE conversation.
+  `{"kind":"fork"}` for a row the human owns: nothing is written and the
+  shell opens a fresh tab, exactly as `/new` always did.
+  `{"kind":"compacted"}` for a Machinery-Owned row (`machine_owned` on
+  the session; an agent's canonical chat): the relationship is the
+  point, so the conversation FOLDS instead of forking. The transcript
+  keeps every row; the session row's `context_start` marks where the
+  next run's provider context begins and `context_summary` carries the
+  compactor's summary (empty when the pre-fold history was too small to
+  earn one). Same id before and after.
 
 - `DELETE /agents/{name}` - delete the HOME (0.17.3 make-over ruling
   2), sessions included: the definition file, the persona files, the

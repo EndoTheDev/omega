@@ -497,18 +497,39 @@ resolution mirror the one command law every surface follows:
   the facts the tab is for - description, model, session count, last
   activity - and the main row additionally carries a `main` badge
   beside its name (the badge also explains why that row carries no
-  toggle - it is the home config, always on).
-- **A row click opens the agent's chat** (card t_81109e1c): the name
-  is a button that hands the agent's MOST RECENT session id
-  (`last_session_id` on the roster row, newest by `updated_at`) to the
-  shell over the `omega:open-chat-session` window event - module UI
-  imports no shell code, so the literal is copied in
-  `harness/continuous/ui/AgentsPanel.vue` and pinned by
+  toggle - it is the home config, always on). One line below the
+  subtitle carries the PREVIEW (card t_10ac04f0 ruling 5): the agent's
+  newest reply in its canonical chat, whitespace-collapsed and
+  ellipsized to one line, with its age at the right edge; a row whose
+  agent has not spoken yet renders no preview line at all.
+- **A row click opens the agent's CANONICAL chat** (card t_10ac04f0,
+  superseding t_81109e1c's most-recent bind): every row is clickable.
+  The click POSTs `/agents/{name}/canonical`, which answers the one
+  stable conversation the agent owns (`canonical`,
+  `<agent>-canonical`) and MINTS the next generation when the home
+  holds none - a fresh agent, or one whose canonical was archived
+  (archive = retire; the retired row never comes back to the roster).
+  The id the answer names rides the `omega:open-chat-session` window
+  event to the shell - module UI imports no shell code, so the literal
+  is copied in `harness/continuous/ui/AgentsPanel.vue` and pinned by
   `webui/test/agentschat.test.ts`. The shell runs the ORDINARY chat
   opener, so the click opens a full interactive ChatTab (never a
   read-only observer) in the main pane, and a session already open in
-  any tab is FOCUSED rather than opened twice. An agent with no
-  sessions has no clickable name - there is nothing to bind.
+  any tab is FOCUSED rather than opened twice. The preview and the
+  active row both follow the canonical id, never the last session that
+  happened to run.
+- **Agent work sessions do not enter the sessions sidebar** (ruling 4,
+  full separation): that list is the maintainer's own conversations,
+  and a machinery-owned row (`machine_owned`) is filtered out of it.
+  A crashed worker run is inspected from the agent's EXPANDED row,
+  which reads `/agents/{name}/sessions` and opens any row as a chat
+  tab.
+- **`/new` inside an agent chat folds the conversation** (ruling 2):
+  the shell POSTs `/sessions/{id}/new`, and a machinery-owned row
+  answers `compacted` - same tab, same id, the transcript whole, and
+  the next run's context restarted at the fold's boundary with the
+  compactor's summary when one was earned. The human's own
+  conversations answer `fork` and open a fresh tab exactly as before.
 - **An agent-owned chat runs on its own home's model.** The opened tab
   is the same ChatTab, and its composer carries the app's model chip,
   but the chat floor ignores that pick for a session whose owner is an
