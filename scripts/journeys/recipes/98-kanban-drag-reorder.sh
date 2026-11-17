@@ -110,6 +110,36 @@ col_ids() {
     | tr '\n' ' ' | sed 's/ *$//'
 }
 
+# wait_server_col <status> <ids> [timeout_s]: poll the SERVER's own order until
+# it holds <ids>. A drop rides an async PATCH, so the old shape slept a guessed
+# second and read the REST view once: on a loaded host the read landed before
+# the write and the red named a "regression" that was a round trip (card
+# t_fdd12843). What the step asserts is unchanged - the server must hold the
+# order - only the wait now rides the observable.
+wait_server_col() {
+  local status="$1" want="$2" t="${3:-10}" i=0 got
+  while [ "$i" -lt $((t * 2)) ]; do
+    got="$(col_ids "$status")"
+    [ "$got" = "$want" ] && return 0
+    sleep 0.5
+    i=$((i + 1))
+  done
+  die "server order for $status never became [$want] in ${t}s (got [$got])"
+}
+
+# wait_server_first <status> <id> [timeout_s]: the same poll for a column's
+# HEAD (the rail drop law: the card lands at the top).
+wait_server_first() {
+  local status="$1" id="$2" t="${3:-10}" i=0 got
+  while [ "$i" -lt $((t * 2)) ]; do
+    got="$(col_ids "$status" | awk '{print $1}')"
+    [ "$got" = "$id" ] && return 0
+    sleep 0.5
+    i=$((i + 1))
+  done
+  die "server column $status never put $id first in ${t}s (got [$(col_ids "$status")])"
+}
+
 # card_id <status> <title>: seed one task, print its id.
 card_id() {
   curl -s -X POST "${JOURNEY_BASE_URL}/tasks?board=${BOARD}" \
@@ -262,15 +292,21 @@ ptr_n() {
 press_card() {
   local x=$1 y=$2 n0=$3 src="${4:-}" n1 owner
   ab mouse move "$x" "$y" >/dev/null 2>&1
-  sleep 0.1
+  # gesture pacing, not an assertion: a move and a down dispatched in the same
+  # task are coalesced by the real input pipeline, and the page must see the
+  # move as its own event before the press (the drag rule, worker-onboarding)
+  sleep 0.1   # recipe-lint: allow fixed-sleep - input pacing: a move and a press in one task are coalesced by the browser's pointer pipeline
   if [ -n "$src" ]; then
     owner=$(jsq "(function(){var c=[...document.querySelectorAll('.card')].find(function(k){return k.dataset.id==='$src'});var e=document.elementFromPoint($x,$y);if(!e) return 'none';return (c&&(c===e||c.contains(e)))?'card':String((e.className&&String(e.className))||e.tagName)})()" 2>&1 | tail -1 | tr -d '"')
     if [ "$owner" != "card" ]; then PRESS_OWNER="$owner"; return 2; fi
   fi
   ab mouse down >/dev/null 2>&1
-  sleep 0.1
-  n1=$(ptr_n)
-  [ "$n1" != "$n0" ] && return 0
+  # the receipt is an EVENT: poll the document's pointerdown log instead of
+  # pausing a guessed 100ms and reading it once (card t_fdd12843)
+  if poll_js "(()=>{return (window.__ptrLog||[]).length!==$n0})()" 3; then
+    n1=$(ptr_n)
+    return 0
+  fi
   return 1
 }
 
@@ -305,7 +341,7 @@ drag_to() {
       1)
         lost=$(( lost + 1 ))
         ab mouse up >/dev/null 2>&1
-        sleep 0.2
+        sleep 0.2   # input pacing: the up must be a separate task from the re-press below or the pipeline coalesces them
         [ "$lost" -lt 2 ] ||
           die "the press never reaches the page on this lane (2 presses at ($fx,$fy), pointerdowns frozen at $n0) - a browser input fault, not a board regression | $(drag_witness)"
         step "input-fault: the press at ($fx,$fy) never reached the page (pointerdowns frozen at $n0) - re-pressing once"
@@ -320,12 +356,14 @@ drag_to() {
     x=$(( x + dx )); y=$(( y + dy )); i=$(( i + 1 ))
   done
   ab mouse move "$tx" "$ty" >/dev/null 2>&1
-  sleep 0.3
+  # the drop target resolves on the LAST move: give it its own task (the
+  # release is separate, so a mid-drag assert can run off this frame)
+  sleep 0.3   # recipe-lint: allow fixed-sleep - input pacing: the final move must land as its own event before a release or mid-drag read
 }
 
 drag_release() {
   ab mouse up >/dev/null 2>&1
-  sleep 0.2
+  sleep 0.2   # recipe-lint: allow fixed-sleep - input pacing: the up is dispatched, and the async PATCH it starts is awaited by the caller's own poll
 }
 
 # switch_chip_miss_die: the two-mount die WITH its own diagnosis
@@ -434,9 +472,8 @@ assert_dragging "$C"
 step "ok: in-column drag reorders live while the gesture is down"
 
 drag_release
-sleep 1
-got="$(col_ids triage)"
-[ "$got" = "$A $C $B" ] || die "in-column drop did not persist (got [$got] want [$A $C $B])"
+# the drop is an async PATCH: poll the SERVER's view, never a guessed second
+wait_server_col triage "$A $C $B" 10
 wait_dom_order triage "$A $C $B" 8
 step "ok: in-column drop persisted (GET order a,c,b)"
 
@@ -463,10 +500,9 @@ assert_dragging "$B"
 step "ok: cross-column drag reorders live while the gesture is down"
 
 drag_release
-sleep 1
-got_t="$(col_ids triage)"; got_d="$(col_ids todo)"
-[ "$got_t" = "$A $C" ] || die "triage did not lose b (got [$got_t])"
-[ "$got_d" = "$D $B" ] || die "todo did not gain b at the slot below d (got [$got_d])"
+# the drop is an async PATCH (status+after_id): poll both server columns
+wait_server_col triage "$A $C" 10
+wait_server_col todo "$D $B" 10
 wait_dom_order todo "$D $B" 8
 step "ok: cross-column drop rides one PATCH (status+after_id) and lands at the slot"
 
@@ -488,7 +524,7 @@ offx=$(jsq '(()=>{const c=document.querySelector(".board-switch-select .model-ch
 offy=$(jsq '(()=>{const c=document.querySelector(".board-switch-select .model-chip");if(!c) return 40;return Math.round(c.getBoundingClientRect().y+c.getBoundingClientRect().height/2)})()' 2>&1 | tail -1 | tr -d '"')
 [ "$offy" != "-1" ] && [ -n "$offx" ] || { offx=40; offy=40; }
 ab mouse move "$offx" "$offy" >/dev/null 2>&1
-sleep 0.3
+sleep 0.3   # recipe-lint: allow fixed-sleep - gesture pacing: the pointer has to LEAVE the board before the release, and a move and an up dispatched in the same task are coalesced by the input pipeline (the drag rule, worker-onboarding)
 drag_release
 
 # the optimistic move must snap back; the server never saw a PATCH
@@ -549,10 +585,12 @@ step "ok: an API create lands on the idle board by push (no reload, no poll)"
 # survive two levels of shell quoting, and the CLI's unescape behaviour
 # differs across agent-browser versions (worker-onboarding, t_2454597e).
 
-# scroll_start <status>: the source lane at the strip's left edge.
+# scroll_start <status>: the source lane at the strip's left edge, graded on the
+# column's settled x (a 0.3s pause was a guess at the layout pass; card
+# t_fdd12843).
 scroll_start() {
   js "(function(){var c=document.querySelector('.board-col[data-status=$1]');if(c) c.scrollIntoView({block:'nearest',inline:'start'});return 1})()" >/dev/null
-  sleep 0.3
+  wait_settled "(function(){var c=document.querySelector('.board-col[data-status=$1]');return c?Math.round(c.getBoundingClientRect().x):-1})()" 8
 }
 
 # lane_folded_expr <status>: a BOOLEAN for wait_js (never a ?1:0 answer)
@@ -560,13 +598,28 @@ lane_folded_expr() {
   printf "(function(){var c=document.querySelector('.board-col[data-status=%s]');return !!c&&c.classList.contains('folded')})()" "$1"
 }
 
+# lane_state_js <status>: the STATE EXPRESSION (so a caller can build a
+# predicate from it - watch_absent needs one, not a shell-captured string)
+lane_state_js() {
+  printf "(function(){var c=document.querySelector('.board-col[data-status=%s]');if(!c) return 'missing';var r=c.querySelector('.lane-rail');return (c.classList.contains('folded')?'folded':'open')+'|'+c.dataset.count+'|'+(r?'rail':'no-rail')+'|'+(r?((r.querySelector('.lane-rail-name')||{}).textContent||'-'):'-')+'|'+(r?((r.querySelector('.lane-rail-count')||{}).textContent||'-'):'-')})()" "$1"
+}
+
 # lane_state <status> -> "folded|count|rail|name|railcount" (dash = absent)
 lane_state() {
-  jsq "(function(){var c=document.querySelector('.board-col[data-status=$1]');if(!c) return 'missing';var r=c.querySelector('.lane-rail');return (c.classList.contains('folded')?'folded':'open')+'|'+c.dataset.count+'|'+(r?'rail':'no-rail')+'|'+(r?((r.querySelector('.lane-rail-name')||{}).textContent||'-'):'-')+'|'+(r?((r.querySelector('.lane-rail-count')||{}).textContent||'-'):'-')})()" 2>&1 | tail -1 | tr -d "\"'"
+  jsq "$(lane_state_js "$1")" 2>&1 | tail -1 | tr -d "\"'"
 }
 
 lane_width() {
   jsq "(function(){var c=document.querySelector('.board-col[data-status=$1]');return c?Math.round(c.getBoundingClientRect().width):-1})()" 2>&1 | tail -1 | tr -d "\"'"
+}
+
+# lane_settle_width <status> [timeout_s]: the lane's WIDTH has stopped moving.
+# A fold/unfold is a ~180ms cubic-bezier ease on the lane itself, so the lane's
+# own width is the settle observable - reading lane_state() off a lane mid-ease
+# grades a shape nobody shipped (card t_fdd12843; the same class as the press
+# read mid-unfold, t_44f55a54).
+lane_settle_width() {
+  wait_settled "(function(){var c=document.querySelector('.board-col[data-status=$1]');return c?Math.round(c.getBoundingClientRect().width):-1})()" "${2:-8}"
 }
 
 # dot_row <status>: the lane dot's viewport centre y (folded OR expanded)
@@ -613,7 +666,7 @@ step "e1: folding a card-holding lane renders the rail (dot + vertical name + co
 scroll_start todo
 fold_lane todo
 wait_js "$(lane_folded_expr todo)" 6
-sleep 0.4
+lane_settle_width todo   # the fold's ~180ms ease is the settle observable
 st="$(lane_state todo)"
 [ "$st" = "folded|2|rail|todo|2" ] || die "todo rail shape wrong (got [$st] want [folded|2|rail|todo|2])"
 w="$(lane_width todo)"
@@ -646,15 +699,14 @@ drag_to "$afx" "$afy" "$RX" "$RY" "$A"
 box_mid="$(rail_box todo)"
 [ "$box_mid" = "$box_before" ] || die "the strip reshaped under the cursor mid-drag (rail $box_before -> $box_mid) - the drop would land on a neighbour"
 drag_release
-sleep 1
-[ "$(col_ids todo | awk '{print $1}')" = "$A" ] || die "a card dropped on the rail did not land at the top of todo (got [$(col_ids todo)])"
+wait_server_first todo "$A" 10   # the rail drop rides an async PATCH
 st="$(lane_state todo)"
 [ "$st" = "folded|3|rail|todo|3" ] || die "a pinned rail must keep its shape when a card lands on it (got [$st] want [folded|3|rail|todo|3])"
 step "ok: drop on the rail moved $A into todo; the rail kept its shape and its count grew"
 
 unfold_lane todo
 wait_js "!$(lane_folded_expr todo)" 6
-sleep 0.4
+lane_settle_width todo
 w="$(lane_width todo)"
 [ "$w" = "236" ] || die "clicking the rail did not unfold the lane (width ${w}px)"
 st="$(lane_state todo)"
@@ -673,7 +725,7 @@ poll_js "(function(){var c=document.querySelector('.board-col[data-status=schedu
 scroll_start scheduled
 fold_lane scheduled
 wait_js "$(lane_folded_expr scheduled)" 6
-sleep 0.3
+lane_settle_width scheduled
 st="$(lane_state scheduled)"
 [ "$st" = "folded|1|rail|scheduled|1" ] || die "scheduled rail shape wrong (got [$st])"
 curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${S}?board=${BOARD}" \
@@ -692,8 +744,7 @@ card_inview "$D"; rfx=$CX; rfy=$CY
 rail_geo scheduled
 drag_to "$rfx" "$rfy" "$RX" "$RY" "$D"
 drag_release
-sleep 1
-[ "$(col_ids scheduled)" = "$D" ] || die "the refill drop did not land in scheduled (got [$(col_ids scheduled)])"
+wait_server_col scheduled "$D" 10
 st="$(lane_state scheduled)"
 # 0.17.3 lane-click law: 169b1c77 deleted reconcileLanePins, so a pin is
 # FINAL. The collapsed pin written while the lane held a card survives the
@@ -705,15 +756,18 @@ step "ok: the refilled lane is still the rail - the collapsed pin survived the d
 # lane, and the open pin holds while the lane holds cards
 unfold_lane scheduled
 wait_js "!$(lane_folded_expr scheduled)" 6
-sleep 0.4
+lane_settle_width scheduled
 st="$(lane_state scheduled)"
 [ "$st" = "open|1|no-rail|-|-" ] || die "a click on the rail did not expand the refilled lane (got [$st] want [open|1|no-rail|-|-])"
 w="$(lane_width scheduled)"
 [ "$w" = "236" ] || die "the expanded refilled lane is not a 236px column (got ${w}px)"
 # and it HOLDS: nothing reconciles the open pin away while cards sit in the lane
-sleep 0.8
-st="$(lane_state scheduled)"
-[ "$st" = "open|1|no-rail|-|-" ] || die "the open pin did not hold on a card-holding lane (got [$st] want [open|1|no-rail|-|-])"
+# (an absence, watched - not a pause and a second read, card t_fdd12843)
+watch_absent \
+  "($(lane_state_js scheduled))!=='open|1|no-rail|-|-'" \
+  2 \
+  "the open pin reconciling itself away on a card-holding lane" \
+  "$(lane_state_js scheduled)"
 step "ok: the rail click expanded the lane and the open pin holds while it holds cards"
 
 # the card seeded for this section is this recipe's to clean up (the trap

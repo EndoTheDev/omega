@@ -50,7 +50,7 @@ js '(()=>{
   dst.dispatchEvent(new DragEvent("dragover",{dataTransfer:dt,bubbles:true,clientX:r.left+r.width*0.15,clientY:top+(r.bottom-top)*0.5}));
   return "ok";
 })()' >/dev/null 2>&1 || true
-sleep 1
+wait_js '!!document.querySelector(".dock-pane .dock-drop-overlay[data-zone=left]")' 10
 zone=$(jsq 'document.querySelector(".dock-pane .dock-drop-overlay[data-zone=left]") ? 1 : 0' 2>&1)
 assert_eq "$zone" "1" "left zone lights on body hover"
 ghost=$(jsq '(()=>{const g=document.querySelector(".dock-drop-ghost");return g&&g.textContent.includes("Files")?1:0})()' 2>&1)
@@ -61,7 +61,7 @@ js 'document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:tru
     const dt=window.__jrn_dt;
     const src=[...document.querySelectorAll(".dock-pane.pinned .dock-tab")].find(t => (t.getAttribute("aria-label")||"").trim() === "Files");
     if (src&&dt) src.dispatchEvent(new DragEvent("dragend",{dataTransfer:dt,bubbles:true}));' >/dev/null 2>&1 || true
-sleep 1
+wait_js '!document.querySelector(".dock-drop-overlay")' 10
 cleared=$(jsq 'document.querySelector(".dock-drop-overlay") ? 0 : 1' 2>&1)
 assert_eq "$cleared" "1" "Escape clears the prediction"
 after=$(jsq 'document.querySelectorAll("[data-pane-id]").length' 2>&1)
@@ -86,7 +86,7 @@ out=$(js '(()=>{
   return "ok";
 })()' 2>&1)
 step "drag beat: $out"
-sleep 1
+wait_js "(()=>{return document.querySelectorAll('[data-pane-id]').length===$((before+1))})()" 10
 after2=$(jsq 'document.querySelectorAll("[data-pane-id]").length' 2>&1)
 assert_eq "$after2" "$((before+1))" "the target split around the drop"
 rows2=$(jsq 'document.querySelectorAll(".dock-split.row").length' 2>&1)

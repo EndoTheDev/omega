@@ -19,6 +19,8 @@
 # answer any prompt with a tool run (several rows per response), so
 # per-kind item counting is NOT stable; ids and branch metadata are.
 JOURNEY_NEEDS_MODEL=1
+# recipe-lint: allow no-browser - this recipe drives the message-tree endpoints over the wire and never opens a page; its only residue is a
+# journey session, reaped by cleanup_journey_residue in run.sh's EXIT trap.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 SID=$(new_journey_session variants | tail -1)
@@ -93,7 +95,15 @@ while ! tx | grep -q '"kind":"message","content"'; do
   sleep 0.5; i=$((i + 1))
 done
 if kill -0 "$retry_pid" 2>/dev/null; then
-  sleep 1
+  # let the partial grow past its FIRST frame: poll the tail's own item count
+  # instead of pausing a second and hoping some tokens landed (t_fdd12843)
+  _n=$(tx | grep -c '"kind":"message"')
+  _i=0
+  while [ "$_i" -lt 10 ]; do
+    [ "$(tx | grep -c '"kind":"message"')" -gt "$_n" ] && break
+    sleep 0.2
+    _i=$((_i + 1))
+  done
   curl -s -X POST "$BASE/sessions/$SID/stop" -H 'Content-Type: application/json' >/dev/null
 fi
 wait "$retry_pid" 2>/dev/null

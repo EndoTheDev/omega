@@ -136,7 +136,7 @@ cy=${pt##* }
 assert_ne "$cx" "" "copy button centre resolved"
 
 ab mouse move "$cx" "$cy" >/dev/null 2>&1
-sleep 0.2
+sleep 0.2   # recipe-lint: allow fixed-sleep - input pacing: the hover move and the press must be separate tasks or the pointer pipeline coalesces them
 ab mouse down >/dev/null 2>&1
 ab mouse up >/dev/null 2>&1
 

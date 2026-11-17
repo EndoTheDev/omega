@@ -57,8 +57,9 @@ divx=$(jsq '(()=>{const r=document.querySelector(".dock-divider").getBoundingCli
 ab mouse move "$divx" 400 >/dev/null 2>&1
 ab mouse down >/dev/null 2>&1
 x=10; while [ "$x" -le "$snap_drag" ]; do ab mouse move "$((divx+x))" 400 >/dev/null 2>&1; sleep 0.04; x=$((x+10)); done
+# the rung lands when the pane stops moving, not after a guessed pause
 ab mouse up >/dev/null 2>&1
-sleep 0.3
+wait_layout
 sidebar=$(sidebar_px)
 assert_eq "$sidebar" "$rung" "primary divider drag snaps the sidebar to the ${rung} rung"
 
@@ -86,7 +87,7 @@ ab mouse move "$divx" 400 >/dev/null 2>&1
 ab mouse down >/dev/null 2>&1
 x=10; while [ "$x" -le "$free_drag" ]; do ab mouse move "$((divx+x))" 400 >/dev/null 2>&1; sleep 0.03; x=$((x+10)); done
 ab mouse up >/dev/null 2>&1
-sleep 0.3
+wait_layout
 sidebar=$(sidebar_px)
 assert_eq "$sidebar" "$free_px" "primary divider tracks the pointer outside snap zones"
 
@@ -94,7 +95,7 @@ assert_eq "$sidebar" "$free_px" "primary divider tracks the pointer outside snap
 # divider and tab gestures share the pointer surface - card t_38c0e960)
 before=$(jsq 'document.querySelectorAll("[data-pane-id]").length')
 js '(()=>{const dt=new DataTransfer();const pane=document.querySelector("[data-pane-id]");const tab=pane&&pane.querySelector(".dock-tab");if(!tab)return;const target=pane.querySelector(".dock-tab");tab.dispatchEvent(new DragEvent("dragstart",{dataTransfer:dt,bubbles:true}));if(target){target.dispatchEvent(new DragEvent("dragover",{dataTransfer:dt,bubbles:true,clientX:10,clientY:200}));target.dispatchEvent(new DragEvent("drop",{dataTransfer:dt,bubbles:true,clientX:10,clientY:200}));}tab.dispatchEvent(new DragEvent("dragend",{dataTransfer:dt,bubbles:true}));})()' >/dev/null 2>&1 || true
-sleep 1
+wait_layout
 after=$(jsq 'document.querySelectorAll("[data-pane-id]").length')
 alive=$(jsq 'document.querySelector(".sessions .session-list")?1:0')
 assert_eq "$alive" "1" "session list alive after tab DnD attempt"

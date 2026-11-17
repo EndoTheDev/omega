@@ -22,6 +22,8 @@
 # via OMEGA_BIN / the exe-sibling fallback. NOT in regression.list: the
 # two-child cost is nightly-reviewer policy, not the suite's.
 JOURNEY_NEEDS_MODEL=1
+# recipe-lint: allow no-browser - this recipe drives two concurrent /chat runs over the wire and never opens a page; its only residue is a
+# journey session, reaped by cleanup_journey_residue in run.sh's EXIT trap.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
 runtag=$(date +%d%b%H%M%S)

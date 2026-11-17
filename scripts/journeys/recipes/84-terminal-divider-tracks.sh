@@ -112,7 +112,11 @@ press_verify() {
   n0=$(ptr_n)
   ab mouse move "$x" "$y" >/dev/null 2>&1
   ab mouse down >/dev/null 2>&1
-  sleep 0.1
+  # two EVENTS decide this: a handle takes the capture (.active), or the
+  # document at least saw the pointerdown. Wait for either, then grade - a
+  # 100ms pause read "refused" for a press that was merely in flight
+  # (card t_fdd12843).
+  poll_js "(()=>{const act=[...document.querySelectorAll('.dock-divider')].some(d=>d.classList.contains('active'));return act||(window.__ptrLog||[]).length!==$n0})()" 3 >/dev/null 2>&1 || true
   DRAG_ACTIVE=$(jsq '(()=>{return [...document.querySelectorAll(".dock-divider")].filter(d=>d.classList.contains("active")).length})()' 2>&1 | tail -1 | tr -d '"')
   n1=$(ptr_n)
   PRESS_ACK="pointerdowns=$n0->$n1"
@@ -130,7 +134,7 @@ press_or_die() {
   press_verify "$x" "$y"; rc=$?
   if [ "$rc" = "2" ]; then
     ab mouse up >/dev/null 2>&1
-    sleep 0.2
+    sleep 0.2   # recipe-lint: allow fixed-sleep - input pacing: the up must be its own task before the re-press or the pipeline coalesces them
     step "input-fault: the press at ($x,$y) never reached the page ($PRESS_ACK) - re-pressing once"
     press_verify "$x" "$y"; rc=$?
   fi
@@ -157,7 +161,7 @@ drag_x() {
     sleep 0.03
   done
   ab mouse up >/dev/null 2>&1
-  sleep 0.3
+  wait_layout   # the drag resized panes: hand back once the geometry holds
 }
 # geom_report: what a failed leg measured AGAINST - every divider's centre x
 # (a `*` marks the handle holding the pointer capture) plus every pane's

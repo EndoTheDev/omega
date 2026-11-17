@@ -152,8 +152,8 @@ ab wait --load networkidle >/dev/null 2>&1 || true
 PAL_FIELD='input[aria-label="Command palette search"]'
 pal=$(jsq '(()=>{window.dispatchEvent(new KeyboardEvent("keydown",{key:"k",ctrlKey:true,bubbles:true}));return !!document.querySelector(".command-palette")?1:0})()')
 if [ "$pal" != "1" ]; then
-  sleep 0.5
-  pal=$(jsq '!!document.querySelector(".command-palette")?1:0')
+  # the palette mounts a tick later: poll it, never pause and re-read once
+  if poll_js '!!document.querySelector(".command-palette")' 10; then pal=1; else pal=0; fi
 fi
 assert_eq "$pal" "1" "the command palette opened (ctrl+k)"
 # the field really mounted (either branch) - a fill on an absent selector

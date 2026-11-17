@@ -36,3 +36,5 @@ jobs:
           bash scripts/nm-purity_test.sh
           bash scripts/fence-test.sh
           bash scripts/dep-drift_test.sh
+      - name: Recipe determinism (scripts/recipe-lint.sh over scripts/journeys/recipes - no fixed sleeps, no fixed windows in front of a read)
+        run: bash scripts/recipe-lint_test.sh

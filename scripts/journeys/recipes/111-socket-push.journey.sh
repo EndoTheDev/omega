@@ -74,15 +74,17 @@ done
 jsq '(()=>{window.__bootTail=(window.__fetchLog||[]).slice();window.__fetchLog=[];return 1})()' >/dev/null 2>&1
 step "boot reads quiet (${_i} x 0.5s, ${_quiet} unchanged samples) - the poller window opens now"
 
-step "holding still 17s (every deleted cadence is inside this window)"
-sleep 17
-polled=$(jsq '(()=>{const re=/\/(sessions|health|ui\/canvas|notifications|verdicts)(\?|$)/;return (window.__fetchLog||[]).filter(u=>re.test(u)).length})()' 2>&1 | tail -1 | tr -d '"\r')
-if [ "$polled" != "0" ]; then
-  # the URLs are the evidence: a poller repeats a route, a boot read does not
-  polled_urls=$(jsq '(()=>{const re=/\/(sessions|health|ui\/canvas|notifications|verdicts)(\?|$)/;return (window.__fetchLog||[]).filter(u=>re.test(u)).join(",")})()' 2>&1 | tail -1 | tr -d '"\r')
-  boot_tail=$(jsq '(()=>{return (window.__bootTail||[]).join(",")})()' 2>&1 | tail -1 | tr -d '"\r')
-  die "polling fetches in 17s (health/sessions/canvas/notifications/verdicts): got [$polled] want [0] | urls: $polled_urls | boot tail (excluded): ${boot_tail:-none}"
-fi
+step "watching 17s for a poller fetch (every deleted cadence is inside this window)"
+# THE WINDOW IS WATCHED, NOT SLEPT THROUGH (card t_fdd12843). An absence claim
+# needs a duration - a 15s poller cannot be disproved in less than 15s - so the
+# window stays, but every 0.5s sample is graded: a poller reds at its FIRST
+# repeat with the URLs named, instead of surfacing as a post-sleep count. The
+# URLs are the evidence: a poller repeats a route, a boot read does not.
+watch_absent \
+  '(()=>{const re=/\/(sessions|health|ui\/canvas|notifications|verdicts)(\?|$)/;const hits=(window.__fetchLog||[]).filter(u=>re.test(u));return hits.length>0})()' \
+  17 \
+  "a polling fetch (health/sessions/canvas/notifications/verdicts)" \
+  '(()=>{const re=/\/(sessions|health|ui\/canvas|notifications|verdicts)(\?|$)/;const hits=(window.__fetchLog||[]).filter(u=>re.test(u));return hits.join(",")+" | boot tail (excluded): "+((window.__bootTail||[]).join(",")||"none")})()'
 step "ok: no polling fetch in 17s (health/sessions/canvas/notifications/verdicts)"
 
 # the socket is actually alive: the health topic pushes every 5s, so the
@@ -136,8 +138,11 @@ assert_eq "$online" "false" "the tab is offline (the socket is cut)"
 # a full-budget re-arm stretched the discovery window to 30s and the
 # socket outlived the outage, reviving with the network instead of
 # reconnecting, so the catch-up never ran).
+# There is nothing to poll on: the cut is invisible in the DOM and the close
+# EVENT is deferred to network-restore under CDP offline emulation, so the
+# deadline can only be spanned in real seconds (card t_71f28526 measured it).
 step "holding offline 18s (the quiet-wire budget)"
-sleep 18
+sleep 18   # recipe-lint: allow fixed-sleep - the quiet-wire budget IS 15 real seconds of silence: the client's cut lands at 15-16s and neither the DOM nor the socket reports it (t_71f28526)
 
 # a NEW session row appears on the server while nothing can reach the page
 SID=$(new_journey_session socket-push | tail -1)
@@ -146,10 +151,15 @@ LABEL="(journey) socket-push $TAG"
 label_journey_session "$SID" "$LABEL"
 step "seeded $SID offline"
 
-# nothing pushed, nothing replayed: the row cannot be on the page
-sleep 3
-present=$(jsq "(()=>[...document.querySelectorAll('.session-list li')].some(x=>(x.innerText||'').includes('socket-push $TAG'))?1:0)()" 2>&1 | tail -1 | tr -d '"\r')
-assert_eq "$present" "0" "the new row is NOT on the page while the socket is down (no replay, no poller)"
+# nothing pushed, nothing replayed: the row cannot be on the page - watched
+# across a 3s window rather than slept through, so a page that DID receive it
+# reds at the first sample that sees it
+watch_absent \
+  "(()=>[...document.querySelectorAll('.session-list li')].some(x=>(x.innerText||'').includes('socket-push $TAG')))()" \
+  3 \
+  "the seeded row appearing on the page while the socket is down (no replay, no poller)" \
+  "(()=>[...document.querySelectorAll('.session-list li')].map(x=>(x.innerText||'').trim()).join(' / '))()"
+step "ok: the new row is NOT on the page while the socket is down (no replay, no poller)"
 
 # back online: the ladder reconnects and CATCHES UP through the GET
 # routes - the pane refetches and the row appears, no reload

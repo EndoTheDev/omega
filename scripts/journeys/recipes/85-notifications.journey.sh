@@ -20,6 +20,8 @@
 # permanent board row), no session is created. The trap rides
 # cleanup_journey_residue: its jrn- task sweep covers this run's
 # tasks AND any tombstone a crashed earlier run left behind.
+# recipe-lint: allow no-browser - this recipe drives the notifications endpoints over the wire and never opens a page; its only residue is a
+# journey session, reaped by cleanup_journey_residue in run.sh's EXIT trap.
 . "${JROOT:?run must export JROOT}/lib.sh"
 trap cleanup_journey_residue EXIT
 

@@ -50,6 +50,48 @@ tests. Where a UI geometry or gesture contract has both halves, the
 recipe is the browser half of a pin whose other half lives in
 `webui/test/` or a Go test - keep the pair in step.
 
+### The determinism contract (card t_fdd12843)
+
+A recipe asserts on STATE, never on elapsed time. Four gate reds in
+three nights were one root class: a press read mid-unfold
+(t_44f55a54), an h+4 clamp offset (113-settings-nav), a poller counted
+inside a fixed 17s window (111-socket-push), a browser-state leak
+(95-terminal). A sleep between an action and a read is a guess about
+how fast the machine is - right in isolation, wrong in a loaded suite.
+
+Three wait shapes, and nothing else:
+
+| Shape | For | Primitive |
+| ----- | --- | --------- |
+| event | a predicate that becomes true (a drawer opened, a row arrived, a chip flipped, the boot reads resolved) | `wait_js` / `poll_js` / `wait_booted` |
+| settle | a VALUE that stops changing (geometry, computed style, a pane chasing a drag) | `wait_settled` / `wait_layout` |
+| absence | a predicate that must stay false for a cadence's worth of time (the only claim that needs a duration) | `watch_absent` |
+
+Two more laws ride along: a write is graded by polling the SURFACE that
+owns it (`wait_server_col` shape - never "sleep a second, then GET"),
+and every journey leaves a clean room (`open_app` clears the client
+state a previous recipe left on its first call; `journey_exit_cleanup`
+resets panes, viewport and storage on every exit path).
+
+`scripts/recipe-lint.sh` holds the contract over `recipes/*.sh`. It is
+grep-class (awk), reports one line per finding, and is advisory-capable
+(`--advisory` never exits 1). `scripts/recipe-lint_test.sh` pins its
+negative branches and the whole corpus; CI runs it beside the other
+script suites.
+
+A wait that genuinely cannot be event-based is justified IN PLACE, and
+the justification is part of the evidence log:
+
+```bash
+sleep 0.15   # recipe-lint: allow fixed-sleep - input pacing: the real
+             # pointer pipeline coalesces a move and a press in one task
+```
+
+The marker is rule-scoped on purpose (`allow <rule> - <reason>`): a
+blanket allow is a suppression by another name. A marker with no reason
+(`bare-justification`) and a marker whose sleep has gone (`stale-allow`)
+are both findings.
+
 ### The agent-browser version these recipes are written against
 
 **0.42.0.** The CLI is pinned in two places that move together: the

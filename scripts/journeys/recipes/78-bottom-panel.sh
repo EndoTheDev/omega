@@ -30,7 +30,7 @@ ab set viewport 1280 800 >/dev/null 2>&1
 js 'localStorage.clear()' >/dev/null 2>&1
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
-sleep 1
+wait_booted
 
 # --- 1: presence, default height, logs tab live -------------------------
 bottom=$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0')
@@ -100,14 +100,14 @@ ab mouse down >/dev/null 2>&1
 d=30; while [ "$d" -le 200 ]; do ab mouse move "$divx" $((divy - d)) >/dev/null 2>&1; sleep 0.03; d=$((d + 30)); done
 ab mouse move "$divx" $((divy - 200)) >/dev/null 2>&1
 ab mouse up >/dev/null 2>&1
-sleep 0.4
+wait_layout   # the divider drag resizes the pane: read once it holds still
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom").getBoundingClientRect().height)')
 assert_eq "$height" "364" "divider drag grows the bottom panel to the 50% cap (364 at 1280x800; the 400 rung is unreachable below it)"
 
 # --- 3: the resized tree survives a reload ------------------------------
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
-sleep 1
+wait_booted
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom")?.getBoundingClientRect().height ?? 0)')
 assert_eq "$height" "364" "reload restores the bottom panel at the capped height"
 # the ACTIVE tab, not the first chip: step 1 activated the Logs tab, and
@@ -123,16 +123,16 @@ assert_eq "$tab" "Logs" "reload keeps the Logs tab the bottom panel's active tab
 
 # --- 4: close/reopen round-trip (closure survives reload) ---------------
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b => b.getAttribute("aria-label") === "Toggle bottom panel").click()' >/dev/null 2>&1
-sleep 0.4
+wait_js '!document.querySelector(".dock-pane.edge-bottom")' 10
 bottom=$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0')
 assert_eq "$bottom" "0" "the menubar toggle closes the bottom panel"
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
-sleep 1
+wait_booted
 bottom=$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0')
 assert_eq "$bottom" "0" "the closed state survives a reload (closed-edge set)"
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b => b.getAttribute("aria-label") === "Toggle bottom panel").click()' >/dev/null 2>&1
-sleep 0.6
+wait_js '!!document.querySelector(".dock-pane.edge-bottom")' 10
 bottom=$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0')
 assert_eq "$bottom" "1" "the menubar toggle reopens the bottom panel"
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom").getBoundingClientRect().height)')
@@ -140,7 +140,7 @@ assert_eq "$height" "364" "reopen restores the remembered height (364, the cap)"
 
 # --- 5: mobile - the cell zero-collapses, state survives ----------------
 ab set viewport 420 840 >/dev/null 2>&1
-sleep 1.2
+wait_js 'Math.round(document.querySelector(".dock-pane.edge-bottom")?.getBoundingClientRect().height ?? -1)===0' 10
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom")?.getBoundingClientRect().height ?? -1)')
 assert_eq "$height" "0" "mobile: the bottom cell zero-collapses (state survives in the tree)"
 # 16ac10a parity contract: the bottom toggle stays visible at every
@@ -154,7 +154,7 @@ toggle=$(jsq '(() => {
 })()')
 assert_eq "$toggle" "true" "mobile: the bottom-panel toggle is visible under 768px (parity contract, 16ac10a)"
 ab set viewport 1280 800 >/dev/null 2>&1
-sleep 1.2
+wait_js 'Math.round(document.querySelector(".dock-pane.edge-bottom")?.getBoundingClientRect().height ?? -1)>0' 10
 height=$(jsq 'Math.round(document.querySelector(".dock-pane.edge-bottom")?.getBoundingClientRect().height ?? -1)')
 assert_eq "$height" "364" "desktop again: the panel is back at the capped height (state survived mobile)"
 
@@ -164,9 +164,9 @@ assert_eq "$height" "364" "desktop again: the panel is back at the capped height
 # same fixed-drawer + scrim rule the inspector drawer rides. The drawer
 # seats the logs view and streams the tail; the tree is never touched.
 ab set viewport 420 840 >/dev/null 2>&1
-sleep 1
+wait_layout
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b => b.getAttribute("aria-label") === "Toggle bottom panel")?.click()' >/dev/null 2>&1
-sleep 0.7
+wait_js '!!document.querySelector(".mobile-drawer.bottom.open")' 10
 bopen=$(jsq 'document.querySelector(".mobile-drawer.bottom.open")?1:0')
 bscrim=$(jsq 'document.querySelector(".scrim")?1:0')
 assert_eq "$bopen" "1" "mobile: the bottom toggle opens the bottom drawer (4bf1d5b7)"
@@ -193,14 +193,14 @@ step "ok: mobile bottom drawer seats the live logs tail"
 # the right drawer never seats logs (3dbb9c5 stands) - chip names now
 # ride aria-label (icon-only chips, card t_4bf1d5b7)
 js 'Array.from(document.querySelectorAll("button.icon-btn.edge-toggle")).find(b => b.getAttribute("aria-label") === "Toggle right sidebar")?.click()' >/dev/null 2>&1
-sleep 0.7
+wait_js '!!document.querySelector(".mobile-drawer.right.open")' 10
 drawerlogs=$(jsq 'Array.from(document.querySelectorAll(".mobile-drawer.right.open .mobile-drawer-tab")).filter(t => (t.getAttribute("aria-label")||"").trim() === "Logs").length')
 assert_eq "$drawerlogs" "0" "mobile: the right drawer holds no Logs tab (logs is bottom-only, 3dbb9c5)"
 
 # clean exit: back at desktop, drawer closed, bottom panel still there
 js 'document.querySelector(".scrim")?.click()' >/dev/null 2>&1
 ab set viewport 1280 800 >/dev/null 2>&1
-sleep 0.8
+wait_layout   # the width cross re-lays out the dock: settle before the final read
 bottom=$(jsq 'document.querySelector(".dock-pane.edge-bottom")?1:0')
 assert_eq "$bottom" "1" "final: the bottom panel is present at desktop"
 

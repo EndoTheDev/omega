@@ -158,6 +158,6 @@ fi
 # like any tab (the X on its chip, closable by the component's policy), so
 # the main pane returns to chat for the recipes that follow.
 jsq '(()=>{const t=[...document.querySelectorAll(".dock-tab")].find(x=>x.title==="Settings"); const c=t&&t.querySelector(".dock-tab-close"); if(!c) return 0; c.click(); return 1})()' >/dev/null 2>&1 || true
-sleep 1
+wait_js '![...document.querySelectorAll(".dock-tab")].some(x=>x.title==="Settings")' 10
 
 assert_no_console_errors

@@ -44,7 +44,7 @@ open_app
 js 'localStorage.clear()' >/dev/null 2>&1
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
-sleep 1
+wait_booted
 
 # ---- 1: tab labels --------------------------------------------------------
 # card t_210a0d19 rename law: the extensions inventory tab's label was
@@ -112,7 +112,7 @@ assert_eq "$(jsq 'document.querySelector(".board-pane")?1:0' 2>/dev/null | tail 
 # surviving contract: the toggle does not lose the inspector's state -
 # hide, re-show, the notifications tab still routes its rows.
 js 'document.querySelector("[aria-label=\"Toggle right sidebar\"]")?.click()' >/dev/null
-sleep 1
+wait_js '!document.querySelector(".dock-pane.kind-files")' 10
 assert_eq "$(jsq 'document.querySelector(".dock-pane.kind-files")?1:0' 2>/dev/null | tail -1)" \
   "0" "the inspector is hidden before the reopen"
 js 'document.querySelector("[aria-label=\"Toggle right sidebar\"]")?.click()' >/dev/null
@@ -142,7 +142,7 @@ step "ok: aligned mode - sidebars full height, band between them"
 js 'localStorage.setItem("omega.dock-bottom-width-mode","full")' >/dev/null
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
-sleep 1
+wait_booted
 full=$(jsq '(()=>{const b=document.querySelector(".dock-pane.edge-bottom");if(!b)return -1;const sides=[...document.querySelectorAll(".dock-pane.pinned:not(.edge-bottom)")];return sides.length===2 && sides.every((s)=>s.getBoundingClientRect().bottom <= b.getBoundingClientRect().top+1)?1:0})()' 2>/dev/null | tail -1)
 assert_eq "$full" "1" "full mode: the sidebars end above the band"
 
@@ -150,7 +150,7 @@ assert_eq "$full" "1" "full mode: the sidebars end above the band"
 js 'localStorage.setItem("omega.dock-bottom-width-mode","aligned")' >/dev/null
 ab reload >/dev/null 2>&1
 ab wait --load networkidle >/dev/null 2>&1 || true
-sleep 1
+wait_booted
 back=$(jsq '(()=>{const b=document.querySelector(".dock-pane.edge-bottom");if(!b)return -1;const sides=[...document.querySelectorAll(".dock-pane.pinned:not(.edge-bottom)")];return sides.length===2 && sides.every((s)=>Math.abs(s.getBoundingClientRect().bottom - b.getBoundingClientRect().bottom)<=3)?1:0})()' 2>/dev/null | tail -1)
 assert_eq "$back" "1" "aligned re-applies after the full flip"
 
