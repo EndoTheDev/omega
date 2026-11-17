@@ -49,6 +49,7 @@ import {
   COMPONENT_TITLES,
   DOCKABLES,
   INSPECTOR_TAB_COMPONENTS,
+  PRIMARY_TAB_COMPONENTS,
   TAB_MODULES,
   defaultHostTabs,
   hostsOf,
@@ -68,8 +69,10 @@ const DRAWERS = {
   left: {
     shell: "sidebar",
     activeRef: "sidebarDrawerActiveId",
-    floorArg: `drawerTabsFor("sidebar", ["sidebar"])`,
-    floor: ["sidebar"] as readonly DockComponentName[],
+    // canvas C1: the left floor is the PRIMARY class's members (sessions,
+    // agents, cron), gate-filtered like the right one
+    floorArg: `drawerTabsFor("sidebar", sidebarFloor.value)`,
+    floor: PRIMARY_TAB_COMPONENTS,
   },
   right: {
     shell: "inspector",
@@ -292,15 +295,17 @@ test("cross-host drag residual: a tab outside a drawer's branch set never surfac
   );
   assert.ok(
     right.some((t) => t.id === "agents"),
-    "the agents view stays reachable from ITS home drawer",
+    "the agents view stays reachable from a sidebar drawer it visits",
   );
 
   // reachability is the other half of the law: the tab a drawer clamped is
-  // still offered by the drawer of the host that owns it
+  // still offered by the drawer of the host that owns it. canvas C1: agents'
+  // HOME is the primary sidebar, so the LEFT floor is its reachability.
   const bottomHome = drawerTabs(null, defaultHostTabs("bottom"), title, clamped("bottom"));
   assert.ok(bottomHome.some((t) => t.id === "terminal"), "terminal keeps its home drawer");
-  const rightHome = drawerTabs(null, INSPECTOR_TAB_COMPONENTS, title, clamped("right"));
-  assert.ok(rightHome.some((t) => t.id === "agents"), "agents keeps its home drawer");
+  const leftHome = drawerTabs(null, PRIMARY_TAB_COMPONENTS, title, clamped("left"));
+  assert.ok(leftHome.some((t) => t.id === "agents"), "agents keeps its home drawer");
+  assert.ok(leftHome.some((t) => t.id === "sidebar"), "sessions keeps its home drawer");
 });
 
 test("a pane the drawer cannot render still opens on its home floor (never a blank drawer)", () => {

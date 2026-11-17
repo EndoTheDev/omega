@@ -17,6 +17,8 @@
 // those into registry-shaped entries; module entries stay OUT of the
 // openable DockComponentName union until an outlet slot exists.
 
+import type { PaneZone } from "./panes.ts";
+
 // component names a dock pane may host. Single source: the registry
 // below IS this list (dock.ts re-exports for its consumers).
 //
@@ -125,12 +127,76 @@ export const LEGACY_DOCK_COMPONENTS = ["inspector", "newtab"] as const;
 
 export type DockInstancePolicy = "singleton" | "multi";
 
-// where a component may live (card t_4ae27e0d): "left" is the
-// sidebar-pinned sessions pane, "right" the sidebar-pinned inspector
-// pane, "main" the closable main pane class (hover-X). card t_67fc1905:
-// "bottom" joins the pinned class - the horizontal panel under the main
-// panel (the Logs tab and the terminal live there).
-export type DockArea = "left" | "right" | "main" | "bottom";
+// --- THE CLASS LAW (canvas C1, the seat map) ---------------------------------
+//
+// Every view has ONE class and ONE default home. The class IS its home's
+// zone - there is no separate "area" truth to drift from it: `area` on a
+// registry entry is DERIVED from the class (DOCKABLES composes it), so a
+// component cannot be classed one place and seated another.
+//
+//   primary-sidebar   sessions, agents, crons        -> the left shell
+//   secondary-sidebar files, skills, tools, mcp,    -> the right shell
+//                     kanban, insights, notifications
+//   main              chat, viewer (file preview),  -> the main column
+//                     browser, settings (the gear's
+//                     on-demand tab, never a sidebar view)
+//   bottom            logs (observability),         -> the bottom panel
+//                     terminal
+//
+// THE ZONE LAW (ruled 2026-11-17, uniform visit grammar): a view may OCCUPY
+// exactly the zones its class allows - zonesOfClass below is the one
+// matrix, and the dock's drag legality reads it (seatAllowsIn). Main
+// members never leave the main pane; bottom members visit the two sidebars
+// but never the main pane; sidebar views move freely between the two
+// sidebars, may visit the main pane (a temporary promote) and the bottom
+// pane. A visit is never a move-out: the view's home stands, so close
+// returns it home. No permanent move-out via drag exists.
+export type ViewClass = "primary-sidebar" | "secondary-sidebar" | "main" | "bottom";
+
+/** the four seats, in the pane vocabulary the layout record persists
+    (panes.ts PaneZone; `left` = primary, `right` = secondary). The dock's
+    historical name for the same four values - kept because every persisted
+    record and every pane marker speaks it. */
+export type DockArea = PaneZone;
+
+/** THE CLASS <-> ZONE MAP (the one adapter; nothing else may spell it) */
+export function areaOfClass(c: ViewClass): DockArea {
+  switch (c) {
+    case "primary-sidebar":
+      return "left";
+    case "secondary-sidebar":
+      return "right";
+    case "main":
+      return "main";
+    case "bottom":
+      return "bottom";
+  }
+}
+
+/** THE ZONE LAW as one matrix: the zones a view of class `c` may OCCUPY.
+    Order is the seat map's (primary, secondary, main, bottom) so a reader
+    compares sets by eye. */
+export function zonesOfClass(c: ViewClass): readonly DockArea[] {
+  switch (c) {
+    case "main":
+      // main members NEVER leave the main pane - not to a sidebar, not to
+      // the bottom panel (a heavyweight pane in a narrow column is rejected
+      // mechanism (e), not a layout we support)
+      return ["main"];
+    case "bottom":
+      // bottom members may visit BOTH sidebars, never the main pane
+      return ["left", "right", "bottom"];
+    case "primary-sidebar":
+    case "secondary-sidebar":
+      // sidebar views move freely between the two sidebars, visit the main
+      // pane as a temporary promote, and visit the bottom pane
+      return ["left", "right", "main", "bottom"];
+    default:
+      // runtime data outside the union (a stale entry, a fixture) occupies
+      // nothing - the safe refusal, never a throw inside a drag
+      return [];
+  }
+}
 
 // card t_502b8e81: `icon` is a semantic NAME in the webui iconset
 // (composables/icons.ts ICONS - lucide-vue-next behind the Icon.vue
@@ -165,6 +231,11 @@ export interface DockableComponent {
   /** the iconset name - see the iconset comment above the registry */
   icon: string;
   policy: DockInstancePolicy;
+  /** THE CLASS LAW: what the view IS. Its home follows from it (area). */
+  class: ViewClass;
+  /** the view's default home zone - DERIVED from `class` by DOCKABLES
+      (areaOfClass), never declared twice. Every persisted record and pane
+      marker speaks this vocabulary. */
   area: DockArea;
   /** card t_67fc1905: the hosts that keep this component alive BEYOND its
       `area` home. Most components are single-host ([area] by omission);
@@ -195,13 +266,13 @@ export interface DockableComponent {
 // group and the kanban board is born there. card t_00e4a784: settings
 // LEFT the inspector again (the menubar gear opens it as a closable
 // main tab), so the closable class is chat + viewer + browser + settings.
-export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] = [
+export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx" | "area">)[] = [
   {
     id: "sidebar",
     title: "Sessions",
     icon: "sidebar",
     policy: "singleton",
-    area: "left",
+    class: "primary-sidebar",
     closable: false,
   },
   {
@@ -209,7 +280,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     title: "chat",
     icon: "chat",
     policy: "multi",
-    area: "main",
+    class: "main",
     closable: true,
   },
   {
@@ -229,7 +300,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     title: "viewer",
     icon: "file-text",
     policy: "multi",
-    area: "main",
+    class: "main",
     closable: true,
   },
   {
@@ -237,7 +308,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     title: "Files",
     icon: "files",
     policy: "singleton",
-    area: "right",
+    class: "secondary-sidebar",
     closable: false,
   },
   {
@@ -245,7 +316,9 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     title: "cron",
     icon: "cron",
     policy: "singleton",
-    area: "right",
+    // canvas C1 seat map: cron is a PRIMARY-sidebar view (the scheduler is
+    // a companion of sessions and agents, not an inspector tab)
+    class: "primary-sidebar",
     closable: false,
   },
   {
@@ -253,7 +326,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     title: "skills",
     icon: "skills",
     policy: "singleton",
-    area: "right",
+    class: "secondary-sidebar",
     closable: false,
   },
   {
@@ -261,7 +334,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     title: "tools",
     icon: "tools",
     policy: "singleton",
-    area: "right",
+    class: "secondary-sidebar",
     closable: false,
   },
   {
@@ -274,7 +347,9 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     title: "Agents",
     icon: "agents",
     policy: "singleton",
-    area: "right",
+    // canvas C1 seat map: the agent roster is a PRIMARY-sidebar view - it
+    // is the roster of who is working, the left shell's own subject
+    class: "primary-sidebar",
     closable: false,
   },
   {
@@ -289,7 +364,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     title: "Settings",
     icon: "settings",
     policy: "singleton",
-    area: "main",
+    class: "main",
     closable: true,
   },
   {
@@ -297,7 +372,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     title: "kanban",
     icon: "kanban",
     policy: "singleton",
-    area: "right",
+    class: "secondary-sidebar",
     closable: false,
   },
   {
@@ -305,7 +380,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     // SECONDARY sidebar - a default-visible inspector tab, label "Insights"
     // (the kanban inspector tab is the pattern). This supersedes the
     // main-area width-pressure ruling (t_e1e61680): the dashboard's grid
-    // stacks in the ~300px column, and the loader (restoreInspectorSet)
+    // stacks in the ~300px column, and the loader (restoreSeatSet)
     // seats it in the right shell on every boot. Singleton + unclosable
     // like every inspector view; the main '+' menu entry stays (the
     // singleton opener FOCUSES the sidebar instance - clean coexistence).
@@ -313,7 +388,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     title: "Insights",
     icon: "insights",
     policy: "singleton",
-    area: "right",
+    class: "secondary-sidebar",
     closable: false,
   },
   {
@@ -329,7 +404,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     title: "MCP",
     icon: "mcp",
     policy: "singleton",
-    area: "right",
+    class: "secondary-sidebar",
     closable: false,
   },
   {
@@ -348,7 +423,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     title: "Terminal",
     icon: "terminal",
     policy: "singleton",
-    area: "bottom",
+    class: "bottom",
     closable: false,
   },
   {
@@ -367,7 +442,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     title: "Logs",
     icon: "activity",
     policy: "singleton",
-    area: "bottom",
+    class: "bottom",
     closable: false,
   },
   {
@@ -384,7 +459,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     title: "Browser",
     icon: "browser",
     policy: "singleton",
-    area: "main",
+    class: "main",
     closable: true,
   },
   {
@@ -405,7 +480,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx">)[] =
     title: "Notifications",
     icon: "inbox",
     policy: "singleton",
-    area: "right",
+    class: "secondary-sidebar",
     closable: false,
   },
 ];
@@ -433,12 +508,14 @@ const DOCKABLE_MIN_PX: Record<DockComponentName, number> = {
   observability: MIN_PANE_PX,
 };
 
-// THE registry, floors attached (card t_ae9ac5cf): every entry carries its
-// honest `minPx` (paneFloorOf reads it through dockableMinPx) - the
-// inventory literal above stays floor-free and the map below attaches it,
-// so one map edit joins a floor to a component.
+// THE registry, floors AND homes attached (card t_ae9ac5cf, canvas C1):
+// every entry carries its honest `minPx` (paneFloorOf reads it through
+// dockableMinPx) and its `area` DERIVED from its class - the inventory
+// literal above declares the class law alone, and the two maps below
+// attach the consequences, so one edit joins a floor or a home to a
+// component and NO entry can carry a home that contradicts its class.
 export const DOCKABLES: readonly DockableComponent[] = DOCKABLE_INVENTORY.map(
-  (d) => ({ ...d, minPx: DOCKABLE_MIN_PX[d.id] }),
+  (d) => ({ ...d, area: areaOfClass(d.class), minPx: DOCKABLE_MIN_PX[d.id] }),
 );
 
 /** card t_36ceb99b: WHAT a viewer tab shows. `kind` "file" reads the
@@ -507,12 +584,57 @@ export function dockableIcon(id: string): string | null {
 
 /** card t_d6b657a7: THE LOCKED TAB - sessions is the one component whose
     chip may never leave the left sidebar's own bar (draggable inside it,
-    refused everywhere else). Everything else moves freely now: the
-    sidebars are pinned LOCATIONS with free CONTENT. Unknown ids count as
-    locked (the safe refusal). */
+    refused everywhere else). Unknown ids count as locked (the safe
+    refusal). canvas C1: the lock is the seat map's STRICTEST case, not a
+    competing law - `sidebar` is a primary-sidebar view, and this standing
+    lock narrows it from "visits all four zones" to "its own home" (see
+    seatAllowsIn). */
 export function isLockedTab(id: DockComponentName): boolean {
   const d = safeEntry(id);
   return d === null ? true : d.id === "sidebar";
+}
+
+// --- THE SEAT MAP (canvas C1) ------------------------------------------------
+// One question, one answer: may a view of `component` occupy a pane in
+// `zone`? Every legality read in the dock goes through seatAllowsIn -
+// moveTab, the drop predictor, the pane's live drag hit-test and the
+// opener refusals. A new view joins by its registry entry's class; a new
+// zone rule joins by zonesOfClass. Nothing else may spell a zone check.
+
+/** the class a view belongs to (throws on an unknown id - panes only host
+    registry ids) */
+export function viewClassOf(id: DockComponentName): ViewClass {
+  return dockableOf(id).class;
+}
+
+/** lenient class read for RUNTIME data (persisted tabs can carry legacy
+    ids like "inspector"): null rather than a throw - the boot repairs
+    classify what they can and leave the rest alone */
+export function dockableClass(id: string): ViewClass | null {
+  return safeEntry(id)?.class ?? null;
+}
+
+/** the zones a view may occupy: its class's matrix, narrowed to its own
+    home when the view is locked (sessions). Unknown ids may occupy
+    nothing - the safe refusal. */
+export function zonesOf(id: string): readonly DockArea[] {
+  const d = safeEntry(id);
+  if (!d) return [];
+  return isLockedTab(d.id) ? [d.area] : zonesOfClass(d.class);
+}
+
+/** THE ZONE GATE: may this view occupy a pane in `zone`? The one legality
+    predicate the dock's drag law, the drop predictor and the openers read.
+    Unknown ids refuse (a persisted legacy seat has no class to defend). */
+export function seatAllowsIn(id: string, zone: DockArea): boolean {
+  return zonesOf(id).includes(zone);
+}
+
+/** the members of a class whose HOME is `zone`, in registry order - the
+    loader seats a shell's default strip from this (one law for the left
+    shell and the right). */
+export function classMembers(zone: DockArea): readonly DockComponentName[] {
+  return DOCKABLES.filter((d) => d.area === zone).map((d) => d.id);
 }
 
 /** tab-bar X policy: closable components only (chat, viewer, browser,
@@ -564,11 +686,20 @@ export const MENU_DOCKABLES: readonly DockComponentName[] = DOCKABLES
   )
   .map((d) => d.id);
 
-/** the pinned-area singleton set (the inspector pane's view tabs): the
-    load-time modernizer and the default-shell builder both read this
-    list, so a new inspector view joins it in ONE place. */
+/** the secondary sidebar's singleton set (the inspector pane's view tabs):
+    the load-time modernizer and the default-shell builder both read this
+    list, so a new secondary-sidebar view joins it in ONE place - its
+    registry class. canvas C1: the set IS the class's members, derived
+    (classMembers), so a seat-map edit cannot leave this list behind. */
 export const INSPECTOR_TAB_COMPONENTS: readonly DockComponentName[] =
-  DOCKABLES.filter((d) => d.area === "right").map((d) => d.id);
+  classMembers("right");
+
+/** the primary sidebar's singleton set (canvas C1): sessions and its
+    class companions. The loader seats a fresh left shell from it and the
+    restore repair reads it for the same reason the right shell reads
+    INSPECTOR_TAB_COMPONENTS. */
+export const PRIMARY_TAB_COMPONENTS: readonly DockComponentName[] =
+  classMembers("left");
 
 // --- the host homes (card t_67fc1905): the registry decides the default
 // home per host. A built host (the bottom panel today) seeds its fresh

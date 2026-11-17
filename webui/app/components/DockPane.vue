@@ -280,7 +280,6 @@
   import DockGhost from "./DockGhost.vue";
   // the ONE icon wrapper (card t_502b8e81): every icon in the webui
   import Icon from "./ui/Icon.vue";
-  import { isLockedTab } from "../composables/dockables";
   // card t_36ceb99b: the viewer chip's extension-glyph vocabulary (the
   // same pure table the file tree's row glyphs read)
   import { glyphKindFor, glyphIcon } from "../../../harness/files/ui/rowicon";
@@ -534,14 +533,14 @@
   });
 
   // the LIVE hit-test: is the current gesture allowed to drop into THIS pane?
-  // (the window dragend/drop cleanup clears the gesture record) Free tabs
-  // land anywhere; the LOCKED tab reads the store's live law - the left
-  // root's area (its own pane + its grown leaves), v0.14.4 ruling 1/4.
+  // (the window dragend/drop cleanup clears the gesture record) canvas C1:
+  // THE ZONE LAW answers for every tab - the store's seatOk reads the class
+  // law over this pane's zone (a main member never leaves the main pane, a
+  // bottom member never enters it, sidebar views visit every seat).
   function dropAllowed(): boolean {
     const d = tabDrag.current();
     if (!d) return false;
-    if (!isLockedTab(d.component)) return true;
-    return api.lockedBarOk(props.node.id);
+    return api.seatOk(d.component, props.node.id);
   }
 
   function caretIndexFor(e: DragEvent): number {

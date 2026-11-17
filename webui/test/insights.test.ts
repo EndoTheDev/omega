@@ -152,7 +152,7 @@ test("the view's home is the secondary sidebar (card t_d7fd3ad3)", () => {
   // instead of its position at the inventory's tail
   assert.match(
     dockables,
-    /id: "insights",\n    title: "Insights",[\s\S]*?area: "right",\n    closable: false,\n  \},/,
+    /id: "insights",\n    title: "Insights",[\s\S]*?class: "secondary-sidebar",\n    closable: false,\n  \},/,
     "insights is right-shell, unclosable",
   );
   assert.match(dockables, /card t_d7fd3ad3/, "the ruling is recorded at the entry");

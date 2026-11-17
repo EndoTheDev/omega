@@ -208,10 +208,22 @@ describe("reseatParkedTabs: the chip comes back where it sat", () => {
   });
 
   it("falls back to the registry area when the old pane is gone", () => {
-    const parked: ParkedTab[] = [{ component: "cron", pane: "p-gone", index: 0 }];
+    // canvas C1: the fallback reads the registry HOME, which is the class's
+    // zone - skills is a secondary-sidebar view, so its home pane answers.
+    // (cron's home is the primary sidebar now; a shell without one leaves
+    // its seat parked, the honest no-pane answer.)
+    const parked: ParkedTab[] = [{ component: "skills", pane: "p-gone", index: 0 }];
     const tree = shell(inspectorPane({ tabs: [{ component: "files" }], active: 0 }));
-    const res = reseatParkedTabs(tree, parked, gateOf(["cron"], []));
-    assert.deepEqual(tabIds(res.tree, "p-right"), ["cron", "files"]);
+    const res = reseatParkedTabs(tree, parked, gateOf(["skills"], []));
+    assert.deepEqual(tabIds(res.tree, "p-right"), ["skills", "files"]);
+    // no home pane in the tree: the seat stays parked, never minted into a
+    // pane the law does not name
+    const noLeft = reseatParkedTabs(
+      shell(inspectorPane({ tabs: [{ component: "files" }], active: 0 })),
+      [{ component: "cron", pane: "p-gone", index: 0 }],
+      gateOf(["cron"], []),
+    );
+    assert.deepEqual(noLeft.parked.map((p) => p.component), ["cron"]);
   });
 
   it("never duplicates a singleton that is already hosted", () => {
@@ -331,19 +343,19 @@ describe("a reveal reintroduces a strip: the gate re-runs there too", () => {
     assert.ok(strip, "boot seats the inspector shell");
     const before = tabIds(dock.tree.value, strip.id);
 
-    // 1. cron off while the inspector is open: the chip parks
-    dock.setModuleGate(gateOf(["cron"], ["cron"]));
-    assert.equal(findComponentTab(dock.tree.value, "cron"), null);
-    // 2. the inspector closes - the strip (cron already gone) stows
+    // 1. skills off while the inspector is open: the chip parks
+    dock.setModuleGate(gateOf(["skills"], ["skills"]));
+    assert.equal(findComponentTab(dock.tree.value, "skills"), null);
+    // 2. the inspector closes - the strip (skills already gone) stows
     dock.toggleEdge("inspector", "after");
     assert.equal(findEdgePane(dock.tree.value, "inspector"), null, "the edge is closed");
-    // 3. cron comes back while the strip is hidden: no live pane hosts it,
+    // 3. skills comes back while the strip is hidden: no live pane hosts it,
     //    so the seat STAYS parked rather than being dropped
-    dock.setModuleGate(gateOf(["cron"], []));
-    assert.equal(findComponentTab(dock.tree.value, "cron"), null, "still parked behind the closed edge");
+    dock.setModuleGate(gateOf(["skills"], []));
+    assert.equal(findComponentTab(dock.tree.value, "skills"), null, "still parked behind the closed edge");
     assert.deepEqual(
       parseParkedTabs(store.getItem(MODULE_STASH_KEY)).map((p) => p.component),
-      ["cron"],
+      ["skills"],
       "the seat survived the while-hidden remount",
     );
     // 4. the inspector reopens: the reveal re-runs the live gate, so the

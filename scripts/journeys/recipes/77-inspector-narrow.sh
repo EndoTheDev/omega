@@ -8,6 +8,14 @@
 # files tree, and settings rides card t_49d0b308's own adaptation.
 # Logs left the inspector (bottom-hosted only, 3dbb9c5) - the logs
 # checks moved out of this journey with it.
+# canvas C1 (the class law): the views that BOOT in the inspector are the
+# secondary-sidebar class (files, skills, tools, kanban). cron and agents
+# boot in the primary sidebar and settings is a main-pane tab (the gear) -
+# none of the three is an inspector view any more. The adaptation law is
+# about the CONTAINER: cron's narrow witness is its primary home below, and
+# settings' narrow typography is pinned in recipe 113 (its own container,
+# the main pane). A main-class view can NEVER be dragged into the
+# inspector, so the old settings-drag setup step is gone.
 #
 # Customer-visible invariants, asserted here per inspector tab:
 #   narrow  -> the panel root carries the `narrow` class AND the class's
@@ -37,57 +45,27 @@ panes=$(jsq 'document.querySelectorAll("[data-pane-id]").length')
 step "ok: dock tree renders ($panes panes)"
 
 # the inspector pane: the right edge shell - the pinned pane whose tabbar
-# hosts the kanban/settings tabs. JS finds it by tab set, not position
+# hosts the kanban tab (canvas C1: the secondary-sidebar class). JS finds
+# it by tab set, not position
 # arithmetic, so menu-bar tweaks upstream cannot mis-route this journey.
 # card t_502b8e81: edge shells render ICON-ONLY chips - the name rides
 # aria-label (no .dock-tab-title); main/bottom tabs keep text.
 inspJS='(()=>{const ps=[...document.querySelectorAll(".dock-pane")];
  const name=(e)=>((e.getAttribute("aria-label")||"")||e.title||((e.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
  const pinned=ps.filter(p=>p.classList.contains("pinned")||p.querySelector(".dock-tabbar"));
- const hit=pinned.find(p=>[...p.querySelectorAll(".dock-tab")].some(t=>/kanban|settings/i.test(name(t))));
+ const hit=pinned.find(p=>[...p.querySelectorAll(".dock-tab")].some(t=>/kanban/i.test(name(t))));
  return hit?1:0})()'
 found=$(jsq "$inspJS")
 assert_eq "$found" "1" "inspector pane found by its tab set"
 
-# card t_00e4a784 (Endo ruling 2026-11-09): settings left the inspector -
-# the menubar gear opens it as an on-demand MAIN tab. The narrow law still
-# applies to it (useNarrow measures its OWN container), so the journey
-# opens it from the gear and DRAGS its chip into the inspector bar (tabs
-# are free content): the inspector's 240px is the narrow host the phase-1
-# assert needs. Real gesture semantics, synthetic HTML5 drag events (the
-# same shape recipe 70 uses - the app reads dataTransfer, and the pane
-# handlers drive moveTab from it).
-geared=$(jsq '(()=>{const b=document.querySelector("header.menubar button[aria-label=\"Open settings\"]"); if(!b) return 0; b.click(); return 1})()')
-assert_eq "$geared" "1" "settings gear rendered in the menubar"
-# the gear's chip is an EVENT: wait for the settings tab to be in a dock pane
-# (a 2s pause was a guess at the mount, card t_fdd12843)
-wait_js '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();return [...document.querySelectorAll(".dock-pane")].some(p=>[...p.querySelectorAll(".dock-tab")].some(t=>/settings/i.test(name(t))))})()' 15 \
-  || die "the settings chip never appeared in a dock pane after the gear click"
-moved=$(jsq '(() => {
-  const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
-  const panes=[...document.querySelectorAll(".dock-pane")];
-  const src=panes.find(p=>[...p.querySelectorAll(".dock-tab")].some(t=>/settings/i.test(name(t))));
-  const dst=panes.find(p=>p!==src && [...p.querySelectorAll(".dock-tab")].some(t=>/files/i.test(name(t))));
-  if(!src||!dst) return 0;
-  const chip=[...src.querySelectorAll(".dock-tab")].find(t=>/settings/i.test(name(t)));
-  const bar=dst.querySelector(".dock-tabbar");
-  if(!chip||!bar) return 0;
-  const dt=new DataTransfer();
-  chip.dispatchEvent(new DragEvent("dragstart",{dataTransfer:dt,bubbles:true}));
-  const r=bar.getBoundingClientRect();
-  const cx=Math.round(r.right-20), cy=Math.round(r.y+10);
-  bar.dispatchEvent(new DragEvent("dragover",{dataTransfer:dt,bubbles:true,clientX:cx,clientY:cy}));
-  bar.dispatchEvent(new DragEvent("drop",{dataTransfer:dt,bubbles:true,clientX:cx,clientY:cy}));
-  return 1;
-})()')
-assert_eq "$moved" "1" "settings chip dragged into the inspector bar"
-# the drop is an EVENT: wait for the inspector bar to host the chip
-wait_js '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();return [...document.querySelectorAll(".dock-pane.pinned")].some(p=>[...p.querySelectorAll(".dock-tab")].some(t=>/settings/i.test(name(t))))})()' 15 \
-  || die "the inspector bar never hosted the dragged settings tab"
-hosted=$(jsq '(()=>{const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
- const p=[...document.querySelectorAll(".dock-pane.pinned")].find(x=>[...x.querySelectorAll(".dock-tab")].some(t=>/settings/i.test(name(t))));
- return p?1:0})()')
-assert_eq "$hosted" "1" "the inspector bar hosts the dragged settings tab"
+# card t_00e4a784 (Endo ruling 2026-11-09) + canvas C1 (the class law):
+# settings is a MAIN-pane tab (the menubar gear) and a main member NEVER
+# leaves the main pane, so there is no settings-drag into the inspector any
+# more - the old setup step that dragged its chip here is the exact
+# violation the class law forbids. Settings' narrow typography is pinned in
+# recipe 113 (the settings recipe drives its own container narrow at 340px).
+# cron likewise boots in the PRIMARY sidebar now (the class law's seat map),
+# so its narrow witness below reads its primary home - not the inspector.
 
 # TABS: title-regex, panel-root selector, narrow computed-style check.
 # The style checks pin the STACKED/CONDENSED shapes of the recipe's
@@ -132,17 +110,18 @@ tab_narrow() {
   esac
 }
 
-# --- phase 1: every inspector tab renders its narrow adaptation ---------
+# --- phase 1: every inspector view renders its narrow adaptation -------
 # style checks pick data-independent elements where the private lane has
-# no rows (empty cron list, log tail): the condensed root padding is the
-# narrow rule; a missing descendant (no data) cannot fail the tab.
+# no rows (empty cron list): the condensed root padding is the narrow
+# rule; a missing descendant (no data) cannot fail the tab. canvas C1:
+# cron narrows in its PRIMARY-sidebar home (the seat map moved it there);
+# the inspector's own views are the secondary class below.
 tab_narrow 'cron'    '.cron-list'   'getComputedStyle(document.querySelector(".cron-list .cron-body")).paddingLeft==="8px"'
 tab_narrow 'skills'  '.skills-list' 'getComputedStyle(document.querySelector(".skills-list .skills-body")).paddingLeft==="8px"'
 tab_narrow 'tools'   '.tools-list'  'getComputedStyle(document.querySelector(".tools-list .tools-body")).paddingLeft==="8px"'
-tab_narrow 'files'   '.inspector-panel' 'getComputedStyle(document.querySelector(".files-tree .size")).display==="none"'
-tab_narrow 'settings' 'aside.settings'  'getComputedStyle(document.querySelector(".settings-note")).fontSize==="10.5px"'
+tab_narrow 'files'   '.inspector-panel:has(.inspector-files)' 'getComputedStyle(document.querySelector(".files-tree .size")).display==="none"'
 tab_narrow 'kanban'  '.board'       'getComputedStyle(document.querySelector(".board-scroll")).flexDirection==="column"'
-step "ok: every inspector tab renders its measured narrow adaptation"
+step "ok: every inspector view renders its measured narrow adaptation"
 
 # --- phase 2: widen the inspector past the threshold - classes drop -----
 # the divider is the inspector's LEFT border: dragging it RIGHT shrinks the
@@ -152,7 +131,7 @@ step "ok: every inspector tab renders its measured narrow adaptation"
 dragJS='(()=>{const ps=[...document.querySelectorAll(".dock-pane")];
  const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
  const right=ps.filter(p=>p.classList.contains("pinned")||p.querySelector(".dock-tabbar"));
- const insp=right.find(p=>[...p.querySelectorAll(".dock-tab")].some(t=>/kanban|settings/i.test(name(t))));
+ const insp=right.find(p=>[...p.querySelectorAll(".dock-tab")].some(t=>/kanban/i.test(name(t))));
  if(!insp) return -1;
  const r=insp.getBoundingClientRect();
  const divs=[...document.querySelectorAll(".dock-divider")];
@@ -170,7 +149,7 @@ wait_layout
 # the drag may re-key the pane tree; re-find the inspector by its tab set
 wide=$(jsq '(()=>{const ps=[...document.querySelectorAll(".dock-pane")];
  const name=(t)=>((t.getAttribute("aria-label")||"")||t.title||((t.querySelector(".dock-tab-title")||{textContent:""}).textContent)).trim();
- const insp=ps.find(p=>[...p.querySelectorAll(".dock-tab")].some(t=>/kanban|settings/i.test(name(t))));
+ const insp=ps.find(p=>[...p.querySelectorAll(".dock-tab")].some(t=>/kanban/i.test(name(t))));
  return insp?Math.round(insp.getBoundingClientRect().width):-1})()')
 [ "$wide" -ge 380 ] 2>/dev/null || die "inspector did not widen (width $wide)"
 step "ok: inspector widens to ${wide}px"
@@ -208,11 +187,9 @@ wide_drop() {
   [ "$out" = "4" ] 2>/dev/null || die "$1: narrow class did not drop at ${wide}px (last verdict $out)"
 }
 
-wide_drop 'files'   '.inspector-panel'
-wide_drop 'cron'    '.cron-list'
+wide_drop 'files'   '.inspector-panel:has(.inspector-files)'
 wide_drop 'skills'  '.skills-list'
 wide_drop 'tools'   '.tools-list'
-wide_drop 'settings' 'aside.settings'
 wide_drop 'kanban'  '.board'
 step "ok: every widened inspector tab drops the narrow class"
 
@@ -222,5 +199,5 @@ ab mouse down >/dev/null 2>&1
 x=-150; while [ "$x" -le 0 ]; do ab mouse move "$((divx+x))" 400 >/dev/null 2>&1; sleep 0.03; x=$((x+10)); done
 ab mouse up >/dev/null 2>&1
 wait_layout
-tab_narrow 'cron' '.cron-list' 'getComputedStyle(document.querySelector(".cron-list .cron-body")).paddingLeft==="8px"'
+tab_narrow 'kanban' '.board' 'getComputedStyle(document.querySelector(".board-scroll")).flexDirection==="column"'
 step "ok: dragging back narrow re-applies the adaptation (live observer)"

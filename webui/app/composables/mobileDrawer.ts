@@ -127,9 +127,11 @@ export function routeShellToggle(
 // THAT edge's drawer, because the drawer's tab list is live pane + registry
 // floor (the home strip) clamped the same way.
 export const DRAWER_RENDERABLE: Record<MobileShell, readonly DockComponentName[]> = {
-  // the sessions shell: its own locked tab, plus the two shell-owned views
-  // every drawer branches (files/settings are freely draggable residents)
-  sidebar: ["sidebar", "files", "settings"],
+  // the sessions shell: its own locked tab, the primary class's shell-owned
+  // companion (agents - canvas C1 moved its home here), plus the two
+  // shell-owned views every drawer branches (files/settings are freely
+  // draggable residents)
+  sidebar: ["sidebar", "agents", "files", "settings"],
   // the inspector shell: its home views, the shell inventory + insights
   // (t_d7fd3ad3) and the two capsule/panel views it seats by their own
   // branch (notifications t_180db2cb, agents t_07ad4fda). Card t_81d0901b:
