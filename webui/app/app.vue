@@ -47,6 +47,7 @@
             :active-id="focusedSessionId"
             :streaming-ids="busyAll"
             :open="drawerOpen"
+            :draft-focused="draftConversationFocused"
             @open="openChatTab"
             @new="openChatTab(null)"
             @new-ephemeral="openEphemeralTab"
@@ -290,6 +291,7 @@
         :active-id="focusedSessionId"
         :streaming-ids="busyAll"
         :open="drawerOpen"
+        :draft-focused="draftConversationFocused"
         @open="openChatTab"
         @new="openChatTab(null)"
         @new-ephemeral="openEphemeralTab"
@@ -580,8 +582,7 @@
     persistedTelemetry,
     formatDurationMs,
     fetchThemes,
-    fetchSettings,
-    settingValueOf,
+    fetchSettingKnob,
     applyThemeTokens,
     clearThemeTokens,
     DEFAULT_THEME_ID,
@@ -623,6 +624,8 @@
     DOCK_API_KEY,
     DOCK_CHAT_OPEN_KEY,
     DOCK_TAB_TITLE_KEY,
+    DOCK_DRAFT_FOCUS_KEY,
+    isDraftChatKey,
     DOCK_LAYOUT_KEY,
     DOCK_LAYOUT_BAK_KEY,
     nextTabKey,
@@ -1554,6 +1557,23 @@
   // the sidebar's active-session highlight follows the focused chat tab
   const focusedSessionId = computed(() => focusedChatState.value.sessionId);
 
+  // THE NEW-CONVERSATION DIM (card t_0a9edc72): the focused chat tab is
+  // the DRAFT conversation - no session binding yet. Every "new
+  // conversation" door (the sidebar's '+', its menu entry, the palette's
+  // New chat, a main pane's '+') would only focus the tab already on
+  // screen, so each renders dimmed + disabled (aria-disabled, out of tab
+  // order) while this holds - the last-tab close X's law. The click path
+  // is untouched: it focuses the draft, which is the honest outcome.
+  // isDraftChatKey is the pure predicate both sides of the seam read.
+  const draftConversationFocused = computed(() =>
+    isDraftChatKey(dock.tree.value, focusedKey.value),
+  );
+  // one provider for the fact, read by every door (a main pane's '+'
+  // through the inject key, the store sidebar through a prop - a module
+  // UI imports no shell code). Provided here, after the computed it
+  // carries: setup runs top to bottom and children mount afterwards.
+  provide(DOCK_DRAFT_FOCUS_KEY, draftConversationFocused);
+
   // card t_db378a0d: the focused session is broadcast to module-owned
   // panels (the Agents tab's active row) - module UI imports no shell
   // code, so the shell announces the id it is showing and the panel
@@ -2384,6 +2404,9 @@
       openRecentSession: openRecentSessionTab,
       reloadLayout: () => window.location.reload(),
       clearSavedLayout,
+      // card t_0a9edc72: the "New chat" command dims under the draft
+      // focus - the same fact every other new-conversation door reads
+      draftFocused: draftConversationFocused.value,
       // card t_103e30a6: the palette's "open <module tab>" commands follow
       // the runtime gate - a disabled module offers no chip and no command
       hiddenDockable: (id) => moduleGated(id, currentModuleGate()),
@@ -2800,15 +2823,18 @@
           // models are decoration until a chat runs
         }),
       // card t_30137f67: the boot read of server.default_workspace - the
-      // SAME /settings payload the Settings tab renders (shared
-      // fetchSettings read, no second config path). It feeds the shared
-      // signal SettingsTab's reads keep fresh, and seedDefaultWorkspace
-      // backfills the unbound drafts born before this resolved. A host
-      // without the settings seam (501) or a failed read leaves "" - the
-      // unconfigured behavior, the chip starts blank.
-      fetchSettings()
-        .then((p) => {
-          setDefaultWorkspace(settingValueOf(p, DEFAULT_WORKSPACE_KNOB));
+      // SAME registry the Settings tab renders, read through the server's
+      // one-knob door (card t_0a9edc72: `?key=`, so the launch stops
+      // paying for every group, every help line and every agent scope to
+      // learn ONE value - the measured before/after rides the merge
+      // comment). It feeds the shared signal SettingsTab's reads keep
+      // fresh, and seedDefaultWorkspace backfills the unbound drafts born
+      // before this resolved. A host without the settings seam (501), a
+      // host that names no such knob (null), or a failed read leaves "" -
+      // the unconfigured behavior, the chip starts blank.
+      fetchSettingKnob(DEFAULT_WORKSPACE_KNOB)
+        .then((knob) => {
+          setDefaultWorkspace(knob?.value);
           if (defaultWorkspaceNow()) host.seedDefaultWorkspace(defaultWorkspaceNow());
         })
         .catch(() => {

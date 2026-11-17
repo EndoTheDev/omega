@@ -16,10 +16,14 @@ const src = (p: string): string => readFileSync(`${root}${p}`, "utf8");
 
 const sidebar = src("../harness/store/ui/AppSidebar.vue");
 // the picker's data lives in one array - match only inside it, never the
-// whole component (other sites carry label-like strings)
+// whole component (other sites carry label-like strings). Card t_0a9edc72
+// made the list a COMPUTED (the New Session entry carries the live
+// draft-focus dim), so both the plain-array and the computed forms match:
+// the pin is the ENTRIES, not the declaration keyword.
 const picker =
-  sidebar.match(/const newMenuEntries: NewMenuEntry\[\] = \[([\s\S]*?)\n\s*\];/)?.[1] ??
-  "";
+  sidebar.match(
+    /const newMenuEntries (?::[^=]+)?= (?:computed<NewMenuEntry\[\]>\(\s*\(\)\s*=>\s*)?\[([\s\S]*?)\n\s*\][,)]*;/,
+  )?.[1] ?? "";
 
 describe("AppSidebar: the new-session control (card t_55a571ff)", () => {
   it('the main chip reads "+ New Session"', () => {

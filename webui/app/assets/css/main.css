@@ -296,6 +296,14 @@ body {
   cursor: default;
   display: block;
 }
+/* card t_0a9edc72: a command that would only re-focus what already has the
+   focus ("New chat" under the draft conversation) renders DIMMED and
+   aria-disabled - never removed, the way the last-tab close X is. The row
+   still rides the active/hover background (the picker never skips a row);
+   only its voice dims. */
+.command-palette-list li.dimmed .command-title,
+.command-palette-list li.dimmed .command-hint { opacity: 0.4; }
+.command-palette-list li.dimmed { cursor: default; }
 
 /* ---- layer 1: pane area — floating rounded panes on the canvas ---- */
 .pane-area {
@@ -597,6 +605,27 @@ body {
   opacity: 0.3;
   background: none;
   color: var(--text-dim);
+  cursor: default;
+}
+/* card t_0a9edc72: THE DIM LAW for a door whose action is a no-op right
+   now - the shape the locked last-tab X above established (aria-disabled
+   + tabindex -1 in the template, dimmed and never removed, the click
+   still honest). The opacity is the house DISABLED number (0.4: the
+   band-tool and send contracts), not the X's 0.3, because these are band
+   and row controls sitting at rest rather than a hover-revealed strip.
+   Consumers: a main pane's '+' (DockPane) and the sessions sidebar's
+   '+' / its menu's "New Session" row (AppSidebar) - one global class, so
+   no consumer carries a second dim value. */
+.door-dimmed {
+  opacity: 0.4;
+  cursor: default;
+}
+/* a consumer's SCOPED rule (`.new-main[data-v-…]`) outranks the plain class
+   on equal specificity, so its own `cursor: pointer` would keep reading as
+   live - the element+attr form outranks the scoped rule and restores the
+   dimmed voice. (The click still works: the door focuses the draft.) */
+button.door-dimmed[aria-disabled="true"] {
+  opacity: 0.4;
   cursor: default;
 }
 /* card t_80775d15: the pinned TEXT strip (the bottom pane's tabs) keeps
@@ -1573,59 +1602,16 @@ labels stopped short of the right edge. */
   margin-top: 6px;
 }
 
-/* copy message (/copy parity, card t_868633b3): a small mono chip in the
-   action row, same hover-fade contract as the sessions row actions.
-   Opaque chip surface so it stays legible over text underneath; hidden
-   entirely while not hovered (no hit target). */
-.msg-copy {
-  flex: none;
-  height: 16px;
-  padding: 0 5px;
-  border: 1px solid var(--stroke);
-  border-radius: var(--r-chip);
-  background: var(--z2);
-  color: var(--text-dim);
-  font-size: 10px;
-  font-family: var(--mono);
-  line-height: 14px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-}
-.bubble:hover .msg-copy,
-.msg-copy:focus-visible { opacity: 1; pointer-events: auto; }
-.msg-copy:hover { color: var(--text); }
-
-/* fork affordance (t_a62eeb43): the same hover-fade chip as msg-copy,
-   its left neighbor in the action row; any HISTORICAL message carries it
-   (a streaming bubble has no id). Click anchors the composer - the next
-   send continues from this message. */
-.msg-fork {
-  flex: none;
-  height: 16px;
-  padding: 0 5px;
-  border: 1px solid var(--stroke);
-  border-radius: var(--r-chip);
-  background: var(--z2);
-  color: var(--text-dim);
-  font-size: 10px;
-  font-family: var(--mono);
-  line-height: 14px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-}
-.bubble:hover .msg-fork,
-.msg-fork:focus-visible { opacity: 1; pointer-events: auto; }
-.msg-fork:hover { color: var(--accent); }
-
-/* retry affordance (t_95d2bc34): the composer's retry face retired -
-   the replay control rides the action row now, the same hover-fade
-   chip as msg-fork. Only the NEWEST assistant response carries it (the
-   component's prop gates it; ChatTab derives "newest" + idle). Click
-   re-runs the last user turn as a sibling variant - the same pipe call
-   the composer's face used to dispatch. Accent on hover: it is the
-   replay control, not a copy. */
+/* THE ACTION CHIP (card t_0a9edc72): copy (/copy parity, t_868633b3),
+   fork (t_a62eeb43) and retry (t_95d2bc34) are ONE anatomy - a 16px mono
+   chip on the --z2 surface that fades in on bubble hover (and on its own
+   focus-visible, so the keyboard path never needs a mouse). They rode
+   three byte-identical blocks; this is the one block, and a fourth
+   action adds a selector here rather than a fourth copy. The opaque
+   surface keeps the chip legible over the text underneath; hidden means
+   hidden entirely (no hit target) until the fade. */
+.msg-copy,
+.msg-fork,
 .msg-retry {
   flex: none;
   height: 16px;
@@ -1641,8 +1627,16 @@ labels stopped short of the right edge. */
   pointer-events: none;
   transition: opacity 0.12s ease;
 }
+.bubble:hover .msg-copy,
+.bubble:hover .msg-fork,
 .bubble:hover .msg-retry,
+.msg-copy:focus-visible,
+.msg-fork:focus-visible,
 .msg-retry:focus-visible { opacity: 1; pointer-events: auto; }
+/* the verbs' own accent: copy is a copy (the text voice), fork and retry
+   are paths back into the conversation (the accent) */
+.msg-copy:hover { color: var(--text); }
+.msg-fork:hover,
 .msg-retry:hover { color: var(--accent); }
 
 /* variant switcher (t_a62eeb43): « 2/3 » in the action row - small,

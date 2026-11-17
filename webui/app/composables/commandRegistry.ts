@@ -27,6 +27,12 @@ export interface PaletteCommand {
   /** extra filter fuel ("browser" finds "open Browser" the same either
       way; keywords rescue odd voice titles like the modules cockpit) */
   keywords?: string;
+  /** card t_0a9edc72: the command renders DIMMED and disabled - it can
+      still be picked, and running it does the honest thing (focus the
+      surface that already owns the state), but the row says up front
+      that nothing new will open. The one case today: "New chat" while
+      the draft conversation already holds the focus. */
+  dimmed?: boolean;
   /** the action. Local only - the palette never talks to the agent. */
   run: () => void | Promise<void>;
 }
@@ -50,6 +56,10 @@ export interface PaletteCommandDeps {
       runtime reports OFF gets no "open <title>" command (a module-off
       surface is gone, not merely unreachable). Absent = nothing hidden. */
   hiddenDockable?: (id: DockComponentName) => boolean;
+  /** card t_0a9edc72: the focused tab IS the draft conversation, so
+      "New chat" would only focus it again. The row renders dimmed +
+      aria-disabled (never removed) and the action stays the honest one. */
+  draftFocused?: boolean;
 }
 
 // the openable dockable set: sidebar is the locked tab (the toggle owns
@@ -80,11 +90,14 @@ export function buildPaletteCommands(deps: PaletteCommandDeps): PaletteCommand[]
     if (deps.hiddenDockable?.(id)) continue;
     if (id === "chat") {
       // multi: "open chat" would duplicate the sidebar's '+' semantics -
-      // the command is the fresh tab, labeled honestly
+      // the command is the fresh tab, labeled honestly. Card
+      // t_0a9edc72: under the draft focus it would only re-focus that
+      // tab, so the row dims (the new-conversation dim law).
       cmds.push({
         id: "open:" + id,
         title: "New chat",
         keywords: "chat",
+        dimmed: deps.draftFocused === true,
         run: () => deps.openChat(),
       });
       continue;

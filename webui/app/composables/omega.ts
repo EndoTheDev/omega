@@ -2549,6 +2549,44 @@ export interface SettingsPayload {
 // no control to render, so it falls out like any other stale entry.
 const SETTING_KNOB_TYPES = ["toggle", "number", "text", "secret", "select", "textarea", "bindlist", "model", "providers"];
 
+// normalizeSettingKnob sanitizes ONE knob object - the shape the groups
+// carry and the one-knob read (`GET /settings?key=`) answers verbatim.
+// Card t_0a9edc72: both readers run through this one function, so the
+// lazy read can never disagree with the group walk about a knob's
+// fields. Returns null for a payload with no renderable control.
+export function normalizeSettingKnob(raw: unknown): SettingKnob | null {
+  if (!raw || typeof raw !== "object") return null;
+  const kn = raw as Record<string, unknown>;
+  if (typeof kn.key !== "string" || typeof kn.label !== "string") return null;
+  if (typeof kn.type !== "string" || !SETTING_KNOB_TYPES.includes(kn.type)) return null;
+  if (kn.value === undefined) return null;
+  return {
+    key: kn.key,
+    label: kn.label,
+    type: kn.type as SettingKnob["type"],
+    value: kn.value,
+    // the default rides EVERY knob (card t_d13c7264); JSON null is
+    // the no-default sentinel and survives the normalization so the
+    // pane can tell it from default=false/""/0 (card t_c04c959e).
+    default: kn.default,
+    options: Array.isArray(kn.options) ? (kn.options as string[]) : undefined,
+    filter:
+      kn.filter === "decision" || kn.filter === "vision"
+        ? kn.filter
+        : undefined,
+    slot: kn.slot === true ? true : undefined,
+    defaultOption: kn.default_option === true ? true : undefined,
+    min: typeof kn.min === "number" ? kn.min : undefined,
+    max: typeof kn.max === "number" ? kn.max : undefined,
+    step: typeof kn.step === "number" ? kn.step : undefined,
+    help: typeof kn.help === "string" ? kn.help : undefined,
+    live: kn.live === true,
+    // card t_af7e1150: the nav's nesting field when a host ever
+    // sends it (the pane's own table stamps the rest)
+    subgroup: typeof kn.subgroup === "string" && kn.subgroup !== "" ? kn.subgroup : undefined,
+  };
+}
+
 export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
   const groups: SettingGroup[] = [];
   if (raw && typeof raw === "object" && Array.isArray((raw as Record<string, unknown>).groups)) {
@@ -2559,36 +2597,8 @@ export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
       if (!Array.isArray(gr.knobs)) continue;
       const knobs: SettingKnob[] = [];
       for (const k of gr.knobs as unknown[]) {
-        if (!k || typeof k !== "object") continue;
-        const kn = k as Record<string, unknown>;
-        if (typeof kn.key !== "string" || typeof kn.label !== "string") continue;
-        if (typeof kn.type !== "string" || !SETTING_KNOB_TYPES.includes(kn.type)) continue;
-        if (kn.value === undefined) continue;
-        knobs.push({
-          key: kn.key,
-          label: kn.label,
-          type: kn.type as SettingKnob["type"],
-          value: kn.value,
-          // the default rides EVERY knob (card t_d13c7264); JSON null is
-          // the no-default sentinel and survives the normalization so the
-          // pane can tell it from default=false/""/0 (card t_c04c959e).
-          default: kn.default,
-          options: Array.isArray(kn.options) ? (kn.options as string[]) : undefined,
-          filter:
-            kn.filter === "decision" || kn.filter === "vision"
-              ? kn.filter
-              : undefined,
-          slot: kn.slot === true ? true : undefined,
-          defaultOption: kn.default_option === true ? true : undefined,
-          min: typeof kn.min === "number" ? kn.min : undefined,
-          max: typeof kn.max === "number" ? kn.max : undefined,
-          step: typeof kn.step === "number" ? kn.step : undefined,
-          help: typeof kn.help === "string" ? kn.help : undefined,
-          live: kn.live === true,
-          // card t_af7e1150: the nav's nesting field when a host ever
-          // sends it (the pane's own table stamps the rest)
-          subgroup: typeof kn.subgroup === "string" && kn.subgroup !== "" ? kn.subgroup : undefined,
-        });
+        const knob = normalizeSettingKnob(k);
+        if (knob) knobs.push(knob);
       }
       groups.push({ key: gr.key, label: gr.label, knobs });
     }
@@ -2645,6 +2655,30 @@ export async function fetchSettings(): Promise<SettingsPayload> {
     throw new Error(msg);
   }
   return normalizeSettingsPayload(await r.json());
+}
+
+// fetchSettingKnob reads ONE knob through the server's own one-knob
+// door (`GET /settings?key=<dotted path>`, card t_013b4643). Card
+// t_0a9edc72: the launch reads a single value (server.default_workspace)
+// and used to pay for the whole registry - every group, every knob's
+// help text, every agent scope - on EVERY page load. The knob object
+// rides back exactly as it sits inside its group; a null answer means
+// the host named no such knob (an old host, a renamed key).
+export async function fetchSettingKnob(key: string): Promise<SettingKnob | null> {
+  const r = await fetch(`/settings?key=${encodeURIComponent(key)}`);
+  if (!r.ok) throw await settingsFailure(r, "settings read");
+  return normalizeSettingKnob(await r.json());
+}
+
+// fetchSettingsScopes reads ONLY the per-agent scopes (`GET
+// /settings?scopes=1`, card t_0a9edc72). The scope refresh after an
+// agent save needs nothing else, and a full read there shipped every
+// knob group of the main document for a field the pane then threw away.
+// Same structure, same normalizer - the wire is sliced, not forked.
+export async function fetchSettingsScopes(): Promise<SettingsScope[]> {
+  const r = await fetch("/settings?scopes=1");
+  if (!r.ok) throw await settingsFailure(r, "settings scopes");
+  return normalizeSettingsPayload(await r.json()).scopes;
 }
 
 // saveSettings PUTs the changed knob values and returns the refreshed

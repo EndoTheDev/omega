@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Config-knob surface for the webui settings pane. Read/write of the
@@ -40,6 +42,20 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			writeSettingsJSON(w, knob)
+			return
+		}
+		// The SCOPES slice (card t_0a9edc72): the settings pane's scope
+		// refresh needs the per-agent scopes and nothing else, and it
+		// used to re-fetch the whole document for that one field. The
+		// slice is the SAME structure (the host's own Schema()) cut at
+		// the wire - no second registry, no second query path: the
+		// groups ride empty so the client's normalizer keeps its one
+		// shape. An absent/short flag is the full read, unchanged.
+		if r.URL.Query().Get("scopes") == "1" {
+			writeSettingsJSON(w, &core.SettingsSchema{
+				Groups: []core.SettingsGroup{},
+				Scopes: payload.Scopes,
+			})
 			return
 		}
 		writeSettingsJSON(w, payload)

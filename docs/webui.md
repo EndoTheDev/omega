@@ -255,6 +255,19 @@ Everything else animates through `transition`, not keyframes.
 - **Sessions lock to the primary sidebar** - open a session or hit `new`
   and it opens in the MAIN pane, focusing the existing tab instead of
   reopening.
+- **The new-conversation DIM** (card t_0a9edc72, vera's finding): while the
+  FOCUSED chat tab IS the draft conversation, every "new conversation" door
+  would only focus the tab already on screen, so each renders dimmed and
+  disabled - `aria-disabled` + `tabindex -1` and the one global
+  `.door-dimmed` value (0.4, the house disabled number), dimmed but never
+  removed, the same law the last-tab close X obeys. The doors: the sessions
+  sidebar's `+ New Session` chip and its picker's `New Session` entry, the
+  palette's `New chat` command, and a main pane's `+`. The fact has ONE
+  owner (`app.vue`'s `draftConversationFocused`, the pure
+  `isDraftChatKey`), provided once through `DOCK_DRAFT_FOCUS_KEY` and handed
+  to the store sidebar as a prop (module UI imports no shell code) - no two
+  doors can disagree, and a click still runs its honest action (focus the
+  draft). The dim lifts the moment a send binds the tab to a session.
 - **Dockables** (`composables/dockables.ts`): the registry of openable
   domains - the pinned shells (sessions sidebar left, the inspector
   tabs right, the bottom host under the main pane) plus the main-pane
@@ -495,7 +508,11 @@ resolution mirror the one command law every surface follows:
   the facts the tab is for - description, model, session count, last
   activity - and the main row additionally carries a `main` badge
   beside its name (the badge also explains why that row carries no
-  toggle - it is the home config, always on). One line below the
+  toggle - it is the home config, always on). The badge rides the row
+  law's NAME LINE through `RegistryList`'s `name-side` slot (card
+  t_0a9edc72: the `side` slot seats things beside the whole text stack,
+  which parked the badge at the subtitle's tail); an empty slot renders
+  nothing. One line below the
   subtitle carries the PREVIEW (ruling 5): the agent's
   newest reply in its canonical chat, whitespace-collapsed and
   ellipsized to one line, with its age at the right edge; a row whose

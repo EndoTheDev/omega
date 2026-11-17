@@ -44,9 +44,10 @@
       <li
         v-for="(c, i) in visible"
         :key="c.id"
-        :class="{ active: i === active }"
+        :class="{ active: i === active, dimmed: c.dimmed }"
         role="option"
         :aria-selected="i === active"
+        :aria-disabled="c.dimmed || undefined"
         @mouseenter="active = i"
         @click="run(c)">
         <span class="command-title">{{ c.title }}</span>

@@ -27,6 +27,9 @@ type fakeSettings struct {
 	rawSaveErr error
 	resets     int
 	resetErr   error
+	// the per-agent scopes the payload carries (card t_0a9edc72's
+	// ?scopes=1 slice test)
+	scopes []core.SettingsScope
 }
 
 func (f *fakeSettings) Schema() (*core.SettingsSchema, error) {
@@ -46,6 +49,7 @@ func (f *fakeSettings) Schema() (*core.SettingsSchema, error) {
 				},
 			},
 		}},
+		Scopes: f.scopes,
 	}, nil
 }
 
@@ -140,6 +144,54 @@ func TestSettingsGET(t *testing.T) {
 	}
 	if payload.Groups[0].Knobs[0].Value != true {
 		t.Errorf("knob value %v, want true", payload.Groups[0].Knobs[0].Value)
+	}
+}
+
+// TestSettingsGETScopesSlice pins the lazy scopes read (card t_0a9edc72):
+// the settings pane's scope refresh reads `.scopes` alone, so ?scopes=1
+// answers the SAME payload structure with the knob groups empty. The full
+// read still carries both halves - one structure, sliced at the wire.
+func TestSettingsGETScopesSlice(t *testing.T) {
+	host := &fakeSettings{
+		defaultValue: true,
+		scopes: []core.SettingsScope{{
+			Name: "scout",
+			Groups: []core.SettingsScopeGroup{{
+				Key:        "provider",
+				Overridden: true,
+				Knobs:      []core.SettingsScopeKnob{{Key: "provider.model_name", Value: "m", Overridden: true}},
+			}},
+		}},
+	}
+	ts := settingsServer(host)
+	defer ts.Close()
+
+	read := func(path string) (groups int, scopes int) {
+		resp, err := http.Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: status %d", path, resp.StatusCode)
+		}
+		var payload struct {
+			Groups []json.RawMessage `json:"groups"`
+			Scopes []struct {
+				Name string `json:"name"`
+			} `json:"scopes"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		return len(payload.Groups), len(payload.Scopes)
+	}
+
+	if g, s := read("/settings?scopes=1"); g != 0 || s != 1 {
+		t.Fatalf("slice read groups=%d scopes=%d, want 0/1 (the pane's refresh pays for scopes only)", g, s)
+	}
+	if g, s := read("/settings"); g != 1 || s != 1 {
+		t.Fatalf("full read groups=%d scopes=%d, want 1/1 - the slice must not change the document read", g, s)
 	}
 }
 

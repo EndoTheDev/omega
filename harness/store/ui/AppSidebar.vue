@@ -33,9 +33,19 @@
       <div
         class="new-btn"
         @keydown.esc="newMenuOpen = false">
+        <!-- card t_0a9edc72: the NEW-CONVERSATION DIM. While the focused
+             chat tab IS the draft conversation, this door only focuses a
+             tab that already has the focus - so it dims and disables
+             (aria-disabled + tabindex -1, the last-tab close X's law;
+             the .door-dimmed value is the shell's one global class) and
+             KEEPS its click path: the click focuses the draft, which is
+             the honest outcome. Never removed. -->
         <button
           class="new-main"
-          title="New conversation"
+          :class="{ 'door-dimmed': draftFocused }"
+          :aria-disabled="draftFocused || undefined"
+          :tabindex="draftFocused ? -1 : undefined"
+          :title="draftFocused ? 'the draft conversation already has the focus' : 'New conversation'"
           @click="pickNew(false)">
           + New Session
         </button>
@@ -66,10 +76,11 @@
           v-for="entry in newMenuEntries"
           :key="entry.label"
           class="new-menu-item"
-          :class="{ 'new-menu-disabled': entry.disabled }"
+          :class="{ 'new-menu-disabled': entry.disabled, 'door-dimmed': entry.dimmed }"
           :disabled="entry.disabled"
+          :aria-disabled="entry.disabled || entry.dimmed || undefined"
+          :tabindex="entry.dimmed ? -1 : undefined"
           :title="entry.title"
-          :aria-disabled="entry.disabled || undefined"
           @click="entry.run?.()">
           {{ entry.label }}
         </button>
@@ -274,6 +285,12 @@
     // ids of sessions whose stream is live - the pulse edge renders per row
     streamingIds: ReadonlySet<string>;
     open: boolean;
+    /** card t_0a9edc72: the focused chat tab IS the draft conversation,
+        so a "new conversation" door would only focus what already has the
+        focus. The shell owns the fact (one provider, every door); this
+        panel takes it as a prop because module UI imports no shell code.
+        Default false = the pre-dim world (and every test fixture). */
+    draftFocused?: boolean;
   }>();
 
   // --- card t_7ee0a673: the in-band search's narrow stack ---
@@ -350,16 +367,28 @@
     label: string;
     title: string;
     disabled?: boolean;
+    /** card t_0a9edc72: the new-conversation DIM (never the native
+        `disabled` - that kills the mouse events and with them the title
+        that explains the state, exactly why the last-tab close X uses
+        aria-disabled instead) */
+    dimmed?: boolean;
     run?: () => void;
   }
-  const newMenuEntries: NewMenuEntry[] = [
-    { label: "New Session", title: "New conversation", run: () => pickNew(false) },
+  // a COMPUTED so the dim follows the focus fact live: the menu can be
+  // open while the draft gains or loses the focus (a send binds it).
+  const newMenuEntries = computed<NewMenuEntry[]>(() => [
+    {
+      label: "New Session",
+      title: "New conversation",
+      dimmed: props.draftFocused,
+      run: () => pickNew(false),
+    },
     {
       label: "Ephemeral",
       title: "No-persist chat (nothing stored, gone when closed)",
       run: () => pickNew(true),
     },
-  ];
+  ]);
   function pickNew(ephemeral: boolean) {
     newMenuOpen.value = false;
     if (ephemeral) emit("new-ephemeral");

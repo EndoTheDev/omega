@@ -590,6 +590,7 @@
     configExportFilename,
     fetchConfigYaml,
     fetchSettings,
+    fetchSettingsScopes,
     filterSettingGroups,
     knobDiffersFromDefault,
     knobHasDefault,
@@ -2561,7 +2562,10 @@
       state.unset = [];
     }
     try {
-      applyScopes((await fetchSettings()).scopes);
+      // card t_0a9edc72: the scopes slice, not the whole payload - this
+      // refresh reads `.scopes` alone, and the full read shipped every
+      // main-document knob group for it.
+      applyScopes(await fetchSettingsScopes());
     } catch (err) {
       saveError.value = err instanceof Error ? err.message : String(err);
     } finally {

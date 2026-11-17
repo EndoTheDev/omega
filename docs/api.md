@@ -97,7 +97,7 @@ unchanged.
 | `/logs?lines=N`                           | GET                | omega.log tail (default 200, clamped 1..2000)                                                                                                                                                                                                               |
 | `/observability/events`                   | GET                | structured run-event ring: `?session=`, `?level=error\|warn`, `?limit=` (newest N, oldest-first); 1024-record in-process cap                                                                                                                                |
 | `/observability/logs`                     | GET                | omega.log tail from the observability capsule (`?lines=`, default 200, cap 2000); 404 without a log file                                                                                                                                                    |
-| `/settings`                               | GET, PUT           | config knobs schema / diff-only save (`GET ?key=<dotted path>` = one knob, 404 on a miss)                                                                                                                                                                   |
+| `/settings`                               | GET, PUT           | config knobs schema / diff-only save (`GET ?key=<dotted path>` = one knob, 404 on a miss; `GET ?scopes=1` = the per-agent scopes with the knob groups empty)                                                                                                  |
 | `/settings/raw`                           | GET, PUT           | the config file as YAML, secrets masked / write a whole document through the same validator + writer + hot-apply                                                                                                                                            |
 | `/settings/reset`                         | POST               | restore the host's defaults for every knob that has one (the config.yaml-only doors are kept)                                                                                                                                                               |
 | `/themes`                                 | GET                | user theme tokens (`<home>/themes/*.yaml`)                                                                                                                                                                                                                  |
@@ -400,6 +400,16 @@ single value without decoding the group envelope. An unknown key is
 404 `unknown setting: <key>`; an empty `key` param is ignored (the
 full payload answers). The one-knob read is the same masked schema
 the full read serves (`provider.instances` rows still ride `****`).
+
+`GET /settings?scopes=1` answers the SCOPES half alone: the same
+`SettingsSchema` envelope with `scopes` populated and `groups` empty,
+so a client that re-reads the per-agent scopes after an edit pays for
+that slice instead of the whole knob document. It is the SAME
+structure cut at the wire - one `Settings` seam call, no second
+registry - and the bare `/settings` read is unchanged. `?key=` wins
+when both are present. Both slices exist because the launch reads one
+value (`server.default_workspace`) and the settings pane's scope
+refresh reads one list; neither renders the rest.
 
 #### agent scopes (`scopes`, settings tier 3a)
 

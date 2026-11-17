@@ -13,7 +13,14 @@
         aria-label="browser back"
         title="back"
         @click="step(-1)">
-        ←
+        <!-- card t_0a9edc72: the band tool rides the icon law (a lucide
+             glyph through the shared wrapper at the band-tool size 13) -
+             the literal "←" was the same drift as the agents tab's "+".
+             nav-back / nav-forward are the iconset's own names for the
+             concept, so the browser adds no vocabulary. -->
+        <Icon
+          name="nav-back"
+          :size="13" />
       </button>
       <button
         class="band-tool"
@@ -21,7 +28,9 @@
         aria-label="browser forward"
         title="forward"
         @click="step(+1)">
-        →
+        <Icon
+          name="nav-forward"
+          :size="13" />
       </button>
       <input
         v-model="urlInput"

@@ -24,11 +24,19 @@
          scrolling the list never moves it. -->
     <TabBand title="Agents">
       <div class="agents-actions">
+        <!-- card t_0a9edc72: the band tool rides the icon law - a lucide
+             glyph via the shared ui/Icon wrapper at the band-tool size
+             (13, .agents/DESIGN.md), never a bare "+" text run (the cron
+             tab's add-job tool is the reference). -->
         <button
           class="agents-new band-tool"
           title="create an agent"
           aria-label="create an agent"
-          @click="toggleCreate">+</button>
+          @click="toggleCreate">
+          <Icon
+            name="plus"
+            :size="13" />
+        </button>
       </div>
     </TabBand>
     <!-- THE ONE CREATE DOOR (ruling 1): one form, the kind inside.
@@ -154,12 +162,15 @@
         @expand="onExpand">
         <!-- card t_81109e1c (ruling 3): the main agent rides the roster
              like every other home and its row says which one it is - the
-             badge sits beside the name, so it survives a host that
-             serves no toggle seam (where no pill renders at all).
+             badge sits BESIDE THE NAME (the row law's name-side line, card
+             t_0a9edc72: the `side` slot seats things beside the whole
+             stack, which put the badge at the subtitle's tail), so it
+             survives a host that serves no toggle seam (where no pill
+             renders at all).
              card t_db378a0d: the default agent carries NO toggle - the
              badge is also the reason, so the absence reads as a law
              rather than a missing control. -->
-        <template #side="{ row }">
+        <template #name-side="{ row }">
           <span
             v-if="row.name === DefaultAgentName"
             class="agents-main-badge"
@@ -541,6 +552,7 @@ import {
   type OmegaEvidenceRow,
 } from "./continuousRows.ts";
 import type { RegistryRow } from "~/composables/omega";
+import Icon from "~/components/ui/Icon.vue";
 
 const profiles = ref<OmegaAgent[]>([]);
 const fold = ref<string[]>([]);

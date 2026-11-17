@@ -63,15 +63,29 @@
             <template v-else>{{ isExpanded(r.name) ? "▾" : "▸" }}</template>
           </button>
           <div class="reg-row-main">
-            <button
-              v-if="openableRow(r)"
-              type="button"
-              class="reg-row-name registry-open"
-              :title="`open ${r.name}`"
-              @click.stop="emit('open', r)">{{ r.name }}</button>
-            <span
-              v-else
-              class="reg-row-name">{{ r.name }}</span>
+            <!-- the NAME LINE (card t_0a9edc72): the row law says a name's
+                 companion badge rides BESIDE THE NAME (the agents tab's
+                 `main`), and the #side slot below seats things beside the
+                 whole stack - right of the text column, which lands at the
+                 subtitle's end and reads as a suffix on the facts line. So
+                 the name gets its own line wrapper and a `name-side` slot;
+                 an empty slot renders nothing visible, and the name keeps
+                 the row law's ellipsis (min-width 0 / shrink in the
+                 anatomy file). -->
+            <div class="reg-row-name-line">
+              <button
+                v-if="openableRow(r)"
+                type="button"
+                class="reg-row-name registry-open"
+                :title="`open ${r.name}`"
+                @click.stop="emit('open', r)">{{ r.name }}</button>
+              <span
+                v-else
+                class="reg-row-name">{{ r.name }}</span>
+              <slot
+                name="name-side"
+                :row="r" />
+            </div>
             <!-- the row law's subtitle: a flex line so bars/badges can
                  ride it; the dim 11px rides the .reg-row-sub anatomy
                  class (the consumer keeps no row typography). Card

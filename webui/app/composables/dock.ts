@@ -2314,6 +2314,17 @@ export function firstDraftChatTab(tree: DockNode): ChatTabLocation | null {
   return null;
 }
 
+/** whether the chat tab `key` IS the draft conversation (no session
+    binding yet). The new-conversation dim's ONE predicate (card
+    t_0a9edc72): while it holds, every "new conversation" door only
+    focuses a tab that already has the focus. A null/unknown key is not
+    a draft - no door dims on a pane with no chat focus. */
+export function isDraftChatKey(tree: DockNode, key: string | null): boolean {
+  if (!key) return false;
+  const loc = findChatTab(tree, key);
+  return loc !== null && !loc.tab.sessionRef;
+}
+
 // card t_96844dcb (journey 98): the /board route owns its host pane's
 // FOREGROUND. The board view folds into the chat pane template, which
 // DockPane renders only while the pane's ACTIVE tab is chat - a persisted
@@ -3454,6 +3465,17 @@ export const DOCK_CHAT_OPEN_KEY: InjectionKey<
 // null falls back to the generic COMPONENT_TITLES entry
 export const DOCK_TAB_TITLE_KEY: InjectionKey<(tab: DockTab) => string | null> =
   Symbol("omega-dock-tab-title");
+
+// The NEW-CONVERSATION DIM (card t_0a9edc72): while the FOCUSED chat tab
+// IS the draft conversation, every "new conversation" door would only
+// focus the tab already on screen. The doors keep rendering - dimmed and
+// disabled, never removed - the same law the last-tab close X obeys
+// (aria-disabled + tabindex -1, the click still focuses the draft). The
+// shell provides the fact once; every door reads it, so no door can
+// disagree with another.
+export const DOCK_DRAFT_FOCUS_KEY: InjectionKey<Ref<boolean>> = Symbol(
+  "omega-dock-draft-focus",
+);
 
 /** the persisted reopen sizes for edge panes (page-lifetime memory: closing
     the sidebar and reopening restores the width the user had last).

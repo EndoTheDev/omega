@@ -115,9 +115,11 @@
           <button
             v-if="!pinned"
             class="dock-tab-new"
-            :class="{ 'caret-before': dropIdx === node.tabs.length }"
+            :class="{ 'caret-before': dropIdx === node.tabs.length, 'door-dimmed': draftFocused }"
             aria-label="new session"
-            title="new session"
+            :aria-disabled="draftFocused || undefined"
+            :tabindex="draftFocused ? -1 : undefined"
+            :title="draftFocused ? 'the draft conversation already has the focus' : 'new session'"
             @click.stop="newSession()">
               +
             </button>
@@ -262,6 +264,7 @@
     DOCK_API_KEY,
     DOCK_CHAT_OPEN_KEY,
     DOCK_TAB_TITLE_KEY,
+    DOCK_DRAFT_FOCUS_KEY,
     // card t_b72a4ee3: the LOCKED LAST TAB's one condition - imported under
     // a local name so the pane's computed does not shadow the pure helper
     lastTabLocked as lastTabLockedIn,
@@ -309,6 +312,12 @@
   // button (Endo amendment 2026-10-26: it mints a session directly, no
   // menu) and the empty-pane watermark's "new chat" ride it.
   const openChat = inject(DOCK_CHAT_OPEN_KEY, null);
+  // card t_0a9edc72: the focused tab IS the draft conversation - the '+'
+  // would only focus it again, so it dims (aria-disabled + tabindex -1,
+  // the last-tab close X's law) while keeping its click path (which
+  // focuses the draft, the honest outcome). The shell provides the fact.
+  const draftFocus = inject(DOCK_DRAFT_FOCUS_KEY, null);
+  const draftFocused = computed(() => draftFocus?.value === true);
   // card 3: chat tabs show their session's title ('new chat' unsaved);
   // other components keep the generic titles
   const tabTitleFor = inject(DOCK_TAB_TITLE_KEY, null);

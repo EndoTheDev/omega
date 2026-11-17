@@ -29,8 +29,10 @@ review finding: the copy dies, this file keeps the rule.
   silent blank box.
 - Sizes: 16 for menubar chrome, 13 for row actions and band tools.
   The wrapper default (14, stroke 2) serves glyphs outside both
-  bands; a size never rides ad hoc inline attrs. (Known drift: the
-  notifications panel's band tools default to 14 - fix pending.)
+  bands; a size never rides ad hoc inline attrs. Every band tool in
+  the tree passes 13 explicitly (the notifications panel's 14 was the
+  last straggler; it now passes 13 too, so the note that said "fix
+  pending" is retired).
 
 ## Components
 

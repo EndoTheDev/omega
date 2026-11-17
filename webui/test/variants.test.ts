@@ -296,9 +296,12 @@ describe("ChatMessage markup: switcher + fork affordance", () => {
   });
   it("the styles exist: hover-revealed fork chip, always-on switcher", () => {
     assert.match(css, /\.variant-switcher \{/);
-    assert.match(css, /\.msg-fork \{/);
+    // card t_0a9edc72: copy/fork/retry are ONE chip anatomy now - the
+    // fork's own selector rides the shared block instead of a standalone
+    // rule, so the pin matches the grouped selector list.
+    assert.match(css, /\.msg-copy,\n\.msg-fork,\n\.msg-retry \{/, "one action-chip anatomy");
     assert.match(css, /\.bubble:hover \.msg-fork/);
-    // the switcher is NOT hover-gated: only the fork chip fades
+    // the switcher is NOT hover-gated: only the action chips fade
     assert.doesNotMatch(css, /\.bubble:hover \.variant-switcher/);
   });
 });

@@ -335,7 +335,8 @@ test("R4: agent writes ride the existing agents edit endpoint, one call per save
   // outlives the key it just deleted
   assert.match(
     SETTINGS_TAB,
-    /state\.loaded = \{ \.\.\.state\.draft \};[\s\S]{0,200}?applyScopes\(\(await fetchSettings\(\)\)\.scopes\)/,
+    /state\.loaded = \{ \.\.\.state\.draft \};[\s\S]{0,260}?applyScopes\(await fetchSettingsScopes\(\)\)/,
+    "the refresh reads the SCOPES slice (card t_0a9edc72), never the whole knob document",
   );
   // a refusal pins the endpoint's words and renders the tab read-only
   assert.match(SETTINGS_TAB, /scopeLocks\[name\] = err instanceof Error \? err\.message : String\(err\)/);
