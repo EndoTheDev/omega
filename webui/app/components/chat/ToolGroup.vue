@@ -25,9 +25,14 @@
       >
     </summary>
     <div class="toolgroup-body">
+      <!-- card t_64212867: children key on the CALL's identity
+           (toolChildKey), never the slot - index N would hand a
+           surviving row's instance (fold pin, meter) to a different
+           call once the group's membership shifts under a surviving
+           container -->
       <template
         v-for="(item, i) in items"
-        :key="i">
+        :key="toolChildKey(item, i)">
         <ToolCallLine
           :name="item.name"
           :status="item.status"
@@ -56,7 +61,7 @@
   import Icon from "../ui/Icon.vue";
   import ToolCallLine from "./ToolCallLine.vue";
   import type { PendingVerdictCard, ToolItem } from "../../composables/omega";
-  import { toolGroupWantOpen } from "../../composables/toolGroup";
+  import { toolChildKey, toolGroupWantOpen } from "../../composables/toolGroup";
   import { useToolDisplay } from "../../composables/toolDisplay";
 
   const props = defineProps<{
