@@ -20,6 +20,8 @@ import cLang from "highlight.js/lib/languages/c";
 import cpp from "highlight.js/lib/languages/cpp";
 import diff from "highlight.js/lib/languages/diff";
 
+import { isStreaming, isYielded } from "./toolStatus.ts";
+
 hljs.registerLanguage("go", go);
 hljs.registerLanguage("javascript", javascript);
 hljs.registerLanguage("typescript", typescript);
@@ -518,16 +520,16 @@ export function renderTranscriptItems(
 // their wake re-attaches to the events stream so the chips fill in
 // live. Pure.
 export function transcriptHasPending(items: readonly TranscriptItem[]): boolean {
-  return items.some((it) => it?.kind === "tool" && it.status === "pending");
+  return items.some((it) => it?.kind === "tool" && isYielded(it.status));
 }
 
 // transcriptPendingCount is the status bar's `N pending` segment over a
 // rendered transcript (card t_8fd38f88): the OPEN session's still-pending
 // calls, never a machine-wide number. Same derivation as
-// transcriptHasPending, counted. Pure.
+// transcriptHasPending, counted - through the same predicate. Pure.
 export function transcriptPendingCount(items: readonly TranscriptItem[]): number {
   let n = 0;
-  for (const it of items) if (it?.kind === "tool" && it.status === "pending") n++;
+  for (const it of items) if (it?.kind === "tool" && isYielded(it.status)) n++;
   return n;
 }
 
@@ -946,7 +948,11 @@ export function bindGateQuestions(
     return out;
   }
   const running = items.filter(
-    (it): it is ToolItem => it.kind === "tool" && it.status === "running" && it.name === "shell.run",
+    // isStreaming, NOT isLive - a named decision (composables/toolStatus.ts):
+    // a card binds to the row whose command is streaming NOW; a pending chip
+    // is a call that already ran and awaits its wake result.
+    (it): it is ToolItem =>
+      it.kind === "tool" && isStreaming(it.status) && it.name === "shell.run",
   );
   const taken = new Set<ToolItem>();
   for (const card of mine) {

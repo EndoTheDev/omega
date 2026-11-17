@@ -59,6 +59,7 @@ import {
   type OmegaMessage,
 } from "./omega.ts";
 import { SHELL_COMMAND_NAMES, dispatchCommand } from "./commands.ts";
+import { isLive, isStreaming } from "./toolStatus.ts";
 
 // The chat actions are module-qualified on the wire: http_channel owns
 // the chat panel's stop/retry handlers (the pipe checks module + id).
@@ -430,10 +431,15 @@ export function activityPhase(
   let streaming: ThinkingItem | MessageItem | null = null;
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
+    // isStreaming, NOT isLive - a named decision (composables/toolStatus.ts):
+    // the activity line narrates what the run is DOING at this instant, and
+    // a pending (yielded) call emits no delta until its wake turn arrives.
+    // Narrating it would claim work with no bytes behind it; the phase falls
+    // through to "thinking", which is true of a run waiting on a wake.
     if (
       tool === null &&
       item?.kind === "tool" &&
-      item.status === "running"
+      isStreaming(item.status)
     ) {
       tool = item;
     } else if (
@@ -1562,16 +1568,17 @@ export function createCanvasTranscript(): CanvasTranscript {
         blockRunning ? "running"
         : callId && !resultIds.has(callId) ? "pending"
         : "done";
-      // a RUNNING or PENDING call meters from its open wall clock
-      // (card t_6bad9f6f round 3): started_at is re-derived at every
-      // paint, so a pane rebuilt from a payload whose last delta
-      // predates the call's yield (the store keeps it - a yielded call
-      // emits nothing until its wake) still counts from the call's
-      // real start instead of zero. The built duration is only the
-      // fallback for a block the server served without a stamp; an
-      // already-set offset survives when neither is present (the
-      // running -> pending flip on a live payload).
-      if (it.status === "running" || it.status === "pending") {
+      // a LIVE call meters from its open wall clock (card t_6bad9f6f
+      // round 3): started_at is re-derived at every paint, so a pane
+      // rebuilt from a payload whose last delta predates the call's yield
+      // (the store keeps it - a yielded call emits nothing until its
+      // wake) still counts from the call's real start instead of zero.
+      // The built duration is only the fallback for a block the server
+      // served without a stamp; an already-set offset survives when
+      // neither is present (the running -> pending flip on a live
+      // payload). "Live" is the shared predicate (toolStatus.ts), never a
+      // local spelling of the set.
+      if (isLive(it.status)) {
         const anchor = toolCallAnchorMs(block.started_at, block.elapsed_ms);
         if (anchor !== undefined) it.elapsedMs = anchor;
       }

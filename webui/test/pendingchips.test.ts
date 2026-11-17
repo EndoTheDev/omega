@@ -11,7 +11,7 @@
 // Run: node --test webui/test/ (node >= 23)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,9 +31,22 @@ import {
   type ToolDisplay,
 } from "../app/composables/toolDisplay.ts";
 import { toolGroupWantOpen } from "../app/composables/toolGroup.ts";
+import { isLive, isStreaming, isYielded } from "../app/composables/toolStatus.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "app");
 const src = (p: string) => readFileSync(join(root, p), "utf8");
+
+// walk: every source file under app/ (the inline-spelling sweep needs the
+// whole render tree, not a hand-listed set that rots as files move).
+function walk(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walk(p));
+    else if (/\.(ts|vue)$/.test(entry.name)) out.push(p);
+  }
+  return out;
+}
 
 // --- renderTranscriptItems: the pending derivation ------------------------
 
@@ -329,20 +342,154 @@ test("a group with a pending child stays open in auto", () => {
   assert.equal(toolGroupWantOpen(true, false, "collapsed"), false);
 });
 
+// --- one live-set predicate: the consumers cannot drift apart --------------
+//
+// Card t_008f5d27 (audit F3). The live set `running | pending` was spelled
+// inline at five consumer sites, and the spellings were already free to
+// diverge: the gate binding carried `running` only while the rest carried
+// `pending`. That is precisely the shape t_6bad9f6f cost three rounds to -
+// the row rendered the word `pending` while its meter gate spelled
+// `running`, so for the state the row displayed no meter ever started.
+// The predicate lives in composables/toolStatus.ts. These tests are the
+// AGREEMENT between consumers, never a second definition of the set.
+
+// The status vocabulary the two mappers can mint (omega.ts
+// renderTranscriptItems, chat.ts canvas apply) plus the next state a future
+// card is most likely to add. The predicate must answer NARROWLY for an
+// unknown value instead of inheriting a stale default.
+const STATUSES = ["running", "pending", "done", "error", "waiting"];
+
+test("the live set is exactly running | pending, for every status value", () => {
+  for (const s of STATUSES) {
+    assert.equal(isLive(s), s === "running" || s === "pending", `isLive(${s})`);
+  }
+  assert.deepEqual(
+    STATUSES.filter(isLive),
+    ["running", "pending"],
+    "a new status is not live until toolStatus.ts says so",
+  );
+});
+
+test("isStreaming is the named running-only half, and streaming implies live", () => {
+  for (const s of STATUSES) {
+    assert.equal(isStreaming(s), s === "running", `isStreaming(${s})`);
+    if (isStreaming(s)) assert.equal(isLive(s), true, `streaming implies live (${s})`);
+  }
+});
+
+test("every consumer agrees with the predicate for every status value", () => {
+  for (const s of STATUSES) {
+    // the row's auto-open law (toolDisplay.ts): a live row opens ...
+    assert.equal(toolRowWantOpen(s, "auto"), isLive(s), `row auto-open ${s}`);
+    assert.equal(toolRowWantOpen(s, "expanded"), true, `expanded ${s}`);
+    assert.equal(toolRowWantOpen(s, "collapsed"), false, `collapsed ${s}`);
+    // ... and the group's open law reads the SAME set (ToolGroup passes its
+    // isLive aggregate), so one live child opens the container too
+    assert.equal(toolGroupWantOpen(isLive(s), false, "auto"), isLive(s), `group open ${s}`);
+    // the wake watcher arms on the yielded half, and the two named halves
+    // partition the live set exactly (no status is both, none is neither)
+    assert.equal(isYielded(s), s === "pending", `isYielded(${s})`);
+    assert.equal(
+      isStreaming(s) !== isYielded(s),
+      isLive(s),
+      `streaming | yielded === live (${s})`,
+    );
+  }
+});
+
+test("all five consumers import the predicate instead of spelling the set", () => {
+  const sites: [string, RegExp][] = [
+    ["components/chat/ToolCallLine.vue", /from "\.\.\/\.\.\/composables\/toolStatus"/],
+    ["components/chat/ToolGroup.vue", /from "\.\.\/\.\.\/composables\/toolStatus"/],
+    ["composables/toolDisplay.ts", /from "\.\/toolStatus\.ts"/],
+    ["composables/chat.ts", /from "\.\/toolStatus\.ts"/],
+    ["composables/omega.ts", /from "\.\/toolStatus\.ts"/],
+  ];
+  for (const [file, imp] of sites) {
+    assert.match(src(file), imp, `${file} imports toolStatus`);
+  }
+  // each consumer's CALL SITE names the answer it needs: two take the live
+  // set, two the streaming-only half (the named decision), one the yielded
+  // half. A consumer that starts spelling a status inline has no pin here
+  // and no pin below - the sweep is what catches it.
+  assert.match(
+    src("components/chat/ToolCallLine.vue"),
+    /useElapsed\(\s*\(\) => props\.finalMs,\s*\(\) => isLive\(props\.status\)/,
+    "the row's elapsed meter takes the live set",
+  );
+  assert.match(
+    src("components/chat/ToolGroup.vue"),
+    /anyActive = computed\(\(\) => props\.items\.some\(\(it\) => isLive\(it\.status\)\)\)/,
+    "the group aggregate takes the live set",
+  );
+  assert.match(
+    src("composables/chat.ts"),
+    /if \(isLive\(it\.status\)\) \{\s*const anchor = toolCallAnchorMs/,
+    "the paint-time anchor takes the live set",
+  );
+  assert.match(
+    src("composables/chat.ts"),
+    /item\?\.kind === "tool" &&\s*isStreaming\(item\.status\)/,
+    "the activity phase takes the streaming-only half, by name",
+  );
+  assert.match(
+    src("composables/omega.ts"),
+    /it\.kind === "tool" && isStreaming\(it\.status\) && it\.name === "shell\.run"/,
+    "the gate binding takes the streaming-only half, by name",
+  );
+  assert.match(
+    src("composables/omega.ts"),
+    /it\?\.kind === "tool" && isYielded\(it\.status\)/,
+    "the wake watcher takes the yielded half, by name",
+  );
+});
+
+test("no file under app/ spells the live set inline any more", () => {
+  // The pair, in ANY order and any container: `=== "running" || === "pending"`,
+  // `["running","pending"].includes(x)`, `new Set(["pending","running"])`.
+  // Adjacency is the whole shape - a consumer classifies the set by naming
+  // both of its members next to each other.
+  const pair = new RegExp(
+    `["'](?:running|pending)["'][\\s\\S]{0,60}["'](?:running|pending)["']`,
+    "g",
+  );
+  // The two MAPPERS mint the word as a ternary yield (`cond ? "running"`).
+  // A producer is not a classifier: a classification never yields the word
+  // straight out of a `?`.
+  const yieldsWord = /\?\s*$/;
+  const offenders: string[] = [];
+  for (const f of walk(root)) {
+    if (f.endsWith("toolStatus.ts")) continue;
+    const text = readFileSync(f, "utf8");
+    for (const m of text.matchAll(pair)) {
+      const start = m.index ?? 0;
+      // the 8 chars before the first literal decide: `? ` is a producer
+      const prefix = text.slice(Math.max(0, start - 8), start);
+      if (yieldsWord.test(prefix)) continue;
+      offenders.push(`${f.slice(root.length + 1)}:${text.slice(0, start).split("\n").length}`);
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `toolStatus.ts is the only spelling of the live set (offenders: ${offenders.join(", ")})`,
+  );
+});
+
 // --- structural wiring: the render side carries the shapes ----------------
 
-test("ToolCallLine renders the pending word and ticks the meter for pending", () => {
+test("ToolCallLine renders the pending word and meters on the live predicate", () => {
   const vue = src("components/chat/ToolCallLine.vue");
   assert.ok(vue.includes(`v-if="status === 'pending'"`), "the pending label renders");
-  assert.ok(
-    vue.includes(`props.status === "running" || props.status === "pending"`),
-    "the elapsed meter runs while the chip pends",
-  );
+  assert.match(vue, /import \{ isLive \} from "\.\.\/\.\.\/composables\/toolStatus"/);
+  assert.ok(vue.includes("() => isLive(props.status)"), "the elapsed meter runs while the chip pends");
 });
 
 test("ToolGroup keeps the wrench active for pending children", () => {
   const vue = src("components/chat/ToolGroup.vue");
-  assert.ok(vue.includes("anyPending"), "the aggregate state reads pending children");
+  assert.match(vue, /import \{ isLive \} from "\.\.\/\.\.\/composables\/toolStatus"/);
+  assert.ok(vue.includes("isLive(it.status)"), "the aggregate reads the shared live set");
+  assert.ok(!vue.includes("anyPending"), "no per-status aggregate is left to drift");
   assert.ok(vue.includes("anyActive"), "the open law reads the combined active flag");
 });
 
