@@ -18,8 +18,6 @@ import {
   chatPanelOf,
 } from "../app/composables/omega.ts";
 import { createCanvasTranscript } from "../app/composables/chat.ts";
-import { effect } from "vue";
-
 import type { StreamHandlers } from "../app/composables/omega.ts";
 
 // silent handlers that record every call
@@ -378,12 +376,16 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
     assert.equal(settled.picked, "yes");
   });
 
-  // t_078a2c35: the switch-back red. The positional sig folds variant-2's
-  // row and variant-1's row onto one cached item; apply() mutates its id
-  // in place. Consumers read item.id (variantLabel rides it - « n/n »):
-  // the fold must INVALIDATE them, i.e. the items are reactive proxies -
-  // a plain object's write is invisible and the pane keeps the old paint.
-  it("the sibling fold's in-place id/content write invalidates its readers", () => {
+  // t_494639c8 (retires t_078a2c35's positional fold): a sibling variant
+  // is a DIFFERENT store row, so it gets its OWN item. The old positional
+  // sig folded variant-2's row 392 and variant-1's row 391 onto one
+  // cached object and rewrote its id/content in place - which is also how
+  // a sliding window handed one row another row's component state.
+  // Consumers still read item.id (variantLabel rides it - « n/n » - and
+  // the fork/copy targets too), so the swap must HAND the renderer the
+  // sibling's values: its own item does exactly that, and the row left
+  // behind keeps its own fields untouched.
+  it("a sibling variant repaints as its own item, never a rewrite of the other's", () => {
     const t = createCanvasTranscript();
     const rows = (aid: string, text: string) =>
       ({
@@ -395,21 +397,27 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
         ],
       }) as never;
     const v2 = t.apply(rows("392", "second answer"));
-    let reads = 0;
-    let seen = "";
-    // stands in for the ChatItem/ChatMessage render effects that track
-    // item.id (the :item-id prop -> variantLabel) + :content
-    const stop = effect(() => {
-      reads++;
-      seen = `${(v2[1] as { id?: string }).id}:${(v2[1] as { content: string }).content}`;
-    });
-    assert.equal(seen, "392:second answer");
-    // the select's refetch: BOTH variants' rows fold onto the same sig
+    const before = {
+      id: (v2[1] as { id?: string }).id,
+      content: (v2[1] as { content: string }).content,
+    };
+    assert.deepEqual(before, { id: "392", content: "second answer" });
+    // the select's refetch: the snapshot serves the sibling alone
     const v1 = t.apply(rows("391", "first answer"));
-    assert.equal(v1[1], v2[1], "the sibling row folds onto the cached item (identity kept)");
-    assert.equal(seen, "391:first answer", "the in-place write invalidated a reader");
-    assert.ok(reads >= 2, "the effect re-ran on the fold's writes");
-    stop();
+    assert.notEqual(v1[1], v2[1], "the sibling row is addressed by its own id - its own item");
+    assert.equal((v1[1] as { id?: string }).id, "391");
+    assert.equal((v1[1] as { content: string }).content, "first answer");
+    // the row left behind was never written through
+    assert.deepEqual(
+      { id: (v2[1] as { id?: string }).id, content: (v2[1] as { content: string }).content },
+      before,
+      "no cross-row write: the previous variant keeps its own fields",
+    );
+    // and the user turn above both variants is untouched throughout
+    assert.equal((v1[0] as { content: string }).content, "prompt");
+    // switching BACK re-uses the first variant's own item (ids are stable)
+    const back = t.apply(rows("392", "second answer"));
+    assert.equal(back[1], v2[1], "a variant you return to keeps its item");
   });
 });
 
