@@ -77,6 +77,7 @@
   import Icon from "../ui/Icon.vue";
   import { toolRowWantOpen, useToolDisplay } from "../../composables/toolDisplay";
   import { formatDurationMs } from "../../composables/omega";
+  import { isLive } from "../../composables/toolStatus";
   import { useElapsed } from "../../composables/useElapsed";
   import VariantSwitcher from "./VariantSwitcher.vue";
   import type { VariantBlock } from "../../composables/omega";
@@ -119,16 +120,18 @@
   }>();
 
   // Elapsed counter (tool_call event -> tool_result arrival): ticks while
-  // the call is running, freezes at the final value once the result
+  // the call is live, freezes at the final value once the result
   // lands - the finished line keeps showing how long the call took.
   // Restored history arrives already-final and renders nothing. It stays
   // honest: dot and status keep saying running. A PENDING chip ticks too
   // (async agent loop phase 3): the call is genuinely in flight - its
   // result re-enters as a later wake turn - and the meter freezes the
-  // same way when that result lands.
+  // same way when that result lands. The gate is the SHARED live-set
+  // predicate (composables/toolStatus.ts), never a local spelling: the
+  // row's own word and its meter must key on the same set.
   const elapsedLabel = useElapsed(
     () => props.finalMs,
-    () => props.status === "running" || props.status === "pending",
+    () => isLive(props.status),
     // a restored STILL-RUNNING call counts on from the server's
     // elapsed-so-far (live-run merge) - not from the mount moment
     () => props.elapsedMs ?? 0,

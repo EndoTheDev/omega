@@ -8,6 +8,8 @@
 
 import { ref, type Ref } from "vue";
 
+import { isLive } from "./toolStatus.ts";
+
 export type ToolDisplay = "expanded" | "collapsed" | "auto";
 
 export const TOOL_DISPLAY_KEY = "omega.tool-display";
@@ -20,15 +22,16 @@ export function parseToolDisplay(v: unknown): ToolDisplay {
 }
 
 // toolRowWantOpen: the pure mode+status -> open mapping for a row the
-// user has NOT pinned. Auto: a running call is open
+// user has NOT pinned. Auto: a live call is open
 // (you watch it work), a settled one is closed (the result collapses).
-// A PENDING chip stays open too (async agent loop phase 3): the chip
-// is the contract's visible half - its result re-enters as a later
-// wake turn and the row fills in when it lands. Pure.
+// "Live" is the ONE predicate (composables/toolStatus.ts): running OR
+// pending - a PENDING chip stays open too (async agent loop phase 3),
+// its result re-enters as a later wake turn and the row fills in when it
+// lands. Pure.
 export function toolRowWantOpen(status: string, mode: ToolDisplay): boolean {
   if (mode === "expanded") return true;
   if (mode === "collapsed") return false;
-  return status === "running" || status === "pending";
+  return isLive(status);
 }
 
 // Module-scoped mode ref: ToolCallLine rows live under ChatItem in every

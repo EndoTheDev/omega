@@ -20,6 +20,8 @@ import cLang from "highlight.js/lib/languages/c";
 import cpp from "highlight.js/lib/languages/cpp";
 import diff from "highlight.js/lib/languages/diff";
 
+import { isStreaming } from "./toolStatus.ts";
+
 hljs.registerLanguage("go", go);
 hljs.registerLanguage("javascript", javascript);
 hljs.registerLanguage("typescript", typescript);
@@ -946,7 +948,11 @@ export function bindGateQuestions(
     return out;
   }
   const running = items.filter(
-    (it): it is ToolItem => it.kind === "tool" && it.status === "running" && it.name === "shell.run",
+    // isStreaming, NOT isLive - a named decision (composables/toolStatus.ts):
+    // a card binds to the row whose command is streaming NOW; a pending chip
+    // is a call that already ran and awaits its wake result.
+    (it): it is ToolItem =>
+      it.kind === "tool" && isStreaming(it.status) && it.name === "shell.run",
   );
   const taken = new Set<ToolItem>();
   for (const card of mine) {

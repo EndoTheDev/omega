@@ -146,7 +146,10 @@ test("ToolGroup mirrors the row/block fold: shared mode, pin click, child passth
   // phase 3) keeps a chip-holding group open
   assert.match(g, /useToolDisplay\(\)/);
   assert.match(g, /toolGroupWantOpen\(anyActive\.value, props\.live \?\? false, display\.value\)/);
-  assert.match(g, /anyPending/);
+  // the combined flag is the SHARED live-set predicate (card t_008f5d27) -
+  // no per-status aggregate of its own to drift
+  assert.match(g, /import \{ isLive \} from "\.\.\/\.\.\/composables\/toolStatus"/);
+  assert.match(g, /anyActive = computed\(\(\) => props\.items\.some\(\(it\) => isLive\(it\.status\)\)\)/);
   // children render EXACTLY the ChatItem tool-branch markup: rows keep
   // their own fold + gate card, a group is a container not a re-render
   assert.match(g, /<ToolCallLine/);

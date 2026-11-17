@@ -58,6 +58,7 @@
   import type { PendingVerdictCard, ToolItem } from "../../composables/omega";
   import { toolGroupWantOpen } from "../../composables/toolGroup";
   import { useToolDisplay } from "../../composables/toolDisplay";
+  import { isLive } from "../../composables/toolStatus";
 
   const props = defineProps<{
     // the grouped consecutive tool rows (groupToolRuns) - the result
@@ -76,12 +77,13 @@
 
   // --- aggregate state: one wrench color for the whole run ---
   const anyError = computed(() => props.items.some((it) => it.status === "error"));
-  const anyRunning = computed(() => props.items.some((it) => it.status === "running"));
-  // async agent loop phase 3: a still-pending child keeps the group's
-  // wrench at the active color - the run is not over, its call's result
-  // re-enters as a later wake turn
-  const anyPending = computed(() => props.items.some((it) => it.status === "pending"));
-  const anyActive = computed(() => anyRunning.value || anyPending.value);
+  // anyActive: any child in the LIVE set, asked through the one shared
+  // predicate (composables/toolStatus.ts) - running OR pending. The
+  // pending half matters (async agent loop phase 3): its result re-enters
+  // as a later wake turn, so the run is not over and the wrench stays at
+  // the active color. A per-status spelling here is what lets a new state
+  // land in the mapper while one aggregate keeps the old vocabulary.
+  const anyActive = computed(() => props.items.some((it) => isLive(it.status)));
   const state = computed(() =>
     anyError.value ? "error" : anyActive.value ? "" : "done",
   );
