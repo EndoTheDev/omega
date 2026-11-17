@@ -53,6 +53,18 @@ jobs:
           go vet ./...
           go test ./...
 
+      - name: Repo docs health (advisory)
+        # Repo markdown drifts silently (card t_42a86188): docs/pipeline.md sat
+        # stale through the whole 3+1 capacity change with no machine noticing.
+        # This step prints the due table and appends it to the run summary, and
+        # it never blocks the tag: findings exit 0, the signal is the greppable
+        # `DOCS WARNING: <n> due, <m> broken links` line (advisory, exactly like
+        # drift-gate's DRIFT_ADVISORY mode). Only a broken tool - no git, a
+        # shallow checkout, a mapping row naming a path nobody tracks - exits
+        # non-zero. The checkout above already carries full history and tags,
+        # which the last-touch times and the release counts need.
+        run: scripts/docs-health.sh
+
       - name: Binary-purity rotation (every capsule must leave the binary whole)
         run: scripts/nm-purity.sh --all
 
