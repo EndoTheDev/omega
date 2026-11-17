@@ -1508,8 +1508,9 @@ Keys are the dotted yaml paths the webui settings pane uses
 
 Values: true/false (yes/no, on/off) for a toggle, a number for a
 number, a JSON array for provider.instances, text otherwise. A write
-validates exactly like a pane save; provider.api_key and server.bind
-stay config.yaml's door, and a refusal writes nothing.
+validates exactly like a pane save; server.bind stays config.yaml's
+door, and so does a stored instance's host and secret. A refusal
+writes nothing.
 `
 
 // cmdSettings dispatches the settings verbs. configPath is the --config

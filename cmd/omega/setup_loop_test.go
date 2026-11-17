@@ -57,6 +57,12 @@ func TestSetupWizardWritesConfig(t *testing.T) {
 		t.Fatalf("setup wrote no config: %v", err)
 	}
 	body := string(data)
+	if !strings.Contains(body, "instances:") || !strings.Contains(body, "- name: default") {
+		t.Errorf("the wizard did not write the instances shape (card t_bf21ee07):\n%s", body)
+	}
+	if strings.Contains(body, "\n  type:") {
+		t.Errorf("the wizard wrote the pre-merge flat trio:\n%s", body)
+	}
 	if !strings.Contains(body, "type: ollama") {
 		t.Errorf("config missing provider type:\n%s", body)
 	}

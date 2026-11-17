@@ -282,19 +282,20 @@ Keys are the dotted paths the pane shows (`provider.model_name`,
 aliases (`provider.vision_model` / `provider.title_model` and the four
 `provider.*_model` subsystem slots). Values coerce to the knob's type:
 `yes/no`, `on/off`, `true/false` for a toggle, a decimal for a number,
-a JSON array for `provider.instances`, text otherwise. The `api_key`
-reads masked (`****`) like the pane; `provider.api_key` and
-`server.bind` stay config.yaml's door and a write is refused. A
-refusal writes nothing. A live host (`omega serve`) picks the change
-up through its config watch; every other process reads it at boot.
+a JSON array for `provider.instances`, text otherwise. Provider rows
+read masked (`****`) like the pane; `server.bind` stays config.yaml's
+door, and so does a stored row's host and secret - a write is refused
+and nothing is written. A live host (`omega serve`) applies every
+provider knob on the spot - the instance list included - and picks the
+rest up through its config watch; every other process reads at boot.
 
 ```bash
 omega settings                                  # every knob, grouped
 omega settings get provider.model_name          # one value, unquoted
 omega settings set server.port 18432
 omega settings set compaction.enabled off
-omega settings set provider.instances '[]'      # empty the instance list
-omega settings set provider.api_key sk-x        # fails: config.yaml only
+omega settings set provider.instances '[{"name":"default","type":"ollama"},{"name":"work","type":"openai"}]'
+omega settings set server.bind 0.0.0.0           # fails: config.yaml only
 ```
 
 ### `omega update`
@@ -442,10 +443,10 @@ integers below their minimum are ignored (the YAML/default value stays).
 
 | Env var                          | Config key                        | Default           |
 | -------------------------------- | --------------------------------- | ----------------- |
-| `OMEGA_PROVIDER`                 | `provider.type`                   | `ollama`          |
-| `OMEGA_API_KEY`                  | `provider.api_key`                | (empty)           |
+| `OMEGA_PROVIDER`                 | `provider.instances` (the `default` row's type) | `ollama`          |
+| `OMEGA_API_KEY`                  | `provider.instances` (the `default` row's key) | (empty)           |
 | `OMEGA_MODEL`                    | `provider.model_name`             | (required)        |
-| `OMEGA_HOST`                     | `provider.host`                   | `http://localhost:11434` |
+| `OMEGA_HOST`                     | `provider.instances` (the `default` row's host) | `http://localhost:11434` |
 | `OMEGA_VISION_MODEL`             | `vision_model`                    | (empty)           |
 | `OMEGA_TITLE_MODEL`              | `title_model`                     | (empty)           |
 | `OMEGA_DB_PATH`                  | `store.db_path`                   | `<home>/data/omega.db` |

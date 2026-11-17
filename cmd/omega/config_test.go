@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // writeTempConfig writes content to a temp file and returns its path.
@@ -78,6 +80,83 @@ store:
 	}
 	if cfg.Store.DBPath != "/tmp/omega.db" {
 		t.Errorf("db_path = %q, want /tmp/omega.db", cfg.Store.DBPath)
+	}
+}
+
+// TestFirstSaveWritesInstancesShape (card t_bf21ee07): a pre-merge
+// config.yaml loads (flat trio plus the old top-level providers map)
+// and the FIRST write lands the one all-instances shape - no flat
+// trio, no legacy map - and the saved document reloads to the same
+// provider rows.
+func TestFirstSaveWritesInstancesShape(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  type: openai
+  model_name: gpt-4o
+  host: http://openai-proxy:8080
+  api_key: sk-test
+providers:
+  work:
+    type: ollama
+    host: http://work-host:11434
+  home:
+    type: ollama
+    host: http://home-host:11434
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if _, ok := cfg.Provider.instance(PrimaryProviderInstance); !ok {
+		t.Fatalf("the flat trio did not normalize to the %q row: %+v", PrimaryProviderInstance, cfg.Provider.Instances)
+	}
+
+	if err := writeConfigFile(path, &cfg); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved struct {
+		Provider struct {
+			ModelName string             `yaml:"model_name"`
+			Type      string             `yaml:"type"`
+			Host      string             `yaml:"host"`
+			APIKey    string             `yaml:"api_key"`
+			Instances []ProviderInstance `yaml:"instances"`
+		} `yaml:"provider"`
+		Providers map[string]any `yaml:"providers"`
+	}
+	if err := yaml.Unmarshal(data, &saved); err != nil {
+		t.Fatalf("the saved document does not parse: %v\n%s", err, data)
+	}
+	if saved.Provider.Type != "" || saved.Provider.Host != "" || saved.Provider.APIKey != "" {
+		t.Errorf("the flat trio survived the save: %+v\n%s", saved.Provider, data)
+	}
+	if len(saved.Providers) != 0 {
+		t.Errorf("the legacy providers map survived the save: %+v\n%s", saved.Providers, data)
+	}
+	names := make([]string, 0, len(saved.Provider.Instances))
+	for _, inst := range saved.Provider.Instances {
+		names = append(names, inst.Name)
+	}
+	if got := strings.Join(names, ","); got != "default,home,work" {
+		t.Errorf("saved rows = %s, want default,home,work\n%s", got, data)
+	}
+
+	// the saved shape reloads to the same provider
+	reloaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	primary := primaryOf(reloaded)
+	if primary.Name != PrimaryProviderInstance || primary.Type != "openai" ||
+		primary.Host != "http://openai-proxy:8080" || primary.APIKey != "sk-test" {
+		t.Errorf("reloaded primary = %+v, want the flat trio's endpoint", primary)
+	}
+	if work, ok := reloaded.Provider.instance("work"); !ok || work.Host != "http://work-host:11434" {
+		t.Errorf("reloaded work row = %+v (ok=%v)", work, ok)
 	}
 }
 

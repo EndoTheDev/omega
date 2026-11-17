@@ -141,3 +141,33 @@ func TestConfigSectionSlots(t *testing.T) {
 		t.Errorf("skills section curator slot = %q", sc.CuratorModel)
 	}
 }
+
+// TestModelSlotResolvesFromConfigFile (card t_bf21ee07): a config.yaml
+// carrying only the instances list serves the slot grammar unchanged -
+// "work:big-model" rides the row named work, read through the file.
+func TestModelSlotResolvesFromConfigFile(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  model_name: main-model
+  instances:
+    - name: default
+      type: ollama
+    - name: work
+      type: openai
+      host: http://work-host:9000
+      api_key: sk-work
+approvals_model: work:big-model
+compaction_model: work:sum-model
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	host, key, model := approvalSlot(cfg)
+	if host != "http://work-host:9000" || key != "sk-work" || model != "big-model" {
+		t.Errorf("approval slot = %q %q %q, want the work row + big-model", host, key, model)
+	}
+	if got := compactionSection(cfg).Model; got != "work:sum-model" {
+		t.Errorf("compaction slot = %q, want the persisted slot", got)
+	}
+}

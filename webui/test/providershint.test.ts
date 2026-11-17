@@ -58,3 +58,35 @@ test("the provider.instances knob help carries the same flow facts", () => {
     /the row named .{0,18}default.{0,18} is the provider the agent serves[\s\S]{0,400}apply live/,
     "the help names the primary row and that the list applies live");
 });
+
+// --- ONE section: every instance renders, the primary included --------
+
+test("the providers section renders every instance, the primary included", () => {
+  // card t_bf21ee07: the old connection form and the instances list
+  // merged into ONE list - the rows ARE the connection surface, so the
+  // editor iterates the whole list and the primary renders as a row
+  assert.match(field, /v-for="\(inst, i\) in rows"/,
+    "one row per instance, the primary included (there is no separate connection form)");
+  assert.doesNotMatch(field, /provider\.(type|host|api_key)/,
+    "the flat connection trio is gone from the editor");
+  // the primary row is found by NAME - no flag, no index special case
+  assert.match(field, /const PRIMARY = "default"/,
+    "the primary is the row named default, resolved by name");
+  assert.match(field, /:readonly="isPrimary\(inst\)"/,
+    "the primary row's name is the contract: not renamable from the pane");
+  assert.match(field, /:disabled="isPrimary\(inst\)"/,
+    "the primary row cannot be removed: the agent would have no provider");
+});
+
+test("editing the primary row writes the default row", () => {
+  // the type/api_key cells of the primary row emit their row like any
+  // other: only the NAME is locked, and the update maps that one index
+  assert.match(field,
+    /if \(key === "name" && isPrimary\(rows\.value\[i\]!\)\) return;/,
+    "the primary's name edit is refused, every other field writes through");
+  assert.match(field,
+    /rows\.value\.map\(\(row, j\) => \(j === i \? \{ \.\.\.row, \[key\]: value \} : row\)\)/,
+    "an edit replaces exactly the edited row - the primary edits its own row");
+  assert.match(field, /function removeRow\(i: number\) \{\s*\n\s*if \(isPrimary\(rows\.value\[i\]!\)\) return;/,
+    "remove refuses the primary row before it filters anything");
+});

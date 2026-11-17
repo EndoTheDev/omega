@@ -13,6 +13,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/compactor"
+	"github.com/EndoTheDev/omega/harness/provider"
 	"github.com/EndoTheDev/omega/llm"
 	"gopkg.in/yaml.v3"
 )
@@ -1014,4 +1015,109 @@ func TestHotApplyPushesCronRunTimeout(t *testing.T) {
 	// An unmounted cron capsule (or a disabled module) is a no-op: no
 	// panic, and the fire keeps its own read.
 	hotApply(cfg, cfg.Server.DefaultWorkspace, &agent.Context{}, nil, nil, nil, nil)
+}
+
+// TestProviderKnobsAreLive (card t_bf21ee07): the provider cluster's
+// knobs apply without a restart - the merged instances list plus the
+// six model slots, vision and title included (they joined their four
+// live siblings in the same stroke).
+func TestProviderKnobsAreLive(t *testing.T) {
+	cfg := DefaultConfig()
+	seen := map[string]bool{}
+	for _, g := range settingGroups(&cfg) {
+		for _, k := range g.Knobs {
+			seen[k.Key] = k.Live
+		}
+	}
+	for _, key := range []string{
+		"provider.instances",
+		"provider.vision_model",
+		"provider.title_model",
+		"provider.compaction_model",
+		"provider.summarizer_model",
+		"provider.skills_model",
+		"provider.approvals_model",
+	} {
+		live, ok := seen[key]
+		if !ok {
+			t.Fatalf("%s is missing from the schema - the live assert went vacuous", key)
+		}
+		if !live {
+			t.Errorf("%s is not live: a save would need a restart", key)
+		}
+	}
+}
+
+// the three live lanes the provider merge opened, as the host sees
+// them: the consumer-owned local faces below are satisfied
+// structurally by the capsules (no capsule type name reaches the host).
+type recordingProviderConfig struct {
+	got    provider.Config
+	pushed bool
+}
+
+func (r *recordingProviderConfig) SetConfig(c provider.Config) { r.got, r.pushed = c, true }
+
+type recordingCaptioner struct {
+	model string
+	calls int
+}
+
+func (r *recordingCaptioner) Caption(context.Context, core.ImageContent) (string, error) {
+	return "", nil
+}
+
+func (r *recordingCaptioner) SetModel(m string) { r.model, r.calls = m, r.calls+1 }
+
+type recordingTitleChannel struct{ model string }
+
+func (r *recordingTitleChannel) Start(context.Context, core.ChannelDeps) error { return nil }
+func (r *recordingTitleChannel) Stop() error                                   { return nil }
+func (r *recordingTitleChannel) SetTitleModel(m string)                        { r.model = m }
+
+// TestHotApplyPushesProviderLanes (card t_bf21ee07): one settings save
+// re-points the running provider, the captioner and the title lane -
+// the save IS the restart for the provider cluster.
+func TestHotApplyPushesProviderLanes(t *testing.T) {
+	stub := &recordingProviderConfig{}
+	pctx := &agent.Context{}
+	pctx.ApplyOffer("provider", "test", stub)
+	captioner := &recordingCaptioner{model: "old-vision"}
+	pctx.Captioner = captioner
+	channel := &recordingTitleChannel{model: "old-title"}
+	pctx.Channels = append(pctx.Channels, channel)
+
+	cfg := DefaultConfig()
+	cfg.Provider.setInstance(ProviderInstance{
+		Name: PrimaryProviderInstance, Type: "openai", Host: "http://moved:9000", APIKey: "sk-primary",
+	})
+	cfg.Provider.setInstance(ProviderInstance{
+		Name: "work", Type: "openai", Host: "http://work:9000", APIKey: "sk-work",
+	})
+	cfg.VisionModel = "work:vision-model"
+	cfg.TitleModel = "work:title-model"
+
+	hotApply(cfg, cfg.Server.DefaultWorkspace, pctx, nil, nil, nil, nil)
+	if !stub.pushed {
+		t.Fatal("provider SetConfig never called: a save would need a restart")
+	}
+	if stub.got.Type != "openai" || stub.got.Host != "http://moved:9000" || stub.got.APIKey != "sk-primary" {
+		t.Errorf("provider section = %+v, want the primary row's endpoint", stub.got)
+	}
+	if work, ok := stub.got.Instances["work"]; !ok || work.Host != "http://work:9000" || work.APIKey != "sk-work" {
+		t.Errorf("provider section lost the work row: %+v", stub.got.Instances)
+	}
+	if captioner.calls != 1 || captioner.model != "work:vision-model" {
+		t.Errorf("vision lane = %q after %d pushes, want the saved slot", captioner.model, captioner.calls)
+	}
+	if channel.model != "work:title-model" {
+		t.Errorf("title lane = %q, want the saved slot", channel.model)
+	}
+	// a CLEARED knob reaches the wire too (the setter is idempotent)
+	cfg.VisionModel = ""
+	cfg.TitleModel = ""
+	hotApply(cfg, cfg.Server.DefaultWorkspace, pctx, nil, nil, nil, nil)
+	if captioner.model != "" || channel.model != "" {
+		t.Errorf("cleared knobs did not reach the lanes: %q %q", captioner.model, channel.model)
+	}
 }

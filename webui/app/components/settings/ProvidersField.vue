@@ -1,17 +1,19 @@
 <template>
   <!-- omega webui: the NAMED PROVIDER INSTANCES editor (card
-       t_7dcd4280, reshaped t_1914a8c9 to the Hermes shape). One row
-       per instance: the row's name IS the instance id (config.yaml
-       providers:) and the row is a NAMED ENDPOINT only - name, type,
-       base url, api key, NO model column (models come from the
-       instance's own catalog through the model pickers). remove drops
-       the row (a removed instance strands ITS sessions - their next
-       send fails loudly, never a silent fallback); add appends a
-       blank row. The list REPLACES the server's providers: map on
-       save; a masked api key ("****") round-trips as "keep the
-       existing secret" - typing over it replaces the secret, clearing
-       it keeps the masked round trip failing server-side (a masked
-       key must mean something). -->
+       t_7dcd4280, reshaped t_1914a8c9 to the Hermes shape, merged
+       t_bf21ee07 into the ONE providers section). One row per
+       instance: the row's name IS the instance id
+       (config.yaml provider.instances) and the row is a NAMED ENDPOINT
+       only - name, type, base url, api key, NO model column (models
+       come from the instance's own catalog through the model pickers).
+       The row named "default" is the primary, so the list always
+       carries it; remove drops any other row (a removed instance
+       strands ITS sessions - their next send fails loudly, never a
+       silent fallback); add appends a blank row. The list REPLACES the
+       server's list on save; a masked api key ("****") round-trips as
+       "keep the existing secret" - typing over it replaces the secret,
+       clearing it keeps the masked round trip failing server-side (a
+       masked key must mean something). -->
   <div class="providers-editor">
     <!-- card t_fec41e66 (the one-line explainer survives the reshape):
          the rows carry no visible flow on their own - one line above
