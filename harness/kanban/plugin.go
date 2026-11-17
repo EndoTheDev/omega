@@ -165,7 +165,7 @@ func (p *Plugin) registerCommands(api *agent.ExtensionAPI) error {
 	if err := api.RegisterCommand("/board", "show the active board, or switch it (/board [name])", nil,
 		func(c context.Context, name, args string) (core.CommandResult, error) {
 			if name != "/board" {
-				return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+				return core.CommandResult{}, core.CommandMiss(name)
 			}
 			return p.handleCommand(name, args)
 		}); err != nil {
@@ -174,7 +174,7 @@ func (p *Plugin) registerCommands(api *agent.ExtensionAPI) error {
 	return api.RegisterCommand("/boards", "list boards and the current pointer", nil,
 		func(c context.Context, name, args string) (core.CommandResult, error) {
 			if name != "/boards" {
-				return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+				return core.CommandResult{}, core.CommandMiss(name)
 			}
 			return p.handleCommand(name, args)
 		})
@@ -226,7 +226,7 @@ func (p *Plugin) handleCommand(name, args string) (core.CommandResult, error) {
 		}
 		return core.CommandResult{Text: "board: " + rest}, nil
 	}
-	return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+	return core.CommandResult{}, core.CommandMiss(name)
 }
 
 // --- session-scoped active board (small, mutexed; the command

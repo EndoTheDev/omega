@@ -32,7 +32,7 @@ import (
 func verdictHandler(p *Plugin) func(context.Context, string, string) (core.CommandResult, error) {
 	return func(_ context.Context, name, args string) (core.CommandResult, error) {
 		if name != "/verdict" {
-			return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+			return core.CommandResult{}, core.CommandMiss(name)
 		}
 		if p.hub == nil {
 			return core.CommandResult{}, fmt.Errorf("verdicts seam not mounted")

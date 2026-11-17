@@ -47,6 +47,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -768,6 +769,12 @@ func (api *ExtensionAPI) RegisterChannel(ch core.Channel) error {
 // classic modules build (byte-equal shape - parity holds). The
 // command name keeps its slash (user-facing identity); the registry
 // records the owner and rejects a cross-tenant claim (Q5).
+//
+// The chain falls through on ONE error: core.ErrCommandMiss, which a
+// handler returns (core.CommandMiss) for a name it does not own. Every
+// other error stops the chain and surfaces as itself with its own
+// message - an owner's refusal ("no active session to export") is an
+// answer, not a miss.
 func (api *ExtensionAPI) RegisterCommand(name, description string, args []string, h func(ctx context.Context, name, args string) (core.CommandResult, error)) error {
 	if name == "" || name[0] != '/' {
 		return fmt.Errorf("command %q: an extension command keeps its leading slash", name)
@@ -789,13 +796,15 @@ func (api *ExtensionAPI) RegisterCommand(name, description string, args []string
 			inner := c.CommandHandler // chain on the target Context's current handler
 			c.CommandHandler = func(ctx context.Context, n, a string) (core.CommandResult, error) {
 				out, err := h(ctx, n, a)
-				if err == nil {
-					return out, nil
+				if err == nil || !errors.Is(err, core.ErrCommandMiss) {
+					// an answer, or this owner's own refusal - the chain
+					// stops here and the message is the owner's
+					return out, err
 				}
 				if inner != nil {
 					return inner(ctx, n, a)
 				}
-				return out, err
+				return out, err // the chain's end: nobody owns the name
 			}
 		},
 		func(c *core.Context) { c.CommandHandler = prev },

@@ -239,7 +239,7 @@ func TestCommandChainDelegates(t *testing.T) {
 		if prev := ctx.CommandHandler; prev != nil {
 			return prev(c, name, args)
 		}
-		return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+		return core.CommandResult{}, core.CommandMiss(name)
 	}
 	if _, err := kanbanOnly(context.Background(), "/other", ""); err == nil {
 		t.Fatal("prev fallback did not run")

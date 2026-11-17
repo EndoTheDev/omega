@@ -2,10 +2,9 @@ package compactor
 
 import (
 	"context"
-	"fmt"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Plugin adapts the compactor to the agent.Plugin interface. It
@@ -77,7 +76,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 // here so the registration and the behavior sit in one file).
 func (p *Plugin) handleCompact(ctx context.Context, name, args string) (core.CommandResult, error) {
 	if name != "/compact" {
-		return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+		return core.CommandResult{}, core.CommandMiss(name)
 	}
 	return core.CommandResult{
 		Actions: []core.CmdAction{{Type: "run_compact"}},

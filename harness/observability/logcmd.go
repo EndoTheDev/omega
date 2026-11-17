@@ -34,7 +34,7 @@ const defaultLogLines = 200
 func logsHandler(ctx *core.Context) func(context.Context, string, string) (core.CommandResult, error) {
 	return func(_ context.Context, name, args string) (core.CommandResult, error) {
 		if name != "/logs" {
-			return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+			return core.CommandResult{}, core.CommandMiss(name)
 		}
 		path := ""
 		if ctx != nil {

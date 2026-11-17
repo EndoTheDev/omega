@@ -28,7 +28,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -49,7 +48,7 @@ func (commandCanary) MountWithAPI(_ *core.Context, api *agent.ExtensionAPI) erro
 	return api.RegisterCommand("/zz-canary", "the chain's innermost probe", nil,
 		func(_ context.Context, name, _ string) (core.CommandResult, error) {
 			if name != "/zz-canary" {
-				return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+				return core.CommandResult{}, core.CommandMiss(name)
 			}
 			return core.CommandResult{Text: "[canary] answered"}, nil
 		})

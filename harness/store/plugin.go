@@ -210,34 +210,45 @@ func (p *Plugin) handleSessionCommand(s *Store, c context.Context, name, args st
 	case "/resume":
 		return HandleResumeCommand(c, s, args)
 	case "/branch":
-		// TUI passes "parentID rest" — extract the parent ID.
-		parts := strings.SplitN(args, " ", 2)
-		parentID := parts[0]
-		rest := ""
-		if len(parts) > 1 {
-			rest = parts[1]
-		}
+		// /branch [parent-id]: the given id wins (branching FROM a
+		// session is the documented argument); with no id the invoking
+		// surface's bound session is the parent.
+		parentID, rest := sessionTarget(c, args)
 		return HandleBranchCommand(c, s, parentID, rest)
 	case "/label":
-		// TUI passes "sessionID label" — extract the session ID.
-		parts := strings.SplitN(args, " ", 2)
-		sessionID := parts[0]
-		rest := ""
-		if len(parts) > 1 {
-			rest = parts[1]
-		}
-		return HandleLabelCommand(c, s, sessionID, rest)
+		sessionID, label := sessionPayload(c, args)
+		return HandleLabelCommand(c, s, sessionID, label)
 	case "/export":
-		// TUI passes "sessionID path" — extract the session ID.
-		parts := strings.SplitN(args, " ", 2)
-		sessionID := parts[0]
-		rest := ""
-		if len(parts) > 1 {
-			rest = parts[1]
-		}
-		return HandleExportCommand(c, s, sessionID, rest)
+		sessionID, path := sessionPayload(c, args)
+		return HandleExportCommand(c, s, sessionID, path)
 	}
-	return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+	return core.CommandResult{}, core.CommandMiss(name)
+}
+
+// sessionTarget resolves the session a command acts ON: the first word
+// of args when the operator named one, else the invoking surface's
+// session off the dispatch wire (the palette's binding). Its second
+// return is the remaining args.
+func sessionTarget(c context.Context, args string) (sessionID, rest string) {
+	head, tail, _ := strings.Cut(strings.TrimSpace(args), " ")
+	if head != "" {
+		return head, strings.TrimSpace(tail)
+	}
+	return core.CommandSession(c), ""
+}
+
+// sessionPayload is sessionTarget's sibling for commands whose args are
+// the command's own PAYLOAD once the surface supplies the session:
+// "/label <text>" sets the bound session's label and "/export [path]"
+// exports it. A caller that binds no session (the terminal loop) keeps
+// the legacy shape, where the first word names the session:
+// "/label <session-id> <text>", "/export <session-id> [path]".
+func sessionPayload(c context.Context, args string) (sessionID, payload string) {
+	if id := core.CommandSession(c); id != "" {
+		return id, strings.TrimSpace(args)
+	}
+	id, rest, _ := strings.Cut(strings.TrimSpace(args), " ")
+	return id, strings.TrimSpace(rest)
 }
 
 // NewPlugin returns a store Plugin instance.

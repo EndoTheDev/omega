@@ -123,7 +123,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return api.RegisterCommand("/notifications", "list recent finished things (tasks, crons, chats)", nil,
 		func(c context.Context, name, args string) (core.CommandResult, error) {
 			if name != "/notifications" {
-				return core.CommandResult{}, fmt.Errorf("no handler for %s", name)
+				return core.CommandResult{}, core.CommandMiss(name)
 			}
 			return p.handleCommand(c, args)
 		})

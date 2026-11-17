@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -30,10 +31,15 @@ type commandListing struct {
 	Args        []string `json:"args,omitempty"`
 }
 
-// commandDispatchRequest is one POST /commands/dispatch body.
+// commandDispatchRequest is one POST /commands/dispatch body. SessionID
+// is the invoking surface's session (the palette sends the tab's own):
+// a session-scoped command - /export, /label, /branch - acts on it
+// without the id riding in args. It is optional: a caller that binds no
+// session (the terminal loop) keeps resolving from args.
 type commandDispatchRequest struct {
-	Name string `json:"name"`
-	Args string `json:"args,omitempty"`
+	Name      string `json:"name"`
+	Args      string `json:"args,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // commandDispatchResponse announces WHAT ran: an extension command's
@@ -99,10 +105,22 @@ func (s *Server) handleCommandDispatch(w http.ResponseWriter, r *http.Request) {
 		// NOTE-tier): a module command handler that never returned
 		// previously pinned the HTTP request forever - now the wire
 		// answers 500 and the client walks away
-		ctx, cancel := context.WithTimeout(r.Context(), commandDispatchTimeout)
+		//
+		// the invoking surface's session rides the context: a
+		// session-scoped command resolves it with core.CommandSession
+		// instead of demanding the id in args
+		ctx, cancel := context.WithTimeout(core.WithCommandSession(r.Context(), req.SessionID), commandDispatchTimeout)
 		defer cancel()
 		result, dErr := handler(ctx, req.Name, req.Args)
 		if dErr != nil {
+			// A miss is "nobody owns this name" - the same answer the
+			// not-registered path gives. Every other error is the
+			// owner's own refusal and prints its own message: the
+			// chain-on-miss wrapper no longer rewrites it.
+			if errors.Is(dErr, core.ErrCommandMiss) {
+				http.Error(w, "unknown command: "+req.Name, http.StatusNotFound)
+				return
+			}
 			http.Error(w, "command failed: "+dErr.Error(), http.StatusInternalServerError)
 			return
 		}
