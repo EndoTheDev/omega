@@ -990,7 +990,8 @@ at the production boundary or they do not exist.
 
 Notable suites: `interrupted.test.ts` (transport-death detection + transcript
 transitions), `identity.test.ts` (the chat transcript's row identity law - a
-41-row window, the head leaving, every survivor keeping its object),
+41-row window, the head leaving, every survivor keeping its object, and the
+reactive-proxy binding an in-place id/content write must invalidate),
 `composer-retry.test.ts` (the morphing button), `panemodel.test.ts`
 (the pane invariants), `dock.test.ts`/`dockables.test.ts`/`panes.test.ts`
 (tree model), `canvas.test.ts` (the canvas snapshot/delta/action flow),
