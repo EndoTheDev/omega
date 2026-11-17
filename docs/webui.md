@@ -56,7 +56,7 @@ the others:
 | Gutter (divider)  | 8px   |
 | Mobile breakpoint | 768px |
 
-**Top bar seats** (t_20fd8745, Endo's 2026-11-13 reshape): three regions
+**Top bar seats**: three regions
 on the 35px bar. The BRAND is ONE element far left - `Ωmega`, the glyph
 and the word in a single span whose text is its accessible name (the old
 lone-glyph brand and the centered `Omega` wordmark are both dead). The
@@ -72,8 +72,8 @@ handles. The palette SEAT (`.nav-palette-input`, 420x24, `26vw` cap)
 holds the live `HH:MM` clock while the palette is closed - a button
 dressed as an input, one click = the ctrl+k intent, the `nav-palette-clock`
 span decorative (`aria-hidden`) so the affordance's name stays the
-command-palette hint. **Opening the palette takes the seat over in place**
-(card t_cc6d0920, HIS 2026-11-16): the palette's own field teleports into
+command-palette hint. **Opening the palette takes the seat over in place**: the palette's own
+field teleports into
 `#nav-palette-slot` (a `display: contents` anchor inside the cluster, so
 the field is a flex item in exactly the box the clock filled), the clock
 button stands down, and the bar's other chrome - the back/forward arrows
@@ -87,20 +87,20 @@ overlay listens on the document; the `data-palette-trigger` markers and
 the teleported field itself are the exemptions, so a click that opens
 cannot close on the way out).
 
-**The command palette's geometry** (card t_d4443ab5, VS Code
+**The command palette's geometry** (VS Code
 quick-open): the panel HANGS from the top bar. Its top edge is
 `var(--menubar-h)` - the same number the bar's own height reads - so the
 seat you took over and the results below it read as one control, and it
 is centred on that absolute-center section (420px wide, capped at
 `100vw - 24px`). `position: fixed`, z 200: it overlays the panes and
 never pushes them, with no scrim (the panes stay readable behind it).
-Card t_cc6d0920 keeps that anchor exactly as merged (t_d83b54b8: both
-open paths land on x/y 505/35, 420 wide) but the panel is now the results
+That anchor is kept exactly as merged (both open paths land on x/y
+505/35, 420 wide) but the panel is now the results
 dropdown ALONE - the field lives in the bar's seat, so the list drops
 from the bar's lower edge. Both open paths - the seat click and Ctrl+K -
 ride ONE toggle, so they land on ONE geometry.
 
-**Honest floors** (cards t_ae9ac5cf + t_8bcbe72e): the floor is a
+**Honest floors**: the floor is a
 PER-COMPONENT registry fact, not a sidebar rule. `DOCKABLE_MIN_PX`
 (composables/dockables.ts) attaches every dockable's `minPx` - chat is
 the only 320px component (`CHAT_FLOOR_PX`), every tool component floors
@@ -116,10 +116,9 @@ lie: it is refused and the shell surfaces the one-line toast
 The gutter divider (`PaneDivider`) retains its magnetic snap rebase
 mechanics. On a drag between two FLEXIBLE panes the shares re-derive
 from the frozen pre-drag baseline (c50b749) - the squeeze chain is
-dead: a divider never pushes a third pane around (t_6a74d5a1's
-wall-law). A divider with a FIXED pane on one side writes that pane's
+dead: a divider never pushes a third pane around (the wall-law). A divider with a FIXED pane on one side writes that pane's
 px and the ADJACENT neighbor absorbs the change 1:1 - every other
-flexible sibling holds its measured px (t_8098aa06; before it, the
+flexible sibling holds its measured px (before it, the
 flex reflow spread the delta over the whole flex space, so a small
 pane beside a big one tracked the pointer at a fraction of the drag).
 Fixed panes drag down to the shared 128 floor. Below the
@@ -127,7 +126,7 @@ mobile breakpoint the sidebars collapse into slide-in drawers over a
 scrim; chrome (menu/status bar) rides above all overlays: drawers z12,
 scrim z10.
 
-**Same-pane split drag** (t_ae9ac5cf, the VS Code read): tab
+**Same-pane split drag** (the VS Code read): tab
 drag-and-drop runs ONE pure formula behind both the commit and the
 ghost preview. Dropping a tab on an EDGE zone splits the target pane
 and lands the dragged tab in the new half-pane; a drop on the CENTER
@@ -146,14 +145,13 @@ left, tab actions right, 22px min-height, 14px lead-in clearing the
 The band renders OUTSIDE the panel's scrollport, structurally pinned:
 scrolling the body never moves the band. Band action buttons use the
 shared `.band-tool` look (dimmed at rest, hover raises, disabled 0.4).
-The BAND POSITION CONTRACT (t_9ae4dea5): the tools/settings/insights
+The BAND POSITION CONTRACT: the tools/settings/insights
 tab roots stop sitting the band inside - the band is the host frame's
 top row, never a child of the scroll body (the 22/14 numbers above are
 the shared contract; a module panel that renders its own inner band is
 a review finding).
 
-**Frame rails** (t_bc321318 → t_97cece1e, amended t_064b1559 /
-t_e539ba29): a rail renders ONLY across a GUTTER between two
+**Frame rails**: a rail renders ONLY across a GUTTER between two
 horizontally-adjacent cards - the row divider's own top/bottom strokes,
 spanning exactly the divider's 4px width, aligned to the cards' border
 rows. Nothing else strokes. The old whole-width pane-area strokes are
@@ -167,7 +165,7 @@ pane-area contributes no connecting stroke. Desktop law only.
 The UI-family laws live in [`.agents/DESIGN.md`](../.agents/DESIGN.md).
 The anatomy map:
 
-**The registry row** (card t_561dc4e0): LINE 1 the name (semibold,
+**The registry row**: LINE 1 the name (semibold,
 full opacity, ~13px), LINE 2 the subtitle (dim, smaller: the mono
 schedule, the description, transport + status, module counts), and
 exactly ONE control on the right, top-aligned with line 1. Expanded
@@ -178,19 +176,19 @@ mcp, modules). Status dots speak dot + word: green active, dim
 sleeping (the agents roster's law); an enabled/disabled text label is
 dead - the control column rides the pill.
 
-**The toggle pill** (card t_d93864e7, `components/ui/TogglePill.vue`):
+**The toggle pill** (`components/ui/TogglePill.vue`):
 the 26px rounded pill with the 11px state DOT inside (dot shifts,
 border goes `--ok` when on, transparent background). No `:checked`
 prop exists for Vue's prop diff to skip, so the stale-arm re-render
 trap is structurally dead for every host that adopts it. ONE CLICK IS
-ONE SWITCH (card t_5051d523): the pill emits a single intent per
+ONE SWITCH: the pill emits a single intent per
 activation and carries no armed state and no confirm label, so the
 arm/confirm two-step that used to make every toggle need a double
 click cannot come back through the shared component. The host owns the
 write path and re-renders the row from the server's answer; the
 consequence text (what an exclusion means, a module's dependents)
 rides the pill's `hint` in BOTH the accessible name and the title
-(card t_d92a1f74: one composed string, so a screen reader hears the
+(one composed string, so a screen reader hears the
 consequence a hover tooltip would hide) - always informative, never a
 gate. Adopted across the registry tabs (skills, tools, agents, MCP,
 modules) and the agents roster; the MCP tab's "from mcp.yaml" caption
@@ -220,23 +218,23 @@ Everything else animates through `transition`, not keyframes.
   Cron, Skills, Tools, Agents, Settings, Kanban, Modules, Insights,
   MCP, Notifications - no X); the bottom panel under the main pane
   hosts the Logs tab (the structured event stream over a raw-tail
-  chip, card t_e703180e; named "Logs" since card t_01c53e78 retired
-  the old raw-tail pane) and the Terminal;
+  chip; named "Logs" since the old raw-tail pane retired) and the
+  Terminal;
   middle = main pane. The LAST main pane never closes its
-  PANE (Endo ruling, 2026-10-25, corrected t_b620f99d): `removePane`
+  PANE: `removePane`
   (and the move-out
   auto-close) refuse it as a no-op - the main area never reaches zero
   panes. The pane X shows on hover and only while another MAIN pane
   exists (pinned shells don't count toward that census). **The last tab of
   a pane never closes** (see THE LOCKED LAST TAB below): that is how the
   pane stays non-empty, so nothing is seated in its place.
-- **THE LOCKED LAST TAB** (card t_9855a20e, Endo ruling 2026-11-14 - the
-  live eyeball on commit 8eabefc7's never-zero placeholder): a pane's LAST
+- **THE LOCKED LAST TAB** (the live eyeball on commit
+  8eabefc7's never-zero placeholder): a pane's LAST
   tab is locked. `closeTab` refuses the request and `DockPane`'s
   `tabClosable` renders no X on the lone tab, so no close can empty a
-  pane. The `newtab` placeholder that card t_d04a1c80 used to seat in the
+  pane. The `newtab` placeholder that used to seat in the
   emptied pane is RETIRED: a blank "New Tab" body was the "empty bad
-  looking space" Endo closed his last chat into. Nothing is minted to fill
+  looking space" a closed chat left behind. Nothing is minted to fill
   an empty pane - a pane a GESTURE leaves empty (a fresh split group, a
   shell whose last tab was dragged out) renders the bar-less empty strip
   and a drop refills it. Two dead states are REPAIRED rather than rendered:
@@ -246,7 +244,7 @@ Everything else animates through `transition`, not keyframes.
   first), and a pane whose last chat died with its deleted session seats
   the same fresh chat. The empty-pane component menu stays deleted
   (DOCK-EMPTY-ACTIONS).
-- **The empty-pane component menu is DELETED** (card t_d04a1c80, DOCK-EMPTY-
+- **The empty-pane component menu is DELETED** (DOCK-EMPTY-
   ACTIONS removal): the 15-button inventory that WAS the empty pane's
   content is gone, and the icons-bleeding-at-the-sidebar-bottom bug died
   with the element (no overflow fix was owed to a deleted element). The
@@ -267,8 +265,8 @@ Everything else animates through `transition`, not keyframes.
   structured run-event stream over the raw log tail; see its own
   section), the notifications feed (right pane, unclosable,
   inbox glyph - the bell died). The `newtab` placeholder left the registry
-  with card t_9855a20e (legacy id only: persisted seats are retired on
-  boot). `inspector` is legacy
+  under a legacy id (persisted seats are retired on boot). `inspector` is
+  legacy
   only: deserialization still accepts the persisted id and modernizes
   it, nothing opens one. `continuous`, the `canvas` host tab and the
   modules cockpit tab left the registry - the continuous roster folded
@@ -276,16 +274,16 @@ Everything else animates through `transition`, not keyframes.
   section (`composables/canvas.ts` stays as the shared view-model store
   - snapshot GET /ui/canvas, delta merge, the action pipe, the toast
     funnel), and the module lifecycle surface is CONFIGURATION, so it lives
-    in the settings tab's MODULES section (card t_81d0901b: rows with live
+    in the settings tab's MODULES section (rows with live
     toggles, the expandable tools/commands/panels detail, the always-on tier
     (agent-loop, provider, observability) as a chip - the toggle endpoint
     refuses it at the seam; `/modules`,
     `/extensions` and `/panels` open that section). Settings is an ON-DEMAND
-    main tab (t_00e4a784): the menubar gear beside the right-sidebar
+    main tab: the menubar gear beside the right-sidebar
     toggle opens it, it closes like any tab, and the boot retires a
     persisted inspector seat (`retireInspectorSettings`). The `+` menu
     still carries no settings entry - the gear is the entry point.
-- **The runtime module gate** (card t_103e30a6): a dockable whose pane body
+- **The runtime module gate**: a dockable whose pane body
   ships from a capsule's `ui/` dir is MODULE-OWNED, and the set is DERIVED
   from the composition manifests (`modulePanels` + `moduleTabs`, the
   generated capsule scans) - never a second hardcoded list. When
@@ -306,25 +304,25 @@ Everything else animates through `transition`, not keyframes.
   panes (sessions, chat, viewer, agents, insights, settings) are not module
   ids and are never gated; `shell` (the capsule behind the Terminal tab) has
   no manifest id match yet, so its chip is not gated either.
-- **Closing an edge pane HIDES state, never deletes it** (t_9ed6cad7):
+- **Closing an edge pane HIDES state, never deletes it**:
   a sidebar/bottom pane's collapse removes the host from the tree but
   keeps the domain's state (search text, selected tab, scroll) so the
   reveal puts it back exactly as it was.
-- **The give-away law** (t_66fa358e): pure window-narrow arithmetic -
+- **The give-away law**: pure window-narrow arithmetic -
   when the window cannot seat every fixed edge pane at its floor, the
   give-away squeezes the other edge roots to make room, but the
   component the user JUST revealed (the last request) is exempt: it
   survives, the other edge gives way. Reveal and resize read the same
   formula, so "no room" never fires while a give-away could seat the
   pane.
-- **Sessions panel order** (t_311fc40b as amended by t_7ee0a673):
+- **Sessions panel order**:
   the head row IS the universal band - tab title left, the search seats
   IN the band top right (band-tool slot, on the band's own 22px row;
   the separate search row below the band is dead), and the new-session
   control keeps its own full-width row under the band.
 - **Tab drag-and-drop** moves tabs between panes (edge zones split,
   see the geometry section); sessions stay in the sidebar.
-- **Boot repair** (t_841df625): a persisted dock shell from before a
+- **Boot repair**: a persisted dock shell from before a
   built host's bottom-home addition is repaired at boot - new
   bottom-home registry members are injected into the persisted bottom
   shell with the persisted layout untouched (the repair count is
@@ -334,8 +332,8 @@ Everything else animates through `transition`, not keyframes.
   `app/composables/module-panels.generated.ts` is generated at build
   time and there is NO runtime registry. `harness/tools/ui/ToolsList.vue`
   is the canary.
-- **Mobile drawers resolve views, not panels** (t_e703180e, t_07ad4fda,
-  t_572015db): below the 768px breakpoint every edge shell becomes an
+- **Mobile drawers resolve views, not panels**: below the 768px breakpoint
+every edge shell becomes an
   overlay drawer, and each drawer's tab chain ends in the generic
   `InspectorPanel` catch-all - which reads the PANEL manifest. A TAB
   capsule (terminal, notifications, observability) and a shell-owned view
@@ -343,7 +341,7 @@ Everything else animates through `transition`, not keyframes.
   their own branch AHEAD of that catch-all, or a loaded tab renders
   "module not loaded". The bug is a width breakpoint, not a device: a
   desktop window resized under 768px shows it.
-- **The drawer CLAMPS its tab set** (t_572015db): a tab is free content in
+- **The drawer CLAMPS its tab set**: a tab is free content in
   the dock, so any unlocked tab can be dragged into any pane - which put a
   tab the drawer had no branch for into the live edge pane (agents in the
   bottom pane, terminal in the right one) and rendered "module not loaded"
@@ -374,7 +372,7 @@ Everything else animates through `transition`, not keyframes.
 - Stack mode: every block renders full width on the background. The
   assistant answer keeps the full column width but insets its text 8px
   from the turn's left edge, and the branch-anchor chips sit at left 4px
-  / right 8px (Endo's tuned numbers out of the chat-spacing tuner,
+  / right 8px (the tuned numbers out of the chat-spacing tuner,
   2026-11-15, round 2 - the numbers are law). Within a turn the strips
   sit flush on a 0px gap in 24px rows (the panels that reuse those rows
   keep their 44px click floor); the 32px turn boundary is the dominant
@@ -387,7 +385,7 @@ Everything else animates through `transition`, not keyframes.
   viewed; the `pinned` flag changes only on real scroll events - never
   re-measure after appending.
 - Retry is regenerate-in-place via the server: the action row's retry
-  chip (composer face retired, t_95d2bc34) dispatches the chat panel's
+  chip (composer face retired) dispatches the chat panel's
   retry action through the pipe - it re-runs the session's LAST user
   message as a sibling variant without persisting a duplicate user
   bubble; a cancelled/partial response stays visible and the new
@@ -402,7 +400,7 @@ Everything else animates through `transition`, not keyframes.
 - Error payloads in the SSE driver THROW (`composables/omega.ts`) - a
   swallowed stream error is an invisible dead stream.
 
-## Ephemeral chat (card t_d96a5cd5)
+## Ephemeral chat
 
 - An ephemeral chat is a **chat tab, not a session**. Entry point: the
   sessions panel's `+ new` dropdown (`new chat` / `new ephemeral
@@ -428,14 +426,14 @@ chat`). The tab carries the `EPHEMERAL_DRAFT_REF` marker until the
 - Retry/fork/variants never exist on an ephemeral tab - the store
   tree they replay is absent. The server 400s the flag combination.
 
-## The composer's `/` palette and `@` mentions (card t_07aed3f9)
+## The composer's `/` palette and `@` mentions
 
 The webui is the shell; the palette is webui-native. Registration and
 resolution mirror the one command law every surface follows:
 
-- **A `/` token at the caret opens the command palette** (t_d1a2951d:
-  caret/token-based, mid-sentence included - the draft's leading word
-  is just the boundary-free case). Rows: the webui's
+- **A `/` token at the caret opens the command palette** (caret/token-based,
+  mid-sentence included - the draft's leading word is just the
+  boundary-free case). Rows: the webui's
   shell commands (`composables/commands.ts` `WEBUI_SHELL_COMMANDS` -
   `/new` and `/sessions` plus the local-action set
   `/copy /modules /fork /help /panels /retry /theme /variant`;
@@ -463,21 +461,21 @@ resolution mirror the one command law every surface follows:
 
 ## The Files tab
 
-- **The tree is chevronless** (t_63582d1f): expand/collapse triangles
+- **The tree is chevronless**: expand/collapse triangles
   do not exist. The folder icon alone carries the state - the glyph
   flips `lucide-folder` / `lucide-folder-open` and the row carries
   `aria-expanded`. Keyboard parity: focus + Enter toggles. Hover
   indent guides: one hairline `::before` per nesting level, revealed
   purely by CSS `:hover` on the root tree (0.15s opacity fade) - zero
   listeners, zero layout shift; no narrow exemption.
-- **The path guard is the traversal set** (t_ccd4a000): every file
+- **The path guard is the traversal set**: every file
   surface (browse, read, raw) rejects absolute paths, empty segments,
   and ONLY the `.` / `..` traversal segments - dotfiles and dot-folders
   (`.git`, `.worktrees`, ...) list and read like everything else.
   Listed rows carry no error state; a failed read is a one-line
   notice, not a phantom row.
-- **The viewer renders ONE body per content class** (t_08d822bb,
-  t_42c8aced): `GET /files/read` carries the sniffed `mime` (+ `size`)
+- **The viewer renders ONE body per content class**: `GET /files/read`
+  carries the sniffed `mime` (+ `size`)
   field; the viewer tab branches on it - `image/*` -> an `<img>` and
   `application/pdf` -> the browser's native viewer in an `<iframe>`,
   both served by `GET /files/raw` (raw bytes under the read surface's
@@ -498,7 +496,7 @@ resolution mirror the one command law every surface follows:
   activity - and the main row additionally carries a `main` badge
   beside its name (the badge also explains why that row carries no
   toggle - it is the home config, always on).
-- **A row click opens the agent's chat** (card t_81109e1c): the name
+- **A row click opens the agent's chat**: the name
   is a button that hands the agent's MOST RECENT session id
   (`last_session_id` on the roster row, newest by `updated_at`) to the
   shell over the `omega:open-chat-session` window event - module UI
@@ -522,13 +520,13 @@ resolution mirror the one command law every surface follows:
   on the subtitle (green active, dim sleeping), the right-anchored
   toggle per the pill law, and NO wake control anywhere - waking is
   the scheduler's job, the tab never spawns a wake.
-- **The default agent carries NO toggle** (t_db378a0d, superseding the
-  t_2d8deb8c locked pill): it is on by definition - the home config the
+- **The default agent carries NO toggle** (superseding the locked
+  pill): it is on by definition - the home config the
   daemon loads - so its row renders no switch and no state text at all;
   the `main` badge explains the absence. `PUT /disabled/agents` still
   answers 409 for the default agent at the handler level and config.yaml
   stays untouched. Every non-default row keeps its pill.
-- **The agents rows speak the sessions vocabulary** (t_db378a0d, round 1
+- **The agents rows speak the sessions vocabulary** (round 1
   of the unified theming language): chip radius, the `--z1-raised` hover,
   the name brightening to full text, the hairlines ABOVE and BELOW the
   raised row fading, the whole head line as the open surface, and the row
@@ -551,7 +549,7 @@ resolution mirror the one command law every surface follows:
   inherit flags; nil = leave alone). Session ROWS are dead on this tab -
   the roster opens a session's chat, it never lists sessions (the
   per-agent session endpoints stay in the API, docs/api.md).
-- **The 0.17.3 make-over** (card t_df015e66, pinned by
+- **The 0.17.3 make-over** (pinned by
   `webui/test/agentsmakeover.test.ts`):
   - **One create door.** A single `+` in the band opens ONE form whose
     agent-kind choice decides the wire: `scaffold` (`POST /agents`),
@@ -589,7 +587,7 @@ The board is `harness/kanban/ui/Board.vue` over the pure lane logic in
 `webui/test/kanban.test.ts`). Nine lanes in the Hermes status grammar,
 one horizontal scroll strip, 236px columns.
 
-- **ANY lane folds to a rail** (card t_50a8c145). A folded lane is a
+- **ANY lane folds to a rail**. A folded lane is a
   thin vertical strip (`LANE_RAIL_PX` = 36px, the 32-40 ruled band):
   the lane's colored dot on top, the lane name in `writing-mode:
 vertical-rl` uppercase small, the count below when the lane holds
@@ -631,10 +629,10 @@ vertical-rl` uppercase small, the count below when the lane holds
   on `flex-basis` - Hermes snaps, omega eases. The numbers ride CSS
   custom properties set from the constants, so the view and the logic
   cannot drift.
-- **The narrow stack has no rails** (Endo ruling: "not in mobile
+- **The narrow stack has no rails** ("not in mobile
   view"). Below `NARROW_MAX_PX` the lanes stack full width and every
   lane renders expanded - the fold is a horizontal-scroll affordance.
-- **The card grammar** (card t_65ea61a1). A card is a reading surface:
+- **The card grammar**. A card is a reading surface:
   the title and the body teaser clamp at `CARD_CLAMP_LINES` (2) lines
   (`-webkit-line-clamp`, fed to CSS as `--card-clamp` from the
   constant), the assignee is a bordered chip, and ONE meta row carries
@@ -659,7 +657,7 @@ vertical-rl` uppercase small, the count below when the lane holds
 
 ## The Settings pane
 
-`SettingsTab.vue` is a MASTER-DETAIL surface (card t_af7e1150, settings
+`SettingsTab.vue` is a MASTER-DETAIL surface (settings
 tier 4): a CATEGORY NAV on the left, ONE category's knobs on the right -
 the VSCode settings bones. The tier-1/2 seat stays: the full-width search
 bar is the pane's top row, the rows themselves are untouched (modified
@@ -689,12 +687,12 @@ dot, reset link, draft star, live note).
   the nav keeps its shape so you can see where the hits live. Search mode
   skips the curated section: a hit renders once, under the domain that
   owns it.
-- **Selecting a section FILTERS the pane** (card t_cd9952a3, the VS Code
+- **Selecting a section FILTERS the pane** (the VS Code
   read; it narrows what the one document RENDERS and reverses nothing).
   A nav click renders that category and its subsections and nothing else -
   the pane's row count equals the section's own. A deselect restores the
-  whole document. Commonly Used filters like every other category (card
-  t_6fb4ddc6): its curated section is the one thing on screen.
+  whole document. Commonly Used filters like every other category: its
+  curated section is the one thing on screen.
   It is a VIEW filter: no knob changes, no config is written. A live
   search OVERRIDES it - one global match across every section - and the
   filter returns the moment the query clears. A scroll moves the
@@ -702,7 +700,7 @@ dot, reset link, draft star, live note).
   section rides the in-app URL on the QUERY axis (`?settings=<id>`,
   replaceState only), so an in-app deep link lands the pane pre-filtered
   and outranks the remembered anchor. The PATH names the PANE too:
-  `/settings/` is the settings route (cards t_6d6a6dc4, t_a5ef6340), and
+  `/settings/` is the settings route, and
   the client WRITES it - every door that opens or focuses the tab (the
   gear, the `/modules` family of commands, the palette's dockable entry, a
   settings chip click) replaceStates the path, so a copied address bar
@@ -715,8 +713,8 @@ dot, reset link, draft star, live note).
   neighbor-focus lands in the same re-focus path) - so the claim never
   outlives the tab, and the release WRITES the path the pause held (a
   derivation suppressed while the claim was up would otherwise stay stale
-  when the focused chat does not change). Settings stays a CLOSABLE tab
-  (t_00e4a784): the path is a focus claim, never a pinned view.
+  when the focused chat does not change). Settings stays a CLOSABLE tab:
+  the path is a focus claim, never a pinned view.
   The TRAILING SLASH is the contract, not decoration - the knob API owns
   the bare noun (agent/api/server.go registers exact `/settings`, beside
   `/settings/raw` and `/settings/reset`) while `/settings/` misses every
@@ -751,7 +749,7 @@ dot, reset link, draft star, live note).
   remembered id is kept RAW and normalised against the live nav per
   render, so an agent scope that does not carry the remembered category
   falls back without clobbering the memory - switching back finds it again.
-- **A scope switch normalises both remembered ids** (card t_4e9559c8): the
+- **A scope switch normalises both remembered ids**: the
   highlight (which the scroll-spy moves on its own) and the section filter
   (the only id the document obeys) are asked SEPARATELY whether the live
   nav can resolve them. They disagree whenever a live query moves the
@@ -771,7 +769,7 @@ dot, reset link, draft star, live note).
   remembered selection, no-accordion proof) and
   `110-settings-scopes.journey.sh` (the tier-3 scope tabs, re-witnessed
   under the new bones).
-- **The whole-document band** (card t_a82d39c8): beside the knob rows, the
+- **The whole-document band**: beside the knob rows, the
   pane's band carries three config-document actions - `reset to defaults`
   (POST `settings/reset`, the defaults belong to the host, so the client
   never assembles them), `export to yaml` (downloads the live config as a
@@ -786,7 +784,7 @@ dot, reset link, draft star, live note).
 
 - The face of the observability capsule (`harness/observability`, the
   engine half): two read-only routes, ONE tab. The tab is NAMED "Logs"
-  (Endo ruling 2026-11-13, card t_01c53e78): the old raw-tail
+  the old raw-tail
   `http_channel` pane answered the same question with nothing but a
   `GET /logs` tail, and retired with its component - one logs surface
   survives. The STRUCTURED event
@@ -795,8 +793,8 @@ dot, reset link, draft star, live note).
   `{seq, time, session, type, level, tool, turn, duration_ms, summary,
 error}` (level is DERIVED server-side: error on a failure field or an
   IsError result, warn on an unclean stop, info otherwise). The raw log
-  tail is the SECONDARY view inside the same tab (Endo's ruling 1: not
-  a peer tab) - `GET /observability/logs?lines=` answers
+  tail is the SECONDARY view inside the same tab (ruling 1: not a peer
+  tab) - `GET /observability/logs?lines=` answers
   `{path, lines}` verbatim.
 - **Band controls**: the session chip (scope defaults to the OPEN
   session, the chip flips the whole ring into view - a shell with no
@@ -821,7 +819,7 @@ error}` (level is DERIVED server-side: error on a failure field or an
   nothing. The push channel (`composables/socket.ts`) carries a CLOSED
   topic set of five names the client speaks (chat, chips, canvas, runs,
   health - the server's sixth, `logs`, lost its client half with the
-  raw-tail pane, card t_1423218e), none of them an observability topic;
+  raw-tail pane), none of them an observability topic;
   riding it would be an engine-side change
   (`agent/api/sockets.go`), so v1 does not pretend to subscribe.
 - **Degradation is a sentence, not a blank pane**: a 404 from the
@@ -838,8 +836,8 @@ ObservabilityTab.vue` + the pure `rows.ts`); the shell's registry
 
 ## Terminal and browser panes
 
-Two module capsules complete the main surface (t_55a3fc4b terminal +
-t_95c91f9c browser): the terminal module hosts a PTY in the
+Two module capsules complete the main surface (terminal + browser):
+the terminal module hosts a PTY in the
 bottom pane (`TerminalTab`, journey 95), and the browser module hosts
 an any-origin iframe tab in the main area (`BrowserTab` over
 GET/PUT /browser/last, the resume URL; sites refusing embedding get
@@ -847,7 +845,7 @@ an explicit fallback panel, journey 96). Both are in-process capsules
 of the module table (docs/architecture.md). Both views are the
 capsules' own - they ship at `harness/<name>/ui/` and the shell's dock
 outlets bind them from the generated module-tabs manifest
-(`module-tabs.generated.ts`, card t_617c2ad0; the shell's registry in
+(`module-tabs.generated.ts`; the shell's registry in
 `dockables.ts` keeps the composition: `TAB_MODULES`, the pinned-root
 order, title/icon/policy). Removing a capsule drops its manifest
 entry - the tab hosts nothing, same shape as a removed panel capsule.
@@ -872,8 +870,8 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   multipart POST /attach-file, part order `session_id` then `file`),
   `renderMarkdown` (markdown-it, `html: false` - the lib's default
   escaping is the sanitizer), `createRenderScheduler`.
-  `composables/moduleState.ts` - the one live module-state store (card
-  t_103e30a6): the settings MODULES rows and the dock's runtime gate read
+  `composables/moduleState.ts` - the one live module-state store: the
+  settings MODULES rows and the dock's runtime gate read
   the same payload, one boot read plus the toggle responses, the disabled
   set cached for the synchronous boot hydrate.
 - Shell: `MenuBar` (the three seats, see the top-bar paragraph),
@@ -889,10 +887,10 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   toggles, the board switcher, the drawer status, settings knobs, the
   composer's reasoning-effort chip).
 - Chat: `AppComposer` (auto-grow editable editor - `contenteditable`
-  `.composer-input`, the t_e67c372b chip law: a reference chip
+  `.composer-input`, the chip law: a reference chip
   REPLACES the token span it represents, inline in the flow, and
   Backspace behind a chip dissolves it back to the raw token text while
-  the chip's x removes outright; card t_d4443ab5: `/skill` tokens chip
+  the chip's x removes outright; `/skill` tokens chip
   on the SAME machinery as `@file` ones - the composer scans with
   `ScanOpts.inlineSkills` (a skill token at ANY word boundary, the shape
   its caret-based slash palette accepts) and the chip is the one
@@ -905,12 +903,12 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   `@skill:<name>` token wears the SAME skill pill whichever door
   injected it (its click opens SKILL.md), while an opaque
   `@session:<id>` stays literal text - neither is a file reference
-  (card t_620a3edf).
+.
   Shift+Enter writes the newline as a
   text node (the editor claims every Enter - plain sends), and Chromium
   hangs a block-final newline in pre-wrap, so every write settles one
-  draft-invisible sentinel `<br>` after it (AppComposer's capTail, card
-  t_eb07b315) that turns the break into a real line box and seats the
+  draft-invisible sentinel `<br>` after it (AppComposer's capTail)
+  that turns the break into a real line box and seats the
   caret on the new line - pinned by the 102-composer-shift-enter
   journey and `webui/test/composershiftnl.test.ts`; ONE morphing action button -
   send/stop, dimmed at idle with no draft, `+` opens the file picker,
@@ -919,15 +917,15 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   composables/attachments.ts owns the glyph/size helpers), paste +
   paperclip attach; the
   retry face is retired - the newest response's action row carries the
-  msg-retry chip, card t_95d2bc34; `/` command palette + `@` mention
+  msg-retry chip; `/` command palette + `@` mention
   picker, see below; the composer shape law lives in
-  [`.agents/DESIGN.md`](../.agents/DESIGN.md) (card t_1750a9e3),
+  [`.agents/DESIGN.md`](../.agents/DESIGN.md),
   pinned by the 22-composer journey and
   `webui/test/composershape.test.ts`; `ModelSelect` + the shared `BandSelect` effort chip (the dedicated
   ThinkingSelect retired - the BandSelect owns the select grammar; the
   model+effort pair is one nowrap wrap unit), `ChatMessage`,
   `ThinkingBlock`, `ToolCallLine` (running/done/error, expandable
-  result), `ToolGroup` (the tool-group RENDERING law, card t_e4280de7:
+  result), `ToolGroup` (the tool-group RENDERING law:
   a run's CONSECUTIVE tool rows collapse into ONE collapsible group -
   `composables/toolGroup.ts` folds each render list strictly, a
   variant-anchored row never gets swallowed, the group rides the shared
@@ -942,29 +940,29 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
 - Files: `FileTree` + `FilesTab` + `InspectorPanel` (module panels slot
   in). See the Files tab section below. Settings: `SettingsTab` (the
   config knobs as a dock-tab singleton; the theme picker is TWO knobs -
-  color mode and the custom theme, t_a94b1cda; model slots ride
+  color mode and the custom theme; model slots ride
   `ModelField`, the BandSelect listbox with capability filters).
   Terminal view: `harness/terminal/ui/TerminalTab` (the bottom-host PTY
   over the terminal module's routes; a fresh spawn lands in the
   resolved workspace - the focused chat session's pinned root rides
   the claim as `?session=<id>`, the server resolves it against the
-  `server.default_workspace` knob and the process cwd, t_62d72028). Browser view:
+  `server.default_workspace` knob and the process cwd). Browser view:
   `harness/browser/ui/BrowserTab` (URL bar + iframe over
   GET/PUT /browser/last; X-Frame-Options refusals render the fallback
   panel, never a silent blank frame). Both are tab capsules - their
   views live in the capsule, the shell's outlets bind them through
-  `module-tabs.generated.ts` (card t_617c2ad0).
+  `module-tabs.generated.ts`.
   Observability view: `harness/observability/ui/ObservabilityTab` (the
   event stream + the tail toggle over the observability capsule's two
   reads; the pure filter/format half is `ui/rows.ts`) - the tab the dock
-  names "Logs" (card t_01c53e78).
+  names "Logs".
 - Canvas (arc 3c): `composables/canvas.ts` is the store -
   snapshot load (GET /ui/canvas) + view_model_delta merge (forwarded
   by the chat host's `canvasDelta` dep) + the action pipe POST
   (optimistic pending, error state on 4xx/5xx); the standalone
   generic host tab (`components/canvas/CanvasPanel.vue`) is gone -
   folded into the settings MODULES section with the rest of the module
-  surface (card t_81d0901b), the chat transcript renders FROM the
+  surface, the chat transcript renders FROM the
   canvas view-model.
 
 ## Testing

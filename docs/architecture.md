@@ -10,15 +10,15 @@ webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> llm (provi
 | Agent   | `agent`     | Multi-turn loop machinery + the loop's need-face declarations (`agent/seams.go`), Plugin system (Context alias, MountAllAPI, RouteConfigs), the ExtensionAPI registration surface (the universal mount, v0.12), TurnSink seam, canvas runtime, insights/caption/compaction helpers                                                                                                                                                                |
 | LLM     | `llm`       | Shared provider infra: SSE streaming client, retry, the think-level ladder, image sniffing; the core wire-shape aliases (`llm.ToolSchema`, `llm.ModelInfo`) - it carries no provider contract (consumers declare their own faces)                                                                                                                                                                                                                 |
 | CLI     | `cmd/omega` | Entry point, CLI loop + setup, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                                                                                                                                                                                                                                                                                                    |
-| Modules | `harness/`  | In-process Go packages: provider, store, datadir, skills, compactor, observability (logging + the run-event ring, the 0.17.3 fold), memory, prompt, tools, mcp, delegate, cron, verdict, approval, continuous, notifications, terminal (module `terminal` - the dir, the plugin name and the dockable id agree since t_9ae9a25a; it carries shell.run/list/read/kill + the terminal pane), browser, kanban, trust + `datadir` (the imported leaf) |
+| Modules | `harness/`  | In-process Go packages: provider, store, datadir, skills, compactor, observability (logging + the run-event ring, the 0.17.3 fold), memory, prompt, tools, mcp, delegate, cron, verdict, approval, continuous, notifications, terminal (module `terminal` - the dir, the plugin name and the dockable id agree; it carries shell.run/list/read/kill + the terminal pane), browser, kanban, trust + `datadir` (the imported leaf) |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
 consumes them and runs the tool loop. The HTTP channel exposes
 everything over HTTP and serves the embedded webui SPA (built by
 webui/scripts/build.sh, committed in api/static/,
-baked in at compile time). Mutating routes ride the Host/Origin guard
-(t_b52d09f3): a write from a foreign origin answers 403. Config and
+baked in at compile time). Mutating routes ride the Host/Origin guard: a
+write from a foreign origin answers 403. Config and
 capsule writes are atomic - a temp file plus rename, so a killed
 process never leaves a half-written yaml - and shared toggle state
 sits behind one mutex.
@@ -211,7 +211,7 @@ rest degrade to nil-safe floors: no logging, no compaction (context
 overflow surfaces a friendly error), no system prompt, no nudger, no
 gate.
 
-### Yield-class calls (the async loop, card t_f3f953d0; escalation, t_1501cb04)
+### Yield-class calls (the async loop; escalation)
 
 A tool registered with `core.Tool.Yield = true` is IMMEDIATE-yield
 (reserved for calls that are minutes by nature - `delegate.task`): the
@@ -230,7 +230,7 @@ and registers the call in the durable pending-calls table
 backs it, `agent.NewMemYieldLedger` is the in-memory floor) before any
 result can arrive, and the run ends with
 `finish_reason: "yielded"` - no conversation goroutine parks. The
-table is session-typed (card t_61d3def9): the store capsule's
+table is session-typed: the store capsule's
 `pending_calls` SQLite table backs durable sessions, the `eph-`
 namespace is memory-backed beside the ephRegistry (restart eats its
 pending results - the ephemeral mode's own contract;
@@ -248,11 +248,11 @@ from a pre-split build settles and drops - its home died with the
 restart). A turn with pending calls
 is never folded (the compactor's never-fold law). A host without the
 harness runs every tool loop-back: nil-safe by construction. The
-pending marker the model sees on a still-pending call is unmistakable
-(card t_1501cb04, session bf0fa2a2): it names the tool and forbids
+pending marker the model sees on a still-pending call is unmistakable:
+it names the tool and forbids
 re-running, re-dispatching, or working around it.
 
-### The push channel (`/ws`, card t_7624bab1)
+### The push channel (`/ws`)
 
 The transport-only arc that retired browser polling: ONE websocket per
 browser connection (`GET /ws`), every update a typed topic on it. The
@@ -296,7 +296,7 @@ hints and state is truth. The GET API stays complete and authoritative.
 
 `skills`, `memory`, `trust`, `cron`, `notifications`, `verdicts`,
 `chat-runs` - services one capsule (or, for `chat-runs`, the serving
-shell - the first shell-offered key, Endo ruling 2026-11-04) owns and
+shell - the first shell-offered key) owns and
 others (capsules, the serving surface, the host) consume: resolve the
 key, assert to the consumer's own 1-2 method local interface (e.g. the
 host's `trustResolver` in `cmd/omega/trust.go`, the store capsule's
@@ -329,7 +329,7 @@ trace per consumer. Strings are data, not type-system vocabulary.
 
 ## The shell-ring census (shrink wave 3)
 
-The executable sentence (Endo ruling 2026-11-04, ADR
+The executable sentence (ADR
 Workshop/omega-shell-ring-shrink.md): **remove every capsule and what
 remains is a usable agent with a chat face.** `agent/api` is the
 serving shell's BASE set - chat + canvas + settings - and carries no
@@ -351,7 +351,7 @@ into a new package).
 | `runs.go`               | chat - the live run: the RunHub, detached runs, the SSE run frames + the store floor guards                                                                                                                                          |
 | `server.go`             | chat - the chat floor: /models, /chat, the session-existence floor (POST /sessions, /sessions/{id}), /tools, the command palette, canvas wiring                                                                                      |
 | `server_atmention.go`   | chat - the @-mention expansion on the submit path (the browser never expands; /chat does)                                                                                                                                            |
-| `server_agentrun.go`    | chat - the per-agent run config: a session owned by an agent home runs on THAT home's provider, model, system prompt and max_turns (card t_a7fab745)                                                                                 |
+| `server_agentrun.go`    | chat - the per-agent run config: a session owned by an agent home runs on THAT home's provider, model, system prompt and max_turns                                                                                 |
 | `server_attachments.go` | chat - the composer attach surface for non-image files: /attach-file writes into the session upload dir and /chat carries the typed reference (kind, name, size, path); the model-facing render lives in `agent/loop/attachments.go` |
 | `server_canvas.go`      | canvas - the transport: GET /ui/canvas snapshot + POST /ui/actions, deltas fan out on the run streams                                                                                                                                |
 | `server_commands.go`    | chat - the command palette's server surface (GET /commands + POST /commands/dispatch, the composer's slash-command face over the universal registration seam)                                                                        |
@@ -360,23 +360,22 @@ into a new package).
 | `server_settings.go`    | settings - the third shell-ring face (GET/PUT /settings)                                                                                                                                                                             |
 | `server_transcript.go`  | chat - the transcript serving (live + store-backed restore)                                                                                                                                                                          |
 | `server_variants.go`    | chat - message variants on the live run (regenerate/branch selection)                                                                                                                                                                |
-| `sockets.go`            | chat - the push channel's fan-out: the `/ws` hub, the typed topic set, the broadcast hooks at the run/wake/canvas seams (card t_7624bab1)                                                                                            |
+| `sockets.go`            | chat - the push channel's fan-out: the `/ws` hub, the typed topic set, the broadcast hooks at the run/wake/canvas seams                                                                                            |
 | `web_tools.go`          | chat - the web.search/web.fetch tool pair: built-in shell vocabulary since v0.13 (shell law 1), always mounted                                                                                                                       |
 
-The movers' tombstones (the capsule their surface rides, the wave that
-moved it):
+The movers' tombstones (the capsule their surface rides):
 
-| File                   | Rides                                            | Wave       |
-| ---------------------- | ------------------------------------------------ | ---------- |
-| `server_files.go`      | harness/files (tool + explorer endpoints)        | t_48eeb015 |
-| `server_sessions.go`   | harness/store (the session MANAGEMENT surface)   | t_490fed88 |
-| `server_branch.go`     | harness/store (/sessions/{id}/branch)            | t_490fed88 |
-| `server_insights.go`   | harness/store (GET /insights)                    | t_490fed88 |
-| `server_agents.go`     | harness/continuous (the roster)                  | t_490fed88 |
-| `server_workspaces.go` | harness/files (the workspaces picker)            | t_b75df168 |
-| `server_verdicts.go`   | harness/verdict (the verdict answer surface)     | t_b75df168 |
-| `server_notify.go`     | harness/notifications (the finished-things face) | t_b75df168 |
-| `server_skills.go`     | harness/skills (the skills content view)         | t_b75df168 |
+| File                   | Rides                                            |
+| ---------------------- | ------------------------------------------------ |
+| `server_files.go`      | harness/files (tool + explorer endpoints)        |
+| `server_sessions.go`   | harness/store (the session MANAGEMENT surface)   |
+| `server_branch.go`     | harness/store (/sessions/{id}/branch)            |
+| `server_insights.go`   | harness/store (GET /insights)                    |
+| `server_agents.go`     | harness/continuous (the roster)                  |
+| `server_workspaces.go` | harness/files (the workspaces picker)            |
+| `server_verdicts.go`   | harness/verdict (the verdict answer surface)     |
+| `server_notify.go`     | harness/notifications (the finished-things face) |
+| `server_skills.go`     | harness/skills (the skills content view)         |
 
 Machine-enforced in the same gate as the webui noun check:
 `agent/api/api_census_test.go` (the pin + the tombstones + the

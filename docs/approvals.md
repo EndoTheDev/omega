@@ -10,7 +10,7 @@ cloud call or a prompt.
 | mode     | behavior                                                                                                                        |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `off`    | The gate is fully absent: no detection, no calls, no logging. The seam mounts nothing (proved by `TestApprovalRemovalProof`).   |
-| `manual` | Default (ship dark). Every flagged command asks YOU via a verdict card - approve/deny (+ a typed follow-up answer, t_63204dfd). |
+| `manual` | Default (ship dark). Every flagged command asks YOU via a verdict card - approve/deny (+ a typed follow-up answer). |
 | `smart`  | A decision model reviews flagged commands first; the deterministic ladder decides from its answers.                             |
 
 Empty config value = `manual`. Reviewer unreachable, timed out, or
@@ -55,7 +55,7 @@ The model advises, Go decides. The ladder (`ladder.go`), in order:
 ## Escalation
 
 - Interactive: an approve/deny/follow-up verdict card (title = the
-  command, body = the fired step and why; card t_63204dfd). Approve
+  command, body = the fired step and why). Approve
   runs it, deny skips it, follow-up prompt denies it AND carries the
   typed guidance to the agent (its tool error reads
   "follow-up guidance: <text>"). A typed answer never runs the
@@ -104,13 +104,13 @@ approvals:
     ...
 ```
 
-The decision model moved to provider settings (card t_fc0b2f2d): the
+The decision model moved to provider settings: the
 `approvals_model` slot (`provider.approvals_model` in the settings
 pane) rides the typed model picker, decision-filtered, and the picker
 also lists the named provider instances' models as `instance:model`
 values - the consult routes through that instance. Empty = fail-closed
 (every flagged command escalates). The gate re-reads its config on
-every decision (card t_34cd1921): the mode, the policy and the model
+every decision: the mode, the policy and the model
 slot apply LIVE - a settings-pane save (or a hand-edited config.yaml)
 reaches the running gate without a restart (the host's hot-apply path
 pushes the fresh section; the reviewer request is rebuilt per ask
