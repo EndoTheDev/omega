@@ -1088,7 +1088,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       return true;
     }
     try {
-      const res = await dispatchCommand(name, args);
+      // the tab's own session rides the dispatch: session-scoped
+      // commands (/export, /label, /branch) act on THIS tab
+      const res = await dispatchCommand(name, args, st.sessionId || "");
       if (res.kind === "skill") {
         st.pendingSkill = { name: res.name || name.slice(1), content: res.content || "" };
         if (send) {
