@@ -25,7 +25,7 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
 
 - Machine-facing names - tool names, panel action ids - are
   owner-claimed at registration. Dotted wire tools are the norm
-  (process.*, delegate.*, web.*, the kanban split t_f616ed78, and
+  (process._, delegate._, web.\*, the kanban split t_f616ed78, and
   the phase-2 split t_d8fbad57: one tool per verb, each schema
   carrying only its own args - files, memory, skills and verdict
   are all dotted now, no flat domain tool remains); panel action
@@ -51,13 +51,13 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
 2. **Map every classic assignment to its registration.** The census
    (`agent/extensionapi.go` header) is the table; the short list:
 
-   | Classic assignment                    | Registration                |
-   | ------------------------------------- | --------------------------- |
-   | Exclusive seam (one per slot)         | `api.Offer(key, svc)` - one owner per key (part 3: the closed need/capsule-service keys; the consumer asserts its own face) |
-   | `ctx.ToolProviders` append            | `RegisterTool` per tool     |
-   | `ctx.Commands` + handler wrapper      | `RegisterCommand` per name  |
-   | `ctx.PanelProviders` append            | `RegisterPanelProvider`     |
-   | notifications capture (`ctx.Notifications`, nil-guarded) | `RegisterEmitter` |
+   | Classic assignment                                       | Registration                                                                                                                |
+   | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+   | Exclusive seam (one per slot)                            | `api.Offer(key, svc)` - one owner per key (part 3: the closed need/capsule-service keys; the consumer asserts its own face) |
+   | `ctx.ToolProviders` append                               | `RegisterTool` per tool                                                                                                     |
+   | `ctx.Commands` + handler wrapper                         | `RegisterCommand` per name                                                                                                  |
+   | `ctx.PanelProviders` append                              | `RegisterPanelProvider`                                                                                                     |
+   | notifications capture (`ctx.Notifications`, nil-guarded) | `RegisterEmitter`                                                                                                           |
 
    `RegisterCommand` builds the chain-on-miss wrapper for you: each
    handler answers only its own command name and returns an error for
@@ -69,8 +69,8 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
    wire tools are the norm: a multi-verb capsule registers one
    `module.verb` pair per verb (`kanban.list`, `memory.add`,
    `skills.curate` - the registry unification B ruling, t_f616ed78
-   + t_d8fbad57; no flat domain tool survives); panel action ids
-   stay namespace pairs (`kanban.complete_task`).
+   - t_d8fbad57; no flat domain tool survives); panel action ids
+     stay namespace pairs (`kanban.complete_task`).
 
    This is not a rename of convenience - the
    registration API refuses anything else. Alias shims that cannot

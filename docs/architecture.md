@@ -4,13 +4,13 @@
 webui (Nuxt SPA, embedded) -> HTTP channel -> agent (loop + tools) -> llm (provider streaming)
 ```
 
-| Layer    | Package     | Responsibility                                                                                                                                          |
-| -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core     | `core`      | Zero-behavior contract layer: wire vocabulary (`QuestionPrompt`/`QuestionAnswer`, `Notice`), channel + mount machinery interfaces, the `Services` registry, Context, canvas panel types, captioner, universal-mount vocabulary (`api.go`: Refusal/RefusalSink, ModulePanicError); zero capsule nouns (the noun tests) |
-| Agent    | `agent`     | Multi-turn loop machinery + the loop's need-face declarations (`agent/seams.go`), Plugin system (Context alias, MountAllAPI, RouteConfigs), the ExtensionAPI registration surface (the universal mount, v0.12), TurnSink seam, canvas runtime, insights/caption/compaction helpers   |
-| LLM      | `llm`       | Shared provider infra: SSE streaming client, retry, the think-level ladder, image sniffing; the core wire-shape aliases (`llm.ToolSchema`, `llm.ModelInfo`) - it carries no provider contract (consumers declare their own faces) |
-| CLI      | `cmd/omega` | Entry point, CLI loop + setup, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                       |
-| Modules  | `harness/`  | In-process Go packages: provider, store, datadir, skills, compactor, observability (logging + the run-event ring, the 0.17.3 fold), memory, prompt, tools, mcp, delegate, cron, verdict, approval, continuous, notifications, terminal (module `terminal` - the dir, the plugin name and the dockable id agree since t_9ae9a25a; it carries shell.run/list/read/kill + the terminal pane), browser, kanban, trust + `datadir` (the imported leaf) |
+| Layer   | Package     | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core    | `core`      | Zero-behavior contract layer: wire vocabulary (`QuestionPrompt`/`QuestionAnswer`, `Notice`), channel + mount machinery interfaces, the `Services` registry, Context, canvas panel types, captioner, universal-mount vocabulary (`api.go`: Refusal/RefusalSink, ModulePanicError); zero capsule nouns (the noun tests)                                                                                                                             |
+| Agent   | `agent`     | Multi-turn loop machinery + the loop's need-face declarations (`agent/seams.go`), Plugin system (Context alias, MountAllAPI, RouteConfigs), the ExtensionAPI registration surface (the universal mount, v0.12), TurnSink seam, canvas runtime, insights/caption/compaction helpers                                                                                                                                                                |
+| LLM     | `llm`       | Shared provider infra: SSE streaming client, retry, the think-level ladder, image sniffing; the core wire-shape aliases (`llm.ToolSchema`, `llm.ModelInfo`) - it carries no provider contract (consumers declare their own faces)                                                                                                                                                                                                                 |
+| CLI     | `cmd/omega` | Entry point, CLI loop + setup, project context, trust gate, config loading (YAML + env + defaults), hot-reload                                                                                                                                                                                                                                                                                                                                    |
+| Modules | `harness/`  | In-process Go packages: provider, store, datadir, skills, compactor, observability (logging + the run-event ring, the 0.17.3 fold), memory, prompt, tools, mcp, delegate, cron, verdict, approval, continuous, notifications, terminal (module `terminal` - the dir, the plugin name and the dockable id agree since t_9ae9a25a; it carries shell.run/list/read/kill + the terminal pane), browser, kanban, trust + `datadir` (the imported leaf) |
 
 No layer skips another. Events are typed structs, dispatched via type
 switch. The provider layer emits events on a channel. The agent layer
@@ -191,16 +191,16 @@ the need. Never a silent nil discovered mid-turn, never a lazy
 resolve. Capsules offer supplies under these keys; proposing a ninth
 is a design event, argued in a card:
 
-| Key         | The need                        | Supplying capsule               |
-| ----------- | ------------------------------- | --------------------------------|
-| `provider`  | the model client                | `harness/provider`              |
-| `store`     | session persistence             | `harness/store`                 |
-| `loop`      | the multi-turn loop             | `agent/loop` (the default; a capsule may replace it) |
-| `logger`    | operational logging             | `harness/observability` (the folded logging half) |
-| `compactor` | context compaction              | `harness/compactor`             |
-| `prompt`    | system prompt + guidelines      | `harness/prompt`                |
-| `nudger`    | the learning-loop reminder      | `harness/skills`                |
-| `approvals` | the smart approval gate         | `harness/approval`              |
+| Key         | The need                   | Supplying capsule                                    |
+| ----------- | -------------------------- | ---------------------------------------------------- |
+| `provider`  | the model client           | `harness/provider`                                   |
+| `store`     | session persistence        | `harness/store`                                      |
+| `loop`      | the multi-turn loop        | `agent/loop` (the default; a capsule may replace it) |
+| `logger`    | operational logging        | `harness/observability` (the folded logging half)    |
+| `compactor` | context compaction         | `harness/compactor`                                  |
+| `prompt`    | system prompt + guidelines | `harness/prompt`                                     |
+| `nudger`    | the learning-loop reminder | `harness/skills`                                     |
+| `approvals` | the smart approval gate    | `harness/approval`                                   |
 
 Floor detail: `provider` refuses the boot upstream (the unconfigured
 host posture). The host binds `store` itself (`cmd/omega/main.go`,
@@ -345,46 +345,47 @@ else = opinion, moves with its capsule. Trivial opinion surface with
 no capsule home rides the closest capsule (disclosed, not invented
 into a new package).
 
-| File | Verdict |
-| ---- | ------- |
-| `chat_panel.go` | chat - the composer panel + the /chat turn handling |
-| `runs.go` | chat - the live run: the RunHub, detached runs, the SSE run frames + the store floor guards |
-| `server.go` | chat - the chat floor: /models, /chat, the session-existence floor (POST /sessions, /sessions/{id}), /tools, the command palette, canvas wiring |
-| `server_atmention.go` | chat - the @-mention expansion on the submit path (the browser never expands; /chat does) |
-| `server_agentrun.go` | chat - the per-agent run config: a session owned by an agent home runs on THAT home's provider, model, system prompt and max_turns (card t_a7fab745) |
+| File                    | Verdict                                                                                                                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `chat_panel.go`         | chat - the composer panel + the /chat turn handling                                                                                                                                                                                  |
+| `runs.go`               | chat - the live run: the RunHub, detached runs, the SSE run frames + the store floor guards                                                                                                                                          |
+| `server.go`             | chat - the chat floor: /models, /chat, the session-existence floor (POST /sessions, /sessions/{id}), /tools, the command palette, canvas wiring                                                                                      |
+| `server_atmention.go`   | chat - the @-mention expansion on the submit path (the browser never expands; /chat does)                                                                                                                                            |
+| `server_agentrun.go`    | chat - the per-agent run config: a session owned by an agent home runs on THAT home's provider, model, system prompt and max_turns (card t_a7fab745)                                                                                 |
 | `server_attachments.go` | chat - the composer attach surface for non-image files: /attach-file writes into the session upload dir and /chat carries the typed reference (kind, name, size, path); the model-facing render lives in `agent/loop/attachments.go` |
-| `server_canvas.go` | canvas - the transport: GET /ui/canvas snapshot + POST /ui/actions, deltas fan out on the run streams |
-| `server_commands.go` | chat - the command palette's server surface (GET /commands + POST /commands/dispatch, the composer's slash-command face over the universal registration seam) |
-| `server_ephemeral.go` | chat - ephemeral sessions: the no-persist chat mode of /chat (in-memory, eph- ids, gone at restart) |
-| `server_images.go` | chat - image serving + /attach-image (chat renders images) |
-| `server_settings.go` | settings - the third shell-ring face (GET/PUT /settings) |
-| `server_transcript.go` | chat - the transcript serving (live + store-backed restore) |
-| `server_variants.go` | chat - message variants on the live run (regenerate/branch selection) |
-| `sockets.go` | chat - the push channel's fan-out: the `/ws` hub, the typed topic set, the broadcast hooks at the run/wake/canvas seams (card t_7624bab1) |
-| `web_tools.go` | chat - the web.search/web.fetch tool pair: built-in shell vocabulary since v0.13 (shell law 1), always mounted |
+| `server_canvas.go`      | canvas - the transport: GET /ui/canvas snapshot + POST /ui/actions, deltas fan out on the run streams                                                                                                                                |
+| `server_commands.go`    | chat - the command palette's server surface (GET /commands + POST /commands/dispatch, the composer's slash-command face over the universal registration seam)                                                                        |
+| `server_ephemeral.go`   | chat - ephemeral sessions: the no-persist chat mode of /chat (in-memory, eph- ids, gone at restart)                                                                                                                                  |
+| `server_images.go`      | chat - image serving + /attach-image (chat renders images)                                                                                                                                                                           |
+| `server_settings.go`    | settings - the third shell-ring face (GET/PUT /settings)                                                                                                                                                                             |
+| `server_transcript.go`  | chat - the transcript serving (live + store-backed restore)                                                                                                                                                                          |
+| `server_variants.go`    | chat - message variants on the live run (regenerate/branch selection)                                                                                                                                                                |
+| `sockets.go`            | chat - the push channel's fan-out: the `/ws` hub, the typed topic set, the broadcast hooks at the run/wake/canvas seams (card t_7624bab1)                                                                                            |
+| `web_tools.go`          | chat - the web.search/web.fetch tool pair: built-in shell vocabulary since v0.13 (shell law 1), always mounted                                                                                                                       |
 
 The movers' tombstones (the capsule their surface rides, the wave that
 moved it):
 
-| File | Rides | Wave |
-| ---- | ----- | ---- |
-| `server_files.go` | harness/files (tool + explorer endpoints) | t_48eeb015 |
-| `server_sessions.go` | harness/store (the session MANAGEMENT surface) | t_490fed88 |
-| `server_branch.go` | harness/store (/sessions/{id}/branch) | t_490fed88 |
-| `server_insights.go` | harness/store (GET /insights) | t_490fed88 |
-| `server_agents.go` | harness/continuous (the roster) | t_490fed88 |
-| `server_workspaces.go` | harness/files (the workspaces picker) | t_b75df168 |
-| `server_verdicts.go` | harness/verdict (the verdict answer surface) | t_b75df168 |
-| `server_notify.go` | harness/notifications (the finished-things face) | t_b75df168 |
-| `server_skills.go` | harness/skills (the skills content view) | t_b75df168 |
+| File                   | Rides                                            | Wave       |
+| ---------------------- | ------------------------------------------------ | ---------- |
+| `server_files.go`      | harness/files (tool + explorer endpoints)        | t_48eeb015 |
+| `server_sessions.go`   | harness/store (the session MANAGEMENT surface)   | t_490fed88 |
+| `server_branch.go`     | harness/store (/sessions/{id}/branch)            | t_490fed88 |
+| `server_insights.go`   | harness/store (GET /insights)                    | t_490fed88 |
+| `server_agents.go`     | harness/continuous (the roster)                  | t_490fed88 |
+| `server_workspaces.go` | harness/files (the workspaces picker)            | t_b75df168 |
+| `server_verdicts.go`   | harness/verdict (the verdict answer surface)     | t_b75df168 |
+| `server_notify.go`     | harness/notifications (the finished-things face) | t_b75df168 |
+| `server_skills.go`     | harness/skills (the skills content view)         | t_b75df168 |
 
 Machine-enforced in the same gate as the webui noun check:
 `agent/api/api_census_test.go` (the pin + the tombstones + the
 production-filename noun scan) and
 `webui/test/capsule-noun.test.ts` (capsule names must not appear under
 `webui/app/components/`, beside the agent/api production-filename walk
+
 - `/tools` is base vocabulary there: the inventory endpoint serves the
-chat loop).
+  chat loop).
 
 ## The three-layer sessions law (shrink wave 2)
 

@@ -25,7 +25,7 @@ trusted:
 
 - An untrusted project SKIPS context with a stderr warning
   (`omega: untrusted project <dir>; AGENTS.md context skipped (use
-  --approve to trust)`) - the CLI loop, `run`, `serve` and the
+--approve to trust)`) - the CLI loop, `run`, `serve` and the
   `/workspace` command all share this gate. The interactive stdin
   prompt is a TUI-era shape today's hosts never enable.
 - **`--approve`** - trust the current project (records an `exact` entry).

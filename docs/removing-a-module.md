@@ -7,7 +7,7 @@ the slash commands, the canvas panels and their actions are
 all registered from that one function. Delete the module's
 registration and every face vanishes by construction - nothing outside
 the module holds a reference. Kanban is the worked example below (arc
-5, the flagship: the biggest module - seven dotted kanban.* tools,
+5, the flagship: the biggest module - seven dotted kanban.\* tools,
 two commands, two panels, the REST surface).
 
 This doc is the whole-module recipe. The mount-style migration recipe
@@ -66,13 +66,14 @@ surface) is its sibling: `docs/migrating-a-module.md`.
    canvas panels (`harness/kanban/panel.go`,
    namespaced action ids), and the docs. Then delete the module
    directory (`harness/kanban/`) - tests die with it.
+
 4. **Write the removal proof against the mounts, not the directory.**
    The pattern is `TestKanbanRemovalProof` (`cmd/omega/removal_test.go`
    - `TestNotificationsRemovalProof` started it): build the full
-   plugin set once, mount, assert every face is present and working;
-   mount again without the module, assert every face is gone. The
-   proof runs against the mounted context, so it survives later
-   refactors of the module directory layout.
+     plugin set once, mount, assert every face is present and working;
+     mount again without the module, assert every face is gone. The
+     proof runs against the mounted context, so it survives later
+     refactors of the module directory layout.
 5. **The unmount proof must show all of it:**
 
    ```
@@ -83,7 +84,7 @@ surface) is its sibling: `docs/migrating-a-module.md`.
    ```
 
    That is: seam absent (routes 404), canvas panels absent, tool
-   registry without the kanban.* tools, commands
+   registry without the kanban.\* tools, commands
    unregistered, the other modules mounted - the CLI loop and webui
    stay alive, the canvas snapshot simply misses the module.
 
@@ -121,7 +122,6 @@ surface) is its sibling: `docs/migrating-a-module.md`.
 
    More shapes the v0.13/v0.14 wiring taught (the nightly paid four
    runs for them):
-
    - The capsule's own type never crosses a host function boundary.
      A module-typed return (`newAgent` handing back the plugin
      instance) makes the scrub kill the whole function and strands
@@ -169,6 +169,7 @@ surface) is its sibling: `docs/migrating-a-module.md`.
      deleted func names) still crosses chunks; anchors do not. Fixtures
      14 and 15 in `scripts/nm-purity_test.sh` pin the scope and its
      teeth.
+
 8. **Run the gates in the worktree**: `go build ./...`, `go vet ./...`,
    `go test ./...`. The journey suite proves the board behavior green
    before removal (`91-canvas-tab` and the module journeys) and green

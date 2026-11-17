@@ -1,0 +1,4 @@
+{
+  "content": "🚀 **omega v0.17.3-nightly.20261116** is out!\n\n- feat(scripts): prod deploy is one command\n- feat(webui): the palette takes over the bar's time field in place\n- feat(factory): three disjoint cards and one review at a time\n- feat(webui): the agents tab takes the sessions interaction vocabulary\n- feat(webui): pin folder references like files\n\n17 features, 3 refactors, 42 fixes, 0 tunes, 5 doc updates, 52 merges across journeys, webui, terminal, scripts, api, continuous\n\nUpdate: `omega update` · full changelog: <https://github.com/EndoTheDev/omega/releases/tag/v0.17.3-nightly.20261116>\n",
+  "username": "omega releases"
+}

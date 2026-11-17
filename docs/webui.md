@@ -33,7 +33,7 @@ value map, `assets/css/main.css`:
   `#ececec` z0 / `#f7f7f8` z1 / `#ededf0` z1-raised /
   `#ffffff` z2, stroke `#d5d5da`, text `#1a1a1d`, text-dim `#6a6a72`,
   plus the light shadow overrides. Theme selection rides `auto |
-  light | dark` (`ThemeMode`, composables/omega.ts) plus `theme:<name>`
+light | dark` (`ThemeMode`, composables/omega.ts) plus `theme:<name>`
   custom themes from the picker.
 - Theme overrides: YAML files in `<home>/themes/` (one per theme,
   token overrides, `base:` + `name:`). Served by the HTTP channel
@@ -47,14 +47,14 @@ Constants in `main.css`. They are contracts, not suggestions - tuned
 over many measured rounds, and changing one requires re-checking all
 the others:
 
-| Constant          | Value   |
-| ----------------- | ------- |
-| MenuBar height    | 35px    |
-| StatusBar height  | 29px    |
-| Tool pane floor   | 128px   |
-| Chat pane floor   | 320px   |
-| Gutter (divider)  | 8px     |
-| Mobile breakpoint | 768px   |
+| Constant          | Value |
+| ----------------- | ----- |
+| MenuBar height    | 35px  |
+| StatusBar height  | 29px  |
+| Tool pane floor   | 128px |
+| Chat pane floor   | 320px |
+| Gutter (divider)  | 8px   |
+| Mobile breakpoint | 768px |
 
 **Top bar seats** (t_20fd8745, Endo's 2026-11-13 reshape): three regions
 on the 35px bar. The BRAND is ONE element far left - `Ωmega`, the glyph
@@ -275,16 +275,16 @@ Everything else animates through `transition`, not keyframes.
   into the Agents tab, the canvas renderer into the settings MODULES
   section (`composables/canvas.ts` stays as the shared view-model store
   - snapshot GET /ui/canvas, delta merge, the action pipe, the toast
-  funnel), and the module lifecycle surface is CONFIGURATION, so it lives
-  in the settings tab's MODULES section (card t_81d0901b: rows with live
-  toggles, the expandable tools/commands/panels detail, the always-on tier
-  (agent-loop, provider, observability) as a chip - the toggle endpoint
-  refuses it at the seam; `/modules`,
-  `/extensions` and `/panels` open that section). Settings is an ON-DEMAND
-  main tab (t_00e4a784): the menubar gear beside the right-sidebar
-  toggle opens it, it closes like any tab, and the boot retires a
-  persisted inspector seat (`retireInspectorSettings`). The `+` menu
-  still carries no settings entry - the gear is the entry point.
+    funnel), and the module lifecycle surface is CONFIGURATION, so it lives
+    in the settings tab's MODULES section (card t_81d0901b: rows with live
+    toggles, the expandable tools/commands/panels detail, the always-on tier
+    (agent-loop, provider, observability) as a chip - the toggle endpoint
+    refuses it at the seam; `/modules`,
+    `/extensions` and `/panels` open that section). Settings is an ON-DEMAND
+    main tab (t_00e4a784): the menubar gear beside the right-sidebar
+    toggle opens it, it closes like any tab, and the boot retires a
+    persisted inspector seat (`retireInspectorSettings`). The `+` menu
+    still carries no settings entry - the gear is the entry point.
 - **The runtime module gate** (card t_103e30a6): a dockable whose pane body
   ships from a capsule's `ui/` dir is MODULE-OWNED, and the set is DERIVED
   from the composition manifests (`modulePanels` + `moduleTabs`, the
@@ -406,7 +406,7 @@ Everything else animates through `transition`, not keyframes.
 
 - An ephemeral chat is a **chat tab, not a session**. Entry point: the
   sessions panel's `+ new` dropdown (`new chat` / `new ephemeral
-  chat`). The tab carries the `EPHEMERAL_DRAFT_REF` marker until the
+chat`). The tab carries the `EPHEMERAL_DRAFT_REF` marker until the
   send; the server mints an `eph-` id on the leading `session` frame.
 - **Pure in-memory.** No store row, no messages on disk: conversation
   context, transcript items and telemetry live in the server's
@@ -457,9 +457,9 @@ resolution mirror the one command law every surface follows:
   `@session:` lists sessions, `@skill:` lists skills. Picking inserts
   the completed token at the caret. The picker only helps TYPE tokens
   - expansion is SERVER-SIDE on the `/chat` submit path through the
-  one `core.ExpandAtMentions` law (`core/atmention.go`). The browser
-  never reads or expands files;
-  unresolvable tokens stay literal in the message.
+    one `core.ExpandAtMentions` law (`core/atmention.go`). The browser
+    never reads or expands files;
+    unresolvable tokens stay literal in the message.
 
 ## The Files tab
 
@@ -487,7 +487,7 @@ resolution mirror the one command law every surface follows:
   "binary file - no preview" state with the size and a download link
   (the raw route's `?download=1` attachment lane); everything else
   stays the line-numbered monospace text body. The raw route serves
-  image/* + pdf only - other mimes answer 400 outside the download
+  image/\* + pdf only - other mimes answer 400 outside the download
   lane.
 
 ## The Agents tab
@@ -592,7 +592,7 @@ one horizontal scroll strip, 236px columns.
 - **ANY lane folds to a rail** (card t_50a8c145). A folded lane is a
   thin vertical strip (`LANE_RAIL_PX` = 36px, the 32-40 ruled band):
   the lane's colored dot on top, the lane name in `writing-mode:
-  vertical-rl` uppercase small, the count below when the lane holds
+vertical-rl` uppercase small, the count below when the lane holds
   cards. The header's dot + name are the fold control on every lane -
   the old settled-only fold (done/archived collapsed, the "N folded"
   note) is dead; `isSettled` no longer exists.
@@ -781,6 +781,7 @@ dot, reset link, draft star, live note).
   larger document is refused with 413). Scope-aware: the main tab edits
   `config.yaml`; an agent scope tab edits its own layer. The endpoints are
   documented in `api.md`.
+
 ## The Logs tab
 
 - The face of the observability capsule (`harness/observability`, the
@@ -792,7 +793,7 @@ dot, reset link, draft star, live note).
   stream is the primary view - `GET /observability/events?session=&level=&limit=`
   answers `{events, returned, buffered, capacity}` with rows of
   `{seq, time, session, type, level, tool, turn, duration_ms, summary,
-  error}` (level is DERIVED server-side: error on a failure field or an
+error}` (level is DERIVED server-side: error on a failure field or an
   IsError result, warn on an unclean stop, info otherwise). The raw log
   tail is the SECONDARY view inside the same tab (Endo's ruling 1: not
   a peer tab) - `GET /observability/logs?lines=` answers
@@ -829,7 +830,7 @@ dot, reset link, draft star, live note).
   tail reads "no log file" (logging off, or a logger with no path), and
   a transient failure never wipes the last good page.
 - The view is the capsule's own (`harness/observability/ui/
-  ObservabilityTab.vue` + the pure `rows.ts`); the shell's registry
+ObservabilityTab.vue` + the pure `rows.ts`); the shell's registry
   keeps the composition (`TAB_MODULES`, the bottom home) and `app.vue`
   binds the component from `module-tabs.generated.ts`, passing
   `focusedSessionId` as the default scope. Pinned by

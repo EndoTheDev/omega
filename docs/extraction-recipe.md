@@ -46,16 +46,16 @@ direction: the harness depends on the engine, never the reverse.
 
 ### The engine side (stays in omega)
 
-| Dir | What it is | Why engine |
-|---|---|---|
-| `core/` | Zero-behavior contract layer: message vocabulary, seam interfaces, Context, canvas panel types, captioner, kanban task vocabulary | stdlib-only by law (core/importability_test.go) |
-| `agent/` | Multi-turn loop machinery, Plugin system (Context alias, MountAll, RouteConfigs, Describer, ConfigSource), TurnSink seam, canvas runtime, insights/caption/compaction helpers | imports core only (verified by scripts/gate-deps.sh today) |
-| `llm/` | HTTP-client, retry, image sniffing, think-level ladder, the concrete `llm.Provider` streaming contract, fake provider | imports core only; imported by the agent loop and harness capsules alike - it must sit below the mechanism or the loop would reach upward |
-| `agent/loop` | The default LoopProvider implementation (the turn loop) | no opinions and no harness deps; rides the loop seam |
-| `harness/tools` | The bare-minimum tools: `shell.run`, the `files.grep`/`files.glob` search pair, /files browser, db deny-guard (the `files.read`/`files.write`/`files.edit`/`files.batch` set rides `harness/files`) | the north-star ruling; verdict tool status is separate (see §6) |
-| `http_channel` | The web connector: SSE/REST transport for the canvas, channels, runs, board/verdict/settings HTTP shapes | the connector/canvas runtime per the ruling |
-| `webui/` (checkout root) | The webui SPA shell source (Nuxt/TS, no Go) - build output embedded into http_channel's `static/` | part of the connector/canvas runtime (build material, not a module). (The `tui` connector this row once sat beside was retired 2026-11-01, t_0744eb8e - the webui is the only screen-shaped surface.) |
-| `cmd/omega` (the shell parts) | main.go, config.go, home.go wire the engine packages into the minimal shell | see HURT-4: today's shell is NOT yet minimal |
+| Dir                           | What it is                                                                                                                                                                                          | Why engine                                                                                                                                                                                            |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core/`                       | Zero-behavior contract layer: message vocabulary, seam interfaces, Context, canvas panel types, captioner, kanban task vocabulary                                                                   | stdlib-only by law (core/importability_test.go)                                                                                                                                                       |
+| `agent/`                      | Multi-turn loop machinery, Plugin system (Context alias, MountAll, RouteConfigs, Describer, ConfigSource), TurnSink seam, canvas runtime, insights/caption/compaction helpers                       | imports core only (verified by scripts/gate-deps.sh today)                                                                                                                                            |
+| `llm/`                        | HTTP-client, retry, image sniffing, think-level ladder, the concrete `llm.Provider` streaming contract, fake provider                                                                               | imports core only; imported by the agent loop and harness capsules alike - it must sit below the mechanism or the loop would reach upward                                                             |
+| `agent/loop`                  | The default LoopProvider implementation (the turn loop)                                                                                                                                             | no opinions and no harness deps; rides the loop seam                                                                                                                                                  |
+| `harness/tools`               | The bare-minimum tools: `shell.run`, the `files.grep`/`files.glob` search pair, /files browser, db deny-guard (the `files.read`/`files.write`/`files.edit`/`files.batch` set rides `harness/files`) | the north-star ruling; verdict tool status is separate (see §6)                                                                                                                                       |
+| `http_channel`                | The web connector: SSE/REST transport for the canvas, channels, runs, board/verdict/settings HTTP shapes                                                                                            | the connector/canvas runtime per the ruling                                                                                                                                                           |
+| `webui/` (checkout root)      | The webui SPA shell source (Nuxt/TS, no Go) - build output embedded into http_channel's `static/`                                                                                                   | part of the connector/canvas runtime (build material, not a module). (The `tui` connector this row once sat beside was retired 2026-11-01, t_0744eb8e - the webui is the only screen-shaped surface.) |
+| `cmd/omega` (the shell parts) | main.go, config.go, home.go wire the engine packages into the minimal shell                                                                                                                         | see HURT-4: today's shell is NOT yet minimal                                                                                                                                                          |
 
 ### The harness side (moves to TigerClaw)
 
@@ -64,21 +64,21 @@ since the v0.13 dissolution took the web capsule into the channel,
 order is data, not semantics - MountAll's topoSort is the only
 ordering) plus the plugins' `Provides()` declarations:
 
-| Dir | Plugin name | Provides | ConfigKey |
-|---|---|---|---|
-| `harness/store` | store | store, tools | store |
-| `harness/kanban` | kanban | kanban, tools | kanban |
-| `harness/cron` | cron | cron | (none) |
-| `harness/memory` | memory | memory, tools, prompt_sections | memory |
-| `harness/delegate` | delegate | tools | (none) |
-| `harness/mcp` | mcp | tools | (none) |
-| `harness/notifications` | notifications | notifications | notifications |
-| `harness/trust` | trust | trust | trust |
-| `harness/compactor` | compactor | compactor | compactor |
-| `harness/prompt` | prompt | prompt | (none) |
-| `harness/observability` | observability | logger | logging |
-| `harness/provider` | provider | provider | provider |
-| `harness/skills` | skills | skills, tools, prompt_sections | skills |
+| Dir                     | Plugin name   | Provides                       | ConfigKey     |
+| ----------------------- | ------------- | ------------------------------ | ------------- |
+| `harness/store`         | store         | store, tools                   | store         |
+| `harness/kanban`        | kanban        | kanban, tools                  | kanban        |
+| `harness/cron`          | cron          | cron                           | (none)        |
+| `harness/memory`        | memory        | memory, tools, prompt_sections | memory        |
+| `harness/delegate`      | delegate      | tools                          | (none)        |
+| `harness/mcp`           | mcp           | tools                          | (none)        |
+| `harness/notifications` | notifications | notifications                  | notifications |
+| `harness/trust`         | trust         | trust                          | trust         |
+| `harness/compactor`     | compactor     | compactor                      | compactor     |
+| `harness/prompt`        | prompt        | prompt                         | (none)        |
+| `harness/observability` | observability | logger                         | logging       |
+| `harness/provider`      | provider      | provider                       | provider      |
+| `harness/skills`        | skills        | skills, tools, prompt_sections | skills        |
 
 That is 14 capsules. (Older notes say 13 and omit skills; the
 registration above is the list that compiles, skills included.)
@@ -227,10 +227,10 @@ The split fires as one series of moves. Each step's success has a
 compiler-checkable end state.
 
 1. **Create the harness repo and go.mod.** New repo, `module
-   github.com/EndoTheDev/tigerclaw`, the one `require` line plus
+github.com/EndoTheDev/tigerclaw`, the one `require` line plus
    `replace ../omega` (§2). Empty otherwise.
 2. **Move the 14 harness capsule dirs.** `git mv harness/<x>
-   <tigerclaw>/harness/<x>` for store, kanban, cron, memory,
+<tigerclaw>/harness/<x>` for store, kanban, cron, memory,
    delegate, mcp, web, notifications, trust, compactor, prompt,
    logging, provider, skills. Nothing inside a capsule dir needs to
    change at this step.
@@ -286,60 +286,60 @@ not a hedge. None is fixed by this card except where noted.
 
 1. **tui imports the store capsule for one helper function**
    - engine/tui/tui.go:23 imports
-   `github.com/EndoTheDev/omega/harness/store`; the only
-   package-qualified use is `store.SessionDisplayName(...)` at
-   tui.go:1525 (the other `store.X` greps are calls through the
-   `core.StoreProvider` field at tui.go:305 - seam-clean). The helper
-   (harness/store/commands.go:173-181) is an 8-line pure function.
-   Trivial remedy, named here because the split itself must not fire
-   first: move `SessionDisplayName` into core (the agent.FormatNumber
-   pattern - a label/id presentation helper) or inline it in the tui;
-   either is a one-file change, and then tui imports only core/agent
-   /llm. This is the ONLY prod import edge from an engine connector
-   into a harness capsule.
+     `github.com/EndoTheDev/omega/harness/store`; the only
+     package-qualified use is `store.SessionDisplayName(...)` at
+     tui.go:1525 (the other `store.X` greps are calls through the
+     `core.StoreProvider` field at tui.go:305 - seam-clean). The helper
+     (harness/store/commands.go:173-181) is an 8-line pure function.
+     Trivial remedy, named here because the split itself must not fire
+     first: move `SessionDisplayName` into core (the agent.FormatNumber
+     pattern - a label/id presentation helper) or inline it in the tui;
+     either is a one-file change, and then tui imports only core/agent
+     /llm. This is the ONLY prod import edge from an engine connector
+     into a harness capsule.
 
 2. **tools reads the store capsule's config type**
    - harness/tools/plugin.go:9 imports the store capsule and :41 does
-   `ctx.Configs["store"].(store.Config)` to build the db deny-guard
-   (harness/tools/dbguard.go, ENDO'S LAW 2026-10-18). tools stays
-   engine-side (bare-minimum tools, §1); store moves harness-side. An
-   engine capsule reading a harness capsule's config type crosses the
-   forbidden direction the moment the split fires. The mechanical
-   remedy is small and belongs to split day: the deny-guard's trigger
-   input is one string (`c.DBPath`) - route it through a ctx field or
-   make the guard resolve the standard layout itself (it already
-   does, at dbguard.go:52-56). Trivial + one line, recorded because
-   the config-shape choice (whose `db_path` field feeds the guard)
-   is Endo's to settle at split time.
+     `ctx.Configs["store"].(store.Config)` to build the db deny-guard
+     (harness/tools/dbguard.go, ENDO'S LAW 2026-10-18). tools stays
+     engine-side (bare-minimum tools, §1); store moves harness-side. An
+     engine capsule reading a harness capsule's config type crosses the
+     forbidden direction the moment the split fires. The mechanical
+     remedy is small and belongs to split day: the deny-guard's trigger
+     input is one string (`c.DBPath`) - route it through a ctx field or
+     make the guard resolve the standard layout itself (it already
+     does, at dbguard.go:52-56). Trivial + one line, recorded because
+     the config-shape choice (whose `db_path` field feeds the guard)
+     is Endo's to settle at split time.
 
 3. **datadir is a cross-side shared leaf**
    - harness/datadir imports nothing and is imported (prod) by
-   harness/store/plugin.go:10, store_impl.go:17,
-   harness/kanban/plugin.go:12 + boards.go:22 + store.go:16,
-   harness/notifications/plugin.go:10 + notify.go:24, and
-   harness/tools/dbguard.go:9 + :52,56 - plus cmd/omega. Three of
-   those capsules are harness; one is engine; so the leaf cannot move
-   "with its capsule": there is no single side. Remedy on split day:
-   keep it in the engine and add it to the §3 allowed surface (it is
-   already stdlib-only and opinion-free), or duplicate its 2 helpers
-   per side. Default for the recipe: engine-side.
+     harness/store/plugin.go:10, store_impl.go:17,
+     harness/kanban/plugin.go:12 + boards.go:22 + store.go:16,
+     harness/notifications/plugin.go:10 + notify.go:24, and
+     harness/tools/dbguard.go:9 + :52,56 - plus cmd/omega. Three of
+     those capsules are harness; one is engine; so the leaf cannot move
+     "with its capsule": there is no single side. Remedy on split day:
+     keep it in the engine and add it to the §3 allowed surface (it is
+     already stdlib-only and opinion-free), or duplicate its 2 helpers
+     per side. Default for the recipe: engine-side.
 
 4. **cmd/omega is not the minimal shell yet**
    - the ruling gives the engine side a minimal shell; today's shell wires all
-   19 plugins (main.go:308-351), hand-routes every capsule's config
-   (config.go:324-355, a hand-written adapter that constructs each
-   capsule's `Config` value), and carries harness CLI surfaces
-   (kanban.go imports the kanban capsule; export.go and insights.go
-   import the store capsule; settings.go rides the compactor). Step 3
-   of the recipe splits this mechanically, but the split point is
-   "every file whose only engine role is wiring a harness capsule" -
-   a per-file judgement, not a dir move. Named so the afternoon does
-   not pretend cmd/omega is a clean `git mv`. Also the reason step 6
-   exists. The engine-only binary after this split runs core+agent
-   +ai+tools+connectors with the provider capsule absent - the model
-   transport arrives with the harness assembly. If that reading of
-   the ruling is wrong, the dir lists are unaffected; only step 3's
-   file split changes.
+     19 plugins (main.go:308-351), hand-routes every capsule's config
+     (config.go:324-355, a hand-written adapter that constructs each
+     capsule's `Config` value), and carries harness CLI surfaces
+     (kanban.go imports the kanban capsule; export.go and insights.go
+     import the store capsule; settings.go rides the compactor). Step 3
+     of the recipe splits this mechanically, but the split point is
+     "every file whose only engine role is wiring a harness capsule" -
+     a per-file judgement, not a dir move. Named so the afternoon does
+     not pretend cmd/omega is a clean `git mv`. Also the reason step 6
+     exists. The engine-only binary after this split runs core+agent
+     +ai+tools+connectors with the provider capsule absent - the model
+     transport arrives with the harness assembly. If that reading of
+     the ruling is wrong, the dir lists are unaffected; only step 3's
+     file split changes.
 
 5. **the section-adapter switch is a duplicate of every capsule's
    config shape** - cmd/omega/config.go:324-355 constructs

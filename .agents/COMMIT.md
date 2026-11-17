@@ -163,15 +163,15 @@ Closing lines do not count toward the limit.
 
 ## Types
 
-| type     | meaning                                             |
-| -------- | --------------------------------------------------- |
-| feat     | new capability acquired                             |
-| fix      | failure mode removed                                |
-| refactor | architecture improved                               |
-| chore    | maintenance or scaffolding                          |
-| docs     | knowledge externalized                              |
-| test     | behaviour verified                                  |
-| style    | formatting only                                     |
+| type     | meaning                    |
+| -------- | -------------------------- |
+| feat     | new capability acquired    |
+| fix      | failure mode removed       |
+| refactor | architecture improved      |
+| chore    | maintenance or scaffolding |
+| docs     | knowledge externalized     |
+| test     | behaviour verified         |
+| style    | formatting only            |
 
 ## Breaking Changes
 

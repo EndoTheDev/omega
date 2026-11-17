@@ -35,71 +35,71 @@ alone never authorises a write off loopback - that pair is exactly the
 DNS-rebinding shape. Loopback-only installs need no declaration and are
 unchanged.
 
-| Route                                | Methods    | Notes                                          |
-| ------------------------------------ | ---------- | ---------------------------------------------- |
-| `/health`                            | GET        | liveness                                       |
-| `/ws`                                | GET        | the push channel (one websocket, typed topics) |
-| `/models`                            | GET        | model list + context window                    |
-| `/chat`                              | POST       | SSE streaming chat                             |
-| `/attach-image`                      | POST       | server-side URL fetch -> chat image            |
-| `/attach-file`                       | POST       | multipart file upload -> session upload dir reference |
-| `/sessions`                          | GET, POST  | list / create                                  |
-| `/sessions/search?q=`                | GET        | FTS5 content+label search                      |
-| `/sessions/{id}`                     | GET, PATCH, DELETE | detail / flags / remove                |
-| `/sessions/{id}/events`              | GET        | SSE reattach to a live run                     |
-| `/sessions/{id}/stop`                | POST       | hard stop: cancel the run, kill its spawned shells, abandon its pending calls |
-| `/sessions/{id}/transcript`          | GET        | render-ready items (restore + live contract)   |
-| `/sessions/{id}/variants`            | GET, POST, PATCH | branch points + active-variant select    |
-| `/sessions/{id}/branch`              | POST       | fork a child session (store-linked)                    |
-| `/sessions/{id}/export`              | GET        | active path as JSONL attachment                |
-| `/sessions/{id}/verdicts`            | GET, POST  | one session's verdict cards / the answer POST  |
-| `/verdicts`                          | GET        | cross-session verdict listing (the bell count) |
-| `/agents`                            | GET        | agent homes (roster rows; each row carries `last_session_id`) |
-| `/agents/{name}`                     | GET, PUT, DELETE | detail / the node-preserving config layer editor / delete the home, sessions included |
-| `/agents/{name}/sessions`            | GET        | the agent's session list                       |
-| `/disabled`                          | GET        | the registry-browser folded state (skills/tools/agents namespaces) |
-| `/disabled/skills`, `/disabled/tools` | PUT       | registry-browser toggle fold (one entry per name) |
-| `/disabled/agents`                   | PUT        | registry-browser toggle; the DEFAULT agent answers 409 (it must always be on) |
-| `/modules`                           | GET        | mounted module capsules (introspection)         |
-| `/modules/{name}`                    | PUT        | the live module toggle (`disabled:` fold); the always-on tier - `agent-loop`, `provider` and `observability` (the folded logging module) - answers 400 "module <name> is always on" (the seam's guard, cards t_81d0901b + t_ee3a968b) |
-| `/themes`                            | GET        | user theme tokens (`<home>/themes/*.yaml`)      |
-| `/insights`                          | GET        | session usage analytics                        |
-| `/workspaces/browse`, `/workspaces/files` | GET   | the workspace surface (browsers + Files tab root) |
-| `/boards`                           | GET, POST  | board registry (multi-board, current flagged) / create |
-| `/tasks`                             | GET, POST  | kanban board (list/create, `?board=` picker)    |
-| `/tasks/{id}`                        | GET, PATCH | task detail (task+comments+events) / edits     |
-| `/tasks/{id}/comments`               | POST       | add a comment (author default: `web`)          |
-| `/notifications`                     | GET, DELETE | finished-things list + unread (`?unread=1`, `?limit/?offset`) / clear-all (every record drops; the reply carries `cleared`) |
-| `/notifications/read`                | POST       | mark one (`{"id": N}`) or all (`{"all": true}`) |
-| `/notifications/events`              | GET        | SSE record stream (the public API surface; the webui's toasts ride the canvas) |
-| `/files/browse`, `/files/read`       | GET        | read-only working-dir surface for the inspector; read carries `mime` |
-| `POST /files/write`, `POST /files/mkdir` | POST   | the toolbar's write half: add file / add folder (same root jail) |
-| `/files/raw`                         | GET        | raw bytes under the read surface's root jail: `image/*` + `application/pdf` render (t_42c8aced), `?download=1` serves ANY file as a `Content-Disposition: attachment` never rendered |
-| `/tools`                             | GET        | tool inventory (bare = executable registry; `?disabled=1` = fold-aware management read) |
-| `/mcp/servers`                        | GET        | configured MCP servers (name, transport, connection state, recorded failure, server-qualified tools) over the live bridge |
-| `/mcp/reload`                         | POST       | re-read mcp.yaml/MCP_SERVERS, swap the live bridge (mcp.yaml edits go live on the MCP tab's refresh - no restart); returns the fresh server list |
-| `/mcp/toggle`                         | POST       | the live MCP toggle through the module seam     |
-| `/mcp/save`                          | POST       | upsert one full MCP server entry into mcp.yaml (schema-validated, node-spliced, atomic), swap the live bridge; returns the fresh server list |
-| `/mcp/delete`                        | POST       | remove one MCP server entry from mcp.yaml and swap the bridge (the removed entry's connections close in the swap); unknown name 404 |
-| `/cron/jobs`                         | GET        | cron job list (empty when unmounted - not 501); rows carry the authored `prompt`, the fire-pinned `skills`, the last fire's `status` + `last` + `status_note`, and `agent_owned` (the file-ownership mark: true only on an agent home's own wake row) |
-| `/cron/save`                         | POST       | upsert one full job definition into the main crons.yaml (schema-validated, hot-reloaded); returns the fresh job set |
-| `/cron/delete`                       | POST       | remove one job from the main crons.yaml; unknown name 404 |
-| `/cron/toggle`                       | POST       | the row's toggle commit: writes the per-job `enabled:` flag only |
-| `/skills`                            | GET        | loaded skills (name + description only)        |
-| `/skills/content`                    | GET        | one skill's SKILL.md body for the viewer tab (64 KiB cap) |
-| `/skills/save`                       | POST       | the skills tab editor's upsert: a new name composes `<dir>/<name>/SKILL.md` (frontmatter composed, loader-parsed), an existing name rewrites the body under the fence while the operator's other frontmatter keys stay byte-true; answers the fresh listing |
-| `/skills/delete`                     | POST       | remove one skill: backed up to `.curator/backups`, ledger row at `.curator/ledger.jsonl` (`actor: webui`), folder removed; unknown name 404 |
-| `/browser/last`, `/browser/frameable`| GET, PUT   | module REST (browser capsule): the resume URL + the embed-permission probe |
-| `/commands`                          | GET        | extension command registry (palette rows)      |
-| `/commands/dispatch`                 | POST       | run one command/skill locally - never the agent |
-| `/logs?lines=N`                      | GET        | omega.log tail (default 200, clamped 1..2000)  |
-| `/observability/events`              | GET        | structured run-event ring: `?session=`, `?level=error\|warn`, `?limit=` (newest N, oldest-first); 1024-record in-process cap |
-| `/observability/logs`                | GET        | omega.log tail from the observability capsule (`?lines=`, default 200, cap 2000); 404 without a log file |
-| `/settings`                          | GET, PUT   | config knobs schema / diff-only save (`GET ?key=<dotted path>` = one knob, 404 on a miss) |
-| `/settings/raw`                      | GET, PUT   | the config file as YAML, secrets masked / write a whole document through the same validator + writer + hot-apply |
-| `/settings/reset`                    | POST       | restore the host's defaults for every knob that has one (the config.yaml-only doors are kept) |
-| `/themes`                            | GET        | user theme tokens (`<home>/themes/*.yaml`)     |
-| `/`                                  | GET        | embedded SPA catch-all (history-mode fallback) |
+| Route                                     | Methods            | Notes                                                                                                                                                                                                                                                       |
+| ----------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/health`                                 | GET                | liveness                                                                                                                                                                                                                                                    |
+| `/ws`                                     | GET                | the push channel (one websocket, typed topics)                                                                                                                                                                                                              |
+| `/models`                                 | GET                | model list + context window                                                                                                                                                                                                                                 |
+| `/chat`                                   | POST               | SSE streaming chat                                                                                                                                                                                                                                          |
+| `/attach-image`                           | POST               | server-side URL fetch -> chat image                                                                                                                                                                                                                         |
+| `/attach-file`                            | POST               | multipart file upload -> session upload dir reference                                                                                                                                                                                                       |
+| `/sessions`                               | GET, POST          | list / create                                                                                                                                                                                                                                               |
+| `/sessions/search?q=`                     | GET                | FTS5 content+label search                                                                                                                                                                                                                                   |
+| `/sessions/{id}`                          | GET, PATCH, DELETE | detail / flags / remove                                                                                                                                                                                                                                     |
+| `/sessions/{id}/events`                   | GET                | SSE reattach to a live run                                                                                                                                                                                                                                  |
+| `/sessions/{id}/stop`                     | POST               | hard stop: cancel the run, kill its spawned shells, abandon its pending calls                                                                                                                                                                               |
+| `/sessions/{id}/transcript`               | GET                | render-ready items (restore + live contract)                                                                                                                                                                                                                |
+| `/sessions/{id}/variants`                 | GET, POST, PATCH   | branch points + active-variant select                                                                                                                                                                                                                       |
+| `/sessions/{id}/branch`                   | POST               | fork a child session (store-linked)                                                                                                                                                                                                                         |
+| `/sessions/{id}/export`                   | GET                | active path as JSONL attachment                                                                                                                                                                                                                             |
+| `/sessions/{id}/verdicts`                 | GET, POST          | one session's verdict cards / the answer POST                                                                                                                                                                                                               |
+| `/verdicts`                               | GET                | cross-session verdict listing (the bell count)                                                                                                                                                                                                              |
+| `/agents`                                 | GET                | agent homes (roster rows; each row carries `last_session_id`)                                                                                                                                                                                               |
+| `/agents/{name}`                          | GET, PUT, DELETE   | detail / the node-preserving config layer editor / delete the home, sessions included                                                                                                                                                                       |
+| `/agents/{name}/sessions`                 | GET                | the agent's session list                                                                                                                                                                                                                                    |
+| `/disabled`                               | GET                | the registry-browser folded state (skills/tools/agents namespaces)                                                                                                                                                                                          |
+| `/disabled/skills`, `/disabled/tools`     | PUT                | registry-browser toggle fold (one entry per name)                                                                                                                                                                                                           |
+| `/disabled/agents`                        | PUT                | registry-browser toggle; the DEFAULT agent answers 409 (it must always be on)                                                                                                                                                                               |
+| `/modules`                                | GET                | mounted module capsules (introspection)                                                                                                                                                                                                                     |
+| `/modules/{name}`                         | PUT                | the live module toggle (`disabled:` fold); the always-on tier - `agent-loop`, `provider` and `observability` (the folded logging module) - answers 400 "module <name> is always on" (the seam's guard, cards t_81d0901b + t_ee3a968b)                       |
+| `/themes`                                 | GET                | user theme tokens (`<home>/themes/*.yaml`)                                                                                                                                                                                                                  |
+| `/insights`                               | GET                | session usage analytics                                                                                                                                                                                                                                     |
+| `/workspaces/browse`, `/workspaces/files` | GET                | the workspace surface (browsers + Files tab root)                                                                                                                                                                                                           |
+| `/boards`                                 | GET, POST          | board registry (multi-board, current flagged) / create                                                                                                                                                                                                      |
+| `/tasks`                                  | GET, POST          | kanban board (list/create, `?board=` picker)                                                                                                                                                                                                                |
+| `/tasks/{id}`                             | GET, PATCH         | task detail (task+comments+events) / edits                                                                                                                                                                                                                  |
+| `/tasks/{id}/comments`                    | POST               | add a comment (author default: `web`)                                                                                                                                                                                                                       |
+| `/notifications`                          | GET, DELETE        | finished-things list + unread (`?unread=1`, `?limit/?offset`) / clear-all (every record drops; the reply carries `cleared`)                                                                                                                                 |
+| `/notifications/read`                     | POST               | mark one (`{"id": N}`) or all (`{"all": true}`)                                                                                                                                                                                                             |
+| `/notifications/events`                   | GET                | SSE record stream (the public API surface; the webui's toasts ride the canvas)                                                                                                                                                                              |
+| `/files/browse`, `/files/read`            | GET                | read-only working-dir surface for the inspector; read carries `mime`                                                                                                                                                                                        |
+| `POST /files/write`, `POST /files/mkdir`  | POST               | the toolbar's write half: add file / add folder (same root jail)                                                                                                                                                                                            |
+| `/files/raw`                              | GET                | raw bytes under the read surface's root jail: `image/*` + `application/pdf` render (t_42c8aced), `?download=1` serves ANY file as a `Content-Disposition: attachment` never rendered                                                                        |
+| `/tools`                                  | GET                | tool inventory (bare = executable registry; `?disabled=1` = fold-aware management read)                                                                                                                                                                     |
+| `/mcp/servers`                            | GET                | configured MCP servers (name, transport, connection state, recorded failure, server-qualified tools) over the live bridge                                                                                                                                   |
+| `/mcp/reload`                             | POST               | re-read mcp.yaml/MCP_SERVERS, swap the live bridge (mcp.yaml edits go live on the MCP tab's refresh - no restart); returns the fresh server list                                                                                                            |
+| `/mcp/toggle`                             | POST               | the live MCP toggle through the module seam                                                                                                                                                                                                                 |
+| `/mcp/save`                               | POST               | upsert one full MCP server entry into mcp.yaml (schema-validated, node-spliced, atomic), swap the live bridge; returns the fresh server list                                                                                                                |
+| `/mcp/delete`                             | POST               | remove one MCP server entry from mcp.yaml and swap the bridge (the removed entry's connections close in the swap); unknown name 404                                                                                                                         |
+| `/cron/jobs`                              | GET                | cron job list (empty when unmounted - not 501); rows carry the authored `prompt`, the fire-pinned `skills`, the last fire's `status` + `last` + `status_note`, and `agent_owned` (the file-ownership mark: true only on an agent home's own wake row)       |
+| `/cron/save`                              | POST               | upsert one full job definition into the main crons.yaml (schema-validated, hot-reloaded); returns the fresh job set                                                                                                                                         |
+| `/cron/delete`                            | POST               | remove one job from the main crons.yaml; unknown name 404                                                                                                                                                                                                   |
+| `/cron/toggle`                            | POST               | the row's toggle commit: writes the per-job `enabled:` flag only                                                                                                                                                                                            |
+| `/skills`                                 | GET                | loaded skills (name + description only)                                                                                                                                                                                                                     |
+| `/skills/content`                         | GET                | one skill's SKILL.md body for the viewer tab (64 KiB cap)                                                                                                                                                                                                   |
+| `/skills/save`                            | POST               | the skills tab editor's upsert: a new name composes `<dir>/<name>/SKILL.md` (frontmatter composed, loader-parsed), an existing name rewrites the body under the fence while the operator's other frontmatter keys stay byte-true; answers the fresh listing |
+| `/skills/delete`                          | POST               | remove one skill: backed up to `.curator/backups`, ledger row at `.curator/ledger.jsonl` (`actor: webui`), folder removed; unknown name 404                                                                                                                 |
+| `/browser/last`, `/browser/frameable`     | GET, PUT           | module REST (browser capsule): the resume URL + the embed-permission probe                                                                                                                                                                                  |
+| `/commands`                               | GET                | extension command registry (palette rows)                                                                                                                                                                                                                   |
+| `/commands/dispatch`                      | POST               | run one command/skill locally - never the agent                                                                                                                                                                                                             |
+| `/logs?lines=N`                           | GET                | omega.log tail (default 200, clamped 1..2000)                                                                                                                                                                                                               |
+| `/observability/events`                   | GET                | structured run-event ring: `?session=`, `?level=error\|warn`, `?limit=` (newest N, oldest-first); 1024-record in-process cap                                                                                                                                |
+| `/observability/logs`                     | GET                | omega.log tail from the observability capsule (`?lines=`, default 200, cap 2000); 404 without a log file                                                                                                                                                    |
+| `/settings`                               | GET, PUT           | config knobs schema / diff-only save (`GET ?key=<dotted path>` = one knob, 404 on a miss)                                                                                                                                                                   |
+| `/settings/raw`                           | GET, PUT           | the config file as YAML, secrets masked / write a whole document through the same validator + writer + hot-apply                                                                                                                                            |
+| `/settings/reset`                         | POST               | restore the host's defaults for every knob that has one (the config.yaml-only doors are kept)                                                                                                                                                               |
+| `/themes`                                 | GET                | user theme tokens (`<home>/themes/*.yaml`)                                                                                                                                                                                                                  |
+| `/`                                       | GET                | embedded SPA catch-all (history-mode fallback)                                                                                                                                                                                                              |
 
 Optional seams degrade with a status code, never a panic: no store ->
 `/sessions*` and `/sessions/search` answer 501; no settings seam ->
@@ -218,21 +218,21 @@ continue" note on the transcript: it was answered, by the stop.
 Response is `text/event-stream`; frames are `event: <name>\ndata:
 <json>\n\n`, flushed as written:
 
-| Event             | Carries                                                     |
-| ----------------- | ----------------------------------------------------------- |
-| `session`         | `{"id": "<session id>"}` - first frame, the durable handle  |
-| `agent_start`     | run start                                                   |
-| `turn_start`      | one agent turn begins                                       |
-| `thinking_chunk`  | incremental reasoning text                                  |
-| `response_chunk`  | incremental response text                                   |
-| `tool_call`       | name + arguments                                            |
-| `tool_result`     | the tool's result                                           |
-| `stream_end`      | `finish_reason` (`stop`, `tool_call`, provider string, `cancelled`, `error`), usage counts when reported |
-| `turn_end`        | turn complete (`pending_calls` counts outstanding calls - immediate-yield dispatches and inline-budget escalations - that ended the turn) |
-| `agent_end`       | terminal state (`finish_reason`, incl. `cancelled` from a stop and `yielded` - the run ended on an outstanding call (immediate-yield or escalated past the inline budget); its result re-enters as a wake turn, see below) |
-| `assistant_message`| the assembled assistant message                            |
-| `view_model_delta`| one canvas panel descriptor (arc 3b): a module updated its panel state; dispatch on this frame, then merge the panel |
-| `error`           | the error text (failures are events, not Go errors)         |
+| Event               | Carries                                                                                                                                                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session`           | `{"id": "<session id>"}` - first frame, the durable handle                                                                                                                                                                 |
+| `agent_start`       | run start                                                                                                                                                                                                                  |
+| `turn_start`        | one agent turn begins                                                                                                                                                                                                      |
+| `thinking_chunk`    | incremental reasoning text                                                                                                                                                                                                 |
+| `response_chunk`    | incremental response text                                                                                                                                                                                                  |
+| `tool_call`         | name + arguments                                                                                                                                                                                                           |
+| `tool_result`       | the tool's result                                                                                                                                                                                                          |
+| `stream_end`        | `finish_reason` (`stop`, `tool_call`, provider string, `cancelled`, `error`), usage counts when reported                                                                                                                   |
+| `turn_end`          | turn complete (`pending_calls` counts outstanding calls - immediate-yield dispatches and inline-budget escalations - that ended the turn)                                                                                  |
+| `agent_end`         | terminal state (`finish_reason`, incl. `cancelled` from a stop and `yielded` - the run ended on an outstanding call (immediate-yield or escalated past the inline budget); its result re-enters as a wake turn, see below) |
+| `assistant_message` | the assembled assistant message                                                                                                                                                                                            |
+| `view_model_delta`  | one canvas panel descriptor (arc 3b): a module updated its panel state; dispatch on this frame, then merge the panel                                                                                                       |
+| `error`             | the error text (failures are events, not Go errors)                                                                                                                                                                        |
 
 The delta rides every live run stream (the chat's origin stream and
 `/sessions/{id}/events` alike) - panel state is global, not per-session,
@@ -499,7 +499,7 @@ A host with no settings seam answers **501** on all three, like
   namespaces (skills, tools, agents) as the config `disabled:` fold
   carries them.
 - `PUT /disabled/skills|tools|agents` - body `{"name": ...,  "enabled":
-  true|false}`; the write lands in config.yaml's `disabled:` fold and a
+true|false}`; the write lands in config.yaml's `disabled:` fold and a
   live toggle re-reads the seams. One refusal stands above the fold:
   `PUT /disabled/agents` for the default agent answers **409**
   ("the default agent cannot be disabled - it must always be on",
@@ -513,7 +513,6 @@ A host with no settings seam answers **501** on all three, like
   editor.
 
   The laws the write lane enforces:
-
   - **Secret-free provider.** `provider.instance` names an instance
     from settings; `provider_type`, `host` and `api_key` are retired
     fields and answer **400** with the law spelled out (an old client
@@ -574,7 +573,7 @@ A host with no settings seam answers **501** on all three, like
   step, so no half-deleted folder keeps registering an agent (folder
   presence IS registration). The session count is read BEFORE the
   removal and answered in the receipt - `{"deleted": "<name>",
-  "sessions": N}` - which is the number the panel's confirm dialog
+"sessions": N}` - which is the number the panel's confirm dialog
   named. The default agent answers **409** (its home is the daemon's
   home), an unknown agent **404**, a malformed name **400**. A name
   left behind in the host's `disabled: agents:` fold is config litter,
@@ -880,7 +879,7 @@ The per-module REST routes stay; these two endpoints are additive.
   `kind`, `payload`, `actions`). Mount order, panel ids sorted within
   a module. Nothing mounted is a 200 with `[]`, not an error.
 - `POST /ui/actions` - the one action pipe. Body: `{"module",
-  "action", "args"}` (module-qualified, `args` raw JSON verbatim).
+"action", "args"}` (module-qualified, `args` raw JSON verbatim).
   Routes through the canvas runtime to the capsule's registered
   handler - zero per-module code. **404** on unknown module or
   unknown action (route failures read as 404s, never 500s); the
@@ -1036,14 +1035,14 @@ Every pushed frame is one JSON text message:
 
 ### Topics
 
-| Topic | Payload | Source (the broadcast seam) |
-| ----- | ------- | -------------------------- |
-| `chat` | the run's SSE frame verbatim, plus the verdict issuance hint `{card_id, session_id, title}` | the run broadcast funnel - every frame `launchRun` broadcasts (token/thinking deltas, `tool_call`, `tool_result`, `turn_end`, `agent_end`, `error`). Wake turns launch through the same pipe, so yielded results stream on the same topic. **`verdict_issued`** (card t_ce2162cd) is the one frame on this topic that is NOT an agent event: the verdict hub fires its registration listeners the moment a card becomes pending (`harness/verdict`'s `OnCardRegistered`), and the serving shell publishes that as one chat-topic frame scoped to the card's session. It is a HINT only - the client re-reads `GET /verdicts` for the card's shape, expiry and options |
-| `chips` | `{call_id, tool, fill, text, content, truncated, is_error, timeout, elapsed_ms}` | `fill` false: the run output tap - a tool's live output as it lands (the shell's capped buffer). `fill` true: the pending chip settles (`wakeHome`, the one settle entry point) |
-| `canvas` | one `view_model_delta` panel descriptor | `CanvasEmit` - every mounted capsule's panel state, notifications toasts and board changes included. Panel state names itself in the payload, so the shell carries no capsule noun |
-| `runs` | `{active}` | the run slot: taken in `prepareRun`, released when the run's finish hook fires. This is the live-run truth `GET /sessions` used to be polled for |
-| `health` | `{status, uptime_seconds, version}` + the optional facts `{provider: {reachable, checked_at, detail?}, database: {healthy, detail?}, last_error: {message, at?}}` | the server heartbeat, every 5s. The same body `GET /health` serves |
-| `logs` | `{lines: string[]}` | the log follower (`api/server_inspector.go`): the lines appended to the log file since the previous frame, read by offset from the same path `GET /logs` tails (the write site is `harness/observability`'s `FileLogger` (the folded logging half)). A DELTA, never the tail - the pane's snapshot is `GET /logs`. Subscription-gated: nothing is read or published while no connection holds the topic, and a subscriber that did not ask receives nothing |
+| Topic    | Payload                                                                                                                                                           | Source (the broadcast seam)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chat`   | the run's SSE frame verbatim, plus the verdict issuance hint `{card_id, session_id, title}`                                                                       | the run broadcast funnel - every frame `launchRun` broadcasts (token/thinking deltas, `tool_call`, `tool_result`, `turn_end`, `agent_end`, `error`). Wake turns launch through the same pipe, so yielded results stream on the same topic. **`verdict_issued`** (card t_ce2162cd) is the one frame on this topic that is NOT an agent event: the verdict hub fires its registration listeners the moment a card becomes pending (`harness/verdict`'s `OnCardRegistered`), and the serving shell publishes that as one chat-topic frame scoped to the card's session. It is a HINT only - the client re-reads `GET /verdicts` for the card's shape, expiry and options |
+| `chips`  | `{call_id, tool, fill, text, content, truncated, is_error, timeout, elapsed_ms}`                                                                                  | `fill` false: the run output tap - a tool's live output as it lands (the shell's capped buffer). `fill` true: the pending chip settles (`wakeHome`, the one settle entry point)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `canvas` | one `view_model_delta` panel descriptor                                                                                                                           | `CanvasEmit` - every mounted capsule's panel state, notifications toasts and board changes included. Panel state names itself in the payload, so the shell carries no capsule noun                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `runs`   | `{active}`                                                                                                                                                        | the run slot: taken in `prepareRun`, released when the run's finish hook fires. This is the live-run truth `GET /sessions` used to be polled for                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `health` | `{status, uptime_seconds, version}` + the optional facts `{provider: {reachable, checked_at, detail?}, database: {healthy, detail?}, last_error: {message, at?}}` | the server heartbeat, every 5s. The same body `GET /health` serves                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `logs`   | `{lines: string[]}`                                                                                                                                               | the log follower (`api/server_inspector.go`): the lines appended to the log file since the previous frame, read by offset from the same path `GET /logs` tails (the write site is `harness/observability`'s `FileLogger` (the folded logging half)). A DELTA, never the tail - the pane's snapshot is `GET /logs`. Subscription-gated: nothing is read or published while no connection holds the topic, and a subscriber that did not ask receives nothing                                                                                                                                                                                                           |
 
 The `chips` topic is the one **lossy** topic: a consumer that falls
 behind drops frames rather than losing the wire (the tool result and
@@ -1068,7 +1067,7 @@ per 5s frame - and `checked_at` dates it; `database` is the store seam's
 The only message is a subscription:
 
 ```json
-{"type": "subscribe", "topics": ["chat", "chips"]}
+{ "type": "subscribe", "topics": ["chat", "chips"] }
 ```
 
 It **replaces** the connection's topic set (a connection starts

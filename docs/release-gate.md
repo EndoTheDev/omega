@@ -30,10 +30,10 @@ change under review.
 
 Every gate finding carries exactly one tag at post:
 
-| Tag | Meaning | Blocks the merge? | Blames the card's author? |
-| --- | ------- | ----------------- | ------------------------- |
-| `Important` | The change introduces a real defect or breaks a law | yes | n/a |
-| `Nit` | Style, naming, polish - the merge is fine | **never** | - |
+| Tag            | Meaning                                                    | Blocks the merge?                                           | Blames the card's author?                          |
+| -------------- | ---------------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------- |
+| `Important`    | The change introduces a real defect or breaks a law        | yes                                                         | n/a                                                |
+| `Nit`          | Style, naming, polish - the merge is fine                  | **never**                                                   | -                                                  |
 | `Pre-existing` | Present at the merge-base; the change did not introduce it | **never** (a separate card or a rider, the reviewer's word) | **never** - finding it is not the author's failure |
 
 Two hard rules:

@@ -78,11 +78,11 @@ omega update
 HTTP channel -> agent (loop + tools) -> llm (provider streaming)
 ```
 
-| Layer    | Responsibility                                             |
-| -------- | ---------------------------------------------------------- |
-| Agent    | Multi-turn loop, tools, compaction, harness capsules       |
-| LLM      | Ollama + OpenAI + Anthropic streaming                      |
-| CLI      | Entry point, CLI agent loop + setup, config loading, trust gate |
+| Layer | Responsibility                                                  |
+| ----- | --------------------------------------------------------------- |
+| Agent | Multi-turn loop, tools, compaction, harness capsules            |
+| LLM   | Ollama + OpenAI + Anthropic streaming                           |
+| CLI   | Entry point, CLI agent loop + setup, config loading, trust gate |
 
 See [docs/architecture.md](docs/architecture.md) for details.
 
@@ -93,18 +93,18 @@ All modules are in-process Go packages under `harness/`. See
 
 ## Documentation
 
-| Topic           | File                                               |
-| --------------- | -------------------------------------------------- |
-| CLI             | [docs/cli.md](docs/cli.md)                         |
-| Configuration   | [docs/configuration.md](docs/configuration.md)     |
-| HTTP API        | [docs/api.md](docs/api.md)                         |
-| Web UI          | [docs/webui.md](docs/webui.md)                     |
-| Approval gate   | [docs/approvals.md](docs/approvals.md)             |
-| Extensions      | [docs/modules.md](docs/modules.md)           |
-| Project Trust   | [docs/project-trust.md](docs/project-trust.md)     |
-| Architecture    | [docs/architecture.md](docs/architecture.md)       |
-| Landing pipeline | [docs/pipeline.md](docs/pipeline.md)              |
-| Troubleshooting | [docs/troubleshooting.md](docs/troubleshooting.md) |
+| Topic            | File                                               |
+| ---------------- | -------------------------------------------------- |
+| CLI              | [docs/cli.md](docs/cli.md)                         |
+| Configuration    | [docs/configuration.md](docs/configuration.md)     |
+| HTTP API         | [docs/api.md](docs/api.md)                         |
+| Web UI           | [docs/webui.md](docs/webui.md)                     |
+| Approval gate    | [docs/approvals.md](docs/approvals.md)             |
+| Extensions       | [docs/modules.md](docs/modules.md)                 |
+| Project Trust    | [docs/project-trust.md](docs/project-trust.md)     |
+| Architecture     | [docs/architecture.md](docs/architecture.md)       |
+| Landing pipeline | [docs/pipeline.md](docs/pipeline.md)               |
+| Troubleshooting  | [docs/troubleshooting.md](docs/troubleshooting.md) |
 
 ## License
 

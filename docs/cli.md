@@ -364,11 +364,12 @@ OMEGA_HEALTH_HOST=127.0.0.1 omega health
 `omega mcp list|add|edit|delete` is the terminal face of the MCP dock
 tab's editor. Entries live in the `mcp.yaml` the loader reads
 (`<home>/mcp.yaml` legacy location first, then `<home>/config/mcp.yaml`)
+
 - the file is the store, and every write is the same law the wire
-rides: validate, splice the one entry at the `yaml.Node` level
-(comments and keys survive), write atomically, then swap the live
-bridge. No restart, and a removed or disabled server's connections
-close in the swap.
+  rides: validate, splice the one entry at the `yaml.Node` level
+  (comments and keys survive), write atomically, then swap the live
+  bridge. No restart, and a removed or disabled server's connections
+  close in the swap.
 
 ```bash
 omega mcp                                      # same as `omega mcp list`
@@ -398,14 +399,14 @@ listing, so one response carries the state it landed.
 
 Accepted before or after the subcommand:
 
-| Flag                          | Meaning                                                                 |
-| ----------------------------- | ----------------------------------------------------------------------- |
-| `--config <path>`             | Config file (default: `<home>/config.yaml`, then `<home>/config/config.yaml`; legacy home-root wins) |
-| `--append-system-prompt <text>` | Append to the system prompt; repeatable; `run`/loop only            |
-| `--approve`                   | Trust the current project's AGENTS.md                                   |
-| `--no-approve`                | Skip the current project's AGENTS.md                                    |
-| `--version`, `-v`             | Print version                                                           |
-| `--help`, `-h`                | Print the global help                                                   |
+| Flag                            | Meaning                                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `--config <path>`               | Config file (default: `<home>/config.yaml`, then `<home>/config/config.yaml`; legacy home-root wins) |
+| `--append-system-prompt <text>` | Append to the system prompt; repeatable; `run`/loop only                                             |
+| `--approve`                     | Trust the current project's AGENTS.md                                                                |
+| `--no-approve`                  | Skip the current project's AGENTS.md                                                                 |
+| `--version`, `-v`               | Print version                                                                                        |
+| `--help`, `-h`                  | Print the global help                                                                                |
 
 `--config` is the only flag with a value; both `--config <p>` and
 `--config=<p>` forms work. No subcommand has its own `--help` -
@@ -441,45 +442,45 @@ tool file operations.
 Applied after config.yaml, before validation. Booleans accept `1`/`true`;
 integers below their minimum are ignored (the YAML/default value stays).
 
-| Env var                          | Config key                        | Default           |
-| -------------------------------- | --------------------------------- | ----------------- |
-| `OMEGA_PROVIDER`                 | `provider.instances` (the `default` row's type) | `ollama`          |
-| `OMEGA_API_KEY`                  | `provider.instances` (the `default` row's key) | (empty)           |
-| `OMEGA_MODEL`                    | `provider.model_name`             | (required)        |
-| `OMEGA_HOST`                     | `provider.instances` (the `default` row's host) | `http://localhost:11434` |
-| `OMEGA_VISION_MODEL`             | `vision_model`                    | (empty)           |
-| `OMEGA_TITLE_MODEL`              | `title_model`                     | (empty)           |
-| `OMEGA_DB_PATH`                  | `store.db_path`                   | `<home>/data/omega.db` |
-| `OMEGA_SKILLS_DIR`               | `skills.dir`                      | `<home>/skills`   |
-| `OMEGA_THEME`                    | `theme`                           | (empty)           |
-| `OMEGA_NOTIFICATIONS`            | `notifications`                   | `bell`            |
-| `OMEGA_LOGGING_FILE`             | `logging.file`                    | `<home>/omega.log` |
-| `OMEGA_COMPACTION_ENABLED`       | `compaction.enabled`              | `true`            |
-| `OMEGA_MEMORY_ENABLED`           | `memory.enabled`                  | `true`            |
-| `OMEGA_USER_PROFILE_ENABLED`     | `memory.user_profile_enabled`     | `true`            |
-| `OMEGA_LOGGING_ENABLED`          | `logging.enabled`                 | `true`            |
-| `OMEGA_PORT`                     | `server.port`                     | `8099`            |
-| `OMEGA_COMPACTION_CONTEXT_WINDOW`| `compaction.context_window`       | `32768` (0 = auto-probe) |
-| `OMEGA_COMPACTION_KEEP_FIRST`    | `compaction.keep_first`           | `2`               |
-| `OMEGA_COMPACTION_KEEP_LAST`     | `compaction.keep_last`            | `10`              |
-| `OMEGA_COMPACTION_RESERVE_TOKENS`| `compaction.reserve_tokens`       | `16384`           |
-| `OMEGA_COMPACTION_MAX_TOOL_OUTPUT`| `compaction.max_tool_output`     | `32768`           |
-| `OMEGA_HTTP_TIMEOUT`             | `http_timeout`                    | `300` (seconds)   |
-| `OMEGA_MAX_TURNS`                | `max_turns`                       | `100`             |
-| `OMEGA_MEMORY_CHAR_LIMIT`        | `memory.char_limit`               | `2200`            |
-| `OMEGA_USER_CHAR_LIMIT`          | `memory.user_char_limit`          | `1375`            |
-| `OMEGA_COMPACTION_THRESHOLD`     | `compaction.threshold`            | `0.6` (0 < t <= 1)|
+| Env var                            | Config key                                      | Default                  |
+| ---------------------------------- | ----------------------------------------------- | ------------------------ |
+| `OMEGA_PROVIDER`                   | `provider.instances` (the `default` row's type) | `ollama`                 |
+| `OMEGA_API_KEY`                    | `provider.instances` (the `default` row's key)  | (empty)                  |
+| `OMEGA_MODEL`                      | `provider.model_name`                           | (required)               |
+| `OMEGA_HOST`                       | `provider.instances` (the `default` row's host) | `http://localhost:11434` |
+| `OMEGA_VISION_MODEL`               | `vision_model`                                  | (empty)                  |
+| `OMEGA_TITLE_MODEL`                | `title_model`                                   | (empty)                  |
+| `OMEGA_DB_PATH`                    | `store.db_path`                                 | `<home>/data/omega.db`   |
+| `OMEGA_SKILLS_DIR`                 | `skills.dir`                                    | `<home>/skills`          |
+| `OMEGA_THEME`                      | `theme`                                         | (empty)                  |
+| `OMEGA_NOTIFICATIONS`              | `notifications`                                 | `bell`                   |
+| `OMEGA_LOGGING_FILE`               | `logging.file`                                  | `<home>/omega.log`       |
+| `OMEGA_COMPACTION_ENABLED`         | `compaction.enabled`                            | `true`                   |
+| `OMEGA_MEMORY_ENABLED`             | `memory.enabled`                                | `true`                   |
+| `OMEGA_USER_PROFILE_ENABLED`       | `memory.user_profile_enabled`                   | `true`                   |
+| `OMEGA_LOGGING_ENABLED`            | `logging.enabled`                               | `true`                   |
+| `OMEGA_PORT`                       | `server.port`                                   | `8099`                   |
+| `OMEGA_COMPACTION_CONTEXT_WINDOW`  | `compaction.context_window`                     | `32768` (0 = auto-probe) |
+| `OMEGA_COMPACTION_KEEP_FIRST`      | `compaction.keep_first`                         | `2`                      |
+| `OMEGA_COMPACTION_KEEP_LAST`       | `compaction.keep_last`                          | `10`                     |
+| `OMEGA_COMPACTION_RESERVE_TOKENS`  | `compaction.reserve_tokens`                     | `16384`                  |
+| `OMEGA_COMPACTION_MAX_TOOL_OUTPUT` | `compaction.max_tool_output`                    | `32768`                  |
+| `OMEGA_HTTP_TIMEOUT`               | `http_timeout`                                  | `300` (seconds)          |
+| `OMEGA_MAX_TURNS`                  | `max_turns`                                     | `100`                    |
+| `OMEGA_MEMORY_CHAR_LIMIT`          | `memory.char_limit`                             | `2200`                   |
+| `OMEGA_USER_CHAR_LIMIT`            | `memory.user_char_limit`                        | `1375`                   |
+| `OMEGA_COMPACTION_THRESHOLD`       | `compaction.threshold`                          | `0.6` (0 < t <= 1)       |
 
 ### Plumbing (set or read by the binary itself)
 
-| Env var                | Direction | Meaning                                                                    |
-| ---------------------- | --------- | -------------------------------------------------------------------------- |
-| `OMEGA_HOME`           | read      | Overrides home resolution (see above); re-exported by the binary so child processes inherit it |
-| `OMEGA_SKILLS_DIR`     | set       | Re-exported every boot as `<home>/skills` for the skills extension         |
-| `OMEGA_BIN`            | set       | The binary's own path, for the delegate extension's subagent spawns        |
-| `OMEGA_HEALTH_HOST`    | read      | Host for `omega health` (default `localhost`)                              |
-| `OMEGA_UPDATE_API_BASE`| read      | Test seam: overrides the GitHub API base during `omega update` (`https://api.github.com` by default). Never set in production |
-| `OMEGA_MAX_RETRIES`    | read      | Provider retry budget (`llm/retry.go`), default `3` - HTTP 429/5xx and Ollama `done_reason: load` retried with backoff |
+| Env var                 | Direction | Meaning                                                                                                                       |
+| ----------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `OMEGA_HOME`            | read      | Overrides home resolution (see above); re-exported by the binary so child processes inherit it                                |
+| `OMEGA_SKILLS_DIR`      | set       | Re-exported every boot as `<home>/skills` for the skills extension                                                            |
+| `OMEGA_BIN`             | set       | The binary's own path, for the delegate extension's subagent spawns                                                           |
+| `OMEGA_HEALTH_HOST`     | read      | Host for `omega health` (default `localhost`)                                                                                 |
+| `OMEGA_UPDATE_API_BASE` | read      | Test seam: overrides the GitHub API base during `omega update` (`https://api.github.com` by default). Never set in production |
+| `OMEGA_MAX_RETRIES`     | read      | Provider retry budget (`llm/retry.go`), default `3` - HTTP 429/5xx and Ollama `done_reason: load` retried with backoff        |
 
 ## Related
 

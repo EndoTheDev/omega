@@ -7,11 +7,11 @@ cloud call or a prompt.
 
 ## Modes (`approvals.mode`)
 
-| mode     | behavior |
-|----------|----------|
-| `off`    | The gate is fully absent: no detection, no calls, no logging. The seam mounts nothing (proved by `TestApprovalRemovalProof`). |
+| mode     | behavior                                                                                                                        |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `off`    | The gate is fully absent: no detection, no calls, no logging. The seam mounts nothing (proved by `TestApprovalRemovalProof`).   |
 | `manual` | Default (ship dark). Every flagged command asks YOU via a verdict card - approve/deny (+ a typed follow-up answer, t_63204dfd). |
-| `smart`  | A decision model reviews flagged commands first; the deterministic ladder decides from its answers. |
+| `smart`  | A decision model reviews flagged commands first; the deterministic ladder decides from its answers.                             |
 
 Empty config value = `manual`. Reviewer unreachable, timed out, or
 malformed = fail-closed: the command escalates, it never auto-runs.
@@ -99,8 +99,8 @@ the audit log measures it in production.
 
 ```yaml
 approvals:
-  mode: manual        # off | manual | smart (default manual)
-  smart_policy: |     # trusted operator policy the reviewer reads
+  mode: manual # off | manual | smart (default manual)
+  smart_policy: | # trusted operator policy the reviewer reads
     ...
 ```
 
@@ -123,5 +123,5 @@ Capsule law: removing `harness/approval/` removes the feature whole -
 detection, parser, reviewer, ladder, cache, audit file and settings
 group. Outside the capsule only the `core.ApprovalProvider` seam, the
 loop's consult hook and the host's config/settings wiring remain.
- Removal proof: `TestApprovalRemovalProof` (mounts the capsule, mode
+Removal proof: `TestApprovalRemovalProof` (mounts the capsule, mode
 off, and the module removed).
