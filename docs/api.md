@@ -880,7 +880,10 @@ same registration seams:
   here - they ride `/skills` and the palette renders them as
   `/<skill-name>` rows itself.
 - `POST /commands/dispatch` - body `{"name": "/<command>"}` (plus
-  optional `"args"`). Resolution order: a
+  optional `"args"`, plus optional `"session_id"` - the invoking
+  surface's session; the palette sends the tab's own, so a
+  session-scoped command acts on that tab instead of demanding the id
+  in its args). Resolution order: a
   registered extension command executes through the chain-on-miss
   `ctx.CommandHandler` (rewired at boot and on every live module
   toggle) and answers `{"kind":"command","text":...,"actions":[...]}`;
@@ -888,7 +891,10 @@ same registration seams:
   `{"kind":"skill","name":...,"content":...}` - the content the client
   arms as a System preamble on its next send. Unknown names are 404,
   non-slash
-  names 400, a missing handler 501. Dispatch is a local execution
+  names 400, a missing handler 501. A registered command whose owner
+  refuses answers 500 carrying the owner's own message - only an
+  explicit miss (`core.CommandMiss`) reads as 404, so a refusal never
+  masquerades as an unknown command. Dispatch is a local execution
   surface: it never enqueues an agent run.
 
 ## Canvas (view-model)
