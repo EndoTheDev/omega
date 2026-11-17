@@ -1,0 +1,75 @@
+# scripts/eyeball-surfaces.txt - THE SURFACE MAP (eyeball-pack, card t_214ca1bd).
+#
+# One line per webui surface:
+#
+#   <surface>|<component-path-globs>|<how-to-reach>
+#
+# surface   slug used in the pack's file names: <out-dir>/<n>-<surface>.png
+# globs     comma-separated repo-relative git-path globs, NO spaces
+#           (`*` crosses `/`, so `webui/app/components/chat/*` is the whole
+#           directory); a changed file that fits any surface's globs lists
+#           that surface in the pack
+# reach     semicolon-separated steps, run in order against the lane:
+#             url:<path>       open <lane-url><path>
+#             reload           reload the page
+#             vp:<w>x<h>       set the viewport
+#             press:<key>      press a key (Control+k, Escape, ...)
+#             tab:<Name>       click the dock tab whose name matches exactly
+#                              (aria-label, title, or .dock-tab-title text -
+#                              edge strips are icon-only chips)
+#             click:<selector> document.querySelector(sel).click()
+#             eval:<js>        run JS (a throw fails the step)
+#             wait:<js>        poll a BOOLEAN js expression until true (bounded
+#                              by EYEBALL_REACH_TIMEOUT); a `?1:0` probe never
+#                              matches - return !!x instead
+#             waittext:<text>  wait for text to render
+#
+# A surface no changed component maps to is skipped ("no changed
+# components"). A reach that fails on the lane skips THAT surface with the
+# reason printed - a missing seed or a disabled capsule must not cost the
+# whole pack. No line may contain `|` beyond its two separators (the reach
+# spec's own steps are `;`-separated for exactly that reason).
+#
+# Routes verified against webui/app (app.vue's route table: /, /chat/<id>,
+# /board, /settings) and the dock registry (webui/app/composables/dockables.ts
+# titles: Sessions, chat, viewer, Files, cron, skills, tools, Agents,
+# Settings, kanban, Insights, MCP, Terminal, Logs, Browser, Notifications).
+
+# --- the shell --------------------------------------------------------------
+sheet|webui/app/app.vue|url:/;wait:!!document.querySelector('[data-pane-id]')
+menubar|webui/app/components/shell/MenuBar.vue,webui/app/components/nav/NavCluster.vue|url:/;wait:!!document.querySelector('.menubar')
+statusbar|webui/app/components/shell/StatusBar.vue|url:/;wait:!!document.querySelector('.statusbar')
+sidebar|harness/store/ui/AppSidebar.vue|url:/;wait:!!document.querySelector('.sessions')
+command-palette|webui/app/components/nav/CommandPalette.vue,webui/app/composables/commandRegistry.ts,webui/app/composables/commands.ts|url:/;press:Control+k;wait:!!document.querySelector('.command-palette')
+mobile-drawer|webui/app/components/shell/MobileDrawer.vue|vp:390x800;url:/;click:[aria-label="Toggle right sidebar"];wait:!!document.querySelector('.mobile-drawer.open')
+
+# --- the dock (the shell's own chrome + the tab band primitives) ------------
+dock|webui/app/components/DockPane.vue,webui/app/components/DockSplit.vue,webui/app/components/DockDivider.vue,webui/app/components/DockGhost.vue,webui/app/composables/dock.ts,webui/app/composables/dockdnd.ts,webui/app/composables/dividerGesture.ts,webui/app/composables/dockghost.ts,webui/app/composables/dockables.ts,webui/app/composables/panes.ts,webui/app/composables/focus.ts|url:/;wait:!!document.querySelector('.dock-pane')
+dock-band|webui/app/components/ui/TabBand.vue,webui/app/components/ui/BandSelect.vue,webui/app/components/ui/TogglePill.vue,webui/app/components/ui/Icon.vue,webui/app/composables/icons.ts,webui/app/composables/chips.ts|url:/;wait:!!document.querySelector('.dock-pane')
+viewer|webui/app/components/ViewerTab.vue,webui/app/composables/viewer.ts|url:/;wait:!!document.querySelector('.dock-pane')
+inspector|webui/app/components/InspectorPanel.vue,webui/app/components/RegistryList.vue|url:/;wait:!!document.querySelector('.dock-pane')
+
+# --- chat -------------------------------------------------------------------
+chat|webui/app/components/ChatTab.vue,webui/app/components/ChatItem.vue,webui/app/composables/chat.ts,webui/app/composables/canvas.ts|url:/;wait:!!document.querySelector('.dock-pane')
+chat-composer|webui/app/components/chat/AppComposer.vue,webui/app/components/chat/ReferencePill.vue,webui/app/components/chat/WorkspaceSelect.vue,webui/app/composables/pills.ts,webui/app/composables/attachments.ts|url:/;wait:!!document.querySelector('.composer')
+chat-messages|webui/app/components/chat/ChatMessage.vue,webui/app/components/chat/ThinkingBlock.vue,webui/app/components/chat/ToolCallLine.vue,webui/app/components/chat/ToolGroup.vue,webui/app/composables/toolGroup.ts,webui/app/composables/toolDisplay.ts,webui/app/composables/thinkingDisplay.ts,webui/app/composables/codeblocks.ts|url:/;wait:!!document.querySelector('.dock-pane')
+chat-model|webui/app/components/chat/ModelSelect.vue,webui/app/components/chat/VariantSwitcher.vue,webui/app/composables/modelCatalog.ts|url:/;wait:!!document.querySelector('.composer')
+chat-verdicts|webui/app/components/chat/VerdictCard.vue,webui/app/components/chat/GateCard.vue|url:/;wait:!!document.querySelector('.dock-pane')
+
+# --- settings ---------------------------------------------------------------
+settings|webui/app/components/settings/SettingsTab.vue,webui/app/components/settings/ModelField.vue,webui/app/components/settings/ModulesSection.vue,webui/app/components/settings/ProvidersField.vue,webui/app/components/settings/settingsNav.ts,webui/app/composables/settingsJump.ts|url:/settings/;wait:!!document.querySelector('.settings')
+settings-sheet|webui/app/composables/omega.ts,webui/app/composables/moduleState.ts,webui/app/composables/narrow.ts,webui/app/composables/mobileDrawer.ts,webui/app/composables/defaultWorkspace.ts|url:/settings/;wait:!!document.querySelector('.settings')
+
+# --- the capsule tabs (their views live in harness/<name>/ui/) --------------
+files|harness/files/ui/FilesTab.vue,harness/files/ui/FileTree.vue,harness/files/ui/rowicon.ts,webui/app/composables/filetree.ts|url:/;tab:Files;wait:!!document.querySelector('.inspector-files')
+cron|harness/cron/ui/CronJobs.vue|url:/;tab:cron;wait:!!document.querySelector('.cron-list')
+skills|harness/skills/ui/SkillsList.vue|url:/;tab:skills;wait:!!document.querySelector('.skills-list')
+tools|harness/tools/ui/ToolsList.vue|url:/;tab:tools;wait:!!document.querySelector('.tools-list')
+agents|harness/continuous/ui/AgentsPanel.vue|url:/;tab:Agents;wait:!!document.querySelector('.agents')
+mcp|harness/mcp/ui/McpServers.vue|url:/;tab:MCP;wait:!!document.querySelector('.mcp-list')
+kanban|harness/kanban/ui/Board.vue,harness/kanban/ui/board/*|url:/board;wait:!!document.querySelector('.board')
+insights|harness/store/ui/InsightsTab.vue|url:/;tab:Insights;wait:!!document.querySelector('.insights')
+notifications|harness/notifications/ui/NotificationsPanel.vue,webui/app/components/shell/notificationFeed.ts,webui/app/components/shell/NotificationToasts.vue,webui/app/composables/notifications.ts|url:/;tab:Notifications;wait:!!document.querySelector('.notif-pane')
+observability|harness/observability/ui/ObservabilityTab.vue,harness/observability/ui/rows.ts|url:/;tab:Logs;wait:!!document.querySelector('.obs-pane')
+terminal|harness/terminal/ui/TerminalTab.vue|url:/;tab:Terminal;wait:!!document.querySelector('.terminal-pane')
+browser|harness/browser/ui/BrowserTab.vue,harness/browser/ui/browserLogic.ts|url:/;tab:Browser;wait:!!document.querySelector('.browser-tab')
