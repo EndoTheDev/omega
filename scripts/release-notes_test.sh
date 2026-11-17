@@ -7,10 +7,16 @@ set -uo pipefail
 # line, the GitHub body's per-class changelog (feat -> refactor -> fix ->
 # tune -> docs, newest first inside each, the tail classes capped at 5),
 # noise exclusion, empty-range and no-annotation fallbacks, and the POST law
-# (t_878b1b7c): FIVE highlights (newest-5 feat default, the tag annotation's
-# list wins), ONE prose paragraph read off the annotation body, the counts
-# line, the update + changelog link, and the loud 2000-char Discord cap with
-# no trimmer behind it.
+# (t_878b1b7c + t_42854d3e): the two-audience shape (hook line first, then
+# user-facing bullets, then the unchanged stats line), FIVE highlights at most
+# (newest-5 feat default, the tag annotation's list or the override file's list
+# wins), the counts line, the update + changelog link, the no-em-dash style
+# law, and the loud 2000-char Discord cap with no trimmer behind it.
+# The override file (scripts/release-notes.overrides.md) is per-release hand
+# written prose; the script prefers it, and a missing file or a missing section
+# still renders (N19, N20, N22). NOTE: run_notes pins NOTES_OVERRIDES into the
+# fixture, so the shipped file never leaks into a synthetic range unless a test
+# asks for it by name.
 # The annotation has to SURVIVE the CI checkout (t_530c4635): a tag ref
 # rewritten to its commit by actions/checkout@v4 reads as no annotation, so
 # the absence is named on stderr with its remedy and the release workflow's
@@ -22,6 +28,10 @@ set -uo pipefail
 # the SUT's python a path it cannot open - the fixtures then look empty).
 
 SUT="$(cd "$(dirname "$0")" && pwd)/release-notes.sh"
+SHIPPED_OVERRIDES="$(cd "$(dirname "$0")" && pwd)/release-notes.overrides.md"
+# the style law's two characters, built from bytes so no editor mangles them
+EM="$(printf '\xe2\x80\x94')"   # em-dash
+EN="$(printf '\xe2\x80\x93')"   # en-dash
 
 pass=0
 fail=0
@@ -61,11 +71,15 @@ new_fixture() {
 }
 
 # run_notes <fixture> [args...]: stdout+stderr -> OUT; exit -> RC;
-# generated files land in <fixture>/out
+# generated files land in <fixture>/out. NOTES_OVERRIDES always points inside
+# the fixture (absent unless the test writes one), or at OVERRIDES_FILE when a
+# test sets it - the shipped overrides file must never colour a synthetic
+# range by accident.
 run_notes() {
-	local root=$1
+	local root=$1 ov
 	shift
-	OUT="$(cd "$root" && NOTES_OUT_DIR="$root/out" bash "$SUT" "$@" 2>&1)"
+	ov="${OVERRIDES_FILE:-$root/release-notes.overrides.md}"
+	OUT="$(cd "$root" && NOTES_OUT_DIR="$root/out" NOTES_OVERRIDES="$ov" bash "$SUT" "$@" 2>&1)"
 	RC=$?
 }
 
@@ -128,8 +142,9 @@ expect_body_bullets "$fx" N1 \
 	"fix(side): a race in the send path" \
 	"tune(core): default context window 32768" \
 	"docs: note the soak law"
-# the post carries the five-highlight law: only the newest feats
-expect_bullets "$fx" N1 "feat(main): the landing lane"
+# the post carries the five-highlight law: only the newest feats, and the
+# conventional-commit prefix never posts (factory vocabulary, t_42854d3e)
+expect_bullets "$fx" N1 "the landing lane"
 md "$fx" | grep -qF "Merge branch" && bad "N1: bare merge must not highlight" || ok
 body "$fx" | grep -qF "Merge branch" && bad "N1: bare merge must not reach the record" || ok
 md "$fx" | grep -qF "chore" && bad "N1: chore leaked into the post" || ok
@@ -156,12 +171,13 @@ expect_body_bullets "$fx" N2 \
 	"feat(sessions): the hygiene pass" \
 	"feat(core): the context window grows" \
 	"fix(core): the oldest fix"
-# the default highlight pick: newest 5 feats, and only feats exist here (4)
+# the default highlight pick: newest 5 feats, only feats exist here (4), and
+# the post renders them without the factory prefix
 expect_bullets "$fx" N2 \
-	"feat(webui): reference pills for tokens" \
-	"feat(webui): command palette" \
-	"feat(sessions): the hygiene pass" \
-	"feat(core): the context window grows"
+	"reference pills for tokens" \
+	"command palette" \
+	"the hygiene pass" \
+	"the context window grows"
 body "$fx" | grep -qF "the tree tells the product story" && bad "N2: card merge reached the record" || ok
 [ "$(body "$fx" | grep -cF 'feat(webui)')" -eq 2 ] && ok || bad "N2: same-scope feats were deduped"
 body "$fx" | grep -qF "embed-lane" && bad "N2: embed-lane leaked into the record" || ok
@@ -173,7 +189,7 @@ merge_commit "$fx" "merge: restructure part 3 - the seam constitution" "chore(mg
 merge_commit "$fx" "merge: restructure" "chore(mg): side scratch"
 run_notes "$fx"
 expect_body_bullets "$fx" N3 "feat(side): a real thing"
-expect_bullets "$fx" N3 "feat(side): a real thing"
+expect_bullets "$fx" N3 "a real thing"
 
 # --- N4: fixes newest-first in the record, order after refactors ------------
 fx=$(new_fixture)
@@ -191,7 +207,7 @@ expect_body_bullets "$fx" N4 \
 	"fix(b): third" \
 	"fix(a): second in the same scope" \
 	"fix(a): first"
-expect_bullets "$fx" N4 "feat(a): the one feat"
+expect_bullets "$fx" N4 "the one feat"
 
 # --- N5: noise-only range -> zeros, no bullets, exit 0 ----------------------
 fx=$(new_fixture)
@@ -235,15 +251,22 @@ LC_ALL=C grep -qF "🚀" "$BODY" && bad "N7: body file must not carry the rocket
 [ "$(sed -n '1p' "$BODY")" = "Delegates got safer and the tree got flatter" ] \
 	&& ok || bad "N7: body file prose line"
 
-# --- N8: lightweight tag -> no prose anywhere (fallback) --------------------
+# --- N8: lightweight tag -> no annotation, so the hook is generated --------
+# (t_42854d3e: the post never has a blank line where the hook belongs - with no
+# annotation and no override the counts sentence is the honest floor, and the
+# gap is named on stderr)
 fx=$(new_fixture)
 c "$fx" "feat(side): a feature"
 "${GUSER[@]}" -C "$fx" tag v2.0.0
 run_notes "$fx"
 [ "$RC" -eq 0 ] && ok || bad "N8: lightweight-tag run exit $RC"
-[ "$(sed -n '2p' "$fx/out/release-notes.md")" = "" ] && ok || bad "N8: no prose expected on line 2"
-[ "$(sed -n '3p' "$fx/out/release-notes.md")" = "- feat(side): a feature" ] \
-	&& ok || bad "N8: post must fall through to the highlight bullets"
+[ "$(sed -n '2p' "$fx/out/release-notes.md")" = "" ] && ok || bad "N8: line 2 must stay blank"
+[ "$(sed -n '3p' "$fx/out/release-notes.md")" = "This update brings 1 new feature." ] \
+	&& ok || bad "N8: hook should be the generated counts sentence, got [$(sed -n '3p' "$fx/out/release-notes.md")]"
+[ "$(sed -n '5p' "$fx/out/release-notes.md")" = "- a feature" ] \
+	&& ok || bad "N8: post must carry the user-facing bullet after the hook"
+printf '%s' "$OUT" | grep -qF "no override section and no tag annotation" \
+	&& ok || bad "N8: the missing hook must be named on stderr"
 printf '%s' "$OUT" | grep -qF "1 feature" && ok || bad "N8: counts expected"
 printf '%s' "$OUT" | grep -qF "full changelog:" && ok || bad "N8: link expected"
 
@@ -290,10 +313,10 @@ expect_body_bullets "$fx" N10 \
 	"docs: doc 4" \
 	"docs: doc 3"
 printf '%s' "$OUT" | grep -qF "7 fixes" && ok || bad "N10: counts must still carry every commit"
-# the post still carries five at most
+# the post still carries five at most, prefix-free
 expect_bullets "$fx" N10 \
-	"feat(core): feature two" \
-	"feat(core): feature one"
+	"feature two" \
+	"feature one"
 
 # --- N11: the post law - five highlights, counts, link, under 900 chars -----
 fx=$(new_fixture)
@@ -307,16 +330,18 @@ run_notes "$fx"
 [ "$RC" -eq 0 ] && ok || bad "N11: exit $RC"
 [ "$(bullets "$fx")" -eq 5 ] && ok || bad "N11: post must carry 5 highlights, got $(bullets "$fx")"
 expect_bullets "$fx" N11 \
-	"feat(core): feature 7" \
-	"feat(core): feature 6" \
-	"feat(core): feature 5" \
-	"feat(core): feature 4" \
-	"feat(core): feature 3"
+	"feature 7" \
+	"feature 6" \
+	"feature 5" \
+	"feature 4" \
+	"feature 3"
 printf '%s' "$OUT" | grep -qF "7 features, 2 refactors, 6 fixes, 1 tune, 6 doc updates" \
 	&& ok || bad "N11: counts line missing from the post"
 printf '%s' "$OUT" | grep -qF "Update: \`omega update\` · full changelog: <https://github.com/EndoTheDev/omega/releases/tag/v2.0.0>" \
 	&& ok || bad "N11: update + changelog line missing"
-[ "$(sed -n '2p' "$fx/out/release-notes.md")" = "" ] && ok || bad "N11: no prose paragraph expected (no annotation)"
+[ "$(sed -n '2p' "$fx/out/release-notes.md")" = "" ] && ok || bad "N11: line 2 must stay blank"
+[ "$(sed -n '3p' "$fx/out/release-notes.md")" = "This update brings 7 new features and 6 bug fixes." ] \
+	&& ok || bad "N11: generated hook expected at line 3, got [$(sed -n '3p' "$fx/out/release-notes.md")]"
 [ "$(wc -c < "$fx/out/release-notes.md")" -lt 900 ] && ok || bad "N11: post must stay under 900 chars ($(wc -c < "$fx/out/release-notes.md"))"
 # the record is untouched: 7 feat + 2 refactor + 5 fix + 1 tune + 5 docs
 [ "$(body_bullets "$fx")" -eq 20 ] && ok || bad "N11: the record must keep 20 pick bullets, got $(body_bullets "$fx")"
@@ -464,6 +489,135 @@ restore_ln="$(grep -nF 'refs/tags/$VERSION:refs/tags/$VERSION' "$WF" | head -1 |
 notes_ln="$(grep -nF 'scripts/release-notes.sh "' "$WF" | head -1 | cut -d: -f1)"
 [ -n "$restore_ln" ] && [ -n "$notes_ln" ] && [ "$restore_ln" -lt "$notes_ln" ] && ok \
 	|| bad "N18: the restore must run before the notes step ($restore_ln vs $notes_ln)"
+
+# --- N19: the two-audience shape, no override and no annotation -------------
+# Hook line first, bullets next, the stats line after them, the update line
+# last. A missing override file renders; it never crashes the run.
+fx=$(new_fixture)
+c "$fx" "feat(core): the palette gains a clock editor"
+c "$fx" "feat(core): agents get cards"
+c "$fx" "fix(core): a stale row after reload"
+"${GUSER[@]}" -C "$fx" tag v2.0.0
+run_notes "$fx"
+[ "$RC" -eq 0 ] && ok || bad "N19: a missing override file must not crash, exit $RC"
+[ ! -f "$fx/release-notes.overrides.md" ] && ok || bad "N19: fixture must carry no override file"
+MD19="$fx/out/release-notes.md"
+[ "$(sed -n '1p' "$MD19")" = "🚀 **omega v2.0.0** is out!" ] && ok || bad "N19: line 1 is the header"
+[ "$(sed -n '2p' "$MD19")" = "" ] && ok || bad "N19: line 2 is blank"
+[ "$(sed -n '3p' "$MD19")" = "This update brings 2 new features and 1 bug fix." ] \
+	&& ok || bad "N19: line 3 is the hook, got [$(sed -n '3p' "$MD19")]"
+[ "$(sed -n '4p' "$MD19")" = "" ] && ok || bad "N19: line 4 is blank"
+[ "$(sed -n '5p' "$MD19")" = "- agents get cards" ] && ok || bad "N19: line 5 is the newest bullet, got [$(sed -n '5p' "$MD19")]"
+[ "$(sed -n '6p' "$MD19")" = "- the palette gains a clock editor" ] \
+	&& ok || bad "N19: line 6 is the older bullet, got [$(sed -n '6p' "$MD19")]"
+[ "$(sed -n '7p' "$MD19")" = "" ] && ok || bad "N19: line 7 is blank"
+[ "$(sed -n '8p' "$MD19")" = "2 features, 0 refactors, 1 fix, 0 tunes, 0 doc updates across core" ] \
+	&& ok || bad "N19: line 8 is the unchanged stats line, got [$(sed -n '8p' "$MD19")]"
+[ "$(sed -n '9p' "$MD19")" = "" ] && ok || bad "N19: line 9 is blank"
+printf '%s' "$(sed -n '10p' "$MD19")" | grep -qF "Update: \`omega update\` · full changelog:" \
+	&& ok || bad "N19: line 10 is the update + changelog link"
+[ "$(sed -n '11p' "$MD19")" = "" ] && ok || bad "N19: the post ends after the link"
+# the shape held: no bullet rode above the hook
+grep -n '^- ' "$MD19" | cut -d: -f1 | awk '$1 <= 3 {exit 1}' && ok || bad "N19: a bullet rode above the hook"
+grep -qF "$EM" "$MD19" && bad "N19: generated text must not carry an em-dash" || ok
+
+# --- N20: the override file wins over the annotation, per version -----------
+# A section for another version is inert; the stats line stays the commit
+# log's; the record keeps the raw subjects and leads with the override hook.
+fx=$(new_fixture)
+c "$fx" "feat(core): feature one"
+c "$fx" "fix(core): a stale row"
+"${GUSER[@]}" -C "$fx" tag -a v2.0.0 -m 'The annotation paragraph the override must replace - tuner vocabulary.'
+{
+	printf '%s\n' '## v1.0.0'
+	printf '%s\n' 'hook: A stale section for an older release.'
+	printf -- '- a stale bullet\n'
+	printf '\n'
+	printf '%s\n' '## v2.0.0'
+	printf '%s\n' 'hook: The palette learned to edit the clock, in place.'
+	printf -- '- the command palette now edits the top bar clock field\n'
+	printf -- '- the agents tab works like sessions do\n'
+	printf -- '- the files tree was rebuilt\n'
+	printf -- '- folder references pin like files\n'
+	printf -- '- prod deploy is one command\n'
+	printf -- '- a sixth bullet that must not post\n'
+} > "$fx/release-notes.overrides.md"
+run_notes "$fx"
+[ "$RC" -eq 0 ] && ok || bad "N20: exit $RC"
+[ "$(sed -n '3p' "$fx/out/release-notes.md")" = "The palette learned to edit the clock, in place." ] \
+	&& ok || bad "N20: the override hook must be the post hook, got [$(sed -n '3p' "$fx/out/release-notes.md")]"
+expect_bullets "$fx" N20 \
+	"the command palette now edits the top bar clock field" \
+	"the agents tab works like sessions do" \
+	"the files tree was rebuilt" \
+	"folder references pin like files" \
+	"prod deploy is one command"
+printf '%s' "$OUT" | grep -qF "override lists 6 highlights - the post keeps the first 5 (five-highlight law); not posted: a sixth bullet that must not post" \
+	&& ok || bad "N20: the sixth override bullet must be named on stderr"
+md "$fx" | grep -qF "a sixth bullet" && bad "N20: the sixth override bullet must not post" || ok
+md "$fx" | grep -qF "tuner vocabulary" && bad "N20: annotation prose must not post under an override" || ok
+md "$fx" | grep -qF "stale bullet" && bad "N20: another version's bullets must not post" || ok
+md "$fx" | grep -qF "stale section" && bad "N20: another version's hook must not post" || ok
+printf '%s' "$OUT" | grep -qF "1 feature, 0 refactors, 1 fix, 0 tunes, 0 doc updates across core" \
+	&& ok || bad "N20: the stats line stays the commit log's"
+[ "$(sed -n '1p' "$fx/out/release-notes-body.md")" = "The palette learned to edit the clock, in place." ] \
+	&& ok || bad "N20: the record should lead with the override hook"
+body "$fx" | grep -qF "feat(core): feature one" && ok || bad "N20: the record keeps the raw subjects"
+
+# --- N21: the style law - no em-dash, no en-dash in generated text ----------
+fx=$(new_fixture)
+c "$fx" "feat(core): a feature $EM with an em-dash"
+{
+	printf '%s\n' '## v2.0.0'
+	printf 'hook: The make-over %s the biggest refresh yet.\n' "$EM"
+	printf -- '- the palette edits the clock %s in place\n' "$EN"
+} > "$fx/release-notes.overrides.md"
+"${GUSER[@]}" -C "$fx" tag -a v2.0.0 -m "An annotation $EM that must be normalized too."
+run_notes "$fx"
+[ "$RC" -eq 0 ] && ok || bad "N21: exit $RC"
+[ "$(sed -n '3p' "$fx/out/release-notes.md")" = "The make-over - the biggest refresh yet." ] \
+	&& ok || bad "N21: the hook must ride plain hyphens, got [$(sed -n '3p' "$fx/out/release-notes.md")]"
+expect_bullets "$fx" N21 "the palette edits the clock - in place"
+for f in "$fx/out/release-notes.md" "$fx/out/release-notes-body.md"; do
+	grep -qF "$EM" "$f" && bad "N21: em-dash leaked into $(basename "$f")" || ok
+	grep -qF "$EN" "$f" && bad "N21: en-dash leaked into $(basename "$f")" || ok
+done
+body "$fx" | grep -qF "a feature - with an em-dash" \
+	&& ok || bad "N21: the record subject must ride plain hyphens too"
+
+# --- N22: the shipped override renders the v0.17.3 worked examples ----------
+# The acceptance shape for the two-audience template: a v0.17.3 range carrying
+# the OLD annotation prose (factory vocabulary) renders the hand-written hook
+# and the rewritten bullets instead, with the internal voice nowhere in the
+# post and the stats line untouched.
+fx=$(new_fixture)
+c "$fx" "feat(webui): the palette takes over the bar's time field in place"
+c "$fx" "feat(agents): the agents tab takes the sessions interaction vocabulary"
+c "$fx" "feat(factory): three disjoint cards and one review at a time"
+"${GUSER[@]}" -C "$fx" tag -a v0.17.3 \
+	-m "0.17.3 is the make-over: the palette takes over the bar's time field in place, the agents tab takes the sessions interaction vocabulary, and the factory runs three disjoint cards and one review at a time."
+OVERRIDES_FILE="$SHIPPED_OVERRIDES" run_notes "$fx"
+[ "$RC" -eq 0 ] && ok || bad "N22: exit $RC"
+[ "$(sed -n '3p' "$fx/out/release-notes.md")" = "The make-over: the web ui's biggest visual and interaction refresh yet." ] \
+	&& ok || bad "N22: the v0.17.3 hook is missing, got [$(sed -n '3p' "$fx/out/release-notes.md")]"
+expect_bullets "$fx" N22 \
+	"the command palette now edits the top bar's clock field right where it lives - click, type, done, no trip through settings" \
+	"the agents tab now works like sessions do: agent cards with one-line previews, timestamps, and rebind-to-canonical-chat" \
+	"under the hood, the build pipeline runs more work in parallel without collisions" \
+	"folder references pin like file references, so a whole folder can ride along with a message" \
+	"the files tree was rebuilt: hover guides show where a row sits and the tree scans faster"
+[ "$(bullets "$fx")" -eq 5 ] && ok || bad "N22: the v0.17.3 post must carry 5 bullets, got $(bullets "$fx")"
+md "$fx" | grep -qF "takes over the bar's time field in place" \
+	&& bad "N22: the internal-voice annotation must not reach the post" || ok
+md "$fx" | grep -qF "disjoint cards" && bad "N22: factory vocabulary reached the post" || ok
+md "$fx" | grep -qF "interaction vocabulary" && bad "N22: factory vocabulary reached the post" || ok
+printf '%s' "$OUT" | grep -qF "3 features, 0 refactors, 0 fixes, 0 tunes, 0 doc updates across factory, agents, webui" \
+	&& ok || bad "N22: the stats line must stay the commit log's, got [$(printf '%s' "$OUT" | grep -m1 'features')]"
+# the shipped file itself: one section per release, plain hyphens only
+[ -f "$SHIPPED_OVERRIDES" ] && ok || bad "N22: scripts/release-notes.overrides.md must ship"
+grep -qE '^## v0\.17\.3$' "$SHIPPED_OVERRIDES" && ok || bad "N22: the shipped file must carry a v0.17.3 section"
+grep -qF "$EM" "$SHIPPED_OVERRIDES" && bad "N22: the shipped override carries an em-dash" || ok
+grep -qF "$EN" "$SHIPPED_OVERRIDES" && bad "N22: the shipped override carries an en-dash" || ok
 
 echo
 echo "release-notes_test: $pass ok, $fail fail"

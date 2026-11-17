@@ -120,10 +120,11 @@ jobs:
           fi
 
       - name: Generate release notes
-        # deterministic counts + FIVE highlights from the round's commit log;
-        # the prose paragraph and the optional highlight override ride the
-        # ANNOTATED tag message (empty annotation = five default highlights +
-        # counts, never a blank paragraph).
+        # deterministic shape (t_42854d3e): a hook line, the round's bullets,
+        # the counts. The hook and the bullet list ride the per-release
+        # scripts/release-notes.overrides.md (preferred) or the ANNOTATED tag
+        # message (fallback); with neither, the hook is a plain counts sentence
+        # named on stderr - never a blank line, never invented behavior text.
         #
         # A post over the 2000-char Discord cap means a broken annotation:
         # release-notes.sh writes no payload and exits 1, so the job goes red

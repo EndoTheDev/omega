@@ -1,20 +1,49 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# release-notes.sh - the release story: five highlights, one paragraph, counts.
+# release-notes.sh - the release story: a hook, user-facing bullets, counts.
 #
 # The post is a release NOTE, not a changelog dump (Endo ruling 2026-11-10,
-# card t_878b1b7c):
+# card t_878b1b7c), and it speaks to TWO audiences (card t_42854d3e): a NEW
+# user has to read it and be interested, an EXISTING user has to understand
+# what is new or updated. Factory vocabulary - tuner-round phrases, internal
+# mechanism names, conventional-commit prefixes - serves neither.
 #
 #   🚀 **omega v0.17.0** is out!
 #
-#   <one prose paragraph>
+#   <hook: one sentence, plain words, the theme and why it matters>
 #
-#   - <five highlight bullets>
+#   - <bullet: user-observable behavior, never the internal mechanism>
 #
 #   26 features, 2 refactors, 16 fixes, 1 tune, 14 doc updates, 12 merges ...
 #
 #   Update: `omega update` · full changelog: <release link>
+#
+# The rewrite rule, applied per bullet: would someone who never worked on this
+# codebase understand it without asking? Rendering does what it can (the
+# "feat(scope):" prefix is factory vocabulary and never posts; card pointers
+# are stripped), but no regex turns a commit subject into behavior text - the
+# per-release override file carries the hand-written prose (next paragraph).
+#
+# Style law: no em-dashes and no en-dashes anywhere in generated text, plain
+# hyphens only (AGENTS.md style). Every generated line passes through dash_fix
+# before it is written.
+#
+# Overrides (scripts/release-notes.overrides.md, optional, human-written):
+#
+#   ## v0.17.3
+#   hook: The make-over: the web ui's biggest visual and interaction refresh yet.
+#   - the command palette now edits the top bar's clock field right where it lives
+#   - the agents tab now works like sessions do
+#
+# A "## <version>" heading opens a section; "hook: <text>" sets that release's
+# hook and "- " / "* " lines are its bullets. Text outside a matching section is
+# ignored, so the file accumulates one section per release. The override WINS
+# over the tag annotation for the post's hook and bullets; the stats line and
+# the GitHub body's changelog are untouched by it. A missing file, or a file
+# with no section for this version, is not an error: the annotation carries the
+# post, and with no annotation either a plain counts-derived hook is generated.
+# NOTES_OVERRIDES points the script at a different file (tests do this).
 #
 # The GitHub release body keeps the FULL per-class bullet changelog - the
 # record lives there, the post is the pitch, one click away. The bullet wall
@@ -27,18 +56,15 @@ set -euo pipefail
 # guarantees informative subjects; the range + record-parsing approach is
 # shared with scripts/release-suggest.sh).
 #
-# Highlights: five, and five only. Default = the newest 5 feat subjects of
-# the range. The ANNOTATED tag may override them with a short list (body
-# lines starting with "- " or "* "); curation is optional, never mandatory.
-# The five-highlight law caps that list too - extras are named on stderr
-# (never silently dropped) and never posted.
-#
-# Prose: the annotation's body, word for word, as ONE paragraph (line wraps
-# and paragraph breaks collapse to single spaces; no wording is changed).
-# The annotation's subject is its title and is not posted; when the body
-# carries no prose the subject IS the prose (a one-line `git tag -a -m ...`).
-# A tag with no annotation gets no prose paragraph - the post is highlights +
-# counts + link, never a blank paragraph, and the absence is NAMED on stderr.
+# Hook and bullets: the annotation's body carries the hook paragraph and an
+# optional highlight list (lines starting with "- " or "* "). The
+# five-highlight law caps that list - extras are named on stderr (never
+# silently dropped) and never posted. The annotation's subject is its title and
+# is not posted; when the body carries no prose the subject IS the hook (a
+# one-line `git tag -a -m ...`). With no annotation at all the hook is
+# generated from the class counts and named on stderr - never a blank line,
+# never an invented behavior claim ("the tag has no hook" is a curation gap,
+# the counts sentence is the honest floor).
 #
 # The annotation is read off the LOCAL tag OBJECT. A CI checkout can leave
 # refs/tags/<v> pointing at the bare commit - actions/checkout@v4's targeted
@@ -87,6 +113,8 @@ set -euo pipefail
 # Exit codes: 2 unusable input (not a git repo / no base found); 1 when the
 # post is over the 2000-char Discord cap (the notes and the body are still
 # written; no payload, so nothing posts).
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
   echo "release-notes: not a git repo" >&2
@@ -233,6 +261,81 @@ if [ "${#scopes[@]}" -gt 0 ]; then
   counts="$counts across ${sjoin%, }"
 fi
 
+# --- the two-audience template ---------------------------------------------
+# Style law: plain hyphens only. A generated line never carries an em- or an
+# en-dash, whatever the annotation, the override file or a commit subject
+# arrived with - the writer's keyboard is not the reader's problem.
+dash_fix() { printf '%s' "$1" | sed -e 's/—/-/g' -e 's/–/-/g'; }
+
+# A post bullet is user-facing text. The conventional-commit prefix
+# (feat(webui):, fix:, ...) is factory vocabulary: the record keeps the full
+# subject, the post drops the prefix. The body of the subject stays verbatim -
+# a regex cannot rewrite a mechanism into a behavior, and pretending it can
+# would invent claims.
+re_cc_prefix='^(feat|fix|tune|refactor|docs|test|chore)(\([^)]*\))?:[[:space:]]*'
+user_line() {
+  local s="$1"
+  if [[ "${s,,}" =~ $re_cc_prefix ]]; then
+    s="${s:${#BASH_REMATCH[0]}}"
+  fi
+  dash_fix "$s"
+}
+
+# --- the override file ------------------------------------------------------
+# scripts/release-notes.overrides.md is the human's word on the post's prose:
+# one "## <version>" section per release, "hook: <sentence>" plus "- " bullets.
+# A missing file, a missing section for this version and a section without a
+# hook are all fallbacks, never errors - the post always renders.
+OVERRIDES="${NOTES_OVERRIDES:-$SCRIPT_DIR/release-notes.overrides.md}"
+OV_HOOK=""
+OV_ITEMS=()
+if [ -f "$OVERRIDES" ]; then
+  ov_in_section=0
+  while IFS= read -r raw || [ -n "$raw" ]; do
+    line="$(rtrim "$(ltrim "$raw")")"
+    if [[ "$line" =~ ^#+[[:space:]]*(.+)$ ]]; then
+      # a heading opens a section only when it names THIS version
+      head="$(rtrim "${BASH_REMATCH[1]}")"
+      if [ "$head" = "$VERSION" ]; then ov_in_section=1; else ov_in_section=0; fi
+      continue
+    fi
+    [ "$ov_in_section" -eq 1 ] || continue
+    case "$line" in
+      '') ;;
+      hook:*) OV_HOOK="$(oneline "${line#hook:}")" ;;
+      '- '* | '* '*) OV_ITEMS+=("$(rtrim "${line:2}")") ;;
+    esac
+  done < "$OVERRIDES"
+fi
+
+# --- the hook ---------------------------------------------------------------
+# Precedence: the override's hand-written sentence, the annotation's paragraph,
+# then a plain counts sentence. The last is a floor, not a pitch - the script
+# cannot invent behavior text, so it names what shipped and says so on stderr.
+default_hook() {
+  local feats="$n_feat new feature$(plural "$n_feat")"
+  local fixes="$n_fix bug fix$(plural_fix "$n_fix")"
+  if [ "$n_feat" -gt 0 ] && [ "$n_fix" -gt 0 ]; then
+    printf 'This update brings %s and %s.' "$feats" "$fixes"
+  elif [ "$n_feat" -gt 0 ]; then
+    printf 'This update brings %s.' "$feats"
+  elif [ "$n_fix" -gt 0 ]; then
+    printf 'This update is %s, no new features.' "$fixes"
+  else
+    printf 'A maintenance round: refactors, tuning and docs, no new features.'
+  fi
+}
+
+if [ -n "$OV_HOOK" ]; then
+  HOOK="$(dash_fix "$OV_HOOK")"
+elif [ -n "$ANN_PROSE" ]; then
+  HOOK="$(dash_fix "$ANN_PROSE")"
+else
+  HOOK="$(default_hook)"
+  printf 'release-notes: no override section and no tag annotation for %s - the hook is generated from the class counts (write one in %s)\n' \
+    "$VERSION" "$OVERRIDES" >&2
+fi
+
 # --- the GitHub body's pick -------------------------------------------------
 # Ordered classes, each newest-first. feat and refactor are the headline
 # classes: the range's story, listed complete. fix, tune and docs are the
@@ -259,19 +362,29 @@ for pair in fx:fix tn:tune dc:docs; do
 done
 
 # --- the post's five highlights ---------------------------------------------
-# Default: the newest 5 feat subjects. The annotation's own list wins
-# outright (ruling 3), but the post law is five - anything beyond is named
-# on stderr, never dropped quietly.
+# The override's list wins, then the annotation's own list (ruling 3), then the
+# newest 5 feat subjects. The post law is five either way - anything beyond is
+# named on stderr, never dropped quietly. Rendering into user-facing text is
+# user_line's job at print time.
 HL_MAX=5
 post_hl=()
-if [ "${#ANN_ITEMS[@]}" -gt 0 ]; then
+src_items=()
+src_label=""
+if [ "${#OV_ITEMS[@]}" -gt 0 ]; then
+  src_items=("${OV_ITEMS[@]}")
+  src_label="override"
+elif [ "${#ANN_ITEMS[@]}" -gt 0 ]; then
+  src_items=("${ANN_ITEMS[@]}")
+  src_label="annotation"
+fi
+if [ "${#src_items[@]}" -gt 0 ]; then
   n=0
-  for item in "${ANN_ITEMS[@]}"; do
+  for item in "${src_items[@]}"; do
     if [ "$n" -lt "$HL_MAX" ]; then
       post_hl+=("$item")
     else
-      printf 'release-notes: annotation lists %d highlights - the post keeps the first %d (five-highlight law); not posted: %s\n' \
-        "${#ANN_ITEMS[@]}" "$HL_MAX" "$item" >&2
+      printf 'release-notes: %s lists %d highlights - the post keeps the first %d (five-highlight law); not posted: %s\n' \
+        "$src_label" "${#src_items[@]}" "$HL_MAX" "$item" >&2
     fi
     n=$((n + 1))
   done
@@ -291,13 +404,13 @@ MD="$OUT_DIR/release-notes.md"
 BODY="$OUT_DIR/release-notes-body.md"
 JSON="$OUT_DIR/discord-release.json"
 
-# the post: header, prose, five highlights, counts, update + changelog link
+# the post: header, hook, user-facing bullets, counts, update + changelog link
 {
   printf '🚀 **omega %s** is out!\n' "$VERSION"
-  if [ -n "$ANN_PROSE" ]; then printf '\n%s\n' "$ANN_PROSE"; fi
+  printf '\n%s\n' "$HOOK"
   if [ "${#post_hl[@]}" -gt 0 ]; then
     printf '\n'
-    for line in "${post_hl[@]}"; do printf -- '- %s\n' "$line"; done
+    for line in "${post_hl[@]}"; do printf -- '- %s\n' "$(user_line "$line")"; done
   fi
   printf '\n%s\n' "$counts"
   if [ "$VERSION" != "unreleased" ]; then
@@ -306,11 +419,16 @@ JSON="$OUT_DIR/discord-release.json"
   fi
 } > "$MD"
 
-# the GitHub body: the record - prose, counts, every per-class pick bullet
+# the GitHub body: the record - the release paragraph, counts, every per-class
+# pick bullet. Subjects stay verbatim (the record IS the commit log) apart from
+# the style law's dashes. A hand-written hook heads the record too: it is the
+# release's own description, not post decoration.
+BODY_PROSE="$ANN_PROSE"
+if [ -n "$OV_HOOK" ]; then BODY_PROSE="$OV_HOOK"; fi
 {
-  if [ -n "$ANN_PROSE" ]; then printf '%s\n\n' "$ANN_PROSE"; fi
+  if [ -n "$BODY_PROSE" ]; then printf '%s\n\n' "$(dash_fix "$BODY_PROSE")"; fi
   printf '%s\n' "$counts"
-  for line in "${hl[@]}"; do printf -- '- %s\n' "$line"; done
+  for line in "${hl[@]}"; do printf -- '- %s\n' "$(dash_fix "$line")"; done
 } > "$BODY"
 
 # --- the Discord payload ----------------------------------------------------
