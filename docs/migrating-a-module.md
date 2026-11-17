@@ -15,7 +15,7 @@ registry, closed at 15 keys (8 need keys + 7 capsule-service keys -
 docs/architecture.md's seam-constitution section); needs live with
 their consumers and no core-named seam type exists.
 
-Kanban (t_a62ffa95, phase C1) is the proven migration: the biggest
+Kanban (phase C1) is the proven migration: the biggest
 capsule - a service offer, a folded tool, two commands, a live
 canvas capsule, and the notifications capture. Every remaining
 capsule follows this pattern in its own card. The removal-side recipe
@@ -25,8 +25,8 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
 
 - Machine-facing names - tool names, panel action ids - are
   owner-claimed at registration. Dotted wire tools are the norm
-  (process._, delegate._, web.\*, the kanban split t_f616ed78, and
-  the phase-2 split t_d8fbad57: one tool per verb, each schema
+  (process._, delegate._, web.\*, the kanban split and the phase-2
+  split: one tool per verb, each schema
   carrying only its own args - files, memory, skills and verdict
   are all dotted now, no flat domain tool remains); panel action
   ids stay namespace pairs.
@@ -72,8 +72,8 @@ stays in `docs/removing-a-module.md`; the two recipes compose.
 3. **Name the machine-facing identities for their domain.** Dotted
    wire tools are the norm: a multi-verb capsule registers one
    `module.verb` pair per verb (`kanban.list`, `memory.add`,
-   `skills.curate` - the registry unification B ruling, t_f616ed78
-   - t_d8fbad57; no flat domain tool survives); panel action ids
+   `skills.curate` - the registry unification B ruling;
+   no flat domain tool survives); panel action ids
      stay namespace pairs (`kanban.complete_task`).
 
    This is not a rename of convenience - the

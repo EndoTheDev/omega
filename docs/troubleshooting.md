@@ -88,7 +88,7 @@ out clean (grep served files, never the `.vue` sources). See
 ## Variant switch-back renders stale after a retry run (journey 30 class)
 
 The pane shows the old variant (`2/2`) after a switch-back click that the
-server accepted. Pinned by instrumented diagnosis (t_7ab2bc47, 2026-10-25;
+server accepted. Pinned by instrumented diagnosis (2026-10-25;
 full evidence in git history, `diag/` at 14f2972c): the click, the server
 persistence, and the refetch ordering are all ruled out - root cause is
 the CLIENT RENDER GRAPH in the post-exit-flush window (~1-12s after a

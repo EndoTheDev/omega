@@ -14,7 +14,7 @@ it is not authentication.
 Routes are registered in `api/server.go`. Anything
 documented below that is not in that mux is not real.
 
-**The Host/Origin guard** (t_b52d09f3, hardened at t_9caf16c8): the
+**The Host/Origin guard**: the
 unauthenticated surface is loopback-local, so cross-origin writes ride the
 browser's own rules - the `hostGuard` wraps the whole mux and refuses with
 403 any request whose Host is not a trusted identity (reads included: a
@@ -63,7 +63,7 @@ unchanged.
 | `/disabled/skills`, `/disabled/tools`     | PUT                | registry-browser toggle fold (one entry per name)                                                                                                                                                                                                           |
 | `/disabled/agents`                        | PUT                | registry-browser toggle; the DEFAULT agent answers 409 (it must always be on)                                                                                                                                                                               |
 | `/modules`                                | GET                | mounted module capsules (introspection)                                                                                                                                                                                                                     |
-| `/modules/{name}`                         | PUT                | the live module toggle (`disabled:` fold); the always-on tier - `agent-loop`, `provider` and `observability` (the folded logging module) - answers 400 "module <name> is always on" (the seam's guard, cards t_81d0901b + t_ee3a968b)                       |
+| `/modules/{name}`                         | PUT                | the live module toggle (`disabled:` fold); the always-on tier - `agent-loop`, `provider` and `observability` (the folded logging module) - answers 400 "module <name> is always on" (the seam's guard)                       |
 | `/themes`                                 | GET                | user theme tokens (`<home>/themes/*.yaml`)                                                                                                                                                                                                                  |
 | `/insights`                               | GET                | session usage analytics                                                                                                                                                                                                                                     |
 | `/workspaces/browse`, `/workspaces/files` | GET                | the workspace surface (browsers + Files tab root)                                                                                                                                                                                                           |
@@ -76,7 +76,7 @@ unchanged.
 | `/notifications/events`                   | GET                | SSE record stream (the public API surface; the webui's toasts ride the canvas)                                                                                                                                                                              |
 | `/files/browse`, `/files/read`            | GET                | read-only working-dir surface for the inspector; read carries `mime`                                                                                                                                                                                        |
 | `POST /files/write`, `POST /files/mkdir`  | POST               | the toolbar's write half: add file / add folder (same root jail)                                                                                                                                                                                            |
-| `/files/raw`                              | GET                | raw bytes under the read surface's root jail: `image/*` + `application/pdf` render (t_42c8aced), `?download=1` serves ANY file as a `Content-Disposition: attachment` never rendered                                                                        |
+| `/files/raw`                              | GET                | raw bytes under the read surface's root jail: `image/*` + `application/pdf` render, `?download=1` serves ANY file as a `Content-Disposition: attachment` never rendered                                                                        |
 | `/tools`                                  | GET                | tool inventory (bare = executable registry; `?disabled=1` = fold-aware management read)                                                                                                                                                                     |
 | `/mcp/servers`                            | GET                | configured MCP servers (name, transport, connection state, recorded failure, server-qualified tools) over the live bridge                                                                                                                                   |
 | `/mcp/reload`                             | POST               | re-read mcp.yaml/MCP_SERVERS, swap the live bridge (mcp.yaml edits go live on the MCP tab's refresh - no restart); returns the fresh server list                                                                                                            |
@@ -151,7 +151,7 @@ Body: `{"messages": [...], "session_id": "...?", "model": "...?",
   pinned there (no messages); an assistant/tool target CONTINUES FROM
   it - it takes the fork's user message and runs. Mutually exclusive
   with `retry` (400).
-- **`provider`** (cards t_7dcd4280, t_bf21ee07): the named provider
+- **`provider`**: the named provider
   INSTANCE the run serves through (a `provider.instances` row; the webui
   provider picker sends it). Empty = the row named `default`, the
   primary. An unknown name - the
@@ -183,7 +183,7 @@ Body: `{"messages": [...], "session_id": "...?", "model": "...?",
 - **Images**: any user message rides AI image content (base64), capped
   at 10 MB decoded per image (400 above it, checked before anything
   runs).
-- **@-mentions expand server-side** (card t_07aed3f9): the LAST user
+- **@-mentions expand server-side**: the LAST user
   message runs through the one `core.ExpandAtMentions` law
   (`core/atmention.go`) before the run starts. Relative
   paths root at the session's workspace; `@file.png` attaches, text
@@ -308,8 +308,8 @@ own, so the snapshot's age is added back to it on the way out - the
 served anchor is the call's true elapsed-so-far, never the call-open
 anchor the last event baked. A text segment a tool call FOLLOWS is
 finished, so it ships settled - measured span, no running bit - for the
-whole of the call even though the record is still open for the result
-(card t_484cbb27): the tool's wall clock bills to nobody, and a
+whole of the call even though the record is still open for the result:
+the tool's wall clock bills to nobody, and a
 remounted row must not tick off a window the accumulator closed.
 
 An UNANSWERED tool line (the running call, and the yielded call whose
@@ -362,8 +362,8 @@ same param the list takes).
 
 Each content/summary hit's `snippet` is a VERBATIM excerpt of the
 stored content - a contiguous substring, byte-for-byte what the store
-holds, with no highlight markers or synthetic `...` inserted (card
-t_1901ce48). Where the matched terms sit inside the excerpt rides
+holds, with no highlight markers or synthetic `...` inserted. Where the matched terms sit inside the
+excerpt rides
 structured metadata: each hit may carry `matches` - byte offsets
 (`{start, end}`) into the snippet. A verbatim consumer can therefore
 strip nothing and trust the string; a canary/echo check against an
@@ -453,9 +453,9 @@ window help reports what startup auto-probed).
 
 #### the config-file doors (`/settings/raw`, `/settings/reset`)
 
-Card t_a82d39c8 added the whole-document pair the settings band's
-`config` chip drives. Both ride the SAME host `Settings` seam the knob
-endpoints do, so there is one schema, one validator and one writer:
+The whole-document pair the settings band's `config` chip drives - both
+ride the SAME host `Settings` seam the knob endpoints do, so there is one
+schema, one validator and one writer:
 
 - `GET /settings/raw` - the config file as YAML (`application/yaml`,
   no-store). Every `api_key` VALUE is MASKED (`****`), by NAME anywhere
@@ -504,8 +504,8 @@ A host with no settings seam answers **501** on all three, like
 true|false}`; the write lands in config.yaml's `disabled:` fold and a
   live toggle re-reads the seams. One refusal stands above the fold:
   `PUT /disabled/agents` for the default agent answers **409**
-  ("the default agent cannot be disabled - it must always be on",
-  t_2d8deb8c) and leaves config.yaml untouched.
+  ("the default agent cannot be disabled - it must always be on") and
+  leaves config.yaml untouched.
 - `PUT /agents/{name}` - the node-preserving agent DEFINITION layer
   editor (0.17.3 make-over). The field set is the whole agent:
   `description`, `system_prompt`, `provider` (`instance` + `model_name`),
@@ -631,7 +631,7 @@ true|false}`; the write lands in config.yaml's `disabled:` fold and a
 - `GET /tasks` - list rows in board order (the column's drag order,
   newest-first fallback); `?status=` filters. The EMPTY value lists the
   active board: every status but `archived` - the default list is not
-  an archive dump (t_02a8beea A2). `?status=archived` lists the
+  an archive dump. `?status=archived` lists the
   archive, `?status=all` lists everything. The board grid module UI
   requests `all` deliberately (it renders the archived column).
   `?scope=all` lifts the read out of one board: every board's cards in
@@ -660,7 +660,7 @@ catch-all answers it).
 
 #### The batch contract (the `kanban.batch` tool's `operations` array)
 
-The batch is ATOMIC on the mounted store (card t_02a8beea): the whole
+The batch is ATOMIC on the mounted store: the whole
 `operations` array runs inside one SQLite transaction (the `Batcher`
 capability) - every operation applies or none does, and a failed batch
 rolls back the operations it already applied, so no create inside a
@@ -712,7 +712,7 @@ panels, the toast events and this surface together.
 The `observability` capsule owns the two reads behind the webui logging
 tab. Both are GET-only; both die with the capsule (a disabled module's
 paths answer 404 at the module mux), and neither exports anything - no
-OTLP, no exporter, no telemetry dependency (t_8de82cff; OTel is a
+OTLP, no exporter, no telemetry dependency (OTel is a
 future concern, deliberately out of v1).
 
 - `GET /observability/events` - the structured run-event stream, read
@@ -746,8 +746,8 @@ future concern, deliberately out of v1).
   picture, and the only history across restarts. The shell's
   `GET /logs` (plus the subscription-gated `logs` socket topic that
   feeds it deltas) stays the raw-tail wire, and no shipped UI consumes
-  it - the client half retired with the pane (cards t_01c53e78,
-  t_1423218e): the Logs tab reads the capsule's own route above.
+  it - the client half retired with the pane: the Logs tab reads the
+  capsule's own route above.
 
 The ring is fed from the run event spine through the session-attributed
 observer (`core.SessionEventObserver`): the spine's events carry no
@@ -830,7 +830,7 @@ up edits without restart.
 - `GET /tools` - the tool inventory (name + description). The bare
   read is the agent's executable registry the chat loop consumes:
   disabled tools are absent. `?disabled=1` is the fold-aware
-  management read the settings tab rides (t_5c9bb50a): the same union
+  management read the settings tab rides: the same union
   before the fold filters it, each entry stamped with the fold's
   verdict (`disabled: true`), so a disabled tool keeps its row and
   its re-enable toggle.
@@ -853,13 +853,13 @@ up edits without restart.
   directory for the webui inspector: read-only, GET-only, 64 KiB
   preview cap, and the path guard is the traversal set (absolute
   paths, empty segments and only `.` / `..` rejected - dotfiles list
-  and read like everything else; t_ccd4a000) plus
+  and read like everything else) plus
   symlink-containment. `/files/read` carries `mime` for every file
-  (sniffed from the bytes) and `size` (the full size on disk,
-  t_42c8aced); the viewer branches on the mime: `image/*` -> `<img>`,
+  (sniffed from the bytes) and `size` (the full size on disk); the
+  viewer branches on the mime: `image/*` -> `<img>`,
   `application/pdf` -> the browser's native viewer in an iframe,
   otherwise text, with a binary flag keeping the no-preview state.
-- `GET /files/raw` (t_08d822bb, t_42c8aced) - the mime's byte face: raw
+- `GET /files/raw` - the mime's byte face: raw
   bytes for `image/*` + `application/pdf`, under the read surface's
   exact root jail. `?download=1` is the download lane: any file serves
   as `Content-Disposition: attachment` (never rendered as a document).
@@ -871,7 +871,7 @@ up edits without restart.
 
 ## Commands (the slash palette's server surface)
 
-The webui's `/` command palette rides two endpoints (card t_07aed3f9).
+The webui's `/` command palette rides two endpoints.
 Slash commands run LOCALLY and never hit the agent - the command law,
 same registration seams:
 
@@ -946,11 +946,11 @@ surface stays untouched - the panel is additive for canvas renderers.
 ## The push channel (`GET /ws`)
 
 One websocket per browser connection, and every live update is a typed
-topic on it (card t_7624bab1, design of record
+topic on it (design of record
 `Workshop/omega/websocket-channel.md`). The socket replaces the webui's
 polling: no shell view polls a GET route on a cadence beside it (the
-kanban board's 5s `GET /tasks` died with card t_b5784de3, the logs
-pane's tail with t_0e7bc0bb). One module pane is the exception and polls
+kanban board's 5s `GET /tasks` and the logs pane's tail both died with
+their panels). One module pane is the exception and polls
 on purpose: the observability tab re-reads `/observability/events` every
 5s while it is mounted (`harness/observability/ui/rows.ts`, `REFRESH_MS`),
 because the closed topic set carries no observability topic - a topic
@@ -962,7 +962,7 @@ every bind's `/ws` to the same `SocketHub` (`BindSocketHub`, the same
 binding the run registry follows at channel start), so a frame any bind
 publishes reaches every connected browser. Per-bind hubs served each
 bind's clients from its own subscriber set - a browser on one bind
-never saw a frame published on another (card t_229edd92).
+never saw a frame published on another.
 
 **Events are hints, state is truth.** Nothing is buffered or replayed
 server-side. On close the client reconnects with backoff, does one
@@ -978,9 +978,9 @@ panel delta is republished as `omega-canvas-delta` from
 same event with the reset id so such a pane re-reads its own REST route.
 A delta that landed while the socket was down is never replayed, so
 without that pulse the pane would stay stale until some later mutation
-happened to fire (card t_b5784de3).
+happened to fire.
 
-The client half (card t_896cf5a8, `webui/app/composables/socket.ts`)
+The client half (`webui/app/composables/socket.ts`)
 owns one connection per page load: it subscribes to the five topics it
 speaks, `chat`, `chips`, `canvas`, `runs` and `health` (the server's
 sixth, `logs`, has no client consumer - see below),
@@ -994,7 +994,7 @@ for the remainder, never for a fresh whole budget, so the cut lands
 within one budget of the final frame. A full-budget re-arm instead let a
 dead wire sit undetected for up to 2x the budget (30s), longer than the
 outage a reconnect catch-up is given - the half-open socket then revived
-with the network and the catch-up refetch never ran (card t_71f28526).
+with the network and the catch-up refetch never ran.
 The cut also hands recovery to the ladder ITSELF: a half-open socket's
 `close` event is not a promise. Measured under `ab set offline` (both
 agent-browser 0.26.0 and 0.42.0), `close()` was called at 15-16s of
@@ -1004,7 +1004,7 @@ sits dark with no timer armed (no reconnect, no catch-up refetch, a
 stale pane, journey 111 red at 45s of polling). So the deadline tears
 the socket out of the client's hands and schedules the ladder at once;
 the browser's late close is ignored by the stale-socket guard in
-`onclose` (card t_71f28526, pinned by
+`onclose` (pinned by
 `test/socket.test.ts` "the ladder runs even when the dead socket never
 reports close").
 That timer is the liveness
@@ -1018,14 +1018,14 @@ its own and is refetched on the `verdict_issued` issuance frame, chat
 call/turn edges, run edges and reconnect (the issuance frame is what
 makes a smart-gate card visible at all: the gate registers its card
 after the call-edge window and the frozen run emits no further edge
-until the answer - card t_ce2162cd).
+until the answer).
 
-The sixth topic, `logs`, is **subscription-gated** (card t_0e7bc0bb) and
+The sixth topic, `logs`, is **subscription-gated** and
 has NO client consumer. It carries only the lines appended to the log
 file since the previous frame - the snapshot half stays `GET /logs` (200
 lines), and the pane that appended the deltas onto it retired with the
-raw-tail view (card t_01c53e78). The client half went after it (card
-t_1423218e): the topic in the webui's set, the dispatch case, the pane
+raw-tail view. The client half went after it: the topic in the webui's
+set, the dispatch case, the pane
 counter, the subscribe gate and the two window `CustomEvent`s that
 bridged pane to shell. Nothing dispatched the pane's request any more, so
 the counter sat at zero, the topic was never subscribed and the forward
@@ -1066,7 +1066,7 @@ Every pushed frame is one JSON text message:
 
 | Topic    | Payload                                                                                                                                                           | Source (the broadcast seam)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `chat`   | the run's SSE frame verbatim, plus the verdict issuance hint `{card_id, session_id, title}`                                                                       | the run broadcast funnel - every frame `launchRun` broadcasts (token/thinking deltas, `tool_call`, `tool_result`, `turn_end`, `agent_end`, `error`). Wake turns launch through the same pipe, so yielded results stream on the same topic. **`verdict_issued`** (card t_ce2162cd) is the one frame on this topic that is NOT an agent event: the verdict hub fires its registration listeners the moment a card becomes pending (`harness/verdict`'s `OnCardRegistered`), and the serving shell publishes that as one chat-topic frame scoped to the card's session. It is a HINT only - the client re-reads `GET /verdicts` for the card's shape, expiry and options |
+| `chat`   | the run's SSE frame verbatim, plus the verdict issuance hint `{card_id, session_id, title}`                                                                       | the run broadcast funnel - every frame `launchRun` broadcasts (token/thinking deltas, `tool_call`, `tool_result`, `turn_end`, `agent_end`, `error`). Wake turns launch through the same pipe, so yielded results stream on the same topic. **`verdict_issued`** is the one frame on this topic that is NOT an agent event: the verdict hub fires its registration listeners the moment a card becomes pending (`harness/verdict`'s `OnCardRegistered`), and the serving shell publishes that as one chat-topic frame scoped to the card's session. It is a HINT only - the client re-reads `GET /verdicts` for the card's shape, expiry and options |
 | `chips`  | `{call_id, tool, fill, text, content, truncated, is_error, timeout, elapsed_ms}`                                                                                  | `fill` false: the run output tap - a tool's live output as it lands (the shell's capped buffer). `fill` true: the pending chip settles (`wakeHome`, the one settle entry point)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `canvas` | one `view_model_delta` panel descriptor                                                                                                                           | `CanvasEmit` - every mounted capsule's panel state, notifications toasts and board changes included. Panel state names itself in the payload, so the shell carries no capsule noun                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `runs`   | `{active}`                                                                                                                                                        | the run slot: taken in `prepareRun`, released when the run's finish hook fires. This is the live-run truth `GET /sessions` used to be polled for                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -1078,7 +1078,7 @@ behind drops frames rather than losing the wire (the tool result and
 the transcript remain the truth). On every other topic a stalled
 consumer is cut and reconnects.
 
-**The health body's optional facts** (card t_5e2f3095) are all-or-nothing
+**The health body's optional facts** are all-or-nothing
 per key: an ABSENT key means the process has no source for that fact -
 no provider probe has landed yet, no store module is mounted, the
 logger carries no last-error record, or the server predates the
@@ -1122,7 +1122,7 @@ asset URL is a bug a deep link must not mask.
 
 An outstanding tool call - an immediate-yield dispatch
 (`delegate.task`) or a call that ran past the loop's inline budget and
-escalated (card t_1501cb04) - ends the run with `agent_end`
+escalated - ends the run with `agent_end`
 `finish_reason: "yielded"`: the result re-enters when it settles as a
 wake run on the same session: every live subscriber sees TWO runs on
 one send (detach at the first `agent_end`; reattach via

@@ -59,8 +59,7 @@ surface) is its sibling: `docs/migrating-a-module.md`.
    the route table (`harness/kanban/rest.go` registering the
    patterns through `api.RegisterRoute`), the tool registry
    (the seven dotted `kanban.*` tools - the flat action-protocol
-   `kanban` tool retired with the registry unification B ruling,
-   t_f616ed78),
+   `kanban` tool retired with the registry unification B ruling),
    the command chain
    (`/board`, `/boards` registered through `api.RegisterCommand`), the
    canvas panels (`harness/kanban/panel.go`,
@@ -79,7 +78,7 @@ surface) is its sibling: `docs/migrating-a-module.md`.
    ```
    PROOF mount=full: seam mounted, canvas carries the task panel + the board switcher, module-qualified
    PROOF tool wiring: task create pushed the task panel through the live canvas
-   PROOF action-pipe: complete_task closed t_d259b564, switch_board answered the switcher
+   PROOF action-pipe: complete_task closed a card, switch_board answered the switcher
    PROOF removed: seam absent (the capsule's route patterns left the ledger, the module mux is empty), canvas carries no kanban panel, no task tools, no /board commands
    ```
 
@@ -114,7 +113,7 @@ surface) is its sibling: `docs/migrating-a-module.md`.
    mechanically, and access sites via the field (`cfg.Memory.File`,
    `case "memory":`) cascade with them. A planted fixture proved it:
    `main.CronConfig` + a `Cron CronConfig` field scrubbed byte-clean
-   off config.go (card t_6209ed01). Host rules keep the cascade
+   off config.go. Host rules keep the cascade
    mechanical: helpers read module-config fields as arguments, never
    whole Config (webBaseURL - a helper reading whole Config strands
    its last return when the access sites die), and a host type named
@@ -144,7 +143,7 @@ surface) is its sibling: `docs/migrating-a-module.md`.
      names in place (unread plain declarations die; a short form with
      no new name degrades to a plain assignment). Fixtures pin both in
      `scripts/nm-purity_test.sh`.
-   - The named-instances wiring (card t_4a1ed765) taught five more:
+   - The named-instances wiring taught five more:
      an aggregate config field typed through a composite (map key type,
      slice/array mark, star) joins the SharedFields class and dies with
      its `<Noun>Config` type; the type's VALUE uses (a constructor
@@ -158,7 +157,7 @@ surface) is its sibling: `docs/migrating-a-module.md`.
      live local, never the package - only the qualified use
      (`provider.X`) is the wire. Fixture 10 in
      `scripts/nm-purity_test.sh` pins all five plus the counter-law.
-   - Anchored names are FUNCTION-scoped (card t_f77dd67d). A `:=` name
+   - Anchored names are FUNCTION-scoped. A `:=` name
      filed from a dying wire line lives only inside the chunk that
      anchored it - Go gives it its block's scope, so no sibling
      function can read it anyway, and a sibling declaring the same

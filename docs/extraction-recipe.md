@@ -1,7 +1,7 @@
 # The omega extraction recipe (split-ready criterion c)
 
 Status: DORMANT. Nothing below has fired. This is a recipe, not a
-plan in motion - phase 7 stays dormant until Endo's word moves it.
+plan in motion - phase 7 stays dormant until it is moved.
 
 SEA-CONSTITUTION RESYNC (2026-11-03, part 3 of the restructure): the
 seam inventory this recipe counts is superseded. Core no longer
@@ -54,7 +54,7 @@ direction: the harness depends on the engine, never the reverse.
 | `agent/loop`                  | The default LoopProvider implementation (the turn loop)                                                                                                                                             | no opinions and no harness deps; rides the loop seam                                                                                                                                                  |
 | `harness/tools`               | The bare-minimum tools: `shell.run`, the `files.grep`/`files.glob` search pair, /files browser, db deny-guard (the `files.read`/`files.write`/`files.edit`/`files.batch` set rides `harness/files`) | the north-star ruling; verdict tool status is separate (see §6)                                                                                                                                       |
 | `http_channel`                | The web connector: SSE/REST transport for the canvas, channels, runs, board/verdict/settings HTTP shapes                                                                                            | the connector/canvas runtime per the ruling                                                                                                                                                           |
-| `webui/` (checkout root)      | The webui SPA shell source (Nuxt/TS, no Go) - build output embedded into http_channel's `static/`                                                                                                   | part of the connector/canvas runtime (build material, not a module). (The `tui` connector this row once sat beside was retired 2026-11-01, t_0744eb8e - the webui is the only screen-shaped surface.) |
+| `webui/` (checkout root)      | The webui SPA shell source (Nuxt/TS, no Go) - build output embedded into http_channel's `static/`                                                                                                   | part of the connector/canvas runtime (build material, not a module). (The `tui` connector this row once sat beside was retired 2026-11-01 - the webui is the only screen-shaped surface.) |
 | `cmd/omega` (the shell parts) | main.go, config.go, home.go wire the engine packages into the minimal shell                                                                                                                         | see HURT-4: today's shell is NOT yet minimal                                                                                                                                                          |
 
 ### The harness side (moves to TigerClaw)
@@ -301,7 +301,7 @@ not a hedge. None is fixed by this card except where noted.
 2. **tools reads the store capsule's config type**
    - harness/tools/plugin.go:9 imports the store capsule and :41 does
      `ctx.Configs["store"].(store.Config)` to build the db deny-guard
-     (harness/tools/dbguard.go, ENDO'S LAW 2026-10-18). tools stays
+     (harness/tools/dbguard.go, the deny-guard law 2026-10-18). tools stays
      engine-side (bare-minimum tools, §1); store moves harness-side. An
      engine capsule reading a harness capsule's config type crosses the
      forbidden direction the moment the split fires. The mechanical
@@ -310,7 +310,7 @@ not a hedge. None is fixed by this card except where noted.
      make the guard resolve the standard layout itself (it already
      does, at dbguard.go:52-56). Trivial + one line, recorded because
      the config-shape choice (whose `db_path` field feeds the guard)
-     is Endo's to settle at split time.
+     is the split owner's to settle at split time.
 
 3. **datadir is a cross-side shared leaf**
    - harness/datadir imports nothing and is imported (prod) by
@@ -375,7 +375,7 @@ PACKAGE - separate directories, no file-level sharing anywhere).
   takes "one dependency line on the engine", which makes the
   TigerClaw main the production assembly (§4 step 3). The engine's
   minimal shell then exists as the engine-only developer binary. If
-  Endo's ruling instead keeps the production main on the engine side,
+  The opposite ruling keeps the production main on the engine side,
   steps 3 and 6 change shape (the harness would ship capsules for
   that main to import) but every other step and every HURT stands
   unchanged.
