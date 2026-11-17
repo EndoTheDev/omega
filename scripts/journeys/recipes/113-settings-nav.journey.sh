@@ -465,6 +465,7 @@ ab set viewport 340 780 >/dev/null 2>&1
 if ! wait_js '(()=>{const a=document.querySelector("aside.settings");return !!a&&a.classList.contains("narrow")})()' 15; then
   die "the pane never flipped narrow at 340px"
 fi
+assert_eq "$(jsq '(()=>{const n=document.querySelector(".settings-note");return n?getComputedStyle(n).fontSize:""})()' 2>&1 | plain)" "10.5px" "narrow steps the note type down (canvas C1: settings' container-narrow pin moved here from recipe 77 - a main-class view can never sit in the inspector)"
 closed=$(jsq '(()=>{const n=document.querySelector(".settings-nav");const c=document.querySelector(".settings-body");return (n?1:0)+"|"+(c?1:0)})()' 2>&1 | plain)
 assert_eq "$closed" "0|1" "narrow shows the DOCUMENT; the nav is not on screen until asked"
 assert_eq "$(jsq '(()=>{return document.querySelectorAll(".settings-back").length})()' 2>&1 | plain)" "0" "no back control exists (there is nothing to drill into)"
