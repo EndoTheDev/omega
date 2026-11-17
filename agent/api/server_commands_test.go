@@ -191,6 +191,34 @@ func TestHandleCommandDispatchSkillResolves(t *testing.T) {
 // head: every dispatch answered with cron's text (card t_d923b50a).
 func realChainCapsules(t *testing.T) *Server {
 	t.Helper()
+	s := NewServer(nil, nil, nil, nil, nil, nil)
+	if err := s.RewireSeams(mountRealChain(t), nil, nil); err != nil {
+		t.Fatalf("rewire: %v", err)
+	}
+	return s
+}
+
+// realChainServer is realChainCapsules with the store seam wired into
+// the server too, so a test can seed a session through the shell's own
+// POST /sessions and then dispatch a command that acts on it.
+func realChainServer(t *testing.T) *Server {
+	t.Helper()
+	ctx := mountRealChain(t)
+	st, _ := ctx.Services().Resolve("store").(agent.StoreProvider)
+	if st == nil {
+		t.Fatal("the chain mounted no store seam")
+	}
+	s := NewServer(nil, nil, st, nil, nil, nil)
+	if err := s.RewireSeams(ctx, nil, nil); err != nil {
+		t.Fatalf("rewire: %v", err)
+	}
+	return s
+}
+
+// mountRealChain mounts the real capsule chain into a fresh temp home
+// (nothing writes into the operator's files) and returns the Context.
+func mountRealChain(t *testing.T) *core.Context {
+	t.Helper()
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	plugins := []agent.Plugin{
 		observability.NewPlugin(),
@@ -205,12 +233,7 @@ func realChainCapsules(t *testing.T) *Server {
 		t.Fatalf("mount capsules: %v", err)
 	}
 	t.Cleanup(func() { _ = agent.DismountAll(reg, ctx) })
-
-	s := NewServer(nil, nil, nil, nil, nil, nil)
-	if err := s.RewireSeams(ctx, nil, nil); err != nil {
-		t.Fatalf("rewire: %v", err)
-	}
-	return s
+	return ctx
 }
 
 // TestCommandDispatchReachesTheOwningCapsule is the wire boundary of
@@ -254,5 +277,149 @@ func TestCommandDispatchReachesTheOwningCapsule(t *testing.T) {
 				t.Fatalf("%s answered %q, want the owner's output containing %q", tt.name, got.Text, tt.wantText)
 			}
 		})
+	}
+}
+
+// ---- the dispatch contract (card t_d1fe01da) ------------------------
+
+// TestCommandDispatchDistinguishesMissFromRefusal is the wire boundary
+// of the miss sentinel: an unclaimed name answers 404, an owner's
+// refusal answers 500 with its OWN message. Before the sentinel both
+// read as "unknown command".
+func TestCommandDispatchDistinguishesMissFromRefusal(t *testing.T) {
+	s := NewServer(nil, nil, nil, nil, nil, nil)
+	s.seams.mu.Lock()
+	s.seams.commands = []core.ExtensionCommand{{Name: "/ghost"}, {Name: "/export"}}
+	s.seams.commandHandler = func(_ context.Context, name, _ string) (core.CommandResult, error) {
+		if name == "/ghost" {
+			return core.CommandResult{}, core.CommandMiss(name)
+		}
+		return core.CommandResult{}, errors.New("no active session to export")
+	}
+	s.seams.mu.Unlock()
+
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/commands/dispatch",
+		strings.NewReader(`{"name":"/ghost"}`)))
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "unknown command: /ghost") {
+		t.Fatalf("miss: %d %q, want 404 unknown command", rec.Code, rec.Body.String())
+	}
+
+	rec2 := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec2, httptest.NewRequest(http.MethodPost, "/commands/dispatch",
+		strings.NewReader(`{"name":"/export"}`)))
+	body := rec2.Body.String()
+	if rec2.Code != http.StatusInternalServerError {
+		t.Fatalf("refusal: %d %q, want 500 carrying the owner's error", rec2.Code, body)
+	}
+	if !strings.Contains(body, "no active session to export") {
+		t.Fatalf("refusal body = %q, want the owner's own message", body)
+	}
+	if strings.Contains(body, "unknown command") || strings.Contains(body, "no handler") {
+		t.Fatalf("refusal body = %q: an owner's refusal must never read as a miss", body)
+	}
+}
+
+// TestCommandDispatchBindsTheInvokingSession: the wire session reaches
+// the handler through the command context, and an absent one stays
+// absent (the terminal loop's args-only shape).
+func TestCommandDispatchBindsTheInvokingSession(t *testing.T) {
+	s := NewServer(nil, nil, nil, nil, nil, nil)
+	s.seams.mu.Lock()
+	s.seams.commands = []core.ExtensionCommand{{Name: "/ping"}}
+	s.seams.commandHandler = func(ctx context.Context, _, args string) (core.CommandResult, error) {
+		return core.CommandResult{Text: "session=" + core.CommandSession(ctx) + " args=" + args}, nil
+	}
+	s.seams.mu.Unlock()
+
+	cases := []struct {
+		body string
+		want string
+	}{
+		{`{"name":"/ping","args":"x","session_id":"sess-9"}`, "session=sess-9 args=x"},
+		{`{"name":"/ping","args":"x"}`, "session= args=x"},
+	}
+	for _, tt := range cases {
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/commands/dispatch",
+			strings.NewReader(tt.body)))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", tt.body, rec.Code, rec.Body)
+		}
+		var got commandDispatchResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if got.Text != tt.want {
+			t.Fatalf("%s -> %q, want %q", tt.body, got.Text, tt.want)
+		}
+	}
+}
+
+// TestCommandDispatchSessionCommandsActOnTheTab drives the five
+// session commands the palette could not reach (card t_d1fe01da) over
+// the real capsule chain: /export, /label and /branch answer for the
+// session on the wire, /export without one keeps its honest refusal,
+// and the session-free commands are untouched.
+func TestCommandDispatchSessionCommandsActOnTheTab(t *testing.T) {
+	s := realChainServer(t)
+
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/sessions",
+		strings.NewReader(`{"id":"tab-sess"}`)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create session: %d %s", rec.Code, rec.Body)
+	}
+
+	dispatch := func(t *testing.T, body string) (int, commandDispatchResponse, string) {
+		t.Helper()
+		r := httptest.NewRecorder()
+		s.Handler().ServeHTTP(r, httptest.NewRequest(http.MethodPost, "/commands/dispatch",
+			strings.NewReader(body)))
+		var out commandDispatchResponse
+		_ = json.Unmarshal(r.Body.Bytes(), &out)
+		return r.Code, out, r.Body.String()
+	}
+	// body marshals a dispatch request properly: a Windows path in args
+	// is JSON-escaped, never spliced raw into the literal
+	body := func(name, args, session string) string {
+		req := commandDispatchRequest{Name: name, Args: args, SessionID: session}
+		b, _ := json.Marshal(req)
+		return string(b)
+	}
+
+	exportPath := t.TempDir() + "/tab.jsonl"
+	code, out, raw := dispatch(t, body("/export", exportPath, "tab-sess"))
+	if code != http.StatusOK || !strings.Contains(out.Text, "exported") || !strings.Contains(out.Text, "tab.jsonl") {
+		t.Fatalf("/export with the wire session: %d %q, want the export of the tab's session", code, raw)
+	}
+
+	code, out, raw = dispatch(t, body("/label", "from the palette", "tab-sess"))
+	if code != http.StatusOK || !strings.Contains(out.Text, "from the palette") {
+		t.Fatalf("/label with the wire session: %d %q", code, raw)
+	}
+	if len(out.Actions) != 1 || out.Actions[0].Type != "set_label" || out.Actions[0].Value != "from the palette" {
+		t.Fatalf("/label actions = %+v, want set_label with the whole args as the label", out.Actions)
+	}
+
+	code, out, raw = dispatch(t, body("/branch", "", "tab-sess"))
+	if code != http.StatusOK || len(out.Actions) != 1 || out.Actions[0].Type != "branch_session" || out.Actions[0].Value == "" {
+		t.Fatalf("/branch with the wire session: %d %q actions=%+v", code, raw, out.Actions)
+	}
+
+	// no session on the wire: the owner's honest refusal, never
+	// "no handler for /export" and never a silent success
+	code, _, raw = dispatch(t, body("/export", "", ""))
+	if code != http.StatusInternalServerError || !strings.Contains(raw, "no active session to export") {
+		t.Fatalf("/export without a session: %d %q, want the owner's refusal", code, raw)
+	}
+
+	// the session-free commands answer exactly as before: /sessions
+	// lists, /search needs its term
+	for _, name := range []string{"/sessions", "/tree", "/search"} {
+		code, _, got := dispatch(t, body(name, "", ""))
+		if strings.Contains(got, "no handler for") {
+			t.Fatalf("%s read as an unclaimed name: %d %q", name, code, got)
+		}
 	}
 }

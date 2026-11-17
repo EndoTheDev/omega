@@ -441,3 +441,74 @@ func TestSubcommandRegistration(t *testing.T) {
 		t.Fatalf("remount table: %+v", reg3.Subcommands())
 	}
 }
+
+// ---- the chain-on-miss law (card t_d1fe01da) ------------------------
+
+// chainInner owns one command and mounts FIRST, so every other capsule
+// in the chain is consulted before it.
+type chainInner struct{}
+
+func (chainInner) Name() string       { return "inner" }
+func (chainInner) Provides() []string { return nil }
+func (chainInner) Requires() []string { return nil }
+func (chainInner) MountWithAPI(_ *Context, api *ExtensionAPI) error {
+	return api.RegisterCommand("/inner-answer", "the chain's innermost probe", nil,
+		func(_ context.Context, name, _ string) (core.CommandResult, error) {
+			if name != "/inner-answer" {
+				return core.CommandResult{}, core.CommandMiss(name)
+			}
+			return core.CommandResult{Text: "[inner] answered"}, nil
+		})
+}
+
+// chainOuter owns /outer-refuse and answers it with an honest refusal -
+// the shape every session-scoped command has ("no active session to
+// export").
+type chainOuter struct{}
+
+func (chainOuter) Name() string       { return "outer" }
+func (chainOuter) Provides() []string { return nil }
+func (chainOuter) Requires() []string { return nil }
+func (chainOuter) MountWithAPI(_ *Context, api *ExtensionAPI) error {
+	return api.RegisterCommand("/outer-refuse", "refuses without a session", nil,
+		func(_ context.Context, name, _ string) (core.CommandResult, error) {
+			if name != "/outer-refuse" {
+				return core.CommandResult{}, core.CommandMiss(name)
+			}
+			return core.CommandResult{}, errors.New("no active session to refuse for")
+		})
+}
+
+// TestCommandChainFallsThroughOnlyOnAMiss is the miss sentinel's law at
+// the real registration seam. Before it, ANY error fell through: an
+// owner's refusal was skipped and the caller was told the command did
+// not exist. Now a miss falls through and an error is the answer.
+func TestCommandChainFallsThroughOnlyOnAMiss(t *testing.T) {
+	var ctx Context
+	if _, err := MountAllAPI([]Plugin{chainInner{}, chainOuter{}}, &ctx, nil, nil); err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+	// an owner's refusal stops the chain and keeps its own words - the
+	// innermost capsule is never consulted for a name this owner took
+	_, err := ctx.CommandHandler(context.Background(), "/outer-refuse", "")
+	if err == nil || err.Error() != "no active session to refuse for" {
+		t.Fatalf("/outer-refuse answered %v, want the owner's own refusal", err)
+	}
+	if errors.Is(err, core.ErrCommandMiss) {
+		t.Fatalf("/outer-refuse read as a miss: an honest refusal must never look like an unclaimed name")
+	}
+	// a miss still falls through to the next link
+	res, err := ctx.CommandHandler(context.Background(), "/inner-answer", "")
+	if err != nil || res.Text != "[inner] answered" {
+		t.Fatalf("/inner-answer = %q, %v: a miss must fall through", res.Text, err)
+	}
+	// nobody answers: the chain ends at the miss, structurally
+	// recognisable and phrased the way the terminal has always printed it
+	_, err = ctx.CommandHandler(context.Background(), "/nobody", "")
+	if err == nil || !errors.Is(err, core.ErrCommandMiss) {
+		t.Fatalf("/nobody = %v, want a core.ErrCommandMiss", err)
+	}
+	if err.Error() != "no handler for /nobody" {
+		t.Fatalf("/nobody text = %q, want the historical phrase", err)
+	}
+}

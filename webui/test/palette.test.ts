@@ -203,6 +203,27 @@ describe("production-boundary wiring (test law: the served shape)", () => {
     assert.ok(host.includes('{ role: "system", content: st.pendingSkill.content }'), "the next send carries the armed skill");
   });
 
+  // t_d1fe01da: the dispatch wire carries the invoking tab's session, so
+  // a session-scoped command (/export, /label, /branch) acts on THAT tab
+  // instead of demanding the id in its args - and a refusal arrives with
+  // the server's own words, never a client-side "no handler".
+  it("the dispatch binds the invoking tab's session and surfaces the server's own message", () => {
+    const wire = readFileSync(join(here, "../app/composables/commands.ts"), "utf8");
+    assert.match(wire, /sessionId = "",/, "dispatchCommand takes the invoking session");
+    assert.ok(
+      wire.includes("if (sessionId) body.session_id = sessionId"),
+      "the wire field is session_id, and a tab with no session yet sends none (args keep their legacy shape)",
+    );
+    assert.ok(
+      host.includes('dispatchCommand(name, args, st.sessionId || "")'),
+      "the host hands the dispatching tab's own session to the wire",
+    );
+    assert.ok(
+      wire.includes("throw new Error(detail || `${r.status}`)"),
+      "a refused dispatch surfaces the server's message - the client never invents a miss",
+    );
+  });
+
   it("the palette is a themed dropdown on the tokens, above the draft", () => {
     assert.ok(css.includes(".composer-palette"), "the palette has real CSS");
     assert.ok(css.includes("var(--z2)") || css.includes("background: var(--z2)"), "it reads the design tokens");
