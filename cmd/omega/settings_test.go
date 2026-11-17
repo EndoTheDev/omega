@@ -13,6 +13,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/compactor"
+	"github.com/EndoTheDev/omega/harness/provider"
 	"github.com/EndoTheDev/omega/llm"
 	"gopkg.in/yaml.v3"
 )
@@ -23,7 +24,6 @@ import (
 func settingsKnobKeys(t *testing.T) map[string]bool {
 	t.Helper()
 	return map[string]bool{
-		"provider.type":                  true,
 		"provider.model_name":            true,
 		"provider.vision_model":          true,
 		"provider.title_model":           true,
@@ -31,8 +31,6 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 		"provider.summarizer_model":      true,
 		"provider.skills_model":          true,
 		"provider.approvals_model":       true,
-		"provider.host":                  true,
-		"provider.api_key":               true,
 		"provider.instances":             true,
 		"server.port":                    true,
 		"server.bind":                    true,
@@ -184,8 +182,14 @@ const testConfigYAML = "provider:\n  model_name: test-model\n"
 func TestApplySettingValuesTyped(t *testing.T) {
 	cfg := DefaultConfig()
 	err := applySettingValues(&cfg, map[string]any{
-		"provider.host":             "  http://host:1234  ",
-		"provider.type":             " OpenAI ",
+		"provider.instances": []any{
+			map[string]any{
+				"name":    " default ",
+				"type":    " OpenAI ",
+				"host":    "  http://localhost:11434  ",
+				"api_key": "",
+			},
+		},
 		"provider.compaction_model": "big:big-model",
 		"provider.summarizer_model": "small-model",
 		"provider.skills_model":     "small-model",
@@ -201,16 +205,23 @@ func TestApplySettingValuesTyped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if cfg.Provider.Host != "http://host:1234" {
-		t.Errorf("host not trimmed: %q", cfg.Provider.Host)
+	if len(cfg.Provider.Instances) != 1 {
+		t.Fatalf("instances: got %d rows, want 1", len(cfg.Provider.Instances))
+	}
+	inst, ok := cfg.Provider.instance(PrimaryProviderInstance)
+	if !ok {
+		t.Fatalf("the primary row %q is missing", PrimaryProviderInstance)
+	}
+	if inst.Type != "openai" {
+		t.Errorf("type not trimmed and lowercased: %q", inst.Type)
+	}
+	if inst.Host != "http://localhost:11434" {
+		t.Errorf("host not trimmed: %q", inst.Host)
 	}
 	if cfg.CompactionModel != "big:big-model" || cfg.SummarizerModel != "small-model" ||
 		cfg.SkillsModel != "small-model" || cfg.ApprovalsModel != "big:big-model" {
 		t.Errorf("per-subsystem model slots not applied: %q %q %q %q",
 			cfg.CompactionModel, cfg.SummarizerModel, cfg.SkillsModel, cfg.ApprovalsModel)
-	}
-	if cfg.Provider.Type != "OpenAI" {
-		t.Errorf("type not preserved case: %q", cfg.Provider.Type)
 	}
 	if cfg.Server.Port != 9000 {
 		t.Errorf("port: %d", cfg.Server.Port)
@@ -362,24 +373,34 @@ func TestWriteConfigFileAtomicNoStrayTemp(t *testing.T) {
 	}
 }
 
+// TestSchemaMasksAPIKey: the providers list rides masked - the plain
+// text never reaches the pane, and a missing key stays visibly empty
+// (a mask on a missing key would imply one exists).
 func TestSchemaMasksAPIKey(t *testing.T) {
+	keyOf := func(p *core.SettingsSchema, name string) string {
+		for _, g := range p.Groups {
+			for _, k := range g.Knobs {
+				if k.Key != "provider.instances" {
+					continue
+				}
+				list, _ := k.Value.([]map[string]any)
+				for _, row := range list {
+					if row["name"] == name {
+						got, _ := row["api_key"].(string)
+						return got
+					}
+				}
+			}
+		}
+		t.Errorf("no %q row in the provider.instances knob", name)
+		return ""
+	}
 	path := writeTestConfig(t, testConfigYAML+"  api_key: sk-hunter2\n")
 	payload, err := settingsSchema(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	apiKey := func(p *core.SettingsSchema) any {
-		for _, g := range p.Groups {
-			for _, k := range g.Knobs {
-				if k.Key == "provider.api_key" {
-					return k.Value
-				}
-			}
-		}
-		t.Errorf("no provider.api_key knob in schema")
-		return nil
-	}
-	if got := apiKey(payload); got != maskedSecret {
+	if got := keyOf(payload, PrimaryProviderInstance); got != maskedSecret {
 		t.Errorf("GET schema api_key %q, want masked", got)
 	}
 	// the save-refresh payload rides the same channel: masked too
@@ -389,16 +410,16 @@ func TestSchemaMasksAPIKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := apiKey(refreshed); got != maskedSecret {
+	if got := keyOf(refreshed, PrimaryProviderInstance); got != maskedSecret {
 		t.Errorf("save-refresh api_key %q, want masked", got)
 	}
-	// empty stays empty: a mask on a missing key would imply one exists
+	// empty stays empty
 	path = writeTestConfig(t, testConfigYAML)
 	payload, err = settingsSchema(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := apiKey(payload); got != "" {
+	if got := keyOf(payload, PrimaryProviderInstance); got != "" {
 		t.Errorf("api_key without a stored key %q, want empty", got)
 	}
 }
@@ -495,7 +516,8 @@ func TestOmegaSettingsImplementsSeam(t *testing.T) {
 	}
 }
 
-// card t_7dcd4280 / t_1914a8c9: the provider.instances knob - apply law.
+// card t_bf21ee07: the merged provider.instances knob - apply law.
+// Every provider is a row and the primary is the row named "default".
 // An instance is a NAMED ENDPOINT only: name, type, host, api_key. A
 // model_name row is a loud refusal (models come from the instance's
 // catalog through the pickers).
@@ -503,127 +525,98 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 	inst := func(name, typ string) map[string]any {
 		return map[string]any{"name": name, "type": typ, "host": "", "api_key": ""}
 	}
-	// add two instances of one type: the card's headline
-	cfg := DefaultConfig()
-	err := applySettingValues(&cfg, map[string]any{
-		"provider.instances": []any{inst("backup", "openai"), inst("second", "openai")},
-	})
-	if err != nil {
+	masked := func(name string) map[string]any {
+		m := inst(name, "openai")
+		m["api_key"] = maskedSecret
+		return m
+	}
+	add := func(cfg *Config, rows ...map[string]any) error {
+		list := make([]any, len(rows))
+		for i, r := range rows {
+			list[i] = r
+		}
+		return applySettingValues(cfg, map[string]any{"provider.instances": list})
+	}
+	// newCfg starts from the defaults with a hostless primary row, the
+	// shape the pane round-trips on a fresh home.
+	newCfg := func() Config {
+		cfg := DefaultConfig()
+		cfg.Provider.ModelName = "m"
+		cfg.Provider.setInstance(ProviderInstance{Name: PrimaryProviderInstance, Type: "ollama"})
+		return cfg
+	}
+
+	// add a second instance beside the primary: the card's headline
+	cfg := newCfg()
+	if err := add(&cfg, inst("default", "ollama"), inst("backup", "openai")); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	if len(cfg.Providers) != 2 || cfg.Providers["second"].APIKey != "" {
-		t.Fatalf("instances not applied: %v", cfg.Providers)
+	if len(cfg.Provider.Instances) != 2 {
+		t.Fatalf("instances not applied: %+v", cfg.Provider.Instances)
 	}
+	backup, ok := cfg.Provider.instance("backup")
+	if !ok || backup.APIKey != "" || backup.Type != "openai" {
+		t.Fatalf("the added row did not land: %+v", backup)
+	}
+	// the primary leads the list whatever order was submitted
+	if first := cfg.Provider.Instances[0]; first.Name != PrimaryProviderInstance {
+		t.Fatalf("list does not lead with %q: %+v", PrimaryProviderInstance, cfg.Provider.Instances)
+	}
+
+	// the primary row cannot be renamed away
+	if err := add(&cfg, inst("primary", "ollama")); err == nil || !strings.Contains(err.Error(), PrimaryProviderInstance) {
+		t.Fatalf("expected the missing-primary refusal, got %v", err)
+	}
+	// ... nor can the list be emptied: the agent would have no provider
+	if err := add(&cfg); err == nil || !strings.Contains(err.Error(), PrimaryProviderInstance) {
+		t.Fatalf("expected the empty-list refusal, got %v", err)
+	}
+
 	// a model_name row is a loud refusal, never silently dropped
-	err = applySettingValues(&cfg, map[string]any{
-		"provider.instances": []any{map[string]any{"name": "backup", "type": "openai", "model_name": "gpt-4o", "host": "", "api_key": ""}},
-	})
-	if err == nil || !strings.Contains(err.Error(), "no longer settable") {
+	cfg = newCfg()
+	if err := add(&cfg, map[string]any{"name": "default", "type": "ollama", "model_name": "gpt-4o", "host": "", "api_key": ""}); err == nil || !strings.Contains(err.Error(), "no longer settable") {
 		t.Fatalf("expected the model_name refusal, got %v", err)
 	}
-	// save-side validation: a bad type lands in the map and cfg.Validate()
+
+	// save-side validation: a bad type lands in the row and cfg.Validate()
 	// (run by saveSettings after apply) refuses it
-	cfg = DefaultConfig()
-	cfg.Provider.ModelName = "m"
-	if err := applySettingValues(&cfg, map[string]any{"provider.instances": []any{inst("bad", "azure")}}); err != nil {
+	cfg = newCfg()
+	if err := add(&cfg, inst("default", "azure")); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "not recognized") {
 		t.Fatal("expected Validate to refuse the unknown type, got", err)
 	}
 
-	// masked round trip: "****" keeps the EXISTING secret
-	cfg = DefaultConfig()
-	if err := applySettingValues(&cfg, map[string]any{
-		"provider.instances": []any{inst("backup", "openai")},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	p := cfg.Providers["backup"]
-	p.APIKey = "sk-real"
-	cfg.Providers["backup"] = p
 	// duplicate names fail before anything else
-	err = applySettingValues(&cfg, map[string]any{
-		"provider.instances": []any{inst("backup", "openai"), inst("backup", "openai")},
-	})
-	if err == nil {
-		t.Fatal("expected duplicated name in the list to fail")
+	cfg = newCfg()
+	if err := add(&cfg, inst("default", "ollama"), inst("default", "ollama")); err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatal("expected duplicated name in the list to fail, got", err)
 	}
-	// masked round trip: "****" keeps the EXISTING secret
-	cfg = DefaultConfig()
-	if err := applySettingValues(&cfg, map[string]any{
-		"provider.instances": []any{func() map[string]any {
-			m := inst("backup", "openai")
-			m["api_key"] = maskedSecret
-			return m
-		}()},
-	}); err == nil || !strings.Contains(err.Error(), "masked") {
+
+	// masked round trip: "****" on a NEW row has no stored secret behind
+	// it, so the save refuses rather than writing an empty one
+	cfg = newCfg()
+	if err := add(&cfg, inst("default", "ollama"), masked("backup")); err == nil || !strings.Contains(err.Error(), "masked") {
 		t.Fatal("expected masked key on a NEW instance to refuse, got", err)
 	}
-	err = applySettingValues(&cfg, map[string]any{
-		"provider.instances": []any{func() map[string]any {
-			m := inst("backup", "openai")
-			m["api_key"] = maskedSecret
-			return m
-		}()},
-	})
-	if err == nil || !strings.Contains(err.Error(), "masked") {
-		t.Fatal("expected masked key with no stored secret to refuse, got", err)
-	}
 	// with a stored secret, "****" keeps it
-	if err := applySettingValues(&cfg, map[string]any{
-		"provider.instances": []any{inst("backup", "openai")},
-	}); err != nil {
-		t.Fatal(err)
+	cfg = newCfg()
+	cfg.Provider.setInstance(ProviderInstance{Name: "backup", Type: "openai", APIKey: "sk-kept"})
+	if err := add(&cfg, inst("default", "ollama"), masked("backup")); err != nil {
+		t.Fatalf("masked round trip refused: %v", err)
 	}
-	p = cfg.Providers["backup"]
-	p.APIKey = "sk-kept"
-	cfg.Providers["backup"] = p
-	if err := applySettingValues(&cfg, map[string]any{
-		"provider.instances": []any{func() map[string]any {
-			m := inst("backup", "openai")
-			m["api_key"] = maskedSecret
-			return m
-		}()},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Providers["backup"].APIKey != "sk-kept" {
-		t.Fatalf("masked round trip wiped the secret: %q", cfg.Providers["backup"].APIKey)
-	}
-
-	// removal: an emptied list clears the map
-	if err := applySettingValues(&cfg, map[string]any{"provider.instances": []any{}}); err != nil {
-		t.Fatal(err)
-	}
-	if len(cfg.Providers) != 0 {
-		t.Fatalf("empty list did not clear: %v", cfg.Providers)
-	}
-
-	// duplicate names and wrong shapes are loud
-	cfg = DefaultConfig()
-	err = applySettingValues(&cfg, map[string]any{
-		"provider.instances": []any{inst("dup", "openai"), inst("dup", "openai")},
-	})
-	if err == nil || !strings.Contains(err.Error(), "duplicate") {
-		t.Fatal("expected duplicate-name refusal, got", err)
-	}
-	err = applySettingValues(&cfg, map[string]any{"provider.instances": "no list"})
-	if err == nil || !strings.Contains(err.Error(), "expected a list") {
-		t.Fatal("expected non-list refusal, got", err)
-	}
-	err = applySettingValues(&cfg, map[string]any{"provider.instances": []any{"row"}})
-	if err == nil || !strings.Contains(err.Error(), "expected an object") {
-		t.Fatal("expected non-object entry refusal, got", err)
-	}
-	err = applySettingValues(&cfg, map[string]any{"provider.instances": []any{inst("", "openai")}})
-	if err == nil || !strings.Contains(err.Error(), "name is required") {
-		t.Fatal("expected empty-name refusal, got", err)
+	backup, _ = cfg.Provider.instance("backup")
+	if backup.APIKey != "sk-kept" {
+		t.Fatalf("masked round trip wiped the secret: %q", backup.APIKey)
 	}
 }
 
-// TestSchemaProviderInstancesKnob: the schema sorts the names, types
-// ride lowercase and the keys mask; no model column rides the rows.
+// TestSchemaProviderInstancesKnob: the merge folds every older provider
+// shape into ONE list - the flat trio becomes the "default" row, the
+// pre-merge top-level providers: map follows in name order - and the
+// schema renders that list with the primary first, types lowercase, the
+// keys masked and no model column anywhere.
 func TestSchemaProviderInstancesKnob(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML+`
   host: http://localhost:11434
@@ -650,20 +643,25 @@ providers:
 		t.Fatal("no provider.instances knob in schema")
 	}
 	list, ok := knob.Value.([]map[string]any)
-	if !ok || len(list) != 2 {
+	if !ok || len(list) != 3 {
 		t.Fatalf("instances knob value: %v", knob.Value)
 	}
-	if list[0]["name"] != "alpha" || list[1]["name"] != "zeta" {
-		t.Fatalf("names not sorted: %v", list)
+	if list[0]["name"] != PrimaryProviderInstance || list[1]["name"] != "alpha" || list[2]["name"] != "zeta" {
+		t.Fatalf("rows not primary-first then name order: %v", list)
 	}
-	if list[1]["api_key"] != maskedSecret {
-		t.Fatalf("instance key not masked: %v", list[1])
+	if list[0]["host"] != "http://localhost:11434" {
+		t.Fatalf("the flat trio did not become the primary row: %v", list[0])
 	}
-	if list[0]["api_key"] != "" {
-		t.Fatalf("missing key must stay empty, got %v", list[0])
+	if list[2]["api_key"] != maskedSecret {
+		t.Fatalf("instance key not masked: %v", list[2])
 	}
-	if _, has := list[0]["model_name"]; has {
-		t.Fatalf("rows must carry no model column: %v", list[0])
+	if list[0]["api_key"] != "" || list[1]["api_key"] != "" {
+		t.Fatalf("a missing key must stay empty: %v %v", list[0], list[1])
+	}
+	for _, row := range list {
+		if _, has := row["model_name"]; has {
+			t.Fatalf("rows must carry no model column: %v", row)
+		}
 	}
 }
 
@@ -675,13 +673,20 @@ func TestApplyProviderInstancesGate(t *testing.T) {
 	row := func(name, host, key string) map[string]any {
 		return map[string]any{"name": name, "type": "openai", "host": host, "api_key": key}
 	}
+	const sharedHost = "http://10.0.0.9:8080"
 	stored := func() *Config {
 		cfg := DefaultConfig()
-		cfg.Providers = map[string]ProviderConfig{
-			"alpha": {Type: "openai", Host: "http://10.0.0.9:8080", APIKey: "sk-alpha"},
-			"beta":  {Type: "openai", Host: "http://10.0.0.9:8080", APIKey: "sk-beta"},
+		cfg.Provider.Instances = []ProviderInstance{
+			{Name: PrimaryProviderInstance, Type: "openai", Host: "", APIKey: "sk-default"},
+			{Name: "alpha", Type: "openai", Host: sharedHost, APIKey: "sk-alpha"},
+			{Name: "beta", Type: "openai", Host: sharedHost, APIKey: "sk-beta"},
 		}
 		return &cfg
+	}
+	primary := row(PrimaryProviderInstance, "", maskedSecret)
+	dkey := func(cfg *Config, name string) string {
+		inst, _ := cfg.Provider.instance(name)
+		return inst.APIKey
 	}
 	door := func(err error, t *testing.T) {
 		t.Helper()
@@ -700,36 +705,36 @@ func TestApplyProviderInstancesGate(t *testing.T) {
 
 	// a changed host on a stored row: refused, config untouched
 	cfg := stored()
-	if err := apply(t, cfg, row("alpha", "http://evil:9999", maskedSecret)); err == nil {
+	if err := apply(t, cfg, primary, row("alpha", "http://evil:9999", maskedSecret)); err == nil {
 		t.Fatal("host change accepted")
 	} else {
 		door(err, t)
 	}
-	if cfg.Providers["alpha"].Host != "http://10.0.0.9:8080" || cfg.Providers["alpha"].APIKey != "sk-alpha" {
-		t.Fatalf("failed apply mutated the stored row: %+v", cfg.Providers["alpha"])
+	if inst, _ := cfg.Provider.instance("alpha"); inst.Host != sharedHost || inst.APIKey != "sk-alpha" {
+		t.Fatalf("failed apply mutated the stored row: %+v", inst)
 	}
 
 	// a planted host on a new row: refused even keyless
-	if err := apply(t, stored(), row("plant", "http://169.254.1.1:8080", "")); err == nil {
+	if err := apply(t, stored(), primary, row("plant", "http://169.254.1.1:8080", "")); err == nil {
 		t.Fatal("planted host accepted")
 	} else {
 		door(err, t)
 	}
 
 	// a secret set on a stored row (plain key): refused
-	if err := apply(t, stored(), row("alpha", "http://10.0.0.9:8080", "sk-new")); err == nil {
+	if err := apply(t, stored(), primary, row("alpha", sharedHost, "sk-new")); err == nil {
 		t.Fatal("plain key change accepted")
 	} else {
 		door(err, t)
 	}
 	// a secret wipe on a stored row: refused
-	if err := apply(t, stored(), row("alpha", "http://10.0.0.9:8080", "")); err == nil {
+	if err := apply(t, stored(), primary, row("alpha", sharedHost, "")); err == nil {
 		t.Fatal("key wipe accepted")
 	} else {
 		door(err, t)
 	}
 	// a secret on a NEW row: refused outright
-	if err := apply(t, stored(), row("plant", "http://10.0.0.9:8080", "sk-fresh")); err == nil {
+	if err := apply(t, stored(), primary, row("plant", sharedHost, "sk-fresh")); err == nil {
 		t.Fatal("new-row plain key accepted")
 	} else {
 		door(err, t)
@@ -739,33 +744,37 @@ func TestApplyProviderInstancesGate(t *testing.T) {
 	// rename with key inheritance, retype, removal
 	cfg = stored()
 	if err := apply(t, cfg,
-		row("alpha", "http://10.0.0.9:8080", maskedSecret),  // keep
-		row("beta-r", "http://10.0.0.9:8080", maskedSecret), // rename, key inherits
-		row("gamma", "", ""), // keyless loopback row adds
+		primary,                                 // keep the served provider
+		row("alpha", sharedHost, maskedSecret),  // keep
+		row("beta-r", sharedHost, maskedSecret), // rename, key inherits
+		row("gamma", "", ""),                    // keyless loopback row adds
 	); err != nil {
 		t.Fatalf("name-level edit refused: %v", err)
 	}
-	if cfg.Providers["alpha"].APIKey != "sk-alpha" {
-		t.Fatalf("masked round trip wiped the secret: %q", cfg.Providers["alpha"].APIKey)
+	if dkey(cfg, PrimaryProviderInstance) != "sk-default" {
+		t.Fatalf("masked round trip wiped the primary secret: %q", dkey(cfg, PrimaryProviderInstance))
+	}
+	if dkey(cfg, "alpha") != "sk-alpha" {
+		t.Fatalf("masked round trip wiped the secret: %q", dkey(cfg, "alpha"))
 	}
 	// beta-r is beta's rename (beta left the list): its masked key
 	// inherits beta's secret even though alpha shares the host
-	if cfg.Providers["beta-r"].APIKey != "sk-beta" {
-		t.Fatalf("rename did not inherit the removed row's key: %q", cfg.Providers["beta-r"].APIKey)
+	if dkey(cfg, "beta-r") != "sk-beta" {
+		t.Fatalf("rename did not inherit the removed row's key: %q", dkey(cfg, "beta-r"))
 	}
-	if _, has := cfg.Providers["beta"]; has {
+	if _, has := cfg.Provider.instance("beta"); has {
 		t.Fatal("old name beta should be gone after its rename")
 	}
-	if _, has := cfg.Providers["gamma"]; !has {
+	if _, has := cfg.Provider.instance("gamma"); !has {
 		t.Fatal("keyless hostless row was not added")
 	}
 	// the plain echo of the stored key applies unchanged
 	cfg = stored()
-	if err := apply(t, cfg, row("alpha", "http://10.0.0.9:8080", "sk-alpha")); err != nil {
+	if err := apply(t, cfg, primary, row("alpha", sharedHost, "sk-alpha")); err != nil {
 		t.Fatalf("identical plain-key echo refused: %v", err)
 	}
-	if cfg.Providers["alpha"].APIKey != "sk-alpha" {
-		t.Fatalf("echo changed the secret: %q", cfg.Providers["alpha"].APIKey)
+	if dkey(cfg, "alpha") != "sk-alpha" {
+		t.Fatalf("echo changed the secret: %q", dkey(cfg, "alpha"))
 	}
 }
 
@@ -1006,4 +1015,127 @@ func TestHotApplyPushesCronRunTimeout(t *testing.T) {
 	// An unmounted cron capsule (or a disabled module) is a no-op: no
 	// panic, and the fire keeps its own read.
 	hotApply(cfg, cfg.Server.DefaultWorkspace, &agent.Context{}, nil, nil, nil, nil)
+}
+
+// TestProviderKnobsAreLive (card t_bf21ee07): the provider cluster's
+// knobs apply without a restart - the merged instances list plus the
+// six model slots, vision and title included (they joined their four
+// live siblings in the same stroke).
+//
+// provider.model_name is the ONE model knob that stays restart-only:
+// the running model belongs to the picker and /model, and
+// Provider.SetConfig deliberately preserves it on an unrelated save
+// (round-1 review, t_bf21ee07 rework). Flipping this flag without
+// landing the live apply in the same change makes the pane's "knobs
+// marked live apply to the running server" claim a lie - the assert
+// below is what keeps that honest.
+func TestProviderKnobsAreLive(t *testing.T) {
+	cfg := DefaultConfig()
+	seen := map[string]bool{}
+	for _, g := range settingGroups(&cfg) {
+		for _, k := range g.Knobs {
+			seen[k.Key] = k.Live
+		}
+	}
+	for _, key := range []string{
+		"provider.instances",
+		"provider.vision_model",
+		"provider.title_model",
+		"provider.compaction_model",
+		"provider.summarizer_model",
+		"provider.skills_model",
+		"provider.approvals_model",
+	} {
+		live, ok := seen[key]
+		if !ok {
+			t.Fatalf("%s is missing from the schema - the live assert went vacuous", key)
+		}
+		if !live {
+			t.Errorf("%s is not live: a save would need a restart", key)
+		}
+	}
+	// The negative half: model_name must NOT claim live while the live
+	// apply does not exist. Absent from the map would mean the knob
+	// vanished from the schema, which is also a failure.
+	live, ok := seen["provider.model_name"]
+	if !ok {
+		t.Fatal("provider.model_name is missing from the schema")
+	}
+	if live {
+		t.Error("provider.model_name claims live, but Provider.SetConfig preserves the running model on a save - a model_name save would be silently restart-only")
+	}
+}
+
+// the three live lanes the provider merge opened, as the host sees
+// them: the consumer-owned local faces below are satisfied
+// structurally by the capsules (no capsule type name reaches the host).
+type recordingProviderConfig struct {
+	got    provider.Config
+	pushed bool
+}
+
+func (r *recordingProviderConfig) SetConfig(c provider.Config) { r.got, r.pushed = c, true }
+
+type recordingCaptioner struct {
+	model string
+	calls int
+}
+
+func (r *recordingCaptioner) Caption(context.Context, core.ImageContent) (string, error) {
+	return "", nil
+}
+
+func (r *recordingCaptioner) SetModel(m string) { r.model, r.calls = m, r.calls+1 }
+
+type recordingTitleChannel struct{ model string }
+
+func (r *recordingTitleChannel) Start(context.Context, core.ChannelDeps) error { return nil }
+func (r *recordingTitleChannel) Stop() error                                   { return nil }
+func (r *recordingTitleChannel) SetTitleModel(m string)                        { r.model = m }
+
+// TestHotApplyPushesProviderLanes (card t_bf21ee07): one settings save
+// re-points the running provider, the captioner and the title lane -
+// the save IS the restart for the provider cluster.
+func TestHotApplyPushesProviderLanes(t *testing.T) {
+	stub := &recordingProviderConfig{}
+	pctx := &agent.Context{}
+	pctx.ApplyOffer("provider", "test", stub)
+	captioner := &recordingCaptioner{model: "old-vision"}
+	pctx.Captioner = captioner
+	channel := &recordingTitleChannel{model: "old-title"}
+	pctx.Channels = append(pctx.Channels, channel)
+
+	cfg := DefaultConfig()
+	cfg.Provider.setInstance(ProviderInstance{
+		Name: PrimaryProviderInstance, Type: "openai", Host: "http://moved:9000", APIKey: "sk-primary",
+	})
+	cfg.Provider.setInstance(ProviderInstance{
+		Name: "work", Type: "openai", Host: "http://work:9000", APIKey: "sk-work",
+	})
+	cfg.VisionModel = "work:vision-model"
+	cfg.TitleModel = "work:title-model"
+
+	hotApply(cfg, cfg.Server.DefaultWorkspace, pctx, nil, nil, nil, nil)
+	if !stub.pushed {
+		t.Fatal("provider SetConfig never called: a save would need a restart")
+	}
+	if stub.got.Type != "openai" || stub.got.Host != "http://moved:9000" || stub.got.APIKey != "sk-primary" {
+		t.Errorf("provider section = %+v, want the primary row's endpoint", stub.got)
+	}
+	if work, ok := stub.got.Instances["work"]; !ok || work.Host != "http://work:9000" || work.APIKey != "sk-work" {
+		t.Errorf("provider section lost the work row: %+v", stub.got.Instances)
+	}
+	if captioner.calls != 1 || captioner.model != "work:vision-model" {
+		t.Errorf("vision lane = %q after %d pushes, want the saved slot", captioner.model, captioner.calls)
+	}
+	if channel.model != "work:title-model" {
+		t.Errorf("title lane = %q, want the saved slot", channel.model)
+	}
+	// a CLEARED knob reaches the wire too (the setter is idempotent)
+	cfg.VisionModel = ""
+	cfg.TitleModel = ""
+	hotApply(cfg, cfg.Server.DefaultWorkspace, pctx, nil, nil, nil, nil)
+	if captioner.model != "" || channel.model != "" {
+		t.Errorf("cleared knobs did not reach the lanes: %q %q", captioner.model, channel.model)
+	}
 }

@@ -31,12 +31,12 @@ func resolveAgentName() string {
 // providerInstanceNames renders the configured instance ids for an
 // error message, sorted so the text is stable.
 func providerInstanceNames(cfg *Config) string {
-	if len(cfg.Providers) == 0 {
+	if len(cfg.Provider.Instances) == 0 {
 		return "none configured"
 	}
-	names := make([]string, 0, len(cfg.Providers))
-	for name := range cfg.Providers {
-		names = append(names, name)
+	names := make([]string, 0, len(cfg.Provider.Instances))
+	for _, inst := range cfg.Provider.Instances {
+		names = append(names, inst.Name)
 	}
 	sort.Strings(names)
 	return strings.Join(names, ", ")
@@ -128,22 +128,19 @@ func ApplyAgentLayer(cfg *Config, home, name string) error {
 	if !lay.SecretFree() {
 		return fmt.Errorf("agent config %s carries %s - agent configs are secret-free: type, host and api_key are defined once in settings; reference an instance with provider.instance, and scrub the legacy keys with unset: [\"provider.api_key\"] etc.", name, strings.Join(lay.LegacySecrets, ", "))
 	}
-	// PROVIDER = A REFERENCED INSTANCE. "default" (or an empty value)
-	// keeps the host's own provider: section; any other name resolves
-	// type/host/api_key out of the settings where they live.
+	// PROVIDER = A REFERENCED INSTANCE (card t_bf21ee07: the agent's
+	// provider IS the config's instance list). "default" (or an empty
+	// value) keeps the host's own primary row; any other name copies
+	// that row's endpoint onto the primary, so the agent serves the
+	// referenced instance by the one code path every provider takes.
 	if lay.ProviderInstance.Set {
 		inst := lay.ProviderInstance.Value
 		if inst != "" && inst != agent.DefaultProviderInstance {
-			resolved, ok := cfg.Providers[inst]
+			resolved, ok := cfg.Provider.instance(inst)
 			if !ok {
 				return fmt.Errorf("agent config %s references provider instance %q, which settings does not define (want one of: %s, or %q)", name, inst, providerInstanceNames(cfg), agent.DefaultProviderInstance)
 			}
-			cfg.Provider = ProviderConfig{
-				Type:      resolved.Type,
-				Host:      resolved.Host,
-				APIKey:    resolved.APIKey,
-				ModelName: cfg.Provider.ModelName,
-			}
+			cfg.setDefaultInstance(resolved)
 		}
 	}
 	// INHERIT-AS-DISABLED: a hand-edited flag materializes the same way

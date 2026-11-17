@@ -14,6 +14,28 @@ import (
 // "vision","decision"]).
 const visionCapability = "vision"
 
+// captionSwitch is the consumer-owned face a captioner MAY satisfy to
+// report whether its lane is on (card t_bf21ee07). The host installs
+// the captioner from boot so the vision_model knob can flip live, which
+// makes "off" a state rather than a missing pointer: a captioner that
+// answers false is skipped exactly like a nil one (images ride to the
+// main provider and a blind model fails loudly - the documented
+// fallback). A captioner with no such face is always on.
+type captionSwitch interface {
+	CaptioningEnabled() bool
+}
+
+// captionerActive reports whether the installed captioner should run.
+func captionerActive(c core.Captioner) bool {
+	if c == nil {
+		return false
+	}
+	if sw, ok := c.(captionSwitch); ok {
+		return sw.CaptioningEnabled()
+	}
+	return true
+}
+
 // modelSeesImages reports whether the run's SELECTED model declares the
 // vision capability in its provider's model registry
 // (agent.ModelCapabilitiesProvider). The upgrade is probed at runtime:
@@ -85,7 +107,7 @@ func CaptionProvider(ctx context.Context) Provider {
 // model refusal. Moved with the Agent machinery (part 3, wave 2) - the
 // agent consumes the captioner; core keeps the face (core.Captioner).
 func (a *Agent) applyCaptions(ctx context.Context, provider Provider, messages []core.Message) ([]core.Message, error) {
-	if a.captioner == nil {
+	if !captionerActive(a.captioner) {
 		return messages, nil
 	}
 	hasImages := false

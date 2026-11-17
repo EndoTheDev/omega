@@ -152,14 +152,14 @@ func TestResetRestoresDefaultsAndKeepsTheDoors(t *testing.T) {
 		t.Errorf("server.port %d, want %d", cfg.Server.Port, def.Server.Port)
 	}
 	// the doors stayed shut
-	if cfg.Provider.APIKey != "sk-hunter2" {
-		t.Errorf("provider.api_key %q - reset destroyed the credential", cfg.Provider.APIKey)
+	if key := primaryOf(cfg).APIKey; key != "sk-hunter2" {
+		t.Errorf("provider.api_key %q - reset destroyed the credential", key)
 	}
 	if len(cfg.Server.Bind) != 1 || cfg.Server.Bind[0] != "0.0.0.0" {
 		t.Errorf("server.bind %v - reset rewrote the LAN door", cfg.Server.Bind)
 	}
-	if cfg.Providers["work"].APIKey != "sk-work" {
-		t.Errorf("providers.work.api_key %q - reset deleted an instance secret", cfg.Providers["work"].APIKey)
+	if work, ok := cfg.Provider.instance("work"); !ok || work.APIKey != "sk-work" {
+		t.Errorf("work instance key %q - reset deleted an instance secret", work.APIKey)
 	}
 	if cfg.Provider.ModelName != "test-model" {
 		t.Errorf("provider.model_name %q - reset dropped the one required knob", cfg.Provider.ModelName)
@@ -200,11 +200,11 @@ func TestRawMasksAndSaveRawKeepsTheSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Provider.APIKey != "sk-hunter2" {
-		t.Errorf("provider.api_key %q after the round trip, want the stored key", cfg.Provider.APIKey)
+	if primaryOf(cfg).APIKey != "sk-hunter2" {
+		t.Errorf("provider.api_key %q after the round trip, want the stored key", primaryOf(cfg).APIKey)
 	}
-	if cfg.Providers["work"].APIKey != "sk-work" {
-		t.Errorf("providers.work.api_key %q after the round trip, want the stored key", cfg.Providers["work"].APIKey)
+	if work, ok := cfg.Provider.instance("work"); !ok || work.APIKey != "sk-work" {
+		t.Errorf("work instance key %q after the round trip, want the stored key", work.APIKey)
 	}
 }
 
@@ -270,8 +270,8 @@ func TestSaveRawKeepsAnEnvOnlySecretOutOfTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Provider.APIKey != "" {
-		t.Errorf("the env key landed in config.yaml: %q", cfg.Provider.APIKey)
+	if primaryOf(cfg).APIKey != "" {
+		t.Errorf("the env key landed in config.yaml: %q", primaryOf(cfg).APIKey)
 	}
 }
 
@@ -282,13 +282,13 @@ func TestSaveRawKeepsAnEnvOnlySecretOutOfTheFile(t *testing.T) {
 func TestSettleSecretsRefusesAnUnreadableDocument(t *testing.T) {
 	cfg := DefaultConfig()
 	doc := DefaultConfig()
-	doc.Provider.APIKey = maskedSecret
+	doc.setDefaultInstance(ProviderInstance{Name: PrimaryProviderInstance, APIKey: maskedSecret})
 	path := writeTestConfig(t, testConfigYAML) + ".absent"
 	if err := settleSecretsFromDisk(path, &cfg, &doc); err == nil {
 		t.Fatal("expected a refusal when the on-disk document cannot be read")
 	}
-	if cfg.Provider.APIKey == maskedSecret {
-		t.Errorf("the mask landed in the credential layer: %q", cfg.Provider.APIKey)
+	if primaryOf(cfg).APIKey == maskedSecret {
+		t.Errorf("the mask landed in the credential layer: %q", primaryOf(cfg).APIKey)
 	}
 }
 

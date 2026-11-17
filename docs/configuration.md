@@ -20,39 +20,50 @@ for AGENTS.md project context and tool file operations.
 
 ```yaml
 provider:
-  type: ollama # ollama, openai, anthropic, or mock (deterministic, no network - tests and journeys)
   model_name: # required - e.g. llama3, gpt-4o, claude-sonnet-4-20250514
-  host: http://localhost:11434 # use https://ollama.com for Ollama Cloud
-  api_key: # required for Ollama Cloud, OpenAI, and Anthropic
-
-# Named provider instances (optional): the map key IS the instance id,
-# so two accounts of one type are two entries. The provider: section
-# above stays the default instance.
-providers:
-  backup: # instance id (lowercase letters, digits, - or _)
-    type: openai
-    model_name: gpt-4o
-    host: https://api.openai.com/v1
-    api_key: sk-...
+  # Every provider is a named instance. The row named "default" is the
+  # primary - the provider the agent serves. Adding a provider is
+  # adding a row.
+  instances:
+    - name: default
+      type: ollama # ollama, openai, anthropic, or mock (deterministic, no network - tests and journeys)
+      host: http://localhost:11434 # use https://ollama.com for Ollama Cloud
+      api_key: # required for Ollama Cloud, OpenAI, and Anthropic
+    - name: backup # instance id (lowercase letters, digits, - or _)
+      type: openai
+      host: https://api.openai.com/v1
+      api_key: sk-...
 ```
 
 > **YAML indentation matters.** The keys under `provider:` must be
 > indented 2 spaces. If they are at the root level, omega will not
 > find them and report "provider.model_name is required".
 
-**Named instances.** Each `providers:` entry is one named instance
-(key = the id, must be lowercase letters/digits/`-`/`_`; `model_name`
-is required per instance; `default` is reserved). Instances apply on
-restart, like the rest of the provider section. The settings pane
-maintains them through the `provider.instances` list editor (rows can
-be renamed, retyped and removed; a row's name is the instance id).
-A row's host and api_key are config.yaml-only - the pane keeps them
-round-tripped but refuses changes with the config.yaml pointer. A
-session pinned to an
+**Provider instances.** Every provider is one row of `provider.instances`
+(name, type, host, api_key) - there is no second shape for the primary.
+The row named `default` is the primary: it is looked up by name like any
+other row, it must exist (`config: provider.instances must carry the row
+named "default"`), and its name is not renamable from the settings pane.
+`model_name` stays on the `provider:` section - it is the model the agent
+serves, not a property of a row. Adding a provider is adding a row.
+
+Older configs keep loading: the pre-merge flat trio (`provider.type`,
+`provider.host`, `provider.api_key`) and the pre-merge top-level
+`providers:` map are folded into the instance list in memory, and the
+first save writes the all-instances shape - no migration step, no user
+action.
+
+The settings pane maintains the list through the `provider.instances`
+editor (rows can be renamed, retyped and removed; a row's name is the
+instance id). A row's host and api_key are config.yaml-only - the pane
+keeps them round-tripped but refuses changes with the config.yaml
+pointer. A session pinned to an
 instance that is later removed fails its next send LOUDLY (400, "not
 configured") - it never falls back silently to the default; clearing
 the pin restores the default. Send a run through an instance with the
-`/chat` `provider` field (see [api.md](api.md)).
+`/chat` `provider` field (see [api.md](api.md)). A provider save
+re-points the running server on the spot - the list is live, no
+restart.
 
 ## Module toggles
 
@@ -81,10 +92,8 @@ naming it.
 | Key                           | Env var                            | Default                  | Description                                                                                                                                                                                                                                               |
 | ----------------------------- | ---------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
 | -                             | `OMEGA_HOME`                       | Binary directory         | Omega home: config, db, skills, modules live here                                                                                                                                                                                                         |
-| `provider.type`               | `OMEGA_PROVIDER`                   | `ollama`                 | Provider: `ollama`, `openai`, `anthropic`, `mock`
+| `provider.instances`          | `OMEGA_PROVIDER` / `OMEGA_HOST` / `OMEGA_API_KEY` | one `default` row: `ollama` at `http://localhost:11434` | The named provider rows (`name`, `type`, `host`, `api_key`). The row named `default` is the primary - the provider the agent serves. Types: `ollama`, `openai`, `anthropic`, `mock`. The three env vars re-point the `default` row's type/host/key; `OMEGA_API_KEY` falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` |
 | `provider.model_name`         | `OMEGA_MODEL`                      | (required)               | Model name                                                                                                                                                                                                                                                |
-| `provider.host`               | `OMEGA_HOST`                       | `http://localhost:11434` | Provider base URL                                                                                                                                                                                                                                         |
-| `provider.api_key`            | `OMEGA_API_KEY`                    |                          | API key (Ollama Cloud, OpenAI, Anthropic). Falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`                                                                                                                                                           |
 | `server.port`                 | `OMEGA_PORT`                       | `8099`                   | HTTP listen port                                                                                                                                                                                                                                          |
 | `server.bind`                 | -                                  | `127.0.0.1`              | Addresses to listen on (one channel each). Loopback only by default - the API is unauthenticated; extra addresses (e.g. a Tailscale IP) are an explicit opt-in for reverse-proxy routing                                                                  |     |
 | `server.public_hosts`         | -                                  | `[]`                     | Identities the Host/Origin guard answers off the bind (a tunnel/proxy domain). Exact match, no wildcards. A wildcard bind (`0.0.0.0`, `::`) trusts ONLY this list and refuses to start when it is empty - docs/api.md carries the full guard law |     |
@@ -318,8 +327,9 @@ Ollama supports three connection modes:
   `api_key: <your-key>`. omega sends a Bearer token in the
   Authorization header.
 
-Provider changes (`provider.type`, `provider.api_key`,
-`providers:` instances) apply on restart. Per-run model changes ride
+Provider rows (`provider.instances`) and the model slots apply live: a
+settings save re-points the running provider, the captioner and the
+title lane on the spot. Per-run model changes ride
 the webui: the composer's model chip and each `/chat` request's
 `model` field build a provider copy for that run - the running
 sessions never share model state (see [api.md](api.md)).

@@ -39,7 +39,7 @@ func TestSettingsCLIListsEveryKnobGroup(t *testing.T) {
 	}
 	for _, want := range []string{
 		`provider.model_name = "test-model"`,
-		"provider.api_key = \"\"", // unset stays visibly empty, never masked into implying a key
+		"provider.instances = [", // the ONE providers list, one row per instance
 		"server",
 		"compaction.keep_first",
 		"approvals.mode",
@@ -184,7 +184,7 @@ func TestSettingsCLISetRefusesLikeThePane(t *testing.T) {
 	}
 
 	cases := []struct{ key, val, want string }{
-		{"provider.api_key", "sk-secret", "config.yaml is the only door"},
+		{"provider.type", "openai", "unknown setting"}, // the flat trio is gone
 		{"server.bind", "0.0.0.0", "config.yaml is the only door"},
 		{"compaction.threshold", "3", "out of range"},
 		{"server.port", "18432.5", "whole number"},

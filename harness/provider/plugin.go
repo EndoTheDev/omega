@@ -42,19 +42,16 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		cfg = c
 	}
 	prov := NewProvider(cfg.Type, cfg.ModelName, cfg.Host, cfg.APIKey)
-	// Named instances (card t_7dcd4280): one resolver per config
-	// providers: entry, eager at mount (no network at construction).
+	// The instances (cards t_7dcd4280, t_bf21ee07): one resolver per
+	// config provider.instances row, eager at mount (no network at
+	// construction). The primary row is the base provider itself - the
+	// resolver answers the name, so nothing downstream needs a flag.
 	// The shell resolves a run's pinned instance through
-	// agent.ProviderInstances and fails loudly on a missing name,
-	// which is how a removed instance can never strand a session's
-	// run into a silent fallback. Applies on restart, like the rest
-	// of the provider section.
-	if len(cfg.Instances) > 0 {
-		prov.instances = make(map[string]*Provider, len(cfg.Instances))
-		for name, inst := range cfg.Instances {
-			prov.instances[name] = NewProvider(inst.Type, inst.ModelName, inst.Host, inst.APIKey)
-		}
-	}
+	// agent.ProviderInstances and fails loudly on a missing name, which
+	// is how a removed instance can never strand a session's run into a
+	// silent fallback. Live from here on: the settings save re-sends the
+	// section through SetConfig.
+	prov.SetConfig(cfg)
 	if err := api.Offer("provider", prov); err != nil {
 		return err
 	}
@@ -87,7 +84,7 @@ func (p *Plugin) handleCommand(prov *Provider, name, args string) (core.CommandR
 		if args == "" {
 			return core.CommandResult{Text: "usage: /model <name>"}, nil
 		}
-		*prov = *prov.WithModel(args).(*Provider)
+		prov.SetModel(args)
 		return core.CommandResult{
 			Text: "switched to " + args,
 			Actions: []core.CmdAction{

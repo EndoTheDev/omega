@@ -38,11 +38,14 @@ const DefaultAuxModel = "default"
 // image a cache hit - the caption is computed ONCE per image and
 // persisted, never re-run for old images.
 type Captioner struct {
-	base agent.Provider // the mounted base provider (WithModel source)
-	prov agent.Provider // pinned copy serving the vision model
-	// followMain marks the DefaultAuxModel lane: no pinned model, the
-	// call resolves the run's main model (agent.CaptionModel) instead.
-	followMain bool
+	// mu guards the model lane: the settings save swaps vision_model
+	// LIVE (card t_bf21ee07) while runs caption through the same
+	// pointer, so the pinned copy and the "off" state swap under it.
+	mu         sync.RWMutex
+	base       agent.Provider // the mounted base provider (WithModel source)
+	prov       agent.Provider // pinned copy serving the vision model
+	model      string         // the knob as configured; "" = the lane is off
+	followMain bool           // the DefaultAuxModel lane: follow the run's model
 	sink       agent.CaptionStore
 	cache      sync.Map // image id -> caption string
 	log        agent.LoggerProvider
@@ -54,21 +57,39 @@ type Captioner struct {
 // into caption calls. model == DefaultAuxModel pins NOTHING - the copy
 // is derived per call from the run's main model, falling back to the
 // base provider's own model for a captioner invoked outside a run.
-// model empty serves the base as-is - but the host only wires the
-// captioner when vision_model is set, so that is a misconfiguration
-// guard, not a mode.
+// model empty leaves the lane OFF (CaptioningEnabled false): the host
+// installs the captioner unconditionally so the knob can be turned on
+// live, and the agent skips the hop while it is off.
 func NewCaptioner(base agent.Provider, model string, sink agent.CaptionStore, log agent.LoggerProvider) *Captioner {
-	if base == nil {
-		return &Captioner{sink: sink, log: log}
-	}
-	c := &Captioner{base: base, prov: base, sink: sink, log: log}
-	switch model {
-	case "", DefaultAuxModel:
-		c.followMain = model == DefaultAuxModel
-	default:
-		c.prov = base.WithModel(model)
-	}
+	c := &Captioner{base: base, sink: sink, log: log}
+	c.SetModel(model)
 	return c
+}
+
+// SetModel swaps the vision lane live (card t_bf21ee07): "" turns it
+// off, DefaultAuxModel follows each run's model, any other name pins a
+// fresh WithModel copy of the base. The cache survives the swap - a
+// caption already computed is still the caption for those bytes.
+func (c *Captioner) SetModel(model string) {
+	model = strings.TrimSpace(model)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.model = model
+	c.prov = c.base
+	c.followMain = model == DefaultAuxModel
+	if model != "" && !c.followMain && c.base != nil {
+		c.prov = c.base.WithModel(model)
+	}
+}
+
+// CaptioningEnabled reports whether the knob names a lane. The agent
+// reads it before the aux hop (card t_bf21ee07): the captioner is
+// installed from boot on, so "off" must be a state, not a missing
+// pointer.
+func (c *Captioner) CaptioningEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.model != ""
 }
 
 // providerFor resolves the provider one caption call streams through:
@@ -76,21 +97,27 @@ func NewCaptioner(base agent.Provider, model string, sink agent.CaptionStore, lo
 // itself serves - the composer's chip model, and its named instance, at
 // call time.
 func (c *Captioner) providerFor(ctx context.Context) (agent.Provider, error) {
-	if c.followMain {
+	c.mu.RLock()
+	on, followMain, prov, base := c.model != "", c.followMain, c.prov, c.base
+	c.mu.RUnlock()
+	if !on {
+		return nil, fmt.Errorf("no vision model configured")
+	}
+	if followMain {
 		if run := agent.CaptionProvider(ctx); run != nil {
 			return run, nil
 		}
 		// Outside a run there is no chip to follow: the base provider's
 		// own model is the only main model there is.
-		if c.base == nil {
+		if base == nil {
 			return nil, fmt.Errorf("no vision model configured")
 		}
-		return c.base, nil
+		return base, nil
 	}
-	if c.prov == nil {
+	if prov == nil {
 		return nil, fmt.Errorf("no vision model configured")
 	}
-	return c.prov, nil
+	return prov, nil
 }
 
 // Caption returns the caption for one image: process memo -> store ->

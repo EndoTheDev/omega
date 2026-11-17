@@ -149,9 +149,10 @@ Body: `{"messages": [...], "session_id": "...?", "model": "...?",
   pinned there (no messages); an assistant/tool target CONTINUES FROM
   it - it takes the fork's user message and runs. Mutually exclusive
   with `retry` (400).
-- **`provider`** (card t_7dcd4280): the named provider INSTANCE the run
-  serves through (a `providers:` config key; the webui provider picker
-  sends it). Empty = the default instance. An unknown name - the
+- **`provider`** (cards t_7dcd4280, t_bf21ee07): the named provider
+  INSTANCE the run serves through (a `provider.instances` row; the webui
+  provider picker sends it). Empty = the row named `default`, the
+  primary. An unknown name - the
   instance was removed, or never existed - is a loud 400, NEVER a
   silent fallback to the default. A wire name WINS and sticks on the
   session like the model pin: the next send resolves the pinned name
@@ -379,8 +380,8 @@ GET returns the knob schema + effective values (`agent.SettingsSchema`
 groups: provider, server, store, compaction, runtime, skills, memory,
 logging, approvals - the same surface the settings pane renders;
 model slots ride typed pickers, approvals.mode is a select; no-store
-cache headers). `provider.api_key` is MASKED (`****`) and never
-round-trips.
+cache headers). Every row of `provider.instances` rides with its
+`api_key` MASKED (`****`) and never round-trips plain text.
 
 Every knob also carries `default`: the value it takes when config.yaml
 names no key - the built-in defaults with the `OMEGA_*` environment
@@ -396,7 +397,7 @@ object as it rides inside its group - so a script client reads a
 single value without decoding the group envelope. An unknown key is
 404 `unknown setting: <key>`; an empty `key` param is ignored (the
 full payload answers). The one-knob read is the same masked schema
-the full read serves (`provider.api_key` still rides `****`).
+the full read serves (`provider.instances` rows still ride `****`).
 
 #### agent scopes (`scopes`, settings tier 3a)
 
@@ -431,18 +432,21 @@ The write path does not live here: every scope write goes through the
 agents REST edit endpoint (`PUT /agents/{name}`), unchanged.
 
 PUT applies a **diff-only** values map keyed by the schema's dotted
-knob paths (`provider.api_key`, `compaction.keep_first`, ...) - note
+knob paths (`provider.instances`, `compaction.keep_first`, ...) - note
 these are not all literal yaml paths (the vision/title models are root
 yaml keys exposed as `provider.vision_model` / `provider.title_model`,
 and the four per-subsystem model slots - compaction, summarizer,
 skills curator, approvals - are the same shape as
 `provider.*_model`);
-unknown keys are 400; `server.bind`, `provider.api_key` and a
+unknown keys are 400; `server.bind` and a stored
 `provider.instances` row's host / api_key are gated - config.yaml is
 their only door (instance rows stay renameable / removable in the
-pane; the endpoint and the secret are not settable over the API). Knob
+pane; the endpoint and the secret are not settable over the API). The
+list itself REPLACES the config's rows on a save, and the row named
+`default` must be in it. Knob
 help lines note which apply on
-restart vs hot-apply live (http timeout + compaction hot-apply; context
+restart vs hot-apply live (the provider rows, the http timeout and
+compaction hot-apply; context
 window help reports what startup auto-probed).
 
 #### the config-file doors (`/settings/raw`, `/settings/reset`)
@@ -481,7 +485,7 @@ endpoints do, so there is one schema, one validator and one writer:
   the same field the pane's per-knob reset compares against), so a
   client can never ship a second default set. Every knob that HAS a
   default is written through the knob save path, and the
-  config.yaml-only doors are KEPT - `provider.api_key`, `server.bind`,
+  config.yaml-only doors are KEPT - `server.bind`,
   `provider.instances` (whose rows carry endpoints and secrets the API
   cannot set) and `provider.model_name` (required, so it has no
   default). Answers the refreshed knob payload.
@@ -534,7 +538,8 @@ A host with no settings seam answers **501** on all three, like
     (`description`, `system_prompt`, `provider.instance`,
     `provider.model_name`, `provider.type`, `provider.host`,
     `provider.api_key`, `max_turns`, `toggles`, `skills.allow`,
-    `inherit`). Each named key pair is deleted from the layer file,
+    `inherit`). The four provider keys are the LEGACY layer vocabulary:
+    writing them is refused, unsetting them scrubs a pre-merge layer. Each named key pair is deleted from the layer file,
     every other key, comment and style stays byte-intact, and a
     `provider` block left with no sub-keys is removed with them. The
     legacy secret keys stay in the vocabulary only as a scrub verb -

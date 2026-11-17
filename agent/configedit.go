@@ -243,6 +243,36 @@ func HostConfigPath(home string) string {
 	return ""
 }
 
+// hostConfigSections is the slice of the host config LoadHostDefinition
+// reads: the provider instance rows and the disabled: fold. NAMED, not
+// anonymous - an anonymous struct spells its yaml tags into the binary's
+// type symbols, and nm-purity reads the capsule noun there (the same law
+// disabledFold below obeys).
+type hostConfigSections struct {
+	Provider hostProviderSection `yaml:"provider"`
+	// Providers is the pre-merge top-level map (card t_7dcd4280): the
+	// load-time fold (card t_bf21ee07) turns it into provider.instances,
+	// and a deployed config that still carries it must validate an
+	// agent's provider.instance reference too.
+	Providers map[string]hostProviderRow `yaml:"providers"`
+	Disabled  yaml.Node                  `yaml:"disabled"`
+}
+
+// hostProviderSection is the config provider: section's instance list.
+type hostProviderSection struct {
+	Instances []hostProviderRow `yaml:"instances"`
+}
+
+// hostProviderRow is one provider instance row as the host config spells
+// it: only the NAME is read here (the endpoint columns are the provider
+// capsule's business).
+type hostProviderRow struct {
+	Name   string `yaml:"name"`
+	Type   string `yaml:"type"`
+	Host   string `yaml:"host"`
+	APIKey string `yaml:"api_key"`
+}
+
 // LoadHostDefinition reads the host config's provider instances and
 // disabled: fold. A home with no config file answers the zero
 // definition: validation then refuses every instance reference loudly,
@@ -258,18 +288,20 @@ func LoadHostDefinition(home string) (HostDefinition, error) {
 	if err != nil {
 		return host, fmt.Errorf("read host config: %w", err)
 	}
-	var raw struct {
-		Providers map[string]struct {
-			Type   string `yaml:"type"`
-			Host   string `yaml:"host"`
-			APIKey string `yaml:"api_key"`
-		} `yaml:"providers"`
-		Disabled yaml.Node `yaml:"disabled"`
-	}
+	var raw hostConfigSections
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return host, fmt.Errorf("parse host config: %w", err)
 	}
+	seen := map[string]bool{DefaultProviderInstance: true}
+	for _, inst := range raw.Provider.Instances {
+		if inst.Name != "" {
+			seen[inst.Name] = true
+		}
+	}
 	for name := range raw.Providers {
+		seen[name] = true
+	}
+	for name := range seen {
 		host.ProviderInstances = append(host.ProviderInstances, name)
 	}
 	slices.Sort(host.ProviderInstances)

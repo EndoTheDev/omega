@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // writeTempConfig writes content to a temp file and returns its path.
@@ -19,8 +21,12 @@ func writeTempConfig(t *testing.T, content string) string {
 
 func TestLoadConfigDefaults(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.Provider.Host != "http://localhost:11434" {
-		t.Errorf("default host = %q, want http://localhost:11434", cfg.Provider.Host)
+	primary := primaryOf(cfg)
+	if primary.Host != "http://localhost:11434" {
+		t.Errorf("default host = %q, want http://localhost:11434", primary.Host)
+	}
+	if primary.Name != PrimaryProviderInstance {
+		t.Errorf("default row name = %q, want %q", primary.Name, PrimaryProviderInstance)
 	}
 	if cfg.Server.Port != 8099 {
 		t.Errorf("default port = %d, want 8099", cfg.Server.Port)
@@ -30,6 +36,10 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 }
 
+// TestLoadConfigFromYAML is the COMPAT contract (card t_bf21ee07): a
+// config.yaml carrying the pre-merge flat provider trio keeps loading,
+// and the reader normalizes it to the instance named "default" in
+// memory - no migration script, no user action.
 func TestLoadConfigFromYAML(t *testing.T) {
 	path := writeTempConfig(t, `
 provider:
@@ -46,23 +56,107 @@ store:
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if cfg.Provider.Type != "openai" {
-		t.Errorf("type = %q, want openai", cfg.Provider.Type)
+	primary, ok := cfg.Provider.instance(PrimaryProviderInstance)
+	if !ok {
+		t.Fatalf("the flat trio did not normalize to the %q instance: %+v", PrimaryProviderInstance, cfg.Provider.Instances)
+	}
+	if primary.Type != "openai" {
+		t.Errorf("type = %q, want openai", primary.Type)
 	}
 	if cfg.Provider.ModelName != "gpt-4o" {
 		t.Errorf("model_name = %q, want gpt-4o", cfg.Provider.ModelName)
 	}
-	if cfg.Provider.Host != "http://openai-proxy:8080" {
-		t.Errorf("host = %q, want http://openai-proxy:8080", cfg.Provider.Host)
+	if primary.Host != "http://openai-proxy:8080" {
+		t.Errorf("host = %q, want http://openai-proxy:8080", primary.Host)
 	}
-	if cfg.Provider.APIKey != "sk-test" {
-		t.Errorf("api_key = %q, want sk-test", cfg.Provider.APIKey)
+	if primary.APIKey != "sk-test" {
+		t.Errorf("api_key = %q, want sk-test", primary.APIKey)
+	}
+	if len(cfg.Provider.Instances) != 1 {
+		t.Errorf("instances = %+v, want the one default row", cfg.Provider.Instances)
 	}
 	if cfg.Server.Port != 9000 {
 		t.Errorf("port = %d, want 9000", cfg.Server.Port)
 	}
 	if cfg.Store.DBPath != "/tmp/omega.db" {
 		t.Errorf("db_path = %q, want /tmp/omega.db", cfg.Store.DBPath)
+	}
+}
+
+// TestFirstSaveWritesInstancesShape (card t_bf21ee07): a pre-merge
+// config.yaml loads (flat trio plus the old top-level providers map)
+// and the FIRST write lands the one all-instances shape - no flat
+// trio, no legacy map - and the saved document reloads to the same
+// provider rows.
+func TestFirstSaveWritesInstancesShape(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  type: openai
+  model_name: gpt-4o
+  host: http://openai-proxy:8080
+  api_key: sk-test
+providers:
+  work:
+    type: ollama
+    host: http://work-host:11434
+  home:
+    type: ollama
+    host: http://home-host:11434
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if _, ok := cfg.Provider.instance(PrimaryProviderInstance); !ok {
+		t.Fatalf("the flat trio did not normalize to the %q row: %+v", PrimaryProviderInstance, cfg.Provider.Instances)
+	}
+
+	if err := writeConfigFile(path, &cfg); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved struct {
+		Provider struct {
+			ModelName string             `yaml:"model_name"`
+			Type      string             `yaml:"type"`
+			Host      string             `yaml:"host"`
+			APIKey    string             `yaml:"api_key"`
+			Instances []ProviderInstance `yaml:"instances"`
+		} `yaml:"provider"`
+		Providers map[string]any `yaml:"providers"`
+	}
+	if err := yaml.Unmarshal(data, &saved); err != nil {
+		t.Fatalf("the saved document does not parse: %v\n%s", err, data)
+	}
+	if saved.Provider.Type != "" || saved.Provider.Host != "" || saved.Provider.APIKey != "" {
+		t.Errorf("the flat trio survived the save: %+v\n%s", saved.Provider, data)
+	}
+	if len(saved.Providers) != 0 {
+		t.Errorf("the legacy providers map survived the save: %+v\n%s", saved.Providers, data)
+	}
+	names := make([]string, 0, len(saved.Provider.Instances))
+	for _, inst := range saved.Provider.Instances {
+		names = append(names, inst.Name)
+	}
+	if got := strings.Join(names, ","); got != "default,home,work" {
+		t.Errorf("saved rows = %s, want default,home,work\n%s", got, data)
+	}
+
+	// the saved shape reloads to the same provider
+	reloaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	primary := primaryOf(reloaded)
+	if primary.Name != PrimaryProviderInstance || primary.Type != "openai" ||
+		primary.Host != "http://openai-proxy:8080" || primary.APIKey != "sk-test" {
+		t.Errorf("reloaded primary = %+v, want the flat trio's endpoint", primary)
+	}
+	if work, ok := reloaded.Provider.instance("work"); !ok || work.Host != "http://work-host:11434" {
+		t.Errorf("reloaded work row = %+v (ok=%v)", work, ok)
 	}
 }
 
@@ -77,11 +171,12 @@ provider:
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if cfg.Provider.Type != "anthropic" {
-		t.Errorf("type = %q, want anthropic (env override)", cfg.Provider.Type)
+	primary := primaryOf(cfg)
+	if primary.Type != "anthropic" {
+		t.Errorf("type = %q, want anthropic (env override)", primary.Type)
 	}
-	if cfg.Provider.APIKey != "sk-ant-test" {
-		t.Errorf("api_key = %q, want sk-ant-test (env override)", cfg.Provider.APIKey)
+	if primary.APIKey != "sk-ant-test" {
+		t.Errorf("api_key = %q, want sk-ant-test (env override)", primary.APIKey)
 	}
 }
 
@@ -107,8 +202,8 @@ store:
 	if cfg.Provider.ModelName != "qwen2.5" {
 		t.Errorf("model_name = %q, want qwen2.5 (env override)", cfg.Provider.ModelName)
 	}
-	if cfg.Provider.Host != "http://env-host:11434" {
-		t.Errorf("host = %q, want env override", cfg.Provider.Host)
+	if host := primaryOf(cfg).Host; host != "http://env-host:11434" {
+		t.Errorf("host = %q, want env override", host)
 	}
 	if cfg.Server.Port != 7777 {
 		t.Errorf("port = %d, want 7777 (env override)", cfg.Server.Port)
@@ -132,8 +227,8 @@ provider:
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if cfg.Provider.Host != "http://env-host:11434" {
-		t.Errorf("host = %q, want env value", cfg.Provider.Host)
+	if host := primaryOf(cfg).Host; host != "http://env-host:11434" {
+		t.Errorf("host = %q, want env value", host)
 	}
 	if cfg.Server.Port != 7000 {
 		t.Errorf("port = %d, want 7000", cfg.Server.Port)
@@ -167,40 +262,59 @@ provider:
 		footer  string
 		wantErr string
 	}{
-		{"ok instance", `
+		{"legacy map row", `
 providers:
   backup:
     type: openai
     host: https://api.openai.example
 `, ""},
-		{"ok instance with key", `
+		{"legacy map row with key", `
 providers:
   backup:
     type: openai
     api_key: sk-test
     host: https://api.openai.example
 `, ""},
-		{"reserved name", `
-providers:
-  default:
-    type: openai
-`, "reserved"},
+		// card t_bf21ee07: every provider is a row now, the primary
+		// included - a config whose list carries only the named rows has
+		// no primary and says so loudly.
+		{"merged list without the primary", `
+  instances:
+    - name: backup
+      type: openai
+      host: https://api.openai.example
+`, "must carry the row named"},
+		{"merged list with the primary", `
+  instances:
+    - name: default
+      type: ollama
+    - name: backup
+      type: openai
+      host: https://api.openai.example
+`, ""},
 		{"bad name", `
-providers:
-  "My Account":
-    type: openai
+  instances:
+    - name: default
+    - name: "My Account"
+      type: openai
 `, "invalid"},
+		{"duplicate name", `
+  instances:
+    - name: default
+    - name: default
+      type: openai
+`, "defined twice"},
 		{"bad type", `
-providers:
-  backup:
-    type: azure
+  instances:
+    - name: default
+    - name: backup
+      type: azure
 `, "not recognized"},
-		{"bound model", `
-providers:
-  backup:
-    type: openai
-    model_name: gpt-4o
-`, "no longer settable"},
+		{"bad host", `
+  instances:
+    - name: default
+      host: "://nope"
+`, "not a valid URL"},
 	}
 	for _, tc := range cases {
 		path := writeTempConfig(t, base+tc.footer)
@@ -213,6 +327,10 @@ providers:
 		}
 		if err == nil {
 			t.Errorf("%s: expected error matching %q, got nil", tc.name, tc.wantErr)
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.wantErr) {
+			t.Errorf("%s: error = %v, want it to name %q", tc.name, err, tc.wantErr)
 		}
 	}
 }

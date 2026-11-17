@@ -13,17 +13,28 @@ import (
 // tests - the compaction section carries the slot, and the approval
 // decision slot resolves into the reviewer's host/key/model wiring.
 
-// slotConfig builds a config carrying the default provider (main) and
-// one named instance "big".
+// slotConfig builds a config carrying the primary provider (the row
+// named "default", the agent's main endpoint) and one named instance
+// "big". Every provider is a row (card t_bf21ee07): there is no second
+// shape for the primary.
 func slotConfig(slot string) Config {
 	cfg := DefaultConfig()
 	cfg.Provider.ModelName = "main-model"
-	cfg.Provider.APIKey = "default-key"
-	cfg.Providers = map[string]ProviderConfig{
-		"big": {Type: "openai", ModelName: "big-model", Host: "http://big.internal", APIKey: "big-key"},
-	}
+	cfg.Provider.setInstance(ProviderInstance{
+		Name: PrimaryProviderInstance, Type: "ollama", APIKey: "default-key",
+	})
+	cfg.Provider.setInstance(ProviderInstance{
+		Name: "big", Type: "openai", Host: "http://big.internal", APIKey: "big-key",
+	})
 	cfg.ApprovalsModel = slot
 	return cfg
+}
+
+// primaryHost is the primary row's endpoint - the wiring a bare slot
+// rides.
+func primaryHost(c Config) string {
+	inst, _ := c.defaultInstance()
+	return inst.Host
 }
 
 func TestApprovalSlotRoutesInstance(t *testing.T) {
@@ -40,49 +51,50 @@ func TestApprovalSlotRoutesInstance(t *testing.T) {
 	}
 }
 
-// An instance prefix with no model part serves the instance's own
-// model.
-func TestApprovalSlotInstanceDefaultModel(t *testing.T) {
+// An instance prefix with no model part names an endpoint and no model:
+// the consult fails closed (the gate escalates) rather than guessing a
+// model the instance no longer carries.
+func TestApprovalSlotInstanceWithoutModelFailsClosed(t *testing.T) {
 	cfg := slotConfig("big:")
-	host, _, model := approvalSlot(cfg)
-	if model != "big-model" {
-		t.Errorf("model = %q, want the instance's model", model)
+	host, key, model := approvalSlot(cfg)
+	if model != "" {
+		t.Errorf("model = %q, want the fail-closed empty model", model)
 	}
-	if host != "http://big.internal" {
-		t.Errorf("host = %q, want the instance host", host)
+	if host != "http://big.internal" || key != "big-key" {
+		t.Errorf("host/key = %q %q, want the instance wiring", host, key)
 	}
 }
 
-// A bare slot (and an unconfigured prefix over it) keeps the default
+// A bare slot (and an unconfigured prefix over it) keeps the primary
 // provider wiring and carries the whole slot as the model.
 func TestApprovalSlotBareStays(t *testing.T) {
 	cfg := slotConfig("gemma3:27b")
 	host, key, model := approvalSlot(cfg)
-	if model != "gemma3:27b" || host != cfg.Provider.Host || key != "default-key" {
-		t.Errorf("bare slot: %q %q %q (want default wiring + a bare model)", host, key, model)
+	if model != "gemma3:27b" || host != primaryHost(cfg) || key != "default-key" {
+		t.Errorf("bare slot: %q %q %q (want primary wiring + a bare model)", host, key, model)
 	}
 
 	cfg = slotConfig("unknown:m")
 	host, key, model = approvalSlot(cfg)
-	if model != "unknown:m" || host != cfg.Provider.Host || key != "default-key" {
-		t.Errorf("unconfigured prefix: %q %q %q (want default wiring + a bare model)", host, key, model)
+	if model != "unknown:m" || host != primaryHost(cfg) || key != "default-key" {
+		t.Errorf("unconfigured prefix: %q %q %q (want primary wiring + a bare model)", host, key, model)
 	}
 }
 
-// The reserved "default" prefix stays on the default provider's own
-// wiring.
-func TestApprovalSlotReservedDefault(t *testing.T) {
+// The prefix naming the primary row resolves that row's wiring and the
+// model part - there is no special "reserved" word, only the row name.
+func TestApprovalSlotPrimaryPrefix(t *testing.T) {
 	cfg := slotConfig("default:main-model")
 	host, key, model := approvalSlot(cfg)
-	if host != cfg.Provider.Host || key != "default-key" || model != "main-model" {
-		t.Errorf("reserved default: %q %q %q", host, key, model)
+	if host != primaryHost(cfg) || key != "default-key" || model != "main-model" {
+		t.Errorf("primary prefix: %q %q %q", host, key, model)
 	}
 }
 
 // An empty slot keeps today's fail-closed shape (no model).
 func TestApprovalSlotEmpty(t *testing.T) {
 	host, key, model := approvalSlot(slotConfig(""))
-	if model != "" || host != DefaultConfig().Provider.Host || key != "default-key" {
+	if model != "" || host != primaryHost(slotConfig("")) || key != "default-key" {
 		t.Errorf("empty slot: %q %q %q", host, key, model)
 	}
 }
@@ -116,7 +128,7 @@ func TestConfigSectionSlots(t *testing.T) {
 	if sec, ok := cfg.ConfigSection("approvals"); !ok {
 		t.Fatal("no approvals section")
 	} else if ac := sec.(approval.Config); ac.HTTPHost == "" {
-		t.Errorf("approvals section lost its host wiring")
+		t.Error("approvals section lost its host wiring")
 	}
 	if sec, ok := cfg.ConfigSection("sessions"); !ok {
 		t.Fatal("no sessions section")
@@ -127,5 +139,35 @@ func TestConfigSectionSlots(t *testing.T) {
 		t.Fatal("no skills section")
 	} else if sc := sec.(skills.Config); sc.CuratorModel != "small-model" {
 		t.Errorf("skills section curator slot = %q", sc.CuratorModel)
+	}
+}
+
+// TestModelSlotResolvesFromConfigFile (card t_bf21ee07): a config.yaml
+// carrying only the instances list serves the slot grammar unchanged -
+// "work:big-model" rides the row named work, read through the file.
+func TestModelSlotResolvesFromConfigFile(t *testing.T) {
+	path := writeTempConfig(t, `
+provider:
+  model_name: main-model
+  instances:
+    - name: default
+      type: ollama
+    - name: work
+      type: openai
+      host: http://work-host:9000
+      api_key: sk-work
+approvals_model: work:big-model
+compaction_model: work:sum-model
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	host, key, model := approvalSlot(cfg)
+	if host != "http://work-host:9000" || key != "sk-work" || model != "big-model" {
+		t.Errorf("approval slot = %q %q %q, want the work row + big-model", host, key, model)
+	}
+	if got := compactionSection(cfg).Model; got != "work:sum-model" {
+		t.Errorf("compaction slot = %q, want the persisted slot", got)
 	}
 }

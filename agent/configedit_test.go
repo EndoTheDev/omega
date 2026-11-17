@@ -379,7 +379,9 @@ func TestLoadHostDefinition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(host.ProviderInstances, ",") != "home,work" {
+	// the primary is the row named "default" (card t_bf21ee07): the flat
+	// trio and the pre-merge providers map both land in one list
+	if strings.Join(host.ProviderInstances, ",") != "default,home,work" {
 		t.Errorf("instances = %v", host.ProviderInstances)
 	}
 	if host.HostEnabledModule("cron") || !host.HostEnabledModule("kanban") {

@@ -10,19 +10,23 @@ This error means omega loaded your `config.yaml` but the
 
 ```yaml
 provider:
-type: ollama
 model_name: llama3
+instances:
+  - name: default
+    type: ollama
 ```
 
-YAML treats `type` and `model_name` as root-level keys, not nested
+YAML treats `model_name` and `instances` as root-level keys, not nested
 under `provider`. omega sees an empty provider.
 
 ### Right (keys indented 2 spaces)
 
 ```yaml
 provider:
-  type: ollama
   model_name: llama3
+  instances:
+    - name: default
+      type: ollama
 ```
 
 ### Other causes

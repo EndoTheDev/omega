@@ -3,18 +3,28 @@
 # OMEGA_* environment variable (see below).
 
 provider:
-  # Provider type: ollama (default), openai, or anthropic.
-  # For openai, host defaults to https://api.openai.com/v1; for
-  # anthropic, https://api.anthropic.com/v1.
-  type: ollama
   # Required. The model to use. No default - must be set.
   # Examples: llama3, gpt-4o, claude-sonnet-4-20250514
   model_name:
-  # Base URL. Ollama default: http://localhost:11434
-  host: http://localhost:11434
-  # API key for openai/anthropic. Falls back to OPENAI_API_KEY or
-  # ANTHROPIC_API_KEY. Ignored by ollama.
-  api_key:
+  # Every provider is a named instance: name, type, host, api_key.
+  # The row named "default" is the primary - the provider the agent
+  # serves - and it must exist. Adding a provider is adding a row.
+  instances:
+    - name: default
+      # Provider type: ollama (default), openai, or anthropic.
+      # For openai, host defaults to https://api.openai.com/v1; for
+      # anthropic, https://api.anthropic.com/v1.
+      type: ollama
+      # Base URL. Ollama default: http://localhost:11434
+      host: http://localhost:11434
+      # API key for openai/anthropic. Falls back to OPENAI_API_KEY or
+      # ANTHROPIC_API_KEY. Ignored by ollama.
+      api_key:
+    # A second endpoint is another row:
+    # - name: backup
+    #   type: openai
+    #   host: https://api.openai.com/v1
+    #   api_key: sk-...
 
 # Auxiliary model fields (card t_70c28128: model slots are typed
 # pickers in the webui settings pane - the vision slot's dropdown lists
@@ -163,10 +173,10 @@ logging:
 
 # Environment variable overrides (take precedence over this file):
 #   OMEGA_HOME                        -> omega home directory (default: binary dir, fallback ~/.omega/)
-#   OMEGA_PROVIDER                    -> provider.type
-#   OMEGA_API_KEY                     -> provider.api_key
+#   OMEGA_PROVIDER                    -> provider.instances (the default row's type)
+#   OMEGA_API_KEY                     -> provider.instances (the default row's key)
 #   OMEGA_MODEL                       -> provider.model_name
-#   OMEGA_HOST                        -> provider.host
+#   OMEGA_HOST                        -> provider.instances (the default row's host)
 #   OMEGA_PORT                        -> server.port
 #   OMEGA_DB_PATH                     -> store.db_path
 #   OMEGA_COMPACTION_ENABLED          -> compaction.enabled (true/1 or false/0)

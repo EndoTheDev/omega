@@ -35,18 +35,17 @@ import (
 // are applied for anything still unset.
 type Config struct {
 	Provider ProviderConfig `yaml:"provider"`
-	// Providers are the NAMED provider instances (card t_7dcd4280):
-	// the map key IS the instance id, so two accounts of one type are
-	// two entries. The top-level provider: section stays the DEFAULT
-	// instance the agent serves; "default" is a reserved instance
-	// name (it would read as the provider: section). A session or
-	// run pinned to an instance that is gone from this map fails
-	// loudly (config: unknown instance) - never a silent fallback.
-	Providers    map[string]ProviderConfig `yaml:"providers,omitempty"`
-	Server       ServerConfig              `yaml:"server"`
-	Store        StoreConfig               `yaml:"store"`
-	Compaction   agent.CompactionConfig    `yaml:"compaction"`
-	SystemPrompt string                    `yaml:"system_prompt"`
+	// Providers is the PRE-MERGE top-level instances map (card
+	// t_7dcd4280). It is a DECODE-ONLY shape since the instances merge
+	// (card t_bf21ee07): Config.UnmarshalYAML folds every entry into
+	// provider.instances and nils the map, so a deployed config.yaml
+	// keeps loading while the next save writes the one list. Nothing
+	// outside the fold may read this field.
+	Providers    map[string]legacyProviderConfig `yaml:"providers,omitempty"`
+	Server       ServerConfig                    `yaml:"server"`
+	Store        StoreConfig                     `yaml:"store"`
+	Compaction   agent.CompactionConfig          `yaml:"compaction"`
+	SystemPrompt string                          `yaml:"system_prompt"`
 	// VisionModel is the auxiliary captioner (vision_model knob): when
 	// set, image-carrying user messages are described once with this
 	// model and the main model sees the caption as text. The special
@@ -108,6 +107,54 @@ type Config struct {
 	// rather than "every skill" (main's own mount).
 	agentSkillsAllow    []string
 	agentSkillsAllowSet bool
+}
+
+// UnmarshalYAML decodes the document over whatever value the caller
+// already holds (LoadConfig starts from DefaultConfig, so an absent key
+// keeps its default) and then folds the pre-merge provider shapes into
+// the one instances list (card t_bf21ee07). Every reader of a
+// config.yaml therefore sees the merged shape, and the first save
+// writes it.
+func (c *Config) UnmarshalYAML(node *yaml.Node) error {
+	// The alias type carries no UnmarshalYAML, so this cannot recurse.
+	type plain Config
+	decoded := plain(*c)
+	if err := node.Decode(&decoded); err != nil {
+		return err
+	}
+	next := Config(decoded)
+	next.foldLegacyProviders()
+	*c = next
+	return nil
+}
+
+// foldLegacyProviders merges the pre-merge top-level `providers:` map
+// (card t_7dcd4280) into provider.instances and drops the map, so a
+// deployed config.yaml keeps loading while the merged list becomes the
+// only shape code reads. A same-named merged row wins: the list is the
+// newer shape.
+func (c *Config) foldLegacyProviders() {
+	if len(c.Providers) == 0 {
+		return
+	}
+	names := make([]string, 0, len(c.Providers))
+	for name := range c.Providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if _, ok := c.Provider.instance(name); ok {
+			continue
+		}
+		legacy := c.Providers[name]
+		c.Provider.setInstance(ProviderInstance{
+			Name:   name,
+			Type:   legacy.Type,
+			Host:   legacy.Host,
+			APIKey: legacy.APIKey,
+		})
+	}
+	c.Providers = nil
 }
 
 // DisabledNamespaces is the config.yaml `disabled:` fold shape: one
@@ -248,12 +295,135 @@ type LoggingConfig struct {
 	File    string `yaml:"file"`
 }
 
-// ProviderConfig configures the LLM provider connection.
+// ProviderConfig configures the LLM provider the agent serves: the
+// default model, and the named provider INSTANCES (card t_bf21ee07).
+// Every provider is a named instance - the primary is the row named
+// "default" (PrimaryProviderInstance), looked up by name like any
+// other. There is no flag, no separate field, no structural special
+// case: adding a provider is adding a row.
 type ProviderConfig struct {
-	Type      string `yaml:"type"`
-	ModelName string `yaml:"model_name"`
-	Host      string `yaml:"host"`
-	APIKey    string `yaml:"api_key"`
+	ModelName string             `yaml:"model_name"`
+	Instances []ProviderInstance `yaml:"instances,omitempty"`
+}
+
+// ProviderInstance is one named provider endpoint: the name IS the
+// instance id model slots and session pins speak ("instance:model"),
+// and the row carries no model of its own - models come from the
+// endpoint's catalog through the pickers (card t_1914a8c9).
+type ProviderInstance struct {
+	Name   string `yaml:"name"`
+	Type   string `yaml:"type"`
+	Host   string `yaml:"host"`
+	APIKey string `yaml:"api_key"`
+}
+
+// PrimaryProviderInstance names the primary provider (card
+// t_bf21ee07). It is an ordinary instance id - the row that carries it
+// is the provider the agent serves; the name is the whole mechanism.
+const PrimaryProviderInstance = "default"
+
+// legacyProviderConfig is the PRE-MERGE provider: section (the flat
+// trio plus the instances list the merge introduced). Decode-only: the
+// flat type/host/api_key fold into the "default" instance the moment
+// the document is read, so no other code ever sees them.
+type legacyProviderConfig struct {
+	ModelName string             `yaml:"model_name"`
+	Instances []ProviderInstance `yaml:"instances"`
+	Type      string             `yaml:"type"`
+	Host      string             `yaml:"host"`
+	APIKey    string             `yaml:"api_key"`
+}
+
+// UnmarshalYAML reads a provider: section of any shape config.yaml has
+// ever carried (card t_bf21ee07): the merged list, the flat trio, or a
+// half-migrated mix. A flat trio becomes the "default" row; an absent
+// instances key keeps whatever the value already held (the caller
+// decoded over DefaultConfig, so a config that sets only
+// provider.model_name keeps the default instance).
+func (p *ProviderConfig) UnmarshalYAML(node *yaml.Node) error {
+	prev := *p
+	var raw legacyProviderConfig
+	if err := node.Decode(&raw); err != nil {
+		return err
+	}
+	out := ProviderConfig{ModelName: raw.ModelName, Instances: prev.Instances}
+	// An absent model_name keeps the value already held: the caller
+	// decodes over DefaultConfig (or over the host config, for an
+	// agent layer), and yaml's "leave absent fields alone" law is the
+	// one a custom unmarshaler has to re-implement.
+	if out.ModelName == "" {
+		out.ModelName = prev.ModelName
+	}
+	if raw.Instances != nil {
+		out.Instances = raw.Instances
+	}
+	if raw.Type != "" || raw.Host != "" || raw.APIKey != "" {
+		out.setInstance(ProviderInstance{
+			Name:   PrimaryProviderInstance,
+			Type:   raw.Type,
+			Host:   raw.Host,
+			APIKey: raw.APIKey,
+		})
+	}
+	*p = out
+	return nil
+}
+
+// instanceIndex is the row position of name, -1 when the list has none.
+func (p ProviderConfig) instanceIndex(name string) int {
+	for i, inst := range p.Instances {
+		if inst.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// instance returns the named row (the zero value for a name the list
+// does not carry - Validate is what makes a missing primary loud).
+func (p ProviderConfig) instance(name string) (ProviderInstance, bool) {
+	if i := p.instanceIndex(name); i >= 0 {
+		return p.Instances[i], true
+	}
+	return ProviderInstance{}, false
+}
+
+// setInstance replaces the row named inst.Name, or appends it when the
+// list has none. The primary row always sits first.
+func (p *ProviderConfig) setInstance(inst ProviderInstance) {
+	if i := p.instanceIndex(inst.Name); i >= 0 {
+		p.Instances[i] = inst
+	} else {
+		p.Instances = append(p.Instances, inst)
+	}
+	p.primaryFirst()
+}
+
+// primaryFirst orders the list the one way the pane and the writer
+// agree on: the primary row leads, the rest keep their order.
+func (p *ProviderConfig) primaryFirst() {
+	i := p.instanceIndex(PrimaryProviderInstance)
+	if i <= 0 {
+		return
+	}
+	primary := p.Instances[i]
+	copy(p.Instances[1:i+1], p.Instances[0:i])
+	p.Instances[0] = primary
+}
+
+// defaultInstance returns the primary row. ok is false only for a
+// config that carries no primary at all - a state Validate refuses.
+func (c Config) defaultInstance() (ProviderInstance, bool) {
+	return c.Provider.instance(PrimaryProviderInstance)
+}
+
+// setDefaultInstance replaces the primary row's endpoint fields, the
+// one way a caller (the env layer, an agent layer) re-points the
+// provider the agent serves. ModelName is the provider section's, not
+// the row's, and survives.
+func (c *Config) setDefaultInstance(inst ProviderInstance) {
+	inst.Name = PrimaryProviderInstance
+	c.Provider.setInstance(inst)
 }
 
 // validInstanceName is the instance-id syntax law (card t_7dcd4280):
@@ -351,7 +521,10 @@ type ProcessConfig struct {
 func DefaultConfig() Config {
 	return Config{
 		Provider: ProviderConfig{
-			Host: "http://localhost:11434",
+			Instances: []ProviderInstance{{
+				Name: PrimaryProviderInstance,
+				Host: "http://localhost:11434",
+			}},
 		},
 		Server: ServerConfig{
 			Port:       8099,
@@ -698,15 +871,34 @@ func writeDisabled(path string, fold DisabledNamespaces) error {
 
 // applyEnv overrides config fields from OMEGA_* environment variables.
 func applyEnv(cfg *Config) {
+	// Provider env overrides (card t_bf21ee07): the env table speaks
+	// about the PRIMARY provider, which is the instance named
+	// "default" - the same row a config.yaml flat trio folds into.
+	primary, _ := cfg.defaultInstance()
+	envProvider := primary
+	overridden := false
+	if v := os.Getenv("OMEGA_PROVIDER"); v != "" {
+		envProvider.Type = v
+		overridden = true
+	}
+	if v := os.Getenv("OMEGA_API_KEY"); v != "" {
+		envProvider.APIKey = v
+		overridden = true
+	}
+	if v := os.Getenv("OMEGA_HOST"); v != "" {
+		envProvider.Host = v
+		overridden = true
+	}
+	if overridden {
+		cfg.setDefaultInstance(envProvider)
+	}
+
 	// String assignments: env var -> *string field.
 	for _, s := range []struct {
 		env    string
 		target *string
 	}{
-		{"OMEGA_PROVIDER", &cfg.Provider.Type},
-		{"OMEGA_API_KEY", &cfg.Provider.APIKey},
 		{"OMEGA_MODEL", &cfg.Provider.ModelName},
-		{"OMEGA_HOST", &cfg.Provider.Host},
 		{"OMEGA_VISION_MODEL", &cfg.VisionModel},
 		{"OMEGA_TITLE_MODEL", &cfg.TitleModel},
 		{"OMEGA_DB_PATH", &cfg.Store.DBPath},
@@ -777,42 +969,34 @@ func (c Config) Validate() error {
 	if c.Server.Port <= 0 {
 		return fmt.Errorf("config: server.port must be > 0, got %d", c.Server.Port)
 	}
-	if c.Provider.Type != "" {
-		switch strings.ToLower(c.Provider.Type) {
-		case "ollama", "openai", "anthropic", "mock":
-		default:
-			return fmt.Errorf("config: provider.type %q is not recognized (want ollama, openai, anthropic, or mock)", c.Provider.Type)
-		}
-	}
-	// Named instances (card t_7dcd4280): the key IS the instance id.
-	// A name must survive every consumer that records it (session
-	// pins, model-selection slots), so the id space is conservative
-	// and "default" stays reserved for the provider: section.
+	// The provider INSTANCES (card t_bf21ee07): every provider is a row,
+	// the primary is the row named "default". The names must survive
+	// every consumer that records one (session pins, model slots), and
+	// a config with no primary row has no provider the agent can serve
+	// - both are loud here, never a silent fallback mid-run.
 	providerTypes := map[string]string{
 		"ollama": "ollama", "openai": "openai", "anthropic": "anthropic", "mock": "mock",
 	}
-	for name, inst := range c.Providers {
-		if name == "default" {
-			return fmt.Errorf("config: provider instance %q is reserved (the provider: section is the default instance)", name)
+	seenInstances := make(map[string]bool, len(c.Provider.Instances))
+	for _, inst := range c.Provider.Instances {
+		if !validInstanceName(inst.Name) {
+			return fmt.Errorf("config: provider instance name %q is invalid (want lowercase letters, digits, - or _)", inst.Name)
 		}
-		if !validInstanceName(name) {
-			return fmt.Errorf("config: provider instance name %q is invalid (want lowercase letters, digits, - or _)", name)
+		if seenInstances[inst.Name] {
+			return fmt.Errorf("config: provider instance %q is defined twice", inst.Name)
 		}
+		seenInstances[inst.Name] = true
 		if strings.ToLower(inst.Type) != "" && providerTypes[strings.ToLower(inst.Type)] == "" {
-			return fmt.Errorf("config: provider %s.type %q is not recognized (want ollama, openai, or anthropic)", name, inst.Type)
+			return fmt.Errorf("config: provider %s.type %q is not recognized (want ollama, openai, anthropic, or mock)", inst.Name, inst.Type)
 		}
-		// Card t_1914a8c9: an instance is a NAMED ENDPOINT only (the
-		// Hermes shape) - name, type, host, api_key. Models come from
-		// the instance's own catalog through the pickers; a bound
-		// model is a loud config error, never an ignored field.
-		if inst.ModelName != "" {
-			return fmt.Errorf("config: provider %s.model_name is no longer settable - providers are named endpoints only, pick the model in the model picker (instance:model)", name)
+		if inst.Host != "" {
+			if _, err := url.Parse(inst.Host); err != nil {
+				return fmt.Errorf("config: provider %s.host is not a valid URL: %w", inst.Name, err)
+			}
 		}
 	}
-	if c.Provider.Host != "" {
-		if _, err := url.Parse(c.Provider.Host); err != nil {
-			return fmt.Errorf("config: provider.host is not a valid URL: %w", err)
-		}
+	if !seenInstances[PrimaryProviderInstance] {
+		return fmt.Errorf("config: provider.instances must carry the row named %q - it is the provider the agent serves", PrimaryProviderInstance)
 	}
 	if c.Memory.Enabled && c.Memory.CharLimit <= 0 {
 		return fmt.Errorf("config: memory.char_limit must be > 0 when memory is enabled")
@@ -870,20 +1054,10 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "sessions":
 		return sessionsSection(c), true
 	case "provider":
-		// card t_7dcd4280: the named instances ride the section - the
-		// provider capsule builds one resolver per entry at mount.
-		instances := make(map[string]provider.Config, len(c.Providers))
-		for name, inst := range c.Providers {
-			instances[name] = provider.Config{
-				Type:      inst.Type,
-				ModelName: inst.ModelName,
-				Host:      inst.Host,
-				APIKey:    inst.APIKey,
-			}
-		}
-		return provider.Config{Type: c.Provider.Type, ModelName: c.Provider.ModelName, Host: c.Provider.Host, APIKey: c.Provider.APIKey, Instances: instances}, true
+		return providerSection(c), true
 	case "http_channel":
-		return api.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, DefaultWorkspace: c.Server.DefaultWorkspace, TitleModel: c.TitleModel, PublicHosts: c.Server.PublicHosts, WebTools: agentapi.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true
+		primary, _ := c.defaultInstance()
+		return api.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, DefaultWorkspace: c.Server.DefaultWorkspace, TitleModel: c.TitleModel, PublicHosts: c.Server.PublicHosts, WebTools: agentapi.WebToolsConfig{APIKey: primary.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, primary.Host)}}, true
 	case "skills":
 		return skillsSection(c), true
 	case "memory":
@@ -917,6 +1091,35 @@ func (c Config) ConfigSection(name string) (any, bool) {
 		}, true
 	}
 	return nil, false
+}
+
+// providerSection returns the provider capsule's section (card
+// t_bf21ee07): the config's instance list IS the provider. The primary
+// row (named "default") fills the capsule's base fields; every other
+// row rides the resolver map the shell pins runs and slots through.
+// One shape for BOTH the boot wiring (RouteConfigs) and the hot-apply
+// path - a settings save re-sends it through Provider.SetConfig, so the
+// instances and the primary's endpoint go live without a restart.
+func providerSection(c Config) provider.Config {
+	primary, _ := c.defaultInstance()
+	instances := make(map[string]provider.Config, len(c.Provider.Instances))
+	for _, inst := range c.Provider.Instances {
+		if inst.Name == PrimaryProviderInstance {
+			continue // the primary is the base provider itself
+		}
+		instances[inst.Name] = provider.Config{
+			Type:   inst.Type,
+			Host:   inst.Host,
+			APIKey: inst.APIKey,
+		}
+	}
+	return provider.Config{
+		Type:      primary.Type,
+		ModelName: c.Provider.ModelName,
+		Host:      primary.Host,
+		APIKey:    primary.APIKey,
+		Instances: instances,
+	}
 }
 
 // approvalSection returns the approvals section (card t_c2b52cb5):
@@ -1004,22 +1207,24 @@ func compactionSection(c Config) agent.CompactionConfig {
 // whole slot as a bare model on the default provider. An instance
 // prefix with no model part serves the instance's own model.
 func approvalSlot(c Config) (host, key, model string) {
-	host = c.Provider.Host
-	key = c.Provider.APIKey
+	primary, _ := c.defaultInstance()
+	host = primary.Host
+	key = primary.APIKey
 	model = c.ApprovalsModel
 	name, m := agent.ParseModelSlot(c.ApprovalsModel)
 	if name == "" {
 		return host, key, model
 	}
-	if name == "default" {
+	if name == PrimaryProviderInstance {
 		return host, key, m
 	}
-	if inst, ok := c.Providers[name]; ok {
+	if inst, ok := c.Provider.instance(name); ok {
+		// A prefix with no model part names an ENDPOINT only (an
+		// instance carries no model of its own): the consult has no
+		// model to ask, so the slot fails closed and the gate
+		// escalates, exactly like an empty one.
 		host = inst.Host
 		key = inst.APIKey
-		if m == "" {
-			m = inst.ModelName
-		}
 		model = m
 	}
 	// An unconfigured prefix stays a bare model: the whole slot rides
