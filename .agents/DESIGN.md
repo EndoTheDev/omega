@@ -1,82 +1,74 @@
 # DESIGN.md
 
-The design LAWS home (Endo's word, 2026-11-07). Each law is stated
-exactly once - here. docs/webui.md is the map (values, anatomy,
-mechanics); code headers point. A law restated anywhere else is a
-review finding: the copy dies, this file keeps the law. Laws only -
-tutorials and per-component prose here are this file becoming a
-second map, the death of its 2026-10-30 predecessor.
+The single source of truth for omega's UI rules. A rule is stated
+exactly once - here. docs/webui.md carries the values (colors, sizes,
+anatomy); code headers point back. A rule restated anywhere else is a
+review finding: the copy dies, this file keeps the rule.
 
-## Iconset (card t_502b8e81)
+## Colors
 
-- `webui/app/composables/icons.ts` is the ONLY file a lucide
-  component may be referenced from: lucide-vue-next by NAME only -
-  no icon font, no hand-rolled SVG, no second library.
-- One semantic name = one meaning: two glyphs for one concept means
-  one goes; the ICONS map is the vocabulary.
-- Every call site renders the shared `ui/Icon.vue` wrapper.
-- An unknown name THROWS at render (`iconOf`) - a typo is a build
-  bug, never a silent blank box.
-
-## Icon sizes (card t_502b8e81; the open nit ruled by t_59de3bbe)
-
-- 16 = menubar chrome. 13 = row actions and band tools (the
-  FilesTab precedent, card t_a4504a25, wins: band tools are 13 -
-  the notifications panel's default-14 tools are drift, fix
-  pending). The wrapper default (14, stroke 2) serves glyphs outside
-  both bands; a size never rides ad hoc inline attrs.
-
-## Theme tokens (values live in docs/webui.md)
-
-- Tokens live in `webui/app/assets/css/main.css`; no component
-  invents a color.
-- `--unread` is an unread-ONLY semantic color, never a generic
-  highlight.
-- Dark-first, light-parity: dark is the default identity, light is
-  the same ladder inverted at full parity.
-- Theme overrides recolor only: color tokens + the two layer
+- Tokens live in `webui/app/assets/css/main.css`. No component invents
+  a color; every color in the UI resolves to a token.
+- `--unread` marks unread items only - never a generic highlight.
+- Dark is the default identity; light is the same ladder inverted at
+  full parity.
+- A theme override recolors only: color tokens and the two layer
   shadows. Radii and fonts are never overridable - an override
   recolors, it does not restyle.
-- A new token ships a sane default in main.css.
+- A new token ships with a sane default in main.css.
 
-## Composer (card t_1750a9e3, Endo ruling 2026-11-07)
+## Icons
 
-- ONE composer, no modes: no display-mode setting, no mode classes,
-  no centered card. The mode system is dead and stays dead.
-- The C5 row arrangement is the single shape, stretched pane-wide:
-  plus + input on top, a hairline, chips left + the orange send
-  right.
+- `webui/app/composables/icons.ts` is the only file a lucide icon may
+  be referenced from. Icons come from lucide-vue-next by NAME only -
+  no icon font, no hand-rolled SVG, no second library.
+- One semantic name, one meaning: the ICONS map is the vocabulary.
+  Two glyphs for one concept means one goes.
+- Every call site renders the shared `ui/Icon.vue` wrapper.
+- An unknown name throws at render. A typo is a build bug, never a
+  silent blank box.
+- Sizes: 16 for menubar chrome, 13 for row actions and band tools.
+  The wrapper default (14, stroke 2) serves glyphs outside both
+  bands; a size never rides ad hoc inline attrs. (Known drift: the
+  notifications panel's band tools default to 14 - fix pending.)
+
+## Components
+
+One anatomy per family, one shared component, no per-tab variants.
+Consumers keep their specifics; a consumer carrying a family-anatomy
+block is a review finding.
+
+- Registry row: `webui/app/assets/css/registry-row.css`. Registry
+  lists are quiet - hierarchy by typography weight and opacity, one
+  hairline between rows, not borders or boxes.
+- Toggle pill: `webui/app/components/ui/TogglePill.vue`. The only
+  switch in the webui, and it renders as a button - never a checkbox.
+  One click is one switch: no arm/confirm second click, no confirm
+  label. Consequence text (what an exclusion means, a module's
+  dependents) rides the pill's title, where it informs without gating.
+- Panel band: `webui/app/components/ui/TabBand.vue` + `.band-tool`.
+
+## Composer
+
+- One composer, no modes: no display-mode setting, no mode classes,
+  no centered card.
+- One arrangement, stretched pane-wide: plus + input on top, a
+  hairline, chips left, the orange send right.
 - A floating card: 12px inset at the sides and floor; the top edge
   runs flush with the activity line. Border and rounded corners all
   around - never edge-to-edge.
 - Stored display-mode values are ignored orphans - never read again,
   no migration written.
 
-## UI families (cards t_561dc4e0, t_d93864e7, t_9ae4dea5)
-
-- One anatomy per family, one shared component, no per-tab
-  variants: the registry row (`assets/css/registry-row.css`), the
-  toggle pill (`components/ui/TogglePill.vue`), the panel band
-  (`components/ui/TabBand.vue` + `.band-tool`). Consumers keep
-  their specifics only - a consumer carrying a family-anatomy block
-  is a review finding.
-- The toggle pill is the only switch in the webui, and it renders as
-  a button - never a checkbox. ONE click is one switch (card
-  t_5051d523): no arm/confirm second click, no confirm label. The
-  consequence text (what an exclusion means, a module's dependents)
-  rides the pill's title, where it informs without gating.
-- Registry lists are quiet: hierarchy by typography weight and
-  opacity, one hairline between rows - not borders or boxes.
-
-## Accessibility (card t_502b8e81)
+## Accessibility
 
 - An icon-only affordance carries its accessible name on the HOST:
   `title` + `aria-label`, both required (the tooltip is the title);
   the glyph itself is aria-hidden.
-- Pointer paths have keyboard parity (focus + Enter toggles the
-  chevronless tree row, card t_63582d1f).
+- Pointer paths have keyboard parity: focus + Enter toggles the
+  chevronless tree row.
 
-## The architecture bar (Endo ruling, 2026-10-25)
+## Architecture
 
 - Deletability is the test: removing a module folder removes the
   feature from source AND binary - zero module vocabulary survives
@@ -86,10 +78,8 @@ second map, the death of its 2026-10-30 predecessor.
   entry and the shell hosts nothing - no alias keeps the feature
   alive.
 
-## Convergence
+## How this file converges
 
-- This file converges design law; docs converge facts and
-  mechanics. When a doc, code header or vault note restates a law,
-  the law moves here and the site gets a one-line pointer. Vault
-  files keep their decision prose (ADRs, grills) under a
-  superseded-by pointer.
+When a doc, code header, or note restates a rule, the rule moves
+here and the source gets a one-line pointer. Decision records live
+outside this file.

@@ -12,7 +12,7 @@ in Go.
 
 This file is the single worker map. There is no other AGENTS.md:
 per-module files are consolidated into this map and into `docs/`
-(Endo ruling, 2026-10-21). A new AGENTS.md anywhere outside the root
+(maintainer ruling, 2026-10-21). A new AGENTS.md anywhere outside the root
 is a review finding; its content lands in its mapped home instead.
 
 ## Ownership
@@ -90,17 +90,17 @@ Terse operational rules. Layer references live in `docs/` (map below);
     tests hold the namespace; `agent/seams_test.go` +
     `core/importability_test.go`). The consumer declaring its need is
     its own truth; the owner capsule never knows its consumers.
-  Commands register via `ctx.Commands` + `ctx.CommandHandler` (chain
-  the previous handler on miss); a handler returns `CommandResult`
-  with optional `CmdAction` directives - the host interprets actions,
-  extensions declare intent.
+    Commands register via `ctx.Commands` + `ctx.CommandHandler` (chain
+    the previous handler on miss); a handler returns `CommandResult`
+    with optional `CmdAction` directives - the host interprets actions,
+    extensions declare intent.
 - **Mount order.** Mount order is declared data: an extension whose
   `Mount()` reads a seam another plugin owns needs a `Requires()` edge
   naming that seam (delegate, kanban and cron require `notifications`).
   `MountAllAPI`'s topoSort is the only ordering - slice position in
   `buildPlugins()` is a stable tiebreak (prompt-section authoring order
   among independent plugins) and carries no dependency semantics.
-  Comment-law ordering is retired (card t_13a2af8a).
+  Comment-law ordering is retired.
 - **Goroutine fence.** Modules register Start/Stop lifecycle handles on
   Context.RunGroup; Mount never starts background work. The host calls
   Start after the mount commit; StopAll walks handles in reverse. A
@@ -110,8 +110,8 @@ Terse operational rules. Layer references live in `docs/` (map below);
   and real helpers
   only (`Plugin`, `MountAllAPI`, `TurnSink`, profiles, `NewSessionID`).
   No module imports another module - shared shapes live in core
-  (card t_fb49d5cf). TIER AMENDMENT (v0.12 tier law, 2026-10-26;
-  TUI retired 2026-11-01, card t_0744eb8e):
+  TIER AMENDMENT (v0.12 tier law, 2026-10-26;
+  TUI retired 2026-11-01):
   `api/` is the shell ring, not modules - a module importing it is
   module-imports-shell, not module-imports-module.
 - **New extension recipe.** Create `harness/<name>/` with `<name>.go`,
@@ -131,7 +131,7 @@ Terse operational rules. Layer references live in `docs/` (map below);
   live Context; a module-rooted miss answers 404, an absent module's
   paths ride the SPA catch-all. Seam-nil 501 guards survive only for
   shell-served seams (store, settings). (notifications REST rode its
-  capsule out with shrink wave 3, card t_b75df168 - the 501
+  capsule out with shrink wave 3 - the 501
   degradation retired with the 404 module lane.)
 - **http_channel.** Persistence order is provider-correct and old
   baked sessions are never rewritten: user -> assistant(A + thinking +
@@ -158,7 +158,7 @@ Terse operational rules. Layer references live in `docs/` (map below);
   NARROW_MAX_PX=360; each module keeps its own copy (module UI
   imports no shell code); modulenarrow.test.ts pins threshold
   agreement.
-- **cli loop.** (TUI retired 2026-11-01, card t_0744eb8e - the
+- **cli loop.** (TUI retired 2026-11-01 - the
   three-shells-to-two flip.) `omega setup` is the mandatory first-run
   wizard (provider/host/model, live connection test);
   unconfigured `serve`/`run` refuse exit 1 pointing at it; the bare
@@ -179,7 +179,7 @@ Terse operational rules. Layer references live in `docs/` (map below);
   cancellation return immediately). Upstream answers ending with
   `done_reason: "load"` (ollama-cloud cold-load) are retried with the
   same budget before surfacing as a LOUD stream error - never a silent
-  empty turn (t_854eef1b). New provider: a `streamX` function
+  empty turn. New provider: a `streamX` function
   plus a case in the `Stream` switch in `harness/provider/`.
   Fragmented tool-call deltas (OpenAI, Anthropic) accumulate by index
   and flush in order after the stream ends; consecutive Anthropic
@@ -214,11 +214,11 @@ Terse operational rules. Layer references live in `docs/` (map below);
 ## Gate law
 
 The review gate's operating law (Anthropic agent-volume review steal-list,
-card t_8abdbb15; full contract and templates in `docs/release-gate.md`):
+full contract and templates in `docs/release-gate.md`):
 
 - **Gate rounds are capped at 3.** After 3 gate rounds on one card, a
   4th round is FORBIDDEN: stop, and card the approach reconsideration
-  for Endo (author-agent vs reviewer-agent can ping-pong forever
+  for the maintainer (author-agent vs reviewer-agent can ping-pong forever
   otherwise). From round 3 on, a re-review covers the NEW DIFF only -
   the changed lines against the last round's diff, never a fresh full
   pass.
@@ -237,19 +237,19 @@ card t_8abdbb15; full contract and templates in `docs/release-gate.md`):
 
 ## Wide-angle map
 
-| Area | What it is | Docs |
-| ---- | ---------- | ---- |
-| `llm/` | Shared provider infra: SSE streaming client, retry, the think-level ladder, image sniffing, wire-shape aliases - no provider contract (consumers declare their own faces) | `docs/api.md` |
-| `agent/` | Multi-turn loop machinery + its need-face declarations (`agent/seams.go`), Plugin system (`Context`, `MountAllAPI`), the universal registration surface, events, shared types | `docs/architecture.md` |
-| `core/` | Wire types, events, mount machinery, the Services registry, message vocabulary, messagetree; zero capsule nouns (the noun tests) + stdlib-only imports, enforced by `core/importability_test.go` | `docs/architecture.md` |
-| `api/` + `agent/api/` | Shell ring (always on, never disabled): serving shell (listener, hostguard, module routes, static embed, themes) + the agent's base endpoint set - chat + canvas + settings (the chat floor: sessions, live runs, tools, command palette). Remove every capsule and what remains is a usable agent with a chat face (the census law, pinned by `agent/api/api_census_test.go`) | `docs/api.md` |
-| `cmd/omega/loop.go` + `setup.go` | The CLI agent loop + the mandatory first-run setup wizard (the TUI retired 2026-11-01) | `docs/cli.md` |
-| `harness/` | In-process extension packages (one `agent.Plugin` each) - the TOGGLEABLE tier; capsules own their module REST (`routes.go` per capsule, api.RegisterRoute); new extensions go here, never into the shell ring | `docs/architecture.md` (table), `harness/README.md` (authoring) |
-| `webui/` | Shell SPA (always on, never disabled): Nuxt 4 webui SPA source at checkout root, built output embedded into the binary via the embed lane | `docs/webui.md` |
-| `harness/cron/` | Scheduled prompts (`crons.yaml`, `cron:<name>` sessions) | `docs/cli.md` (`/cron`) |
-| `harness/trust/` | Project trust gate (`trust.yaml`, AGENTS.md loading; the host reads it through its own nil-guarded need faces) | `docs/project-trust.md` |
-| `cmd/omega/` | Single binary entry point, config, home resolution, self-update | `docs/cli.md` |
-| `docs/` | User and worker documentation | start at `docs/architecture.md` |
+| Area                             | What it is                                                                                                                                                                                                                                                                                                                                                                     | Docs                                                            |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `llm/`                           | Shared provider infra: SSE streaming client, retry, the think-level ladder, image sniffing, wire-shape aliases - no provider contract (consumers declare their own faces)                                                                                                                                                                                                      | `docs/api.md`                                                   |
+| `agent/`                         | Multi-turn loop machinery + its need-face declarations (`agent/seams.go`), Plugin system (`Context`, `MountAllAPI`), the universal registration surface, events, shared types                                                                                                                                                                                                  | `docs/architecture.md`                                          |
+| `core/`                          | Wire types, events, mount machinery, the Services registry, message vocabulary, messagetree; zero capsule nouns (the noun tests) + stdlib-only imports, enforced by `core/importability_test.go`                                                                                                                                                                               | `docs/architecture.md`                                          |
+| `api/` + `agent/api/`            | Shell ring (always on, never disabled): serving shell (listener, hostguard, module routes, static embed, themes) + the agent's base endpoint set - chat + canvas + settings (the chat floor: sessions, live runs, tools, command palette). Remove every capsule and what remains is a usable agent with a chat face (the census law, pinned by `agent/api/api_census_test.go`) | `docs/api.md`                                                   |
+| `cmd/omega/loop.go` + `setup.go` | The CLI agent loop + the mandatory first-run setup wizard (the TUI retired 2026-11-01)                                                                                                                                                                                                                                                                                         | `docs/cli.md`                                                   |
+| `harness/`                       | In-process extension packages (one `agent.Plugin` each) - the TOGGLEABLE tier; capsules own their module REST (`routes.go` per capsule, api.RegisterRoute); new extensions go here, never into the shell ring                                                                                                                                                                  | `docs/architecture.md` (table), `harness/README.md` (authoring) |
+| `webui/`                         | Shell SPA (always on, never disabled): Nuxt 4 webui SPA source at checkout root, built output embedded into the binary via the embed lane                                                                                                                                                                                                                                      | `docs/webui.md`                                                 |
+| `harness/cron/`                  | Scheduled prompts (`crons.yaml`, `cron:<name>` sessions)                                                                                                                                                                                                                                                                                                                       | `docs/cli.md` (`/cron`)                                         |
+| `harness/trust/`                 | Project trust gate (`trust.yaml`, AGENTS.md loading; the host reads it through its own nil-guarded need faces)                                                                                                                                                                                                                                                                 | `docs/project-trust.md`                                         |
+| `cmd/omega/`                     | Single binary entry point, config, home resolution, self-update                                                                                                                                                                                                                                                                                                                | `docs/cli.md`                                                   |
+| `docs/`                          | User and worker documentation                                                                                                                                                                                                                                                                                                                                                  | start at `docs/architecture.md`                                 |
 
 ## Read path
 
@@ -292,7 +292,7 @@ flake, because the debugging run always passes. Use the package's
 
 ## Pointers
 
-- `docs/cli.md` - subcommands, flags, home resolution, OMEGA_* env vars
+- `docs/cli.md` - subcommands, flags, home resolution, OMEGA\_\* env vars
 - `docs/api.md` - HTTP routes, `/chat` SSE semantics, provider quirks on the wire
 - `docs/webui.md` - webui reference: geometry, tokens, dock, test law, embed lane
 - `docs/architecture.md` - layer table and project structure

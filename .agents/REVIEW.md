@@ -12,12 +12,12 @@ Each block names a class this repo has actually shipped:
 - **webui** - renders wrong, throws on tab switch, drifts from the
   iconset law (icon or size), mode/class drift between shell and
   module UI, bundle stale vs source (the embed-lane miss: source
-  edited, static/ never rebuilt - t_0a108f16).
+  edited, static/ never rebuilt).
 - **Go core/agent** - blocks the agent loop, races the config lock,
   leaks goroutines or zombies, blocks a pipe on a grandchild kill.
 - **harness** - corrupts state when a crash lands mid-write, bakes
-  config at mount instead of reading it live (the snapshot class -
-  t_34cd1921), escapes the capability jail.
+  config at mount instead of reading it live (the snapshot class)
+  escapes the capability jail.
 - **docs** - lies: a stale claim contradicted by code. Or restates
   a law that already lives elsewhere.
 
