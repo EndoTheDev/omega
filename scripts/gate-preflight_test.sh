@@ -193,20 +193,41 @@ cat >"$WORK/build-dead-lane.sh" <<'STUB'
 } >"$PREFLIGHT_BIN"
 chmod +x "$PREFLIGHT_BIN"
 STUB
-started=$SECONDS
-# A deliberately HUGE wait budget: the point is not the absolute time (the stage
-# costs several seconds on winbtw) but that a corpse is detected instead of
-# burning the budget.
+
+# The health probe is a COUNTER, so this case can measure the phase that can
+# actually hang (the health poll) instead of the whole run's fixed cost. A
+# whole-run clock here bounds `git archive HEAD | tar -x` - 5s idle, past 40s
+# under load - which is the AGENTS.md flake class: red on a loaded machine,
+# green in isolation, measuring something other than what it claims to guard.
+cat >"$WORK/health-probe.sh" <<'STUB'
+#!/usr/bin/env bash
+# one line per probe; prints nothing, so /health is never "ok"
+printf '%s\n' "$(date +%s)" >>"$PREFLIGHT_PROBE_FILE"
+STUB
+probes="$WORK/dead-lane.probes"
+: >"$probes"
 PREFLIGHT_BUILD_CMD="bash '$WORK/build-dead-lane.sh'"
+PREFLIGHT_HEALTH_CMD="bash '$WORK/health-probe.sh'"
 PREFLIGHT_LANE_WAIT=100
-export PREFLIGHT_BUILD_CMD PREFLIGHT_LANE_WAIT
+export PREFLIGHT_BUILD_CMD PREFLIGHT_HEALTH_CMD PREFLIGHT_LANE_WAIT
+export PREFLIGHT_PROBE_FILE="$probes"
 run --port 18211
-elapsed=$((SECONDS - started))
-unset PREFLIGHT_LANE_WAIT
+verdict_at="$(date +%s)"
+first_probe="$(head -1 "$probes" 2>/dev/null | tr -d '\r' || true)"
+probe_n="$(wc -l <"$probes" 2>/dev/null | tr -d ' \r' || true)"
+probe_n="${probe_n:-0}"
+unset PREFLIGHT_LANE_WAIT PREFLIGHT_PROBE_FILE
 check "a lane that dies exits 2" [ "$RC" -eq 2 ]
 check "a dead lane is named as infra" contains "lane will not start" "$ERR"
 check "a dead lane prints its log tail" contains "fixture lane: no provider reachable" "$ERR"
-check "a dead lane short-circuits the health wait (did not burn 100s)" [ "$elapsed" -lt 40 ]
+# Load-free signal: an undetected corpse polls ~200 times over the 100s budget
+# (0.5s cadence); a detected one probes at most a couple of times before the
+# liveness check wins. No clock involved, so no load dependence.
+check "a dead lane is detected instead of polling the budget away (probe count)" [ "$probe_n" -le 4 ]
+# The phase bound: from the FIRST probe to the verdict. That window holds the
+# only thing that can hang; the stage extraction is outside it.
+check "the health-wait phase stays inside the lane_wait budget" \
+  [ "$((verdict_at - ${first_probe:-$verdict_at}))" -lt 40 ]
 
 # =============================================================================
 # 4. never-kill: ports, decoys, and the source law
@@ -336,6 +357,37 @@ export PREFLIGHT_JOURNEYS_CMD
 run --port 18217
 check "a red with no id never exits 0" [ "$RC" -eq 2 ]
 check "the nameless red is named as infra" contains "reported red but named no journey" "$ERR"
+
+# A suite that exits 0 while judging NOTHING is the same discovery lie in its
+# other shape - a run.sh emptied by a bad merge, a suite that bailed before its
+# first recipe. It must be exit 2 ("nothing to judge"), never "0 red - green
+# locally": a driver reading that would dispatch a nightly believing the tip
+# had been pre-flighted.
+cat >"$WORK/journeys-silent.sh" <<'STUB'
+#!/usr/bin/env bash
+# exits 0, writes no log, prints no result line
+exit 0
+STUB
+PREFLIGHT_JOURNEYS_CMD="bash '$WORK/journeys-silent.sh'"
+export PREFLIGHT_JOURNEYS_CMD
+run --port 18218
+check "a suite that judged nothing exits 2" [ "$RC" -eq 2 ]
+check "nothing-to-judge is named as infra" contains "nothing to judge" "$ERR"
+check "nothing-to-judge never prints a local green" not_contains "green locally" "$OUT"
+
+# ... and the converse: a suite whose ONLY evidence is a recipe log (no result
+# line in its stdout - a truncated or reformatted log) is still a judged run.
+cat >"$WORK/journeys-log-only.sh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' '12:00:01 [journey] ok: open' '12:00:02 [journey] ok: console silent' \
+  >"$PREFLIGHT_EVIDENCE/10-alpha.log"
+exit 0
+STUB
+PREFLIGHT_JOURNEYS_CMD="bash '$WORK/journeys-log-only.sh'"
+export PREFLIGHT_JOURNEYS_CMD
+run --port 18218
+check "a log-only suite is a judged run (exit 0)" [ "$RC" -eq 0 ]
+check "the log-only green names its evidence count" contains "0 red - green locally" "$OUT"
 
 # =============================================================================
 # 6. argument handling + the never-kill source law

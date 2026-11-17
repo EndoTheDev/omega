@@ -94,7 +94,8 @@ set -uo pipefail
 #                          $PREFLIGHT_HEALTH_URL.
 #   PREFLIGHT_LANE_WAIT    seconds to wait for /health (default 60).
 #   PREFLIGHT_CHROME_PORT  CDP port the suite attaches to (default: the first
-#                          free port in 9300..9319). Set it when a browser is
+#                          free port in 9300..9339; the script refuses when none
+#                          is free). Set it when a browser is
 #                          already listening - run.sh attaches to a live CDP
 #                          port instead of launching one (the winbtw lane: a
 #                          host with no agent-browser-managed chromium).
@@ -440,7 +441,14 @@ else
     die2 "port $port is already listening (that process is not mine to kill - pass another --port)"
 fi
 chrome_port="${PREFLIGHT_CHROME_PORT:-}"
-[ -n "$chrome_port" ] || chrome_port="$(pick_port 9300 9319)" || chrome_port=9333
+# The suite LAUNCHES a chromium on this port (an explicit PREFLIGHT_CHROME_PORT
+# means "attach to the live one already there"), so a busy port is not an
+# alternative - a fallback picked past the scan would have the suite attach to a
+# browser this script never started. Widen the scan, then refuse.
+if [ -z "$chrome_port" ]; then
+  chrome_port="$(pick_port 9300 9339)" ||
+    die2 "no free CDP port in 9300..9339 for the suite's chromium (pass PREFLIGHT_CHROME_PORT=<port> to attach a live one)"
+fi
 
 base_url="http://127.0.0.1:$port"
 
@@ -561,7 +569,7 @@ print_reds "$suite_log" "$evid_used"
 case "$suite_rc" in
   0 | 1) : ;;
   3)
-    die2 "another journey suite holds the run lock - nothing ran (queue with PREFLIGHT_LOCK_WAIT=<secs> 1)"
+    die2 "another journey suite holds the run lock - nothing ran (queue by setting PREFLIGHT_LOCK_WAIT to the seconds to wait, e.g. 1)"
     ;;
   *)
     die2 "the journey suite exited $suite_rc (lane/browser infra, not a product verdict)"
@@ -579,6 +587,25 @@ fi
 # one outcome this script must never produce. Stop loudly instead.
 [ "$suite_rc" -ne 1 ] ||
   die2 "the journey suite reported red but named no journey (run.sh exit 1, no id in its output)"
+
+# ... and so would a suite that exits 0 while JUDGING nothing: run.sh emptied by
+# a bad merge, a suite that bailed before its first recipe, a stub seam with no
+# work. That is the same discovery lie the format-only guard above refuses ("a
+# formatter that reads nothing to judge as nothing wrong"), in its live shape -
+# and here it would let a driver dispatch a nightly believing the tip was
+# pre-flighted. A result line (`journeys: <id>  green|RED`) or a recipe log is
+# the evidence that something was asserted; absent both, nothing was.
+judged=0
+if [ -f "$suite_log" ] &&
+  sed -n -E 's/^journeys: ([^ ]+) +(green|RED)$/\1/p' "$suite_log" 2>/dev/null | grep -q .; then
+  judged=1
+else
+  for f in "$evid_used"/*.log; do
+    [ -f "$f" ] && judged=1 && break
+  done
+fi
+[ "$judged" -eq 1 ] ||
+  die2 "the journey suite exited 0 but judged no recipe (no result line in the suite log, no log in $evid_used - nothing to judge)"
 
 printf '%s: 0 red - green locally (DISCOVERY ONLY: CI layout can differ by a small offset, and only a green nightly certifies a cut)\n' "$PROG"
 exit 0
