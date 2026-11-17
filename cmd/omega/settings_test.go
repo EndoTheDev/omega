@@ -1021,6 +1021,14 @@ func TestHotApplyPushesCronRunTimeout(t *testing.T) {
 // knobs apply without a restart - the merged instances list plus the
 // six model slots, vision and title included (they joined their four
 // live siblings in the same stroke).
+//
+// provider.model_name is the ONE model knob that stays restart-only:
+// the running model belongs to the picker and /model, and
+// Provider.SetConfig deliberately preserves it on an unrelated save
+// (round-1 review, t_bf21ee07 rework). Flipping this flag without
+// landing the live apply in the same change makes the pane's "knobs
+// marked live apply to the running server" claim a lie - the assert
+// below is what keeps that honest.
 func TestProviderKnobsAreLive(t *testing.T) {
 	cfg := DefaultConfig()
 	seen := map[string]bool{}
@@ -1045,6 +1053,16 @@ func TestProviderKnobsAreLive(t *testing.T) {
 		if !live {
 			t.Errorf("%s is not live: a save would need a restart", key)
 		}
+	}
+	// The negative half: model_name must NOT claim live while the live
+	// apply does not exist. Absent from the map would mean the knob
+	// vanished from the schema, which is also a failure.
+	live, ok := seen["provider.model_name"]
+	if !ok {
+		t.Fatal("provider.model_name is missing from the schema")
+	}
+	if live {
+		t.Error("provider.model_name claims live, but Provider.SetConfig preserves the running model on a save - a model_name save would be silently restart-only")
 	}
 }
 

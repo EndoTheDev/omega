@@ -245,8 +245,11 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					// model_name, so no value can be "the default" - the
 					// knob answers JSON null and the pane renders no dot
 					// and no reset (the one omission in this schema).
-					Live: true,
-					Help: "default model the agent serves; the webui model picker overrides per chat; applies live"},
+					// NO Live: the running model belongs to the picker
+					// (and /model), so Provider.SetConfig deliberately
+					// preserves it on a settings save; this knob is
+					// restart-only until that changes (t_bf21ee07 rework).
+					Help: "default model the agent serves; the webui model picker overrides per chat; applies on restart"},
 				{Key: "provider.vision_model", Label: "vision model", Type: "model", Filter: "vision", DefaultOption: true,
 					Value:   cfg.VisionModel,
 					Default: def.VisionModel, Live: true,
