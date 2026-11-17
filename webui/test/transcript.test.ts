@@ -4,9 +4,13 @@
 // no reload-side reconstruction). Run: node --test webui/test/ (node >= 23 runs TS natively)
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { renderTranscriptItems } from "../app/composables/omega.ts";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createElapsedMeter, renderTranscriptItems } from "../app/composables/omega.ts";
+import { syncConsumedSpan } from "../app/composables/useElapsed.ts";
 
-import type { TranscriptWireItem } from "../app/composables/omega.ts";
+import type { RenderTimers, TranscriptWireItem } from "../app/composables/omega.ts";
 
 describe("renderTranscriptItems", () => {
   it("renders a segmented session in wire order, nothing reconstructed", () => {
@@ -244,5 +248,119 @@ describe("renderTranscriptItems", () => {
     if (call.kind !== "tool") return assert.fail("items[2] not tool");
     assert.equal(call.status, "running", "the call itself keeps streaming");
     assert.equal(call.elapsedMs, 5000);
+  });
+});
+
+// --- the meter's LATE anchor: the consumed span arrives after mount ---
+// Card t_556bd2ad. The row's anchor (initialMs: the elapsed-so-far the
+// wire carries) can land AFTER the component mounted: a restored row only
+// flips to streaming once the stream attaches, and an id-less call gains
+// started_at on a later paint. useElapsed captured initialMs() once at
+// setup, so such a row showed 0 for the whole run. The acceptance: a fake
+// clock, initialMs 0, 30s pushed through the getter -> the label jumps
+// once, and a repeated or stale arrival never double-counts.
+describe("useElapsed late anchor (the consumed span arrives after mount)", () => {
+  // manual fake clock, the omega.test.ts shape: one stored tick callback
+  function fakeMeter() {
+    const labels: string[] = [];
+    let now = 0;
+    let fire: (() => void) | null = null;
+    const timers: RenderTimers = {
+      set: (fn) => {
+        fire = fn;
+        return 0;
+      },
+      clear: () => {
+        fire = null;
+      },
+    };
+    const meter = createElapsedMeter((l) => labels.push(l), () => now, timers, 0);
+    return {
+      meter,
+      labels,
+      last: () => labels[labels.length - 1],
+      ticksPending: () => fire !== null,
+      advance(ms: number) {
+        now += ms;
+        const f = fire;
+        fire = null;
+        f?.();
+      },
+    };
+  }
+
+  it("jumps once from 0 to the arrived span, then counts on from it", () => {
+    const t = fakeMeter();
+    let consumed = 0;
+    const anchor = () => consumed;
+    t.meter.start();
+    assert.deepEqual(t.labels, ["0ms"], "a row that mounted before its span starts at zero");
+    t.advance(1000);
+    assert.equal(t.last(), "1s");
+    // the span arrives: the call had already burned 30s before this row
+    // knew anything about it
+    consumed = 30_000;
+    syncConsumedSpan(t.meter, anchor);
+    assert.equal(t.last(), "30s", "the label jumps to the real elapsed");
+    assert.equal(t.labels.length, 3, "and jumps exactly once");
+    t.advance(1000);
+    assert.equal(t.last(), "31s", "the meter counts on from the new anchor");
+    // a repeat of the same paint and a stale payload landing later are
+    // both no-ops - the anchor only moves forward
+    syncConsumedSpan(t.meter, anchor);
+    assert.equal(t.labels.length, 4, "a repeated arrival emits nothing");
+    consumed = 12_000;
+    syncConsumedSpan(t.meter, anchor);
+    assert.equal(t.last(), "31s", "a stale (smaller) span never walks the label back");
+  });
+
+  it("replaces the base instead of adding to it (no double count)", () => {
+    const t = fakeMeter();
+    let consumed = 0;
+    const anchor = () => consumed;
+    t.meter.start();
+    t.advance(10_000);
+    assert.equal(t.last(), "10s", "the meter burned 10s on its own");
+    consumed = 30_000;
+    syncConsumedSpan(t.meter, anchor);
+    assert.equal(t.last(), "30s", "30s consumed is 30s, never 10s + 30s");
+    // a later paint of the same live call hands a bigger elapsed-so-far;
+    // it re-anchors to that value at the same instant
+    consumed = 31_000;
+    syncConsumedSpan(t.meter, anchor);
+    assert.equal(t.last(), "31s", "a growing paint re-anchors without stacking");
+    assert.ok(t.ticksPending(), "and the ticker is still armed");
+  });
+
+  it("holds an arrival that lands while the row is still settled for the next start", () => {
+    const t = fakeMeter();
+    let consumed = 0;
+    const anchor = () => consumed;
+    consumed = 30_000;
+    syncConsumedSpan(t.meter, anchor);
+    assert.deepEqual(t.labels, [], "a settled meter emits nothing");
+    t.meter.start();
+    assert.equal(t.last(), "30s", "the first start counts on from the arrived span");
+    // a row that already froze keeps its frozen label - a finished row's
+    // truth is finalMs, not a late anchor
+    t.meter.stop();
+    const frozen = t.last();
+    consumed = 45_000;
+    syncConsumedSpan(t.meter, anchor);
+    assert.equal(t.last(), frozen, "a stopped meter never re-emits a late span");
+  });
+
+  // The cases above drive the reconciler directly: they need a fake clock,
+  // and useElapsed arms a real interval that would hold the node event loop
+  // open (probed: a reactive `elapsedMs` pushed 0 -> 30000 + nextTick() DID
+  // move the label to "30s" through the real composable). The last link -
+  // that useElapsed actually watches the anchor - is therefore pinned
+  // structurally, the elapsedanchor.test.ts convention.
+  it("useElapsed watches the anchor getter and hands it to the meter", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(join(here, "..", "app", "composables", "useElapsed.ts"), "utf8");
+    assert.match(source, /watch\(initialMs, \(\) => syncConsumedSpan\(meter, initialMs\)\)/, "the setup capture is not the last word - the getter is watched");
+    const helper = source.slice(source.indexOf("export function syncConsumedSpan"));
+    assert.match(helper, /meter\.reanchor\(initialMs\(\)\)/, "the watched value reaches the meter's reanchor");
   });
 });

@@ -2115,6 +2115,15 @@ export function formatDurationMs(ms: number): string {
 export interface ElapsedMeter {
   start(): void;
   stop(): void;
+  // reanchor REPLACES the consumed span the meter counts on from - the
+  // late-arrival half of initialMs (card t_556bd2ad). A row can mount
+  // before its span exists (a restored row that only starts streaming
+  // once the stream attaches, an id-less call that gains started_at on a
+  // later paint); without this the meter carried the setup paint's zero
+  // for the whole run. Monotone: a repeated or stale (smaller) span is a
+  // no-op, so an arriving anchor moves the label once and can never
+  // double-count or walk it backwards.
+  reanchor(initialMs: number): void;
 }
 
 // createElapsedMeter takes the tick callback and optional clock parts -
@@ -2134,7 +2143,14 @@ export function createElapsedMeter(
   },
   initialMs = 0,
 ): ElapsedMeter {
+  // base is the consumed span the meter counts on from: initialMs at
+  // construction, then whatever a later reanchor lands. startedAt is the
+  // wall-clock origin (now - base); running says whether a tick is armed,
+  // so a span arriving while the row is still settled is recorded for the
+  // next start() instead of emitting into a stopped meter.
+  let base = Math.max(0, initialMs);
   let startedAt: number | null = null;
+  let running = false;
   let handle: unknown = null;
   const fire = () => {
     handle = null;
@@ -2144,17 +2160,31 @@ export function createElapsedMeter(
   };
   return {
     start() {
+      running = true;
       if (startedAt !== null) return;
-      startedAt = now() - initialMs;
+      startedAt = now() - base;
       onElapsed(formatElapsed(startedAt, now()));
       if (handle === null) handle = timers.set(fire, ELAPSED_TICK_MS);
     },
     stop() {
       // clear FIRST, then emit - the timer must be gone before the final
       // label lands, or the next tick re-emits past the frozen value
+      running = false;
       if (handle !== null) timers.clear(handle);
       handle = null;
       if (startedAt === null) return;
+      onElapsed(formatElapsed(startedAt, now()));
+    },
+    reanchor(next: number) {
+      // REPLACE, never add: the offset is the call's elapsed-so-far, so
+      // applying a second one over the first would count the same
+      // seconds twice. A value that does not grow is a no-op (a repeat of
+      // the same paint, or a stale payload landing after a fresher one).
+      const ms = Math.max(0, next);
+      if (!(ms > base)) return;
+      base = ms;
+      if (!running) return;
+      startedAt = now() - base;
       onElapsed(formatElapsed(startedAt, now()));
     },
   };
