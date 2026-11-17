@@ -90,3 +90,15 @@ test("editing the primary row writes the default row", () => {
   assert.match(field, /function removeRow\(i: number\) \{\s*\n\s*if \(isPrimary\(rows\.value\[i\]!\)\) return;/,
     "remove refuses the primary row before it filters anything");
 });
+
+test("the type ladder is the listbox's {value,label} shape", () => {
+  // a bare string array renders an EMPTY popup: BandSelect reads
+  // o.value / o.label off every row, and the chip's fallback hides the
+  // breakage (it prints the raw modelValue). Pin the ladder's shape.
+  assert.match(field, /const types: \{ value: string; label: string \}\[\] = \[/,
+    "the type ladder is object-shaped, or the popup renders blank rows");
+  for (const type of ["ollama", "openai", "anthropic"]) {
+    assert.match(field, new RegExp(`\{ value: "${type}", label: "${type}" \}`),
+      `the ladder offers ${type}`);
+  }
+});

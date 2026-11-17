@@ -112,7 +112,16 @@
     (e: "update", value: ProviderInstanceRow[]): void;
   }>();
 
-  const types = ["ollama", "openai", "anthropic"];
+  // BandSelect's ladder is {value,label} objects: a bare string array
+  // renders an EMPTY popup (the rows read o.value/o.label) while the
+  // chip still shows the raw value - the type cell looked fine and did
+  // nothing (Pre-existing at the merge base, fixed here because the
+  // merged providers section claims the type is yours to change).
+  const types: { value: string; label: string }[] = [
+    { value: "ollama", label: "ollama" },
+    { value: "openai", label: "openai" },
+    { value: "anthropic", label: "anthropic" },
+  ];
 
   const rows = computed<ProviderInstanceRow[]>(() => props.value ?? []);
 
