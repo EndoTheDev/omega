@@ -34,3 +34,13 @@ export function isLive(status: string): boolean {
 export function isStreaming(status: string): boolean {
   return status === "running";
 }
+
+// isYielded: the OTHER named half - the call was dispatched, its result
+// re-enters as a later wake turn (the row renders the word `pending` for
+// it). One consumer needs it: the chat host's wake watcher, which arms on
+// a transcript that still holds a yielded call so the chip fills in when
+// the wake lands. A status that awaits a wake but is not `pending` must
+// land HERE, not in a fifth inline comparison.
+export function isYielded(status: string): boolean {
+  return status === "pending";
+}

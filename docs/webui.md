@@ -926,13 +926,22 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   `webui/test/composershape.test.ts`; `ModelSelect` + the shared `BandSelect` effort chip (the dedicated
   ThinkingSelect retired - the BandSelect owns the select grammar; the
   model+effort pair is one nowrap wrap unit), `ChatMessage`,
-  `ThinkingBlock`, `ToolCallLine` (running/done/error, expandable
+  `ThinkingBlock`, `ToolCallLine` (running/pending/done/error, expandable
   result), `ToolGroup` (the tool-group RENDERING law, card t_e4280de7:
   a run's CONSECUTIVE tool rows collapse into ONE collapsible group -
   `composables/toolGroup.ts` folds each render list strictly, a
   variant-anchored row never gets swallowed, the group rides the shared
   `chat.tool_display` knob with auto open-while-live and a session-scoped
-  pin; pinned by the 23-tool-group journey and `webui/test/toolgroup.test.ts`),
+  pin; pinned by the 23-tool-group journey and `webui/test/toolgroup.test.ts`);
+  the tool-status VOCABULARY is one predicate file, card t_008f5d27:
+  `composables/toolStatus.ts` owns the live set (`isLive`:
+  running | pending) and its two named halves (`isStreaming` -
+  running only, the activity line and the gate-card binding, a
+  deliberate running-only decision; `isYielded` - pending only, the
+  wake watcher); every consumer imports the predicate instead of
+  spelling the set inline, and `webui/test/pendingchips.test.ts`
+  asserts the consumers agree for each status value and sweeps `app/`
+  for any inline re-spelling,
   `ChatTab` (transcript + composer, live-pin layout),
   `ChatItem`.
 - Sessions: `AppSidebar` (band head with the in-band search, the

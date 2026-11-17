@@ -31,7 +31,7 @@ import {
   type ToolDisplay,
 } from "../app/composables/toolDisplay.ts";
 import { toolGroupWantOpen } from "../app/composables/toolGroup.ts";
-import { isLive, isStreaming } from "../app/composables/toolStatus.ts";
+import { isLive, isStreaming, isYielded } from "../app/composables/toolStatus.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "app");
 const src = (p: string) => readFileSync(join(root, p), "utf8");
@@ -386,6 +386,14 @@ test("every consumer agrees with the predicate for every status value", () => {
     // ... and the group's open law reads the SAME set (ToolGroup passes its
     // isLive aggregate), so one live child opens the container too
     assert.equal(toolGroupWantOpen(isLive(s), false, "auto"), isLive(s), `group open ${s}`);
+    // the wake watcher arms on the yielded half, and the two named halves
+    // partition the live set exactly (no status is both, none is neither)
+    assert.equal(isYielded(s), s === "pending", `isYielded(${s})`);
+    assert.equal(
+      isStreaming(s) !== isYielded(s),
+      isLive(s),
+      `streaming | yielded === live (${s})`,
+    );
   }
 });
 
@@ -400,21 +408,67 @@ test("all five consumers import the predicate instead of spelling the set", () =
   for (const [file, imp] of sites) {
     assert.match(src(file), imp, `${file} imports toolStatus`);
   }
-  // the two running-only gates NAME the decision (isStreaming) with a
-  // comment at the call site; they never re-spell the set
-  const gates = src("composables/chat.ts") + src("composables/omega.ts");
-  assert.equal(
-    gates.match(/isStreaming\(/g)?.length,
-    2,
-    "both running-only gates call isStreaming",
+  // each consumer's CALL SITE names the answer it needs: two take the live
+  // set, two the streaming-only half (the named decision), one the yielded
+  // half. A consumer that starts spelling a status inline has no pin here
+  // and no pin below - the sweep is what catches it.
+  assert.match(
+    src("components/chat/ToolCallLine.vue"),
+    /useElapsed\(\s*\(\) => props\.finalMs,\s*\(\) => isLive\(props\.status\)/,
+    "the row's elapsed meter takes the live set",
+  );
+  assert.match(
+    src("components/chat/ToolGroup.vue"),
+    /anyActive = computed\(\(\) => props\.items\.some\(\(it\) => isLive\(it\.status\)\)\)/,
+    "the group aggregate takes the live set",
+  );
+  assert.match(
+    src("composables/chat.ts"),
+    /if \(isLive\(it\.status\)\) \{\s*const anchor = toolCallAnchorMs/,
+    "the paint-time anchor takes the live set",
+  );
+  assert.match(
+    src("composables/chat.ts"),
+    /item\?\.kind === "tool" &&\s*isStreaming\(item\.status\)/,
+    "the activity phase takes the streaming-only half, by name",
+  );
+  assert.match(
+    src("composables/omega.ts"),
+    /it\.kind === "tool" && isStreaming\(it\.status\) && it\.name === "shell\.run"/,
+    "the gate binding takes the streaming-only half, by name",
+  );
+  assert.match(
+    src("composables/omega.ts"),
+    /it\?\.kind === "tool" && isYielded\(it\.status\)/,
+    "the wake watcher takes the yielded half, by name",
   );
 });
 
 test("no file under app/ spells the live set inline any more", () => {
-  const inline = /===\s*["']running["']\s*\|\|[\s\S]{0,40}===\s*["']pending["']/;
-  const offenders = walk(root).filter(
-    (f) => !f.endsWith("toolStatus.ts") && inline.test(readFileSync(f, "utf8")),
+  // The pair, in ANY order and any container: `=== "running" || === "pending"`,
+  // `["running","pending"].includes(x)`, `new Set(["pending","running"])`.
+  // Adjacency is the whole shape - a consumer classifies the set by naming
+  // both of its members next to each other.
+  const pair = new RegExp(
+    `["'](?:running|pending)["'][\\s\\S]{0,60}["'](?:running|pending)["']`,
+    "g",
   );
+  // The two MAPPERS mint the word as a ternary yield (`cond ? "running"`).
+  // A producer is not a classifier: a classification never yields the word
+  // straight out of a `?`.
+  const yieldsWord = /\?\s*$/;
+  const offenders: string[] = [];
+  for (const f of walk(root)) {
+    if (f.endsWith("toolStatus.ts")) continue;
+    const text = readFileSync(f, "utf8");
+    for (const m of text.matchAll(pair)) {
+      const start = m.index ?? 0;
+      // the 8 chars before the first literal decide: `? ` is a producer
+      const prefix = text.slice(Math.max(0, start - 8), start);
+      if (yieldsWord.test(prefix)) continue;
+      offenders.push(`${f.slice(root.length + 1)}:${text.slice(0, start).split("\n").length}`);
+    }
+  }
   assert.deepEqual(
     offenders,
     [],

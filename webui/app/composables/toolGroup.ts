@@ -68,16 +68,16 @@ export function groupToolRuns(
 // toolGroupWantOpen: the pure mode+state -> open mapping for a group
 // the user has NOT pinned. Auto keeps the group open while the run is
 // live (calls still streaming in - closing per call would yoyo) or any
-// child row is active - running, or pending its out-of-band result
-// (async agent loop phase 3: the chip stays visible until its wake
-// fills it); a settled group collapses. Expanded/collapsed force one
-// state, like toolRowWantOpen. Pure.
+// child row is live (composables/toolStatus.ts: running, or pending its
+// out-of-band result - async agent loop phase 3, the chip stays visible
+// until its wake fills it); a settled group collapses. Expanded/collapsed
+// force one state, like toolRowWantOpen. Pure.
 export function toolGroupWantOpen(
-  anyRunning: boolean,
+  anyLive: boolean,
   live: boolean,
   mode: ToolDisplay,
 ): boolean {
   if (mode === "expanded") return true;
   if (mode === "collapsed") return false;
-  return anyRunning || live;
+  return anyLive || live;
 }
