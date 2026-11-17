@@ -169,6 +169,18 @@ surface) is its sibling: `docs/migrating-a-module.md`.
      deleted func names) still crosses chunks; anchors do not. Fixtures
      14 and 15 in `scripts/nm-purity_test.sh` pin the scope and its
      teeth.
+   - A deleted DECLARATION is dead vocabulary (card t_388a2884): the
+     file re-walks for its call sites (a `.name(` sighting is a wire),
+     for a local only ever assigned once its one reader died, and for a
+     consumer interface whose every method went - an empty interface
+     accepts anything and still carries the capsule's noun. The
+     boundary is the declaration KIND: a nil body refuses a non-error
+     return and a hollow interface lies, while an emptied struct is
+     legal Go and the host's aggregate keeps its name for every live
+     signature that carries it. A test double's names stay inside the
+     double - `_test.go` is fixture vocabulary, never host vocabulary.
+     Fixtures 16-19 in `scripts/nm-purity_test.sh` pin the strands, the
+     over-kill teeth and the struct boundary.
 
 8. **Run the gates in the worktree**: `go build ./...`, `go vet ./...`,
    `go test ./...`. The journey suite proves the board behavior green
