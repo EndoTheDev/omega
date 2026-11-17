@@ -7,6 +7,7 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import {
   INSPECTOR_TAB_COMPONENTS,
+  PRIMARY_TAB_COMPONENTS,
   type DockComponentName,
 } from "../app/composables/dockables.ts";
 import {
@@ -139,7 +140,9 @@ describe("edge pane hide/reveal - the stow (card t_9ed6cad7)", () => {
     const { closed, stow } = closedWithKanbanStowed();
     const opened = asSplit(revealEdgePane(closed, "sidebar", "before", null, stow));
     const pane = asPane(findEdgePane(opened, "sidebar")!);
-    assert.deepEqual(pane.tabs, [{ component: "sidebar" }, { component: "kanban" }]);
+    // canvas C1: the fresh left shell seats its CLASS (sessions + its
+    // companions); the dragged kanban rides after them
+    assert.deepEqual(pane.tabs, [...PRIMARY_TAB_COMPONENTS.map((c) => ({ component: c })), { component: "kanban" }]);
     assert.equal(pane.active, 1);
     // the stow's own px wins over the sub-320 reopen clamp
     assert.equal(pane.fixed, 480);
@@ -178,7 +181,7 @@ describe("edge pane hide/reveal - the stow (card t_9ed6cad7)", () => {
     assert.equal(countTab(opened, "kanban"), 1);
     assert.equal(findComponentTab(opened, "kanban")!.paneId, chat.id);
     const left = asPane(findEdgePane(opened, "sidebar")!);
-    assert.deepEqual(left.tabs, [{ component: "sidebar" }]);
+    assert.deepEqual(left.tabs, PRIMARY_TAB_COMPONENTS.map((c) => ({ component: c })));
   });
 
   it("serialize/deserializeLayout carries the stow round-trip", () => {
@@ -189,7 +192,7 @@ describe("edge pane hide/reveal - the stow (card t_9ed6cad7)", () => {
     assert.deepEqual(back.closedEdges, ["sidebar"]);
     const stowed = back.hiddenEdges?.sidebar;
     assert.ok(stowed);
-    assert.deepEqual(stowed.tabs, [{ component: "sidebar" }, { component: "kanban" }]);
+    assert.deepEqual(stowed.tabs, [...PRIMARY_TAB_COMPONENTS.map((c) => ({ component: c })), { component: "kanban" }]);
     assert.equal(stowed.active, 1);
     assert.equal(stowed.fixed, 480);
   });
@@ -258,10 +261,14 @@ describe("createDock: the closed window keeps its composition (card t_9ed6cad7)"
       hiddenEdges?: Record<string, { tabs: { component: string }[]; active: number }>;
     };
     assert.ok(rec.closedEdges?.includes("sidebar"));
-    assert.deepEqual(rec.hiddenEdges?.sidebar?.tabs, [
-      { component: "sidebar" },
-      { component: "kanban" },
-    ]);
+    assert.deepEqual(
+      rec.hiddenEdges?.sidebar?.tabs,
+      // the drag inserted kanban at index 1 - right after sessions
+      // (the class's companions ride behind it)
+      [PRIMARY_TAB_COMPONENTS[0]!, "kanban", ...PRIMARY_TAB_COMPONENTS.slice(1)].map((c) => ({
+        component: c,
+      })),
+    );
     assert.equal(rec.hiddenEdges?.sidebar?.active, 1);
     // RELOAD (closed): the record carries the closure AND the stow
     const dock2 = createDock(store);

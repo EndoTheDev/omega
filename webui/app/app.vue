@@ -301,6 +301,13 @@
         v-else-if="sidebarDrawerActiveId === 'files'"
         class="pane"
         :open="drawerOpen" />
+      <!-- canvas C1: agents' home is the PRIMARY sidebar now (the seat map:
+          sessions, agents, crons), so this drawer seats it by its own branch
+          - the shell-owned panel is not in the PANEL manifest, and the
+          catch-all would render "module not loaded" for a live tab -->
+      <AgentsPanel
+        v-else-if="sidebarDrawerActiveId === 'agents'"
+        class="pane" />
       <SettingsTab
         v-else-if="sidebarDrawerActiveId === 'settings'"
         class="pane"
@@ -631,6 +638,7 @@
   // tab titles (the same voice the dock tabbar uses)
   import {
     INSPECTOR_TAB_COMPONENTS,
+    PRIMARY_TAB_COMPONENTS,
     COMPONENT_TITLES,
     DOCKABLES,
     compositionModuleIds,
@@ -1751,6 +1759,11 @@
   // card t_4ae27e0d routing: a session ALWAYS opens in the main pane, and
   // a tab already bound to that session is FOCUSED wherever it lives -
   // never a duplicate. Only "new" (or an unbound session) mints a tab.
+  // canvas C1 THE ROUTING LAW: the target is the ACTIVE center chat pane
+  // (resolveActivePaneId), falling back to the main column; a pane that
+  // ASKED for the tab (a sidebar's own '+' via DOCK_CHAT_OPEN_KEY) is
+  // honored only when it is a main pane - the dock's sessionPane refuses a
+  // sidebar, which is the whole point: a sidebar never hosts a session.
   // card t_311838e4: a DRAFT tab (no session binding yet) already open?
   // Focus it wherever it sits - no duplicate new-chat tab. Mirrors the
   // focus-existing rule above for opened sessions; only when no draft
@@ -1779,7 +1792,7 @@
         return;
       }
     }
-    const pane = paneId ?? dock.ensureMainPane();
+    const pane = paneId ? dock.sessionPane(paneId) : resolveActivePaneId();
     const key = nextTabKey();
     dock.openTab(pane, {
       component: "chat",
@@ -1801,9 +1814,10 @@
   // the tab. Always mints fresh (no draft reuse: a plain draft and an
   // ephemeral draft are different contracts and must not merge).
   function openEphemeralTab() {
-    // same claim as openChatTab: a fresh chat tab is chat focus
+    // same claim as openChatTab: a fresh chat tab is chat focus, and it
+    // lands in the ACTIVE center chat pane (canvas C1's routing law)
     settingsRoute.value = false;
-    const pane = dock.ensureMainPane();
+    const pane = resolveActivePaneId();
     const key = nextTabKey();
     dock.openTab(pane, { component: "chat", sessionRef: EPHEMERAL_DRAFT_REF, key });
     focusedKey.value = key;
@@ -2117,7 +2131,13 @@
     );
   }
 
-  const sidebarDrawerTabs = computed(() => drawerTabsFor("sidebar", ["sidebar"]));
+  // canvas C1: the primary sidebar's registry floor - its class members
+  // (sessions, agents, cron), gated modules skipped exactly like the
+  // inspector floor below (the drawer is a second face of the same strip)
+  const sidebarFloor = computed(() =>
+    PRIMARY_TAB_COMPONENTS.filter((id) => !moduleGated(id, currentModuleGate())),
+  );
+  const sidebarDrawerTabs = computed(() => drawerTabsFor("sidebar", sidebarFloor.value));
   // card t_103e30a6: the inspector drawer's registry floor skips a gated
   // module's chip - the drawer is a second face of the same strip
   const inspectorFloor = computed(() =>

@@ -22,6 +22,9 @@ export function registerScratchSingleton(): () => void {
     // card t_502b8e81: the registry icon is an iconset NAME now
     icon: "module",
     policy: "singleton",
+    // canvas C1: the registry entry carries the CLASS (area is derived),
+    // and the scratch view exists to exercise the MAIN-pane opener paths
+    class: "main",
     area: "main",
     closable: true,
   } as unknown as never);

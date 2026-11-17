@@ -21,7 +21,8 @@ import {
   rootPaneOf,
   splitDepthInRoot,
   splitLawRefusal,
-  lockedBarRefusal,
+  seatRefusal,
+  paneZone,
   serialize,
   deserializeLayout,
   parseAnyLayout,
@@ -130,7 +131,13 @@ describe("predictDockDrop over the roots (prediction == commit, ruling 5)", () =
   it("bottom shell: all four zones grow, drop position decides the direction", () => {
     for (const zone of ["left", "right", "top", "bottom"] as const) {
       const { root, bottom } = bottomRoot();
-      const src = chatPaneId(root);
+      // canvas C1: the dragged view must be one the seat law lets into the
+      // bottom pane - a sidebar view visits it (a chat tab never does), so
+      // drag the right shell's files tab
+      const right = [...allNodesOf(root)].find(
+        (n) => isPane(n) && n.edge === "right",
+      ) as DockPane;
+      const src = right.id;
       const pred = expectDrop(predictDockDrop(root, src, 0, bottom.id, zone), zone);
       const committed = dockDropToZone(structuredClone(root), src, 0, bottom.id, zone);
       sameShape(pred.tree, committed);
@@ -143,29 +150,32 @@ describe("predictDockDrop over the roots (prediction == commit, ruling 5)", () =
   });
 
   it("inner sidebar leaf: row zones refuse, the column split lands and equals the commit, depth caps at 2", () => {
-    const { root, left } = rowRoot();
+    const { root, left, right } = rowRoot();
     const grown = growRoot(root, left.id, "column", "before")!;
     const L = findPane(grown.tree, left.id)!;
-    const src = chatPaneId(grown.tree);
+    // canvas C1: the dragged view must be one the class law ALLOWS in a
+    // sidebar (a secondary-sidebar view visits the primary freely) - a chat
+    // tab is refused by the seat gate before the shape law ever speaks
+    const src = findPane(grown.tree, right.id)!.id;
+    const filesIdx = findPane(grown.tree, right.id)!.tabs.findIndex((t) => t.component === "files");
     const freshId = (L.grown!.children[0] as DockPane).id;
     // row zones refuse on a sidebar leaf (stacked rows ONLY)
-    assert.equal(expectRefusal(predictDockDrop(grown.tree, src, 0, freshId, "left")), "sidebars stack rows only");
-    assert.equal(dockDropToZone(grown.tree, src, 0, freshId, "right"), grown.tree);
+    assert.equal(expectRefusal(predictDockDrop(grown.tree, src, filesIdx, freshId, "left")), "sidebars stack rows only");
+    assert.equal(dockDropToZone(grown.tree, src, filesIdx, freshId, "right"), grown.tree);
     // the column zone splits the leaf: prediction == commit, depth 2
-    const pred = expectDrop(predictDockDrop(grown.tree, src, 0, freshId, "bottom"), "column split of the leaf");
-    const commit = dockDropToZone(structuredClone(grown.tree), src, 0, freshId, "bottom");
+    const pred = expectDrop(predictDockDrop(grown.tree, src, filesIdx, freshId, "bottom"), "column split of the leaf");
+    const commit = dockDropToZone(structuredClone(grown.tree), src, filesIdx, freshId, "bottom");
     sameShape(pred.tree, commit);
     const grownSplit = findPane(pred.tree, left.id)!.grown!;
     assert.equal(splitDepthInRoot(grownSplit, freshId), 2, "depth 2 reached");
     // the fresh leaf's split sibling also sits at depth 2: splitting it refuses
-    // (the dragged chat now lives inside the root - the source re-reads)
+    // (the dragged files tab now lives inside the root - the source re-reads)
     const inner = asSplit(grownSplit.children[0]);
     const siblingId = (inner.children[0] as DockPane).id === freshId
       ? (inner.children[1] as DockPane).id
       : (inner.children[0] as DockPane).id;
-    const src2 = chatPaneId(pred.tree); // the dragged chat seated inside the root
     // the capped attempt sources from a DIFFERENT pane (B's agents tab) -
-    // the chat pane IS one of the capped pair, and zones never self-dock
+    // the files pane IS one of the capped pair, and zones never self-dock
     for (const n of allNodesOf(pred.tree)) {
       if (isPane(n) && n.tabs.some((t) => t.component === "agents") && !n.edge) {
         const srcB = n.id;
@@ -174,7 +184,6 @@ describe("predictDockDrop over the roots (prediction == commit, ruling 5)", () =
         break;
       }
     }
-    assert.ok(src2, "the seated tab sanity");
   });
 
   it("splitLawRefusal: sidebars column-only, bottom both, depth caps at 2 (main has no cap)", () => {
@@ -298,16 +307,30 @@ describe("auto-merge (ruling 8: leaves merge away, roots never die)", () => {
   });
 });
 
-describe("the sessions lock with a grown left root (ruling 4: tabs free, bar = the root area)", () => {
-  it("lockedBarRefusal: the left root's leaves allow, everything else refuses", () => {
+describe("the sessions seat with a grown left root (ruling 4: tabs free, bar = the root area)", () => {
+  it("seatRefusal: the left root's leaves allow for sessions, everything else refuses", () => {
     const { root, left, a } = rowRoot();
     const grown = growRoot(root, left.id, "column", "before")!;
     const L = findPane(grown.tree, left.id)!;
     const freshId = (L.grown!.children[0] as DockPane).id;
-    assert.equal(lockedBarRefusal(grown.tree, left.id), false, "the left shell itself");
-    assert.equal(lockedBarRefusal(grown.tree, freshId), false, "a leaf inside the left root");
-    assert.equal(lockedBarRefusal(grown.tree, a.id), true, "a main pane refuses");
-    assert.equal(lockedBarRefusal(grown.tree, rowRightId(grown.tree)), true, "the right shell refuses");
+    assert.equal(seatRefusal(grown.tree, "sidebar", left.id), null, "the left shell itself");
+    assert.equal(seatRefusal(grown.tree, "sidebar", freshId), null, "a leaf inside the left root");
+    assert.notEqual(seatRefusal(grown.tree, "sidebar", a.id), null, "a main pane refuses");
+    assert.notEqual(
+      seatRefusal(grown.tree, "sidebar", rowRightId(grown.tree)),
+      null,
+      "the right shell refuses",
+    );
+    // canvas C1: the zone read behind that refusal - a grown leaf inherits
+    // the root's seat, a main pane is main, only the marked shell is "left"
+    assert.equal(paneZone(grown.tree, freshId), "left", "the grown leaf is the root's zone");
+    assert.equal(paneZone(grown.tree, a.id), "main", "an unmarked pane is main");
+    assert.equal(paneZone(grown.tree, left.id), "left", "the shell's own marker");
+    assert.equal(
+      paneZone(grown.tree, rowRightId(grown.tree)),
+      "right",
+      "the secondary shell's marker",
+    );
   });
 
   it("forceSessionsLeft: sessions anywhere inside the root is met; absent = seeded at the first leaf", () => {

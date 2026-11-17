@@ -650,7 +650,9 @@ describe("the registry's home rulings", () => {
 
   it("the Logs tab reports its bottom home; every other component single-hosts", () => {
     assert.deepEqual([...hostsOf("observability")], ["bottom"]);
-    assert.deepEqual([...hostsOf("cron")], ["right"]);
+    // canvas C1: cron is a PRIMARY-sidebar view (the seat map moved it off
+    // the inspector strip); chat stays the main column's.
+    assert.deepEqual([...hostsOf("cron")], ["left"]);
     assert.deepEqual([...hostsOf("chat")], ["main"]);
   });
 

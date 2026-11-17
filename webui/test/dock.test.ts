@@ -18,6 +18,7 @@ import {
   moveTab,
   MAIN_DOCKABLES,
   INSPECTOR_TAB_COMPONENTS,
+  PRIMARY_TAB_COMPONENTS,
   dragSplitDivider,
   narrowGiveWay,
   minDockPx,
@@ -54,7 +55,7 @@ import {
   ensurePinnedEdges,
   bottomShellPane,
   forceSessionsLeft,
-  restoreInspectorSet,
+  restoreSeatSet,
   deriveEdgeMarkers,
   normalizeSizes,
   PANE_OPEN_MIN,
@@ -173,7 +174,7 @@ describe("tree construction", () => {
     const insp = asSplit(t).children[2];
     assert.deepEqual(
       asPane(insp).tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
+      [...INSPECTOR_TAB_COMPONENTS],
     );
     assert.equal(asPane(insp).active, 0);
   });
@@ -463,7 +464,7 @@ describe("tab ops", () => {
       assert.equal(l.active, 0, "neighbor takes over the focus");
     });
 
-    it("LOCKED sessions refuses every drop outside the left shell; everything else moves free", () => {
+    it("the seat law: sessions stays in its bar, sidebar views visit the main pane, main members never leave it", () => {
       const t = defaultTree();
       const side = paneByComponent(t, "sidebar");
       const files = paneByComponent(t, "files");
@@ -471,18 +472,22 @@ describe("tab ops", () => {
       // ruling 1: the sessions tab never leaves the left shell's own bar
       assert.equal(moveTab(t, side.id, 0, chat.id, 0), t, "sessions does not drag right");
       assert.equal(moveTab(t, side.id, 0, files.id, 0), t, "sessions does not drag into the right shell");
-      // ruling 2: EVERYTHING ELSE drags everywhere...
+      // canvas C1: a MAIN member never leaves the main pane (the root
+      // cause this law kills - a chat opening inside a sidebar)
+      assert.equal(moveTab(t, chat.id, 0, files.id, 0), t, "chat does not drag into the right shell");
+      assert.equal(moveTab(t, chat.id, 0, side.id, 0), t, "chat does not drag into the left shell");
+      // a SIDEBAR view visits: right shell -> main pane -> back
       const movedOut = moveTab(t, files.id, 0, chat.id, 0);
       assert.deepEqual(
         tabComps(movedOut, chat.id),
         ["files", "chat"],
-        "a right-shell tab becomes a main-pane tab",
+        "a right-shell tab becomes a main-pane tab (a visit)",
       );
-      // ...and back again (bidirectional into the pinned shell)
+      // ...and back again (bidirectional between the two sidebars)
       const movedBack = moveTab(movedOut, chat.id, 0, files.id, 0);
       assert.deepEqual(
         tabComps(movedBack, files.id),
-        ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
+        [...INSPECTOR_TAB_COMPONENTS],
         "the moved tab rejoins the inspector bar at the caret",
       );
       assert.deepEqual(tabComps(t, chat.id), ["chat"], "refusals leave the tree untouched");
@@ -658,18 +663,23 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     assert.equal(root.children.length, 2, "main row + bottom shell");
     return asSplit(root.children[0]);
   }
-  it("always four panes: sidebar(edge default), chat, inspector-9(same default), bottom(200, logs)", () => {
+  it("always four panes: sidebar(the primary class), chat, the secondary class, bottom(200, logs)", () => {
     const t = migrateLegacy(() => null);
     const row = mainRow(t);
     assert.equal(row.children.length, 3);
-    assert.equal(asPane(row.children[0]).tabs[0].component, "sidebar");
+    // canvas C1: the fresh left shell seats its CLASS (sessions + agents +
+    // crons), the right its own - one law for both, no hand-written strip
+    assert.deepEqual(
+      asPane(row.children[0]).tabs.map((x) => x.component),
+      [...PRIMARY_TAB_COMPONENTS],
+    );
     assert.equal(asPane(row.children[0]).fixed, EDGE_DEFAULT_PX.sidebar);
     assert.equal(asPane(row.children[1]).tabs[0].component, "chat");
     assert.equal(asPane(row.children[1]).fixed, null);
     assert.equal(asPane(row.children[2]).fixed, EDGE_DEFAULT_PX.inspector);
     assert.deepEqual(
       asPane(row.children[2]).tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
+      [...INSPECTOR_TAB_COMPONENTS],
     );
     const bottom = asPane(asSplit(t).children[1]);
     assert.equal(bottom.edge, "bottom");
@@ -727,7 +737,7 @@ describe("pane-model reset", () => {
     const out = expandInspectorTabs(legacy);
     assert.deepEqual(
       (out as DockPane).tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
+      [...INSPECTOR_TAB_COMPONENTS],
     );
     assert.equal((out as DockPane).active, 0);
   });
@@ -751,7 +761,7 @@ describe("pane-model reset", () => {
     const right = asPane(out.children[2]); // [sidebar, chat, inspector]
     assert.deepEqual(
       right.tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
+      [...INSPECTOR_TAB_COMPONENTS],
     );
     assert.equal(right.fixed, EDGE_DEFAULT_PX.inspector);
   });
@@ -805,7 +815,7 @@ describe("pane-model reset", () => {
       findEdgePane(lifted, "inspector")!.tabs.some((x) => x.component === "insights"),
       "the right shell's instance survives the lift",
     );
-    // the loader (ensurePinnedEdges -> restoreInspectorSet) seats it in
+    // the loader (ensurePinnedEdges -> restoreSeatSet) seats it in
     // the right shell on the same boot (here it was alive already)
     const loaded = ensurePinnedEdges(lifted);
     const right = findEdgePane(loaded, "inspector")!;
@@ -913,7 +923,7 @@ describe("edge toggle (card t_47b776ad)", () => {
     );
     assert.deepEqual(
       insp.tabs.map((x): string => x.component),
-      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
+      [...INSPECTOR_TAB_COMPONENTS],
     );
   });
 
@@ -1354,45 +1364,61 @@ describe("graftSplit", () => {
 
 // --- t_d6b657a7: locked sessions, free content, pinned shells -----------------
 
-describe("tab DnD everywhere (t_d6b657a7)", () => {
-  it("dropAllowedFor: locked drags only into the left shell; others everywhere", () => {
+describe("tab DnD under the seat law (canvas C1)", () => {
+  it("dropAllowedFor: the class law answers every target zone", () => {
     const locked = { paneId: "n1", index: 0, component: "sidebar" as const };
     const free = { paneId: "n1", index: 0, component: "files" as const };
+    const chat = { paneId: "n1", index: 0, component: "chat" as const };
+    const logs = { paneId: "n1", index: 0, component: "observability" as const };
     const none: typeof free | null = null;
     assert.equal(dropAllowedFor("left", locked), true, "sessions stays in its own bar");
     assert.equal(dropAllowedFor(null, locked), false, "sessions refuses main panes");
     assert.equal(dropAllowedFor("right", locked), false, "sessions refuses the right shell");
-    assert.equal(dropAllowedFor(null, free), true, "files drops into main");
-    assert.equal(dropAllowedFor("left", free), true, "files drops into the left shell");
-    assert.equal(dropAllowedFor("right", free), true, "files drops into the right shell");
+    assert.equal(dropAllowedFor(null, free), true, "files visits main");
+    assert.equal(dropAllowedFor("left", free), true, "files visits the left shell");
+    assert.equal(dropAllowedFor("right", free), true, "files visits the right shell");
+    assert.equal(dropAllowedFor("bottom", free), true, "files visits the bottom pane");
+    // a MAIN member never leaves the main column (the law's whole point)
+    assert.equal(dropAllowedFor(null, chat), true, "chat's own seat");
+    assert.equal(dropAllowedFor("left", chat), false, "chat never lands in a sidebar");
+    assert.equal(dropAllowedFor("right", chat), false, "chat never lands in the inspector");
+    assert.equal(dropAllowedFor("bottom", chat), false, "chat never lands in the bottom pane");
+    // a BOTTOM member visits the sidebars, never main
+    assert.equal(dropAllowedFor("left", logs), true, "logs visit the left shell");
+    assert.equal(dropAllowedFor("right", logs), true, "logs visit the right shell");
+    assert.equal(dropAllowedFor(null, logs), false, "logs never enter the main pane");
     assert.equal(dropAllowedFor(null, none), false, "no gesture - no drop");
   });
 
   it("drag sim: reorder WITHIN the sidebar bar keeps everything in place", () => {
     let t: DockNode = defaultTree();
     const side = paneByComponent(t, "sidebar");
-    // files joins the sessions bar first (free content into the left shell)
+    const seat = side.tabs.map((x) => x.component);
+    // files joins the sessions bar first (a sidebar view visiting the
+    // primary sidebar - legal under the class law)
     const insp = paneByComponent(t, "files");
     t = moveTab(t, insp.id, 0, side.id, 1);
-    // bar: [sessions, files]; drag files' caret to before tab 0
+    // bar: [sessions, files, ...seat]; drag files' caret to before tab 0
     t = moveTab(t, side.id, 1, side.id, 0);
-    assert.deepEqual(
-      paneByComponent(t, "sidebar").tabs.map((x) => x.component),
-      ["files", "sidebar"],
-    );
-    assert.equal(paneByComponent(t, "sidebar").id, side.id, "no new pane minted");
+    const bar = paneByComponent(t, "sidebar");
+    assert.deepEqual(bar.tabs.slice(0, 2).map((x) => x.component), ["files", "sidebar"]);
+    assert.equal(bar.tabs.length, seat.length + 1, "no tab minted or lost");
+    assert.equal(bar.id, side.id, "no new pane minted");
   });
   it("drag sim: sessions reorder within its bar is the ONLY locked move", () => {
     let t: DockNode = defaultTree();
     const side = paneByComponent(t, "sidebar");
-    const insp = paneByComponent(t, "files");
-    t = moveTab(t, insp.id, 0, side.id, 1);
-    // the bar is [sessions, files]: dragging sessions to the end (caret 2)
-    // is a LEGAL reorder inside the shell's own bar
-    const reordered = moveTab(t, side.id, 0, side.id, 2);
+    const seat = side.tabs.map((x) => x.component);
+    const from = seat.indexOf("sidebar");
+    assert.equal(from, 0, "sessions heads the strip");
+    // the bar's own bar: dragging sessions to the end (caret = last index)
+    // is a LEGAL reorder inside the shell it may never leave
+    const reordered = moveTab(t, side.id, from, side.id, seat.length - 1);
+    const bar = paneByComponent(reordered, "sidebar");
     assert.deepEqual(
-      paneByComponent(reordered, "sidebar").tabs.map((x) => x.component),
-      ["files", "sidebar"],
+      bar.tabs.map((x) => x.component),
+      [...seat.slice(1), "sidebar"],
+      "sessions lands where the caret asked, still inside its own bar",
     );
   });
 
@@ -1497,7 +1523,7 @@ describe("tab DnD everywhere (t_d6b657a7)", () => {
     assert.equal(out !== t, true);
   });
 
-  it("restoreInspectorSet re-adds an inspector singleton that died with its pane", () => {
+  it("restoreSeatSet re-adds a secondary-sidebar singleton that died with its pane", () => {
     let t: DockNode = defaultTree();
     // kanban can only die via a pane prune: move it to the main pane,
     // then close the main pane. Endo ruling 2026-10-25: that pane is the
@@ -1505,25 +1531,29 @@ describe("tab DnD everywhere (t_d6b657a7)", () => {
     // card t_00e4a784: settings is NOT in this class any more - it left
     // the inspector for the on-demand main tab (see the retire test).
     const insp = paneByComponent(t, "files");
-    t = moveTab(t, insp.id, 5, paneByComponent(t, "chat").id, 0); // kanban out (settings left the strip - t_00e4a784)
+    const kanbanIdx = insp.tabs.findIndex((x) => x.component === "kanban");
+    t = moveTab(t, insp.id, kanbanIdx, paneByComponent(t, "chat").id, 0); // kanban out (settings left the strip - t_00e4a784)
     const kanbanPane = findComponentPane(t, "kanban")!;
     t = splitPane(t, kanbanPane.id, "row", "after");
     t = removePane(t, kanbanPane.id);
     assert.equal(findComponentTab(t, "kanban"), null, "kanban is gone");
-    const out = restoreInspectorSet(t);
+    const out = restoreSeatSet(t, "right");
     const loc = findComponentTab(out, "kanban")!;
     assert.equal(loc.paneId, paneByComponent(out, "files").id, "kanban returns to the right shell");
     // idempotent once everything is present
-    assert.equal(restoreInspectorSet(out), out);
+    assert.equal(restoreSeatSet(out, "right"), out);
   });
 
   it("retireInspectorSettings drops a persisted inspector seat, keeps a main-pane one (t_00e4a784)", () => {
     // the pre-rule record: settings is pinned in the inspector bar
     let t: DockNode = defaultTree();
     assert.equal(findComponentTab(t, "settings"), null, "a fresh tree never seats settings");
-    // build the legacy seat by hand (the ruling removed every opener)
+    // build the legacy seat by hand (the ruling removed every opener, and
+    // canvas C1's seat gate refuses a main-class view in the right shell -
+    // only a persisted RECORD can carry this shape, which is exactly what
+    // the loader's retire sees)
     const insp = paneByComponent(t, "files");
-    t = openTab(t, insp.id, { component: "settings" });
+    insp.tabs = [...insp.tabs, { component: "settings" }];
     assert.equal(findComponentTab(t, "settings")!.paneId, insp.id);
     const out = retireInspectorSettings(t);
     assert.equal(findComponentTab(out, "settings"), null, "the pinned seat retires on load");

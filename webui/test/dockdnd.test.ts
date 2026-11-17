@@ -175,13 +175,16 @@ describe("dockDropToZone (the docking mutation)", () => {
   });
 
   it("edge shells GROW (v0.14.4 ruling 1): sidebar rows refuse, column grows, center groups", () => {
-    // A(chat) | B(files, pinned right shell). A's row-zones refuse (a
-    // sidebar stacks rows ONLY), A's bottom zone GROWS the root (the
-    // dragged tab seats in the fresh leaf, B's content moves to the first
-    // leaf), and A's center still groups into the grown first leaf. Endo
-    // ruling 2026-10-25 keeps the last-main-pane launcher for center moves.
-    const a = makePane("chat");
-    const b = makePane("files", 240, "right");
+    // A(files - a sidebar view visiting the main pane) | B(kanban, pinned
+    // right shell). A's row-zones refuse (a sidebar stacks rows ONLY), A's
+    // bottom zone GROWS the root (the dragged tab seats in the fresh leaf,
+    // B's content moves to the first leaf), and A's center still groups
+    // into the grown first leaf. Endo ruling 2026-10-25 keeps the
+    // last-main-pane launcher for center moves. canvas C1: the dragged view
+    // must be one the class law seats in a sidebar - a chat tab would be
+    // refused by the seat gate before the shape law spoke.
+    const a = makePane("files");
+    const b = makePane("kanban", 240, "right");
     const root = makeSplit("row", [a, b]);
     assert.equal(dockDropToZone(root, a.id, 0, b.id, "left"), root, "a sidebar stacks rows only");
     assert.equal(dockDropToZone(root, a.id, 0, b.id, "right"), root);
@@ -191,12 +194,12 @@ describe("dockDropToZone (the docking mutation)", () => {
     assert.equal(B.grown!.direction, "column");
     assert.equal(B.tabs.length, 0, "the root's classic bar emptied");
     const shellLeaf = B.grown!.children[0] as DockPane;
-    assert.deepEqual(shellLeaf.tabs.map((t) => t.component), ["files"], "the shell's content moved to the first leaf");
+    assert.deepEqual(shellLeaf.tabs.map((t) => t.component), ["kanban"], "the shell's content moved to the first leaf");
     const fresh = B.grown!.children[1] as DockPane;
-    assert.deepEqual(fresh.tabs.map((t) => t.component), ["chat"], "the dragged tab seats in the fresh leaf");
+    assert.deepEqual(fresh.tabs.map((t) => t.component), ["files"], "the dragged tab seats in the fresh leaf");
     const center = dockDropToZone(root, a.id, 0, b.id, "center");
     const BC = paneOf(center, b.id);
-    assert.deepEqual(BC.tabs.map((t) => t.component), ["files", "chat"], "center still groups");
+    assert.deepEqual(BC.tabs.map((t) => t.component), ["kanban", "files"], "center still groups");
     const AC = findPane(center, a.id);
     assert.ok(AC, "the emptied source pane survives (the last main pane never closes)");
     // card t_9855a20e: the drained last main pane sits EMPTY - the retired
@@ -343,8 +346,8 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
     // v0.14.4 ruling 1: the SHELL's body drop grows its root now - the
     // sidebar's row zones refuse (stacked rows only), the column zones
     // grow; a vanished source refuses every zone as before
-    const a2 = makePane("chat");
-    const b2 = makePane("files", 240, "right");
+    const a2 = makePane("files");
+    const b2 = makePane("kanban", 240, "right");
     const sroot = makeSplit("row", [a2, b2]);
     for (const zone of ["left", "right"] as const) {
       assert.equal(dockDropToZone(sroot, a2.id, 0, b2.id, zone), sroot);
@@ -360,8 +363,10 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
   });
 
   it("shells: sidebar row zones refuse with a reason, column zones grow, center predicts the group", () => {
-    const a = makePane("chat");
-    const b = makePane("files", 240, "right");
+    // canvas C1: a SIDEBAR-class view is the one the seat gate lets land in
+    // a sidebar, so it is what exercises the shape law
+    const a = makePane("files");
+    const b = makePane("kanban", 240, "right");
     const root = makeSplit("row", [a, b]);
     for (const zone of ["left", "right"] as const) {
       assert.equal(expectRefusal(predictDockDrop(root, a.id, 0, b.id, zone)), "sidebars stack rows only");
@@ -376,7 +381,7 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
     sameShape(center.tree, dockDropToZone(root, a.id, 0, b.id, "center"));
   });
 
-  it("the LOCKED tab refuses every landing the commit refuses", () => {
+  it("the LOCKED tab refuses every landing but its own seat", () => {
     const left = makePane("sidebar", 240, "left");
     const chat = makePane("chat");
     const root = makeSplit("row", [left, chat]);
@@ -384,12 +389,17 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
       expectRefusal(predictDockDrop(root, left.id, 0, chat.id, zone));
       assert.equal(dockDropToZone(root, left.id, 0, chat.id, zone), root);
     }
-    // the one legal landing: center on the left shell itself
+    // a same-pane center is a self-dock: refused like every other
     expectRefusal(predictDockDrop(root, left.id, 0, left.id, "center"));
-    const other = makePane("files");
-    const root2 = makeSplit("row", [left, other, chat]);
-    const ok = expectDrop(predictDockDrop(root2, chat.id, 0, left.id, "center"), "center on left accepts the locked tab");
-    sameShape(ok.tree, dockDropToZone(root2, chat.id, 0, left.id, "center"));
+    // the one legal landing: ITS OWN seat. A persisted stray sessions tab
+    // may come home to the left shell - the class lets it, the lock narrows
+    // it to exactly this zone (canvas C1: seatAllowsIn reads both).
+    const stray = makePane("sidebar");
+    const root2 = makeSplit("row", [left, stray, chat]);
+    const ok = expectDrop(predictDockDrop(root2, stray.id, 0, left.id, "center"), "its own bar accepts sessions");
+    sameShape(ok.tree, dockDropToZone(root2, stray.id, 0, left.id, "center"));
+    // and no other seat takes it - not even a main pane's center
+    expectRefusal(predictDockDrop(root2, stray.id, 0, chat.id, "center"));
   });
 
   it("the predictor is pure: repeated calls match and never touch the input", () => {
@@ -415,12 +425,20 @@ describe("the gesture record + legacy hit-test", () => {
     assert.equal(tabDrag.current(), null);
   });
 
-  it("dropAllowedFor: free tabs drop anywhere, sessions only left, null gesture refuses", () => {
+  it("dropAllowedFor: the class law answers the target zone, null gesture refuses", () => {
+    // canvas C1: a MAIN member only lands in the main pane
     assert.equal(dropAllowedFor(null, { paneId: "p", index: 0, component: "chat" }), true);
-    assert.equal(dropAllowedFor("right", { paneId: "p", index: 0, component: "chat" }), true);
-    assert.equal(dropAllowedFor("bottom", { paneId: "p", index: 0, component: "chat" }), true);
+    assert.equal(dropAllowedFor("right", { paneId: "p", index: 0, component: "chat" }), false);
+    assert.equal(dropAllowedFor("bottom", { paneId: "p", index: 0, component: "chat" }), false);
+    // sessions: primary-sidebar by class, locked to its own home
     assert.equal(dropAllowedFor(null, { paneId: "p", index: 0, component: "sidebar" }), false);
     assert.equal(dropAllowedFor("left", { paneId: "p", index: 0, component: "sidebar" }), true);
+    // a sidebar view visits every seat
+    assert.equal(dropAllowedFor(null, { paneId: "p", index: 0, component: "files" }), true);
+    assert.equal(dropAllowedFor("left", { paneId: "p", index: 0, component: "files" }), true);
+    // a bottom member visits the sidebars, never main
+    assert.equal(dropAllowedFor(null, { paneId: "p", index: 0, component: "terminal" }), false);
+    assert.equal(dropAllowedFor("left", { paneId: "p", index: 0, component: "terminal" }), true);
     assert.equal(dropAllowedFor("left", null), false);
   });
 });

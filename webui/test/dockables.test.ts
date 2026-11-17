@@ -17,10 +17,16 @@ import {
   LEGACY_DOCK_COMPONENTS,
   MAIN_DOCKABLES,
   MENU_DOCKABLES,
+  PRIMARY_TAB_COMPONENTS,
+  areaOfClass,
   isClosableTab,
   isLockedTab,
   dockableOf,
   dockablesFromPanels,
+  seatAllowsIn,
+  viewClassOf,
+  zonesOf,
+  zonesOfClass,
   type DockableComponent,
 } from "../app/composables/dockables.ts";
 import { withScratchSingleton } from "./scratchDockable.ts";
@@ -212,30 +218,91 @@ describe("the dockable registry", () => {
     assert.deepEqual([...closable].sort(), ["browser", "chat", "settings", "viewer"]);
   });
 
-  it("the fixed sidebars: sidebar pinned left, the inspector NINE pinned right (t_49d0b308 + t_d7fd3ad3 + arc 3c canvas + t_c7136c50 mcp + t_180db2cb notifications; t_00e4a784 retired settings; t_81d0901b retired the modules cockpit tab)", () => {
+  it("THE SEAT MAP (canvas C1): the primary sidebar seats sessions+agents+crons, the secondary the inspector views", () => {
+    // The class law is the ONE list: every view has a class, and its home
+    // follows from it (area is derived - no entry can disagree).
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "left").map((d) => d.id),
-      ["sidebar"],
+      ["sidebar", "cron", "agents"],
     );
-    // the default order is the ruling's: files, cron, skills, tools,
-    // agents, kanban, insights, mcp, notifications (extensions left the
-    // strip in card t_81d0901b - its surface is the settings MODULES
-    // section; insights joined the right shell at t_d7fd3ad3; mcp joined
-    // last at t_c7136c50; notifications joined last at t_180db2cb;
-    // settings left for the on-demand main tab at t_00e4a784)
+    assert.deepEqual(
+      [...PRIMARY_TAB_COMPONENTS],
+      ["sidebar", "cron", "agents"],
+      "the primary set is the class's members, in registry order",
+    );
+    assert.deepEqual(
+      PRIMARY_TAB_COMPONENTS.map((id) => viewClassOf(id)),
+      ["primary-sidebar", "primary-sidebar", "primary-sidebar"],
+    );
+    // the secondary sidebar keeps the seven inspector views (files, skills,
+    // tools, kanban, insights, mcp, notifications); agents + cron left for
+    // the primary class in canvas C1
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "right").map((d) => d.id),
-      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
+      ["files", "skills", "tools", "kanban", "insights", "mcp", "notifications"],
     );
-    // the inspector tab inventory IS the right-area set, in one place
     assert.deepEqual(
       [...INSPECTOR_TAB_COMPONENTS],
-      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
+      ["files", "skills", "tools", "kanban", "insights", "mcp", "notifications"],
+      "the secondary set IS the right-area set, in one place",
     );
+    assert.deepEqual(
+      INSPECTOR_TAB_COMPONENTS.map((id) => viewClassOf(id)),
+      Array.from({ length: 7 }, () => "secondary-sidebar"),
+    );
+    // main + bottom seats, in registry order
+    assert.deepEqual(
+      DOCKABLES.filter((d) => d.area === "main").map((d) => d.id),
+      ["chat", "viewer", "settings", "browser"],
+    );
+    assert.deepEqual(
+      DOCKABLES.filter((d) => d.area === "bottom").map((d) => d.id),
+      ["terminal", "observability"],
+    );
+    // every class owns a seat: the four homes partition the registry
+    for (const d of DOCKABLES) {
+      assert.equal(
+        d.area,
+        areaOfClass(d.class),
+        `${d.id}: its home IS its class's zone (one truth, no drift)`,
+      );
+    }
     assert.ok(
       INSPECTOR_TAB_COMPONENTS.every((c) => !isClosableTab(c)),
-      "no X on any of the nine",
+      "no X on any of the seven",
     );
+  });
+
+  it("THE ZONE LAW (canvas C1): main stays main, bottom never enters main, sidebar views visit everywhere", () => {
+    // the matrix, exactly as ruled 2026-11-17 (uniform visit grammar)
+    assert.deepEqual([...zonesOfClass("main")], ["main"]);
+    assert.deepEqual([...zonesOfClass("bottom")], ["left", "right", "bottom"]);
+    assert.deepEqual([...zonesOfClass("primary-sidebar")], ["left", "right", "main", "bottom"]);
+    assert.deepEqual([...zonesOfClass("secondary-sidebar")], ["left", "right", "main", "bottom"]);
+    // per-view reads: the class, then the locked view's narrowed seat
+    assert.equal(seatAllowsIn("chat", "main"), true, "chat's home");
+    for (const zone of ["left", "right", "bottom"] as const) {
+      assert.equal(seatAllowsIn("chat", zone), false, `chat never leaves main (${zone})`);
+      assert.equal(seatAllowsIn("browser", zone), false, `browser never leaves main (${zone})`);
+      assert.equal(seatAllowsIn("viewer", zone), false, `the file preview never leaves main (${zone})`);
+      assert.equal(seatAllowsIn("settings", zone), false, `the settings tab never leaves main (${zone})`);
+      assert.equal(seatAllowsIn("terminal", zone), true, `the terminal visits the ${zone}`);
+    }
+    assert.equal(seatAllowsIn("terminal", "main"), false, "the bottom pane never enters main");
+    assert.equal(seatAllowsIn("observability", "main"), false, "logs never enter main");
+    // sidebar views: every seat, both directions
+    for (const id of ["files", "skills", "tools", "mcp", "kanban", "insights", "notifications"] as const) {
+      for (const zone of ["left", "right", "main", "bottom"] as const) {
+        assert.equal(seatAllowsIn(id, zone), true, `${id} visits the ${zone}`);
+      }
+    }
+    // sessions is the strictest seat: primary-sidebar by class, locked home
+    assert.deepEqual([...zonesOf("sidebar")], ["left"]);
+    assert.equal(seatAllowsIn("sidebar", "left"), true);
+    assert.equal(seatAllowsIn("sidebar", "main"), false, "the lock narrows the class's visit");
+    // an id outside the registry may occupy nothing (the safe refusal)
+    assert.deepEqual([...zonesOf("inspector")], []);
+    assert.equal(seatAllowsIn("inspector", "main"), false);
   });
 
   it("settings: NO inspector seat, NO '+' entry - the menubar gear is the entry point (t_00e4a784)", () => {
@@ -320,18 +387,27 @@ describe("the dockable registry", () => {
     }
   });
 
-  it("free content: singletons open INTO an empty edge shell (t_d6b657a7)", async () => {
+  it("the seat map decides the opener: a main-class singleton never opens in an edge shell, an edge shell refills with a sidebar view (canvas C1)", async () => {
     await withScratchSingleton(async (scratch) => {
       const t = defaultTree();
       const side = paneById(t, asSplit(t).children[0].id);
-      const res = openSingleton(t, side.id, scratch);
-      assert.equal(res.action, "created", "an edge shell takes tabs now");
-      assert.equal(instanceCount(res.tree, scratch), 1);
-      assert.deepEqual(
-        paneById(res.tree, side.id).tabs.map((x) => x.component),
-        ["sidebar", scratch],
-      );
+      const refused = openSingleton(t, side.id, scratch);
+      assert.equal(refused.action, "noop", "a main-class view never leaves the main column");
+      assert.equal(refused.tree, t, "the refusal changed nothing");
+      assert.equal(instanceCount(refused.tree, scratch), 0);
     });
+    // the shell's own class opens there: files is secondary-sidebar, and a
+    // sidebar view visits the other sidebar freely - the empty-shell refill
+    // path (t_d6b657a7) survives inside the class law
+    const shell: DockNode = makeSplit("row", [makePane(null, 240, "left"), makePane("chat")]);
+    const side = asSplit(shell).children[0] as DockPane;
+    const res = openSingleton(shell, side.id, "files");
+    assert.equal(res.action, "created", "an edge shell takes the views its zone seats");
+    assert.equal(instanceCount(res.tree, "files"), 1);
+    assert.deepEqual(
+      paneById(res.tree, side.id).tabs.map((x) => x.component),
+      ["files"],
+    );
   });
 
   it("dockableOf resolves every openable component, throws outside the union", () => {
@@ -526,15 +602,15 @@ describe("dock store: the pane-model reset", () => {
     const insp = paneById(tree, "n4");
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      // t_c7136c50 note: an era tree whose insights tab gets lifted
-      // (rehomeInsightsTab runs before the right edge lands) re-seats
-      // insights AFTER the restored set - the modernized v1 strip ends
-      // [mcp, notifications, insights]. The fresh-tree default stays
-      // canonical (dock.test.ts). Card t_81d0901b: the extensions cockpit
-      // left the strip entirely (its surface is the settings MODULES
-      // section), so the tail lost that id too.
-      ["files", "cron", "skills", "tools", "agents", "kanban", "mcp", "notifications", "insights"],
-      "the chip strip's tabs are real now, and the new views are in",
+      // the era's ONE "inspector" tab expands into the class's real tabs,
+      // in registry order - derived, so a seat-map edit cannot leave this
+      // expectation behind (canvas C1; card t_81d0901b took the extensions
+      // cockpit out of the strip, t_00e4a784 retired settings). insights
+      // lifts before the edge lands (rehomeInsightsTab runs on a still
+      // unmarked tree) and the seat repair appends it after its class's
+      // other members, so the modernized v1 strip ends [..., insights].
+      [...INSPECTOR_TAB_COMPONENTS.filter((c) => c !== "insights"), "insights"],
+      "the chip strip's tabs are real now, and the class's views are in",
     );
     // card t_00e4a784: settings is NOT re-seated by the modernizer - the
     // menubar gear owns it as an on-demand main tab
@@ -571,9 +647,14 @@ describe("dock store: the pane-model reset", () => {
     const dock = createDock(mem as unknown as Storage);
     await flush();
     const insp = paneById(dock.tree.value, "n4");
+    // the era strip's own tabs survive in place (existing layouts are
+    // untouched by the class law) and the class's MISSING views append in
+    // registry order. canvas C1: `cron` is no longer a secondary-sidebar
+    // member, but a persisted seat is the user's - nothing relocates it.
+    const era = ["files", "cron", "skills", "tools"];
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
-      ["files", "cron", "skills", "tools", "agents", "kanban", "insights", "mcp", "notifications"],
+      [...era, ...INSPECTOR_TAB_COMPONENTS.filter((c) => !era.includes(c))],
     );
     assert.equal(insp.active, 2, "the user's active view stays put");
   });
@@ -625,20 +706,26 @@ describe("dock store: the pane-model reset", () => {
       0,
       "never a second, pinned copy in the inspector",
     );
-    assert.deepEqual(
-      insp.tabs.map((x) => x.component),
-      // same lift-and-reseat shape as the pre-reset modernize above: the
-      // insights copy lifts back to the right shell
-      ["files", "cron", "skills", "tools", "agents", "kanban", "mcp", "notifications", "insights"],
-    );
+    const era2 = ["files", "cron", "skills", "tools"];
+    // the v1 modernizer SORTS the era strip by the class's registry rank,
+    // and an id the class no longer names (cron, now primary-sidebar) sinks
+    // to the end - the tab survives (a persisted seat is the user's), the
+    // ORDER is the modernizer's. Assert survival + no duplicates, not a
+    // hand-written order for an ancient record.
+    const strip = insp.tabs.map((x) => x.component);
+    for (const c of [...era2, ...INSPECTOR_TAB_COMPONENTS] as string[]) {
+      assert.ok(strip.includes(c as never), `${c} survives the load`);
+    }
+    assert.equal(new Set(strip).size, strip.length, "no duplicated view");
   });
 
   it("a v2 tree with a right-area tab dragged into a main pane KEEPS it (free content)", async () => {
     let t: DockNode = defaultTree();
-    // kanban is tab 5 of the inspector bar (settings left the strip -
-    // t_00e4a784; continuous folded away - t_c7222095): drag it into the
-    // main pane
-    t = moveTab(t, asSplit(t).children[2].id, 5, asSplit(t).children[1].id, 0);
+    // drag the kanban tab into the main pane - its index is READ from the
+    // strip, never hardcoded (the seat map decides how many tabs precede it)
+    const inspPane = asSplit(t).children[2];
+    const kanbanIdx = (inspPane as DockPane).tabs.findIndex((x) => x.component === "kanban");
+    t = moveTab(t, inspPane.id, kanbanIdx, asSplit(t).children[1].id, 0);
     const mem = new MemoryStorage();
     mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
     const dock = createDock(mem as unknown as Storage);
@@ -786,7 +873,7 @@ describe("dock store: the pane-model reset", () => {
     await flush();
     assert.equal(
       paneById(dock.tree.value, files.id).tabs.map((x) => x.component as string).join(","),
-      "files,cron,skills,tools,agents,kanban,insights,mcp,notifications",
+      [...INSPECTOR_TAB_COMPONENTS].join(","),
       "none of them may close (logs left the strip - Endo's comment 2026-10-26)",
     );
     // the main class still closes through the store on ANY census read

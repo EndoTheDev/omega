@@ -294,9 +294,16 @@ describe("case 3: close-last via direct action call never removes the pane", () 
 
 describe("the move-out exception: the last main pane survives its own last tab", () => {
   it("the drained source sits EMPTY (no placeholder is seated)", () => {
-    const { t, main } = shellTree();
+    // canvas C1: the drained tab must be one the class law lets LEAVE the
+    // main pane - a sidebar view visiting main (files) returns to a sidebar;
+    // a CHAT tab never leaves, so it can never drain a main pane.
+    const t: DockNode = makeSplit("row", [
+      makePane("sidebar", 240, "left"),
+      makePane("files", null),
+      makePane("files", 300, "right"),
+    ]);
+    const main = panes(t).find((p) => p.edge === undefined)!;
     const shell = panes(t).find((p) => p.edge === "right")!;
-    // the chat tab walks into the pinned shell: the source empties
     const out = moveTab(t, main.id, 0, shell.id, shell.tabs.length);
     const srcPane = findPane(out, main.id);
     assert.ok(srcPane, "the last main pane never closes (t_aa9dbada exception)");
@@ -306,7 +313,7 @@ describe("the move-out exception: the last main pane survives its own last tab",
       "nothing is minted to fill it (card t_9855a20e: the seat retired)",
     );
     assert.equal(mainPaneCount(out), 1, "the main area never reaches zero panes");
-    assert.deepEqual(comps(findPane(out, shell.id)!), ["files", "chat"], "the tab landed");
+    assert.deepEqual(comps(findPane(out, shell.id)!), ["files", "files"], "the tab landed");
   });
   it("a non-last main pane still closes on its last tab out (the law unchanged)", () => {
     const a = makePane("chat");
