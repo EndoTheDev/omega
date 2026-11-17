@@ -282,6 +282,17 @@ func (c *HTTPChannel) SetDefaultWorkspace(ws string) {
 	}
 }
 
+// SetTitleModel applies the title_model knob LIVE (card t_bf21ee07):
+// the persisted word is stored verbatim (the pane reads it back) and
+// resolved at the wire boundary, exactly like the boot value the wire
+// applies. A bind that has not wired yet keeps the value for Start.
+func (c *HTTPChannel) SetTitleModel(configured string) {
+	c.titleModel = configured
+	if c.srv != nil {
+		c.srv.SetChannelKnobs(c.runTimeout, runtimeTitleModel(configured))
+	}
+}
+
 // Stop shuts the HTTP server down. The host calls this after the
 // context is cancelled; Serve returns on cancellation, so Stop is a
 // no-op safety net.

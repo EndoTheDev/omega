@@ -17,9 +17,12 @@
          the rows carry no visible flow on their own - one line above
          the list states what a row IS and how a run reaches it -->
     <p class="provider-hint">
-      each row is one provider account: a name, its type, a base url
+      every provider is a named instance: a name, its type, a base url
       and an api key - the model pickers (chat picker and the slot
-      knobs below) group that endpoint's models under its name
+      knobs below) group that endpoint's models under its name. the row
+      named "default" is the provider the agent serves: it cannot be
+      renamed or removed here (edit config.yaml), its type is yours to
+      change
     </p>
     <div
       v-for="(inst, i) in rows"
@@ -36,6 +39,7 @@
             spellcheck="false"
             placeholder="my-ollama"
             :value="inst.name"
+            :readonly="isPrimary(inst)"
             :aria-label="`instance ${i + 1} name`"
             @input="setRow(i, 'name', ($event.target as HTMLInputElement).value)" />
         </label>
@@ -74,6 +78,7 @@
         <button
           class="provider-remove"
           type="button"
+          :disabled="isPrimary(inst)"
           :aria-label="`remove instance ${inst.name || i + 1}`"
           @click="removeRow(i)">
           remove
@@ -109,7 +114,15 @@
 
   const rows = computed<ProviderInstanceRow[]>(() => props.value ?? []);
 
+  // The primary is the row named "default" (card t_bf21ee07): the
+  // provider the agent serves, so its name is the contract and the row
+  // never leaves the list through the pane (the server refuses a list
+  // without it). Its type IS editable: a row is a row.
+  const PRIMARY = "default";
+  const isPrimary = (row: ProviderInstanceRow): boolean => row.name === PRIMARY;
+
   function setRow(i: number, key: keyof ProviderInstanceRow, value: string) {
+    if (key === "name" && isPrimary(rows.value[i]!)) return;
     emit(
       "update",
       rows.value.map((row, j) => (j === i ? { ...row, [key]: value } : row)),
@@ -124,6 +137,7 @@
   }
 
   function removeRow(i: number) {
+    if (isPrimary(rows.value[i]!)) return;
     emit(
       "update",
       rows.value.filter((_, j) => j !== i),

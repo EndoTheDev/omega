@@ -13,6 +13,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/llm"
@@ -20,46 +21,109 @@ import (
 
 // Provider implements agent.Provider for Ollama, OpenAI, and Anthropic.
 type Provider struct {
+	// mu guards the mutable state below: the settings pane's live
+	// apply (SetConfig, card t_bf21ee07) swaps a provider's endpoint
+	// while runs are streaming through copies of it. Readers snapshot
+	// the state (snapshot) and never touch the lock again, so one
+	// write never blocks a run.
+	mu            sync.RWMutex
 	typ           string // "ollama", "openai", "anthropic", "mock"
 	modelName     string
 	baseURL       string
 	apiKey        string
 	thinkingLevel string
 	// instances carries the named provider instances this resolver
-	// knows (config.yaml providers:, card t_7dcd4280). Nil = no
-	// configured instances beyond the default; copy discipline keeps
-	// derived copies (WithModel/WithThinkingLevel) resolving through
-	// the same set.
+	// knows (config.yaml provider.instances, cards t_7dcd4280 and
+	// t_bf21ee07). The primary is NOT stored here: it is the row named
+	// DefaultInstance, which resolves to the receiver itself. Copy
+	// discipline keeps derived copies (WithModel/WithThinkingLevel)
+	// resolving through the same set.
 	instances map[string]*Provider
 }
 
-// Instance returns the named provider instance (card t_7dcd4280) and
-// whether it exists. A copy of the base (its thinking level) is built
-// if needed - the default instance never mutates. Implements
-// agent.ProviderInstances: the shell fails a run pinned to an unknown
-// name loudly, never silently falling back to the default instance.
+// DefaultInstance is the instance id of the primary provider (card
+// t_bf21ee07): every provider is a named instance, and the one the
+// agent serves is the row named "default". The name is the mechanism -
+// the resolver answers it like any other id, with no flag anywhere.
+const DefaultInstance = "default"
+
+// Instance returns the named provider instance (cards t_7dcd4280,
+// t_bf21ee07) and whether it exists. "default" is the receiver: the
+// primary is an instance like any other, and a copy resolves it to
+// itself so a run's pinned model never drifts to another copy's.
+// Implements agent.ProviderInstances: the shell fails a run pinned to
+// an unknown name loudly, never silently falling back to the primary.
 func (p *Provider) Instance(name string) (agent.Provider, bool) {
-	inst, ok := p.instances[name]
+	if name == DefaultInstance {
+		return p, true
+	}
+	inst, ok := p.snapshot().instances[name]
 	if !ok {
 		return nil, false
 	}
 	return inst, true
 }
 
-// InstanceNames lists the configured instance ids (card t_1914a8c9):
-// the serving shell reads it for the grouped model catalog. The
-// instance-free provider answers nil (the shell renders the default
-// section only); a derived copy carries the same set.
+// InstanceNames lists the configured instance ids (cards t_1914a8c9,
+// t_bf21ee07): the primary first, then the named rows sorted. The
+// serving shell reads it for the grouped model catalog, so the primary
+// always has a section even when no other instance is configured.
 func (p *Provider) InstanceNames() []string {
-	if len(p.instances) == 0 {
-		return nil
-	}
-	names := make([]string, 0, len(p.instances))
-	for n := range p.instances {
+	instances := p.snapshot().instances
+	names := make([]string, 0, len(instances)+1)
+	names = append(names, DefaultInstance)
+	for n := range instances {
+		if n == DefaultInstance {
+			continue
+		}
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	sort.Strings(names[1:])
 	return names
+}
+
+// snapshot copies the mutable state into a lock-free Provider value:
+// the one way a caller reads fields while a live config swap is
+// possible. The copy carries the instances map but never a mutex use -
+// a fresh zero mutex is created with the copy.
+func (p *Provider) snapshot() *Provider {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return &Provider{
+		typ:           p.typ,
+		modelName:     p.modelName,
+		baseURL:       p.baseURL,
+		apiKey:        p.apiKey,
+		thinkingLevel: p.thinkingLevel,
+		instances:     p.instances,
+	}
+}
+
+// SetConfig swaps the provider's configuration live (card t_bf21ee07):
+// the settings pane's save hands the fresh section here, the instance
+// resolvers are rebuilt, and the next stream/model listing/directive
+// reads the new state. The MODEL the base serves is deliberately NOT
+// taken from cfg: /model mutates it in place, runs pin their own
+// copies, and a settings save must not silently undo a picker choice
+// (the model_name knob keeps its restart semantics).
+func (p *Provider) SetConfig(cfg Config) {
+	next := NewProvider(cfg.Type, "", cfg.Host, cfg.APIKey)
+	snapshot := p.snapshot()
+	instances := make(map[string]*Provider, len(cfg.Instances))
+	for name, inst := range cfg.Instances {
+		if name == DefaultInstance {
+			continue // the primary IS the base provider
+		}
+		instances[name] = NewProvider(inst.Type, "", inst.Host, inst.APIKey)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.typ = next.typ
+	p.baseURL = next.baseURL
+	p.apiKey = next.apiKey
+	p.instances = instances
+	p.modelName = snapshot.modelName
+	p.thinkingLevel = snapshot.thinkingLevel
 }
 
 // NewProvider creates a Provider from the given configuration fields.
@@ -116,6 +180,9 @@ func (p *Provider) initDefaults() {
 // events on the returned channel. The channel is closed when the
 // stream ends. Errors are encoded as StreamEnd (FinishReason="error").
 func (p *Provider) Stream(ctx context.Context, messages []core.Message, tools []llm.ToolSchema) <-chan core.ProviderStreamEvent {
+	// One snapshot per stream: the run keeps the endpoint it started
+	// on even if a settings save swaps the base mid-flight.
+	s := p.snapshot()
 	events := make(chan core.ProviderStreamEvent, 64)
 	go func() {
 		defer close(events)
@@ -124,23 +191,23 @@ func (p *Provider) Stream(ctx context.Context, messages []core.Message, tools []
 		// requires the argument object (a string fails with "Value
 		// looks like object..."); Anthropic's input blocks want one
 		// too.
-		msgJSON := messagesToJSON(messages, p.typ == "openai")
-		if p.typ == "ollama" {
+		msgJSON := messagesToJSON(messages, s.typ == "openai")
+		if s.typ == "ollama" {
 			imagesToOllamaWire(msgJSON)
 		}
 		toolJSON := toolSchemasToJSON(tools)
 		var end core.StreamEnd
-		switch p.typ {
+		switch s.typ {
 		case "ollama":
-			end = p.streamOllama(ctx, events, msgJSON, toolJSON)
+			end = s.streamOllama(ctx, events, msgJSON, toolJSON)
 		case "openai":
-			end = p.streamOpenAI(ctx, events, msgJSON, toolJSON)
+			end = s.streamOpenAI(ctx, events, msgJSON, toolJSON)
 		case "anthropic":
-			end = p.streamAnthropic(ctx, events, msgJSON, toolJSON)
+			end = s.streamAnthropic(ctx, events, msgJSON, toolJSON)
 		case "mock":
-			end = p.streamMock(ctx, events, msgJSON, toolJSON)
+			end = s.streamMock(ctx, events, msgJSON, toolJSON)
 		default:
-			end = core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("unknown provider type: %s", p.typ)}
+			end = core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("unknown provider type: %s", s.typ)}
 		}
 		select {
 		case <-ctx.Done():
@@ -151,18 +218,32 @@ func (p *Provider) Stream(ctx context.Context, messages []core.Message, tools []
 }
 
 // ModelName returns the current model name.
-func (p *Provider) ModelName() string { return p.modelName }
+func (p *Provider) ModelName() string { return p.snapshot().modelName }
 
 // SetThinkingLevel sets the thinking level for subsequent streams.
-func (p *Provider) SetThinkingLevel(level string) { p.thinkingLevel = level }
+func (p *Provider) SetThinkingLevel(level string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.thinkingLevel = level
+}
+
+// SetModel points the base provider at another model in place: the
+// /model command's switch, applied outside a run (single user). Runs
+// and slots derive their own WithModel copies, so the switch never
+// reaches a run already streaming.
+func (p *Provider) SetModel(model string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.modelName = model
+}
 
 // WithModel returns a copy of the provider serving the given model.
 // The receiver is left unchanged, so per-run providers are derived
 // without mutating the mounted base provider.
 func (p *Provider) WithModel(model string) agent.Provider {
-	cp := *p
+	cp := p.snapshot()
 	cp.modelName = model
-	return &cp
+	return cp
 }
 
 // WithThinkingLevel returns a copy of the provider streaming at the
@@ -171,9 +252,9 @@ func (p *Provider) WithModel(model string) agent.Provider {
 // the receiver is left unchanged, so per-run providers derived from
 // the mounted base never mutate it.
 func (p *Provider) WithThinkingLevel(level string) agent.Provider {
-	cp := *p
+	cp := p.snapshot()
 	cp.thinkingLevel = level
-	return &cp
+	return cp
 }
 
 // ListModelEntries fetches available models from the provider API with
@@ -182,13 +263,13 @@ func (p *Provider) WithThinkingLevel(level string) agent.Provider {
 // keypool mirror passes it through); the openai/anthropic lists carry
 // ids only, so Capabilities stays nil for those.
 func (p *Provider) ListModelEntries() ([]core.ModelEntry, error) {
-	return p.listModelEntries()
+	return p.snapshot().listModelEntries()
 }
 
 // ListModels fetches available model names from the provider API - the
 // plain projection of listModelEntries, the agent.Provider contract.
 func (p *Provider) ListModels() ([]string, error) {
-	entries, err := p.listModelEntries()
+	entries, err := p.snapshot().listModelEntries()
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +283,7 @@ func (p *Provider) ListModels() ([]string, error) {
 // ModelInfo queries the provider for the current model's context window.
 // Ollama: POST /api/show. OpenAI/Anthropic: return 0 (not exposed).
 func (p *Provider) ModelInfo() (llm.ModelInfo, error) {
-	ctx, err := p.modelInfo()
+	ctx, err := p.snapshot().modelInfo()
 	if err != nil {
 		return llm.ModelInfo{}, err
 	}

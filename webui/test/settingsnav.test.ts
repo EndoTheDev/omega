@@ -74,11 +74,12 @@ const group = (key: string, label: string, knobs: SettingKnob[]): SettingGroup =
   knobs,
 });
 
-// a provider domain with two declared children (connection, models)
+// a provider domain with two declared children (providers, models) -
+// card t_bf21ee07 merged connection+instances into the one providers
+// child
 const providerGroup = () =>
   group("provider", "provider", [
-    knob("provider.type", "type", "ollama"),
-    knob("provider.host", "base url", ""),
+    knob("provider.instances", "provider instances", []),
     knob("provider.model_name", "model name", "glm-5.3"),
   ]);
 
@@ -99,7 +100,7 @@ test("the table is data per knob, never a derivation from the key", () => {
   assert.equal(knobSubgroup("chat.theme"), "appearance");
   assert.equal(knobSubgroup("chat.color_mode"), "appearance");
   assert.equal(knobSubgroup("provider.model_name"), "models");
-  assert.equal(knobSubgroup("provider.host"), "connection");
+  assert.equal(knobSubgroup("provider.instances"), "providers");
   // a knob with no line lands in the implicit general child
   assert.equal(knobSubgroup("totally.undeclared"), GENERAL_SUBGROUP);
   // and the lookup is NOT "first path segment" or any other key spelling
@@ -119,8 +120,8 @@ test("every declared child has a display label (no blank nav row)", () => {
 test("withSubgroups stamps every knob and never mutates the caller", () => {
   const groups = [providerGroup(), logGroup()];
   const stamped = withSubgroups(groups);
-  assert.equal(stamped[0].knobs[0].subgroup, "connection");
-  assert.equal(stamped[0].knobs[2].subgroup, "models");
+  assert.equal(stamped[0].knobs[0].subgroup, "providers");
+  assert.equal(stamped[0].knobs[1].subgroup, "models");
   assert.equal(stamped[1].knobs[1].subgroup, GENERAL_SUBGROUP);
   assert.equal(groups[0].knobs[0].subgroup, undefined, "the input stays untouched");
 });
@@ -131,12 +132,11 @@ test("buildNav derives parents with their children underneath", () => {
   const nav = buildNav(withSubgroups([providerGroup()]));
   assert.equal(nav.length, 1);
   assert.equal(nav[0].id, "provider");
-  assert.deepEqual(nav[0].subgroups.map((s) => s.id), ["connection", "models"]);
+  assert.deepEqual(nav[0].subgroups.map((s) => s.id), ["providers", "models"]);
   assert.deepEqual(nav[0].subgroups[0].knobs.map((k) => k.key), [
-    "provider.type",
-    "provider.host",
+    "provider.instances",
   ]);
-  assert.equal(nav[0].knobs.length, 3, "the parent still owns every knob");
+  assert.equal(nav[0].knobs.length, 2, "the parent still owns every knob");
 });
 
 test("an undeclared domain collapses to ONE implicit general child", () => {
@@ -150,13 +150,13 @@ test("general is pinned FIRST among a domain's children (ruling 3)", () => {
   const mixed = group("provider", "provider", [
     knob("provider.model_name", "model name"), // models
     knob("totally.undeclared", "unclassified"), // general
-    knob("provider.host", "base url"), // connection
+    knob("provider.instances", "instances"), // providers
   ]);
   const nav = buildNav(withSubgroups([mixed]));
   assert.deepEqual(nav[0].subgroups.map((s) => s.id), [
     GENERAL_SUBGROUP,
     "models",
-    "connection",
+    "providers",
   ]);
 });
 
@@ -196,9 +196,9 @@ test("a multi-child domain renders its children as headed blocks", () => {
   const nav = buildNav(withSubgroups([providerGroup()]));
   const section = documentFor(nav)[0];
   assert.equal(section.id, "provider");
-  assert.equal(section.count, 3);
+  assert.equal(section.count, 2);
   assert.deepEqual(section.blocks.map((block) => block.id), [
-    "provider/connection",
+    "provider/providers",
     "provider/models",
   ]);
   assert.ok(section.blocks.every((block) => block.heading), "each block names itself");
@@ -245,7 +245,7 @@ test("an empty hit set is the empty state, never 'everything'", () => {
   assert.deepEqual(documentFor(nav, { hits: new Set() }), []);
   // null means NO query is live
   assert.equal(documentFor(nav, { hits: null }).length, 1);
-  assert.equal(documentFor(nav, { hits: null })[0].count, 3);
+  assert.equal(documentFor(nav, { hits: null })[0].count, 2);
 });
 
 test("modified-only filters the WHOLE document, not one category", () => {
@@ -278,7 +278,7 @@ test("spyTargetIds lists each section then its blocks, in document order", () =>
   assert.deepEqual(spyTargetIds(doc), [
     COMMON_CATEGORY,
     "provider",
-    "provider/connection",
+    "provider/providers",
     "provider/models",
   ]);
 });
@@ -347,18 +347,18 @@ test("a selected section shows its rows and hides every other section", () => {
   );
   assert.deepEqual(
     doc[0].blocks.map((block) => block.id),
-    ["provider/connection", "provider/models"],
+    ["provider/providers", "provider/models"],
     "its subsections render with it",
   );
   assert.equal(
     doc[0].count,
-    3,
+    2,
     "every row of the section is shown - the filter hides SECTIONS, never rows",
   );
   // the surviving ids are the same anchors the nav and the spy use
   assert.deepEqual(spyTargetIds(doc), [
     "provider",
-    "provider/connection",
+    "provider/providers",
     "provider/models",
   ]);
 });
@@ -367,7 +367,7 @@ test("a subsection selection filters to its CATEGORY (a block is not a section)"
   const nav = buildNav(withSubgroups([providerGroup(), logGroup()]));
   const doc = documentFor(nav, { only: sectionFilter("provider/models", false) });
   assert.deepEqual(doc.map((section) => section.id), ["provider"]);
-  assert.equal(doc[0].count, 3, "the whole category, not just the clicked child");
+  assert.equal(doc[0].count, 2, "the whole category, not just the clicked child");
 });
 
 test("a search query OVERRIDES the section filter, and clearing it gives the filter back", () => {
@@ -537,7 +537,7 @@ test("matchingCategoryIds answers exactly the categories with a survivor", () =>
   );
   // the modified-only switch greys the untouched categories too
   assert.deepEqual(
-    [...matchingCategoryIds(nav, { modifiedOnly: true, isModified: (k) => k.key === "provider.host" })],
+    [...matchingCategoryIds(nav, { modifiedOnly: true, isModified: (k) => k.key === "provider.instances" })],
     ["provider"],
   );
 });

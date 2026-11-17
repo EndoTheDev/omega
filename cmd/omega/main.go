@@ -796,12 +796,15 @@ func newAgent(cfg Config, configPath string, appendPrompts []string, trust trust
 
 // wireCaptioner builds the image captioner (vision_model knob) onto the
 // context: a pinned vision-model provider copy, the store as the caption
-// sink, and the logger. An unset knob (or a store without caption
-// support) changes nothing. Called after the store resolves, before any
-// agent is built from the context - serve, loop, and cron agents all
-// inherit through NewFromContext.
+// sink, and the logger. It is installed UNCONDITIONALLY as of card
+// t_bf21ee07 - the settings save flips the knob live through
+// Captioner.SetModel, and a captioner with no model is simply off
+// (CaptioningEnabled false, the agent skips the aux hop exactly like a
+// nil one). Called after the store resolves, before any agent is built
+// from the context - serve, loop, and cron agents all inherit through
+// NewFromContext.
 func wireCaptioner(cfg Config, pctx *agent.Context) {
-	if cfg.VisionModel == "" || pctx == nil {
+	if pctx == nil {
 		return
 	}
 	resolve := func(key string) any { return pctx.Services().Resolve(key) }
@@ -818,7 +821,7 @@ func wireCaptioner(cfg Config, pctx *agent.Context) {
 		lg = l
 	}
 	pctx.Captioner = provider.NewCaptioner(prov, cfg.VisionModel, sink, lg)
-	if sink == nil && lg != nil {
+	if cfg.VisionModel != "" && sink == nil && lg != nil {
 		lg.Warnf("omega: vision_model set but the store does not support captions - captions cache in-process only")
 	}
 }

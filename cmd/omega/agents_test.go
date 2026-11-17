@@ -18,9 +18,16 @@ import (
 
 func agentLayerBase() Config {
 	cfg := DefaultConfig()
-	cfg.Provider.Host = "http://localhost:11434"
+	cfg.setDefaultInstance(ProviderInstance{Name: PrimaryProviderInstance, Host: "http://localhost:11434"})
 	cfg.Provider.ModelName = "glm-5.3"
 	return cfg
+}
+
+// primaryOf is the primary provider row (card t_bf21ee07): the instance
+// named "default", the one the agent serves.
+func primaryOf(cfg Config) ProviderInstance {
+	inst, _ := cfg.defaultInstance()
+	return inst
 }
 
 // TestAgentLayerStorePinSurvives pins the delegate child's store pin
@@ -94,8 +101,8 @@ func TestApplyAgentLayerOverridesModel(t *testing.T) {
 	// the layer does not touch knobs it never set: the host provider's
 	// type and host stand (a provider.instance reference is the only way
 	// an agent redirects them, and a secret can never ride the layer).
-	if cfg.Provider.Host != "http://localhost:11434" {
-		t.Errorf("host clobbered: %q", cfg.Provider.Host)
+	if host := primaryOf(cfg).Host; host != "http://localhost:11434" {
+		t.Errorf("host clobbered: %q", host)
 	}
 }
 
@@ -411,8 +418,8 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 	if cfg.Provider.ModelName != "main-model" {
 		t.Errorf("model_name after the reset = %q, want main's main-model", cfg.Provider.ModelName)
 	}
-	if cfg.Provider.Type != "openai" || cfg.Provider.Host != "http://work-host:9000" || cfg.Provider.APIKey != "work-secret" {
-		t.Errorf("provider after the model_name reset = %+v, want the resolved work instance", cfg.Provider)
+	if primary := primaryOf(cfg); primary.Type != "openai" || primary.Host != "http://work-host:9000" || primary.APIKey != "work-secret" {
+		t.Errorf("provider after the model_name reset = %+v, want the resolved work instance", primary)
 	}
 	schema, err = settingsSchema(mainConfigPath)
 	if err != nil {
@@ -476,8 +483,8 @@ func TestApplyAgentLayerDefinitionLaws(t *testing.T) {
 	}
 	// The instance resolves type/host/key out of settings - the agent
 	// file held none of them.
-	if cfg.Provider.Type != "openai" || cfg.Provider.Host != "http://work-host:9000" || cfg.Provider.APIKey != "work-secret" {
-		t.Errorf("provider = %+v, want the resolved work instance", cfg.Provider)
+	if primary := primaryOf(cfg); primary.Type != "openai" || primary.Host != "http://work-host:9000" || primary.APIKey != "work-secret" {
+		t.Errorf("provider = %+v, want the resolved work instance", primary)
 	}
 	if cfg.Provider.ModelName != "scout-model" {
 		t.Errorf("model = %q, want the layer's scout-model", cfg.Provider.ModelName)

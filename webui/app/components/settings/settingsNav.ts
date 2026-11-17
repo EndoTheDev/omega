@@ -182,10 +182,12 @@ export function groupBySurface<T>(
 
 /** KNOB_SUBGROUPS: knob key -> subgroup id. THE declaration. */
 export const KNOB_SUBGROUPS: Readonly<Record<string, string>> = {
-  // provider - the endpoint, the models it serves, the named instances
-  "provider.type": "connection",
-  "provider.host": "connection",
-  "provider.api_key": "connection",
+  // provider - card t_bf21ee07: the connection subgroup and the
+  // instances subgroup MERGED into one "providers" child. Every
+  // provider is a named instance (the row named "default" is the one
+  // the agent serves), so the endpoint rows ARE the connection surface
+  // - there is no flat provider.type/host/api_key knob to place.
+  "provider.instances": "providers",
   "provider.model_name": "models",
   "provider.vision_model": "models",
   "provider.title_model": "models",
@@ -193,7 +195,6 @@ export const KNOB_SUBGROUPS: Readonly<Record<string, string>> = {
   "provider.compaction_model": "models",
   "provider.summarizer_model": "models",
   "provider.skills_model": "models",
-  "provider.instances": "instances",
   // server
   "server.port": "network",
   "server.bind": "network",
@@ -247,9 +248,8 @@ export const KNOB_SUBGROUPS: Readonly<Record<string, string>> = {
     renders as the id itself - a missing label is never a blank nav row. */
 export const SUBGROUP_LABELS: Readonly<Record<string, string>> = {
   general: "general",
-  connection: "connection",
+  providers: "providers",
   models: "models",
-  instances: "instances",
   network: "network",
   runs: "runs",
   workspace: "workspace",

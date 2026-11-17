@@ -80,7 +80,9 @@ func Census(ctx *Context) CensusSnapshot {
 		}
 	}
 	if ctx.Captioner != nil {
-		s.Slots["captioner"] = true
+		if sw, ok := ctx.Captioner.(interface{ CaptioningEnabled() bool }); !ok || sw.CaptioningEnabled() {
+			s.Slots["captioner"] = true
+		}
 	}
 	for _, tp := range ctx.ToolProviders {
 		if tp == nil {

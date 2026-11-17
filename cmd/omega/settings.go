@@ -8,7 +8,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +16,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/approval"
 	"github.com/EndoTheDev/omega/harness/compactor"
+	"github.com/EndoTheDev/omega/harness/provider"
 	"github.com/EndoTheDev/omega/harness/store"
 	"github.com/EndoTheDev/omega/llm"
 	"gopkg.in/yaml.v3"
@@ -223,30 +223,18 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			Key:   "provider",
 			Label: "provider",
 			Knobs: []core.SettingsKnob{
-				{Key: "provider.type", Label: "type", Type: "select",
-					Options: []string{"ollama", "openai", "anthropic", "mock"},
-					Value:   strings.ToLower(cfg.Provider.Type),
-					// config-layer default is empty ("empty defaults to
-					// ollama" is the provider capsule's read of it), so a
-					// fresh config is NOT shown as modified.
-					Default: strings.ToLower(def.Provider.Type),
-					Help:    "provider flavor; empty defaults to ollama; mock answers deterministically with no network (tests, journeys)"},
-				// Card t_1914a8c9: the provider group is ordered CONNECTION
-				// FIRST (type, base url, api key), then the model knobs,
-				// then the instance list and the slots - the fields render
-				// in the shape the pane groups them.
-				{Key: "provider.host", Label: "base url", Type: "text",
-					Value:   cfg.Provider.Host,
-					Default: def.Provider.Host,
-					Help:    "provider base URL (default http://localhost:11434)"},
-				{Key: "provider.api_key", Label: "api key", Type: "secret",
-					Value: maskSecret(cfg.Provider.APIKey),
-					// The default rides masked exactly like the value: an
-					// env-supplied OMEGA_API_KEY must never leak through the
-					// unauthenticated GET, and no stored key means the default
-					// is the empty string (masking that would imply a key).
-					Default: maskSecret(def.Provider.APIKey),
-					Help:    "masked here; edit config.yaml instead (blank for local ollama)"},
+				// card t_bf21ee07: the connection subgroup and the
+				// instances subgroup MERGED - the providers list IS
+				// the connection surface. Every provider is a row; the
+				// primary is the row named "default", first in the
+				// list. There is no separately-named flat provider.
+				{Key: "provider.instances", Label: "provider instances", Type: "providers",
+					Value: providerInstancesKnob(cfg),
+					// The default is the same single row rendered
+					// through the same function, so the shapes (and the
+					// modified-dot comparison) cannot drift.
+					Default: providerInstancesKnob(&def), Live: true,
+					Help: "every provider is a named instance: the name is the instance id the model pickers and slots speak (instance:model), so two accounts of one type are two rows; the row named \"default\" is the provider the agent serves. Rows can be added, renamed, retyped and removed here; a row's base url and api key are config.yaml-only, and changes apply live"},
 				// card t_70c28128: model fields are typed pickers - the
 				// webui renders type "model" as a dropdown of the
 				// provider's live models, filtered by the knob's Filter
@@ -257,28 +245,16 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					// model_name, so no value can be "the default" - the
 					// knob answers JSON null and the pane renders no dot
 					// and no reset (the one omission in this schema).
-					Help: "default model the agent serves; the webui model picker overrides per chat; applies on restart"},
+					Live: true,
+					Help: "default model the agent serves; the webui model picker overrides per chat; applies live"},
 				{Key: "provider.vision_model", Label: "vision model", Type: "model", Filter: "vision", DefaultOption: true,
 					Value:   cfg.VisionModel,
-					Default: def.VisionModel,
-					Help:    "auxiliary captioner model for image messages; \"default\" follows the model the current chat runs (the composer's chip), resolved per call - useful only when that model can see images (the caption hop exists for a blind main model, so \"default\" on a blind one sends the image there and the run fails on the caption); the dropdown lists vision-capable models only; empty = images reach the main model unchanged and may fail loudly; applies on restart"},
+					Default: def.VisionModel, Live: true,
+					Help: "auxiliary captioner model for image messages; \"default\" follows the model the current chat runs (the composer's chip), resolved per call - useful only when that model can see images (the caption hop exists for a blind main model, so \"default\" on a blind one sends the image there and the run fails on the caption); the dropdown lists vision-capable models only; empty = images reach the main model unchanged and may fail loudly; applies live"},
 				{Key: "provider.title_model", Label: "title model", Type: "model", DefaultOption: true,
 					Value:   cfg.TitleModel,
-					Default: def.TitleModel,
-					Help:    "cheap model for session titles; empty or \"default\" = the model this chat runs (resolved per call); applies on restart"},
-				// card t_7dcd4280, reshaped t_1914a8c9: the named
-				// instances - one row per instance, each a NAMED ENDPOINT
-				// only (name, type, base url, api key; no model column -
-				// models come from the instance's catalog through the
-				// model pickers). The list REPLACES the providers: map on
-				// save; a masked key round-trips as "keep the existing
-				// secret".
-				{Key: "provider.instances", Label: "provider instances", Type: "providers",
-					Value: providerInstancesKnob(cfg),
-					// The default is the empty list, rendered through the
-					// same function as the value so the shapes cannot drift.
-					Default: providerInstancesKnob(&def),
-					Help:    "named provider endpoints: the name is the instance id, so two accounts of one type are two rows; the provider section above stays the default; rows can be renamed, retyped and removed here, but a row's host and api key are config.yaml-only (changes apply on restart)"},
+					Default: def.TitleModel, Live: true,
+					Help: "cheap model for session titles; empty or \"default\" = the model this chat runs (resolved per call); applies live"},
 				// card t_fc0b2f2d: the four per-subsystem model
 				// slots - provider settings assigns one named model
 				// per subsystem ("instance:model" or a bare model;
@@ -539,24 +515,19 @@ func compactionKnobs(cfg, def *Config) []core.SettingsKnob {
 
 func ptrF(n float64) *float64 { return &n }
 
-// providerInstancesKnob renders the named provider instances (card
-// t_7dcd4280, reshaped t_1914a8c9) as the list editor's value: one
-// object per instance - name, type, host, api_key, NO model column
-// (models come from the instance's catalog through the pickers) -
-// names sorted (a yaml map iterates unordered - the pane must not
-// reshuffle its rows between reloads). The api_key rides masked; the
-// save path treats a masked value as "keep the existing secret".
+// providerInstancesKnob renders the provider instances (card
+// t_bf21ee07: the ONE providers list - the primary row named
+// "default" leads it) as the list editor's value: one object per row -
+// name, type, host, api_key, NO model column (models come from the
+// instance's catalog through the pickers). The list order is the
+// config.yaml order (the primary first), so the pane never reshuffles
+// its rows between reloads. The api_key rides masked; the save path
+// treats a masked value as "keep the existing secret".
 func providerInstancesKnob(cfg *Config) []map[string]any {
-	names := make([]string, 0, len(cfg.Providers))
-	for n := range cfg.Providers {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	out := make([]map[string]any, 0, len(names))
-	for _, n := range names {
-		inst := cfg.Providers[n]
+	out := make([]map[string]any, 0, len(cfg.Provider.Instances))
+	for _, inst := range cfg.Provider.Instances {
 		out = append(out, map[string]any{
-			"name":    n,
+			"name":    inst.Name,
 			"type":    strings.ToLower(inst.Type),
 			"host":    inst.Host,
 			"api_key": maskSecret(inst.APIKey),
@@ -603,17 +574,15 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 	for key, raw := range values {
 		var err error
 		switch key {
-		case "provider.type":
-			err = setString(&cfg.Provider.Type, key, raw, trim)
-		case "provider.model_name", "provider.host", "provider.vision_model", "provider.title_model":
+		case "provider.model_name", "provider.vision_model", "provider.title_model":
 			err = setStringField(cfg, key, raw)
 		case "provider.instances":
-			// The named instances (card t_7dcd4280): the card's point
-			// is add/remove-with-key through the settings UI, so the
-			// per-instance api_key IS hot-PUT-able here (masked read,
-			// masked round-trip keeps the secret). The default
-			// section's provider.api_key stays config.yaml-only -
-			// the gated knob below is untouched.
+			// The provider instances (card t_bf21ee07): the ONE list
+			// every provider lives in, the primary row included. A
+			// row's api_key IS hot-PUT-able here (masked read, masked
+			// round-trip keeps the secret); a row's host and a stored
+			// secret stay config.yaml's property - the gate inside
+			// applyProviderInstances names that door.
 			err = applyProviderInstances(cfg, key, raw)
 		case "provider.api_key", "server.bind":
 			// gated knobs: bind is the escalation lever for the whole
@@ -751,8 +720,6 @@ func setStringField(cfg *Config, key string, raw any) error {
 		cfg.SkillsModel = v
 	case "provider.approvals_model":
 		cfg.ApprovalsModel = v
-	case "provider.host":
-		cfg.Provider.Host = v
 	case "store.db_path":
 		cfg.Store.DBPath = v
 	case "system_prompt":
@@ -777,26 +744,31 @@ func setStringField(cfg *Config, key string, raw any) error {
 // significant in any config field.
 func trim(s string) string { return strings.TrimSpace(s) }
 
-// applyProviderInstances applies the instances knob (card t_7dcd4280,
-// reshaped t_1914a8c9; gated t_9825147c part 2). The submitted list
-// REPLACES cfg.Providers. Each entry carries name, type, host and
+// applyProviderInstances applies the instances knob (card t_bf21ee07,
+// the merge of the flat connection trio and the old named-instance
+// list; gated t_9825147c part 2). The submitted list REPLACES
+// cfg.Provider.Instances. Each entry carries name, type, host and
 // api_key - an instance is a named endpoint only, a model_name field
 // is a loud error (models come from the instance's catalog through
-// the model pickers). The stored rows are the trust anchor for the
-// two gated columns: a row may be RENAMED, RETYPED or REMOVED over
-// the API, but the endpoint (host) and the secret (api_key) are
-// config.yaml's property - a changed host on a stored row, a key
-// set or wiped on one, or a planted host config.yaml does not carry
-// all answer with the config.yaml door (the same law provider.api_key
-// and server.bind hold). Renames keep their secret via the masked
-// round trip: the masked key inherits from the one stored row that
-// carries the submitted host (ambiguous or missing matches refuse).
-// A masked api_key keeps the entry's EXISTING secret ("****" means
-// unchanged, not blank - the plain text never rides the wire, so the
-// round trip must not wipe it). Unknown types, reserved names and
-// duplicate ids fail through apply + cfg.Validate() in saveSettings -
-// the schema is the contract and a typo must be loud, never silently
-// dropped.
+// the model pickers). The PRIMARY is the row named "default": the
+// list must carry it (a list without it would leave the agent with no
+// provider to serve), and it can be retyped like any row but not
+// renamed away.
+//
+// The stored rows are the trust anchor for the two gated columns: a
+// row may be RENAMED, RETYPED or REMOVED over the API, but the
+// endpoint (host) and the secret (api_key) are config.yaml's property
+// - a changed host on a stored row, a key set or wiped on one, or a
+// planted host config.yaml does not carry all answer with the
+// config.yaml door (the same law server.bind holds). Renames keep
+// their secret via the masked round trip: the masked key inherits
+// from the one stored row that carries the submitted host (ambiguous
+// or missing matches refuse). A masked api_key keeps the entry's
+// EXISTING secret ("****" means unchanged, not blank - the plain text
+// never rides the wire, so the round trip must not wipe it). Unknown
+// types, illegal names and duplicate ids fail through apply +
+// cfg.Validate() in saveSettings - the schema is the contract and a
+// typo must be loud, never silently dropped.
 func applyProviderInstances(cfg *Config, key string, raw any) error {
 	list, ok := raw.([]any)
 	if !ok {
@@ -816,7 +788,7 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 			}
 		}
 	}
-	providers := make(map[string]ProviderConfig, len(list))
+	instances := make([]ProviderInstance, 0, len(list))
 	seen := make(map[string]bool, len(list))
 	for i, item := range list {
 		obj, ok := item.(map[string]any)
@@ -837,14 +809,11 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 		if v, err := asTrimmedString(obj["model_name"]); err == nil && v != "" {
 			return fmt.Errorf("%s: %s.model_name is no longer settable - providers are named endpoints only, pick the model in the model picker (instance:model)", key, name)
 		}
-		inst := ProviderConfig{}
+		inst := ProviderInstance{Name: name}
 		if inst.Type, err = asTrimmedString(obj["type"]); err != nil {
 			return fmt.Errorf("%s: %s.type: %w", key, name, err)
 		}
 		inst.Type = strings.ToLower(inst.Type)
-		if inst.ModelName, err = asTrimmedString(obj["model_name"]); err != nil {
-			return fmt.Errorf("%s: %s.model_name: %w", key, name, err)
-		}
 		if inst.Host, err = asTrimmedString(obj["host"]); err != nil {
 			return fmt.Errorf("%s: %s.host: %w", key, name, err)
 		}
@@ -856,7 +825,7 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 		// default, loopback) or carries a host config.yaml already
 		// serves - that is a rename of a stored row, never a planted
 		// endpoint reaching a fresh network target.
-		existing, has := cfg.Providers[name]
+		existing, has := cfg.Provider.instance(name)
 		if has {
 			if inst.Host != existing.Host {
 				return instancesDoor(name, "host")
@@ -900,22 +869,25 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 				return instancesDoor(name, "api_key")
 			}
 		}
-		providers[name] = inst
+		instances = append(instances, inst)
 	}
-	if len(providers) == 0 {
-		// An emptied list removes every instance - the writer omits
-		// the nil map entirely.
-		cfg.Providers = nil
-		return nil
+	if !seen[PrimaryProviderInstance] {
+		// Every provider is a row now (card t_bf21ee07): without the
+		// primary row there is no provider the agent can serve, and a
+		// RENAME of it is exactly this error - the primary keeps its
+		// name, its endpoint is what may change (in config.yaml).
+		return fmt.Errorf("%s: the row named %q is required - it is the provider the agent serves (rename it by editing config.yaml, never away)", key, PrimaryProviderInstance)
 	}
-	cfg.Providers = providers
+	// The primary leads the list, the rest keep the submitted order.
+	cfg.Provider.Instances = instances
+	cfg.Provider.primaryFirst()
 	return nil
 }
 
 // storedHostIn reports whether config already serves the host (the
 // rename path's anchor, card t_9825147c part 2).
 func storedHostIn(cfg *Config, host string) bool {
-	for _, inst := range cfg.Providers {
+	for _, inst := range cfg.Provider.Instances {
 		if inst.Host == host {
 			return true
 		}
@@ -930,8 +902,8 @@ func storedHostIn(cfg *Config, host string) bool {
 // inherits, none or several refuse at config.yaml.
 func renamedOffKey(cfg *Config, submitted map[string]bool, want string) (string, int) {
 	keys := map[string]bool{}
-	for name, inst := range cfg.Providers {
-		if submitted[name] || inst.Host != want {
+	for _, inst := range cfg.Provider.Instances {
+		if submitted[inst.Name] || inst.Host != want {
 			continue
 		}
 		keys[inst.APIKey] = true
@@ -1112,6 +1084,32 @@ func hotApply(cfg Config, prevWorkspace string, pctx *agent.Context, setFilesWor
 	if a, ok := pctx.Services().Resolve("approvals").(*approval.Gate); ok {
 		a.SetConfig(approvalSection(cfg))
 	}
+	// The providers go live (card t_bf21ee07): one save materializes the
+	// whole instance list, and the capsule swaps its base endpoint plus
+	// every resolver behind the lock - the next run, model listing and
+	// slot consult see the saved config. Consumer law (the noun test):
+	// the host declares its own local face, the capsule satisfies it
+	// structurally.
+	if pp, ok := pctx.Services().Resolve("provider").(providerConfigSetter); ok {
+		pp.SetConfig(providerSection(cfg))
+	}
+	// vision_model goes live on the SAME stroke (card t_bf21ee07): the
+	// captioner is installed from boot and swaps its lane in place, so
+	// every agent holding the pointer follows a settings save. Empty
+	// turns the aux hop off again.
+	if c, ok := pctx.Captioner.(visionModelSetter); ok {
+		c.SetModel(cfg.VisionModel)
+	}
+	// title_model rides the channel's own setter (card t_bf21ee07): the
+	// title call resolves the persisted word at the wire boundary, so
+	// the channel keeps the knob and every mounted bind follows it. The
+	// push is unconditional - a CLEARED knob must reach the wire too,
+	// and the setter is idempotent.
+	for _, ch := range pctx.Channels {
+		if tm, ok := ch.(titleModelSetter); ok {
+			tm.SetTitleModel(cfg.TitleModel)
+		}
+	}
 	// The store's hygiene pass goes live (card t_f78acfd6): the sweep
 	// resolves its model slot + retention window from the live section
 	// (store.SetHygieneConfig), so a summarizer_model flip reaches the
@@ -1176,6 +1174,28 @@ func pushRunTimeout(pctx *agent.Context, cfg Config) {
 // name never leaves harness/ (the noun test holds the namespace).
 type curatorSlotSetter interface {
 	SetCuratorModel(model string)
+}
+
+// providerConfigSetter is the host's consumer-owned face for the
+// provider capsule's live configuration (card t_bf21ee07): hotApply
+// declares its need, the capsule satisfies it with SetConfig and swaps
+// its endpoint + instance resolvers behind its own lock.
+type providerConfigSetter interface {
+	SetConfig(provider.Config)
+}
+
+// visionModelSetter is the captioner's live lane (card t_bf21ee07):
+// hotApply hands the vision_model knob over, the captioner swaps its
+// pinned copy (or turns the aux hop off for an empty value).
+type visionModelSetter interface {
+	SetModel(model string)
+}
+
+// titleModelSetter is the HTTP channel's live title lane (card
+// t_bf21ee07): the channel resolves the persisted word at its wire
+// boundary, so the setter carries the knob VERBATIM.
+type titleModelSetter interface {
+	SetTitleModel(configured string)
 }
 
 // omegaSettings implements core.Settings for the serve host: the webui
@@ -1388,11 +1408,19 @@ func settleSecretsFromDisk(path string, cfg *Config, doc *Config) error {
 // copy in the file would outlive it. Clearing the line therefore clears
 // the credential, the way a text editor would.
 func settleSecrets(cfg *Config, doc *Config, onDisk *Config) {
-	cfg.Provider.APIKey = secretLayerValue(doc.Provider.APIKey, onDisk.Provider.APIKey)
-	for name, inst := range cfg.Providers {
-		inst.APIKey = secretLayerValue(doc.Providers[name].APIKey, onDisk.Providers[name].APIKey)
-		cfg.Providers[name] = inst
+	instances := make([]ProviderInstance, 0, len(cfg.Provider.Instances))
+	for _, inst := range cfg.Provider.Instances {
+		docKey, diskKey := "", ""
+		if d, ok := doc.Provider.instance(inst.Name); ok {
+			docKey = d.APIKey
+		}
+		if d, ok := onDisk.Provider.instance(inst.Name); ok {
+			diskKey = d.APIKey
+		}
+		inst.APIKey = secretLayerValue(docKey, diskKey)
+		instances = append(instances, inst)
 	}
+	cfg.Provider.Instances = instances
 }
 
 // secretLayerValue is the one rule: the mask stands for the value on

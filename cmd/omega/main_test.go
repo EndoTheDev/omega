@@ -377,10 +377,13 @@ func TestBuildConfigs(t *testing.T) {
 	// Customize the fields the router is expected to propagate so a wrong
 	// mapping (e.g. store<->provider swap) fails the test.
 	cfg.Store.DBPath = "/tmp/store-test.db"
-	cfg.Provider.Type = "ollama"
+	cfg.setDefaultInstance(ProviderInstance{
+		Name:   PrimaryProviderInstance,
+		Type:   "ollama",
+		Host:   "http://unit-host:1234",
+		APIKey: "secret-key",
+	})
 	cfg.Provider.ModelName = "unit-model"
-	cfg.Provider.Host = "http://unit-host:1234"
-	cfg.Provider.APIKey = "secret-key"
 	cfg.Server.Port = 7000
 	cfg.Skills.Dir = "/tmp/skills-test"
 	cfg.Memory.Enabled = false
@@ -433,22 +436,24 @@ func TestBuildConfigs(t *testing.T) {
 		t.Errorf("store.DBPath = %q, want %q", sc.DBPath, cfg.Store.DBPath)
 	}
 
-	// provider: provider.Config{Type, ModelName, Host, APIKey}
+	// provider: provider.Config{Type, ModelName, Host, APIKey} - the
+	// primary row's endpoint plus the model (card t_bf21ee07)
 	pc, ok := configs["provider"].(provider.Config)
 	if !ok {
 		t.Fatalf("provider config is %T, want provider.Config", configs["provider"])
 	}
-	if pc.Type != cfg.Provider.Type {
-		t.Errorf("provider.Type = %q, want %q", pc.Type, cfg.Provider.Type)
+	want := primaryOf(cfg)
+	if pc.Type != want.Type {
+		t.Errorf("provider.Type = %q, want %q", pc.Type, want.Type)
 	}
 	if pc.ModelName != cfg.Provider.ModelName {
 		t.Errorf("provider.ModelName = %q, want %q", pc.ModelName, cfg.Provider.ModelName)
 	}
-	if pc.Host != cfg.Provider.Host {
-		t.Errorf("provider.Host = %q, want %q", pc.Host, cfg.Provider.Host)
+	if pc.Host != want.Host {
+		t.Errorf("provider.Host = %q, want %q", pc.Host, want.Host)
 	}
-	if pc.APIKey != cfg.Provider.APIKey {
-		t.Errorf("provider.APIKey = %q, want %q", pc.APIKey, cfg.Provider.APIKey)
+	if pc.APIKey != want.APIKey {
+		t.Errorf("provider.APIKey = %q, want %q", pc.APIKey, want.APIKey)
 	}
 
 	// http_channel: api.Config{Port}
@@ -459,11 +464,11 @@ func TestBuildConfigs(t *testing.T) {
 	if hc.Port != cfg.Server.Port {
 		t.Errorf("api.Port = %d, want %d", hc.Port, cfg.Server.Port)
 	}
-	if hc.WebTools.APIKey != cfg.Provider.APIKey {
-		t.Errorf("api.WebTools.APIKey = %q, want %q", hc.WebTools.APIKey, cfg.Provider.APIKey)
+	if hc.WebTools.APIKey != want.APIKey {
+		t.Errorf("api.WebTools.APIKey = %q, want %q", hc.WebTools.APIKey, want.APIKey)
 	}
-	if hc.WebTools.BaseURL != cfg.Provider.Host {
-		t.Errorf("api.WebTools.BaseURL = %q, want %q", hc.WebTools.BaseURL, cfg.Provider.Host)
+	if hc.WebTools.BaseURL != want.Host {
+		t.Errorf("api.WebTools.BaseURL = %q, want %q", hc.WebTools.BaseURL, want.Host)
 	}
 
 	// skills: skills.Config{Dir}

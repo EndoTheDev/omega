@@ -19,7 +19,6 @@ import (
 	"net/http"
 	"os"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -787,14 +786,16 @@ func listOneSection(name string, inst agent.Provider) ModelSection {
 	return sec
 }
 
-// modelSections builds the grouped catalog: the default instance,
-// then every named instance (sorted - a config map iterates
-// unordered). Each listing rides its own provider copy, so no shared
-// state mutates; a listing error lands IN the section (the picker
-// shows it), never a 500 of the whole payload. Sections collect under
-// a deadline (modelSectionsTimeout): a section whose endpoint misses
-// it answers as an Error section, and the picker's Refresh re-runs
-// the whole GET as a fresh per-provider fetch.
+// modelSections builds the grouped catalog: every provider INSTANCE,
+// primary first (cards t_1914a8c9, t_bf21ee07 - the primary is the row
+// named "default" and it is an instance like any other, so the listed
+// names ARE the sections; there is no separate base section). Each
+// listing rides its own provider copy, so no shared state mutates; a
+// listing error lands IN the section (the picker shows it), never a 500
+// of the whole payload. Sections collect under a deadline
+// (modelSectionsTimeout): a section whose endpoint misses it answers as
+// an Error section, and the picker's Refresh re-runs the whole GET as a
+// fresh per-provider fetch.
 func (s *Server) modelSections() []ModelSection {
 	prov := s.agent.Provider()
 	if prov == nil {
@@ -804,20 +805,24 @@ func (s *Server) modelSections() []ModelSection {
 		name string
 		inst agent.Provider
 	}
-	jobs := []job{{name: "default", inst: prov}}
+	var jobs []job
 	if ir, ok := prov.(agent.ProviderInstances); ok {
-		// the named set rides the listed names (an optional upgrade
+		// the instance set rides the listed names (an optional upgrade
 		// like the instances one); each name resolves through the
 		// same resolver a run's pin uses
 		if listed, ok := prov.(agent.ProviderInstanceNames); ok {
-			names := listed.InstanceNames()
-			sort.Strings(names)
-			for _, n := range names {
+			for _, n := range listed.InstanceNames() {
 				if inst, ok2 := ir.Instance(n); ok2 {
 					jobs = append(jobs, job{name: n, inst: inst})
 				}
 			}
 		}
+	}
+	if len(jobs) == 0 || jobs[0].name != "default" {
+		// the primary lane is the picker's default section whatever the
+		// resolver's name list says (a resolver that omits it, or the
+		// bare base itself): it leads the catalog
+		jobs = append([]job{{name: "default", inst: prov}}, jobs...)
 	}
 	// every fetch goroutine sends exactly once on a buffered channel,
 	// so a section that reaches the deadline never blocks the late
