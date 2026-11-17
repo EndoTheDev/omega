@@ -783,7 +783,7 @@ dot, reset link, draft star, live note).
 ## The Logs tab
 
 - The face of the observability capsule (`harness/observability`, the
-  engine half): two read-only routes, ONE tab. The tab is NAMED "Logs"
+  engine half): two read-only routes, ONE tab. The tab is NAMED "Logs":
   the old raw-tail
   `http_channel` pane answered the same question with nothing but a
   `GET /logs` tail, and retired with its component - one logs surface
@@ -902,8 +902,7 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   classifies them by that prefix rather than as paths: an
   `@skill:<name>` token wears the SAME skill pill whichever door
   injected it (its click opens SKILL.md), while an opaque
-  `@session:<id>` stays literal text - neither is a file reference
-.
+  `@session:<id>` stays literal text - neither is a file reference.
   Shift+Enter writes the newline as a
   text node (the editor claims every Enter - plain sends), and Chromium
   hangs a block-final newline in pre-wrap, so every write settles one
