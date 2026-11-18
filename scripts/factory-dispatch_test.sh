@@ -1460,124 +1460,155 @@ rc=$?
 [ ! -f "$FDHOME/pinned.db" ] && ok || bad "T24d: the tick created a pinned db (the pin means read exactly this)"
 rm -rf "$FDHOME"
 
-# T25 (local + CI): the TRIO VERDICT - the 2026-11-15 3+1 ruling generalizes
-# the sanctioned GO+GO pair to three concurrent implementation cards. The law:
-# three cards may run together ONLY when ALL THREE surfaces are provable (a
-# FILES: line, no bare-directory word, tokens on every side) and no pair
-# overlaps; any unprovable leg CLAMPS the spawn. Shapes pinned:
-#   T25a  three provably disjoint go cards at cap 3 -> `trio: sanctioned` and
-#         all three legal (a pair line is NOT printed - the trio line answers
-#         the same question for three);
-#   T25b  the LIVE pass spawns THREE (--max 3 through, Spawned: 3);
-#   T25c  one implementation card already running -> two spawnable (the seat
-#         math, not the old "2 spawns per pass" cap);
-#   T25d  a trio with a NO-FILES member -> clamped, and the fallback pair
-#         (which is forbidden too) clamps the live pass to ONE card, naming
-#         the ids it declined;
-#   T25e  a trio with a bare-directory FILES token -> clamped, fallback pair
-#         sanctioned -> the live pass spawns TWO and the declined card is
-#         released (park is a capacity hold, never a leak);
-#   T25f  a config knob of 4 cannot buy a fourth implementation seat - the
-#         seats are clamped to 3, LOUDLY, and the trio still governs.
+# T25 (local + CI): the IMPL-SEAT CLAMP follows the 2+1 law (HIS ruling
+# 2026-11-17 evening). It NARROWS the 2026-11-15 3+1 ruling after three
+# persist-seam waves in one evening (20:46, 21:11, 21:46 - the third with ZERO
+# tick-side load): three concurrent workers running gate suites stall the
+# gateway's worker.persist receipts, and the serialized option trades one
+# implementation seat for a seam that never sees its failure shape.
+#
+# TWO implementation seats + ONE review lane = 3 concurrent runs max. The
+# review lane's own hard cap of 1 is UNTOUCHED (T26). The guard's
+# pair-disjointness machinery is untouched too: pairs stay legal on the same
+# proof. What changed is the WIDTH of the head set - a would-be TRIO is now an
+# OVER-CAP shape, not a verdict: the seat math hands the head the largest pair
+# the seats can fund, the pair verdict decides that pair, and every legal card
+# left without a slot is named by the `impl lane over-cap:` line. Shapes pinned:
+#   T25a  a config knob of 3 cannot buy a third implementation seat - the seats
+#         line states the clamp, the head holds a PAIR, and the third legal
+#         card is named over-cap (dry-run);
+#   T25b  the LIVE pass with that knob spawns TWO, never three, and the third
+#         card is left `ready` with a free lock (a capacity hold never leaks);
+#   T25c  an explicit `--max 3` is clamped the same way, LOUDLY - both the
+#         seats line and the `clamp: --max 3 -> 2 (factory seats: ...)` line -
+#         and the inner dispatcher is handed --max 2;
+#   T25d  a would-be trio whose head PAIR is forbidden clamps the pass to ONE
+#         card, naming the clamp AND the ids it declined;
+#   T25e  one implementation card already running leaves ONE seat, so exactly
+#         one more spawns and the two legal leftovers are named over-cap (the
+#         seat math, not a "2 spawns per pass" rule);
+#   T25f  a config knob of 4 is clamped to 2, loudly.
 TRIOCFG='kanban:
   max_in_progress_per_profile: 3'
 TRIG1="INSERT INTO tasks VALUES('t_tg1','ready','go one','FILES: scripts/factory-dispatch.sh',NULL,NULL,5,'2026-11-15T09:00',NULL,NULL);"
 TRIG2="INSERT INTO tasks VALUES('t_tg2','ready','go two','FILES: harness/cron/runner.go',NULL,NULL,5,'2026-11-15T09:01',NULL,NULL);"
 TRIG3="INSERT INTO tasks VALUES('t_tg3','ready','go three','FILES: cmd/omega/loop.go',NULL,NULL,5,'2026-11-15T09:02',NULL,NULL);"
+SEATS_NOTE='seats: config cap 3 > 2 - implementation seats clamped to 2 (2 implementation + 1 review = 3 max)'
 
-# T25a: dry-run, cap 3, three disjoint go cards, nothing running.
+# T25a: dry-run, cap 3 in the config, three disjoint go cards, nothing running.
+# The factory has TWO seats, so the head is a pair and the third card is refused
+# as an over-cap shape - named, never dropped in silence.
 PAIR_CONFIG="$TRIOCFG"
 out=$(PAIRRUN "$TRIG1
 $TRIG2
 $TRIG3")
 PAIR_CONFIG=""
-printf "%s" "$out" | grep -qF 'trio: sanctioned (t_tg1 t_tg2 t_tg3, classes go+go+go, FILES disjoint)' \
-	&& ok || bad "T25a: three provably disjoint go cards were not sanctioned as a trio (out: $out)"
-printf "%s" "$out" | grep -q "^legal: t_tg3" \
-	&& ok || bad "T25a: the third disjoint card must stay legal (out: $out)"
-printf "%s" "$out" | grep -q "^pair: " \
-	&& bad "T25a: a three-card head printed a PAIR line - the trio verdict replaces it (out: $out)" || ok
-printf "%s" "$out" | grep -qF 'seats: 3 implementation + 1 review = 4 max (config cap 3)' \
-	&& ok || bad "T25a: the seats line did not state 3+1=4 (out: $out)"
+printf "%s" "$out" | grep -qF "$SEATS_NOTE" \
+	&& ok || bad "T25a: a config cap of 3 must be clamped to 2 implementation seats, loudly (out: $out)"
+printf "%s" "$out" | grep -qF 'impl lane: live=0 cap=2 - room: 2' \
+	&& ok || bad "T25a: the implementation-seat state line did not report the 2-seat lane (out: $out)"
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_tg1 t_tg2, classes go+go, FILES disjoint)' \
+	&& ok || bad "T25a: the head set must be the largest PAIR the seats can fund (out: $out)"
+printf "%s" "$out" | grep -qF 'impl lane over-cap: t_tg3 - legal, but no implementation slot this pass (2 head slot(s), 0 of 2 seats live)' \
+	&& ok || bad "T25a: the third disjoint card must be named as over-cap (out: $out)"
+printf "%s" "$out" | grep -q "^trio: " \
+	&& bad "T25a: a trio verdict still exists - the third implementation seat is gone (out: $out)" || ok
+printf "%s" "$out" | grep -qF 'dry-run: no dispatch' \
+	&& ok || bad "T25a: the dry-run dispatched (out: $out)"
 
-# T25b: the LIVE trio - --max 3 reaches the inner dispatcher and three spawn.
+# T25b: the LIVE pass - two spawn, the third is refused and LEFT READY (the
+# clamp is a capacity decision for the pass, never a park that outlives it).
 SPAWN_BASE=$(mktemp -d); SPAWN_BASE_N=$(mixpath "$SPAWN_BASE")
 SPAWN_BASE_U=$(cygpath -u "$SPAWN_BASE" 2>/dev/null || printf '%s' "$SPAWN_BASE")
 SPAWN_CONFIG="$TRIOCFG"
-out=$(SPAWNRUN trio-live "$TRIG1
+out=$(SPAWNRUN impl-clamp-live "$TRIG1
 $TRIG2
 $TRIG3")
-printf "%s" "$out" | grep -qF 'trio: sanctioned (t_tg1 t_tg2 t_tg3, classes go+go+go, FILES disjoint)' \
-	&& ok || bad "T25b: the live path lost the trio verdict (out: $out)"
+printf "%s" "$out" | grep -qF "$SEATS_NOTE" \
+	&& ok || bad "T25b: the live pass lost the seats clamp line (out: $out)"
 printf "%s" "$out" | grep -q "clamp:" \
-	&& bad "T25b: a sanctioned trio was clamped (out: $out)" || ok
-grep -qxF 'kanban dispatch --max 3' "$(splog trio-live)" \
-	&& ok || bad "T25b: the inner dispatcher was not handed --max 3 (got: $(tr '\n' ';' <"$(splog trio-live)"))"
-printf "%s" "$out" | grep -qF 'Spawned: 3 (t_tg1 t_tg2 t_tg3)' \
-	&& ok || bad "T25b: three sanctioned cards must spawn (out: $out)"
-
-# T25c: one implementation card already running -> two of the trio spawnable.
-out=$(SPAWNRUN trio-one-running "INSERT INTO tasks VALUES('t_trun','running','docs bits','FILES: docs/running.md','pibtw:5',NULL,5,'2026-11-15T08:00',NULL,NULL);
-$TRIG1
-$TRIG2
-$TRIG3")
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_tg1 t_tg2, classes go+go, FILES disjoint)' \
-	&& ok || bad "T25c: with one card running the head holds two - expected a sanctioned pair (out: $out)"
-grep -qxF 'kanban dispatch --max 3' "$(splog trio-one-running)" \
-	&& ok || bad "T25c: running=1 + two slots must hand --max 3 (got: $(tr '\n' ';' <"$(splog trio-one-running)"))"
+	&& bad "T25b: a sanctioned pair was clamped - the seats already bounded the head (out: $out)" || ok
+grep -qxF 'kanban dispatch --max 2' "$(splog impl-clamp-live)" \
+	&& ok || bad "T25b: the inner dispatcher must be handed --max 2, never 3 (got: $(tr '\n' ';' <"$(splog impl-clamp-live)"))"
 printf "%s" "$out" | grep -qF 'Spawned: 2 (t_tg1 t_tg2)' \
-	&& ok || bad "T25c: exactly two cards may spawn beside the running one (out: $out)"
-nrun=$(sql "$(spdb trio-one-running)" "SELECT COUNT(*) FROM tasks WHERE status='running';")
-[ "$nrun" = "3" ] && ok || bad "T25c: $nrun cards running (expected 3: the running one + two spawns)"
+	&& ok || bad "T25b: exactly two implementation cards may spawn under the 2+1 law (out: $out)"
+s=$(sql "$(spdb impl-clamp-live)" "SELECT status||'|'||coalesce(claim_lock,'NULL') FROM tasks WHERE id='t_tg3';")
+[ "$s" = "ready|NULL" ] && ok || bad "T25b: the refused third card changed shape ('$s') - it must stay ready with a free lock"
 
-# T25d: an unprovable trio member clamps the LIVE pass to ONE card. The trio is
-# (no-FILES webui card, go card, webui card): every candidate is legal on its
-# own, so the trio verdict is the only thing that refuses all three - and the
-# fallback PAIR is forbidden as well (the no-FILES card leads), so one spawns.
-out=$(SPAWNRUN trio-clamp-one "INSERT INTO tasks VALUES('t_tnf','ready','webui tweak','the fix lands in webui/app/pages/y.vue and its test',NULL,NULL,5,'2026-11-15T09:00',NULL,NULL);
+# T25c: an explicit --max 3 is the CALLER asking for a third run: clamped to the
+# seats, loudly, on BOTH lines (seats + the factory-seats clamp), inner --max 2.
+out=$(SPAWNRUN impl-clamp-max3 "$TRIG1
+$TRIG2
+$TRIG3" --max 3)
+printf "%s" "$out" | grep -qF 'seats: --max 3 > 2 - implementation seats clamped to 2 (2 implementation + 1 review = 3 max)' \
+	&& ok || bad "T25c: --max 3 must name the caller as the clamped source (out: $out)"
+printf "%s" "$out" | grep -qF 'clamp: --max 3 -> 2 (factory seats: 2 implementation + 1 review = 3 max)' \
+	&& ok || bad "T25c: the seats clamp must be stated as a clamp line with the ids' arithmetic (out: $out)"
+grep -qxF 'kanban dispatch --max 2' "$(splog impl-clamp-max3)" \
+	&& ok || bad "T25c: --max 3 must reach the inner as --max 2 (got: $(tr '\n' ';' <"$(splog impl-clamp-max3)"))"
+printf "%s" "$out" | grep -qF 'Spawned: 2 (t_tg1 t_tg2)' \
+	&& ok || bad "T25c: --max 3 may not spawn three implementation cards (out: $out)"
+SPAWN_CONFIG=""
+
+# T25d: the head PAIR is forbidden (a FILES-less member) -> the pass clamps to
+# ONE card, naming both the clamp and the ids it declined; the legal third card
+# that never got a slot is named too.
+SPAWN_CONFIG="$TRIOCFG"
+out=$(SPAWNRUN impl-clamp-forbidden "INSERT INTO tasks VALUES('t_tnf','ready','webui tweak','the fix lands in webui/app/pages/y.vue and its test',NULL,NULL,5,'2026-11-15T09:00',NULL,NULL);
 $TRIG1
 INSERT INTO tasks VALUES('t_tw1','ready','webui one','FILES: webui/app/pages/a.vue',NULL,NULL,5,'2026-11-15T09:02',NULL,NULL);")
-printf "%s" "$out" | grep -qF 'trio: clamped (t_tnf t_tg1 t_tw1, no FILES: line on t_tnf - unprovable surface, never a trio)' \
-	&& ok || bad "T25d: a FILES-less trio member must clamp the trio and be named (out: $out)"
-printf "%s" "$out" | grep -qF 'clamp: wanted 3 -> 1 (trio: clamped - no FILES: line on t_tnf - unprovable surface, never a trio; pair: forbidden - no FILES: line on t_tnf - unprovable surface, never a pair) - declined to pair: t_tnf t_tg1' \
-	&& ok || bad "T25d: the clamp line lost the trio reason, the pair reason or the declined ids (out: $out)"
-grep -qxF 'kanban dispatch --max 1' "$(splog trio-clamp-one)" \
-	&& ok || bad "T25d: a clamped trio must reach the inner as --max 1 (got: $(tr '\n' ';' <"$(splog trio-clamp-one)"))"
+printf "%s" "$out" | grep -qF 'pair: forbidden (t_tnf t_tg1, no FILES: line on t_tnf - unprovable surface, never a pair)' \
+	&& ok || bad "T25d: a FILES-less head member must forbid the pair and be named (out: $out)"
+printf "%s" "$out" | grep -qF 'clamp: wanted 2 -> 1 (pair: forbidden - no FILES: line on t_tnf - unprovable surface, never a pair) - declined to pair: t_tnf t_tg1' \
+	&& ok || bad "T25d: the clamp line lost the pair reason or the declined ids (out: $out)"
+printf "%s" "$out" | grep -qF 'impl lane over-cap: t_tw1 - legal, but no implementation slot this pass' \
+	&& ok || bad "T25d: the unslotted legal card was not named (out: $out)"
+grep -qxF 'kanban dispatch --max 1' "$(splog impl-clamp-forbidden)" \
+	&& ok || bad "T25d: a forbidden head pair must reach the inner as --max 1 (got: $(tr '\n' ';' <"$(splog impl-clamp-forbidden)"))"
 printf "%s" "$out" | grep -qF 'Spawned: 1 (t_tnf)' \
-	&& ok || bad "T25d: exactly one card may spawn under the clamped trio (out: $out)"
+	&& ok || bad "T25d: exactly one card may spawn under the clamped pair (out: $out)"
+SPAWN_CONFIG=""
 
-# T25e: a bare-directory FILES token clamps the trio, but the oldest PAIR is
-# sanctioned -> two spawn and the declined third is released, not stranded.
-out=$(SPAWNRUN trio-clamp-two "$TRIG1
-INSERT INTO tasks VALUES('t_tw2','ready','webui two','FILES: webui/app/pages/b.vue components',NULL,NULL,5,'2026-11-15T09:01',NULL,NULL);
-INSERT INTO tasks VALUES('t_tw3','ready','webui three','FILES: webui/test/c.test.ts',NULL,NULL,5,'2026-11-15T09:02',NULL,NULL);")
-printf "%s" "$out" | grep -qF 'trio: clamped (t_tg1 t_tw2 t_tw3, bare-directory token on t_tw2 - unprovable surface, never a trio)' \
-	&& ok || bad "T25e: a bare-directory FILES token must clamp the trio and name the card (out: $out)"
-printf "%s" "$out" | grep -qF 'clamp: wanted 3 -> 2 (trio: clamped - bare-directory token on t_tw2 - unprovable surface, never a trio) - declined: t_tw3' \
-	&& ok || bad "T25e: the clamped trio did not fall back to its sanctioned pair (out: $out)"
-grep -qxF 'kanban dispatch --max 2' "$(splog trio-clamp-two)" \
-	&& ok || bad "T25e: the clamped trio must reach the inner as --max 2 (got: $(tr '\n' ';' <"$(splog trio-clamp-two)"))"
-printf "%s" "$out" | grep -qF 'Spawned: 2 (t_tg1 t_tw2)' \
-	&& ok || bad "T25e: the sanctioned pair of the trio must spawn (out: $out)"
-s=$(sql "$(spdb trio-clamp-two)" "SELECT status||'|'||coalesce(claim_lock,'NULL') FROM tasks WHERE id='t_tw3';")
-[ "$s" = "ready|NULL" ] && ok || bad "T25e: the declined card was not released by the pass ('$s') - the park must not outlive it"
+# T25e: one implementation card already running -> IMPL_ROOM 1, so exactly ONE
+# of the three legal cards spawns and the two leftovers are named over-cap.
+SPAWN_CONFIG="$TRIOCFG"
+out=$(SPAWNRUN impl-seat-math "INSERT INTO tasks VALUES('t_trun','running','docs bits','FILES: docs/running.md','pibtw:5',NULL,5,'2026-11-15T08:00',NULL,NULL);
+$TRIG1
+$TRIG2
+$TRIG3")
+printf "%s" "$out" | grep -qF 'impl lane: live=1 (t_trun) cap=2 - room: 1' \
+	&& ok || bad "T25e: the seat state line must report ONE free implementation seat (out: $out)"
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_tg1, single would-spawn candidate)' \
+	&& ok || bad "T25e: with one card running the head holds one slot (out: $out)"
+printf "%s" "$out" | grep -qF 'impl lane over-cap: t_tg2 t_tg3 - legal, but no implementation slot this pass (1 head slot(s), 1 of 2 seats live)' \
+	&& ok || bad "T25e: both legal leftovers must be named over-cap (out: $out)"
+grep -qxF 'kanban dispatch --max 2' "$(splog impl-seat-math)" \
+	&& ok || bad "T25e: running=1 + one slot must hand --max 2 (got: $(tr '\n' ';' <"$(splog impl-seat-math)"))"
+printf "%s" "$out" | grep -qF 'Spawned: 1 (t_tg1)' \
+	&& ok || bad "T25e: exactly one card may spawn beside the running one (out: $out)"
+nrun=$(sql "$(spdb impl-seat-math)" "SELECT COUNT(*) FROM tasks WHERE status='running';")
+[ "$nrun" = "2" ] && ok || bad "T25e: $nrun cards running (expected 2: the running one + one spawn)"
+SPAWN_CONFIG=""
 
-# T25f: the knob cannot buy a fourth seat - clamped to 3, said out loud.
+# T25f: the knob cannot buy a third seat - clamped to 2, said out loud.
 PAIR_CONFIG='kanban:
   max_in_progress_per_profile: 4'
 out=$(PAIRRUN "$TRIG1
 $TRIG2
 $TRIG3")
 PAIR_CONFIG=""
-printf "%s" "$out" | grep -qF 'seats: config cap 4 > 3 - implementation seats clamped to 3 (3 implementation + 1 review = 4 max)' \
-	&& ok || bad "T25f: a config cap of 4 must be clamped to 3 implementation seats, loudly (out: $out)"
-printf "%s" "$out" | grep -qF 'trio: sanctioned (t_tg1 t_tg2 t_tg3, classes go+go+go, FILES disjoint)' \
-	&& ok || bad "T25f: the trio must still govern at the clamped seat count (out: $out)"
+printf "%s" "$out" | grep -qF 'seats: config cap 4 > 2 - implementation seats clamped to 2 (2 implementation + 1 review = 3 max)' \
+	&& ok || bad "T25f: a config cap of 4 must be clamped to 2 implementation seats, loudly (out: $out)"
+printf "%s" "$out" | grep -qF 'pair: sanctioned (t_tg1 t_tg2, classes go+go, FILES disjoint)' \
+	&& ok || bad "T25f: the pair verdict must still govern at the clamped seat count (out: $out)"
+printf "%s" "$out" | grep -qF 'impl lane over-cap: t_tg3' \
+	&& ok || bad "T25f: the third card must still be named over-cap (out: $out)"
 rm -rf "$SPAWN_BASE"; SPAWN_CONFIG=""
 PAIR_CONFIG=""
 
-# T26 (local + CI): the REVIEW-LANE CAP - 3 implementation seats + 1 review
-# lane = 4 concurrent runs maximum (2026-11-15 ruling). vera runs at most ONE
+# T26 (local + CI): the REVIEW-LANE CAP - 2 implementation seats + 1 review
+# lane = 3 concurrent runs maximum (the 2+1 law of 2026-11-17; the lane cap
+# itself is unchanged since the 2026-11-15 ruling). vera runs at most ONE
 # review at a time, and the guard enforces it by PARKING the second review
 # candidate (the review lane's claim filter is `claim_lock IS NULL`), never by
 # printing a verdict beside the action.
@@ -1620,7 +1651,7 @@ $REV_WAIT
 $REV_READY" "" --dry-run)
 printf "%s" "$out" | grep -qF 'review candidates: 1 unclaimed (t_rev2)' \
 	&& ok || bad "T26a: the waiting review was not counted (out: $out)"
-printf "%s" "$out" | grep -qF 'review lane: live=1 (t_rvr) cap=1 - a second review is HELD (3 implementation + 1 review = 4 max)' \
+printf "%s" "$out" | grep -qF 'review lane: live=1 (t_rvr) cap=1 - a second review is HELD (2 implementation + 1 review = 3 max)' \
 	&& ok || bad "T26a: the review-lane state line did not report the live run / the cap (out: $out)"
 printf "%s" "$out" | grep -qF 'review lane hold: t_rev2 (live review run (t_rvr) - one review at a time)' \
 	&& ok || bad "T26a: the held review was not named with its reason (out: $out)"
@@ -1762,19 +1793,19 @@ printf "%s" "$out" | grep -q "cap=" \
 
 # T27c: the success path names the file and the cap.
 capfixture with-config
-printf 'kanban:\n  max_in_progress_per_profile: 3\n' >"$CAPBASE/with-config/config.yaml"
+printf 'kanban:\n  max_in_progress_per_profile: 2\n' >"$CAPBASE/with-config/config.yaml"
 CAPRUN with-config --dry-run; rc=$CAPRC; out=$OUT
 [ "$rc" -eq 0 ] && ok || bad "T27c: a readable cap must not refuse (exit $rc, out: $out)"
-printf "%s" "$out" | grep -qF "config: cap 3 from $CAPBASE_N/with-config/config.yaml" \
+printf "%s" "$out" | grep -qF "config: cap 2 from $CAPBASE_N/with-config/config.yaml" \
 	&& ok || bad "T27c: the pass did not name the file it read the cap from (out: $out)"
-printf "%s" "$out" | grep -qF 'seats: 3 implementation + 1 review = 4 max (config cap 3)' \
+printf "%s" "$out" | grep -qF 'seats: 2 implementation + 1 review = 3 max (config cap 2)' \
 	&& ok || bad "T27c: the seats line lost the config cap (out: $out)"
-printf "%s" "$out" | grep -q "cap=3" && ok || bad "T27c: the dry-run cap is wrong (out: $out)"
+printf "%s" "$out" | grep -q "cap=2" && ok || bad "T27c: the dry-run cap is wrong (out: $out)"
 
 # T27d: --max is the CALLER's number - named as such, never as `config cap`.
 CAPRUN with-config --max 1 --dry-run; rc=$CAPRC; out=$OUT
 [ "$rc" -eq 0 ] && ok || bad "T27d: a --max pass exited $rc (out: $out)"
-printf "%s" "$out" | grep -qF "config: cap 3 from $CAPBASE_N/with-config/config.yaml (--max 1 overrides this pass)" \
+printf "%s" "$out" | grep -qF "config: cap 2 from $CAPBASE_N/with-config/config.yaml (--max 1 overrides this pass)" \
 	&& ok || bad "T27d: the config line dropped the config value or the override (out: $out)"
 printf "%s" "$out" | grep -qF 'seats: 1 implementation + 1 review = 2 max (--max 1)' \
 	&& ok || bad "T27d: the seats line must name --max as the source (out: $out)"
