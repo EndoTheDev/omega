@@ -23,7 +23,10 @@ is a review finding; its content lands in its mapped home instead.
 - **Dependencies:** Added when a layer requires them, not before.
   Prefer the standard library. Prefer a dependency already in `go.mod`.
 - **Entry point:** `omega` (single binary: `serve`, `run`, `health`,
-  `chat`, `export`, `update`, `insights`, `rollback`, `setup`;
+  `chat`, `export`, `update`, `insights`, `rollback`, `setup`,
+  `agents`, `tools`, `settings`, plus the module-owned subcommands the
+  capsules register at mount - `kanban`, `crons`, `skills`, `curator`,
+  `mcp`;
   no arg -> the CLI agent loop (`cmd/omega/loop.go`; unconfigured
   runs `omega setup` inline first), `<path>` -> chdir +
   loop). CLI reference and law:
@@ -186,8 +189,14 @@ Terse operational rules. Layer references live in `docs/` (map below);
   `ToolResult`s fold into one user message. `FakeProvider` scripts
   deterministic stream events for agent loop tests.
 - **cmd/omega.** Subcommands are the only entry surface;
-  `--help`/`-h`/`--version`/`-v` print globally and exit before
-  dispatch - there is no per-subcommand help. No subcommand means the
+  `--help`/`-h`/`--version`/`-v` anywhere in a built-in subcommand's
+  argv print the global help / version and exit before dispatch, so
+  `omega agents --help` answers with the root help; a module-owned
+  subcommand owns its whole trailing argv and prints its own
+  (`omega kanban --help`), and `omega tools` opts out of the root flag
+  scan to do the same. `agents` and `settings` carry a `help` verb for
+  their own usage; the rule (per-subcommand help appears as
+  subcommands gain flags) lives in `docs/cli.md`. No subcommand means the
   CLI agent loop (unconfigured: runs `omega setup` inline first); a non-subcommand argument is a project path
   (chdir + loop);
   subcommand names beat same-named directories. `resolveHomePaths`
@@ -244,7 +253,7 @@ full contract and templates in `docs/release-gate.md`):
 | `core/`                          | Wire types, events, mount machinery, the Services registry, message vocabulary, messagetree; zero capsule nouns (the noun tests) + stdlib-only imports, enforced by `core/importability_test.go`                                                                                                                                                                               | `docs/architecture.md`                                          |
 | `api/` + `agent/api/`            | Shell ring (always on, never disabled): serving shell (listener, hostguard, module routes, static embed, themes) + the agent's base endpoint set - chat + canvas + settings (the chat floor: sessions, live runs, tools, command palette). Remove every capsule and what remains is a usable agent with a chat face (the census law, pinned by `agent/api/api_census_test.go`) | `docs/api.md`                                                   |
 | `cmd/omega/loop.go` + `setup.go` | The CLI agent loop + the mandatory first-run setup wizard (the TUI retired 2026-11-01)                                                                                                                                                                                                                                                                                         | `docs/cli.md`                                                   |
-| `harness/`                       | In-process extension packages (one `agent.Plugin` each) - the TOGGLEABLE tier; capsules own their module REST (`routes.go` per capsule, api.RegisterRoute); new extensions go here, never into the shell ring                                                                                                                                                                  | `docs/architecture.md` (table), `harness/README.md` (authoring) |
+| `harness/`                       | In-process extension packages (one `agent.Plugin` each) - the TOGGLEABLE tier; capsules own their module REST (`routes.go` in files, notifications, observability, skills, store, verdict; `rest.go` in kanban, `agentsrest.go` in continuous; api.RegisterRoute); new extensions go here, never into the shell ring                                                                                                                                                                  | `docs/architecture.md` (table), `harness/README.md` (authoring) |
 | `webui/`                         | Shell SPA (always on, never disabled): Nuxt 4 webui SPA source at checkout root, built output embedded into the binary via the embed lane                                                                                                                                                                                                                                      | `docs/webui.md`                                                 |
 | `harness/cron/`                  | Scheduled prompts (`crons.yaml`, `cron:<name>` sessions)                                                                                                                                                                                                                                                                                                                       | `docs/cli.md` (`/cron`)                                         |
 | `harness/trust/`                 | Project trust gate (`trust.yaml`, AGENTS.md loading; the host reads it through its own nil-guarded need faces)                                                                                                                                                                                                                                                                 | `docs/project-trust.md`                                         |
