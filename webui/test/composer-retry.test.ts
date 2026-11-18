@@ -234,17 +234,24 @@ describe("composer structure: one button, + in the input row", () => {
   });
 });
 
-describe("the squeeze: 320px floor keeps one button + two chips on a row", () => {
-  // structural CSS pins: the narrow block shrinks the model chip with an
-  // ellipsis instead of letting the button row wrap chaotically
-  it("the narrow media block squeezes the model chip", () => {
-    const narrow = css.slice(css.indexOf("@media (max-width: 768px)"));
-    assert.match(narrow, /model-chip[^}]*min-width: 0/);
-    assert.match(narrow, /chip-name[^}]*text-overflow: ellipsis/);
-    assert.match(narrow, /chip-name[^}]*white-space: nowrap/);
+describe("the squeeze: the ladder owns it, no label ever dies mid-word", () => {
+  // card t_27ff2bbd retired the t_357cbe9c squeeze: the narrow viewport no
+  // longer shrinks the model chip into an ellipsis ("deepse..."). The
+  // composer's OWN width picks a rung instead (composables/composerladder
+  // .ts): full label -> chevron only -> stacked rows, measured, never
+  // truncated. These pins hold the retired law dead.
+  it("the narrow media block no longer shrinks or ellipsizes the chip", () => {
+    const at = css.lastIndexOf("@media (max-width: 768px)");
+    const narrow = css.slice(at);
+    assert.ok(at > 0 && narrow.length < css.length, "the narrow block was found");
+    assert.doesNotMatch(narrow, /model-chip\s*\{[^}]*max-width:\s*96px/);
+    assert.doesNotMatch(narrow, /chip-name[^}]*text-overflow: ellipsis/);
+    assert.doesNotMatch(narrow, /model-chip\s*\{[^}]*min-width: 0/);
   });
-  it("the model chip's name sits in an ellipsis-able span", () => {
+  it("the model chip's name still sits in its own span (the shed rung's seat)", () => {
     assert.match(modelSelect, /class="chip-name"/);
+    // and the whole label is one line: a wrapped label is not a fit
+    assert.match(css, /\.composer \.model-chip \.chip-name\s*\{[^}]*white-space: nowrap/);
   });
   it("the + input row never contributes to the toolbar wrap", () => {
     assert.match(css, /\.composer-row\s*\{[^}]*display: flex/);

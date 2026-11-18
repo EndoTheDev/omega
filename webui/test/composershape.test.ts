@@ -21,11 +21,16 @@ const src = (p: string) => readFileSync(join(here, "..", p), "utf8");
 describe("the single composer (one shape, no modes)", () => {
   const composer = src("app/components/chat/AppComposer.vue");
 
-  it("AppComposer carries no mode class - only the expanded flag", () => {
+  it("AppComposer carries no mode class - only the expanded flag and the squeeze rung", () => {
     // the retired two-mode binding must not return piecemeal
     assert.doesNotMatch(composer, /composerModeClass/);
     assert.doesNotMatch(composer, /composerMode/);
-    assert.match(composer, /:class="\{ expanded: expanded \}"/);
+    // card t_27ff2bbd added the ladder rung beside the flag: the class
+    // object carries the expanded flag plus at most one stage-* rung
+    assert.match(composer, /:class="\{[\s\S]*?expanded: expanded,/);
+    assert.match(composer, /'stage-icon': stage === 'icon'/);
+    assert.match(composer, /'stage-stacked': stage === 'stacked'/);
+    assert.doesNotMatch(composer, /stage-full/, "full is the plain card - it has no class");
   });
 
   it("the mode system's residue is gone (composable, knob, seg-div)", () => {
