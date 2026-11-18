@@ -580,32 +580,54 @@ export function applyTurnTotals(items: TranscriptItem[]): TranscriptItem[] {
 }
 
 // stampTurnTotal resolves ONE turn's slice (head user row at `from`, items
-// [from, to)): clears every assistant segment's turn total, then sets the
-// answer's. Split out of the walk so the boundary law reads as data.
+// [from, to)): every assistant segment carries the turn total only while it
+// is the turn's ANSWER, and the answer's is the span between the turn's two
+// row stamps.
+//
+// WRITE LAW (card t_a356fcc7): this runs inside the canvas PAINT, over the
+// transcript's REACTIVE cached items, so every assignment it makes is a
+// reactive write on the very objects the paint handed out. A write that
+// changes a value invalidates every computed and effect that read it, and
+// the paint ran BECAUSE one of those computeds is dirty - so a write whose
+// value differs between two paints of the same payload re-arms the paint
+// and the app spins (the clear-then-stamp order did exactly that: the
+// answer's total was written, wiped, written, once per evaluation, forever).
+// Resolve the wanted value FIRST, then assign ONLY on a real change. A
+// paint of an unchanged payload must write nothing at all.
 function stampTurnTotal(items: TranscriptItem[], from: number, to: number): void {
   const head = items[from];
   if (!head || head.kind !== "message" || head.role !== "user") return;
-  const start = stampMs(head.time);
-  let answer: MessageItem | null = null;
+  // the answer is the turn's LAST assistant segment
   let answerAt = -1;
   for (let i = from + 1; i < to; i++) {
     const it = items[i];
     if (it?.kind !== "message" || it.role !== "assistant") continue;
-    // every segment starts cleared: a row that was the turn's last answer
-    // on an earlier paint stops being one the moment a phase lands below
-    // it (the live canvas rewrites these objects across deltas)
-    it.turnMs = undefined;
-    answer = it;
     answerAt = i;
   }
-  if (!answer) return;
-  // the answer only stands while the turn does not continue past it
+  if (answerAt < 0) return;
+  // the answer only stands while the turn does not continue past it: a tool
+  // call (or a verdict card, which IS a call) below it means that segment
+  // was a phase, not the answer
+  let continues = false;
   for (let i = answerAt + 1; i < to; i++) {
     const kind = items[i]?.kind;
-    if (kind === "tool" || kind === "verdict") return;
+    if (kind === "tool" || kind === "verdict") {
+      continues = true;
+      break;
+    }
   }
-  const end = stampMs(answer.time);
-  answer.turnMs = start !== null && end !== null && end >= start ? end - start : undefined;
+  let total: number | undefined;
+  if (!continues) {
+    const start = stampMs(head.time);
+    const end = stampMs((items[answerAt] as MessageItem).time);
+    total = start !== null && end !== null && end >= start ? end - start : undefined;
+  }
+  for (let i = from + 1; i < to; i++) {
+    const it = items[i];
+    if (it?.kind !== "message" || it.role !== "assistant") continue;
+    const want = i === answerAt ? total : undefined;
+    if (it.turnMs !== want) it.turnMs = want;
+  }
 }
 
 // stampMs parses a row stamp (RFC 3339 / ISO 8601 from the store) into

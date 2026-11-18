@@ -334,11 +334,17 @@
   );
   const transcript = computed(() => {
     const items = canvasItems.value ?? restoreItems.value;
+    // the merge writes the chips store's tail onto the row (t_896cf5a8);
+    // assign only on a REAL change - a paint of an unchanged payload must
+    // not write, because a changed write here invalidates the effects that
+    // read it and the pane re-arms itself (card t_a356fcc7)
     for (const it of items) {
       if (it.kind !== "tool") continue;
       const chip = chipOf(it.callId);
-      it.liveText = chipDisplay(chip) || undefined;
-      it.liveSettled = chip?.settled === true;
+      const liveText = chipDisplay(chip) || undefined;
+      const liveSettled = chip?.settled === true;
+      if (it.liveText !== liveText) it.liveText = liveText;
+      if (it.liveSettled !== liveSettled) it.liveSettled = liveSettled;
     }
     return items;
   });
