@@ -128,6 +128,9 @@ test("the chat pane merges the live tail onto the row that owns the call", () =>
 test("the tool call id reaches the row from both render paths", () => {
   const omega = src("composables/omega.ts");
   const chat = src("composables/chat.ts");
-  assert.ok(omega.includes("callId: cid || undefined"), "the restore path stamps the call id");
+  // the restore path assigns the wire's call id onto the row (it used to
+  // be an object literal; the mapper now paints into a cached item, so
+  // the pin reads the assignment - card t_a20fbad7)
+  assert.ok(omega.includes("t.callId = callId || undefined"), "the restore path stamps the call id");
   assert.ok(chat.includes("it.callId = callId"), "the canvas panel path stamps the call id");
 });

@@ -30,6 +30,7 @@ import type { ChatPayloadWire, ChatRowWire } from "../app/composables/omega.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const chatSource = readFileSync(join(here, "..", "app", "composables", "chat.ts"), "utf8");
+const omegaSource = readFileSync(join(here, "..", "app", "composables", "omega.ts"), "utf8");
 
 // --- row builders: the panel's own v1 vocabulary (ONE block per row) ---
 
@@ -79,14 +80,20 @@ function toolResultRow(id: string | undefined, callId: string, content: string):
 }
 
 // a 41-row persisted payload that exercises every prose branch: user
-// bubbles, assistant segments and thinking rows, in wire order
+// bubbles, assistant segments and thinking rows, in wire order. The
+// SHAPE follows the store id (not the window offset): on the wire an id
+// names ONE row, so a window shifted by one keeps every surviving id
+// pointing at the same kind of row - the address carries the shape too
+// (omega.ts transcriptAddress), and a fixture that flips a row's shape
+// under one id would be testing an id the store cannot serve.
 function proseWindow(prefix: string, first: number, count: number): ChatRowWire[] {
   const rows: ChatRowWire[] = [];
   for (let n = 0; n < count; n++) {
     const id = `${prefix}${first + n}`;
     // the shape follows the ROW ID, not the slot in the window: a sliding
     // window re-lists the same rows, and a store row never changes its
-    // role or block type (the address is (id, block type), card t_a356fcc7)
+    // role or block type (the address is (id, role: block type), cards
+    // t_a356fcc7 + t_a20fbad7)
     const cycle = (first + n) % 3;
     if (cycle === 0) rows.push(userRow(id, `q${id}`));
     else if (cycle === 1) rows.push(thinkingRow(id, `think ${id}`));
@@ -315,18 +322,21 @@ test("chat.ts: prose rows are addressed by store id; the positional sig is gone"
     "the positional prose sig must not come back",
   );
   assert.doesNotMatch(chatSource, /\bconst sig = /, "no positional sig variable");
-  // the id address + the explicit id-less slot. The address carries the
-  // BLOCK TYPE beside the store id: one store row lands as several wire
-  // rows (a reasoning block and the answer block share the row id), and an
-  // id-only address aliased them into one object whose `kind` flipped on
-  // every paint - the reactive write loop of card t_a356fcc7
-  assert.match(
-    chatSource,
-    /if \(row\.id\) return `row:\$\{row\.id\}:\$\{block\.type\}`/,
-    "the store id AND the block type are the address",
-  );
-  assert.match(chatSource, /`live:\$\{shape\}:\$\{ordinal\}`/, "the id-less slot address is explicit");
-  assert.match(chatSource, /const shape = `\$\{row\.role\}:\$\{block\.type\}`/, "slots are shaped by role + block type");
+  // the address rule lives in ONE place: omega.ts transcriptAddress,
+  // which the REST restore path resolves too (card t_a20fbad7). chat.ts
+  // DELEGATES - a local spelling here would let the two paths drift. The
+  // shape carries the BLOCK TYPE beside the role: one store row lands as
+  // several wire rows (a reasoning block and the answer block share the
+  // row id), and an id-only address aliased them into one object whose
+  // `kind` flipped on every paint - the reactive write loop of card
+  // t_a356fcc7.
+  assert.match(chatSource, /transcriptAddress\(row\.id, `\$\{row\.role\}:\$\{block\.type\}`/, "the canvas delegates the store-id address");
+  assert.match(chatSource, /transcriptAddress\(undefined, `\$\{row\.role\}:\$\{block\.type\}`, ctx\.ordinals, consume\)/, "and the id-less slot address");
+  assert.doesNotMatch(chatSource, /`row:\$\{row\.id\}`/, "no second spelling of the id address");
+  assert.doesNotMatch(chatSource, /`live:\$\{shape\}:\$\{ordinal\}`/, "no second spelling of the slot address");
+  assert.match(omegaSource, /if \(id\) return `row:\$\{id\}:\$\{shape\}`/, "omega.ts owns the id address");
+  assert.match(omegaSource, /`live:\$\{shape\}:\$\{ordinal\}`/, "and the id-less slot address");
+  assert.match(omegaSource, /The ordinal counts ID-LESS rows/, "the ordinal's law is stated where it is obeyed");
   // the id-less case is STATED where a reader meets it, not implied
   assert.match(chatSource, /THE ID-LESS CASE, stated/, "the id-less fallback is documented in the contract");
   assert.match(chatSource, /in-flight rows carry none/, "and names the wire's own law");

@@ -7,7 +7,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createElapsedMeter, renderTranscriptItems } from "../app/composables/omega.ts";
+import { effect, nextTick, stop } from "vue";
+import {
+  createElapsedMeter,
+  createRestoreTranscript,
+  renderTranscriptItems,
+} from "../app/composables/omega.ts";
 import { createCanvasTranscript } from "../app/composables/chat.ts";
 import { syncConsumedSpan } from "../app/composables/useElapsed.ts";
 
@@ -521,6 +526,213 @@ describe("verdict countdown anchor", () => {
       source,
       /if \(!props\.item\.issuedAt\) return ""/,
       "no anchor renders no label - never a fabricated full countdown",
+    );
+  });
+});
+
+// --- the restore path's identity (card t_a20fbad7) ----------------------
+//
+// renderTranscriptItems is PURE: every call mints fresh literals, so a
+// refetch (a dock-tab remount, a reload, a variant select - load() always
+// refetches) re-created every rendered row and the keyed v-for destroyed
+// and re-created it: fold pins, elapsed meters and selection died. Every
+// session the canvas panel does not cover lives on this path. The pins
+// below are the audit's F5 acceptance (t_839b75c8, render-hygiene-audit-
+// FULL.md): two renders over the same wire share every object, and a
+// refetch re-uses the object of each unchanged row.
+describe("createRestoreTranscript: identity across refetches", () => {
+  const userWire = (id: string | undefined, content: string): TranscriptWireItem => ({
+    kind: "user",
+    ...(id ? { id } : {}),
+    content,
+    time: "t0",
+  });
+
+  const textWire = (id: string | undefined, content: string, running = false): TranscriptWireItem => ({
+    kind: "message",
+    ...(id ? { id } : {}),
+    content,
+    time: running ? undefined : "t1",
+    running: running || undefined,
+    elapsed_ms: running ? 500 : undefined,
+    response_ms: running ? undefined : 900,
+  });
+
+  const thinkWire = (id: string | undefined, content: string, running = false): TranscriptWireItem => ({
+    kind: "thinking",
+    ...(id ? { id } : {}),
+    content,
+    running: running || undefined,
+    thinking_ms: running ? undefined : 1200,
+    elapsed_ms: running ? 200 : undefined,
+  });
+
+  const callWire = (callId: string | undefined, name = "shell.run"): TranscriptWireItem => ({
+    kind: "tool_call",
+    tool_call: { ...(callId ? { id: callId } : {}), name, arguments: { cmd: "ls" } },
+  });
+
+  const resultWire = (callId: string, content = "ok"): TranscriptWireItem => ({
+    kind: "tool_result",
+    tool_call_id: callId,
+    content,
+    elapsed_ms: 700,
+  });
+
+  // one session's history in wire order: a probe turn, a tool call, an
+  // answer - every item kind the restore path renders
+  const wire = (): TranscriptWireItem[] => [
+    userWire("u1", "run it"),
+    thinkWire("a1", "hmm"),
+    callWire("c1"),
+    resultWire("c1", "PASS"),
+    textWire("a1", "all green"),
+  ];
+
+  it("two renders over the same wire share every object (a refetch is not a remount)", () => {
+    const t = createRestoreTranscript();
+    const first = t.apply(wire(), "s1");
+    const second = t.apply(wire(), "s1");
+    assert.equal(first.length, 4, "the result row folds onto its call - 5 wire items paint 4");
+    assert.equal(second.length, first.length);
+    for (let i = 0; i < first.length; i++) {
+      assert.equal(second[i], first[i], `item ${i} kept its object across the refetch`);
+    }
+  });
+
+  it("an append keeps every surviving row: only the new tail is a fresh object", () => {
+    const t = createRestoreTranscript();
+    const first = t.apply(wire(), "s1");
+    const known = new Set<unknown>(first);
+    const second = t.apply([...wire(), userWire("u2", "next"), textWire("a2", "more")], "s1");
+    assert.equal(second.length, 6);
+    for (let i = 0; i < first.length; i++) {
+      assert.equal(second[i], first[i], `row ${i} survived the append`);
+    }
+    assert.ok(!known.has(second[4]), "the new user row is its own object");
+    assert.ok(!known.has(second[5]), "the new answer row is its own object");
+  });
+
+  it("a CHANGED row keeps its object and is updated in place (the meter never restarts)", async () => {
+    const t = createRestoreTranscript();
+    const streaming = [userWire("u1", "q"), textWire("a1", "par", true)];
+    const before = t.apply(streaming, "s1");
+    const live = before[1] as { content: string; streaming?: boolean; elapsedMs?: number };
+    assert.equal(live.content, "par");
+    assert.equal(live.streaming, true);
+
+    // the reader the pane renders through: the in-place write must
+    // invalidate it (the items are reactive proxies, the t_078a2c35 law)
+    const seen: string[] = [];
+    const reader = effect(() => seen.push(`${(before[1] as { content: string }).content}/${String((before[1] as { streaming?: boolean }).streaming)}`));
+
+    const after = t.apply([userWire("u1", "q"), textWire("a1", "partial answer")], "s1");
+    await nextTick();
+    stop(reader);
+    assert.equal(after[1], before[1], "same object: the answer bubble is patched, not re-created");
+    const settled = after[1] as { content: string; streaming?: boolean; finalMs?: number; elapsedMs?: number };
+    assert.equal(settled.content, "partial answer");
+    assert.equal(settled.streaming, undefined, "the streaming bit clears on the settled row");
+    assert.equal(settled.elapsedMs, undefined, "and the running offset is spent");
+    assert.equal(settled.finalMs, 900, "the server's span lands on the same object");
+    assert.ok(seen.length > 1, `the in-place write invalidated the reader (ran ${seen.length}x)`);
+    assert.equal(seen[seen.length - 1], "partial answer/undefined");
+  });
+
+  it("a tool row and its verdict card are addressed by their CALL id", () => {
+    const t = createRestoreTranscript();
+    const pendingCall = [userWire("u1", "ship?"), callWire("c9")];
+    const before = t.apply(pendingCall, "s1");
+    const call = before[1] as { status: string; result?: string };
+    assert.equal(call.status, "pending");
+
+    const settled = t.apply([userWire("u1", "ship?"), callWire("c9"), resultWire("c9", "PASS")], "s1");
+    assert.equal(settled[1], before[1], "the call row keeps its object when the result lands");
+    assert.equal((settled[1] as { status: string }).status, "done");
+    assert.equal((settled[1] as { result?: string }).result, "PASS");
+
+    // a verdict card: pending on the first sight, settled by its result,
+    // ONE object throughout (its countdown anchor is derived from the
+    // wire's start stamp at every paint, so a refetch never restarts it)
+    const cards = createRestoreTranscript();
+    const pending = cards.apply([callWire("v1", "verdict.request")], "s1");
+    const card = pending[0] as { status: string; issuedAt?: number };
+    assert.equal(card.status, "pending");
+    const answered = cards.apply(
+      [callWire("v1", "verdict.request"), resultWire("v1", '{"verdict":"answer","option":"yes"}')],
+      "s1",
+    );
+    assert.equal(answered[0], pending[0], "the card keeps its object across the refetch");
+    assert.equal((answered[0] as { status: string }).status, "settled");
+    assert.equal((answered[0] as { verdictKind?: string }).verdictKind, "answer");
+  });
+
+  it("one stored message's thinking and text items are TWO objects (the id is not unique)", () => {
+    const t = createRestoreTranscript();
+    // the wire serves one StoredMessage as a thinking item AND a text
+    // item under the SAME row id (agent/api/server_transcript.go)
+    const both: TranscriptWireItem[] = [userWire("u1", "q"), thinkWire("a1", "hmm"), textWire("a1", "answer")];
+    const first = t.apply(both, "s1");
+    assert.equal(first.length, 3);
+    assert.notEqual(first[1], first[2], "two rows, two objects - never one shared item");
+    assert.equal((first[1] as { kind: string }).kind, "thinking");
+    assert.equal((first[2] as { kind: string }).kind, "message");
+    const second = t.apply(both, "s1");
+    assert.equal(second[1], first[1], "the thinking row keeps its own object");
+    assert.equal(second[2], first[2], "the text row keeps its own object");
+  });
+
+  it("the live tail's item is ADOPTED when the store names the row", () => {
+    const t = createRestoreTranscript();
+    const live = [userWire("u1", "q"), textWire(undefined, "streaming", true)];
+    const before = t.apply(live, "s1");
+    const liveItem = before[1] as { content: string; streaming?: boolean };
+    assert.equal(liveItem.content, "streaming");
+
+    const persisted = t.apply([userWire("u1", "q"), textWire("a1", "streaming done")], "s1");
+    assert.equal(persisted[1], before[1], "the persisting row owns the object it streamed in");
+    assert.equal((persisted[1] as { content: string }).content, "streaming done");
+    assert.equal((persisted[1] as { streaming?: boolean }).streaming, undefined);
+  });
+
+  it("a vanished id-less row leaves no object for a later row of that shape", () => {
+    const t = createRestoreTranscript();
+    const first = t.apply([userWire("u1", "q"), thinkWire(undefined, "live thinking", true)], "s1");
+    const liveThink = first[1]!;
+    // the live row is gone: the payload carries no thinking item at all
+    t.apply([userWire("u1", "q")], "s1");
+    // a DIFFERENT, already-persisted thinking row arrives afterwards
+    const later = t.apply([userWire("u1", "q"), thinkWire("a9", "other")], "s1");
+    assert.notEqual(later[1], liveThink, "the vanished row's object is not inherited by an unrelated row");
+    assert.equal((later[1] as { content: string }).content, "other");
+  });
+
+  it("another session resets the cache (identities are worthless across sessions)", () => {
+    const t = createRestoreTranscript();
+    const first = t.apply(wire(), "s1");
+    const other = t.apply(wire(), "s2");
+    for (let i = 0; i < first.length; i++) {
+      assert.notEqual(other[i], first[i], `item ${i} is a fresh object in the other conversation`);
+    }
+  });
+
+  it("load() renders through the state's cache, never the pure mapper", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const chatSource = readFileSync(join(here, "..", "app", "composables", "chat.ts"), "utf8");
+    assert.match(
+      chatSource,
+      /const restoreCaches = new WeakMap<ChatState, RestoreTranscript>\(\)/,
+      "one cache per chat state, collected with it",
+    );
+    assert.match(
+      chatSource,
+      /st\.restored = restoreFor\(st\)\.apply\(detail\.items, sessionId\)/,
+      "the restore goes through the cache",
+    );
+    assert.doesNotMatch(
+      chatSource,
+      /st\.restored = renderTranscriptItems\(/,
+      "the refetch must not remint every row",
     );
   });
 });

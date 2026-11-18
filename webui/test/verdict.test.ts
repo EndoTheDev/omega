@@ -413,7 +413,7 @@ test("both render paths ask ONE wire-name predicate (a rename cannot kill the ca
   // files, both left behind by the dotted rename (card t_79386e36).
   assert.match(omega, /export const VERDICT_TOOL_NAMES: readonly string\[\] = \["verdict\.request"\]/, "the dotted wire verb, spelled once");
   assert.match(omega, /export function isVerdictTool/, "one predicate owns the name");
-  assert.match(omega, /if \(isVerdictTool\(t\.name\)\)/, "the REST restore asks the predicate");
+  assert.match(omega, /if \(isVerdictTool\(it\.tool_call\?\.name\)\)/, "the REST restore asks the predicate");
   assert.match(chat, /if \(isVerdictTool\(block\.tool_call\?\.name\)\)/, "the canvas paint asks the same predicate");
   for (const [file, src] of [["chat.ts", chat], ["omega.ts", omega]] as const) {
     assert.doesNotMatch(

@@ -315,7 +315,19 @@ export type TranscriptWireItem =
       // anchor a running tool_call carries in elapsed_ms
       elapsed_ms?: number;
     }
-  | { kind: "thinking"; content: string; thinking_ms?: number; running?: boolean; elapsed_ms?: number }
+  | {
+      kind: "thinking";
+      // the stored assistant message's row id. The server serves it
+      // (agent/api/server_transcript.go builds the thinking and text
+      // items of one StoredMessage from the SAME id), and the restore
+      // path uses it as this row's ADDRESS - never as a rendered id
+      // (see mapTranscriptItems)
+      id?: string;
+      content: string;
+      thinking_ms?: number;
+      running?: boolean;
+      elapsed_ms?: number;
+    }
   | {
       kind: "tool_call";
       tool_call?: { id?: string; name?: string; arguments?: Record<string, unknown> };
@@ -369,7 +381,7 @@ export function toolCallAnchorMs(
 // a tool line keyed by its id and the matching tool_result (matched by
 // tool_call_id, exactly like a live tool_result frame) fills the
 // result, error state and elapsed onto it. Thin items (empty content)
-// render nothing. Pure.
+// render nothing. Pure: every call mints its own items.
 //
 // Async agent loop phase 3 (pending chips, ruling 6): a call whose
 // result row is ABSENT from the transcript renders as the PENDING
@@ -380,8 +392,239 @@ export function toolCallAnchorMs(
 // turn in wire order, so a call visible in the window always sees its
 // settled result in the same window. Two passes: result ids first
 // (a result may sit anywhere after its call), then the mapping.
+//
+// The PURITY is the defect the stateful twin below fixes (card
+// t_a20fbad7): a reload or a tab remount refetches this wire and gets
+// fresh literals, so every restored row remounts. createRestoreTranscript
+// runs the same mapping over a keyed cache; a caller with no identity to
+// keep still wants this entry point.
 export function renderTranscriptItems(
   items: TranscriptWireItem[] | null | undefined,
+): TranscriptItem[] {
+  return mapTranscriptItems(items, null);
+}
+
+// --- the render identity: ONE address rule for both render paths ------
+//
+// A transcript row's identity across refetches is its ADDRESS, and the
+// address is never its position. The chat panel is a sliding window (the
+// newest 40 rows, agent/api/chat_panel.go), so ONE append past the window
+// moves every surviving index: keyed positionally, every surviving row
+// misses its cache entry, mints a new object, gets a new key, and the
+// keyed v-for destroys and re-creates the row - worse, the incoming tail
+// row can inherit an existing row's object (a row wearing another row's
+// meter anchor, fold pin and streaming bit). The canvas paint learned
+// this first (card t_494639c8). The REST restore keyed by NOTHING - every
+// refetch minted fresh literals - so every session the canvas panel does
+// not cover (a second tab, any session after a reload) still remounted
+// every row on every load (card t_a20fbad7, audit F5). Both paths resolve
+// a row's address through this ONE function:
+//
+//   row:<store row id>:<shape>   the store has named the row
+//   live:<shape>:<ordinal>       it has not yet (a live stream's
+//                                in-flight rows carry no id - core.ChatRow.ID)
+//
+// <shape> is the row's rendered shape ("assistant:text",
+// "assistant:thinking", "user:text", ...). The restore path needs it: one
+// stored assistant message renders TWO items (thinking + text) under the
+// SAME store id on the wire (agent/api/server_transcript.go builds both
+// from one StoredMessage), so the id alone is not unique there. On the
+// canvas an id names exactly one row and the suffix is a no-op.
+//
+// The ordinal counts ID-LESS rows of the shape only, so a head slide (a
+// persisted row leaving the payload) never moves it and the open tail
+// (which grows at the END) does not move it either. Slots are swept at the
+// end of every paint: an id-less row's object dies with the payload that
+// stopped carrying its row, so a later row of the same shape can never
+// inherit it.
+export function transcriptAddress(
+  id: string | undefined,
+  shape: string,
+  ordinals: Map<string, number>,
+  consume = true,
+): string {
+  if (id) return `row:${id}:${shape}`;
+  const ordinal = ordinals.get(shape) ?? 0;
+  if (consume) ordinals.set(shape, ordinal + 1);
+  return `live:${shape}:${ordinal}`;
+}
+
+// wireShape names one wire item's rendered shape - the suffix of its
+// address. The canvas derives the same strings as `<row role>:<block
+// type>` (chat.ts), so a row painted by either path lands on one address
+// space. Pure.
+export function wireShape(kind: TranscriptWireItem["kind"]): string {
+  switch (kind) {
+    case "user":
+      return "user:text";
+    case "message":
+      return "assistant:text";
+    case "thinking":
+      return "assistant:thinking";
+    case "tool_call":
+      return "assistant:tool_call";
+    case "tool_result":
+      return "tool:tool_result";
+  }
+}
+
+// wireId is the store row id a wire item carries, when its kind carries
+// one at all (a tool_call names its CALL id instead). Pure.
+function wireId(it: TranscriptWireItem): string | undefined {
+  return "id" in it ? it.id : undefined;
+}
+
+// RestorePaint is one restore pass's working set: the two caches plus the
+// bookkeeping an id-less row's slot needs. `ordinals` restarts every
+// paint (an ordinal counts what THIS payload carries); `slots` does not.
+interface RestorePaint {
+  cache: Map<string, TranscriptItem>;
+  slots: Map<string, TranscriptItem>;
+  ordinals: Map<string, number>;
+  usedSlots: Set<string>;
+  lastIdOfShape: ReadonlyMap<string, number>;
+}
+
+// itemAt returns the item one wire row paints into. With no paint (the
+// pure entry point) it mints, exactly as it always did. With a paint it
+// resolves the row's ADDRESS and reuses the object that address owns; an
+// id-bearing row that is its shape's LAST id-bearing row ADOPTS the slot
+// its own live object sits in - the live -> persisted transition must not
+// swap the object, because the streaming bubble's meter would restart.
+// Items in a cache are reactive proxies: the paint writes them IN PLACE
+// (a delta mutating content/streaming/elapsedMs), and those writes must
+// invalidate the readers that watch those fields (the t_078a2c35 law,
+// the same one the canvas items ride).
+function itemAt<T extends TranscriptItem>(
+  paint: RestorePaint | null,
+  id: string | undefined,
+  shape: string,
+  index: number,
+  make: () => T,
+): T {
+  if (!paint) return make();
+  const address = transcriptAddress(id, shape, paint.ordinals);
+  if (!id) {
+    paint.usedSlots.add(address);
+    const hit = paint.slots.get(address) as T | undefined;
+    if (hit) return hit;
+    const fresh = reactive(make()) as T;
+    paint.slots.set(address, fresh);
+    return fresh;
+  }
+  const hit = paint.cache.get(address) as T | undefined;
+  if (hit) return hit;
+  if (paint.lastIdOfShape.get(shape) === index) {
+    const slot = transcriptAddress(undefined, shape, paint.ordinals, false);
+    const adopted = paint.slots.get(slot) as T | undefined;
+    if (adopted) {
+      paint.slots.delete(slot);
+      paint.cache.set(address, adopted);
+      return adopted;
+    }
+  }
+  const fresh = reactive(make()) as T;
+  paint.cache.set(address, fresh);
+  return fresh;
+}
+
+// itemByKey is the same reuse for the rows whose identity is their CALL id
+// (a tool line and the verdict card its result settles are addressed by
+// it), or by a slot while the call has no id yet.
+function itemByKey<T extends TranscriptItem>(
+  paint: RestorePaint | null,
+  key: string,
+  live: boolean,
+  make: () => T,
+): T {
+  if (!paint) return make();
+  if (live) {
+    paint.usedSlots.add(key);
+    const hit = paint.slots.get(key) as T | undefined;
+    if (hit) return hit;
+    const fresh = reactive(make()) as T;
+    paint.slots.set(key, fresh);
+    return fresh;
+  }
+  const hit = paint.cache.get(key) as T | undefined;
+  if (hit) return hit;
+  const fresh = reactive(make()) as T;
+  paint.cache.set(key, fresh);
+  return fresh;
+}
+
+// callKey addresses a row by its CALL id, or by a slot while the call has
+// none: a payload index is never an address.
+function callKey(
+  prefix: "tc" | "verdict",
+  callId: string,
+  paint: RestorePaint | null,
+): { key: string; live: boolean } {
+  if (!paint) return { key: "", live: true };
+  if (callId) return { key: `${prefix}:${callId}`, live: false };
+  return { key: `${prefix}:${transcriptAddress(undefined, wireShape("tool_call"), paint.ordinals)}`, live: true };
+}
+
+// lastIdOfShape indexes each shape's LAST id-bearing row in this payload:
+// the only row of that shape allowed to adopt a live slot. The store
+// names the open tail last, so a row that just gained an id is its
+// shape's newest id-bearing row; an earlier row of the shape is a
+// different row and must never take the object. Pure.
+function lastIdOfShape(items: TranscriptWireItem[] | null | undefined): Map<string, number> {
+  const last = new Map<string, number>();
+  items?.forEach((it, i) => {
+    if (wireId(it)) last.set(wireShape(it.kind), i);
+  });
+  return last;
+}
+
+// RestoreTranscript is the restore path's render source: the same mapping
+// renderTranscriptItems performs, over the items it built on the previous
+// pass. Every row whose address it has seen keeps its object, so a
+// refetch (a remount, a tab switch, a variant select) UPDATES rows in
+// place instead of remounting them - the per-row components keep their
+// fold pins, meters and selection. One instance per chat state.
+export interface RestoreTranscript {
+  apply(items: TranscriptWireItem[] | null | undefined, session?: string): TranscriptItem[];
+}
+
+export function createRestoreTranscript(): RestoreTranscript {
+  let session = "";
+  const cache = new Map<string, TranscriptItem>();
+  const slots = new Map<string, TranscriptItem>();
+  return {
+    apply(items, next) {
+      const sid = next ?? "";
+      if (sid !== session) {
+        // another conversation took the pane over: identities are
+        // worthless across sessions - both caches reset
+        session = sid;
+        cache.clear();
+        slots.clear();
+      }
+      const paint: RestorePaint = {
+        cache,
+        slots,
+        ordinals: new Map(),
+        usedSlots: new Set(),
+        lastIdOfShape: lastIdOfShape(items),
+      };
+      const out = mapTranscriptItems(items, paint);
+      for (const key of slots.keys()) {
+        if (!paint.usedSlots.has(key)) slots.delete(key);
+      }
+      return out;
+    },
+  };
+}
+
+// mapTranscriptItems is the one mapping body: both render paths (the pure
+// renderTranscriptItems and createRestoreTranscript) run it, so the
+// restore path and the canvas can never drift on item shape - only the
+// identity policy differs (mint per call, or reuse by address).
+function mapTranscriptItems(
+  items: TranscriptWireItem[] | null | undefined,
+  paint: RestorePaint | null,
 ): TranscriptItem[] {
   const out: TranscriptItem[] = [];
   if (!items) return out;
@@ -391,52 +634,72 @@ export function renderTranscriptItems(
   }
   const toolById = new Map<string, ToolItem>();
   const verdictById = new Map<string, VerdictItem>();
-  for (const it of items) {
+  for (let index = 0; index < items.length; index++) {
+    const it = items[index]!;
     switch (it.kind) {
-      case "user":
+      case "user": {
         // a user turn whose ONLY payload is attachments still renders
         // (card t_8a569163): the reference chips are the message
-        if (it.content || it.images?.length || it.attachments?.length)
-          out.push({
-            kind: "message",
-            role: "user",
-            content: it.content,
-            time: it.time,
-            images: it.images,
-            attachments: it.attachments,
-            id: it.id,
-          });
+        if (!(it.content || it.images?.length || it.attachments?.length)) break;
+        const m = itemAt<MessageItem>(paint, it.id, wireShape(it.kind), index, () => ({
+          kind: "message",
+          role: "user",
+          content: "",
+        }));
+        m.kind = "message";
+        m.role = "user";
+        m.content = it.content;
+        m.time = it.time;
+        m.images = it.images;
+        m.attachments = it.attachments;
+        m.id = it.id;
+        out.push(m);
         break;
-      case "message":
-        if (it.content)
-          out.push({
-            kind: "message",
-            role: "assistant",
-            content: it.content,
-            time: it.time,
-            finalMs: it.response_ms,
-            id: it.id,
-            // only the merge's live tail streams from restore - persisted
-            // items mount final (the driver adopts the streaming ones).
-            // A streaming segment also carries its elapsed-so-far: the
-            // remounted meter counts on from it instead of restarting at
-            // the mount moment (card t_95385aba).
-            streaming: it.running ? true : undefined,
-            elapsedMs: it.running ? it.elapsed_ms : undefined,
-          });
+      }
+      case "message": {
+        if (!it.content) break;
+        const m = itemAt<MessageItem>(paint, it.id, wireShape(it.kind), index, () => ({
+          kind: "message",
+          role: "assistant",
+          content: "",
+        }));
+        m.kind = "message";
+        m.role = "assistant";
+        m.content = it.content;
+        m.time = it.time;
+        m.finalMs = it.response_ms;
+        m.id = it.id;
+        // only the merge's live tail streams from restore - persisted
+        // items mount final (the driver adopts the streaming ones).
+        // A streaming segment also carries its elapsed-so-far: the
+        // remounted meter counts on from it instead of restarting at
+        // the mount moment (card t_95385aba).
+        m.streaming = it.running ? true : undefined;
+        m.elapsedMs = it.running ? it.elapsed_ms : undefined;
+        out.push(m);
         break;
-      case "thinking":
-        if (it.content)
-          out.push({
-            kind: "thinking",
-            content: it.content,
-            finalMs: it.thinking_ms,
-            streaming: it.running ? true : undefined,
-            elapsedMs: it.running ? it.elapsed_ms : undefined,
-          });
+      }
+      case "thinking": {
+        if (!it.content) break;
+        // the wire carries the stored message's row id here too (the
+        // same row as the text item beside it), and it is this row's
+        // ADDRESS. It is deliberately NOT stamped onto the item: an id
+        // on a rendered thinking item moves variantAnchors' head
+        // resolution (a different law from this card's).
+        const think = itemAt<ThinkingItem>(paint, wireId(it), wireShape(it.kind), index, () => ({
+          kind: "thinking",
+          content: "",
+        }));
+        think.kind = "thinking";
+        think.content = it.content;
+        think.finalMs = it.thinking_ms;
+        think.streaming = it.running ? true : undefined;
+        think.elapsedMs = it.running ? it.elapsed_ms : undefined;
+        out.push(think);
         break;
+      }
       case "tool_call": {
-        const cid = it.tool_call?.id || "";
+        const callId = it.tool_call?.id || "";
         // a settled call has its result somewhere in the transcript
         // (wire order: the result lands right after the call's turn);
         // an ABSENT result on an idle session is the yield-class
@@ -444,52 +707,62 @@ export function renderTranscriptItems(
         // orphaned done line. The live tail's running bit outranks
         // both (the run still owns the call); an id-less call keeps
         // today's done shape (nothing to match a result against).
-        const pending = !!cid && !resultIds.has(cid);
-        const t: ToolItem = {
-          kind: "tool",
-          name: it.tool_call?.name || "tool",
-          callId: cid || undefined,
-          status:
-            it.running ? "running"
-            : pending ? "pending"
-            : "done",
-          output:
-            it.tool_call?.arguments ?
-              JSON.stringify(it.tool_call.arguments, null, 2)
-            : undefined,
-          // a RUNNING or PENDING call meters from its open wall clock
-          // when the wire carries one (card t_6bad9f6f round 3): a
-          // yielded call pushes no delta, so a restored payload is
-          // arbitrarily old and its elapsed_ms only tells how long the
-          // call had run when the payload was built - the stamp makes
-          // the row count on from the call's real start at every paint
-          elapsedMs:
-            it.running || pending ?
-              toolCallAnchorMs(it.started_at, it.elapsed_ms)
-            : undefined,
-        };
-        if (it.tool_call?.id) toolById.set(it.tool_call.id, t);
+        const pending = !!callId && !resultIds.has(callId);
         // a verdict call (the dotted wire verb - isVerdictTool) renders
         // as a verdict card and NO tool line (the card is the
         // interactive surface AND the technical record - its result
         // below still settles the card). The matching tool_result is
         // consumed by the card branch, never by the tool-line map.
-        if (isVerdictTool(t.name)) {
-          const v = verdictCardFromToolArgs(it.tool_call?.arguments);
-          if (it.tool_call?.id) verdictById.set(it.tool_call.id, v);
-          v.status = "pending"; // settled by the tool_result below
-          // the card is ANSWERABLE while its call has no result row,
-          // whatever the run did: verdict.request is yield-class, so
-          // the run ends with the card waiting in the hub and the
-          // answer wakes a new run on the same session (card
-          // t_79386e36 - "no live run" was read as "dead", which made
-          // every real card render dead). The countdown needs no guess
-          // either: an unanswered call carries the server's own start
-          // stamp, so the deadline is `issuedAt + timeout_s`.
-          v.issuedAt = verdictIssuedAt(it.started_at);
-          out.push(v);
+        if (isVerdictTool(it.tool_call?.name)) {
+          const { key, live } = callKey("verdict", callId, paint);
+          const built = verdictCardFromToolArgs(it.tool_call?.arguments);
+          const card = itemByKey<VerdictItem>(paint, key, live, () => built);
+          card.kind = "verdict";
+          card.title = built.title;
+          card.body = built.body;
+          card.options = built.options;
+          card.multi = built.multi;
+          card.allowText = built.allowText;
+          card.timeoutS = built.timeoutS;
+          card.callId = callId || undefined;
+          card.status = "pending"; // settled by the tool_result below
+          // the countdown's anchor: an unanswered call carries the
+          // server's own start stamp, so `issuedAt + timeout_s` is the
+          // deadline on the FIRST sight too, and re-deriving it at every
+          // paint never drifts (a fixed instant)
+          card.issuedAt = verdictIssuedAt(it.started_at);
+          if (callId) verdictById.set(callId, card);
+          out.push(card);
           break;
         }
+        const { key, live } = callKey("tc", callId, paint);
+        const t = itemByKey<ToolItem>(paint, key, live, () => ({
+          kind: "tool",
+          name: "tool",
+          status: "done",
+        }));
+        t.kind = "tool";
+        t.name = it.tool_call?.name || "tool";
+        t.callId = callId || undefined;
+        t.status =
+          it.running ? "running"
+          : pending ? "pending"
+          : "done";
+        t.output =
+          it.tool_call?.arguments ?
+            JSON.stringify(it.tool_call.arguments, null, 2)
+          : undefined;
+        // a RUNNING or PENDING call meters from its open wall clock
+        // when the wire carries one (card t_6bad9f6f round 3): a
+        // yielded call pushes no delta, so a restored payload is
+        // arbitrarily old and its elapsed_ms only tells how long the
+        // call had run when the payload was built - the stamp makes
+        // the row count on from the call's real start at every paint
+        t.elapsedMs =
+          it.running || pending ?
+            toolCallAnchorMs(it.started_at, it.elapsed_ms)
+          : undefined;
+        if (callId) toolById.set(callId, t);
         out.push(t);
         break;
       }
@@ -505,9 +778,9 @@ export function renderTranscriptItems(
           v.answerText = settled.answerText;
           break;
         }
-        if (!it.tool_call_id) continue;
+        if (!it.tool_call_id) break;
         const t = toolById.get(it.tool_call_id);
-        if (!t) continue;
+        if (!t) break;
         t.result = it.content || "";
         t.status = it.is_error ? "error" : "done";
         // the gate's decision record rides the result onto the call row

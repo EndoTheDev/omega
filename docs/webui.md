@@ -439,6 +439,17 @@ every edge shell becomes an
   response appends below. The chip renders only on the NEWEST assistant
   response while the run is idle. Client-side `dropLastExchange`
   transcript surgery is RETIRED - never reintroduce it.
+- Transcript rows are ADDRESSED, never positioned (cards t_494639c8,
+  t_a20fbad7): one rule (`transcriptAddress` in `composables/omega.ts`)
+  names a row by its store row id plus its rendered shape, or by an
+  explicit slot while the store has not named it yet. Both render paths
+  resolve it - the live canvas paint and the REST restore - so a refetch
+  (a remount, a variant select, the socket's catch-up) reuses the object
+  of every row it already rendered and patches it in place. Keying a row
+  by its payload index was the whole remount defect family: the chat
+  panel is a sliding window, so one append moved every surviving index.
+  Pinned by `webui/test/identity.test.ts` (canvas) and
+  `webui/test/transcript.test.ts` (restore).
 - The answer row's elapsed badge is the TURN TOTAL (card t_3a857a2d):
   prompt arrival to answer completion, subtracted from the two row
   timestamps the transcript already carries (`time` on the user row and
