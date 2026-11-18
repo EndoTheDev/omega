@@ -523,6 +523,21 @@
   // streamed away from it).
   let followWrite = -1;
 
+  // --- the transcript has ONE scroll writer (card t_31c64042) ----------
+  //
+  // The follow and the browser's scroll anchoring both write scrollTop,
+  // and they write it in the same frames. Measured live on this card's
+  // lane (stacked appearance, a live send): the app's follow write lands
+  // the pane at the tail, an anchor adjustment moves it back up 72-490px
+  // while a row above the viewport re-folds, and the next follow write
+  // yanks it down again - the up/down the bug report names. The anchor
+  // half of that pair is CSS, not JS: `.messages` carries
+  // `overflow-anchor: none`, so the app's follow is the only writer.
+  // What is left here is the app's half of the thrash: a follow write of
+  // a position the scrollport ALREADY holds is not free - it is a
+  // programmatic scroll. Measured: 20 writes in one send, 16 of them on
+  // the position the pane already had; the skip below leaves 3-4.
+
   // --- content-change follow (card t_bef3f45e): the transcript
   // watcher below fires per delta, but paint does not always grow the
   // scrollport on that tick. The streaming text bubble renders on a
@@ -614,6 +629,14 @@
       const el = messagesEl.value;
       if (!el) return;
       if (!force && !pinned.value) return;
+      // the clamp target is what the browser would land on anyway. A
+      // write of the value the scrollport already holds is NOT free: it
+      // is a programmatic scroll, and the follow fires several per burst.
+      // Measured on this card's lane: 20 writes in one send, 16 landing
+      // on the position the pane already had; 150 in a 20s stream window,
+      // 146 of them no-ops.
+      const target = Math.max(el.scrollHeight - el.clientHeight, 0);
+      if (el.scrollTop >= target - 1) return;
       el.scrollTop = el.scrollHeight;
       // read back the clamped value: that scrollTop is what the follow's
       // own scroll event will carry (onScroll recognises it)
