@@ -417,8 +417,13 @@ every edge shell becomes an
   2026-11-15, round 2 - the numbers are law). Within a turn the strips
   sit flush on a 0px gap in 24px rows (the panels that reuse those rows
   keep their 44px click floor); the 32px turn boundary is the dominant
-  gap. Thinking strips de-card on dark. Order never changes - live-pin
-  is scroll + sticky layout, not render order.
+  gap. Thinking strips de-card on dark, and while reasoning STREAMS the
+  row is activity - no border, no raised fill, just the glyph, label and
+  ticking elapsed; the card face (border + raised background) belongs to
+  the collapsed artifact the phase leaves behind. Order never changes -
+  live-pin is scroll + sticky layout, not render order, and its
+  full-bleed inset IS the transcript's own side padding (a hardcoded
+  column number turns the scrollport horizontal mid-stream).
 - Statusbar telemetry is honest: the token counter ticks per chunk
   (chars/4 estimate, corrected by real usage at stream end); live
   chunks/s comes from real arrival times.

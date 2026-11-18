@@ -1409,6 +1409,14 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
 .messages {
   flex: 1;
   overflow-y: auto;
+  /* card t_2739f125: the transcript is a VERTICAL scroller only, stated like
+     every other list scroller in the app (.session-list, .files-scroll). An
+     unset overflow-x computes to `auto` on a scroll container, so a live row
+     measuring wider than the content box silently turned the transcript into
+     a horizontal scrollport and painted a scrollbar above the composer. The
+     causal overflow is fixed below (.live-pin); this states the intent so a
+     future live row can never resurrect it. */
+  overflow-x: hidden;
   /* the column tracks the composer (t_5063675a): the transcript's side
      inset is the composer's 12px side margin (the ONE composer law,
      t_1750a9e3), so every block's edge lands on the composer's edge
@@ -1535,12 +1543,20 @@ labels stopped short of the right edge. */
   position: sticky;
   top: 0;
   z-index: 3;
-  /* full-bleed across the scrollport's 20px side padding - the background
-     has to cover the rows sliding under it, edge to edge */
-  margin: 0 -20px;
-  padding: 14px 20px 12px;
+  /* full-bleed across the scrollport's side padding - the background has to
+     cover the rows sliding under it, edge to edge. The inset IS the
+     scrollport's own side padding (12px, the ONE composer law): the pair was
+     authored against a 20px column, and the stale number left the pin 8px
+     past the scrollport's right edge, which is what turned the transcript
+     into a horizontal scroller mid-stream (card t_2739f125 - live-probed:
+     pin 1150px inside a 1134px scrollport). */
+  margin: 0 -12px;
+  padding: 14px 12px 12px;
   background: var(--z1);
-  border-bottom: 1px solid var(--stroke);
+  /* no bottom rule (card t_2739f125): while the run streams the strip under
+     the question is activity, not an artifact - a 1px edge there reads as a
+     hairline under the just-sent message. The pin's opaque background is what
+     keeps the scrolled-under rows from bleeding through. */
   /* the scrollport's 16px top padding sits ABOVE the sticky position, so
      the row sliding under the pin peeks through that band as a clipped
      line (measured on the private lane). A zero-blur shadow paints the
@@ -1972,6 +1988,16 @@ labels stopped short of the right edge. */
   border-radius: var(--r-card);
   background: var(--z1-raised);
   max-width: 70%;
+}
+/* card t_2739f125: while a run streams the thinking row is ACTIVITY, not a
+   re-openable artifact - it paints as a plain summary row (glyph, label,
+   ticking elapsed) with no box. The full card face (border + raised fill)
+   returns the moment the stream ends, when the block IS the collapsed
+   artifact. The border stays 1px but transparent so the row's geometry never
+   jumps at the run's edge. */
+.thinking.live {
+  border-color: transparent;
+  background: none;
 }
 .thinking summary {
   padding: 6px 12px;

@@ -31,6 +31,14 @@
 #     drives the real run.sh with a stub browser and proves the old line
 #     cannot red the next recipe, the unscoped shape still does, and a real
 #     error from the recipe's own run still reds.
+#   - webui/test/stackedpin.test.ts + webui/test/thinking.test.ts (t_2739f125):
+#     the mid-stream transcript chrome - the pinned question row's full-bleed
+#     inset IS the transcript's own side padding (the stale 20px pair pushed it
+#     8px past the scrollport and turned the transcript into a horizontal
+#     scroller above the composer, live-probed 1150px in a 1134px scrollport),
+#     the scrollport states overflow-x: hidden like every other list, and the
+#     reasoning row carries no box face while it streams. Runs in the webui
+#     node suite.
 60-settings-themes t_31aa2542 - the Settings chip/knob poll contract: the cold-runner wait_js race (theme picker "got [0] want [1]") - poll, never a zero-wait query
 61-session-title-fallback  t_8abdbb15 - session titles never lean on a model: the label renders with zero title runs; the unlabeled tab keeps the stable generic fallback (the nightly's no-provider reds, f82f4ee)
 75-divider-resize  t_38c0e960 - dock-stuck divider shapes: the v0.9.0 drag rework crossed the cumulative/per-event delta contract - the divider looked dead (~10px per full drag)
