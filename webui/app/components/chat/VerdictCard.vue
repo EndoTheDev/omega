@@ -1,19 +1,19 @@
 <template>
   <div
     class="verdict-card"
-    :class="{ settled: item.status === 'settled', stale: item.stale }">
+    :class="{ settled: item.status === 'settled' }">
     <div class="verdict-head">
       <span class="verdict-mark">?</span>
       <span class="verdict-title">{{ item.title }}</span>
       <span
-        v-if="item.status === 'pending' && !item.stale && countdown"
+        v-if="item.status === 'pending' && countdown"
         class="verdict-countdown">{{ countdown }}</span>
     </div>
     <p
       v-if="item.body"
       class="verdict-body">{{ item.body }}</p>
 
-    <template v-if="item.status === 'pending' && !item.stale">
+    <template v-if="item.status === 'pending'">
       <!-- v1.1 list layout: one row per option, label over its
            optional description. Single cards answer on click; multi
            cards toggle rows and confirm. -->
@@ -133,7 +133,6 @@
 
   const outcomeText = computed(() => {
     const i = props.item;
-    if (i.stale && i.status === "pending") return "no answer recorded (the run ended first)";
     switch (i.verdictKind) {
       case "answer":
         return i.picked
@@ -203,8 +202,7 @@
     border-radius: 8px;
     border-left: 3px solid var(--accent, #e8833a);
   }
-  .verdict-card.settled,
-  .verdict-card.stale {
+  .verdict-card.settled {
     border-left-color: var(--stroke, #444);
     opacity: 0.85;
   }

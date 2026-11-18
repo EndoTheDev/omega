@@ -391,7 +391,7 @@ describe("verdict countdown anchor", () => {
           ...(startedAt ? { started_at: startedAt } : {}),
           tool_call: {
             id: callId,
-            name: "verdict",
+            name: "verdict.request",
             arguments: {
               title: "ship it?",
               options: [{ label: "yes" }, { label: "no" }],
