@@ -20,10 +20,10 @@ import {
   PANE_OPEN_MIN,
   SNAP_STEP,
   BOTTOM_SNAP_STEP,
-  isSidebarZone,
   openClamp,
   snapCandidate,
   snapCandidateAt,
+  splitFitsZone,
   travelSnapAt,
   zoneLabel,
   zoneOfEdge,
@@ -724,12 +724,14 @@ export function isLastMainPane(tree: DockNode, pane: DockPane): boolean {
 // The three roots (primary sidebar, secondary sidebar, bottom panel) grow
 // LOCAL split trees - the same DockSplit/DockPane machinery the main pane uses,
 // wrapped inside the root so the root's geometry (fixed px, contract, resize
-// band, hide/fullscreen modes) never changes. Sidebars stack ROWS only
-// (column splits; zone left/right refuses), main + bottom take both
-// directions (drop position decides), and the tight roots cap at two split
-// levels (main is unlimited). Tabs move freely across roots; splits stay
-// local. Roots never die: a degenerate local tree un-grows back into the
-// shell's classic single cell (ruling 8).
+// band, hide/fullscreen modes) never changes. Canvas C2's SHAPE LAW narrows the
+// SIDEBARS to one shape: tabs + a STACK (column splits only - a sidebar never
+// puts two columns of content side by side, because the shell's two columns ARE
+// the two sidebars, and the deleted split-sidebar gesture has no entry point
+// left). Main + bottom take both directions (drop position decides), and the
+// tight roots cap at two split levels (main is unlimited). Tabs move freely
+// across roots; splits stay local. Roots never die: a degenerate local tree
+// un-grows back into the shell's classic single cell (ruling 8).
 
 /** the depth-first first pane under a split - a grown root's host leaf */
 function firstPaneOf(split: DockSplit): DockPane | null {
@@ -767,10 +769,12 @@ export function splitDepthInRoot(split: DockSplit, paneId: string): number {
   return 0;
 }
 
-/** v0.14.4 ruling 2/3: may `direction` split `paneId` HERE? Sidebars
-    stack rows only, main + bottom take both, and the tight roots cap at
-    two split levels. Returns the refusal reason, or null when allowed.
-    Reads the LIVE tree so a leaf's root is found wherever it sits. Pure. */
+/** v0.14.4 ruling 2/3 + canvas C2 THE SHAPE LAW: may `direction` split
+    `paneId` HERE? A sidebar - the shell itself or a leaf of its grown stack -
+    STACKS (column) and never splits into side-by-side columns; main + bottom
+    take both, and the tight roots cap at two split levels. Returns the
+    refusal reason, or null when allowed. Reads the LIVE tree so a leaf's root
+    is found wherever it sits. Pure. */
 export function splitLawRefusal(
   tree: DockNode,
   paneId: string,
@@ -779,19 +783,13 @@ export function splitLawRefusal(
   const pane = findPane(tree, paneId);
   if (!pane) return "a pane of the gesture vanished";
   const root = rootPaneOf(tree, paneId);
-  if (root) {
-    // an inner leaf: the ROOT's law applies (the leaf carries no marker)
-    if (isSidebarZone(zoneOfEdge(root.edge)) && direction !== "column") {
-      return "sidebars stack rows only";
-    }
-    if (root.grown && splitDepthInRoot(root.grown, paneId) >= 2) {
-      return "this root caps at two split levels";
-    }
-    return null;
+  // the shape law names the pane's zone: an inner leaf inherits its grown
+  // root's zone (ruling 4 - the root owns the identity)
+  if (!splitFitsZone(zoneOfEdge((root ?? pane).edge), direction)) {
+    return "a sidebar stacks - it never splits into columns";
   }
-  // the shell itself (the growth gesture) or a main pane
-  if (isSidebarZone(zoneOfEdge(pane.edge)) && direction !== "column") {
-    return "sidebars stack rows only";
+  if (root?.grown && splitDepthInRoot(root.grown, paneId) >= 2) {
+    return "this root caps at two split levels";
   }
   return null;
 }
@@ -1041,6 +1039,39 @@ export function restoreSeatSet(
       n.tabs = [...n.tabs, ...missing.map((c) => ({ component: c }))];
       n.active = clamp(n.active, 0, n.tabs.length - 1);
     }
+  });
+}
+
+/** canvas C2 THE SHAPE LAW's ONE-TIME migration: a sidebar that carries a
+    LOCAL SPLIT TREE is a layout the deleted split-sidebar model produced, so
+    it resets to the clean default - an empty shell the loader's seat repair
+    (restoreSeatSet) re-seats from the class law on the same boot, one pane,
+    no stack tree. A sidebar WITHOUT a stack tree is not the deleted model's
+    work and loads untouched (the break is exactly as wide as the feature
+    was). Center and bottom layouts SURVIVE UNTOUCHED: their splits, sizes and
+    grown trees are legal shapes and come back exactly as persisted. What is
+    dropped is the sidebar's stacked composition (and any tab a user had
+    parked in a leaf) - not a best-effort repair of the old shape, which would
+    be throwaway code for one record; the release note states the break
+    plainly. The pane's WIDTH and its zone survive (a width is not part of the
+    deleted model). Pure; a tree with no grown sidebar returns the SAME
+    reference. */
+export function resetSidebarShape(tree: DockNode): DockNode {
+  let dirty = false;
+  for (const n of allNodes(tree)) {
+    if (isPane(n) && (n.edge === "left" || n.edge === "right") && n.grown !== undefined) {
+      dirty = true;
+      break;
+    }
+  }
+  if (!dirty) return tree;
+  return cloneTreeWith(tree, (n) => {
+    if (!isPane(n) || (n.edge !== "left" && n.edge !== "right") || n.grown === undefined) return;
+    // an empty bar + no local tree: the class's tabs arrive from
+    // restoreSeatSet, in the registry's canonical order (the clean default)
+    n.tabs = [];
+    n.active = 0;
+    delete n.grown;
   });
 }
 
@@ -2622,7 +2653,10 @@ export function clamp(v: number, lo: number, hi: number): number {
 // closed); a reload restores THAT state, the loader stops re-asserting an
 // open shape over it. The field is optional (older records lack it) and v2
 // readers that predate it ignore it - no version bump, no compat shim.
-const LAYOUT_VERSION = 3;
+// canvas C2: v4 - the sidebar shape law. Records below 4 were written by
+// the deleted sidebar-split model and get ONE reset (resetSidebarShape,
+// run by the loader); the bump is what makes the reset happen exactly once.
+const LAYOUT_VERSION = 4;
 
 // card t_9ed6cad7: closing an edge pane HIDES state, it does not delete it.
 // The hide stows the pane's full record (tabs, active, fixed, grown) and the
@@ -2781,8 +2815,9 @@ export function serialize(
 export interface LoadedLayout {
   tree: DockNode;
   /** the persisted version: 1 needs the era migration, 2 loads as-is,
-      3 is the px-on-disk shape (sizes derive) */
-  version: 1 | 2 | 3;
+      3 is the px-on-disk shape (sizes derive), 4 is the sidebar shape law's
+      record (below it, the one-time sidebar reset runs) */
+  version: 1 | 2 | 3 | 4;
   /** which pinned shells the record says the user left closed; missing on
       records that predate the field (the legacy bottom flag migrates them) */
   closedEdges?: DockEdgeComponent[];
@@ -2806,7 +2841,7 @@ export function deserializeLayout(raw: string | null): LoadedLayout | null {
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const rec = parsed as { v?: unknown; tree?: unknown; closedEdges?: unknown; hiddenEdges?: unknown };
-  if (rec.v !== 1 && rec.v !== 2 && rec.v !== 3) return null;
+  if (rec.v !== 1 && rec.v !== 2 && rec.v !== 3 && rec.v !== 4) return null;
   const tree = validateNode(rec.tree);
   if (!tree) return null;
   const closedEdges = validateClosedEdges(rec.closedEdges);
@@ -2934,7 +2969,7 @@ const MAX_LAYOUT_DEPTH = 32;
 
 export interface ParsedLayout {
   tree: DockNode;
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   closedEdges?: DockEdgeComponent[];
   /** card t_9ed6cad7: the closed shells' stowed pane records (absent on
       records that predate the field) */
@@ -2966,7 +3001,7 @@ export function parseAnyLayout(raw: string | null, fallback: () => DockNode): Pa
     return { tree: fallback(), version: 2, repairs: ["the record was not a layout object: booted the layout default"] };
   }
   const rec = parsed as { v?: unknown; tree?: unknown; closedEdges?: unknown; hiddenEdges?: unknown };
-  const v = rec.v === 1 || rec.v === 2 || rec.v === 3 ? rec.v : 2;
+  const v = rec.v === 1 || rec.v === 2 || rec.v === 3 || rec.v === 4 ? rec.v : 2;
   const repairs: string[] =
     typeof rec.v === "number" && rec.v !== v
       ? [`unknown layout version: read as v${v}-era`]
@@ -2990,7 +3025,7 @@ export function parseAnyLayout(raw: string | null, fallback: () => DockNode): Pa
 
 interface TolerantEnv {
   depth: number;
-  v: 1 | 2 | 3;
+  v: 1 | 2 | 3 | 4;
 }
 
 function tolerantNode(
@@ -3124,7 +3159,7 @@ function tolerantSplitSizes(
   n: Record<string, unknown>,
   childCount: number,
   repairs: string[],
-  v: 1 | 2 | 3,
+  v: 1 | 2 | 3 | 4,
 ): number[] {
   if (Array.isArray(n.px) && (n.px as unknown[]).length === childCount) {
     const px: number[] = [];
@@ -3351,6 +3386,12 @@ export interface DockApi {
       `paneId`? The panes read it during dragover (both the bar and the body
       hit-tests); the class law's seat map answers it over the pane's zone. */
   seatOk: (component: DockComponentName, paneId: string) => boolean;
+  /** canvas C2 THE SHAPE LAW: the SEAT a pane lives in - a shell's own
+      marker, a grown leaf's root's marker, else the main column. The pane's
+      chrome and its body gesture read it (a sidebar's tab strip is the
+      pinned icon strip, and its body offers stacks only). null = the pane is
+      not in the tree. */
+  zoneOf: (paneId: string) => PaneZone | null;
   /** canvas C1 THE ROUTING LAW: the pane a session opens in. `preferred`
       (the pane that asked - a sidebar '+' or the board route) is honored
       when it is a MAIN pane; otherwise the first main pane hosting a chat
@@ -3530,6 +3571,13 @@ export function createDock(store: Storage): DockApi {
   if (loaded?.hiddenEdges) {
     for (const comp of Object.keys(loaded.hiddenEdges) as DockEdgeComponent[]) {
       const pane = loaded.hiddenEdges[comp];
+      // canvas C2 (ONE-TIME): a sidebar stow carrying a LOCAL SPLIT TREE is
+      // a record of the deleted split-sidebar model - it never comes back.
+      // Dropped HERE, so the shell's next reveal mints the clean default
+      // instead of restoring the old stack (the receipt rides the reset
+      // below). A stow without a stack tree, and the bottom panel's stow,
+      // are legal shapes and survive untouched.
+      if (loaded.version < 4 && (comp === "sidebar" || comp === "inspector") && pane?.grown) continue;
       if (pane) {
         // card t_00e4a784: a stow recorded while settings was a pinned
         // inspector view carries that seat - retire it here too, or the
@@ -3564,6 +3612,24 @@ export function createDock(store: Storage): DockApi {
   // seat retires before the shell repair - restoreSeatSet no longer
   // names settings, so nothing re-seats it.
   initial = retireInspectorSettings(initial);
+  // canvas C2 THE SHAPE LAW (ONE-TIME): a record written before v4 came from
+  // the deleted sidebar-split model. Both sidebars reset to the clean default
+  // HERE - before the seat repair, so restoreSeatSet re-seats the class
+  // members in the reset shells on this same boot, and the boot's own
+  // re-persist writes v4 so the reset never runs again. The markers derive
+  // first: a v1-era record has no edge markers at all, and the reset must see
+  // the shells the repair is about to heal (deriveEdgeMarkers is idempotent).
+  // Center and bottom layouts are untouched - their splits are legal shapes.
+  if (loaded.version < 4) {
+    const marked = deriveEdgeMarkers(initial, closedEdges);
+    const reset = resetSidebarShape(marked);
+    if (reset !== marked) {
+      loaded.repairs.push(
+        "the sidebar shape law arrived: a split sidebar was reset to the clean default (center and bottom layouts kept)",
+      );
+    }
+    initial = reset;
+  }
   // the CLOSED shells' stows count as the tree's composition while they sit
   // hidden (t_9ed6cad7): the missing-set repair never re-seats them
   const stowedComponents = Object.keys(hiddenState) as DockEdgeComponent[];
@@ -3832,6 +3898,9 @@ export function createDock(store: Storage): DockApi {
   // the seat map decides, never a per-view conditional
   const seatOk = (component: DockComponentName, paneId: string): boolean =>
     seatRefusal(tree.value, component, paneId) === null;
+  // canvas C2: the pane's zone, read live - the shape law's one answer for
+  // the pane's chrome (DockPane) and its body gesture (dockdnd.zoneForPointer)
+  const zoneOf = (paneId: string): PaneZone | null => paneZone(tree.value, paneId);
   // canvas C1: THE ROUTING LAW - a session opens in the main column, never
   // in a sidebar (see DockApi.sessionPane)
   const sessionPane = (preferred?: string | null): string => {
@@ -4017,7 +4086,7 @@ export function createDock(store: Storage): DockApi {
   return {
     bootRepairs: loaded.repairs,
     tree, has, setComponent, focus, openTab: openTabIn, closeTab: closeTabIn, moveTab: moveTabIn,
-    dockDropToZone: dockDropToZoneIn, seatOk, sessionPane,
+    dockDropToZone: dockDropToZoneIn, seatOk, zoneOf, sessionPane,
     openSingleton: openSingletonIn,
     setSessionRef, closeSession, openViewer,
     findChatTab: (key: string) => findChatTab(tree.value, key),

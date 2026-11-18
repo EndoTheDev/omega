@@ -1,9 +1,9 @@
 // omega webui: unit tests for the LOCAL split trees in the pinned roots
-// (v0.14.4 milestone 4, rulings 1-4 + 8). Sidebars stack rows only (the
-// stacked strip = an webui column split), main + bottom take both
-// directions (drop position decides), the tight roots cap at two split
-// levels, tabs stay free across roots, and the auto-merge unwinds a root
-// whose leaves merge away - roots never die. Render-free; node's built-in
+// (v0.14.4 milestone 4, rulings 1-4 + 8). Canvas C2's shape law: a sidebar
+// STACKS (column splits) and never splits into side-by-side columns, main +
+// bottom take both directions (drop position decides), the tight roots cap at
+// two split levels, tabs stay free across roots, and the auto-merge unwinds a
+// root whose leaves merge away - roots never die. Render-free; node's built-in
 // test runner.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -160,7 +160,7 @@ describe("predictDockDrop over the roots (prediction == commit, ruling 5)", () =
     const filesIdx = findPane(grown.tree, right.id)!.tabs.findIndex((t) => t.component === "files");
     const freshId = (L.grown!.children[0] as DockPane).id;
     // row zones refuse on a sidebar leaf (stacked rows ONLY)
-    assert.equal(expectRefusal(predictDockDrop(grown.tree, src, filesIdx, freshId, "left")), "sidebars stack rows only");
+    assert.equal(expectRefusal(predictDockDrop(grown.tree, src, filesIdx, freshId, "left")), "a sidebar stacks - it never splits into columns");
     assert.equal(dockDropToZone(grown.tree, src, filesIdx, freshId, "right"), grown.tree);
     // the column zone splits the leaf: prediction == commit, depth 2
     const pred = expectDrop(predictDockDrop(grown.tree, src, filesIdx, freshId, "bottom"), "column split of the leaf");
@@ -192,7 +192,7 @@ describe("predictDockDrop over the roots (prediction == commit, ruling 5)", () =
     const L = findPane(grown.tree, left.id)!;
     const freshId = (L.grown!.children[0] as DockPane).id;
     assert.equal(splitLawRefusal(grown.tree, freshId, "column"), null, "a sidebar leaf may stack further");
-    assert.match(splitLawRefusal(grown.tree, freshId, "row") ?? "", /sidebars stack rows only/);
+    assert.match(splitLawRefusal(grown.tree, freshId, "row") ?? "", /a sidebar stacks - it never splits into columns/);
     // a hand-built depth-2 leaf refuses outright
     const deepLeaf = makePane("agents");
     L.grown = makeSplit("column", [
@@ -364,7 +364,7 @@ describe("persistence of the local trees (ruling 6: grown rides the v:3 record)"
     const rec = serialize(grown.tree);
     const back = deserializeLayout(rec);
     assert.ok(back, "the record validates");
-    assert.equal(back!.version, 3);
+    assert.equal(back!.version, 4);
     assert.ok(treeShapesMatch(back!.tree, grown.tree), "shape == the live tree");
     const L = findPane(back!.tree, left.id)!;
     assert.ok(L.grown, "the local tree survived the record");

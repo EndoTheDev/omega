@@ -8,8 +8,8 @@ import {
   tabDrag,
   dropAllowedFor,
   zoneForPoint,
+  zoneForPointer,
   zoneRectFractions,
-  splitAllowedFor,
   zoneSplitOf,
   type DragZone,
 } from "../app/composables/dockdnd.ts";
@@ -91,10 +91,27 @@ describe("zone math (pointer -> region)", () => {
 });
 
 describe("zone gates", () => {
-  it("edge shells never split; main panes take every zone", () => {
-    assert.equal(splitAllowedFor(undefined), true);
-    for (const edge of ["left", "right", "bottom"] as const)
-      assert.equal(splitAllowedFor(edge), false);
+  it("canvas C2: a sidebar reads its vertical lane only - no column half can be entered", () => {
+    const rect = { x: 0, y: 0, w: 240, h: 600 };
+    // main + bottom: the pointer's own x decides (the four halves)
+    for (const zone of ["main", "bottom"] as const) {
+      assert.equal(zoneForPointer(zone, 12, 300, rect), "left");
+      assert.equal(zoneForPointer(zone, 228, 300, rect), "right");
+      assert.equal(zoneForPointer(zone, 120, 20, rect), "top");
+      assert.equal(zoneForPointer(zone, 120, 580, rect), "bottom");
+      assert.equal(zoneForPointer(zone, 120, 300, rect), "center");
+    }
+    // a sidebar: x is ignored - every x reads the same vertical lane, so the
+    // side-by-side zones of the deleted split gesture do not exist
+    for (const zone of ["left", "right"] as const) {
+      for (const x of [0, 12, 120, 228, 240]) {
+        assert.notEqual(zoneForPointer(zone, x, 300, rect), "left");
+        assert.notEqual(zoneForPointer(zone, x, 300, rect), "right");
+      }
+      assert.equal(zoneForPointer(zone, 12, 300, rect), "center");
+      assert.equal(zoneForPointer(zone, 228, 20, rect), "top");
+      assert.equal(zoneForPointer(zone, 0, 580, rect), "bottom");
+    }
   });
 
   it("zones encode direction + side; center encodes a plain move", () => {
@@ -369,7 +386,7 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
     const b = makePane("kanban", 240, "right");
     const root = makeSplit("row", [a, b]);
     for (const zone of ["left", "right"] as const) {
-      assert.equal(expectRefusal(predictDockDrop(root, a.id, 0, b.id, zone)), "sidebars stack rows only");
+      assert.equal(expectRefusal(predictDockDrop(root, a.id, 0, b.id, zone)), "a sidebar stacks - it never splits into columns");
       assert.equal(dockDropToZone(root, a.id, 0, b.id, zone), root);
     }
     for (const zone of ["top", "bottom"] as const) {

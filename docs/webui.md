@@ -132,9 +132,27 @@ ghost preview. Dropping a tab on an EDGE zone splits the target pane
 and lands the dragged tab in the new half-pane; a drop on the CENTER
 zone focuses/reorders within the target's bar. A pane's OWN edge
 half-zones split that pane - center body drops stay focus-only.
-Refusals render the hatched-red ghost with the reason (a sidebar row
-zone, depth caps, a grown re-growth, the locked sessions tab - it
-never leaves the left shell).
+Refusals render the hatched-red ghost with the reason (depth caps, a
+grown re-growth, the locked sessions tab - it never leaves the left
+shell).
+
+**The sidebar shape law (canvas C2)**: a sidebar is TABS + a STACK.
+It stacks panes (a column split, drop on the body's top/bottom half)
+and NEVER puts two columns of content side by side - the shell's two
+columns ARE the two sidebars, so the split-sidebar gesture is DELETED,
+not refused: a sidebar body has no left/right half at all
+(`zoneForPointer`, composables/dockdnd.ts, reads a sidebar's vertical
+lane only), and its panes' actions menu carries no "split right"
+(`splitFitsZone`, composables/panes.ts). One predicate answers the
+pointer, the menu and the store's split law, so no entry point can
+offer what the shape forbids; the hatched-red "a sidebar stacks - it
+never splits into columns" line survives only as the pure law's guard.
+The strip identity follows the ZONE, not the marker: a pane inside a
+sidebar's stack is a sidebar pane (28px icon chips, no `+`, no split
+actions), so the icons-bleeding-at-the-sidebar-bottom class - a text
+strip crushed into a narrow column - cannot come back through a stack
+leaf. The column split that grew the bleed is deleted; no overflow fix
+is owed to the deleted element.
 
 The universal panel band (`components/ui/TabBand.vue`) is a geometry
 contract too: every tab panel (module tabs: files, cron, logs, skills,
@@ -228,6 +246,16 @@ Everything else animates through `transition`, not keyframes.
   exists (pinned shells don't count toward that census). **The last tab of
   a pane never closes** (see THE LOCKED LAST TAB below): that is how the
   pane stays non-empty, so nothing is seated in its place.
+- **THE SIDEBAR SHAPE** (canvas C2): a sidebar is one column of
+  content - a tab bar plus a vertical STACK of panes. It never holds
+  two columns side by side; the shell's two columns ARE the two
+  sidebars. `resetSidebarShape` (dock.ts) is the ONE-TIME migration
+  behind the record bump (v3 -> v4): a sidebar that carried a local
+  split tree - the deleted model's work - resets to the clean default
+  on the first load of an older record, while center and bottom
+  layouts load untouched. The boot counts a repair receipt for it
+  (`bootRepairs`, the raw record backs up first), and the boot's own
+  re-persist writes v4 so the reset never runs twice.
 - **THE LOCKED LAST TAB** (the live eyeball on commit
   8eabefc7's never-zero placeholder): a pane's LAST
   tab is locked. `closeTab` refuses the request and `DockPane`'s

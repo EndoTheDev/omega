@@ -250,18 +250,18 @@ describe("parseAnyLayout: the repair table (ruling 6)", () => {
     const store = new MemoryStorage();
     store.setItem(DOCK_LAYOUT_KEY, raw);
     const dock = createDock(store as unknown as Storage);
-    assert.ok(JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!).v === 3, "the layout re-persists cleanly");
+    assert.ok(JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!).v === 4, "the layout re-persists cleanly");
     assert.ok(!store.getItem(DOCK_LAYOUT_KEY)!.includes("extensions"), "the orphan id is gone from disk");
   });
 });
 
-describe("serialize v:3: integer px on disk (ruling 6)", () => {
+describe("serialize v:4: integer px on disk (ruling 6)", () => {
   it("split nodes carry px, not fraction sizes", () => {
     const a = { kind: "pane", id: "n2", tabs: [{ component: "chat" }], active: 0, fixed: null } as unknown as DockPane;
     const b = { kind: "pane", id: "n3", tabs: [{ component: "files" }], active: 0, fixed: 240 } as unknown as DockPane;
     const root = { kind: "split", id: "n1", direction: "row", children: [a, b], sizes: [1 / 3, 2 / 3] } as unknown as DockSplit;
     const rec = JSON.parse(serialize(root, [])) as { v: number; tree: DockSplit };
-    assert.equal(rec.v, 3);
+    assert.equal(rec.v, 4);
     assert.equal(rec.tree.sizes, undefined, "fraction sizes are gone from disk");
     // chat flexes over the 760px remainder (1/3 vs files' fixed 240);
     // files keeps its fixed px whole
@@ -275,7 +275,7 @@ describe("serialize v:3: integer px on disk (ruling 6)", () => {
     );
   });
 
-  it("v:2 records migrate: fraction * nominal-container -> px at load, re-persist writes v:3", () => {
+  it("v:2 records migrate: fraction * nominal-container -> px at load, re-persist writes v:4", () => {
     const raw = JSON.stringify({
       v: 2,
       tree: { kind: "split", id: "n1", direction: "row", sizes: [0.5, 0.5], children: [
@@ -287,9 +287,9 @@ describe("serialize v:3: integer px on disk (ruling 6)", () => {
     const p = parseAnyLayout(raw, fallback);
     assert.deepEqual(asSplit(p.tree).sizes, [0.5, 0.5], "the migration preserves ratios");
     const rec = JSON.parse(serialize(p.tree, [])) as { v: number };
-    assert.equal(rec.v, 3, "the next persist is v:3");
-    // the strict reader accepts the v:3 shape too (deserialize() keeps working)
-    assert.ok(deserializeLayout(serialize(p.tree, [])), "the strict reader reads v:3");
+    assert.equal(rec.v, 4, "the next persist is v:4");
+    // the strict reader accepts the v:4 shape too (deserialize() keeps working)
+    assert.ok(deserializeLayout(serialize(p.tree, [])), "the strict reader reads v:4");
   });
 });
 
@@ -306,7 +306,7 @@ describe("the round-trip gate (ruling 6: one gated writer)", () => {
     store.setItem(DOCK_LAYOUT_KEY, "{broken");
     createDock(store as unknown as Storage);
     assert.equal(store.getItem(DOCK_LAYOUT_BAK_KEY), "{broken", "the raw record is copied");
-    assert.ok(JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!).v === 3, "the layout re-persisted (the receipt path)");
+    assert.ok(JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!).v === 4, "the layout re-persisted (the receipt path)");
   });
 
   it("a healthy layout never lands a bak file", () => {

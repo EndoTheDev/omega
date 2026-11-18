@@ -90,6 +90,22 @@ export function isSidebarZone(zone: PaneZone): boolean {
   return zone === "left" || zone === "right";
 }
 
+/** a split's axis, in the dock's vocabulary: `row` puts the children SIDE
+    BY SIDE (two columns of content); `column` STACKS them (one above the
+    other). */
+export type SplitDirection = "row" | "column";
+
+/** canvas C2 THE SHAPE LAW (the pane side): may a pane in `zone` split in
+    `direction`? A sidebar STACKS - one column of content, tabs above it -
+    and never puts two columns side by side: the shell's two columns ARE the
+    two sidebars. Main and bottom split either way (a row of main panes, a
+    column of main + bottom). ONE predicate: the pointer's zone read
+    (dockdnd), the pane's actions menu and the store's split law all ask it,
+    so no entry point can offer what the shape refuses. Pure. */
+export function splitFitsZone(zone: PaneZone, direction: SplitDirection): boolean {
+  return direction === "column" || !isSidebarZone(zone);
+}
+
 /** the zone's name in the UI's voice - a refusal line names the seat it
     refused ("main pane", "primary sidebar"), never a raw marker */
 export function zoneLabel(zone: PaneZone): string {

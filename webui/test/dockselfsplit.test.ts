@@ -105,14 +105,14 @@ describe("same-pane split drops (card t_ae9ac5cf Defect 2)", () => {
 
   // --- the laws this card must NOT break ------------------------------------
 
-  it("EDGE SHELLS: a same-pane row zone refuses (sidebars stack rows only); bottom GROWS and seats from shellLeaf", () => {
+  it("EDGE SHELLS: a same-pane row zone refuses (a sidebar stacks - it never splits into columns); bottom GROWS and seats from shellLeaf", () => {
     const a = makePane("chat");
     const b = makePane("files", 240, "right");
     b.tabs = [{ component: "files" }, { component: "agents" }];
     const root = makeSplit("row", [a, b]);
     // row zones refuse on a sidebar root - same-pane or not
     assert.strictEqual(dockDropToZone(root, b.id, 0, b.id, "left"), root);
-    assert.equal(expectRefusal(predictDockDrop(root, b.id, 0, b.id, "left")), "sidebars stack rows only");
+    assert.equal(expectRefusal(predictDockDrop(root, b.id, 0, b.id, "left")), "a sidebar stacks - it never splits into columns");
     // the column zone grows the root: the shell's content lands in
     // shellLeaf, the DRAGGED tab (index 0, files) seats in the fresh leaf
     const grown = dockDropToZone(root, b.id, 0, b.id, "bottom");
