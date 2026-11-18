@@ -274,11 +274,21 @@ FDB_N="$FDHOME_N/kanban/boards/project-omega/kanban.db"
 sqlex "$FDB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
   claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
   worker_pid INTEGER, last_heartbeat_at INTEGER);
+CREATE TABLE task_comments(id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL,
+  author TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL);
 INSERT INTO tasks VALUES('t_move','running','engine ring move','engine ring move: webui/ -> engine/webui/','pibtw:1',NULL,0,'2026-10-28T01:00',NULL,NULL);
 INSERT INTO tasks VALUES('t_cand','ready','engine ring move implement','FILES: engine/webui/
 engine ring move: webui/ -> engine/webui/',NULL,0,5,'2026-10-28T02:00',NULL,NULL);"
 cat >"$FDHOME/bin/hermes" <<'EOF'
 #!/usr/bin/env bash
+# comment calls (card t_f6d15b7f: the SPAWNER posts the onboarding law) are
+# RECORDED and never re-enter the dispatch behavior below - this stub replays
+# its spawn SQL on every invocation, so a comment treated as a dispatch would
+# turn one pass into five.
+if [ "${1:-} ${2:-}" = "kanban comment" ]; then
+  printf '%s\t%s\n' "${3:-}" "${4:-}" >>"${HERMES_STUB_COMMENTS:-/dev/null}"
+  exit 0
+fi
 py=$(command -v python3 || command -v python)
 exec "$py" - "$HERMES_STUB_DB" <<'PYEOF'
 import sqlite3, sys
@@ -298,17 +308,25 @@ print("Spawned: 4 (t_new1 t_new2 t_new3 t_new4)")
 PYEOF
 EOF
 chmod +x "$FDHOME/bin/hermes"
+T9COMMENTS="$FDHOME/comments.log"; : >"$T9COMMENTS"
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$FDB_N" bash "$GUARD" --dry-run 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T9: dry-run exited $rc"
 printf "%s" "$out" | grep -q "^hold: t_cand" && ok || bad "T9: move card did not hold the webui candidate (out: $out)"
 printf "%s" "$out" | grep -q "dry-run: no dispatch" && ok || bad "T9: dry-run dispatched (out: $out)"
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$FDB_N" bash "$GUARD" 2>&1)
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$FDB_N" HERMES_STUB_COMMENTS="$T9COMMENTS" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T9: dispatch pass exited $rc (out: $out)"
 printf "%s" "$out" | grep -q "wanted <=2 running (snapshot 1 + slots 1)" && ok || bad "T9: handoff line wrong (out: $out)"
 printf "%s" "$out" | grep -q "after: 4 (delta 3 since snapshot)" && ok || bad "T9: post-call re-read wrong (out: $out)"
 printf "%s" "$out" | grep -q "over-run" && ok || bad "T9: over-run not reported (out: $out)"
+# The spawner owns the onboarding law now (card t_f6d15b7f): the four cards the
+# stub really spawned are onboarded in the SAME pass, and the receipt says so.
+printf "%s" "$out" | grep -qF 'Onboarded: 4 (t_new1 t_new2 t_new3 t_new4)' \
+	&& ok || bad "T9: the spawn receipt did not answer Spawned: 4 with Onboarded: 4 (out: $out)"
+[ "$(wc -l <"$T9COMMENTS")" = "4" ] && ok || bad "T9: expected 4 onboarding comments, got $(wc -l <"$T9COMMENTS")"
+[ "$(cut -f1 "$T9COMMENTS" | sort -u | tr '\n' ' ')" = "t_new1 t_new2 t_new3 t_new4 " ] \
+	&& ok || bad "T9: the comments did not land on the spawned cards (got: $(cut -f1 "$T9COMMENTS" | tr '\n' ' '))"
 l=$(sql "$FDB_N" "SELECT claim_lock IS NULL FROM tasks WHERE id='t_cand';")
 [ "$l" = "1" ] && ok || bad "T9: unpark left t_cand locked ('$l')"
 rm -rf "$FDHOME"
@@ -864,6 +882,10 @@ SPAWN_BASE_U=$(cygpath -u "$SPAWN_BASE" 2>/dev/null || printf '%s' "$SPAWN_BASE"
 sphome() { printf '%s' "$SPAWN_BASE/$1"; }
 spdb()   { printf '%s' "$SPAWN_BASE_N/$1/kanban/boards/project-omega/kanban.db"; }
 splog()  { printf '%s' "$SPAWN_BASE_N/$1/args.log"; }
+# spcomment: the onboarding comment calls this case's stub received (card
+# t_f6d15b7f) - a SEPARATE file from splog, so the `--max` assertions keep
+# reading exactly one dispatch line per pass.
+spcomment() { printf '%s' "$SPAWN_BASE_N/$1/comments.log"; }
 SPAWNRUN() {  # $1 = case tag (names its board dir), $2 = seed SQL, rest = guard args
   local tag="$1" seed="$2" home hn hu
   shift 2
@@ -877,12 +899,22 @@ SPAWNRUN() {  # $1 = case tag (names its board dir), $2 = seed SQL, rest = guard
   # (the knob is still 2 on the live lanes until the config flip lands).
   if [ -n "${SPAWN_CONFIG:-}" ]; then printf '%s\n' "$SPAWN_CONFIG" >"$home/config.yaml"; fi
   : >"$(splog "$tag")"
+  : >"$(spcomment "$tag")"
   sqlex "$(spdb "$tag")" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
   claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
   worker_pid INTEGER, last_heartbeat_at INTEGER);
+CREATE TABLE task_comments(id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL,
+  author TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL);
 $seed"
   cat >"$home/bin/hermes" <<'STUB_EOF'
 #!/usr/bin/env bash
+# comment calls (card t_f6d15b7f: the SPAWNER posts the onboarding law) are
+# recorded on their own log and never re-enter the dispatch math below, so the
+# `--max` line this stub writes stays one per pass.
+if [ "${1:-} ${2:-}" = "kanban comment" ]; then
+  printf '%s\t%s\n' "${3:-}" "${4:-}" >>"${HERMES_STUB_COMMENTS:-/dev/null}"
+  exit 0
+fi
 py=$(command -v python3 || command -v python)
 exec "$py" - "$HERMES_STUB_DB" "$HERMES_STUB_LOG" "$@" <<'PYEOF'
 import sqlite3, sys
@@ -918,6 +950,7 @@ STUB_EOF
   chmod +x "$home/bin/hermes"
   out=$(HOME="$home" HERMES_HOME= HERMES_KANBAN_HOME="$hn" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
     PATH="$hu/bin:$PATH" HERMES_STUB_DB="$(spdb "$tag")" HERMES_STUB_LOG="$(splog "$tag")" \
+    HERMES_STUB_COMMENTS="$(spcomment "$tag")" \
     bash "$GUARD" "$@" 2>&1)
   printf '%s' "$out"
 }
@@ -934,6 +967,12 @@ grep -qxF 'kanban dispatch --max 1' "$(splog clamp-forbidden)" \
 	&& ok || bad "T19a: the inner dispatcher was not handed --max 1 (got: $(tr '\n' ';' <"$(splog clamp-forbidden)"))"
 printf "%s" "$out" | grep -qF 'Spawned: 1 (t_nofiles)' \
 	&& ok || bad "T19a: exactly ONE card must spawn under the clamp (out: $out)"
+# The spawn verdict path answers Spawned with Onboarded (card t_f6d15b7f): the
+# clamped pass posts the law to the one card it spawned, and the stub records it.
+printf "%s" "$out" | grep -qF 'Onboarded: 1 (t_nofiles)' \
+	&& ok || bad "T19a: the clamped pass did not onboard the card it spawned (out: $out)"
+[ "$(cut -f1 "$(spcomment clamp-forbidden)")" = "t_nofiles" ] \
+	&& ok || bad "T19a: the onboarding comment missed t_nofiles (got: $(cut -f1 "$(spcomment clamp-forbidden)" | tr '\n' ' '))"
 nrun=$(sql "$(spdb clamp-forbidden)" "SELECT COUNT(*) FROM tasks WHERE status='running';")
 [ "$nrun" = "1" ] && ok || bad "T19a: $nrun cards running after a clamped pass (expected 1)"
 
@@ -1865,6 +1904,62 @@ printf "%s" "$out" | grep -qF "board pointer '$CAPBASE_N/pointer/kanban/current'
 printf "%s" "$out" | grep -qF "refusing to fall back to the default board" \
 	&& ok || bad "T27i: the pointer refusal did not say why the fallback is refused (out: $out)"
 rm -rf "$CAPBASE"
+
+# T28 (local + CI): the SPAWNER posts the onboarding law (card t_f6d15b7f).
+# The hermes spawner never posts it (AS-IS, 2026-11-13) and NO-UPSTREAM forbids
+# raising it; the tick's fallback hand-post lands a minute later, which a
+# resumed or fast-completing worker can outrun. So the pass that owns the spawn
+# posts the law itself, on the verdict path. Pinned: (T28a) a spawned card is
+# onboarded in the same pass, with the STANDING text byte-for-byte and the id
+# named in the receipt; (T28b) a card whose LATEST comment is already that text
+# is skipped - no duplicate (the tick's fallback and this pass read one law);
+# (T28c) a card whose latest comment is something else still gets the law, and
+# the read is by `id`, not by the newest-looking body.
+#
+# ONBOARD_LIT is deliberately a COPY of the guard's text: the fallback sweep
+# compares byte equality, so an edit on one side only must red here rather than
+# silently produce two different onboarding comments for the same law.
+SPAWN_BASE=$(mktemp -d); SPAWN_BASE_N=$(mixpath "$SPAWN_BASE")
+SPAWN_BASE_U=$(cygpath -u "$SPAWN_BASE" 2>/dev/null || printf '%s' "$SPAWN_BASE")
+ONBOARD_LIT='Load skill worker-onboarding at run start - you are one of up to 2 concurrent workers. When your card is done, request review with --reviewer vera (rule 7).'
+T28CARD="INSERT INTO tasks VALUES('t_law','ready','onboard me','FILES: scripts/factory-dispatch.sh',NULL,NULL,5,'2026-11-18T12:00',NULL,NULL);"
+out=$(SPAWNRUN onboard-fresh "$T28CARD" --max 1)
+printf "%s" "$out" | grep -qF 'Spawned: 1 (t_law)' \
+	&& ok || bad "T28a: the fixture did not spawn (out: $out)"
+printf "%s" "$out" | grep -qF 'Onboarded: 1 (t_law)' \
+	&& ok || bad "T28a: a spawned card was NOT onboarded beside its Spawned line (out: $out)"
+[ "$(cut -f1 "$(spcomment onboard-fresh)")" = "t_law" ] \
+	&& ok || bad "T28a: the onboard comment did not land on t_law (got: $(cut -f1 "$(spcomment onboard-fresh)" | tr '\n' ' '))"
+[ "$(cut -f2 "$(spcomment onboard-fresh)")" = "$ONBOARD_LIT" ] \
+	&& ok || bad "T28a: the posted body is not the standing onboarding text (got: $(cut -f2 "$(spcomment onboard-fresh)"))"
+
+# T28b: the tick already hand-posted the law (it is the card's LATEST comment,
+# after an older unrelated note) -> no duplicate, and the pass says it skipped.
+out=$(SPAWNRUN onboard-dup "$T28CARD
+INSERT INTO task_comments(task_id,author,body,created_at) VALUES('t_law','user','unrelated earlier note',1794900000);
+INSERT INTO task_comments(task_id,author,body,created_at) VALUES('t_law','user','$ONBOARD_LIT',1794900060);" --max 1)
+printf "%s" "$out" | grep -qF 'Spawned: 1 (t_law)' \
+	&& ok || bad "T28b: the fixture did not spawn - the duplicate guard is untested (out: $out)"
+printf "%s" "$out" | grep -qF 'Onboarded: 0' \
+	&& ok || bad "T28b: a card already carrying the law was counted as onboarded (out: $out)"
+printf "%s" "$out" | grep -qF 'onboard: t_law skipped - its latest comment is already the standing onboarding text' \
+	&& ok || bad "T28b: the skip is silent - the pass must name the card it left alone (out: $out)"
+[ ! -s "$(spcomment onboard-dup)" ] \
+	&& ok || bad "T28b: a DUPLICATE onboarding comment was posted (got: $(cut -f1 "$(spcomment onboard-dup)" | tr '\n' ' '))"
+
+# T28c: the law sits EARLIER in the thread (a reply came after it) -> the latest
+# comment is not the law, so the spawn is onboarded again. The read is `ORDER BY
+# id DESC`: created_at is second-granular and both rows here share a second.
+out=$(SPAWNRUN onboard-other "$T28CARD
+INSERT INTO task_comments(task_id,author,body,created_at) VALUES('t_law','user','$ONBOARD_LIT',1794900000);
+INSERT INTO task_comments(task_id,author,body,created_at) VALUES('t_law','user','a human reply landed after the law',1794900000);" --max 1)
+printf "%s" "$out" | grep -qF 'Onboarded: 1 (t_law)' \
+	&& ok || bad "T28c: a card whose latest comment is NOT the law must be onboarded (out: $out)"
+[ "$(wc -l <"$(spcomment onboard-other)")" = "1" ] \
+	&& ok || bad "T28c: expected exactly one onboarding comment (got: $(cat "$(spcomment onboard-other)"))"
+[ "$(sql "$(spdb onboard-other)" "SELECT count(*) FROM task_comments WHERE task_id='t_law';")" = "2" ] \
+	&& ok || bad "T28c: the pass rewrote the card's thread (expected the 2 seeded rows, nothing else)"
+rm -rf "$SPAWN_BASE"
 
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"

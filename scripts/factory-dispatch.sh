@@ -133,6 +133,20 @@ fallback to a different board. The default board heals through `hermes
 kanban init`, a named board through `hermes kanban boards create`. A
 pinned HERMES_KANBAN_DB is the caller's file and is never created here; a
 dry-run writes nothing and says what a live pass would recreate.
+
+ONBOARDING AT SPAWN (card t_f6d15b7f): every card a live pass sends
+running gets the standing worker-onboarding comment in that SAME pass,
+from this guard (`hermes kanban comment <id> "<text>"`), and the receipt
+answers the inner dispatcher's `Spawned: N` with `Onboarded: N (<ids>)`
+beside it - a failed post is named, never swallowed. The law does not
+depend on the hermes spawner (which never posts it - AS-IS ruling
+2026-11-13, and NO-UPSTREAM forbids raising it) nor on the tick's hand-
+post a minute later, which a resumed or fast-completing worker can
+outrun. The body is the tick's standing text byte-for-byte, and the post
+is IDEMPOTENT: a card whose LATEST comment is already that text is
+skipped by name (`onboard: <id> skipped ...`) instead of doubled, so the
+guard and the tick's fallback sweep can both run without producing two
+copies of one law.
 USAGE_EOF
 }
 usage_err() { echo "factory-dispatch.sh: $1" >&2; usage >&2; exit 2; }
@@ -1331,6 +1345,50 @@ if [ "${#RUNNING[@]}" -lt "$TOTAL_SEATS" ] && [ "$CLAIMABLE" -gt 0 ]; then
     <(printf '%s\n' "${RUNNING[@]:-}" | sort -u) \
     <(printf '%s\n' "$RUNNOW" | sort -u) \
     | tr '\n' ' ')
+  # ONBOARD (card t_f6d15b7f): the standing worker-onboarding law is posted BY
+  # THE SPAWNER. It used to depend on two things this pass does not control:
+  # the hermes spawner (never posts it - AS-IS per the 2026-11-13 ruling, and
+  # NO-UPSTREAM forbids raising it) and the tick's fallback hand-post about a
+  # minute later (a resumed or fast-completing worker can read its card before
+  # that notice lands - missed three times, 2026-11-13 + twice on 2026-11-18).
+  # The guard knows exactly which cards went running in THIS call, so it posts
+  # the law itself, on the spawn verdict path: `Spawned: N` is answered by
+  # `Onboarded: N` beside it, and a miss is a pass that says so out loud.
+  #
+  # The body is the STANDING text the tick hand-posts, byte-identical on
+  # purpose: the fallback sweep's own idempotency check then reads a comment
+  # this pass wrote and skips the card. One law, one body, whoever got there
+  # first.
+  #
+  # Review-seat cards get it too: the text is the standing law for a card in
+  # this factory, and the tick has never drawn a lane distinction.
+  ONBOARD_TEXT='Load skill worker-onboarding at run start - you are one of up to 2 concurrent workers. When your card is done, request review with --reviewer vera (rule 7).'
+  ONBOARDED=0; ONBOARD_IDS=""
+  for oid in $NEWRUN; do
+    [ -n "$oid" ] || continue
+    # Idempotent by construction: a duplicate onboarding comment is noise, so a
+    # card whose LATEST comment is already the standing text is left alone
+    # (a resumed card the tick hand-posted, or a re-post after a crashed pass).
+    # `id` is the tiebreak, not created_at: that column is second-granular and
+    # two comments in one pass tie.
+    OLAST=$(dbq "SELECT body FROM task_comments WHERE task_id='$oid' ORDER BY id DESC LIMIT 1;")
+    if [ "$OLAST" = "$ONBOARD_TEXT" ]; then
+      echo "onboard: $oid skipped - its latest comment is already the standing onboarding text"
+      continue
+    fi
+    ORC=0
+    OOUT=$(hermes kanban comment "$oid" "$ONBOARD_TEXT" 2>&1) || ORC=$?
+    if [ "$ORC" -eq 0 ]; then
+      ONBOARDED=$(( ONBOARDED + 1 ))
+      ONBOARD_IDS="${ONBOARD_IDS:+$ONBOARD_IDS }$oid"
+    else
+      # Loud, never silent: a worker that starts without the law is exactly the
+      # failure this block exists to end, and a swallowed post reads as handled.
+      # The CLI's own words ride along - "rc=1" alone names no cause.
+      echo "onboard: $oid comment FAILED (rc=$ORC) - that worker starts without the onboarding law: $OOUT" >&2
+    fi
+  done
+  echo "Onboarded: $ONBOARDED${ONBOARD_IDS:+ ($ONBOARD_IDS)}"
   echo "handoff: wanted <=$WANT running (snapshot ${#RUNNING[@]} + slots $SLOTS), after: $NOWRUN (delta $(( NOWRUN - ${#RUNNING[@]} )) since snapshot)"
   [ -n "$NEWRUN" ] && echo "  newly running: $NEWRUN"
   if [ "$NOWRUN" -gt "$WANT" ]; then
