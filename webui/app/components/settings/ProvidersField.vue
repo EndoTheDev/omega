@@ -24,7 +24,8 @@
       knobs below) group that endpoint's models under its name. the row
       named "default" is the provider the agent serves: it cannot be
       renamed or removed here (edit config.yaml), its type is yours to
-      change
+      change. base urls and api keys are config.yaml's to set - this
+      pane saves names and types
     </p>
     <div
       v-for="(inst, i) in rows"
@@ -56,23 +57,33 @@
             @update:model-value="setRow(i, 'type', $event)" />
         </label>
         <label class="provider-cell provider-host">
-          <span>base url</span>
+          <span
+            >base url<em v-if="isNew(inst)" class="provider-door"
+              >config.yaml-only</em
+            ></span
+          >
           <input
             class="setting-input"
             type="text"
             autocomplete="off"
             spellcheck="false"
-            placeholder="http://localhost:11434"
+            :disabled="isNew(inst)"
+            :placeholder="isNew(inst) ? 'config.yaml-only' : 'provider default'"
             :value="inst.host"
             :aria-label="`instance ${i + 1} base url`"
             @input="setRow(i, 'host', ($event.target as HTMLInputElement).value)" />
         </label>
         <label class="provider-cell">
-          <span>api key</span>
+          <span
+            >api key<em v-if="isNew(inst)" class="provider-door"
+              >config.yaml-only</em
+            ></span
+          >
           <input
             class="setting-input"
             type="password"
             autocomplete="off"
+            :disabled="isNew(inst)"
             :value="inst.api_key"
             :aria-label="`instance ${i + 1} api key`"
             @input="setRow(i, 'api_key', ($event.target as HTMLInputElement).value)" />
@@ -93,6 +104,13 @@
       @click="addRow">
       add instance
     </button>
+    <!-- card t_4924df4c: a fresh row can only save its name and type,
+         so the add flow says where an endpoint actually comes from -->
+    <p class="provider-add-note">
+      a new instance saves with its name and type - its base url and api
+      key are set in config.yaml, and the row shows them here once the
+      file carries them
+    </p>
   </div>
 </template>
 
@@ -131,6 +149,27 @@
   // without it). Its type IS editable: a row is a row.
   const PRIMARY = "default";
   const isPrimary = (row: ProviderInstanceRow): boolean => row.name === PRIMARY;
+
+  // isNew: a row the STORED list does not name. props.value is the draft
+  // (SettingsTab reads draft-first); knob.value is the last payload the
+  // server sent, which is exactly what applyProviderInstances compares a
+  // submitted name against. A new row is legal with its name and type
+  // ALONE - a host or api key on one answers "config.yaml is the only
+  // door" (cmd/omega/settings.go), so the pane must not offer those
+  // inputs. A row named like a stored one is a rename/retype, whose host
+  // and masked key round-trip legally, so its inputs stay live.
+  const isNew = (row: ProviderInstanceRow): boolean => {
+    const stored = props.knob.value;
+    if (!Array.isArray(stored)) return true;
+    const name = row.name.trim();
+    return !stored.some(
+      (r) =>
+        !!r &&
+        typeof r === "object" &&
+        typeof (r as ProviderInstanceRow).name === "string" &&
+        (r as ProviderInstanceRow).name === name,
+    );
+  };
 
   function setRow(i: number, key: keyof ProviderInstanceRow, value: string) {
     if (key === "name" && isPrimary(rows.value[i]!)) return;
@@ -193,6 +232,29 @@
   .provider-cell :deep(.setting-input),
   .provider-cell :deep(.setting-select) {
     max-width: 100%;
+  }
+
+  /* card t_4924df4c: the door marker on a new row's gated cells - the
+     field itself says config.yaml owns it, before any save click */
+  .provider-door {
+    margin-left: 0.35em;
+    font-style: normal;
+    font-size: 0.92em;
+    letter-spacing: 0.01em;
+    color: var(--text-dim);
+    opacity: 1;
+  }
+
+  .provider-cell input:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .provider-add-note {
+    margin: 0;
+    font-size: 11px;
+    color: var(--text-dim);
+    max-width: 42ch;
   }
 
   .provider-remove,
