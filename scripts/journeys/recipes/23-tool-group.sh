@@ -77,10 +77,15 @@ done
 step "ok: transcript settled at $prev items"
 
 # the premise, from the SERVER's transcript (GET /sessions/<id>/transcript,
-# the same items the pane renders): run lengths of consecutive
-# kind:"tool" items. The model is real - if it interleaved thinking or
-# prose, the runs say so and any red names the premise, never a phantom
-# presentation bug. The transcript rides the run's evidence dir.
+# the same items the pane renders): run lengths of consecutive RENDERED
+# tool rows. The wire is not the render: a tool_result item merges onto
+# its call's row and paints nothing (omega.ts mapTranscriptItems), and a
+# thin item (an assistant message or thinking block with empty content)
+# paints nothing either - so neither can break a run of rendered rows.
+# A verdict tool call DOES break it: it paints a card, not a tool row.
+# The model is real - if it interleaved real prose, the runs say so and
+# any red names the premise, never a phantom presentation bug. The
+# transcript rides the run's evidence dir.
 TRFILE="${JOURNEY_WORKTMP:?no journey worktmp}/transcript-$SID.json"
 curl -s "$JOURNEY_BASE_URL/sessions/$SID/transcript" > "$TRFILE"
 RUNLEN=$(python - "$TRFILE" <<'PYEOF'
@@ -90,15 +95,37 @@ items = data.get("items") if isinstance(data, dict) else data
 if not isinstance(items, list):
     print("NOITEMS")
 else:
+    # renders(it) mirrors the client projection (webui/composables/
+    # omega.ts mapTranscriptItems + groupToolRuns):
+    #   "tool"  -> a rendered tool row
+    #   "break" -> a rendered NON-tool row (a verdict card, prose, a user
+    #              bubble): the run ends here
+    #   None    -> paints nothing at all: transparent to the run
+    VERDICT_TOOLS = {"verdict.request"}
+    def renders(it):
+        kind = it.get("kind")
+        if kind == "tool_result":
+            # merges onto its call row - no row of its own
+            return None
+        if kind == "tool_call":
+            name = (it.get("tool_call") or {}).get("name")
+            return "break" if name in VERDICT_TOOLS else "tool"
+        if kind == "user":
+            if it.get("content") or it.get("images") or it.get("attachments"):
+                return "break"
+            return None
+        if kind in ("message", "thinking"):
+            return "break" if it.get("content") else None
+        return "break"
     runs, n = [], 0
     for it in items:
-        # wire shape: the endpoint serves TranscriptWireItem items where
-        # every tool_call opens a rendered tool row (the matching
-        # tool_result merges onto it) - so consecutive kind:"tool_call"
-        # wire items ARE consecutive rendered tool rows
-        if it.get("kind") == "tool_call":
+        what = renders(it)
+        if what == "tool":
             n += 1
-        elif n:
+            continue
+        if what is None:
+            continue
+        if n:
             runs.append(n)
             n = 0
     if n:
