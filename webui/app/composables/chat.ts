@@ -29,6 +29,7 @@ import {
   postVariantSelect,
   isVerdictTool,
   renderTranscriptItems,
+  applyTurnTotals,
   streamChat,
   verdictCardFromToolArgs,
   verdictFromResultText,
@@ -1497,6 +1498,10 @@ export function createCanvasTranscript(): CanvasTranscript {
       // t_8a569163) - the live turn renders the same chips the restore does
       it.attachments = block.attachments;
       it.id = row.id;
+      // the row's wall clock (card t_3a857a2d): the persisted user row's
+      // stamp is the turn's START - the arrival the turn total measures
+      // from. Absent on a row the store has not landed yet.
+      it.time = row.time;
       return it;
     }
     if (row.role === "assistant" && block.type === "thinking") {
@@ -1665,7 +1670,12 @@ export function createCanvasTranscript(): CanvasTranscript {
     it.role = "assistant";
     it.content = block.content ?? "";
     it.streaming = running ? true : undefined;
-    it.time = undefined;
+    // the row's wall clock (card t_3a857a2d): the persisted answer row's
+    // stamp is the turn's END - the same created_at the transcript wire
+    // serves, so a live turn and its restored twin compute one total. An
+    // in-flight answer row carries none (the store has not landed it yet)
+    // and keeps its own segment meter until it does.
+    it.time = row.time;
     it.finalMs = block.response_ms;
     it.elapsedMs = running ? block.elapsed_ms : undefined;
     it.id = row.id;
@@ -1731,6 +1741,10 @@ export function createCanvasTranscript(): CanvasTranscript {
     // this card removes, one row down. (The live -> persisted adoption
     // above runs first, in the payload where the row still arrives.)
     sweepSlots(ctx);
+    // the answer row's turn total (card t_3a857a2d): the SAME pass the
+    // restore builder runs, over the same two row stamps - the live pane
+    // and a reloaded transcript cannot disagree
+    applyTurnTotals(out);
     return out;
   }
 

@@ -13,6 +13,7 @@
     :item-id="item.id"
     :variant="item.role === 'assistant' ? variant : null"
     :final-ms="item.finalMs"
+    :turn-ms="item.turnMs"
     :elapsed-ms="item.elapsedMs"
     :streaming="item.streaming"
     :retryable="retryable && item.role === 'assistant'"

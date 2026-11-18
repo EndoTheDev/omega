@@ -11,6 +11,13 @@ import { createElapsedMeter, formatDurationMs, type ElapsedMeter } from "./omega
 // no interval across unmount: stop() runs on unmount too (clears the
 // timer, keeps the last label).
 //
+// finalMs is the caller's choice of FROZEN number, not necessarily one
+// span: the answer row hands over the TURN's wall-clock total
+// (turnMs ?? its own segment span, card t_3a857a2d), because the badge on
+// the last row of a turn is the turn's bottom line - every phase, every
+// tool run and every smart-gate wait included - while thinking and tool
+// rows keep their own segment's measured duration.
+//
 // Returns the display label: "" until the first tick or while the item
 // was never live, so the template's v-if renders nothing. Must be
 // called from component setup (it owns a watch and an unmount hook).

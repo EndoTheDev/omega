@@ -93,9 +93,9 @@ func chatRowRoles(rows []core.ChatRow) []string {
 // off the item's kind and running hint.
 func TestChatRowsMapTheTranscriptVocabulary(t *testing.T) {
 	rows := chatRows([]transcriptItem{
-		{Kind: "user", ID: "u1", Content: "hi", Images: []core.ImageContent{{MediaType: "image/png", Base64: "aGk="}}},
+		{Kind: "user", ID: "u1", Content: "hi", Time: "2026-11-15T09:00:00Z", Images: []core.ImageContent{{MediaType: "image/png", Base64: "aGk="}}},
 		{Kind: "thinking", ID: "a1", Content: "hmm", Running: true, ElapsedMs: 2600},
-		{Kind: "message", ID: "a2", Content: "answer", ResponseMs: 1800},
+		{Kind: "message", ID: "a2", Content: "answer", ResponseMs: 1800, Time: "2026-11-15T09:00:51Z"},
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}, Running: true, ElapsedMs: 5},
 		{Kind: "tool_result", ID: "r1", ToolCallID: "tcl", Content: "out", IsError: true, ElapsedMs: 7, AnswerMs: 9},
 	})
@@ -133,6 +133,12 @@ func TestChatRowsMapTheTranscriptVocabulary(t *testing.T) {
 	}
 	if rows[4].Role != core.ChatRoleTool || rows[4].Blocks[0].ToolCallID != "tcl" || !rows[4].Blocks[0].IsError {
 		t.Fatalf("tool_result row = %+v", rows[4])
+	}
+	// the row's wall clock rides it (card t_3a857a2d): the answer row's
+	// turn-total badge reads the turn's two stamps, so the live canvas
+	// must serve the same created_at the transcript wire does
+	if rows[0].Time != "2026-11-15T09:00:00Z" || rows[2].Time != "2026-11-15T09:00:51Z" {
+		t.Fatalf("row stamps = %q / %q, want the transcript wire's times", rows[0].Time, rows[2].Time)
 	}
 	// the response-return window rides the result block beside the
 	// call's elapsed (card t_e27c8347)
