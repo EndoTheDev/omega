@@ -1414,9 +1414,22 @@ export function createCanvasTranscript(): CanvasTranscript {
     return `live:${shape}:${ordinal}`;
   }
 
-  // rowAddress: the store id when the row is persisted, else its slot
+  // rowAddress: the store id AND the block type when the row is persisted,
+  // else its slot. The block type is part of the address because ONE store
+  // row lands as SEVERAL wire rows: an assistant turn that reasoned and then
+  // answered is one row id with a thinking row and a text row (agent/api
+  // expands a stored row's blocks). Keyed by the id alone those two wire
+  // rows shared ONE cached item and each paint wrote the other's `kind`
+  // over it - a CHANGED reactive write on every paint of an unchanged
+  // payload, which invalidated the effects that read it and re-armed the
+  // paint that made it: the pane spun, painting itself, until the tab died
+  // (card t_a356fcc7). It also silently dropped the reasoning row from the
+  // live pane (the same object cannot be both). The type is stable across
+  // the window's slide, so identity survives exactly as the id law wants;
+  // the ordinal below is still the id-less row's, where the shape already
+  // carries it.
   function rowAddress(row: ChatRowWire, block: ChatBlockWire, ctx: Paint): string {
-    if (row.id) return `row:${row.id}`;
+    if (row.id) return `row:${row.id}:${block.type}`;
     return liveAddress(row, block, ctx, true);
   }
 
@@ -1641,16 +1654,18 @@ export function createCanvasTranscript(): CanvasTranscript {
         : callId && !resultIds.has(callId) ? "pending"
         : "done";
       // a LIVE call meters from its open wall clock (card t_6bad9f6f
-      // round 3): started_at is re-derived at every paint, so a pane
-      // rebuilt from a payload whose last delta predates the call's yield
-      // (the store keeps it - a yielded call emits nothing until its
-      // wake) still counts from the call's real start instead of zero.
-      // The built duration is only the fallback for a block the server
-      // served without a stamp; an already-set offset survives when
-      // neither is present (the running -> pending flip on a live
-      // payload). "Live" is the shared predicate (toolStatus.ts), never a
-      // local spelling of the set.
-      if (isLive(it.status)) {
+      // round 3), resolved ONCE PER ITEM (card t_a356fcc7): the anchor is
+      // `now - started_at` at FIRST SIGHT, so a rebuild whose fresh
+      // identity cache meets a payload older than the call's yield still
+      // counts from the call's real start instead of zero. It is NOT
+      // rewritten on later paints. A re-derived value differs on EVERY
+      // paint of the same payload, and these items are the reactive cached
+      // rows - a changed write invalidates the effects that read it,
+      // including the computeds that called the paint, so the pane re-armed
+      // itself and spun until the tab died. The row's own meter counts on
+      // from the first-sight base; a settled result clears the offset (the
+      // result branch above) and nothing re-mints one.
+      if (isLive(it.status) && it.elapsedMs === undefined) {
         const anchor = toolCallAnchorMs(block.started_at, block.elapsed_ms);
         if (anchor !== undefined) it.elapsedMs = anchor;
       }

@@ -422,9 +422,13 @@ test("all five consumers import the predicate instead of spelling the set", () =
     /anyActive = computed\(\(\) => props\.items\.some\(\(it\) => isLive\(it\.status\)\)\)/,
     "the group aggregate takes the live set",
   );
+  // the paint-time anchor's call site: the live set, by name, and resolved
+  // ONCE per item - the anchor is a first-sight value, never re-derived per
+  // paint (card t_a356fcc7: a re-derived value differs on every paint of
+  // the same payload, and a changed write inside the paint re-arms it)
   assert.match(
     src("composables/chat.ts"),
-    /if \(isLive\(it\.status\)\) \{\s*const anchor = toolCallAnchorMs/,
+    /if \(isLive\(it\.status\) && it\.elapsedMs === undefined\) \{\s*const anchor = toolCallAnchorMs/,
     "the paint-time anchor takes the live set",
   );
   assert.match(

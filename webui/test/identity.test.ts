@@ -84,7 +84,10 @@ function proseWindow(prefix: string, first: number, count: number): ChatRowWire[
   const rows: ChatRowWire[] = [];
   for (let n = 0; n < count; n++) {
     const id = `${prefix}${first + n}`;
-    const cycle = n % 3;
+    // the shape follows the ROW ID, not the slot in the window: a sliding
+    // window re-lists the same rows, and a store row never changes its
+    // role or block type (the address is (id, block type), card t_a356fcc7)
+    const cycle = (first + n) % 3;
     if (cycle === 0) rows.push(userRow(id, `q${id}`));
     else if (cycle === 1) rows.push(thinkingRow(id, `think ${id}`));
     else rows.push(textRow(id, `answer ${id}`));
@@ -312,8 +315,16 @@ test("chat.ts: prose rows are addressed by store id; the positional sig is gone"
     "the positional prose sig must not come back",
   );
   assert.doesNotMatch(chatSource, /\bconst sig = /, "no positional sig variable");
-  // the id address + the explicit id-less slot
-  assert.match(chatSource, /if \(row\.id\) return `row:\$\{row\.id\}`/, "the store id is the address");
+  // the id address + the explicit id-less slot. The address carries the
+  // BLOCK TYPE beside the store id: one store row lands as several wire
+  // rows (a reasoning block and the answer block share the row id), and an
+  // id-only address aliased them into one object whose `kind` flipped on
+  // every paint - the reactive write loop of card t_a356fcc7
+  assert.match(
+    chatSource,
+    /if \(row\.id\) return `row:\$\{row\.id\}:\$\{block\.type\}`/,
+    "the store id AND the block type are the address",
+  );
   assert.match(chatSource, /`live:\$\{shape\}:\$\{ordinal\}`/, "the id-less slot address is explicit");
   assert.match(chatSource, /const shape = `\$\{row\.role\}:\$\{block\.type\}`/, "slots are shaped by role + block type");
   // the id-less case is STATED where a reader meets it, not implied
