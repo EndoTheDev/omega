@@ -16,12 +16,33 @@ bad() { fail=$((fail + 1)); echo "FAIL: $1" >&2; }
 
 GUSER=(git -c user.email=t@t -c user.name=t)
 
+# fixture_error <msg>: the named cause plus the stake. Fixtures are real git
+# repos driven with `git -C up` / `-C dev` from inside the fixture root, and
+# `git -C ""` resolves to the CWD - so an empty root creates `up/` and `dev/`
+# in the checkout the suite runs in (and commits there).
+fixture_error() {
+	echo "drift-gate_test: $* - refusing to continue (fixture dirs would land in the repo the suite was launched from)" >&2
+}
+
+# Temp-parent preflight (card t_60874fa5): loud before the first fixture.
+TMPROOT_PROBE="$(mktemp -d "${TMPDIR:-/tmp}/drift-probe.XXXXXX")" \
+	|| { fixture_error "mktemp -d failed under '${TMPDIR:-/tmp}'"; exit 1; }
+[ -d "$TMPROOT_PROBE" ] || { fixture_error "mktemp -d returned '$TMPROOT_PROBE', which is not a directory"; exit 1; }
+rmdir "$TMPROOT_PROBE" 2>/dev/null || true
+
 # fixture <ahead> <base_age_days>: upstream master tip dated age days back,
 # dev clone with `ahead` empty commits on top of it. Echoes the dev path.
 fixture() {
 	local ahead=$1 age=$2
 	local root
-	root="$(mktemp -d "${TMPDIR:-/tmp}/drift-fx.XXXXXX")"
+	if ! root="$(mktemp -d "${TMPDIR:-/tmp}/drift-fx.XXXXXX")"; then
+		fixture_error "mktemp -d failed under '${TMPDIR:-/tmp}'"
+		return 1
+	fi
+	if [ -z "$root" ] || [ ! -d "$root" ]; then
+		fixture_error "mktemp -d returned '$root', which is not a directory"
+		return 1
+	fi
 	(
 		cd "$root" &&
 		git init -q -b master up &&
@@ -45,6 +66,14 @@ fixture() {
 	echo "$root/dev"
 }
 
+# --- ISO: the fixture builder refuses a missing temp parent -----------------
+# An unchecked mktemp collapses root to "" and the fixture's `cd "$root"` then
+# runs in the launch repo, creating up/ and dev/ there (card t_60874fa5).
+iso="$(TMPDIR="${TMPDIR:-/tmp}/drift-no-such-dir" fixture 1 0 2>/dev/null)"
+[ -z "$iso" ] && ok || bad "ISO: a failed fixture must echo no root (got '$iso')"
+TMPDIR="${TMPDIR:-/tmp}/drift-no-such-dir" fixture 1 0 >/dev/null 2>&1 \
+	&& bad "ISO: fixture must fail when its temp parent does not exist" || ok
+
 # run_case <dev-path> [env assignments...] -> sets RC, OUT
 run_case() {
 	local dev=$1
@@ -59,29 +88,29 @@ run_case() {
 }
 
 # S1: 30 commits ahead, base fresh -> green (limit is 30, trip is at 31)
-fx=$(fixture 30 0)
+fx=$(fixture 30 0) || exit 1
 run_case "$fx"
 [ "$RC" -eq 0 ] && ok || bad "S1: 30 commits -> expected exit 0, got $RC"
 
 # S2: 31 commits ahead -> RED at the exact commit 31
-fx=$(fixture 31 0)
+fx=$(fixture 31 0) || exit 1
 run_case "$fx"
 [ "$RC" -eq 1 ] && ok || bad "S2: 31 commits -> expected exit 1 (trip at commit 31), got $RC"
 printf '%s' "$OUT" | grep -q "31 commits ahead of master" && ok || bad "S2: reason text missing the commit count"
 
 # S3: merge-base 8 days old, one dev commit dated now -> RED at day 8
-fx=$(fixture 1 8)
+fx=$(fixture 1 8) || exit 1
 run_case "$fx"
 [ "$RC" -eq 1 ] && ok || bad "S3: 8 days -> expected exit 1 (trip at day 8), got $RC"
 printf '%s' "$OUT" | grep -q "8 days past master's last sync" && ok || bad "S3: reason text missing the day count"
 
 # S4: merge-base 7 days old -> green (trip is at day 8)
-fx=$(fixture 1 7)
+fx=$(fixture 1 7) || exit 1
 run_case "$fx"
 [ "$RC" -eq 0 ] && ok || bad "S4: 7 days -> expected exit 0, got $RC"
 
 # S5: both budgets blown -> ONE red with both reasons
-fx=$(fixture 32 9)
+fx=$(fixture 32 9) || exit 1
 run_case "$fx"
 [ "$RC" -eq 1 ] && ok || bad "S5: 32 commits + 9 days -> expected exit 1, got $RC"
 printf '%s' "$OUT" | grep -q "commits ahead of master" && \
@@ -89,17 +118,17 @@ printf '%s' "$OUT" | grep -q "days past master's last sync" && \
 	ok || bad "S5: expected both reasons in one gate"
 
 # S6: unmeasurable base -> exit 2 (also red: unknowable drift is not green)
-fx=$(fixture 1 0)
+fx=$(fixture 1 0) || exit 1
 run_case "$fx" DRIFT_BASE=origin/nope
 [ "$RC" -eq 2 ] && ok || bad "S6: missing base -> expected exit 2, got $RC"
 
 # S7: env budgets work (tighter limit trips earlier)
-fx=$(fixture 2 0)
+fx=$(fixture 2 0) || exit 1
 run_case "$fx" DRIFT_MAX_COMMITS=1
 [ "$RC" -eq 1 ] && ok || bad "S7: DRIFT_MAX_COMMITS=1 with 2 commits -> expected exit 1, got $RC"
 
 # S8: the CI summary block renders (GITHUB_STEP_SUMMARY)
-fx=$(fixture 31 0)
+fx=$(fixture 31 0) || exit 1
 sum="$(mktemp "${TMPDIR:-/tmp}/drift-sum.XXXXXX")"
 run_case "$fx" GITHUB_STEP_SUMMARY="$sum"
 printf '%s' "$OUT" | grep -Eq 'DRIFT GATE' && \
@@ -110,28 +139,28 @@ printf '%s' "$OUT" | grep -Eq 'DRIFT GATE' && \
 # --- advisory mode (DRIFT_ADVISORY=1): over budget warns, exits 0 ---
 
 # A9: the commit trip stays exit 0, the warning line carries the count
-fx=$(fixture 31 0)
+fx=$(fixture 31 0) || exit 1
 run_case "$fx" DRIFT_ADVISORY=1
 [ "$RC" -eq 0 ] && ok || bad "A9: advisory 31 commits -> expected exit 0, got $RC"
 printf '%s' "$OUT" | grep -q "DRIFT WARNING: 31 commits / 0 days ahead of master - reconcile at the next release round" && \
 	ok || bad "A9: greppable warning line missing: $OUT"
 
 # A10: the day trip stays exit 0 in advisory mode
-fx=$(fixture 1 8)
+fx=$(fixture 1 8) || exit 1
 run_case "$fx" DRIFT_ADVISORY=1
 [ "$RC" -eq 0 ] && ok || bad "A10: advisory 8 days -> expected exit 0, got $RC"
 printf '%s' "$OUT" | grep -q "DRIFT WARNING: 1 commits / 8 days" && \
 	ok || bad "A10: warning line missing the day count"
 
 # A11: summary records the advisory verdict (badge story in the UI)
-fx=$(fixture 31 0)
+fx=$(fixture 31 0) || exit 1
 run_case "$fx" DRIFT_ADVISORY=1 GITHUB_STEP_SUMMARY="$sum"
 [ "$RC" -eq 0 ] && ok || bad "A11: advisory with summary -> expected exit 0, got $RC"
 grep -q 'Verdict: ADVISORY' "$sum" && \
 	ok || bad "A11: summary does not record the advisory verdict"
 
 # A12: advisory does NOT green an unmeasurable base (exit 2 is unmoved)
-fx=$(fixture 1 0)
+fx=$(fixture 1 0) || exit 1
 run_case "$fx" DRIFT_ADVISORY=1 DRIFT_BASE=origin/nope
 [ "$RC" -eq 2 ] && ok || bad "A12: advisory + missing base -> expected exit 2, got $RC"
 

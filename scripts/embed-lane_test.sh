@@ -30,9 +30,26 @@ not_contains() {
 
 STAMP="s0" # bundle stamp the mock writes (bump to force a new bundle)
 
+# fixture_error <msg>: the named cause plus the stake. The fixture repo is
+# driven with `git -C "$TMP"`, and `git -C ""` resolves to the CWD - so an
+# empty $TMP does not merely commit, it `add -A`s the WHOLE checkout into the
+# repo the suite was launched from.
+fixture_error() {
+	echo "embed-lane_test: $* - refusing to continue (fixture git would run inside the repo the suite was launched from)" >&2
+	exit 1
+}
+
+# Temp-parent preflight (card t_60874fa5): loud before the first fixture.
+TMPROOT_PROBE="$(mktemp -d "${TMPDIR:-/tmp}/embedlane-probe.XXXXXX")" \
+	|| fixture_error "mktemp -d failed under '${TMPDIR:-/tmp}'"
+[ -d "$TMPROOT_PROBE" ] || fixture_error "mktemp -d returned '$TMPROOT_PROBE', which is not a directory"
+rmdir "$TMPROOT_PROBE" 2>/dev/null || true
+
 new_repo() {
 	# $TMP: fixture repo; $BASE: its initial tip; $MOCK: fake bundle build
-	TMP="$(mktemp -d)"
+	# new_repo() is called in THIS shell, so the guards below can exit.
+	TMP="$(mktemp -d)" || fixture_error "mktemp -d failed under '${TMPDIR:-/tmp}'"
+	[ -n "$TMP" ] && [ -d "$TMP" ] || fixture_error "mktemp -d returned '$TMP', which is not a directory"
 	OUT="$TMP/run.err"
 	git -C "$TMP" init -q
 	git -C "$TMP" config user.email t@t
@@ -55,6 +72,13 @@ new_repo() {
 	rm -f "$TMP.mock/canary-mock-ran" # the setup mock run leaves it behind
 	STAMP="s0"
 }
+
+# --- ISO: the fixture builder refuses a missing temp parent -----------------
+# An unchecked mktemp collapses $TMP to "" here, and the `git -C "$TMP" add -A`
+# below would commit the WHOLE launch checkout into itself (card t_60874fa5).
+# new_repo() exits the script on a bad root, so probe it in a subshell.
+( TMPDIR="${TMPDIR:-/tmp}/embedlane-no-such-dir" new_repo ) >/dev/null 2>&1 \
+	&& bad "ISO: new_repo must fail when its temp parent does not exist" || ok
 
 mk_mock() {
 	# $TMP.mock/mock-build.sh: OUTSIDE the fixture repo root on purpose -

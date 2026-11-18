@@ -26,6 +26,8 @@ set -uo pipefail
 #
 # The suite needs a NATIVE TMPDIR on Windows (mktemp under bare /tmp hands
 # the SUT's python a path it cannot open - the fixtures then look empty).
+# A TMPDIR that does not exist no longer commits into the launch repo: the
+# preflight below fails loud, naming mktemp, before the first fixture.
 
 SUT="$(cd "$(dirname "$0")" && pwd)/release-notes.sh"
 SHIPPED_OVERRIDES="$(cd "$(dirname "$0")" && pwd)/release-notes.overrides.md"
@@ -37,6 +39,25 @@ pass=0
 fail=0
 ok() { pass=$((pass + 1)); }
 bad() { fail=$((fail + 1)); echo "FAIL: $1"; }
+
+# fixture_error <msg>: the named cause plus the stake. Every fixture is a real
+# git repo driven with `git -C "$root"`, and `git -C ""` resolves to the CWD -
+# so an empty fixture root turns the suite into a commit generator for the
+# checkout it runs in (proven: 171 fixture commits plus tags v1.0.0, v2.0.0 and
+# v0.17.3 landed on the host repo from one hostile TMPDIR). Never continue
+# with a root that is not a real directory.
+fixture_error() {
+	echo "release-notes_test: $* - refusing to continue (a fixture commit would land in the repo the suite was launched from)" >&2
+}
+
+# Temp-parent preflight (card t_60874fa5): prove the fixture parent exists and
+# is writable BEFORE the first fixture, and name the cause when it is not. This
+# is the loud half; new_fixture() re-checks every step so a later failure
+# cannot fall through to an empty root either.
+TMPROOT_PROBE="$(mktemp -d "${TMPDIR:-/tmp}/rnotes-probe.XXXXXX")" \
+	|| { fixture_error "mktemp -d failed under '${TMPDIR:-/tmp}'"; exit 1; }
+[ -d "$TMPROOT_PROBE" ] || { fixture_error "mktemp -d returned '$TMPROOT_PROBE', which is not a directory"; exit 1; }
+rmdir "$TMPROOT_PROBE" 2>/dev/null || true
 
 GUSER=(git -c user.email=t@t -c user.name=t)
 T=1793700000
@@ -61,14 +82,43 @@ merge_commit() {
 	"${GUSER[@]}" -C "$fx" branch -q -D _mgside
 }
 
+# new_fixture: a fresh scratch repo. Every step is checked and the failure is
+# NAMED before returning - an unchecked mktemp here is the whole defect: root
+# becomes "" and every later `git -c ... -C "$root"` resolves to the CWD.
 new_fixture() {
 	local root
-	root="$(mktemp -d "${TMPDIR:-/tmp}/rnotes-fx.XXXXXX")"
-	git init -q -b master "$root"
-	c "$root" seed
-	git -C "$root" tag v1.0.0
+	if ! root="$(mktemp -d "${TMPDIR:-/tmp}/rnotes-fx.XXXXXX")"; then
+		fixture_error "mktemp -d failed under '${TMPDIR:-/tmp}'"
+		return 1
+	fi
+	if [ -z "$root" ] || [ ! -d "$root" ]; then
+		fixture_error "mktemp -d returned '$root', which is not a directory"
+		return 1
+	fi
+	if ! git init -q -b master "$root"; then
+		fixture_error "git init failed in '$root'"
+		return 1
+	fi
+	if ! c "$root" seed; then
+		fixture_error "the seed commit failed in '$root'"
+		return 1
+	fi
+	if ! git -C "$root" tag v1.0.0; then
+		fixture_error "tagging v1.0.0 failed in '$root'"
+		return 1
+	fi
 	echo "$root"
 }
+
+# --- ISO: the fixture builder refuses a missing temp parent -----------------
+# The defect that produced junk commits on a real branch (card t_60874fa5,
+# residue on wt/t_42854d3e): an unchecked mktemp hands back an empty root, and
+# every `git -C "$root"` then commits into the launch repo instead. The guard
+# is load-bearing - keep it red by proving the refusal here.
+iso="$(TMPDIR="${TMPDIR:-/tmp}/rnotes-no-such-dir" new_fixture 2>/dev/null)"
+[ -z "$iso" ] && ok || bad "ISO: a failed fixture must echo no root (got '$iso')"
+TMPDIR="${TMPDIR:-/tmp}/rnotes-no-such-dir" new_fixture >/dev/null 2>&1 \
+	&& bad "ISO: new_fixture must fail when its temp parent does not exist" || ok
 
 # run_notes <fixture> [args...]: stdout+stderr -> OUT; exit -> RC;
 # generated files land in <fixture>/out. NOTES_OVERRIDES always points inside
@@ -128,7 +178,7 @@ expect_body_bullets() {
 }
 
 # --- N1: counts line + scopes, merges counted, classes in ruled order -------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 c "$fx" "docs: note the soak law"
 c "$fx" "tune(core): default context window 32768"
 c "$fx" "fix(side): a race in the send path"
@@ -151,7 +201,7 @@ md "$fx" | grep -qF "chore" && bad "N1: chore leaked into the post" || ok
 body "$fx" | grep -qF "chore" && bad "N1: chore leaked into the record" || ok
 
 # --- N2: every feat in the record, no scope dedupe, merges carry no bullet --
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 c "$fx" "fix(core): the oldest fix (t_0000001)"
 c "$fx" "feat(core): the context window grows"
 merge_commit "$fx" "merge: t_768c6cc1 - the tree tells the product story (three-tier restructure)" \
@@ -183,7 +233,7 @@ body "$fx" | grep -qF "the tree tells the product story" && bad "N2: card merge 
 body "$fx" | grep -qF "embed-lane" && bad "N2: embed-lane leaked into the record" || ok
 
 # --- N3: merge stories never become bullets ---------------------------------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 c "$fx" "feat(side): a real thing"
 merge_commit "$fx" "merge: restructure part 3 - the seam constitution" "chore(mg): side scratch"
 merge_commit "$fx" "merge: restructure" "chore(mg): side scratch"
@@ -192,7 +242,7 @@ expect_body_bullets "$fx" N3 "feat(side): a real thing"
 expect_bullets "$fx" N3 "a real thing"
 
 # --- N4: fixes newest-first in the record, order after refactors ------------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 c "$fx" "fix(a): first"
 c "$fx" "fix(a): second in the same scope"
 c "$fx" "fix(b): third"
@@ -210,7 +260,7 @@ expect_body_bullets "$fx" N4 \
 expect_bullets "$fx" N4 "the one feat"
 
 # --- N5: noise-only range -> zeros, no bullets, exit 0 ----------------------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 c "$fx" "chore: one"
 c "$fx" "style: two"
 c "$fx" "wip: three"
@@ -223,13 +273,13 @@ printf '%s' "$OUT" | grep -qF "0 features, 0 refactors, 0 fixes, 0 tunes, 0 doc 
 [ -f "$fx/out/discord-release.json" ] && ok || bad "N5: a noise-only post is still a post"
 
 # --- N6: empty range -> graceful (base passed explicitly) --------------------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 run_notes "$fx" v1.0.0
 [ "$RC" -eq 0 ] && ok || bad "N6: empty range exit $RC"
 printf '%s' "$OUT" | grep -qF "0 features, 0 refactors, 0 fixes, 0 tunes" && ok || bad "N6: empty counts missing"
 
 # --- N7: annotated tag, subject only -> it IS the prose paragraph ----------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 c "$fx" "feat(side): delegates got safer"
 "${GUSER[@]}" -C "$fx" tag -a v2.0.0 -m 'Delegates got safer and the tree got flatter'
 run_notes "$fx"
@@ -255,7 +305,7 @@ LC_ALL=C grep -qF "🚀" "$BODY" && bad "N7: body file must not carry the rocket
 # (t_42854d3e: the post never has a blank line where the hook belongs - with no
 # annotation and no override the counts sentence is the honest floor, and the
 # gap is named on stderr)
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 c "$fx" "feat(side): a feature"
 "${GUSER[@]}" -C "$fx" tag v2.0.0
 run_notes "$fx"
@@ -271,7 +321,7 @@ printf '%s' "$OUT" | grep -qF "1 feature" && ok || bad "N8: counts expected"
 printf '%s' "$OUT" | grep -qF "full changelog:" && ok || bad "N8: link expected"
 
 # --- N9: annotated tag quoting survives the JSON escape ---------------------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 c "$fx" "feat(side): a feature"
 "${GUSER[@]}" -C "$fx" tag -a v2.0.0 -m 'Endo said "ship it" - and the webhook must not choke'
 run_notes "$fx"
@@ -291,7 +341,7 @@ PY
 printf '%s' "$OUT" | grep -q 'over the 2000-char cap' && bad "N9: a normal cycle must not hit the cap" || ok
 
 # --- N10: the record caps the tail classes at 5, keeps every feat ----------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 for i in 1 2 3 4 5 6 7; do c "$fx" "fix(core): fix $i"; done
 for i in 1 2 3 4 5 6 7; do c "$fx" "docs: doc $i"; done
 c "$fx" "refactor(core): reshape one"
@@ -319,7 +369,7 @@ expect_bullets "$fx" N10 \
 	"feature one"
 
 # --- N11: the post law - five highlights, counts, link, under 900 chars -----
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 for i in 1 2 3 4 5 6 7; do c "$fx" "feat(core): feature $i"; done
 for i in 1 2; do c "$fx" "refactor(core): reshape $i"; done
 for i in 1 2 3 4 5 6; do c "$fx" "fix(core): fix $i"; done
@@ -347,7 +397,7 @@ printf '%s' "$OUT" | grep -qF "Update: \`omega update\` · full changelog: <http
 [ "$(body_bullets "$fx")" -eq 20 ] && ok || bad "N11: the record must keep 20 pick bullets, got $(body_bullets "$fx")"
 
 # --- N12: an annotation highlight list OVERRIDES the default five ----------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 for i in 1 2 3 4 5; do c "$fx" "feat(core): feature $i"; done
 MSG="$fx/../tagmsg-n12.txt"
 {
@@ -372,7 +422,7 @@ printf '%s' "$OUT" | grep -qF "5 features" && ok || bad "N12: counts line missin
 [ "$(body_bullets "$fx")" -eq 5 ] && ok || bad "N12: the record must keep all 5 feats, got $(body_bullets "$fx")"
 
 # --- N13: wrapped annotation prose -> one paragraph, title dropped ---------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 for i in 1 2 3 4 5; do c "$fx" "feat(core): feature $i"; done
 MSG="$fx/../tagmsg-n13.txt"
 {
@@ -393,7 +443,7 @@ md "$fx" | grep -qF "the wrapped release" && bad "N13: the annotation subject is
 [ "$(bullets "$fx")" -eq 5 ] && ok || bad "N13: default five feats expected, got $(bullets "$fx")"
 
 # --- N14: six annotation bullets -> first five post, the sixth named -------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 for i in 1 2 3; do c "$fx" "feat(core): feature $i"; done
 MSG="$fx/../tagmsg-n14.txt"
 {
@@ -419,7 +469,7 @@ md "$fx" | grep -qF "highlight 6" && bad "N14: the sixth bullet must not post" |
 
 # --- N15: the fat cycle that used to blow the cap now posts under it -------
 # 60 feats at pad 40 = a ~3500-char record; the post is five bullets.
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 for i in $(seq 1 60); do c "$fx" "feat(core): feature $i $(pad 40)"; done
 "${GUSER[@]}" -C "$fx" tag v2.0.0
 run_notes "$fx"
@@ -433,7 +483,7 @@ printf '%s' "$OUT" | grep -qF "60 features" && ok || bad "N15: counts must repor
 
 # --- N16: a post over 2000 chars is a loud backstop (no trimmer, no payload)
 # A 2100-char annotation line: the tag is broken, so nothing posts.
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 c "$fx" "feat(core): a feature"
 "${GUSER[@]}" -C "$fx" tag -a v2.0.0 -m "$(pad 2100)"
 mkdir -p "$fx/out"
@@ -450,7 +500,7 @@ printf '%s' "$OUT" | grep -qF "over the 2000-char cap" && ok || bad "N16: the ca
 # as no annotation (the v0.17.1 defect): the post ships bare and the absence
 # is NAMED on stderr, remedy included. Restoring the tag object - what the
 # release workflow now does - brings the prose back.
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 c "$fx" "feat(side): a feature"
 "${GUSER[@]}" -C "$fx" tag -a v2.0.0 -m 'The paragraph the runner must not drop.'
 tag_obj="$("${GUSER[@]}" -C "$fx" rev-parse 'refs/tags/v2.0.0')"
@@ -493,7 +543,7 @@ notes_ln="$(grep -nF 'scripts/release-notes.sh "' "$WF" | head -1 | cut -d: -f1)
 # --- N19: the two-audience shape, no override and no annotation -------------
 # Hook line first, bullets next, the stats line after them, the update line
 # last. A missing override file renders; it never crashes the run.
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 c "$fx" "feat(core): the palette gains a clock editor"
 c "$fx" "feat(core): agents get cards"
 c "$fx" "fix(core): a stale row after reload"
@@ -524,7 +574,7 @@ grep -qF "$EM" "$MD19" && bad "N19: generated text must not carry an em-dash" ||
 # --- N20: the override file wins over the annotation, per version -----------
 # A section for another version is inert; the stats line stays the commit
 # log's; the record keeps the raw subjects and leads with the override hook.
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 c "$fx" "feat(core): feature one"
 c "$fx" "fix(core): a stale row"
 "${GUSER[@]}" -C "$fx" tag -a v2.0.0 -m 'The annotation paragraph the override must replace - tuner vocabulary.'
@@ -565,7 +615,7 @@ printf '%s' "$OUT" | grep -qF "1 feature, 0 refactors, 1 fix, 0 tunes, 0 doc upd
 body "$fx" | grep -qF "feat(core): feature one" && ok || bad "N20: the record keeps the raw subjects"
 
 # --- N21: the style law - no em-dash, no en-dash in generated text ----------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 c "$fx" "feat(core): a feature $EM with an em-dash"
 {
 	printf '%s\n' '## v2.0.0'
@@ -590,7 +640,7 @@ body "$fx" | grep -qF "a feature - with an em-dash" \
 # the OLD annotation prose (factory vocabulary) renders the hand-written hook
 # and the rewritten bullets instead, with the internal voice nowhere in the
 # post and the stats line untouched.
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 c "$fx" "feat(webui): the palette takes over the bar's time field in place"
 c "$fx" "feat(agents): the agents tab takes the sessions interaction vocabulary"
 c "$fx" "feat(factory): three disjoint cards and one review at a time"

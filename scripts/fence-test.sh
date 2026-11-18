@@ -19,7 +19,10 @@ bad()   { fail=$((fail + 1)); echo "FAIL: $1" >&2; }
 
 # Fixture: a repo with disjoint master/dev/feat branches (separate files,
 # merges never conflict) and a local bare origin.
-FIX="$(mktemp -d)"
+FIX="$(mktemp -d)" \
+	|| { echo "fence-test: mktemp -d failed under '${TMPDIR:-/tmp}' - refusing to continue (fixture git would run inside the repo the suite was launched from)" >&2; exit 1; }
+[ -n "$FIX" ] && [ -d "$FIX" ] \
+	|| { echo "fence-test: mktemp -d returned '$FIX', which is not a directory" >&2; exit 1; }
 trap 'rm -rf "$FIX"' EXIT
 git -C "$FIX" -c init.defaultBranch=master init -q repo
 R="$FIX/repo"

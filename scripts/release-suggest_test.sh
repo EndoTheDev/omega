@@ -18,14 +18,52 @@ bad() { fail=$((fail + 1)); echo "FAIL: $1"; }
 
 GUSER=(git -c user.email=t@t -c user.name=t)
 
+# fixture_error <msg>: the named cause plus the stake. Fixtures are real git
+# repos driven with `git -C "$root"`, and `git -C ""` resolves to the CWD, so an
+# empty fixture root commits into the checkout the suite runs in.
+fixture_error() {
+	echo "release-suggest_test: $* - refusing to continue (a fixture commit would land in the repo the suite was launched from)" >&2
+}
+
+# Temp-parent preflight (card t_60874fa5): loud before the first fixture.
+TMPROOT_PROBE="$(mktemp -d "${TMPDIR:-/tmp}/rls-probe.XXXXXX")" \
+	|| { fixture_error "mktemp -d failed under '${TMPDIR:-/tmp}'"; exit 1; }
+[ -d "$TMPROOT_PROBE" ] || { fixture_error "mktemp -d returned '$TMPROOT_PROBE', which is not a directory"; exit 1; }
+rmdir "$TMPROOT_PROBE" 2>/dev/null || true
+
+# new_fixture: a fresh scratch repo; every step checked, every failure named.
 new_fixture() {
 	local root
-	root="$(mktemp -d "${TMPDIR:-/tmp}/rls-fx.XXXXXX")"
-	git init -q -b master "$root"
-	"${GUSER[@]}" -C "$root" commit --allow-empty -q -m seed
-	"${GUSER[@]}" -C "$root" tag v1.0.0
+	if ! root="$(mktemp -d "${TMPDIR:-/tmp}/rls-fx.XXXXXX")"; then
+		fixture_error "mktemp -d failed under '${TMPDIR:-/tmp}'"
+		return 1
+	fi
+	if [ -z "$root" ] || [ ! -d "$root" ]; then
+		fixture_error "mktemp -d returned '$root', which is not a directory"
+		return 1
+	fi
+	if ! git init -q -b master "$root"; then
+		fixture_error "git init failed in '$root'"
+		return 1
+	fi
+	if ! "${GUSER[@]}" -C "$root" commit --allow-empty -q -m seed; then
+		fixture_error "the seed commit failed in '$root'"
+		return 1
+	fi
+	if ! "${GUSER[@]}" -C "$root" tag v1.0.0; then
+		fixture_error "tagging v1.0.0 failed in '$root'"
+		return 1
+	fi
 	echo "$root"
 }
+
+# --- ISO: the fixture builder refuses a missing temp parent -----------------
+# An unchecked mktemp hands back an empty root and every `git -C "$root"` then
+# commits into the launch repo (card t_60874fa5). Prove the refusal stays.
+iso="$(TMPDIR="${TMPDIR:-/tmp}/rls-no-such-dir" new_fixture 2>/dev/null)"
+[ -z "$iso" ] && ok || bad "ISO: a failed fixture must echo no root (got '$iso')"
+TMPDIR="${TMPDIR:-/tmp}/rls-no-such-dir" new_fixture >/dev/null 2>&1 \
+	&& bad "ISO: new_fixture must fail when its temp parent does not exist" || ok
 
 # run_suggest <fixture-path> [base]: full output -> OUT; exit code -> RC
 run_suggest() {
@@ -44,7 +82,7 @@ assert_level() { # <want> <label>
 }
 
 # --- S1: BREAKING CHANGE marker (`feat!:` shape) -> major -------------------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 "${GUSER[@]}" -C "$fx" commit --allow-empty -q -m "fix: a small fix"
 "${GUSER[@]}" -C "$fx" commit --allow-empty -q -m "feat!: replace the store with an fs-free one"
 run_suggest "$fx"
@@ -54,25 +92,25 @@ printf '%s' "$OUT" | grep -q "fix: a small fix" && \
 	bad "S1: the fix commit must NOT appear in a major's evidence list" || ok
 
 # --- S2: BREAKING CHANGE footer in the body -> major ------------------------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 "${GUSER[@]}" -C "$fx" commit --allow-empty -q -m "feat: new config surface" -m "BREAKING CHANGE: the gateway key is gone"
 run_suggest "$fx"
 assert_level major "S2 BREAKING CHANGE footer"
 
 # --- S3: removed API surface -> major ---------------------------------------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 "${GUSER[@]}" -C "$fx" commit --allow-empty -q -m "remove(gateway): drop the dead channel"
 run_suggest "$fx"
 assert_level major "S3 remove prefix"
 
 # --- S4: renamed API surface -> major ---------------------------------------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 "${GUSER[@]}" -C "$fx" commit --allow-empty -q -m "rename: messageRole helper"
 run_suggest "$fx"
 assert_level major "S4 rename prefix"
 
 # --- S5: feat commits (no breaking) -> minor with both feats as evidence ----
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 "${GUSER[@]}" -C "$fx" commit --allow-empty -q -m "feat(train): the landing lane"
 "${GUSER[@]}" -C "$fx" commit --allow-empty -q -m "fix(tui): sticky layout"
 "${GUSER[@]}" -C "$fx" commit --allow-empty -q -m "feat(ci): nightly job wiring"
@@ -82,7 +120,7 @@ n_ev=$(printf '%s' "$OUT" | grep -cE '^  [0-9a-f]+ feat\(')
 [ "$n_ev" -eq 2 ] && ok || bad "S5: expected 2 evidence commits, got $n_ev"
 
 # --- S6: fixes/chore/docs + a merge commit -> patch, empty evidence ---------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 "${GUSER[@]}" -C "$fx" checkout -q -b side
 "${GUSER[@]}" -C "$fx" commit --allow-empty -q -m "chore(side): scratch"
 "${GUSER[@]}" -C "$fx" checkout -q master
@@ -94,13 +132,13 @@ assert_level patch "S6 fixes+merge"
 printf '%s' "$OUT" | grep -q "Evidence: none" && ok || bad "S6: patch with no driver should have empty evidence"
 
 # --- S7: empty range -> patch ------------------------------------------------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 run_suggest "$fx" v1.0.0
 assert_level patch "S7 empty range"
 [ "$RC" -eq 0 ] && ok || bad "S7: a suggestion must exit 0 even on an empty range (got $RC)"
 
 # --- S8: base pick: newest STABLE tag (nightly + rc tags never count) --------
-fx=$(new_fixture)
+fx=$(new_fixture) || exit 1
 "${GUSER[@]}" -C "$fx" commit --allow-empty -q -m "feat: a"
 "${GUSER[@]}" -C "$fx" tag v1.2.0
 "${GUSER[@]}" -C "$fx" tag v1.2.0-rc1
