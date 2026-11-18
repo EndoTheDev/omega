@@ -184,3 +184,36 @@ describe("content-change follow (t_bef3f45e)", () => {
     assert.match(src, /contentRO\?\.disconnect\(\)/, "the observer disconnects on unmount");
   });
 });
+
+describe("the transcript has one scroll writer (t_31c64042)", () => {
+  it("skips a write the scrollport already satisfies", () => {
+    const src = chatTab();
+    // the clamp target - not the raw scrollHeight - is what decides
+    // whether there is anything to write at all: a follow write of the
+    // position the pane already holds is a programmatic scroll, and the
+    // follow fires several per height burst
+    assert.match(
+      src,
+      /const target = Math\.max\(el\.scrollHeight - el\.clientHeight, 0\)/,
+      "the follow compares against the clamp target",
+    );
+    assert.match(
+      src,
+      /if \(el\.scrollTop >= target - 1\) return/,
+      "an already-at-tail follow is skipped, not re-written",
+    );
+    // the skip must not eat the write that DOES land: the follow still
+    // writes past the end and lets the clamp decide
+    assert.match(src, /el\.scrollTop = el\.scrollHeight/, "the landing write is untouched");
+  });
+
+  it("disables the browser's scroll anchoring on the transcript", () => {
+    const body = rule(cssNoComments(), ".messages {");
+    assert.ok(body, ".messages rule not found");
+    assert.match(
+      body,
+      /overflow-anchor:\s*none/,
+      "the browser's anchor corrections are the redundant writer - the follow owns this scrollport",
+    );
+  });
+});

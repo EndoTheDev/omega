@@ -1409,6 +1409,23 @@ a.row-export { text-decoration: none; color: var(--text-dim); }
 .messages {
   flex: 1;
   overflow-y: auto;
+  /* ONE scroll writer (card t_31c64042). The browser's scroll anchoring
+     adjusts scrollTop on its own when a row above the viewport re-folds
+     or a paint lands shorter than the last one, and the follow's own
+     writes land in the same frames - the pane is dragged up 72-490px,
+     the follow yanks it back down, and the reader sees the transcript
+     flick up/down for a few frames (measured live on the stacked
+     appearance during a live send; the anchor adjustment carries no app
+     write at all, which is how the two writers were told apart). The
+     app's follow IS the authority for this scrollport: it gates on the
+     pinned flag, holds through a fold (resumesFollow's shrink guard) and
+     re-writes only a position that changed - so the browser's anchor
+     corrections are the redundant, fighting half of the pair.
+     The trade-off, stated: an UNPINNED reader no longer has the browser
+     keep their anchor node steady when content above them changes
+     height. That is the deliberate cost of one authority - and the
+     follow's pill plus the shrink guard already own that case. */
+  overflow-anchor: none;
   /* the column tracks the composer (t_5063675a): the transcript's side
      inset is the composer's 12px side margin (the ONE composer law,
      t_1750a9e3), so every block's edge lands on the composer's edge
