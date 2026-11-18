@@ -98,6 +98,58 @@ bash scripts/factory-merge.sh <task_id>      # the review seat's entry
   they follow `factory-prune.sh` conventions (`REFUSED`, `NOTE`,
   `<VERB> <id> ...`).
 
+## The train's environment contract (no caller env required)
+
+Ruled from the first real train pass on winbtw (card t_7acaa267,
+2026-11-18): the review seat exports no environment, so a pass that needs
+one is a pass that cannot land. Two values used to be assumed, and both
+assumptions were wrong on a host whose live home was remapped.
+
+- **The board db resolves itself.** `$KANBAN_DB` > `$HERMES_KANBAN_DB` >
+  the live home's `kanban/boards/<board>/kanban.db` (`<board>` is
+  `$HERMES_KANBAN_BOARD`, default `project-omega`). The live home follows
+  the hermes CLI's own chain: `$HERMES_KANBAN_HOME`, else `$HERMES_HOME`
+  (a `profiles/<name>` home names its root), else windows
+  `%LOCALAPPDATA%/hermes`, else POSIX `$HOME/.hermes`. The old
+  `$HOME/.hermes` default is the LEGACY home on winbtw and made every
+  review-seat merge die `board db not found` exit 2 before the queue.
+  An explicit `KANBAN_DB` that names no file refuses without falling back
+  (landing another board's queue silently is worse than a dead pass), and
+  a pass with no candidate names every probed path.
+- **The journeys gate's lane env is derived or demanded BEFORE the merge.**
+  Six recipes seed agent homes into the serving lane home and die loudly
+  when `$OMEGA_HOME`/`$OMEGA_BIN` do not name it (110, 114, 60, 92, 94,
+  96). The train derives `<checkout>/bin` when that directory is a serving
+  home (`config/config.yaml` plus the `omega` binary the lane's serve was
+  launched from), and otherwise refuses exit 2 naming what it probed. The
+  same precondition health-checks the lane the suite drives
+  (`$JOURNEY_BASE_URL`, default `http://127.0.0.1:8098`).
+- **A precondition refusal is not a strike and not a demote.** Nothing is
+  rebased, nothing is merged, the card keeps its status, its branch and
+  its verdict. `factory-merge.sh` prints a `NOTE` naming the class, so the
+  review seat reads "the environment is wrong", not "the work is wrong".
+
+### The lane lag: what a train-time journeys red actually measures
+
+The train-time journeys run against the **served lane**, which lags the
+merged tree by one lane rebuild. So a train-time journey result describes
+the PREVIOUS landing's tree, not the tree this pass just merged. A red
+there can be a pre-existing lane defect that no landing can clear.
+
+- Read a journeys-only red as "the lane is red". Re-run the named recipes
+  against a lane rebuilt from the merged tree before treating it as this
+  card's regression; the pass's un-land and demote law runs unchanged, so
+  the evidence trail stays mechanical.
+- The authoritative full-suite verdict is the nightly, which builds the
+  lane from the tree it tests. Train-time gates stay: build/vet/test,
+  `-race` on touched packages, dep law, the fence eval, the webui node
+  suite, the embed lane, then the journeys.
+- Narrowing the train-time journeys to `--regression` was considered and
+  rejected: the regression set itself carries the standing
+  `75-divider-resize` red on wider-sidebar trees, so narrowing removes no
+  false demote while silently shrinking train-time coverage. The
+  preconditions above are what make the harness-gap class impossible; the
+  lane-lag class stays a reading rule.
 
 ## The machine fence (worker sessions)
 
