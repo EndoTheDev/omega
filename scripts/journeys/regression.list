@@ -4,10 +4,12 @@
 # then the red it pins (text only; the parser strips '#' comments).
 #
 # run.sh --regression executes exactly this set (gate-time minimum,
-# lane SHA); the full suite - the nightly and every train pass - runs
-# it as part of everything. A name here that no longer matches a
-# recipe file is an ERROR, not a silent skip: a regression entry that
-# rots quietly is the same as deleting the proof.
+# lane SHA); a train pass runs this set ALONE (the full suite belongs to
+# the nightly, which builds the lane from the tree it tests - see
+# docs/pipeline.md, "The train's journeys gate is the regression set").
+# A name here that no longer matches a recipe file is an ERROR, not a
+# silent skip: a regression entry that rots quietly is the same as
+# deleting the proof.
 #
 # The set also carries pin tests that are NOT journey recipes (a
 # journey cannot see compile-time shape) - they run in go test ./...

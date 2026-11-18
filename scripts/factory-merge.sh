@@ -52,7 +52,14 @@
 #   FM_LOCK_DIR      pipeline-lock directory (default: $HOME/.hermes/cache/scratch)
 #   FM_LOCK_WAIT     seconds to wait for a held pipeline lock (default: 0)
 #   HERMES           hermes CLI (the receipt comment; default: hermes)
-#   KANBAN_DB        board db (forwarded to train-pass)
+#   KANBAN_DB        board db (inherited by train-pass; unset, the train
+#                    resolves the live home's board db itself - card
+#                    t_7acaa267, never the dead $HOME/.hermes legacy default)
+#   OMEGA_HOME       the SERVING lane home for the journeys gate (inherited;
+#   OMEGA_BIN        unset, the train derives <checkout>/bin and refuses
+#                    BEFORE the merge when it cannot)
+#   JOURNEY_BASE_URL the lane those journeys drive (inherited; health-checked
+#                    as a precondition)
 #   TRAIN_GATES_CMD  forwarded - the test override for the gate list
 #
 # Greppable lines (factory-prune.sh conventions):
@@ -231,6 +238,12 @@ if [ "$train_rc" != "0" ]; then
     echo "ALREADY-MERGED $ID ($branch reached $MERGE_REF at $shas while the train failed rc $train_rc)"
     prune_card || true
     exit 0
+  fi
+  if [ "$train_rc" = 2 ]; then
+    # A precondition refusal happens BEFORE the rebase: nothing was merged, the
+    # card keeps its status and its verdict. Name it so the review seat reads
+    # "the environment is wrong", not "the work is wrong" (card t_7acaa267).
+    echo "NOTE train-pass refused a precondition (rc 2) before the merge - nothing was rebased or landed. The cause is named above (board db, lane home or lane health); the card keeps its status."
   fi
   echo "FAILED $ID train-pass rc $train_rc - nothing landed here; the card stays where the train left it and the tick's fallback merge pass sweeps it"
   exit 6

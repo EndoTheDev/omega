@@ -40,14 +40,37 @@ set -euo pipefail
 # Environment:
 #
 #   HERMES                     hermes CLI binary (default: hermes)
-#   HERMES_KANBAN_BOARD        board slug for the CLI (when not the active one)
-#   KANBAN_DB                  board db path (default: active board's db;
-#                              falls back to the project-omega path)
+#   HERMES_KANBAN_BOARD        board slug (default: project-omega) - names the db
+#                              the live-home probe looks for
+#   KANBAN_DB                  board db path. An EXPLICIT value must exist: it
+#                              never falls back to another board. Unset, the
+#                              db is resolved as $HERMES_KANBAN_DB > the live
+#                              home's boards/<slug>/kanban.db (windows
+#                              %LOCALAPPDATA%/hermes, POSIX $HOME/.hermes) and
+#                              a pass with no candidate refuses naming every
+#                              probed path (card t_7acaa267: the old
+#                              $HOME/.hermes default is the LEGACY home on a
+#                              remapped host and red every review-seat merge
+#                              rc 2 before the queue)
 #   TRAIN_GATES_CMD            test override - replaces the whole gate list
-#   TRAIN_JOURNEYS_CMD         the validation-journeys suite
-#                              (default: scripts/journeys/run.sh; missing
-#                              = skipped loudly until the companion card
-#                              lands)
+#   TRAIN_JOURNEYS_CMD         the validation-journeys suite (default:
+#                              scripts/journeys/run.sh --regression - the
+#                              NAMED REGRESSION SET, regression.list's own
+#                              gate-time minimum. The full suite belongs to
+#                              the nightly, which builds the lane from the
+#                              tree it tests; docs/pipeline.md carries the
+#                              ruling. Missing = skipped loudly until the
+#                              companion card lands). Flags allowed - the
+#                              gate runs it through bash -c
+#   OMEGA_HOME / OMEGA_BIN     the SERVING lane home the journey recipes seed
+#                              into. Unset, the train derives <checkout>/bin
+#                              (a serving home: config/config.yaml + the omega
+#                              binary) and refuses BEFORE the merge when it
+#                              cannot - a gate that cannot run green is a
+#                              precondition, never a post-merge demote
+#   JOURNEY_BASE_URL           the served lane the journeys gate drives
+#                              (default: run.sh's own http://127.0.0.1:8098);
+#                              checked healthy as a precondition
 #   TRAIN_RECONCILER_ASSIGNEE  profile that takes third-strike cards
 #                              (default: default)
 #   TRAIN_NO_PUSH=1            same as --no-push
@@ -57,8 +80,9 @@ set -euo pipefail
 #                              that is not a queued landing refuses loudly
 #                              instead of landing a neighbour.
 #
-# Exit codes: 0 landed (or empty queue), 2 usage/precondition, 3 rebase
-# strike (card stays queued), 4 demoted to ready (rebase strikes, replay
+# Exit codes: 0 landed (or empty queue), 2 usage/precondition (nothing
+# rebased, nothing merged, the card keeps its status), 3 rebase strike
+# (card stays queued), 4 demoted to ready (rebase strikes, replay
 # anomalies, no-op merges), 5 third strike -> reconciler card, 6 red gate
 # -> card back to ready, 7 the pinned card has nothing to land (already
 # merged, or no branch).
@@ -67,7 +91,19 @@ BASE="dev"
 PUSH=1
 [ "${TRAIN_NO_PUSH:-}" = "1" ] && PUSH=0
 HERMES_BIN="${HERMES:-hermes}"
-JOURNEYS_CMD="${TRAIN_JOURNEYS_CMD:-scripts/journeys/run.sh}"
+# The train-time journeys gate is the NAMED REGRESSION SET, not the full
+# suite. regression.list is the gate-time minimum (every entry there burned
+# a lane once and must never fail again); the full suite belongs to the
+# nightly, which builds the lane from the tree it tests. The narrowing is
+# not a coverage trade: the tick's fallback merge carries NO journeys gate,
+# so a full-suite train gate vetoes nothing it would not already land - it
+# only converts any standing product red into an un-land + demote + resweep
+# cycle. Ruling 2026-11-19 on this card: the set ran 12/12 green while
+# 92-registry-toggles - NOT in the set - red on the same lane, and the
+# 75-divider-resize red the earlier rejection rested on was green. Widen
+# the gate by adding a recipe to regression.list, never by asking the train
+# for the full suite.
+JOURNEYS_CMD="${TRAIN_JOURNEYS_CMD:-scripts/journeys/run.sh --regression}"
 RECONCILER_ASSIGNEE="${TRAIN_RECONCILER_ASSIGNEE:-default}"
 PIN="${TRAIN_CARD:-}"
 
@@ -112,8 +148,71 @@ fi
 
 now() { date +%s; }
 
-KANBAN_DB="${KANBAN_DB:-${HERMES_KANBAN_DB:-$HOME/.hermes/kanban/boards/project-omega/kanban.db}}"
-[ -f "$KANBAN_DB" ] || die "board db not found at $KANBAN_DB (set KANBAN_DB)"
+# Board db resolution (host-remap law, card t_7acaa267). The old default was
+# $HOME/.hermes/boards/... - the LEGACY home on a host whose live home was
+# remapped (winbtw: %LOCALAPPDATA%/hermes), so a pass with no caller env died
+# `board db not found` exit 2 BEFORE the queue and before the merge: every
+# review-seat landing fell back to the tick sweep, forever. Order:
+#
+#   $KANBAN_DB > $HERMES_KANBAN_DB > the live home's board db
+#
+# An explicit override that names no file REFUSES without falling back -
+# silently landing somebody else's queue is worse than a dead pass. The live
+# home follows the hermes CLI's own chain (mirrors the resolve_hermes idiom in
+# scripts/factory-dispatch.sh): $HERMES_KANBAN_HOME, else $HERMES_HOME (a
+# profiles/<name> home names its root), else windows %LOCALAPPDATA%/hermes,
+# else POSIX $HOME/.hermes - plus the same windows tree reached as
+# $HOME/AppData/Local for a stripped-env caller. Never silent: a refusal names
+# every probed path.
+board_slug="${HERMES_KANBAN_BOARD:-project-omega}"
+hermes_root_of() {  # a trailing profiles/<name> segment names its ROOT home
+  local h="${1//\\//}"
+  if [ "$h" != "$(dirname "$h")" ] && [ "$(basename "$(dirname "$h")")" = profiles ]; then
+    h="$(dirname "$(dirname "$h")")"
+  fi
+  printf '%s' "$h"
+}
+
+kanban_db_candidates=()
+if [ -n "${KANBAN_DB:-}" ]; then
+  [ -f "$KANBAN_DB" ] || die "KANBAN_DB is set but there is no board db at $KANBAN_DB (an explicit override never falls back to another board)"
+  kanban_db_candidates=("$KANBAN_DB")
+elif [ -n "${HERMES_KANBAN_DB:-}" ]; then
+  [ -f "$HERMES_KANBAN_DB" ] || die "HERMES_KANBAN_DB is set but there is no board db at $HERMES_KANBAN_DB (a pinned db is the caller's file, never guessed around)"
+  kanban_db_candidates=("$HERMES_KANBAN_DB")
+else
+  hermes_roots=()
+  if [ -n "${HERMES_KANBAN_HOME:-}" ]; then hermes_roots+=("${HERMES_KANBAN_HOME//\\//}"); fi
+  if [ -n "${HERMES_HOME:-}" ]; then hermes_roots+=("$(hermes_root_of "$HERMES_HOME")"); fi
+  if [ -n "${LOCALAPPDATA:-}" ]; then hermes_roots+=("${LOCALAPPDATA//\\//}/hermes"); fi
+  hermes_roots+=("$HOME/AppData/Local/hermes" "$HOME/.hermes")
+  for root in "${hermes_roots[@]}"; do
+    cand="$root/kanban/boards/$board_slug/kanban.db"
+    case " ${kanban_db_candidates[*]-} " in
+      *" $cand "*) continue ;;   # same tree reached twice - probe it once
+    esac
+    kanban_db_candidates+=("$cand")
+  done
+fi
+
+KANBAN_DB=""
+for cand in "${kanban_db_candidates[@]}"; do
+  if [ -f "$cand" ]; then
+    KANBAN_DB="$cand"
+    break
+  fi
+done
+if [ -z "$KANBAN_DB" ]; then
+  echo "FATAL: train-pass: no board db for board '$board_slug'. Probed, in order:" >&2
+  for cand in "${kanban_db_candidates[@]}"; do echo "         $cand" >&2; done
+  echo "       set KANBAN_DB (or HERMES_KANBAN_DB to pin one), or HERMES_KANBAN_BOARD" >&2
+  echo "       to name the board. Nothing was queued, rebased or merged." >&2
+  exit 2
+fi
+note "board db: $KANBAN_DB"
+# The resolved path rides the environment: the hermes CLI fallback stub and
+# every board_comment/demote below read it from here.
+export KANBAN_DB
 
 # The sqlite3 CLI is absent on fleet Windows hosts (the same gap
 # scripts/tick-pending.sh documents: boards are read through the python
@@ -142,7 +241,23 @@ for line in sql.splitlines(True):
         buf = ""
 if buf.strip():
     stmts.append(buf)
-con = sqlite3.connect(db, timeout=30)
+try:
+    con = sqlite3.connect(db, timeout=30)
+except sqlite3.OperationalError:
+    # A native python cannot open an MSYS path (/tmp/...): the caller may
+    # have handed us the shell spelling. Convert once and retry; when
+    # cygpath is absent or refuses, the original error stands.
+    import subprocess
+    fixed = ""
+    try:
+        conv = subprocess.run(["cygpath", "-m", db], capture_output=True, text=True)
+        if conv.returncode == 0:
+            fixed = conv.stdout.strip()
+    except OSError:
+        fixed = ""
+    if not fixed:
+        raise
+    con = sqlite3.connect(fixed, timeout=30)
 # Windows text streams translate \n to \r\n; the callers parse LF records.
 sys.stdout.reconfigure(newline="\n")
 try:
@@ -310,6 +425,78 @@ else
   note "oldest queued card: $tid ($title), branch $bra"
 fi
 
+# ---- gate preconditions (refuse BEFORE the merge, never mid-cycle) ------
+# The journeys gate measures the SERVED lane, and six recipes seed agent
+# homes into the lane home ($OMEGA_HOME), dying loudly when the env does not
+# name it (110/114/60/92/94/96: "set OMEGA_HOME or OMEGA_BIN ..."). A pass
+# with no caller env therefore burned a full merge cycle and paid a red gate
+# for a harness gap: on winbtw 2026-11-18, 5 of 9 journey reds were that
+# precondition die with zero product assertions reached, and an approved
+# card was demoted on it. A gate that cannot run green is a PRECONDITION:
+# it refuses HERE, before anything is rebased or merged, and the card keeps
+# its status, its branch and its verdict.
+journeys_path="$JOURNEYS_CMD"
+# A command may carry flags, and a path may carry spaces: the WHOLE value is
+# the path when it names a real file, else the first token is.
+[ -f "$journeys_path" ] || journeys_path="${JOURNEYS_CMD%% *}"
+journeys_will_run() { [ -z "${TRAIN_GATES_CMD:-}" ] && [ -f "$journeys_path" ]; }
+
+lane_home_usable() {  # <dir>: a serving lane home - its config + serve binary
+  local d="$1" b
+  [ -f "$d/config/config.yaml" ] || return 1
+  for b in "$d/omega" "$d/omega.exe"; do
+    if [ -x "$b" ]; then return 0; fi
+  done
+  return 1
+}
+
+resolve_lane_env() {
+  local b
+  if [ -z "${OMEGA_HOME:-}" ] && [ -n "${OMEGA_BIN:-}" ]; then
+    OMEGA_HOME="$(dirname "$OMEGA_BIN")"
+  fi
+  if [ -n "${OMEGA_HOME:-}" ]; then
+    [ -d "$OMEGA_HOME" ] || die "OMEGA_HOME is set but is not a directory: $OMEGA_HOME (the journey recipes seed agent homes into it)"
+    if [ -z "${OMEGA_BIN:-}" ]; then
+      for b in "$OMEGA_HOME/omega" "$OMEGA_HOME/omega.exe"; do
+        if [ -x "$b" ]; then OMEGA_BIN="$b"; break; fi
+      done
+    fi
+    export OMEGA_HOME OMEGA_BIN
+    note "journeys lane home (caller): $OMEGA_HOME"
+    return 0
+  fi
+  # Derivation: the checkout's own bin/ IS the dev lane home (config/config.yaml
+  # plus the omega binary the lane's serve was launched from). Nothing is
+  # guessed past that - an unproven home would seed into the wrong directory.
+  if lane_home_usable "$REPO/bin"; then
+    OMEGA_HOME="$REPO/bin"
+    for b in "$REPO/bin/omega" "$REPO/bin/omega.exe"; do
+      if [ -x "$b" ]; then OMEGA_BIN="$b"; break; fi
+    done
+    export OMEGA_HOME OMEGA_BIN
+    note "journeys lane home (derived): $OMEGA_HOME"
+    return 0
+  fi
+  die "the validation journeys gate cannot run green without a lane home: OMEGA_HOME and OMEGA_BIN are unset and $REPO/bin is not a serving lane home (needs config/config.yaml plus omega or omega.exe). Probed: OMEGA_HOME (unset), OMEGA_BIN (unset), $REPO/bin. Refusing BEFORE the merge - nothing rebased, nothing merged, the card keeps its status."
+}
+
+lane_healthy() {  # <url>: the served lane the journeys drive must answer ok
+  local url="$1" answer=""
+  if command -v curl >/dev/null 2>&1; then
+    answer="$(curl -s -m 10 "$url/health" 2>/dev/null || true)"
+  fi
+  case "$answer" in
+    *'"ok"'*) note "journeys lane healthy: $url"; return 0 ;;
+  esac
+  die "the validation journeys gate drives the SERVED lane, and $url/health is not healthy (answer: ${answer:-<none>}). A lane red of that shape says nothing about this landing. Refusing BEFORE the merge - nothing rebased, nothing merged, the card keeps its status. Fix the lane (or set JOURNEY_BASE_URL to the lane that serves this checkout) and rerun."
+}
+
+if journeys_will_run; then
+  resolve_lane_env
+  lane_healthy "${JOURNEY_BASE_URL:-http://127.0.0.1:8098}"
+fi
+
 # ---- free the branch ---------------------------------------------------
 
 ws="$(task_field "$tid" "workspace_path" || true)"
@@ -465,14 +652,21 @@ gates_pass() {
   else
     echo "embed lane absent in this checkout - skipping (static/ change gate lives in the lane)"
   fi
-  if [ -f "$JOURNEYS_CMD" ]; then
+  if [ -f "$journeys_path" ]; then
     echo "==> validation journeys"
-    "$JOURNEYS_CMD" || exit 1
+    echo "    lane env: OMEGA_HOME=${OMEGA_HOME:-<unset>} OMEGA_BIN=${OMEGA_BIN:-<unset>} base ${JOURNEY_BASE_URL:-<run.sh default>}"
+    # An override whose WHOLE value is a path (spaces allowed) runs as one
+    # argument; anything else is a command line, flags included.
+    if [ "$JOURNEYS_CMD" = "$journeys_path" ]; then
+      bash "$journeys_path" || exit 1
+    else
+      bash -c "$JOURNEYS_CMD" || exit 1
+    fi
   elif [ -n "${TRAIN_JOURNEYS_CMD:-}" ]; then
-    echo "journeys command is set but missing: $JOURNEYS_CMD" >&2
+    echo "journeys command is set but missing: $journeys_path (from '$JOURNEYS_CMD')" >&2
     exit 1
   else
-    echo "==> validation journeys: SKIPPED - $JOURNEYS_CMD not present yet (the companion card wires it in)"
+    echo "==> validation journeys: SKIPPED - $journeys_path not present yet (the companion card wires it in)"
   fi
   echo "FIN"
 }

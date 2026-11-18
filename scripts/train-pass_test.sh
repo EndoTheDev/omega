@@ -22,10 +22,98 @@ badf() {
   echo "FAIL: $1"
 }
 
+# ---- the board reader ---------------------------------------------------
+# The sqlite3 CLI is absent on fleet Windows hosts (the same gap
+# train-pass.sh and factory-dispatch.sh document for themselves), and this
+# suite seeds every fixture board with it - so on such a host the whole
+# suite reds "sqlite3: command not found" no matter what the train does.
+# Ship the shim the scripts already carry inline: the python sqlite3 module
+# behind the CLI's own argument shapes ([-readonly] [-separator S] <arg>...,
+# statements also via stdin). The stub hermes below calls it too, so it must
+# sit on PATH, not be a shell function.
+# A PATH entry must be POSIX under MSYS: a C:/ entry is split at the colon.
+# A native python cannot open an MSYS path either (/tmp/...), so the shim
+# converts the db spelling once (cygpath -m) when the raw one does not open -
+# the suite is honest under both TMPDIR shapes (round-1 review nit 1).
+posix_path() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -u "$1"; else printf '%s' "$1"; fi
+}
+# Fixture roots are consumed by NATIVE tools (git, python), which cannot open
+# an MSYS /tmp/... path at all: mktemp under a POSIX TMPDIR made every fixture
+# git init and file write fail, reding the whole suite (round-1 review nit 1).
+native_mktemp() {
+  local d
+  d="$(mktemp -d)" || return 1
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$d"; else printf '%s' "$d"; fi
+}
+if ! command -v sqlite3 >/dev/null 2>&1; then
+  SUITE_PY="$(command -v python || command -v python3 || true)"
+  [ -n "$SUITE_PY" ] || {
+    echo "train-pass_test: no board reader - neither the sqlite3 CLI nor python is present" >&2
+    exit 1
+  }
+  SHIM_ROOT="$(native_mktemp)"
+  SHIM_DIR="$(posix_path "$SHIM_ROOT")/bin"
+  mkdir -p "$SHIM_DIR"
+  cat >"$SHIM_DIR/sqlite3" <<SHIM
+#!/usr/bin/env bash
+exec "$SUITE_PY" -c '
+import sqlite3, sys
+args, sep, readonly = sys.argv[1:], "|", False
+while args and args[0].startswith("-"):
+    a = args.pop(0)
+    if a == "-separator":
+        sep = args.pop(0)
+    elif a == "-readonly":
+        readonly = True
+db = args[0]
+sql = " ".join(args[1:]) if len(args) > 1 else sys.stdin.read()
+stmts, buf = [], ""
+for line in sql.splitlines(True):
+    buf += line
+    if sqlite3.complete_statement(buf):
+        stmts.append(buf)
+        buf = ""
+if buf.strip():
+    stmts.append(buf)
+try:
+    con = sqlite3.connect(db, timeout=30)
+except sqlite3.OperationalError:
+    # A native python cannot open an MSYS path (/tmp/...): convert once and
+    # retry, so the suite is honest under a POSIX TMPDIR too (round-1 nit).
+    import subprocess
+    fixed = ""
+    try:
+        conv = subprocess.run(["cygpath", "-m", db], capture_output=True, text=True)
+        if conv.returncode == 0:
+            fixed = conv.stdout.strip()
+    except OSError:
+        fixed = ""
+    if not fixed:
+        raise
+    con = sqlite3.connect(fixed, timeout=30)
+sys.stdout.reconfigure(newline="\n")
+try:
+    for stmt in stmts:
+        cur = con.execute(stmt)
+        if cur.description:
+            for row in cur.fetchall():
+                print(sep.join("" if v is None else str(v) for v in row))
+    if not readonly:
+        con.commit()
+finally:
+    con.close()
+' "\$@"
+SHIM
+  chmod +x "$SHIM_DIR/sqlite3"
+  PATH="$SHIM_DIR:$PATH"
+  export PATH
+fi
+
 # ---- fixture scaffolding ------------------------------------------------
 
 mk_harness() {
-  HARNESS="$(mktemp -d)"
+  HARNESS="$(native_mktemp)"
   REPO="$HARNESS/repo"
   mkdir -p "$HARNESS/mock" "$HARNESS/board"
   : >"$HARNESS/mock/hermes.log"
@@ -50,10 +138,14 @@ STUB
   HERMES="$HARNESS/mock/hermes"
   export HERMES
   unset TRAIN_GATES_CMD TRAIN_JOURNEYS_CMD TRAIN_NO_PUSH HERMES_KANBAN_BOARD TRAIN_RECONCILER_ASSIGNEE
+  # the env contract under test (card t_7acaa267): every leg states its own
+  unset KANBAN_DB HERMES_KANBAN_DB HERMES_KANBAN_HOME HERMES_HOME TRAIN_CARD
+  unset OMEGA_HOME OMEGA_BIN JOURNEY_BASE_URL JOURNEY_WITNESS
 }
 
-new_board() {
-  KANBAN_DB="$HARNESS/board/kanban.db"
+new_board() {  # new_board [<db path>] - default: the harness dir (explicit KANBAN_DB)
+  KANBAN_DB="${1:-$HARNESS/board/kanban.db}"
+  mkdir -p "$(dirname "$KANBAN_DB")"
   export KANBAN_DB
   sqlite3 "$KANBAN_DB" <<'SQL'
 CREATE TABLE tasks (
@@ -96,6 +188,75 @@ run() {
 bisect_run() {
   rc=0
   ( cd "$REPO" && "$BISECT" "$@" >"$HARNESS/run.out" 2>&1 ) || rc=$?
+}
+
+# The no-caller-env pass (card t_7acaa267): HOME carries no hermes home, the
+# remapped windows live home sits under LOCALAPPDATA - the exact shape that
+# used to die `board db not found` exit 2 before the queue.
+run_nocaller_env() {
+  rc=0
+  mkdir -p "$HARNESS/home" "$HARNESS/app"
+  ( cd "$REPO" && env -u KANBAN_DB -u HERMES_KANBAN_DB -u HERMES_KANBAN_HOME -u HERMES_HOME \
+      -u OMEGA_HOME -u OMEGA_BIN -u JOURNEY_BASE_URL \
+      HOME="$HARNESS/home" LOCALAPPDATA="$HARNESS/app" \
+      "$TRAIN" "$@" >"$HARNESS/run.out" 2>&1 ) || rc=$?
+}
+
+# <ok|dead>: a train run whose lane health answer comes from a curl stub on
+# PATH (no server, no port) - the journeys precondition's two branches.
+run_with_lane() {
+  rc=0
+  ( cd "$REPO" && PATH="$STUBBIN:$PATH" STUB_LANE_HEALTH="$1" \
+      "$TRAIN" --no-push >"$HARNESS/run.out" 2>&1 ) || rc=$?
+}
+
+# a fixture checkout that carries the journeys suite (the gate sees it)
+fixture_journeys() {
+  mkdir -p "$REPO/scripts/journeys"
+  cat >"$REPO/scripts/journeys/run.sh" <<'JR'
+#!/usr/bin/env bash
+# fixture suite: witness the env + the argument vector the train handed it
+if [ -n "${JOURNEY_WITNESS:-}" ]; then
+  { printf 'ARGS=%s\n' "$*"
+    printf 'OMEGA_HOME=%s\n' "${OMEGA_HOME:-unset}"
+    printf 'OMEGA_BIN=%s\n' "${OMEGA_BIN:-unset}"
+  } >"$JOURNEY_WITNESS"
+fi
+exit 0
+JR
+  chmod +x "$REPO/scripts/journeys/run.sh"
+}
+
+# ... plus a serving lane home at <checkout>/bin
+fixture_lane_home() {
+  mkdir -p "$REPO/bin/config"
+  : >"$REPO/bin/config/config.yaml"
+  printf '#!/bin/sh\nexit 0\n' >"$REPO/bin/omega"
+  chmod +x "$REPO/bin/omega"
+}
+
+# a curl stub: `{"ok":true}` for a healthy lane, connection failure for a dead
+lane_stub() {
+  STUBBIN="$(posix_path "$HARNESS")/stubbin"
+  mkdir -p "$STUBBIN"
+  cat >"$STUBBIN/curl" <<'CURL'
+#!/usr/bin/env bash
+case "${STUB_LANE_HEALTH:-}" in
+  ok) printf '{"ok":true}\n'; exit 0 ;;
+  *) exit 7 ;;
+esac
+CURL
+  chmod +x "$STUBBIN/curl"
+}
+
+# a committed card branch: card_branch <task_id> <completed_at>
+card_branch() {
+  git -C "$REPO" checkout -q -b "wt/$1" dev
+  echo "$1 work" >"$REPO/$1.txt"
+  git -C "$REPO" add -A
+  git -C "$REPO" commit -qm "feat(card): $1 work"
+  git -C "$REPO" checkout -q dev
+  card_row "$1" "wt/$1" "$2"
 }
 
 status_of() { sqlite3 "$KANBAN_DB" "SELECT status FROM tasks WHERE id='$1';"; }
@@ -341,6 +502,146 @@ if [ "$rc" != 0 ]; then badf "S6d: reapply must land (rc 0), got $rc: $(cat "$HA
 [ "$(git -C "$REPO" rev-parse dev)" = "$(git -C "$REPO" rev-parse refs/train/0001-t_skip)" ] ||
   badf "S6d: marker at dev tip"
 [ "$(status_of t_skip)" = "done" ] || badf "S6d: card stays done, got $(status_of t_skip)"
+
+echo ""
+echo "== S7: NO caller env - the board db resolves from the live home (host-remap)"
+ok
+
+mk_harness
+new_repo
+new_board "$HARNESS/app/hermes/kanban/boards/project-omega/kanban.db"
+card_branch t_live 600
+run_nocaller_env --no-push
+if [ "$rc" != 0 ]; then badf "S7: expected rc 0 with no caller env, got $rc: $(cat "$HARNESS/run.out")"; fi
+grep -q "board db: .*app/hermes/kanban/boards/project-omega/kanban.db" "$HARNESS/run.out" ||
+  badf "S7: the pass must name the live-home db it resolved: $(cat "$HARNESS/run.out")"
+grep -q "DONE t_live" "$HARNESS/run.out" || badf "S7: no landing: $(cat "$HARNESS/run.out")"
+[ "$(git -C "$REPO" rev-parse dev)" = "$(git -C "$REPO" rev-parse refs/train/0001-t_live)" ] ||
+  badf "S7: marker must sit at dev tip"
+
+echo "== S8: no candidate anywhere -> refuse exit 2 naming every probed path"
+ok
+
+mk_harness
+new_repo
+new_board "$HARNESS/elsewhere/kanban.db"
+card_branch t_nowhere 610
+pre="$(git -C "$REPO" rev-parse dev)"
+run_nocaller_env --no-push
+if [ "$rc" != 2 ]; then badf "S8: a pass with no board db must refuse exit 2, got $rc: $(cat "$HARNESS/run.out")"; fi
+grep -q "no board db for board 'project-omega'" "$HARNESS/run.out" || badf "S8: refusal must name the board: $(cat "$HARNESS/run.out")"
+grep -q "Probed, in order" "$HARNESS/run.out" || badf "S8: refusal must name the probes: $(cat "$HARNESS/run.out")"
+grep -q "app/hermes/kanban/boards/project-omega/kanban.db" "$HARNESS/run.out" || badf "S8: windows live home not probed"
+grep -q "\.hermes/kanban/boards/project-omega/kanban.db" "$HARNESS/run.out" || badf "S8: POSIX live home not probed"
+grep -q "DONE t_nowhere" "$HARNESS/run.out" && badf "S8: nothing may land without a board"
+[ "$(git -C "$REPO" rev-parse dev)" = "$pre" ] || badf "S8: dev must be untouched"
+git -C "$REPO" show-ref --verify --quiet refs/heads/wt/t_nowhere || badf "S8: the card branch must survive a precondition refusal"
+
+echo "== S9: an explicit KANBAN_DB that names no file refuses, never falls back"
+ok
+
+mk_harness
+new_repo
+# the live-home candidate EXISTS - the explicit dead path must still refuse
+new_board "$HARNESS/app/hermes/kanban/boards/project-omega/kanban.db"
+card_branch t_pin 620
+pre="$(git -C "$REPO" rev-parse dev)"
+rc=0
+( cd "$REPO" && KANBAN_DB="$HARNESS/dead/kanban.db" "$TRAIN" --no-push >"$HARNESS/run.out" 2>&1 ) || rc=$?
+if [ "$rc" != 2 ]; then badf "S9: a dead explicit KANBAN_DB must refuse exit 2, got $rc: $(cat "$HARNESS/run.out")"; fi
+grep -q "KANBAN_DB is set but there is no board db at .*dead/kanban.db" "$HARNESS/run.out" ||
+  badf "S9: refusal must name the dead override: $(cat "$HARNESS/run.out")"
+grep -q "DONE t_pin" "$HARNESS/run.out" && badf "S9: an explicit dead override must never land a neighbour board"
+[ "$(git -C "$REPO" rev-parse dev)" = "$pre" ] || badf "S9: dev must be untouched"
+
+echo "== S10a: journeys gate with no derivable lane home refuses BEFORE the merge"
+ok
+
+mk_harness
+new_repo
+new_board
+fixture_journeys
+git -C "$REPO" add -A
+git -C "$REPO" commit -qm "test(fixture): journeys suite"
+card_branch t_nolane 630
+pre="$(git -C "$REPO" rev-parse dev)"
+run --no-push
+if [ "$rc" != 2 ]; then badf "S10a: no lane home must refuse exit 2, got $rc: $(cat "$HARNESS/run.out")"; fi
+grep -q "cannot run green without a lane home" "$HARNESS/run.out" || badf "S10a: refusal must name the lane-home gap: $(cat "$HARNESS/run.out")"
+[ "$(git -C "$REPO" rev-parse dev)" = "$pre" ] || badf "S10a: the refusal must come BEFORE the merge (dev moved)"
+[ "$(status_of t_nolane)" = "done" ] || badf "S10a: a precondition refusal never demotes, got $(status_of t_nolane)"
+git -C "$REPO" show-ref --verify --quiet refs/heads/wt/t_nolane || badf "S10a: branch must survive"
+sqlite3 "$KANBAN_DB" "SELECT count(*) FROM task_comments WHERE task_id='t_nolane';" | grep -q '^0$' ||
+  badf "S10a: a precondition refusal posts nothing (no strike, no red-gate evidence)"
+
+echo "== S10b: <checkout>/bin is derived and the gate inherits OMEGA_HOME/OMEGA_BIN"
+ok
+
+mk_harness
+new_repo
+new_board
+fixture_journeys
+fixture_lane_home
+git -C "$REPO" add -A
+git -C "$REPO" commit -qm "test(fixture): journeys suite + lane home"
+card_branch t_lane 640
+lane_stub
+export JOURNEY_WITNESS="$HARNESS/journey.env"
+run_with_lane ok
+unset JOURNEY_WITNESS
+if [ "$rc" != 0 ]; then badf "S10b: expected rc 0 with a derived lane home, got $rc: $(cat "$HARNESS/run.out")"; fi
+grep -q "journeys lane home (derived): .*bin" "$HARNESS/run.out" || badf "S10b: derivation line missing: $(cat "$HARNESS/run.out")"
+[ -f "$HARNESS/journey.env" ] || badf "S10b: the journeys command never ran"
+grep -q "^ARGS=--regression$" "$HARNESS/journey.env" ||
+  badf "S10b: the default gate must run the named regression set (--regression), got: $(cat "$HARNESS/journey.env")"
+grep -q "OMEGA_HOME=.*/repo/bin" "$HARNESS/journey.env" || badf "S10b: OMEGA_HOME must reach the gate: $(cat "$HARNESS/journey.env")"
+grep -q "OMEGA_BIN=.*/repo/bin/omega" "$HARNESS/journey.env" || badf "S10b: OMEGA_BIN must reach the gate: $(cat "$HARNESS/journey.env")"
+grep -q "DONE t_lane" "$HARNESS/run.out" || badf "S10b: no landing: $(cat "$HARNESS/run.out")"
+
+echo "== S10c: a dead lane refuses BEFORE the merge (never a post-merge demote)"
+ok
+
+mk_harness
+new_repo
+new_board
+fixture_journeys
+fixture_lane_home
+git -C "$REPO" add -A
+git -C "$REPO" commit -qm "test(fixture): journeys suite + lane home"
+card_branch t_deadlane 650
+lane_stub
+pre="$(git -C "$REPO" rev-parse dev)"
+run_with_lane dead
+if [ "$rc" != 2 ]; then badf "S10c: a dead lane must refuse exit 2, got $rc: $(cat "$HARNESS/run.out")"; fi
+grep -q "is not healthy" "$HARNESS/run.out" || badf "S10c: refusal must name the lane health: $(cat "$HARNESS/run.out")"
+[ "$(git -C "$REPO" rev-parse dev)" = "$pre" ] || badf "S10c: the refusal must come BEFORE the merge (dev moved)"
+[ "$(status_of t_deadlane)" = "done" ] || badf "S10c: a lane red at precondition time never demotes, got $(status_of t_deadlane)"
+grep -q "DONE t_deadlane" "$HARNESS/run.out" && badf "S10c: nothing may land on a dead lane"
+
+echo "== S11: TRAIN_JOURNEYS_CMD replaces the whole command (no flag injected, spaces allowed)"
+ok
+
+mk_harness
+new_repo
+new_board
+fixture_journeys
+fixture_lane_home
+# a path with a space: the precondition probe takes the WHOLE value as the
+# path and the gate runs it as one argument (round-1 nit 3)
+mv "$REPO/scripts/journeys/run.sh" "$REPO/scripts/journeys/my suite.sh"
+git -C "$REPO" add -A
+git -C "$REPO" commit -qm "test(fixture): journeys suite + lane home"
+card_branch t_override 660
+lane_stub
+export JOURNEY_WITNESS="$HARNESS/journey.env"
+export TRAIN_JOURNEYS_CMD="scripts/journeys/my suite.sh"
+run_with_lane ok
+unset JOURNEY_WITNESS TRAIN_JOURNEYS_CMD
+if [ "$rc" != 0 ]; then badf "S11: expected rc 0 under a space-bearing override path, got $rc: $(cat "$HARNESS/run.out")"; fi
+[ -f "$HARNESS/journey.env" ] || badf "S11: the override command never ran"
+grep -q "^ARGS=$" "$HARNESS/journey.env" ||
+  badf "S11: the override must receive no injected flag, got: $(cat "$HARNESS/journey.env")"
+grep -q "DONE t_override" "$HARNESS/run.out" || badf "S11: no landing under the override: $(cat "$HARNESS/run.out")"
 
 echo ""
 echo "train-pass_test: $pass ok, $fail failed"
