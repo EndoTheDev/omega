@@ -27,6 +27,7 @@ import {
   persistedTelemetry,
   postCanvasAction,
   postVariantSelect,
+  isVerdictTool,
   renderTranscriptItems,
   streamChat,
   verdictCardFromToolArgs,
@@ -1387,11 +1388,10 @@ export function createCanvasTranscript(): CanvasTranscript {
   // here: a per-pane Map re-anchored every card on a remount (see
   // verdictAnchorMs above)
 
-  // paint is one apply()'s working set: the panel's own flags plus the
-  // per-payload slot bookkeeping (an ordinal counts what THIS payload
-  // carries, so it starts over every paint)
+  // paint is one apply()'s working set: the per-payload slot bookkeeping
+  // (an ordinal counts what THIS payload carries, so it starts over
+  // every paint)
   interface Paint {
-    panelRunning: boolean;
     resultIds: ReadonlySet<string>;
     ordinals: Map<string, number>;
     usedSlots: Set<string>;
@@ -1486,7 +1486,6 @@ export function createCanvasTranscript(): CanvasTranscript {
     if (!block) return null;
     const running = row.status === "streaming";
     const blockRunning = running && block.running;
-    const panelRunning = ctx.panelRunning;
     const resultIds = ctx.resultIds;
     if (row.role === "user") {
       const it = lookup(row, block, index, ctx, () => reactive({ kind: "message", role: "user", content: "" }) as MessageItem);
@@ -1565,22 +1564,24 @@ export function createCanvasTranscript(): CanvasTranscript {
     // role assistant:
     if (block.type === "tool_call") {
       const callId = block.tool_call?.id;
-      // verdict calls (the bare domain tool, the one-domain law
-      // t_e06b38bc) render as cards (the card IS the surface, no
-      // plain tool line - the matching result row settles it)
-      if (block.tool_call?.name === "verdict") {
+      // verdict calls render as cards (the card IS the surface, no plain
+      // tool line - the matching result row settles it). The name comes
+      // from ONE predicate (omega.ts isVerdictTool): the wire tool is
+      // the dotted verb `verdict.request`, and the flat pre-rename name
+      // this branch used to spell matches nothing on the wire (card
+      // t_79386e36 - every card degraded to a tool line in silence).
+      if (isVerdictTool(block.tool_call?.name)) {
         // a card without a call id has nothing to settle it: the row's
         // own address keeps it stable across repaints anyway
         const live = !callId && !row.id;
         const vsig = callId ? `verdict:${callId}` : `verdict:${rowAddress(row, block, ctx)}`;
         const cached = peek<VerdictItem>(vsig, live, ctx);
         if (cached) {
-          // the card is issued; only the stale bit moves. The run is
-          // the truth: a pending card under a LIVE panel run is
-          // actively awaited (the compose dedupe can hand the card the
-          // persisted, closed copy of its own call row) - staleness is
-          // the panel's running flag, not the row's.
-          cached.stale = !panelRunning;
+          // the card is issued; only its anchor moves. A pending card is
+          // ANSWERABLE regardless of the panel's streaming bit: the tool
+          // is yield-class, so the run ending with the card waiting is
+          // the normal path, not the death of it (the retired `stale`
+          // bit read !panelRunning and painted every real card dead).
           // the anchor is re-derived at every paint (the elapsed-meter
           // law): a payload that carries the server's start stamp only
           // on a later delta moves the countdown onto the true clock,
@@ -1595,7 +1596,6 @@ export function createCanvasTranscript(): CanvasTranscript {
         const card = reactive(verdictCardFromToolArgs(block.tool_call?.arguments));
         card.callId = callId;
         card.status = "pending";
-        card.stale = !panelRunning;
         // anchored whether or not a stream is live: a yielded run's card
         // is still pending, and its remaining time is the call's truth,
         // never the panel's running flag (the old gate here is why a
@@ -1713,7 +1713,6 @@ export function createCanvasTranscript(): CanvasTranscript {
       if (b && row.id) lastIdOfShape.set(`${row.role}:${b.type}`, i);
     });
     const ctx: Paint = {
-      panelRunning: !!payload.running,
       resultIds,
       ordinals: new Map<string, number>(),
       usedSlots: new Set<string>(),

@@ -439,8 +439,8 @@ test("all five consumers import the predicate instead of spelling the set", () =
   );
   assert.match(
     src("composables/omega.ts"),
-    /it\?\.kind === "tool" && isYielded\(it\.status\)/,
-    "the wake watcher takes the yielded half, by name",
+    /if \(it\.kind === "tool"\) return isYielded\(it\.status\)/,
+    "the wake watcher takes the yielded half, by name (awaitsWake: the tool chip AND the pending verdict card)",
   );
 });
 

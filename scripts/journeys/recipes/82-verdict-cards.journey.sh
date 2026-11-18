@@ -16,6 +16,11 @@
 #             the multi confirm, and the typed-answer row.
 #
 # Browser (model-driven, self-skips on a modelless lane):
+#   alive   - the card is ACTIONABLE and counts down, and no generic
+#             GateCard binds over it (card t_79386e36: the renderer
+#             matched the PRE-RENAME flat tool name `verdict`, the wire
+#             has been `verdict.request` since 2026-11-09, so this half
+#             was asserting a card the product never mounted).
 #   layout  - a real card from a real run renders its options top to
 #             bottom (strictly increasing row tops), each row carries
 #             its description, the multi confirm and the typed-answer
@@ -106,16 +111,51 @@ open_journey_row "(journey) verdict layout $TAG"
 
 # drive a real run: demand the verdict tool with fixed options, so the
 # layout assertions below are stable regardless of the model's wording
-ab find placeholder "message omega" click >/dev/null
-ab keyboard type "Call the verdict tool now with action request, title \"J82 layout probe\", options EXACTLY [{label:\"Ship\",description:\"merge the branch now\"},{label:\"Hold\",description:\"wait for the next window\"},{label:\"Scrap\",description:\"abandon the attempt\"},{label:\"Park\"},{label:\"Fold\"}], multi=true, allow_text=true. Do not add, reorder, or reword options. Issue the card and stop."
+# focus the active pane's composer: the composer input carries no
+# placeholder attribute (the only "say something to" text in the DOM is
+# the EMPTY-TRANSCRIPT marker, not an input placeholder), so an
+# `ab find placeholder` click lands nowhere - the focus is an assertion
+focused=$(jsq '(()=>{const i=document.querySelector(".composer .composer-input"); if(!i) return 0; i.focus(); return document.activeElement===i?1:0})()' 2>&1 | tr -d '"')
+[ "$focused" = "1" ] || die "composer not focusable (got $focused)"
+ab keyboard type "Call the verdict.request tool now with title \"J82 layout probe\", options EXACTLY [{label:\"Ship\",description:\"merge the branch now\"},{label:\"Hold\",description:\"wait for the next window\"},{label:\"Scrap\",description:\"abandon the attempt\"},{label:\"Park\"},{label:\"Fold\"}], multi=true, allow_text=true, timeout_s=600. Do not add, reorder, or reword options. Issue the card and stop."
 ab press Enter
 ab press Enter
-step "sent the card instruction"
+step "sent the card instruction (the dotted wire verb: verdict.request)"
 
 # the card renders as an interactive card, not a tool line: our title
 # token pins OUR card (the throwaway session has no other cards)
 wait_js '[...document.querySelectorAll(".verdict-title")].some(t => (t.innerText||"").includes("J82 layout probe"))' 150
 step "ok: verdict card rendered"
+
+# The card must be ALIVE, not just present (card t_79386e36). A pending
+# verdict.request is a YIELDED call: the run ends while the card waits in
+# the hub, so the renderer's stale bit used to mark every real card dead -
+# options hidden, no countdown, "no answer recorded (the run ended
+# first)". A live card keeps its option rows, its skip, and a countdown
+# anchored on the call's own start stamp.
+live=$(jsq '(()=>{
+  const card=[...document.querySelectorAll(".verdict-card")].filter(c=>c.innerText.includes("J82 layout probe"))[0];
+  if(!card) return "no-card";
+  if(card.classList.contains("stale")) return "stale";
+  if(card.classList.contains("settled")) return "settled";
+  if(!card.querySelector(".verdict-option-row")) return "no-options";
+  if(!card.querySelector(".verdict-skip")) return "not-actionable";
+  const cd=card.querySelector(".verdict-countdown");
+  if(!cd) return "no-countdown";
+  const label=(cd.innerText||"").trim();
+  return (/^[0-9]+:[0-9]{2}$/.test(label)||label==="expiring…") ? "ok:"+label : "bad-countdown:"+label;
+})()' 2>&1 | tr -d '"')
+case "$live" in ok:*) step "ok: card is actionable and counting down ($live)";;
+  *) die "verdict card is not live (actionable + countdown): $live";;
+esac
+
+# No generic gate card may bind over the model's own question: the gate
+# binder's guard read the same dead bit, so an approve/deny GateCard took
+# the card's place and the user answered a question the model never asked
+# (card t_79386e36).
+gates=$(jsq '(()=>document.querySelectorAll(".verdict-card.gate-card").length)()' 2>&1 | tr -d '"')
+[ "$gates" = "0" ] || die "a GateCard bound over the model's verdict card ($gates found)"
+step "ok: no gate card bound over the model's card"
 
 # list layout geometry: the rows stack top to bottom - every row's top
 # is strictly below the previous row's, all sharing one column.

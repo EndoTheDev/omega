@@ -258,9 +258,10 @@ export interface VerdictItem {
   // a "type your own answer" row renders between options and skip
   allowText: boolean;
   timeoutS?: number;
-  // live mounts anchor the client countdown to the frame's arrival;
-  // restored items never count down (issuedAt unknown client-side, the
-  // countdown is an approximation either way)
+  // the call's issue instant (ms) - the countdown's anchor, so
+  // `issuedAt + timeout_s - now` is the remaining time. Derived from the
+  // wire's started_at on both render paths (verdictIssuedAt); absent when
+  // a payload carries no clock, and the card then renders no label.
   issuedAt?: number;
   status: "pending" | "settled";
   // the settled verdict, rendered as the card's outcome line
@@ -268,9 +269,6 @@ export interface VerdictItem {
   // the picked label(s), already joined for multi answers
   picked?: string;
   answerText?: string;
-  // the stream ended while the card was still pending: no answer can
-  // arrive anymore - render the card dead, not actionable
-  stale?: boolean;
 }
 
 // VerdictOptionItem is one pick row: the label the row shows and an
@@ -463,19 +461,24 @@ export function renderTranscriptItems(
             : undefined,
         };
         if (it.tool_call?.id) toolById.set(it.tool_call.id, t);
-        // a verdict call (the bare domain tool, the one-domain law
-        // t_e06b38bc) renders as a verdict card and NO tool line (the card is the
+        // a verdict call (the dotted wire verb - isVerdictTool) renders
+        // as a verdict card and NO tool line (the card is the
         // interactive surface AND the technical record - its result
         // below still settles the card). The matching tool_result is
         // consumed by the card branch, never by the tool-line map.
-        if (t.name === "verdict") {
+        if (isVerdictTool(t.name)) {
           const v = verdictCardFromToolArgs(it.tool_call?.arguments);
           if (it.tool_call?.id) verdictById.set(it.tool_call.id, v);
           v.status = "pending"; // settled by the tool_result below
-          // a restored card whose call is NOT part of a live run tail
-          // will never see a tool_result - render it dead from the
-          // start; a matching tool_result still overrides to settled
-          v.stale = it.running !== true;
+          // the card is ANSWERABLE while its call has no result row,
+          // whatever the run did: verdict.request is yield-class, so
+          // the run ends with the card waiting in the hub and the
+          // answer wakes a new run on the same session (card
+          // t_79386e36 - "no live run" was read as "dead", which made
+          // every real card render dead). The countdown needs no guess
+          // either: an unanswered call carries the server's own start
+          // stamp, so the deadline is `issuedAt + timeout_s`.
+          v.issuedAt = verdictIssuedAt(it.started_at);
           out.push(v);
           break;
         }
@@ -514,22 +517,38 @@ export function renderTranscriptItems(
   return out;
 }
 
-// transcriptHasPending: does this rendered transcript carry at least
-// one pending chip (async agent loop phase 3)? The chat host's pending
-// watcher arms on it - a restored session whose calls still await
-// their wake re-attaches to the events stream so the chips fill in
-// live. Pure.
+// awaitsWake: this rendered item is an unanswered yield-class call - the
+// run has ended (or is about to) and the item's result re-enters as a
+// later WAKE run on the same session. Two shapes qualify, and they are
+// the SAME contract: a plain tool chip (a dispatched call, no result
+// row) and a pending verdict card (verdict.request blocks the turn, the
+// loop yields, the answer wakes the run - card t_79386e36). The card
+// was invisible here before: a reload with a card waiting armed no
+// watcher, so the wake's frames landed on nobody and the continuation
+// never painted. One predicate, both shapes. Pure.
+export function awaitsWake(it: TranscriptItem | undefined): boolean {
+  if (!it) return false;
+  if (it.kind === "tool") return isYielded(it.status);
+  return it.kind === "verdict" && it.status === "pending";
+}
+
+// transcriptHasPending: does this rendered transcript still await a
+// wake run (async agent loop phase 3)? The chat host's pending watcher
+// arms on it - a restored session whose calls/cards still await their
+// wake re-attaches to the events stream so they fill in live. Pure.
 export function transcriptHasPending(items: readonly TranscriptItem[]): boolean {
-  return items.some((it) => it?.kind === "tool" && isYielded(it.status));
+  return items.some(awaitsWake);
 }
 
 // transcriptPendingCount is the status bar's `N pending` segment over a
-// rendered transcript (card t_8fd38f88): the OPEN session's still-pending
-// calls, never a machine-wide number. Same derivation as
-// transcriptHasPending, counted - through the same predicate. Pure.
+// rendered transcript (card t_8fd38f88): the OPEN session's still-awaiting
+// items, never a machine-wide number. Same derivation as
+// transcriptHasPending, counted - through the same predicate (which is
+// also what makes it agree with chatPanelPendingCount on the canvas
+// payload: there a verdict call is simply an unanswered call). Pure.
 export function transcriptPendingCount(items: readonly TranscriptItem[]): number {
   let n = 0;
-  for (const it of items) if (it?.kind === "tool" && isYielded(it.status)) n++;
+  for (const it of items) if (awaitsWake(it)) n++;
   return n;
 }
 
@@ -737,6 +756,38 @@ export function chatPanelPendingCount(payload: ChatPayloadWire): number {
 
 // --- verdict cards v1 (card t_2ecf9c51) ---
 
+// VERDICT_TOOL_NAMES is the WIRE vocabulary of the card surface (card
+// t_79386e36). The DOMAIN noun is `verdict` (the capsule, the hub, this
+// card); the wire tool is the DOTTED verb `verdict.request` (the dotted
+// split of 2026-11-09). The flat pre-rename name matches nothing on the
+// wire, and a name list spelled at each call site is how the rename
+// silently killed the surface: the canvas paint (chat.ts) and the REST
+// restore below each carried their own `=== "verdict"`, both went dead
+// with the wire, and nothing failed - the tool line rendered instead of
+// the card, on a green suite (the node suite pinned the mappers, never
+// the name; journey 82's browser half self-skips on a modelless lane).
+// ONE list, ONE predicate, both paths. A new dotted verdict verb is
+// added HERE, never as a second comparison at a call site.
+export const VERDICT_TOOL_NAMES: readonly string[] = ["verdict.request"];
+
+// isVerdictTool: does this tool_call name issue a verdict card? The ONLY
+// place the wire name is spelled. Pure.
+export function isVerdictTool(name: string | undefined): boolean {
+  return !!name && VERDICT_TOOL_NAMES.includes(name);
+}
+
+// verdictIssuedAt resolves a card's countdown anchor from the wire's
+// started_at - the call's own open wall clock, served on an UNANSWERED
+// tool_call block both ways (core.ChatBlock.StartedAt). A fixed instant,
+// so every repaint derives the same deadline; absent or unparseable
+// answers undefined and the card renders without a label rather than a
+// fabricated one. Pure.
+export function verdictIssuedAt(startedAt: string | undefined): number | undefined {
+  if (!startedAt) return undefined;
+  const at = Date.parse(startedAt);
+  return Number.isNaN(at) ? undefined : at;
+}
+
 // verdictCardFromToolArgs builds a card item from a verdict tool
 // call's arguments. Pure - the live stream and the restored
 // transcript both call this; a malformed args blob degrades to an
@@ -942,9 +993,13 @@ export function bindGateQuestions(
   if (!sessionId) return out;
   const mine = cards.filter((c) => c.session_id === sessionId);
   if (!mine.length) return out;
-  // a verdict-tool card that is pending (and not dead) is THE question
-  // this run awaits - its own card renders from the call row
-  if (items.some((it) => it.kind === "verdict" && it.status === "pending" && !it.stale)) {
+  // a verdict-tool card that is pending is THE question this run awaits
+  // - its own card renders from the call row. Pending is the whole test
+  // (card t_79386e36): a card is answerable exactly while its call has
+  // no result row, and verdict.request is yield-class, so the run HAS
+  // ended while the card waits. (The retired `stale` bit asked the
+  // panel's running flag and answered "dead" for every real card.)
+  if (items.some((it) => it.kind === "verdict" && it.status === "pending")) {
     return out;
   }
   const running = items.filter(
