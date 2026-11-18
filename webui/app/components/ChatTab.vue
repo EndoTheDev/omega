@@ -163,7 +163,7 @@
   // and the SSE-composed live view are gone; the state keeps the
   // composer transport side (draft, attach chips, the REST restore's
   // fallback for sessions the single panel does not cover, variants).
-  import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+  import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
   import {
     CHAT_HOST_KEY,
     EPHEMERAL_DRAFT_REF,
@@ -197,7 +197,6 @@
     type ModelProviderSection,
   } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
-  import { chipDisplay, chipOf } from "../composables/chips";
   // card t_e4280de7: consecutive tool rows collapse into ONE group
   // block (render-site view, the transcript itself stays flat)
   import { groupToolRuns, isToolRun, type ChatEntry } from "../composables/toolGroup";
@@ -319,35 +318,15 @@
     return canvasTranscript.apply(panelPayload.value);
   });
   // the live chip tail (card t_896cf5a8): a running call's streamed
-  // output rides the row whose tool call id matches. The store is
-  // reactive, so a landed chunk repaints exactly these rows; the merge
-  // runs over the FINAL transcript, so both render sources (the canvas
-  // panel and the REST restore fallback) show the live half. Restore
-  // items are wrapped in reactive proxies: the mutation lands on the
-  // child's own prop read (the t_078a2c35 mechanism the canvas items
-  // already ride), and identity is kept - the elapsed meter never
-  // restarts on a chunk.
-  const restoreItems = computed(() =>
-    (state.value?.restored ?? []).map((it) =>
-      it.kind === "tool" ? (reactive(it) as TranscriptItem) : it,
-    ),
-  );
-  const transcript = computed(() => {
-    const items = canvasItems.value ?? restoreItems.value;
-    // the merge writes the chips store's tail onto the row (t_896cf5a8);
-    // assign only on a REAL change - a paint of an unchanged payload must
-    // not write, because a changed write here invalidates the effects that
-    // read it and the pane re-arms itself (card t_a356fcc7)
-    for (const it of items) {
-      if (it.kind !== "tool") continue;
-      const chip = chipOf(it.callId);
-      const liveText = chipDisplay(chip) || undefined;
-      const liveSettled = chip?.settled === true;
-      if (it.liveText !== liveText) it.liveText = liveText;
-      if (it.liveSettled !== liveSettled) it.liveSettled = liveSettled;
-    }
-    return items;
-  });
+  // output rides the row whose tool call id matches - read AT THE ROW
+  // (ToolCallLine, card t_64d14d2b), keyed by the row's own call id. The
+  // store is reactive, so a landed chunk repaints the one row that owns
+  // the call. The derivation below is a PURE projection: no write, no
+  // chip read - so a chunk never re-derives the transcript, its blocks or
+  // the activity line, and no assignment of ours can re-arm the pane
+  // (card t_a356fcc7's class, now structurally impossible here).
+  const restoreItems = computed(() => state.value?.restored ?? []);
+  const transcript = computed(() => canvasItems.value ?? restoreItems.value);
   const statusLine = computed(() => state.value?.statusLine ?? "");
   const itemKey = createItemKeySource();
   // stacked layout (card t_84e4653c): the transcript cut at user

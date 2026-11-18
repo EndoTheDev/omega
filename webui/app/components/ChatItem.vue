@@ -37,8 +37,7 @@
     :answer-ms="item.answerMs"
     :output="item.output"
     :result="item.result"
-    :live-text="item.liveText"
-    :live-settled="item.liveSettled"
+    :call-id="item.callId"
     :gate="item.gate"
     :variant="variant"
     @select="(i) => variant && $emit('select', variant.message_id, i)" />

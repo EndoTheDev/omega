@@ -80,7 +80,7 @@ function snapshot(items: readonly unknown[]): string {
   return JSON.stringify(
     items.map((raw) => {
       const it = raw as Record<string, unknown>;
-      return [it.kind, it.role, it.content, it.status, it.elapsedMs, it.turnMs, it.streaming, it.liveText];
+      return [it.kind, it.role, it.content, it.status, it.elapsedMs, it.turnMs, it.streaming];
     }),
   );
 }
