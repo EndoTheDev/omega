@@ -20,6 +20,8 @@ import {
   liveChips,
   resetLiveChips,
 } from "../app/composables/chips.ts";
+import { groupToolRuns, toolChildKey, type ToolRunGroup } from "../app/composables/toolGroup.ts";
+import type { ToolItem } from "../app/composables/omega.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "app");
 const src = (p: string) => readFileSync(join(root, p), "utf8");
@@ -166,4 +168,50 @@ test("the tool call id reaches the row from both render paths", () => {
   // the pin reads the assignment - card t_a20fbad7)
   assert.ok(omega.includes("t.callId = callId || undefined"), "the restore path stamps the call id");
   assert.ok(chat.includes("it.callId = callId"), "the canvas panel path stamps the call id");
+});
+
+// card t_85066d64: a GROUPED row never showed a live tail. ToolGroup is a
+// container - but it forwarded no call id to the row it renders, so the
+// chips store had no key to hand that row its own chunk; only a lone call
+// (which renders through ChatItem) streamed its output. The group now
+// binds the same call-id path ChatItem does, and this pin holds it: the
+// binding arrived with the store view state work (t_15572849), so the pin
+// is what keeps a future "group is only a container" cleanup from
+// silently dropping the tail again. Removing the binding reds the pin.
+test("a grouped child carries the call id - the group is a container, not a re-render", () => {
+  const group = src("components/chat/ToolGroup.vue");
+  const chatItem = src("components/ChatItem.vue");
+  assert.ok(group.includes(':call-id="item.callId"'), "ToolGroup forwards the call id to every child row");
+  assert.ok(chatItem.includes(':call-id="item.callId"'), "both render paths bind the SAME call id");
+  // the tail is the row's own read - the container must never merge one
+  // onto the item (the retired live-text prop) nor read the store itself
+  assert.equal(group.includes("live-text"), false, "the group merges no tail onto its children");
+  assert.equal(
+    group.includes("chipOf(") || group.includes("chipDisplay("),
+    false,
+    "the container does not read the chip store - the row owns its tail",
+  );
+});
+
+// the fold must not strip or re-stamp the id: groupToolRuns hands the
+// transcript's own ToolItem objects through, so whatever the restore/canvas
+// mapper stamped (callId) is still the key the row reads.
+test("the fold preserves each child's call id - grouping never re-keys a row", () => {
+  const first: ToolItem = { kind: "tool", name: "shell.run", status: "running", callId: "c1" };
+  const second: ToolItem = { kind: "tool", name: "shell.run", status: "running", callId: "c2" };
+  const entries = groupToolRuns([first, second]);
+  assert.equal(entries.length, 1, "two consecutive calls fold into one group");
+  const group = entries[0] as ToolRunGroup;
+  assert.equal(group.toolgroup, true);
+  assert.equal(group.items[0], first, "the child is the transcript's own item object");
+  assert.equal(group.items[1], second);
+  assert.deepEqual(
+    group.items.map((it) => it.callId),
+    ["c1", "c2"],
+    "each child keeps the id the chips store keys on",
+  );
+  // the child key and the tail key are the same identity - a row cannot
+  // render one call's chunk under another call's key
+  assert.equal(toolChildKey(first, 0), "call:c1");
+  assert.equal(toolChildKey(second, 1), "call:c2");
 });
