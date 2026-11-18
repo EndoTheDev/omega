@@ -188,7 +188,7 @@ describe("edge pane hide/reveal - the stow (card t_9ed6cad7)", () => {
     const { closed, stow } = closedWithKanbanStowed();
     const raw = serialize(closed, ["sidebar"], 1000, { sidebar: stow } satisfies HiddenEdgeState);
     const back = deserializeLayout(raw)!;
-    assert.equal(back.version, 3);
+    assert.equal(back.version, 4, "the record shape is v:4 (px on disk)");
     assert.deepEqual(back.closedEdges, ["sidebar"]);
     const stowed = back.hiddenEdges?.sidebar;
     assert.ok(stowed);

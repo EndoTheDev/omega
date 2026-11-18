@@ -622,7 +622,7 @@ describe("serialize / deserialize", () => {
   it("marker-bearing v2 trees deserialize; bogus markers fall back to main", () => {
     const t = defaultTree();
     const back = deserializeLayout(serialize(t))!;
-    assert.equal(back.version, 3, "the record shape is v:3 (px on disk)");
+    assert.equal(back.version, 4, "the record shape is v:4 (px on disk, sidebar shape law)");
     assert.equal(findPane(back.tree, asSplit(t).children[0].id)!.edge, "left");
     assert.equal(findPane(back.tree, asSplit(t).children[2].id)!.edge, "right");
     const bogus = JSON.parse(serialize(t));
@@ -1624,7 +1624,7 @@ describe("v1 layout migration (t_d6b657a7)", () => {
     const dock = createDock(mem as unknown as Storage);
     await flush();
     const loaded = deserializeLayout(mem.getItem(DOCK_LAYOUT_KEY))!;
-    assert.equal(loaded.version, 3, "the migrated tree persisted as v3 (px on disk)");
+    assert.equal(loaded.version, 4, "the migrated tree persisted as v4 (px on disk, sidebar shape law)");
     assert.equal(findPane(loaded.tree, "n2")!.edge, "left");
     assert.equal(findPane(loaded.tree, "n4")!.edge, "right");
   });
@@ -1750,10 +1750,10 @@ describe("v:3 px shares tolerate a pane that omits fixed (t_f1898589)", () => {
     tree.sizes = [0.25, 0.75];
 
     const rec = JSON.parse(serialize(tree)) as {
-      v: 3;
+      v: 4;
       tree: { kind: "split"; px: unknown[]; children: unknown[] };
     };
-    assert.equal(rec.v, 3);
+    assert.equal(rec.v, 4);
     const px = rec.tree.px;
     assert.ok(Array.isArray(px), "the split record carries px shares");
     for (const p of px)

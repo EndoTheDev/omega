@@ -214,12 +214,14 @@
       aria-label="pane actions"
       @click.stop>
       <button
+        v-if="canSplit('row')"
         class="dock-menu-btn"
         role="menuitem"
         @click="api.split(node.id, 'row', 'after')">
         split right
       </button>
       <button
+        v-if="canSplit('column')"
         class="dock-menu-btn"
         role="menuitem"
         @click="api.split(node.id, 'column', 'after')">
@@ -278,7 +280,8 @@
     isClosableTab,
     type DockComponentName,
   } from "../composables/dockables";
-  import { endGesture, onGestureEnd, tabDrag, zoneForPoint, zoneRectFractions, type DragZone, type ZoneRect } from "../composables/dockdnd";
+  import { endGesture, onGestureEnd, tabDrag, zoneForPointer, zoneRectFractions, type DragZone, type ZoneRect } from "../composables/dockdnd";
+  import { splitFitsZone, type SplitDirection } from "../composables/panes";
   import { ghostPreview, ghostRegistry, type GhostPreview } from "../composables/dockghost";
   import DockGhost from "./DockGhost.vue";
   // the ONE icon wrapper (card t_502b8e81): every icon in the webui
@@ -330,8 +333,25 @@
   // (left = sessions home, right = inspector home) is fixed chrome as a
   // whole - no remove X, no actions menu - but its TABS are free: any tab
   // may live here or leave (drop into / out of this bar freely), the only
-  // lock is sessions leaving "left".
-  const pinned = computed(() => props.node.edge !== undefined);
+  // lock is sessions leaving "left". canvas C2: the SIDEBAR ZONE carries the
+  // same identity, so a pane inside a sidebar's stack reads as a sidebar pane
+  // too - one strip shape (the pinned icon chips below), no split actions,
+  // and the icons-bleeding-at-the-sidebar-bottom class cannot come back
+  // through a stack leaf (the column split that grew the bleed is deleted).
+  const paneZone = computed(() => api.zoneOf(props.node.id));
+  const inSidebarZone = computed(() => {
+    const z = paneZone.value;
+    return z === "left" || z === "right";
+  });
+  const pinned = computed(() => props.node.edge !== undefined || inSidebarZone.value);
+  // canvas C2 THE SHAPE LAW: which split actions this pane may OFFER. A
+  // sidebar stacks, so its panes offer no side-by-side split at all - the
+  // entry point is gone, never a greyed-out button (the pure split law
+  // refuses the same direction; the menu simply never offers it).
+  function canSplit(direction: SplitDirection): boolean {
+    const z = paneZone.value;
+    return z !== null && splitFitsZone(z, direction);
+  }
   // card t_b72a4ee3: the X renders on EVERY closable-class tab - the pane's
   // population no longer decides whether the affordance exists, only
   // whether it is LIVE or dimmed (lastTabLocked, right below). card
@@ -378,10 +398,10 @@
   // tab strips as ICON-ONLY chips (the dockable registry carries the
   // iconset name). Main/bottom tabs carry icon + label since t_172f9009 -
   // the glyph leads the session name, size stays capped by the 160px
-  // max-width with the title ellipsizing.
-  const iconTabs = computed(
-    () => props.node.edge === "left" || props.node.edge === "right",
-  );
+  // max-width with the title ellipsizing. canvas C2: the ZONE decides, not
+  // the marker - a stack leaf inside a sidebar is a sidebar pane and takes
+  // the same 28px chip strip (a text strip there is what bled).
+  const iconTabs = computed(() => inSidebarZone.value);
   function tabIcon(tab: DockTab): string | null {
     // card t_36ceb99b: the viewer's chip icon follows the CONTENT type -
     // file rows keep the extension-glyph vocabulary (rowicon), skill rows
@@ -627,10 +647,14 @@
     const d = tabDrag.current();
     // card t_ae9ac5cf: the split zones self-drop now (VS Code: dragging a
     // tab to its own group's edge splits the group) - only the CENTER
-    // zone keeps the focus-only read on a same-pane body hover.
-    const selfRaw = d && d.paneId === props.node.id
-      ? zoneForPoint(e.clientX, e.clientY, bodyRect())
-      : null;
+    // zone keeps the focus-only read on a same-pane body hover. canvas C2:
+    // the read is bounded by the pane's ZONE - a sidebar has no left/right
+    // half at all (its vertical lane is the whole gesture), so the
+    // side-by-side split of a sidebar cannot even be entered.
+    const zone = paneZone.value;
+    if (zone === null) return;
+    const rawZone = zoneForPointer(zone, e.clientX, e.clientY, bodyRect());
+    const selfRaw = d && d.paneId === props.node.id ? rawZone : null;
     if (d && d.paneId === props.node.id && selfRaw === "center") {
       dropHover.value = true;
       refusedIdx.value = null;
@@ -639,10 +663,10 @@
       return;
     }
     // VS Code zone read on the pane body: halves + center. v0.14.4 ruling
-    // 1-3: the pinned roots GROW now - a shell's body offers split zones
-    // like any pane (sidebars stack rows only), and the pure predictor's
-    // refusal (hatched-red ghost) is the gate, not a center-fold here.
-    const raw = selfRaw ?? zoneForPoint(e.clientX, e.clientY, bodyRect());
+    // 1-3: the pinned roots GROW now - a shell's body offers stack zones
+    // like any pane (a sidebar stacks, main/bottom take both), and the pure
+    // predictor's refusal (hatched-red ghost) is the gate, not a center-fold.
+    const raw = selfRaw ?? rawZone;
     dropHover.value = false; // the overlay carries the body affordance
     refusedIdx.value = null;
     dropZone.value = raw;

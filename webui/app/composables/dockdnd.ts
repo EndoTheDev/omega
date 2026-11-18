@@ -7,7 +7,7 @@
 // the drop handlers still re-read the dataTransfer payload as the source of
 // truth.
 import { seatAllowsIn, type DockComponentName } from "./dockables.ts";
-import { zoneOfEdge } from "./panes.ts";
+import { isSidebarZone, zoneOfEdge, type PaneZone } from "./panes.ts";
 
 export interface TabDragInfo {
   /** source pane id */
@@ -196,17 +196,20 @@ export function zoneRectFractions(zone: DragZone): ZoneRect {
   }
 }
 
-/** PURE zone gate: which zones may a drop land on for a target pane whose
-    edge marker is `targetEdge` (undefined = main pane)? EDGE SHELLS keep
-    their fixed shape (card t_d6b657a7: identity, not content) - their
-    tabs are free but the pane never splits, so only the center zone
-    (group into the shell's bar) lands there. Main panes take every zone.
-    Same-pane drops read the predictor's center-only self-fold (card
-    t_ae9ac5cf) - which zones are offered does not depend on the source. */
-export function splitAllowedFor(
-  targetEdge: "left" | "right" | "bottom" | undefined,
-): boolean {
-  return targetEdge === undefined;
+/** PURE pointer -> zone, BOUNDED by the target pane's own zone (canvas C2,
+    the shape law): a sidebar reads ITS VERTICAL LANE ONLY. Its x axis is not
+    part of the gesture at all, so the left/right halves that would split it
+    into side-by-side columns cannot be entered - the split-sidebar gesture
+    is gone, not refused. Main and bottom panes read both axes as before. */
+export function zoneForPointer(
+  zone: PaneZone,
+  x: number,
+  y: number,
+  rect: ZoneRect,
+): DragZone {
+  if (!isSidebarZone(zone)) return zoneForPoint(x, y, rect);
+  // the vertical lane: x pinned to the pane's own middle, the y band decides
+  return zoneForPoint(rect.x + rect.w / 2, y, rect);
 }
 
 /** the dock mutation a zone encodes, for the drop handlers: direction +

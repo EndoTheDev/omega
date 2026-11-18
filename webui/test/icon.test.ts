@@ -145,8 +145,11 @@ test("sidebar tab strips are ICON-ONLY chips with accessible names", () => {
   const pane = read("app/components/DockPane.vue");
   // the pinned edges (left/right shells) render the icon instead of text
   assert.match(pane, /iconTabs\s*=/, "the icon-tabs rule exists");
-  assert.match(pane, /edge === "left" \|\| props\.node\.edge === "right"/,
-    "both sidebars iconified");
+  // canvas C2: the ZONE decides (a sidebar stack leaf takes the same strip),
+  // not a per-node marker read
+  assert.match(pane, /inSidebarZone/, "the sidebar zone drives the strip");
+  assert.match(pane, /const pinned = computed\(\(\) => props\.node\.edge !== undefined \|\| inSidebarZone\.value\)/,
+    "both sidebars - and their stack leaves - iconified");
   // t_172f9009: the icon no longer rides the iconTabs gate - every pane
   // renders it; the TITLE span is what sidebars drop
   assert.match(pane, /v-if="tabIcon\(t\)"/, "the chip is the icon");
