@@ -66,11 +66,14 @@ test("ToolCallLine pins a manual toggle and recomputes around it", () => {
   // the element must be reachable: the details ref is the anchor every
   // apply path reads - without it applyAuto no-ops forever
   assert.match(t, /<details\s+ref="el"/);
-  // the pin: a summary click records the post-toggle state and auto
-  // recompute (mount + status/mode watcher) skips pinned rows
+  // the pin: a summary click records the post-toggle state against the
+  // row's DURABLE address on the tab's view record (card t_15572849 - a
+  // dock-tab switch unmounts the pane, so the pin cannot live in the
+  // instance), and applyAuto applies it rather than recomputing over it
   assert.match(t, /@click="onSummaryClick"/);
-  assert.match(t, /pinned\.value = !el\.value\.open/);
-  assert.match(t, /applyAuto\(\) \{\s*\n\s*if \(pinned\.value !== null \|\| !el\.value\) return/);
+  assert.match(t, /rememberPin\(!el\.value\.open\)/);
+  assert.match(t, /inject\(CHAT_FOLD_PINS_KEY, null\)/);
+  assert.match(t, /el\.value\.open = pin !== null \? pin : toolRowWantOpen\(props\.status, display\.value\)/);
   // the state machine rides the shared composable, not a private copy
   assert.match(t, /useToolDisplay\(\)/);
   assert.match(t, /toolRowWantOpen\(props\.status, display\.value\)/);

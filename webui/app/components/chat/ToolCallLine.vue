@@ -71,10 +71,11 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, nextTick, onMounted, ref, watch } from "vue";
+  import { computed, inject, nextTick, onMounted, ref, watch } from "vue";
 
   // card t_502b8e81: the iconset wrapper - wrench on the tool call line
   import Icon from "../ui/Icon.vue";
+  import { CHAT_FOLD_PINS_KEY } from "../../composables/chat";
   import { toolRowWantOpen, useToolDisplay } from "../../composables/toolDisplay";
   import { formatDurationMs } from "../../composables/omega";
   import { chipDisplay, chipOf } from "../../composables/chips";
@@ -113,6 +114,12 @@
     // exactly this row, and the transcript derivation stays pure.
     // Absent on an id-less call (nothing to attach to) - no tail.
     callId?: string;
+    // this row's DURABLE fold address (card t_15572849): the tab's view
+    // record keys the reader's manual open/close pin by it, so the pin
+    // survives the dock-tab switch that unmounts the whole pane. Derived
+    // once, upstream, by toolGroup.ts foldAddress - absent on a row
+    // without a durable identity (nothing to pin against after a remount).
+    foldKey?: string;
   }>();
 
   const emit = defineEmits<{
@@ -158,17 +165,44 @@
   // The settings knob (auto | expanded | collapsed) decides what a row
   // does on its own: auto expands a running call and collapses it once
   // it settles. A manual summary click PINS the row - its open state is
-  // the user's for the session, and mode flips and status transitions
-  // recompute around it, never over it. The details element stays
-  // uncontrolled (no :open binding): the browser owns the toggle, this
-  // side applies the mode on mount and on status/mode change only.
+  // the USER's, and mode flips and status transitions recompute around
+  // it, never over it.
+  //
+  // The pin is stored, not remembered (card t_15572849): the pane unmounts
+  // on every dock-tab switch (DockPane renders only the ACTIVE tab), so an
+  // instance-local pin died with the instance and the row came back closed.
+  // The pin lives on the tab's view record, addressed by the row's DURABLE
+  // identity (foldAddress: call id, else store row id) - the address a
+  // remount, a refetch and the sliding 40-row window all preserve. A row
+  // with no durable address keeps the instance-local pin (a slot pin would
+  // land on a different call after the remount). The details element stays
+  // uncontrolled (no :open binding): the browser owns the toggle, this side
+  // applies the pin or the mode on mount and on status/mode change only.
   const el = ref<HTMLDetailsElement | null>(null);
   const display = useToolDisplay();
-  const pinned = ref<boolean | null>(null);
+  const folds = inject(CHAT_FOLD_PINS_KEY, null);
+  const localPin = ref<boolean | null>(null);
+  const foldKey = computed(() => props.foldKey ?? "");
+  const pinned = computed<boolean | null>(() => {
+    const key = foldKey.value;
+    if (key && folds) return folds.get(key) ?? null;
+    return localPin.value;
+  });
+
+  function rememberPin(open: boolean) {
+    const key = foldKey.value;
+    if (key && folds) folds.set(key, open);
+    else localPin.value = open;
+  }
 
   function applyAuto() {
-    if (pinned.value !== null || !el.value) return;
-    el.value.open = toolRowWantOpen(props.status, display.value);
+    if (!el.value) return;
+    const pin = pinned.value;
+    // a pin - this instance's or one the tab's view record kept - WINS. On
+    // a remount the DOM is fresh (a <details> mounts closed), so the
+    // restored pin has to be APPLIED here; skipping a pinned row would
+    // render every restored row collapsed.
+    el.value.open = pin !== null ? pin : toolRowWantOpen(props.status, display.value);
   }
 
   // nextTick: the status flip and the result's v-if land in the same
@@ -181,9 +215,10 @@
 
   // Click fires BEFORE the browser's toggle default action, so !open is
   // the state the click is about to produce - pin that, and auto mode
-  // never touches this row again this session.
+  // never touches this row again this session (or, with the stored pin,
+  // this tab).
   function onSummaryClick() {
     if (!el.value) return;
-    pinned.value = !el.value.open;
+    rememberPin(!el.value.open);
   }
 </script>

@@ -162,7 +162,7 @@ test("ChatTab renders the group at BOTH sites and keys on item identity", () => 
   const t = src("components/ChatTab.vue");
   // the grouping rides the transcript level (render-site view), never
   // a transcript mutation
-  assert.match(t, /import \{ groupToolRuns, isToolRun, type ChatEntry \}/);
+  assert.match(t, /import \{ groupToolRuns, isToolRun, foldAddress, type ChatEntry \}/);
   assert.match(t, /groupToolRuns\(transcript\.value, variantOfItem\)/);
   assert.match(t, /groupToolRuns\(block, variantOfItem\)/);
   // the third site retired with the run-only live body (card t_5bb319f6):
@@ -181,8 +181,12 @@ test("ToolGroup mirrors the row/block fold: shared mode, pin click, child passth
   const g = src("components/chat/ToolGroup.vue");
   assert.match(g, /<details\s+ref="el"/);
   assert.match(g, /@click="onSummaryClick"/);
-  assert.match(g, /pinned\.value = !el\.value\.open/);
-  assert.match(g, /applyAuto\(\) \{\s*\n\s*if \(pinned\.value !== null \|\| !el\.value\) return/);
+  // the manual pin is STORED on the tab's view record (card t_15572849):
+  // the click records the post-toggle state against the group's durable
+  // address, and applyAuto applies the pin (never recomputes over it)
+  assert.match(g, /rememberPin\(!el\.value\.open\)/);
+  assert.match(g, /inject\(CHAT_FOLD_PINS_KEY, null\)/);
+  assert.match(g, /pin !== null\s*\?\s*pin\s*\n?\s*:\s*toolGroupWantOpen\(/);
   // the state machine rides the SHARED composable, not a private copy;
   // the combined active flag (running OR pending - async agent loop
   // phase 3) keeps a chip-holding group open
