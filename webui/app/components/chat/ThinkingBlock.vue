@@ -1,7 +1,7 @@
 <template>
   <details
     ref="el"
-    class="thinking">
+    :class="['thinking', { live: streaming === true }]">
     <summary @click="onSummaryClick">
       <!-- card t_502b8e81: the thinking block wears its iconset glyph -->
       <Icon

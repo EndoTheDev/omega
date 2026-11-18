@@ -249,6 +249,36 @@ describe("one scrollport, sticky pin: the shipped wiring", () => {
     );
   });
 
+  it("the pin's full-bleed inset matches the scrollport's side padding (card t_2739f125)", () => {
+    // the pair was authored against a 20px column and the transcript's side
+    // inset is 12px (the ONE composer law) - the stale number pushed the pin
+    // 8px past the scrollport's right edge, and mid-stream the transcript grew
+    // a horizontal scrollbar above the composer. The inset is DERIVED from the
+    // column, so the two rules must agree; the pin also carries no bottom rule
+    // (mid-stream the strip under the question is activity, not an artifact).
+    const c = css();
+    const start = c.indexOf(".live-pin {");
+    assert.ok(start !== -1, ".live-pin rule not found");
+    const rule = c.slice(start, c.indexOf("}", start));
+    const msgsStart = c.indexOf(".messages {");
+    const msgs = c.slice(msgsStart, c.indexOf("}", msgsStart));
+    const column = msgs.match(/padding:\s*16px\s+(\d+)px/)!;
+    assert.ok(column, ".messages padding not found");
+    const side = Number(column[1]);
+    assert.match(
+      rule,
+      new RegExp(`margin:\\s*0 -${side}px`),
+      `the pin's full-bleed inset must be the column's own ${side}px side padding`,
+    );
+    assert.match(
+      rule,
+      new RegExp(`padding:\\s*14px ${side}px 12px`),
+      "the pin's inner inset mirrors the same number",
+    );
+    assert.doesNotMatch(rule, /border-bottom/, "no rule under the pinned question");
+    assert.match(msgs, /overflow-x:\s*hidden/, "the transcript is a vertical scroller only");
+  });
+
   it("the pin's CSS sticks inside the scrollport, not to a fixed header band", () => {
     const c = css();
     const start = c.indexOf(".live-pin {");

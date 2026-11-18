@@ -69,6 +69,26 @@ test("ThinkingBlock pins a manual toggle and skips pinned recompute", () => {
   assert.match(t, /thinkingWantOpen\(display\.value\)/);
 });
 
+test("the live thinking row drops the box face (card t_2739f125)", () => {
+  const t = src("components/chat/ThinkingBlock.vue");
+  // while the reasoning streams the row is ACTIVITY - no box. The class is
+  // driven by the same streaming prop that drives the live "…" marker, so the
+  // artifact face returns exactly when the phase ends.
+  assert.match(t, /class="\['thinking', \{ live: streaming === true \}\]"/);
+  const css = readFileSync(join(root, "assets/css/main.css"), "utf8");
+  const start = css.indexOf(".thinking.live {");
+  assert.ok(start !== -1, ".thinking.live rule not found");
+  const rule = css.slice(start, css.indexOf("}", start));
+  assert.match(rule, /border-color:\s*transparent/, "the border's 1px stays (no geometry jump), the ink goes");
+  assert.match(rule, /background:\s*none/, "the raised fill belongs to the artifact face only");
+  // the settled artifact face is untouched
+  const baseStart = css.indexOf("\n.thinking {");
+  assert.ok(baseStart !== -1, "base .thinking rule not found");
+  const base = css.slice(baseStart, css.indexOf("}", baseStart));
+  assert.match(base, /border:\s*1px solid var\(--stroke\)/);
+  assert.match(base, /background:\s*var\(--z1-raised\)/);
+});
+
 test("the settings knob is a client chat select beside the tool display one", () => {
   const s = src("components/settings/SettingsTab.vue");
   assert.match(s, /key: "chat\.thinking_display"/);
