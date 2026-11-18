@@ -1,7 +1,12 @@
 <template>
   <div
     class="composer"
-    :class="{ expanded: expanded }"
+    :class="{
+      expanded: expanded,
+      'stage-icon': stage === 'icon',
+      'stage-stacked': stage === 'stacked',
+    }"
+    ref="root"
     @click="onCanvasClick">
     <div
       v-if="attachments.length || files.length"
@@ -234,6 +239,7 @@
     isImageFile,
   } from "../../composables/attachments";
   import { composerFace } from "../../composables/chat";
+  import { useComposerLadder } from "../../composables/composerladder";
   import {
     paletteCommands,
     filterCommands,
@@ -351,6 +357,19 @@
   const fileInput = ref<HTMLInputElement | null>(null);
   const expanded = ref(false);
   const overflowing = ref(false);
+
+  // the squeeze ladder (card t_27ff2bbd): the composer's own width picks
+  // the rung - full label, label shed to the chevron, or a stacked control
+  // row. Costs are measured off the live row, so the label's own length
+  // (any model name) decides where the shed rung starts; the touch bump
+  // re-measures when a control's FACE changes width without the composer
+  // resizing (model / effort swap, send <-> stop, the fullscreen toggle
+  // mounting its + into the row).
+  const root = ref<HTMLElement | null>(null);
+  const ladderTouch = computed(
+    () => `${props.model}|${props.thinking}|${props.busy}|${expanded.value}`,
+  );
+  const stage = useComposerLadder(root, ladderTouch);
 
   function resize() {
     const el = ta.value;

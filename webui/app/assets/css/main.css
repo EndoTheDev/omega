@@ -2490,6 +2490,51 @@ labels stopped short of the right edge. */
   flex-wrap: nowrap;
 }
 
+/* ---- the squeeze ladder (card t_27ff2bbd) ----------------------------
+   The composer's own width picks one of three rungs - full label, label
+   shed to the chevron, stacked control rows - and the rung is decided in
+   JS from MEASURED control costs (composables/composerladder.ts carries
+   the arithmetic: 42 chrome around a whole label, 36 around the chevron
+   alone, 8 between the chips, 8 gaps + 16 padding on the row, 8 slack).
+   The classes below are the two rungs whose SHAPE differs from full; the
+   full rung is the plain card.
+
+   The law these replace: the chip used to give up width first and the
+   label died mid-word ("deepse...", then a second-row wrap when the row
+   ran out). A label now fits WHOLE or is absent - the chip is never
+   capped, so nothing can clip it. */
+.composer .model-group .model-select:not(.band-select) .model-chip {
+  max-width: none; /* the ladder sheds the label; the chip never truncates it */
+}
+.composer .model-chip .chip-name { white-space: nowrap; }
+
+/* rung 2 - icon: the label leaves the ROW but keeps its layout box, so
+   the fit test can still read its natural width and climb back to full
+   when the pane widens. Its NAME survives on the chip's aria-label
+   (ModelSelect), so the control still announces the model it holds.
+   rung 3 - stacked KEEPS the shed (the rungs are cumulative: the row gave
+   up the label before it gave up the single row, so stacking must not put
+   the label back and overflow the narrow card - live-probed at 210px). */
+.composer.stage-icon .model-group .model-select:not(.band-select) .chip-name,
+.composer.stage-stacked .model-group .model-select:not(.band-select) .chip-name {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* rung 3 - stacked: the model + effort pair keeps line one, the send keeps
+   line two, still right-anchored (it stays the row's action). A column is
+   deliberate, not a wrap: the wrap would leave the last 8px of the icon
+   band looking IDENTICAL to the icon rung (the row still fits there by the
+   slack), and a rung that changes nothing is not a rung - live-probed at
+   230px, where wrap left the send on line one. The column splits the row
+   the moment the rung fires, and the C5 hairline is untouched. */
+.composer.stage-stacked .toolbar {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.composer.stage-stacked .send { align-self: flex-end; }
+
 .model-chip {
   background: var(--z1);
   border: 1px solid var(--stroke);
@@ -3308,18 +3353,10 @@ labels stopped short of the right edge. */
   .model-chip { max-width: 140px; }
   .send { padding: 6px 14px; }
 
-  /* the squeeze (t_357cbe9c): one button + two chips survive the 320px
-     hard floor on one row - the model chip gives up width first
-     (ellipsis on .chip-name), and only the name text ever wraps */
-  .model-chip {
-    max-width: 96px;
-    min-width: 0;
-  }
-  .model-chip .chip-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  /* the squeeze lives on the composer's OWN width now (the ladder, card
+     t_27ff2bbd): a narrow viewport no longer squeezes the model chip - the
+     ladder measures the row and sheds the label whole, or stacks. No
+     mid-word ellipsis anywhere, at any width. */
 
   .statusbar { font-size: 11px; gap: 8px; }
   .statusbar .hide-sm { display: none; }

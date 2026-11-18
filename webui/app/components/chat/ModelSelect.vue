@@ -22,12 +22,15 @@
       class="model-chip"
       type="button"
       :title="chipTitle"
+      :aria-label="chipText"
       :aria-expanded="open"
       :aria-controls="open ? listId : undefined"
       @click="open ? close() : openNow()"
       @keydown.down.prevent="openNow()">
-      <!-- ellipsis container: at narrow widths the chip gives up width
-           BEFORE the toolbar wraps (t_357cbe9c squeeze, 320px floor) -->
+      <!-- the label keeps its NAME when the composer's squeeze ladder
+           sheds it (card t_27ff2bbd): the rung removes the label from the
+           row (out of flow, never truncated mid-word), and the aria-label
+           above is what still announces the current model then -->
       <span class="chip-name">{{ chipText }}</span>
       <span
         class="chev"
