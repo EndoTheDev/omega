@@ -2682,13 +2682,6 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
-// fileError writes the structured JSON error envelope for the request
-// surfaces whose failures are data, not panic material (the workspace
-// chip's routes and the skills content route).
-func fileError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
-}
-
 // decodeMessages decodes polymorphic core.Message values from JSON using a
 // role discriminator: system, user, assistant, or tool.
 func decodeMessages(raw []json.RawMessage) ([]core.Message, error) {

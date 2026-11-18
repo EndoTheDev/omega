@@ -36,7 +36,7 @@ export interface PanelRef {
   title: string;
 }
 
-export interface ExtensionRow {
+interface ExtensionRow {
   name: string;
   description: string;
   tools: number;

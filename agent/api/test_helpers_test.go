@@ -5,7 +5,6 @@ package api
 // fixtures serve both sides - card t_905fa502).
 
 import (
-	"encoding/json"
 	"net/http"
 	httptest "net/http/httptest"
 	"testing"
@@ -39,14 +38,3 @@ func serveInspector(t *testing.T, s *Server) *httptest.Server {
 }
 
 var _ = http.StatusOK
-
-// mustJSON is the shared JSON serializer for wire assertions (the
-// shell inspector test owns the original after the carve).
-func mustJSON(t *testing.T, v any) string {
-	t.Helper()
-	b, err := json.Marshal(v)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
-}

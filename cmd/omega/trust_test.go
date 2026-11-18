@@ -2,12 +2,6 @@ package main
 
 import "testing"
 
-// setTestHome points omegaHome at a temp dir for the duration of a test.
-func setTestHome(t *testing.T) {
-	t.Helper()
-	t.Setenv("OMEGA_HOME", t.TempDir())
-}
-
 func TestParseTrustArgs(t *testing.T) {
 	tests := []struct {
 		args []string

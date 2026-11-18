@@ -51,11 +51,6 @@ func maskSecret(v string) any {
 	return maskedSecret
 }
 
-// num builds the min/max/step triple for a number knob.
-func num(min, max, step float64) (*float64, *float64, *float64) {
-	return &min, &max, &step
-}
-
 // settingsSchema loads the live config and renders it as groups of
 // knobs. Values come from the same LoadConfig path the server booted
 // with (file + env overrides + defaults), so the pane always shows the

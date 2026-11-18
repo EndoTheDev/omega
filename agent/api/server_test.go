@@ -130,14 +130,6 @@ func (m *mockProvider) servedModelNames() []string {
 	return append([]string(nil), *m.seenModels...)
 }
 
-// streamCalls reports how many Stream calls were made. Concurrent with
-// in-flight streams it is advisory; callers poll for quiescence.
-func (m *mockProvider) streamCalls() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return *m.calls
-}
-
 func scripted(events ...core.ProviderStreamEvent) []core.ProviderStreamEvent { return events }
 
 func newTestServer() *Server {

@@ -67,13 +67,6 @@ func loadBackoff(attempt int) time.Duration {
 	return base + jitter
 }
 
-// Backoff returns the exponential backoff wait for retry attempt n,
-// identical to the pacing retryHTTP applies between attempts. Exported
-// for stream-level retries sharing this shape.
-func Backoff(attempt int) time.Duration {
-	return backoff(attempt)
-}
-
 // LoadBackoff returns the backoff wait for a cold-load ("load" verdict)
 // stream retry attempt n - load-scale pacing, not 429-scale. Exported
 // for the ollama stream retry loop; one knob (OMEGA_MAX_RETRIES) still

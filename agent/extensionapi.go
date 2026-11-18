@@ -839,18 +839,6 @@ func (api *ExtensionAPI) RegisterLifecycle(name string, start func(ctx context.C
 	return nil
 }
 
-// mountSeam maps one exclusive slot: the one-tenant claim at
-// registration time (Q5, journaled for release), then the same field
-// assignment the classic mount writes - journaled with the previous
-// value so the dismount restores exactly what it found.
-func (api *ExtensionAPI) mountSeam(seam string, apply func(*core.Context), undo func(*core.Context)) error {
-	if err := api.claimRecorded(seam); err != nil {
-		return err
-	}
-	api.writeSlot(apply, undo)
-	return nil
-}
-
 // Offer mounts one service under a stringly-keyed seam (restructure
 // part 3, the seam constitution): the universal mechanism every
 // capsule - and the substrate itself - shares. One owner per key: a

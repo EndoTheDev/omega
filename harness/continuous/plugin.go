@@ -33,9 +33,6 @@ type Plugin struct {
 // Compile-time assertion that *Plugin implements agent.Plugin.
 var _ agent.Plugin = (*Plugin)(nil)
 
-// NewPlugin creates the plugin. Mount resolves the home.
-func NewPlugin() *Plugin { return &Plugin{} }
-
 // NewPluginWithHome creates the plugin against an explicit root home
 // (tests, embedders, and the cmd/omega host that owns exe-dir
 // resolution).

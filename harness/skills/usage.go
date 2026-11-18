@@ -82,15 +82,9 @@ func readUsageLocked(dir string) map[string]UsageRecord {
 	return out
 }
 
-// writeUsage persists the usage map for dir, creating .curator/ as
+// writeUsageLocked persists the usage map for dir, creating .curator/ as
 // needed. A write failure is swallowed: usage tracking must never
-// fail a skills tool call.
-func writeUsage(dir string, m map[string]UsageRecord) {
-	usageMu.Lock()
-	defer usageMu.Unlock()
-	writeUsageLocked(dir, m)
-}
-
+// fail a skills tool call. Callers hold usageMu.
 func writeUsageLocked(dir string, m map[string]UsageRecord) {
 	if err := os.MkdirAll(filepath.Dir(usageFile(dir)), 0o755); err != nil {
 		return
