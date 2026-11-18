@@ -1,14 +1,7 @@
 package continuous
 
-// wake.go: the wake subprocess (card t_72ecca67, rulings 7-9). A wake
-// is one spawned omega binary invoked against the agent home, running
-// ONE budgeted agent loop; the process death IS the sleep (ruling 7).
-// Crash isolation is the subprocess boundary: a wedged wake is orphaned
-// by the timeout fence and never touches whichever parent spawned it
-// (ruling 9). The wake report is the run's closing message persisted
-// into the agent's canonical session by the child itself (`omega run
-// --session canonical`, the TurnSink ride); the parent only spawns,
-// guards one live wake per agent, and keeps the log.
+// wake.go: the wake subprocess. Crash isolation is the subprocess boundary: a wedged
+// wake is orphaned by the timeout fence and never touches whichever parent spawned it.
 
 import (
 	"context"
@@ -30,21 +23,17 @@ import (
 // cron fire guard, ported to spawns).
 var ErrAwake = errors.New("continuous: agent already awake")
 
-// wakeTickPayload is the raw-JSON shape cron fires for wake ticks
-// (payload law: raw JSON, namespaced strings - no Go types cross).
+// wakeTickPayload is the raw-JSON shape cron fires for wake ticks (payload law.
 type wakeTickPayload struct {
 	Agent  string `json:"agent"`
 	Job    string `json:"job"`
 	Prompt string `json:"prompt"`
-	// Model is cron's per-fire override (card t_ecec864e, the
-	// defaulting law); empty = inherit, no env on the child.
 	Model string `json:"model,omitempty"`
 }
 
-// tickObserver returns the spine subscription that turns cron's wake
-// ticks into spawns (ruling 13: cron fires; continuous owns WHAT). The
-// observer is cheap by contract - it validates and hands off to its own
-// goroutine; a malformed payload kills the wake, never the emitter.
+// tickObserver returns the spine subscription that turns cron's wake ticks into spawns.
+// The observer is cheap by contract - it validates and hands off to its own goroutine;
+// a malformed payload kills the wake, never the emitter.
 func (m *Machine) tickObserver() core.EventObserver {
 	return func(ev core.Event) {
 		tick, ok := core.Tick(ev)
@@ -63,8 +52,7 @@ func (m *Machine) tickObserver() core.EventObserver {
 	}
 }
 
-// childExe resolves the wake child binary: os.Executable by law
-// (one binary, many homes); the swappable hook exists for tests.
+// childExe resolves the wake child binary.
 func (m *Machine) childExe() (string, error) {
 	if m.spawnExe != nil {
 		return m.spawnExe()
@@ -72,27 +60,20 @@ func (m *Machine) childExe() (string, error) {
 	return os.Executable()
 }
 
-// logf writes to stderr. The subprocess log law (ruling 1: the home
-// holds <name>.log) is served by the child's own capture; this path is
-// for parent-side spawn failures only.
+// logf writes to stderr.
 func (m *Machine) logf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "continuous: "+format+"\n", args...)
 }
 
-// Wake spawns one wake for the named agent: a human wake (ruling 8's
-// second trigger) or a cron tick dispatch. model is the job's per-fire
-// model override (the defaulting law: empty = inherit - the agent's
-// own provider config, untouched); non-empty it rides OMEGA_MODEL on
-// the child's env, the same wall the per-wake turn budget rides, so
-// the override dies with the wake and never leaks into any other
-// session. One live wake per agent - a second call returns ErrAwake.
-// The call returns once the child is RUNNING, never when its loop
-// finishes; the report lands in the agent's own canonical session by
-// the child's own persistence.
+// Wake spawns one wake for the named agent: a human wake or a cron tick dispatch. model
+// is the job's per-fire model override (the defaulting law: empty = inherit - the
+// agent's own provider config, untouched); non-empty it rides OMEGA_MODEL on the
+// child's env, the same wall the per-wake turn budget rides, so the override dies with
+// the wake and never leaks into any other session. The call returns once the child is
+// RUNNING, never when its loop finishes; the report lands in the agent's own canonical
+// session by the child's own persistence.
 func (m *Machine) Wake(name, message, model string) error {
-	// The soft-disable law (v0.14.1): every wake trigger - the cron
-	// tick, the human's canonical-chat POST, a scripted spawn - passes
-	// this one wall. A disabled agent's home is never touched.
+	// The soft-disable law (v0.14.1). A disabled agent's home is never touched.
 	if m.agentDisabled(name) {
 		return fmt.Errorf("continuous: agent %s is disabled (config.yaml disabled.agents) - wake refused", name)
 	}
@@ -114,8 +95,7 @@ func (m *Machine) Wake(name, message, model string) error {
 	return nil
 }
 
-// Sleep terminates a live wake (the roster's sleep button). An agent
-// with no live wake sleeps already (ruling 7) - no-op, not an error.
+// Sleep terminates a live wake (the roster's sleep button).
 func (m *Machine) Sleep(name string) {
 	m.mu.Lock()
 	cancel, ok := m.live[name]
@@ -125,9 +105,7 @@ func (m *Machine) Sleep(name string) {
 	}
 }
 
-// runWake builds and runs the child process for one wake. model is the
-// cron job's per-fire override (empty = inherit). Guarded by Wake's
-// lock bracket; clears the live entry when the child exits.
+// runWake builds and runs the child process for one wake.
 func (m *Machine) runWake(p agent.Profile, message, model string) {
 	defer func() {
 		m.mu.Lock()
@@ -140,26 +118,19 @@ func (m *Machine) runWake(p agent.Profile, message, model string) {
 		m.logf("wake %s: resolve binary: %v", p.Name, err)
 		return
 	}
-	// The child runs ONE loop bound to the canonical chat: the flag
-	// makes it persist input + report into the session instead of
-	// printing and dropping (the run --session contract). The id is the
-	// home's own agent-qualified one (card t_5df01d0f).
+	// The child runs ONE loop bound to the canonical chat: the flag makes it persist input
+	// + report into the session instead of printing and dropping (the run --session
+	// contract).
 	args := []string{"run", "--session", CanonicalSessionIDFor(p.Name)}
 	if message != "" {
 		args = append(args, message)
 	}
-	// The timeout fence is the second crash wall: the subprocess
-	// boundary keeps a wedged wake from the parent, the fence ends a
-	// wedged wake at all.
 	timeout := time.Duration(m.cfg.Timeout()) * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, exe, args...)
 	cmd.Dir = p.Dir
-	// Environment: the ROOT home (datadir.AgentHome re-derives the
-	// agent's own data dir from it), the agent name (the layer + the
-	// data-isolation key), and the per-wake turn budget riding the
-	// existing max-turns machinery (ruling 17 - config.go's env table).
+	// Environment: the ROOT home (datadir.AgentHome re-derives the agent's own data dir.
 	cmd.Env = append(os.Environ(),
 		"OMEGA_HOME="+m.home,
 		"OMEGA_AGENT="+p.Name,
@@ -167,16 +138,11 @@ func (m *Machine) runWake(p agent.Profile, message, model string) {
 	if m.cfg.WakeTurnBudget > 0 {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("OMEGA_MAX_TURNS=%d", m.cfg.WakeTurnBudget))
 	}
-	// The per-fire model override (card t_ecec864e, the defaulting
-	// law): a non-empty cron-job model rides OMEGA_MODEL - the child's
-	// config applyEnv table honors it over its own provider.model -
-	// scoped to this one child process. Empty inherits: no env, the
-	// agent's own provider config stands.
+	// The per-fire model override.
 	if model != "" {
 		cmd.Env = append(cmd.Env, "OMEGA_MODEL="+model)
 	}
-	// The log: the agent home holds <name>.log (ruling 1). stdout of a
-	// run child is the report text; both streams append here.
+	// The log: the agent home holds <name>.log.
 	log, err := os.OpenFile(filepath.Join(p.Dir, p.Name+".log"),
 		os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err == nil {
@@ -196,9 +162,8 @@ func (m *Machine) runWake(p agent.Profile, message, model string) {
 	}
 	cmd.WaitDelay = 5 * time.Second
 	if err := cmd.Run(); err != nil && ctx.Err() != context.DeadlineExceeded {
-		// A failed wake is logged and done, nothing else: reports land
-		// only via the child's own sink, and a crash never queues a
-		// retry (the skip law). The timeout fence logs its own line.
+		// A failed wake is logged and done, nothing else: reports land only via the child's
+		// own sink, and a crash never queues a retry (the skip law).
 		m.logf("wake %s: %v", p.Name, err)
 	}
 	if ctx.Err() == context.DeadlineExceeded {
@@ -225,11 +190,10 @@ type EvidenceRow struct {
 	Verifier string `json:"verifier,omitempty"`
 }
 
-// Evidence reads the named agent's evidence ledger (ruling 11's read
-// face): rows grouped by run, latest first. When is an agent-home read
-// but NOT a roster/canonical-chat read - it rides the allow-list as its
-// own item because ruling 11 names the ledger as runtime-owned evidence
-// the roster must be able to cite; it reads NOTHING else about the home.
+// Evidence reads the named agent's evidence ledger: rows grouped by run, latest first.
+// When is an agent-home read but NOT a roster/canonical-chat read - it rides the
+// allow-list as its own item because names the ledger as runtime-owned evidence the
+// roster must be able to cite; it reads NOTHING else about the home.
 func (m *Machine) Evidence(name string) ([]EvidenceRow, error) {
 	p, err := agent.LoadProfile(m.home, name)
 	if err != nil {
@@ -244,8 +208,7 @@ func (m *Machine) Evidence(name string) ([]EvidenceRow, error) {
 	return lg.All(context.Background())
 }
 
-// WakeNow is the roster's wake button: a manual wake carrying the
-// agent's standing prompt.
+// WakeNow is the roster's wake button.
 func (m *Machine) WakeNow(name string) error {
 	return m.Wake(name, "", "")
 }

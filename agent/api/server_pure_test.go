@@ -100,9 +100,7 @@ func TestNewSessionIDFormat(t *testing.T) {
 	}
 }
 
-// TestSSEStreamEventAllCases exercises every type-switch arm in
-// sseStreamEvent, including the default fallback for an unrecognized
-// core.ProviderStreamEvent implementation.
+// TestSSEStreamEventAllCases exercises every type-switch arm in sseStreamEvent.
 func TestSSEStreamEventAllCases(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -161,10 +159,7 @@ func TestEventTypeOfAllCases(t *testing.T) {
 	}
 }
 
-// TestAccumulateAssistantSegments verifies the segment boundary: a
-// response chunk after tool results starts a new record, so a tool turn
-// persists as assistant(A+calls) -> tool results -> assistant(B) and
-// the webui reload renders two bubbles like the live view.
+// TestAccumulateAssistantSegments verifies the segment boundary.
 func TestAccumulateAssistantSegments(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	var recs []assistantRecord
@@ -200,9 +195,8 @@ func TestAccumulateAssistantSegments(t *testing.T) {
 	}
 }
 
-// TestAccumulateAssistantNoSegmentWithoutResults: thinking and plain
-// responses accumulate into a single record; the split only happens
-// across tool results.
+// TestAccumulateAssistantNoSegmentWithoutResults: thinking and plain responses
+// accumulate into a single record.
 func TestAccumulateAssistantNoSegmentWithoutResults(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	var recs []assistantRecord
@@ -222,13 +216,8 @@ func TestAccumulateAssistantNoSegmentWithoutResults(t *testing.T) {
 	}
 }
 
-// runMeter math: the last-run block is completion tokens and chunk
-// count over the streaming wall clock, rounded, with the same floor
-// the live meter applies. Fields are set directly so the arithmetic is
-// deterministic - the ticker itself is exercised through the run
-// handler tests.
+// runMeter math: the last-run block is completion tokens and chunk count over the.
 func TestRunMeterStats(t *testing.T) {
-	// 60 completion tokens over 12 chunks in 2.0s -> 30 tok/s, 6 ch/s.
 	m := &runMeter{started: time.Unix(1000, 0), lastChunk: time.Unix(1002, 0), chunks: 12}
 	got := m.stats(streamUsage{prompt: 5, completion: 60})
 	if got == nil || got.TokensPerSecond != 30 || got.ChunksPerSecond != 6 {
@@ -241,7 +230,6 @@ func TestRunMeterStats(t *testing.T) {
 		t.Fatalf("sub-floor stats = %+v, want nil", got)
 	}
 
-	// No usage reported by the provider: nothing written.
 	m = &runMeter{started: time.Unix(1000, 0), lastChunk: time.Unix(1010, 0), chunks: 12}
 	if got := m.stats(streamUsage{}); got != nil {
 		t.Fatalf("no-usage stats = %+v, want nil", got)
@@ -261,9 +249,7 @@ func TestRunMeterStats(t *testing.T) {
 	}
 }
 
-// tick counts only streamed chunks (thinking AND response); the clock
-// opens at meter creation, not at the first chunk, so prompt
-// processing is part of the run the same way it is for the client.
+// tick counts only streamed chunks (thinking AND response).
 func TestRunMeterTick(t *testing.T) {
 	m := newRunMeter()
 	if m.started.IsZero() {

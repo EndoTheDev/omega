@@ -1,18 +1,12 @@
 package kanban
 
-// batch.go is the atomic kanban batch. The tool surface's `operations`
-// array runs entirely inside one SQLite transaction (the Batcher
-// capability on the store): every operation applies or none does - a
-// failed batch cannot orphan the tasks its earlier creates made, and
-// the failure report says so. In-batch referencing rides the same
-// machinery: an operation's `id` may read LAST (the task the most
-// recent create in this batch made) or #N (the task created at
-// operations[N-1], 1-based, matching the numbered result lines), so a
-// create-then-act sequence fits one atomic call.
-//
-// Boards whose provider lacks the Batcher capability keep the honest
-// fail-forward semantics (applied ops stand, the failure rides the
-// result) - see runBatchFailForward.
+// batch.go is the atomic kanban batch. The tool surface's `operations` array runs
+// entirely inside one SQLite transaction (the Batcher capability on the store): every
+// operation applies or none does - a failed batch cannot orphan the tasks its earlier
+// creates made, and the failure report says so. In-batch referencing rides the same
+// machinery: an operation's `id` may read LAST (the task the most recent create in this
+// batch made) or #N (the task created at operations[N-1], 1-based, matching the
+// numbered result lines), so a create-then-act sequence fits one atomic call.
 
 import (
 	"context"
@@ -26,9 +20,7 @@ import (
 // opIndexRef matches a "#N" positional reference to a create operation.
 var opIndexRef = regexp.MustCompile(`^#([0-9]+)$`)
 
-// batchPreflight validates every in-batch reference BEFORE the first
-// operation applies: a batch with a malformed or forward-pointing
-// reference fails at the door and leaves the board untouched.
+// batchPreflight validates every in-batch reference BEFORE the first operation applies.
 func batchPreflight(ops []map[string]any) error {
 	hasCreate := false
 	for i, op := range ops {
@@ -63,8 +55,7 @@ func batchPreflight(ops []map[string]any) error {
 	return nil
 }
 
-// parseOpIndex reads a "#N" reference; N is 1-based (matching the
-// numbered batch result lines) up to the batch size.
+// parseOpIndex reads a "#N" reference.
 func parseOpIndex(id string, total int) (int, error) {
 	m := opIndexRef.FindStringSubmatch(id)
 	if m == nil {
@@ -77,10 +68,7 @@ func parseOpIndex(id string, total int) (int, error) {
 	return n, nil
 }
 
-// resolveRef rewrites one operation's in-batch id reference to the
-// real task id. Empty return = the id is not a reference (a literal
-// id passes through untouched). "LAST" resolves to the latest create
-// that RAN in this batch; "#N" to the create at operations[N-1].
+// resolveRef rewrites one operation's in-batch id reference to the real task id.
 func resolveRef(op map[string]any, last string, created map[int]string, total int) (map[string]any, string, error) {
 	id, _ := op["id"].(string)
 	if id == "" {
@@ -111,13 +99,10 @@ func resolveRef(op map[string]any, last string, created map[int]string, total in
 	return out, resolved, nil
 }
 
-// runTaskBatch runs the operations array on the tool provider's board
-// (the kanban.batch tool's lane). On a Batcher board the
-// whole batch is one transaction: the first failure rolls back the
-// operations that already applied and the result says so; on success
-// everything commits at once (done-notifications flush after the
-// commit, never for a rolled-back batch). In-batch references resolve
-// live: LAST / #N read the ids the batch itself created.
+// runTaskBatch runs the operations array on the tool provider's board (the. On a
+// Batcher board the whole batch is one transaction: the first failure rolls back the
+// operations that already applied and the result says so; on success everything commits
+// at once (done-notifications flush after the commit, never for a rolled-back batch).
 func (p *ToolProvider) runTaskBatch(ctx context.Context, ops []map[string]any) (string, error) {
 	if err := batchPreflight(ops); err != nil {
 		return "", err
@@ -162,8 +147,7 @@ func (p *ToolProvider) runTaskBatch(ctx context.Context, ops []map[string]any) (
 		fmt.Fprintf(&sb, "%d: %s\n", i+1, res)
 	}
 	if cerr := commit(); cerr != nil {
-		// a failed commit leaves nothing applied; cancel is a no-op
-		// after the attempt (and harmless either way)
+		// a failed commit leaves nothing applied.
 		cancel()
 		committed = true
 		return "", fmt.Errorf("batch commit failed (rolled back): %w", cerr)
@@ -183,8 +167,7 @@ func (p *ToolProvider) runBatchFailForward(ctx context.Context, ops []map[string
 	for i, op := range ops {
 		res, _, err := p.runTaskOp(ctx, p.board, op)
 		if err != nil {
-			// earlier ops still applied: the panel refresh below
-			// is exactly the catch-up the partial batch needs
+			// earlier ops still applied: the panel refresh below is exactly the catch-up the.
 			p.refreshCapsule()
 			return sb.String() + fmt.Sprintf("failed at operations[%d]: %v", i, err), nil
 		}

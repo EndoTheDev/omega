@@ -1,14 +1,8 @@
-// omega webui: the composer's SINGLE shape (card t_1750a9e3, ruling
-// 2026-11-07 - the mode system died). ONE composer: the C5 'footer-send'
-// arrangement (plus/input on top, chips left + send right on a bottom
-// hairline row) stretched to the pane width - full-width floating card,
-// the base 12px inset (sides + floor), borders and rounded corners all
-// around, NOT edge-to-edge. The retired mode system (composables/
-// composerMode.ts, the settings' chat.composer_mode knob, the
-// mode-compact/mode-full classes, the seg-div divider, the 720px cap)
-// must stay dead; a stored omega.composer-mode localStorage value is an
-// ignored orphan - never read, never rewritten, no migration code.
-// Render-free; node's built-in test runner.
+// omega webui: the composer's SINGLE shape. The retired mode system (composables/
+// composerMode.ts, the settings' chat.composer_mode knob, the mode-compact/mode-full
+// classes, the seg-div divider, the 720px cap) must stay dead; a stored
+// omega.composer-mode localStorage value is an ignored orphan - never read, never
+// rewritten, no migration code.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -25,8 +19,7 @@ describe("the single composer (one shape, no modes)", () => {
     // the retired two-mode binding must not return piecemeal
     assert.doesNotMatch(composer, /composerModeClass/);
     assert.doesNotMatch(composer, /composerMode/);
-    // card t_27ff2bbd added the ladder rung beside the flag: the class
-    // object carries the expanded flag plus at most one stage-* rung
+    // added the ladder rung beside the flag.
     assert.match(composer, /:class="\{[\s\S]*?expanded: expanded,/);
     assert.match(composer, /'stage-icon': stage === 'icon'/);
     assert.match(composer, /'stage-stacked': stage === 'stacked'/);
@@ -34,7 +27,6 @@ describe("the single composer (one shape, no modes)", () => {
   });
 
   it("the mode system's residue is gone (composable, knob, seg-div)", () => {
-    // the composable file itself is deleted; these pins keep it deleted
     assert.throws(
       () => src("app/composables/composerMode.ts"),
       "composables/composerMode.ts is deleted - it must stay deleted",
@@ -51,7 +43,6 @@ describe("the single composer (one shape, no modes)", () => {
     assert.ok(notx, ".composer:not(.expanded) .toolbar rule missing from main.css");
     assert.match(notx[0], /flex-wrap: nowrap/); // the bottom row never wraps
     assert.match(notx[0], /border-top: 1px solid var\(--stroke\)/); // the C5 hairline
-    // the base column makes the two rows; the send pins row 2's right end
     const composerCss = css.match(/^\.composer\s*\{([^}]*)\}/m)?.[1] ?? "";
     assert.match(composerCss, /flex-direction: column/);
     const send = css.match(/^\.send\s*\{([^}]*)\}/m)?.[1] ?? "";
@@ -79,7 +70,6 @@ describe("take A geometry: pane-wide floating card", () => {
   it("the fullscreen expanded card keeps its own geometry (12px, full width)", () => {
     const expanded = css.match(/\.composer\.expanded\s*\{([^}]*)\}/)?.[1] ?? "";
     assert.match(expanded, /margin: 12px/);
-    // the mode cap is gone, so no reset survives either
     assert.doesNotMatch(expanded, /max-width/);
   });
 

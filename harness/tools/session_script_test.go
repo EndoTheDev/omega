@@ -1,11 +1,10 @@
 package tools
 
-// The session-script verify (card t_db98ebfe): grep and glob run for
-// real inside the production agent loop - a FakeProvider scripts two
-// turns (one grep call, then one glob call), the loop executes them
-// against a seeded workspace and the tool results land as ToolResult
-// events on the transcript spine, exactly the path a serve run takes
-// (the channel's WithRunWorkspace wrap supplies the workspace root).
+// The session-script verify: grep and glob run for real inside the production agent
+// loop - a FakeProvider scripts two turns (one grep call, then one glob call), the loop
+// executes them against a seeded workspace and the tool results land as ToolResult
+// events on the transcript spine, exactly the path a serve run takes (the channel's
+// WithRunWorkspace wrap supplies the workspace root).
 
 import (
 	"context"
@@ -20,8 +19,6 @@ import (
 func TestSearchToolsRunInScriptedSession(t *testing.T) {
 	root := seedTree(t)
 
-	// Mount the real plugin (the buildPlugins path): one provider with
-	// grep + glob.
 	mctx := &core.Context{}
 	if _, err := agent.MountAllAPI([]agent.Plugin{NewPlugin()}, mctx, nil, nil); err != nil {
 		t.Fatalf("mount: %v", err)
@@ -31,7 +28,6 @@ func TestSearchToolsRunInScriptedSession(t *testing.T) {
 	}
 
 	provider := agent.NewFakeProviderScripts("test",
-		// turn 1: the model greps the workspace
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{
 				ID: "c1", Name: "files.grep",
@@ -39,7 +35,6 @@ func TestSearchToolsRunInScriptedSession(t *testing.T) {
 			}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		// turn 2: then globs for the markdown notes
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{
 				ID: "c2", Name: "files.glob",
@@ -47,7 +42,6 @@ func TestSearchToolsRunInScriptedSession(t *testing.T) {
 			}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		// turn 3: done
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "done"},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -57,9 +51,7 @@ func TestSearchToolsRunInScriptedSession(t *testing.T) {
 	events := make(chan core.Event, 256)
 	done := make(chan struct{})
 	go func() {
-		// The caller owns the events channel: the loop writes its spine
-		// and returns; only the producer closes (the agent/loop tests
-		// carry the same shape).
+		// The caller owns the events channel.
 		defer close(events)
 		defer close(done)
 		loop.Loop{}.Run(core.WithRunWorkspace(context.Background(), root, ""), agent.LoopOptions{
@@ -93,11 +85,9 @@ func TestSearchToolsRunInScriptedSession(t *testing.T) {
 	if len(toolResults) != 2 {
 		t.Fatalf("tool results = %d, want 2 (grep + glob):\n%s", len(toolResults), strings.Join(toolResults, "\n"))
 	}
-	// grep's transcript row: the content rows for the seeded files.
 	if !strings.Contains(toolResults[0], "isError=no") || !strings.Contains(toolResults[0], "main.go") || !strings.Contains(toolResults[0], "notes.md") {
 		t.Errorf("grep result wrong in the transcript:\n%s", toolResults[0])
 	}
-	// glob's transcript row: the one markdown file, without an error.
 	if !strings.Contains(toolResults[1], "notes.md") {
 		t.Errorf("glob result wrong in the transcript:\n%s", toolResults[1])
 	}

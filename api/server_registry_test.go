@@ -1,10 +1,9 @@
 package api
 
-// server_registry_test.go: the registry-toggle handler gates (card
-// t_2d8deb8c). The locked default agent is a HANDLER law: a PUT
-// disable for the default agent must be refused before the seam is
-// touched, answer a visible 4xx, and leave the fold unchanged - a
-// curl must hit the same wall the UI's locked pill renders.
+// server_registry_test.go: the registry-toggle handler gates. The locked default agent
+// is a HANDLER law: a PUT disable for the default agent must be refused before the seam
+// is touched, answer a visible 4xx, and leave the fold unchanged - a curl must hit the
+// same wall the UI's locked pill renders.
 
 import (
 	"errors"
@@ -45,7 +44,6 @@ func dirWord(enabled bool) string {
 
 func newToggleTestServer(t *testing.T, rt core.RegistryToggles) *httptest.Server {
 	t.Helper()
-	// registries ride the constructor: the base field is shell-invisible.
 	s, _ := newTestServerWithStoreSeam(t, rt)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /disabled", s.handleDisabled)
@@ -83,11 +81,9 @@ func boolJSON(b bool) string {
 	return "false"
 }
 
-// TestPutDisabledAgentsRefusesDefaultAgent pins the trust boundary
-// (card t_2d8deb8c, Endo verbatim "it cannot be disabled EVER!"): the
-// refusal lives in the handler - the seam is never called, the
-// response is a visible 4xx with the reason, and the fold is
-// unchanged afterwards.
+// TestPutDisabledAgentsRefusesDefaultAgent pins the trust boundary: the refusal lives
+// in the handler - the seam is never called, the response is a visible 4xx with the
+// reason, and the fold is unchanged afterwards.
 func TestPutDisabledAgentsRefusesDefaultAgent(t *testing.T) {
 	stub := &foldStub{}
 	srv := newToggleTestServer(t, stub)
@@ -116,8 +112,7 @@ func TestPutDisabledAgentsRefusesDefaultAgent(t *testing.T) {
 	}
 }
 
-// TestPutDisabledAgentsStillToggles agents other than the default:
-// the guard is scoped to the default agent only.
+// TestPutDisabledAgentsStillToggles agents other than the default.
 func TestPutDisabledAgentsStillToggles(t *testing.T) {
 	stub := &foldStub{}
 	srv := newToggleTestServer(t, stub)

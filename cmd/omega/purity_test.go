@@ -11,8 +11,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// captureSink is a RefusalSink that records every ledger entry - the
-// conformance suite's exactness witness (module, seam, predicate).
+// captureSink is a RefusalSink that records every ledger entry.
 type captureSink struct {
 	mu       sync.Mutex
 	refusals []core.Refusal
@@ -24,8 +23,7 @@ func (s *captureSink) Log(r core.Refusal) {
 	s.refusals = append(s.refusals, r)
 }
 
-// bootMount boots the full default plugin set into a fresh Context and
-// returns the registry, the context and the canvas built over them.
+// bootMount boots the full default plugin set into a fresh Context and returns the.
 // OMEGA_HOME must be set by the caller (each proof gets its own home).
 func bootMount(t *testing.T, sink core.RefusalSink) (*agent.Registry, *core.Context, *agent.Canvas) {
 	t.Helper()
@@ -47,17 +45,14 @@ func bootMount(t *testing.T, sink core.RefusalSink) (*agent.Registry, *core.Cont
 	return reg, ctx, canvas
 }
 
-// TestDoubleBootPurity is the registration-surface regulator diff
-// (phase F proof 3): two boots of the same plugin set must produce the
-// identical registration surface - census equality. A mount that reads
-// ambient state into its registrations (home paths, host IDs, time) is
-// a purity break and the diff names it.
+// TestDoubleBootPurity is the registration-surface regulator diff (phase F proof 3):
+// two boots of the same plugin set must produce the identical registration surface -
+// census equality.
 func TestDoubleBootPurity(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	_, ctx1, _ := bootMount(t, nil)
 	c1 := core.Census(ctx1)
 
-	// second boot, fresh home and all
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	_, ctx2, _ := bootMount(t, nil)
 	c2 := core.Census(ctx2)
@@ -65,8 +60,7 @@ func TestDoubleBootPurity(t *testing.T) {
 	if diff := c1.Diff(c2); len(diff) != 0 {
 		t.Fatalf("DOUBLE BOOT: registration surface drifted between boots:\n%s", strings.Join(diff, "\n"))
 	}
-	// and the surface is not empty - a diff of two empty mounts is a
-	// vacuous green
+	// and the surface is not empty - a diff of two empty mounts is a vacuous green
 	if len(c1.Tools) == 0 || len(c1.Slots) == 0 {
 		t.Fatalf("DOUBLE BOOT: census carries no surface (tools=%d slots=%d) - the diff proves nothing", len(c1.Tools), len(c1.Slots))
 	}
@@ -82,13 +76,11 @@ func actionsNames(actions []act) []string {
 	return out
 }
 
-// mutationBattery is the conformance payload set: for every registered
-// action, every payload shape runs through the canonical dispatch
-// boundary (Canvas.Dispatch). The "golden" payload is the empty shape
-// the module itself decodes; the mutations are the shapes a decode
-// must either reject exactly at the boundary or govern on its own -
-// what the suite pins is that the counts and the refusal ledger agree
-// with the verdicts, on exactly the dispatched set, twice across boots.
+// mutationBattery is the conformance payload set. The "golden" payload is the empty
+// shape the module itself decodes; the mutations are the shapes a decode must either
+// reject exactly at the boundary or govern on its own - what the suite pins is that the
+// counts and the refusal ledger agree with the verdicts, on exactly the dispatched set,
+// twice across boots.
 var mutationBattery = []struct {
 	name   string
 	args   []byte // nil = empty args
@@ -101,19 +93,17 @@ var mutationBattery = []struct {
 	{"not-json", []byte("{not json"), true},
 }
 
-// TestMutationConformance is the mutation-based conformance suite
-// (phase F proof 5, sketch 3): the battery drives every registered
-// action on the full mount; per-seam accept counters and the refusal
-// ledger must agree with the boundary verdicts on exactly what the
-// module decode rejects - no refusal without a verdict, no verdict
+// TestMutationConformance is the mutation-based conformance suite (phase F proof 5,
+// sketch 3): the battery drives every registered action on the full mount; per-seam
+// accept counters and the refusal ledger must agree with the boundary verdicts on
+// exactly what the module decode rejects - no refusal without a verdict, no verdict
 // without a count, no count without a boot-identical replay.
 func TestMutationConformance(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	sink := &captureSink{}
 	_, _, canvas := bootMount(t, sink)
 
-	// the action census from the canvas snapshot: module + action id,
-	// module-qualified on every declared panel
+	// the action census from the canvas snapshot.
 	var actions []act
 	seen := map[string]bool{}
 	for _, p := range canvas.Snapshot() {
@@ -130,9 +120,7 @@ func TestMutationConformance(t *testing.T) {
 	}
 	t.Logf("CONFORMANCE: battery covers %d registered actions (%v)", len(actions), actionsNames(actions))
 
-	// the module's no counts as a refusal: a decode rejection, a
-	// ShapeCheck refusal or the module's own validation arm - the
-	// counter records what the module rejected, nothing else decides.
+	// the module's no counts as a refusal.
 	send := func(canvas *agent.Canvas, module, action string, args []byte) (err error) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -181,10 +169,9 @@ func TestMutationConformance(t *testing.T) {
 		}
 	}
 
-	// reconcile 2: the refusal ledger (Q12) only ever fires on
-	// boundary-owned verdicts - a "not valid JSON" or "refused by"
-	// refusal whose action the battery dispatched, never on an
-	// accepted dispatch, never on an undispatched action.
+	// reconcile 2: the refusal ledger (Q12) only ever fires on boundary-owned verdicts - a
+	// "not valid JSON" or "refused by" refusal whose action the battery dispatched, never
+	// on an accepted dispatch, never on an undispatched action.
 	byAction := map[string][]core.Refusal{}
 	sink.mu.Lock()
 	for _, r := range sink.refusals {
@@ -219,20 +206,15 @@ func TestMutationConformance(t *testing.T) {
 		}
 	}
 
-	// reconcile 3 lives inside the battery: the not-json mutation IS
-	// part of the battery, so any module that tolerates raw garbage
-	// for a typed action surfaces as an accepted not-json dispatch -
-	// its choice, the counters still balance. Report the tolerant
-	// decodes loudly for the record.
+	// reconcile 3 lives inside the battery.
 	for _, a := range actions {
 		if got := expected[a.id]; got.Accepted == len(mutationBattery) {
 			t.Logf("CONFORMANCE: %s tolerates every mutation (garbage-in decode choice)", a.id)
 		}
 	}
 
-	// the drift alarm: a second boot replays the identical battery and
-	// the accept counters must land identical - a mount whose boundary
-	// counts drift between boots is not the same surface twice.
+	// the drift alarm: a second boot replays the identical battery and the accept counters
+	// must land identical.
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	sink2 := &captureSink{}
 	_, _, canvas2 := bootMount(t, sink2)
@@ -257,9 +239,6 @@ func TestMutationConformance(t *testing.T) {
 		}
 	}
 
-	// sanity: the battery DID exercise the boundary - at least one
-	// refusal landed somewhere (a world that accepts raw garbage for
-	// every action is a finding, not a green)
 	totalRefused := 0
 	for _, v := range t1 {
 		totalRefused += v.Refused

@@ -9,35 +9,16 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// The board REST surface (v0.12 phase F): the routes http_channel
-// served over the kanban core seam serve from the capsule itself now -
-// the module noun left core with the seam types (kanbantypes.go), and
-// the routes register through RegisterRoute. The wire shapes are the
-// the ones the webui consumes, byte-stable from the source move:
-// GET /tasks list/filter, POST /tasks create, GET /tasks/{id} detail
-// (task + comments + events), PATCH /tasks/{id}, DELETE /tasks/{id}
-// (the TaskDeleter capability), POST /tasks/{id}/comments, GET /boards,
-// and - since the boards folded into the one database (t_feae19d3) -
-// POST /boards to create, PATCH /boards/{name} to rename and DELETE
-// /boards/{name} to remove a board. A disabled kanban answers 404 - no
-// route registered, nothing to degrade to (Q7: one mount path).
-//
-// There is deliberately no cross-board mutation endpoint: a PATCH
-// moves a card inside its board only. Switching boards is the registry
-// is_current flag's job (omega kanban board use), never a card op.
-// Deleting is a registry op like switching, but destructive - the
-// handler keeps DeleteBoardRow's card precondition (a board holding a
-// live card refuses, naming the count; archived cards ride out with
-// the board) and answers 400 with the refusal text. Since 0.17.3 the
-// default and current boards are deletable too, and zero boards is a
-// legal registry.
-//
-// GET /tasks?scope=all lifts the list out of one board (the view's
-// all-boards search scope): every board's cards in one answer, each row
-// stamped with the board it lives on.
+// The board REST surface (v0.12 phase F). The wire shapes are the the ones the webui
+// consumes, byte-stable from the source move: GET /tasks list/filter, POST /tasks
+// create, GET /tasks/{id} detail (task + comments + events), PATCH /tasks/{id}, DELETE
+// /tasks/{id} (the TaskDeleter capability), POST /tasks/{id}/comments, GET /boards, and
+// - since the boards folded into the one database - POST /boards to create, PATCH
+// /boards/{name} to rename and DELETE /boards/{name} to remove a board. Switching
+// boards is the registry is_current flag's job (omega kanban board use), never a card
+// op.
 
-// writeJSON encodes v and answers status, the envelope the
-// handlers before the move wrote.
+// writeJSON encodes v and answers status, the envelope the handlers before the move.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -49,10 +30,7 @@ func boardParam(r *http.Request) string {
 	return r.URL.Query().Get("board")
 }
 
-// scopeAll is the ?scope= value that lifts a tasks read out of one
-// board: every board's cards in one answer (0.17.3 make-over, the board
-// view's all-boards search scope). Any other value (or none) keeps the
-// read board-scoped.
+// scopeAll is the ?scope= value that lifts a tasks read out of one board.
 const scopeAll = "all"
 
 // allBoardLister is the optional capability behind ?scope=all - the same
@@ -63,9 +41,8 @@ type allBoardLister interface {
 }
 
 // deleteFromStore deletes through the optional TaskDeleter capability
-// (BoardLister/Reorderer's shape): a store that cannot delete answers
-// 400 with the reason - the board UI's delete control refuses first,
-// this is the wire's backstop.
+// (BoardLister/Reorderer's shape): a store that cannot delete answers 400 with the
+// reason - the board UI's delete control refuses first, this is the wire's backstop.
 func deleteFromStore(store restProvider, w http.ResponseWriter, r *http.Request, id string) {
 	td, ok := any(store).(TaskDeleter)
 	if !ok {
@@ -86,8 +63,7 @@ type taskDetail struct {
 	Events   []KanbanEvent   `json:"events"`
 }
 
-// taskByIDError maps store errors onto status codes: missing task 404,
-// bad input 400, everything else 500.
+// taskByIDError maps store errors onto status codes.
 func taskByIDError(w http.ResponseWriter, err error) {
 	if errors.Is(err, ErrTaskNotFound) {
 		http.Error(w, "task not found: "+err.Error(), http.StatusNotFound)
@@ -96,9 +72,7 @@ func taskByIDError(w http.ResponseWriter, err error) {
 	http.Error(w, "update task: "+err.Error(), http.StatusBadRequest)
 }
 
-// boardsHandler serves GET /boards: the board registry with the
-// current board flagged. Registered only when the store carries the
-// multi-board capability (a single-board implementation stays legal).
+// boardsHandler serves GET /boards: the board registry with the current board flagged.
 func boardsHandler(store BoardLister) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		boards, err := store.Boards(r.Context())
@@ -110,11 +84,7 @@ func boardsHandler(store BoardLister) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-// tasksHandler serves GET /tasks (list; ?status= filters, the empty
-// value lists every status; ?board= picks the board; ?scope=all lists
-// EVERY board's cards in one answer - the board view's all-boards search
-// scope, each row carrying its board name) and POST /tasks (create;
-// title required, unspecified status defaults to triage in the store).
+// tasksHandler serves GET /tasks and POST /tasks (create.
 func tasksHandler(store restProvider) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -169,11 +139,10 @@ func tasksHandler(store restProvider) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-// taskByIDHandler serves GET /tasks/{id} (task + comments + events),
-// PATCH /tasks/{id} (any legal status transition by any caller - one
-// agent, no dispatch races to armor; PATCH pointer fields distinguish
-// "set to this value (possibly empty)" from "leave alone") and DELETE
-// /tasks/{id} (through the optional TaskDeleter capability - a store
+// taskByIDHandler serves GET /tasks/{id} (task + comments + events), PATCH /tasks/{id}
+// (any legal status transition by any caller - one agent, no dispatch races to armor;
+// PATCH pointer fields distinguish "set to this value (possibly empty)" from "leave
+// alone") and DELETE /tasks/{id} (through the optional TaskDeleter capability - a store
 // without it answers 400 with the reason).
 func taskByIDHandler(store restProvider) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -214,13 +183,11 @@ func taskByIDHandler(store restProvider) func(http.ResponseWriter, *http.Request
 				http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
 				return
 			}
-			// task.update keeps a simple non-pointer Status field
-			// ("" = no change); wire it through directly. An after_id body
-			// is the drag-order slot instead: the reorder capability is
-			// optional on the seam (single-order-agnostic stores stay
-			// legal), so an after_id against one that cannot reorder
-			// answers 400 with the reason - the board refetches and the
-			// card snaps back.
+			// task.update keeps a simple non-pointer Status field ("" = no change). An after_id
+			// body is the drag-order slot instead: the reorder capability is optional on the
+			// seam (single-order-agnostic stores stay legal), so an after_id against one that
+			// cannot reorder answers 400 with the reason - the board refetches and the card
+			// snaps back.
 			var (
 				out KanbanTask
 				err error
@@ -253,9 +220,8 @@ func taskByIDHandler(store restProvider) func(http.ResponseWriter, *http.Request
 	}
 }
 
-// taskCommentsHandler serves POST /tasks/{id}/comments. An absent
-// author is "web" - the board must be able to tell a human UI comment
-// from an agent tool comment.
+// taskCommentsHandler serves POST /tasks/{id}/comments. An absent author is "web" - the
+// board must be able to tell a human UI comment from an agent tool comment.
 func taskCommentsHandler(store restProvider) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -287,9 +253,8 @@ func taskCommentsHandler(store restProvider) func(http.ResponseWriter, *http.Req
 	}
 }
 
-// boardCreateHandler serves POST /boards: create a board (name in the
-// JSON body, board-name grammar enforced). Duplicates and reserved
-// names answer 400 with the refusal text.
+// boardCreateHandler serves POST /boards. Duplicates and reserved names answer 400 with
+// the refusal text.
 func boardCreateHandler(store boardRegistry) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -311,20 +276,16 @@ func boardCreateHandler(store boardRegistry) func(http.ResponseWriter, *http.Req
 	}
 }
 
-// boardRegistry is the slice of *Store the board routes need (the DB
-// registry is a store capability now, not a home-path op).
+// boardRegistry is the slice of *Store the board routes need (the DB registry is a.
 type boardRegistry interface {
 	CreateBoardRow(name string) error
 	RenameBoardRow(oldName, newName string) error
 	DeleteBoardRow(name string) error
 }
 
-// boardRenameHandler serves PATCH /boards/{name} with {"name": "<new>"}:
-// the board is renamed in place (0.17.3 make-over - renaming joins the
-// delete-all surface, the same band the selector and the remove control
-// ride). The row keeps its id, so the cards do not move; the refusal
-// text (illegal name, duplicate name, unknown board) answers 400 and the
-// webui shows it verbatim.
+// boardRenameHandler serves PATCH /boards/{name} with {"name". The row keeps its id, so
+// the cards do not move; the refusal text (illegal name, duplicate name, unknown board)
+// answers 400 and the webui shows it verbatim.
 func boardRenameHandler(store boardRegistry) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPatch {
@@ -351,16 +312,7 @@ func boardRenameHandler(store boardRegistry) func(http.ResponseWriter, *http.Req
 	}
 }
 
-// boardDeleteHandler serves DELETE /boards/{name}: remove a board
-// through the registry's own DeleteBoardRow. Since 0.17.3 every board
-// may leave - the default board and the current board included, and a
-// home may end up with ZERO boards (the panel's create-board empty
-// state). The one guard left is the card precondition: a board holding
-// a LIVE card refuses by name and count ("archive or delete them
-// first"), so the archive lane is the last stop before a board goes;
-// the archived cards, their comments and their events ride out with the
-// board. There is no force. The webui's confirm click is only a
-// courtesy double-take; this handler is the law.
+// boardDeleteHandler serves DELETE /boards/{name}.
 func boardDeleteHandler(store boardRegistry) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
@@ -402,9 +354,7 @@ func (p *Plugin) pushAll() {
 	}
 }
 
-// statusRecorder remembers the status a handler answered, so the push
-// wrapper can tell a mutation from a refusal. The handlers keep writing
-// through the embedded writer - every route here is JSON only.
+// statusRecorder remembers the status a handler answered, so the push wrapper can.
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
@@ -422,13 +372,8 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 	return s.ResponseWriter.Write(b)
 }
 
-// pushAfterMutation wraps one mutating REST handler (card t_b5784de3): a
-// 2xx answer refreshes the module's canvas panels, so a task edited
-// through the HTTP API - a sibling agent, a curl, another tab - reaches
-// every live frontend as a ViewModelDelta. That is what lets the board
-// drop its 5s poll: it renders from its own REST view and re-reads it on
-// the announced delta. A failed mutation pushes nothing (the error text
-// is the answer); GET routes are never wrapped.
+// pushAfterMutation wraps one mutating REST handler. A failed mutation pushes nothing
+// (the error text is the answer); GET routes are never wrapped.
 func (p *Plugin) pushAfterMutation(refresh func(), h func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rec := &statusRecorder{ResponseWriter: w}
@@ -440,12 +385,8 @@ func (p *Plugin) pushAfterMutation(refresh func(), h func(http.ResponseWriter, *
 	}
 }
 
-// registerRoutes hands the capsule's REST routes to the registry
-// (RegisterRoute, the phase-D vocabulary): the served surface rides
-// ctx.ModuleRoutes from here on. Every mutating route answers through
-// pushAfterMutation (the canvas delta the frontends render from);
-// comments push nothing - the tasks panel carries no thread and the
-// drawer that posted re-reads its own detail.
+// registerRoutes hands the capsule's REST routes to the registry (RegisterRoute, the
+// phase-D vocabulary).
 func (p *Plugin) registerRoutes(api *agent.ExtensionAPI) error {
 	rows := []struct {
 		pattern string

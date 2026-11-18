@@ -9,10 +9,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// httpClient is the shared HTTP client used by all providers. It
-// respects HTTP_PROXY and HTTPS_PROXY environment variables via
-// http.ProxyFromEnvironment. The timeout defaults to 300s and is
-// set via SetHTTPTimeout from config loading.
+// httpClient is the shared HTTP client used by all providers.
 var httpClient = &http.Client{
 	Timeout: 300 * time.Second,
 	Transport: &http.Transport{
@@ -20,29 +17,24 @@ var httpClient = &http.Client{
 	},
 }
 
-// SetHTTPTimeout updates the shared HTTP client's timeout. Called
-// during config loading from the host config's HTTPTimeout field.
+// SetHTTPTimeout updates the shared HTTP client's timeout.
 func SetHTTPTimeout(seconds int) {
 	if seconds > 0 {
 		httpClient.Timeout = time.Duration(seconds) * time.Second
 	}
 }
 
-// HTTPClient returns the shared HTTP client. Extensions import this
-// to make HTTP calls with the same timeout and proxy settings.
+// HTTPClient returns the shared HTTP client.
 func HTTPClient() *http.Client {
 	return httpClient
 }
 
 // RetryHTTP runs req with exponential backoff on transient failures.
-// Extensions import this for provider HTTP calls.
 func RetryHTTP(req *http.Request) (*http.Response, error) {
 	return retryHTTP(req.Context(), req)
 }
 
-// SSEData returns the payload of each `data:` line in an SSE stream,
-// skipping comments, event/blank lines, and the trailing `[DONE]`
-// sentinel. Extensions import this for parsing SSE responses.
+// SSEData returns the payload of each `data:` line in an SSE stream, skipping.
 func SSEData(reader *bufio.Reader) (string, bool, error) {
 	for {
 		line, err := reader.ReadString('\n')
@@ -61,14 +53,11 @@ func SSEData(reader *bufio.Reader) (string, bool, error) {
 	}
 }
 
-// Compatibility aliases: the tool + model wire shapes live in core
-// (arc 1b2). They are Go aliases of the core wire types, not a second
-// contract. The Provider face itself left core in part 3 (wave 2, the
-// seam constitution): consumers declare it (agent.Provider); llm keeps
-// no provider contract at all.
-//
-// DO NOT add new contract types here - provider contracts belong to
-// their consumers.
+// Compatibility aliases: the tool + model wire shapes live in core (arc 1b2). They are
+// Go aliases of the core wire types, not a second contract. The Provider face itself
+// left core in part 3 (wave 2, the seam constitution): consumers declare it
+// (agent.Provider); llm keeps no provider contract at all. DO NOT add new contract
+// types here - provider contracts belong to their consumers.
 type (
 	// ToolSchema describes a tool the model may call.
 	ToolSchema = core.ToolSchema
@@ -76,14 +65,10 @@ type (
 	ModelInfo = core.ModelInfo
 )
 
-// ThinkingLevels is the ordered list of thinking levels the user can
-// cycle through with /thinking (no argument). "none" is the default:
-// no thinking parameter is sent to the provider. "off" explicitly
-// disables thinking. The rest enable thinking at increasing intensity.
+// ThinkingLevels is the ordered list of thinking levels the user can cycle through.
 var ThinkingLevels = []string{"none", "off", "on", "minimal", "low", "medium", "high", "extra high", "max", "ultra"}
 
-// ThinkingEnabled returns true if the level enables thinking (anything
-// except "none" and "off").
+// ThinkingEnabled returns true if the level enables thinking (anything except "none".
 func ThinkingEnabled(level string) bool {
 	return level != "" && level != "none" && level != "off"
 }

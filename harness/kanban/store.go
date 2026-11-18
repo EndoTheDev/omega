@@ -17,67 +17,50 @@ import (
 // shared sentinel, aliased here so store callers stay short).
 var ErrNotFound = ErrTaskNotFound
 
-// Store implements KanbanProvider over SQLite. Safe for
-// concurrent use via *sql.DB (WAL + busy_timeout, same recipe as the
-// session store).
-//
-// ONE DATABASE (t_feae19d3): db is the single <home>/data/kanban.db -
-// every board is a row in its boards table and every card, comment and
-// event carries a board_id FK. There is no per-board handle and no
-// pointer file; a board argument is resolved to its row id at the door.
+// Store implements KanbanProvider over SQLite. Safe for concurrent use via *sql.DB (WAL
+// + busy_timeout, same recipe as the session store).
 type Store struct {
 	db *sql.DB
 
-	// q is the statement surface every task read and write executes
-	// through: the *sql.DB handle itself on a plain store, the open
-	// batch transaction on a batch clone (BeginBatch). Registry ops
-	// (boards.go) stay on db directly - ATTACH/DETACH and Begin cannot
-	// run inside a transaction, and registry work never joins a batch.
+	// q is the statement surface every task read and write executes through. Registry ops
+	// (boards.go) stay on db directly - ATTACH/DETACH and Begin cannot run inside a
+	// transaction, and registry work never joins a batch.
 	q stmtDB
 
-	// tx is the open batch transaction this store executes inside
-	// (non-nil on a batch clone only). Write ops that would open their
-	// own transaction reuse it instead - the batch owns every commit.
+	// tx is the open batch transaction this store executes inside (non-nil on a batch.
 	tx *sql.Tx
 
-	// batchEmits buffers finished-things emissions while a batch is
-	// open: replayed to the notifier on commit, dropped on rollback.
-	// Nil on a plain store (emit at once). See emitDone.
+	// batchEmits buffers finished-things emissions while a batch is open. Nil on a plain
+	// store (emit at once).
 	batchEmits *[]string
 
-	// notifier is the finished-things seam (card t_5d9032d3), wired by
-	// the kanban plugin after MountAllAPI order places notifications
-	// first. Nil-safe: a store without the seam just doesn't notify.
+	// notifier is the finished-things seam, wired by the kanban plugin after MountAllAPI.
+	// Nil-safe: a store without the seam just doesn't notify.
 	notifier finishedThings
 }
 
-// stmtDB is the full statement face *sql.DB and *sql.Tx share:
-// everything the task surface (store.go) executes. The registry surface
-// (boards.go) needs Begin/Exec/ATTACH and stays on *sql.DB.
+// stmtDB is the full statement face *sql.DB and *sql.Tx share.
 type stmtDB interface {
 	ExecContexter
 	QueryRowContexter
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-// finishedThings is the consumer-side face of the finished-things
-// store (part 3 seam constitution): just the emit method this store
-// calls when a task lands done. The notifications capsule satisfies
-// it structurally; no shared type exists.
+// finishedThings is the consumer-side face of the finished-things store (part 3 seam
+// constitution).
 type finishedThings interface {
 	Emit(n core.Notice) (core.Notice, error)
 }
 
-// SetNotifier wires the finished-things consumers face (the plugin
-// calls this post-mount; exposed for tests to inject a recorder).
+// SetNotifier wires the finished-things consumers face (the plugin calls this
+// post-mount.
 func (s *Store) SetNotifier(n finishedThings) {
 	s.notifier = n
 }
 
-// emitDone records one task notification when a task ENTERED done in
-// this update. Best-effort: a notification failure never fails the
-// board write (the caller swallows the error). Title is metadata only.
-// Inside a batch the emission buffers: replayed on commit, dropped on
+// emitDone records one task notification when a task ENTERED done in this update.
+// Best-effort: a notification failure never fails the board write (the caller swallows
+// the error). Inside a batch the emission buffers: replayed on commit, dropped on
 // rollback - a batch that reverts cannot leave a done-notice behind.
 func (s *Store) emitDone(taskID string) {
 	if s.batchEmits != nil {
@@ -110,14 +93,10 @@ var (
 	_ Batcher        = (*Store)(nil)
 )
 
-// Open opens (creating if needed) the board database at dsn and
-// ensures the schema exists. ":memory:" works for SEQUENTIAL tests
-// only - the loop executes tool calls concurrently, and every fresh
-// pooled connection to a :memory: dsn is its own empty database
-// (use a file dsn under concurrency). A dsn inside a
-// data/ directory gets the boot-time data-dir migration first
-// (legacy home-root databases move into data/ before the handle is
-// opened - see harness/datadir).
+// Open opens (creating if needed) the board database at dsn and ensures the schema.
+// ":memory:" works for SEQUENTIAL tests only - the loop executes tool calls
+// concurrently, and every fresh pooled connection to a:memory: dsn is its own empty
+// database (use a file dsn under concurrency).
 func Open(dsn string) (*Store, error) {
 	if err := datadir.Migrate(dsn); err != nil {
 		return nil, err
@@ -134,8 +113,7 @@ func Open(dsn string) (*Store, error) {
 	return s, nil
 }
 
-// openDB is the dsn-widening + sql.Open step, shared by Open and the
-// migration's short-lived source handles.
+// openDB is the dsn-widening + sql.Open step, shared by Open and the migration's.
 func openDB(dsn string) (*sql.DB, error) {
 	dsnParams := dsn
 	if !strings.Contains(dsn, "?") {
@@ -155,15 +133,7 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// migrate ensures the schema on the single database. Fresh schemas
-// carry the full multi-board shape (boards table + board_id FKs); a
-// database from the legacy shape is rebuilt in place - new tables with
-// board_id, the rows copied with main's board id backfilled.
-// boardIndexes is the board_id index set. It runs AFTER the board
-// tables exist - on a legacy database, board_id only arrives with
-// rebuildLegacyRows, so migrate() creates the tables (IF NOT EXISTS,
-// no board_id index touching), upgrades the legacy rows, and only then
-// lays the board indexes.
+// migrate ensures the schema on the single database.
 const boardIndexes = `
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, id);
@@ -193,13 +163,7 @@ func (s *Store) migrate(db *sql.DB) error {
 	return err
 }
 
-// migrateTaskPositions adds the drag-order column when it is missing
-// (any legacy or legacy-rebuilt database carries the pre-position
-// shape) and backfills it so the display order the board already
-// rendered (created_at DESC, id DESC within each column) is frozen
-// into explicit positions. Only the ALTER branch backfills: re-running
-// the backfill on a database where reorders already happened would
-// destroy the live order.
+// migrateTaskPositions adds the drag-order column when it is missing (any legacy or.
 func migrateTaskPositions(db *sql.DB) error {
 	if !tableMissingColumn(db, "tasks", "position") {
 		return nil
@@ -215,8 +179,8 @@ UPDATE tasks SET position = (
 	return err
 }
 
-// taskTables is the three card tables in the boards-aware shape (fresh
-// databases are born with board_id; legacy databases rebuild below).
+// taskTables is the three card tables in the boards-aware shape (fresh databases are
+// born with board_id.
 const taskTables = `
 CREATE TABLE IF NOT EXISTS tasks (
 	id           TEXT PRIMARY KEY,
@@ -251,14 +215,9 @@ CREATE TABLE IF NOT EXISTS task_events (
 );
 `
 
-// rebuildLegacyRows upgrades a database from the boardless legacy
-// shape: tasks/task_comments/task_events without a board_id column.
-// The rows are rebuilt into new boards-aware tables in one transaction
-// (all legacy rows belong to "main" - the boards table's seeded row is
-// the backfill source), the old tables drop, the new ones take their
-// places and the indexes are re-created. A database that already has
-// board_id columns is a no-op. The table re-creation must exist in the
-// same file because sqlite has no ALTER TABLE ADD CONSTRAINT.
+// rebuildLegacyRows upgrades a database from the boardless legacy shape. The table
+// re-creation must exist in the same file because sqlite has no ALTER TABLE ADD
+// CONSTRAINT.
 func rebuildLegacyRows(db *sql.DB) error {
 	if !tableMissingColumn(db, "tasks", "board_id") {
 		return nil
@@ -325,8 +284,8 @@ func rebuildLegacyRows(db *sql.DB) error {
 	return tx.Commit()
 }
 
-// tableMissingColumn reports whether table lacks column (false for a
-// table that does not exist at all - the CREATE above then makes it).
+// tableMissingColumn reports whether table lacks column (false for a table that does
+// not exist at all.
 func tableMissingColumn(db *sql.DB, table, column string) bool {
 	rows, err := db.Query("PRAGMA table_info(" + table + ")")
 	if err != nil {
@@ -356,10 +315,7 @@ func tableMissingColumn(db *sql.DB, table, column string) bool {
 	return !found
 }
 
-// topPosition is the slot a landing card takes on top of its column:
-// one below the lowest position (the column was newest-first before
-// the order column existed, so a fresh card keeps landing on top).
-// db may be *sql.DB or an open *sql.Tx.
+// topPosition is the slot a landing card takes on top of its column.
 func topPosition(ctx context.Context, db QueryRowContexter, boardID int64, status string) (int64, error) {
 	var top int64
 	err := db.QueryRowContext(ctx,
@@ -368,24 +324,19 @@ func topPosition(ctx context.Context, db QueryRowContexter, boardID int64, statu
 	return top, err
 }
 
-// QueryRowContexter is the single-row read half *sql.DB and *sql.Tx
-// share - topPosition accepts either.
+// QueryRowContexter is the single-row read half *sql.DB and *sql.Tx share.
 type QueryRowContexter interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// writeScope is one task-write transaction. A plain store opens a real
-// *sql.Tx and owns its own commit; a batch clone (Store.tx set) runs
-// inside the open batch transaction instead and its commits and
-// rollbacks are no-ops - the batch owns the outcome (BeginBatch).
+// writeScope is one task-write transaction.
 type writeScope struct {
 	tx     *sql.Tx
 	commit func() error
 	revert func()
 }
 
-// beginWrite opens the transaction one mutating task op needs: a fresh
-// tx on the plain store, the already-open batch tx on a batch clone.
+// beginWrite opens the transaction one mutating task op needs.
 func (s *Store) beginWrite(ctx context.Context) (writeScope, error) {
 	if s.tx != nil {
 		return writeScope{tx: s.tx, commit: func() error { return nil }, revert: func() {}}, nil
@@ -397,13 +348,9 @@ func (s *Store) beginWrite(ctx context.Context) (writeScope, error) {
 	return writeScope{tx: tx, commit: tx.Commit, revert: func() { _ = tx.Rollback() }}, nil
 }
 
-// BeginBatch opens one SQLite transaction and returns a clone of the
-// store that executes every op inside it (the Batcher capability, the
-// atomic kanban batch). The commit function rolls the transaction
-// forward and then flushes the batch's buffered finished-things
-// emissions; cancel always rolls back - safe to call unconditionally
-// (a no-op once committed or already rolled back). A nested batch is
-// refused: there is exactly one open batch transaction per store.
+// BeginBatch opens one SQLite transaction and returns a clone of the store that
+// executes every op inside it (the Batcher capability, the atomic kanban batch). A
+// nested batch is refused: there is exactly one open batch transaction per store.
 func (s *Store) BeginBatch(ctx context.Context) (KanbanProvider, func() error, func(), error) {
 	if s.tx != nil {
 		return nil, nil, nil, fmt.Errorf("a batch is already open")
@@ -431,11 +378,7 @@ func (s *Store) BeginBatch(ctx context.Context) (KanbanProvider, func() error, f
 	return &b, commit, cancel, nil
 }
 
-// migrateTaskPriority adds the urgency column when it is missing (any
-// database from before the priority round carries the pre-priority
-// shape). DEFAULT 0 is the backfill: every pre-existing card was
-// created when only created_at ordered the columns, so neutral (0 =
-// normal) is the truthful read back.
+// migrateTaskPriority adds the urgency column when it is missing (any database from.
 func migrateTaskPriority(db *sql.DB) error {
 	if !tableMissingColumn(db, "tasks", "priority") {
 		return nil
@@ -444,9 +387,8 @@ func migrateTaskPriority(db *sql.DB) error {
 	return err
 }
 
-// CreateTask inserts a task on the named board ("" = the current
-// board). ID, Status (default triage) and CreatedAt are filled by the
-// store; title must be non-empty.
+// CreateTask inserts a task on the named board ("" = the current board). ID, Status
+// (default triage) and CreatedAt are filled by the store; title must be non-empty.
 func (s *Store) CreateTask(ctx context.Context, board string, in KanbanTask) (KanbanTask, error) {
 	if strings.TrimSpace(in.Title) == "" {
 		return KanbanTask{}, fmt.Errorf("task title is required")
@@ -508,14 +450,7 @@ func describeNew(t KanbanTask) string {
 	return detail
 }
 
-// ListTasks returns the board's tasks in board order: the explicit
-// position column when the column carries one (drag order), falling
-// back to newest first for tasks that share a position (legacy rows
-// and merged boards all sit at 0). The empty status lists the ACTIVE
-// board - every status but archived (the default kanban list is not a
-// dump of the archive; an explicit `archived` status lists it, `all`
-// includes everything). The board filter is ALWAYS applied - the
-// board_id column carries the isolation the per-board files used to.
+// ListTasks returns the board's tasks in board order.
 func (s *Store) ListTasks(ctx context.Context, board, status string) ([]KanbanTask, error) {
 	bid, err := s.boardID(board)
 	if err != nil {
@@ -548,17 +483,14 @@ func (s *Store) ListTasks(ctx context.Context, board, status string) ([]KanbanTa
 	return out, rows.Err()
 }
 
-// statusFilter turns the ?status= argument into a WHERE fragment:
-// "" hides archived (the active view), StatusAll lists everything, and a
-// named status must be legal. Shared by the board read and the
-// all-boards read so the two can never drift.
+// statusFilter turns the ?status= argument into a WHERE fragment: "" hides archived
+// (the active view), StatusAll lists everything, and a named status must be legal.
+// Shared by the board read and the all-boards read so the two can never drift.
 func statusFilter(status string) (string, []any, error) {
 	switch status {
 	case "":
-		// the default view is the active board: archived hides
 		return " AND status != ?", []any{StatusArchived}, nil
 	case StatusAll:
-		// include archived too - the full scan is explicit
 		return "", nil, nil
 	default:
 		if !IsStatus(status) {
@@ -568,12 +500,8 @@ func statusFilter(status string) (string, []any, error) {
 	}
 }
 
-// ListAllTasks is the all-boards read behind the board view's "all
-// boards" search scope (0.17.3 make-over): every board's cards in one
-// list, each row carrying the board NAME it lives on (the view addresses
-// a card by (board, id), so a mixed list must say which board a row
-// belongs to). Ordered by board then column position, so the mixed list
-// groups the way the grid does.
+// ListAllTasks is the all-boards read behind the board view's "all boards" search scope
+// (0.17.3 make-over).
 func (s *Store) ListAllTasks(ctx context.Context, status string) ([]KanbanTask, error) {
 	where, args, err := statusFilter(status)
 	if err != nil {
@@ -705,11 +633,8 @@ INSERT INTO task_comments (task_id, author, body, created_at, board_id) VALUES (
 	return c, err
 }
 
-// UpdateTask applies the patch and writes the audit events. Any status
-// may move to any other (legal) status; moving INTO done stamps
-// completed_at, moving OUT of a settled status clears it; moving INTO
-// running stamps started_at once. The board argument selects which
-// board holds the task - patches cannot move a task across boards.
+// UpdateTask applies the patch and writes the audit events. The board argument selects
+// which board holds the task - patches cannot move a task across boards.
 func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch KanbanPatch) (KanbanTask, error) {
 	bid, err := s.boardID(board)
 	if err != nil {
@@ -727,8 +652,6 @@ func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch Kanb
 		return KanbanTask{}, err
 	}
 
-	// card t_5d9032d3: a task that ENTERS done this update emits one
-	// finished-things record (fired after the commit below).
 	enteredDone := false
 	events := [][2]string{}
 	edits := []string{}
@@ -753,10 +676,9 @@ func (s *Store) UpdateTask(ctx context.Context, board, taskID string, patch Kanb
 				t.CompletedAt = ""
 			}
 			t.Status = patch.Status
-			// a column change drops the card on top of its new column
-			// (the same slot a drag without a target position takes -
-			// stale positions from the old column must not leak into
-			// the new column's order)
+			// a column change drops the card on top of its new column (the same slot a drag
+			// without a target position takes - stale positions from the old column must not
+			// leak into the new column's order)
 			top, err := topPosition(ctx, tx, bid, patch.Status)
 			if err != nil {
 				return KanbanTask{}, err
@@ -824,13 +746,7 @@ UPDATE tasks SET title=?, body=?, assignee=?, status=?, session_id=?, source=?, 
 	return t, nil
 }
 
-// DeleteTask implements TaskDeleter: the card, its comment thread and
-// its audit trail are removed in one transaction (explicit deletes -
-// the sqlite driver does not enable the FK pragma per connection, so
-// the ON DELETE CASCADE clauses are documentation, not enforcement).
-// There is no audit row to leave behind: the deleted task's events go
-// too. Archive (PATCH status=archived) is the reversible path; the UI's
-// armed confirm is the only guard this op gets.
+// DeleteTask implements TaskDeleter.
 func (s *Store) DeleteTask(ctx context.Context, board, taskID string) error {
 	bid, err := s.boardID(board)
 	if err != nil {
@@ -857,16 +773,8 @@ func (s *Store) DeleteTask(ctx context.Context, board, taskID string) error {
 	return ws.commit()
 }
 
-// ReorderTask places a task at an explicit slot on the named board:
-// the target column (patch.Status-style, "" = keep the current column)
-// and the sibling the card lands after (afterID, "" = top of the
-// column). The target column is resequenced to dense positions, so the
-// drag order lives in the sqlite rows and survives every reload. A
-// column change rides UpdateTask's machinery first (the stamp rules
-// and the moved event); the slot is applied in its own transaction
-// with a "reordered" audit event whenever anything actually changed.
-// afterID must sit in the target column; afterID naming the task
-// itself resolves to the top slot.
+// ReorderTask places a task at an explicit slot on the named board. afterID must sit in
+// the target column; afterID naming the task itself resolves to the top slot.
 func (s *Store) ReorderTask(ctx context.Context, board, taskID, status, afterID string) (KanbanTask, error) {
 	if status != "" && !IsStatus(status) {
 		return KanbanTask{}, fmt.Errorf("illegal status %q", status)
@@ -890,7 +798,6 @@ func (s *Store) ReorderTask(ctx context.Context, board, taskID, status, afterID 
 		}
 	}
 
-	// the target column, in display order, with the moved card's slot
 	ws, err := s.beginWrite(ctx)
 	if err != nil {
 		return KanbanTask{}, err
@@ -918,7 +825,6 @@ ORDER BY position ASC, created_at DESC, id DESC`, bid, target)
 	}
 	rows.Close()
 
-	// the siblings without the moved card
 	others := make([]string, 0, len(all))
 	for _, id := range all {
 		if id != taskID {
@@ -945,16 +851,14 @@ ORDER BY position ASC, created_at DESC, id DESC`, bid, target)
 			return KanbanTask{}, fmt.Errorf("after task %q not in column %q", afterID, target)
 		}
 	}
-	// a drop that leaves the rendered order unchanged writes nothing:
-	// no resequencing, no audit event (the list above is already
-	// exactly the order the slot implies)
+	// a drop that leaves the rendered order unchanged writes nothing: no resequencing, no
+	// audit event (the list above is already exactly the order the slot implies)
 	if at == oldIndex {
 		if err := ws.commit(); err != nil {
 			return KanbanTask{}, err
 		}
 		return t, nil
 	}
-	// dense positions: the siblings shift around the inserted slot
 	for i, id := range others {
 		p := int64(i)
 		if i >= at {

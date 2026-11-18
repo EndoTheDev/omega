@@ -1,7 +1,5 @@
-// omega webui: unit tests for the themes pure helpers
-// (normalizeThemesPayload, usableThemes, the split knobs: color mode +
-// theme lists, the persisted-pair migration, the vanished-file fallback).
-// Run: node --test webui/test/ (node >= 23 runs TS natively)
+// omega webui: unit tests for the themes pure helpers (normalizeThemesPayload,
+// usableThemes, the split knobs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -17,7 +15,7 @@ import {
   clearThemeTokens,
 } from "../app/composables/omega.ts";
 
-// --- normalizeThemesPayload ---
+// -- normalizeThemesPayload --
 
 test("normalize keeps well-formed themes", () => {
   const out = normalizeThemesPayload({
@@ -48,7 +46,7 @@ test("normalize flags broken themes instead of dropping them", () => {
   assert.equal(out[0].base, "dark"); // malformed base falls back to dark
 });
 
-// --- malformed entries are dropped, not thrown on ---
+// -- malformed entries are dropped, not thrown on --
 test("normalize drops malformed entries", () => {
   const out = normalizeThemesPayload([
     null,
@@ -68,7 +66,7 @@ test("normalize tolerates total garbage", () => {
   assert.deepEqual(normalizeThemesPayload({ themes: "not an array" }), []);
 });
 
-// --- usableThemes ---
+// -- usableThemes --
 
 test("usableThemes filters only the picker's list", () => {
   const all = normalizeThemesPayload({
@@ -82,7 +80,7 @@ test("usableThemes filters only the picker's list", () => {
   assert.equal(usable[0].id, "good");
 });
 
-// --- the split picker's option lists ---
+// -- the split picker's option lists --
 
 test("color mode knob lists auto/dark/light and nothing else", () => {
   assert.deepEqual(colorModeOptions, ["auto", "dark", "light"]);
@@ -98,9 +96,7 @@ const fileThemes = normalizeThemesPayload({
 
 test("theme knob lists default plus usable files, shadows the seed id", () => {
   const opts = themePickOptions(fileThemes);
-  // "default" first; palm usable; junk flagged (hidden, as before);
-  // the seeded default.yaml's file entry is shadowed - the picker's
-  // "default" names the built-in palettes only
+  // "default" first; palm usable.
   assert.deepEqual(opts, [
     "default",
     { value: "palm", label: "Midnight Palm" },
@@ -111,7 +107,7 @@ test("theme knob options stay the bare list with no files", () => {
   assert.deepEqual(themePickOptions([]), ["default"]);
 });
 
-// --- persisted-pair migration (the old merged select's values) ---
+// -- persisted-pair migration (the old merged select's values) --
 
 test("migration: stored theme:<id> maps to theme <id> + mode auto", () => {
   assert.deepEqual(restoreThemeKnobs(null, "theme:palm"), {
@@ -147,8 +143,7 @@ test("migration: missing or tampered legacy value defaults both knobs", () => {
 });
 
 test("migration: a persisted theme id is idempotent, mode rides along", () => {
-  // after the split, the theme-id key exists and the mode key holds a
-  // plain mode: both are read back as-is, no second migration
+  // after the split, the theme-id key exists and the mode key holds a plain mode.
   assert.deepEqual(restoreThemeKnobs("palm", "dark"), {
     mode: "dark",
     theme: "palm",
@@ -159,12 +154,11 @@ test("migration: a persisted theme id is idempotent, mode rides along", () => {
   });
 });
 
-// --- fallback on a vanished or broken file ---
+// -- fallback on a vanished or broken file --
 
 test("fallback: a vanished file id returns to default", () => {
   assert.equal(resolveThemeId("palm", fileThemes), "palm");
   assert.equal(resolveThemeId("palm", []), DEFAULT_THEME_ID);
-  // the flagged junk entry is not usable either
   assert.equal(resolveThemeId("junk", fileThemes), DEFAULT_THEME_ID);
 });
 
@@ -173,9 +167,9 @@ test("fallback: the built-in default never falls back", () => {
   assert.equal(resolveThemeId(DEFAULT_THEME_ID, fileThemes), DEFAULT_THEME_ID);
 });
 
-// --- theme select wire value ---
+// -- theme select wire value --
 
-// --- token application against a stand-in CSSStyleDeclaration ---
+// -- token application against a stand-in CSSStyleDeclaration --
 
 type FakeStyle = Map<string, string>;
 

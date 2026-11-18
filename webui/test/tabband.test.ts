@@ -1,12 +1,6 @@
-// omega webui: the UNIVERSAL PANEL TOP BAR (card t_308e6d9b, Endo's
-// design directive 2026-10-30). Every tab carries the Files-band top
-// bar (the shared TabBand component), and the band never scrolls: it
-// renders OUTSIDE the tab's scrollport (the t_c252b9c6 lesson - no CSS
-// sticky inside a scroll body). The node suite has no DOM, so this is
-// pinned on the source, per tab: the <TabBand> usage, its position
-// BEFORE the scroll container, and (where the tab owns actions) the
-// tab's real buttons living inside the band.
-// Run: node --test test/tabband.test.ts
+// omega webui: the UNIVERSAL PANEL TOP BAR. Every tab carries the Files-band top bar
+// (the shared TabBand component), and the band never scrolls: it renders OUTSIDE the
+// tab's scrollport.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -15,11 +9,9 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 
-// one entry per tab: file (webui-root relative; ../ leaves to
-// the repo root for module/webui-ring UIs), the band title, the scroll
-// container class the band must sit OUTSIDE of, and the tab's own
-// action labels that must live inside the band. files is the band's
-// birthplace: its band is conditional ONLY on the cwd-fallback ruling.
+// one entry per tab: file (webui-root relative;./ leaves to the repo root for
+// module/webui-ring UIs), the band title, the scroll container class the band must sit
+// OUTSIDE of, and the tab's own action labels that must live inside the band.
 const TABS: Array<{
   file: string;
   title: string | null;
@@ -30,38 +22,17 @@ const TABS: Array<{
   { file: "../harness/cron/ui/CronJobs.vue", title: "Cron", scrollClass: "cron-body", actions: ["refresh cron jobs", "Search cron jobs"] },
   { file: "../harness/skills/ui/SkillsList.vue", title: "Skills", scrollClass: "skills-body", actions: ["refresh skills", "Search skills"] },
   { file: "../harness/tools/ui/ToolsList.vue", title: "Tools", scrollClass: "tools-body", actions: ["refresh tools", "Search tools"] },
-  // card t_01c53e78: the raw-tail Logs pane retired - the Logs tab IS the
-  // observability capsule's view now (band title follows the dock title)
+  // the raw-tail Logs pane retired.
   { file: "../harness/observability/ui/ObservabilityTab.vue", title: "Logs", scrollClass: "obs-body", actions: ["toggle errors only", "toggle raw log tail"] },
   { file: "../harness/mcp/ui/McpServers.vue", title: "MCP", scrollClass: "mcp-body", actions: ["refresh mcp servers", "Search MCP servers"] },
-  // card t_2b644603 (Endo's narrow-pane ruling): the band keeps the
-  // family shape - title + board chip + count | filter. The destructive
-  // pair and the scope toggle left the band (dropdown rows and a chip on
-  // the filter seat), so the ONE action this tab owns in the band is the
-  // filter seat itself.
+  // the band keeps the family shape - title + board chip + count | filter.
   { file: "../harness/kanban/ui/Board.vue", title: "Kanban", scrollClass: "board-scroll", actions: ["filter cards"] },
-  // card t_81d0901b: the Modules tab retired - module toggles are
-  // configuration, so the surface moved into the settings tab's MODULES
-  // section, and the settings pane carries NO band (card t_1cfb080a). No
-  // entry here any more; band-breaks.test.ts pins the settings absence.
+  // the Modules tab retired - module toggles are configuration, so the surface moved.
   { file: "../harness/continuous/ui/AgentsPanel.vue", title: "Agents", scrollClass: "agents-body", actions: ["create an agent"] },
   { file: "../harness/store/ui/InsightsTab.vue", title: "Insights", scrollClass: "insights-scroll", actions: ["window in days, 0 = all time"] },
-  // card t_6bebff18 (Endo ruling 2026-11-10, option B): settings LEFT the
-  // band-search roster - the filter is the pane-top full-width bar, so the
-  // band carried the title alone; card t_1cfb080a (Endo, 2026-11-11) then
-  // dropped the band ITSELF from this pane (the dock tab already says
-  // "Settings"), so there is no entry here any more. The absence is pinned
-  // in band-breaks.test.ts; the bar is pinned in bandsearch.test.ts.
-  // card t_9794272d (Endo's de-crowd ruling, 2026-11-06): the two actions
-  // are ICON-only band tools now - the verbs live on the title/aria-label
-  // attrs, which the action probe below matches (the tooltip string is
-  // still quoted in source, inside the band).
+  // settings LEFT the band-search roster.
   { file: "../harness/notifications/ui/NotificationsPanel.vue", title: "Notifications", scrollClass: "notif-list", actions: ["mark all read", "clear all"] },
-  // card t_7ee0a673 (Endo's comment 3, 2026-11-01): the sessions band
-  // carried the TITLE ALONE (card t_311fc40b) - now the SEARCH seats in
-  // the band's band-tool slot too ("Search sessions", the shared
-  // SearchInput's own aria-label). The new-session button keeps its own
-  // row below the band (pinned in test/sidebar-order.test.ts).
+  // the sessions band carried the TITLE ALONE.
   { file: "../harness/store/ui/AppSidebar.vue", title: "Sessions", scrollClass: "session-list", actions: ["Search sessions"] },
 ];
 
@@ -85,13 +56,11 @@ describe("the universal band (card t_308e6d9b)", () => {
       }
       const bandAt = src.indexOf("<TabBand");
       const scrollAt = src.indexOf(`class="${t.scrollClass}"`);
-      // the established cwd-fallback ruling is the ONLY conditional band
       if (!src.includes('v-if="headerName"')) {
         const pre = src.slice(Math.max(0, bandAt - 60), bandAt);
         assert.doesNotMatch(pre, /v-if=/, "the band is ALWAYS present");
       }
       assert.ok(bandAt < scrollAt, `the band renders BEFORE "${t.scrollClass}" (never inside the scrollport)`);
-      // no floating tab-head rows left in the bodies
       assert.doesNotMatch(
         src,
         /class="(notif-head|mcp-header|skills-header|tools-head|agents-head\b|insights-head|sessions-head|board-head)"/,

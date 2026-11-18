@@ -11,8 +11,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// toolRun runs the verdict tool in a goroutine (the request sub-action
-// blocks on the hub) and returns a channel for the result string / error.
+// toolRun runs the verdict tool in a goroutine (the request sub-action blocks on the.
 func toolRun(t *testing.T, p *verdictToolProvider, ctx context.Context, args map[string]any) <-chan toolResult {
 	t.Helper()
 	ch := make(chan toolResult, 1)
@@ -48,8 +47,7 @@ func interactiveCtx(session string) context.Context {
 	return ctx
 }
 
-// requestArgs is a valid verdict.request args map with the extras
-// merged in. No action field - the verb IS the tool name.
+// requestArgs is a valid verdict.request args map with the extras merged in.
 func requestArgs(extra map[string]any) map[string]any {
 	args := map[string]any{"title": "q"}
 	for k, v := range extra {
@@ -58,9 +56,7 @@ func requestArgs(extra map[string]any) map[string]any {
 	return args
 }
 
-// TestDottedWirePin pins the split's registry shape (t_d8fbad57):
-// exactly one dotted verdict tool, the flat `verdict` name gone, the
-// required list its own (title alone - no action property anywhere).
+// TestDottedWirePin pins the split's registry shape: exactly one dotted verdict tool.
 func TestDottedWirePin(t *testing.T) {
 	p := &verdictToolProvider{hub: NewHub(nil, nil)}
 	tools := p.Tools()
@@ -132,7 +128,6 @@ func TestToolBlocksAndReturnsVerdictJSON(t *testing.T) {
 	args := requestArgs(map[string]any{"title": "Approve?", "body": "ship it", "options": []any{"yes", "no"}})
 	ch := toolRun(t, p, interactiveCtx("s1"), args)
 
-	// the card is pending before the answer resolves the block.
 	cards := waitForPending(t, h, "s1", 1)
 	if cards[0].Title != "Approve?" {
 		t.Fatalf("Pending = %+v, want one Approve? card", cards)
@@ -161,7 +156,6 @@ func TestToolParsesDescribedOptionsAndMulti(t *testing.T) {
 		"options": []any{
 			map[string]any{"label": "Ship", "description": "merge now"},
 			map[string]any{"label": "Hold"},
-			// plain strings stay legal (one-word rows)
 			"Stop",
 		},
 		"multi":      true,

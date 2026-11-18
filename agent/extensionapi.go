@@ -8,27 +8,27 @@
 // THE SEAM CENSUS (the post-flip tree, part 3 wave 2; every exclusive
 // seam is an Offer under the closed need-key namespace):
 //
-//	Exclusive slots                  Surface
-//	 provider, store, logger         api.Offer("<key>", svc) - the
-//	 compactor, prompt, nudger       loop's needs resolve at bind
-//	 approvals, loop                 (agent/seams.go bindNeed).
-//	 skills, memory, trust           api.Offer("<key>", svc) -
-//	 cron, notifications, verdicts   capsule-to-capsule through
+// Exclusive slots Surface
+// provider, store, logger api.Offer("<key>", svc) - the
+// compactor, prompt, nudger loop's needs resolve at bind
+// approvals, loop (agent/seams.go bindNeed).
+// skills, memory, trust api.Offer("<key>", svc)
+// cron, notifications, verdicts capsule-to-capsule through
 //	                                 consumer-owned interfaces.
-//	 core.Captioner                  host-built after the mount today
+// core.Captioner host-built after the mount today
 //
-//	 Additive surfaces (7)          Registration
-//	 ToolProviders                 RegisterTool / RegisterRuntimeTools
-//	 PromptSectioners              RegisterPromptSectioner
-//	 PanelProviders                RegisterPanelProvider (a stateful
-//	                              core.PanelProvider - Panels()
+// Additive surfaces (7) Registration
+// ToolProviders RegisterTool / RegisterRuntimeTools
+// PromptSectioners RegisterPromptSectioner
+// PanelProviders RegisterPanelProvider (a stateful
+// core.PanelProvider - Panels
 //	                              computed per snapshot, a
 //	                              core.PanelUpdateSink pushing through
 //	                              mutations; kanban's capsule is the
 //	                              reference)
-//	 Channels                      RegisterChannel
-//	 Commands + CommandHandler     RegisterCommand
-//	 CLI subcommands (phase D)     RegisterSubcommand
+// Channels RegisterChannel
+// Commands + CommandHandler RegisterCommand
+// CLI subcommands (phase D) RegisterSubcommand
 //
 // Two families have no Context field of their own: routes
 // (RegisterRoute - module REST; the http channel consumes it with the
@@ -57,26 +57,20 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// ExtensionAPI tier: whether the mounting capsule ships built-in
-// vocabulary (machine-critical, not toggleable - provider, store,
-// skills, tools, the loop) or module vocabulary (the opinionated
-// capsules). Module registrations must carry the capsule's own
-// namespace (Q10); built-in registrations are the machine's vocabulary
-// and keep their natural names - both land on the same one-tenant
-// ledger, so the collision law holds across the boundary.
+// ExtensionAPI tier: whether the mounting capsule ships built-in vocabulary
+// (machine-critical, not toggleable. Module registrations must carry the capsule's own
+// namespace (Q10); built-in registrations are the machine's vocabulary and keep their
+// natural names - both land on the same one-tenant ledger, so the collision law holds
+// across the boundary.
 func isBuiltin(p Plugin) bool {
 	_, toggleable := p.(Toggleable)
 	return !toggleable
 }
 
-// MountAllAPI mounts the plugin set and returns the
-// registration registry: claims, module routes and the refusal
-// ledger. The refusals sink is host-supplied; nil builds the default
-// in-process refusal ledger. disabled names the modules config.yaml
-// toggles off (Q1): Mount skips them; a remaining plugin depending on
-// a disabled module fails the boot naming the edge (Q3). A boot panic
-// re-panics as *core.ModulePanicError - die loud naming the module
-// and the fix-it hint (Q11).
+// MountAllAPI mounts the plugin set and returns the registration registry. The refusals
+// sink is host-supplied; nil builds the default in-process refusal ledger. A boot panic
+// re-panics as *core.ModulePanicError - die loud naming the module and the fix-it hint
+// (Q11).
 func MountAllAPI(plugins []Plugin, ctx *Context, refusals core.RefusalSink, disabled []string) (*Registry, error) {
 	if refusals == nil {
 		refusals = NewRefusalLedger()
@@ -105,8 +99,7 @@ func MountAllAPI(plugins []Plugin, ctx *Context, refusals core.RefusalSink, disa
 		reg.active[p.Name()] = true
 		reg.plugins[p.Name()] = p
 	}
-	// The catalog keeps EVERY module of the build - disabled ones too -
-	// so the E2 registry surface can introspect and remount them.
+	// The catalog keeps EVERY module of the build.
 	reg.catalog = make(map[string]Plugin, len(plugins))
 	for _, p := range plugins {
 		reg.catalog[p.Name()] = p
@@ -117,12 +110,9 @@ func MountAllAPI(plugins []Plugin, ctx *Context, refusals core.RefusalSink, disa
 	return reg, nil
 }
 
-// Registry is the process's registration state: the one-name-one-
-// tenant ledger (Q5/Q10), the registrations only the host consumes
-// (module REST routes; phase-D consumption), and the refusal sink
-// every boundary rejection lands in (Q12). Created per MountAllAPI
-// wiring - a remount builds a fresh registry, which is what makes
-// re-registration a replace and the mount stay clean-idempotent.
+// Registry is the process's registration state. Created per MountAllAPI wiring - a
+// remount builds a fresh registry, which is what makes re-registration a replace and
+// the mount stay clean-idempotent.
 type Registry struct {
 	mu       sync.Mutex
 	owner    map[string]string // seam name or namespace pair -> tenant module
@@ -131,27 +121,17 @@ type Registry struct {
 	subcmds  []Subcommand      // module CLI subcommands, dispatched by the omega binary
 	refusals core.RefusalSink
 
-	// Teardown state (v0.12 E1): the recorded topo order DismountAll
-	// replays in reverse, which modules are live, each module's
-	// contribution journal and the plugin handles by name.
 	mountOrder []Plugin
 	active     map[string]bool
 	journals   map[string]*journal
 	plugins    map[string]Plugin
 
-	// Introspection + toggle state (v0.12 E2): the full plugin
-	// catalog - mounted or disabled - behind the registry's module
-	// surface, its build order for the UI list, and the mutex
-	// serializing live toggles.
 	catalog      map[string]Plugin
 	catalogOrder []Plugin
 	toggleMu     sync.Mutex
 }
 
-// Route is one module-registered REST route - the core.ModuleRoute
-// alias: the shape rides the live Context (phase F), the registry
-// keeps the claim ledger and the registration order. Nothing serves
-// these from the registry; the channels read ctx.ModuleRoutes.
+// Route is one module-registered REST route - the core.ModuleRoute alias.
 type Route = core.ModuleRoute
 
 // Routes returns the registered module routes in registration order.
@@ -163,13 +143,10 @@ func (r *Registry) Routes() []Route {
 	return out
 }
 
-// Subcommand is one module-owned CLI subcommand (v0.12 phase D, grill
-// Q6 - CLI homecoming): the binary routes `omega <name> ...` to the
-// handler with the untouched argv after the name; the module parses
-// its own argv (core never grows a flag framework) and prints its own
-// help. Deleting the module removes the registration: the subcommand
-// vanishes from `omega --help` and dispatch falls back to the
-// project-path behavior.
+// Subcommand is one module-owned CLI subcommand (v0.12 phase D, grill Q6 - CLI
+// homecoming): the binary routes `omega <name>..` to the handler with the untouched
+// argv after the name; the module parses its own argv (core never grows a flag
+// framework) and prints its own help.
 type Subcommand struct {
 	Module  string
 	Name    string
@@ -177,8 +154,7 @@ type Subcommand struct {
 	Handler func(argv []string) error
 }
 
-// Subcommands returns the registered module subcommands in
-// registration order.
+// Subcommands returns the registered module subcommands in registration order.
 func (r *Registry) Subcommands() []Subcommand {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -197,9 +173,7 @@ func (r *Registry) Refusals() []core.Refusal {
 	return nil
 }
 
-// RefusalLedger is the default in-process ledger (Q12): it keeps the
-// refusal values for hosts and tests to read. Printing, spine wiring
-// and the conformance suite come with the phases that consume them.
+// RefusalLedger is the default in-process ledger (Q12).
 type RefusalLedger struct {
 	mu      sync.Mutex
 	entries []core.Refusal
@@ -235,24 +209,22 @@ func newRegistry(refusals core.RefusalSink) *Registry {
 	}
 }
 
-// isActive reports whether a module is mounted, under the registry
-// lock.
+// isActive reports whether a module is mounted, under the registry lock.
 func (r *Registry) isActive(name string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.active[name]
 }
 
-// recordJournal lands a successfully mounted module's contributions
-// in the ledger (boot path - the writes are already live).
+// recordJournal lands a successfully mounted module's contributions in the ledger (boot
+// path.
 func (r *Registry) recordJournal(j *journal) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.journals[j.module] = j
 }
 
-// adoptMount accepts a committed remount: the live record of module,
-// journal and topo position.
+// adoptMount accepts a committed remount.
 func (r *Registry) adoptMount(p Plugin, j *journal) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -273,11 +245,9 @@ func (r *Registry) releaseClaim(key, module string) {
 	}
 }
 
-// claimSlot records the one-tenant rule on a bare seam name ("store",
-// "kanban" - the exclusive slots; the same key the provides sweep
-// recorded, so the sweep and the registration agree on tenancy).
-// The owner map holds seam names and "module.verb" pairs;
-// ParseSeamName guarantees the shapes never collide.
+// claimSlot records the one-tenant rule on a bare seam name ("store", "kanban". The
+// owner map holds seam names and "module.verb" pairs; ParseSeamName guarantees the
+// shapes never collide.
 func (r *Registry) claimSlot(seam, module string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -297,10 +267,7 @@ func (r *Registry) claimSlotQuiet(seam, module string) {
 	r.owner[seam] = module
 }
 
-// emitterReg is one registered finished-things hook. The delivered
-// value is the service under the offer key "notifications" - the hook
-// type-asserts to its own local interface (part 3: the mount carries
-// no capsule type).
+// emitterReg is one registered finished-things hook.
 type emitterReg struct {
 	module string
 	fn     func(svc any)
@@ -320,13 +287,9 @@ func (r *Registry) deliverEmitters(ctx *Context) {
 	}
 }
 
-// deliverModuleEmitters replays the emit-on-remount law: a remount's
-// fresh hooks never saw the mount-end deliver (they registered after
-// boot's sweep), so Mount delivers the named module's hooks itself.
-// Only that module's entries are replayed - the others are either
-// already delivered (boot) or gone (their dismount undid them). A
-// rejected remount panics before this runs and plays the hooks back
-// instead, so nothing is delivered half-mounted (Q11).
+// deliverModuleEmitters replays the emit-on-remount law: a remount's fresh hooks never
+// saw the mount-end deliver (they registered after boot's sweep), so Mount delivers the
+// named module's hooks itself.
 func (r *Registry) deliverModuleEmitters(ctx *Context, module string) {
 	r.mu.Lock()
 	var hooks []emitterReg
@@ -342,11 +305,7 @@ func (r *Registry) deliverModuleEmitters(ctx *Context, module string) {
 	}
 }
 
-// ExtensionAPI is one capsule's namespaced view of the mount surface,
-// created by the mount loop for every plugin of the build. Every
-// enforcement below carries the capsule's plugin name as the tenant;
-// the methods land each registration on the Context surface it owns
-// - journaled so the dismount replays them backward.
+// ExtensionAPI is one capsule's namespaced view of the mount surface, created by the.
 type ExtensionAPI struct {
 	module  string
 	ctx     *core.Context
@@ -356,16 +315,12 @@ type ExtensionAPI struct {
 	builtin bool     // the capsule ships built-in vocabulary (not Toggleable)
 	tools   map[string]core.Tool
 	wired   bool // the one tool provider is already on ctx.ToolProviders
-	// panelProviders holds the registered providers - each lands on
-	// ctx.PanelProviders at commit.
 	panelProviders []core.PanelProvider
 }
 
-// writeSlot records the mount's write into the journal and applies it
-// to the mounting Context (boot: the live Context; remount: the
-// scoped proxy). apply runs immediately; undo plays backward at
-// dismount time and removes exactly the captured element
-// (removeOne) - never a slice truncation.
+// writeSlot records the mount's write into the journal and applies it to the mounting
+// Context (boot. apply runs immediately; undo plays backward at dismount time and
+// removes exactly the captured element (removeOne) - never a slice truncation.
 func (api *ExtensionAPI) writeSlot(apply func(*core.Context), undo func(*core.Context)) {
 	applied := api.live
 	if apply != nil {
@@ -415,32 +370,18 @@ func (api *ExtensionAPI) claim(name string) error {
 	return nil
 }
 
-// RegisterTool adds one tool (ToolProviders, additive). The name is
-// the model-facing identity. Dotted wire tools are the norm (the
-// registry unification B ruling, t_f616ed78 phase 1 + t_d8fbad57
-// phase 2): a module capsule
-// (Toggleable) registers its module.verb pairs ("kanban.list",
-// "memory.add" - every action-protocol domain is split, no flat
-// domain tool remains); a built-in
-// capsule (provider, the loop - in
-// the machine's vocabulary) registers its natural name ("shell.run",
-// "web.search"). Pre-tier vocabulary that predates the capsule law
-// keeps its name through RegisterBuiltinTool below. Both land on the
-// same one-tenant ledger; a
-// second tenant on a held tool name is a fail-loud error (Q5), and a
-// same-tenant re-registration replaces (Q7, the clean-idempotent
-// remount). The payload contract is unchanged raw JSON (core.Tool.Run
-// takes map[string]any, Q9).
+// RegisterTool adds one tool (ToolProviders, additive). Both land on the same
+// one-tenant ledger; a second tenant on a held tool name is a fail-loud error (Q5), and
+// a same-tenant re-registration replaces (Q7, the clean-idempotent remount). The
+// payload contract is unchanged raw JSON (core.Tool.Run takes map[string]any, Q9).
 func (api *ExtensionAPI) RegisterTool(name string, t core.Tool) error {
 	if api.builtin {
-		// Built-in tier: the one-tenant ledger holds the name
-		// itself, no namespace pairing. Journaled for release.
+		// Built-in tier: the one-tenant ledger holds the name itself, no namespace pairing.
 		if err := api.claimRecorded("tool:" + name); err != nil {
 			return err
 		}
 	} else if name == api.module {
-		// The bare domain name: the module IS the identity (the
-		// one-domain law), no module.verb pair to parse.
+		// The bare domain name: the module IS the identity (the one-domain law), no.
 		if err := api.claimRecorded(name); err != nil {
 			return err
 		}
@@ -451,22 +392,10 @@ func (api *ExtensionAPI) RegisterTool(name string, t core.Tool) error {
 	return nil
 }
 
-// RegisterBuiltinTool adds one tool on the built-in VOCABULARY rail: its
-// dotted name carries a domain verb that predates the capsule tier
-// ("files.grep"/"files.glob" from the tools capsule, "sessions.search"/
-// "sessions.hygiene" from the store), so the module-namespace claim would
-// refuse a registration the model, the prompt and the approval gate have
-// always addressed by that name.
-//
-// The tier re-law (0.17.3, card t_ee3a968b) is what makes this method
-// necessary: store and tools were built-in TIER capsules (no Toggleable)
-// and lost that exemption when they opted into the toggleable tier. The
-// exemption narrows to the NAME, never the capsule - the tool keeps its
-// one-tenant ledger slot (claimed as tool:<name>, journaled for release
-// exactly like RegisterTool's builtin branch), the capsule keeps its
-// toggle, and every NEW tool name stays module.verb. Renaming these four
-// verbs to store.* / tools.* is an API decision for Endo, not a fold side
-// effect.
+// RegisterBuiltinTool adds one tool on the built-in VOCABULARY rail. The exemption
+// narrows to the NAME, never the capsule - the tool keeps its one-tenant ledger slot
+// (claimed as tool:<name>, journaled for release exactly like RegisterTool's builtin
+// branch), the capsule keeps its toggle, and every NEW tool name stays module.verb.
 func (api *ExtensionAPI) RegisterBuiltinTool(name string, t core.Tool) error {
 	if err := api.claimRecorded("tool:" + name); err != nil {
 		return err
@@ -475,8 +404,7 @@ func (api *ExtensionAPI) RegisterBuiltinTool(name string, t core.Tool) error {
 	return nil
 }
 
-// landTool assembles one registration into the provider the loop reads
-// and arms the Context slot on the first hit (the additive rail).
+// landTool assembles one registration into the provider the loop reads and arms the.
 func (api *ExtensionAPI) landTool(name string, t core.Tool) {
 	if api.tools == nil {
 		api.tools = make(map[string]core.Tool)
@@ -492,24 +420,15 @@ func (api *ExtensionAPI) landTool(name string, t core.Tool) {
 	}
 }
 
-// toolMap is the assembled provider the registrations build; the map
-// lives with the view, so later registrations merge into it.
+// toolMap is the assembled provider the registrations build.
 type toolMap map[string]core.Tool
 
 func (m toolMap) Tools() map[string]core.Tool { return m }
 
-// RegisterRuntimeTools lands the capsule's runtime-loaded tool set
-// (the mcp ruling, card t_6c0375b5): server-qualified externally
-// sourced names ("proof.echo") are configuration data, not registered
-// vocabulary - they never pass the namespace claim, so a server name
-// outside the capsule's own namespace stays illegal to CLAIM while
-// being legal to SERVE. The provider is appended whole (it re-reads
-// its live set on every Tools() call, the classic bridge shape). The
-// capsule claims its own namespace ONCE as the guard ("mcp." - the
-// guard is journaled like every other), and the tools ride
-// beneath it as runtime data. Binary purity holds: removing the module
-// removes all of them regardless of naming. The one-dot law is not
-// weakened anywhere - no multi-dot parse, no flattening.
+// RegisterRuntimeTools lands the capsule's runtime-loaded tool set: server-qualified
+// externally sourced names ("proof.echo") are configuration data, not registered
+// vocabulary - they never pass the namespace claim, so a server name outside the
+// capsule's own namespace stays illegal to CLAIM while being legal to SERVE.
 func (api *ExtensionAPI) RegisterRuntimeTools(p core.ToolProvider) error {
 	if p == nil {
 		return fmt.Errorf("runtime tools %q: a registration carries its provider", api.module)
@@ -528,14 +447,7 @@ func (api *ExtensionAPI) RegisterRuntimeTools(p core.ToolProvider) error {
 	return nil
 }
 
-// RegisterPanelProvider registers a panel provider: its Panels()
-// computes the snapshot from its own state on every read and a
-// core.PanelUpdateSink (installed by the canvas at registration)
-// pushes deltas around module-face mutations. Kanban's capsule is the
-// reference (phase C1). The validation: every panel carries its id,
-// every action id is a namespaced pair claimed by this capsule. The
-// provider lands on ctx.PanelProviders at commit - the exact append
-// the classic mount makes.
+// RegisterPanelProvider registers a panel provider.
 func (api *ExtensionAPI) RegisterPanelProvider(p core.PanelProvider) error {
 	if p == nil {
 		return fmt.Errorf("panel provider %q: a registration carries its provider", api.module)
@@ -561,10 +473,7 @@ func (api *ExtensionAPI) RegisterPanelProvider(p core.PanelProvider) error {
 	return nil
 }
 
-// commit appends the module's registered panel providers to
-// ctx.PanelProviders - the exact slice the classic mount appends to.
-// Called by the mount loop after MountWithAPI returns; validation
-// failures abort the mount (fail loud, Q5).
+// commit appends the module's registered panel providers to ctx.PanelProviders.
 func (api *ExtensionAPI) commit() error {
 	if len(api.panelProviders) > 0 {
 		providers := api.panelProviders
@@ -584,10 +493,7 @@ func (api *ExtensionAPI) commit() error {
 	return nil
 }
 
-// RegisterRoute registers one module REST route (the phase-D vocabulary;
-// validated and recorded, nothing serves it in phase B). The pattern
-// is an http.ServeMux pattern; the registry rejects a cross-tenant
-// claim of the same pattern and replaces a same-tenant one.
+// RegisterRoute registers one module REST route (the phase-D vocabulary.
 func (api *ExtensionAPI) RegisterRoute(pattern string, h func(http.ResponseWriter, *http.Request)) error {
 	if pattern == "" {
 		return fmt.Errorf("route %q: a registered route carries its pattern", api.module)
@@ -648,16 +554,8 @@ func (api *ExtensionAPI) RegisterRoute(pattern string, h func(http.ResponseWrite
 	return nil
 }
 
-// RegisterSubcommand registers the capsule's CLI subcommand (v0.12
-// phase D, Q6 - module owns its argv): a thin name+handler prefix. The
-// binary consults the registry's cli table when a first non-flag
-// argument matches no built-in subcommand; the registration carries
-// the name (user-facing identity, natural shape like slash commands -
-// no namespace pair), the one-line summary the global help list shows,
-// and the handler that parses its own argv. The claim is
-// one-name-one-tenant: a cross-tenant claim of the same subcommand
-// name fails the boot loud (Q5), same-tenant re-registration replaces
-// (Q7).
+// RegisterSubcommand registers the capsule's CLI subcommand (v0.12 phase D, Q6 - module
+// owns its argv).
 func (api *ExtensionAPI) RegisterSubcommand(name, summary string, handler func(argv []string) error) error {
 	if name == "" || name != strings.TrimSpace(name) {
 		return fmt.Errorf("subcommand %q: a registration carries its bare-word name", name)
@@ -704,11 +602,9 @@ func (api *ExtensionAPI) RegisterSubcommand(name, summary string, handler func(a
 	return nil
 }
 
-// RegisterEmitter registers the capsule's finished-things hook: at
-// mount end the service under the "notifications" key is handed to it
-// (nil when the notifications module is absent - emitters stay
-// nil-safe). The hook type-asserts the value to its own local
-// interface. The hook is the registration shape (phase C).
+// RegisterEmitter registers the capsule's finished-things hook: at mount end the
+// service under the "notifications" key is handed to it (nil when the notifications
+// module is absent - emitters stay nil-safe).
 func (api *ExtensionAPI) RegisterEmitter(fn func(svc any)) error {
 	if fn == nil {
 		return fmt.Errorf("emitter %q: a registration carries its hook", api.module)
@@ -734,8 +630,7 @@ func (api *ExtensionAPI) RegisterEmitter(fn func(svc any)) error {
 	return nil
 }
 
-// sameFunc compares two func values by code pointer - the identity
-// the emitter undo matches on. Same function, same hook.
+// sameFunc compares two func values by code pointer.
 func sameFunc(a, b any) bool {
 	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
 }
@@ -764,17 +659,9 @@ func (api *ExtensionAPI) RegisterChannel(ch core.Channel) error {
 	return nil
 }
 
-// RegisterCommand maps the command seam: the same append onto
-// ctx.Commands and the same chain-on-miss CommandHandler wrapper the
-// classic modules build (byte-equal shape - parity holds). The
-// command name keeps its slash (user-facing identity); the registry
-// records the owner and rejects a cross-tenant claim (Q5).
-//
-// The chain falls through on ONE error: core.ErrCommandMiss, which a
-// handler returns (core.CommandMiss) for a name it does not own. Every
-// other error stops the chain and surfaces as itself with its own
-// message - an owner's refusal ("no active session to export") is an
-// answer, not a miss.
+// RegisterCommand maps the command seam: the same append onto ctx.Commands and the same
+// chain-on-miss CommandHandler wrapper the classic modules build (byte-equal shape -
+// parity holds).
 func (api *ExtensionAPI) RegisterCommand(name, description string, args []string, h func(ctx context.Context, name, args string) (core.CommandResult, error)) error {
 	if name == "" || name[0] != '/' {
 		return fmt.Errorf("command %q: an extension command keeps its leading slash", name)
@@ -797,8 +684,7 @@ func (api *ExtensionAPI) RegisterCommand(name, description string, args []string
 			c.CommandHandler = func(ctx context.Context, n, a string) (core.CommandResult, error) {
 				out, err := h(ctx, n, a)
 				if err == nil || !errors.Is(err, core.ErrCommandMiss) {
-					// an answer, or this owner's own refusal - the chain
-					// stops here and the message is the owner's
+					// an answer, or this owner's own refusal.
 					return out, err
 				}
 				if inner != nil {
@@ -812,12 +698,8 @@ func (api *ExtensionAPI) RegisterCommand(name, description string, args []string
 	return nil
 }
 
-// RegisterLifecycle records one Start/Stop fence handle for the
-// capsule (the goroutine fence, v0.12 E1): Mount starts nothing - the
-// handle waits for the host's StartAll after the commit. The
-// registration journals the fence entry, so a dismount stops and
-// unregisters it and a rejected remount leaves the live run-group
-// untouched (the scoped proxy holds its own group).
+// RegisterLifecycle records one Start/Stop fence handle for the capsule (the goroutine
+// fence, v0.12 E1).
 func (api *ExtensionAPI) RegisterLifecycle(name string, start func(ctx context.Context, deps core.StartDeps) error, stop func() error) error {
 	if name == "" {
 		return fmt.Errorf("lifecycle handle by %q: a handle carries its name", api.module)
@@ -839,10 +721,9 @@ func (api *ExtensionAPI) RegisterLifecycle(name string, start func(ctx context.C
 	return nil
 }
 
-// mountSeam maps one exclusive slot: the one-tenant claim at
-// registration time (Q5, journaled for release), then the same field
-// assignment the classic mount writes - journaled with the previous
-// value so the dismount restores exactly what it found.
+// mountSeam maps one exclusive slot: the one-tenant claim at registration time (Q5,
+// journaled for release), then the same field assignment the classic mount writes -
+// journaled with the previous value so the dismount restores exactly what it found.
 func (api *ExtensionAPI) mountSeam(seam string, apply func(*core.Context), undo func(*core.Context)) error {
 	if err := api.claimRecorded(seam); err != nil {
 		return err
@@ -851,33 +732,17 @@ func (api *ExtensionAPI) mountSeam(seam string, apply func(*core.Context), undo 
 	return nil
 }
 
-// Offer mounts one service under a stringly-keyed seam (restructure
-// part 3, the seam constitution): the universal mechanism every
-// capsule - and the substrate itself - shares. One owner per key: a
-// foreign offer on a held key fails the mount loud (Q5), a
-// same-tenant re-offer replaces (the clean-idempotent remount, Q7).
-// Consumers resolve by key from ctx.Services() and type-assert to
-// their OWN interfaces; the key string is data, never a shared type.
-// Offer is journaled like every registration: the dismount removes
-// the offer, a remount replaces it.
-//
-// The key namespace is closed per direction: capsule services use the
-// capsule's own name ("cron", "trust", "verdicts", "notifications",
-// "skills", "memory") plus the shell-offered "chat-runs" (Endo ruling
-// 2026-11-04, the first shell-offered service key - the census names
-// it, the consumer owns the face); the substrate need-keys are a
-// documented closed list (provider, store, loop, logger, compactor,
-// prompt, nudger, approvals) - proposing need key #9 is a design
-// event, argued in a card.
+// Offer mounts one service under a stringly-keyed seam (restructure part 3, the seam
+// constitution). One owner per key: a foreign offer on a held key fails the mount loud
+// (Q5), a same-tenant re-offer replaces (the clean-idempotent remount, Q7). Consumers
+// resolve by key from ctx.Services and type-assert to their OWN interfaces; the key
+// string is data, never a shared type.
 func (api *ExtensionAPI) Offer(key string, svc any) error {
 	if svc == nil {
 		return fmt.Errorf("service %q: a registration carries its service", key)
 	}
 	module := api.module
-	// The ledger claims the key first (the same one-tenant slot the
-	// provides sweep records), so an api offer behind a classic
-	// capsule's swept claim - and the reverse - fails the mount loud
-	// with the seam named (Q5). A same-tenant re-offer replaces (Q7).
+	// The ledger claims the key first (the same one-tenant slot the provides sweep.
 	if err := api.claimRecorded(key); err != nil {
 		return err
 	}

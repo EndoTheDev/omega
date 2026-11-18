@@ -90,11 +90,9 @@ func TestMountAllOrdering(t *testing.T) {
 	}
 }
 
-// TestMountAllRequiresEdgeForcesOrder proves a Requires edge forces
-// mount order regardless of slice position (card t_13a2af8a: mount
-// order is declared data). The notifications-shaped consumer is listed
-// before its producer in the slice; topoSort must still mount the
-// producer first.
+// TestMountAllRequiresEdgeForcesOrder proves a Requires edge forces mount order. The
+// notifications-shaped consumer is listed before its producer in the slice; topoSort
+// must still mount the producer first.
 func TestMountAllRequiresEdgeForcesOrder(t *testing.T) {
 	var order []string
 	mk := func(name string, provides, requires []string) testPlugin {
@@ -128,10 +126,7 @@ func TestMountAllRequiresEdgeForcesOrder(t *testing.T) {
 	}
 }
 
-// TestMountAllMissingDep covers the fault-injected Requires edge: a
-// plugin whose dependency is absent from the set refuses the mount
-// loud - no silent degradation, the module name and the seam in the
-// error (the Q3 refusal language, phase F's fault-injection proof).
+// TestMountAllMissingDep covers the fault-injected Requires edge.
 func TestMountAllMissingDep(t *testing.T) {
 	p := testPlugin{
 		name:     "compactor",
@@ -149,12 +144,11 @@ func TestMountAllMissingDep(t *testing.T) {
 	}
 }
 
-// TestMountAllDisabledDepRefuses is the second fault-injected Requires
-// proof (phase F, Q3): the dependency is present in the build but
-// disabled via the config.yaml disabled: list - the boot must still refuse,
-// naming the seam, the dependent and its disabled provider, with the
-// fix-it in the message. The silent variant (silently mount without the
-// dep) is exactly what the refusal forbids.
+// TestMountAllDisabledDepRefuses is the second fault-injected Requires proof (phase F,
+// Q3): the dependency is present in the build but disabled via the config.yaml
+// disabled: list - the boot must still refuse, naming the seam, the dependent and its
+// disabled provider, with the fix-it in the message. The silent variant (silently mount
+// without the dep) is exactly what the refusal forbids.
 func TestMountAllDisabledDepRefuses(t *testing.T) {
 	p := testPlugin{
 		name:     "compactor",
@@ -169,11 +163,9 @@ func TestMountAllDisabledDepRefuses(t *testing.T) {
 		toggleable: true,
 	}
 
-	// both mounted: fine.
 	if _, err := MountAllAPI([]Plugin{off, p}, &Context{}, nil, nil); err != nil {
 		t.Fatalf("full set refuses: %v", err)
 	}
-	// provider disabled: the Q3 refusal fires and names every party.
 	_, err := MountAllAPI([]Plugin{off, p}, &Context{}, nil, []string{"provider"})
 	if err == nil {
 		t.Fatal("disabled provider: expected the Q3 refusal, got a silent mount")
@@ -185,10 +177,7 @@ func TestMountAllDisabledDepRefuses(t *testing.T) {
 	}
 }
 
-// TestAlwaysOffDisabled pins the ALWAYS OFF law's runtime half: an empty
-// enabled list disables every toggleable capsule and keeps the locked
-// pair (not toggleable) mounted; an enabled capsule's REQUIRES seam is
-// kept on with it; and naming a non-toggleable module is refused.
+// TestAlwaysOffDisabled pins the ALWAYS OFF law's runtime half.
 func TestAlwaysOffDisabled(t *testing.T) {
 	noop := func(c *Context) error { return nil }
 	plugins := []Plugin{
@@ -200,8 +189,7 @@ func TestAlwaysOffDisabled(t *testing.T) {
 		testPlugin{name: "cron", requires: []string{"notifications"}, mount: noop, toggleable: true},
 	}
 
-	// Nothing enabled: every toggleable capsule is off, the locked pair
-	// stays (it is not named in the disable list at all).
+	// Nothing enabled: every toggleable capsule is off, the locked pair stays (it is not.
 	off, err := AlwaysOffDisabled(plugins, nil)
 	if err != nil {
 		t.Fatalf("empty enabled set: %v", err)
@@ -210,7 +198,6 @@ func TestAlwaysOffDisabled(t *testing.T) {
 		t.Fatalf("always-off set = %v, want every toggleable capsule", off)
 	}
 
-	// An enabled capsule keeps its requires-providers on with it.
 	off, err = AlwaysOffDisabled(plugins, []string{"cron"})
 	if err != nil {
 		t.Fatalf("enable cron: %v", err)
@@ -219,7 +206,6 @@ func TestAlwaysOffDisabled(t *testing.T) {
 		t.Fatalf("always-off set = %v, want only kanban (cron + its notifications seam on)", off)
 	}
 
-	// The locked pair is not a toggle.
 	if _, err := AlwaysOffDisabled(plugins, []string{"provider"}); err == nil {
 		t.Fatal("toggling provider was accepted - the locked pair is always on")
 	}
@@ -328,10 +314,7 @@ func TestMountAllCircularDep(t *testing.T) {
 	}
 }
 
-// TestMountAllPopulatesInfos verifies that MountAll fills in
-// core.ExtensionInfo.Tools, Commands, and ToolList after each mount.
-// This is a regression test for the bug where /extensions showed
-// zero tools and zero commands for all extensions.
+// TestMountAllPopulatesInfos verifies that MountAll fills in.
 func TestMountAllPopulatesInfos(t *testing.T) {
 	p1 := testPlugin{
 		name:     "tools-ext",
@@ -367,7 +350,6 @@ func TestMountAllPopulatesInfos(t *testing.T) {
 		t.Fatalf("expected 2 infos, got %d", len(ctx.Infos))
 	}
 
-	// tools-ext contributed 2 tools, 0 commands.
 	ti := ctx.Infos[0]
 	if ti.Name != "tools-ext" {
 		t.Fatalf("expected tools-ext, got %q", ti.Name)
@@ -385,7 +367,6 @@ func TestMountAllPopulatesInfos(t *testing.T) {
 		t.Fatalf("unexpected tool entry: %+v", ti.ToolList[0])
 	}
 
-	// cmd-ext contributed 0 tools, 2 commands.
 	ci := ctx.Infos[1]
 	if ci.Name != "cmd-ext" {
 		t.Fatalf("expected cmd-ext, got %q", ci.Name)
@@ -398,8 +379,7 @@ func TestMountAllPopulatesInfos(t *testing.T) {
 	}
 }
 
-// keyPlugin is a testPlugin that also declares a config section
-// (the Describer capability the config router consults).
+// keyPlugin is a testPlugin that also declares a config section (the Describer.
 type keyPlugin struct {
 	testPlugin
 	desc string
@@ -409,8 +389,7 @@ type keyPlugin struct {
 func (p keyPlugin) Description() string { return p.desc }
 func (p keyPlugin) ConfigKey() string   { return p.key }
 
-// mapSource is a ConfigSource backed by a plain map - the shape the
-// host's raw config presents to the router.
+// mapSource is a ConfigSource backed by a plain map.
 type mapSource map[string]any
 
 func (m mapSource) ConfigSection(name string) (any, bool) {
@@ -418,12 +397,9 @@ func (m mapSource) ConfigSection(name string) (any, bool) {
 	return v, ok
 }
 
-// TestRouteConfigs covers the config router contract (arc 2b,
-// t_889388cc): each plugin's declared ConfigKey pulls its matching
-// section from the raw config into the routed map. Sections the host
-// does not provide stay absent, plugins without a key or without the
-// Describer capability contribute nothing, and a nil source routes
-// nothing instead of panicking.
+// TestRouteConfigs covers the config router contract. Sections the host does not
+// provide stay absent, plugins without a key or without the Describer capability
+// contribute nothing, and a nil source routes nothing instead of panicking.
 func TestRouteConfigs(t *testing.T) {
 	src := mapSource{
 		"store":  "store-section",

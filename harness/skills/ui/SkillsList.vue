@@ -3,15 +3,13 @@
     ref="rootEl"
     class="skills-list"
     :class="{ narrow: narrow }">
-    <!-- card t_308e6d9b: the UNIVERSAL band (the shared TabBand) - title
-         left, the refresh action right, ONE row. The click re-runs the
-         fetch chain: GET /skills is a live scan, so a skill added after
-         mount appears - no restart. The band renders BEFORE the scroll
-         body (structurally pinned, never sticky): scrolling the list
-         never moves it. Card t_529628d5: the compact in-band search
-         (TabBand's shared .band-search seat) - the query filters the
-         LOADED inventory by name or description, client-side,
-         hide-rows-only. -->
+    <!--
+      the UNIVERSAL band (the shared TabBand).
+      The band renders BEFORE the scroll body (structurally pinned, never sticky):
+      scrolling the list never moves it.: the compact in-band search (TabBand's
+      shared.band-search seat) - the query filters the LOADED inventory by name or
+      description, client-side, hide-rows-only.
+    -->
     <TabBand title="Skills">
       <div class="band-search">
         <SearchInput
@@ -28,11 +26,7 @@
           name="refresh"
           :size="13" />
       </button>
-      <!-- card t_0a108f16: the tab becomes a skill editor - the plus
-           tool opens a new-skill form; each row carries its own pencil
-           (the CronJobs editor's shape: panel above the rows, save
-           through POST /skills/save, two-step delete armed inside the
-           panel). -->
+      <!-- the tab becomes a skill editor. -->
       <button
         class="band-tool"
         title="add skill"
@@ -43,8 +37,10 @@
           :size="13" />
       </button>
     </TabBand>
-    <!-- the editor panel: one at a time, above the rows (the CronJobs
-         editor's place - scrolling never moves it mid-edit). -->
+    <!--
+      the editor panel: one at a time, above the rows (the CronJobs editor's place -
+      scrolling never moves it mid-edit).
+    -->
     <div
       v-if="editor"
       class="skill-editor">
@@ -56,8 +52,7 @@
         <div class="skill-editor-grid">
           <label class="skill-editor-field">
             <span>name</span>
-            <!-- the name IS the identity (the folder-name law): an
-                 editing row keeps its name, only a create names one. -->
+            <!-- the name IS the identity (the folder-name law). -->
             <input
               v-model="editor.draft.name"
               :disabled="!editor.creating"
@@ -114,10 +109,7 @@
         class="panel-status">
         loading
       </p>
-      <!-- v0.14.1 registry-browser: the shared RegistryList (one pattern,
-           three consumers). The toggle drives PUT /disabled/skills; a
-           disabled skill stays in the inventory but leaves the session
-           prompt build (config.yaml disabled.skills). -->
+      <!-- v0.14.1 registry-browser: the shared RegistryList (one pattern, three. -->
       <RegistryList
         v-else
         kind="skills"
@@ -130,9 +122,7 @@
         :empty-text="query.trim() ? 'no matching skills' : 'no skills installed'"
         @toggle="onToggle"
         @open="openSkill">
-        <!-- card t_0a108f16: the row's edit affordance - a pencil per
-             row opening the editor pre-filled with the skill (the
-             CronJobs pencil, on the shared row side seat). -->
+        <!-- the row's edit affordance. -->
         <template #side="{ row }">
           <button
             class="band-tool skill-edit-ctrl"
@@ -153,12 +143,9 @@
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
   import { refreshSkills, type SkillInfo } from "./refresh";
-  // card t_529628d5: the band search's filter (name / description),
-  // pure so the node suite pins it without compiling the SFC.
+  // the band search's filter (name / description), pure so the node suite pins it.
   import { filterSearchableRows } from "./search";
-  // card t_0a108f16: the skill editor chain (pure module - the cron
-  // edit.ts convention). The SFC only wires the form state and the
-  // buttons; the validation and the wire shape live in ./edit.ts.
+  // the skill editor chain (pure module - the cron edit.ts convention).
   import {
     deleteSkill,
     emptyDraft,
@@ -168,32 +155,21 @@
     type SkillDraft,
   } from "./edit";
 
-  // Module-owned UI (card t_db430fea): the loaded skill inventory,
-  // from GET /skills, plus the per-skill enable/disable toggle
-  // (v0.14.1) against the /disabled fold. Self-contained wiring: a
-  // module's UI carries its own wiring so it can ride the desktop /
-  // VS Code builds alone (ToolsList precedent) - the fetch chain
-  // lives in ./refresh.ts (the reload.ts precedent, card t_d6e94e79)
-  // and the SHARED thing is the RegistryList component.
+  // Module-owned UI: the loaded skill inventory, from GET /skills, plus the per-skill.
   const skills = ref<SkillInfo[]>([]);
   const fold = ref<string[]>([]);
   const loaded = ref(false);
   const error = ref("");
   const busy = ref<string | null>(null);
-  // the refresh button's lock: a second click while a chain is in
-  // flight is dropped (the in-flight chain answers)
+  // the refresh button's lock.
   const refreshing = ref(false);
   const toggleError = ref<string | null>(null);
-  // false when the host serves no toggle seam (501 on /disabled): the
-  // list stays, read-only.
+  // false when the host serves no toggle seam (501 on /disabled).
   const toggleable = ref(false);
 
-  // rows are a computed (the AgentsPanel shape): RegistryList binds
-  // `rows` straight into the template, where an unwrap gives the array
-  // - a plain function would make the `v-if="rows.length"` gate read
-  // the ARITY (0), and the list would never render (the t_504a78ca
-  // bug: data fetched, tabs empty). Structural RegistryRow: module UI
-  // imports no shell code, so the type rides inference.
+  // rows are a computed (the AgentsPanel shape): RegistryList binds `rows` straight
+  // into the template, where an unwrap gives the array - a plain function would make
+  // the `v-if="rows.length"` gate read the ARITY (0), and the list would never render.
   const rows = computed(() => {
     const set = new Set(fold.value);
     return skills.value.map((s) => ({
@@ -203,19 +179,11 @@
     }));
   });
 
-  // card t_529628d5: the in-band search - CLIENT-SIDE on the loaded
-  // inventory (no new backend route), name or description,
-  // hide-rows-only (the row anatomy law: the filtered survivors keep
-  // their exact row shape).
+  // the in-band search - CLIENT-SIDE on the loaded inventory (no new backend route).
   const query = ref("");
   const visibleRows = computed(() => filterSearchableRows(rows.value, query.value));
 
-  // --- the viewer open (card t_36ceb99b): a name click opens the skill
-  // in a main-pane viewer tab. Module UI imports no shell code (the
-  // nuxt.config comment; the Board precedent), so the open rides a window
-  // CustomEvent the shell app listens on. THE LITERAL IS COPIED from
-  // composables/viewer.ts (VIEWER_OPEN_EVENT) - deliberately, like
-  // narrow.ts; the viewer test pins both spellings identical.
+  // -- the viewer open: a name click opens the skill in a main-pane viewer tab.
   const VIEWER_OPEN_EVENT = "omega:open-viewer";
 
   interface SkillRow {
@@ -234,21 +202,14 @@
     applyInventory(await refreshSkills());
   }
 
-  // server truth lands on the tab: the skills list always (the caller
-  // only gets a resolved update when GET /skills succeeded), the fold
-  // and the toggle flag only when the /disabled read landed - a miss
-  // (501, unreachable, refusal) keeps the shown fold stable.
+  // server truth lands on the tab: the skills list always (the caller only gets a.
   function applyInventory(u: Awaited<ReturnType<typeof refreshSkills>>): void {
     skills.value = u.skills;
     if (u.fold !== null) fold.value = u.fold;
     if (u.toggleable !== null) toggleable.value = u.toggleable;
   }
 
-  // the refresh (card t_ec57d5b8): re-run the fetch chain without a
-  // remount - GET /skills is a live scan, so a skill added after
-  // mount appears. A failure lands on the panel's existing error line
-  // and the current rows stand; the fold re-read (or the same miss
-  // rules as the mount) keeps the enabled/disabled state stable.
+  // the refresh: re-run the fetch chain without a remount.
   async function refresh(): Promise<void> {
     if (refreshing.value) return;
     refreshing.value = true;
@@ -262,12 +223,8 @@
     }
   }
 
-  // --- the skill editor (card t_0a108f16) -------------------------------
-  // One editor at a time (the CronJobs editor's shape): creating = a
-  // new skill, else the row's name pre-fills the draft through GET
-  // /skills/content. The name input locks while editing - the folder
-  // name IS the identity. The delete rides the armed two-step mechanic
-  // the toggle carries.
+  // -- the skill editor ------------------------------- One editor at a time (the
+  // CronJobs editor's shape).
   const editor = ref<{
     creating: boolean;
     loadingDraft: boolean;
@@ -312,10 +269,7 @@
     editor.value = null;
   }
 
-  // the commit: validate against the mirrored Go law first (the editor
-  // never ships a skill the provider would reject), POST, and land the
-  // response's fresh listing on the rows. A failure keeps the editor
-  // open with the refusal in its error line.
+  // the commit: validate against the mirrored Go law first (the editor never ships a.
   async function commitEditor(): Promise<void> {
     if (!editor.value || editor.value.busy) return;
     const msg = validateDraft(editor.value.draft);
@@ -338,9 +292,6 @@
     }
   }
 
-  // the panel's delete: click 1 arms ("confirm delete?"), click 2
-  // removes - backed up + receipted server-side, so the answer is the
-  // listing the folder left. Armed clears whether the write lands.
   async function onDeleteFromEditor(): Promise<void> {
     if (!editor.value || editor.value.busy) return;
     if (!editor.value.armedDelete) {
@@ -363,11 +314,7 @@
     }
   }
 
-  // --- narrow adaptation, the module-UI recipe (card t_a2fdc630): this
-  // root measures its OWN rendered container and flips the class; the
-  // scoped stylesheet below condenses. Same mechanism as the shell's
-  // useNarrow - kept in-module because module UI imports no shell code
-  // (Board precedent); the threshold is unit-covered in ./narrow.ts.
+  // -- narrow adaptation, the module-UI recipe.
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;
@@ -406,9 +353,7 @@
     loaded.value = true;
   });
 
-  // the toggle: PUT answers the fresh fold - rows rebuild so the
-  // persisted (server-owned) state is what the tab shows. A failed
-  // toggle refreshes anyway: the error line stands over the truth.
+  // the toggle: PUT answers the fresh fold.
   async function onToggle(name: string, enabled: boolean): Promise<void> {
     if (busy.value !== null) return;
     busy.value = name;
@@ -426,7 +371,6 @@
       try {
         await load();
       } catch {
-        // the rows stay; the error line stands
       }
       busy.value = null;
     }
@@ -434,9 +378,10 @@
 </script>
 
 <style scoped>
-  /* card t_308e6d9b: the root stops being a flat scroll child - the
-     TabBand stays fixed, the body owns the scroll (structurally, never
-     sticky). The old root padding rides the body now. */
+  /*
+   * the root stops being a flat scroll child - the TabBand stays fixed, the body owns
+   * the scroll (structurally, never sticky).
+   */
   .skills-list {
     flex: 1;
     min-height: 0;
@@ -457,9 +402,7 @@
     font-size: 11px;
     opacity: 0.6;
   }
-  /* card t_0a108f16: the editor panel - the CronJobs editor's shape
-     (anchored under the band, above the scroll body, a 2-wide field
-     grid the body textarea spans). */
+  /* the editor panel - the CronJobs editor's shape (anchored under the band, above. */
   .skill-editor {
     padding: 8px 12px;
     border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.25));
@@ -540,7 +483,6 @@
   .skill-editor-btn.danger {
     color: var(--danger, #e5484d);
   }
-  /* the row pencil sits beside the toggle pill on the right edge */
   .skill-edit-ctrl {
     margin-right: 2px;
     flex: none;

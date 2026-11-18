@@ -1,17 +1,5 @@
-// omega webui: the Cron tab's JOB EDITOR chain (card t_ecec864e, the
-// settings-exposure ruling: the tab shows and edits ALL job fields).
-// The editor's behavior lives in this PURE module (the toggle.ts /
-// search.ts convention): the node suite probes the wire with a fetch
-// log and pins the validation laws without compiling CronJobs.vue - the
-// SFC only wires the form and the buttons.
-//
-// Scope law: MAIN-home jobs only. A row the agent home OWNS (its yaml
-// lives in that home's own config/crons.yaml) is read-only here -
-// editing it would write across a home boundary (the LoadAllConfigs
-// law). The toggle keeps working on those rows. Ownership rides the
-// wire as `agent_owned`, never inferred from `agent` (card
-// t_21824d98: a main-home job's AUTHORED `agent:` is main's file and
-// stays editable).
+// omega webui: the Cron tab's JOB EDITOR chain. Ownership rides the wire as
+// `agent_owned`, never inferred from `agent`.
 
 import type { CronJobWire } from "./toggle";
 
@@ -23,22 +11,17 @@ export interface CronJobWireFull extends CronJobWire {
   file?: string; // the append-to-file target, home-relative
   prompt?: string; // the authored user message (the editor's whole-job upsert needs it)
   skills?: string[]; // the fire-pinned skill names
-  // agent_owned marks the job's FILE ownership (the loader's
-  // AgentOwned): true when the yaml lives in an agent home's own
-  // config/crons.yaml. Agent alone cannot carry this - a main-home
-  // job's authored `agent:` and a wake's owning home both set it.
+  // agent_owned marks the job's FILE ownership (the loader's AgentOwned). Agent alone
+  // cannot carry this - a main-home job's authored `agent:` and a wake's owning home
+  // both set it.
   agent_owned?: boolean;
-  // the last fire's outcome: status "" (never fired) | ok | error, the
-  // completion wall clock in RFC3339, and the capped error message.
+  // the last fire's outcome: status "" (never fired) | ok | error, the completion.
   status?: string;
   last?: string;
   status_note?: string;
 }
 
-// JobDraft is the form shape: every field a string so inputs bind
-// directly (minutes and enabled turn typed at save time). skills is
-// the comma-separated editor voice - the list shape lives only on the
-// wire (parseSkills turns it).
+// JobDraft is the form shape.
 export interface JobDraft {
   name: string;
   kind: string;
@@ -53,25 +36,21 @@ export interface JobDraft {
   enabled: boolean;
 }
 
-// the deliver vocabulary - the ONE enum the cron Job schema carries
-// (harness/cron/cron.go). Legacy aliases resolve server-side; the
-// editor speaks the canonical values only.
+// the deliver vocabulary - the ONE enum the cron Job schema carries.
 export const DELIVER_TARGETS = [
   "new-session",
   "continuous-agent",
   "append-to-file",
 ] as const;
 
-// editableOf: a row the agent home OWNS is the agent's own file - the
-// editor refuses it by hiding the affordance. The refusal reads the
-// ownership mark, never `agent`: a main-home job's AUTHORED `agent:`
-// lives in main's crons.yaml and keeps its pencil (card t_21824d98).
+// editableOf: a row the agent home OWNS is the agent's own file. The refusal reads the
+// ownership mark, never `agent`: a main-home job's AUTHORED `agent:` lives in main's
+// crons.yaml and keeps its pencil.
 export function editableOf(j: CronJobWireFull): boolean {
   return !j.agent_owned;
 }
 
-// emptyDraft: a new job lands cron-kind, new-session, enabled - the
-// schema's own defaults.
+// emptyDraft: a new job lands cron-kind, new-session, enabled.
 export function emptyDraft(): JobDraft {
   return {
     name: "",
@@ -88,8 +67,7 @@ export function emptyDraft(): JobDraft {
   };
 }
 
-// draftOf prefills the form from a wire row (kind defaulting to cron -
-// the schema's default, absent on the wire for legacy jobs).
+// draftOf prefills the form from a wire row (kind defaulting to cron.
 export function draftOf(j: CronJobWireFull): JobDraft {
   return {
     name: j.name,
@@ -106,13 +84,11 @@ export function draftOf(j: CronJobWireFull): JobDraft {
   };
 }
 
-// validateDraft returns "" when the draft obeys the schema laws the Go
-// loader enforces (the editor NEVER ships a job the loader would
-// reject - one validation law, mirrored), else the human error line.
-// The inheritance chain's law rides here too (chainViolation): a wake
-// that leans on the main agent would persist and never fire, so it
-// never leaves the editor either. mainAgent is the roster's main row;
-// an unanswered GET /agents falls back to the Go constant.
+// validateDraft returns "" when the draft obeys the schema laws the Go loader enforces
+// (the editor NEVER ships a job the loader would reject - one validation law,
+// mirrored), else the human error line. The inheritance chain's law rides here too
+// (chainViolation): a wake that leans on the main agent would persist and never fire,
+// so it never leaves the editor either.
 export function validateDraft(
   d: JobDraft,
   mainAgent: string = MAIN_AGENT_FALLBACK,
@@ -142,14 +118,11 @@ export function validateDraft(
     if (seenSkills.has(s)) return `duplicate skill ${s}`;
     seenSkills.add(s);
   }
-  // the chain's law last: a schema-broken draft names its schema
-  // problem first, never the chain
+  // the chain's law last: a schema-broken draft names its schema problem first, never.
   return chainViolation(d, mainAgent);
 }
 
-// parseSkills turns the comma-separated editor voice into the wire's
-// list: split on the comma, trim, drop empties, keep order (the Go
-// loader's own normalizeSkills law, mirrored).
+// parseSkills turns the comma-separated editor voice into the wire's list.
 export function parseSkills(s: string): string[] {
   const out: string[] = [];
   for (const part of s.split(",")) {
@@ -159,29 +132,21 @@ export function parseSkills(s: string): string[] {
   return out;
 }
 
-// --- the field option sources (card t_60e0651e) ----------------------
+// -- the field option sources ---------------------
 //
 // Three GETs, all pre-existing, no new registry:
 //
-//   GET /agents   the roster inventory, harness/continuous/agentsrest.go
+// GET /agents the roster inventory, harness/continuous/agentsrest.go
 //                 (LoadProfiles: the main profile first, then every
 //                 agents/<name> home, named `default` for the home root)
-//   GET /models   the provider catalog the settings model knobs read,
+// GET /models the provider catalog the settings model knobs read,
 //                 agent/api/server.go handleModels
-//   GET /skills   the loaded skill inventory, api/server_inspector.go
+// GET /skills the loaded skill inventory, api/server_inspector.go
 //
 // Every control degrades to free text (or a named empty list) when its
 // GET fails - an option source that is down must never strand an edit.
 
 // FieldOption is one dropdown row in the editor's option sources.
-// `hint` is the secondary line (a description, "the main agent");
-// `group` labels the source family so a test can tell them apart.
-// `model` / `continuous` are ROSTER detail (card t_7fb3b35a): only the
-// agents source fills them, and only the inheritance chain reads them
-// - the combobox itself renders value + hint. `model` is the agent's
-// own provider model layer ("" = the layer authors nothing, so it
-// inherits the main agent's model); `continuous` is the roster's
-// main-vs-secondary mark (false = the home root, the main agent).
 export interface FieldOption {
   value: string;
   label: string;
@@ -201,16 +166,13 @@ interface AgentRowWire {
   model_name?: string;
 }
 
-// fetchAgentOptions reads the agents registry. Typing a name that is
-// NOT on this list stays legal: a job may reference an agent home that
-// no longer exists, and the editor must never strand that job's edit.
-//
-// The wire's `continuous` flag marks a SECONDARY agent home (the one
-// that wakes as a subprocess, agent/profiles.go loadProfile); the home
-// root - the main agent, named `default` - answers false and never
-// wakes as a subprocess (harness/continuous/wake.go refuses it), so its
-// row says so where the operator picks it. Verified live against
-// GET /agents, not read off the stale Profile comment.
+// fetchAgentOptions reads the agents registry. Typing a name that is NOT on this list
+// stays legal: a job may reference an agent home that no longer exists, and the editor
+// must never strand that job's edit. The wire's `continuous` flag marks a SECONDARY
+// agent home (the one that wakes as a subprocess, agent/profiles.go loadProfile); the
+// home root - the main agent, named `default` - answers false and never wakes as a
+// subprocess (harness/continuous/wake.go refuses it), so its row says so where the
+// operator picks it.
 export async function fetchAgentOptions(): Promise<FieldOption[]> {
   const res = await fetch("/agents");
   if (!res.ok) throw new Error(`GET /agents: ${res.status}`);
@@ -228,9 +190,6 @@ export async function fetchAgentOptions(): Promise<FieldOption[]> {
           ? "agent home"
           : "the main agent - in-process, never wakes"),
       group: "agents",
-      // the chain's two roster facts (card t_7fb3b35a): the agent's own
-      // model layer and the main-vs-secondary mark. Both come straight
-      // off the profile the roster already renders.
       model: (r.model_name ?? "").trim(),
       continuous: r.continuous === true,
     });
@@ -245,30 +204,22 @@ interface ModelListWire {
   providers?: { name: string; models?: string[]; error?: string }[];
 }
 
-// ModelCatalog is fetchModelOptions' answer: the offered bare names and
-// the model this omega RUNS (`current`, the daemon's own provider
-// model). The chain's last link reads `current` - an in-process fire
-// runs on this very provider, so it is the main agent's model in
-// practice (card t_7fb3b35a).
+// ModelCatalog is fetchModelOptions' answer.
 export interface ModelCatalog {
   options: FieldOption[];
   current: string;
 }
 
-// fetchModelOptions reads the model catalog the settings knobs use.
-//
-// The offered VALUE is a BARE model name, and that is the load-bearing
-// choice: a cron job's `model:` is consumed as a bare model on the
-// provider - harness/cron/runner.go hands it straight to
-// p.WithModel(model) for a session fire, and harness/continuous/wake.go
-// rides it as OMEGA_MODEL for a wake fire - while the `instance:model`
-// slot grammar is resolved only in the chat/slot lanes
-// (agent/api/server.go through agent.ParseModelSlot). Offering an
-// instance-qualified value here would write a string every fire fails
-// on, so the list is the base provider's own catalog (the flat
-// `models` array the settings pickers fall back to); an operator who
-// needs another instance's model types it, exactly as before. The
-// grouped `providers` sections stay unread for the same reason.
+// fetchModelOptions reads the model catalog the settings knobs use. The offered VALUE
+// is a BARE model name, and that is the load-bearing choice: a cron job's `model:` is
+// consumed as a bare model on the provider - harness/cron/runner.go hands it straight
+// to p.WithModel(model) for a session fire, and harness/continuous/wake.go rides it as
+// OMEGA_MODEL for a wake fire - while the `instance:model` slot grammar is resolved
+// only in the chat/slot lanes (agent/api/server.go through agent.ParseModelSlot).
+// Offering an instance-qualified value here would write a string every fire fails on,
+// so the list is the base provider's own catalog (the flat `models` array the settings
+// pickers fall back to); an operator who needs another instance's model types it,
+// exactly as before.
 export async function fetchModelOptions(): Promise<ModelCatalog> {
   const res = await fetch("/models");
   if (!res.ok) throw new Error(`GET /models: ${res.status}`);
@@ -290,9 +241,7 @@ interface SkillRowWire {
   description?: string;
 }
 
-// fetchSkillOptions reads the skills registry. The skills control is
-// STRICT: only names that answer here are offered, and only those
-// survive a job's load (strictSkills below).
+// fetchSkillOptions reads the skills registry.
 export async function fetchSkillOptions(): Promise<FieldOption[]> {
   const res = await fetch("/skills");
   if (!res.ok) throw new Error(`GET /skills: ${res.status}`);
@@ -311,9 +260,7 @@ export async function fetchSkillOptions(): Promise<FieldOption[]> {
   return out;
 }
 
-// filterFieldOptions narrows a dropdown by the typed query, matching
-// the value or the hint (case-insensitive). An empty query is the full
-// list - opening a control always shows the whole catalog.
+// filterFieldOptions narrows a dropdown by the typed query, matching the value or the.
 export function filterFieldOptions(
   options: FieldOption[],
   query: string,
@@ -333,8 +280,6 @@ export function optionKnown(options: FieldOption[], value: string): boolean {
 }
 
 // moveComboIndex steps a combobox's active row, wrapping at both ends.
-// -1 = nothing active (the typed text stands); the first Down lands on
-// row 0 and the first Up on the last row.
 export function moveComboIndex(
   index: number,
   delta: number,
@@ -345,18 +290,18 @@ export function moveComboIndex(
   return (((index + delta) % length) + length) % length;
 }
 
-// --- the inheritance chain (card t_7fb3b35a) -------------------------
+// -- the inheritance chain ------------------------
 //
 // ONE state machine, two links:
 //
-//   agent: ""       -> INHERITED from the main agent
-//   agent: "scout"  -> AUTHORED
-//   model: ""       -> INHERITED from the agent the fire resolves to
-//   model: "glm"    -> AUTHORED
+// agent: "" -> INHERITED from the main agent
+// agent: "scout" -> AUTHORED
+// model: "" -> INHERITED from the agent the fire resolves to
+// model: "glm" -> AUTHORED
 //
 // The STATE is presence - an absent field inherits, a present one is
 // authored - and the chain never writes a resolved value back into the
-// field (the pencil fix's law, t_21824d98: one field read two ways is
+// field (the pencil fix's law, one field read two ways is
 // a bug waiting for its second reader). What the chain adds is the
 // DISPLAY: a chip that says "inherited" plus the link that supplies
 // the value, so an empty box stops being a mystery.
@@ -377,42 +322,29 @@ export function moveComboIndex(
 
 // ChainValue is one field's chain state.
 export interface ChainValue {
-  // inherited is the STATE: true = the yaml omits the field and the
-  // chain supplies the value.
   inherited: boolean;
-  // value is what the fire will use. "" when the chain cannot resolve
-  // it (an agent the registry does not list, or a model catalog that
-  // never answered).
+  // value is what the fire will use. "" when the chain cannot resolve it (an agent the
+  // registry does not list, or a model catalog that never answered).
   value: string;
-  // source names the link that supplies an inherited value, in the
-  // editor's voice ("the main agent", "agent scout"). "" when authored.
   source: string;
-  // note is the ONE line the editor renders beside the chip: the
-  // source, with the resolved value when there is one.
   note: string;
-  // blocked marks a chain the fire can NEVER satisfy - a wake leaning
-  // on the main agent, which never wakes as a subprocess. The editor
-  // shows it in the danger voice and the save law refuses it
-  // (harness/cron/save.go, one law both sides).
+  // blocked marks a chain the fire can NEVER satisfy - a wake leaning on the main
+  // agent, which never wakes as a subprocess.
   blocked: boolean;
 }
 
-// ChainDraft is the slice of the form the chain reads. Kept structural
-// so JobDraft satisfies it and a test can pass a literal.
+// ChainDraft is the slice of the form the chain reads.
 export interface ChainDraft {
   agent: string;
   model: string;
   deliver: string;
 }
 
-// MAIN_AGENT_FALLBACK mirrors the Go constant agent.DefaultAgentName:
-// the home root's agent. The roster names it, but GET /agents that
-// never answered must still render the chain honestly.
+// MAIN_AGENT_FALLBACK mirrors the Go constant agent.DefaultAgentName. The roster names
+// it, but GET /agents that never answered must still render the chain honestly.
 export const MAIN_AGENT_FALLBACK = "default";
 
-// mainAgentOf reads the main agent's name off the roster: the row the
-// wire marks continuous === false (agent/profiles.go mainProfile; every
-// secondary home answers true).
+// mainAgentOf reads the main agent's name off the roster.
 export function mainAgentOf(roster: FieldOption[]): string {
   const main = roster.find((o) => o.continuous === false);
   return main?.value ?? MAIN_AGENT_FALLBACK;
@@ -426,9 +358,7 @@ const CHAIN_AUTHORED: ChainValue = {
   blocked: false,
 };
 
-// isWake reports whether the draft's deliver target fires into an
-// agent's own continuous session (the only target a non-main agent can
-// run under).
+// isWake reports whether the draft's deliver target fires into an agent's own.
 function isWake(d: ChainDraft): boolean {
   return d.deliver.trim() === "continuous-agent";
 }
@@ -459,11 +389,7 @@ export function agentChain(d: ChainDraft, roster: FieldOption[]): ChainValue {
   };
 }
 
-// modelChain resolves the model link: absent = the model of the agent
-// the fire runs under. That agent's own layer answers first (a wake
-// child layers over the main home config); a layer that names no model
-// inherits the main agent's, which is the model this omega runs
-// (GET /models' `current`).
+// modelChain resolves the model link.
 export function modelChain(
   d: ChainDraft,
   roster: FieldOption[],
@@ -510,15 +436,13 @@ export function modelChain(
     note: mainModel
       ? `inherits the main agent (${mainModel})`
       : "inherits the main agent",
-    // a wake inheriting the main agent cannot fire at all; its model
-    // link carries that state up so the whole chain reads as blocked
+    // a wake inheriting the main agent cannot fire at all.
     blocked: agent.blocked,
   };
 }
 
-// chainViolation is the chain's ONE law as the operator reads it: a
-// wake needs an agent of its own, because the chain's fallback (the
-// main agent) never wakes. "" when the chain is satisfiable.
+// chainViolation is the chain's ONE law as the operator reads it: a wake needs an agent
+// of its own, because the chain's fallback (the main agent) never wakes.
 export function chainViolation(d: ChainDraft, mainAgent: string): string {
   if (!isWake(d)) return "";
   const agent = d.agent.trim();
@@ -526,13 +450,12 @@ export function chainViolation(d: ChainDraft, mainAgent: string): string {
   return `continuous-agent needs its own agent - an empty agent inherits the main agent (${mainAgent}), which never wakes`;
 }
 
-// --- the strict skills multi-select (ruling 3) -----------------------
+// -- the strict skills multi-select ----------------------
 
-// strictSkills splits a job's pinned names into what the registry can
-// serve and what it cannot. STRICT means the control loads only known
-// names: an unknown one cannot be represented as a chip, so it is
-// dropped - and returned, so the editor can SAY it dropped something
-// instead of losing it silently.
+// strictSkills splits a job's pinned names into what the registry can serve and what it
+// cannot. STRICT means the control loads only known names: an unknown one cannot be
+// represented as a chip, so it is dropped - and returned, so the editor can SAY it
+// dropped something instead of losing it silently.
 export function strictSkills(
   skills: string[],
   options: FieldOption[],
@@ -559,18 +482,15 @@ export function withoutSkill(skills: string[], name: string): string[] {
   return skills.filter((s) => s !== name);
 }
 
-// skillsVoice renders a chip list back into the draft's comma voice -
-// the ONE string saveCronJob parses (the upsert path is untouched).
+// skillsVoice renders a chip list back into the draft's comma voice.
 export function skillsVoice(skills: string[]): string {
   return skills.join(", ");
 }
 
-// saveCronJob POSTs the full job definition (the /cron/save route: the
-// server validates through the loader's own ParseConfig, upserts at
-// the yaml.Node level, hot-reloads) and answers the fresh listing in
-// the toggle's wire contract - one response carries the state it
-// landed, then the listing re-fetches. Failure throws before any
-// re-fetch so the prior rows stand.
+// saveCronJob POSTs the full job definition (the /cron/save route: the server validates
+// through the loader's own ParseConfig, upserts at the yaml.Node level, hot-reloads)
+// and answers the fresh listing in the toggle's wire contract - one response carries
+// the state it landed, then the listing re-fetches.
 export async function saveCronJob(d: JobDraft): Promise<CronJobWireFull[]> {
   const body = {
     name: d.name.trim(),
@@ -615,17 +535,13 @@ export async function deleteCronJob(name: string): Promise<CronJobWireFull[]> {
   return (await list.json()) as CronJobWireFull[];
 }
 
-// cadenceOf renders the row's firing voice, kind-aware: the 5-field
-// expression for cron, the minute interval for interval (pure - the
-// node suite pins it).
+// cadenceOf renders the row's firing voice, kind-aware.
 export function cadenceOf(j: CronJobWireFull): string {
   if ((j.kind ?? "cron") === "interval") return `${j.minutes ?? 0}m interval`;
   return j.schedule ?? "";
 }
 
-// jobMeta renders the row's dim meta fragments - what the defaulting
-// law resolves and where the fire lands. Empty-resolved fields stay
-// quiet (they ARE the defaults; noise would bury the authored ones).
+// jobMeta renders the row's dim meta fragments.
 export function jobMeta(j: CronJobWireFull): string {
   const parts: string[] = [];
   if (j.deliver && j.deliver !== "new-session") parts.push(j.deliver);
@@ -636,11 +552,8 @@ export function jobMeta(j: CronJobWireFull): string {
   return parts.length ? ` - ${parts.join(", ")}` : "";
 }
 
-// lastMeta renders the row's last-fire voice (t_3885c975): " - last ok
-// 11/07 02:14", with the capped error note riding an error. The
-// never-fired row stays quiet - "-" means no fire, silence here is the
-// same truth. The note display caps under 120 chars: the row stays a
-// row (the full message is in /cron's log and the fire session).
+// lastMeta renders the row's last-fire voice. The never-fired row stays quiet - "-"
+// means no fire, silence here is the same truth.
 const NOTE_DISPLAY_CAP = 120;
 
 export function lastMeta(j: CronJobWireFull): string {
@@ -656,9 +569,8 @@ export function lastMeta(j: CronJobWireFull): string {
   return ` - last ${j.status} ${stamp}`;
 }
 
-// statusStamp renders an RFC3339 timestamp as a local, compact
-// date-time ("11/07 02:14") - the same shape the row renders `next`
-// with. An unparseable string renders verbatim (the wire's truth).
+// statusStamp renders an RFC3339 timestamp as a local, compact date-time ("11/07
+// 02:14").
 export function statusStamp(rfc3339: string): string {
   const t = new Date(rfc3339);
   if (Number.isNaN(t.getTime())) return rfc3339;

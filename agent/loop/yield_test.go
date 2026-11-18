@@ -1,10 +1,6 @@
 package loop
 
-// The async agent loop phase 1 behavior tests (card t_f3f953d0): a
-// yield-class call ends the turn without parking, the settled result
-// re-enters as a synthetic input message, and every harness-less or
-// degraded path keeps today's loop-back semantics. Real loop, fake
-// provider - the agent_loop_test.go patterns.
+// The async agent loop phase 1 behavior tests.
 
 import (
 	"context"
@@ -19,15 +15,12 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// testWaitTimeout bounds every poll-until-true wait in this package's tests.
-// It exists to catch a HANG, not to time correctness: a healthy condition can
-// take seconds when the full suite runs packages in parallel and starves the
-// goroutine under test. Bounding it tightly (2-5s) made load-sensitive tests
-// red on a loaded machine and green in isolation - the worst kind of flake.
+// testWaitTimeout bounds every poll-until-true wait in this package's tests. It exists
+// to catch a HANG, not to time correctness: a healthy condition can take seconds when
+// the full suite runs packages in parallel and starves the goroutine under test.
 const testWaitTimeout = 30 * time.Second
 
-// yieldEcho is the reference yield-class tool: registration declares
-// the class; the run itself is plain.
+// yieldEcho is the reference yield-class tool.
 func yieldEcho() core.Tool {
 	return core.Tool{
 		Description: "Echo later",
@@ -107,8 +100,7 @@ func (w *wakeRecorder) snapshot() []core.YieldResult {
 	return append([]core.YieldResult(nil), w.list...)
 }
 
-// waitForWakes blocks until the recorder holds n wakes or the deadline
-// lapses (the dispatched executors land asynchronously).
+// waitForWakes blocks until the recorder holds n wakes or the deadline lapses (the.
 func waitForWakes(t *testing.T, rec *wakeRecorder, n int) {
 	t.Helper()
 	deadline := time.Now().Add(testWaitTimeout)
@@ -189,10 +181,7 @@ func TestLoopYieldCallEndsTurn(t *testing.T) {
 	}
 }
 
-// TestLoopYieldResultStartsNewTurn: the settled result re-enters the
-// home input path as a first-class synthetic message and starts a new
-// turn - persisted through the sink in its own yield_result class, and
-// visible in the provider context the new turn's first call builds.
+// TestLoopYieldResultStartsNewTurn: the settled result re-enters the home input path.
 func TestLoopYieldResultStartsNewTurn(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
@@ -215,7 +204,6 @@ func TestLoopYieldResultStartsNewTurn(t *testing.T) {
 	if end.finish != "stop" {
 		t.Errorf("finish = %q, want stop", end.finish)
 	}
-	// The synthetic message persisted in its own class.
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
 	found := false
@@ -245,9 +233,8 @@ func TestLoopYieldResultStartsNewTurn(t *testing.T) {
 	}
 }
 
-// TestLoopTwoPendingWakeIndependently: two yield-class calls in one
-// completion both dispatch; each settles and wakes on its own arrival
-// (ruling 7 - one wake per result, never one batched).
+// TestLoopTwoPendingWakeIndependently: two yield-class calls in one completion both
+// dispatch.
 func TestLoopTwoPendingWakeIndependently(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"msg": "a"}}},
@@ -280,9 +267,7 @@ func TestLoopTwoPendingWakeIndependently(t *testing.T) {
 	}
 }
 
-// TestLoopYieldMixedWithLoopback: a completion mixing loop-back and
-// yield calls runs the loop-back half inline (the turn continued for
-// its result) and ends with the pending half outstanding.
+// TestLoopYieldMixedWithLoopback: a completion mixing loop-back and yield calls runs.
 func TestLoopYieldMixedWithLoopback(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
@@ -354,8 +339,7 @@ func TestLoopYieldWithoutHarnessRunsLoopBack(t *testing.T) {
 		switch v := e.(type) {
 		case core.ToolResultEvent:
 			sawResult = true
-			// Degraded execution runs the yield tool INLINE - its own
-			// content, no synthetic wrapper.
+			// Degraded execution runs the yield tool INLINE.
 			if v.Message.Content != "async:hi" || v.Message.IsError {
 				t.Errorf("result = %+v, want the tool's inline content", v.Message)
 			}
@@ -368,13 +352,10 @@ func TestLoopYieldWithoutHarnessRunsLoopBack(t *testing.T) {
 	}
 }
 
-// TestLoopYieldDispatchesForEphemeralHome: the session-type parity
-// pin (card t_61d3def9) - an `eph-` session id is a HOME like any
-// other. The loop's dispatch gate reads the home id, not the
-// backing, so an ephemeral chat's yield call ends the turn yielded
-// (never the loop-back degrade) and the settled result wakes
-// re-entry through whatever home input path the host owns. A long
-// shell.run in an ephemeral chat yields and re-enters.
+// TestLoopYieldDispatchesForEphemeralHome: the session-type parity pin. The loop's
+// dispatch gate reads the home id, not the backing, so an ephemeral chat's yield call
+// ends the turn yielded (never the loop-back degrade) and the settled result wakes
+// re-entry through whatever home input path the host owns.
 func TestLoopYieldDispatchesForEphemeralHome(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
@@ -412,11 +393,10 @@ func TestLoopYieldDispatchesForEphemeralHome(t *testing.T) {
 	}
 }
 
-// TestLoopPendingPlaceholders: the still-pending sibling placeholder
-// (ruling 7's engine half) answers exactly the unanswered pending
-// calls, once per call, and never duplicates - the answered-id scan
-// covers a placeholder from an earlier turn prep, and a real
-// re-entry result suppresses the placeholder for good.
+// TestLoopPendingPlaceholders: the still-pending sibling placeholder answers exactly
+// the unanswered pending calls, once per call, and never duplicates - the answered-id
+// scan covers a placeholder from an earlier turn prep, and a real re-entry result
+// suppresses the placeholder for good.
 func TestLoopPendingPlaceholders(t *testing.T) {
 	pending := []agent.PendingCall{{SessionID: "s", CallID: "c2", ToolName: "echo"}}
 	messages := []core.Message{core.NewUser("go")}
@@ -438,9 +418,8 @@ func TestLoopPendingPlaceholders(t *testing.T) {
 	}
 }
 
-// shrinkBudget points the loop's inline budget at a test-sized window
-// (the production value is 2s - the var exists only for this) and
-// restores it on cleanup.
+// shrinkBudget points the loop's inline budget at a test-sized window (the production
+// value is 2s.
 func shrinkBudget(t *testing.T, d time.Duration) {
 	t.Helper()
 	old := inlineToolBudget
@@ -448,8 +427,7 @@ func shrinkBudget(t *testing.T, d time.Duration) {
 	t.Cleanup(func() { inlineToolBudget = old })
 }
 
-// slowEcho returns after d - past any test budget, well inside the
-// yield timeout - and counts its executions (the ran-ONCE pin).
+// slowEcho returns after d.
 func slowEcho(d time.Duration, runs *int32) core.Tool {
 	return core.Tool{
 		Description: "Echo slowly",
@@ -464,12 +442,11 @@ func slowEcho(d time.Duration, runs *int32) core.Tool {
 	}
 }
 
-// TestLoopEscalationConvertsRunningCall (card t_1501cb04): a tool
-// call that runs past the inline budget escalates - the RUNNING call
-// converts to a pending dispatch mid-flight (never restarted, never
-// duplicated: the execution count stays 1), the turn ends, one
-// yield_result re-enters through the wake, and the ledger is empty
-// after the settle-then-inject.
+// TestLoopEscalationConvertsRunningCall: a tool call that runs past the inline budget
+// escalates - the RUNNING call converts to a pending dispatch mid-flight (never
+// restarted, never duplicated: the execution count stays 1), the turn ends, one
+// yield_result re-enters through the wake, and the ledger is empty after the
+// settle-then-inject.
 func TestLoopEscalationConvertsRunningCall(t *testing.T) {
 	shrinkBudget(t, 20*time.Millisecond)
 	provider := agent.NewFakeProviderScripts("test",
@@ -517,10 +494,8 @@ func TestLoopEscalationConvertsRunningCall(t *testing.T) {
 	}
 }
 
-// TestLoopFastToolRunsInlineZeroOverhead (card t_1501cb04): a call
-// that finishes inside the budget is exactly today's fast path - the
-// result lands in-turn, the second script plays, zero pending rows,
-// zero re-entries.
+// TestLoopFastToolRunsInlineZeroOverhead: a call that finishes inside the budget is
+// exactly today's fast path.
 func TestLoopFastToolRunsInlineZeroOverhead(t *testing.T) {
 	shrinkBudget(t, 20*time.Millisecond)
 	provider := agent.NewFakeProviderScripts("test",
@@ -561,12 +536,10 @@ func TestLoopFastToolRunsInlineZeroOverhead(t *testing.T) {
 	}
 }
 
-// TestLoopEscalatedPendingMarkerWording (card t_1501cb04): the
-// marker the model sees on a still-pending call is unmistakable - a
-// scripted-provider pin that the next turn's context carries the
-// do-not-work-around instruction for the escalated call (the old
-// "dispatched" wording sent a live agent to spawn a duplicate,
-// session bf0fa2a2).
+// TestLoopEscalatedPendingMarkerWording: the marker the model sees on a still-pending
+// call is unmistakable - a scripted-provider pin that the next turn's context carries
+// the do-not-work-around instruction for the escalated call (the old "dispatched"
+// wording sent a live agent to spawn a duplicate, session bf0fa2a2).
 func TestLoopEscalatedPendingMarkerWording(t *testing.T) {
 	shrinkBudget(t, 20*time.Millisecond)
 	provider := agent.NewFakeProviderScripts("test",
@@ -600,9 +573,7 @@ func TestLoopEscalatedPendingMarkerWording(t *testing.T) {
 	if res := rec.snapshot()[0]; res.ToolCallID != "slow" || res.Content != "slow:later" {
 		t.Errorf("wake = %+v, want exactly the escalated call's result", res)
 	}
-	// The provider context of the turn that followed the mixed batch
-	// carries the inline result AND the pending marker for the
-	// escalated sibling.
+	// The provider context of the turn that followed the mixed batch carries the inline.
 	marker, inline := "", false
 	for _, m := range provider.LastMessages {
 		switch v := m.(type) {
@@ -626,11 +597,8 @@ func TestLoopEscalatedPendingMarkerWording(t *testing.T) {
 	}
 }
 
-// TestLoopStopCancelsStillInlineCall (card t_1501cb04): a run stop
-// inside the inline window still kills the running call - the
-// budgeted per-call ctx is detached from the run's cancellation, so
-// the watcher re-forwards the stop; the result lands inline as a
-// context error, nothing escalates, nothing wakes.
+// TestLoopStopCancelsStillInlineCall: a run stop inside the inline window still kills
+// the running call.
 func TestLoopStopCancelsStillInlineCall(t *testing.T) {
 	shrinkBudget(t, 100*time.Millisecond)
 	provider := agent.NewFakeProviderScripts("test",
@@ -697,8 +665,7 @@ func TestLoopStopCancelsStillInlineCall(t *testing.T) {
 	}
 }
 
-// failingRegisterLedger wraps the in-memory floor with a Register that
-// always fails - the conversion's degradation pin.
+// failingRegisterLedger wraps the in-memory floor with a Register that always fails.
 type failingRegisterLedger struct {
 	agent.YieldLedger
 }
@@ -707,10 +674,8 @@ func (f failingRegisterLedger) Register(_ agent.PendingCall) error {
 	return fmt.Errorf("table full")
 }
 
-// TestLoopEscalationRegisterFailureStaysInline (card t_1501cb04): a
-// conversion whose ledger registration fails stays inline - blocking
-// beats a result with nowhere to go. The turn waits past the budget
-// and the result lands in-turn; nothing wakes.
+// TestLoopEscalationRegisterFailureStaysInline: a conversion whose ledger registration
+// fails stays inline - blocking beats a result with nowhere to go.
 func TestLoopEscalationRegisterFailureStaysInline(t *testing.T) {
 	shrinkBudget(t, 20*time.Millisecond)
 	provider := agent.NewFakeProviderScripts("test",

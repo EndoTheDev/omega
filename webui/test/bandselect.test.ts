@@ -1,14 +1,4 @@
-// omega webui: the THEMED SELECT (card t_acad02ec, audit M1). The native
-// <select> popup is OS chrome over the themed panes; every band/drawer/
-// row picker rides the shared BandSelect - the ModelSelect dropdown
-// grammar (chip button + role="listbox" pop + pointerdown
-// outside-close) generalized over short option ladders. The node suite
-// has no DOM: this pins the grammar on the component's source and each
-// call site's pattern presence - the listbox pattern as BEHAVIOR (open,
-// options, pick-emit, close), not a grep for one attribute. The drawer
-// surface token (audit M4) and the insights fixes (audit M7) ride here
-// too: same card, same files.
-// Run: node --test webui/test/bandselect.test.ts
+// omega webui: the THEMED SELECT.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -37,10 +27,8 @@ test("BandSelect is the listbox grammar, not a native select", () => {
   assert.match(bandSelect, /emit\("update:modelValue"/, "a pick emits the model update");
   assert.match(bandSelect, /pointerdown/, "outside-pointerdown closes the pop (the native behavior)");
   assert.match(bandSelect, /generic="V extends string \| number"/, "generic over the value type");
-  // card t_2b644603: a host may mark its OWN rows (the kanban board
-  // dropdown's armed remove) - the pop still owns the row look
+  // a host may mark its OWN rows (the kanban board dropdown's armed remove).
   assert.match(bandSelect, /o\.cls/, "an option's host marker class reaches its row");
-  // the component itself renders no native select - that was the bug
   assert.doesNotMatch(bandSelect, /<select[\s>]/);
 });
 
@@ -61,8 +49,7 @@ const SITES = [
   {
     file: join(repo, "harness", "kanban", "ui", "Board.vue"),
     label: "the board switcher",
-    // card t_2b644603: the ladder is boards + the two board VERBS (rename,
-    // remove) - one popup for the switcher and its commands
+    // the ladder is boards + the two board VERBS (rename, remove).
     select: /<BandSelect[\s\S]*?:options="boardMenu"/,
     labelProp: /@update:model-value="switchBoard\(\$event\)"/,
   },
@@ -79,7 +66,6 @@ for (const s of SITES) {
     const src = stripComments(read(s.file));
     assert.match(src, s.select);
     assert.match(src, s.labelProp);
-    // no native select chrome left at this site
     assert.doesNotMatch(src, /<select[\s>]/);
   });
 }
@@ -109,16 +95,8 @@ test("board radii ride the ladder (the named band-work gaps)", () => {
     assert.equal(bare.length, 0, `no bare ${px} radii left - they ride ${token}`);
   }
 });
-// --- the KEYBOARD LAW (card t_2daae1aa) ----------------------------------
-//
-// The rows carried role="option" and NOTHING else: a keyboard user could not
-// reach a single option, and the whole popup was pointer-only. They are now a
-// real listbox riding the SAME grammar the model picker rides (card
-// t_a990f422): roving tabindex, arrows/Home/End on the app's one clampIndex
-// wrap, Enter/Space picks, Escape closes and hands focus back to the chip.
-// The node suite has no DOM, so the law is pinned on the SOURCE here; the
-// behavior (focus really moves, the cursor really follows) is proven live
-// over CDP on a lane built from this branch.
+// -- the KEYBOARD LAW ---------------------------------- The rows carried role="option"
+// and NOTHING else.
 const modelSelect = stripComments(
   read(webui, "app", "components", "chat", "ModelSelect.vue"),
 );
@@ -130,8 +108,7 @@ const keyLabels = (src: string): string[] =>
 /** every case body, keyed by its label - lets a pin name key AND action */
 const caseBodies = (src: string): Map<string, string> => {
   const out = new Map<string, string>();
-  // a case with an EMPTY body falls through to the next one (the Enter/Space
-  // pair): it inherits that case's body, so both keys assert the same action
+  // a case with an EMPTY body falls through to the next one (the Enter/Space pair).
   let carried: string[] = [];
   for (const part of src.split(/\n\s*case /).slice(1)) {
     const m = part.match(/^("(?:[^"\\]|\\.)*")\s*:([\s\S]*)$/);
@@ -240,11 +217,7 @@ test("keyboard law: Escape and a pick hand focus back to the chip (one close pat
       `${key} stops the act keystroke - type-to-capture must not steal the focus return`,
     );
   }
-  // the SAME obligation on the other member of the roving family (ModelSelect
-  // is the template this grammar came from): its pick keys ride one line, so
-  // pinning BOTH bodies here reds the moment either implementation drops the
-  // stop. Without it a Space pick on a model row bubbles to app.vue and the
-  // focus lands in .composer-input instead of the chip that opened the pop.
+  // the SAME obligation on the other member of the roving family (ModelSelect is the.
   const modelBodies = caseBodies(
     modelSelect.slice(modelSelect.indexOf("function onRowKey")),
   );

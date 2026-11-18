@@ -1,14 +1,14 @@
-// omega webui: unit tests for the answerable gate question (card
-// t_63204dfd). Two surfaces over the SAME verdict endpoint:
-// - the chat card (GateCard.vue at the escalated tool call row):
+// omega webui: unit tests for the answerable gate question
+// ). Two surfaces over the SAME verdict endpoint:
+// the chat card:
 //   approve / deny / follow-up prompt;
-// - the notification card (NotificationsPanel.vue): approve / deny
+// the notification card (NotificationsPanel.vue): approve / deny
 //   only, body click still jumps to the session.
 // Layers, matching the house patterns:
-// - the pure helpers (omega.ts): approveDenyOptions, gateAnswerBody,
+// the pure helpers (omega.ts): approveDenyOptions, gateAnswerBody,
 //   isSettledRace, toolCallCommand, bindGateQuestions;
-// - the fetch wrapper: postVerdict carries the message field;
-// - source pins: the components' wiring (components are not importable
+// the fetch wrapper: postVerdict carries the message field;
+// source pins: the components' wiring (components are not importable
 //   in node).
 // Run: node --test webui/test/ (node >= 23 runs TS natively)
 import { test } from "node:test";
@@ -37,8 +37,7 @@ function read(...parts: string[]): string {
   return readFileSync(join(modules, ...parts), "utf8");
 }
 
-// gateCardRow is the wire shape the /verdicts listing serves for a gate
-// escalation: id + session + the approve/deny pair.
+// gateCardRow is the wire shape the /verdicts listing serves for a gate escalation.
 function gateCardRow(id = "c1", sessionId = "s1", title = "rm -rf build"): PendingVerdictCard {
   return {
     id,
@@ -63,7 +62,7 @@ function runningShell(id: string, command: string): ToolItem {
   };
 }
 
-// --- the pair contract ---
+// -- the pair contract --
 
 test("approveDenyOptions finds the approve/deny pair, case-insensitive, 1-based", () => {
   const ix = approveDenyOptions(gateCardRow("c1", "s1").options);
@@ -73,14 +72,13 @@ test("approveDenyOptions finds the approve/deny pair, case-insensitive, 1-based"
 });
 
 test("approveDenyOptions: null when the card is not a gate question", () => {
-  // a verdict tool's custom question has neither label (or only one)
   assert.equal(approveDenyOptions([{ label: "Ship" }, { label: "Hold" }]), null);
   assert.equal(approveDenyOptions([{ label: "approve" }, { label: "Stop" }]), null);
   assert.equal(approveDenyOptions(undefined), null);
   assert.equal(approveDenyOptions([]), null);
 });
 
-// --- the answer bodies ---
+// -- the answer bodies --
 
 test("gateAnswerBody: approve runs the command, deny skips it", () => {
   const card = gateCardRow();
@@ -112,7 +110,7 @@ test("gateAnswerBody: the pair contract reads the card's own options", () => {
   assert.deepEqual(gateAnswerBody(card, "approve"), { card_id: "c1", option_index: 1 });
 });
 
-// --- the race ---
+// -- the race --
 
 test("isSettledRace: the settled vocabulary collapses, other failures do not", () => {
   for (const why of [
@@ -145,13 +143,12 @@ test("postVerdict carries the follow-up message to the same endpoint", async () 
   }
 });
 
-// --- the chat binding ---
+// -- the chat binding --
 
 test("bindGateQuestions: no session or no cards binds nothing", () => {
   const items: TranscriptItem[] = [runningShell("tc1", "rm -rf build")];
   assert.deepEqual(bindGateQuestions(items, [gateCardRow()], null), { assigned: [], standalone: [] });
   assert.deepEqual(bindGateQuestions(items, [], "s1"), { assigned: [], standalone: [] });
-  // a card for another session belongs to that session's surface
   assert.deepEqual(bindGateQuestions(items, [gateCardRow("c1", "s2")], "s1"), {
     assigned: [],
     standalone: [],
@@ -191,14 +188,13 @@ test("bindGateQuestions: a pending verdict-tool card owns the pause, nothing bin
     assigned: [],
     standalone: [],
   });
-  // the verdict card settled: the gate question binds again
   verdictPending.status = "settled";
   const after = bindGateQuestions([shell, verdictPending], [gateCardRow()], "s1");
   assert.equal(after.assigned.length, 1);
 });
 
 test("bindGateQuestions: the byte-truncated title still matches its command", () => {
-  // the backend truncates the card title to 120 bytes with a ... tail
+  // the backend truncates the card title to 120 bytes with a..
   const command = "docker run --rm -v /data:/data alpine:latest sh -c 'apk add --no-cache rsync && rsync -a /data/ /backup/'";
   const shell = runningShell("tc1", command);
   const bound = bindGateQuestions([shell], [gateCardRow("c1", "s1", command.slice(0, 117) + "\u2026")], "s1");
@@ -227,7 +223,7 @@ test("toolCallCommand reads the command argument, junk-safe", () => {
   assert.equal(toolCallCommand({ kind: "tool", name: "shell.run", status: "running" }), "");
 });
 
-// --- source pins (components are not importable in node) ---
+// -- source pins (components are not importable in node) --
 
 test("GateCard renders the three options and every resolution path", () => {
   const vue = read("app/components/chat/GateCard.vue");
@@ -266,9 +262,7 @@ test("the notification surface answers approve/deny and keeps the jump", () => {
 });
 
 test("the chat gate card is the notification card's sibling, same endpoint same verdict", () => {
-  // both surfaces answer the SAME pending question id through the SAME
-  // endpoint; the chat card binds to the row, the notification row
-  // carries the id in its payload
+  // both surfaces answer the SAME pending question id through the SAME endpoint.
   const wire = read("../harness/verdict/routes.go");
   assert.match(wire, /SessionID\s+string\s+`json:"session_id"`/, "the pending listing payload carries the session id");
   assert.match(wire, /Message\s+string\s+`json:"message,omitempty"`/, "the verdict endpoint accepts the follow-up message");

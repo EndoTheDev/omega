@@ -1,21 +1,21 @@
 // The session workspace surface, riding the file domain capsule
-// (shell-ring shrink wave 3, card t_b75df168: a filesystem listing face
+// (shell-ring shrink wave 3, a filesystem listing face
 // is the files domain's work - the workspace PICKER is the session's
 // row truth (the store's Workspace column); these routes only WALK
 // directories, unbuzzed from the explorer's rooted cwd). The picker
-// reads the local filesystem to pick a folder; strictly read-only GET -
+// reads the local filesystem to pick a folder; strictly read-only GET
 // no write, delete or exec path exists here. The browse walks REAL
 // directories (an absolute path selects any folder on the box - a
 // session workspace is not contained by the process working directory,
 // unlike the /files inspector, which stays rooted there).
 //
 // Safety rules, every request:
-//   - absolute paths only (no browser-relative confusion), validated
+// absolute paths only (no browser-relative confusion), validated
 //     by core.ResolveWorkspaceDir (the shared guard the session
 //     create/PATCH paths use - one validator, two consumers)
-//   - "."-prefixed segments and hidden entries are rejected/filtered
-//   - the path is symlink-resolved before the disk is touched
-//   - only directory listings are served, never file contents
+// "."-prefixed segments and hidden entries are rejected/filtered
+// the path is symlink-resolved before the disk is touched
+// only directory listings are served, never file contents
 package files
 
 import (
@@ -34,17 +34,7 @@ type workspaceDir struct {
 	Path string `json:"path"`
 }
 
-// handleWorkspacesBrowse serves GET /workspaces/browse?path=<abs>,
-// listing one directory's child folders. Empty or missing path lists
-// the root - on windows the PROCESS volume's root (the "/" default
-// spelled volume-less is a row shape the sibling validator refuses
-// - filepath.IsAbs("\\Users") is false on windows - so the emitted
-// rows would be dead clicks the same endpoint rejected; see card
-// t_7dcdc98e). Linux keeps the "/" root. Hidden entries (and every
-// dot-prefixed name) are filtered, and dot segments are rejected in
-// the query path - no browsing into hidden trees. The response
-// carries the entries plus the parent path ("" when at the root -
-// the UI hides the climb there).
+// handleWorkspacesBrowse serves GET /workspaces/browse?path=<abs>, listing one.
 func (rt *Routes) handleWorkspacesBrowse(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -60,11 +50,9 @@ func (rt *Routes) handleWorkspacesBrowse(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	} else if filepath.VolumeName(abs) == "" {
-		// The empty-path root default: mount the listing on the
-		// process volume when the "/" spelling is volume-less
-		// (windows). Rows then carry volume-qualified paths that
-		// re-validate on click ("/Users" -> "C:\Users"); a non-windows
-		// volume name is "", so linux behavior is byte-identical.
+		// The empty-path root default. Rows then carry volume-qualified paths that
+		// re-validate on click ("/Users" -> "C:\Users"); a non-windows volume name is "", so
+		// linux behavior is byte-identical.
 		if wd, err := os.Getwd(); err == nil {
 			if vol := filepath.VolumeName(wd); vol != "" {
 				abs = vol + string(filepath.Separator)
@@ -96,21 +84,17 @@ func (rt *Routes) handleWorkspacesBrowse(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"path": abs, "parent": parent, "dirs": out})
 }
 
-// workspaceFile is one /workspaces/files row: the name and whether it
-// is a directory (the @ picker filters to files).
+// workspaceFile is one /workspaces/files row.
 type workspaceFile struct {
 	Name  string `json:"name"`
 	IsDir bool   `json:"is_dir"`
 }
 
-// handleWorkspaceFiles serves GET /workspaces/files?path=<abs>, listing
-// one validated directory's first-level entries. It backs the @ mention
-// picker when a workspace intent (or a pinned session workspace) is
-// set: the token the picker inserts expands SERVER-side against the
-// session workspace at run time, so the listing must read THAT folder,
-// not the process working directory /files/browse is jailed to (card
-// t_ea7e6a58). Read-only, one level deep, hidden entries filtered, the
-// same absolute-path + symlink rules as the browse endpoint.
+// handleWorkspaceFiles serves GET /workspaces/files?path=<abs>, listing one validated.
+// It backs the @ mention picker when a workspace intent (or a pinned session workspace)
+// is set: the token the picker inserts expands SERVER-side against the session
+// workspace at run time, so the listing must read THAT folder, not the process working
+// directory /files/browse is jailed to.
 func (rt *Routes) handleWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -129,7 +113,6 @@ func (rt *Routes) handleWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]workspaceFile, 0, len(entries))
 	for _, e := range entries {
-		// hidden entries stay invisible (same rule as the browse walk)
 		if strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
@@ -138,8 +121,7 @@ func (rt *Routes) handleWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
 	sort.SliceStable(out, func(i, j int) bool {
 		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
-	// a runaway folder never floods the DOM - the picker slices its
-	// rows further; the cap only bounds this endpoint's payload
+	// a runaway folder never floods the DOM.
 	if len(out) > 500 {
 		out = out[:500]
 	}

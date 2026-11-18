@@ -1,11 +1,4 @@
-// omega webui: the / command palette and @ mention picker (t_07aed3f9).
-// The TUI is the spec: "/" at input start lists the commands (shell +
-// module registry + skills), "@" lists workspace files plus the
-// session:/skill: injections, a selected command acts LOCALLY without
-// an agent round-trip, Esc dismisses. Expansion itself is SERVER-SIDE
-// (core.ExpandAtMentions on /chat) - these tests own the picker's pure
-// token logic and the production-boundary wiring assertions (test law:
-// the signal shape production sends).
+// omega webui: the / command palette and @ mention picker.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
@@ -24,9 +17,8 @@ import {
   replaceSlashToken,
   clampIndex,
 } from "../app/composables/commands.ts";
-// card t_6215474b: the shell's TopLevel command palette (Ctrl+K) - the
-// registry build + filter are pure, the overlay's grammar is pinned by
-// file assertions (node cannot import .vue)
+// the shell's TopLevel command palette (Ctrl+K) - the registry build + filter are pure,
+// the overlay's grammar is pinned by file assertions (node cannot import.vue)
 import {
   buildPaletteCommands,
   filterPaletteCommands,
@@ -90,7 +82,6 @@ describe("mention token parsing", () => {
     assert.deepEqual(mentionQueryAt("hello @notes.t", 14), { active: true, token: "@notes.t" });
     assert.equal(mentionQueryAt("hello @notes.txt and", 22).active, false);
     assert.deepEqual(mentionQueryAt("@", 1), { active: true, token: "@" });
-    // the caret may sit before the token's tail
     assert.equal(mentionQueryAt("email me at user@site.com", 14).active, false);
   });
 
@@ -104,22 +95,19 @@ describe("mention token parsing", () => {
     const out = replaceMentionToken("see @notes.t please", 12, "@notes.t", "@notes.txt");
     assert.equal(out.draft, "see @notes.txt please");
     assert.equal(out.caret, 14);
-    // a stale/mismatched token is a no-op
     const same = replaceMentionToken("see @notes.t please", 11, "@other", "@x");
     assert.equal(same.draft, "see @notes.t please");
   });
 });
 
-// --- t_d1a2951d: the slash token is caret-based, mid-sentence included ---
+// --: the slash token is caret-based, mid-sentence included --
 
 describe("slash token parsing (t_d1a2951d)", () => {
   it("activates on a /token at the caret, anywhere in the draft", () => {
     assert.deepEqual(slashTokenAt("use /sk to fix", 7), { active: true, token: "/sk" });
     assert.deepEqual(slashTokenAt("/th", 3), { active: true, token: "/th" }, "leading stays");
     assert.deepEqual(slashTokenAt("/", 1), { active: true, token: "/" });
-    // a paren is a word boundary like the file-token law
     assert.deepEqual(slashTokenAt("(try /th", 8), { active: true, token: "/th" });
-    // the caret may sit before the token's tail: the full word extends it
     assert.deepEqual(slashTokenAt("/theme dark", 3), { active: true, token: "/th" });
   });
 
@@ -133,18 +121,14 @@ describe("slash token parsing (t_d1a2951d)", () => {
   });
 
   it("replaceSlashToken replaces only the whole word under the caret", () => {
-    // mid-sentence: the sentence around the token stays
     const mid = replaceSlashToken("use /sk to fix", 7, "/sk", "/skill");
     assert.equal(mid.draft, "use /skill to fix");
     assert.equal(mid.caret, 10);
-    // leading: the token is the first word, args ride along
     const lead = replaceSlashToken("/th dark", 3, "/th", "/theme");
     assert.equal(lead.draft, "/theme dark");
     assert.equal(lead.caret, 6);
-    // a caret outside any /word is a no-op
     const miss = replaceSlashToken("use /sk to fix", 14, "/sk", "/skill");
     assert.equal(miss.draft, "use /sk to fix");
-    // a drifted query (stale token) is a no-op
     const stale = replaceSlashToken("use /sk to fix", 7, "/zz", "/skill");
     assert.equal(stale.draft, "use /sk to fix");
   });
@@ -191,7 +175,6 @@ describe("production-boundary wiring (test law: the served shape)", () => {
       chatTab.includes("host.command(stateKey, text,"),
       "the host routes the command - with the t_7f09bd0c send ctx, a skill dispatch arms AND posts",
     );
-    // and the intercept really returns - the plain send path stays after it
     const after = chatTab.slice(interceptIdx, interceptIdx + 400);
     assert.ok(after.includes("return;"), "a slash draft is consumed");
   });
@@ -203,10 +186,10 @@ describe("production-boundary wiring (test law: the served shape)", () => {
     assert.ok(host.includes('{ role: "system", content: st.pendingSkill.content }'), "the next send carries the armed skill");
   });
 
-  // t_d1fe01da: the dispatch wire carries the invoking tab's session, so
-  // a session-scoped command (/export, /label, /branch) acts on THAT tab
-  // instead of demanding the id in its args - and a refusal arrives with
-  // the server's own words, never a client-side "no handler".
+  // the dispatch wire carries the invoking tab's session, so a session-scoped command
+  // (/export, /label, /branch) acts on THAT tab instead of demanding the id in its args
+  // - and a refusal arrives with the server's own words, never a client-side "no
+  // handler".
   it("the dispatch binds the invoking tab's session and surfaces the server's own message", () => {
     const wire = readFileSync(join(here, "../app/composables/commands.ts"), "utf8");
     assert.match(wire, /sessionId = "",/, "dispatchCommand takes the invoking session");
@@ -230,7 +213,7 @@ describe("production-boundary wiring (test law: the served shape)", () => {
   });
 });
 
-// --- card t_6215474b: the shell command palette (Ctrl+K) ---------------
+// --: the shell command palette (Ctrl+K) --------------
 
 function fakeDeps(rec: string[]): PaletteCommandDeps {
   const tag = (s: string) => () => rec.push(s);
@@ -257,7 +240,6 @@ describe("command registry build (t_6215474b)", () => {
     assert.ok(opens.includes("settings"), "the + menu's exclusion never applied to the palette");
     assert.ok(!opens.includes("sidebar"), "the locked tab is the toggle's business");
     assert.ok(!opens.includes("viewer"), "an empty viewer tab is meaningless");
-    // chat is multi: "open chat" is a fresh tab, labeled honestly
     const chat = cmds.find((c) => c.id === "open:chat")!;
     assert.ok(chat, "every dockable is reachable - chat included");
     assert.equal(chat.title, "New chat");
@@ -298,9 +280,7 @@ describe("command registry filter (substring, the settled lazy default)", () => 
   it("matches case-insensitively over title, id and keywords", () => {
     assert.ok(filterPaletteCommands("brow", cmds).some((c) => c.title === "Open Browser"));
     assert.ok(filterPaletteCommands("BROW", cmds).some((c) => c.title === "Open Browser"));
-    // keywords rescue odd voice titles
     assert.ok(filterPaletteCommands("logs", cmds).some((c) => c.id === "open:observability"));
-    // the id is fuel too
     assert.ok(filterPaletteCommands("tab:close", cmds).some((c) => c.id === "tab:close"));
   });
 
@@ -338,10 +318,10 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
     assert.ok(app.includes("buildPaletteCommands"), "the registry builds from app deps");
   });
 
-  // Endo rider 2026-11-12: the palette had Escape but no outside-click
-  // close. The overlay carries no scrim by design, so the outside click is
-  // a document listener bounded by the root ref - and it must be pointerdown
-  // so the opening click cannot immediately re-close the palette.
+  // Endo rider: the palette had Escape but no outside-click close. The overlay carries
+  // no scrim by design, so the outside click is a document listener bounded by the root
+  // ref - and it must be pointerdown so the opening click cannot immediately re-close
+  // the palette.
   it("an outside click closes the overlay (no scrim, document listener)", () => {
     assert.ok(overlay.includes('ref="rootEl"'), "the surface is ref-bound");
     assert.ok(
@@ -359,13 +339,11 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
     assert.ok(overlay.includes('emit("close")'), "the close rides the existing @close seam");
     // Escape must still be the same path (no key handler rewrite)
     assert.ok(/e\.key === "Escape"[\s\S]{0,80}emit\("close"\)/.test(overlay));
-    // item navigation is untouched: the row click stays a run(), not a close
     assert.ok(/@click="run\(c\)"/.test(overlay), "row clicks still run the command");
   });
 
-  // the shell's trigger is the one outside surface the overlay must not
-  // close on pointerdown: its own click toggles, so closing first would
-  // flicker closed-then-reopened. One toggle serves both doors.
+  // the shell's trigger is the one outside surface the overlay must not close on
+  // pointerdown.
   it("the nav-cluster trigger toggles instead of flickering", () => {
     const cluster = readFileSync(
       join(here, "../app/components/nav/NavCluster.vue"),
@@ -388,9 +366,8 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
     assert.ok(css.includes(".command-palette {"), "the overlay has real CSS");
     const block = css.slice(css.indexOf(".command-palette {"), css.indexOf(".command-palette-input"));
     assert.ok(block.includes("position: fixed") && block.includes("top:"), "top-center fixed");
-    // VS Code quick-open geometry: the panel's top edge IS the top bar's
-    // lower edge (one --menubar-h for both), so it overlays the panes and
-    // never pushes them
+    // VS Code quick-open geometry: the panel's top edge IS the top bar's lower edge
+    // (one --menubar-h for both), so it overlays the panes and never pushes them
     assert.ok(
       block.includes("top: var(--menubar-h)"),
       "the panel hangs from the menubar's own height",
@@ -407,13 +384,9 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
     assert.ok(css.includes("background: var(--z2)"), "tokens carry it");
   });
 
-  // card t_d83b54b8: ONE geometry, two doors. The trigger click and Ctrl+K
-  // ride ONE toggle into ONE overlay, so ONE rule anchors the panel - at
-  // the top, under the bar. The way this breaks on one path only is a
-  // SECOND anchor rule (a media query, a late override) re-seating the
-  // panel mid-screen, which the block-contents test above cannot see:
-  // it reads the first block and stops. Pin the count across every
-  // stylesheet instead.
+  // ONE geometry, two doors. The way this breaks on one path only is a SECOND anchor
+  // rule (a media query, a late override) re-seating the panel mid-screen, which the
+  // block-contents test above cannot see: it reads the first block and stops.
   it("one anchor rule for the panel - a second one could re-seat it (card t_d83b54b8)", () => {
     const cssDir = join(here, "../app/assets/css");
     const sheets = readdirSync(cssDir).filter((f: string) => f.endsWith(".css"));
@@ -427,7 +400,6 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
       0,
     );
     assert.equal(total, 1, "exactly one .command-palette anchor rule, never a second");
-    // and that one rule is the fixed, top-hanging, centred band
     const one = css.slice(css.indexOf(".command-palette {"));
     const block = one.slice(0, one.indexOf("}"));
     assert.match(block, /position:\s*fixed/, "the one rule is the fixed overlay");
@@ -437,13 +409,11 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
   });
 });
 
-// --- card t_cc6d0920: the TAKEOVER -------------------------------------
-// HIS 2026-11-16 reconfirmation: the palette was never meant to hang its
-// own input box above the bar - the top bar's time field IS the input, in
-// place. The field element is TELEPORTED into the cluster's seat (one
-// element, one focus path - never a second copy), the panel below is the
-// results dropdown alone (the merged t_d83b54b8 geometry, untouched), and
-// the bar's other chrome (arrows + the Ctrl+K toggle) hides by
+// --: the TAKEOVER ------------------------------------- HIS reconfirmation: the
+// palette was never meant to hang its own input box above the bar - the top bar's time
+// field IS the input, in place. The field element is TELEPORTED into the cluster's seat
+// (one element, one focus path - never a second copy), the panel below is the results
+// dropdown alone, and the bar's other chrome (arrows + the Ctrl+K toggle) hides by
 // VISIBILITY so the seat cannot slide while the field is up.
 describe("the palette takeover (t_cc6d0920)", () => {
   const overlay = readFileSync(
@@ -485,9 +455,8 @@ describe("the palette takeover (t_cc6d0920)", () => {
       "a pointerdown in the teleported field never closes the palette",
     );
     assert.match(overlay, /inPlace: boolean/, "the seat bit is a declared prop");
-    // a live breakpoint cross re-mounts the field in the other seat (the
-    // Teleport flips `disabled`) - the caret rides along, or the field on
-    // screen would swallow typing
+    // a live breakpoint cross re-mounts the field in the other seat (the Teleport flips
+    // `disabled`).
     assert.match(
       overlay,
       /watch\(\s*\(\) => props\.inPlace,[\s\S]{0,160}inputEl\.value\?\.focus\(\)/,
@@ -512,7 +481,6 @@ describe("the palette takeover (t_cc6d0920)", () => {
     // display: contents is what makes the seat transparent to the flex row:
     // the teleported field is a flex item exactly as the button was
     assert.match(css, /\.nav-palette-slot\s*\{[^}]*display:\s*contents/);
-    // and the field carries the affordance's own seat geometry
     assert.match(css, /\.nav-palette-input\.is-live\s*\{/);
     assert.match(
       css,
@@ -545,8 +513,8 @@ describe("the palette takeover (t_cc6d0920)", () => {
       app.includes('.closest(".command-palette, #nav-palette-slot")'),
       "a click in the palette's own surfaces is not a pane gesture",
     );
-    // the clock keeps ticking while it is hidden (the timer is the
-    // component's, not the button's) - Esc brings back a current time
+    // the clock keeps ticking while it is hidden (the timer is the component's, not the
+    // button's).
     assert.match(
       cluster,
       /onMounted\(armClock\)/,

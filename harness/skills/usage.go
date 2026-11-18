@@ -9,19 +9,10 @@ import (
 	"time"
 )
 
-// Usage state for the learning loop (card t_9972dfd0): one JSON file
-// per skills directory - <dir>/.curator/usage.json - recording the
-// activity the staleness pass anchors on. Shape follows Hermes'
-// skill_usage records: created_at anchors a never-used skill so it
-// cannot self-archive by sitting unread, last_used_at is the freshest
-// real activity, state is the staleness phase the deterministic pass
-// moved the skill to.
-//
-// The file lives in a dot-dir the scanner skips, so usage tracking is
-// invisible to discovery. All records ride skills; hand-written and
-// agent-authored skills age the same here - the AUTHOR frontmatter
-// field (stamped by skills.write) is the curator's agent-created
-// class, so the LLM passes can age them differently if needed.
+// Usage state for the learning loop. Shape follows Hermes' skill_usage records:
+// created_at anchors a never-used skill so it cannot self-archive by sitting unread,
+// last_used_at is the freshest real activity, state is the staleness phase the
+// deterministic pass moved the skill to.
 
 // Usage states (Hermes skill_usage vocabulary).
 const (
@@ -30,10 +21,7 @@ const (
 	StateArchived = "archived"
 )
 
-// Staleness constants (card t_9972dfd0, Hermes defaults): a skill with
-// no activity for staleAfterDays is marked stale; archiveAfterDays
-// without activity is archived. Distillation floor lives in
-// curator.go (DistillMinChars).
+// Staleness constants: a skill with no activity for staleAfterDays is marked stale.
 const (
 	StaleAfterDays   = 14
 	ArchiveAfterDays = 30
@@ -82,9 +70,8 @@ func readUsageLocked(dir string) map[string]UsageRecord {
 	return out
 }
 
-// writeUsage persists the usage map for dir, creating .curator/ as
-// needed. A write failure is swallowed: usage tracking must never
-// fail a skills tool call.
+// writeUsage persists the usage map for dir, creating.curator/ as needed. A write
+// failure is swallowed: usage tracking must never fail a skills tool call.
 func writeUsage(dir string, m map[string]UsageRecord) {
 	usageMu.Lock()
 	defer usageMu.Unlock()
@@ -102,19 +89,16 @@ func writeUsageLocked(dir string, m map[string]UsageRecord) {
 	_ = os.WriteFile(usageFile(dir), data, 0o644)
 }
 
-// sortedUsage renders the map through a name-sorted shim so the file
-// diffs deterministically (map JSON would churn key order).
+// sortedUsage renders the map through a name-sorted shim so the file diffs.
 func sortedUsage(m map[string]UsageRecord) map[string]UsageRecord {
-	// json.Marshal already sorts map keys alphabetically in Go; this
-	// shim exists as the named law, not behavior.
+	// json.Marshal already sorts map keys alphabetically in Go.
 	return m
 }
 
-// TouchUsage records one activity on a skill: kind "read" bumps
-// use_count + last_used, "write" bumps patch_count + last_used (and
-// creates the record with an author class when the caller has one).
-// Missing record = the skill's first sight (created_at = now) unless
-// the skill was created this run - the caller supplies createdAt.
+// TouchUsage records one activity on a skill: kind "read" bumps use_count + last_used,
+// "write" bumps patch_count + last_used (and creates the record with an author class
+// when the caller has one). Missing record = the skill's first sight (created_at = now)
+// unless the skill was created this run - the caller supplies createdAt.
 func TouchUsage(dir, name, kind, author string) {
 	usageMu.Lock()
 	defer usageMu.Unlock()
@@ -134,9 +118,7 @@ func TouchUsage(dir, name, kind, author string) {
 	if author != "" {
 		rec.Author = author
 	}
-	// Real activity reactivates a stale skill (Hermes: used again
-	// after going stale). An archived skill stays archived - the
-	// folder is gone; the record keeps its history until rollback.
+	// Real activity reactivates a stale skill (Hermes: used again after going stale).
 	if rec.State == StateStale {
 		rec.State = StateActive
 	}
@@ -147,9 +129,7 @@ func TouchUsage(dir, name, kind, author string) {
 	writeUsageLocked(dir, m)
 }
 
-// StaleSkillNames returns the names currently marked stale in dir,
-// sorted - the input the weekly LLM pass reads. A missing usage file
-// yields an empty list.
+// StaleSkillNames returns the names currently marked stale in dir, sorted.
 func (sp *SkillsProvider) StaleSkillNames() []string {
 	var out []string
 	for dir := range sp.usageDirs() {
@@ -166,9 +146,7 @@ func (sp *SkillsProvider) StaleSkillNames() []string {
 	return out
 }
 
-// usageDirs returns the provider's write-home (Dir) keyed by itself -
-// usage records live only in the agent's own dir; SharedDir skills
-// belong to every agent and none of them.
+// usageDirs returns the provider's write-home (Dir) keyed by itself.
 func (sp *SkillsProvider) usageDirs() map[string]bool {
 	if sp.Dir == "" {
 		return nil

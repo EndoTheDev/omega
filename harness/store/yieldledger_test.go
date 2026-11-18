@@ -1,9 +1,6 @@
 package store
 
-// The pending-calls ledger tests (async agent loop phase 1, card
-// t_f3f953d0): the store's YieldLedger face over the SQLite
-// pending_calls table - durable enough that the boot recovery sweep
-// (the api side's restart simulation) finds every entry.
+// The pending-calls ledger tests.
 
 import (
 	"testing"
@@ -21,8 +18,7 @@ func openLedgerStore(t *testing.T) *Store {
 	return st
 }
 
-// TestYieldLedgerShape: register, pending, all, settle - the face the
-// loop, the placeholders and the boot sweep walk.
+// TestYieldLedgerShape: register, pending, all, settle.
 func TestYieldLedgerShape(t *testing.T) {
 	st := openLedgerStore(t)
 	rows := []agent.PendingCall{
@@ -36,7 +32,6 @@ func TestYieldLedgerShape(t *testing.T) {
 		}
 	}
 
-	// Pending filters by session, in dispatch order.
 	p1 := st.Pending("s1")
 	if len(p1) != 2 || p1[0].CallID != "c1" || p1[1].CallID != "c2" {
 		t.Fatalf("pending s1 = %+v", p1)
@@ -45,12 +40,10 @@ func TestYieldLedgerShape(t *testing.T) {
 		t.Fatalf("arguments lost: %+v", p1[0])
 	}
 
-	// All carries both homes, insertion order.
 	if all := st.All(); len(all) != 3 || all[2].CallID != "c3" || all[2].SessionID != "s2" {
 		t.Fatalf("all = %+v", all)
 	}
 
-	// Settle is keyed: the settled call leaves, the sibling stays.
 	if err := st.Settle("s1", "c1"); err != nil {
 		t.Fatalf("settle: %v", err)
 	}

@@ -1,9 +1,8 @@
 package store
 
-// hygiene_test.go: the pass's behaviour proofs (card t_329b9312). The
-// summarizer writes to the row AND the FTS index; prune deletes ONLY
-// past-retention sessions (pinned exempt); vacuum leaves a zero-byte
-// WAL on disk; a legacy two-column index rebuilds at open.
+// hygiene_test.go: the pass's behaviour proofs. The summarizer writes to the row AND
+// the FTS index; prune deletes ONLY past-retention sessions (pinned exempt); vacuum
+// leaves a zero-byte WAL on disk; a legacy two-column index rebuilds at open.
 
 import (
 	"github.com/EndoTheDev/omega/agent"
@@ -35,9 +34,7 @@ func newFileStore(t *testing.T) *Store {
 	return s
 }
 
-// ageSession backdates a session's updated_at (migrate() never backfills
-// the summary, and the pass reads updated_at, so the queue shape is
-// driven by this stamp).
+// ageSession backdates a session's updated_at (migrate never backfills the summary.
 func ageSession(t *testing.T, s *Store, id string, daysAgo int) {
 	t.Helper()
 	if _, err := s.db.Exec(`UPDATE sessions SET updated_at = ? WHERE id = ?`,
@@ -64,11 +61,10 @@ func TestSummarizerWritesRowAndFTS(t *testing.T) {
 		t.Fatal(err)
 	}
 	ageSession(t, s, "s1", 2) // two days idle: past the 24h floor
-	// The baseline is the stamp AS WRITTEN, read back once. Recomputing
-	// the backdate at compare time reds on a wall-clock second boundary
-	// inside this test: RFC3339 truncates to seconds, so the recomputed
-	// stamp drifts a second while the row never moved (the once-in-six
-	// full-suite flake, t_288d7f0c).
+	// The baseline is the stamp AS WRITTEN, read back once. Recomputing the backdate at
+	// compare time reds on a wall-clock second boundary inside this test: RFC3339
+	// truncates to seconds, so the recomputed stamp drifts a second while the row never
+	// moved.
 	base, err := s.GetSession(ctx, "s1")
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +77,6 @@ func TestSummarizerWritesRowAndFTS(t *testing.T) {
 		t.Fatalf("summarized %d pending %d, want 1/0 (skipped: %v)", rep.Summarized, rep.Pending, rep.Skipped)
 	}
 
-	// The row carries it.
 	sess, err := s.GetSession(ctx, "s1")
 	if err != nil {
 		t.Fatal(err)
@@ -94,8 +89,7 @@ func TestSummarizerWritesRowAndFTS(t *testing.T) {
 		t.Errorf("updated_at %q moved by the summary write (was %q)", sess.UpdatedAt, base.UpdatedAt)
 	}
 
-	// ...and the FTS index answers for the SUMMARY text (content never
-	// contained the word paragraph-unique below).
+	// ..and the FTS index answers for the SUMMARY text (content never contained the word.
 	res, err := s.SearchSessions(ctx, "asked for fibonacci")
 	if err != nil {
 		t.Fatal(err)
@@ -104,8 +98,7 @@ func TestSummarizerWritesRowAndFTS(t *testing.T) {
 		t.Fatalf("summary search: %+v", res)
 	}
 
-	// A young unsammarized session stays pending; a nil provider skips
-	// loudly.
+	// A young unsammarized session stays pending; a nil provider skips loudly.
 	if err := s.CreateSession(ctx, "s2", "", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -226,8 +219,6 @@ func TestVacuumShrinksWALFileOnDisk(t *testing.T) {
 	if err := s.CreateSession(ctx, "big", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	// Grow the WAL: a batch of large tool results without a checkpoint
-	// between them.
 	big := strings.Repeat("x", 1<<20) // 1 MB
 	for i := 0; i < 8; i++ {
 		if err := s.AppendMessage(ctx, "big", core.NewUser(big)); err != nil {
@@ -247,8 +238,7 @@ func TestVacuumShrinksWALFileOnDisk(t *testing.T) {
 
 func TestLegacyTwoColumnIndexRebuildsAtOpen(t *testing.T) {
 	dsn := t.TempDir() + "/legacy.db"
-	// Build the PRE-summary shape by hand: a full-length sessions table
-	// without the summary column and a two-column stand-alone fts table.
+	// Build the PRE-summary shape by hand.
 	legacy, err := sql.Open("sqlite", dsn+"?_pragma=foreign_keys(1)&_journal_mode=WAL")
 	if err != nil {
 		t.Fatal(err)
@@ -295,7 +285,6 @@ VALUES ('s-legacy', 'legacy label', '%s', '%s');`, timeAgo(30), timeAgo(3)))
 		t.Fatalf("open legacy: %v", err)
 	}
 	defer s.Close()
-	// The summary column landed, the index answers the new arity.
 	if _, err := s.db.Exec(`UPDATE sessions SET summary = 'legacy note about syncthing setup' WHERE id = 's-legacy'`); err != nil {
 		t.Fatalf("write summary to migrated row: %v", err)
 	}
@@ -306,8 +295,6 @@ VALUES ('s-legacy', 'legacy label', '%s', '%s');`, timeAgo(30), timeAgo(3)))
 	if len(res) != 1 || res[0].SessionID != "s-legacy" || !res[0].Summary {
 		t.Fatalf("summary search after migration: %+v", res)
 	}
-	// The label half survived the rebuild untouched (the old row's
-	// label stays indexed).
 	res, err = s.SearchSessions(context.Background(), "legacy label")
 	if err != nil {
 		t.Fatal(err)
@@ -346,8 +333,7 @@ func TestHygieneToolActions(t *testing.T) {
 		t.Error("unknown action accepted")
 	}
 
-	// The summarize-only action answers a second run: the queue is
-	// already clear, so nothing is summarized and pending stays 0.
+	// The summarize-only action answers a second run.
 	out, err = tool.Run(ctx, map[string]any{"action": "summarize"})
 	if err != nil {
 		t.Fatalf("summarize action: %v", err)
@@ -367,28 +353,20 @@ func TestInsightsCarriesFileSizes(t *testing.T) {
 	if in.DBSizeBytes <= 0 {
 		t.Errorf("insights db size %d", in.DBSizeBytes)
 	}
-	// A WAL that exists after the migrate writes shows up too; do not
-	// pin the value (checkpoint timing), only that the db file reported.
+	// A WAL that exists after the migrate writes shows up too; do not pin the value.
 }
 
-// ---------------------------------------------------------------------------
-// Hygiene goes live (card t_f78acfd6): the sweep resolves its model slot
-// from the store's LIVE section per call; the host's hot-apply replaces
-// the section (SetHygieneConfig) and the next sweep consults the new
-// slot - no restart, no re-mount. The tool's report line names the
-// slot: the acceptance's proof.
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------- Hygiene
+// goes live.
 
-// spySlotProvider records every WithModel derivation: the consult's
-// slot is the fact the live-flip test pins.
+// spySlotProvider records every WithModel derivation.
 type spySlotProvider struct {
 	agent.Provider // the underlying fake (embedded interface)
 	saw            []string
 }
 
-// WithModel records the derived model before delegating. The returned
-// provider stays the plain fake (the caller streams from it); the spy
-// only needs the derivation trail.
+// WithModel records the derived model before delegating. The returned provider stays
+// the plain fake (the caller streams from it); the spy only needs the derivation trail.
 func (p *spySlotProvider) WithModel(model string) agent.Provider {
 	p.saw = append(p.saw, model)
 	return p.Provider.WithModel(model)
@@ -413,7 +391,6 @@ func TestSetHygieneConfigGoesLive(t *testing.T) {
 		return spy
 	}}).Tools()["sessions.hygiene"]
 
-	// Boot: empty slot = the session provider's own model, no derivation.
 	out, err := tool.Run(ctx, map[string]any{"action": "summarize"})
 	if err != nil {
 		t.Fatal(err)
@@ -425,8 +402,7 @@ func TestSetHygieneConfigGoesLive(t *testing.T) {
 		t.Errorf("boot consult must not derive a slot: %v", spy.saw)
 	}
 
-	// THE flip: the live section swaps - the SAME tool (no re-mount)
-	// consults the new slot on the next sweep, and the report names it.
+	// THE flip: the live section swaps.
 	s.SetHygieneConfig(HygieneConfig{SummarizerModel: "flip:sweep", SummarizeAfterHours: DefaultSummarizeAfterHours})
 	out, err = tool.Run(ctx, map[string]any{"action": "summarize"})
 	if err != nil {

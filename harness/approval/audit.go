@@ -8,23 +8,16 @@ import (
 	"time"
 )
 
-// The audit log (design Q6): every verdict appends ONE JSONL record
-// to the omega home. The log IS the eval data source (Q9's corpus
-// companion) - it records the parsed command, all six answers, the
-// ladder step fired, the policy hash and the mode. Append-only,
-// best-effort: a logging failure never changes a gate decision.
+// The audit log (design Q6): every verdict appends ONE JSONL record to the omega home.
+// Append-only, best-effort: a logging failure never changes a gate decision.
 
 // AuditLog appends decision records to <home>/approval-decisions.jsonl.
-// Mode 0600 (the rows carry reviewed commands), rotation at 4 MB
-// keeping one previous generation.
 const (
 	auditFileName = "approval-decisions.jsonl"
 	auditMaxBytes = 4 << 20
 )
 
-// AuditRow is one decision record. The six answers carry zero-values
-// when the deciding pass was a card (manual mode) or a replay
-// (cached: the original's answers repeat in the row).
+// AuditRow is one decision record.
 type AuditRow struct {
 	TS             string   `json:"ts"`
 	Mode           string   `json:"mode"`
@@ -89,10 +82,7 @@ func (a *Audit) Append(row AuditRow) {
 	}
 }
 
-// append is the write seam: single O_APPEND|O_CREATE|O_NOFOLLOW open
-// (where the platform defines O_NOFOLLOW), 0600, rotation keeping one
-// generation. Best effort - mirror of the reference's persistence
-// boundary.
+// append is the write seam.
 func (a *Audit) append(encoded []byte) error {
 	dir := filepath.Dir(a.path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {

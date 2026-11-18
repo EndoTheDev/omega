@@ -7,12 +7,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// The registry's contract (the shell-ring shrink wave 1, extended by
-// card t_db98ebfe): the tools capsule ships the grep + glob search
-// tools itself and contributes the same additive tools rail every
-// other tool capsule (harness/files, harness/terminal's shell plugin)
-// registers through. The registry also owns the seam claims, the
-// /tools command, the ToolsList panel and the prompt section.
+// The registry's contract: the tools capsule ships the grep + glob search tools.
 
 // TestPluginContract pins the plugin's identity + seams.
 func TestPluginContract(t *testing.T) {
@@ -35,9 +30,7 @@ func TestPluginContract(t *testing.T) {
 	}
 }
 
-// TestRegistryMountRegistersSearchTools: the mount registers the
-// grep + glob provider (one ToolProvider, two tools) plus a prompt
-// sectioner.
+// TestRegistryMountRegistersSearchTools: the mount registers the grep + glob provider.
 func TestRegistryMountRegistersSearchTools(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}
@@ -61,9 +54,7 @@ func TestRegistryMountRegistersSearchTools(t *testing.T) {
 	}
 }
 
-// TestSearchToolsShape pins the two single-purpose tools: names,
-// descriptions and that grep and glob are one-verb tools (no
-// sub-action split, the settled cut of card t_db98ebfe).
+// TestSearchToolsShape pins the two single-purpose tools.
 func TestSearchToolsShape(t *testing.T) {
 	p := NewSearchProvider(nil)
 	tools := p.Tools()

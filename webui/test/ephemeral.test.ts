@@ -1,10 +1,7 @@
-// omega webui: unit tests for the ephemeral chat contract (card
-// t_d96a5cd5). The wire half: streamChat carries the ephemeral flag.
-// The host half: the no-persist state binds the server-minted `eph-`
-// id, never marks read (no row to read), never retries (nothing
-// persisted to replay) and DELETEs the server record when the last
-// bound state closes (the contract: close = gone).
-// Run: node --test test/
+// omega webui: unit tests for the ephemeral chat contract. The host half: the
+// no-persist state binds the server-minted `eph-` id, never marks read (no row to
+// read), never retries (nothing persisted to replay) and DELETEs the server record when
+// the last bound state closes (the contract: close = gone).
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
@@ -40,8 +37,6 @@ afterEach(() => {
 });
 
 // a recording fetch: every call lands in the log as [method, url, body?].
-// respond is called per request (fresh response each time - a Response
-// body can be consumed once).
 type Call = [string, string, unknown?];
 function recordFetch(respond: () => Response) {
   const calls: Call[] = [];
@@ -113,8 +108,7 @@ describe("chat host: the ephemeral contract", () => {
     assert.equal(st.sessionId, "eph-xyz", "the server-minted eph id binds");
     const sendBody = calls[0]?.[2] as Record<string, unknown>;
     assert.equal(sendBody.ephemeral, true, "the run rides the ephemeral flag");
-    // the focused ephemeral tab STILL never sends the read-stamp: the
-    // PATCH would 204 into a store write that does not exist
+    // the focused ephemeral tab STILL never sends the read-stamp.
     assert.deepEqual(reads, [], "no read stamp for a session with no row");
   });
 
@@ -153,8 +147,7 @@ describe("chat host: the ephemeral contract", () => {
   });
 
   it("load() reattaches an eph id from the registry transcript (reload)", async () => {
-    // restore = the transcript endpoint, served from server memory:
-    // the user turn + the settled answer, running:false (the run ended)
+    // restore = the transcript endpoint, served from server memory.
     recordFetch(() =>
       ({
         ok: true,

@@ -1,8 +1,7 @@
 package core
 
-// The universal-mount vocabulary tests (v0.12 phase B): identity
-// parsing (Q10), the split-panic error shape (Q11), and the Refusal
-// ledger plumbing (Q12).
+// The universal-mount vocabulary tests (v0.12 phase B): identity parsing (Q10), the
+// split-panic error shape (Q11), and the Refusal ledger plumbing (Q12).
 
 import (
 	"errors"

@@ -12,8 +12,7 @@ import (
 	"time"
 )
 
-// pythonBin finds the Python binary at test time. Modern Linux distros
-// ship python3 but not python, so try both.
+// pythonBin finds the Python binary at test time.
 func pythonBin() string {
 	for _, name := range []string{"python3", "python"} {
 		if path, err := exec.LookPath(name); err == nil {
@@ -23,9 +22,7 @@ func pythonBin() string {
 	return "python3"
 }
 
-// fakeServerScript is a minimal MCP server over stdio: it reads
-// newline-delimited JSON-RPC from stdin and answers initialize,
-// tools/list, and tools/call with canned responses.
+// fakeServerScript is a minimal MCP server over stdio.
 const fakeServerScript = `import sys, json
 
 for line in sys.stdin:
@@ -63,8 +60,7 @@ for line in sys.stdin:
     sys.stdout.flush()
 `
 
-// writeFakeServer writes the fake MCP server script to a temp file and
-// returns its path.
+// writeFakeServer writes the fake MCP server script to a temp file and returns its.
 func writeFakeServer(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -75,9 +71,7 @@ func writeFakeServer(t *testing.T) string {
 	return path
 }
 
-// TestNewStdioServerHandshake verifies that newStdioServer spawns the
-// subprocess, completes the initialize handshake, and that listTools and
-// callTool round-trip through the real request/readLoop path.
+// TestNewStdioServerHandshake verifies that newStdioServer spawns the subprocess.
 func TestNewStdioServerHandshake(t *testing.T) {
 	script := writeFakeServer(t)
 	s, err := newStdioServer("fake", pythonBin(), []string{script}, nil)
@@ -111,8 +105,7 @@ func TestNewStdioServerHandshake(t *testing.T) {
 	}
 }
 
-// TestNewStdioServerBadCommand verifies the start-error branch returns an
-// error when the command does not exist.
+// TestNewStdioServerBadCommand verifies the start-error branch returns an error when.
 func TestNewStdioServerBadCommand(t *testing.T) {
 	_, err := newStdioServer("bad", "definitely-not-a-real-executable-xyz-12345", nil, nil)
 	if err == nil {
@@ -123,8 +116,7 @@ func TestNewStdioServerBadCommand(t *testing.T) {
 	}
 }
 
-// TestStdioServerClose verifies close terminates the subprocess promptly
-// without hanging.
+// TestStdioServerClose verifies close terminates the subprocess promptly without.
 func TestStdioServerClose(t *testing.T) {
 	script := writeFakeServer(t)
 	s, err := newStdioServer("fake", pythonBin(), []string{script}, nil)
@@ -146,8 +138,7 @@ func TestStdioServerClose(t *testing.T) {
 	}
 }
 
-// TestStdioServerEnv verifies env vars are passed through to the subprocess
-// by having the fake server echo an env var back via a tools/call.
+// TestStdioServerEnv verifies env vars are passed through to the subprocess by having.
 func TestStdioServerEnv(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "env_mcp_server.py")
@@ -186,9 +177,7 @@ for line in sys.stdin:
 	}
 }
 
-// TestStdioServerRequestRoundTrip verifies request() returns the parsed
-// result payload and that responses are routed by ID (two sequential
-// requests get distinct results).
+// TestStdioServerRequestRoundTrip verifies request returns the parsed result payload.
 func TestStdioServerRequestRoundTrip(t *testing.T) {
 	script := writeFakeServer(t)
 	s, err := newStdioServer("fake", pythonBin(), []string{script}, nil)
@@ -292,7 +281,5 @@ for line in sys.stdin:
 	if pending != 0 {
 		t.Fatalf("pending requests after cancellation: got %d, want 0", pending)
 	}
-	// No "connection is still usable" assertion here: the fake server is
-	// single-threaded and is still inside its 60s sleep for the abandoned
-	// call, so any follow-up request would only prove the fake is busy.
+	// No "connection is still usable" assertion here.
 }

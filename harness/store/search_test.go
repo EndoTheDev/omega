@@ -1,9 +1,8 @@
 package store
 
-// Search snippet verbatim contract (t_1901ce48): snippets are
-// byte-for-byte stored content - no in-band match markers, no
-// synthetic ellipses. Matched-term positions ride structured
-// metadata (core.SearchResult.Matches, byte offsets).
+// Search snippet verbatim contract: snippets are byte-for-byte stored content.
+// Matched-term positions ride structured metadata (core.SearchResult.Matches, byte
+// offsets).
 
 import (
 	"context"
@@ -40,9 +39,7 @@ func assertVerbatim(t *testing.T, s *Store, query, content string, wantSpans int
 		t.Fatalf("results = %d, want 1", len(results))
 	}
 	r := results[0]
-	// The snippet must be verbatim stored content: the raw text rides
-	// inside the stored envelope unchanged, no marker characters
-	// inserted anywhere.
+	// The snippet must be verbatim stored content.
 	if !strings.Contains(r.Snippet, content) {
 		t.Fatalf("snippet %q does not carry the stored content verbatim %q", r.Snippet, content)
 	}
@@ -64,9 +61,8 @@ func assertVerbatim(t *testing.T, s *Store, query, content string, wantSpans int
 	return r
 }
 
-// TestSearchSnippetVerbatim is the card's acceptance case: a term
-// stored without brackets never renders bracketed, and the span points
-// at the term.
+// TestSearchSnippetVerbatim is the card's acceptance case: a term stored without
+// brackets never renders bracketed, and the span points at the term.
 func TestSearchSnippetVerbatim(t *testing.T) {
 	s := searchFixture(t)
 	r := assertVerbatim(t, s, "PowerShell",
@@ -76,8 +72,7 @@ func TestSearchSnippetVerbatim(t *testing.T) {
 	}
 }
 
-// TestSearchSnippetLiteralBrackets: brackets that ARE content stay
-// content; the span still points at the plain term.
+// TestSearchSnippetLiteralBrackets: brackets that ARE content stay content.
 func TestSearchSnippetLiteralBrackets(t *testing.T) {
 	s := searchFixture(t)
 	assertVerbatim(t, s, "PowerShell",
@@ -91,11 +86,10 @@ func TestSearchSnippetMultipleMatches(t *testing.T) {
 		"echo one echo two echo three", 3)
 }
 
-// TestResolveSnippet pins the marked+plain referee (the store's live
-// envelope can never hold a raw sentinel byte - JSON escapes control
-// bytes - so the ambiguity lane is a pure unit case): a clean pair
-// parses to exact spans; a pair whose content side holds a sentinel
-// byte falls back to the plain verbatim with no spans.
+// TestResolveSnippet pins the marked+plain referee (the store's live envelope can never
+// hold a raw sentinel byte - JSON escapes control bytes - so the ambiguity lane is a
+// pure unit case): a clean pair parses to exact spans; a pair whose content side holds
+// a sentinel byte falls back to the plain verbatim with no spans.
 func TestResolveSnippet(t *testing.T) {
 	verbatim, spans := resolveSnippet("x \x01needle\x02 y and \x01needle\x02 again", "x needle y and needle again")
 	if verbatim != "x needle y and needle again" {
@@ -105,7 +99,6 @@ func TestResolveSnippet(t *testing.T) {
 	if len(spans) != 2 || spans[0] != want[0] || spans[1] != want[1] {
 		t.Fatalf("spans = %+v, want %+v", spans, want)
 	}
-	// The no-match case: marked equals plain, no spans.
 	if v, sp := resolveSnippet("plain text", "plain text"); v != "plain text" || sp != nil {
 		t.Fatalf("no-match case = %q %+v", v, sp)
 	}
@@ -118,9 +111,7 @@ func TestResolveSnippet(t *testing.T) {
 	}
 }
 
-// TestSearchSessionsVerbatim: the unified lane - a title hit carries
-// the label verbatim, a content hit carries verbatim content with the
-// spans, and no bracket markers survive on either.
+// TestSearchSessionsVerbatim: the unified lane.
 func TestSearchSessionsVerbatim(t *testing.T) {
 	s := searchFixture(t)
 	ctx := context.Background()
@@ -166,9 +157,7 @@ func TestSearchSessionsVerbatim(t *testing.T) {
 	}
 }
 
-// TestSearchToolSnippetVerbatim: the agent-facing sessions.search tool
-// output renders stored text verbatim, with only the label prefix as
-// presentation formatting.
+// TestSearchToolSnippetVerbatim: the agent-facing sessions.search tool output renders.
 func TestSearchToolSnippetVerbatim(t *testing.T) {
 	s := searchFixture(t)
 	ctx := context.Background()

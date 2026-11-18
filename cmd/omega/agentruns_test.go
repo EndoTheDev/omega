@@ -1,10 +1,6 @@
 package main
 
-// agentruns_test.go: the host's per-agent run factory (card t_a7fab745).
-// Law: the agent the chat floor runs for a home carries THAT home's
-// provider/model, system prompt and max_turns - the agent's config layer
-// over the home config, mounted the same way `omega run` mounts an
-// OMEGA_AGENT child.
+// agentruns_test.go: the host's per-agent run factory.
 
 import (
 	"context"
@@ -44,8 +40,7 @@ func TestAgentRunFactoryLayersTheHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build scout agent: %v", err)
 	}
-	// The daemon holds these mounts for its lifetime; the test releases
-	// them so windows can delete the temp home.
+	// The daemon holds these mounts for its lifetime.
 	defer func() {
 		if err := build.close(); err != nil {
 			t.Fatalf("close agent mounts: %v", err)
@@ -61,7 +56,6 @@ func TestAgentRunFactoryLayersTheHome(t *testing.T) {
 		t.Fatalf("agent max_turns = %d, want the layer's 9", got)
 	}
 
-	// One build per home per process: the second ask is the same agent.
 	again, err := build.agent(context.Background(), "scout")
 	if err != nil {
 		t.Fatalf("second build: %v", err)
@@ -70,7 +64,6 @@ func TestAgentRunFactoryLayersTheHome(t *testing.T) {
 		t.Fatal("the factory rebuilt the agent instead of serving the cached one")
 	}
 
-	// The daemon's own config is untouched by an agent build.
 	base, err := LoadConfig(resolveConfigPath(""))
 	if err != nil {
 		t.Fatalf("reload base config: %v", err)

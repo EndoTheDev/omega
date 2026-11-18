@@ -1,19 +1,11 @@
 package provider
 
-// The mock provider (`type: mock` in the provider section; card
-// t_150ce9fc) answers every request with a deterministic, network-free
-// response seeded by the request itself: same input, same output. It
-// implements agent.Provider at the same seam as the real transports,
-// so tests and journeys can run full agent flows without burning
-// provider tokens.
-//
-// Determinism contract: the seed is a hash over the identity-bearing
-// fields of the request (role, content, tool-call names and arguments)
-// and the behavior rules never consult clocks, randomness, or env. One
-// behavior rule drives the whole thing - the mock calls the FIRST
-// announced tool exactly once per fresh user prompt, and after it
-// consumes the tool result it answers with text. Every other turn is
-// a seeded text echo streamed in fixed-size chunks.
+// The mock provider answers every request with a deterministic, network-free response.
+// Determinism contract: the seed is a hash over the identity-bearing fields of the
+// request (role, content, tool-call names and arguments) and the behavior rules never
+// consult clocks, randomness, or env. One behavior rule drives the whole thing - the
+// mock calls the FIRST announced tool exactly once per fresh user prompt, and after it
+// consumes the tool result it answers with text.
 
 import (
 	"context"
@@ -58,9 +50,6 @@ func mockSeed(messages []map[string]any) string {
 }
 
 // streamMock produces the deterministic stream for typ "mock".
-// Behavior: last message a tool result (or no tools declared) -
-// stream the seeded text reply. Otherwise - one tool call for the
-// first announced tool, FinishReason "tool_call".
 func (p *Provider) streamMock(ctx context.Context, events chan<- core.ProviderStreamEvent, messages, tools []map[string]any) core.StreamEnd {
 	seed := mockSeed(messages)
 	var lastRole string
@@ -85,12 +74,7 @@ func (p *Provider) streamMock(ctx context.Context, events chan<- core.ProviderSt
 	return core.StreamEnd{Type: "stream_end", FinishReason: "stop"}
 }
 
-// mockToolCall builds the deterministic tool call for the first
-// announced tool. The id is stamped from how many assistant tool-call
-// turns the transcript already carries (so ids stay unique across
-// the loop), and required properties are filled from the schema:
-// strings take the seeded filler, numbers take 1, booleans take true,
-// collections take empties - every tool callable by the mock runs.
+// mockToolCall builds the deterministic tool call for the first announced tool.
 func mockToolCall(tool map[string]any, seed string, messages []map[string]any) core.ToolCall {
 	name, _ := tool["name"].(string)
 	seen := 0
@@ -119,8 +103,7 @@ func mockToolCall(tool map[string]any, seed string, messages []map[string]any) c
 	return core.ToolCall{ID: fmt.Sprintf("mock_call_%d", seen+1), Name: name, Arguments: args}
 }
 
-// mockFill derives the deterministic value for a required schema
-// property of the given JSON type.
+// mockFill derives the deterministic value for a required schema property of the.
 func mockFill(typ any, seed string) any {
 	switch typ {
 	case "string":
@@ -138,9 +121,7 @@ func mockFill(typ any, seed string) any {
 	}
 }
 
-// mockReply composes the seeded deterministic text: a one-line echo of
-// the prompt (the tool result it just consumed, on a post-tool turn)
-// prefixed with the seed tag. Truncated to keep the reply one line.
+// mockReply composes the seeded deterministic text.
 func mockReply(seed, prompt string, fromTool bool) string {
 	body := prompt
 	if fromTool {
@@ -163,8 +144,7 @@ func mockReply(seed, prompt string, fromTool bool) string {
 	return fmt.Sprintf("[mock %s %s] %s", who, seed, body)
 }
 
-// mockChunks streams the reply in fixed-size RUNE chunks so consumers
-// that care see real streaming shape instead of one mega chunk.
+// mockChunks streams the reply in fixed-size RUNE chunks so consumers that care see.
 func mockChunks(text string) []string {
 	const size = 16
 	runes := []rune(text)

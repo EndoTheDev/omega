@@ -2,10 +2,9 @@ package approval
 
 import "testing"
 
-// TestFDRedirectWritesPins pin the trust boundary (card t_2919b7a3):
-// every fd-prefixed redirect that targets a FILE writes - in the
-// spaced and in the unspaced shape - while the descriptor-dup forms
-// (2>&1, >&2) write no file and must read clean.
+// TestFDRedirectWritesPins pin the trust boundary: every fd-prefixed redirect that
+// targets a FILE writes - in the spaced and in the unspaced shape - while the
+// descriptor-dup forms (2>&1, >&2) write no file and must read clean.
 func TestFDRedirectWritesPins(t *testing.T) {
 	cases := []struct {
 		in  string
@@ -26,13 +25,11 @@ func TestFDRedirectWritesPins(t *testing.T) {
 		{in: "cmd 2<>log", want: true},
 		// writesThrough feeds the assessment; echo stays benign
 		{in: "echo hi", want: false},
-		// descriptor duplication writes no file - parses clean,
-		// reads as a non-write
+		// descriptor duplication writes no file - parses clean, reads as a non-write
 		{in: "echo hi 2>&1", want: false},
 		{in: "cmd 1>&2", want: false},
 		{in: "cmd >&2", want: false},
 		{in: "cmd 2>&12", want: false},
-		// input redirects read; heredocs read
 		{in: "grep x < in.txt", want: false},
 		{in: "python3 - <<'EOF'\nprint(1)\nEOF", want: false},
 	}
@@ -50,9 +47,8 @@ func TestFDRedirectWritesPins(t *testing.T) {
 	}
 }
 
-// TestFDRedirectAssess: writesThrough feeds the would-interrupt
-// decision (the trust boundary) - a stderr file write presenting as a
-// read is the WRONG direction to fail.
+// TestFDRedirectAssess: writesThrough feeds the would-interrupt decision (the trust
+// boundary).
 func TestFDRedirectAssess(t *testing.T) {
 	for _, cmd := range []string{
 		"echo hi 2> f.txt", "echo hi 2>> f.txt", "echo hi &> f.txt",
@@ -69,7 +65,6 @@ func TestFDRedirectAssess(t *testing.T) {
 				cmd, Assess(p).Reasons, p.ParseErr)
 		}
 	}
-	// the guard surfaces as would-interrupt (unparsable-command)
 	for _, cmd := range []string{"cmd 2>|f", "cmd 2>;", "cmd 2>&|x"} {
 		p := Parse(cmd)
 		if p.ParseErr == nil {

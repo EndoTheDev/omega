@@ -1,7 +1,4 @@
-// omega webui: unit tests for the transcript RESTORE path - the pure
-// mapping from GET /sessions/{id}/transcript wire items into the items
-// the chat renderer draws (the same shapes the live SSE stream paints;
-// no reload-side reconstruction). Run: node --test webui/test/ (node >= 23 runs TS natively)
+// omega webui: unit tests for the transcript RESTORE path.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -32,14 +29,12 @@ describe("renderTranscriptItems", () => {
     // user carries its store timestamp for ChatMessage's hover title
     assert.equal(items[0].kind === "message" && items[0].role, "user");
     assert.equal(items[0].kind === "message" && items[0].time, "t0");
-    // assistant bubble keeps the server-measured duration
     const answer = items[3];
     assert.equal(answer.kind, "message");
     if (answer.kind !== "message") return;
     assert.equal(answer.role, "assistant");
     assert.equal(answer.finalMs, 500);
     assert.equal(answer.time, "t3");
-    // thinking block keeps its server-measured span
     const think = items[1];
     assert.equal(think.kind, "thinking");
     if (think.kind !== "thinking") return;
@@ -77,7 +72,6 @@ describe("renderTranscriptItems", () => {
       { kind: "tool_result", tool_call_id: "tc11", content: "orphan" },
       { kind: "tool_result", tool_call_id: "tc12", content: "boom", is_error: true, elapsed_ms: 9 },
     ]);
-    // one line per call, in call order; an unmatched result renders nothing
     assert.deepEqual(items.map((i) => i.kind), ["tool", "tool"]);
     const a = items[0];
     assert.ok(a.kind === "tool");
@@ -133,9 +127,8 @@ describe("renderTranscriptItems", () => {
     assert.equal(items[0].name, "mystery");
   });
 
-  // the live-run merge (card t_692254f7 fix A): the run's in-flight
-  // items carry `running` and render as the shapes the live stream
-  // paints - one contract, two sources.
+  // the live-run merge: the run's in-flight items carry `running` and render as the
+  // shapes the live stream paints - one contract, two sources.
   it("a running tool_call renders the live line with its elapsed offset", () => {
     const items = renderTranscriptItems([
       {
@@ -150,7 +143,6 @@ describe("renderTranscriptItems", () => {
     assert.equal(items[0].status, "running");
     assert.equal(items[0].elapsedMs, 7000);
     assert.equal(items[0].finalMs, undefined, "no final duration while the call runs");
-    // a set result flag flips the line terminal even without the hint
     const settled = renderTranscriptItems([
       { kind: "tool_call", tool_call: { id: "tc2", name: "sh" }, running: true },
       { kind: "tool_result", tool_call_id: "tc2", content: "out" },
@@ -172,8 +164,7 @@ describe("renderTranscriptItems", () => {
       items[0].elapsedMs !== undefined && items[0].elapsedMs >= 8_500 && items[0].elapsedMs <= Date.now() - now + 9_500,
       `the restored row anchors on the call's start (got ${items[0].elapsedMs})`,
     );
-    // an answered call never carries a live offset - its result's final
-    // duration is the row's number
+    // an answered call never carries a live offset.
     const settled = renderTranscriptItems([
       { kind: "tool_call", tool_call: { id: "tc1", name: "shell.run" }, started_at: started },
       { kind: "tool_result", tool_call_id: "tc1", content: "done", elapsed_ms: 9_100 },
@@ -200,10 +191,8 @@ describe("renderTranscriptItems", () => {
     assert.equal(bubble.streaming, true, "open response block streams from the restored item");
   });
 
-  // card t_95385aba: the streaming segment's elapsed-so-far is the
-  // meter's anchor - a remount (tab switch / reload) counts on from it
-  // instead of restarting the answer's clock at zero. Persisted rows
-  // never carry it: they mount final.
+  // the streaming segment's elapsed-so-far is the meter's anchor. Persisted rows never
+  // carry it: they mount final.
   it("a running thinking/answer row carries the elapsed-so-far it counts on from", () => {
     const items = renderTranscriptItems([
       { kind: "thinking", content: "still going", running: true, elapsed_ms: 8400 },
@@ -223,12 +212,7 @@ describe("renderTranscriptItems", () => {
     assert.equal(settled.finalMs, 4100, "the server's measured span wins");
   });
 
-  // card t_484cbb27: a segment a tool call ended ships SETTLED on the
-  // live tail too - no running bit, its measured span in
-  // response_ms/thinking_ms - so a remount mid-call paints the frozen
-  // label instead of a meter ticking off a closed window, and the
-  // landing turn has nothing to snap. No client change is needed: the
-  // item shape rides the same two fields a persisted row already uses.
+  // a segment a tool call ended ships SETTLED on the live tail too.
   it("a tool call that ended the segment settles its text rows on the live tail", () => {
     const items = renderTranscriptItems([
       { kind: "thinking", content: "considered", thinking_ms: 2200 },
@@ -252,14 +236,9 @@ describe("renderTranscriptItems", () => {
   });
 });
 
-// --- the meter's LATE anchor: the consumed span arrives after mount ---
-// Card t_556bd2ad. The row's anchor (initialMs: the elapsed-so-far the
-// wire carries) can land AFTER the component mounted: a restored row only
-// flips to streaming once the stream attaches, and an id-less call gains
-// started_at on a later paint. useElapsed captured initialMs() once at
-// setup, so such a row showed 0 for the whole run. The acceptance: a fake
-// clock, initialMs 0, 30s pushed through the getter -> the label jumps
-// once, and a repeated or stale arrival never double-counts.
+// -- the meter's LATE anchor: the consumed span arrives after mount ---. The
+// acceptance: a fake clock, initialMs 0, 30s pushed through the getter -> the label
+// jumps once, and a repeated or stale arrival never double-counts.
 describe("useElapsed late anchor (the consumed span arrives after mount)", () => {
   // manual fake clock, the omega.test.ts shape: one stored tick callback
   function fakeMeter() {
@@ -298,16 +277,14 @@ describe("useElapsed late anchor (the consumed span arrives after mount)", () =>
     assert.deepEqual(t.labels, ["0ms"], "a row that mounted before its span starts at zero");
     t.advance(1000);
     assert.equal(t.last(), "1s");
-    // the span arrives: the call had already burned 30s before this row
-    // knew anything about it
+    // the span arrives: the call had already burned 30s before this row knew anything.
     consumed = 30_000;
     syncConsumedSpan(t.meter, anchor);
     assert.equal(t.last(), "30s", "the label jumps to the real elapsed");
     assert.equal(t.labels.length, 3, "and jumps exactly once");
     t.advance(1000);
     assert.equal(t.last(), "31s", "the meter counts on from the new anchor");
-    // a repeat of the same paint and a stale payload landing later are
-    // both no-ops - the anchor only moves forward
+    // a repeat of the same paint and a stale payload landing later are both no-ops.
     syncConsumedSpan(t.meter, anchor);
     assert.equal(t.labels.length, 4, "a repeated arrival emits nothing");
     consumed = 12_000;
@@ -325,8 +302,7 @@ describe("useElapsed late anchor (the consumed span arrives after mount)", () =>
     consumed = 30_000;
     syncConsumedSpan(t.meter, anchor);
     assert.equal(t.last(), "30s", "30s consumed is 30s, never 10s + 30s");
-    // a later paint of the same live call hands a bigger elapsed-so-far;
-    // it re-anchors to that value at the same instant
+    // a later paint of the same live call hands a bigger elapsed-so-far.
     consumed = 31_000;
     syncConsumedSpan(t.meter, anchor);
     assert.equal(t.last(), "31s", "a growing paint re-anchors without stacking");
@@ -342,8 +318,7 @@ describe("useElapsed late anchor (the consumed span arrives after mount)", () =>
     assert.deepEqual(t.labels, [], "a settled meter emits nothing");
     t.meter.start();
     assert.equal(t.last(), "30s", "the first start counts on from the arrived span");
-    // a row that already froze keeps its frozen label - a finished row's
-    // truth is finalMs, not a late anchor
+    // a row that already froze keeps its frozen label.
     t.meter.stop();
     const frozen = t.last();
     consumed = 45_000;
@@ -351,12 +326,7 @@ describe("useElapsed late anchor (the consumed span arrives after mount)", () =>
     assert.equal(t.last(), frozen, "a stopped meter never re-emits a late span");
   });
 
-  // The cases above drive the reconciler directly: they need a fake clock,
-  // and useElapsed arms a real interval that would hold the node event loop
-  // open (probed: a reactive `elapsedMs` pushed 0 -> 30000 + nextTick() DID
-  // move the label to "30s" through the real composable). The last link -
-  // that useElapsed actually watches the anchor - is therefore pinned
-  // structurally, the elapsedanchor.test.ts convention.
+  // The cases above drive the reconciler directly.
   it("useElapsed watches the anchor getter and hands it to the meter", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(join(here, "..", "app", "composables", "useElapsed.ts"), "utf8");
@@ -366,17 +336,7 @@ describe("useElapsed late anchor (the consumed span arrives after mount)", () =>
   });
 });
 
-// --- the verdict countdown anchor (card t_f13642bc) -------------------
-//
-// The card's acceptance is a live one ("switch tabs mid-countdown, the
-// label continues") and its mechanism is provable here. A dock-tab switch
-// remounts the pane (DockPane renders one outlet, no KeepAlive), so the
-// second look at a card comes from a SECOND createCanvasTranscript over
-// the same wire. The anchor belongs to the call id at module scope, so the
-// second pane reads what the first one resolved: the label continues
-// instead of restarting at full time (the retired behaviour: the anchor
-// was a Map inside the per-mount transcript, so a card four minutes into
-// a five-minute deadline read 5:00 again).
+// -- the verdict countdown anchor ------------------- The card's acceptance is a live.
 describe("verdict countdown anchor", () => {
   const VERDICT_TIMEOUT_S = 300;
 
@@ -419,7 +379,6 @@ describe("verdict countdown anchor", () => {
   }
 
   it("a remount mid-deadline continues: the server's start stamp is the anchor", () => {
-    // four minutes into a five-minute card - the case from the audit
     const startedAt = new Date(Date.now() - 4 * 60_000).toISOString();
     const row = verdictCallRow("v-remount-stamp", startedAt);
     const first = paneAnchor(createCanvasTranscript(), row);
@@ -429,7 +388,6 @@ describe("verdict countdown anchor", () => {
       Date.parse(startedAt),
       "the anchor is the call's server clock, not the paint's arrival",
     );
-    // the dock-tab switch: a fresh pane, the same wire
     const remounted = paneAnchor(createCanvasTranscript(), row);
     assert.equal(remounted.issuedAt, first.issuedAt, "the label continues on the call, never on the mount");
     const left = (first.issuedAt ?? 0) + VERDICT_TIMEOUT_S * 1000 - Date.now();
@@ -438,10 +396,7 @@ describe("verdict countdown anchor", () => {
 
   it("no server stamp: the call id's first sight holds across panes", () => {
     const row = verdictCallRow("v-remount-sight");
-    // The two panes are four minutes apart. Without a server stamp the
-    // ONLY thing that can carry the instant across the mount is module
-    // scope keyed by the call id: the retired per-pane Map minted a fresh
-    // Date.now() on the second sight, so the label read full time again.
+    // The two panes are four minutes apart.
     const realNow = Date.now;
     const first = (() => {
       Date.now = () => realNow() - 4 * 60_000;
@@ -463,7 +418,6 @@ describe("verdict countdown anchor", () => {
   it("a start stamp arriving on a later delta moves the anchor once, onto the truth", () => {
     const pane = createCanvasTranscript();
     const bare = paneAnchor(pane, verdictCallRow("v-late-stamp"));
-    // the item is mutated in place, so snapshot the first-sight instant
     const bareAt = bare.issuedAt ?? Date.now();
     const startedAt = new Date(bareAt - 4 * 60_000).toISOString();
     const stamped = paneAnchor(pane, verdictCallRow("v-late-stamp", startedAt));
@@ -477,7 +431,6 @@ describe("verdict countdown anchor", () => {
   it("a session switch never resets a card's anchor", () => {
     const pane = createCanvasTranscript();
     const card = paneAnchor(pane, verdictCallRow("v-cross-session"), "s1");
-    // another conversation takes the panel over, then this one returns
     pane.apply({
       session: "s2",
       rows: [{ role: "user", status: "complete", blocks: [{ type: "text", content: "other" }] }],
@@ -502,8 +455,7 @@ describe("verdict countdown anchor", () => {
     } as never)[0] as unknown as AnchorCard;
     assert.equal(settled.status, "settled");
     assert.equal(settled.issuedAt, undefined, "a settled card has no countdown to anchor");
-    // the server drops started_at once the result lands: the bare call row
-    // must not resurrect an anchor on the dead card
+    // the server drops started_at once the result lands: the bare call row must not.
     const repaint = paneAnchor(pane, verdictCallRow("v-settles"));
     assert.equal(repaint.status, "settled");
     assert.equal(repaint.issuedAt, undefined, "the spent anchor stays spent");

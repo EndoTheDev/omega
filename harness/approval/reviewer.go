@@ -14,17 +14,11 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// The reviewer client (design Q12 + the folded assumption): ONE
-// systemone forward pass per reviewed command, against the configured
-// keypool provider's /v1/systemone passthrough. No new HTTP knob -
-// the client is llm's shared one (http_timeout config), and the
-// practical budget lives keypool-side (~15-30s per request). Every
-// failure mode - unreachable, timeout, malformed answers - raises and
-// the caller escalates (Q4: fail-closed).
+// The reviewer client (design Q12 + the folded assumption). Every failure mode -
+// unreachable, timeout, malformed answers - raises and the caller escalates (Q4:
+// fail-closed).
 
 // reviewerEndpointPath is the keypool passthrough path under the host.
-// A host carrying /v1 (TypeSafe-style base_url) normalizes to the
-// same <root>/v1/systemone.
 const reviewerEndpointPath = "/v1/systemone"
 
 // Reviewer issues the six-question review for one command.
@@ -34,9 +28,7 @@ type Reviewer struct {
 	Model  string // approvals.model (decision family)
 }
 
-// questionsJSON is the six-question set, verbatim from the reference
-// (anpicasso/hermes-jev-approvals, MIT). The criteria are the
-// semantics; editing them re-fingerprints the request (audit).
+// questionsJSON is the six-question set, verbatim from the reference.
 func questionsJSON() map[string]any {
 	return map[string]any{
 		"verdict": map[string]any{
@@ -92,14 +84,11 @@ func questionsFingerprint() string {
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-// maxCommandChars caps the reviewed text (a heredoc or generated
-// pipeline must not make an unbounded body); the cut is marked so the
-// reviewer sees truncation instead of inferring a complete command.
+// maxCommandChars caps the reviewed text (a heredoc or generated pipeline must not make
+// an unbounded body).
 const maxCommandChars = 4000
 
 // Review sends one forward pass and returns the parsed six answers.
-// command is the parsed, redacted, answer-schema-stripped form (the
-// gate prepares it); flagged describes why the detector woke.
 func (r Reviewer) Review(ctx context.Context, command, flagged, policy string, hasPolicy bool) (Answers, error) {
 	state := map[string]any{"command": trunc(command)}
 	if flagged != "" {
@@ -139,11 +128,9 @@ func (r Reviewer) Review(ctx context.Context, command, flagged, policy string, h
 	return parseAnswers(raw)
 }
 
-// parseAnswers validates the typed answer shape (the reference's
-// validation, ported): an answers object, a known verdict choice,
-// noul probabilities in [0,1] for every signal question, the blast
-// score inside its rubric range. Malformed/missing answers RAISE -
-// the caller escalates (never read a missing hazard as absent).
+// parseAnswers validates the typed answer shape (the reference's validation, ported).
+// Malformed/missing answers RAISE - the caller escalates (never read a missing hazard
+// as absent).
 func parseAnswers(raw []byte) (Answers, error) {
 	var payload struct {
 		Answers map[string]map[string]any `json:"answers"`
@@ -212,9 +199,7 @@ func noul(answer map[string]any, key string) (float64, error) {
 	return finite(answer["noul"], key+".noul", -1)
 }
 
-// finite coerces one numeric answer: bools refuse, non-numbers
-// refuse, out-of-[0,1] refuses. def < 0 means "required" (no
-// default read).
+// finite coerces one numeric answer.
 func finite(raw any, where string, def float64) (float64, error) {
 	if _, isBool := raw.(bool); isBool {
 		return 0, fmt.Errorf("approval reviewer: %s is a bool, not a number", where)
@@ -227,8 +212,7 @@ func finite(raw any, where string, def float64) (float64, error) {
 			}
 			return def, nil
 		}
-		// JSON numbers unmarshal to float64; a string-typed number is
-		// the endpoint being wrong, not a value to coerce
+		// JSON numbers unmarshal to float64.
 		if s, isStr := raw.(string); isStr && def >= 0 && s == "" {
 			return def, nil
 		}

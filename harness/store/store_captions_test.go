@@ -5,9 +5,7 @@ import (
 	"testing"
 )
 
-// The image_captions roundtrip behind the captioner's store sink:
-// miss (not an error), save, hit, and the once-per-image discipline
-// (re-saving the same id keeps the first caption).
+// The image_captions roundtrip behind the captioner's store sink.
 func TestImageCaptionsRoundtrip(t *testing.T) {
 	st, err := Open(":memory:")
 	if err != nil {

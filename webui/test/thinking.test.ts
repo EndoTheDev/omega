@@ -1,9 +1,4 @@
-// omega webui: unit tests for the thinking display mode (card
-// t_428ed4fb). The pure logic (mode parsing, the open mapping) is
-// tested directly; the component wiring (the manual-pin override, the
-// settings knob) is pinned structurally, the composition-test
-// convention (same shape as test/toolrows.test.ts). Run:
-// node --test webui/test/ (node >= 23)
+// omega webui: unit tests for the thinking display mode.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -20,7 +15,7 @@ import {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "app");
 const src = (p: string) => readFileSync(join(root, p), "utf8");
 
-// --- parseThinkingDisplay: the localStorage round-trip ---
+// -- parseThinkingDisplay: the localStorage round-trip --
 
 test("parseThinkingDisplay accepts the two non-default modes", () => {
   assert.equal(parseThinkingDisplay("expanded"), "expanded");
@@ -37,7 +32,7 @@ test("parseThinkingDisplay falls back to auto on missing/tampered values", () =>
   assert.equal(parseThinkingDisplay({ auto: true }), "auto");
 });
 
-// --- thinkingWantOpen: the pure open mapping ---
+// -- thinkingWantOpen: the pure open mapping --
 
 test("only expanded forces the block open; auto/collapsed stay shut", () => {
   assert.equal(thinkingWantOpen("expanded"), true);
@@ -49,22 +44,18 @@ test("the shared mode key persists under omega.thinking-display", () => {
   assert.equal(THINKING_DISPLAY_KEY, "omega.thinking-display");
 });
 
-// --- structural wiring: the card's must-haves in the components ---
+// -- structural wiring: the card's must-haves in the components --
 
 test("ThinkingBlock pins a manual toggle and skips pinned recompute", () => {
   const t = src("components/chat/ThinkingBlock.vue");
-  // the element must be reachable: the details ref is the anchor every
-  // apply path reads - without it applyAuto no-ops forever
+  // the element must be reachable.
   assert.match(t, /<details\s+ref="el"/);
-  // the element stays UNCONTROLLED: the streaming-driven :open binding
-  // is gone (card t_428ed4fb superseded auto-expand-while-streaming)
+  // the element stays UNCONTROLLED: the streaming-driven:open binding is gone
   assert.doesNotMatch(t, /:open="streaming"/);
-  // the pin: a summary click records the post-toggle state and auto
-  // recompute (mount + mode watcher) skips pinned blocks
+  // the pin: a summary click records the post-toggle state and auto recompute (mount.
   assert.match(t, /@click="onSummaryClick"/);
   assert.match(t, /pinned\.value = !el\.value\.open/);
   assert.match(t, /applyAuto\(\) \{\s*\n\s*if \(pinned\.value !== null \|\| !el\.value\) return/);
-  // the mapping rides the shared composable, not a private copy
   assert.match(t, /useThinkingDisplay\(\)/);
   assert.match(t, /thinkingWantOpen\(display\.value\)/);
 });
@@ -81,7 +72,6 @@ test("the live thinking row drops the box face (card t_2739f125)", () => {
   const rule = css.slice(start, css.indexOf("}", start));
   assert.match(rule, /border-color:\s*transparent/, "the border's 1px stays (no geometry jump), the ink goes");
   assert.match(rule, /background:\s*none/, "the raised fill belongs to the artifact face only");
-  // the settled artifact face is untouched
   const baseStart = css.indexOf("\n.thinking {");
   assert.ok(baseStart !== -1, "base .thinking rule not found");
   const base = css.slice(baseStart, css.indexOf("}", baseStart));

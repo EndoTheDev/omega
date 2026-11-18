@@ -1,9 +1,8 @@
 package kanban
 
-// The reorder route tests (card t_09b44af1): PATCH after_id carries the
-// drag-order slot over the same /tasks/{id} route, the wire shape never
-// grows a position field (store-internal state), and bad slots answer
-// 400 - the board refetches and the card snaps back.
+// The reorder route tests: PATCH after_id carries the drag-order slot over the same
+// /tasks/{id} route, the wire shape never grows a position field (store-internal
+// state), and bad slots answer 400 - the board refetches and the card snaps back.
 
 import (
 	"encoding/json"
@@ -75,13 +74,11 @@ func TestPatchReorder(t *testing.T) {
 	b := postTask(t, ts.URL, "b-card")
 	c := postTask(t, ts.URL, "c-card")
 
-	// wire shape: the list arrives position-ordered with NO position field
 	got := listOrder(t, ts.URL)
 	if len(got) != 3 || got[0] != c || got[1] != b || got[2] != a {
 		t.Fatalf("initial order = %v (c,b,a expected)", got)
 	}
 
-	// slot a behind c: [c, a, b]
 	res, _ := patchBody(t, ts.URL, a, `{"status":"","after_id":"`+c+`"}`)
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("after_id patch = %d", res.StatusCode)
@@ -101,7 +98,6 @@ func TestPatchReorder(t *testing.T) {
 		t.Fatalf("cross-column order = %v, want c first", got)
 	}
 
-	// a bad slot answers 400 (board refetches, card snaps back)
 	res, raw := patchBody(t, ts.URL, a, `{"after_id":"t_ffffffff"}`)
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("bad after_id = %d", res.StatusCode)

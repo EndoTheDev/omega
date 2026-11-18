@@ -5,28 +5,19 @@ import (
 	"strings"
 )
 
-// The would-interrupt detector (design Q1): a rule-based filter over
-// the PARSED command. Only commands it flags reach the reviewer - in
-// smart mode the decision model, in manual mode the human card.
-// Benign tool traffic pays one pass, never a cloud call.
-//
-// The detector is deliberately over-eager, never under: a false ask
-// costs a click (or, in smart mode, one cheap forward pass - the
-// cache makes repeats free); a false pass costs whatever the command
-// does. It decides nothing - it only decides WHO looks next.
+// The would-interrupt detector (design Q1). Benign tool traffic pays one pass, never a
+// cloud call. The detector is deliberately over-eager, never under: a false ask costs a
+// click (or, in smart mode, one cheap forward pass - the cache makes repeats free); a
+// false pass costs whatever the command does.
 
 // Risk is the detector's verdict for one command.
 type Risk struct {
 	// WouldInterrupt - true when a reviewer must see it.
 	WouldInterrupt bool
-	// Reasons names the rules that fired, stable and greppable; they
-	// ride the audit row ("rules") and the reviewer prompt
-	// ("flagged_as").
 	Reasons []string
 }
 
-// wordSet is one rule's command vocabulary: basename form of words
-// whose ABSENCE in a segment means nothing risky via this rule.
+// wordSet is one rule's command vocabulary.
 type wordSet map[string]bool
 
 func set(words ...string) wordSet {
@@ -37,10 +28,7 @@ func set(words ...string) wordSet {
 	return m
 }
 
-// Plain vocabulary rules: any of these words anywhere in a segment's
-// parsed words flags the command. Substitution spans ($( ... ),
-// backticks) are opaque words - they surface via command-substitution,
-// not via a member scan of their inner text.
+// Plain vocabulary rules: any of these words anywhere in a segment's parsed words.
 var plainRules = []struct {
 	name  string
 	words wordSet
@@ -70,25 +58,19 @@ var plainRules = []struct {
 		"eval", "exec", "xargs", "nohup", "setsid")},
 }
 
-// Interpreters: run code a file or stdin carries - the one family
-// where the CODE is not the command text (a reviewer cannot read what
-// `bash script.sh` does), so any meaningful interpreter-invocation
-// flags. Version/probe args (--version, -V, -h) stay invisible to the
-// gate; code passed with -c/-e is visible but still runs unvetted -
-// it flags too, and the reviewer sorts benign one-liners.
+// Interpreters: run code a file or stdin carries - the one family where the CODE is not
+// the command text (a reviewer cannot read what `bash script.sh` does), so any
+// meaningful interpreter-invocation flags.
 var interpreters = set(
 	"bash", "sh", "zsh", "bash5", "dash", "ksh", "ash", "source", "node",
 	"deno", "python", "python2", "python3", "pypy", "pypy3", "perl",
 	"ruby", "php", "lua", "npx", "uvx", "bun", "javac")
 
-// interpreterInerts are interpreter args that execute nothing: probing
-// version/help only. A segment of JUST interpreter + inerts is no risk.
+// interpreterInerts are interpreter args that execute nothing.
 var interpreterInerts = set(
 	"--version", "-V", "-v", "-h", "--help", "-help", "--usage", "-?")
 
-// actionRules: (tool, action) pairs - install/remove-class invocations
-// of the package tools, and the git/history-touching family. Matching
-// walks forward from each tool word.
+// actionRules: (tool, action) pairs.
 var actionRules = []struct {
 	name string
 	tool map[string]wordSet
@@ -129,10 +111,8 @@ var actionRules = []struct {
 	}},
 }
 
-// gitHardDestruct: git subcommands only destructive with a flag
-// (reset --hard, checkout --force, push --force) - matched separately
-// so the plain (tool, action) scan can name the action, this scan the
-// hardness.
+// gitHardDestruct: git subcommands only destructive with a flag (reset --hard, checkout
+// --force, push --force).
 var gitHardFlags = set("--hard", "--force", "-f", "--prune", "--amend", "--no-gpg-sign", "--delete")
 
 // Assess runs the rule set over the parsed command. Substitution
@@ -171,11 +151,9 @@ func assessSegment(seg Segment) []string {
 	}
 	fired := map[string]bool{}
 
-	// interpreter invocation (any interpreter, any position): flag when
-	// the segment would run code the reviewer cannot certify - a bare
-	// interpreter (stdin REPL), a code-carrying flag (-c/-e/--eval),
-	// or an unvetted arg. Probe args (--version, -h) and test files
-	// (*.test.*) stay inert.
+	// interpreter invocation (any interpreter, any position): flag when the segment would
+	// run code the reviewer cannot certify - a bare interpreter (stdin REPL), a
+	// code-carrying flag (-c/-e/--eval), or an unvetted arg.
 	if segHitsInterpreter(seg) {
 		invoked, work := false, 0
 		for _, w := range seg.Words {
@@ -187,10 +165,7 @@ func assessSegment(seg Segment) []string {
 			switch {
 			case interpreterInerts[b], runnerFlags[b], b == "":
 			case strings.HasPrefix(b, "<<"), strings.HasPrefix(b, ">"):
-				// heredoc markers and redirect wrappers are not
-				// interpreter work: a heredoc body rides the command
-				// text itself (Q7 - the reviewer reads it), and its
-				// words are assessed as their own segments.
+				// heredoc markers and redirect wrappers are not interpreter work.
 			case interpreterCodeFlags[b]:
 				work++
 			case strings.Contains(w, ".test."):
@@ -205,9 +180,8 @@ func assessSegment(seg Segment) []string {
 			fired["script-execution"] = true
 		}
 	}
-	// a script file named as a command word: ./deploy.sh, bin/setup.sh
-	// (*.test.* files stay inert - the project's own declared test
-	// surface, e.g. `node --test test/*.test.ts`)
+	// a script file named as a command word:./deploy.sh, bin/setup.sh (*.test.* files stay
+	// inert.
 	for _, w := range seg.Words {
 		if hasScriptExtension(w) && !strings.Contains(w, ".test.") {
 			fired["script-execution"] = true
@@ -249,8 +223,7 @@ func assessSegment(seg Segment) []string {
 	return out
 }
 
-// actionsHit walks forward from every tool word: one of its actions
-// appears later in the segment.
+// actionsHit walks forward from every tool word.
 func actionsHit(seg Segment, tool map[string]wordSet) bool {
 	for i, w := range seg.Words {
 		actions, ok := tool[baseWord(w)]
@@ -267,9 +240,8 @@ func actionsHit(seg Segment, tool map[string]wordSet) bool {
 	return false
 }
 
-// toolsAreFlags removed: flag-form tools (pacman -Syu) are modeled by
-// (tool, action) pairs directly - `pacman` followed by `-S` matches
-// the action scan; no second table.
+// toolsAreFlags removed: flag-form tools (pacman -Syu) are modeled by (tool, action)
+// pairs directly.
 
 func gitHardFlagsHit(seg Segment) bool {
 	for i, w := range seg.Words {
@@ -291,9 +263,8 @@ func gitHardFlagsHit(seg Segment) bool {
 	return false
 }
 
-// segHitsInterpreter reports whether an interpreter word rides the
-// segment (any position; a piped-in REPL is as invisible-run as a
-// bare one).
+// segHitsInterpreter reports whether an interpreter word rides the segment (any
+// position.
 func segHitsInterpreter(seg Segment) bool {
 	for _, w := range seg.Words {
 		if interpreters[baseWord(w)] {
@@ -303,13 +274,12 @@ func segHitsInterpreter(seg Segment) bool {
 	return false
 }
 
-// runnerFlags: interpreter arguments that run a project's OWN declared
-// surface (node --test on the repo's *.test.* files) - routine dev
-// work, never an ask.
+// runnerFlags: interpreter arguments that run a project's OWN declared surface (node
+// --test on the repo's *.test.* files) - routine dev work, never an ask.
 var runnerFlags = set("--test", "--check", "--compile-only", "lint")
 
-// interpreterCodeFlags: flags whose value IS code (visible, but it
-// still executes unvetted - it flags and the reviewer sorts it).
+// interpreterCodeFlags: flags whose value IS code (visible, but it still executes
+// unvetted.
 var interpreterCodeFlags = set("-c", "-e", "-x", "--eval", "-X")
 
 // dataEgressHit: curl/wget/fetch that SENDS data (POST/PUT/form/
@@ -337,7 +307,7 @@ func dataEgressHit(seg Segment) bool {
 				j++
 				continue
 			}
-			// -XPOST / --request=POST fused forms
+			// XPOST / --request=POST fused forms
 			if strings.HasPrefix(ab, "-X") {
 				tail := strings.TrimPrefix(ab, "-X")
 				tail = strings.TrimPrefix(tail, "--request=")
@@ -350,10 +320,7 @@ func dataEgressHit(seg Segment) bool {
 	return false
 }
 
-// secretMaterialHit: credential-material paths and names ride the
-// would-interrupt set so the reviewer's reads_secrets question can
-// act on them (the reference's measured case: `cat id_rsa` was
-// approved on blast radius alone until the question existed).
+// secretMaterialHit: credential-material paths and names ride the would-interrupt set.
 var secretVocabulary = []string{
 	".ssh", "id_rsa", "id_ed25519", "id_ecdsa", ".aws/credentials",
 	".netrc", ".git-credentials", ".env", "auth.json", "keyring",
@@ -373,14 +340,7 @@ func secretMaterialHit(seg Segment) bool {
 	return false
 }
 
-// writesThrough reports redirect writes in parsed form. Redirect
-// forms live both spaced (the operator is its own word: `2> f.txt`)
-// and fused (2>err.log, &>all.log) - the tokenizer emits one redirect
-// token either way, so this reads whole words: strip the fd prefix
-// (2>, 21>, 2>>x keeps its fd prefix) and classify what remains. The
-// descriptor-dup forms (2>&1, >&2) copy a descriptor and write no
-// file - the one redirect shape that is not a write (t_2919b7a3.2).
-// tee writes whatever flows through it.
+// writesThrough reports redirect writes in parsed form.
 func writesThrough(seg Segment) bool {
 	for _, w := range seg.Words {
 		if w == "tee" {
@@ -389,8 +349,7 @@ func writesThrough(seg Segment) bool {
 		body := strings.TrimLeft(w, "0123456789") // fd prefix
 		switch {
 		case body == ">" || body == ">>":
-			// the operator stands alone; its file operand rides
-			// as the next word (spaced form) - a write either way
+			// the operator stands alone; its file operand rides as the next word (spaced form).
 			return true
 		case strings.HasPrefix(body, ">&"):
 			if isFDOperand(body[2:]) {
@@ -420,9 +379,7 @@ func isFDOperand(s string) bool {
 	return true
 }
 
-// hasScriptExtension reports whether a word names a script by
-// extension - the reviewer-visible static fact that the shell would
-// interpret the file.
+// hasScriptExtension reports whether a word names a script by extension.
 func hasScriptExtension(w string) bool {
 	low := strings.ToLower(baseWord(w))
 	if len(low) <= len(".sh") { // the bare extension and shorter
@@ -436,8 +393,7 @@ func hasScriptExtension(w string) bool {
 	return false
 }
 
-// baseWord strips a path prefix (basename) and trailing punctuation
-// so `/usr/bin/rm` and `install -m` match their command words.
+// baseWord strips a path prefix (basename) and trailing punctuation so `/usr/bin/rm`.
 func baseWord(w string) string {
 	if i := strings.LastIndexAny(w, "/"); i >= 0 {
 		w = w[i+1:]

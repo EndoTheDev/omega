@@ -1,10 +1,4 @@
 // Package prompt builds the omega system prompt.
-//
-// It is a generic assembler: identity, guidelines, project context,
-// environment, user-supplied custom/append, plus whatever sections
-// other modules contribute via the core.PromptSectioner seam. Modules
-// own their prompt content; this package owns only the assembly order.
-// It implements agent.PromptBuilder.
 package prompt
 
 import (
@@ -24,16 +18,12 @@ type PromptBuilder struct {
 	now  func() time.Time // injectable clock for tests
 }
 
-// NewPromptBuilder creates a PromptBuilder. Contributing prompt
-// sections are read from the Context at build time, so every
-// PromptSectioner plugin mounted anywhere is picked up.
+// NewPromptBuilder creates a PromptBuilder.
 func NewPromptBuilder(ctx *core.Context) *PromptBuilder {
 	return &PromptBuilder{pctx: ctx, now: time.Now}
 }
 
 // BuildPrompt assembles the full system prompt from the build options.
-// Returns (prompt, true) on success. It always returns true — the
-// prompt builder is the default source of the system prompt.
 func (b *PromptBuilder) BuildPrompt(_ context.Context, opts core.PromptBuildOptions) (string, bool) {
 	var sb strings.Builder
 	sb.WriteString("You are an AI coding agent with access to tools.\n")
@@ -75,10 +65,7 @@ func (b *PromptBuilder) BuildPrompt(_ context.Context, opts core.PromptBuildOpti
 	return sb.String(), true
 }
 
-// writeSections collects PromptSections from every contributing module
-// and renders them in stable order. Untitled sections render as raw
-// blocks with a blank line before and after; titled sections render
-// under a "## <Title>" heading.
+// writeSections collects PromptSections from every contributing module and renders.
 func (b *PromptBuilder) writeSections(sb *strings.Builder, opts core.PromptBuildOptions) {
 	if b.pctx == nil {
 		return
@@ -107,8 +94,7 @@ func (b *PromptBuilder) writeSections(sb *strings.Builder, opts core.PromptBuild
 	}
 }
 
-// Guidelines returns the default guideline lines appended under
-// "## Guidelines" in the system prompt.
+// Guidelines returns the default guideline lines appended under "## Guidelines" in.
 func (b *PromptBuilder) Guidelines() []string {
 	return []string{
 		"Use tools to read files and run commands before making assumptions.",

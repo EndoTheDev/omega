@@ -1,8 +1,4 @@
-// omega webui: unit tests for the ONE copy path (composables/clipboard.ts,
-// card t_a92450ea). Run: node --test webui/test/ (node 23+ runs TS natively).
-// The helper's two paths are exercised against hand-rolled globals:
-// navigator.clipboard in secure contexts, document.execCommand("copy") in
-// insecure ones - the plain-http lane's shape.
+// omega webui: unit tests for the ONE copy path.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -11,8 +7,7 @@ import { fileURLToPath, URL } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const srcFile = (rel: string): string => readFileSync(`${root}/${rel}`, "utf8");
 
-// node 21+ installs navigator as a getter on globalThis - defineProperty
-// (configurable) is the only installable shape
+// node 21+ installs navigator as a getter on globalThis.
 function installNavigator(value: any) {
   Object.defineProperty(globalThis, "navigator", {
     value,
@@ -30,9 +25,7 @@ function uninstallGlobals() {
   }
 }
 
-// stub the DOM bits execCommandCopy needs (append/remove/select/
-// setSelectionRange on the fake textarea all no-op - only the verdict
-// flow is under test, not real browser copy semantics)
+// stub the DOM bits execCommandCopy needs (append/remove/select/ setSelectionRange on.
 function stubGlobals(opts: {
   clipboardWrite?: (text: string) => Promise<void>;
   clipboardPresent?: boolean;
@@ -42,8 +35,6 @@ function stubGlobals(opts: {
     created: number;
     removed: number;
     commands: string[];
-    // card t_61cc8762: the value the fallback textarea actually held -
-    // the insecure lane's payload receipt
     fallbackText: () => string;
   } = {
     created: 0,
@@ -176,13 +167,11 @@ describe("copyText: the insecure path (plain-http lane)", () => {
   });
 });
 
-// --- card t_61cc8762: the sessions row's copy-id affordance ---------------
-// The row action lives in module UI (harness/store/ui/AppSidebar.vue) and
-// this suite has no DOM, so the contract is pinned in two halves: the
-// helper writes the EXACT id it is handed (behavior, both copy paths), and
-// the SFC call site routes through the composable with a verdict-branched
-// toast (shape). The browser witness is journey 115-session-copy-id (real
-// hover, real click, the live toast stack).
+// --: the sessions row's copy-id affordance --------------- The row action lives in
+// module UI (harness/store/ui/AppSidebar.vue) and this suite has no DOM, so the
+// contract is pinned in two halves: the helper writes the EXACT id it is handed
+// (behavior, both copy paths), and the SFC call site routes through the composable with
+// a verdict-branched toast (shape).
 
 const SESSION_ID = "jrn-13nov213000-copy-id";
 
@@ -231,9 +220,9 @@ describe("the sessions row's copy-id action (card t_61cc8762)", () => {
     assert.match(sidebar, /aria-label="Copy session id"/);
     assert.match(sidebar, /title="Copy session id"/);
     assert.match(sidebar, /@click\.stop="copySessionId\(s\.id\)"/, ".stop: a copy never opens the session");
-    // the cluster is what hover reveals (main.css: .session-list li:hover
-    // .row-actions) and what reserves the time slot - a button outside it
-    // would be always-visible chrome the row layout never carried
+    // the cluster is what hover reveals (main.css:.session-list li:hover.row-actions)
+    // and what reserves the time slot - a button outside it would be always-visible
+    // chrome the row layout never carried
     const clusterAt = sidebar.indexOf('class="row-actions"');
     const copyAt = sidebar.indexOf('class="icon-btn row-act row-copy-id"');
     const clusterEnd = sidebar.indexOf("</span>", clusterAt);
@@ -250,30 +239,22 @@ describe("the sessions row's copy-id action (card t_61cc8762)", () => {
   it("confirms on the shell's local toast funnel - no second toast stack", () => {
     assert.match(sidebar, /import \{ emitLocalToast \} from "~\/composables\/canvas"/);
     assert.equal((sidebar.match(/emitLocalToast\(/g) ?? []).length, 1, "one emit, the shared funnel");
-    // the payload is the record shape the funnel's consumer decodes
-    // (notificationFeed decodeToast: numeric id, kind task|cron|chat) -
-    // kind "chat" with a NON-session source_id, so a toast click opens
-    // nothing (app.vue's openNotification matches source_id against the
-    // session list and no-ops on a miss)
+    // the payload is the record shape the funnel's consumer decodes (notificationFeed
+    // decodeToast.
     assert.match(sidebar, /kind: "chat"/);
     assert.match(sidebar, /source_id: "session-copy"/);
     assert.match(sidebar, /read: true/, "a copy receipt never counts as unread");
-    // distinct fingerprints: the funnel dedupes identical payloads, so a
-    // repeated copy of the SAME id must carry a fresh timestamp or the
-    // second toast never fires
+    // distinct fingerprints: the funnel dedupes identical payloads, so a repeated copy
+    // of the SAME id must carry a fresh timestamp or the second toast never fires
     assert.match(sidebar, /created_at: new Date\(\)\.toISOString\(\)/);
-    // the confirmation follows the awaited verdict - a failed copy never
-    // reads as "copied"
+    // the confirmation follows the awaited verdict - a failed copy never reads as.
     assert.match(sidebar, /verdict: ok \? "ok" : "failed"/);
     assert.match(sidebar, /title: ok \? `copied session id \$\{id\}` : "copy failed/);
     assert.doesNotMatch(sidebar, /toasts?\s*=\s*ref/, "no private toast stack");
   });
 });
 
-// the copy-path law in one scan: the composable is the ONLY source naming
-// the clipboard API (card t_a92450ea's "no source outside that file" rule).
-// Comment text counts too - a copy-pasted snippet fails here before it can
-// lie in an insecure context.
+// the copy-path law in one scan.
 describe("the copy-path law: one file names the clipboard API", () => {
   function walk(dir: string): string[] {
     const out: string[] = [];

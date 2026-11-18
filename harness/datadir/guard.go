@@ -1,13 +1,4 @@
-// ENDO'S LAW 2026-10-18: omega must never touch its database through the
-// filesystem - only through the store seam and the task/session tools.
-// The deny guard lives beside the db-path layout it guards (datadir is
-// the instance-database's path authority), consumed by the tool
-// capsules (harness/files for the file tools, harness/terminal for
-// shell.run). The shell matcher also greps the raw command string for
-// the db basename - a deny-list is inherently heuristic (a determined
-// agent can base64 around it); this guard kills the accidental class,
-// the prompt law covers intent, and WAL + backups are the recovery
-// floor.
+// ENDO'S LAW: omega must never touch its database through the filesystem.
 
 package datadir
 
@@ -26,10 +17,8 @@ func DBDenied(what string) error {
 	return fmt.Errorf("REFUSED by ENDO'S LAW 2026-10-18: %s (requested: %s)", DBDenyLaw, what)
 }
 
-// Guard holds the real filesystem paths of the instance database
-// family (omega.db, omega.db-wal, omega.db-shm), symlink-resolved the
-// same way the files endpoints resolve paths. A nil Guard means no
-// instance home was determinable and everything passes.
+// Guard holds the real filesystem paths of the instance database family (omega.db. A
+// nil Guard means no instance home was determinable and everything passes.
 type Guard struct {
 	reals map[string]bool
 }
@@ -41,11 +30,7 @@ func dbSuffixed(dbPath string) []string {
 	return []string{dbPath, dbPath + "-wal", dbPath + "-shm"}
 }
 
-// NewGuard builds the deny set from the instance db path. The db
-// file may not exist yet (fresh home, created lazily by the store),
-// so resolution falls back to the real parent directory like the
-// files endpoints do. If path is empty, the standard install layout
-// (data db under OMEGA_HOME or ~/.omega) is used.
+// NewGuard builds the deny set from the instance db path.
 func NewGuard(dbPath string) *Guard {
 	if strings.TrimSpace(dbPath) == "" {
 		datadirHome := Home()
@@ -60,10 +45,9 @@ func NewGuard(dbPath string) *Guard {
 		if err != nil {
 			abs = filepath.Clean(cand)
 		}
-		// The unresolved cleaned path is a member too: a symlinked
-		// home parent (macOS /var, containers) must still be caught
-		// when EvalSymlinks of the leaf fails and only one of the two
-		// spellings is known.
+		// The unresolved cleaned path is a member too: a symlinked home parent (macOS /var,
+		// containers) must still be caught when EvalSymlinks of the leaf fails and only one
+		// of the two spellings is known.
 		g.reals[abs] = true
 		if real := realResolve(abs); real != "" {
 			g.reals[real] = true
@@ -72,10 +56,9 @@ func NewGuard(dbPath string) *Guard {
 	return g
 }
 
-// realResolve resolves a path through symlinks, tolerating a missing
-// leaf by resolving the real parent first - the same contract as
-// http_channel's resolveUnderRoot. Never fails: returns the cleaned
-// path when nothing better is known.
+// realResolve resolves a path through symlinks, tolerating a missing leaf by resolving
+// the real parent first - the same contract as http_channel's resolveUnderRoot. Never
+// fails: returns the cleaned path when nothing better is known.
 func realResolve(path string) string {
 	real, err := filepath.EvalSymlinks(path)
 	if err == nil {
@@ -91,8 +74,7 @@ func realResolve(path string) string {
 	return filepath.Clean(path)
 }
 
-// DenyFile reports whether a file-tool path resolves into the
-// instance database family.
+// DenyFile reports whether a file-tool path resolves into the instance database family.
 func (g *Guard) DenyFile(path string) bool {
 	if g == nil {
 		return false
@@ -106,12 +88,7 @@ func (g *Guard) DenyFile(path string) bool {
 	return false
 }
 
-// DenyShell reports whether a shell command is denied: either the raw
-// string spells the db basename, or some path-like token in it resolves
-// into the instance database family. Tokens are examined individually
-// so a harmless mention of the basename in a long command is still
-// evaluated by the stronger resolver-based check - but a bare basename
-// hit denies outright, since the command could be anything.
+// DenyShell reports whether a shell command is denied.
 func (g *Guard) DenyShell(command string) bool {
 	if g == nil {
 		return false

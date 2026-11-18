@@ -1,13 +1,8 @@
 package cron
 
-// sweep_test.go: the cronstate.json GC rule (card t_a99ffcd7). State
-// entries whose job no longer declares itself anywhere (main
-// crons.yaml + agent homes) are swept at Start and on every hot
-// reload, logged by name; a declared job's state is never touched,
-// disabled included. The observed drift this pins: a live home whose
-// crons.yaml declared jobs: [] while cronstate.json carried three
-// jrn-*-roster/wake entries pointing at roster agents from FINISHED
-// journey runs (one with no run record at all).
+// sweep_test.go: the cronstate.json GC rule. State entries whose job no longer declares
+// itself anywhere (main crons.yaml + agent homes) are swept at Start and on every hot
+// reload, logged by name; a declared job's state is never touched, disabled included.
 
 import (
 	"context"
@@ -20,11 +15,9 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// testWaitTimeout bounds every poll-until-true wait in this package's tests.
-// It exists to catch a HANG, not to time correctness: a healthy condition can
-// take seconds when the full suite runs packages in parallel and starves the
-// goroutine under test. Bounding it tightly (2-5s) made load-sensitive tests
-// red on a loaded machine and green in isolation - the worst kind of flake.
+// testWaitTimeout bounds every poll-until-true wait in this package's tests. It exists
+// to catch a HANG, not to time correctness: a healthy condition can take seconds when
+// the full suite runs packages in parallel and starves the goroutine under test.
 const testWaitTimeout = 30 * time.Second
 
 // writeState writes a cronstate.json fixture into home.
@@ -53,14 +46,13 @@ func readState(t *testing.T, home string) cronState {
 	return st
 }
 
-// waitForState polls until cronstate.json satisfies keep, or fails.
-// A transient read failure is a retry, not a verdict (card t_e9965bc6):
-// on Windows the runner's atomic save (saveCronState: tmp + os.Rename)
-// opens cronstate.json with DELETE access and no read-share for the
-// length of the rename, and a poll stepping into that window gets
-// ERROR_SHARING_VIOLATION from os.ReadFile. The poll deadline stays
-// the only failure clock; readState keeps failing loudly for the
-// tests that read the file with no concurrent writer.
+// waitForState polls until cronstate.json satisfies keep, or fails. A transient read
+// failure is a retry, not a verdict: on Windows the runner's atomic save
+// (saveCronState: tmp + os.Rename) opens cronstate.json with DELETE access and no
+// read-share for the length of the rename, and a poll stepping into that window gets
+// ERROR_SHARING_VIOLATION from os.ReadFile. The poll deadline stays the only failure
+// clock; readState keeps failing loudly for the tests that read the file with no
+// concurrent writer.
 func waitForState(t *testing.T, home string, keep func(cronState) bool) {
 	t.Helper()
 	deadline := time.Now().Add(testWaitTimeout)
@@ -84,11 +76,10 @@ func waitForState(t *testing.T, home string, keep func(cronState) bool) {
 	t.Fatalf("cronstate.json never reached the swept shape: %+v", st)
 }
 
-// The observed drift, replayed: crons.yaml declares jobs: [], the
-// state carries three jrn-* wake entries from finished journeys -
-// one fired clean, one errored, one never ran at all (a fire record
-// with no outcome). A real Start (the same path a serve boot runs:
-// loadCronState -> sweep -> catch-up) must drop all three.
+// The observed drift, replayed: crons.yaml declares jobs: [], the state carries three
+// jrn-* wake entries from finished journeys - one fired clean, one errored, one never
+// ran at all (a fire record with no outcome). A real Start (the same path a serve boot
+// runs: loadCronState -> sweep -> catch-up) must drop all three.
 func TestSweepRemovesObservedJourneyDriftOnStart(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {
@@ -189,9 +180,7 @@ func TestSweepKeepsDeclaredDropsStale(t *testing.T) {
 	}
 }
 
-// The live journey shape: an agent home with a declared wake is
-// removed (the recipe's rm -rf), the watcher-style reload re-loads
-// the job set without it, and the sweep drops its state entries.
+// The live journey shape: an agent home with a declared wake is removed (the recipe's.
 func TestSweepOnReloadAfterAgentHomeRemoved(t *testing.T) {
 	home := t.TempDir()
 	if err := os.WriteFile(filepath.Join(home, stateFileName), []byte("jobs: []\n"), 0o644); err != nil {
@@ -213,7 +202,6 @@ func TestSweepOnReloadAfterAgentHomeRemoved(t *testing.T) {
 		t.Fatal("fixture never recorded the wake")
 	}
 
-	// the journey's rm -rf: home gone, the reload re-reads without it
 	if err := os.RemoveAll(filepath.Join(home, "agents", "jrn-05-roster")); err != nil {
 		t.Fatal(err)
 	}

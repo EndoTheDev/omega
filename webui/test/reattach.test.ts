@@ -1,7 +1,4 @@
-// webui unit tests for the stream-reattach surface (card t_2f9b6110):
-// attachSession subscribes to the DETACHED server-side run's live events
-// (GET /sessions/<id>/events) and shares consumeSSE's frame grammar and
-// clean-end rule with streamChat. Run: node --test test/
+// webui unit tests for the stream-reattach surface.
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 

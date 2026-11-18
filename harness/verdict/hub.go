@@ -1,13 +1,5 @@
-// Package verdict implements verdict cards v1 (card t_2ecf9c51): the
-// agent issues a question mid-turn, the turn HARD-PAUSES inside the
-// verdict tool, and the user answers by click (webui) or type
-// (the CLI loop). Whichever surface answers first wins - the second answerer is
-// rejected with a reason, never double-applied. Advisory in v1: the
-// verdict is recorded as session messages; the agent then acts through
-// its normal tools. Nothing on the card executes automatically.
-//
-// Seam: verdicts (exclusive), tools (additive), store (read-only
-// persistence of the card + verdict records).
+// Package verdict implements verdict cards v1. Whichever surface answers first wins -
+// the second answerer is rejected with a reason, never double-applied.
 package verdict
 
 import (
@@ -24,65 +16,39 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// DefaultTimeout is the per-card default deadline (design Q5): twenty
-// minutes. A tool call's timeout_s argument overrides it per card.
+// DefaultTimeout is the per-card default deadline (design Q5): twenty minutes.
 const DefaultTimeout = 20 * time.Minute
 
-// cardHub is the consumer-side face the tool provider holds (part 3
-// seam constitution): the hub is the capsule's own implementation, so
-// this is the local face - just the ask. The offer under the
-// "verdicts" key is the mount-time registration; answering surfaces
-// declare their own read/write faces over the same wire types.
+// cardHub is the consumer-side face the tool provider holds (part 3 seam constitution).
 type cardHub interface {
 	Ask(ctx context.Context, card core.QuestionPrompt) (core.QuestionAnswer, error)
 }
 
-// answerSink is the consumer-side face of the CLI loop's busy-time
-// answering surface: read the pending cards, record the answer. The
-// hub satisfies it structurally; the host resolves the service by key.
+// answerSink is the consumer-side face of the CLI loop's busy-time answering surface.
 type answerSink interface {
 	Answer(sessionID, cardID string, v core.QuestionAnswer) (core.QuestionAnswer, error)
 	Pending(sessionID string) []core.QuestionPrompt
 }
 
-// The run-origin values the issuer gate compares (the launch surfaces
-// write them; the words stay stable on the wire while the identifiers
-// carry no capsule noun).
+// The run-origin values the issuer gate compares (the launch surfaces write them.
 const (
 	originScheduled = "cron"
 	originSubagent  = "delegate"
 )
 
-// Hub is the in-memory registry of verdict cards. Cards live in issued
-// order; the transcript persistence (core.QuestionCard / core.QuestionRecord rows,
-// via the store) is the durable audit trail - the hub itself survives
-// only for the process. A restart with still-pending cards leaves the
-// transcript's card unreconciled (no tool result) - the next run is not
-// blocked by it; a v2 card can reconcile against the store.
-//
-// ponytail: terminal cards stay in memory forever. Each is a few
-// hundred bytes and issuance is human-paced; the upgrade path is a
-// prune pass when the slice exceeds a few hundred entries.
+// Hub is the in-memory registry of verdict cards.
 type Hub struct {
 	store  agent.StoreProvider
 	logger agent.LoggerProvider
-	// deadline is the default per-card timeout when a call passes none.
 	deadline time.Duration
 
 	mu    sync.Mutex
 	cards []*cardState
-	// listeners are the issuance notifications (card t_ce2162cd): every
-	// function registered through OnCardRegistered is called once per
-	// card, right after the card enters the pending list. They are
-	// collected under mu and fired OUTSIDE it (a listener publishes on
-	// the push channel; holding the card lock across that call would
-	// order this hub behind a socket write for no reason).
+	// listeners are the issuance notifications.
 	listeners []func(core.QuestionPrompt)
 }
 
-// cardState is one card's identity plus its answer race: exactly one
-// resolution channel send wins (Answer or the expiry timer), and any
-// later Answer sees the settled state and returns the reason.
+// cardState is one card's identity plus its answer race: exactly one resolution.
 type cardState struct {
 	prompt       core.QuestionPrompt
 	answer       chan core.QuestionAnswer
@@ -96,26 +62,16 @@ type cardState struct {
 	text         string
 }
 
-// NewHub builds a hub. store is optional (ephemeral sessions and
-// store-less hosts skip persistence); logger optional.
+// NewHub builds a hub.
 func NewHub(store agent.StoreProvider, logger agent.LoggerProvider) *Hub {
 	return &Hub{store: store, logger: logger, deadline: DefaultTimeout}
 }
 
-// OnCardRegistered registers an issuance notification: fn is called
-// once per card, immediately after the card becomes pending (and
-// before Ask blocks), with the card as it was registered. It is the ONE
-// signal a surface needs to learn a card exists without polling -
-// answering surfaces pull Pending on it, and the serving shell pushes a
-// chat-topic hint from it (card t_ce2162cd: a smart-gate card registers
-// AFTER the tool-call hint window and the frozen run emits no further
-// frame, so issuance had no voice at all).
-//
-// Issuance only: Answer and expiry do not notify - the tool result on
-// the answer path already hints the shell. Listeners are called on the
-// Ask goroutine outside the hub lock, in registration order; a slow
-// listener delays that Ask's pause, so keep them cheap (the shell's
-// publish is one marshalled fan-out).
+// OnCardRegistered registers an issuance notification. Issuance only: Answer and expiry
+// do not notify - the tool result on the answer path already hints the shell. Listeners
+// are called on the Ask goroutine outside the hub lock, in registration order; a slow
+// listener delays that Ask's pause, so keep them cheap (the shell's publish is one
+// marshalled fan-out).
 func (h *Hub) OnCardRegistered(fn func(core.QuestionPrompt)) {
 	if fn == nil {
 		return
@@ -125,11 +81,7 @@ func (h *Hub) OnCardRegistered(fn func(core.QuestionPrompt)) {
 	h.mu.Unlock()
 }
 
-// Close is the host shutdown hook: it settles every still-pending card
-// so a later Answer is rejected cleanly, instead of delivering into a
-// dead tool call. A run's ctx cancellation already does this per card;
-// Close is the belt-and-braces sweep. Tests use it to unblock an Ask
-// deterministically without spinning a context cancellation.
+// Close is the host shutdown hook.
 func (h *Hub) Close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -141,10 +93,7 @@ func (h *Hub) Close() {
 	}
 }
 
-// Ask implements core.VerdictsProvider: registers the card, persists
-// the core.QuestionCard record, arms the expiry timer, and blocks until
-// an answer, the expiry, or ctx cancellation. ctx cancellation (run
-// stop / shutdown) settles the card; Close is the host-wide sweep.
+// Ask implements core.VerdictsProvider.
 func (h *Hub) Ask(ctx context.Context, card core.QuestionPrompt) (core.QuestionAnswer, error) {
 	if card.ID == "" {
 		id, err := agent.NewSessionID()
@@ -161,12 +110,8 @@ func (h *Hub) Ask(ctx context.Context, card core.QuestionPrompt) (core.QuestionA
 
 	state := &cardState{prompt: card, answer: make(chan core.QuestionAnswer, 1)}
 
-	// Persist the card BEFORE the pause - and before the card enters
-	// the pending list - so the audit trail always reads
-	// [verdict_card, verdict]: a surface only learns the card exists
-	// through Pending, which starts below. The session is card.SessionID
-	// (persistAs never scans); best effort, the question itself never
-	// fails on a persistence problem.
+	// Persist the card BEFORE the pause. The session is card.SessionID (persistAs never
+	// scans); best effort, the question itself never fails on a persistence problem.
 	h.persistAs(card.SessionID, core.NewQuestionCard(card.ID, card.Title, card.Body, card.Options, card.Multi, card.AllowText, card.TimeoutS))
 
 	h.mu.Lock()
@@ -174,10 +119,8 @@ func (h *Hub) Ask(ctx context.Context, card core.QuestionPrompt) (core.QuestionA
 	listeners := slices.Clone(h.listeners)
 	h.mu.Unlock()
 
-	// Issuance notification, OUTSIDE the lock: the card is answerable
-	// from here on, so every surface that watches for new cards may
-	// pull it. Fired before the pause below - Ask cannot answer itself,
-	// so a listener that reads Pending finds this card.
+	// Issuance notification, OUTSIDE the lock. Fired before the pause below - Ask cannot
+	// answer itself, so a listener that reads Pending finds this card.
 	for _, fn := range listeners {
 		fn(card)
 	}
@@ -192,8 +135,7 @@ func (h *Hub) Ask(ctx context.Context, card core.QuestionPrompt) (core.QuestionA
 		}
 		return v, nil
 	case <-ctx.Done():
-		// Run stop / shutdown: settle the card so a later Answer is
-		// rejected cleanly instead of delivering into a dead tool call.
+		// Run stop / shutdown: settle the card so a later Answer is rejected cleanly.
 		h.mu.Lock()
 		state.settled = true
 		h.mu.Unlock()
@@ -201,9 +143,8 @@ func (h *Hub) Ask(ctx context.Context, card core.QuestionPrompt) (core.QuestionA
 	}
 }
 
-// expire fires the card's safe answer (deny / no-pick): the waiter gets
-// Verdict{Expired: true}, the transcript records the expiry event.
-// A card that was answered first is untouched (the timer lost the race).
+// expire fires the card's safe answer (deny / no-pick). A card that was answered first
+// is untouched (the timer lost the race).
 func (h *Hub) expire(cardID string) {
 	h.mu.Lock()
 	c := h.byIDLocked(cardID)
@@ -216,9 +157,7 @@ func (h *Hub) expire(cardID string) {
 	record := core.NewVerdictRecord(cardID, nil, nil, "", false, true)
 	h.mu.Unlock()
 
-	// The record persists before Ask wakes: same contract as Answer -
-	// the waiter (the tool result) sees the expiry only after the audit
-	// row exists.
+	// The record persists before Ask wakes: same contract as Answer.
 	h.persist(record)
 	c.answer <- core.QuestionAnswer{CardID: cardID, Expired: true}
 
@@ -227,11 +166,9 @@ func (h *Hub) expire(cardID string) {
 	}
 }
 
-// Answer implements core.VerdictsProvider. cardID empty means the
-// session's OLDEST pending card (one run per session, so the common
-// case is exactly one; ambiguous cases name the count in the error and
-// leave the choice to the caller). First answer wins; every later
-// attempt errors with the reason.
+// Answer implements core.VerdictsProvider. cardID empty means the session's OLDEST
+// pending card (one run per session, so the common case is exactly one; ambiguous cases
+// name the count in the error and leave the choice to the caller).
 func (h *Hub) Answer(sessionID, cardID string, v core.QuestionAnswer) (core.QuestionAnswer, error) {
 	h.mu.Lock()
 	var c *cardState
@@ -260,10 +197,7 @@ func (h *Hub) Answer(sessionID, cardID string, v core.QuestionAnswer) (core.Ques
 			h.mu.Unlock()
 			return core.QuestionAnswer{}, fmt.Errorf("no pending verdict card %s", cardID)
 		}
-		// session boundary: a known card from another session cannot be
-		// answered through this session's surface (the URL is the
-		// boundary, v1). Empty sessionID trusts the card id (the /verdict
-		// /verdict command answers without a session context).
+		// session boundary: a known card from another session cannot be answered through.
 		if sessionID != "" && c.prompt.SessionID != sessionID {
 			h.mu.Unlock()
 			return core.QuestionAnswer{}, fmt.Errorf("verdict card %s belongs to a different session", cardID)
@@ -280,14 +214,10 @@ func (h *Hub) Answer(sessionID, cardID string, v core.QuestionAnswer) (core.Ques
 		return core.QuestionAnswer{}, fmt.Errorf("verdict card %s already answered", cardID)
 	}
 
-	// Validations per card shape (design point 1: ONE card shape):
-	// a pick must land on real option(s); free text only when the card
-	// allows it; a skip is always allowed and is recorded, never
-	// silent. A multi card takes option_indexes; a single card takes
-	// one option_index.
+	// Validations per card shape: a pick must land on real option(s); free text only when
+	// the card allows it; a skip is always allowed and is recorded, never silent.
 	switch {
 	case v.Skipped:
-		// always fine
 	case len(v.OptionIndexes) > 0:
 		if !c.prompt.Multi {
 			h.mu.Unlock()
@@ -336,9 +266,7 @@ func (h *Hub) Answer(sessionID, cardID string, v core.QuestionAnswer) (core.Ques
 	c.optionLabels = v.Options
 	c.text = v.Text
 	v.CardID = cardID
-	// a single pick rides OptionIndex/Option; a multi pick rides
-	// OptionIndexes/Options. The record normalizes both to the
-	// indexed shape so the audit row always names the pick(s).
+	// a single pick rides OptionIndex/Option; a multi pick rides OptionIndexes/Options.
 	ixs, labels := v.OptionIndexes, v.Options
 	if ixs == nil && v.OptionIndex > 0 {
 		ixs = []int{v.OptionIndex}
@@ -349,17 +277,15 @@ func (h *Hub) Answer(sessionID, cardID string, v core.QuestionAnswer) (core.Ques
 	record := core.NewVerdictRecord(cardID, ixs, labels, v.Text, v.Skipped, false)
 	h.mu.Unlock()
 
-	// The record persists before Ask wakes (the seam contract): the
-	// first answer returns - and the blocked turn resumes - only after
-	// its audit row exists, so the transcript can never read
-	// [verdict, verdict_card].
+	// The record persists before Ask wakes (the seam contract): the first answer returns -
+	// and the blocked turn resumes - only after its audit row exists, so the transcript
+	// can never read [verdict, verdict_card].
 	h.persist(record)
 	c.answer <- v
 	return v, nil
 }
 
-// Pending implements core.VerdictsProvider: unanswered, unexpired
-// cards, oldest first. Empty filter lists every session.
+// Pending implements core.VerdictsProvider: unanswered, unexpired cards, oldest first.
 func (h *Hub) Pending(sessionID string) []core.QuestionPrompt {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -373,7 +299,6 @@ func (h *Hub) Pending(sessionID string) []core.QuestionPrompt {
 			continue
 		}
 		if now.After(c.prompt.ExpiresAt) {
-			// the timer has not fired yet; the card is dead either way
 			continue
 		}
 		out = append(out, c.prompt)
@@ -392,10 +317,9 @@ func (h *Hub) byIDLocked(cardID string) *cardState {
 	return nil
 }
 
-// persist appends one record to the session transcript when the hub
-// has a store and knows the session. Best effort: a persistence
-// failure logs and moves on - the question itself must not fail
-// because the audit row could not be written.
+// persist appends one record to the session transcript when the hub has a store and.
+// Best effort: a persistence failure logs and moves on - the question itself must not
+// fail because the audit row could not be written.
 func (h *Hub) persist(msg core.Message) {
 	if h.store == nil {
 		return
@@ -416,21 +340,16 @@ func (h *Hub) persist(msg core.Message) {
 	h.persistAs(session, msg)
 }
 
-// persistAs is persist with the session already known - the Ask path
-// uses it so the card row lands before the card becomes answerable
-// (registration), not just before the pause. An empty session (a card
-// the hub never registered under a session) persists nothing.
+// persistAs is persist with the session already known.
 func (h *Hub) persistAs(session string, msg core.Message) {
 	cardID := cardOf(msg)
 	if h.store == nil || session == "" || cardID == "" {
 		return
 	}
-	// Ephemeral sessions (the `eph-` namespace minted by the HTTP
-	// channel) live in memory only. A card issued there must keep its
-	// records out of the store: an `eph-` row on disk is a durable
-	// transcript under an id no store read serves - it would never be
-	// read back and never be deleted (the ephemeral nothing-on-disk
-	// law). Skip persistence wholesale for the namespace.
+	// Ephemeral sessions (the `eph-` namespace minted by the HTTP channel) live in. A card
+	// issued there must keep its records out of the store: an `eph-` row on disk is a
+	// durable transcript under an id no store read serves - it would never be read back
+	// and never be deleted (the ephemeral nothing-on-disk law).
 	if strings.HasPrefix(session, "eph-") {
 		return
 	}
@@ -452,11 +371,7 @@ func cardOf(msg core.Message) string {
 	return ""
 }
 
-// resultMap is the wire shape the verdict TOOL RESULT carries
-// back to the model (the loop persists it through the normal tool
-// result path). Flat and small: the agent reads it, acts through its
-// normal tools, nothing executes off it. A multi answer adds the
-// selected indexes and their labels.
+// resultMap is the wire shape the verdict TOOL RESULT carries back to the model (the.
 func resultMap(v core.QuestionAnswer) string {
 	out := map[string]any{
 		"card_id": v.CardID,

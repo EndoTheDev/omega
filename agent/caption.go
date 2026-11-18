@@ -8,19 +8,14 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// visionCapability is the registry flag a model carries when it accepts
-// image input (the ollama-family /api/tags "capabilities" array, passed
-// through by the keypool mirror: ["completion","tools","thinking",
-// "vision","decision"]).
+// visionCapability is the registry flag a model carries when it accepts image input.
 const visionCapability = "vision"
 
-// captionSwitch is the consumer-owned face a captioner MAY satisfy to
-// report whether its lane is on (card t_bf21ee07). The host installs
-// the captioner from boot so the vision_model knob can flip live, which
-// makes "off" a state rather than a missing pointer: a captioner that
-// answers false is skipped exactly like a nil one (images ride to the
-// main provider and a blind model fails loudly - the documented
-// fallback). A captioner with no such face is always on.
+// captionSwitch is the consumer-owned face a captioner MAY satisfy to report whether.
+// The host installs the captioner from boot so the vision_model knob can flip live,
+// which makes "off" a state rather than a missing pointer: a captioner that answers
+// false is skipped exactly like a nil one (images ride to the main provider and a blind
+// model fails loudly - the documented fallback).
 type captionSwitch interface {
 	CaptioningEnabled() bool
 }
@@ -36,12 +31,7 @@ func captionerActive(c core.Captioner) bool {
 	return true
 }
 
-// modelSeesImages reports whether the run's SELECTED model declares the
-// vision capability in its provider's model registry
-// (agent.ModelCapabilitiesProvider). The upgrade is probed at runtime:
-// a name-only provider (openai/anthropic id lists), a model missing
-// from the listing, and a listing failure all answer false - the aux
-// hop stays, which is the pre-existing behavior.
+// modelSeesImages reports whether the run's SELECTED model declares the vision.
 func modelSeesImages(p Provider) bool {
 	lp, ok := p.(ModelCapabilitiesProvider)
 	if !ok {
@@ -66,18 +56,13 @@ func modelSeesImages(p Provider) bool {
 	return false
 }
 
-// captionProviderKey is the context key carrying the provider the run
-// itself streams through. An auxiliary lane stored under the "default"
-// sentinel reads it per call, so the choice never freezes to whatever
-// model (or provider instance) happened to be selected when the knob was
-// saved.
+// captionProviderKey is the context key carrying the provider the run itself streams.
+// An auxiliary lane stored under the "default" sentinel reads it per call, so the
+// choice never freezes to whatever model (or provider instance) happened to be selected
+// when the knob was saved.
 type captionProviderKey struct{}
 
-// WithCaptionProvider stamps the run's provider onto the context for the
-// auxiliary caption hop. Called by applyCaptions with the provider THIS
-// run uses - the per-request copy the channel built from the composer's
-// chip - so the "default" vision lane follows a model switch (or a named
-// provider instance) without any config write.
+// WithCaptionProvider stamps the run's provider onto the context for the auxiliary.
 func WithCaptionProvider(ctx context.Context, provider Provider) context.Context {
 	if provider == nil {
 		return ctx
@@ -85,27 +70,18 @@ func WithCaptionProvider(ctx context.Context, provider Provider) context.Context
 	return context.WithValue(ctx, captionProviderKey{}, provider)
 }
 
-// CaptionProvider returns the run provider WithCaptionProvider recorded
-// (nil for a captioner invoked outside a run).
+// CaptionProvider returns the run provider WithCaptionProvider recorded (nil for a.
 func CaptionProvider(ctx context.Context) Provider {
 	provider, _ := ctx.Value(captionProviderKey{}).(Provider)
 	return provider
 }
 
-// applyCaptions rewrites image-carrying user messages for the MAIN
-// model: each image is described once (the Captioner owns the cache)
-// and the loop-visible copy carries the caption as a text block with
-// the binary stripped, so a caption-only main model never receives
-// image content. A main model the registry marks vision-capable is
-// left alone - the pixels ride to it directly and the auxiliary hop is
-// skipped (no duplicate image processing).
-// The input slice and its messages are left untouched -
-// channels persist and re-render the originals.
-//
-// A captioning failure is loud and attributed: the run ends with an
-// error naming the captioner, not a provider 400 masquerading as a
-// model refusal. Moved with the Agent machinery (part 3, wave 2) - the
-// agent consumes the captioner; core keeps the face (core.Captioner).
+// applyCaptions rewrites image-carrying user messages for the MAIN model: each image is
+// described once (the Captioner owns the cache) and the loop-visible copy carries the
+// caption as a text block with the binary stripped, so a caption-only main model never
+// receives image content. A main model the registry marks vision-capable is left alone
+// - the pixels ride to it directly and the auxiliary hop is skipped (no duplicate image
+// processing).
 func (a *Agent) applyCaptions(ctx context.Context, provider Provider, messages []core.Message) ([]core.Message, error) {
 	if !captionerActive(a.captioner) {
 		return messages, nil
@@ -120,20 +96,16 @@ func (a *Agent) applyCaptions(ctx context.Context, provider Provider, messages [
 	if !hasImages {
 		return messages, nil
 	}
-	// The aux hop exists for a BLIND main model. When the selected model
-	// declares vision in its registry, the pixels go to it directly:
-	// captioning would duplicate the image work (two provider calls, two
-	// image passes) for a model that can already see.
+	// The aux hop exists for a BLIND main model. When the selected model declares vision
+	// in its registry, the pixels go to it directly: captioning would duplicate the image
+	// work (two provider calls, two image passes) for a model that can already see.
 	if modelSeesImages(provider) {
 		if a.logger != nil {
 			a.logger.Printf("captioner: %s sees images - auxiliary vision hop skipped", provider.ModelName())
 		}
 		return messages, nil
 	}
-	// The default-sentinel aux lane resolves its provider per call: stamp
-	// the provider THIS run streams through (the composer's chip model on
-	// the channel, the host default elsewhere) so a captioner stored as
-	// "default" follows a main-model switch with no config write.
+	// The default-sentinel aux lane resolves its provider per call.
 	ctx = WithCaptionProvider(ctx, provider)
 	out := make([]core.Message, len(messages))
 	copy(out, messages)
@@ -161,24 +133,15 @@ func (a *Agent) applyCaptions(ctx context.Context, provider Provider, messages [
 	return out, nil
 }
 
-// Captioner moved to core with the agent (arc 1b); the agent's
-// RunWithProvider caption path references it. Consumers import it from
-// core.Captioner (no re-exports at intermediate layers).
+// Captioner moved to core with the agent (arc 1b).
 
-// CaptionStore persists computed captions keyed by image content.
-// Optional: the captioner's in-process cache covers one process's
-// lifetime; the sink is what makes turn 2 (and any other session that
-// carries the same image) a cache hit after a restart. Implemented by
-// the store extension as a separate narrow interface, so StoreProvider
-// consumers never need to know captions exist.
+// CaptionStore persists computed captions keyed by image content. Implemented by the
+// store extension as a separate narrow interface, so StoreProvider consumers never need
+// to know captions exist.
 type CaptionStore interface {
-	// GetImageCaption returns the persisted caption for the image id
-	// (sha256 of the payload, see CaptionStore's implementor), or
-	// ok=false when none is stored. A read failure is an error, not a
-	// miss.
+	// GetImageCaption returns the persisted caption for the image id (sha256 of the.
 	GetImageCaption(ctx context.Context, imageID string) (caption string, ok bool, err error)
-	// SaveImageCaption persists one caption. Failure is logged and
-	// ignored by the captioner - an unpersisted caption only costs a
-	// later re-caption, never the turn.
+	// SaveImageCaption persists one caption. Failure is logged and ignored by the
+	// captioner - an unpersisted caption only costs a later re-caption, never the turn.
 	SaveImageCaption(ctx context.Context, imageID, caption string) error
 }

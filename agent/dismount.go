@@ -1,9 +1,7 @@
-// The teardown machinery (v0.12 phase E1, implementation sketch 2,
-// grill Q3/Q11): Dismount replays a module's contributions backward;
-// DismountAll replays MountAllAPI's recorded topo order in REVERSE. A
-// runtime remount mounts through the scoped Context proxy with split
-// panic semantics: boot re-panics loudly naming the module; a remount
-// panic rolls back, rejects the toggle and the server keeps running.
+// The teardown machinery (v0.12 phase E1, implementation sketch 2, grill Q3/Q11). A
+// runtime remount mounts through the scoped Context proxy with split panic semantics:
+// boot re-panics loudly naming the module; a remount panic rolls back, rejects the
+// toggle and the server keeps running.
 package agent
 
 import (
@@ -14,21 +12,16 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Dismounter is an optional Plugin capability (v0.12 E1): module-
-// internal teardown beyond the Context - state the mount opened that
-// the journal cannot see (a connection, a watcher). Context surface
-// is journaled and dismounts automatically.
+// Dismounter is an optional Plugin capability (v0.12 E1): module- internal teardown
+// beyond the Context - state the mount opened that the journal cannot see (a
+// connection, a watcher).
 type Dismounter interface {
-	// Dismount removes every registration the mount made.
 	Dismount(ctx *core.Context) error
 }
 
-// DismountAll dismounts the mounted plugin set in the REVERSE of
-// MountAllAPI's recorded topo order: last mounted, first removed, so a
-// module is always torn down before the seam it consumed. Every
-// module must prove its teardown - journaled (mounted through the
-// ExtensionAPI) or a Dismount implementation - or the proof fails
-// loud naming it.
+// DismountAll dismounts the mounted plugin set in the REVERSE of MountAllAPI's recorded
+// topo order. Every module must prove its teardown - journaled (mounted through the
+// ExtensionAPI) or a Dismount implementation - or the proof fails loud naming it.
 func DismountAll(reg *Registry, ctx *core.Context) error {
 	for i := len(reg.mountOrder) - 1; i >= 0; i-- {
 		name := reg.mountOrder[i].Name()
@@ -42,13 +35,11 @@ func DismountAll(reg *Registry, ctx *core.Context) error {
 	return nil
 }
 
-// mountOne is the one mount path boot and remount share (Q7:
-// boot-skip and the UI toggle mount through the same code). The phase
-// selects only the panic semantics and which Context the writes land
-// on - the live Context (boot, applied directly) or the scoped proxy
-// (remount, applied at commit). On success it returns the module's
-// journal for the caller to commit (remount) or keep (boot, already
-// applied and recorded).
+// mountOne is the one mount path boot and remount share (Q7. The phase selects only the
+// panic semantics and which Context the writes land on - the live Context (boot,
+// applied directly) or the scoped proxy (remount, applied at commit). On success it
+// returns the module's journal for the caller to commit (remount) or keep (boot,
+// already applied and recorded).
 func mountOne(target *core.Context, reg *Registry, p Plugin, remount bool) (j *journal, err error) {
 	j = newJournal(p.Name())
 	defer func() {
@@ -63,9 +54,8 @@ func mountOne(target *core.Context, reg *Registry, p Plugin, remount bool) (j *j
 				"add %q to \"disabled\" in config.yaml", p.Name()),
 		}
 		if remount {
-			// The Context side died with the scoped proxy - the
-			// live Context never saw those writes; the registry
-			// side landed live and plays backward.
+			// The Context side died with the scoped proxy - the live Context never saw those
+			// writes.
 			j.playBackRegistry(reg)
 			err = mpe
 			return
@@ -95,7 +85,6 @@ func mountOne(target *core.Context, reg *Registry, p Plugin, remount bool) (j *j
 			continue
 		}
 		for name, t := range tp.Tools() {
-			// Alias entries are model-facing compat shims, not inventory.
 			if t.AliasOf != "" {
 				continue
 			}
@@ -131,13 +120,9 @@ func (reg *Registry) bootMount(target *core.Context, p Plugin) error {
 	return nil
 }
 
-// Mount mounts one plugin into the live Context (the runtime enable
-// path, Q7): all writes land on a scoped Context proxy - a shallow
-// copy - and nothing touches the live Context until commit replays
-// the journal forward. A panic plays backward and returns as
-// *core.ModulePanicError: rejected toggle, zero contributions, the
-// server keeps running. deps arms the module's fence handles after
-// the commit; a zero StartDeps mounts without starting anything.
+// Mount mounts one plugin into the live Context (the runtime enable path, Q7). A panic
+// plays backward and returns as *core.ModulePanicError: rejected toggle, zero
+// contributions, the server keeps running.
 func (r *Registry) Mount(ctx *core.Context, p Plugin, deps core.StartDeps) error {
 	r.mu.Lock()
 	already := r.active[p.Name()]
@@ -165,10 +150,7 @@ func (r *Registry) Mount(ctx *core.Context, p Plugin, deps core.StartDeps) error
 	return nil
 }
 
-// Dismount removes one mounted module: its fence handles stop first,
-// then the module's own Dismount hook (module-internal state), then
-// the journal plays backward. Every mount is journaled (the universal
-// mount is the only mount path) - the Context surface always reverses.
+// Dismount removes one mounted module.
 func (r *Registry) Dismount(ctx *core.Context, name string) error {
 	r.mu.Lock()
 	j := r.journals[name]

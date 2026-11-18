@@ -1,6 +1,6 @@
 package skills
 
-// edit.go: the webui skill editor's write face (card t_0a108f16, the
+// edit.go: the webui skill editor's write face
 // skills tab CRUD capsule round). The tab showed the inventory and
 // opened one SKILL.md in the viewer tab; the editor creates, rewrites
 // and removes skills - the human's own surface for the skill folders
@@ -8,15 +8,15 @@ package skills
 //
 // Three write laws, one per operation:
 //
-//   Create  composes the file fresh (--- / description: / ---) exactly
+// Create composes the file fresh (--- / description: / ---) exactly
 //           the way the write action composes it - the loader's parse
 //           of what was written is the shape proof.
-//   Update  rewrites the BODY and the description line while every
+// Update rewrites the BODY and the description line while every
 //           frontmatter key the operator wrote stays byte-true: the
 //           editor owns the markdown, never the whole frontmatter.
 //           The merge-winner rule picks the file (shared first), the
 //           same file the reader tool and the runUpdate action patch.
-//   Delete  backs the folder up into .curator/backups, ledger row
+// Delete backs the folder up into.curator/backups, ledger row
 //           attached, and removes it - a removal is receipted, never
 //           a silent rm.
 
@@ -29,14 +29,7 @@ import (
 	"strings"
 )
 
-// SaveSkill upserts one skill from the editor's voice: the name is the
-// folder (the folder-name law), the description the one frontmatter
-// line, the body the markdown under the fence. An existing name is an
-// update (frontmatter preserved); a new name is a create. The editor
-// is the human's voice, so no author frontmatter line is composed -
-// `author` stays the domain write action's provenance class. The
-// answer is the fresh listing (one response carries the state it
-// landed - the cron save route's law).
+// SaveSkill upserts one skill from the editor's voice.
 func (sp *SkillsProvider) SaveSkill(name, description, body string) ([]Skill, error) {
 	name = strings.TrimSpace(name)
 	if !validSkillName(name) {
@@ -55,15 +48,11 @@ func (sp *SkillsProvider) SaveSkill(name, description, body string) ([]Skill, er
 	if sp.Dir == "" {
 		return nil, fmt.Errorf("skills directory not configured")
 	}
-	// one trailing newline: the body seats under the fence in the
-	// loader-neutral shape, however the textarea handed it over
+	// one trailing newline: the body seats under the fence in the loader-neutral shape.
 	body = strings.TrimRight(body, "\n") + "\n"
 
 	if skillFile, err := sp.resolveSkillFile(name); err == nil {
-		// update: the merge-winner's file, the operator's frontmatter
-		// keys preserved, only the description line rewritten and the
-		// body re-seated under the fence. writePatched re-parses
-		// through the loader - the same shape gate every write applies.
+		// update: the merge-winner's file, the operator's frontmatter keys preserved, only.
 		raw, err := os.ReadFile(skillFile)
 		if err != nil {
 			return nil, fmt.Errorf("read SKILL.md: %w", err)
@@ -78,14 +67,10 @@ func (sp *SkillsProvider) SaveSkill(name, description, body string) ([]Skill, er
 		if err != nil {
 			return nil, err
 		}
-		// the editor's write is activity, not an agent authorship stamp
 		TouchUsage(filepath.Dir(filepath.Dir(skillFile)), name, "write", "")
 		return sp.ListSkills()
 	}
 
-	// create: an existing FOLDER without SKILL.md is not a skill (a
-	// legacy or empty dir, invisible to discovery) - but a name in the
-	// own directory is refused, the write action's collision law.
 	skillDir := filepath.Join(sp.Dir, name)
 	if _, err := os.Stat(skillDir); err == nil {
 		return nil, fmt.Errorf("save: a folder named %q already exists in %s - give the skill another name", name, skillDir)
@@ -98,28 +83,19 @@ func (sp *SkillsProvider) SaveSkill(name, description, body string) ([]Skill, er
 		return nil, fmt.Errorf("write SKILL.md: %w", err)
 	}
 	if _, err := loadSkill(filepath.Join(skillDir, "SKILL.md")); err != nil {
-		// the loader's parse of what we just wrote is the shape proof
 		return nil, fmt.Errorf("save: composed SKILL.md failed the loader's frontmatter parse: %w", err)
 	}
 	TouchUsage(sp.Dir, name, "write", "")
 	return sp.ListSkills()
 }
 
-// DeleteSkill removes one skill's folder: backed up first (the whole
-// folder, SKILL.md plus scripts and references - the curator's own
-// removal law), an audit ledger row on the removal, then the folder
-// gone. The merge-winner rule picks the folder, the same file the
-// reader resolves. An unknown name is the loud not-found error (a
-// no-op delete must be visible - the silent-persist law in reverse).
-// This is the tab editor's door; the ledger names the writer.
+// DeleteSkill removes one skill's folder. An unknown name is the loud not-found error
+// (a no-op delete must be visible - the silent-persist law in reverse).
 func (sp *SkillsProvider) DeleteSkill(name string) ([]Skill, error) {
 	return sp.DeleteSkillAs(name, ActorWebui, "removed from the skills tab")
 }
 
-// DeleteSkillAs is the same removal with the caller's ledger
-// attribution: one removal implementation, and the audit row names
-// the surface that asked (the tab, the CLI) instead of claiming one
-// writer for both.
+// DeleteSkillAs is the same removal with the caller's ledger attribution.
 func (sp *SkillsProvider) DeleteSkillAs(name, actor, reason string) ([]Skill, error) {
 	name = strings.TrimSpace(name)
 	if !validSkillName(name) {
@@ -147,35 +123,25 @@ func (sp *SkillsProvider) DeleteSkillAs(name, actor, reason string) ([]Skill, er
 	return sp.ListSkills()
 }
 
-// ActorWebui is the ledger actor class for the tab editor's own
-// writes: the audit trail names its writer, and this one is not the
-// curator.
+// ActorWebui is the ledger actor class for the tab editor's own writes.
 const ActorWebui = "webui"
 
-// ActorCLI is the ledger actor class for the terminal face: an
-// `omega skills` write or delete is a different writer than the tab,
-// and the audit row says so.
+// ActorCLI is the ledger actor class for the terminal face.
 const ActorCLI = "cli"
 
-// SkillsEditor is the write face the tab's editor rides, separate from
-// the reader seam and the toggle (the CronJobs editor's cronSaver
-// shape): an upsert and a delete, the fresh listing both answers.
+// SkillsEditor is the write face the tab's editor rides, separate from the reader.
 type SkillsEditor interface {
 	SaveSkill(name, description, body string) ([]Skill, error)
 	DeleteSkill(name string) ([]Skill, error)
 }
 
-// frontmatterOf composes the loader's frontmatter shape over one
-// description: the two fences, one plain-scalar line.
+// frontmatterOf composes the loader's frontmatter shape over one description.
 func frontmatterOf(description string) string {
 	return fmt.Sprintf("---\ndescription: %s\n---\n", description)
 }
 
-// replaceDescription swaps the frontmatter's description line and
-// keeps every other key byte-true (version, tags, the operator's own
-// frontmatter law). front is the fenced block WITH fences and its
-// trailing newline; the first description-bearing line is rewritten,
-// one is inserted before the closing fence when the block names none.
+// replaceDescription swaps the frontmatter's description line and keeps every other key
+// byte-true (version, tags, the operator's own frontmatter law).
 func replaceDescription(front, description string) string {
 	front = strings.TrimSuffix(front, "\n")
 	lines := strings.Split(front, "\n")
@@ -200,36 +166,25 @@ func replaceDescription(front, description string) string {
 	return strings.Join(out, "\n") + "\n"
 }
 
-// skillSaveRequest is the POST /skills/save body: the editor's whole
-// skill - the name (the folder), the one-line description, the
-// markdown body under the fence. Name edits are not part of the
-// round: the folder name IS the identity (renames stay the file
-// explorer's lane).
+// skillSaveRequest is the POST /skills/save body.
 type skillSaveRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Content     string `json:"content"`
 }
 
-// skillDeleteRequest is the POST /skills/delete body: the name the
-// row carries.
+// skillDeleteRequest is the POST /skills/delete body: the name the row carries.
 type skillDeleteRequest struct {
 	Name string `json:"name"`
 }
 
-// skillListingRow is one save/delete response row: the fresh listing
-// the one-response law answers, GET /skills' own row shape.
+// skillListingRow is one save/delete response row.
 type skillListingRow struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
-// serveEditorAction is the POST-only wire helper the two handlers
-// share: the method law, the body decode, the typed callback. Errors
-// answer plain text (the cron mutation routes' shape); an unknown
-// skill is the loud 404 (the silent-persist law in reverse),
-// everything else a 400 naming the refusal; the landed truth answers
-// as the listing rows.
+// serveEditorAction is the POST-only wire helper the two handlers share.
 func serveEditorAction[reqT any](w http.ResponseWriter, r *http.Request, label string, act func(reqT) ([]Skill, error)) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -257,17 +212,13 @@ func serveEditorAction[reqT any](w http.ResponseWriter, r *http.Request, label s
 	_ = json.NewEncoder(w).Encode(lrows)
 }
 
-// handleSkillsSave serves POST /skills/save: upsert the skill (create
-// on a new name, body rewrite on an existing one), answer the fresh
-// listing.
+// handleSkillsSave serves POST /skills/save.
 func (rt *Routes) handleSkillsSave(w http.ResponseWriter, r *http.Request) {
 	serveEditorAction(w, r, "skills save", func(req skillSaveRequest) ([]Skill, error) {
 		return rt.svc.SaveSkill(req.Name, req.Description, req.Content)
 	})
 }
 
-// handleSkillsDelete serves POST /skills/delete: back up, receipt,
-// remove, answer the fresh listing. Unknown name = 404.
 func (rt *Routes) handleSkillsDelete(w http.ResponseWriter, r *http.Request) {
 	serveEditorAction(w, r, "skills delete", func(req skillDeleteRequest) ([]Skill, error) {
 		return rt.svc.DeleteSkill(req.Name)

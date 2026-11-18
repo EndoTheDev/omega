@@ -1,15 +1,8 @@
 package provider
 
-// The rendered tools block, measured on the wire.
-//
-// agent/loop owns the ORDER of the schema list (toolSchemas sorts by
-// name) and the CADENCE (one derivation per run, not per turn). This
-// file owns the third link in that chain: the provider must render the
-// list it is handed byte-for-byte, with no re-shuffle of its own.
-// toolSchemasToJSON is the shared conversion for all three wires; the
-// ollama path then re-shapes each entry into the function envelope.
-// json.Marshal sorts map keys, so the only way the block can drift is a
-// reorder of the slice - which is what this pins.
+// The rendered tools block, measured on the wire. This file owns the third link in that
+// chain: the provider must render the list it is handed byte-for-byte, with no
+// re-shuffle of its own.
 
 import (
 	"bytes"
@@ -73,17 +66,13 @@ func renderedTools(t *testing.T, body []byte) []byte {
 	return sent.Tools
 }
 
-// TestOllamaRenderedToolsBlockByteStable pins the wire half of the
-// prompt-cache contract: two consecutive turns of one run - the same
-// mounted tools, the second turn carrying one more assistant/user pair -
-// render a byte-identical tools[] block.
-//
-// A prefix cache reuses only a byte-identical PREFIX and re-prefills
-// from the first differing token, so a block that reshuffles between
-// turns moves the divergence to the START of the tools array and drops
-// the cacheable prefix back to the system prompt alone. The 2026-11-12
-// measurement of the pre-fix build was the inverse of this test: same
-// 9,865 bytes, different order.
+// TestOllamaRenderedToolsBlockByteStable pins the wire half of the prompt-cache
+// contract: two consecutive turns of one run - the same mounted tools, the second turn
+// carrying one more assistant/user pair - render a byte-identical tools[] block. A
+// prefix cache reuses only a byte-identical PREFIX and re-prefills from the first
+// differing token, so a block that reshuffles between turns moves the divergence to the
+// START of the tools array and drops the cacheable prefix back to the system prompt
+// alone.
 func TestOllamaRenderedToolsBlockByteStable(t *testing.T) {
 	bodies := make(chan []byte, 8)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

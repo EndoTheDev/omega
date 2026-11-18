@@ -1,10 +1,9 @@
 package core
 
-// ProviderStreamEvent is the sealed interface for all provider stream
-// event types. Consumers dispatch on the concrete type via a type
-// switch. Named ProviderStreamEvent (not StreamEvent) because the
-// agent-event contract already carries core.StreamEvent - the wrapper
-// that forwards one of these events into the run's event stream.
+// ProviderStreamEvent is the sealed interface for all provider stream event types.
+// Named ProviderStreamEvent (not StreamEvent) because the agent-event contract already
+// carries core.StreamEvent - the wrapper that forwards one of these events into the
+// run's event stream.
 type ProviderStreamEvent interface {
 	isProviderStreamEvent()
 }
@@ -40,8 +39,7 @@ type ToolCallEvent struct {
 
 func (ToolCallEvent) isProviderStreamEvent() {}
 
-// StreamEnd is emitted at the end of a stream. Errors are encoded
-// here (FinishReason="error", Error set), not returned as Go errors.
+// StreamEnd is emitted at the end of a stream.
 type StreamEnd struct {
 	Type            string `json:"type"`
 	FinishReason    string `json:"finish_reason"`

@@ -1,23 +1,15 @@
 <template>
-  <!-- omega webui: the NAMED PROVIDER INSTANCES editor (card
-       t_7dcd4280, reshaped t_1914a8c9 to the Hermes shape, merged
-       t_bf21ee07 into the ONE providers section). One row per
-       instance: the row's name IS the instance id
-       (config.yaml provider.instances) and the row is a NAMED ENDPOINT
-       only - name, type, base url, api key, NO model column (models
-       come from the instance's own catalog through the model pickers).
-       The row named "default" is the primary, so the list always
-       carries it; remove drops any other row (a removed instance
-       strands ITS sessions - their next send fails loudly, never a
-       silent fallback); add appends a blank row. The list REPLACES the
-       server's list on save; a masked api key ("****") round-trips as
-       "keep the existing secret" - typing over it replaces the secret,
-       clearing it keeps the masked round trip failing server-side (a
-       masked key must mean something). -->
+  <!--
+    omega webui: the NAMED PROVIDER INSTANCES editor.
+    The row named "default" is the primary, so the list always carries it; remove drops
+    any other row (a removed instance strands ITS sessions - their next send fails
+    loudly, never a silent fallback); add appends a blank row.
+    The list REPLACES the server's list on save; a masked api key ("****") round-trips
+    as "keep the existing secret" - typing over it replaces the secret, clearing it
+    keeps the masked round trip failing server-side (a masked key must mean something).
+  -->
   <div class="providers-editor">
-    <!-- card t_fec41e66 (the one-line explainer survives the reshape):
-         the rows carry no visible flow on their own - one line above
-         the list states what a row IS and how a run reaches it -->
+    <!-- (the one-line explainer survives the reshape). -->
     <p class="provider-hint">
       every provider is a named instance: a name, its type, a base url
       and an api key - the model pickers (chat picker and the slot
@@ -99,8 +91,7 @@
 <script setup lang="ts">
   import { computed } from "vue";
   import type { SettingKnob, ProviderInstanceRow } from "~/composables/omega";
-  // THE shared listbox (card t_acad02ec) - never a native select
-  // popup (OS chrome over the panes)
+  // THE shared listbox - never a native select popup (OS chrome over the panes)
   import BandSelect from "../ui/BandSelect.vue";
 
   const props = defineProps<{
@@ -112,11 +103,7 @@
     (e: "update", value: ProviderInstanceRow[]): void;
   }>();
 
-  // BandSelect's ladder is {value,label} objects: a bare string array
-  // renders an EMPTY popup (the rows read o.value/o.label) while the
-  // chip still shows the raw value - the type cell looked fine and did
-  // nothing (Pre-existing at the merge base, fixed here because the
-  // merged providers section claims the type is yours to change).
+  // BandSelect's ladder is {value,label} objects.
   const types: { value: string; label: string }[] = [
     { value: "ollama", label: "ollama" },
     { value: "openai", label: "openai" },
@@ -125,10 +112,9 @@
 
   const rows = computed<ProviderInstanceRow[]>(() => props.value ?? []);
 
-  // The primary is the row named "default" (card t_bf21ee07): the
-  // provider the agent serves, so its name is the contract and the row
-  // never leaves the list through the pane (the server refuses a list
-  // without it). Its type IS editable: a row is a row.
+  // The primary is the row named "default": the provider the agent serves, so its name
+  // is the contract and the row never leaves the list through the pane (the server
+  // refuses a list without it).
   const PRIMARY = "default";
   const isPrimary = (row: ProviderInstanceRow): boolean => row.name === PRIMARY;
 

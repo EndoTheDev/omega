@@ -11,8 +11,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// Config is the optional knob for the store path. Empty resolves to
-// <home>/data/notifications.db; tests and embedders point it anywhere.
+// Config is the optional knob for the store path.
 type Config struct {
 	DBPath string
 }
@@ -20,11 +19,7 @@ type Config struct {
 // Default returns the zero config (path resolved from the home).
 func Default() Config { return Config{} }
 
-// Plugin adapts the notifications Store into omega's plugin system. It
-// owns the exclusive "notifications" seam; kanban, cron and delegate
-// emit through ctx.Notifications, the dock's Notifications tab chip
-// reads it, and the capsule's canvas surface carries the list panel and
-// the toast event (arc 4b).
+// Plugin adapts the notifications Store into omega's plugin system.
 type Plugin struct {
 	store   *Store
 	capsule *capsule
@@ -43,20 +38,16 @@ func (p *Plugin) Description() string {
 	return "notifications: the finished-things store behind the dock's Notifications tab chip (tasks, crons, chats)"
 }
 
-// ConfigKey names the config section this plugin reads from
-// ctx.Configs (see agent.Describer). Empty = reads no section.
+// ConfigKey names the config section this plugin reads from ctx.Configs (see.
 func (p *Plugin) ConfigKey() string { return "notifications" }
 
 func (p *Plugin) Provides() []string { return []string{"notifications"} }
 func (p *Plugin) Requires() []string { return nil }
 
-// MountWithAPI implements agent.APIPlugin. Same resolution the classic
-// body ran; without a home AND a config path (exotic embeds) the mount
-// registers nothing and returns nil - every emitter is nil-safe and
-// the HTTP endpoints answer 501, so notifications are a no-op rather
-// than a startup failure. Every face goes through the api: the seam
-// (the capsule-backed emittingStore), the canvas panels, and the
-// read-only /notifications command.
+// MountWithAPI implements agent.APIPlugin. Same resolution the classic body ran;
+// without a home AND a config path (exotic embeds) the mount registers nothing and
+// returns nil - every emitter is nil-safe and the HTTP endpoints answer 501, so
+// notifications are a no-op rather than a startup failure.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["notifications"].(Config); ok {
@@ -77,21 +68,12 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err != nil {
 		return fmt.Errorf("notifications store: %w", err)
 	}
-	// A same-instance re-mount (the double-mount removal proofs) opens
-	// a second store: the prior handle is dead weight - close it, or
-	// the abandoned handle keeps the database file locked on windows.
+	// A same-instance re-mount (the double-mount removal proofs) opens a second store.
 	if p.store != nil {
 		_ = p.store.Close()
 	}
 	p.store = s
-	// Capsule law (arc 4b, t_9339ad05): the module ships its view-model
-	// with its store. The seam the emitters see is the capsule-backed
-	// wrapper - every emit records through the store AND pushes the
-	// canvas panels (toast event + list refresh), so the toast is a
-	// canvas event and the emitter wiring lives in this module. The
-	// provider rides the same registration: an unregistered plugin
-	// ships no store, no panels, no toasts, no wiring - removal kills
-	// all of it together.
+	// Capsule law: the module ships its view-model with its store.
 	p.capsule = newCapsule(s)
 	seam := &emittingStore{store: s, capsule: p.capsule}
 	p.routes = newRoutes(seam)
@@ -101,10 +83,9 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err := api.RegisterPanelProvider(p.capsule); err != nil {
 		return err
 	}
-	// The REST face over the same service handle (shell-ring shrink
-	// wave 3, card t_b75df168): the tab chip's list/read + the toast
-	// SSE ride the capsule - they register and die with the mount,
-	// exactly like the panel surface above them.
+	// The REST face over the same service handle: the tab chip's list/read + the toast SSE
+	// ride the capsule - they register and die with the mount, exactly like the panel
+	// surface above them.
 	for _, r := range []struct {
 		pattern string
 		h       func(http.ResponseWriter, *http.Request)
@@ -117,9 +98,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 			return err
 		}
 	}
-	// The read-only /notifications table command (the /board pattern:
-	// one registration per command, the wrapper falls through on a
-	// miss).
+	// The read-only /notifications table command (the /board pattern.
 	return api.RegisterCommand("/notifications", "list recent finished things (tasks, crons, chats)", nil,
 		func(c context.Context, name, args string) (core.CommandResult, error) {
 			if name != "/notifications" {
@@ -129,9 +108,8 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		})
 }
 
-// handleCommand renders the newest records as a fixed-width table.
-// Read-only on purpose: reads happen in the webui, the terminal never
-// interrupts (no TUI toasts).
+// handleCommand renders the newest records as a fixed-width table. Read-only on
+// purpose: reads happen in the webui, the terminal never interrupts (no TUI toasts).
 func (p *Plugin) handleCommand(c context.Context, args string) (core.CommandResult, error) {
 	unreadOnly := strings.TrimSpace(args) == "unread"
 	notes, unread, err := p.store.List(c, unreadOnly, 20, 0)
@@ -156,11 +134,9 @@ func (p *Plugin) handleCommand(c context.Context, args string) (core.CommandResu
 	return core.CommandResult{Text: sb.String()}, nil
 }
 
-// Dismount releases the mounted store (the open sqlite handle):
-// beyond-Context state the journal cannot see. A handle left open
-// blocks the removal of the data directory on windows, so the host
-// shutdown and every test mount dismount instead of abandoning it.
-// Nil-safe: never mounted (or already dismounted) closes nothing.
+// Dismount releases the mounted store (the open sqlite handle): beyond-Context state
+// the journal cannot see. Nil-safe: never mounted (or already dismounted) closes
+// nothing.
 func (p *Plugin) Dismount(ctx *core.Context) error {
 	if p.store == nil {
 		return nil
@@ -170,6 +146,5 @@ func (p *Plugin) Dismount(ctx *core.Context) error {
 	return err
 }
 
-// Toggleable marks this capsule as a module capsule (v0.12 E1, the
-// tier law): the config.yaml disabled: list may name it.
+// Toggleable marks this capsule as a module capsule (v0.12 E1, the tier law).
 func (p *Plugin) Toggleable() bool { return true }

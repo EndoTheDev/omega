@@ -1,13 +1,8 @@
 package main
 
-// The nm-purity wire-shape pins (card t_8abdbb15, the regression set).
-// Two past reds where a host function carried a module's logic INLINE
-// and the scrubber's line-only deletion stranded dead identifiers or a
-// missing return (bea6abc, "loop/setup: purity-scrub-safe shapes" -
-// the verdict and provider purity rotations went red together). A
-// journey recipe cannot see this class: it is compile-time shape, not
-// browser state. So the pins run in the go gate - the nightly and
-// every train pass - and a deliberately reverted shape must stay red.
+// The nm-purity wire-shape pins. A journey recipe cannot see this class: it is
+// compile-time shape, not browser state. So the pins run in the go gate - the nightly
+// and every train pass - and a deliberately reverted shape must stay red.
 
 import (
 	"os"
@@ -16,10 +11,7 @@ import (
 	"testing"
 )
 
-// cmdGoFiles collects the non-test .go files of cmd/ (the binary's
-// host layer - the only layer the scrubber walks). Runs from the
-// package dir cmd/omega, so cmd/ is the parent - walk one level over
-// the siblings, this package included.
+// cmdGoFiles collects the non-test.go files of cmd/ (the binary's host layer.
 func cmdGoFiles(t *testing.T) []string {
 	t.Helper()
 	var out []string
@@ -46,15 +38,9 @@ func cmdGoFiles(t *testing.T) []string {
 	return out
 }
 
-// TestVerdictExchangeStaysInCapsule pins the inline-verdict rehoming.
-// The loop's busy-time verdict answering once lived in cmd/omega -
-// ParseCardAnswer called inline, hint/echo helpers in the host - and
-// the scrubber's line-only deletion of the verdict wires left dead
-// identifiers and a stranded return, so the verdict rotation built
-// red. The exchange lives in harness/verdict (AnswerInline) behind ONE
-// wire line whose shape the line deletion cannot break: a named
-// return on the host function. An inline re-copy in cmd/ is the exact
-// past red.
+// TestVerdictExchangeStaysInCapsule pins the inline-verdict rehoming. The exchange
+// lives in harness/verdict (AnswerInline) behind ONE wire line whose shape the line
+// deletion cannot break: a named return on the host function.
 func TestVerdictExchangeStaysInCapsule(t *testing.T) {
 	for _, f := range cmdGoFiles(t) {
 		b, err := os.ReadFile(f)
@@ -78,13 +64,8 @@ func TestVerdictExchangeStaysInCapsule(t *testing.T) {
 	}
 }
 
-// TestSetupProviderHookNamedReturn pins the wizard provider hook shape.
-// The setup wizard touches ONE provider surface - the live model list -
-// through the newSetupProvider hook. When it returned the module value
-// directly (`return provider.NewProvider(...)`), the scrubber's
-// deletion of the provider wire line left the hook returning nothing:
-// the provider rotation built red. The named return is load-bearing -
-// the hook must still return with the module gone.
+// TestSetupProviderHookNamedReturn pins the wizard provider hook shape. The named
+// return is load-bearing - the hook must still return with the module gone.
 func TestSetupProviderHookNamedReturn(t *testing.T) {
 	b, err := os.ReadFile("setup.go")
 	if err != nil {

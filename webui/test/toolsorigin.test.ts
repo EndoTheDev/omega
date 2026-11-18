@@ -1,16 +1,14 @@
-// omega webui: the TOOLS tab's MCP-origin exclusion (card t_c2da3379,
-// Endo's report: the tools sidebar mixed sequential-thinking.*
-// MCP-origin tools into the native list). Pure-surface test like the
-// composition-test convention: the filter reads the ORIGIN FIELD the
-// wire stamps (core.Tool.Origin via GET /tools), never the name shape -
-// native tools are dotted too (sessions.search/shell.run stay), an
-// MCP-origin tool is excluded whichever shape its name has.
+// omega webui: the TOOLS tab's MCP-origin exclusion. Pure-surface test like the
+// composition-test convention: the filter reads the ORIGIN FIELD the wire stamps
+// (core.Tool.Origin via GET /tools), never the name shape - native tools are dotted too
+// (sessions.search/shell.run stay), an MCP-origin tool is excluded whichever shape its
+// name has.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { nativeTools, toolRows, type ToolWire } from "../../harness/tools/ui/toolRows.ts";
 
-// --- nativeTools: the exclusion (mandate 1 - MCP shows in the MCP tab alone) ---
+// -- nativeTools: the exclusion (mandate 1 - MCP shows in the MCP tab alone) --
 
 test("nativeTools excludes origin=mcp tools, keeps native dotted tools", () => {
   const tools: ToolWire[] = [
@@ -26,8 +24,7 @@ test("nativeTools excludes origin=mcp tools, keeps native dotted tools", () => {
 });
 
 test("nativeTools treats any dotted native tool as native (no name heuristics)", () => {
-  // a mcp-server-looking name with NO origin stamp is native data:
-  // the filter must keep it
+  // a mcp-server-looking name with NO origin stamp is native data: the filter must.
   const tools: ToolWire[] = [
     { name: "server-looking.name", description: "native registry tool, unstamped" },
   ];
@@ -40,7 +37,7 @@ test("nativeTools does not mutate its input", () => {
   assert.equal(tools.length, 1);
 });
 
-// --- the rows pipeline consumes the FILTERED slice ---
+// -- the rows pipeline consumes the FILTERED slice --
 
 test("toolRows built from the filtered slice: no mcp rows or groups leak", () => {
   const tools: ToolWire[] = [
@@ -51,10 +48,7 @@ test("toolRows built from the filtered slice: no mcp rows or groups leak", () =>
   ];
   const rows = toolRows(nativeTools(tools), []);
   const names = rows.map((r) => r.name);
-  // sequential-thinking.* neither renders as its own row nor forms a
-  // lone-member domain group
   assert.equal(names.includes("sequential-thinking.sequentialthinking"), false);
   assert.equal(names.includes("sequential-thinking"), false);
-  // the native grouping is untouched (delegate merges under its prefix)
   assert.deepEqual(names, ["delegate", "shell.run"]);
 });

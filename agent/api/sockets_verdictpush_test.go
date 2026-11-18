@@ -1,15 +1,9 @@
 package api
 
-// The verdict issuance push (card t_ce2162cd): a card's registration is
-// the ONE event a shell cannot derive from anything else. A smart-gate
-// escalation registers its card AFTER the tool_call hint window (the
-// reviewer round trip happens inside the gate, before hub.Ask) and the
-// run is frozen from then until the answer, so no call/turn edge ever
-// follows - issuance had no voice at all, and the pending card rendered
-// nowhere until the notifications tab's activation read. These tests pin
-// the two halves on this side of the seam: the chat-topic frame itself,
-// and the nil-seam boot (no verdict capsule mounted -> serve still
-// boots, nothing subscribes).
+// The verdict issuance push: a card's registration is the ONE event a shell cannot.
+// These tests pin the two halves on this side of the seam: the chat-topic frame itself,
+// and the nil-seam boot (no verdict capsule mounted -> serve still boots, nothing
+// subscribes).
 
 import (
 	"context"
@@ -36,11 +30,7 @@ func waitPendingCard(t *testing.T, hub *verdict.Hub, session string) core.Questi
 	return core.QuestionPrompt{}
 }
 
-// TestVerdictIssuanceRidesChatTopic: mounting the verdict hub and
-// rewiring the server subscribes the issuance push; a card that
-// registers publishes ONE chat-topic frame scoped to its own session,
-// carrying the minimal hint payload. The chat topic is the only topic
-// it touches, and a live rewire does not multiply the frame.
+// TestVerdictIssuanceRidesChatTopic: mounting the verdict hub and rewiring the server.
 func TestVerdictIssuanceRidesChatTopic(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	hub := verdict.NewHub(nil, nil)
@@ -85,16 +75,13 @@ func TestVerdictIssuanceRidesChatTopic(t *testing.T) {
 	if hint.CardID == "" || hint.SessionID != "sess-gate" || hint.Title != "run rm -rf build?" {
 		t.Fatalf("hint = %+v, want the registered card's id/session/title", hint)
 	}
-	// the frame is a HINT: the card behind it is answerable through the
-	// REST truth the client re-reads on it.
 	pending := waitPendingCard(t, hub, "sess-gate")
 	if pending.ID != hint.CardID {
 		t.Fatalf("pending card %q != hinted card %q", pending.ID, hint.CardID)
 	}
 
-	// answering settles the Ask and pushes nothing (the tool result is
-	// the answer path's own hint) - and the run-only subscriber never
-	// sees the issuance frame at all.
+	// answering settles the Ask and pushes nothing (the tool result is the answer path's
+	// own hint) - and the run-only subscriber never sees the issuance frame at all.
 	if _, err := hub.Answer("sess-gate", "", core.QuestionAnswer{OptionIndex: 1}); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -110,9 +97,8 @@ func TestVerdictIssuanceRidesChatTopic(t *testing.T) {
 	expectNoFrame(t, runsOnly)
 }
 
-// TestVerdictIssuancePushNilSafe: a host with no verdict capsule (or a
-// wrong-shaped offer) boots clean - no subscription, no panic, and the
-// server still serves.
+// TestVerdictIssuancePushNilSafe: a host with no verdict capsule (or a wrong-shaped
+// offer) boots clean - no subscription, no panic, and the server still serves.
 func TestVerdictIssuancePushNilSafe(t *testing.T) {
 	s := inspectorServer(t)
 	offerServices(t, s, map[string]any{})
@@ -120,8 +106,7 @@ func TestVerdictIssuancePushNilSafe(t *testing.T) {
 		t.Fatalf("verdictSrc = %v, want nil (nothing to subscribe to)", s.verdictSrc)
 	}
 
-	// a wrong-shaped offer is an optional consumer's degradation, not a
-	// boot failure: the push stays dark and serve keeps going.
+	// a wrong-shaped offer is an optional consumer's degradation, not a boot failure.
 	offerServices(t, s, map[string]any{"verdicts": "not a card source"})
 	if s.verdictSrc != nil {
 		t.Fatalf("verdictSrc = %v, want nil for a wrong-shaped offer", s.verdictSrc)

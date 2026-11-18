@@ -75,8 +75,7 @@ func TestMigrateLegacyHome(t *testing.T) {
 	}
 }
 
-// TestMigratePartialSidecars recovers the crash-mid-migration state:
-// sidecars already in data/ (stale), main still at the root.
+// TestMigratePartialSidecars recovers the crash-mid-migration state.
 func TestMigratePartialSidecars(t *testing.T) {
 	home := t.TempDir()
 	dsn := DBPath(home, "omega.db")
@@ -185,9 +184,7 @@ func TestMigrateOtherName(t *testing.T) {
 }
 
 func TestDBPath(t *testing.T) {
-	// wants are slash spellings; the product joins with filepath.Join
-	// (native separators are the canon for this port), so compare in
-	// native shape
+	// wants are slash spellings.
 	if got, want := DBPath("/home/x/.omega", "omega.db"), filepath.FromSlash("/home/x/.omega/data/omega.db"); got != want {
 		t.Errorf("DBPath = %q, want %q", got, want)
 	}
@@ -209,19 +206,15 @@ func TestHome(t *testing.T) {
 
 func TestAgentHome(t *testing.T) {
 	t.Setenv("OMEGA_HOME", "/explicit/home")
-	// no env: main - verbatim home.
 	t.Setenv("OMEGA_AGENT", "")
 	if got, err := AgentHome(); err != nil || got != "/explicit/home" {
 		t.Errorf("AgentHome without OMEGA_AGENT = %q %v, want the home root", got, err)
 	}
-	// "default" is main: the env is noise, not a target.
 	t.Setenv("OMEGA_AGENT", "default")
 	if got, err := AgentHome(); err != nil || got != "/explicit/home" {
 		t.Errorf("AgentHome(default) = %q %v, want the home root", got, err)
 	}
-	// a continuous agent homes at agents/<name>; the product joins with
-	// filepath.Join (native separators), the want stays a slash
-	// spelling read back through FromSlash
+	// a continuous agent homes at agents/<name>.
 	t.Setenv("OMEGA_AGENT", "scout")
 	scoutHome := filepath.FromSlash("/explicit/home/agents/scout")
 	if got, err := AgentHome(); err != nil || got != scoutHome {

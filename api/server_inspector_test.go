@@ -18,14 +18,12 @@ import (
 	"github.com/EndoTheDev/omega/harness/observability"
 )
 
-// The inspector endpoint surface (card t_db430fea, read-only v1):
-// /cron/jobs, /skills, /logs. Every test here also re-asserts the
-// read-only posture - the handlers never write.
+// The inspector endpoint surface: /cron/jobs, /skills, /logs. Every test here also
+// re-asserts the read-only posture - the handlers never write.
 
-// --- test doubles ---
+// -- test doubles --
 
-// cronRow decodes one /cron/jobs wire row (the capsule pre-marshals;
-// the shape is the row the shared type always produced).
+// cronRow decodes one /cron/jobs wire row (the capsule pre-marshals.
 type cronRow struct {
 	Name     string `json:"name"`
 	Schedule string `json:"schedule"`
@@ -33,8 +31,7 @@ type cronRow struct {
 	Next     string `json:"next"`
 }
 
-// fakeCronRows is the cron capsule's wire face (part 3): the route
-// resolves "cron" and asserts JobRows - std types only.
+// fakeCronRows is the cron capsule's wire face (part 3).
 type fakeCronRows struct{ rows []json.RawMessage }
 
 func (f *fakeCronRows) JobRows() []json.RawMessage { return f.rows }
@@ -64,7 +61,7 @@ func (l *fakePathLogger) Errorf(string, ...any) {}
 func (*fakePathLogger) Close() error            { return nil }
 func (l *fakePathLogger) Path() string          { return l.path }
 
-// ---
+// -
 
 func inspectorServer(t *testing.T) *Server {
 	t.Helper()
@@ -78,9 +75,8 @@ func serveInspector(t *testing.T, s *Server) *httptest.Server {
 	return ts
 }
 
-// wireInspector offers the fake supplies into a fresh Context and
-// rewires the server against it - the same rewire the live toggle runs
-// (one code path, no test-only seam plumbing).
+// wireInspector offers the fake supplies into a fresh Context and rewires the server
+// against it.
 func wireInspector(t *testing.T, s *Server, offers map[string]any, logger agent.LoggerProvider) {
 	t.Helper()
 	ctx := &core.Context{}
@@ -207,8 +203,7 @@ func TestSkillsListsNameAndDescriptionOnly(t *testing.T) {
 			t.Fatalf("row missing description: %+v", row)
 		}
 	}
-	// the wire shape is name+description only: content and dir must
-	// never ride the inspector listing
+	// the wire shape is name+description only: content and dir must never ride the.
 	if strings.Contains(mustJSON(t, got), "SECRET-BODY") {
 		t.Fatal("skill content leaked onto the wire")
 	}
@@ -228,9 +223,8 @@ func TestSkillsScanErrorSurfaces(t *testing.T) {
 	}
 }
 
-// TestLogsTailRealFile is the endpoint contract against the kind of
-// file the FileLogger produces: lines > window (head cut inside the
-// window is dropped), lines <= n, ?lines= override, and 404s.
+// TestLogsTailRealFile is the endpoint contract against the kind of file the FileLogger
+// produces.
 func TestLogsTailRealFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "omega.log")
 	var body string
@@ -246,7 +240,6 @@ func TestLogsTailRealFile(t *testing.T) {
 	wireInspector(t, s, nil, &fakePathLogger{path: path})
 	ts := serveInspector(t, s)
 
-	// default: 200 lines
 	res, err := http.Get(ts.URL + "/logs")
 	if err != nil {
 		t.Fatal(err)
@@ -265,7 +258,6 @@ func TestLogsTailRealFile(t *testing.T) {
 		t.Fatalf("path = %q, want %q", payload.Path, path)
 	}
 
-	// ?lines= override
 	res2, err := http.Get(ts.URL + "/logs?lines=2")
 	if err != nil {
 		t.Fatal(err)
@@ -330,7 +322,6 @@ func TestLogsUnconfiguredIs404(t *testing.T) {
 
 func TestLogsLoggerWithoutPathIs404(t *testing.T) {
 	s := inspectorServer(t)
-	// NopLogger twin: LoggerProvider, no Path
 	ts := serveInspector(t, s)
 	res, err := http.Get(ts.URL + "/logs")
 	if err != nil {
@@ -364,7 +355,7 @@ func (nopTestLogger) Warnf(string, ...any)  {}
 func (nopTestLogger) Errorf(string, ...any) {}
 func (nopTestLogger) Close() error          { return nil }
 
-// --- helpers ---
+// -- helpers --
 
 type logPayload struct {
 	Path  string   `json:"path"`
@@ -400,10 +391,9 @@ func itoa(i int) string {
 	return strconv.Itoa(i)
 }
 
-// --- the logs topic's delta follower (card t_0e7bc0bb) ---
+// -- the logs topic's delta follower --
 
-// readLogFrame reads one pushed frame off a hub subscriber, failing on
-// timeout. The logs topic is the only one under test here.
+// readLogFrame reads one pushed frame off a hub subscriber, failing on timeout.
 func readLogFrame(t *testing.T, sub *agentapi.SocketSub) agentapi.SocketMessage {
 	t.Helper()
 	select {
@@ -422,8 +412,7 @@ func readLogFrame(t *testing.T, sub *agentapi.SocketSub) agentapi.SocketMessage 
 	}
 }
 
-// appendLog appends raw bytes to the followed file (the logger's own
-// write shape: whole lines, newline-terminated).
+// appendLog appends raw bytes to the followed file (the logger's own write shape.
 func appendLog(t *testing.T, path, text string) {
 	t.Helper()
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
@@ -436,11 +425,8 @@ func appendLog(t *testing.T, path, text string) {
 	}
 }
 
-// TestPushLogDelta: the follower publishes ONLY the bytes appended since
-// the last offset, as whole lines - the snapshot half stays GET /logs.
-// It also pins the two skip laws: no subscriber means no read (the
-// offset advances anyway), and a partial write is carried to the tick
-// that completes the line.
+// TestPushLogDelta: the follower publishes ONLY the bytes appended since the last
+// offset, as whole lines.
 func TestPushLogDelta(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "omega.log")
 	if err := os.WriteFile(path, []byte("boot line\n"), 0o644); err != nil {
@@ -448,8 +434,7 @@ func TestPushLogDelta(t *testing.T) {
 	}
 	s := newTestServer()
 
-	// nobody holds the topic: the offset walks to the end, nothing is
-	// published and no bytes are read
+	// nobody holds the topic: the offset walks to the end, nothing is published and no.
 	off, carry := s.pushLogDelta(path, 0, "")
 	if off != int64(len("boot line\n")) || carry != "" {
 		t.Fatalf("no-subscriber tick = (%d, %q), want (%d, \"\")", off, carry, len("boot line\n"))
@@ -464,7 +449,6 @@ func TestPushLogDelta(t *testing.T) {
 		t.Fatal("an attached subscriber (subscribed to every topic) is not wanted on logs")
 	}
 
-	// a write that lands mid-line is held, not published
 	appendLog(t, path, "second line\nhalf a li")
 	off, carry = s.pushLogDelta(path, off, carry)
 	if carry != "half a li" {
@@ -482,7 +466,6 @@ func TestPushLogDelta(t *testing.T) {
 		t.Fatalf("delta = %v, want exactly [second line]", delta.Lines)
 	}
 
-	// the completing write emits the whole line, carry cleared
 	appendLog(t, path, "ne\n")
 	off, carry = s.pushLogDelta(path, off, carry)
 	if carry != "" {
@@ -495,14 +478,8 @@ func TestPushLogDelta(t *testing.T) {
 		t.Fatalf("delta = %v, want exactly [half a line]", delta.Lines)
 	}
 
-	// no new bytes: no frame (the follower is silent, never repetitive).
-	// The absence window is deliberate and cadence-derived, not a hang
-	// bound: two full logPushInterval ticks, the rate the logs topic
-	// publishes at, so a stray frame landing a whole tick late on a
-	// loaded machine still fails here. A 100ms glance asserted nothing
-	// on a busy host and stayed green (t_a5f8c170). Clamped to
-	// testWaitTimeout so the absence wait can never outlive the
-	// package's hang bound.
+	// no new bytes: no frame (the follower is silent, never repetitive). Clamped to
+	// testWaitTimeout so the absence wait can never outlive the package's hang bound.
 	absence := 2 * logPushInterval
 	if absence > testWaitTimeout {
 		absence = testWaitTimeout
@@ -518,7 +495,6 @@ func TestPushLogDelta(t *testing.T) {
 	case <-time.After(absence):
 	}
 
-	// truncation/rotation resyncs to the end instead of replaying
 	if err := os.WriteFile(path, []byte("rotated\n"), 0o644); err != nil {
 		t.Fatalf("rotate log: %v", err)
 	}
@@ -528,10 +504,8 @@ func TestPushLogDelta(t *testing.T) {
 	}
 }
 
-// TestFollowLogsPublishesAppends: the follower goroutine wires the file
-// to the topic end to end - a line appended while a subscriber holds the
-// topic arrives without any REST read in between, and it stops when the
-// server context ends.
+// TestFollowLogsPublishesAppends: the follower goroutine wires the file to the topic
+// end to end.
 func TestFollowLogsPublishesAppends(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "omega.log")
 	if err := os.WriteFile(path, []byte("boot line\n"), 0o644); err != nil {
@@ -550,13 +524,10 @@ func TestFollowLogsPublishesAppends(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	// The first tick seeds the offset to the current end (the socket
-	// never replays history), so the append must land AFTER that
-	// baseline: an append racing the seed would be swallowed forever
-	// (pushLogDelta resyncs past it), and no frame deadline could save
-	// the test. Wait for the seed signal instead of sleeping a tick -
-	// a starved first tick under the parallel suite made the sleep a
-	// coin flip (t_56a3ba27).
+	// The first tick seeds the offset to the current end (the socket never replays
+	// history), so the append must land AFTER that baseline: an append racing the seed
+	// would be swallowed forever (pushLogDelta resyncs past it), and no frame deadline
+	// could save the test.
 	seeded := make(chan struct{})
 	s.logSeeded = seeded
 	go func() {

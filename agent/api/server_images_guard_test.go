@@ -1,11 +1,9 @@
 package api
 
-// Guard-shape tests for the /attach-image internal-address refusal,
-// covering the live-probed bypass forms (card t_860033e3): non-canonical
-// numeric IPv4 spellings that netip cannot parse but the OS dialer
-// still numeric-parses, and the IPv6 rings the first guard revision
-// left out. The plain fetch-flow tests stub the guard seam; these
-// exercise the real guard on the wire (400 + "internal address").
+// Guard-shape tests for the /attach-image internal-address refusal, covering the
+// live-probed bypass forms: non-canonical numeric IPv4 spellings that netip cannot
+// parse but the OS dialer still numeric-parses, and the IPv6 rings the first guard
+// revision left out.
 
 import (
 	"net/http"
@@ -14,16 +12,13 @@ import (
 	"testing"
 )
 
-// TestAttachImageRefusesNonCanonicalIPs walks the bypass forms: every
-// one must be refused with the internal-address 400 before any fetch.
+// TestAttachImageRefusesNonCanonicalIPs walks the bypass forms: every one must be.
 func TestAttachImageRefusesNonCanonicalIPs(t *testing.T) {
 	s := newTestServer()
 	for _, host := range []string{
 		// combined decimal forms: "2130706433" -> 127.0.0.1, "127.1" too
 		"2130706433", "127.1", "999.1.1",
-		// hex-marked labels
 		"0x7f.0.0.1", "0X7F.0.0.1", "0x7f000001",
-		// zero-padded octal-ish labels
 		"0177.0.0.1", "010.0.0.1",
 		// trailing root dot must not smuggle a numeric spelling
 		"127.0.0.1.",
@@ -48,7 +43,6 @@ func TestIsInternalHostRingsAndHostnames(t *testing.T) {
 		"127.0.0.1", "::1", "::", "0.0.0.0",
 		"169.254.169.254", "10.1.2.3", "192.168.1.4", "172.16.0.9",
 		"100.101.126.30", "fe80::1", "fe80::1%eth0", "fc00::1234", "fdaa::1",
-		// 4-in-6 spellings of an internal v4
 		"::ffff:127.0.0.1", "::ffff:10.0.0.1",
 	} {
 		if !isInternalHost(host) {

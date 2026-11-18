@@ -1,9 +1,5 @@
 package continuous
 
-// wake_test.go: the wake subprocess self-checks (rulings 7-9). The
-// child binary is a stub script in every test - no test ever executes
-// a real omega run; the contracts verified are the spawn surface (env,
-// args, cwd, the log) and the guards (one live wake, sleep, ticks).
 
 import (
 	"encoding/json"
@@ -20,26 +16,21 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// testWaitTimeout bounds every poll-until-true wait in this package's tests.
-// It exists to catch a HANG, not to time correctness: a healthy condition can
-// take seconds when the full suite runs packages in parallel and starves the
-// goroutine under test. Bounding it tightly (2-5s) made load-sensitive tests
-// red on a loaded machine and green in isolation - the worst kind of flake.
+// testWaitTimeout bounds every poll-until-true wait in this package's tests. It exists
+// to catch a HANG, not to time correctness: a healthy condition can take seconds when
+// the full suite runs packages in parallel and starves the goroutine under test.
 const testWaitTimeout = 30 * time.Second
 
-// stubExeScript writes an executable child script that records its
-// argv, cwd, and the OMEGA_ env deltas into outPath, then sleeps long
-// enough for the guards to be observed. It runs as the wake child's
-// binary with the machine's own argv. Windows gets a .bat (CreateProcess
-// cannot run a shebang script), posix keeps the sh stub.
+// stubExeScript writes an executable child script that records its argv, cwd, and the.
+// Windows gets a.bat (CreateProcess cannot run a shebang script), posix keeps the sh
+// stub.
 func stubExeScript(t *testing.T, outPath string) func() (string, error) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		if stubExePath == "" {
 			t.Fatal("wake stub exe missing (TestMain build failed?)")
 		}
-		// The stub reads its out path from the env: the spawned child
-		// inherits the test process's env (os.Environ feeds cmd.Env).
+		// The stub reads its out path from the env.
 		t.Setenv("WAKE_STUB_OUT", outPath)
 		return func() (string, error) { return stubExePath, nil }
 	}
@@ -59,9 +50,8 @@ sleep 30
 	return func() (string, error) { return script, nil }
 }
 
-// waitFile polls outPath until the child finished writing (the DONE
-// sentinel) and the predicate succeeds, or the deadline passes (the
-// spawn is asynchronous by contract).
+// waitFile polls outPath until the child finished writing (the DONE sentinel) and the
+// predicate succeeds, or the deadline passes (the spawn is asynchronous by contract).
 func waitFile(t *testing.T, outPath string, pred func(string) bool) string {
 	t.Helper()
 	deadline := time.Now().Add(testWaitTimeout)
@@ -79,8 +69,8 @@ func waitFile(t *testing.T, outPath string, pred func(string) bool) string {
 	return ""
 }
 
-// testAgent scaffolds scout into home (the machine never runs CreateHome
-// in spawn tests - the agent exists, folder presence is registration).
+// testAgent scaffolds scout into home (the machine never runs CreateHome in spawn
+// tests.
 func testAgent(t *testing.T, home string) agent.Profile {
 	t.Helper()
 	if err := agent.ScaffoldAgent(home, "scout", "test agent"); err != nil {
@@ -103,13 +93,10 @@ func TestWakeSpawnContract(t *testing.T) {
 		t.Fatalf("Wake: %v", err)
 	}
 	data := waitFile(t, out, func(d string) bool { return strings.Contains(d, "ARGV:run") })
-	// Args: the run is bound to the canonical chat (the M5 contract),
-	// under the agent's own qualified id (card t_5df01d0f).
+	// Args: the run is bound to the canonical chat (the M5 contract), under the agent's.
 	if !strings.Contains(data, "--session "+CanonicalSessionIDFor("scout")) {
 		t.Errorf("child not bound to the agent's canonical chat:\n%s", data)
 	}
-	// Env: root home + agent isolation + the per-wake budget riding
-	// OMEGA_MAX_TURNS (rulings 4, 17).
 	if !strings.Contains(data, "OMEGA_AGENT=scout") {
 		t.Errorf("OMEGA_AGENT missing:\n%s", data)
 	}
@@ -119,13 +106,10 @@ func TestWakeSpawnContract(t *testing.T) {
 	if !strings.Contains(data, "OMEGA_MAX_TURNS=7") {
 		t.Errorf("per-wake budget missing:\n%s", data)
 	}
-	// The child cwd is the agent home (ruling 1: an agent IS a home).
 	if !strings.Contains(data, "PWD:"+p.Dir+"\n") {
 		t.Errorf("child cwd = agent home expected:\n%s", data)
 	}
-	// The child exits, the live entry clears: wait for the marker then
-	// verify the machine reports the agent asleep again (the sleep IS
-	// the process death; the stub sleeps 30s so poll via Sleep kill).
+	// The child exits, the live entry clears.
 	wakeSleep(t, m, "scout")
 }
 
@@ -138,16 +122,13 @@ func TestWakeOneLiveGuardAndSleep(t *testing.T) {
 	if err := m.Wake("scout", "hello", ""); err != nil {
 		t.Fatal(err)
 	}
-	// The child armed (the DONE sentinel proves the stub fully wrote
-	// its record); the guard is already holding.
+	// The child armed (the DONE sentinel proves the stub fully wrote its record).
 	waitFile(t, out, func(d string) bool { return strings.Contains(d, "OMEGA_AGENT=scout") })
 	// A second wake while the child lives is refused, never queued.
 	if err := m.Wake("scout", "again", ""); !errors.Is(err, ErrAwake) {
 		t.Fatalf("second wake = %v, want ErrAwake", err)
 	}
-	// Sleep terminates the live child (the roster's sleep button).
 	wakeSleep(t, m, "scout")
-	// Sleeping a sleeping agent is a no-op, not an error.
 	m.Sleep("scout")
 }
 
@@ -162,10 +143,8 @@ func TestWakeMainNeverSpawns(t *testing.T) {
 	}
 }
 
-// TestWakeModelOverrideRidesEnv (card t_ecec864e): a cron job's
-// per-fire model rides OMEGA_MODEL on the child's env; an empty model
-// (the defaulting law's inherit case) sets no env line at all - the
-// agent's own provider config stands untouched.
+// TestWakeModelOverrideRidesEnv: a cron job's per-fire model rides OMEGA_MODEL on the
+// child's env.
 func TestWakeModelOverrideRidesEnv(t *testing.T) {
 	home := testHome(t)
 	testAgent(t, home)
@@ -187,8 +166,7 @@ func TestWakeModelOverrideRidesEnv(t *testing.T) {
 	if strings.Contains(data, "OMEGA_MODEL=") {
 		t.Errorf("empty model must inherit, env carries an override:\n%s", data)
 	}
-	// Both wakes end before the temp dirs are cleaned (windows holds
-	// an open file against the remover).
+	// Both wakes end before the temp dirs are cleaned (windows holds an open file.
 	wakeSleep(t, m, "scout")
 	wakeSleep(t, m2, "scout")
 }
@@ -201,21 +179,18 @@ func TestTickObserverDispatchesAndSkips(t *testing.T) {
 	m.setSpawnExe(stubExeScript(t, out))
 	obs := m.tickObserver()
 
-	// Not a tick, not theirs: ignored without a side effect.
 	obs(core.AgentStart{})
 	obs(core.TickEvent{Module: "chat", Kind: "wake", Payload: json.RawMessage(`{"agent":"scout"}`)})
 	if m.LiveWake("scout") {
 		t.Fatal("foreign tick woke an agent")
 	}
-	// Malformed payloads are skipped, never invented (loud consumers
-	// validate; the payload law keeps this JSON-raw).
+	// Malformed payloads are skipped, never invented (loud consumers validate.
 	obs(core.TickEvent{Module: "cron", Kind: "wake", Payload: json.RawMessage(`not-json`)})
 	obs(core.TickEvent{Module: "cron", Kind: "wake", Payload: nil})
 	obs(core.TickEvent{Module: "cron", Kind: "wake", Payload: json.RawMessage(`{}`)})
 	if m.LiveWake("scout") {
 		t.Fatal("malformed tick woke an agent")
 	}
-	// The real shape cron fires.
 	payload, err := json.Marshal(wakeTickPayload{Agent: "scout", Job: "wake", Prompt: "tick patrol"})
 	if err != nil {
 		t.Fatal(err)

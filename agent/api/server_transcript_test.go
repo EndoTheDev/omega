@@ -11,10 +11,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// transcriptFixture builds the persisted history of a segmented session:
-// user turn, assistant segment A (thinking + preamble + tool calls),
-// tool results, assistant segment B (final answer) around tool results,
-// then a second clean user/assistant exchange.
+// transcriptFixture builds the persisted history of a segmented session.
 func transcriptFixture() []core.StoredMessage {
 	thinking := "let me check the file"
 	preamble := "running the check"
@@ -35,9 +32,7 @@ func transcriptFixture() []core.StoredMessage {
 
 func TestTranscriptItemsWireOrder(t *testing.T) {
 	msgs := transcriptFixture()
-	// attach realistic timing: segment A thinking+response spans, the
-	// result's elapsed, segment B's response span
-	// (indices into transcriptFixture)
+	// attach realistic timing: segment A thinking+response spans, the result's elapsed.
 	aa, ok := msgs[1].Message.(core.Assistant)
 	if !ok {
 		t.Fatalf("msgs[1] not assistant")
@@ -68,7 +63,6 @@ func TestTranscriptItemsWireOrder(t *testing.T) {
 				i, items[i].Kind, k, kindsOf(items))
 		}
 	}
-	// timing fields ride the right items and nothing else
 	if items[1].ThinkingMs != 1500 || items[1].ResponseMs != 0 {
 		t.Fatalf("thinking item timing = %+v", items[1])
 	}
@@ -81,17 +75,13 @@ func TestTranscriptItemsWireOrder(t *testing.T) {
 	if items[4].ElapsedMs != 3000 || items[4].ToolCallID != "tc1" || items[4].Content != "PASS" {
 		t.Fatalf("tool_result = %+v", items[4])
 	}
-	// the response-return window rides the result beside the call's
-	// elapsed (card t_e27c8347): segment B's response span
 	if items[4].AnswerMs != 500 {
 		t.Fatalf("tool_result answer_ms = %d, want 500 (segment B's response span)", items[4].AnswerMs)
 	}
-	// tool meta: same nested shape the live tool_call frame carries
 	tc := items[3].ToolCall
 	if tc == nil || tc.ID != "tc1" || tc.Name != "go_test" || tc.Arguments["pkg"] != "./..." {
 		t.Fatalf("tool_call = %+v", tc)
 	}
-	// times come from the store, on user/message/thinking only
 	for i, wantTime := range map[int]string{0: "2026-10-19T01:00:00Z", 1: "2026-10-19T01:00:01Z", 2: "2026-10-19T01:00:01Z", 5: "2026-10-19T01:00:03Z"} {
 		if items[i].Time != wantTime {
 			t.Fatalf("items[%d].time = %q, want %q", i, items[i].Time, wantTime)
@@ -102,19 +92,15 @@ func TestTranscriptItemsWireOrder(t *testing.T) {
 			t.Fatalf("items[%d] (kind %s) carries time %q - tool items are elapsed-only", i, items[i].Kind, items[i].Time)
 		}
 	}
-	// is_error rides only when true (omitempty): a clean result must not
-	// leak a false flag the client would read identically, but the error
-	// result below must carry it
+	// is_error rides only when true (omitempty): a clean result must not leak a false flag
+	// the client would read identically, but the error result below must carry it
 	if items[4].IsError {
 		t.Fatalf("clean result flagged is_error")
 	}
 }
 
 func TestTranscriptItemsMultiTurnThinkingSplit(t *testing.T) {
-	// thinking after tool results must land with the NEXT segment, not
-	// merged onto the previous one (the reload-order bug class): segment
-	// A [thinking? no - plain assistant with calls], results, segment B
-	// thinking + answer.
+	// thinking after tool results must land with the NEXT segment, not merged onto the.
 	thinkingB := "now I can answer"
 	a1 := core.NewAssistant("")
 	a1.ToolCalls = []core.ToolCall{{ID: "tc9", Name: "go_test"}}
@@ -139,8 +125,8 @@ func TestTranscriptItemsMultiTurnThinkingSplit(t *testing.T) {
 	if items[3].Content != thinkingB {
 		t.Fatalf("thinking merged wrong: %q", items[3].Content)
 	}
-	// the empty segment-A assistant record (no content, no thinking)
-	// produced nothing of its own - only its calls
+	// the empty segment-A assistant record (no content, no thinking) produced nothing of
+	// its own.
 	if items[1].ToolCall == nil || items[1].ToolCall.ID != "tc9" {
 		t.Fatalf("tool_call lost: %+v", items[1])
 	}
@@ -178,8 +164,6 @@ func TestTranscriptItemsSkipsEmptyAndForeign(t *testing.T) {
 }
 
 func TestTranscriptItemsTimeFallback(t *testing.T) {
-	// rows saved before the store recorded created_at fall back to the
-	// message's own timestamp
 	msgs := []core.StoredMessage{{Message: core.NewUser("hi")}}
 	items := buildTranscriptItems(msgs)
 	if len(items) != 1 || items[0].Time == "" {
@@ -196,16 +180,10 @@ func TestTranscriptItemsTimeFallback(t *testing.T) {
 	}
 }
 
-// TestTranscriptItemsAnswerWindow (card t_e27c8347): the tool_result's
-// answer_ms is the response span of the answer segment the result
-// unlocked - and only then. Parallel results share the one answer; a
-// contentless next segment (another call) and a user turn (the run
-// ended) carry no second number.
+// TestTranscriptItemsAnswerWindow: the tool_result's answer_ms is the response span.
 func TestTranscriptItemsAnswerWindow(t *testing.T) {
-	// answer assistant with a measured response span
 	answer := core.NewAssistant("here is the answer")
 	answer.Timing = &core.Timing{ResponseMs: 4200}
-	// a) the common shape: result -> answer assistant
 	msgs := []core.StoredMessage{
 		{Message: core.NewToolResult("out", "tc1", false), CreatedAt: "t0"},
 		{Message: answer, CreatedAt: "t1"},
@@ -214,7 +192,6 @@ func TestTranscriptItemsAnswerWindow(t *testing.T) {
 	if len(items) != 2 || items[0].AnswerMs != 4200 {
 		t.Fatalf("answer window lost: %+v", items)
 	}
-	// b) parallel results share the one answer
 	msgs = []core.StoredMessage{
 		{Message: core.NewToolResult("a", "tc1", false), CreatedAt: "t0"},
 		{Message: core.NewToolResult("b", "tc2", false), CreatedAt: "t1"},
@@ -228,7 +205,6 @@ func TestTranscriptItemsAnswerWindow(t *testing.T) {
 			t.Fatalf("parallel result %s answer_ms = %d, want 4200", it.ToolCallID, it.AnswerMs)
 		}
 	}
-	// c) the next segment called another tool instead of answering
 	chained := core.NewAssistant("")
 	chained.ToolCalls = []core.ToolCall{{ID: "tc9", Name: "go_test"}}
 	msgs = []core.StoredMessage{
@@ -248,8 +224,7 @@ func TestTranscriptItemsAnswerWindow(t *testing.T) {
 			t.Fatalf("the answered call's result lost its window: %+v", it)
 		}
 	}
-	// d) the run ended at the result (yield, error): a user turn
-	// follows - no answer to measure
+	// d) the run ended at the result (yield, error).
 	msgs = []core.StoredMessage{
 		{Message: core.NewToolResult("out", "tc1", false), CreatedAt: "t0"},
 		{Message: core.NewUser("next turn"), CreatedAt: "t1"},
@@ -260,8 +235,7 @@ func TestTranscriptItemsAnswerWindow(t *testing.T) {
 			t.Fatalf("result before a user turn carries an answer window: %+v", it)
 		}
 	}
-	// e) an unmeasured answer (no timing record) stays zero, and a
-	// tail result with no follow-up at all stays zero too
+	// e) an unmeasured answer (no timing record) stays zero, and a tail result with no.
 	items = buildTranscriptItems([]core.StoredMessage{
 		{Message: core.NewToolResult("out", "tc1", false), CreatedAt: "t0"},
 		{Message: core.NewAssistant("no timing"), CreatedAt: "t1"},
@@ -325,7 +299,6 @@ func TestSessionTranscriptHandler(t *testing.T) {
 }
 
 func TestSessionTranscriptHandlerGates(t *testing.T) {
-	// unknown session -> 404
 	s, _ := newTestServerWithStore(t)
 	req := httptest.NewRequest(http.MethodGet, "/sessions/nope/transcript", nil)
 	rec := httptest.NewRecorder()
@@ -333,7 +306,6 @@ func TestSessionTranscriptHandlerGates(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
-	// no store -> 501 (same gate as the other session endpoints)
 	req = httptest.NewRequest(http.MethodGet, "/sessions/x/transcript", nil)
 	rec = httptest.NewRecorder()
 	newTestServer().Handler().ServeHTTP(rec, req)
@@ -355,8 +327,7 @@ func TestSessionTranscriptHandlerGates(t *testing.T) {
 	if err := st2.CreateSession(context.Background(), "s1", "", ""); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	// empty history -> items renders as [] not null (the client's
-	// render loop must never see null)
+	// empty history -> items renders as [] not null (the client's render loop must never.
 	req = httptest.NewRequest(http.MethodGet, "/sessions/s1/transcript", nil)
 	rec = httptest.NewRecorder()
 	s2.Handler().ServeHTTP(rec, req)
@@ -382,12 +353,8 @@ func kindsOf(items []transcriptItem) []string {
 	return out
 }
 
-// TestLiveTranscriptItemsWireOrderShapesRunState: the accumulator's
-// closed segments + the open record flatten to wire items in the order
-// the live stream produced them, with the running hints on the
-// in-flight parts only (card t_692254f7 fix A).
+// TestLiveTranscriptItemsWireOrderShapesRunState: the accumulator's closed segments +.
 func TestLiveTranscriptItemsWireOrderShapesRunState(t *testing.T) {
-	// closed segment: thinking + preamble + a call the results answered
 	closed := assistantRecord{
 		thinking: "check first",
 		content:  "running the check",
@@ -398,8 +365,6 @@ func TestLiveTranscriptItemsWireOrderShapesRunState(t *testing.T) {
 		thinkDur: 1500 * time.Millisecond,
 		respDur:  200 * time.Millisecond,
 	}
-	// open record: thinking streaming, one already-resulted call plus
-	// one still-running (started 2s ago), no trailing chunk yet
 	start := time.Now().Add(-2 * time.Second)
 	open := assistantRecord{
 		thinking: "and again",
@@ -423,7 +388,6 @@ func TestLiveTranscriptItemsWireOrderShapesRunState(t *testing.T) {
 			t.Fatalf("items[%d].kind = %q, want %q (order: %v)", i, items[i].Kind, k, got)
 		}
 	}
-	// closed segment: complete spans measured, nothing running
 	if items[0].Running || items[0].ThinkingMs != 1500 {
 		t.Fatalf("closed thinking = %+v", items[0])
 	}
@@ -440,34 +404,27 @@ func TestLiveTranscriptItemsWireOrderShapesRunState(t *testing.T) {
 	if !items[4].Running || items[4].ThinkingMs != 0 {
 		t.Fatalf("open thinking must stream with no final span: %+v", items[4])
 	}
-	// tc2 already resulted: plain call, no running flag
 	if items[5].Running || items[5].ToolCall == nil || items[5].ToolCall.ID != "tc2" {
 		t.Fatalf("resulted call in open record = %+v", items[5])
 	}
-	// tc3 still running: the hint + elapsed-since-call-start
 	if !items[6].Running || items[6].ToolCall == nil || items[6].ToolCall.ID != "tc3" {
 		t.Fatalf("running call = %+v", items[6])
 	}
 	if items[6].ElapsedMs < 1500 {
 		t.Fatalf("running call elapsed = %d, want ~2000", items[6].ElapsedMs)
 	}
-	// the answered call's result rides as a plain result item - never
-	// running (terminal), matched client-side by tool_call_id
+	// the answered call's result rides as a plain result item - never running.
 	if items[7].Running || items[7].ToolCallID != "tc2" || items[7].Content != "OK" {
 		t.Fatalf("open record result = %+v", items[7])
 	}
 }
 
-// TestLiveTranscriptItemsCarryStreamingElapsed: the open record's
-// in-flight thinking/answer rows ship their elapsed-so-far (card
-// t_95385aba) - the anchor a remounted transcript item counts on from
-// after a tab switch or reload, the same shape a running tool line
-// carries. A reasoning phase the answer already ended ships its
-// measured span instead (it will never tick again).
+// TestLiveTranscriptItemsCarryStreamingElapsed: the open record's in-flight. A
+// reasoning phase the answer already ended ships its measured span instead (it will
+// never tick again).
 func TestLiveTranscriptItemsCarryStreamingElapsed(t *testing.T) {
 	now := time.Now()
 
-	// reasoning still open: 3s accumulated + a 2s open span
 	items := liveTranscriptItems(nil, assistantRecord{
 		thinking:  "deliberating",
 		thinkDur:  3 * time.Second,
@@ -486,7 +443,6 @@ func TestLiveTranscriptItemsCarryStreamingElapsed(t *testing.T) {
 		t.Fatalf("a live phase must not ship a final span: %+v", items[0])
 	}
 
-	// the answer streams behind a finished reasoning phase
 	items = liveTranscriptItems(nil, assistantRecord{
 		thinking:  "done deliberating",
 		content:   "the answer so far",
@@ -515,12 +471,7 @@ func TestLiveTranscriptItemsCarryStreamingElapsed(t *testing.T) {
 		t.Fatalf("a live answer must not ship a final span: %+v", items[1])
 	}
 
-	// the answer ended and its tool is running: the tool call closed
-	// the phase window AND finished the segment (segDone), so the row
-	// ships its measured span as a SETTLED row - no running bit, no
-	// ticking meter anchored at the frozen window, no snap when the run
-	// lands (card t_484cbb27). The frozen anchor itself is
-	// phaseElapsed's law, pinned by TestPhaseElapsedSpansTheBoundary.
+	// the answer ended and its tool is running.
 	items = liveTranscriptItems(nil, assistantRecord{
 		content:    "answered, now calling",
 		respDur:    1500 * time.Millisecond,
@@ -540,13 +491,7 @@ func TestLiveTranscriptItemsCarryStreamingElapsed(t *testing.T) {
 	}
 }
 
-// TestSegmentFinishedBoundarySettlesTheTextRows: a tool call that
-// follows accumulated text FINISHES the segment it followed. The
-// record stays open (it takes the call, the result, then splits), but
-// its thinking/answer rows are settled history on both wires: measured
-// spans, no running bit - a remount mid-call renders the frozen span
-// instead of a meter ticking off a closed window, and nothing snaps
-// when the run lands (card t_484cbb27).
+// TestSegmentFinishedBoundarySettlesTheTextRows: a tool call that follows accumulated.
 func TestSegmentFinishedBoundarySettlesTheTextRows(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	var recs []assistantRecord
@@ -559,7 +504,6 @@ func TestSegmentFinishedBoundarySettlesTheTextRows(t *testing.T) {
 	if rec.segDone {
 		t.Fatalf("a live segment is not finished: %+v", rec)
 	}
-	// the answer is still streaming while nothing followed it
 	live := liveTranscriptItems(nil, rec, time.Now())
 	if len(live) != 2 || live[1].Kind != "message" || !live[1].Running {
 		t.Fatalf("live answer must stream: %+v", live)
@@ -570,8 +514,7 @@ func TestSegmentFinishedBoundarySettlesTheTextRows(t *testing.T) {
 		t.Fatal("a tool call after text must finish the segment")
 	}
 
-	// the wire shape both surfaces read, durations deterministic (the
-	// accumulator's ms spans under a same-millisecond feed are 0)
+	// the wire shape both surfaces read, durations deterministic (the accumulator's ms.
 	settled := liveTranscriptItems(nil, assistantRecord{
 		thinking:   "considering",
 		content:    "calling the checker",
@@ -595,8 +538,6 @@ func TestSegmentFinishedBoundarySettlesTheTextRows(t *testing.T) {
 		t.Fatalf("the unanswered call still runs: %+v", settled[2])
 	}
 
-	// the panel wire mirrors the same rows: the text rows are complete
-	// (no streaming status, no meter anchor), the call row streams
 	rows := chatRows(settled)
 	if len(rows) != 3 {
 		t.Fatalf("panel rows = %d, want 3", len(rows))
@@ -624,10 +565,7 @@ func TestSegmentFinishedBoundarySettlesTheTextRows(t *testing.T) {
 	}
 }
 
-// TestPhaseElapsedSpansTheBoundary: a phase that has not produced its
-// first chunk yet still bills the wait from the opening boundary (a
-// turn start or the last tool result) - otherwise a restored meter
-// would start at zero through the model's latency.
+// TestPhaseElapsedSpansTheBoundary: a phase that has not produced its first chunk yet.
 func TestPhaseElapsedSpansTheBoundary(t *testing.T) {
 	now := time.Now()
 	if got := phaseElapsed(0, time.Time{}, now.Add(-3*time.Second), now); got < 2900 || got > 3100 {
@@ -644,8 +582,7 @@ func TestPhaseElapsedSpansTheBoundary(t *testing.T) {
 	}
 }
 
-// TestLiveTranscriptItemsEmptyOpenRecord: a bare open record (no chunks,
-// no calls - a run sitting between turns) contributes nothing.
+// TestLiveTranscriptItemsEmptyOpenRecord: a bare open record (no chunks, no calls.
 func TestLiveTranscriptItemsEmptyOpenRecord(t *testing.T) {
 	items := liveTranscriptItems(nil, assistantRecord{}, time.Now())
 	if items != nil {
@@ -653,8 +590,7 @@ func TestLiveTranscriptItemsEmptyOpenRecord(t *testing.T) {
 	}
 }
 
-// TestSessionTranscriptMergesLiveRun (fix A): persisted history + the
-// run's live tail in wire order when a run holds the session's slot.
+// TestSessionTranscriptMergesLiveRun (fix A).
 func TestSessionTranscriptMergesLiveRun(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
@@ -668,8 +604,6 @@ func TestSessionTranscriptMergesLiveRun(t *testing.T) {
 	if !ok {
 		t.Fatalf("start run")
 	}
-	// what launchRun snaps after each event: the open thinking block and
-	// the running tool call
 	builtAt := time.Now()
 	s.runs.setTail(run, liveTranscriptItems(nil, assistantRecord{
 		toolCalls:  []core.ToolCall{{ID: "tcl", Name: "shell.run"}},
@@ -707,11 +641,7 @@ func TestSessionTranscriptMergesLiveRun(t *testing.T) {
 	}
 }
 
-// TestSessionTranscriptStreamsTheAnswerElapsed (card t_95385aba): a
-// mid-run GET of the transcript - the tab-switch / reload path - serves
-// the open answer and thinking rows with their elapsed-so-far on the
-// wire, so the remounted meters count on instead of restarting at zero.
-// Same wire a running tool line has used since the reattach merge.
+// TestSessionTranscriptStreamsTheAnswerElapsed: a mid-run GET of the transcript.
 func TestSessionTranscriptStreamsTheAnswerElapsed(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
@@ -725,8 +655,6 @@ func TestSessionTranscriptStreamsTheAnswerElapsed(t *testing.T) {
 	if !ok {
 		t.Fatalf("start run")
 	}
-	// the run state a remount interrupts: reasoning 3s in, the answer
-	// 1.2s in behind it
 	builtAt := time.Now()
 	s.runs.setTail(run, liveTranscriptItems(nil, assistantRecord{
 		thinking: "weighing options",
@@ -766,12 +694,10 @@ func TestSessionTranscriptStreamsTheAnswerElapsed(t *testing.T) {
 	}
 }
 
-// TestFreshenRunningCallsAgesOnlyTheCall (card t_6bad9f6f): a snapshot's
-// running tool line counts on by the snapshot's age, so a reader that
-// serves the snapshot anchors at the call's true elapsed. A frozen
-// thinking/answer span keeps the measurement the server stopped at (a
-// tool call closes the phase's window - its wall clock bills to nobody),
-// and the stored snapshot is never mutated in place.
+// TestFreshenRunningCallsAgesOnlyTheCall: a snapshot's running tool line counts on by.
+// A frozen thinking/answer span keeps the measurement the server stopped at (a tool
+// call closes the phase's window - its wall clock bills to nobody), and the stored
+// snapshot is never mutated in place.
 func TestFreshenRunningCallsAgesOnlyTheCall(t *testing.T) {
 	snapshot := []transcriptItem{
 		{Kind: "thinking", Content: "weighing", Running: true, ElapsedMs: 3000},
@@ -798,13 +724,7 @@ func TestFreshenRunningCallsAgesOnlyTheCall(t *testing.T) {
 	}
 }
 
-// TestBuildTranscriptItemsStampsTheUnansweredCall (card t_6bad9f6f
-// round 3): history renders an unanswered call as the pending row, and
-// that row carries the assistant turn's write time as its start stamp -
-// the only anchor that survives a cached payload. An answered call
-// carries no stamp (its result's final duration is the row's number),
-// whether the answer is an inline tool result or a yield-class wake
-// result.
+// TestBuildTranscriptItemsStampsTheUnansweredCall: history renders an unanswered call.
 func TestBuildTranscriptItemsStampsTheUnansweredCall(t *testing.T) {
 	assistant := func(calls ...core.ToolCall) core.Assistant {
 		a := core.NewAssistant("")
@@ -838,11 +758,10 @@ func TestBuildTranscriptItemsStampsTheUnansweredCall(t *testing.T) {
 	}
 }
 
-// TestSessionTranscriptAgesTheRunningCall (card t_6bad9f6f): the
-// reattach tail is a SNAPSHOT, rebuilt per event - and a tool call emits
-// no event until its result. A reload mid-call therefore reads a tail
-// frozen at the call-open anchor (~0) and must be served the anchor aged
-// by the snapshot's age, or the restored meter restarts at 0:00.
+// TestSessionTranscriptAgesTheRunningCall: the reattach tail is a SNAPSHOT, rebuilt per
+// event. A reload mid-call therefore reads a tail frozen at the call-open anchor (~0)
+// and must be served the anchor aged by the snapshot's age, or the restored meter
+// restarts at 0:00.
 func TestSessionTranscriptAgesTheRunningCall(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
@@ -856,9 +775,6 @@ func TestSessionTranscriptAgesTheRunningCall(t *testing.T) {
 	if !ok {
 		t.Fatalf("start run")
 	}
-	// the snapshot the loop built AT the call event: the call had just
-	// opened, so its baked anchor is ~0 - the value the pre-fix wire
-	// served for the whole call
 	builtAt := time.Now().Add(-3 * time.Second)
 	s.runs.setTail(run, liveTranscriptItems(nil, assistantRecord{
 		toolCalls:  []core.ToolCall{{ID: "tcl", Name: "shell.run"}},
@@ -886,19 +802,15 @@ func TestSessionTranscriptAgesTheRunningCall(t *testing.T) {
 	if tc.ElapsedMs < 2900 || tc.ElapsedMs > 3300 {
 		t.Fatalf("elapsed = %d, want ~3000 (the snapshot's age added to its call-open anchor)", tc.ElapsedMs)
 	}
-	// the hub keeps serving the same snapshot: the aging read never
-	// rewrote it
+	// the hub keeps serving the same snapshot: the aging read never rewrote it
 	if tail, _, live := s.runs.tailSnapshot("s1"); !live || tail[0].ElapsedMs != 0 {
 		t.Fatalf("stored tail mutated: %+v", tail)
 	}
 }
 
-// TestSessionTranscriptServesOneAnchoredCallRow (card t_6bad9f6f):
-// mid-call the store already carries the assistant row WITH its call
-// (the loop persists the turn before the tools execute) and the live
-// tail carries the same call while it runs. The wire serves the call
-// ONCE with the running anchor on it - a reload must render one row,
-// not two, and that row must not restart its meter at zero.
+// TestSessionTranscriptServesOneAnchoredCallRow: mid-call the store already carries.
+// The wire serves the call ONCE with the running anchor on it - a reload must render
+// one row, not two, and that row must not restart its meter at zero.
 func TestSessionTranscriptServesOneAnchoredCallRow(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
@@ -946,8 +858,7 @@ func TestSessionTranscriptServesOneAnchoredCallRow(t *testing.T) {
 	}
 }
 
-// TestTranscriptItemsUserImages (scope add 2026-10-20): persisted user
-// images ride the restore - thumbnails survive a reload.
+// TestTranscriptItemsUserImages: persisted user images ride the restore.
 func TestTranscriptItemsUserImages(t *testing.T) {
 	imgs := []core.ImageContent{{MediaType: "image/png", Base64: "aGk="}}
 	msgs := []core.StoredMessage{
@@ -964,7 +875,6 @@ func TestTranscriptItemsUserImages(t *testing.T) {
 	if items[1].Images != nil {
 		t.Fatalf("text-only user must not carry images: %+v", items[1])
 	}
-	// image-only user messages persist too (empty content, images set)
 	items = buildTranscriptItems([]core.StoredMessage{
 		{Message: core.NewUserWithImages("", imgs)},
 	})
@@ -973,12 +883,8 @@ func TestTranscriptItemsUserImages(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// The smart gate's decision record (card t_1b3e2a8b): the stamp rides
-// the persisted tool result into the transcript wire (restore), and
-// the RunHub accumulator's results into the live tail - the same item
-// in both paths, rendered on the call's own row.
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------- The smart
+// gate's decision record.
 
 func TestTranscriptItemsCarryGateStamp(t *testing.T) {
 	msgs := []core.StoredMessage{
@@ -1007,7 +913,6 @@ func TestTranscriptItemsCarryGateStamp(t *testing.T) {
 	if res.Gate != "smart gate: escalated -> denied - command skipped" {
 		t.Fatalf("transcript wire lost the gate stamp: %q", res.Gate)
 	}
-	// an ungated result carries no gate - the wire stays sparse
 	stamped := buildTranscriptItems([]core.StoredMessage{
 		{Message: core.NewToolResult("ok", "tc2", false), CreatedAt: "t"},
 	})

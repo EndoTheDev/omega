@@ -1,9 +1,6 @@
 package agent
 
-// The E1 dismount proofs (implementation sketches 1 and 2): the
-// panicking plugin at boot re-panics named; at remount the Context
-// holds zero of its contributions; teardown reverses the recorded
-// topo order; the churn stays flat on goroutines.
+// The E1 dismount proofs (implementation sketches 1 and 2).
 
 import (
 	"context"
@@ -18,16 +15,13 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// testWaitTimeout bounds every poll-until-true wait in this package's tests.
-// It exists to catch a HANG, not to time correctness: a healthy condition can
-// take seconds when the full suite runs packages in parallel and starves the
-// goroutine under test. Bounding it tightly (2-5s) made load-sensitive tests
-// red on a loaded machine and green in isolation - the worst kind of flake.
+// testWaitTimeout bounds every poll-until-true wait in this package's tests. It exists
+// to catch a HANG, not to time correctness: a healthy condition can take seconds when
+// the full suite runs packages in parallel and starves the goroutine under test.
 const testWaitTimeout = 30 * time.Second
 
-// toggleCapsule is the E1 test capsule: it mounts a tool, a command,
-// a route and a fence handle - surfaces the census and the journal
-// must unwind.
+// toggleCapsule is the E1 test capsule: it mounts a tool, a command, a route and a
+// fence handle - surfaces the census and the journal must unwind.
 type toggleCapsule struct {
 	name       string
 	provides   []string
@@ -70,8 +64,7 @@ func (c *toggleCapsule) MountWithAPI(ctx *core.Context, api *ExtensionAPI) error
 		func() error { return nil })
 }
 
-// classicNoProof registers nothing: it exists for the Q3 edge and
-// introspection cases, where only its name and provides matter.
+// classicNoProof registers nothing.
 type classicNoProof struct{ name string }
 
 func (p *classicNoProof) Name() string       { return p.name }
@@ -116,8 +109,7 @@ func (c *dependentCapsule) MountWithAPI(ctx *core.Context, api *ExtensionAPI) er
 func (c *dependentCapsule) Toggleable() bool                                        { return c.toggle }
 
 func TestBootPanicRePanicsNamed(t *testing.T) {
-	// Sketch 1, first step: a panicking plugin at boot re-panics with
-	// the module named and the fix-it hint attached (Q11).
+	// Sketch 1, first step: a panicking plugin at boot re-panics with the module named.
 	defer func() {
 		rec := recover()
 		if rec == nil {
@@ -138,9 +130,6 @@ func TestBootPanicRePanicsNamed(t *testing.T) {
 }
 
 func TestRemountPanicRollsBack(t *testing.T) {
-	// The remount half of Q11: the same capsule on a live set - the
-	// toggle is rejected, the server keeps running, the Context holds
-	// zero of its contributions.
 	ctx := &core.Context{}
 	liveReg, err := MountAllAPI([]Plugin{&classicWithProof{name: "base"}}, ctx, nil, nil)
 	if err != nil {
@@ -164,8 +153,7 @@ func TestRemountPanicRollsBack(t *testing.T) {
 	if liveReg.isActive("panicker") {
 		t.Fatal("rejected module must not be active")
 	}
-	// A second mount of a WELL-BEHAVED module still works: the
-	// registry was unwound, not wedged.
+	// A second mount of a WELL-BEHAVED module still works.
 	if err := liveReg.Mount(ctx, &toggleCapsule{name: "good"}, core.StartDeps{}); err != nil {
 		t.Fatal(err)
 	}
@@ -209,8 +197,6 @@ func TestToggleCensusRoundTrip(t *testing.T) {
 	if liveReg.isActive("mod") {
 		t.Fatal("dismounted module still active")
 	}
-	// Re-enable works and the claims were released (Q5 one-tenant
-	// holds across the toggle).
 	if err := liveReg.Mount(ctx, mod, core.StartDeps{}); err != nil {
 		t.Fatal(err)
 	}
@@ -242,8 +228,7 @@ func (c *orderCapsule) Dismount(*core.Context) error {
 }
 
 func TestDismountAllReverseTopo(t *testing.T) {
-	// Sketch 2: DismountAll replays MountAll's recorded topo order in
-	// REVERSE - the dependent tears down BEFORE the seam it consumed.
+	// Sketch 2: DismountAll replays MountAll's recorded topo order in REVERSE.
 	var dismounted []string
 	root := &orderCapsule{name: "root", requires: []string{"leaf2"}, on: &dismounted}
 	leaf := &orderCapsule{name: "leaf2", requires: nil, on: &dismounted}
@@ -292,7 +277,6 @@ func TestDismountTwiceFails(t *testing.T) {
 }
 
 func TestDisableList(t *testing.T) {
-	// Q1: the disabled capsule simply does not mount.
 	off := &toggleCapsule{name: "kanban", provides: []string{"kanban"}}
 	ctx := &core.Context{}
 	reg, err := MountAllAPI([]Plugin{off}, ctx, nil, []string{"kanban"})
@@ -305,8 +289,6 @@ func TestDisableList(t *testing.T) {
 	if len(ctx.Infos) != 0 {
 		t.Fatalf("disabled module left inventory: %+v", ctx.Infos)
 	}
-	// Q3: an enabled module depending on the disabled one fails the
-	// boot naming the edge.
 	dep := &dependentCapsule{name: "depper", requires: []string{"kanban"}}
 	_, err = MountAllAPI([]Plugin{off, dep}, ctx, nil, []string{"kanban"})
 	if err == nil {
@@ -317,11 +299,9 @@ func TestDisableList(t *testing.T) {
 			t.Fatalf("Q3 error must name the edge (%s): %v", want, err)
 		}
 	}
-	// The same set without the disable list mounts clean.
 	if _, err := MountAllAPI([]Plugin{off, dep}, &core.Context{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	// Tier law: a machine-critical module is not disableable.
 	_, err = MountAllAPI([]Plugin{&dependentCapsule{name: "store"}}, ctx, nil, []string{"store"})
 	if err == nil || !strings.Contains(err.Error(), "not toggleable") {
 		t.Fatalf("tier law: disabling machine-critical module must fail: %v", err)
@@ -333,9 +313,8 @@ func TestDisableList(t *testing.T) {
 	}
 }
 
-// churnCapsule registers a fence handle whose Start spawns a
-// goroutine - exactly the shape recover cannot unwind and the fence
-// must own.
+// churnCapsule registers a fence handle whose Start spawns a goroutine - exactly the
+// shape recover cannot unwind and the fence must own.
 type churnCapsule struct{ stop chan struct{} }
 
 func (c *churnCapsule) Name() string                 { return "churn" }
@@ -364,10 +343,9 @@ func churnLoop(stop chan struct{}) {
 }
 
 func TestToggleChurnFlatGoroutines(t *testing.T) {
-	// Sketch 2's churn test: N toggle cycles leave the goroutine
-	// count flat, and the pprof goroutine dump (the backstop for
-	// closures invisible to slot diffs) holds no stacks rooted in
-	// the churning module.
+	// Sketch 2's churn test: N toggle cycles leave the goroutine count flat, and the pprof
+	// goroutine dump (the backstop for closures invisible to slot diffs) holds no stacks
+	// rooted in the churning module.
 	ctx := &core.Context{}
 	reg, err := MountAllAPI([]Plugin{&classicWithProof{name: "base"}}, ctx, nil, nil)
 	if err != nil {
@@ -398,8 +376,7 @@ func TestToggleChurnFlatGoroutines(t *testing.T) {
 	if after := runtime.NumGoroutine(); after > before+2 {
 		t.Fatalf("churn leaked goroutines: %d -> %d over %d cycles", before, after, cycles)
 	}
-	// Last module state is mounted: stop it and every pump must be
-	// gone from the dump (the backstop).
+	// Last module state is mounted: stop it and every pump must be gone from the dump.
 	if err := reg.Dismount(ctx, "churn"); err != nil {
 		t.Fatal(err)
 	}
@@ -419,8 +396,7 @@ type dumpWriter struct{ *strings.Builder }
 
 func (w dumpWriter) Write(p []byte) (int, error) { return w.Builder.Write(p) }
 
-// interPanel is a fixture panel provider: one panel, one namespaced
-// action.
+// interPanel is a fixture panel provider: one panel, one namespaced action.
 type interPanel struct{ name string }
 
 func (p interPanel) Panels() []core.Panel {
@@ -445,8 +421,7 @@ type interChannel struct{ name string }
 func (interChannel) Start(context.Context, core.ChannelDeps) error { return nil }
 func (interChannel) Stop() error                                   { return nil }
 
-// interCapsule registers every additive surface the journal appends
-// to: tool, panel provider, command, route, sectioner, channel.
+// interCapsule registers every additive surface the journal appends to.
 type interCapsule struct{ name string }
 
 func (c *interCapsule) Name() string       { return c.name }
@@ -485,13 +460,11 @@ func (c *interCapsule) MountWithAPI(ctx *core.Context, api *ExtensionAPI) error 
 	return api.RegisterChannel(&interChannel{})
 }
 
-// TestInterleavedDismountKeepsLaterSurface is the gate audit's repro
-// (A1): two modules mount, the FIRST dismounts. The journal undo must
-// remove only the first's own contributions - an index truncation
-// deletes every later module's append off the live Context while the
-// registry still reports it mounted. The second's tool must still
-// answer, and the whole census must equal a mount that never included
-// the first.
+// TestInterleavedDismountKeepsLaterSurface is the gate audit's repro (A1). The journal
+// undo must remove only the first's own contributions - an index truncation deletes
+// every later module's append off the live Context while the registry still reports it
+// mounted. The second's tool must still answer, and the whole census must equal a mount
+// that never included the first.
 func TestInterleavedDismountKeepsLaterSurface(t *testing.T) {
 	ctx := &core.Context{}
 	reg, err := MountAllAPI([]Plugin{&interCapsule{name: "early"}, &interCapsule{name: "late"}}, ctx, nil, nil)

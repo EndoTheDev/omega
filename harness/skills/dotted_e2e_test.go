@@ -1,10 +1,6 @@
 package skills
 
-// dotted_e2e_test.go: the split's acceptance witness (t_d8fbad57,
-// phase 2). A scripted provider drives every dotted skills tool
-// through the REAL agent loop - the same wire a model rides - and
-// the assertions read the skills dir. No server, no REST: the
-// loop's tool dispatch on the dotted names is the surface under test.
+// dotted_e2e_test.go: the split's acceptance witness.
 
 import (
 	"context"
@@ -20,9 +16,8 @@ import (
 
 func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 	dir := makeSkillDir(t)
-	// a second seeded skill gives the update its own target: the
-	// loop executes tool calls concurrently, so no call may depend on
-	// another call's landing first.
+	// a second seeded skill gives the update its own target: the loop executes tool calls
+	// concurrently, so no call may depend on another call's landing first.
 	if err := os.MkdirAll(filepath.Join(dir, "update-skill"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -33,8 +28,7 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 	sp := NewSkillsProvider(dir)
 
 	prov := agent.NewFakeProviderScripts("test",
-		// Turn 1: the model exercises every dotted tool back to back -
-		// one call per new tool name.
+		// Turn 1: the model exercises every dotted tool back to back.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{
 				ID: "c1", Name: "skills.read", Arguments: map[string]any{"name": "test-skill"},
@@ -56,7 +50,6 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 			}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		// Turn 2: respond and stop.
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "done"},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -83,8 +76,7 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 		t.Fatalf("the loop executed %d tool results, want 4", results)
 	}
 
-	// the dir is the truth: the write landed with the loader's
-	// frontmatter, the update patched its own skill
+	// the dir is the truth: the write landed with the loader's frontmatter, the update.
 	raw, err := os.ReadFile(filepath.Join(dir, "born-on-the-wire", "SKILL.md"))
 	if err != nil {
 		t.Fatalf("skills.write never landed: %v", err)

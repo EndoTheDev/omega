@@ -1,9 +1,8 @@
 //go:build windows
 
-// Package terminal - the ConPTY door's self-check, the windows
-// counterpart of TestRealPTYShellEcho (pty_linux.go's /dev/ptmx guard
-// skips it here): a real shell on a real pseudoconsole must echo,
-// resize, exit with a real exit code, and die on Kill.
+// Package terminal - the ConPTY door's self-check, the windows counterpart of
+// TestRealPTYShellEcho (pty_linux.go's /dev/ptmx guard skips it here): a real shell on
+// a real pseudoconsole must echo, resize, exit with a real exit code, and die on Kill.
 package terminal
 
 import (
@@ -13,11 +12,8 @@ import (
 	"time"
 )
 
-// TestConPTYShellEcho pins the loop: spawn -> resize -> prompt ->
-// echo. The cmd prompt carries the cwd, so the temp dir's base name
-// is the arrival needle for "the console is live and at the prompt"
-// - and the resize landed first, since the prompt only renders at
-// the sized buffer. cmd reads \r input, never \n.
+// TestConPTYShellEcho pins the loop: spawn -> resize -> prompt -> echo. cmd reads \r
+// input, never \n.
 func TestConPTYShellEcho(t *testing.T) {
 	dir := t.TempDir()
 	proc, err := spawnProcess(dir)
@@ -39,9 +35,8 @@ func TestConPTYShellEcho(t *testing.T) {
 	}
 }
 
-// TestConPTYExitCode pins the exit watcher: an explicit shell exit
-// yields Done + a zero code (cmd.exe's own status), the same contract
-// the linux ptyProcess carries.
+// TestConPTYExitCode pins the exit watcher: an explicit shell exit yields Done + a zero
+// code (cmd.exe's own status), the same contract the linux ptyProcess carries.
 func TestConPTYExitCode(t *testing.T) {
 	dir := t.TempDir()
 	proc, err := spawnProcess(dir)
@@ -62,9 +57,7 @@ func TestConPTYExitCode(t *testing.T) {
 	}
 }
 
-// TestConPTYKill pins the kill door: TerminateProcess tears the shell
-// down, the done fence closes, and the output pipe hangs up (the read
-// loop's exit shape).
+// TestConPTYKill pins the kill door.
 func TestConPTYKill(t *testing.T) {
 	dir := t.TempDir()
 	proc, err := spawnProcess(dir)
@@ -97,9 +90,7 @@ func TestConPTYKill(t *testing.T) {
 	}
 }
 
-// TestShellPathWindowsComSpec pins the pick law: ComSpec wins (the
-// bulletproof ConPTY client), the stat-checked fallbacks only carry
-// exotic boxes.
+// TestShellPathWindowsComSpec pins the pick law.
 func TestShellPathWindowsComSpec(t *testing.T) {
 	t.Setenv("COMSPEC", `C:\Windows\System32\cmd.exe`)
 	if got := shellPath(); got != `C:\Windows\System32\cmd.exe` {

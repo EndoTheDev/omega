@@ -7,17 +7,13 @@ import (
 	"strings"
 )
 
-// The @-mention expansion on the webui submit path (card t_07aed3f9).
-// The old shell ran extractImages inline before a send; the webui gets the
-// same law SERVER-SIDE on /chat - the browser never expands. One law,
-// one function: core.ExpandAtMentions.
+// The @-mention expansion on the webui submit path. The old shell ran extractImages
+// inline before a send; the webui gets the same law SERVER-SIDE on /chat - the browser
+// never expands.
 
-// contextDocs snapshots the mounted skill capsule's inventory as
-// name/content pairs for the @skill: tokens and the /commands skill
-// dispatch. An unmounted module (or a listing failure) degrades to
-// nil - tokens stay as-is, exactly like every other unresolvable
-// token. The pairs are data the consumer resolved; no capsule type
-// crosses (part 3 seam constitution).
+// contextDocs snapshots the mounted skill capsule's inventory as name/content pairs for
+// the @skill. An unmounted module (or a listing failure) degrades to nil - tokens stay
+// as-is, exactly like every other unresolvable token.
 func (s *Server) contextDocs() []core.AtDoc {
 	sk := s.skills()
 	if sk == nil {
@@ -34,15 +30,7 @@ func (s *Server) contextDocs() []core.AtDoc {
 	return out
 }
 
-// expandAtMentions runs the core @-mention law over the run's new
-// input: the LAST incoming user message is the prompt. Card t_7f09bd0c
-// rules the webui's attach semantics: the composer attaches PATHS - the
-// @file token rides through as a REFERENCE the model follows with its
-// own tools; no content inline, no image attach, no mime work on this
-// path (the pill'd token survives in the text, the transcript renders
-// it). @session:/@skill: still inject. dir roots the injections'
-// relative file reads (the session's workspace in the store-backed
-// path, the process cwd in the legacy one).
+// expandAtMentions runs the core @-mention law over the run's new input.
 func (s *Server) expandAtMentions(incoming []core.Message, dir string) []core.Message {
 	if len(incoming) == 0 {
 		return incoming
@@ -62,9 +50,7 @@ func (s *Server) expandAtMentions(incoming []core.Message, dir string) []core.Me
 	}
 	prompt, images, _, err := core.ExpandAtMentions(um.Content, env)
 	if err != nil {
-		// The submit notice law: a failing token stays in the text and
-		// the send proceeds. There is no notice channel on the wire;
-		// the persisted message carries the token instead.
+		// The submit notice law: a failing token stays in the text and the send proceeds.
 		_ = err
 		return incoming
 	}

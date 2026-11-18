@@ -1,10 +1,6 @@
 package cron
 
-// save_test.go: the cron tab's job editor write face (card t_ecec864e).
-// The upsert/delete splice at the yaml.Node level - every test pins the
-// surviving style (comments, untouched siblings) the fold-write law
-// protects, and the wire lanes (200 carries the landed truth, schema
-// rejections 400, unknown delete 404, no runner 501).
+// save_test.go: the cron tab's job editor write face.
 
 import (
 	"errors"
@@ -88,7 +84,6 @@ func TestSaveJobAppendsNewJobAndReloads(t *testing.T) {
 			t.Errorf("file lost %q after append:\n%s", want, text)
 		}
 	}
-	// the untouched siblings keep their shape
 	if !strings.Contains(string(text), "deliver: journal") {
 		t.Errorf("sibling deliver lost:\n%s", text)
 	}
@@ -111,10 +106,7 @@ func TestSaveJobReplacesEntryInPlaceKeepsSiblingStyle(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(text)
-	// the FILE-level comment survives the replace; the replaced
-	// entry's own inline comment dies with it (the documented cost of
-	// swapping a whole entry's mapping) - the sibling entries are
-	// untouched and keep their style
+	// the FILE-level comment survives the replace.
 	for _, want := range []string{"# the human-authored file", "0 9 * * *", "journal/daily.md", "minutes: 5", "kind: interval"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("file lost %q after replace:\n%s", want, s)
@@ -135,7 +127,6 @@ func TestSaveJobReplacesEntryInPlaceKeepsSiblingStyle(t *testing.T) {
 
 func TestSaveJobRefusesAgentHomeName(t *testing.T) {
 	r, _ := newSaveTestRunner(t, saveTestCrons)
-	// simulate a wake job the loader owns:
 	r.mu.Lock()
 	r.jobs = append(r.jobs, Job{Name: "wake", Schedule: "17 * * * *", Prompt: "p", Agent: "scout", AgentOwned: true})
 	r.mu.Unlock()
@@ -171,7 +162,6 @@ func TestDeleteJobRemovesEntryUnknownIsLoud(t *testing.T) {
 	if !strings.Contains(string(text), "daily-journal") {
 		t.Errorf("sibling lost by delete:\n%s", text)
 	}
-	// unknown name: the 404 lane, file untouched
 	before, _ := os.ReadFile(path)
 	_, err = r.DeleteJob("ghost")
 	if err == nil {
@@ -187,12 +177,11 @@ func TestDeleteJobRemovesEntryUnknownIsLoud(t *testing.T) {
 	}
 }
 
-// --- the inheritance chain (card t_7fb3b35a) ---
+// -- the inheritance chain --
 
-// A wake that inherits the main agent is a job that would persist and
-// never fire: the main agent is the daemon and never wakes as a
-// subprocess (runner.go's "main never wakes"). The write face refuses
-// it where the operator can fix it - and leaves the file untouched.
+// A wake that inherits the main agent is a job that would persist and never fire: the
+// main agent is the daemon and never wakes as a subprocess (runner.go's "main never
+// wakes").
 func TestSaveJobRefusesWakeLeaningOnTheMainAgent(t *testing.T) {
 	r, path := newSaveTestRunner(t, saveTestCrons)
 	before, err := os.ReadFile(path)
@@ -221,8 +210,7 @@ func TestSaveJobRefusesWakeLeaningOnTheMainAgent(t *testing.T) {
 	if string(before) != string(after) {
 		t.Errorf("a refused chain moved the file:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
-	// the SAME job with its own agent lands (the chain is what was
-	// refused, not the wake)
+	// the SAME job with its own agent lands (the chain is what was refused, not the wake)
 	if _, err := r.SaveJob(Job{
 		Name:     "wake",
 		Schedule: "17 * * * *",
@@ -235,10 +223,9 @@ func TestSaveJobRefusesWakeLeaningOnTheMainAgent(t *testing.T) {
 	}
 }
 
-// An AUTHORED reference to the main agent is the chain's absence
-// written out ("the default IS the absence"): the combobox lists the
-// main row, and picking it must not pin a phantom override that means
-// exactly what an absent field means.
+// An AUTHORED reference to the main agent is the chain's absence written out ("the
+// default IS the absence"): the combobox lists the main row, and picking it must not
+// pin a phantom override that means exactly what an absent field means.
 func TestSaveJobWritesAnInheritedAgentAsAbsence(t *testing.T) {
 	r, path := newSaveTestRunner(t, saveTestCrons)
 	jobs, err := r.SaveJob(Job{
@@ -261,8 +248,7 @@ func TestSaveJobWritesAnInheritedAgentAsAbsence(t *testing.T) {
 	if strings.Contains(string(text), "agent: default") {
 		t.Errorf("the write pinned a phantom main-agent override:\n%s", text)
 	}
-	// and the chain keeps resolving at fire time: the reloaded job
-	// inherits the main agent
+	// and the chain keeps resolving at fire time: the reloaded job inherits the main agent
 	for _, j := range r.jobsSnapshot() {
 		if j.Name == "pulse" && j.ResolveAgent() != agent.DefaultAgentName {
 			t.Errorf("pulse resolves to %q, want the main agent", j.ResolveAgent())
@@ -270,8 +256,7 @@ func TestSaveJobWritesAnInheritedAgentAsAbsence(t *testing.T) {
 	}
 }
 
-// A wake's own agent IS authored - the chain has nothing to inherit
-// there, and the file says so.
+// A wake's own agent IS authored.
 func TestSaveJobKeepsAnAuthoredWakeAgent(t *testing.T) {
 	r, path := newSaveTestRunner(t, saveTestCrons)
 	if _, err := r.SaveJob(Job{
@@ -316,7 +301,7 @@ func TestSaveJobBootstrapsFreshHome(t *testing.T) {
 	}
 }
 
-// --- the wire lanes ---
+// -- the wire lanes --
 
 func TestHandleSaveAndDeleteWire(t *testing.T) {
 	r, _ := newSaveTestRunner(t, saveTestCrons)
@@ -341,7 +326,6 @@ func TestHandleSaveAndDeleteWire(t *testing.T) {
 		t.Errorf("response does not carry the landed job:\n%s", res.Body.String())
 	}
 
-	// schema law applies to the editor too: interval without minutes
 	if res2 := serve("POST", "/cron/save", `{"name": "bad", "kind": "interval", "prompt": "p", "enabled": true}`); res2.Code != http.StatusBadRequest {
 		t.Errorf("schema-rejected save status = %d, want 400", res2.Code)
 	}

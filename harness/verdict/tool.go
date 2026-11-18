@@ -9,21 +9,12 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// verdictToolProvider contributes the verdict wire tool. The tool is
-// the card issuance point and the hard pause: verdict.request
-// blocks on the hub until the user answers, the card expires, or the
-// run's context dies.
+// verdictToolProvider contributes the verdict wire tool.
 type verdictToolProvider struct {
 	hub cardHub
 }
 
-// Tools implements core.ToolProvider. The registry unification B
-// ruling (t_f616ed78's phase-2 continuation, t_d8fbad57): the flat
-// action-protocol `verdict` tool is gone, the one verb rides its own
-// dotted wire tool - verdict.request IS the card issuance point and
-// the hard pause (it blocks on the hub until the user answers, the
-// card expires, or the run's context dies). No action property: the
-// verb is the name.
+// Tools implements core.ToolProvider.
 func (p *verdictToolProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"verdict.request": {
@@ -49,10 +40,8 @@ func (p *verdictToolProvider) Tools() map[string]core.Tool {
 // does not instantly expire a card the user never saw.
 const minTimeout = 5
 
-// run executes verdict.request: validate origin, parse args, ask the
-// hub, and return the verdict as the tool result string. A block here
-// pauses the whole agent turn - the webui stream idles until the user
-// answers, exactly the design's hard pause.
+// run executes verdict.request. A block here pauses the whole agent turn - the webui
+// stream idles until the user answers, exactly the design's hard pause.
 func (p *verdictToolProvider) run(ctx context.Context, args map[string]any) (string, error) {
 	if p.hub == nil {
 		return "", fmt.Errorf("verdict: the verdicts seam is not mounted on this host")
@@ -60,12 +49,9 @@ func (p *verdictToolProvider) run(ctx context.Context, args map[string]any) (str
 	return p.runRequest(ctx, args)
 }
 
-// runRequest executes the request action: origin gate, card shape, and
-// the blocked Ask.
+// runRequest executes the request action: origin gate, card shape, and the blocked Ask.
 func (p *verdictToolProvider) runRequest(ctx context.Context, args map[string]any) (string, error) {
-	// Issuer gate (design Q7a): cron fires and delegate subagents never
-	// hard-pause for a click. Unknown origin (tests, one-shot) is
-	// treated as interactive.
+	// Issuer gate (design Q7a): cron fires and delegate subagents never hard-pause for a.
 	switch core.RunOriginFromContext(ctx) {
 	case originScheduled, originSubagent:
 		return "", fmt.Errorf("verdict is not available in background turns (origin %q) - decide without the user or surface the question in the transcript",
@@ -89,11 +75,7 @@ func (p *verdictToolProvider) runRequest(ctx context.Context, args map[string]an
 		timeoutS = minTimeout
 	}
 
-	// A pure pick list must have at least one option; an open question
-	// (no options) requires allow_text. Multi with fewer than two
-	// options is pointless but harmless - the card just picks one
-	// row at a time. Approval is the 2-option case, nothing special
-	// on the wire.
+	// A pure pick list must have at least one option.
 	if len(options) == 0 && !allowText {
 		return "", fmt.Errorf("verdict: a card needs at least one option or allow_text=true")
 	}
@@ -114,10 +96,7 @@ func (p *verdictToolProvider) runRequest(ctx context.Context, args map[string]an
 	return resultMap(verdict), nil
 }
 
-// argOptions pulls a JSON array of {label, description?} objects (or
-// plain strings for one-word picks) out of the untyped tool args map.
-// Non-conforming entries are skipped (the model sends objects;
-// anything else is malformed and dropped, not fatal).
+// argOptions pulls a JSON array of {label, description?} objects (or plain strings.
 func argOptions(args map[string]any, key string) []core.QuestionOption {
 	raw, ok := args[key].([]any)
 	if !ok {

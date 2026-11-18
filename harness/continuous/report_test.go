@@ -1,9 +1,6 @@
 package continuous
 
-// report_test.go: the wake report's shape self-checks (ruling 11's
-// second half). The shaper is a pure function of content + rows; the
-// sink's gating (OMEGA_AGENT) and its closing-message rule ride those
-// checks. Fail-closed is the asserted direction: no evidence, no claim.
+// report_test.go: the wake report's shape self-checks.
 
 import (
 	"context"
@@ -185,20 +182,17 @@ func (c *captureSink) AppendTurnMessage(_ context.Context, msg core.Message) err
 }
 
 func TestWrapWakeSinkGatesOnAgentEnv(t *testing.T) {
-	// No OMEGA_AGENT: the sink comes back untouched - a manual run is
-	// never reshaped.
+	// No OMEGA_AGENT: the sink comes back untouched - a manual run is never reshaped.
 	inner := &captureSink{}
 	if WrapWakeSink(inner) != agent.TurnSink(inner) {
 		t.Fatal("WrapWakeSink reshaped a main-process run")
 	}
-	// Main named explicitly ("default" runs as root): untouched too.
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
 	t.Setenv("OMEGA_AGENT", "default")
 	if WrapWakeSink(inner) != agent.TurnSink(inner) {
 		t.Fatal("WrapWakeSink reshaped main")
 	}
-	// A continuous agent profile: shaped.
 	if err := agent.ScaffoldAgent(home, "scout", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -280,40 +274,32 @@ func TestURLLocatorWithoutCheckStaysOutOfFileTables(t *testing.T) {
 	}
 }
 
-// TestShapeReportWindowsShapedClaims (card t_630e595d, the windows
-// red wave): backslash-shaped ledger keys and backslash-shaped
-// claims must still meet. The fixtures are literal shapes on every
-// OS - the shaper is a pure function and the shapes, not the host,
-// are what is under test.
+// TestShapeReportWindowsShapedClaims: backslash-shaped ledger keys and backslash-shaped
+// claims must still meet.
 func TestShapeReportWindowsShapedClaims(t *testing.T) {
 	winKey := `file:exists:C:\Data\notes\plan.md`
 	k := func(id int64) record {
 		return row(id, true, winKey)
 	}
 
-	// A basename claim over a windows-shaped ledger key cites.
 	rows := []record{k(21)}
 	out := shapeReport("I created plan.md and moved on.", rows)
 	if !strings.Contains(out, "[ledger #21]") {
 		t.Errorf("basename claim over a windows ledger key uncited: %q", out)
 	}
 
-	// A full windows-path claim tokenizes whole and cites.
 	rows = []record{k(22)}
 	out = shapeReport("I created " + `C:\Data\notes\plan.md` + " as asked.", rows)
 	if !strings.Contains(out, "[ledger #22]") {
 		t.Errorf("full windows-path claim uncited: %q", out)
 	}
 
-	// A /-spelled claim meets a backslash-shaped ledger key.
 	rows = []record{k(23)}
 	out = shapeReport("I created C:/Data/notes/plan.md as asked.", rows)
 	if !strings.Contains(out, "[ledger #23]") {
 		t.Errorf("slash-spelled claim over windows key uncited: %q", out)
 	}
 
-	// A backslash-shaped rooted claim meets a posix ledger key (the
-	// reverse mix).
 	rows = []record{row(24, true, "file:exists:/Data/notes/plan.md")}
 	out = shapeReport("I created " + `\Data\notes\plan.md` + " as asked.", rows)
 	if !strings.Contains(out, "[ledger #24]") {
@@ -327,7 +313,6 @@ func TestMixedClaimStripsUntilEveryTokenIsBacked(t *testing.T) {
 	if err := os.WriteFile(log, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// url ok + file missing: the whole claim fails closed
 	rows := []record{
 		row(18, true, "url:https://example.com/feed"),
 		row(19, false, "file:missing:"+log),

@@ -2,32 +2,18 @@ package core
 
 import "sort"
 
-// Services is the universal seam registry (restructure part 3, the
-// seam constitution): one stringly-keyed store of services capsules
-// offer at mount, extending the mount claim machinery's
-// one-owner-per-key law. Every seam - the serving surface's, another
-// capsule's, the agent's own needs - resolves here by key and
-// type-asserts to the consumer's OWN interface. The substrate never
-// names a domain interface again: a capsule-shaped type in core is
-// residue by the deletability law, but the key string is data (one
-// inert trace per consumer's resolve call, accepted and documented).
-//
-// The registry is an IMMUTABLE value: offer and release build a new
-// instance and the Context field swaps the pointer. That is what
-// keeps the mount's scoped-proxy law intact - a remount's offers land
-// on the proxy Context copy and commit replays them forward, a
-// panicked mount leaves nothing behind, exactly like every other
-// Context write. A consumer read takes the pointer snapshot; a live
-// toggle swaps it under the reader's feet the same way every other
-// seam read does (no lazy lookup can observe a half-state).
-//
-// Offer is claim-checked at mount: one owner per key, a different
-// tenant offering a held key fails the mount loud (the same fail-loud
-// boot the exclusive slots always had), a same-tenant re-offer
-// replaces (the clean-idempotent remount, Q7). The mount journal
-// replays offers backward at dismount: the undo restores exactly the
-// previous pointer, so after-dismount equals before-mount (the
-// census).
+// Services is the universal seam registry (restructure part 3, the seam constitution).
+// The substrate never names a domain interface again: a capsule-shaped type in core is
+// residue by the deletability law, but the key string is data (one inert trace per
+// consumer's resolve call, accepted and documented). That is what keeps the mount's
+// scoped-proxy law intact - a remount's offers land on the proxy Context copy and
+// commit replays them forward, a panicked mount leaves nothing behind, exactly like
+// every other Context write. Offer is claim-checked at mount: one owner per key, a
+// different tenant offering a held key fails the mount loud (the same fail-loud boot
+// the exclusive slots always had), a same-tenant re-offer replaces (the
+// clean-idempotent remount, Q7). The mount journal replays offers backward at dismount:
+// the undo restores exactly the previous pointer, so after-dismount equals before-mount
+// (the census).
 type Services struct {
 	values map[string]any
 	owners map[string]string
@@ -38,10 +24,8 @@ func NewServices() *Services {
 	return &Services{values: map[string]any{}, owners: map[string]string{}}
 }
 
-// With returns a registry with svc recorded under key for module. A
-// foreign offer on a held key errors loud; a same-tenant re-offer
-// replaces. The receiver is shared by the mount journal's apply/undo
-// closures - never mutated, only swapped.
+// With returns a registry with svc recorded under key for module. The receiver is
+// shared by the mount journal's apply/undo closures - never mutated, only swapped.
 func (s *Services) With(key, module string, svc any) (*Services, error) {
 	if s == nil {
 		s = NewServices()
@@ -59,9 +43,8 @@ func (s *Services) With(key, module string, svc any) (*Services, error) {
 	return next, nil
 }
 
-// Without returns a registry with key removed - only when module
-// still owns it (a re-enabled service's chain never clobbers someone
-// else's offer).
+// Without returns a registry with key removed - only when module still owns it (a
+// re-enabled service's chain never clobbers someone else's offer).
 func (s *Services) Without(key, module string) *Services {
 	if s == nil || s.owners[key] != module {
 		return s
@@ -77,10 +60,9 @@ func (s *Services) Without(key, module string) *Services {
 	return next
 }
 
-// Resolve returns the live service for key. Nil means not offered -
-// the consumer's own nil-safe degradation applies (the floors law:
-// absence is a documented state, never a lazy guess). Nil-receiver
-// safe: a bare Context with no registry resolves nothing.
+// Resolve returns the live service for key. Nil means not offered - the consumer's own
+// nil-safe degradation applies (the floors law: absence is a documented state, never a
+// lazy guess). Nil-receiver safe: a bare Context with no registry resolves nothing.
 func (s *Services) Resolve(key string) any {
 	if s == nil {
 		return nil
@@ -88,8 +70,8 @@ func (s *Services) Resolve(key string) any {
 	return s.values[key]
 }
 
-// Has reports whether key is currently offered (the census reads
-// presence, never the values). Nil-receiver safe.
+// Has reports whether key is currently offered (the census reads presence, never the.
+// Nil-receiver safe.
 func (s *Services) Has(key string) bool {
 	if s == nil {
 		return false
@@ -106,8 +88,7 @@ func (s *Services) Owner(key string) string {
 	return s.owners[key]
 }
 
-// Keys lists the held keys sorted - the census slot inventory and
-// registry introspection read it.
+// Keys lists the held keys sorted.
 func (s *Services) Keys() []string {
 	if s == nil {
 		return nil
@@ -120,8 +101,7 @@ func (s *Services) Keys() []string {
 	return out
 }
 
-// foreignOfferError is one wrong-tenant offer on a held key - the
-// boot error naming the seam key, the holding module and the claimant.
+// foreignOfferError is one wrong-tenant offer on a held key.
 type foreignOfferError struct {
 	Key    string
 	Owner  string
@@ -132,8 +112,5 @@ func (e *foreignOfferError) Error() string {
 	return "seam key " + e.Key + " offered by " + e.Module + " is already held by " + e.Owner
 }
 
-// Unwrap carries the one-tenant sentinel (Q5): consumers of a boot
-// failure check errors.Is(err, core.ErrSeamForeignTenant) across both
-// claim paths - the registry's claim slot and this offer conflict -
-// and get the same error class.
+// Unwrap carries the one-tenant sentinel (Q5).
 func (e *foreignOfferError) Unwrap() error { return ErrSeamForeignTenant }

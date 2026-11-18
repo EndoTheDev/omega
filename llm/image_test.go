@@ -96,8 +96,6 @@ func TestDetectImageMissingFile(t *testing.T) {
 }
 
 func TestDetectImageTooLarge(t *testing.T) {
-	// Create a file just over MaxImageBytes with a PNG header so the size
-	// check is the failing condition (DetectImage reads the whole file).
 	path := filepath.Join(t.TempDir(), "big.png")
 	f, err := os.Create(path)
 	if err != nil {
@@ -122,7 +120,6 @@ func TestDetectImageTooLarge(t *testing.T) {
 }
 
 func TestDetectImageWebPRejectsRIFFOnly(t *testing.T) {
-	// RIFF header but no WEBP marker at offset 8 should not match webp.
 	path := filepath.Join(t.TempDir(), "riff-only.bin")
 	content := []byte{'R', 'I', 'F', 'F', 0x00, 0x00, 0x00, 0x00, 'W', 'A', 'V', 'E'}
 	if err := os.WriteFile(path, content, 0o644); err != nil {

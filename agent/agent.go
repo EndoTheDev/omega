@@ -9,28 +9,18 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Agent runs the multi-turn conversation loop between a provider and a
-// set of tools. It holds configuration and delegates execution to a
-// LoopProvider. Harness concerns (system prompt, compaction) are injected
-// via interfaces. The loop itself is swappable via SetLoopProvider.
-// The loop is not set by default — the host must wire one (e.g. via
-// the agent-loop plugin in agent/loop/).
+// Agent runs the multi-turn conversation loop between a provider and a set of tools.
+// The loop is not set by default — the host must wire one (e.g. via the agent-loop
+// plugin in agent/loop/).
 type Agent struct {
 	provider      Provider
 	tools         map[string]core.Tool
 	toolProviders []core.ToolProvider
-	// tpMu guards toolProviders and extensionInfos: a live module
-	// toggle (v0.12 E2) swaps both sets mid-process while concurrent
-	// runs and the /tools and /extensions inventories read them under
-	// the loop.
+	// tpMu guards toolProviders and extensionInfos: a live module toggle (v0.12 E2) swaps
+	// both sets mid-process while concurrent runs and the /tools and /extensions
+	// inventories read them under the loop.
 	tpMu   sync.RWMutex
 	tpLive bool // NewFromContext built this agent from a mounted Context
-	// disabledTools is the config.yaml disabled.tools opt-out (v0.14.1
-	// registry-browser). The merge law is untouched - a built-in still
-	// wins a name conflict - and the disable filter runs AFTER the
-	// merge, dropping only names no built-in occupies: the merge
-	// settles who answers a name, the disable list settles whether the
-	// tool exists at all.
 	disabledTools  map[string]bool
 	approvals      ApprovalProvider // smart-approval seam snapshot (tpMu-guarded)
 	maxTurns       int
@@ -47,26 +37,22 @@ type Agent struct {
 	userInput      chan string
 	loop           LoopProvider
 	logger         LoggerProvider
-	// The yield harness (async agent loop phase 1, t_f3f953d0): the
-	// pending-calls table, the wake injector and the dispatched call's
-	// wall-clock cap. All nil-safe - a host without the harness runs
-	// every tool loop-back (see LoopOptions.YieldLedger).
+	// The yield harness: the pending-calls table, the wake injector and the dispatched.
+	// All nil-safe - a host without the harness runs every tool loop-back (see
+	// LoopOptions.YieldLedger).
 	yieldLedger  YieldLedger
 	yieldWake    func(sessionID string, res core.YieldResult)
 	yieldTimeout time.Duration
-	// eventObserverSource reads the Context's spine subscriptions at
-	// each Run (card t_72ecca67, M3). Nil-safe: an Agent built without
-	// NewFromContext runs observer-free.
+	// eventObserverSource reads the Context's spine subscriptions at each Run. Nil-safe:
+	// an Agent built without NewFromContext runs observer-free.
 	eventObserverSource func() []core.EventObserver
-	// sessionObserverSource is the session-attributed spine
-	// subscriptions (card t_8de82cff): same snapshot-per-run rule, and
-	// the forward goroutine hands each observer the run's session id
-	// alongside the event. Nil-safe like the plain source.
+	// sessionObserverSource is the session-attributed spine subscriptions: same
+	// snapshot-per-run rule, and the forward goroutine hands each observer the run's
+	// session id alongside the event. Nil-safe like the plain source.
 	sessionObserverSource func() []core.SessionEventObserver
 }
 
-// EventObservers returns the agent's spine snapshot source; nil is the
-// empty subscription set (a bare Agent has none).
+// EventObservers returns the agent's spine snapshot source; nil is the empty.
 func (a *Agent) eventObservers() []core.EventObserver {
 	if a.eventObserverSource == nil {
 		return nil
@@ -74,15 +60,13 @@ func (a *Agent) eventObservers() []core.EventObserver {
 	return a.eventObserverSource()
 }
 
-// SetEventObserverSource wires the Context's spine subscriptions (a
-// snapshot per run - a live toggle's remount re-reads it on the next
-// run, never mid-run).
+// SetEventObserverSource wires the Context's spine subscriptions (a snapshot per run -
+// a live toggle's remount re-reads it on the next run, never mid-run).
 func (a *Agent) SetEventObserverSource(src func() []core.EventObserver) {
 	a.eventObserverSource = src
 }
 
-// sessionEventObservers returns the session-attributed spine snapshot
-// source; nil is the empty subscription set.
+// sessionEventObservers returns the session-attributed spine snapshot source; nil is.
 func (a *Agent) sessionEventObservers() []core.SessionEventObserver {
 	if a.sessionObserverSource == nil {
 		return nil
@@ -90,15 +74,13 @@ func (a *Agent) sessionEventObservers() []core.SessionEventObserver {
 	return a.sessionObserverSource()
 }
 
-// SetSessionEventObserverSource wires the Context's session-attributed
-// spine subscriptions (card t_8de82cff): one snapshot per run, the same
-// rule as SetEventObserverSource.
+// SetSessionEventObserverSource wires the Context's session-attributed spine
+// subscriptions.
 func (a *Agent) SetSessionEventObserverSource(src func() []core.SessionEventObserver) {
 	a.sessionObserverSource = src
 }
 
-// NewAgent creates an Agent. A maxTurns <= 0 uses the default cap.
-// The agent starts with no loop — the host must wire one via
+// NewAgent creates an Agent. The agent starts with no loop — the host must wire one via
 // SetLoopProvider or by mounting the agent-loop plugin.
 func NewAgent(provider Provider, tools map[string]core.Tool, maxTurns int) *Agent {
 	return &Agent{
@@ -114,49 +96,37 @@ func (a *Agent) SetCompactionProvider(c CompactionProvider) {
 }
 
 // SetMaxToolOutput sets the maximum tool result length in characters.
-// Results exceeding this are truncated. A value <= 0 disables truncation.
 func (a *Agent) SetMaxToolOutput(n int) {
 	a.maxToolOutput = n
 }
 
-// SetMaxTurns swaps the per-run turn cap live (card t_f78acfd6, the
-// probe verdict: the loop re-reads it at every Run start, so the
-// host's hot-apply flips it without a restart). A value <= 0 lets the
-// loop's defaultMaxTurns cap apply. The write rides tpMu: a live run
-// reads the field under the same lock.
+// SetMaxTurns swaps the per-run turn cap live.
 func (a *Agent) SetMaxTurns(n int) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
 	a.maxTurns = n
 }
 
-// SetCWD sets the working directory passed to extension-built prompts
-// via PromptBuildOptions.
+// SetCWD sets the working directory passed to extension-built prompts via.
 func (a *Agent) SetCWD(dir string) {
 	a.cwd = dir
 }
 
 // SetPromptCustom stores the user-supplied custom prompt from config.
-// Passed to extensions via PromptBuildOptions.Custom. The write rides
-// tpMu (card t_f78acfd6): the custom prompt is a live settings knob
-// now, and a running run reads the field under the same lock.
 func (a *Agent) SetPromptCustom(s string) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
 	a.promptCustom = s
 }
 
-// PromptCustom returns the live custom prompt snapshot (card
-// t_f78acfd6): the hot-apply knob read for verification, under the
-// same lock its write and the run's read use.
+// PromptCustom returns the live custom prompt snapshot.
 func (a *Agent) PromptCustom() string {
 	a.tpMu.RLock()
 	defer a.tpMu.RUnlock()
 	return a.promptCustom
 }
 
-// MaxTurns returns the live per-run turn cap snapshot (card
-// t_f78acfd6): the hot-apply's knob read for verification.
+// MaxTurns returns the live per-run turn cap snapshot.
 func (a *Agent) MaxTurns() int {
 	a.tpMu.RLock()
 	defer a.tpMu.RUnlock()
@@ -164,33 +134,26 @@ func (a *Agent) MaxTurns() int {
 }
 
 // SetPromptAppend stores extra prompts from --append-system-prompt.
-// Passed to extensions via PromptBuildOptions.Append.
 func (a *Agent) SetPromptAppend(prompts []string) {
 	a.promptAppend = prompts
 }
 
 // SetPromptContext stores the trust-gated AGENTS.md project context.
-// Passed to extensions via PromptBuildOptions.ProjectContext.
 func (a *Agent) SetPromptContext(s string) {
 	a.promptContext = s
 }
 
-// SetToolProviders installs additional tool providers (from extensions).
-// Their tools are merged on each Run. The live-toggle path (v0.12 E2)
-// calls this mid-process; concurrent runs read it under the tpMu lock -
-// the loop always receives a snapshot taken under the same lock.
+// SetToolProviders installs additional tool providers (from extensions). The
+// live-toggle path (v0.12 E2) calls this mid-process; concurrent runs read it under the
+// tpMu lock - the loop always receives a snapshot taken under the same lock.
 func (a *Agent) SetToolProviders(tps []core.ToolProvider) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
 	a.toolProviders = tps
 }
 
-// RefreshToolProviders re-reads the tool set from the mounted Context
-// the agent was built from (NewFromContext): module providers a live
-// toggle appended or removed land here. An agent built without a
-// Context keeps its set - the classic constructor has nothing to
-// re-read. The copy is defensive: the loop and the inventory see a
-// frozen snapshot, the Context keeps mutating underneath.
+// RefreshToolProviders re-reads the tool set from the mounted Context the agent was
+// built from (NewFromContext).
 func (a *Agent) RefreshToolProviders(ctx *Context) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
@@ -202,12 +165,9 @@ func (a *Agent) RefreshToolProviders(ctx *Context) {
 	a.toolProviders = providers
 }
 
-// toolUnion copies the registry union Run loops with: the explicit
-// tools plus every core.ToolProvider's map, existing entries winning
-// name conflicts (RunWithProvider's merge order). The copy is
-// defensive: callers can never mutate the agent's underlying maps.
-// The disabled fold is NOT applied here - the caller decides (Tools
-// filters, ToolsWithDisabled ships the fold alongside).
+// toolUnion copies the registry union Run loops with. The copy is defensive: callers
+// can never mutate the agent's underlying maps. The disabled fold is NOT applied here -
+// the caller decides (Tools filters, ToolsWithDisabled ships the fold alongside).
 func (a *Agent) toolUnion() map[string]core.Tool {
 	a.tpMu.RLock()
 	providers := a.toolProviders
@@ -235,11 +195,7 @@ func (a *Agent) toolUnion() map[string]core.Tool {
 	return tools
 }
 
-// Tools returns a snapshot of the agent's executable tool registry:
-// the union minus every disabled name - what Run actually loops with
-// (the run loop applies the same final filter through LoopOptions).
-// The disable filter is LAST in every union: the merge law is
-// untouched, a disabled name means absent (v0.14.1 registry-browser).
+// Tools returns a snapshot of the agent's executable tool registry.
 func (a *Agent) Tools() map[string]core.Tool {
 	tools, disabled := a.ToolsWithDisabled()
 	for n := range disabled {
@@ -248,14 +204,9 @@ func (a *Agent) Tools() map[string]core.Tool {
 	return tools
 }
 
-// ToolsWithDisabled is the fold-aware management read (card
-// t_5c9bb50a): the registry union BEFORE the disabled fold filters
-// it, plus the fold's name set. The settings tab's tools inventory
-// (GET /tools?disabled=1) rides this so a disabled tool keeps its
-// row - a disabled tool absent from the inventory has no toggle to
-// flip back (the one-way door). Tools() stays the executable
-// registry the loop and the bare GET /tools serve: the model must
-// not see disabled tools.
+// ToolsWithDisabled is the fold-aware management read. Tools stays the executable
+// registry the loop and the bare GET /tools serve: the model must not see disabled
+// tools.
 func (a *Agent) ToolsWithDisabled() (tools map[string]core.Tool, disabled map[string]bool) {
 	a.tpMu.RLock()
 	fold := a.disabledTools
@@ -268,9 +219,7 @@ func (a *Agent) ToolsWithDisabled() (tools map[string]core.Tool, disabled map[st
 	return tools, out
 }
 
-// SetDisabledTools installs the config.yaml disabled.tools opt-out
-// (v0.14.1). Built-ins win name conflicts before this map is
-// consulted; see the field comment.
+// SetDisabledTools installs the config.yaml disabled.tools opt-out (v0.14.1).
 func (a *Agent) SetDisabledTools(names []string) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
@@ -285,19 +234,16 @@ func (a *Agent) SetDisabledTools(names []string) {
 	a.disabledTools = out
 }
 
-// SetApprovals installs the approval-gate seam snapshot. A nil value
-// means the gate is absent (mode off or no module): the loop pays
-// nothing. The live-toggle path calls the Refresh form below.
+// SetApprovals installs the approval-gate seam snapshot. A nil value means the gate is
+// absent (mode off or no module): the loop pays nothing.
 func (a *Agent) SetApprovals(ap ApprovalProvider) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
 	a.approvals = ap
 }
 
-// RefreshApprovals re-reads the approval seam from the mounted Context
-// the agent was built from (NewFromContext): a live module toggle that
-// mounts or unmounts the gate lands here, the same law as
-// RefreshToolProviders. An agent built without a Context keeps its set.
+// RefreshApprovals re-reads the approval seam from the mounted Context the agent was
+// built from (NewFromContext).
 func (a *Agent) RefreshApprovals(ctx *Context) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
@@ -307,12 +253,11 @@ func (a *Agent) RefreshApprovals(ctx *Context) {
 	a.approvals = bindNeed[ApprovalProvider](ctx, "approvals")
 }
 
-// RefreshDisabledTools re-reads the disable list from the mounted
-// Context the agent was built from (NewFromContext): the host updates
-// ctx.DisabledTools on every registry toggle, and a serving surface
-// that re-reads after every successful toggle (core.LiveSeams, the
-// same law as RefreshToolProviders) never serves a tool the fold says
-// is off. An agent built without a Context keeps its set.
+// RefreshDisabledTools re-reads the disable list from the mounted Context the agent was
+// built from (NewFromContext): the host updates ctx.DisabledTools on every registry
+// toggle, and a serving surface that re-reads after every successful toggle
+// (core.LiveSeams, the same law as RefreshToolProviders) never serves a tool the fold
+// says is off.
 func (a *Agent) RefreshDisabledTools(ctx *Context) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
@@ -329,8 +274,7 @@ func (a *Agent) RefreshDisabledTools(ctx *Context) {
 	}
 }
 
-// disabledToolList flattens the disable set for LoopOptions (sorted,
-// nil when none - a zero-name option is indistinguishable from empty).
+// disabledToolList flattens the disable set for LoopOptions (sorted, nil when none.
 func disabledToolList(set map[string]bool) []string {
 	if len(set) == 0 {
 		return nil
@@ -348,39 +292,27 @@ func (a *Agent) SetPromptBuilder(pb PromptBuilder) {
 	a.promptBuilder = pb
 }
 
-// SetTurnNudger installs the learning-loop reminder seam (t_9972dfd0).
-// Nil = no nudging, the loop runs unchanged.
+// SetTurnNudger installs the learning-loop reminder seam. Nil = no nudging, the loop
+// runs unchanged.
 func (a *Agent) SetTurnNudger(n TurnNudger) {
 	a.nudge = n
 }
 
-// ExtensionInfos returns the metadata about loaded extensions (name,
-// description, seams, tool/command counts). The http_channel inspector
-// surfaces it on GET /extensions - the webui parity surface.
+// ExtensionInfos returns the metadata about loaded extensions (name, description.
 func (a *Agent) ExtensionInfos() []core.ExtensionInfo {
 	a.tpMu.RLock()
 	defer a.tpMu.RUnlock()
 	return a.extensionInfos
 }
 
-// SetExtensionInfos sets the metadata about loaded extensions, used
-// for prompt building and the /extensions command.
+// SetExtensionInfos sets the metadata about loaded extensions, used for prompt.
 func (a *Agent) SetExtensionInfos(infos []core.ExtensionInfo) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
 	a.extensionInfos = infos
 }
 
-// RefreshExtensionInfos re-reads the extension metadata from the
-// mounted Context the agent was built from (NewFromContext): the
-// toggle journal keeps ctx.Infos exact across live module toggles
-// (dismount ctxUndo, remount ctxApply), so a serving surface that
-// re-reads it after every successful toggle (core.LiveSeams, the same
-// law as RefreshToolProviders) always lists what is actually mounted.
-// An agent built without a Context keeps its set - the classic
-// constructor has nothing to re-read. The copy is defensive: the
-// inventory sees a frozen snapshot, the Context keeps mutating
-// underneath.
+// RefreshExtensionInfos re-reads the extension metadata from the mounted Context the.
 func (a *Agent) RefreshExtensionInfos(ctx *Context) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
@@ -392,9 +324,7 @@ func (a *Agent) RefreshExtensionInfos(ctx *Context) {
 	a.extensionInfos = infos
 }
 
-// SetCaptioner installs the image captioner (agent/caption.go). When
-// set, image-carrying user messages are described once before the loop
-// and the loop-visible text carries the caption. Nil = images untouched.
+// SetCaptioner installs the image captioner (agent/caption.go). Nil = images untouched.
 func (a *Agent) SetCaptioner(c core.Captioner) {
 	a.captioner = c
 }
@@ -405,40 +335,36 @@ func (a *Agent) SetLoopProvider(loop LoopProvider) {
 	a.loop = loop
 }
 
-// SetUserInput sets a channel for receiving user messages while the
-// agent loop is running. The serving channels use this so the user can chat while
-// subagents are running. One-shot mode (omega run) leaves it nil.
+// SetUserInput sets a channel for receiving user messages while the agent loop is.
+// One-shot mode (omega run) leaves it nil.
 func (a *Agent) SetUserInput(ch chan string) {
 	a.userInput = ch
 }
 
-// SetYieldLedger installs the pending-calls table (async agent loop
-// phase 1, t_f3f953d0). Nil = the harness is off: yield-class tools
-// run loop-back (the degradation documented on LoopOptions.YieldLedger).
+// SetYieldLedger installs the pending-calls table. Nil = the harness is off:
+// yield-class tools run loop-back (the degradation documented on
+// LoopOptions.YieldLedger).
 func (a *Agent) SetYieldLedger(l YieldLedger) {
 	a.yieldLedger = l
 }
 
-// SetYieldWake installs the wake injector the dispatched executor
-// hands a settled core.YieldResult to. Nil = the harness is off.
+// SetYieldWake installs the wake injector the dispatched executor hands a settled. Nil
+// = the harness is off.
 func (a *Agent) SetYieldWake(wake func(sessionID string, res core.YieldResult)) {
 	a.yieldWake = wake
 }
 
-// SetYieldTimeout sets a dispatched call's wall-clock cap; <= 0 keeps
-// the loop's default.
+// SetYieldTimeout sets a dispatched call's wall-clock cap.
 func (a *Agent) SetYieldTimeout(d time.Duration) {
 	a.yieldTimeout = d
 }
 
-// SetLogger installs a logger for the agent loop. A nil value disables
-// logging. The logger is passed to the loop via LoopOptions.
+// SetLogger installs a logger for the agent loop. A nil value disables logging.
 func (a *Agent) SetLogger(l LoggerProvider) {
 	a.logger = l
 }
 
-// AgentOptions carries the host-level settings NewFromContext cannot
-// get from the Context itself. All fields are optional zero-values.
+// AgentOptions carries the host-level settings NewFromContext cannot get from the.
 type AgentOptions struct {
 	MaxTurns      int
 	MaxToolOutput int
@@ -449,11 +375,6 @@ type AgentOptions struct {
 }
 
 // NewFromContext creates a fully-wired Agent from a mounted Context.
-// Channels, newAgent, and the CLI loop use this. The agent gets the loop,
-// tool providers, prompt builder, compactor, injected messages,
-// pending delegations, and logger from ctx. All AgentOptions fields
-// are optional zero-values — setters tolerate zero like the
-// constructor defaults do.
 func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	ag := NewAgent(bindNeed[Provider](ctx, "provider"), nil, opts.MaxTurns)
 	ag.SetToolProviders(ctx.ToolProviders)
@@ -471,8 +392,7 @@ func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	ag.SetEventObserverSource(ctx.EventObservers)
 	ag.SetSessionEventObserverSource(ctx.SessionEventObservers)
 	ag.SetCompactionProvider(bindNeed[CompactionProvider](ctx, "compactor"))
-	// The smart-approval seam (card t_c2b52cb5): nil rides as nil -
-	// a host with no gate (mode off, no module) runs the loop ungated.
+	// The smart-approval seam: nil rides as nil.
 	ag.SetApprovals(bindNeed[ApprovalProvider](ctx, "approvals"))
 	ag.SetTurnNudger(bindNeed[TurnNudger](ctx, "nudger"))
 	if ctx.Captioner != nil {
@@ -481,8 +401,7 @@ func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	return ag
 }
 
-// Provider returns the agent's base provider, so callers can derive
-// per-run copies via WithModel without mutating shared state.
+// Provider returns the agent's base provider, so callers can derive per-run copies.
 func (a *Agent) Provider() Provider {
 	return a.provider
 }
@@ -502,11 +421,7 @@ func (a *Agent) ListModels() ([]string, error) {
 	return a.provider.ListModels()
 }
 
-// ListModelEntries returns the provider's model list with capability
-// flags (card t_70c28128). The optional ModelCapabilitiesProvider
-// upgrade supplies the flags when the provider carries them; a
-// name-only provider (interface stayed un-upgraded) answers through
-// ListModels with empty capability sets.
+// ListModelEntries returns the provider's model list with capability flags.
 func (a *Agent) ListModelEntries() ([]core.ModelEntry, error) {
 	if lp, ok := a.provider.(ModelCapabilitiesProvider); ok {
 		return lp.ListModelEntries()
@@ -522,52 +437,36 @@ func (a *Agent) ListModelEntries() ([]core.ModelEntry, error) {
 	return entries, nil
 }
 
-// Run executes the conversation loop and returns a channel of events.
-// The channel is closed when the loop ends. A non-nil tools map overrides
-// the agent's registered tools for this run.
-//
-// Run always spawns - there is no running guard. The loop is stateless
-// (all state rides LoopOptions) and each Run creates its own events
-// channel, so parallel runs are safe by construction; use RunWithProvider
-// to give a run its own model.
-//
-// Run affinity (t_f3fb7c52): each run drains its own events channel;
-// loop state rides LoopOptions, so concurrent runs share no result
-// plumbing.
+// Run executes the conversation loop and returns a channel of events. A non-nil tools
+// map overrides the agent's registered tools for this run. Run affinity: each run
+// drains its own events channel; loop state rides LoopOptions, so concurrent runs share
+// no result plumbing.
 func (a *Agent) Run(ctx context.Context, messages []core.Message, tools map[string]core.Tool) <-chan core.Event {
 	return a.RunWithProvider(ctx, a.provider, messages, tools)
 }
 
-// RunWithProvider starts a run on the given provider - typically a copy
-// derived from Provider() via WithModel, carrying a per-request model.
-// Returns a channel of events, closed when the run ends.
+// RunWithProvider starts a run on the given provider.
 func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages []core.Message, tools map[string]core.Tool) <-chan core.Event {
 	inner := make(chan core.Event)
 	events := inner
-	// Session attribution default (card t_e203c2f6): a run persisting
-	// into a session IS that session's run, even when its host never
-	// wrapped WithSessionID - the http channel and the CLI loop wrap
-	// it, but a cron fire (harness/cron agentTurn) and `omega run
-	// --session` set only the turn sink. The context's session id is
-	// what the approval gate's evidence ledger (and every other
-	// run-attributed record) reads; without this default its rows lose
-	// the session exactly on the background origins. The store sink
-	// never exists without a session id (NewStoreTurnSink turns an
-	// empty one away), and a host that already wrapped one wins here.
+	// Session attribution default: a run persisting into a session IS that session's run,
+	// even when its host never wrapped WithSessionID - the http channel and the CLI loop
+	// wrap it, but a cron fire (harness/cron agentTurn) and `omega run --session` set only
+	// the turn sink. The context's session id is what the approval gate's evidence ledger
+	// (and every other run-attributed record) reads; without this default its rows lose
+	// the session exactly on the background origins. The store sink never exists without a
+	// session id (NewStoreTurnSink turns an empty one away), and a host that already
+	// wrapped one wins here.
 	if SessionIDFromContext(ctx) == "" {
 		if st, ok := RunTurnSink(ctx).(*storeTurnSink); ok {
 			ctx = WithSessionID(ctx, st.sessionID)
 		}
 	}
-	// The event spine (card t_72ecca67, M3): a snapshot of the
-	// registered observers forwards every event to before the host
-	// consumer sees it. Inline, never buffered: a slow observer slows
-	// the run (the contract says cheap), but an event can NEVER be
-	// delivered to the host before the observers saw it.
-	//
-	// The session-attributed subscribers (card t_8de82cff) ride the
-	// same forward goroutine: the run's session id is already settled
-	// above (the attribution default), so this is the one place a
+	// The event spine: a snapshot of the registered observers forwards every event to.
+	// Inline, never buffered: a slow observer slows the run (the contract says cheap), but
+	// an event can NEVER be delivered to the host before the observers saw it. The
+	// session-attributed subscribers ride the same forward goroutine: the run's session id
+	// is already settled above (the attribution default), so this is the one place a
 	// consumer can learn WHICH conversation an event belongs to.
 	obs := a.eventObservers()
 	sessObs := a.sessionEventObservers()
@@ -594,10 +493,8 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			inner <- core.AgentEnd{Type: "agent_end", FinishReason: "error", Error: "no loop configured — mount the agent-loop plugin or call SetLoopProvider"}
 			return
 		}
-		// Image captioning (vision_model knob): captioned copies go to
-		// the loop, the caller's messages stay original. A captioning
-		// failure ends the run before any streaming - loud, not a
-		// provider 400 about unseen pixels.
+		// Image captioning (vision_model knob): captioned copies go to the loop, the caller's
+		// messages stay original.
 		messages, err := a.applyCaptions(ctx, provider, messages)
 		if err != nil {
 			inner <- core.AgentEnd{Type: "agent_end", FinishReason: "error", Error: err.Error()}
@@ -607,11 +504,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 		if runTools == nil {
 			runTools = a.tools
 		}
-		// Per-run scope override (card t_9de5b009): a session rooted in
-		// a workspace folder serves its CWD and trust-gated AGENTS.md
-		// context for THIS run only - the agent's host-level values
-		// (the process working directory) stay untouched for runs
-		// without a session workspace. Empty overrides are unset.
+		// Per-run scope override: a session rooted in a workspace folder serves its CWD and.
 		runCWD, runPromptContext := a.cwd, a.promptContext
 		if dir := core.RunWorkspace(ctx); dir != "" {
 			runCWD = dir
@@ -623,9 +516,8 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 		toolProviders := a.toolProviders
 		disabledTools := a.disabledTools
 		approvals := a.approvals
-		// t_f78acfd6: maxTurns and the custom prompt are hot-apply
-		// knobs now - the run reads them under the same lock the
-		// settings save writes them through, never racy.
+		// maxTurns and the custom prompt are hot-apply knobs now - the run reads them under
+		// the same lock the settings save writes them through, never racy.
 		maxTurns := a.maxTurns
 		promptCustom := a.promptCustom
 		yieldLedger := a.yieldLedger
@@ -639,9 +531,8 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			DisabledTools:      disabledToolList(disabledTools),
 			CompactionProvider: a.compactor,
 			PromptBuilder:      a.promptBuilder,
-			// The registry entry's disable flag rides the prompt build
-			// (card t_441deb04): the Tools section lists what the model
-			// can actually call, never a tool the fold switched off.
+			// The registry entry's disable flag rides the prompt build: the Tools section lists
+			// what the model can actually call, never a tool the fold switched off.
 			ExtensionInfos: core.StampDisabledTools(a.extensionInfos, disabledToolList(disabledTools)),
 			MaxTurns:           maxTurns,
 			MaxToolOutput:      a.maxToolOutput,

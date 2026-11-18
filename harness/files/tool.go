@@ -1,18 +1,4 @@
-// Package files owns the file domain, all of it (the shell-ring shrink
-// wave 1, ADR Workshop/omega-shell-ring-shrink.md): the dotted file
-// wire tools (files.read / files.write / files.edit, plus files.batch
-// for the atomic multi-file change - the registry unification B
-// ruling, t_d8fbad57, which closed the files-vs-files.* collision
-// class by retiring the flat action-protocol tool and its alias shims;
-// files.grep + files.glob ride the tools capsule) and the webui
-// explorer's REST face (/files/browse, /files/read, /files/raw,
-// /files/write, /files/mkdir - the root-resolution law rides the same
-// capsule).
-//
-// The instance-database deny law (ENDO'S LAW 2026-10-18) is the db
-// family's own (harness/datadir's Guard); the file tool's paths and
-// the shell tool's commands consult it, the tool layer refuses the
-// accidental db-touch class.
+// Package files owns the file domain, all of it (the shell-ring shrink wave 1, ADR.
 package files
 
 import (
@@ -31,31 +17,20 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// FileProvider serves the dotted files tools as an additive
-// tools-seam contributor. It holds per-path file locks so concurrent
-// tool calls on the same file are serialized, and the db-door guard
-// every file path must pass.
+// FileProvider serves the dotted files tools as an additive tools-seam contributor. It
+// holds per-path file locks so concurrent tool calls on the same file are serialized,
+// and the db-door guard every file path must pass.
 type FileProvider struct {
 	// fileLocks serializes read/write/edit on the same path.
-	// ponytail: unbounded growth ceiling = distinct paths per session.
-	// Upgrade path: LRU eviction of idle mutexes if path count grows
-	// large, but in practice the set is bounded by working-tree size.
 	fileLocks sync.Map // map[string]*sync.Mutex, keyed by abs path
 
-	// guard refuses any file path that resolves into the instance
-	// database (ENDO'S LAW 2026-10-18). nil and zero-value guards are
-	// pass-through.
+	// guard refuses any file path that resolves into the instance database. nil and
+	// zero-value guards are pass-through.
 	guard *datadir.Guard
 }
 
-// Tools returns the dotted file wire: one tool per verb plus
-// files.batch for the atomic multi-file change (the registry
-// unification B ruling, t_d8fbad57 - the flat action-protocol `files`
-// tool and its alias shims are gone; the names files.read/write/edit
-// survive as REAL tools, each schema carrying ONLY its own args, no
-// action property anywhere). files.grep + files.glob already ride the
-// tools capsule as dotted tools - this closes the files-vs-files.*
-// collision class permanently.
+// Tools returns the dotted file wire: one tool per verb plus files.batch for the atomic
+// multi-file change.
 func (p *FileProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"files.read": {
@@ -103,9 +78,7 @@ func (p *FileProvider) Tools() map[string]core.Tool {
 	}
 }
 
-// fileBatchVerbs is the batch contract's per-op action enum: the
-// operations array admits write and edit (a read op inside a batch
-// is not a change - the flat tool refused it and so does the batch).
+// fileBatchVerbs is the batch contract's per-op action enum.
 var fileBatchVerbs = []string{"write", "edit"}
 
 // prop assembles one typed schema property.
@@ -113,9 +86,8 @@ func prop(typ, desc string) map[string]any {
 	return map[string]any{"type": typ, "description": desc}
 }
 
-// object assembles the tool's JSON object schema. required names the
-// args THIS verb cannot run without - its own list, never another
-// verb's.
+// object assembles the tool's JSON object schema. required names the args THIS verb
+// cannot run without - its own list, never another verb's.
 func object(props map[string]any, required ...string) map[string]any {
 	schema := map[string]any{"type": "object", "properties": props}
 	if len(required) > 0 {
@@ -124,9 +96,8 @@ func object(props map[string]any, required ...string) map[string]any {
 	return schema
 }
 
-// runBatchTool is files.batch's Run: parse the operations array (its
-// own per-op action contract), then hand it to the atomic batch
-// engine.
+// runBatchTool is files.batch's Run: parse the operations array (its own per-op action
+// contract), then hand it to the atomic batch engine.
 func (p *FileProvider) runBatchTool(ctx context.Context, args map[string]any) (string, error) {
 	ops, err := parseFileOperations(args["operations"])
 	if err != nil {
@@ -135,11 +106,9 @@ func (p *FileProvider) runBatchTool(ctx context.Context, args map[string]any) (s
 	return p.runFileBatch(ctx, ops)
 }
 
-// resolveToolPath roots a tool path argument at the run's session
-// workspace (card t_9de5b009). A session-rooted run resolves RELATIVE
-// paths against that folder; absolute paths pass through untouched. No
-// workspace (or an absolute path) is exactly today's behavior - the
-// path is returned as-is and the process working directory applies.
+// resolveToolPath roots a tool path argument at the run's session workspace. No
+// workspace (or an absolute path) is exactly today's behavior - the path is returned
+// as-is and the process working directory applies.
 func resolveToolPath(ctx context.Context, path string) string {
 	dir := core.RunWorkspace(ctx)
 	if dir == "" || filepath.IsAbs(path) {
@@ -157,8 +126,7 @@ type fileOp struct {
 	NewString string `json:"new_string"`
 }
 
-// parseFileOperations converts the raw interface{} from tool args into
-// a slice of fileOp.
+// parseFileOperations converts the raw interface{} from tool args into a slice of.
 func parseFileOperations(raw any) ([]fileOp, error) {
 	data, err := json.Marshal(raw)
 	if err != nil {
@@ -182,15 +150,9 @@ func parseFileOperations(raw any) ([]fileOp, error) {
 	return ops, nil
 }
 
-// runFileBatch applies a multi-file operation list atomically. Every
-// target path is snapshotted (current bytes, or absent) before any
-// write; if any operation fails, every snapshot is restored - a
-// half-applied multi-file change is impossible. Each file surface is a
-// plain file, not a DB, so snapshot/restore is the rollback.
+// runFileBatch applies a multi-file operation list atomically.
 func (p *FileProvider) runFileBatch(ctx context.Context, ops []fileOp) (string, error) {
-	// Root every op at the run's session workspace FIRST (card
-	// t_9de5b009): the snapshot, the dispatch and the error text all
-	// see the same rooted path, and absolute op paths pass through.
+	// Root every op at the run's session workspace FIRST.
 	for i := range ops {
 		ops[i].Path = resolveToolPath(ctx, ops[i].Path)
 	}
@@ -229,7 +191,6 @@ func (p *FileProvider) runFileBatch(ctx context.Context, ops []fileOp) (string, 
 			fmt.Fprintf(&out, "%d: %s\n", i+1, summary)
 			continue
 		}
-		// Roll back everything touched.
 		restoreFiles(snap, existed, modes)
 		return "", fmt.Errorf("batch failed at operations[%d] (%s %s): %v (rolled back)", i, op.Action, op.Path, err)
 	}
@@ -250,10 +211,9 @@ func opArgs(op fileOp) map[string]any {
 	return args
 }
 
-// restoreFiles writes every snapshot back and removes files that did
-// not exist before the batch. Writes are atomic (temp + rename) with
-// each file's ORIGINAL mode - a rollback must not truncate a
-// half-written file in place or chmod a 0600 file world-readable.
+// restoreFiles writes every snapshot back and removes files that did not exist before.
+// Writes are atomic (temp + rename) with each file's ORIGINAL mode - a rollback must
+// not truncate a half-written file in place or chmod a 0600 file world-readable.
 func restoreFiles(snap map[string][]byte, existed map[string]bool, modes map[string]os.FileMode) {
 	for abs, data := range snap {
 		if !existed[abs] {
@@ -265,8 +225,6 @@ func restoreFiles(snap map[string][]byte, existed map[string]bool, modes map[str
 			mode = 0o644
 		}
 		if err := agent.WriteFileAtomic(abs, data, mode); err != nil {
-			// Keep going: restoring the remaining files matters more
-			// than failing loudly on one.
 			continue
 		}
 	}
@@ -295,12 +253,7 @@ func argString(args map[string]any, key string) (string, error) {
 	return s, nil
 }
 
-// argOptionalInt reads an optional integer argument (absent or null =
-// not present). JSON numbers arrive as float64; a numeric string is
-// also accepted - the legacy alias shims went schema-less for a while
-// and models still emit stringified integers without a schema
-// (card t_b9f74bea, live repro 2026-11-07: the wire carried
-// "limit":"5"). A non-numeric token is an error, worded honestly.
+// argOptionalInt reads an optional integer argument (absent or null = not present).
 func argOptionalInt(args map[string]any, key string) (int, bool, error) {
 	v, ok := args[key]
 	if !ok || v == nil {
@@ -308,8 +261,7 @@ func argOptionalInt(args map[string]any, key string) (int, bool, error) {
 	}
 	f, isNum := v.(float64)
 	if !isNum {
-		// Internal Go callers pass int/int64; the tool wire passes
-		// float64; mistyped models pass strings. All of them parse.
+		// Internal Go callers pass int/int64.
 		switch n := v.(type) {
 		case int:
 			return n, true, nil
@@ -335,10 +287,9 @@ func argOptionalInt(args map[string]any, key string) (int, bool, error) {
 
 // RunReadFile reads a file with line numbers, honoring offset/limit.
 func (p *FileProvider) RunReadFile(ctx context.Context, args map[string]any) (string, error) {
-	// Session workspace rooting (card t_9de5b009): the alias shims and
-	// the fold dispatch root the path before this handler reads it -
-	// resolve again for the direct-call safety (idempotent when
-	// absolute).
+	// Session workspace rooting: the alias shims and the fold dispatch root the path
+	// before this handler reads it - resolve again for the direct-call safety (idempotent
+	// when absolute).
 	if v, ok := args["path"].(string); ok {
 		args["path"] = resolveToolPath(ctx, v)
 	}

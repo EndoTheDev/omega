@@ -9,9 +9,8 @@ import (
 	"testing"
 )
 
-// fixtureReleases serves a releases-list fixture: one GitHub API base
-// with /releases/latest (stable-only) and /releases (the full list).
-// List order is newest-first, exactly like the real endpoint.
+// fixtureReleases serves a releases-list fixture. List order is newest-first, exactly
+// like the real endpoint.
 func fixtureReleases(t *testing.T, latest githubRelease, list []githubRelease) string {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -36,10 +35,7 @@ func rel(tag string) githubRelease {
 	}}
 }
 
-// TestFetchStableSkipsPrereleaseTags: the stable channel must resolve
-// the latest stable tag while nightly (and other prerelease) tags float
-// around it — the fixture list of refs carries both, and /releases/latest
-// serves only the stable one.
+// TestFetchStableSkipsPrereleaseTags: the stable channel must resolve the latest.
 func TestFetchStableSkipsPrereleaseTags(t *testing.T) {
 	old := githubAPIBase
 	t.Cleanup(func() { githubAPIBase = old })
@@ -52,7 +48,6 @@ func TestFetchStableSkipsPrereleaseTags(t *testing.T) {
 			rel("v0.9.1-nightly.20261020"),
 		})
 
-	// The stable resolver hits the stable-only endpoint.
 	got, err := fetchStable()
 	if err != nil {
 		t.Fatalf("fetchStable: %v", err)
@@ -62,9 +57,7 @@ func TestFetchStableSkipsPrereleaseTags(t *testing.T) {
 	}
 }
 
-// TestFetchNightlyPicksNewestPrerelease pins the nightly channel: the
-// newest -nightly.* tag by semver, ignoring stable and rc tags and
-// list order.
+// TestFetchNightlyPicksNewestPrerelease pins the nightly channel.
 func TestFetchNightlyPicksNewestPrerelease(t *testing.T) {
 	old := githubAPIBase
 	t.Cleanup(func() { githubAPIBase = old })
@@ -96,8 +89,7 @@ func TestFetchNightlyNoNightlies(t *testing.T) {
 	}
 }
 
-// TestCompareTagNewer pins that unparseable tags can never win the
-// nightly pick over a valid semver tag.
+// TestCompareTagNewer pins that unparseable tags can never win the nightly pick over.
 func TestCompareTagNewer(t *testing.T) {
 	if compareTagNewer("dev", "v0.9.1") || compareTagNewer("zzz-unknown", "v0.1.0") {
 		t.Error("unparseable tags must never sort newer")

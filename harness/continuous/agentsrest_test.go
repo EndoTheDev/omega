@@ -1,15 +1,6 @@
 package continuous
 
-// agentsrest_test.go: the /agents roster face's gates (card t_490fed88,
-// the shell-ring shrink wave 2). The handlers moved whole from
-// agent/api/server_agents.go, so the tests port with them - the
-// fixture wires the REAL registrationRows() into a local mux (the way
-// the plugin's mount does) and serves it on a real listener.
-//
-// The scaffold probes use a scratch home dir (no OMEGA_HOME games -
-// the home is the struct's field now): no personal content is ever
-// seeded, the store is :memory: and offered under the exact key the
-// fixture resolves.
+// agentsrest_test.go: the /agents roster face's gates.
 
 import (
 	"bytes"
@@ -28,8 +19,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// newAgentsFixture mounts the roster REST face on a real listener with
-// a scratch home and an in-memory store under the "store" seam key.
+// newAgentsFixture mounts the roster REST face on a real listener with a scratch home.
 func newAgentsFixture(t *testing.T) (*httptest.Server, *store.Store, string) {
 	t.Helper()
 	home := t.TempDir()
@@ -66,8 +56,7 @@ func getJSON(t *testing.T, url string) (int, []byte) {
 	return res.StatusCode, body
 }
 
-// postAny posts a JSON body and returns the status only (the roster
-// creations here assert statuses, the created payload rides the store).
+// postAny posts a JSON body and returns the status only (the roster creations here.
 func postAny(t *testing.T, url string, payload any) (int, error) {
 	t.Helper()
 	data, err := json.Marshal(payload)
@@ -122,7 +111,6 @@ func TestAgentsListEndpoint(t *testing.T) {
 	if profiles[1].Description != "probe duty" {
 		t.Errorf("scout description = %q", profiles[1].Description)
 	}
-	// no phantom memory rows in a fresh home.
 	for _, p := range profiles {
 		if p.MemorySize != 0 {
 			t.Errorf("%s carries phantom memory %d", p.Name, p.MemorySize)
@@ -149,13 +137,9 @@ func TestScaffoldEndpoint(t *testing.T) {
 	}
 }
 
-// TestCloneEndpoint pins the CLONE law on the wire: one create door with
-// `inherit_from` materializes a full copy (definition, skills, persona
-// files, session store) and re-tags the copied sessions, so the clone's
-// roster row carries the source's history from birth.
+// TestCloneEndpoint pins the CLONE law on the wire.
 func TestCloneEndpoint(t *testing.T) {
 	srv, st, home := newAgentsFixture(t)
-	// a session owned by scout, so the copy has history to re-tag
 	ctx := context.Background()
 	if err := st.CreateAgentSession(ctx, "scout-sess", "", "probe", "scout"); err != nil {
 		t.Fatal(err)
@@ -164,8 +148,7 @@ func TestCloneEndpoint(t *testing.T) {
 	if err := os.MkdirAll(scoutData, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// close the live store's handle-free copy: the roster reads the
-	// home's own file, so the fixture writes one by opening it.
+	// close the live store's handle-free copy.
 	src, err := store.Open(filepath.Join(scoutData, "omega.db"))
 	if err != nil {
 		t.Fatalf("open source store: %v", err)
@@ -179,7 +162,6 @@ func TestCloneEndpoint(t *testing.T) {
 	if err := src.Close(); err != nil {
 		t.Fatal(err)
 	}
-	// a persona file and a skill travel with the clone
 	if err := os.WriteFile(filepath.Join(agent.AgentDir(home, "scout"), "memory.md"), []byte("scout memory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -219,11 +201,10 @@ func TestCloneEndpoint(t *testing.T) {
 	}
 }
 
-// TestCloneEndpointRetagFailureLeavesNoPhantom pins Important 3 on the
-// wire: the clone door is ONE step. A copy that lands and then fails to
-// re-tag its rows must not leave a registered folder behind - the source's
-// rows would read as the source's session AND the roster would list an
-// agent nobody finished creating.
+// TestCloneEndpointRetagFailureLeavesNoPhantom pins Important 3 on the wire. A copy
+// that lands and then fails to re-tag its rows must not leave a registered folder
+// behind - the source's rows would read as the source's session AND the roster would
+// list an agent nobody finished creating.
 func TestCloneEndpointRetagFailureLeavesNoPhantom(t *testing.T) {
 	srv, _, home := newAgentsFixture(t)
 	prev := retagAgentSessions
@@ -242,7 +223,6 @@ func TestCloneEndpointRetagFailureLeavesNoPhantom(t *testing.T) {
 	if _, statErr := os.Stat(agent.AgentDir(home, "probe")); !os.IsNotExist(statErr) {
 		t.Errorf("a failed clone left a registered phantom agent (%v)", statErr)
 	}
-	// The name is free again: a retry with a working re-tag succeeds.
 	retagAgentSessions = prev
 	if res, _ := postAny(t, srv.URL+"/agents", map[string]any{"name": "probe", "inherit_from": "scout"}); res != http.StatusCreated {
 		t.Errorf("retry after the failed clone = %d, want 201", res)
@@ -262,7 +242,6 @@ func TestAgentDetailEndpoint(t *testing.T) {
 	if p.Name != "scout" {
 		t.Errorf("detail name = %q", p.Name)
 	}
-	// unknown agent 404s.
 	if code, _ := getJSON(t, srv.URL+"/agents/ghost"); code != http.StatusNotFound {
 		t.Errorf("ghost status = %d, want 404", code)
 	}
@@ -271,7 +250,6 @@ func TestAgentDetailEndpoint(t *testing.T) {
 func TestAgentSessionsEndpoint(t *testing.T) {
 	srv, st, _ := newAgentsFixture(t)
 
-	// create a session as scout.
 	res, err := postAny(t, srv.URL+"/agents/scout/sessions", map[string]any{})
 	if err != nil {
 		t.Fatal(err)
@@ -280,7 +258,6 @@ func TestAgentSessionsEndpoint(t *testing.T) {
 		t.Fatalf("create session status = %d", res)
 	}
 
-	// the scout list shows it.
 	code, body := getJSON(t, srv.URL+"/agents/scout/sessions")
 	if code != http.StatusOK {
 		t.Fatalf("scout sessions status %d", code)
@@ -293,8 +270,7 @@ func TestAgentSessionsEndpoint(t *testing.T) {
 		t.Fatalf("scout sessions = %+v", sessions)
 	}
 
-	// THE list-scoping law: the default list never shows it. This
-	// asserts the store filter the capsule list rides on.
+	// THE list-scoping law: the default list never shows it.
 	def, err := st.ListSessions(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -303,16 +279,14 @@ func TestAgentSessionsEndpoint(t *testing.T) {
 		t.Errorf("default list leaked scout sessions: %v", def)
 	}
 
-	// unknown agent: 404, even for creations.
 	if res, _ := postAny(t, srv.URL+"/agents/ghost/sessions", map[string]any{}); res != http.StatusNotFound {
 		t.Errorf("ghost create status = %d, want 404", res)
 	}
 }
 
-// TestAgentSessionsEmptyListEmitsArray pins the list contract (card
-// t_619832ee): a freshly scaffolded agent has zero sessions, the store
-// returns a nil slice, and the endpoint must still answer literal []
-// with 200 - the webui session read crashes on a null .length body.
+// TestAgentSessionsEmptyListEmitsArray pins the list contract: a freshly scaffolded
+// agent has zero sessions, the store returns a nil slice, and the endpoint must still
+// answer literal [] with 200 - the webui session read crashes on a null.length body.
 func TestAgentSessionsEmptyListEmitsArray(t *testing.T) {
 	srv, _, _ := newAgentsFixture(t)
 	code, body := getJSON(t, srv.URL+"/agents/scout/sessions")
@@ -348,10 +322,7 @@ func TestAgentsListCarriesSessionCounts(t *testing.T) {
 	}
 }
 
-// TestAgentUpdateEndpoint pins the roster's edit affordance: PUT writes
-// the definition layer's field set, an empty update is an honest no-op,
-// the DEFAULT agent answers 409 locked, an unknown agent 404s, and the
-// retired secret knobs are the 400 lane (the secret-free provider law).
+// TestAgentUpdateEndpoint pins the roster's edit affordance.
 func TestAgentUpdateEndpoint(t *testing.T) {
 	srv, _, home := newAgentsFixture(t)
 	seedHostProviders(t, home)
@@ -387,26 +358,21 @@ func TestAgentUpdateEndpoint(t *testing.T) {
 	if res, body := putAny(t, srv.URL+"/agents/default", map[string]any{"description": "x"}); res != http.StatusConflict {
 		t.Fatalf("default update status = %d (%s), want 409 locked", res, body)
 	}
-	// unknown agent: 404.
 	if res, _ := putAny(t, srv.URL+"/agents/ghost", map[string]any{"description": "x"}); res != http.StatusNotFound {
 		t.Errorf("ghost update status = %d, want 404", res)
 	}
-	// every retired secret knob: the 400 lane, naming the law.
 	for _, retired := range []string{"provider_type", "host", "api_key"} {
 		res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{retired: "x"})
 		if res != http.StatusBadRequest {
 			t.Errorf("%s status = %d (%s), want 400", retired, res, body)
 		}
 	}
-	// an unknown provider instance is the same 400 lane.
 	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{"provider_instance": "nope"}); res != http.StatusBadRequest {
 		t.Errorf("unknown instance status = %d (%s), want 400", res, body)
 	}
 }
 
-// seedHostProviders gives the fixture home a settings file with one
-// named provider instance, so the definition layer has something legal
-// to reference.
+// seedHostProviders gives the fixture home a settings file with one named provider.
 func seedHostProviders(t *testing.T, home string) {
 	t.Helper()
 	body := "provider:\n  type: ollama\n  model_name: glm\nproviders:\n  work:\n    type: openai\n    host: http://localhost:9000\n    api_key: sk-test\n"
@@ -418,10 +384,7 @@ func seedHostProviders(t *testing.T, home string) {
 	}
 }
 
-// TestAgentUpdateEndpointMaxTurns pins the wire shape of the first
-// additive field (settings tier 3b, card t_53523d5b): max_turns arrives
-// as a JSON NUMBER and lands as a yaml int the wake can parse, 0 is a
-// real value, and every malformed shape is the 400 lane.
+// TestAgentUpdateEndpointMaxTurns pins the wire shape of the first additive field.
 func TestAgentUpdateEndpointMaxTurns(t *testing.T) {
 	srv, _, home := newAgentsFixture(t)
 
@@ -435,7 +398,6 @@ func TestAgentUpdateEndpointMaxTurns(t *testing.T) {
 	if lay.MaxTurns == nil || *lay.MaxTurns != 42 {
 		t.Fatalf("layer max_turns = %v, want 42", lay.MaxTurns)
 	}
-	// The file itself carries the int, not a quoted string.
 	body, err := os.ReadFile(agent.AgentConfigPath(home, "scout"))
 	if err != nil {
 		t.Fatal(err)
@@ -444,7 +406,6 @@ func TestAgentUpdateEndpointMaxTurns(t *testing.T) {
 		t.Fatalf("layer file:\n%s", body)
 	}
 
-	// 0 = no cap, a real value.
 	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{"max_turns": 0}); res != http.StatusOK {
 		t.Fatalf("max_turns 0 status = %d (%s)", res, body)
 	}
@@ -466,14 +427,10 @@ func TestAgentUpdateEndpointMaxTurns(t *testing.T) {
 	}
 }
 
-// TestAgentUpdateEndpointUnset pins the second additive field: the
-// dotted reset vocabulary deletes the layer's key pairs (the fallback to
-// main), and the refusals - unknown name, group name, set+unset in one
-// request, the read mask as a secret - are all 400.
+// TestAgentUpdateEndpointUnset pins the second additive field.
 func TestAgentUpdateEndpointUnset(t *testing.T) {
 	srv, _, home := newAgentsFixture(t)
 
-	// Seed overrides through the same endpoint (the one write path).
 	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{
 		"system_prompt":     "be terse",
 		"max_turns":         42,
@@ -483,7 +440,6 @@ func TestAgentUpdateEndpointUnset(t *testing.T) {
 		t.Fatalf("seed update status = %d (%s)", res, body)
 	}
 
-	// The reset: both keys leave the file, the provider knob stays.
 	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{
 		"unset": []string{"system_prompt", "max_turns"},
 	}); res != http.StatusOK {
@@ -500,7 +456,6 @@ func TestAgentUpdateEndpointUnset(t *testing.T) {
 		t.Fatalf("provider.model_name was not left alone: %+v", lay.ModelName)
 	}
 
-	// A sub-key reset falls back for that knob only.
 	if res, body := putAny(t, srv.URL+"/agents/scout", map[string]any{
 		"unset": []string{"provider.model_name"},
 	}); res != http.StatusOK {
@@ -517,7 +472,6 @@ func TestAgentUpdateEndpointUnset(t *testing.T) {
 		t.Fatalf("provider.instance was collateral damage: %+v", lay.ProviderInstance)
 	}
 
-	// Refusal lanes.
 	for name, payload := range map[string]map[string]any{
 		"unknown unset name":           {"unset": []string{"provider.model"}},
 		"group name is not a knob":     {"unset": []string{"provider"}},
@@ -535,18 +489,16 @@ func TestAgentUpdateEndpointUnset(t *testing.T) {
 	}
 }
 
-// TestAgentsRosterCanonicalChat pins the field the Agents tab binds a
-// chat to (card t_10ac04f0): every roster row carries the agent's
-// CANONICAL chat - one stable conversation, never the most recent
-// session - and the DEFAULT (main) agent rides the same roster with
-// Continuous set. A home with no live canonical omits the field: the
-// click mints one, so the absence never makes a row unclickable.
+// TestAgentsRosterCanonicalChat pins the field the Agents tab binds a chat to: every
+// roster row carries the agent's CANONICAL chat - one stable conversation, never the
+// most recent session - and the DEFAULT (main) agent rides the same roster with
+// Continuous set. A home with no live canonical omits the field: the click mints one,
+// so the absence never makes a row unclickable.
 func TestAgentsRosterCanonicalChat(t *testing.T) {
 	srv, st, home := newAgentsFixture(t)
 
-	// The store that OWNS scout's sessions: the agent home's own db
-	// (per-agent data isolation - the daemon's store never holds them
-	// after the boot migration).
+	// The store that OWNS scout's sessions: the agent home's own db (per-agent data
+	// isolation - the daemon's store never holds them after the boot migration).
 	scoutStore, err := store.Open(filepath.Join(home, "agents", "scout", "data", "omega.db"))
 	if err != nil {
 		t.Fatalf("open scout store: %v", err)
@@ -590,7 +542,6 @@ func TestAgentsRosterCanonicalChat(t *testing.T) {
 		return res.StatusCode, one
 	}
 
-	// A fresh home: the rows are there, no canonical exists yet.
 	first := roster()
 	main, ok := first[agent.DefaultAgentName]
 	if !ok {
@@ -609,8 +560,7 @@ func TestAgentsRosterCanonicalChat(t *testing.T) {
 		t.Errorf("scout canonical = %q with no canonical chat, want empty", scout.Canonical)
 	}
 
-	// The click MINTS on a home that holds none: the id is the agent's
-	// one permanent conversation, stable across clicks.
+	// The click MINTS on a home that holds none.
 	if code, _ := mint("scout"); code != http.StatusOK {
 		t.Fatalf("mint scout canonical status %d, want 200", code)
 	}
@@ -618,7 +568,7 @@ func TestAgentsRosterCanonicalChat(t *testing.T) {
 	if minted != "scout-canonical" {
 		t.Fatalf("scout canonical = %q, want scout-canonical (the seeded stable id)", minted)
 	}
-	// ...and a second click opens the SAME conversation: no re-mint.
+	// ..and a second click opens the SAME conversation: no re-mint.
 	if code, _ := mint("scout"); code != http.StatusOK {
 		t.Fatalf("second mint status %d, want 200", code)
 	}
@@ -626,8 +576,6 @@ func TestAgentsRosterCanonicalChat(t *testing.T) {
 		t.Errorf("canonical moved on a second click: %q -> %q", minted, again)
 	}
 
-	// A worker run lands (a NEWER session, the most recently touched
-	// one): the click target does not move. This is the whole card.
 	ctx := context.Background()
 	if err := scoutStore.CreateAgentSession(ctx, "sess-run", "", "", "scout"); err != nil {
 		t.Fatal(err)
@@ -639,7 +587,6 @@ func TestAgentsRosterCanonicalChat(t *testing.T) {
 		t.Fatalf("canonical = %q after a worker run, want %q (most-recent is dead as a rule)", got, minted)
 	}
 
-	// The preview line: the newest assistant reply in the canonical chat.
 	if err := scoutStore.AppendMessage(ctx, minted, core.NewAssistant("patrol complete,\n0 anomalies")); err != nil {
 		t.Fatal(err)
 	}
@@ -651,8 +598,7 @@ func TestAgentsRosterCanonicalChat(t *testing.T) {
 		t.Error("last_report_at is empty - the preview line carries no age")
 	}
 
-	// ARCHIVE = RETIRE: the retired canonical leaves the roster and the
-	// next click mints the next generation. The old row stays archived.
+	// ARCHIVE = RETIRE: the retired canonical leaves the roster and the next click mints.
 	if err := scoutStore.SetSessionArchived(ctx, minted, true); err != nil {
 		t.Fatal(err)
 	}
@@ -673,8 +619,7 @@ func TestAgentsRosterCanonicalChat(t *testing.T) {
 		t.Error("the retired canonical is not archived - retire means it stays archived")
 	}
 
-	// The main agent binds too - and its canonical is MACHINERY-owned, so
-	// it never joins the human's session list.
+	// The main agent binds too - and its canonical is MACHINERY-owned, so it never joins.
 	if code, _ := mint(agent.DefaultAgentName); code != http.StatusOK {
 		t.Fatalf("mint main canonical status %d, want 200", code)
 	}
@@ -711,13 +656,8 @@ func TestAgentsRosterCanonicalChat(t *testing.T) {
 	}
 }
 
-// TestCreateHomeSeedsTheRosterCanonical pins the round-1 fix (card
-// t_10ac04f0) on the path a real agent takes: POST /continuous runs
-// CreateHome, and the chat it seeds is BOTH what the roster row hands
-// the click AND what /new folds. The fold keys on the machine-owned bit
-// (agent/api's handleSessionNew answers "fork" otherwise), so a seed
-// written as an ordinary listed row forked the relationship - ruling 2 -
-// for every created agent.
+// TestCreateHomeSeedsTheRosterCanonical pins the round-1 fix on the path a real agent
+// takes.
 func TestCreateHomeSeedsTheRosterCanonical(t *testing.T) {
 	home := t.TempDir()
 	st, err := store.Open(":memory:")
@@ -746,7 +686,6 @@ func TestCreateHomeSeedsTheRosterCanonical(t *testing.T) {
 		t.Fatalf("create status %d: %s", res.StatusCode, body)
 	}
 
-	// The roster row hands the seeded chat, with no mint needed.
 	code, rosterBody := getJSON(t, srv.URL+"/agents")
 	if code != http.StatusOK {
 		t.Fatalf("roster status %d: %s", code, rosterBody)
@@ -772,7 +711,6 @@ func TestCreateHomeSeedsTheRosterCanonical(t *testing.T) {
 		t.Fatalf("created agent missing from the roster: %s", rosterBody)
 	}
 
-	// The seeded row is machinery-owned and out of the human's list.
 	ast, err := store.Open(filepath.Join(agent.AgentDir(home, "runner"), "data", "omega.db"))
 	if err != nil {
 		t.Fatalf("runner store: %v", err)
@@ -790,11 +728,6 @@ func TestCreateHomeSeedsTheRosterCanonical(t *testing.T) {
 	}
 }
 
-// TestAgentsDeleteRemovesTheWholeHome pins ruling 2 on the wire:
-// DELETE /agents/{name} removes the HOME (sessions included) and
-// answers the session count it took with it, so the panel's receipt
-// names the same number its confirm dialog promised. The main agent is
-// refused (its home is the daemon's home), a ghost 404s.
 func TestAgentsDeleteRemovesTheWholeHome(t *testing.T) {
 	srv, _, home := newAgentsFixture(t)
 	// two sessions in the agent's OWN store, the rows the delete takes
@@ -837,8 +770,7 @@ func TestAgentsDeleteRemovesTheWholeHome(t *testing.T) {
 	if strings.Contains(string(roster), `"scout"`) {
 		t.Fatalf("the deleted agent still rides the roster: %s", roster)
 	}
-	// Refusals: the main agent's home is the daemon's home (409), a
-	// second delete of the same name finds nothing (404).
+	// Refusals: the main agent's home is the daemon's home (409), a second delete of the.
 	del := func(name string) int {
 		req, err := http.NewRequest(http.MethodDelete, srv.URL+"/agents/"+name, nil)
 		if err != nil {
@@ -859,11 +791,9 @@ func TestAgentsDeleteRemovesTheWholeHome(t *testing.T) {
 	}
 }
 
-// forgetRecorder is a store that remembers the delete verb's release
-// call (card t_5df01d0f). The routing handle is what locks an agent
-// home's files, so the delete verb must release it before removing the
-// directory - asserted here without depending on the host's file
-// locking.
+// forgetRecorder is a store that remembers the delete verb's release call. The routing
+// handle is what locks an agent home's files, so the delete verb must release it before
+// removing the directory - asserted here without depending on the host's file locking.
 type forgetRecorder struct {
 	*store.Store
 	forgot []string

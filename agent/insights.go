@@ -8,8 +8,6 @@ import (
 )
 
 // FormatInsights renders an Insights struct as a plain-text report.
-// Shared by the CLI command and the /insights
-// slash command, transcript).
 func FormatInsights(in *core.Insights) string {
 	var sb strings.Builder
 
@@ -20,7 +18,6 @@ func FormatInsights(in *core.Insights) string {
 		sb.WriteString(fmt.Sprintf("  Through: %s\n\n", in.PeriodEnd))
 	}
 
-	// Overview
 	sb.WriteString("  Overview\n")
 	sb.WriteString("  ─────────────────────────────────────\n")
 	sb.WriteString(fmt.Sprintf("  Sessions:          %d\n", in.Sessions))
@@ -30,7 +27,6 @@ func FormatInsights(in *core.Insights) string {
 	sb.WriteString(fmt.Sprintf("  Tokens (est.):     %s\n", FormatNumber(in.TotalTokens)))
 	sb.WriteString(fmt.Sprintf("  Avg msgs/session:  %.1f\n\n", in.AvgSessionMsgs))
 
-	// Top Tools
 	if len(in.Tools) > 0 {
 		sb.WriteString("  Top Tools\n")
 		sb.WriteString("  ─────────────────────────────────────\n")
@@ -44,7 +40,6 @@ func FormatInsights(in *core.Insights) string {
 		sb.WriteString("\n")
 	}
 
-	// Activity by Day
 	sb.WriteString("  Activity by Day\n")
 	sb.WriteString("  ─────────────────────────────────────\n")
 	for _, d := range in.Daily {
@@ -52,7 +47,6 @@ func FormatInsights(in *core.Insights) string {
 	}
 	sb.WriteString("\n")
 
-	// Notable Sessions
 	if in.NotableMsgs.Value > 0 || in.NotableTokens.Value > 0 || in.NotableTools.Value > 0 {
 		sb.WriteString("  Notable Sessions\n")
 		sb.WriteString("  ─────────────────────────────────────\n")
@@ -67,9 +61,7 @@ func FormatInsights(in *core.Insights) string {
 		}
 	}
 
-	// Store on-disk shape (card t_329b9312's surface ruling: db size
-	// lives HERE, no duplicate surface). A store without a file path
-	// reports zero - the section stays out.
+	// Store on-disk shape.
 	if in.DBSizeBytes > 0 {
 		sb.WriteString("\n  Store\n")
 		sb.WriteString("  ─────────────────────────────────────\n")

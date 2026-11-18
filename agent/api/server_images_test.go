@@ -16,10 +16,6 @@ import (
 var onePNG = []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
 
 func TestCheckImageSizes(t *testing.T) {
-	// a size whose base64 encodes without padding slack - ok. The guard's
-	// decoded estimate (len*3/4) overestimates for padded base64, so the
-	// exact-cap boundary sits just under: a multiple of 3 raw bytes is
-	// the largest representation under 10MB.
 	ok := make([]byte, maxChatImageBytes-maxChatImageBytes%3)
 	messages := []core.Message{core.NewUserWithImages("look", []core.ImageContent{
 		{MediaType: "image/png", Base64: base64.StdEncoding.EncodeToString(ok)},
@@ -28,7 +24,6 @@ func TestCheckImageSizes(t *testing.T) {
 		t.Fatalf("checkImageSizes ok-case: %v", err)
 	}
 
-	// just over the cap -> error names the message/image indexes
 	big := make([]byte, maxChatImageBytes+1)
 	messages[0] = core.NewUserWithImages("look", []core.ImageContent{
 		{MediaType: "image/png", Base64: base64.StdEncoding.EncodeToString(big)},
@@ -139,7 +134,6 @@ func TestAttachImageOversize(t *testing.T) {
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(onePNG) // test server
-		// pad past the cap
 		if _, err := w.Write(make([]byte, maxChatImageBytes+1)); err != nil {
 			t.Errorf("write: %v", err)
 		}
@@ -180,7 +174,6 @@ func TestAttachImageValidation(t *testing.T) {
 		})
 	}
 
-	// GET is refused
 	req := httptest.NewRequest(http.MethodGet, "/attach-image", nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -217,9 +210,7 @@ func TestStoreImagesRoundTrip(t *testing.T) {
 	_ = s
 }
 
-// TestAttachImageRefusesInternal exercises the wire contract itself: IP
-// literals inside the box, the LAN, and the Tailscale ring are refused
-// before any fetch happens; a public literal is allowed through the guard.
+// TestAttachImageRefusesInternal exercises the wire contract itself.
 func TestAttachImageRefusesInternal(t *testing.T) {
 	s := newTestServer()
 	for _, host := range []string{
@@ -236,11 +227,8 @@ func TestAttachImageRefusesInternal(t *testing.T) {
 	}
 }
 
-// TestAttachImageRedirectToInternalBlocked closes the redirect hole: a
-// public-looking first hop that 302s to an internal target must abort
-// mid-chain, not follow it. The guard stub lets the httptest first hop
-// (127.0.0.1) through and blocks only the redirect target - the same
-// seam production uses for every hop.
+// TestAttachImageRedirectToInternalBlocked closes the redirect hole: a public-looking
+// first hop that 302s to an internal target must abort mid-chain, not follow it.
 func TestAttachImageRedirectToInternalBlocked(t *testing.T) {
 	oldGuard := internalHostGuard
 	internalHostGuard = func(host string) bool { return host == "192.0.2.9" }

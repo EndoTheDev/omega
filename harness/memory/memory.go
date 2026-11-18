@@ -1,13 +1,4 @@
-// Package memory provides the persistent memory seam (core.MemoryProvider)
-// backed by two markdown files (memory.md + user.md), plus the memory tool
-// set (memory.add/replace/remove/batch) that lets the agent manage entries.
-//
-// Seam: memory (exclusive), tools (additive).
-//
-// The storage format matches Hermes Agent: entries are separated by §
-// (section sign) delimiters. Files are human-readable and editable outside
-// the agent. Snapshot reads files fresh on each BuildPrompt call, so new
-// sessions pick up writes from the previous session.
+// Package memory provides the persistent memory seam (core.MemoryProvider) backed by.
 package memory
 
 import (
@@ -57,9 +48,6 @@ func NewFileMemory(cfg Config) *FileMemory {
 }
 
 // Snapshot returns the formatted prompt block for system prompt injection.
-// Reads files fresh on each call so new sessions pick up writes from the
-// previous session. BuildPrompt is called once per Run(), not per turn,
-// so this is one disk read per session start — negligible.
 func (fm *FileMemory) Snapshot() string {
 	var sections []string
 	if mem := fm.formatSection("MEMORY", "your personal notes", fm.load(targetMemory), fm.memoryLimit, fm.memoryEnabled); mem != "" {
@@ -71,13 +59,10 @@ func (fm *FileMemory) Snapshot() string {
 	return strings.Join(sections, "\n\n")
 }
 
-// promptSectionOrder places the memory snapshot first among
-// contributed sections, before skills (20) and the tools list (30).
+// promptSectionOrder places the memory snapshot first among contributed sections.
 const promptSectionOrder = 10
 
-// PromptSections renders the memory snapshot as an untitled prompt
-// block. Empty when both stores are disabled or hold nothing. The
-// module owns its own prompt block; the prompt builder only pastes it.
+// PromptSections renders the memory snapshot as an untitled prompt block.
 func (fm *FileMemory) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
 	if snap := fm.Snapshot(); snap != "" {
 		return []core.PromptSection{{Body: snap, Order: promptSectionOrder}}
@@ -107,7 +92,6 @@ func (fm *FileMemory) Add(target, content string) (string, error) {
 		}
 	}
 
-	// Check char limit.
 	limit := fm.targetLimit(target)
 	entries = append(entries, content)
 	total := fm.entriesChars(entries)
@@ -122,8 +106,7 @@ func (fm *FileMemory) Add(target, content string) (string, error) {
 	return fm.usage(target, entries), nil
 }
 
-// Replace finds the entry matching oldText (unique substring) and replaces
-// it with content.
+// Replace finds the entry matching oldText (unique substring) and replaces it with.
 func (fm *FileMemory) Replace(target, oldText, content string) (string, error) {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
@@ -147,7 +130,6 @@ func (fm *FileMemory) Replace(target, oldText, content string) (string, error) {
 	oldEntry := entries[idx]
 	entries[idx] = content
 
-	// Check char limit after replacement.
 	limit := fm.targetLimit(target)
 	total := fm.entriesChars(entries)
 	if total > limit {
@@ -187,10 +169,7 @@ func (fm *FileMemory) Remove(target, oldText string) (string, error) {
 	return fm.usage(target, entries), nil
 }
 
-// snapshotFiles reads the current bytes of both store files and
-// returns a restore closure writing them back. Files that did not
-// exist at snapshot time are removed on restore - a batch that created
-// a store from scratch rolls the creation back too.
+// snapshotFiles reads the current bytes of both store files and returns a restore.
 func (fm *FileMemory) snapshotFiles() func() {
 	type fileSnap struct {
 		path string
@@ -232,7 +211,7 @@ func (fm *FileMemory) List(target string) ([]string, error) {
 	return fm.loadEntries(target), nil
 }
 
-// --- internals ---
+// -- internals --
 
 // load reads the file for the target and returns its raw content.
 func (fm *FileMemory) load(target string) string {
@@ -263,9 +242,8 @@ func (fm *FileMemory) loadEntries(target string) []string {
 	return entries
 }
 
-// saveEntries writes entries back to the file with § delimiters.
-// Atomic (temp + rename): a crash mid-save must not truncate
-// accumulated memory in place.
+// saveEntries writes entries back to the file with § delimiters. Atomic (temp +
+// rename): a crash mid-save must not truncate accumulated memory in place.
 func (fm *FileMemory) saveEntries(target string, entries []string) error {
 	path := fm.targetFile(target)
 	content := strings.Join(entries, "\n"+entrySep+"\n")
@@ -276,7 +254,6 @@ func (fm *FileMemory) saveEntries(target string, entries []string) error {
 }
 
 // findEntry finds the index of the entry containing oldText as a substring.
-// Returns an error if zero or multiple entries match.
 func (fm *FileMemory) findEntry(entries []string, oldText string) (int, error) {
 	idx := -1
 	for i, e := range entries {
@@ -293,8 +270,7 @@ func (fm *FileMemory) findEntry(entries []string, oldText string) (int, error) {
 	return idx, nil
 }
 
-// entriesChars returns the total character count of all entries plus
-// delimiters (matching how the file content is measured).
+// entriesChars returns the total character count of all entries plus delimiters.
 func (fm *FileMemory) entriesChars(entries []string) int {
 	if len(entries) == 0 {
 		return 0
@@ -304,7 +280,6 @@ func (fm *FileMemory) entriesChars(entries []string) int {
 		total += len(e)
 	}
 	// Add delimiter overhead: (n-1) * len("§") + newlines between entries.
-	// Each separator is "\n§\n" = 3 chars.
 	total += (len(entries) - 1) * 3
 	return total
 }
@@ -364,7 +339,6 @@ func (fm *FileMemory) usageStr(used, limit int) string {
 }
 
 // formatSection renders a store's snapshot as a formatted prompt block.
-// Returns empty string if the store is disabled or empty.
 func (fm *FileMemory) formatSection(title, subtitle, snapshot string, limit int, enabled bool) string {
 	if !enabled || snapshot == "" {
 		return ""
@@ -379,25 +353,19 @@ func (fm *FileMemory) formatSection(title, subtitle, snapshot string, limit int,
 	return fmt.Sprintf("%s\n%s\n%s\n%s", border, header, border, snapshot)
 }
 
-// --- memory tool ---
+// -- memory tool --
 
 // memoryToolProvider provides the memory tool.
 type memoryToolProvider struct {
 	mem *FileMemory
 }
 
-// memoryVerbs is the memory verb set: the batch contract's per-op
-// action enum derives from this one list. The registry unification B
-// ruling (t_d8fbad57) split the flat action-protocol `memory` tool
-// into memory.<verb> wire tools - dotted names are the norm on this
-// registry (the kanban split, t_f616ed78, set the shape).
+// memoryVerbs is the memory verb set: the batch contract's per-op action enum derives.
 var memoryVerbs = []string{"add", "replace", "remove"}
 
-// buildMemoryTools assembles the dotted memory wire: one tool per
-// verb, each schema carrying ONLY its own args (required lists are
-// exactly its own), plus memory.batch for the atomic operations
-// array. No action property anywhere - the verb IS the tool name.
-// Stateless - called per Tools().
+// buildMemoryTools assembles the dotted memory wire: one tool per verb, each schema
+// carrying ONLY its own args (required lists are exactly its own), plus memory.batch
+// for the atomic operations array.
 func (p *memoryToolProvider) buildMemoryTools() map[string]core.Tool {
 	target := map[string]any{
 		"type":        "string",
@@ -459,9 +427,8 @@ func prop(typ, desc string) map[string]any {
 	return map[string]any{"type": typ, "description": desc}
 }
 
-// object assembles the tool's JSON object schema. required names the
-// args THIS verb cannot run without - its own list, never another
-// verb's.
+// object assembles the tool's JSON object schema. required names the args THIS verb
+// cannot run without - its own list, never another verb's.
 func object(props map[string]any, required ...string) map[string]any {
 	schema := map[string]any{"type": "object", "properties": props}
 	if len(required) > 0 {
@@ -470,10 +437,7 @@ func object(props map[string]any, required ...string) map[string]any {
 	return schema
 }
 
-// Tools returns the dotted memory wire tools (the registry
-// unification B ruling, t_d8fbad57 - the flat `memory` tool with its
-// action enum is gone; removing harness/memory removes every
-// memory.* tool with it, zero flat-tool residue).
+// Tools returns the dotted memory wire tools.
 func (p *memoryToolProvider) Tools() map[string]core.Tool {
 	return p.buildMemoryTools()
 }
@@ -495,11 +459,8 @@ type memoryResult struct {
 	CurrentEntries []string `json:"current_entries,omitempty"`
 }
 
-// verbRunner binds one verb of the dotted surface: the tool's Run
-// routes the wire args into the shared op machinery - the call
-// carries no action field anymore, the verb IS the tool name.
-// Results stay the tool's JSON contract (success/error shapes ride
-// the payload, not Go errors).
+// verbRunner binds one verb of the dotted surface. Results stay the tool's JSON
+// contract (success/error shapes ride the payload, not Go errors).
 func (p *memoryToolProvider) verbRunner(action string) func(context.Context, map[string]any) (string, error) {
 	return func(ctx context.Context, args map[string]any) (string, error) {
 		target, _ := args["target"].(string)
@@ -512,9 +473,8 @@ func (p *memoryToolProvider) verbRunner(action string) func(context.Context, map
 	}
 }
 
-// runBatchTool is memory.batch's Run: parse the operations array (its
-// own per-op action contract), then hand it to the atomic batch
-// engine.
+// runBatchTool is memory.batch's Run: parse the operations array (its own per-op action
+// contract), then hand it to the atomic batch engine.
 func (p *memoryToolProvider) runBatchTool(ctx context.Context, args map[string]any) (string, error) {
 	ops, err := parseOperations(args["operations"])
 	if err != nil {
@@ -567,16 +527,7 @@ func (p *memoryToolProvider) execOp(op memoryOp) (string, error) {
 	return "", fmt.Errorf("unknown action: %s", op.Action)
 }
 
-// runBatch executes a batch of operations atomically: file-backed
-// stores are snapshotted up front and restored if any operation fails,
-// so a mid-batch failure (e.g. a failed [remove, add]) leaves the
-// earlier operations rolled back - the "applied atomically" promise in
-// the schema description is true, not aspirational.
-// ponytail: the snapshot is per-file bytes, not per-op undo; a store
-// file is at most a few KB, so full-restore is both simpler and safer
-// than reverse-applying ops. (Upgrade path removed: this IS the
-// snapshot-and-revert upgrade the old fail-forward loop was waiting
-// for.)
+// runBatch executes a batch of operations atomically.
 func (p *memoryToolProvider) runBatch(ops []memoryOp) string {
 	restore := p.mem.snapshotFiles()
 	var lastUsage string
@@ -585,14 +536,11 @@ func (p *memoryToolProvider) runBatch(ops []memoryOp) string {
 		usage, err := p.execOp(op)
 		if err != nil {
 			restore()
-			// After rollback the failing target holds its pre-batch
-			// contents - report them so the model can retry informed.
+			// After rollback the failing target holds its pre-batch contents.
 			entries, _ := p.mem.List(op.Target)
 			return marshalResult(memoryResult{
 				Success: false,
 				Error:   fmt.Sprintf("batch failed at %s: %s (rolled back)", op.Action, err.Error()),
-				// Current entries of the failed target: the batch is
-				// rolled back, so these are the pre-batch contents.
 				CurrentEntries: entries,
 				Usage:          usage,
 			})
@@ -603,8 +551,7 @@ func (p *memoryToolProvider) runBatch(ops []memoryOp) string {
 	return marshalResult(memoryResult{Success: true, Target: lastTarget, Usage: lastUsage})
 }
 
-// parseOperations converts the raw interface{} from tool args into
-// a slice of memoryOp.
+// parseOperations converts the raw interface{} from tool args into a slice of memoryOp.
 func parseOperations(raw any) ([]memoryOp, error) {
 	data, err := json.Marshal(raw)
 	if err != nil {

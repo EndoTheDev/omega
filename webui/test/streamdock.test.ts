@@ -1,23 +1,9 @@
-// omega webui: mid-stream live status docks at the stream tail, the
-// scrollbar hugs the pane edge (card t_c252b9c6). Endo's report
-// (2026-10-29, classic appearance): while a run streamed, the activity
-// line ("thinking · 1s") rendered in a narrow strip at the TOP-RIGHT of
-// the pane - clipped by the pane edge - and the scrollbar floated
-// inset from the pane's right edge with whitespace to its spare.
-// Root cause: .messages-wrap was a ROW flex container, so the
-// activity/status line sat BESIDE the .messages scrollport as a
-// phantom right strip instead of BELOW it, and the strip ate the
-// scrollbar's right margin. The fix makes the wrap vertical: the
-// scrollport spans the full pane body (border-to-border scrollbar,
-// the bubble max-widths still cap the readable column) and the
-// activity/status lines park under the scroller - at the stream tail,
-// just above the composer, inside the flow, never clipped. The jump
-// pill keeps its absolute placement on the wrap: an absolutely
-// positioned child of the scroll container itself scrolls away with
-// the content.
-// These are structural source-contract tests (house pattern: read the
-// .vue/.css, assert the wiring).
-// Run: node --test test/
+// omega webui: mid-stream live status docks at the stream tail, the scrollbar hugs. The
+// fix makes the wrap vertical: the scrollport spans the full pane body
+// (border-to-border scrollbar, the bubble max-widths still cap the readable column) and
+// the activity/status lines park under the scroller - at the stream tail, just above
+// the composer, inside the flow, never clipped. These are structural source-contract
+// tests (house pattern: read the.vue/.css, assert the wiring).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -36,8 +22,7 @@ const chatMessage = () =>
     "utf8",
   );
 
-// pull a top-level CSS rule body: selector ... { ... } (flat match - the
-// rules these tests read carry no nested blocks)
+// pull a top-level CSS rule body: selector..
 const rule = (src: string, selector: string): string | null => {
   const idx = src.indexOf(selector);
   if (idx === -1) return null;
@@ -77,8 +62,7 @@ describe("messages-wrap: the scrollport spans the pane body (t_c252b9c6)", () =>
 });
 
 describe("the streaming status line rides the stream tail (t_c252b9c6)", () => {
-  // the wrap's children, in template order: the scroller, then the
-  // activity/status lines, then the pill
+  // the wrap's children, in template order.
   const wrapBlock = (): string => {
     const src = chatTab();
     const start = src.indexOf('class="messages-wrap"');
@@ -102,7 +86,6 @@ describe("the streaming status line rides the stream tail (t_c252b9c6)", () => {
       statusIdx > scrollerClose,
       "the status line must render below the scrollport (stream tail, above the composer), never inside the scroller",
     );
-    // and inside the wrap, not past it (composer comes later)
     const composerIdx = src.indexOf("<AppComposer");
     assert.ok(activityIdx < composerIdx, "the activity line belongs to the wrap, above the composer");
     assert.ok(statusIdx < composerIdx, "the status line belongs to the wrap, above the composer");
@@ -121,7 +104,6 @@ describe("the streaming status line rides the stream tail (t_c252b9c6)", () => {
     const pill = rule(css(), ".jump-live {");
     assert.ok(pill, ".jump-live rule not found");
     assert.match(pill, /position:\s*absolute/, "the pill stays viewport-pinned on the wrap");
-    // and the template renders it inside the wrap, not the scroller
     const src = chatTab();
     const pillIdx = src.indexOf('class="jump-live"');
     const scrollerClose = src.indexOf("</div>", src.indexOf('class="messages"'));

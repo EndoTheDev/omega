@@ -1,9 +1,4 @@
-// omega webui: unit tests for card t_b40131ac (composer auto-focus):
-// focus-on-select + window type-to-capture. The gating rules are pure
-// predicates in composables/focus.ts - no steal from a focused text
-// field, no modifier / non-printable interception, signal delivery to
-// the matching active-tab key only.
-// Run: node --test test/
+// omega webui: unit tests for (composer auto-focus).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { ref } from "vue";
@@ -17,7 +12,7 @@ import {
   shouldCaptureTyping,
 } from "../app/composables/focus.ts";
 
-// --- type-to-capture: the key filter ----------------------------------------
+// -- type-to-capture: the key filter ---------------------------------------
 
 describe("isTypeToCaptureKey", () => {
   const plain = (key: string) => ({ key, ctrlKey: false, altKey: false, metaKey: false });
@@ -48,7 +43,7 @@ describe("isTypeToCaptureKey", () => {
   });
 });
 
-// --- type-to-capture: the target filter -------------------------------------
+// -- type-to-capture: the target filter ------------------------------------
 
 describe("isEditableTarget", () => {
   const tag = (name: string, editable = false) =>
@@ -70,7 +65,7 @@ describe("isEditableTarget", () => {
   });
 });
 
-// --- the full capture gate ---------------------------------------------------
+// -- the full capture gate --------------------------------------------------
 
 describe("shouldCaptureTyping", () => {
   const evt = (key: string, target: { tagName?: string; isContentEditable?: boolean } | null) =>
@@ -111,7 +106,7 @@ describe("shouldCaptureTyping", () => {
   });
 });
 
-// --- the focus signal ---------------------------------------------------------
+// -- the focus signal --------------------------------------------------------
 
 describe("composer focus signal", () => {
   it("request names the key and ticks the sequence every time", () => {
@@ -120,8 +115,7 @@ describe("composer focus signal", () => {
     s.request("c1");
     assert.equal(s.focusKey.value, "c1");
     assert.equal(s.seq.value, 1);
-    // a re-request of the SAME key must still deliver: a second
-    // type-to-capture burst after a click blurred the textarea
+    // a re-request of the SAME key must still deliver.
     s.request("c1");
     assert.equal(s.seq.value, 2);
     s.request("c2");
@@ -132,8 +126,8 @@ describe("composer focus signal", () => {
   it("focusDelivers only to the matching, keyed tab", () => {
     const s = createComposerFocusSignal();
     s.request("c1");
-    // production passes the SIGNAL: focusKey is a Ref. Tests that
-    // unwrap .value here validate a shape the app never sends.
+    // production passes the SIGNAL: focusKey is a Ref. Tests that unwrap.value here
+    // validate a shape the app never sends.
     assert.equal(focusDelivers(s, "c1"), true);
     assert.equal(focusDelivers(s, "c2"), false, "hidden/other tabs never receive");
     assert.equal(focusDelivers({ focusKey: ref("c9") }, ""), false, "a keyless tab receives nothing");

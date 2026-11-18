@@ -1,11 +1,6 @@
 package terminal
 
-// The user-stop test (card t_caa67135). The shell registry's whole
-// reason to exist is detachment: the child outlives the turn, the run
-// cap, and even omega itself. The ONE exception is the human pressing
-// stop - a hard stop ends the work, not just the stream - and this pins
-// both halves: the stop kills the child, an ordinary interruption
-// (the run cap) still leaves it running.
+// The user-stop test.
 
 import (
 	"context"
@@ -54,9 +49,7 @@ func TestRunShellKillsChildOnUserStop(t *testing.T) {
 		return id != ""
 	})
 
-	// The human presses stop: the latch latches first, then the run ctx
-	// is cancelled - the hub's order (a tool reads the intent off the
-	// latch the instant its ctx drops).
+	// The human presses stop: the latch latches first, then the run ctx is cancelled.
 	stop.Stop()
 	cancel(core.ErrUserStopped)
 
@@ -75,7 +68,6 @@ func TestRunShellKillsChildOnUserStop(t *testing.T) {
 		t.Fatal("RunShell never returned after the stop")
 	}
 
-	// Terminated for real, by the registry's own verdict.
 	waitFor(t, testWaitTimeout, "the shell to exit after the stop", func() bool {
 		e, ok := reg.Find(id)
 		return ok && e.Exited

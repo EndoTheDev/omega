@@ -1,7 +1,5 @@
-// omega webui: unit tests for the inspector file-tree helpers in
-// composables/omega.ts (rel-path join/clean/validate, expanded-set
-// persistence, entry sort). Run: node --test "test/*.test.ts" (node >= 23
-// runs TS natively)
+// omega webui: unit tests for the inspector file-tree helpers in composables/omega.ts
+// (rel-path join/clean/validate, expanded-set persistence, entry sort).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -68,7 +66,6 @@ describe("parseExpandedPaths", () => {
       parseExpandedPaths(JSON.stringify(["/abs", "..", "a", "", "a/./b", 7, null])),
       ["a"],
     );
-    // hidden names survive - ordinary paths since the guard narrowed
     assert.deepEqual(parseExpandedPaths(JSON.stringify([".git", "docs/.hidden"])), [
       ".git",
       "docs/.hidden",

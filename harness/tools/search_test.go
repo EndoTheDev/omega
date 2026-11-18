@@ -1,8 +1,8 @@
 package tools
 
-// The search tools' self-check (card t_db98ebfe): a seeded tree,
-// both tools run for real against it. Every test builds its own
-// scratch tree and never touches anything outside its t.TempDir.
+// The search tools' self-check: a seeded tree, both tools run for real against it.
+// Every test builds its own scratch tree and never touches anything outside its
+// t.TempDir.
 
 import (
 	"context"
@@ -18,10 +18,10 @@ import (
 
 // seedTree writes a small source tree into a fresh temp dir:
 //
-//	main.go   : "alpha beta\nsearch me please\n"
-//	notes.md  : "search me please\nsecond note\n"
-//	sub/keep.log : "search me please\n"
-//	bin.dat   : binary bytes (NUL-filled head, "search" also present)
+// main.go: "alpha beta\nsearch me please\n"
+// notes.md: "search me please\nsecond note\n"
+// sub/keep.log: "search me please\n"
+// bin.dat: binary bytes (NUL-filled head, "search" also present)
 func seedTree(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -147,8 +147,6 @@ func TestGrepErrors(t *testing.T) {
 }
 
 func TestGrepCapsAreHonest(t *testing.T) {
-	// A tree with more matching files than the cap: the first
-	// grepMaxFiles rows print and the cap note appears.
 	root := t.TempDir()
 	for i := 0; i < grepMaxFiles+10; i++ {
 		p := filepath.Join(root, "f"+itoa(i)+".txt")
@@ -211,9 +209,8 @@ func TestGrepRunWorkspaceRooting(t *testing.T) {
 }
 
 func TestGrepGuardDeniesDBPaths(t *testing.T) {
-	// A real guard over a seeded fake instance db: the db file itself
-	// (and its WAL/SHM siblings) must never be searched even when the
-	// pattern matches content inside them.
+	// A real guard over a seeded fake instance db: the db file itself (and its WAL/SHM
+	// siblings) must never be searched even when the pattern matches content inside them.
 	root := t.TempDir()
 	dbPath := filepath.Join(root, "home", "data", "omega.db")
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
@@ -243,7 +240,6 @@ func TestGrepGuardDeniesDBPaths(t *testing.T) {
 		t.Errorf("the skip must be counted honestly:\n%s", got)
 	}
 
-	// The db itself as root is a hard refusal.
 	if _, err := p.RunGrep(context.Background(), map[string]any{"pattern": "needle", "path": dbPath}); err == nil {
 		t.Error("searching the instance db root must be refused")
 	}
@@ -289,7 +285,6 @@ func TestGlobErrorsAndCaps(t *testing.T) {
 		t.Error("missing root must error")
 	}
 
-	// Cap: seed more files than globMaxPaths under one dir.
 	big := t.TempDir()
 	for i := 0; i < globMaxPaths+5; i++ {
 		if err := os.WriteFile(filepath.Join(big, itoa(i)+".txt"), []byte("x"), 0o644); err != nil {
@@ -336,9 +331,8 @@ func TestNoMatchesSentinel(t *testing.T) {
 	}
 }
 
-// Audit round (card t_db98ebfe): a single-file root with a glob
-// filter must match the file by its base name, not silently miss it
-// (rel is "." for the root file itself).
+// Audit round: a single-file root with a glob filter must match the file by its base
+// name, not silently miss it (rel is "." for the root file itself).
 func TestGrepSingleFileRootWithGlobFilter(t *testing.T) {
 	root := seedTree(t)
 	p := filepath.Join(root, "notes.md")
@@ -353,7 +347,6 @@ func TestGrepSingleFileRootWithGlobFilter(t *testing.T) {
 	if !strings.Contains(got, "notes.md") {
 		t.Errorf("single-file root must match its own glob filter:\n%s", got)
 	}
-	// and a non-matching filter still excludes it
 	got, err = provider().RunGrep(context.Background(), map[string]any{
 		"pattern": "search me",
 		"path":    p,
@@ -367,10 +360,8 @@ func TestGrepSingleFileRootWithGlobFilter(t *testing.T) {
 	}
 }
 
-// Audit round (card t_db98ebfe): a scan error mid-file must not print
-// partial matches as if the file was fully read - an overlong line
-// (bufio.ErrTooLong) ends the scan and the output carries the read
-// error note.
+// Audit round: a scan error mid-file must not print partial matches as if the file was
+// fully read.
 func TestGrepScanErrorNotesTheFile(t *testing.T) {
 	root := t.TempDir()
 	long := strings.Repeat("x", 2*1024*1024) // 2 MB line: over the 1 MB scanner cap
@@ -397,9 +388,7 @@ func TestGrepScanErrorNotesTheFile(t *testing.T) {
 
 func itoa(n int) string { return fmt.Sprintf("%d", n) }
 
-// resultRows strips the note lines ("[...]") off a search result, so a
-// test can assert on the served rows without the honest notes matching
-// the same words.
+// resultRows strips the note lines ("[..]") off a search result, so a test can assert.
 func resultRows(out string) []string {
 	var rows []string
 	for _, line := range strings.Split(out, "\n") {
@@ -411,11 +400,9 @@ func resultRows(out string) []string {
 	return rows
 }
 
-// seedNoisyTree writes the shape the prod defect came from (card
-// t_d5d092be): a walk-lexically-early pile of ignored trees that all
-// contain the needle, plus the file the caller actually wanted.
-// gitObjects fills .git/objects with matching entries (more than the
-// grep file cap for the cap-spending proof; 0 for the plain fixtures).
+// seedNoisyTree writes the shape the prod defect came from: a walk-lexically-early pile
+// of ignored trees that all contain the needle, plus the file the caller actually
+// wanted.
 func seedNoisyTree(t *testing.T, gitObjects int) string {
 	t.Helper()
 	root := t.TempDir()
@@ -444,9 +431,8 @@ func seedNoisyTree(t *testing.T, gitObjects int) string {
 	return root
 }
 
-// TestGrepPrunesIgnoredDirectories: the default skip set keeps the
-// walk out of the noise trees entirely - the real hit arrives well
-// inside the file cap, and the note names what was not searched.
+// TestGrepPrunesIgnoredDirectories: the default skip set keeps the walk out of the
+// noise trees entirely.
 func TestGrepPrunesIgnoredDirectories(t *testing.T) {
 	root := seedNoisyTree(t, grepMaxFiles+5)
 	got, err := provider().RunGrep(context.Background(), map[string]any{
@@ -480,9 +466,6 @@ func TestGrepPrunesIgnoredDirectories(t *testing.T) {
 			t.Errorf("the prune note must name %s:\n%s", name, got)
 		}
 	}
-	// Pruned at the directory entry: nothing under the noise trees was
-	// opened, so no per-file skip was counted (the 276398-binary-skips
-	// cost in the prod incident).
 	if strings.Contains(got, "binary") || strings.Contains(got, "size cap") {
 		t.Errorf("ignored trees were walked file-by-file, not pruned:\n%s", got)
 	}
@@ -491,8 +474,7 @@ func TestGrepPrunesIgnoredDirectories(t *testing.T) {
 	}
 }
 
-// TestGrepIncludeIgnoredSearchesTheTrees: the skip set is a default,
-// and include_ignored is the promised way back in.
+// TestGrepIncludeIgnoredSearchesTheTrees: the skip set is a default, and.
 func TestGrepIncludeIgnoredSearchesTheTrees(t *testing.T) {
 	root := seedNoisyTree(t, 0)
 	got, err := provider().RunGrep(context.Background(), map[string]any{
@@ -511,15 +493,13 @@ func TestGrepIncludeIgnoredSearchesTheTrees(t *testing.T) {
 	if strings.Contains(got, "ignored directories") {
 		t.Errorf("nothing was pruned, so no prune note belongs here:\n%s", got)
 	}
-	// The other half of the prune test's claim: unpruned, the binary
-	// noise trees ARE read and counted. This is the 276398-skip cost.
+	// The other half of the prune test's claim.
 	if !strings.Contains(got, "[skipped 2 binary]") {
 		t.Errorf("the unpruned walk must read the ignored binaries:\n%s", got)
 	}
 }
 
-// TestGlobPrunesIgnoredDirectories: the same skip set on the name
-// search, same note.
+// TestGlobPrunesIgnoredDirectories: the same skip set on the name search, same note.
 func TestGlobPrunesIgnoredDirectories(t *testing.T) {
 	root := seedNoisyTree(t, 0)
 	got, err := provider().RunGlob(context.Background(), map[string]any{
@@ -552,9 +532,8 @@ func TestGlobPrunesIgnoredDirectories(t *testing.T) {
 	}
 }
 
-// TestIgnoreNeverPrunesAnExplicitRoot: naming an ignored tree as the
-// root is a request to search it - the skip set applies below the
-// root only.
+// TestIgnoreNeverPrunesAnExplicitRoot: naming an ignored tree as the root is a request
+// to search it.
 func TestIgnoreNeverPrunesAnExplicitRoot(t *testing.T) {
 	root := seedNoisyTree(t, 0)
 	got, err := provider().RunGrep(context.Background(), map[string]any{

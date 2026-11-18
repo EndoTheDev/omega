@@ -1,9 +1,6 @@
 package api
 
-// TestChannelMountCarriesWebTools, the shell half of the carve (card
-// t_905fa502): the web tool pair's registration is PLUGIN mount work
-// (shell vocabulary); the wire-shape tests over the pair itself live in
-// agent/api next to web_tools.go.
+// TestChannelMountCarriesWebTools, the shell half of the carve.
 
 import (
 	"testing"
@@ -13,11 +10,9 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestChannelMountCarriesWebTools verifies the channel mount registers
-// the web tool pair from the config - the pair's only mount since the
-// v0.13 dissolution (card t_f76ecdbe). Natural names, shell tier:
-// the channel plugin is not Toggleable, so the pair is never
-// disable-list material.
+// TestChannelMountCarriesWebTools verifies the channel mount registers the web tool
+// pair from the config. Natural names, shell tier: the channel plugin is not
+// Toggleable, so the pair is never disable-list material.
 func TestChannelMountCarriesWebTools(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{

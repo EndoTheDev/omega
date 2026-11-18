@@ -1,6 +1,4 @@
-// omega webui: the registry-browser AGENTS tab toggle behavior (v0.14.1,
-// card t_372b9e9a). Pure-surface test: the row model + the soft-toggle
-// law + the source greps (the composition-test convention).
+// omega webui: the registry-browser AGENTS tab toggle behavior.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -22,7 +20,7 @@ import type { OmegaContinuousRow } from "../../harness/continuous/ui/continuousR
 // the AgentsPanel source is three levels up from test/ (the repo root)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-// --- agent rows: the config summary is the expandable detail ---
+// -- agent rows: the config summary is the expandable detail --
 
 test("agentDetailLines renders the config summary honestly", () => {
   const a: OmegaAgent = {
@@ -69,7 +67,7 @@ test("agentDetailLines renders the config summary honestly", () => {
   );
 });
 
-// --- the soft toggle: the fold flags the row, the note says the consequence ---
+// -- the soft toggle: the fold flags the row, the note says the consequence --
 
 test("the agents fold merges by name; the disable note names roster+wake", () => {
   const fold = normalizeDisabledPayload({ agents: ["bots/patrol"] }).agents;
@@ -85,10 +83,9 @@ test("AgentsPanel renders the shared pattern and the SOFT toggle wire", () => {
   assert.ok(src.includes("/disabled/agents"), "the soft toggle PUTs the agents namespace");
 });
 
-// --- card t_2d8deb8c: the locked default agent + details-not-sessions ---
+// --: the locked default agent + details-not-sessions --
 
-// the status vocabulary (Endo's ruling): on = green (any pulse),
-// sleeping = dim. A config-only agent renders no invented state.
+// the status vocabulary: on = green (any pulse), sleeping = dim.
 test("agentStatusFor: pulse is on, sleeping is dim, config-only is undefined", () => {
   const pulse: OmegaContinuousRow = { name: "coder", next_wake: "2026-11-01T17:00:00Z", unread: false } as unknown as OmegaContinuousRow;
   const sleeping: OmegaContinuousRow = { name: "hello", unread: false } as unknown as OmegaContinuousRow;
@@ -103,8 +100,7 @@ test("agentStatusFor: pulse is on, sleeping is dim, config-only is undefined", (
   assert.equal(agentStatusFor(null), undefined, "config-only: no invented state");
 });
 
-// the no-toggle law (card t_db378a0d, sharpening t_2d8deb8c): the default
-// row never renders a disable affordance - it renders no switch at all.
+// the no-toggle law: the default row never renders a disable affordance.
 test("AgentsPanel gives the default agent no toggle (no disabled render, no write path)", () => {
   const panel = readFileSync(join(root, "harness", "continuous", "ui", "AgentsPanel.vue"), "utf8");
   const list = readFileSync(join(root, "webui", "app", "components", "RegistryList.vue"), "utf8");
@@ -113,16 +109,14 @@ test("AgentsPanel gives the default agent no toggle (no disabled render, no writ
   assert.ok(list.includes("r.noToggle"), "RegistryList seats the no-toggle flag");
   assert.ok(list.includes("if (r.noToggle) return;"), "the write path refuses a no-toggle row by another door");
   assert.ok(list.includes('v-if="toggleable && !r.noToggle"'), "the pill never renders for it");
-  // the backend mirror: the handler refuses a curl too (the Go gate
-  // pins it; this is the UI-side anchor to the same law).
+  // the backend mirror: the handler refuses a curl too (the Go gate pins it.
   assert.ok(panel.includes("if (name === DefaultAgentName && !enabled) return;"), "the toggle handler refuses the default agent");
 });
 
-// ruling 3: the expansion is details + edit. Card t_10ac04f0 ruling 4
-// ADDS one section and reverses the sessions half: an agent's WORK
-// sessions are inspected HERE now (they left the human's sessions
-// sidebar), so the tab reads `/agents/<name>/sessions` - the agent's own
-// store - and never the human's `/sessions` list.
+// the expansion is details + edit. ADDS one section and reverses the sessions half: an
+// agent's WORK sessions are inspected HERE now (they left the human's sessions
+// sidebar), so the tab reads `/agents/<name>/sessions` - the agent's own store - and
+// never the human's `/sessions` list.
 test("AgentsPanel expansion: config edit wire, plus the agent's OWN sessions", () => {
   const panel = readFileSync(join(root, "harness", "continuous", "ui", "AgentsPanel.vue"), "utf8");
   assert.ok(panel.includes(`fetch(\`/agents/\${`), "the edit writes through the agents API");

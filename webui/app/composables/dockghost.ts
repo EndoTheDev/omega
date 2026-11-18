@@ -1,11 +1,4 @@
-// omega webui: the ghost preview (v0.14.4 milestone 5, ruling 5). ONE pure
-// formula renders the before-drop result - ghostPreview delegates to
-// predictDockDrop, the same function the commit runs; a refusal comes back
-// with its reason so the overlay hatches red BEFORE the drop lands. The
-// split's halves are exact by the insert law: insertPane always mints the
-// fresh 2-child split at 0.5/0.5, so the measured axis px halves cleanly.
-// The pointer->zone math and the drag gesture record stay in dockdnd.ts;
-// the divider's snap-readout helper lives here with the ghost numerals.
+// omega webui: the ghost preview.
 import { predictDockDrop, type DockDropPrediction } from "./dock.ts";
 import { onGestureEnd, zoneSplitOf, type DragZone } from "./dockdnd.ts";
 import type { DockNode } from "./dock.ts";
@@ -18,21 +11,12 @@ export interface GhostHalf {
 export interface GhostPreview {
   targetPaneId: string;
   zone: DragZone;
-  /** the landing's split direction; null = center (a plain group move) */
   direction: "row" | "column" | null;
-  /** the predictor's refusal reason - the overlay hatches red on it. The
-      ghost and the commit run the SAME call, so a refusal here is a
-      refusal at release (ruling 5's load-bearing law). */
   refused: string | null;
-  /** the fresh split's halves in measured axis px (null: an unmeasured
-      pane, or a center drop - no split, no halves) */
   halves: GhostHalf[] | null;
 }
 
-/** PURE ghost read: the exact result a release would land. `axisPx` is the
-    TARGET pane's measured body size along the zone's split axis (width for
-    left/right, height for top/bottom) - null leaves the halves unrendered
-    rather than guessing. Pure. */
+/** PURE ghost read: the exact result a release would land. */
 export function ghostPreview(
   tree: DockNode,
   fromPaneId: string,
@@ -62,13 +46,7 @@ export function ghostPreview(
   return { targetPaneId: toPaneId, zone, direction, refused: null, halves };
 }
 
-// --- the gesture rect registry (ruling 5: snapshotted at dragstart) ----------
-// One page-lifetime record per gesture: each pane stamps its body rect the
-// first time the gesture touches it (dragstart for the source, first
-// dragover for the rest); the values hold because no op mutates the tree
-// mid-gesture, so every preview reads the SAME geometry the drop will land
-// on. DocksGhost reads this for the hover pane; the drop handlers re-derive
-// from the live DOM as the source of truth.
+// -- the gesture rect registry ---------- One page-lifetime record per gesture.
 
 interface GhostRectEntry {
   source: { paneId: string; index: number } | null;
@@ -77,10 +55,8 @@ interface GhostRectEntry {
 
 let registry: GhostRectEntry | null = null;
 
-// card t_b2430179: the registry joins the COMPOSABLE-owned gesture end - one
-// subscription, page-lifetime; a pane unmounting can no longer leave the
-// registry armed. (It also clears on the next begin, so a poisoned record
-// never reaches the next gesture either way.)
+// the registry joins the COMPOSABLE-owned gesture end. (It also clears on the next
+// begin, so a poisoned record never reaches the next gesture either way.)
 onGestureEnd(() => {
   registry = null;
 });
@@ -90,8 +66,7 @@ export const ghostRegistry = {
   begin(paneId: string, index: number): void {
     registry = { source: { paneId, index }, rects: new Map() };
   },
-  /** stamp one pane's body rect (lazily at first touch - the layout is
-      frozen during a gesture, so first-touch == dragstart geometry) */
+  /** stamp one pane's body rect (lazily at first touch. */
   record(paneId: string, rect: { x: number; y: number; w: number; h: number }): void {
     if (!registry) return;
     if (!registry.rects.has(paneId)) registry.rects.set(paneId, rect);
@@ -103,4 +78,3 @@ export const ghostRegistry = {
     registry = null;
   },
 };
-

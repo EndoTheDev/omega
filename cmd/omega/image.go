@@ -9,10 +9,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// parseFileArgs splits args into image content and text prompt. Args
-// starting with "@" are treated as file references: image files are
-// loaded as base64 ImageContent, text files are inlined into the prompt.
-// Non-file args become the text prompt.
+// parseFileArgs splits args into image content and text prompt.
 func parseFileArgs(args []string) (string, []core.ImageContent, error) {
 	var promptParts []string
 	var images []core.ImageContent
@@ -31,7 +28,6 @@ func parseFileArgs(args []string) (string, []core.ImageContent, error) {
 			promptParts = append(promptParts, "["+img.MediaType+": "+path+"]")
 			continue
 		}
-		// Not an image: inline the file contents into the prompt.
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return "", nil, fmt.Errorf("read %s: %w", path, err)

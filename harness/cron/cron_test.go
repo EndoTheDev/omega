@@ -35,12 +35,10 @@ jobs:
 	if j.Name != "daily-journal" || j.Schedule != "0 8 * * *" || j.DeliverTarget() != "append-to-file" || j.Deliver != "journal" || !j.IsEnabled() {
 		t.Fatalf("job 0 misparsed: %+v", j)
 	}
-	// Defaults: deliver resolves to new-session, enabled true.
 	d := cfg.Jobs[1]
 	if d.DeliverTarget() != "new-session" || d.Deliver != "" || !d.IsEnabled() {
 		t.Fatalf("defaults wrong: %+v", d)
 	}
-	// enabled: false honored.
 	q := cfg.Jobs[2]
 	if q.IsEnabled() {
 		t.Fatalf("enabled: false not honored: %+v", q)
@@ -143,11 +141,10 @@ jobs:
 	}
 }
 
-// TestParseConfigRepeatedJobsKeyErrorsNotPanics: a file that carries
-// TWO `jobs` keys (yaml keeps both mappings; the operator merged two
-// files by hand) errors as the clean duplicate rejection - the line
-// numbers travel with the accumulated jobs, so the crossing duplicate
-// names both its lines instead of panicking the module mount (the
+// TestParseConfigRepeatedJobsKeyErrorsNotPanics: a file that carries TWO `jobs` keys
+// (yaml keeps both mappings; the operator merged two files by hand) errors as the clean
+// duplicate rejection - the line numbers travel with the accumulated jobs, so the
+// crossing duplicate names both its lines instead of panicking the module mount (the
 // serve-killing index-out-of-range the row-law lane's seed hit).
 func TestParseConfigRepeatedJobsKeyErrorsNotPanics(t *testing.T) {
 	raw := `
@@ -227,7 +224,6 @@ func TestSchedulePrev(t *testing.T) {
 }
 
 func TestSchedulePrevNoOccurrence(t *testing.T) {
-	// Feb 29 schedule: no occurrence in the last 7 days of Oct.
 	sched, err := scheduleParser.Parse("0 3 29 2 *")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -238,14 +234,12 @@ func TestSchedulePrevNoOccurrence(t *testing.T) {
 	}
 }
 
-// mustLocal builds a fixed time.Date in the local zone (schedules
-// evaluate in server local time).
+// mustLocal builds a fixed time.Date in the local zone (schedules evaluate in server.
 func mustLocal(y, m, d, hh, mm int) time.Time {
 	return time.Date(y, time.Month(m), d, hh, mm, 0, 0, time.Local)
 }
 
-// TestHomeFileRootWins verifies the legacy home-root crons.yaml is
-// preferred when present (existing installs keep working unchanged).
+// TestHomeFileRootWins verifies the legacy home-root crons.yaml is preferred when.
 func TestHomeFileRootWins(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {
@@ -262,8 +256,7 @@ func TestHomeFileRootWins(t *testing.T) {
 	}
 }
 
-// TestHomeFileConfigSubdirFallback verifies crons.yaml in <home>/config/
-// (the Endo 2026-10-18 layout) is used when nothing is at the home root.
+// TestHomeFileConfigSubdirFallback verifies crons.yaml in <home>/config/ is used when.
 func TestHomeFileConfigSubdirFallback(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {

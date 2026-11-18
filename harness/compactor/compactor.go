@@ -1,8 +1,4 @@
-// Package compactor implements the compactor seam as an in-process
-// plugin. It keeps the first N and last M messages, LLM-summarizes the
-// middle via the mounted provider, and returns the compacted list.
-//
-// Seam: compactor (exclusive). Requires: provider.
+// Package compactor implements the compactor seam as an in-process plugin.
 package compactor
 
 import (
@@ -14,34 +10,26 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Compactor implements agent.CompactionProvider. It holds a reference
-// to the provider (set at Mount time) and the compaction config (read
-// from ctx.Configs at Mount time).
+// Compactor implements agent.CompactionProvider.
 type Compactor struct {
 	provider agent.Provider
 	config   agent.CompactionConfig
-	// autoWindow is the context window probed from the provider once
-	// at Mount (server start). The value is cached for the process
-	// lifetime - SetConfig never touches it. 0 = no usable window
-	// (probe failed, offline, or the provider cannot report one).
+	// autoWindow is the context window probed from the provider once at Mount (server. The
+	// value is cached for the process lifetime - SetConfig never touches it. 0 = no usable
+	// window (probe failed, offline, or the provider cannot report one).
 	autoWindow int
 }
 
-// SetConfig replaces the compaction config at runtime. The host's
-// settings hot-apply path (WatchConfig / settings save) calls this so
-// an edited config.yaml takes effect on the running agent without a
-// restart — Compact reads the config on every call.
+// SetConfig replaces the compaction config at runtime.
 func (c *Compactor) SetConfig(cfg agent.CompactionConfig) {
 	c.config = cfg
 }
 
-// AutoWindow returns the context window probed at startup, or 0 when
-// the probe produced nothing usable.
+// AutoWindow returns the context window probed at startup, or 0 when the probe.
 func (c *Compactor) AutoWindow() int { return c.autoWindow }
 
-// window resolves the effective context window: a manual override
-// (>0) wins exactly as before; 0 means auto - the startup-probed
-// window. Both 0 -> Budget's DefaultContextWindow fallback.
+// window resolves the effective context window: a manual override (>0) wins exactly as
+// before; 0 means auto.
 func (c *Compactor) window() int {
 	if c.config.ContextWindow > 0 {
 		return c.config.ContextWindow
@@ -49,15 +37,11 @@ func (c *Compactor) window() int {
 	return c.autoWindow
 }
 
-// Compact compacts the message history. If disabled or under budget,
-// returns the original messages unchanged.
-//
-// The never-fold law (ruling 11, async agent loop): a turn whose calls
-// are still pending is NEVER folded - the fold boundary skips past it.
-// The run context carries the pending-calls table (agent.WithYieldLedger,
-// threaded by the loop); the earliest pending call's assistant message
-// anchors the boundary, so middle never contains it and everything from
-// that turn on stays verbatim.
+// Compact compacts the message history. The never-fold law: a turn whose calls are
+// still pending is NEVER folded - the fold boundary skips past it. The run context
+// carries the pending-calls table (agent.WithYieldLedger, threaded by the loop); the
+// earliest pending call's assistant message anchors the boundary, so middle never
+// contains it and everything from that turn on stays verbatim.
 func (c *Compactor) Compact(ctx context.Context, messages []core.Message) ([]core.Message, error) {
 	if !c.config.Enabled {
 		return messages, nil
@@ -73,9 +57,6 @@ func (c *Compactor) Compact(ctx context.Context, messages []core.Message) ([]cor
 		return messages, nil
 	}
 
-	// The fold boundary: where `middle` ends. The pending-turn law
-	// pulls it back so a pending call's assistant turn (and everything
-	// after it) stays out of the summary.
 	end := len(messages) - keepLast
 	if ledger := agent.YieldLedgerFromContext(ctx); ledger != nil {
 		if sid := agent.SessionIDFromContext(ctx); sid != "" {
@@ -100,20 +81,12 @@ func (c *Compactor) Compact(ctx context.Context, messages []core.Message) ([]cor
 	return result, nil
 }
 
-// summarize calls the provider to summarize a slice of messages. It
-// streams the response, collects text chunks, and returns the trimmed
-// summary.
+// summarize calls the provider to summarize a slice of messages.
 func (c *Compactor) summarize(ctx context.Context, middle []core.Message) (string, error) {
 	var b strings.Builder
-	// The summarization prompt carries the billion-context doctrine
-	// (idea-level extraction; github.com/ranxianglei/billion-context -
-	// their PROVENANCE framing marks the ideas license-clean, credit
-	// theirs): in their controlled evidence the doctrine + tags bundle
-	// delivered ~62% of the re-fetch reduction, more than the
-	// compression machinery itself. The summary is the only thing that
-	// survives a fold, so the classes below tell the model what must
-	// not be lost. No fill-percentage disclosure or question anywhere:
-	// a model told it is only part-way full refuses to compress.
+	// The summarization prompt carries the billion-context doctrine (idea-level
+	// extraction. The summary is the only thing that survives a fold, so the classes below
+	// tell the model what must not be lost.
 	b.WriteString("Summarize the conversation below for a context fold. " +
 		"The summary is the only thing that survives the fold; the first and last few messages around it are kept separately.\n" +
 		"\n" +
@@ -141,12 +114,7 @@ func (c *Compactor) summarize(ctx context.Context, middle []core.Message) (strin
 		b.WriteString("\n")
 	}
 
-	// The consult resolves the per-subsystem model slot (card
-	// t_fc0b2f2d): an "instance:model" value rides the named provider
-	// instance, a bare value serves through the default instance, and
-	// an empty model keeps the instance's own default. Resolved per
-	// call - the model knob is hot (compaction config is re-read on
-	// every Compact).
+	// The consult resolves the per-subsystem model slot.
 	prov, model := agent.ResolveModelSlot(c.provider, c.config.Model)
 	if model != "" {
 		prov = prov.WithModel(model)

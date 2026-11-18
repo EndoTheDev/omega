@@ -50,7 +50,6 @@ func TestFakeProviderContextCancellationStopsEmission(t *testing.T) {
 	).WithDelay(50 * time.Millisecond)
 	events := p.Stream(ctx, nil, nil)
 
-	// Consume the first event, then cancel before the second is emitted.
 	if _, ok := <-events; !ok {
 		t.Fatal("expected first event")
 	}

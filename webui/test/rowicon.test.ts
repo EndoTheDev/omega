@@ -1,8 +1,4 @@
-// omega webui: unit tests for the FileTree row-glyph table (card
-// t_467a0386, iconified card t_502b8e81): extension -> glyph kind mapping,
-// unknown -> generic, and the iconset-name builders (folder open/closed
-// distinct). The SVG builders are gone - a glyph is a NAME in the webui
-// iconset, rendered through the Icon wrapper. Run: node --test webui/test/
+// omega webui: unit tests for the FileTree row-glyph table.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { folderIcon, glyphKindFor, glyphIcon } from "../../harness/files/ui/rowicon.ts";

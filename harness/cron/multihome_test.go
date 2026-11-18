@@ -1,9 +1,8 @@
 package cron
 
-// multihome_test.go: the multi-home WHEN self-checks (card t_72ecca67,
-// ruling 12). One module reads main's crons.yaml AND each agent home's
-// config/crons.yaml; agent jobs are wakes - one tick through the event
-// spine, never an in-process turn; continuous off = inert.
+// multihome_test.go: the multi-home WHEN self-checks. One module reads main's
+// crons.yaml AND each agent home's config/crons.yaml; agent jobs are wakes - one tick
+// through the event spine, never an in-process turn; continuous off = inert.
 
 import (
 	"context"
@@ -25,8 +24,7 @@ func TestLoadAllConfigsReadsAgentHomes(t *testing.T) {
 	if err := agent.ScaffoldAgent(home, "scout", ""); err != nil {
 		t.Fatal(err)
 	}
-	// Two agents can honestly carry the same job name - the roster of
-	// the state keys namespaces them (scout/wake, warden/wake).
+	// Two agents can honestly carry the same job name.
 	if err := agent.ScaffoldAgent(home, "warden", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -65,8 +63,7 @@ func TestLoadAllConfigsRejectsAgentDeliver(t *testing.T) {
 	if err := agent.ScaffoldAgent(home, "scout", ""); err != nil {
 		t.Fatal(err)
 	}
-	// A wake's delivery IS its report; a deliver target would cross
-	// the home boundary (ruling 10). Loud rejection.
+	// A wake's delivery IS its report; a deliver target would cross the home boundary.
 	if err := os.WriteFile(filepath.Join(home, "agents", "scout", "config", "crons.yaml"),
 		[]byte("jobs:\n  - name: wake\n    schedule: \"17 * * * *\"\n    prompt: patrol\n    deliver: journal\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -107,8 +104,8 @@ func TestAgentJobInertWithoutContinuous(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(),
 		Job{Name: "wake", Schedule: "17 * * * *", Prompt: "patrol", Agent: "scout", AgentOwned: true})
 	r.tickEmit = nil // the continuous capsule is toggled off
-	// Off = wakes go inert, schedules stay (ruling 14): the fire is a
-	// no-op that still records its occurrence - no panic, no spawn.
+	// Off = wakes go inert, schedules stay: the fire is a no-op that still records its
+	// occurrence - no panic, no spawn.
 	r.fire(context.Background(), r.jobsSnapshot()[0], r.now())
 	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) {
@@ -139,7 +136,6 @@ func TestAgentJobStateKeysNamespace(t *testing.T) {
 	}
 	r := NewRunner(cfg, home)
 	r.now = time.Now
-	// Both fire: same yaml name, distinct state keys, both guarded.
 	for _, j := range r.jobsSnapshot() {
 		if !j.IsAgent() {
 			t.Fatalf("unexpected main job in snapshot: %+v", j)
@@ -154,12 +150,7 @@ func TestAgentJobStateKeysNamespace(t *testing.T) {
 	}
 }
 
-// TestJobsListingMarksHomeOwnership pins the wire's ownership mark (card
-// t_21824d98): a main-home continuous-agent job carrying an AUTHORED
-// `agent:` and an agent home's wake row both put a non-empty Agent on the
-// row, and only AgentOwned tells them apart. The editor's read-only
-// refusal (and the toggle's state key) read that mark, so the
-// authored-agent row keeps its pencil instead of stranding as a wake.
+// TestJobsListingMarksHomeOwnership pins the wire's ownership mark.
 func TestJobsListingMarksHomeOwnership(t *testing.T) {
 	home := t.TempDir()
 	mainYAML := "jobs:\n" +
@@ -195,8 +186,6 @@ func TestJobsListingMarksHomeOwnership(t *testing.T) {
 	if row := byName["wake"]; row.Agent != "scout" || !row.AgentOwned {
 		t.Errorf("agent-home row = %+v, want agent scout and AgentOwned true (read-only)", row)
 	}
-	// The wire carries it: agent_owned appears only on the owned row, so
-	// the SPA can tell the two classes apart without guessing.
 	rows := r.JobRows()
 	if len(rows) != 3 {
 		t.Fatalf("wire rows = %d, want 3", len(rows))

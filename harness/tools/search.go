@@ -1,22 +1,10 @@
 package tools
 
-// The search domain: content search (grep) and name match (glob) as
-// one provider on the tools-seam rail. The registry capsule ships
-// them (card t_db98ebfe, the roadmap's search stubs): grep and glob
-// are two single-purpose tools (the one-domain law, t_73994e55 - two
-// domains, one verb each, no sub-action split needed).
-//
-// Everything is stdlib: regexp + filepath.WalkDir. Output is bounded
-// (file/line caps with an honest truncation note), binary files are
-// refused, and every path passes the instance-database deny guard the
-// file tools use (ENDO'S LAW 2026-10-18, harness/datadir).
-//
-// Two rules keep a broad root sane. Ignored trees (.git, node_modules,
-// .cache, dist, ...) are pruned at the directory entry, never walked
-// entry by entry - a home-root grep that read every .git object cost
-// 567s and spent the file cap on path noise (card t_d5d092be);
-// include_ignored: true opts back in, and an explicitly named root is
-// never pruned.
+// The search domain: content search (grep) and name match (glob) as one provider on.
+// Ignored trees (.git, node_modules,.cache, dist,..) are pruned at the directory entry,
+// never walked entry by entry - a home-root grep that read every.git object cost 567s
+// and spent the file cap on path noise; include_ignored: true opts back in, and an
+// explicitly named root is never pruned.
 
 import (
 	"bufio"
@@ -35,9 +23,8 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// Bounded-output caps. The note lines carry the honest totals so the
-// model knows what it did not see, exactly like shellOutput's
-// truncation note.
+// Bounded-output caps. The note lines carry the honest totals so the model knows what
+// it did not see, exactly like shellOutput's truncation note.
 const (
 	grepMaxFiles  = 200 // files_with_matches rows
 	grepMaxLines  = 400 // content-mode output lines
@@ -50,28 +37,14 @@ const (
 // it into a truncation note, never a tool error.
 var errSearchCapReached = errors.New("search result cap reached")
 
-// walkErrorDetailCap bounds the per-error detail lines; the rest ride
-// one honest "...and N more" tail.
+// walkErrorDetailCap bounds the per-error detail lines.
 const walkErrorDetailCap = 10
 
-// ignoredDirNoteCap bounds the pruned-directory names in the note; the
-// rest ride one honest "...and N more" tail.
+// ignoredDirNoteCap bounds the pruned-directory names in the note.
 const ignoredDirNoteCap = 10
 
-// defaultIgnoreDirs is the directory-name skip set both search tools
-// prune at the directory entry (card t_d5d092be). A home-root grep
-// used to read every .git object and every node_modules/.cache file:
-// 567s of wall clock, the 200-file cap spent on path noise, and not
-// one row about the thing that was asked for. These trees are never
-// what a content search means.
-//
-// Pruning happens on the entry (fs.SkipDir), so nothing under an
-// ignored tree is opened, stat'ed or counted - that difference is the
-// whole cost fix, not the exclusion itself.
-//
-// The escape hatch is include_ignored: true on the tool args. The skip
-// set is a default, not a wall, and an explicitly named root always
-// wins (searching path=/repo/.git searches .git).
+// defaultIgnoreDirs is the directory-name skip set both search tools prune at the.
+// These trees are never what a content search means.
 var defaultIgnoreDirs = map[string]struct{}{
 	".git":         {},
 	".hg":          {},
@@ -86,16 +59,15 @@ var defaultIgnoreDirs = map[string]struct{}{
 	".stversions":  {},
 }
 
-// isIgnoredDir reports whether a directory name is in the default skip
-// set (exact match - these names are tool/VCS-produced, not user-named).
+// isIgnoredDir reports whether a directory name is in the default skip set (exact
+// match.
 func isIgnoredDir(name string) bool {
 	_, ok := defaultIgnoreDirs[name]
 	return ok
 }
 
-// emitPrunedDirs names the directories the walk refused to enter, so
-// the ignore is never a silent blind spot: the result says what was
-// not searched and how to search it anyway.
+// emitPrunedDirs names the directories the walk refused to enter, so the ignore is
+// never a silent blind spot.
 func emitPrunedDirs(out *strings.Builder, pruned []string) {
 	if len(pruned) == 0 {
 		return
@@ -113,8 +85,7 @@ func emitPrunedDirs(out *strings.Builder, pruned []string) {
 	out.WriteString("]\n")
 }
 
-// relSlash is an entry's path relative to the search root, slash
-// separated (the note spelling everywhere in this file).
+// relSlash is an entry's path relative to the search root, slash separated (the note.
 func relSlash(root, path string) string {
 	rel, err := filepath.Rel(root, path)
 	if err != nil {
@@ -123,16 +94,11 @@ func relSlash(root, path string) string {
 	return filepath.ToSlash(rel)
 }
 
-// walkDirFn is the directory walker the search tools run through; a
-// var so the walk-error regression test can inject a denied directory
-// (a genuinely ACL-denied dir is not reproducible portably inside a
-// temp tree). Tests swap and restore it; production never touches it.
+// walkDirFn is the directory walker the search tools run through. Tests swap and
+// restore it; production never touches it.
 var walkDirFn = filepath.WalkDir
 
-// emitWalkErrors writes one detail line per captured walk error -
-// path + reason (card t_b9f74bea: a directory that failed the walk
-// used to vanish as "[skipped N walk errors]" with no name and no
-// cause), capped at walkErrorDetailCap lines.
+// emitWalkErrors writes one detail line per captured walk error.
 func emitWalkErrors(out *strings.Builder, walkErrs []string) {
 	for i, w := range walkErrs {
 		if i == walkErrorDetailCap {
@@ -198,8 +164,7 @@ func argString(args map[string]any, key string) (string, error) {
 	return s, nil
 }
 
-// argInt extracts an optional integer argument (JSON numbers are
-// float64 on the tool-args wire).
+// argInt extracts an optional integer argument (JSON numbers are float64 on the.
 func argInt(args map[string]any, key string) (int, bool, error) {
 	v, ok := args[key]
 	if !ok || v == nil {
@@ -228,10 +193,9 @@ func argBool(args map[string]any, key string) (bool, error) {
 	return b, nil
 }
 
-// searchRoot resolves the root-path argument: empty means the run's
-// session workspace (the process working directory when the run is
-// not rooted); relative paths root there exactly like the file tools'
-// resolveToolPath; absolute paths pass through.
+// searchRoot resolves the root-path argument: empty means the run's session workspace
+// (the process working directory when the run is not rooted); relative paths root there
+// exactly like the file tools' resolveToolPath; absolute paths pass through.
 func searchRoot(ctx context.Context, raw string) string {
 	if strings.TrimSpace(raw) == "" {
 		if dir := core.RunWorkspace(ctx); dir != "" {
@@ -259,8 +223,6 @@ func globToRegexp(pattern string) (*regexp.Regexp, error) {
 	for i := 0; i < len(pattern); i++ {
 		c := pattern[i]
 		if c == '*' && i+1 < len(pattern) && pattern[i+1] == '*' {
-			// "**/" may expand to zero directories; a bare "**"
-			// crosses levels inside a segment.
 			if i+2 < len(pattern) && pattern[i+2] == '/' {
 				sb.WriteString("(?:.*/)?")
 				i += 2
@@ -292,10 +254,7 @@ func globToRegexp(pattern string) (*regexp.Regexp, error) {
 	return re, nil
 }
 
-// relMatch matches an entry's path relative to the search root
-// (slash-separated) against the filter pattern. A single-file root
-// (path == root, rel ".") also matches on its base name, so grep
-// over one file with a glob filter still applies.
+// relMatch matches an entry's path relative to the search root (slash-separated).
 func relMatch(re *regexp.Regexp, root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	if err != nil {
@@ -310,9 +269,7 @@ func relMatch(re *regexp.Regexp, root, path string) bool {
 	return false
 }
 
-// skipReason reports why a file is out of the search's reach: it
-// resolves into the instance database, looks binary, or exceeds the
-// size cap. "" means searchable.
+// skipReason reports why a file is out of the search's reach.
 func (p *SearchProvider) skipReason(path string) string {
 	if p.guard.DenyFile(path) {
 		return "the instance database's door"
@@ -405,10 +362,8 @@ func (p *SearchProvider) RunGrep(ctx context.Context, args map[string]any) (stri
 			return nil
 		}
 		if d.IsDir() {
-			// Prune the ignored trees at the entry: nothing under them
-			// is opened, stat'ed or counted (the 276398-binary-skips
-			// cost, card t_d5d092be). An explicitly named root is never
-			// pruned - the caller asked for that tree by name.
+			// Prune the ignored trees at the entry. An explicitly named root is never pruned -
+			// the caller asked for that tree by name.
 			if path != root && !includeIgnored && isIgnoredDir(d.Name()) {
 				pruned = append(pruned, relSlash(root, path))
 				return fs.SkipDir
@@ -488,7 +443,6 @@ func (p *SearchProvider) grepFile(out *strings.Builder, root, path string, re *r
 		rel = path
 	}
 	if rel == "." && path == root {
-		// single-file root: name the file, not "."
 		rel = filepath.Base(path)
 	}
 	rel = filepath.ToSlash(rel)
@@ -549,7 +503,6 @@ func (p *SearchProvider) grepFile(out *strings.Builder, root, path string, re *r
 			skipped["read errors"]++
 			return nil
 		}
-		// a partial read: render what matched, then the honest note
 		fmt.Fprintf(out, "[%s read error: %v]\n", rel, serr)
 	}
 	if len(matches) == 0 {
@@ -566,13 +519,8 @@ func (p *SearchProvider) grepFile(out *strings.Builder, root, path string, re *r
 	return nil
 }
 
-// emitContextBlocks renders path:line: text rows for the merged
-// match+context windows of one file, stopping at the global line
-// cap. Returns false when the cap hit mid-file (the caller aborts
-// the walk). lines is the SplitAfter slice of the file text (one
-// entry per newline); lineCount is the real line number of the last
-// line. Block high edges are clamped so no phantom trailing row can
-// print.
+// emitContextBlocks renders path:line. Returns false when the cap hit mid-file (the
+// caller aborts the walk).
 func emitContextBlocks(out *strings.Builder, matches []int, context int, hasContext bool,
 	rel string, lines []string, lineCount int, outLines *int) bool {
 	if !hasContext || context == 0 {
@@ -584,7 +532,6 @@ func emitContextBlocks(out *strings.Builder, matches []int, context int, hasCont
 		}
 		return true
 	}
-	// Merge overlapping [m-context, m+context] windows into blocks.
 	type span struct{ lo, hi int }
 	var blocks []span
 	for _, m := range matches {
@@ -638,8 +585,7 @@ func stringArg(args map[string]any, key string) string {
 	return v
 }
 
-// RunGlob lists paths under a root whose slash-separated relative
-// path matches a glob pattern.
+// RunGlob lists paths under a root whose slash-separated relative path matches a glob.
 func (p *SearchProvider) RunGlob(ctx context.Context, args map[string]any) (string, error) {
 	pattern, err := argString(args, "pattern")
 	if err != nil {
@@ -687,9 +633,8 @@ func (p *SearchProvider) RunGlob(ctx context.Context, args map[string]any) (stri
 		if path == root {
 			return nil
 		}
-		// The default skip set is the same one grep prunes (card
-		// t_d5d092be): a name search under a home root drowns in
-		// .git/node_modules rows exactly like a content search does.
+		// The default skip set is the same one grep prunes: a name search under a home root
+		// drowns in.git/node_modules rows exactly like a content search does.
 		if d.IsDir() && !includeIgnored && isIgnoredDir(d.Name()) {
 			pruned = append(pruned, relSlash(root, path))
 			return fs.SkipDir
@@ -704,8 +649,6 @@ func (p *SearchProvider) RunGlob(ctx context.Context, args map[string]any) (stri
 		if !relMatch(re, root, path) {
 			return nil
 		}
-		// The db family stays invisible to the name match too: the
-		// ENDO'S LAW deny set is a filesystem door, not a read door.
 		if p.guard.DenyFile(path) {
 			skipped["the instance database's door"]++
 			return nil

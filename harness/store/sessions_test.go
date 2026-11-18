@@ -1,9 +1,8 @@
 package store
 
-// sessions_test.go: the agent-scoped session surface (card t_7e2b7002).
-// The laws asserted here: binding happens at creation, the default
-// list never shows other agents' sessions, and pre-agent rows ride
-// 'default' (nothing historical drifts).
+// sessions_test.go: the agent-scoped session surface. The laws asserted here: binding
+// happens at creation, the default list never shows other agents' sessions, and
+// pre-agent rows ride 'default' (nothing historical drifts).
 
 import (
 	"context"
@@ -36,8 +35,7 @@ func TestCreateAgentSessionBinds(t *testing.T) {
 	if sess.Agent != "scout" {
 		t.Errorf("session agent = %q, want scout", sess.Agent)
 	}
-	// empty agent creation binds default (the same semantics the
-	// core CreateSession relies on via the column default).
+	// empty agent creation binds default (the same semantics the core CreateSession.
 	if err := s.CreateAgentSession(ctx, "def-a", "", "", ""); err != nil {
 		t.Fatalf("create default-bound: %v", err)
 	}
@@ -74,7 +72,6 @@ func TestListSessionsHidesAgentSessions(t *testing.T) {
 	if len(scout) != 1 || scout[0].ID != "scout-1" || scout[0].Agent != "scout" {
 		t.Errorf("scout list = %v", ids(scout))
 	}
-	// unknown agent: honest empty, not an error.
 	empty, err := s.ListAgentSessions(ctx, "ghost")
 	if err != nil || len(empty) != 0 {
 		t.Errorf("unknown agent = %v, %v", ids(empty), err)
@@ -114,20 +111,16 @@ func TestHandleNewCommandAgentFlag(t *testing.T) {
 	if len(res.Actions) != 1 || len(res.Actions[0].List) != 1 || res.Actions[0].List[0] != "scout" {
 		t.Errorf("action = %+v, want List [scout]", res.Actions)
 	}
-	// both orders keep the flag.
 	res, _ = HandleNewCommand("--ephemeral --agent=a")
 	if len(res.Actions[0].List) != 1 || res.Actions[0].List[0] != "a" {
 		t.Errorf("--agent= form: %+v", res.Actions)
 	}
-	// bare flag with no value is a usage error.
 	if _, err := HandleNewCommand("--agent"); err == nil {
 		t.Errorf("bare --agent accepted")
 	}
-	// hostile names fail validation.
 	if _, err := HandleNewCommand("--agent ../evil"); err == nil {
 		t.Errorf("path-shaped agent accepted")
 	}
-	// plain /new behavior unchanged.
 	res, _ = HandleNewCommand("")
 	if len(res.Actions[0].List) != 0 {
 		t.Errorf("plain /new grew an agent binding: %+v", res.Actions)
@@ -139,8 +132,6 @@ func TestHandleNewCommandAgentFlag(t *testing.T) {
 }
 
 func TestSessionsCommandAgentBindingSurfaces(t *testing.T) {
-	// The store-command renderers need the session counts the fill
-	// helper computes; assert the helper on a known board.
 	s := openTestStore(t)
 	ctx := context.Background()
 	if err := s.CreateAgentSession(ctx, "scout-1", "", "probe row", "scout"); err != nil {

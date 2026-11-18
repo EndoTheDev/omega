@@ -1,30 +1,8 @@
 package kanban
 
-// The board registry (t_feae19d3, Endo ruling 2026-11-01): ALL boards
-// live inside ONE sqlite database - <home>/data/kanban.db. The old
-// layout, a directory of per-board sqlite files (<home>/data/boards/)
-// plus a one-line `current` pointer, accumulated dead directories at
-// journey scale and bought nothing: a board is a row in the `boards`
-// table now, the current board is an is_current flag on that row, and
-// every card, comment and event carries a board_id FK. Isolation stays
-// QUERIES, not files: task ids are globally unique (t_<hex>), a task
-// list is always filtered by board_id, and nothing renders cross-board
-// unless asked (the cross-board-move ban from the reference law holds -
-// switching board is a pointer USE (the is_current flag), never a card
-// mutation).
-//
-// The legacy layout migrates once at boot (migrateLegacyBoards): the
-// top-level kanban.db becomes board "main", every real board directory
-// folds its rows into the one database under a verified count check,
-// the pointer content becomes the is_current flag, and the whole
-// boards/ directory is then deleted (deletion-over-archive for what
-// the fold owns; anything skipped is archived first). Recipe-pinned
-// journey boards (j78-a, j78-b, j86-b - pinnedJourneyBoards) never
-// migrate: the recipes re-create them as fresh rows. The skip is
-// literal for a reason - a shape-based signature once ate legal user
-// boards like "j2026-planning" (t_b63415fb). Migration failures leave
-// the layout untouched; a fold that committed but failed to retire the
-// layout re-runs as a verify-only no-op on the next boot.
+// The board registry: ALL boards live inside ONE sqlite database. Recipe-pinned journey
+// boards (j78-a, j78-b, j86-b - pinnedJourneyBoards) never migrate: the recipes
+// re-create them as fresh rows.
 
 import (
 	"context"
@@ -39,33 +17,20 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// DefaultBoardName is the name the seeded first board carries on a
-// fresh install ("main"). It is a legal name like any other since
-// 0.17.3 - the board can be renamed and even deleted (zero boards is
-// a legal state), so nothing in the registry treats it specially any
-// more; the constant survives for the seed and for readers that need
-// to name the historical default.
+// DefaultBoardName is the name the seeded first board carries on a fresh install.
 const DefaultBoardName = "main"
 
-// errNoBoards is the legal EMPTY registry (0.17.3 make-over: every
-// board may be deleted, main included). A board-less home has no
-// current row, so tasks reads answer an empty list instead of an
-// error; a create is the way back.
+// errNoBoards is the legal EMPTY registry (0.17.3 make-over.
 var errNoBoards = errors.New("no boards - create one first")
 
-// boardNameRE governs registry names: lowercase, starts alphanumeric,
-// 1-64 chars, filesystem-safe (names were directory components in the
-// legacy registry; the grammar keeps a stable, injection-free wire).
+// boardNameRE governs registry names.
 var boardNameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
-// pinnedJourneyBoards is the EXACT set of board names the journey
-// recipes pin (78-board-switch.sh: j78-a, j78-b; 86-dock-round5:
-// j86-b) - fixed names the recipes re-create as fresh rows on every
-// run, so a legacy row of the same name is never migrated. The skip
-// was once a signature regex (^j\d+), which also ate legal user
-// boards like "j2026-planning": never again match by shape, match by
-// pinned name only. Anything a migration skip leaves behind is
-// archived, not deleted (archiveSkippedBoardDirs).
+// pinnedJourneyBoards is the EXACT set of board names the journey recipes pin
+// (78-board-switch.sh: j78-a, j78-b; 86-dock-round5: j86-b) - fixed names the recipes
+// re-create as fresh rows on every run, so a legacy row of the same name is never
+// migrated. The skip was once a signature regex (^j\d+), which also ate legal user
+// boards like "j2026-planning": never again match by shape, match by pinned name only.
 var pinnedJourneyBoards = map[string]bool{
 	"j78-a": true,
 	"j78-b": true,
@@ -78,28 +43,23 @@ func isPinnedJourneyBoard(name string) bool {
 	return pinnedJourneyBoards[name]
 }
 
-// ValidBoardName reports whether name may name a board. "main" is
-// legal (the default board); "" is not a board.
+// ValidBoardName reports whether name may name a board.
 func ValidBoardName(name string) bool {
 	return boardNameRE.MatchString(name)
 }
 
-// registryStaleDSN reports whether dsn carries the legacy pointer-era
-// resolution: a path inside the boards directory (dirs/<name>/kanban.db
-// was BoardDSN's answer for every non-main board).
+// registryStaleDSN reports whether dsn carries the legacy pointer-era resolution.
 func registryStaleDSN(home, dsn string) bool {
 	rel, err := filepath.Rel(filepath.Join(datadir.Dir(home), "boards"), dsn)
 	return err == nil && !strings.HasPrefix(rel, "..")
 }
 
-// ensureBoardsTable creates the boards table + the one-current partial
-// index, and seeds the "main" row once - when the table is BORN, not
-// on every boot. Zero boards is a legal state since 0.17.3: a home
-// whose user deleted every board must not have "main" resurrected
-// under it at the next start, and the seed is the only insert the
-// registry performs by itself. The tasks rebuild in migrate()
-// backfills board_id against main's id, so the fresh-database seed
-// must still land before any card row.
+// ensureBoardsTable creates the boards table + the one-current partial index, and seeds
+// the "main" row once. Zero boards is a legal state since 0.17.3: a home whose user
+// deleted every board must not have "main" resurrected under it at the next start, and
+// the seed is the only insert the registry performs by itself. The tasks rebuild in
+// migrate backfills board_id against main's id, so the fresh-database seed must still
+// land before any card row.
 func ensureBoardsTable(db *sql.DB) error {
 	var born int // 0 = the boards table did not exist before this call
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'boards'`).Scan(&born); err != nil {
@@ -125,14 +85,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_boards_one_current ON boards(is_current) W
 	return err
 }
 
-// boardID resolves a board name to its row id: "" means the current
-// board (the is_current row), a name means that row - unknown or
-// illegal names error at the door, the registry never auto-creates.
-// A board-less registry answers errNoBoards for "" (the legal empty
-// state, not a fault). Reads ride the statement surface (q), so a
-// batch clone's board resolution executes inside the batch
-// transaction; the WRITE ops below keep db directly (Begin/ATTACH
-// cannot nest).
+// boardID resolves a board name to its row id: "" means the current board (the
+// is_current row), a name means that row - unknown or illegal names error at the door,
+// the registry never auto-creates. Reads ride the statement surface (q), so a batch
+// clone's board resolution executes inside the batch transaction; the WRITE ops below
+// keep db directly (Begin/ATTACH cannot nest).
 func (s *Store) boardID(board string) (int64, error) {
 	bg := context.Background()
 	if board == "" {
@@ -161,7 +118,6 @@ func (s *Store) boardID(board string) (int64, error) {
 }
 
 // BoardExists reports whether name is a row in the boards table.
-// "/board <name>" and the capsule switch validate through it.
 func (s *Store) BoardExists(name string) bool {
 	if !ValidBoardName(name) {
 		return false
@@ -170,8 +126,7 @@ func (s *Store) BoardExists(name string) bool {
 	return s.q.QueryRowContext(context.Background(), `SELECT 1 FROM boards WHERE name = ?`, name).Scan(&one) == nil
 }
 
-// Boards implements BoardLister: the boards table, earliest created
-// first (main was seeded with position 0), the current board flagged.
+// Boards implements BoardLister.
 func (s *Store) Boards(ctx context.Context) ([]BoardInfo, error) {
 	rows, err := s.q.QueryContext(ctx, `SELECT name, is_current FROM boards ORDER BY position, id`)
 	if err != nil {
@@ -191,11 +146,9 @@ func (s *Store) Boards(ctx context.Context) ([]BoardInfo, error) {
 	return out, rows.Err()
 }
 
-// CurrentBoard names the current board (the is_current row). When no
-// row claims the flag the earliest board answers instead - a registry
-// that lost its pointer still has an order, and the view must name
-// something. An EMPTY registry answers "" and no error: zero boards is
-// a legal state (0.17.3), not a boot failure.
+// CurrentBoard names the current board (the is_current row). When no row claims the
+// flag the earliest board answers instead - a registry that lost its pointer still has
+// an order, and the view must name something.
 func (s *Store) CurrentBoard() (string, error) {
 	bg := context.Background()
 	var name string
@@ -215,9 +168,9 @@ func (s *Store) CurrentBoard() (string, error) {
 	return name, nil
 }
 
-// SetCurrentBoard points the home at the named board: the flag moves
-// off the old row and onto this one inside one transaction (the
-// partial unique index holds the invariant). Unknown boards refuse.
+// SetCurrentBoard points the home at the named board: the flag moves off the old row
+// and onto this one inside one transaction (the partial unique index holds the
+// invariant).
 func (s *Store) SetCurrentBoard(name string) error {
 	if name == "" || !ValidBoardName(name) {
 		return fmt.Errorf("illegal board name %q", name)
@@ -240,11 +193,9 @@ func (s *Store) SetCurrentBoard(name string) error {
 	return tx.Commit()
 }
 
-// CreateBoardRow inserts the named board. A duplicate name errors.
-// "main" is not special since 0.17.3 - it can be deleted and created
-// again like any other name. A board created into an EMPTY registry
-// claims the pointer: with zero boards there is no current row, and the
-// first board back is the one the views must open on.
+// CreateBoardRow inserts the named board. A duplicate name errors. A board created into
+// an EMPTY registry claims the pointer: with zero boards there is no current row, and
+// the first board back is the one the views must open on.
 func (s *Store) CreateBoardRow(name string) error {
 	if !ValidBoardName(name) {
 		return fmt.Errorf("illegal board name %q", name)
@@ -258,12 +209,9 @@ func (s *Store) CreateBoardRow(name string) error {
 	return err
 }
 
-// RenameBoardRow renames a board (0.17.3: renaming joins the board's
-// own surface - the panel's band carries it beside the selector). The
-// new name obeys the same grammar and must be free; the row keeps its
-// id, so every card, comment and event stays where it was and the
-// is_current flag follows the row. Renaming a board to its own name is
-// a no-op, not an error.
+// RenameBoardRow renames a board (0.17.3. The new name obeys the same grammar and must
+// be free; the row keeps its id, so every card, comment and event stays where it was
+// and the is_current flag follows the row.
 func (s *Store) RenameBoardRow(oldName, newName string) error {
 	if !ValidBoardName(oldName) {
 		return fmt.Errorf("illegal board name %q", oldName)
@@ -287,26 +235,9 @@ func (s *Store) RenameBoardRow(oldName, newName string) error {
 	return nil
 }
 
-// DeleteBoardRow removes a board and everything resting on it. The
-// 0.17.3 make-over ruling: DELETE ALL BOARDS, main included, and zero
-// boards is a legal state.
-//
-// Precondition: every card on the board is ARCHIVED or deleted. A live
-// card (any other status) refuses the delete by name and count - the
-// archive lane is the one place a card can wait without blocking its
-// board's removal. There is deliberately no force flag.
-//
-// The delete takes the board's rows with it: its archived cards, their
-// comments and their events, children first in one transaction. (The
-// schema declares ON DELETE CASCADE, but sqlite runs with
-// foreign_keys OFF here, so the rows are deleted explicitly rather than
-// trusted to a pragma nobody set.)
-//
-// The pointer: deleting the CURRENT board hands is_current to the
-// earliest survivor, because a registry with rows and no pointer would
-// leave the views with no board to open. Deleting the LAST board leaves
-// no pointer at all - the legal empty registry the panel renders as its
-// create-board empty state.
+// DeleteBoardRow removes a board and everything resting on it. A live card (any other
+// status) refuses the delete by name and count - the archive lane is the one place a
+// card can wait without blocking its board's removal.
 func (s *Store) DeleteBoardRow(name string) error {
 	if !ValidBoardName(name) {
 		return fmt.Errorf("illegal board name %q", name)
@@ -351,7 +282,6 @@ func (s *Store) DeleteBoardRow(name string) error {
 				return err
 			}
 		case errors.Is(err, sql.ErrNoRows):
-			// zero boards: no pointer to hand over - legal
 		default:
 			return err
 		}
@@ -359,30 +289,11 @@ func (s *Store) DeleteBoardRow(name string) error {
 	return tx.Commit()
 }
 
-// migrateLegacyBoards folds the legacy per-board-directory layout into
-// the single database. Runs once when <home>/data/boards still exists;
-// a home without it (or a second boot) is a strict no-op.
-//
-// Per board directory <name>: pinned journey boards, illegal names and
-// a stray main dir skip - they are ARCHIVED into <home>/data/boards-junk
-// (recoverable), never deleted silently. Real names insert a board row
-// and copy tasks/comments/events in with board_id set, then the
-// destination counts are verified against the source counts before the
-// board's rows are allowed to stand. A board row that already exists
-// (the earlier fold committed but retiring the layout failed - detach
-// on the wrong pooled connection, crash, partial RemoveAll) skips the
-// copy and is verified instead: the re-run is a no-op that still gets
-// the layout deleted. The `current` pointer file content migrates to
-// the is_current flag (journey-pinned targets fall back to main).
-// After the fold-back verifies, the whole boards/ directory is deleted
-// - the verified counts are the safety net, the archive holds what was
-// skipped.
-//
-// Everything runs in ONE transaction: any failure rolls the entire
-// fold-back and leaves the old layout untouched, so the next boot
-// re-runs the migration cleanly. A committed-before-failure state is
-// equally recoverable: every next boot re-verifies against the source
-// and deletes the layout (idempotent).
+// migrateLegacyBoards folds the legacy per-board-directory layout into the single. Per
+// board directory <name>: pinned journey boards, illegal names and a stray main dir
+// skip - they are ARCHIVED into <home>/data/boards-junk (recoverable), never deleted
+// silently. A committed-before-failure state is equally recoverable: every next boot
+// re-verifies against the source and deletes the layout (idempotent).
 func (s *Store) migrateLegacyBoards(home string) error {
 	dir := filepath.Join(datadir.Dir(home), "boards")
 	entries, err := os.ReadDir(dir)
@@ -393,8 +304,6 @@ func (s *Store) migrateLegacyBoards(home string) error {
 		return err
 	}
 
-	// the current pointer: the legacy file's content moves to the
-	// is_current flag (missing/empty/garbage = main stays current)
 	pointer := readPointerContent(filepath.Join(dir, "current"))
 
 	tx, err := s.db.Begin()
@@ -403,16 +312,9 @@ func (s *Store) migrateLegacyBoards(home string) error {
 	}
 	defer tx.Rollback()
 
-	// the legacy sources ride ATTACHed aliases for the whole migration
-	// (one tx): sqlite refuses ATTACH/DETACH inside a transaction that
-	// has already written, so every migrating board attaches UP FRONT
-	// - before any write - and detaches after the commit. A failed
-	// migration leaves the sources attached; the handle closes on the
-	// mount failure path, and an attached read-only source is harmless
-	// to the same handle otherwise (detached on Close).
-	// alias is index-derived, never name-derived: board names may
-	// carry characters sqlite parses as operators inside an
-	// unquoted alias (legacy-crew -> legacy_legacy-crew reads as
+	// the legacy sources ride ATTACHed aliases for the whole migration (one tx). alias is
+	// index-derived, never name-derived: board names may carry characters sqlite parses as
+	// operators inside an unquoted alias (legacy-crew -> legacy_legacy-crew reads as
 	// arithmetic and reds "no such column").
 	attach := map[string]string{} // alias -> dsn
 	var aliases []string
@@ -427,9 +329,8 @@ func (s *Store) migrateLegacyBoards(home string) error {
 			continue // a directory without kanban.db is not a board
 		}
 		if e.Name() == DefaultBoardName || !ValidBoardName(e.Name()) || isPinnedJourneyBoard(e.Name()) {
-			// pinned journey boards re-create fresh; illegal names and
-			// a stray main dir are not foldable - all three are left
-			// for the archive, not doomed with the layout
+			// pinned journey boards re-create fresh; illegal names and a stray main dir are not
+			// foldable.
 			skipped = append(skipped, e.Name())
 			continue
 		}
@@ -446,14 +347,11 @@ func (s *Store) migrateLegacyBoards(home string) error {
 
 	position := 1
 	for _, b := range boards {
-		// re-run aware (commit before the layout delete is the one way
-		// the migration can half-land: a detach that runs on the wrong
-		// pooled connection, a crash, a partial RemoveAll): when the
-		// board row already exists, the fold landed wholesale inside
-		// the earlier tx - copy NOTHING (plain inserts would die on
-		// the unique ids and duplicate the events), just verify that
-		// what stands matches the source and carry on. The verify is
-		// the skip's license, not a formality.
+		// re-run aware (commit before the layout delete is the one way the migration can
+		// half-land: a detach that runs on the wrong pooled connection, a crash, a partial
+		// RemoveAll): when the board row already exists, the fold landed wholesale inside the
+		// earlier tx - copy NOTHING (plain inserts would die on the unique ids and duplicate
+		// the events), just verify that what stands matches the source and carry on.
 		id := s.boardRowIDTx(tx, b.name)
 		if id == 0 {
 			res, err := tx.Exec(`INSERT INTO boards (name, created_at, position, is_current) VALUES (?, ?, ?, 0)`,
@@ -489,32 +387,23 @@ func (s *Store) migrateLegacyBoards(home string) error {
 		return err
 	}
 	for _, alias := range aliases {
-		// ATTACH is connection-scoped: on a pool this Exec may land on
-		// a DIFFERENT connection than the tx used, and "no such
-		// database" is the normal answer there. The error is cosmetic
-		// anyway - Close drops every attached alias - and a detach
-		// failure must never poison an already-committed fold: the
-		// migration below is re-runnable, this one refusal is not.
+		// ATTACH is connection-scoped. The error is cosmetic anyway - Close drops every
+		// attached alias - and a detach failure must never poison an already-committed fold:
+		// the migration below is re-runnable, this one refusal is not.
 		_, _ = s.db.Exec(`DETACH DATABASE ` + alias)
 	}
-	// the fold-back verified and committed: anything skipped (pinned
-	// journey boards, illegal names, a stray main dir) is archived
-	// first - a skipped dir's DATA is recoverable, the delete below
-	// touches only what the fold genuinely owns
 	archive := filepath.Join(datadir.Dir(home), "boards-junk")
 	if err := archiveSkippedBoardDirs(dir, archive, skipped); err != nil {
 		return err
 	}
-	// the old layout is dead: delete the directory AND every migrated
-	// board's sqlite file inside (the junk left in the archive above)
+	// the old layout is dead: delete the directory AND every migrated board's sqlite.
 	return os.RemoveAll(dir)
 }
 
-// archiveSkippedBoardDirs moves every legacy directory the fold
-// deliberately did not migrate from the boards dir into the archive
-// dir <home>/data/boards-junk, so the RemoveAll that retires the old
-// layout can never take a skipped dir's data with it. A collision
-// lands under a distinct name instead of overwriting.
+// archiveSkippedBoardDirs moves every legacy directory the fold deliberately did not
+// migrate from the boards dir into the archive dir <home>/data/boards-junk, so the
+// RemoveAll that retires the old layout can never take a skipped dir's data with it. A
+// collision lands under a distinct name instead of overwriting.
 func archiveSkippedBoardDirs(dir, archive string, names []string) error {
 	if len(names) == 0 {
 		return nil
@@ -534,9 +423,7 @@ func archiveSkippedBoardDirs(dir, archive string, names []string) error {
 	return nil
 }
 
-// boardRowIDTx resolves a board name inside the open migration tx, 0
-// when the name does not name a row (pinned journey names refuse; main
-// is a seeded row like any other).
+// boardRowIDTx resolves a board name inside the open migration tx, 0 when the name.
 func (s *Store) boardRowIDTx(tx *sql.Tx, pointer string) int64 {
 	if !ValidBoardName(pointer) || isPinnedJourneyBoard(pointer) {
 		return 0
@@ -548,8 +435,7 @@ func (s *Store) boardRowIDTx(tx *sql.Tx, pointer string) int64 {
 	return id
 }
 
-// readPointerContent reads the legacy pointer file, "" when unreadable,
-// empty, or not a board name (a main is a valid board name).
+// readPointerContent reads the legacy pointer file, "" when unreadable, empty, or not.
 func readPointerContent(path string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -562,10 +448,7 @@ func readPointerContent(path string) string {
 	return name
 }
 
-// copyLegacyBoard copies one legacy board db's rows into the single
-// database (board_id stamped on every row) inside the migration tx.
-// The source rides an already-ATTACHed alias - INSERT INTO ... SELECT
-// is the file-to-file table copy the sqlite driver ships.
+// copyLegacyBoard copies one legacy board db's rows into the single database.
 func copyLegacyBoard(alias, name string, tx *sql.Tx, boardID int64) error {
 	copies := []struct{ sql, what string }{
 		{`INSERT INTO tasks (id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, board_id)
@@ -583,10 +466,7 @@ func copyLegacyBoard(alias, name string, tx *sql.Tx, boardID int64) error {
 	return nil
 }
 
-// verifyBoardCopy demands the migrated row counts match the source
-// exactly: tasks, comments AND events. The source is already ATTACHed;
-// a mismatch fails the whole migration (one tx - everything rolls
-// back, the old layout survives untouched).
+// verifyBoardCopy demands the migrated row counts match the source exactly.
 func verifyBoardCopy(alias, name string, tx *sql.Tx, boardID int64) error {
 	type pair struct{ sql, what string }
 	pairs := []pair{
@@ -606,18 +486,15 @@ func verifyBoardCopy(alias, name string, tx *sql.Tx, boardID int64) error {
 	return nil
 }
 
-// MountRegistry opens the home's single kanban database (schema
-// ensured, main seeded), folds any legacy per-board directories in,
-// and returns the store. The CLI opens the same way. A migration
-// failure is a startup error - a board that silently dropped rows is
-// worse than a crash.
+// MountRegistry opens the home's single kanban database (schema ensured, main. A
+// migration failure is a startup error - a board that silently dropped rows is worse
+// than a crash.
 func MountRegistry(home string) (*Store, error) {
 	return MountRegistryDSN(home, datadir.DBPath(home, "kanban.db"))
 }
 
-// MountRegistryDSN is MountRegistry against an explicit dsn (custom
-// db_path configs ride their own database file; the legacy fold-back
-// still merges into the store that the process actually serves).
+// MountRegistryDSN is MountRegistry against an explicit dsn (custom db_path configs
+// ride their own database file.
 func MountRegistryDSN(home, dsn string) (*Store, error) {
 	s, err := Open(dsn)
 	if err != nil {

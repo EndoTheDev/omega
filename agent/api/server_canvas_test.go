@@ -1,9 +1,6 @@
 package api
 
-// Canvas transport tests (arc 3b, card t_e143f41f): the snapshot GET
-// shape, the action pipe's routing and 404s, and the delta riding the
-// live chat/reattach streams. Journey-style REST probes are pinned
-// here - the same shapes the webui will consume in arc 3c.
+// Canvas transport tests: the snapshot GET shape, the action pipe's routing and 404s.
 
 import (
 	"github.com/EndoTheDev/omega/agent"
@@ -23,10 +20,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// canvasProbeProvider is a minimal PanelProvider stub for transport
-// tests: one panel, one module-qualified action, and a capturable
-// handler. The module name comes from the action row itself - the
-// capsule's name on its own declaration (arc 3a law).
+// canvasProbeProvider is a minimal PanelProvider stub for transport tests.
 type canvasProbeProvider struct {
 	mu      sync.Mutex
 	last    *core.ActionCall
@@ -64,8 +58,7 @@ func (p *canvasProbeProvider) captured() *core.ActionCall {
 	return &cp
 }
 
-// canvasServer builds a bare server wired to the probe provider's
-// canvas - the snapshot and action tests ride it.
+// canvasServer builds a bare server wired to the probe provider's canvas.
 func canvasServer(t *testing.T) (*Server, *httptest2.Server, *canvasProbeProvider) {
 	t.Helper()
 	probe := &canvasProbeProvider{}
@@ -108,8 +101,7 @@ func TestCanvasSnapshotListsMountedPanels(t *testing.T) {
 	}
 }
 
-// Zero mounted providers is a state, not an error: the webui renders
-// the empty dock off the same 200.
+// Zero mounted providers is a state, not an error.
 func TestCanvasSnapshotEmptyWhenNothingMounted(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	ts := httptest2.NewServer(s.Handler())
@@ -164,8 +156,7 @@ func TestUIActionsRoutesToCapsuleHandler(t *testing.T) {
 	if call == nil || call.Module != "probe" || call.Action != "shuffle" {
 		t.Fatalf("routed call = %+v, want probe/shuffle", call)
 	}
-	// Args ride verbatim - the capsule's handler owns their shape,
-	// the pipe only carries the raw message.
+	// Args ride verbatim - the capsule's handler owns their shape, the pipe only carries.
 	if string(call.Args) != `{"direction":"left"}` {
 		t.Fatalf("args = %s, want {\"direction\":\"left\"}", call.Args)
 	}
@@ -200,8 +191,7 @@ func TestUIActions404Shapes(t *testing.T) {
 	// And nothing mutated: the handler never saw a failed route.
 }
 
-// A handler error passes through untouched and reads as a 500 - the
-// wire translation of a failed action, distinct from a misrouted one.
+// A handler error passes through untouched and reads as a 500.
 func TestUIActionsHandlerError(t *testing.T) {
 	_, ts, probe := canvasServer(t)
 	probe.mu.Lock()
@@ -223,11 +213,9 @@ func TestUIActionsHandlerError(t *testing.T) {
 	}
 }
 
-// gatedProvider streams one chunk, then holds the turn until release -
-// the mid-run window the delta test injects a panel update into. Every
-// Stream call gates (the run and any detached title call alike), so
-// frame order on the run's stream never depends on who grabbed call
-// index 0.
+// gatedProvider streams one chunk, then holds the turn until release. Every Stream call
+// gates (the run and any detached title call alike), so frame order on the run's stream
+// never depends on who grabbed call index 0.
 type gatedProvider struct {
 	release chan struct{}
 }
@@ -260,9 +248,7 @@ type stubError struct{ msg string }
 
 func (e *stubError) Error() string { return e.msg }
 
-// gatedCanvasServer wires a store-backed server with the gated
-// provider AND the probe canvas, and opens an httptest server. The
-// returned release channel unblocks the runs.
+// gatedCanvasServer wires a store-backed server with the gated provider AND the probe.
 func gatedCanvasServer(t *testing.T) (*Server, *httptest2.Server, *gatedProvider, chan struct{}) {
 	t.Helper()
 	gated := newGatedProvider()
@@ -283,8 +269,7 @@ func gatedCanvasServer(t *testing.T) (*Server, *httptest2.Server, *gatedProvider
 	return s, ts, gated, gated.release
 }
 
-// nextFrame reads one SSE frame off a live stream, with a watchdog - a
-// wedged stream fails the test instead of hanging the suite.
+// nextFrame reads one SSE frame off a live stream, with a watchdog.
 func nextFrame(t *testing.T, rd *bufio.Reader) (sseFrame, bool) {
 	t.Helper()
 	type result struct {
@@ -340,10 +325,7 @@ func expectFrame(t *testing.T, rd *bufio.Reader, event string) sseFrame {
 	return frame
 }
 
-// The arc 3b centerpiece journey: a /chat run streams on the existing
-// pipe; a panel update lands mid-run as ONE view_model_delta frame on
-// that stream, the second subscriber (reattach) sees the same frame,
-// and the stream's own event order is untouched by the interleaving.
+// The arc 3b centerpiece journey.
 func TestViewModelDeltaRidesChatStream(t *testing.T) {
 	s, ts, _, release := gatedCanvasServer(t)
 	body, _ := json.Marshal(map[string]any{
@@ -359,7 +341,6 @@ func TestViewModelDeltaRidesChatStream(t *testing.T) {
 	}
 	origin := bufio.NewReader(res.Body)
 
-	// Auto-created session: the id rides the first frame.
 	session := expectFrame(t, origin, "session")
 	var id struct {
 		ID string `json:"id"`
@@ -372,8 +353,6 @@ func TestViewModelDeltaRidesChatStream(t *testing.T) {
 	expectFrame(t, origin, "turn_start")
 	expectFrame(t, origin, "response_chunk")
 
-	// The reattach subscriber attaches mid-run: same frame pipe, and
-	// headers go out on attach.
 	eventsRes, err := http.Get(ts.URL + "/sessions/" + id.ID + "/events")
 	if err != nil {
 		t.Fatal(err)
@@ -415,18 +394,15 @@ func TestViewModelDeltaRidesChatStream(t *testing.T) {
 		}
 	}
 
-	// Release the gate: the run unwinds through its normal path and the
-	// stream's own event order continues untouched.
+	// Release the gate: the run unwinds through its normal path and the stream's own.
 	close(release)
 	for _, event := range []string{"stream_end", "assistant_message", "turn_end", "agent_end"} {
 		expectFrame(t, origin, event)
 	}
 }
 
-// A delta landing outside any run's lifetime is dropped - the snapshot
-// is the catch-up, exactly like missed session history lives in the
-// store. Pinned: the Update succeeds, nothing panics on the empty hub,
-// and GET /ui/canvas reflects the new state.
+// A delta landing outside any run's lifetime is dropped - the snapshot is the catch-up,
+// exactly like missed session history lives in the store.
 func TestCanvasUpdateWithoutRunIsSnapshotCatchUp(t *testing.T) {
 	s, ts, _ := canvasServer(t)
 	if err := s.canvas.Update("probe", core.Panel{ID: "deck", Payload: map[string]any{"cards": 9}}); err != nil {

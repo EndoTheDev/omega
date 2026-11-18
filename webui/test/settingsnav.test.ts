@@ -1,21 +1,4 @@
-// omega webui: unit tests for the settings ONE-DOCUMENT pane (card
-// t_8b464090, which SUPERSEDES the master-detail nav of t_af7e1150): the
-// per-knob subgroup DATA, the two-level tree it derives, the document the
-// pane paints (EVERY category, in nav order, filtered in place), the nav's
-// grey-out set, the last-anchor resolution - and the SOURCE pins that prove
-// the selector/two-screen model is gone.
-//
-// card t_cd9952a3 extends that law without reversing it: a nav SELECTION now
-// FILTERS the rendered document to that section and its subsections, a live
-// search OVERRIDES the filter, and the selected section rides the in-app URL
-// (`?settings=<id>`) so a deep link lands pre-filtered. Those rules and the
-// URL are pure and pinned here; the click's live behaviour is journey 113.
-//
-// The node suite has no DOM: the document, the anchor and the grey set are
-// pinned as pure functions, the pane as structural assertions on
-// SettingsTab.vue (the live scroll behaviour is the journey's job, recipes
-// 110/113).
-// Run: node --test webui/test/
+// omega webui: unit tests for the settings ONE-DOCUMENT pane.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -59,7 +42,7 @@ import {
   type SpyNodeLike,
 } from "../app/components/settings/settingsNav.ts";
 
-// --- fixtures -------------------------------------------------------------
+// -- fixtures ------------------------------------------------------------
 
 const knob = (
   key: string,
@@ -74,9 +57,7 @@ const group = (key: string, label: string, knobs: SettingKnob[]): SettingGroup =
   knobs,
 });
 
-// a provider domain with two declared children (providers, models) -
-// card t_bf21ee07 merged connection+instances into the one providers
-// child
+// a provider domain with two declared children (providers, models).
 const providerGroup = () =>
   group("provider", "provider", [
     knob("provider.instances", "provider instances", []),
@@ -93,15 +74,13 @@ const logGroup = () =>
 const commonGroup = () =>
   group(COMMON_CATEGORY, "Commonly Used", [knob("provider.model_name", "model name", "glm-5.3")]);
 
-// --- the nesting DATA -----------------------------------------------------
+// -- the nesting DATA ----------------------------------------------------
 
 test("the table is data per knob, never a derivation from the key", () => {
-  // the card's own example: theme -> appearance
   assert.equal(knobSubgroup("chat.theme"), "appearance");
   assert.equal(knobSubgroup("chat.color_mode"), "appearance");
   assert.equal(knobSubgroup("provider.model_name"), "models");
   assert.equal(knobSubgroup("provider.instances"), "providers");
-  // a knob with no line lands in the implicit general child
   assert.equal(knobSubgroup("totally.undeclared"), GENERAL_SUBGROUP);
   // and the lookup is NOT "first path segment" or any other key spelling
   assert.notEqual(knobSubgroup("provider.model_name"), "provider");
@@ -126,7 +105,7 @@ test("withSubgroups stamps every knob and never mutates the caller", () => {
   assert.equal(groups[0].knobs[0].subgroup, undefined, "the input stays untouched");
 });
 
-// --- the two-level tree ---------------------------------------------------
+// -- the two-level tree --------------------------------------------------
 
 test("buildNav derives parents with their children underneath", () => {
   const nav = buildNav(withSubgroups([providerGroup()]));
@@ -173,7 +152,7 @@ test("Commonly Used is a virtual FLAT top category", () => {
   assert.equal(nav[1].id, "provider");
 });
 
-// --- the ONE document -----------------------------------------------------
+// -- the ONE document ----------------------------------------------------
 
 test("the document carries EVERY category, in nav order, with no selection", () => {
   const nav = buildNav(withSubgroups([commonGroup(), providerGroup(), logGroup()]));
@@ -186,7 +165,6 @@ test("the document carries EVERY category, in nav order, with no selection", () 
   assert.equal(doc[0].id, COMMON_CATEGORY, "the curated category leads");
   assert.equal(doc[1].id, "provider");
   assert.equal(doc[2].id, "unknown");
-  // every knob is present, and the counts add up to the nav's own totals
   const rendered = doc.reduce((n, section) => n + section.count, 0);
   const total = nav.reduce((n, category) => n + category.knobs.length, 0);
   assert.equal(rendered, total, "no category is dropped from the one page");
@@ -202,7 +180,6 @@ test("a multi-child domain renders its children as headed blocks", () => {
     "provider/models",
   ]);
   assert.ok(section.blocks.every((block) => block.heading), "each block names itself");
-  // the block ids are the jump targets the nav's child rows carry
   assert.equal(selectionId("provider", "models"), "provider/models");
 });
 
@@ -227,8 +204,7 @@ test("a live query filters the document IN PLACE and drops emptied sections", ()
     2,
     "each hit renders ONCE, under the domain that owns it",
   );
-  // the curated category is a VIEW of other domains' knobs: a live query
-  // skips its section so nothing is listed twice (the nav keeps the entry)
+  // the curated category is a VIEW of other domains' knobs.
   assert.ok(!doc.some((section) => section.id === COMMON_CATEGORY));
 });
 
@@ -283,17 +259,9 @@ test("spyTargetIds lists each section then its blocks, in document order", () =>
   ]);
 });
 
-// --- the SECTION FILTER (card t_cd9952a3) ---------------------------------
-//
-// Part 1: a nav selection FILTERS the right pane to that section plus its
-// subsections; a deselect restores the whole document. Commonly Used is a
-// section like any other (card t_6fb4ddc6) - selecting it narrows to the
-// curated group, never back to the all-view. Part 2: a search query
-// OVERRIDES the selection (one global filter across every section) and
-// clearing it gives the filter back. Part 3: the in-app URL carries the
-// selected section, so a deep link lands pre-filtered. The click's live
-// behaviour is journey 113's job; the rules and the URL are pure and
-// pinned here.
+// -- the SECTION FILTER --------------------------------- Part 1. Commonly Used is a
+// section like any other - selecting it narrows to the curated group, never back to the
+// all-view.
 
 test("the filter is the selected CATEGORY - and Commonly Used is one too", () => {
   assert.equal(sectionFilter(null, false), null, "nothing selected = the all-view");
@@ -355,7 +323,6 @@ test("a selected section shows its rows and hides every other section", () => {
     2,
     "every row of the section is shown - the filter hides SECTIONS, never rows",
   );
-  // the surviving ids are the same anchors the nav and the spy use
   assert.deepEqual(spyTargetIds(doc), [
     "provider",
     "provider/providers",
@@ -383,14 +350,12 @@ test("a search query OVERRIDES the section filter, and clearing it gives the fil
     ["provider", "unknown"],
     "a live query matches EVERY section, not the selected one",
   );
-  // a caller that forgets cannot filter a live query either: the builder
-  // stands the filter down itself (one truth, two doors)
+  // a caller that forgets cannot filter a live query either.
   assert.deepEqual(
     documentFor(nav, { hits, only: "provider" }).map((section) => section.id),
     ["provider", "unknown"],
     "the builder ignores the filter under a live query",
   );
-  // the query clears: the filter is still active and comes back
   const cleared = documentFor(nav, {
     hits: null,
     only: sectionFilter("provider", false),
@@ -413,8 +378,7 @@ test("modified-only still intersects the filtered section", () => {
 
 test("the in-app URL carries the selected section on the query axis", () => {
   assert.equal(SETTINGS_SECTION_PARAM, "settings");
-  // the PATH keeps owning the focused chat session (card t_06c01beb), so a
-  // section rides the query and the shipped scheme is untouched
+  // the PATH keeps owning the focused chat session, so a section rides the query and.
   assert.equal(withSettingsSection("/", "provider"), "/?settings=provider");
   assert.equal(
     withSettingsSection("/chat/abc123", "provider/models"),
@@ -431,7 +395,6 @@ test("the in-app URL carries the selected section on the query axis", () => {
     "/?a=1&b=2&settings=store",
     "other parameters survive the rewrite",
   );
-  // reading it back is exact, whatever encoded the slash
   assert.equal(parseSettingsSection("/?settings=provider%2Fmodels"), "provider/models");
   assert.equal(parseSettingsSection("/chat/abc?settings=dock"), "dock");
   assert.equal(parseSettingsSection("/chat/abc"), null, "no parameter is no section");
@@ -457,8 +420,7 @@ test("a deep link lands pre-filtered: URL -> selection -> filter -> document", (
   assert.equal(id, "provider/models", "the URL names the section");
   const resolved = resolveSelection(nav, id as string);
   assert.ok(resolved, "the id resolves against the LIVE nav");
-  // the pane's opening selection is the nav's own id (a stale child
-  // normalises to its category), clamped to the category and FILTERED
+  // the pane's opening selection is the nav's own id (a stale child normalises to its.
   const opening = selectionId(resolved!.category.id, resolved!.subgroup?.id ?? null);
   assert.equal(opening, "provider/models");
   const doc = documentFor(nav, { only: sectionFilter(opening, false) });
@@ -468,7 +430,6 @@ test("a deep link lands pre-filtered: URL -> selection -> filter -> document", (
     "the deep link opens the pane pre-filtered, not merely scrolled",
   );
   assert.equal(doc.length, 1, "the other categories are NOT rendered");
-  // a stale deep link is not an error: it opens the all-view
   assert.equal(resolveSelection(nav, "retired"), null);
   assert.equal(documentFor(nav, { only: sectionFilter(null, false) }).length, nav.length);
 });
@@ -501,7 +462,6 @@ test("the pane filters on its REAL selection, reads and writes the URL", () => {
     /history\.replaceState\([\s\S]{0,80}withSettingsSection\(window\.location\.href, section\)/,
     "replaceState only - the app never grows the history stack",
   );
-  // the read: an explicit door that outranks the remembered anchor
   assert.match(
     tab,
     /const fromUrl = urlSectionSelection\(\);[\s\S]{0,400}clampId\.value = parseSelection\(fromUrl\)\.category;/,
@@ -522,7 +482,7 @@ test("a palette jump releases a blocking filter instead of dying on it", () => {
   );
 });
 
-// --- the nav's grey-out set ----------------------------------------------
+// -- the nav's grey-out set ---------------------------------------------
 
 test("matchingCategoryIds answers exactly the categories with a survivor", () => {
   const nav = buildNav(withSubgroups([commonGroup(), providerGroup(), logGroup()]));
@@ -530,19 +490,17 @@ test("matchingCategoryIds answers exactly the categories with a survivor", () =>
     [...matchingCategoryIds(nav, { hits: new Set(["custom.one"]) })],
     ["unknown"],
   );
-  // no query, no modified-only: nothing is greyed
   assert.deepEqual(
     [...matchingCategoryIds(nav, {})].sort(),
     [COMMON_CATEGORY, "unknown", "provider"].sort(),
   );
-  // the modified-only switch greys the untouched categories too
   assert.deepEqual(
     [...matchingCategoryIds(nav, { modifiedOnly: true, isModified: (k) => k.key === "provider.instances" })],
     ["provider"],
   );
 });
 
-// --- the anchor (ruling 13 survives as a scroll anchor) -------------------
+// -- the anchor ------------------
 
 test("selection ids round-trip, one level or two", () => {
   assert.equal(selectionId("provider"), "provider");
@@ -563,30 +521,21 @@ test("resolveSelection tolerates a vanished category and a vanished child", () =
 
 test("anchorSelection restores only what the live nav still carries", () => {
   const nav = buildNav(withSubgroups([commonGroup(), providerGroup()]));
-  // a remembered category and a remembered child both restore verbatim
   assert.equal(anchorSelection(nav, "provider"), "provider");
   assert.equal(anchorSelection(nav, "provider/models"), "provider/models");
-  // NO anchor - the opening state, and what a DESELECT persists - never
-  // invents a selection (there is no fallback category any more)
+  // NO anchor - the opening state, and what a DESELECT persists - never invents a.
   assert.equal(anchorSelection(nav, null), null);
   assert.equal(anchorSelection(nav, ""), null);
-  // a category that no longer exists opens at the top instead of breaking
   assert.equal(anchorSelection(nav, "unmounted-domain"), null);
-  // a child the nav dropped normalises to its category - a stale id is
-  // never a dangling anchor
+  // a child the nav dropped normalises to its category - a stale id is never a.
   assert.equal(anchorSelection(nav, "provider/removed-child"), "provider");
   assert.equal(NAV_STORAGE_KEY, "omega.settings-category", "the key survives the model change");
 });
 
-// --- spy target RESOLUTION in the document (card t_c4b42357) -------------
-//
-// A flat (or one-child) category renders ONE unheaded block, so its block id
-// IS the section id: the document carries `data-section="common"` twice. The
-// resolution must hand that id to the SECTION - the box that owns the sticky
-// heading - or a jump lands the block at y=0, hidden behind that heading, and
-// the clamp measures the block instead of the section. The tree here is hand
-// built (the suite has no DOM); `.settings-category` ancestry is what the
-// real closest() answers.
+// -- spy target RESOLUTION in the document ------------- A flat (or one-child). The
+// resolution must hand that id to the SECTION - the box that owns the sticky heading -
+// or a jump lands the block at y=0, hidden behind that heading, and the clamp measures
+// the block instead of the section.
 
 type FakeNode = SpyNodeLike & {
   readonly classes: readonly string[];
@@ -648,9 +597,8 @@ test("a flat category's repeated data-section id resolves to the SECTION, never 
   );
   assert.equal(targets.size, 4, "the duplicate id never adds a second entry");
 
-  // the jump's clear: a section target IS its own section, so it subtracts no
-  // heading (isBlock false) - the pane scrolls the section's top to 0 and its
-  // first row flows BELOW the pinned heading instead of under it
+  // the jump's clear: a section target IS its own section, so it subtracts no heading
+  // (isBlock false).
   const sectionTarget = targets.get("common")!;
   assert.equal(targetSection(sectionTarget), sectionTarget, "a section target resolves to itself");
   assert.equal(
@@ -659,7 +607,6 @@ test("a flat category's repeated data-section id resolves to the SECTION, never 
     "isBlock is false for a section target",
   );
 
-  // a block target still clears its section's sticky heading
   const blockTarget = targets.get("provider/models")!;
   assert.equal(targetSection(blockTarget), provider, "a block target resolves to its section");
   assert.equal(
@@ -669,7 +616,7 @@ test("a flat category's repeated data-section id resolves to the SECTION, never 
   );
 });
 
-// --- the pane's SOURCE pins ----------------------------------------------
+// -- the pane's SOURCE pins ---------------------------------------------
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
@@ -699,10 +646,9 @@ test("the jump/clamp targets are SECTIONS first (card t_c4b42357)", () => {
 });
 
 test("the pane renders ONE document of every category", () => {
-  // card t_f05b1f28: the document paints SURFACE GROUPS - each group's
-  // sections are its items, in SURFACE_ORDER (curated, frontend, backend,
-  // modules) - so the flat `docSections` walk is gone from the template,
-  // never from the builder.
+  // the document paints SURFACE GROUPS - each group's sections are its items, in
+  // SURFACE_ORDER (curated, frontend, backend, modules) - so the flat `docSections`
+  // walk is gone from the template, never from the builder.
   assert.match(tab, /v-for="group in docGroups"/, "the document is grouped by surface class");
   assert.match(tab, /v-for="section in group\.items"/, "and each section renders inside its group");
   assert.match(
@@ -714,7 +660,6 @@ test("the pane renders ONE document of every category", () => {
   assert.match(tab, /:data-section="section\.id"/, "and the spy keys on the same attribute");
   assert.match(tab, /v-for="block in section\.blocks"/, "children render as blocks inside the section");
   assert.match(navSource, /export function documentFor\(/, "the builder lives in one place");
-  // there is no per-selection view left to swap in
   assert.ok(!tab.includes("view.sections"), "no single-category view remains");
   assert.ok(!tab.includes("contentFor("), "the master-detail content view is gone");
 });
@@ -725,18 +670,17 @@ test("a nav click SCROLLS the pane (smooth, reduced-motion aware) and marks it",
     /function selectCategory\(id: string\) \{[\s\S]{0,260}selection\.value = id;[\s\S]{0,200}clampId\.value = picked\.category;/,
     "the click selects and clamps to its category",
   );
-  // card t_cd9952a3: the click also FILTERS the document to that category,
-  // so the jump is measured after that render - a pre-filter measurement
-  // would target an offset the filter deletes.
+  // the click also FILTERS the document to that category, so the jump is measured after
+  // that render.
   assert.match(
     tab,
     /void nextTick\(\(\) => scrollToAnchor\(id\)\)/,
     "the jump is measured once the section filter has rendered",
   );
-  // card t_a8063683: the jump is a scrollTop computation, not a bare
-  // scrollIntoView - the section heading is STICKY, so a block landing at
-  // exactly 0 would paint behind the pinned heading (it subtracts the
-  // heading's measured height for a block, nothing for a section).
+  // the jump is a scrollTop computation, not a bare scrollIntoView - the section
+  // heading is STICKY, so a block landing at exactly 0 would paint behind the pinned
+  // heading (it subtracts the heading's measured height for a block, nothing for a
+  // section).
   assert.match(
     tab,
     /const clear = isBlock \? pinnedHeadingHeight\(node\) : 0;[\s\S]{0,300}root\.scrollTo\(\{ top: root\.scrollTop \+ delta - clear, behavior \}\)/,
@@ -779,8 +723,7 @@ test("the scroll-spy watches the sections and never fights a click", () => {
     /rootMargin: "0px 0px -80% 0px"/,
     "a thin top band, so neighbours cannot flicker mid-scroll",
   );
-  // the observer is suppressed while a jump animates, and a deliberate
-  // deselect stays suppressed until the NEXT real scroll
+  // the observer is suppressed while a jump animates, and a deliberate deselect stays.
   assert.match(tab, /lockSpy\(650\);/, "a nav click holds the observer through its smooth scroll");
   assert.match(tab, /lockSpy\(\); \/\/ stays shut until the NEXT real scroll/, "a deselect holds it until input");
   assert.match(
@@ -792,7 +735,6 @@ test("the scroll-spy watches the sections and never fights a click", () => {
 });
 
 test("expansion is DERIVED from the selection - no remembered toggle set", () => {
-  // nothing selected -> nothing open: the opening state
   assert.deepEqual([...expandedCategoryIds(null)], []);
   // the selected branch is the ONLY one open - a category or a subsection
   assert.deepEqual([...expandedCategoryIds("provider")], ["provider"]);
@@ -801,8 +743,7 @@ test("expansion is DERIVED from the selection - no remembered toggle set", () =>
     ["provider"],
     "selecting a subsection opens its parent",
   );
-  // a live query force-opens every parent carrying a hit, whatever is
-  // selected - and only those
+  // a live query force-opens every parent carrying a hit, whatever is selected.
   assert.deepEqual(
     [...expandedCategoryIds(null, new Set(["provider", "memory"]))].sort(),
     ["memory", "provider"],
@@ -856,10 +797,7 @@ test("the last anchor is remembered per client and restored on open", () => {
 });
 
 test("the content head carries the scope strip and NOTHING else", () => {
-  // card t_a8063683 (Endo, 2026-11-11): the heading mirror stripe is gone.
-  // It repeated the heading the pane thought it was looking at and lagged
-  // behind the scroll (and said "Commonly Used" twice). The document's own
-  // section heading IS the heading, and it sticks instead.
+  // the heading mirror stripe is gone.
   assert.match(
     tab,
     /<div v-if="scopeTabs\.length > 1" class="settings-content-head">/,
@@ -877,8 +815,7 @@ test("the content head carries the scope strip and NOTHING else", () => {
 });
 
 test("the modified-only switch is a pane-wide control beside the search", () => {
-  // card t_a8063683: it narrows the WHOLE document, so it belongs with the
-  // other pane-wide control, not with a heading it would outlive.
+  // it narrows the WHOLE document, so it belongs with the other pane-wide control.
   const bar = tab.match(/<div class="settings-filterbar">[\s\S]*?<\/div>/)?.[0] ?? "";
   assert.ok(bar.includes("<SearchInput"), "the filter bar carries the search");
   assert.match(
@@ -896,10 +833,8 @@ test("the section heading is the pane's STICKY header", () => {
   const rule = tab.match(/\.settings-section-title\s*\{[^}]*\}/)?.[0] ?? "";
   assert.match(rule, /position:\s*sticky/, "the only heading sticks");
   assert.match(rule, /top:\s*0/, "it pins at the scrollport's top edge");
-  // a transparent header would let rows scroll visibly underneath it
   assert.match(rule, /background:\s*var\(--z1\)/, "it is OPAQUE, on the pane's own token");
-  // a sticky box pins its BORDER box at top: 0 - the old 14px top margin
-  // would leave a sliver above it through which rows show
+  // a sticky box pins its BORDER box at top.
   assert.match(rule, /margin:\s*0 0 2px/, "no top margin on the sticky box");
   assert.match(rule, /padding:\s*20px 0 6px/, "the old 14px lead rides padding-top");
   const first =
@@ -926,9 +861,7 @@ test("the search stays ONE filter, wired to filterSettingGroups", () => {
   assert.equal((tab.match(/<SearchInput/g) ?? []).length, 1, "one input, not one per screen");
   assert.match(tab, /hits: searchHits\.value/, "the hits feed the document and the grey-out set");
   assert.match(tab, /query\.value\.trim\(\) === ""\) return null/, "no query is null, not an empty hit set");
-  // clearing the query gives the document back where it was - and card
-  // t_cd9952a3: when a SECTION FILTER is waiting behind the query, the
-  // document that returns is that one section, so the give-back is its top
+  // clearing the query gives the document back where it was - and.
   assert.match(
     tab,
     /const top = filterSection\.value === null \? lastDocScrollTop : 0;/,
@@ -937,13 +870,11 @@ test("the search stays ONE filter, wired to filterSettingGroups", () => {
   assert.match(tab, /node\.scrollTop = top/, "the interrupted scroll position returns");
 });
 
-// --- the selected-section scroll clamp (card t_a6b794b5) ------------------
-//
-// Endo, 2026-11-11: selecting a category must bound the pane's scroll to
-// that category; a deselect restores free scroll through the whole
-// document. The maths is here because it is the part that is easy to get
-// wrong: a range that inverts, or one that answers a position the document
-// cannot reach, is a pane that fights the hand or locks the user out.
+// -- the selected-section scroll clamp ------------------ Endo, selecting a category
+// must bound the pane's scroll to that category; a deselect restores free scroll
+// through the whole document. The maths is here because it is the part that is easy to
+// get wrong: a range that inverts, or one that answers a position the document cannot
+// reach, is a pane that fights the hand or locks the user out.
 
 test("a full-height section pins the pane to its own top", () => {
   // exactly as tall as the pane: there is no travel at all
@@ -959,14 +890,12 @@ test("a taller section lets the pane travel its own height, no further", () => {
   assert.equal(min, 300, "the section's top at the pane's top edge");
   assert.equal(max, 1500, "the section's bottom at the pane's bottom edge");
   assert.equal(300 + 2000 - 800, max, "max is exactly the bottom-aligned position");
-  // and the document continues below the section: the clamp, not the
-  // document's own end, is what stops the pane here
+  // and the document continues below the section.
   assert.ok(max < 5000 - 800, "a mid-document section stops short of the document's end");
 });
 
 test("a section shorter than the viewport does not scroll at all", () => {
-  // step 4: an empty range collapses to the section's top - an inverted
-  // range [top, top - 600] would either invert or scroll into nowhere
+  // step 4: an empty range collapses to the section's top.
   for (const height of [0, 40, 120, 799]) {
     const [min, max] = clampedRange({ top: 500, height, viewport: 800, content: 5000 });
     assert.equal(min, 500, `height ${height}: the range starts at the section's top`);
@@ -1009,29 +938,24 @@ test("a section at the very end answers a REACHABLE window", () => {
 });
 
 test("the END follows a section that GROWS under a pane resting on it", () => {
-  // card t_9e2aaca7, the nightly's clamp witness: the pane rested at 810
-  // while its own end measured 814, and every later pass found 810 legal,
-  // so the 4px never healed. The clamp records the end it left the pane on;
-  // a pass that measures a LONGER end answers the new one.
+  // the nightly's clamp witness: the pane rested at 810 while its own end measured 814,
+  // and every later pass found 810 legal, so the 4px never healed.
   assert.equal(
     clampEndFollow(810, { at: 810, max: 810 }, 814),
     814,
     "a pane resting on the end is carried to the grown end",
   );
-  // the same in the lane's own numbers (dev tip: end 772 -> 776)
   assert.equal(clampEndFollow(772, { at: 772, max: 772 }, 776), 776);
 });
 
 test("a pane parked INSIDE the section never follows a grown end", () => {
-  // the clamp bounds where the pane may rest; it is not a rubber band. A
-  // user who stopped 40px above the end keeps their place.
+  // the clamp bounds where the pane may rest; it is not a rubber band.
   assert.equal(
     clampEndFollow(730, { at: 730, max: 810 }, 814),
     null,
     "a parked pane is never dragged down",
   );
-  // and a scroll that moved OFF the recorded end clears the follow - the
-  // record is about the position, not the section
+  // and a scroll that moved OFF the recorded end clears the follow.
   assert.equal(clampEndFollow(808, { at: 810, max: 810 }, 814), null);
 });
 
@@ -1039,22 +963,17 @@ test("the follow never fights the bound or repeats itself", () => {
   // a SHRUNK end is the bound's job (min(now, max) pulls the pane up) -
   // the follow answers null so the two rules can never disagree
   assert.equal(clampEndFollow(810, { at: 810, max: 810 }, 806), null);
-  // already on the new end: no write (a write fires another scroll event)
   assert.equal(clampEndFollow(814, { at: 814, max: 814 }, 814), null);
-  // a sub-pixel wobble is not a grown end
   assert.equal(clampEndFollow(810, { at: 810, max: 810 }, 810.4), null);
-  // no record (a fresh selection, a parked pane) - nothing to follow
   assert.equal(clampEndFollow(810, null, 814), null);
 });
 
 test("only a REAL selection clamps, measured fresh, on the scroll event", () => {
-  // the arithmetic lives in settingsNav (asserted above); a second copy in
-  // the component is the drift this pins out
+  // the arithmetic lives in settingsNav (asserted above).
   assert.match(navSource, /export function clampedRange\(/);
   assert.match(tab, /const \[min, max\] = clampedRange\(\{/, "the pane asks the pure function");
-  // a nav click clamps to the section it selected - and the spy, which
-  // moves `selection` while the user scrolls, never clamps (the card's trap:
-  // otherwise free scroll seizes up the moment the user scrolls)
+  // a nav click clamps to the section it selected - and the spy, which moves
+  // `selection` while the user scrolls, never clamps
   assert.match(
     tab,
     /clampId\.value = picked\.category;/,
@@ -1069,15 +988,12 @@ test("only a REAL selection clamps, measured fresh, on the scroll event", () => 
     !/selection\.value = best;[\s\S]{0,240}clampId/.test(tab),
     "the spy moves the highlight and never the clamp",
   );
-  // step 2: compare before assigning (a write fires another scroll event)
   assert.match(
     tab,
     /if \(Math\.abs\(next - now\) < 1\) return;/,
     "the clamp writes only when it actually moves the pane",
   );
-  // the trap: the clamp lands on the scroll EVENT (a frame callback alone
-  // is not enough - a hidden/occluded tab throttles it to nothing, card
-  // t_e7404b84) and again on the frame after, for wheel momentum
+  // the trap: the clamp lands on the scroll EVENT and again on the frame after, for.
   assert.match(tab, /if \(clampId\.value\) scheduleClamp\(\);/, "the scroll handler schedules");
   assert.match(
     tab,
@@ -1085,17 +1001,13 @@ test("only a REAL selection clamps, measured fresh, on the scroll event", () => 
     "the clamp lands on the event, not only on the next frame",
   );
   assert.match(tab, /requestAnimationFrame\(\(\) => \{/, "and again on the next frame");
-  // step 5: ONE suppression - a scroll the PANE issued itself, never the
-  // spy's intent-event lock: a scrollbar drag, an AT scroll and a
-  // programmatic scrollTop dispatch no intent event at all, and gating on
-  // them left those scrolls unclamped (card t_e7404b84).
-  //
-  // card t_b8f64550 refines WHICH pane scroll that is: the window is
-  // measured from the LIVE box first and the suppression is asked LAST, so a
-  // pass is never dropped on a window it did not look at, and only the pane's
-  // own DELIBERATE landing (paneScrollOwns) stands the clamp down - the
-  // clamp's own re-snap does not, because its dropped pass leaves a window
-  // measured from a box that has since moved in place for good.
+  // step 5: ONE suppression - a scroll the PANE issued itself, never the spy's
+  // intent-event lock. refines WHICH pane scroll that is: the window is measured from
+  // the LIVE box first and the suppression is asked LAST, so a pass is never dropped on
+  // a window it did not look at, and only the pane's own DELIBERATE landing
+  // (paneScrollOwns) stands the clamp down - the clamp's own re-snap does not, because
+  // its dropped pass leaves a window measured from a box that has since moved in place
+  // for good.
   assert.ok(
     tab.indexOf("const [min, max] = clampedRange({") <
       tab.indexOf("if (paneScrollOwns(paneScroll)) return;"),
@@ -1118,7 +1030,6 @@ test("only a REAL selection clamps, measured fresh, on the scroll event", () => 
     !/if \(spyLocked\) return;[\s\S]{0,400}function scheduleClamp/.test(tab),
     "the clamp no longer rides the spy's intent-event lock",
   );
-  // step 3: a section's box changes without any scroll - re-measure then
   assert.match(tab, /new ResizeObserver\(\(\) => applyClamp\(\)\)/, "the boxes are observed");
   assert.match(tab, /function observeClamp\(\)/);
   assert.match(
@@ -1126,10 +1037,7 @@ test("only a REAL selection clamps, measured fresh, on the scroll event", () => 
     /syncSpy\(\);\s*observeClamp\(\);\s*applyClamp\(\);/,
     "a rebuilt document re-arms and re-measures the clamp",
   );
-  // card t_9e2aaca7: the END is the side the bound cannot follow both ways,
-  // so the pass asks the pure follow rule and records the end it left the
-  // pane on - a second copy of that decision in the component is the drift
-  // the assertions above pin out
+  // the END is the side the bound cannot follow both ways, so the pass asks the pure.
   assert.match(
     tab,
     /const follow = clampEndFollow\(now, clampHold, max\);\s*const next = follow \?\? Math\.min\(Math\.max\(now, min\), max\);/,
@@ -1148,22 +1056,22 @@ test("only a REAL selection clamps, measured fresh, on the scroll event", () => 
 });
 
 
-// --- card t_e7404b84: a scroll with NO intent event is still the USER's ---
+// --: a scroll with NO intent event is still the USER's --
 //
 // The probe that opened this card (private lane 18201, 13 sections, pane
 // clientHeight 423, document end 6247, provider range [1813, 2722]):
 //
-//   nav-click provider                                  -> scrollTop 1813
+// nav-click provider -> scrollTop 1813
 //   `.settings-body`.scrollTop = 1e6, NO intent event,
-//     dispatched 80ms after that click                  -> 6247 = the
+// dispatched 80ms after that click -> 6247 = the
 //       document's end, UNCLAMPED (the section's bottom is 2722), and it
 //       STAYED there
-//   the same assignment 1.2s after the click            -> 2722, clamped
-//   a real wheel (the CDP input pipeline)               -> 2722, clamped
-//   a real scrollbar drag                               -> pointerdown does
+// the same assignment 1.2s after the click -> 2722, clamped
+// a real wheel (the CDP input pipeline) -> 2722, clamped
+// a real scrollbar drag -> pointerdown does
 //       fire on the pane here, so the intent path released it
 //   requestAnimationFrame blacked out + the recipe's own
-//     force_scroll (synthetic wheel + scrollTop)         -> 6247 again
+// force_scroll (synthetic wheel + scrollTop) -> 6247 again
 //
 // So two things were true, and both are fixed: (1) the clamp only ever ran
 // inside a requestAnimationFrame callback, which a hidden or occluded tab
@@ -1174,12 +1082,10 @@ test("only a REAL selection clamps, measured fresh, on the scroll event", () => 
 // OWN scroll, tracked to its settle, and nothing else.
 test("a scroll the pane did not issue is clamped and ends the suppression (t_e7404b84)", () => {
   const GRACE = 200;
-  // the pane issued a jump: until its events stop arriving, they are its own
   const travelling: PaneScrollState = { target: 1813, graceUntil: 0, intent: true };
   assert.equal(paneScrollSettled(travelling), false, "an animation in flight is not settled");
   assert.equal(paneScrollIsUser(travelling, 1000), false, "nor is it the user's scroll");
-  // the events stop -> settle -> its last repeats stay the pane's (a
-  // deselect must not re-select the section its return-to-top just passed)
+  // the events stop -> settle -> its last repeats stay the pane's (a deselect must.
   const settled = paneScrollSettle(1000, GRACE);
   assert.deepEqual(
     settled,
@@ -1188,9 +1094,7 @@ test("a scroll the pane did not issue is clamped and ends the suppression (t_e74
   );
   assert.equal(paneScrollSettled(settled), true, "the clamp may run again");
   assert.equal(paneScrollIsUser(settled, 1100), false, "a trailing repeat is still the pane's");
-  // and past the settle window EVERY scroll is the user's: the probe's
-  // programmatic 1e6, a scrollbar drag, an AT scroll - all clamped, and all
-  // of them release the spy
+  // and past the settle window EVERY scroll is the user's.
   assert.equal(
     paneScrollIsUser(settled, 1200),
     true,
@@ -1203,7 +1107,7 @@ test("a scroll the pane did not issue is clamped and ends the suppression (t_e74
   );
 });
 
-// --- card t_b8f64550: WHO asked decides whether a pass may be dropped -----
+// --: WHO asked decides whether a pass may be dropped ----
 //
 // The nightly held the pane to 816 while the settled box answered 814
 // (`got [816] want [814]`), and the dev-tip probes found the other face: an
@@ -1223,7 +1127,7 @@ test("a scroll the pane did not issue is clamped and ends the suppression (t_e74
 //      measures over it can only agree, and dropping it is what let a window
 //      measured from a transient box stand.
 //   2. A gesture that fires no scroll event (a same-value request: `scrollTop
-//      = 1e6` at the document's end, a nudge past the end) still measures -
+// = 1e6` at the document's end, a nudge past the end) still measures
 //      the intent event is its own trigger (pinned on the source above).
 test("only the pane's own DELIBERATE scroll stands the clamp down (t_b8f64550)", () => {
   const jump: PaneScrollState = { target: 1813, graceUntil: 0, intent: true };
@@ -1232,27 +1136,22 @@ test("only the pane's own DELIBERATE scroll stands the clamp down (t_b8f64550)",
   // but it never owns the pane
   const snap: PaneScrollState = { target: 1151, graceUntil: 0, intent: false };
   assert.equal(paneScrollOwns(snap), false, "the clamp's own re-snap does not");
-  // nothing in flight: every pass runs
   assert.equal(paneScrollOwns({ target: null, graceUntil: 0, intent: false }), false);
   assert.equal(
     paneScrollOwns({ target: null, graceUntil: 200, intent: false }),
     false,
     "the settle grace after a scroll ends does not own the pane either",
   );
-  // an intent scroll's settle ends the exemption: the window is re-measured
-  // the moment the animation is over
+  // an intent scroll's settle ends the exemption.
   assert.equal(paneScrollOwns(paneScrollSettle(1000, 200)), false);
-  // and the window it must then be held to is the LIVE one. The nightly's own
-  // numbers: the section's bottom at 814 while the pane sat at 816 and the
-  // document continued to 818 (its 4px of body padding)
+  // and the window it must then be held to is the LIVE one.
   const nightly = { top: 0, height: 1237, viewport: 423, content: 1241 };
   assert.deepEqual(clampedRange(nightly), [0, 814], "the live window ends at the section's bottom");
   assert.equal(nightly.content - nightly.viewport, 818, "the document's own end is 4 further");
 });
 
 test("the clamp rides the scroll event and never the intent-event lock", () => {
-  // a frame callback alone is not enough: a hidden/occluded tab throttles
-  // requestAnimationFrame to nothing and the pane kept every scroll
+  // a frame callback alone is not enough.
   assert.match(
     tab,
     /function scheduleClamp\(\) \{\s*applyClamp\(\);/,
@@ -1273,9 +1172,7 @@ test("the clamp rides the scroll event and never the intent-event lock", () => {
     !/if \(spyLocked\) return;[\s\S]{0,400}function scheduleClamp/.test(tab),
     "the clamp no longer rides the spy's intent-event lock",
   );
-  // the pane tracks the target of every scroll it issues itself, and says
-  // WHO asked (card t_b8f64550): the clamp's own re-snap is tracked without
-  // claiming intent, so a later pass may measure straight over it
+  // the pane tracks the target of every scroll it issues itself, and says WHO asked.
   assert.match(
     tab,
     /function notePaneScroll\(root: HTMLElement, top: number, intent = false\)/,
@@ -1293,9 +1190,7 @@ test("the clamp rides the scroll event and never the intent-event lock", () => {
     "a cleared query's give-back tracks its landing as deliberate",
   );
   assert.match(tab, /notePaneScroll\(root, next\);/, "the clamp's own re-snap claims no intent");
-  // and the intent path is the trigger a scroll EVENT cannot give: a request
-  // that lands on the value the pane already holds fires none (t_720c9cff),
-  // so the gesture itself measures the window (card t_b8f64550)
+  // and the intent path is the trigger a scroll EVENT cannot give.
   assert.match(
     tab,
     /const noteUserIntent = \(\) => \{[\s\S]{0,900}?if \(clampId\.value\) scheduleClamp\(\);/,
@@ -1309,20 +1204,20 @@ test("the clamp rides the scroll event and never the intent-event lock", () => {
   );
 });
 
-// --- card t_63c699ce: a resize is not a scroll ---------------------------
+// --: a resize is not a scroll --------------------------
 //
 // The probe that opened this card (private lane 18201, settings pane, 13
 // categories; narrow 340x780 -> widen 1280x800) sampled the stored anchor
 // every 100ms across the widen, with the pane's own smooth jump still in
 // flight and the spy's 650ms post-click hold already expired:
 //
-//   108ms  anchor compaction          scrollTop 2807  (the jump's animation)
-//   404ms  anchor compaction          scrollTop 4039  <-- widen lands here
-//   503ms  anchor server/workspace    scrollTop 3340  <-- the flip
-//   609ms  anchor compaction          scrollTop 3904  (the clamp's re-snap)
-//   704ms  anchor compaction/budget   scrollTop 4217
-//   801ms  anchor compaction/window   scrollTop 4335
-//   1001ms anchor compaction/window   scrollTop 4399  (settled)
+// 108ms anchor compaction scrollTop 2807 (the jump's animation)
+// 404ms anchor compaction scrollTop 4039 <-- widen lands here
+// 503ms anchor server/workspace scrollTop 3340 <-- the flip
+// 609ms anchor compaction scrollTop 3904 (the clamp's re-snap)
+// 704ms anchor compaction/budget scrollTop 4217
+// 801ms anchor compaction/window scrollTop 4335
+// 1001ms anchor compaction/window scrollTop 4399 (settled)
 //
 // Every write after 404ms was a delivery the RESIZE armed: the observer
 // re-resolved the band at the new boxes and persisted whatever id it found,
@@ -1333,15 +1228,14 @@ test("the clamp rides the scroll event and never the intent-event lock", () => {
 test("a resize re-spies the highlight but never rewrites the anchor (t_63c699ce)", () => {
   const fresh: SpyAnchorTrace = { userScrollAt: 0, geometryAt: 0, wroteAt: 0 };
   assert.equal(spyAnchorMayWrite(fresh), false, "a pane nobody scrolled writes nothing");
-  // the drawer jump is the PANE's own scroll (notePaneScroll), so it stamps
-  // no user scroll - and the widen after it is geometry
+  // the drawer jump is the PANE's own scroll (notePaneScroll), so it stamps no user
+  // scroll.
   const jumpedThenWidened: SpyAnchorTrace = { userScrollAt: 0, geometryAt: 1000, wroteAt: 0 };
   assert.equal(
     spyAnchorMayWrite(jumpedThenWidened),
     false,
     "the delivery a widen arms leaves the explicit jump's anchor alone",
   );
-  // the user's own hand, after that geometry change, is the one that writes
   const scrolled: SpyAnchorTrace = { ...jumpedThenWidened, userScrollAt: 1200 };
   assert.equal(spyAnchorMayWrite(scrolled), true, "a user scroll writes the anchor");
   assert.equal(
@@ -1349,8 +1243,7 @@ test("a resize re-spies the highlight but never rewrites the anchor (t_63c699ce)
     false,
     "one write per scroll - the clamp's trailing delivery writes nothing",
   );
-  // a scroll OLDER than the geometry change is not evidence: the resize
-  // resolved new boxes, whatever the user did before it
+  // a scroll OLDER than the geometry change is not evidence.
   assert.equal(
     spyAnchorMayWrite({ userScrollAt: 900, geometryAt: 1000, wroteAt: 0 }),
     false,
@@ -1370,13 +1263,11 @@ test("the spy's anchor write is gated on the user's scroll, never on geometry", 
     /function applySpySelection\(best: string \| null\) \{[\s\S]{0,400}selection\.value = best;[\s\S]{0,300}if \(!spyAnchorMayWrite\(anchorTrace\)\) return;\s*anchorTrace\.wroteAt = anchorTrace\.userScrollAt;\s*persistAnchor\(best\);/,
     "the spy persists only what the user's scroll earned",
   );
-  // geometry is stamped by the two things that move the boxes: a re-arm...
   assert.match(
     tab,
     /\/\/ a re-arm is a GEOMETRY change[^\n]*\n\s*anchorTrace\.geometryAt = nowMs\(\);/,
     "re-arming the spy is a geometry change",
   );
-  // ...and the scrollport's own box observer
   assert.match(
     tab,
     /new ResizeObserver\(\(\) => \{\s*anchorTrace\.geometryAt = nowMs\(\);\s*\}\)/,
@@ -1395,7 +1286,7 @@ test("the spy's anchor write is gated on the user's scroll, never on geometry", 
   );
 });
 
-// --- card t_720c9cff: a scroll inside a lock is clamped when the lock ends --
+// --: a scroll inside a lock is clamped when the lock ends -
 //
 // The nightly reded on the SAME clamp assertion the merge before had fixed
 // (113-settings-nav: scrollTop 5709, want 2509, document end 5709 - byte for
@@ -1404,32 +1295,30 @@ test("the spy's anchor write is gated on the user's scroll, never on geometry", 
 //
 //   nav-click provider, then wheel + `scrollTop = 1e6` in the NEXT task
 //     (inside the same frame - a fast host's jsq round trip)
-//                                                      -> 6247, STAYED there
-//   the same wheel + assignment 2s after the click      -> 2722 (clamped)
-//   the same, 3s after (no lock, nothing suppressed)    -> 2722 (clamped)
-//   the same frame, WITHOUT the wheel                   -> 2722 (clamped)
+// > 6247, STAYED there
+// the same wheel + assignment 2s after the click -> 2722 (clamped)
+// the same, 3s after (no lock, nothing suppressed) -> 2722 (clamped)
+// the same frame, WITHOUT the wheel -> 2722 (clamped)
 //
 // The un-wheeled row is the card's own hypothesis refuted: it sits inside the
 // very same 650ms lock and still clamps, because the clamp never read that
-// lock (t_e7404b84 removed it). The swallow is an EVENT-LESS scroll: the pane
+// lock. The swallow is an EVENT-LESS scroll: the pane
 // was already resting at the document's end (a previous free scroll left it
 // there), so `scrollTop = 1e6` is a same-value instant request and fires no
 // scroll event at all; the wheel that preceded it ended the pane's own scroll
 // tracking AND cleared the 400ms settle timer that would have re-measured.
 // Nothing is left pending, so the pane sits outside its section for good.
 test("a scroll inside the lock window is clamped when the lock ends (t_720c9cff)", () => {
-  // the swallowed state is DECIDABLE: nothing is in flight, the pane is just
-  // never re-measured - which is why the clamp is allowed to run the moment a
-  // lock lifts (the t_e7404b84 gate answers "yes, settled")
+  // the swallowed state is DECIDABLE: nothing is in flight, the pane is just never
+  // re-measured.
   const swallowed: PaneScrollState = { target: null, graceUntil: 0, intent: false };
   assert.equal(
     paneScrollSettled(swallowed),
     true,
     "the pane's own scroll is over - the clamp would bite, it is only never asked",
   );
-  // and the range it was kept outside is the same maths the nightly's numbers
-  // fall out of: the CI red names only the document end (5709) and the wanted
-  // end (2509), so the probe document's shape is what is pinned here
+  // and the range it was kept outside is the same maths the nightly's numbers fall out
+  // of.
   const lane = { top: 1813, height: 1332, viewport: 423, content: 6670 };
   assert.deepEqual(
     clampedRange(lane),
@@ -1441,22 +1330,17 @@ test("a scroll inside the lock window is clamped when the lock ends (t_720c9cff)
   const [, hi] = clampedRange(nightly);
   assert.equal(hi, 2509, "and its 'want 2509' is this same clampedRange, no special case");
 
-  // ONE pass, on the locks that already exist: the timed lock's expiry...
-  // card t_81d0901b: the expiry ALSO re-resolves the spy highlight from the
-  // resting boxes (a long jump's last intersection batch can land inside the
-  // lock window) - the clamp re-measure stays the first call.
+  // ONE pass, on the locks that already exist.
   assert.match(
     tab,
     /spyTimer = setTimeout\(\(\) => \{\s*spyLocked = false;\s*spyTimer = undefined;\s*clampOnLockEnd\(\);[\s\S]{0,400}?settleSpyIfIdle\(\);\s*\}, ms\);/,
     "the timed lock re-measures when it expires, not never",
   );
-  // ...and a deselect's open-ended suppression, which lifts on real input
   assert.match(
     tab,
     /function unlockSpy\(\) \{[\s\S]{0,220}spyLocked = false;\s*clampOnLockEnd\(\);/,
     "the suppression's release re-measures too - same shape, same pass",
   );
-  // the pass reuses the clamp machinery instead of inventing a second one
   assert.match(
     tab,
     /function clampOnLockEnd\(\) \{\s*if \(clampId\.value\) scheduleClamp\(\);\s*\}/,
@@ -1466,14 +1350,13 @@ test("a scroll inside the lock window is clamped when the lock ends (t_720c9cff)
     !/function clampOnLockEnd\(\)[\s\S]{0,200}root\.scrollTop =/.test(tab),
     "and it never writes scrollTop itself: applyClamp stays the only writer",
   );
-  // the timed lock's LENGTH is untouched: it exists so the observer does not
-  // fight the smooth scroll it started
+  // the timed lock's LENGTH is untouched.
   assert.match(tab, /lockSpy\(650\);/, "the 650ms jump window is unchanged");
   // and the pane-scroll suppression's own gate is untouched (PANE_SCROLL_GAP_MS)
   assert.match(tab, /const PANE_SCROLL_GAP_MS = 400;/, "the stream-suppression window is unchanged");
 });
 
-// --- the A11Y keyboard law (card t_a990f422) -----------------------------
+// -- the A11Y keyboard law ----------------------------
 //
 // vera's trio, scoped to settings:
 //   1. the model rows carried role="option" and nothing else - unreachable
@@ -1490,23 +1373,20 @@ const picker = read("app/components/chat/ModelSelect.vue");
 const fieldSource = read("app/components/settings/ModelField.vue");
 
 test("settings model rows are a keyboard listbox: roving tabindex, arrows, Enter, Escape", () => {
-  // the settings picker IS this component (card t_dac84a33 shares it with
-  // the composer) - the keyboard law therefore reaches the settings rows
+  // the settings picker IS this component.
   assert.match(
     fieldSource,
     /import ModelSelect from "\.\.\/chat\/ModelSelect\.vue";/,
     "the settings model field renders the shared picker, not a second one",
   );
 
-  // one row in the tab order at a time: Tab enters the list ON the cursor
-  // instead of walking a 200-model catalog
+  // one row in the tab order at a time.
   assert.match(
     picker,
     /:tabindex="isActiveRow\(g\.name, m\) \? 0 : -1"/,
     "a roving tabindex - exactly one row is tabbable",
   );
-  // the rows are a listbox's options, and the popup they sit in is the
-  // combobox the search input drives
+  // the rows are a listbox's options, and the popup they sit in is the combobox the.
   assert.match(picker, /role="listbox"/, "the section list is a real listbox");
   assert.match(picker, /@keydown="onRowKey\(\$event, g\.name, m\)"/, "the rows own their keydown");
   assert.match(
@@ -1532,22 +1412,19 @@ test("settings model rows are a keyboard listbox: roving tabindex, arrows, Enter
     "arrows wrap",
   );
 
-  // focus follows the cursor AND the cursor follows focus: the row that
-  // takes focus is the row the highlight paints
+  // focus follows the cursor AND the cursor follows focus.
   assert.match(picker, /@focus="seatOn\(g\.name, m\)"/, "focusing a row seats the cursor on it");
   assert.match(picker, /active: isActiveRow\(g\.name, m\)/, "the active row is highlighted");
   assert.match(picker, /\.model-list li\.active \{/, "and the highlight has a rule");
 
-  // a keyboard pick rides the SAME guard as a click: a disabled row never
-  // emits, its reason is information
+  // a keyboard pick rides the SAME guard as a click: a disabled row never emits, its.
   assert.match(
     picker,
     /function pickRow\(section: string, model: string\) \{\s*if \(reasonFor\(section, model\) !== null\) return;/,
     "Enter on a disabled row is a no-op, not an override",
   );
 
-  // the popup opens on the value's own row, and typing "filter models"
-  // still filters: the seat falls back to row one when the value is gone
+  // the popup opens on the value's own row, and typing "filter models" still filters.
   assert.match(
     picker,
     /function seatOnCurrent\(\)[\s\S]{0,260}activeKey\.value = seat \? rowKey\(seat\.section, seat\.model\) : null;/,
@@ -1559,8 +1436,7 @@ test("settings model rows are a keyboard listbox: roving tabindex, arrows, Enter
     "a filtered-away seat falls back to the first row",
   );
 
-  // Escape closes and hands focus BACK to the chip: a keyboard user is
-  // never dropped on <body>
+  // Escape closes and hands focus BACK to the chip: a keyboard user is never dropped.
   assert.match(picker, /const chipEl = ref<HTMLButtonElement \| null>\(null\);/, "the chip is the focus return target");
   assert.match(picker, /ref="chipEl"/, "and the template binds it");
   assert.match(
@@ -1573,7 +1449,6 @@ test("settings model rows are a keyboard listbox: roving tabindex, arrows, Enter
 });
 
 test("the settings drawer honours Escape, holds focus, and returns it to the toggle", () => {
-  // the toggle moves focus into the drawer and is the return target
   assert.match(tab, /ref="jumpEl"/, "the toggle is addressable");
   assert.match(
     tab,
@@ -1600,7 +1475,6 @@ test("the settings drawer honours Escape, holds focus, and returns it to the tog
     "a jump and a deselect both close through the one path",
   );
 
-  // Escape closes; Tab and Shift+Tab wrap at the drawer's edges
   assert.match(tab, /@keydown="onDrawerKey"/, "the pane root owns the drawer's keys");
   assert.match(
     tab,
@@ -1614,7 +1488,6 @@ test("the settings drawer honours Escape, holds focus, and returns it to the tog
   );
   assert.match(tab, /const FOCUSABLE =\s*'button:not\(\[disabled\]\), \[href\]/, "the trap walks the drawer's own focusables");
 
-  // the scrim is decoration: click-to-close stays, semantics leave
   assert.match(
     tab,
     /class="settings-scrim"\s*role="presentation"\s*@click="closeDrawer\(\)"/,
@@ -1628,10 +1501,9 @@ test("the settings body reserves the pinned heading for native scrolls (SC 2.4.1
     /\.settings-body \{\s*scroll-padding-top: 44px;\s*\}/,
     "the scrollport pads its own top edge",
   );
-  // the number is not a mood: the pinned heading measures 42px on the lane
-  // (20px padding-top + 6px padding-bottom + an 11px heading's line box +
-  // the 1px rule), and the pad must leave a landed target CLEAR of it, not
-  // flush under it
+  // the number is not a mood: the pinned heading measures 42px on the lane (20px
+  // padding-top + 6px padding-bottom + an 11px heading's line box + the 1px rule), and
+  // the pad must leave a landed target CLEAR of it, not flush under it
   const heading = tab.match(
     /\.settings-section-title \{\s*position: sticky;[\s\S]{0,400}?padding: (\d+)px 0 (\d+)px;/,
   );
@@ -1644,37 +1516,30 @@ test("the settings body reserves the pinned heading for native scrolls (SC 2.4.1
     value > declared,
     `scroll-padding-top ${value}px must exceed the heading's ${declared}px of padding + rule`,
   );
-  // the heading still pins - the pad is an addition to that law, not a
-  // replacement for it
+  // the heading still pins - the pad is an addition to that law, not a replacement.
   assert.match(tab, /\.settings-section-title \{\s*position: sticky;/, "the heading still sticks");
-  // and the pane's OWN jump keeps measuring the live heading: the constant
-  // is for the scrolls omega does not issue
+  // and the pane's OWN jump keeps measuring the live heading.
   assert.match(tab, /const clear = isBlock \? pinnedHeadingHeight\(node\) : 0;/, "the measured jump is untouched");
 });
 
 
-// --- gate: the scope switch normalises the FILTER too (card t_4e9559c8) -----
-// nightly 43586645271 (red 110): an agent tab's `description` selection
-// survived the switch to Main, whose nav carries no `description` - the
-// document was filtered to a category the live nav cannot resolve and the
-// pane answered "no settings here" (the URL still said ?settings=description).
-// Only the HIGHLIGHT was normalised, and a live query had moved it onto a
-// category Main DOES carry, so the highlight-only check resolved and cleared
-// nothing while the filter stood.
+// -- gate: the scope switch normalises the FILTER too ----- nightly 43586645271 (red
+// 110): an agent tab's `description` selection survived the switch to Main, whose nav
+// carries no `description` - the document was filtered to a category the live nav
+// cannot resolve and the pane answered "no settings here" (the URL still said
+// ?settings=description).
 test("a scope switch drops a SECTION FILTER the live nav cannot resolve", () => {
   const mainNav = buildNav(
     withSubgroups([group("provider", "provider", [knob("provider.model_name", "model name")])]),
   );
-  // the highlight can name something the new nav carries ...
   assert.notEqual(resolveSelection(mainNav, "provider"), null);
-  // ... while the FILTER names a category only the old scope had
+  // ..
   assert.equal(resolveSelection(mainNav, "description"), null);
   assert.equal(
     selectionLost(mainNav, ["provider", "description"]),
     true,
     "the filter's own id decides - a highlight that resolves cannot save it",
   );
-  // both resolvable (or nothing remembered) -> no spurious deselect
   assert.equal(selectionLost(mainNav, ["provider", null]), false);
   assert.equal(selectionLost(mainNav, [null, undefined]), false);
   assert.equal(selectionLost(mainNav, [""]), false, "an empty id is no id");

@@ -1,10 +1,7 @@
 package cron
 
-// The /cron command's name law (card t_d923b50a): the handler answers
-// /cron and rejects every other name with an error, because the command
-// seam's chain-on-miss wrapper only falls through on an error. A nil
-// error for a foreign name swallows the whole chain - every later
-// command returned "[cron] no cron jobs configured".
+// The /cron command's name law. A nil error for a foreign name swallows the whole chain
+// - every later command returned "[cron] no cron jobs configured".
 
 import (
 	"context"

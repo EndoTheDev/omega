@@ -1,12 +1,6 @@
-// The skills content-view REST face, riding the skills capsule
-// (shell-ring shrink wave 3, card t_b75df168 - moved whole from
-// agent/api/server_skills.go, wire unchanged). The webui's skill
-// viewer tab reads ONE skill's full SKILL.md: GET
-// /skills/content?name= rides the SkillRead face of the SAME provider
-// the mount offers under the "skills" key - a host without the capsule
-// answers 404 at the module mux (the route mounts and dies with it).
-// The listing route never carries content; this route never carries
-// the inventory - one skill per read, name-resolved.
+// The skills content-view REST face, riding the skills capsule. The listing route never
+// carries content; this route never carries the inventory - one skill per read,
+// name-resolved.
 package skills
 
 import (
@@ -15,9 +9,7 @@ import (
 	"strings"
 )
 
-// skillsContentRow is one GET /skills/content body: the parsed
-// frontmatter description plus the markdown body under the fence. The
-// name echoes the request (the folder-name law makes it authoritative).
+// skillsContentRow is one GET /skills/content body.
 type skillsContentRow struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -25,11 +17,10 @@ type skillsContentRow struct {
 	Truncated   bool   `json:"truncated"`
 }
 
-// validSkillRequestName is the handler-side name law: a skill name is a
-// single directory component (the skill loader's folder-name rule). The
-// provider resolves <dir>/<name>/SKILL.md, so this refuses traversal and
-// hidden names BEFORE any provider call - the defense belongs to the
-// wire, never to the provider implementation's good faith.
+// validSkillRequestName is the handler-side name law. The provider resolves
+// <dir>/<name>/SKILL.md, so this refuses traversal and hidden names BEFORE any provider
+// call - the defense belongs to the wire, never to the provider implementation's good
+// faith.
 func validSkillRequestName(name string) bool {
 	if name == "" || name == "." || name == ".." {
 		return false
@@ -40,9 +31,7 @@ func validSkillRequestName(name string) bool {
 	return !strings.HasPrefix(name, ".") && strings.TrimSpace(name) == name
 }
 
-// skillReadCap is the viewer's SKILL.md preview cap - the 64 KiB cut
-// the file explorer's preview enforces (the files capsule's fileReadCap;
-// the wire shapes match, one rule, two faces).
+// skillReadCap is the viewer's SKILL.md preview cap.
 const skillReadCap = 64 * 1024
 
 // Routes is the capsule's REST face over the mounted provider.
@@ -76,10 +65,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// handleSkillsContent serves GET /skills/content?name=<skill>: the full
-// SKILL.md body for the webui viewer tab. The read is capped at the
-// file surface's 64 KiB preview cap with the truncated flag - a viewer
-// tab shows the cut, it never streams an unbounded file.
+// handleSkillsContent serves GET /skills/content?name=<skill>. The read is capped at
+// the file surface's 64 KiB preview cap with the truncated flag - a viewer tab shows
+// the cut, it never streams an unbounded file.
 func (rt *Routes) handleSkillsContent(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
 		return
@@ -91,8 +79,7 @@ func (rt *Routes) handleSkillsContent(w http.ResponseWriter, r *http.Request) {
 	}
 	description, content, err := rt.svc.SkillRead(name)
 	if err != nil {
-		// the provider's not-found is a loud 404 (the viewer tab shows
-		// it); everything else is a server failure
+		// the provider's not-found is a loud 404 (the viewer tab shows it).
 		if strings.Contains(err.Error(), "not found") {
 			fileError(w, http.StatusNotFound, err.Error())
 			return

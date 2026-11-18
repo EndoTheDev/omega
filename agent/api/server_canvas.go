@@ -1,14 +1,4 @@
-// The canvas transport (arc 3b): http_channel translates the canvas
-// contract to the web. The snapshot + deltas pattern (settled Q3b):
-// GET /ui/canvas serves the current panel state as the load-time
-// catch-up, and ViewModelDelta events serialize as one SSE frame type
-// on the existing run streams - the same stream the chat already
-// rides, no second channel (settled Q10a). POST /ui/actions is the
-// web half of the one action pipe (settled Q4b): module-qualified
-// calls route through agent.Canvas.Dispatch to the capsule's
-// registered handler - zero per-module code in this file. The
-// per-module REST routes stay untouched (settled Q6a); the pipe is
-// additive.
+// The canvas transport (arc 3b): http_channel translates the canvas contract to the.
 package api
 
 import (
@@ -20,44 +10,28 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// NewCanvas wires the server's canvas from a mounted Context. The
-// emitter is the server's delta fan-out: modules updating panel state
-// during a run emit ViewModelDeltas onto every live run's stream.
+// NewCanvas wires the server's canvas from a mounted Context.
 func (s *Server) newCanvas(ctx *core.Context) error {
 	var err error
 	s.canvas, err = agent.NewCanvas(ctx, s.CanvasEmit)
 	return err
 }
 
-// CanvasEmit is the delta emitter the canvas runtime calls on every
-// panel Update: the delta serializes once (sseEvent - the same
-// translation every run event takes) and fans out to every live
-// run's subscribers. Frames stay on the existing streams; a delta
-// landing outside any run's lifetime is dropped - the frontend's
-// next catch-up is the snapshot (GET /ui/canvas), the same way
-// sessions' missed history lives in the store, not the stream.
-// Inline store-less runs register no run, so they see no deltas;
-// the durable /chat path is the contract's home.
+// CanvasEmit is the delta emitter the canvas runtime calls on every panel Update.
+// Inline store-less runs register no run, so they see no deltas; the durable /chat path
+// is the contract's home.
 func (s *Server) CanvasEmit(event core.Event) {
 	eventType, data, err := sseEvent(event)
 	if err != nil {
 		return
 	}
 	s.runs.broadcastAll(runFrame{event: eventType, data: data})
-	// The push channel's canvas topic (card t_7624bab1): a panel delta is
-	// a global fact, not a session's - session stays empty. This is the
-	// frame that retires the SPA's 15s canvas snapshot poll: a toast or a
-	// board change emitted between runs reaches the page now, and it also
-	// reaches a page with no live run (broadcastAll's blind spot).
+	// The push channel's canvas topic.
 	s.sockets.PublishEvent(TopicCanvas, "", eventType, data)
 }
 
-// handleCanvas serves GET /ui/canvas: the current panel snapshot of
-// every mounted module - the webui's load-time catch-up (settled
-// Q3b). The body is the JSON array of panel descriptors verbatim
-// (Canvas.Snapshot: mount order, panel ids sorted within a module).
-// An empty canvas is a 200 with [] - no panels mounted is a state,
-// not an error.
+// handleCanvas serves GET /ui/canvas. The body is the JSON array of panel descriptors
+// verbatim (Canvas.Snapshot: mount order, panel ids sorted within a module).
 func (s *Server) handleCanvas(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -81,14 +55,8 @@ type uiActionResponse struct {
 	Result any `json:"result"`
 }
 
-// handleUIActions serves POST /ui/actions: the web half of the one
-// action pipe (settled Q4b). The body is a module-qualified
-// core.ActionCall verbatim; the canvas runtime routes it. Route
-// failures translate to 404 (unknown module or action - the sentinels
-// decide, errors.Is); the handler's own error is a 500; success
-// returns the handler's result under {"result": ...}.
-// Nil canvas means nothing mounted: no panels to list and no capsule
-// to route to - the sentinels' answer is the 404.
+// handleUIActions serves POST /ui/actions. Nil canvas means nothing mounted: no panels
+// to list and no capsule to route to - the sentinels' answer is the 404.
 func (s *Server) handleUIActions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

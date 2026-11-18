@@ -1,10 +1,10 @@
-// omega webui: the palette's dispatch contract (card t_d1fe01da).
+// omega webui: the palette's dispatch contract.
 // Two laws, both behavioural - the host is the real chat host with the
 // wire stubbed:
-//   - the invoking tab's session rides the dispatch body, so a
+// the invoking tab's session rides the dispatch body, so a
 //     session-scoped command (/export, /label, /branch) acts on the tab
 //     the operator typed in;
-//   - what the status line shows is the SERVER's answer - a refusal
+// what the status line shows is the SERVER's answer - a refusal
 //     arrives in its own words, and a table answer that opens with a
 //     blank line still shows its header line instead of nothing.
 import { describe, it } from "node:test";

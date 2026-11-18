@@ -1,11 +1,6 @@
 package main
 
-// agents_test.go: the agent layering + CLI (card t_72ecca67, settled
-// continuous-agent design; the layering laws: the agent's provider/
-// model/system_prompt win, shared infrastructure does not move, and
-// every agent-writable personal path re-points into the agent's own
-// home unless the layer set it explicitly. Session/notify/boards data
-// isolation resolves through the agent's data/ dir, not this layer.)
+// agents_test.go: the agent layering + CLI
 
 import (
 	"os"
@@ -23,22 +18,19 @@ func agentLayerBase() Config {
 	return cfg
 }
 
-// primaryOf is the primary provider row (card t_bf21ee07): the instance
-// named "default", the one the agent serves.
+// primaryOf is the primary provider row.
 func primaryOf(cfg Config) ProviderInstance {
 	inst, _ := cfg.defaultInstance()
 	return inst
 }
 
-// TestAgentLayerStorePinSurvives pins the delegate child's store pin
-// (card t_93b4e521). The agent layer's data isolation re-points a store
-// that still reads as the home default at <home>/agents/<name>/data/
-// omega.db - correct for an agent's own sessions, fatal for a delegated
-// child whose caller pre-created its session in the CALLER's store:
-// `run --session <id>` answered "session not found" and every prod
-// delegate child died at startup. An env-set OMEGA_DB_PATH is caller
-// intent and survives the layer; with no pin, the agent's own store
-// stands.
+// TestAgentLayerStorePinSurvives pins the delegate child's store pin. The agent layer's
+// data isolation re-points a store that still reads as the home default at
+// <home>/agents/<name>/data/ omega.db - correct for an agent's own sessions, fatal for
+// a delegated child whose caller pre-created its session in the CALLER's store: `run
+// --session <id>` answered "session not found" and every prod delegate child died at
+// startup. An env-set OMEGA_DB_PATH is caller intent and survives the layer; with no
+// pin, the agent's own store stands.
 func TestAgentLayerStorePinSurvives(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -63,7 +55,6 @@ func TestAgentLayerStorePinSurvives(t *testing.T) {
 		t.Fatalf("store pin after the agent layer = %q, want the caller's %q", cfg.Store.DBPath, want)
 	}
 
-	// No pin in the env: the agent's own data dir stands (isolation).
 	t.Setenv("OMEGA_DB_PATH", "")
 	unpinned := agentLayerBase()
 	if err := resolveHomePaths(&unpinned); err != nil {
@@ -106,11 +97,10 @@ func TestApplyAgentLayerOverridesModel(t *testing.T) {
 	}
 }
 
-// TestApplyModelEnvOverrideBeatsLayer pins the wake contract's model
-// specificity: an explicit OMEGA_MODEL (a delegate fire's or cron
-// fire's per-run model riding the env) wins over a persona layer's
-// provider.model, which otherwise applies AFTER applyEnv and would
-// silently clobber it. Empty env = inherit - the layer's model stands.
+// TestApplyModelEnvOverrideBeatsLayer pins the wake contract's model specificity: an
+// explicit OMEGA_MODEL (a delegate fire's or cron fire's per-run model riding the env)
+// wins over a persona layer's provider.model, which otherwise applies AFTER applyEnv
+// and would silently clobber it.
 func TestApplyModelEnvOverrideBeatsLayer(t *testing.T) {
 	t.Setenv("OMEGA_MODEL", " glm-5.2 ")
 	cfg := agentLayerBase()
@@ -136,7 +126,6 @@ func TestApplyAgentLayerScopesWritablePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := agentLayerBase()
-	// the boundary's resolved main dsn (canon spelling, card t_630e595d)
 	cfg.Store.DBPath = filepath.ToSlash(filepath.Join(home, "data", "omega.db"))
 	cfg.Memory.File = filepath.ToSlash(filepath.Join(home, "memory.md"))
 	cfg.Memory.UserProfileFile = filepath.ToSlash(filepath.Join(home, "user.md"))
@@ -146,9 +135,7 @@ func TestApplyAgentLayerScopesWritablePaths(t *testing.T) {
 		t.Fatalf("apply layer: %v", err)
 	}
 	dir := filepath.ToSlash(agent.AgentDir(home, "scout"))
-	// Data isolation (ruling 4): the store dsn re-points under the
-	// agent's own data dir; memory/user/skills/log move into the home.
-	// All wants on canon spelling (the boundary's policy).
+	// Data isolation: the store dsn re-points under the agent's own data dir.
 	if cfg.Store.DBPath != filepath.ToSlash(filepath.Join(dir, "data", "omega.db")) {
 		t.Errorf("store db = %q, want the agent's own data dir", cfg.Store.DBPath)
 	}
@@ -207,13 +194,10 @@ func TestCmdAgentsCreateAndList(t *testing.T) {
 	if _, err := os.Stat(agent.AgentConfigPath(home, "scout")); err != nil {
 		t.Errorf("scaffold missing after create: %v", err)
 	}
-	// listing includes it (capture via os.Stdout swap is overkill for
-	// the gate - the scaffold check plus LoadProfiles covers the data;
-	// assert printAgents does not error).
+	// listing includes it (capture via os.Stdout swap is overkill for the gate.
 	if err := printAgents(home); err != nil {
 		t.Errorf("printAgents: %v", err)
 	}
-	// unknown subcommand errors.
 	if err := cmdAgents([]string{"frobnicate"}); err == nil {
 		t.Errorf("frobnicate accepted")
 	}
@@ -241,8 +225,6 @@ func TestResolveAgentName(t *testing.T) {
 func TestResolveHomePathsMainPersonaAtRoot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
-	// the settled default: main's persona files live at the home root
-	// (ruling 3) - the home config's relative defaults resolve there.
 	cfg := DefaultConfig()
 	if cfg.Memory.File != "memory.md" || cfg.Memory.UserProfileFile != "user.md" {
 		t.Fatalf("precondition: defaults, got %q / %q", cfg.Memory.File, cfg.Memory.UserProfileFile)
@@ -250,8 +232,6 @@ func TestResolveHomePathsMainPersonaAtRoot(t *testing.T) {
 	if err := resolveHomePaths(&cfg); err != nil {
 		t.Fatal(err)
 	}
-	// want: canon spelling (the resolveHomePaths boundary normalizes
-	// the separators it constructs - card t_630e595d, ruling 3).
 	wantMem := filepath.ToSlash(filepath.Join(home, "memory.md"))
 	if cfg.Memory.File != wantMem {
 		t.Errorf("memory.file = %q, want the home root (ruling 3)", cfg.Memory.File)
@@ -281,22 +261,14 @@ func TestHelpMentionsAgents(t *testing.T) {
 	}
 }
 
-// testStrPtr is the one-line *string helper for the write-lane calls
-// below (cmd/omega's tests have no shared pointer helper).
+// testStrPtr is the one-line *string helper for the write-lane calls below.
 func testStrPtr(s string) *string { return &s }
 
-// TestAgentConfigLayerTier3bRoundTrip is the write lane's end-to-end
-// witness (settings tier 3b prerequisite, card t_53523d5b): the two
-// additive PUT fields are exercised through the real write lane and read
-// back by BOTH consumers - the wake's layer overlay (ApplyAgentLayer) and
-// the settings scope payload (settingsScopes) - because a write nobody
-// reads is not a write lane.
-//
-// The reset half is the reason the lane grew a delete verb at all: the
-// scope payload's overridden flag is STRUCTURAL (the file names the
-// key), so "reset to main" must REMOVE the key, never write main's value
-// down (which would leave a permanent phantom override, and for
-// provider.api_key would persist the read mask as the agent's secret).
+// TestAgentConfigLayerTier3bRoundTrip is the write lane's end-to-end witness. The reset
+// half is the reason the lane grew a delete verb at all: the scope payload's overridden
+// flag is STRUCTURAL (the file names the key), so "reset to main" must REMOVE the key,
+// never write main's value down (which would leave a permanent phantom override, and
+// for provider.api_key would persist the read mask as the agent's secret).
 func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 	// The agent package cannot import this package's mask constant
 	// (layer law), so its mirror must be pinned equal here or the
@@ -309,7 +281,6 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 	home := scopeHome(t, scopeMainConfig, map[string]string{"alpha": scopeAlphaConfig})
 	mainConfigPath := filepath.Join(home, "config", "config.yaml")
 
-	// --- max_turns: write -> layer overlay --------------------------
 	turns := 42
 	if err := agent.UpdateAgentConfigLayer(home, "alpha", agent.AgentConfigUpdates{MaxTurns: &turns}); err != nil {
 		t.Fatalf("write max_turns: %v", err)
@@ -322,8 +293,7 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 		t.Fatalf("layer max_turns = %v, want 42", lay.MaxTurns)
 	}
 
-	// The wake's own overlay: the layer's int lands on cfg, and the
-	// provider.instance reference resolves against the host settings.
+	// The wake's own overlay: the layer's int lands on cfg, and the provider.instance.
 	cfg, err := LoadConfig(mainConfigPath)
 	if err != nil {
 		t.Fatalf("load host config: %v", err)
@@ -336,7 +306,6 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 		t.Fatalf("cfg.MaxTurns after the layer = %d, want 42 (the layer's int)", cfg.MaxTurns)
 	}
 
-	// --- the settings scope payload: 42 is the agent's own -----------
 	schema, err := settingsSchema(mainConfigPath)
 	if err != nil {
 		t.Fatalf("settingsSchema: %v", err)
@@ -346,7 +315,6 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 		t.Fatalf("alpha max_turns = %+v, want the written 42, overridden", k)
 	}
 
-	// --- reset: the key goes, main's value comes back ---------------
 	if err := agent.UpdateAgentConfigLayer(home, "alpha", agent.AgentConfigUpdates{
 		Unset: []string{"system_prompt", "max_turns"},
 	}); err != nil {
@@ -360,7 +328,6 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 		t.Fatalf("after the reset the layer still overrides: %+v", lay)
 	}
 
-	// The wake inherits main again.
 	cfg, err = LoadConfig(mainConfigPath)
 	if err != nil {
 		t.Fatalf("load host config: %v", err)
@@ -377,9 +344,8 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 		t.Errorf("cfg.SystemPrompt after the reset = %q, want main's", cfg.SystemPrompt)
 	}
 
-	// The scope payload says "inherited", not "overridden with main's
-	// value" - asserted against the payload's OWN main knob, so the two
-	// surfaces cannot drift.
+	// The scope payload says "inherited", not "overridden with main's value" - asserted
+	// against the payload's OWN main knob, so the two surfaces cannot drift.
 	schema, err = settingsSchema(mainConfigPath)
 	if err != nil {
 		t.Fatalf("settingsSchema after unset: %v", err)
@@ -391,12 +357,11 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 	if k := scopeKnob(t, alpha, "system_prompt"); k.Overridden || k.Value != mainKnob(t, schema, "system_prompt").Value {
 		t.Errorf("alpha system_prompt = %+v, want inherited main value + overridden=false", k)
 	}
-	// The knobs the reset did not name keep their overrides.
 	if k := scopeKnob(t, alpha, "provider.instance"); !k.Overridden || k.Value != "work" {
 		t.Errorf("provider.instance = %+v, want the untouched work override", k)
 	}
 
-	// --- a provider sub-key reset falls back for THAT knob only -----
+	// -- a provider sub-key reset falls back for THAT knob only ----
 	if err := agent.UpdateAgentConfigLayer(home, "alpha", agent.AgentConfigUpdates{
 		ModelName: testStrPtr("scout-model"),
 	}); err != nil {
@@ -433,7 +398,6 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 		t.Errorf("provider.instance = %+v, want the untouched work override", k)
 	}
 
-	// --- no path ever persists the read mask as the secret ----------
 	if err := agent.UpdateAgentConfigLayer(home, "alpha", agent.AgentConfigUpdates{
 		APIKey: testStrPtr(maskedSecret),
 	}); err == nil {
@@ -448,11 +412,8 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 	}
 }
 
-// TestApplyAgentLayerDefinitionLaws pins the definition layer's runtime
-// half at the one place a wake reads it: the provider reference
-// resolves out of settings, the enabled capsule set rides cfg for the
-// mount, the skills allowlist becomes the disable list, and a legacy
-// secret in the file stops the wake loudly.
+// TestApplyAgentLayerDefinitionLaws pins the definition layer's runtime half at the one
+// place a wake reads it.
 func TestApplyAgentLayerDefinitionLaws(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -460,7 +421,6 @@ func TestApplyAgentLayerDefinitionLaws(t *testing.T) {
 	if err := agent.ScaffoldAgent(home, "scout", "probe duty"); err != nil {
 		t.Fatal(err)
 	}
-	// two visible skills, one allowlisted
 	for _, skill := range []string{"alpha", "beta"} {
 		dir := filepath.Join(agent.AgentDir(home, "scout"), "skills", skill)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -481,20 +441,17 @@ func TestApplyAgentLayerDefinitionLaws(t *testing.T) {
 	if err := ApplyAgentLayer(&cfg, home, "scout"); err != nil {
 		t.Fatalf("apply layer: %v", err)
 	}
-	// The instance resolves type/host/key out of settings - the agent
-	// file held none of them.
+	// The instance resolves type/host/key out of settings.
 	if primary := primaryOf(cfg); primary.Type != "openai" || primary.Host != "http://work-host:9000" || primary.APIKey != "work-secret" {
 		t.Errorf("provider = %+v, want the resolved work instance", primary)
 	}
 	if cfg.Provider.ModelName != "scout-model" {
 		t.Errorf("model = %q, want the layer's scout-model", cfg.Provider.ModelName)
 	}
-	// The always-off set rides cfg for the mount to intersect.
 	if cfg.agentName != "scout" || strings.Join(cfg.agentToggles, ",") != "kanban" {
 		t.Errorf("agent scope = %q toggles %v, want scout/[kanban]", cfg.agentName, cfg.agentToggles)
 	}
-	// The allowlist is the only skill the agent may load - and an empty
-	// allowlist is SET, so it means none rather than "every skill".
+	// The allowlist is the only skill the agent may load.
 	if strings.Join(cfg.agentSkillsAllow, ",") != "alpha" || !cfg.agentSkillsAllowSet {
 		t.Errorf("skills allowlist = %v (set %v), want [alpha]", cfg.agentSkillsAllow, cfg.agentSkillsAllowSet)
 	}
@@ -517,7 +474,6 @@ func TestApplyAgentLayerDefinitionLaws(t *testing.T) {
 		t.Errorf("agent toggles = %v, want none (always off)", cfg.agentToggles)
 	}
 
-	// A legacy secret in the file is a law violation, not a fallback.
 	legacy := "provider:\n  type: openai\n  host: http://x\n  api_key: sk-old\n"
 	if err := os.WriteFile(agent.AgentConfigPath(home, "scout"), []byte(legacy), 0o644); err != nil {
 		t.Fatal(err)

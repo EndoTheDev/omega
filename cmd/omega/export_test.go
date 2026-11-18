@@ -147,9 +147,7 @@ func TestMessageRole(t *testing.T) {
 	}
 }
 
-// setupExportEnv prepares an OMEGA_HOME temp dir with a config.yaml and a
-// store containing a session with two messages. Returns the home dir,
-// session ID, and a cleanup function.
+// setupExportEnv prepares an OMEGA_HOME temp dir with a config.yaml and a store.
 func setupExportEnv(t *testing.T) (home, sessionID string) {
 	t.Helper()
 	home = t.TempDir()

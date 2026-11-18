@@ -1,16 +1,7 @@
-// The capsule identity law (card t_9ae9a25a): the webui's composition
-// manifests derive every dockable id from the capsule's ui/ dir
-// (`harness/<name>/ui` -> `{ module: "<name>" }`), and the dock's
-// runtime module gate joins those ids against the module list GET
-// /modules serves out of the mount registry. So the plugin Name(), the
-// package dir, the ui dir and the manifest id are ONE identity.
-//
-// The capsule once answered "shell" while its dir and dockable id said
-// "terminal": the gate's `off` set held "shell" and its `owned` set held
-// "terminal", the two halves never met, and the Terminal chip survived a
-// module toggle-off (the defect class t_103e30a6 killed everywhere
-// else). A hardcoded alias table in the webui was rejected - the names
-// agree by construction instead, and this test is the tripwire.
+// The capsule identity law. The capsule once answered "shell" while its dir and
+// dockable id said "terminal": the gate's `off` set held "shell" and its `owned` set
+// held "terminal", the two halves never met, and the Terminal chip survived a module
+// toggle-off.
 package terminal
 
 import (
@@ -33,15 +24,13 @@ func TestCapsuleIdentityAgreesWithDir(t *testing.T) {
 		t.Fatalf("plugin Name() = %q, capsule dir = %q: the dock's module gate joins the registry row against the manifest id generated from this dir, so they must agree", got, name)
 	}
 
-	// the ui/ dir is what the build's scan turns into the dockable
-	// manifest entry; a capsule without one has no dockable to gate.
+	// the ui/ dir is what the build's scan turns into the dockable manifest entry.
 	if _, err := os.Stat(filepath.Join(capsuleDir, "ui")); err != nil {
 		t.Fatalf("capsule %q has no ui/ dir (the dockable manifest source): %v", name, err)
 	}
 
-	// the generated manifest (tracked, nuxt generate rewrites it) must
-	// carry this capsule under the same id - the join the runtime gate
-	// performs, read off the artifact itself.
+	// the generated manifest (tracked, nuxt generate rewrites it) must carry this capsule
+	// under the same id.
 	manifest := filepath.Join(capsuleDir, "..", "..", "webui", "app", "composables", "module-tabs.generated.ts")
 	body, err := os.ReadFile(manifest)
 	if err != nil {

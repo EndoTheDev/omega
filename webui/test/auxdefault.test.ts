@@ -1,9 +1,7 @@
-// omega webui: unit tests for the auxiliary "default" entry of the model
-// pickers (card t_df46c8cf). The word is the WIRE CONTRACT: the settings
-// schema advertises default_option on the aux knobs, the picker renders
-// the entry, and the value persists as the literal "default" (the server
-// resolves it per call to the model the chat runs).
-// Run: node --test webui/test/ (node >= 23 runs TS natively)
+// omega webui: unit tests for the auxiliary "default" entry of the model pickers. The
+// word is the WIRE CONTRACT: the settings schema advertises default_option on the aux
+// knobs, the picker renders the entry, and the value persists as the literal "default"
+// (the server resolves it per call to the model the chat runs).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -40,9 +38,8 @@ test("withAuxDefault leaves non-aux knobs untouched", () => {
 });
 
 test("the default entry survives an empty catalog - the one live choice", () => {
-  // a vision-filtered list that matched nothing (or a listing that never
-  // landed) still offers "default": following the chat's model needs no
-  // provider catalog at all
+  // a vision-filtered list that matched nothing (or a listing that never landed) still
+  // offers "default".
   const empty = filterModelEntries([], "vision");
   const options = withAuxDefault(
     empty.map((e) => ({ value: e.name, label: e.name })),
@@ -75,20 +72,15 @@ test("an aux knob still degrades to free text when no NAMED model matched", () =
 });
 
 test("pickerNeedsFreeText: the listbox renders only with named models (or mid-flight)", () => {
-  // landed, named models present -> the listbox
   assert.equal(pickerNeedsFreeText(2, false, null), false);
-  // landed, nothing matched -> free text (with or without a sentinel)
   assert.equal(pickerNeedsFreeText(0, false, null), true);
-  // a failed fetch -> free text, named entries or not
   assert.equal(pickerNeedsFreeText(3, false, "boom"), true);
-  // in flight -> the listbox shows the loading hint rather than flashing
-  // the fallback input
+  // in flight -> the listbox shows the loading hint rather than flashing the fallback.
   assert.equal(pickerNeedsFreeText(0, true, null), false);
 });
 
 test("a persisted 'default' value renders as the chip text", () => {
-  // BandSelect falls back to the raw value when no option matches; the
-  // prepended entry is what turns the stored word into the label
+  // BandSelect falls back to the raw value when no option matches.
   const options = withAuxDefault(
     [{ value: "gemma4:31b", label: "gemma4:31b" }],
     true,
@@ -132,7 +124,6 @@ test("normalizeSettingsPayload carries default_option through", () => {
   });
   const knobs = out.groups[0].knobs;
   assert.equal(knobs[0].defaultOption, true);
-  // absent stays absent (the picker adds no entry to a plain model knob)
   assert.equal(knobs[1].defaultOption, undefined);
   // a non-boolean never turns the entry on
   assert.equal(knobs[2].defaultOption, undefined);

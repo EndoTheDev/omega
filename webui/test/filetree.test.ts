@@ -1,15 +1,15 @@
-// omega webui: the file tree store (card t_ccd4a000) - expansion,
+// omega webui: the file tree store - expansion,
 // failures, per-folder error keying, refresh/clear, persistence and the
 // fixed-phrase failure hint, driven WITHOUT a DOM through the
 // composable extracted from FileTree.vue.
 //
 // The mandated scenarios:
-//   - a failed children request paints NO child row (store level: the
+// a failed children request paints NO child row (store level: the
 //     branch collapses and only the store's internal mark exists) +
 //     structural pins in filestoolbar.test.ts
-//   - the error keys by the folder path that ISSUED the request
-//   - a later successful children response clears the mark
-//   - two folders expand in one restore, one fails, one succeeds ->
+// the error keys by the folder path that ISSUED the request
+// a later successful children response clears the mark
+// two folders expand in one restore, one fails, one succeeds ->
 //     only the failed one is marked
 //
 // Run: node --test test/filetree.test.ts
@@ -58,7 +58,6 @@ const errors: string[] = [];
 
 afterEach(() => {
   errors.length = 0;
-  // reset the shared bus counters this file pokes
   fileTreeBus.refresh++;
 });
 
@@ -89,8 +88,7 @@ describe("filetree store - failure keying (t_ccd4a000)", () => {
   });
 
   it("the mark keys by the folder that ISSUED the request, never a sibling", async () => {
-    // two folders fail with DIFFERENT server messages: each key holds
-    // its own message and nothing else is marked after restore
+    // two folders fail with DIFFERENT server messages.
     const { browse } = fakeBrowse((p) => {
       if (p === ".git") return "resolve path: boom";
       if (p === ".worktrees") return "read directory: boom";
@@ -108,7 +106,6 @@ describe("filetree store - failure keying (t_ccd4a000)", () => {
     assert.ok(store.isFailed(".git"));
     assert.ok(store.isFailed(".worktrees"));
     assert.ok(!store.isFailed("docs"));
-    // and each callback fired once, for its own path
     assert.deepEqual(Object.keys(seen).sort(), [".git", ".worktrees"]);
     assert.match(seen[".git"], /resolve path/);
     assert.match(seen[".worktrees"], /read directory/);
@@ -125,8 +122,7 @@ describe("filetree store - failure keying (t_ccd4a000)", () => {
     assert.ok(store.isFailed(".git"));
     assert.ok(!store.isOpen(".git"));
 
-    // the user retries by clicking the folder row: the failed cache was
-    // dropped, so a real refetch fires; this time it succeeds
+    // the user retries by clicking the folder row.
     refuse = false;
     const callsBefore = calls.length;
     store.toggle(".git");
@@ -146,14 +142,13 @@ describe("filetree store - failure keying (t_ccd4a000)", () => {
     const store = createFileTreeStore({ browse, seed: [".git", "agents"] });
     await tick();
     assert.ok(store.isFailed(".git"));
-    // the failure collapsed the branch, so the refresh's reload covers
-    // the OPEN set only - the mark clears either way
+    // the failure collapsed the branch, so the refresh's reload covers the OPEN set
+    // only.
     failGit = false;
     fileTreeBus.refresh++;
     await tick();
     assert.ok(!store.isFailed(".git"), "the refresh gives failures a fresh chance");
     assert.ok(store.isOpen(".git") === false, "the collapsed branch stays closed");
-    // the user's retry (folder-row click) refetches fresh and opens
     const before = calls.length;
     store.toggle(".git");
     await tick();
@@ -162,8 +157,7 @@ describe("filetree store - failure keying (t_ccd4a000)", () => {
   });
 
   it("the default failure hint is ONE fixed-phrase toast - no backend vocabulary", async () => {
-    // shift the funnel's module-level dedupe fingerprint first - the
-    // other stores in this file already emitted the identical payload
+    // shift the funnel's module-level dedupe fingerprint first.
     emitLocalToast({ sentinel: `filetree-test-${Date.now()}` });
     const panels: unknown[] = [];
     const release = onToastPanel((p) => panels.push(p));
@@ -183,7 +177,6 @@ describe("filetree store - failure keying (t_ccd4a000)", () => {
         !JSON.stringify(payload).includes("dot-prefixed"),
         "the backend error string never rides the hint",
       );
-      // and the tree keeps none of it: the store's mark is internal
       assert.ok(store.isFailed(".github"));
     } finally {
       release();

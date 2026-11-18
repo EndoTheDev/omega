@@ -1,24 +1,6 @@
 package api
 
-// The shell-ring census (shrink wave 3, card t_b75df168; ADR
-// Workshop/omega-shell-ring-shrink.md). agent/api is the serving
-// shell's BASE set: chat + canvas + settings, and the chat floor a
-// bare agent needs (sessions, the live-run stream, the tools the loop
-// executes, the command palette the composer drives). Every production
-// file here carries a census verdict - the table below IS the verdict
-// table, mirrored in docs/architecture.md's "The shell-ring census"
-// section. A NEW production file here is a new opinion in the base
-// set: either it serves chat + canvas + settings directly (add it to
-// this pin with its verdict) or it moves to its feature's capsule
-// (harness/<name>/routes.go through api.RegisterRoute). The wave-1/2/3
-// movers are gone from the tree already; this test is the law that
-// keeps them gone.
-//
-// Wired into the same gate as the webui noun check
-// (webui/test/capsule-noun.test.ts): the node gate walks agent/api too
-// and forbids capsule-nouned production filenames there; this pin is
-// the Go half (it knows the full census, the noun scan is the cheap
-// tell).
+// The shell-ring census.
 
 import (
 	"os"
@@ -26,8 +8,7 @@ import (
 	"testing"
 )
 
-// the census pin: production file -> its verdict (the chat/canvas/
-// settings face it serves). Mirrored in docs/architecture.md.
+// the census pin: production file -> its verdict (the chat/canvas/ settings face it.
 var censusPin = map[string]string{
 	"chat_panel.go":         "chat - the composer panel + the /chat turn handling",
 	"runs.go":               "chat - the live run: the RunHub, detached runs, the SSE run frames + the store floor guards",
@@ -47,9 +28,8 @@ var censusPin = map[string]string{
 	"web_tools.go":          "chat - the web.search/web.fetch tool pair: built-in shell vocabulary since v0.13 (shell law 1), always mounted",
 }
 
-// the cross-cutting test files: they guard the ring or package-wide
-// machinery, not one production subject. Anything else must ride a
-// pinned production file's name (subject_test.go).
+// the cross-cutting test files. Anything else must ride a pinned production file's name
+// (subject_test.go).
 var censusCrossTests = map[string]string{
 	"api_census_test.go":    "this census pin",
 	"dep_law_test.go":       "the importability law (t_905fa502)",
@@ -61,23 +41,13 @@ var censusCrossTests = map[string]string{
 	"test_helpers_test.go":  "shared test fixtures",
 }
 
-// the capsule nouns (the webui noun check's list, verdict-era): a
-// production filename carrying one is an opinion file squatting in
-// the base set. Test files ride their subjects and are pinned above,
-// so the noun scan runs on production files only.
+// the capsule nouns (the webui noun check's list, verdict-era).
 var censusNouns = []string{
 	"browser", "terminal", "notifications", "continuous", "kanban",
 	"cron", "skills", "mcp", "files", "memory", "trust", "verdicts",
 	"store", "sessions", "agents", "insights", "provider", "compactor",
 	"prompt", "delegate", "process", "datadir",
-	// the 0.17.3 module fold (card t_ee3a968b) renamed the folded
-	// logging+observability capsule; its new name joins the noun set so
-	// a future opinion file squatting in the base set is caught by the
-	// fold's name, not only by the pre-fold one. The other folded
-	// capsule (shell+terminal) renamed its module to `terminal` (card
-	// t_9ae9a25a) - that noun is already listed above, and `shell` left
-	// the set with it: "shell" is the serving RING's vocabulary
-	// (api/, agent/api/), no longer a capsule identity.
+	// the 0.17.3 module fold renamed the folded logging+observability capsule.
 	"observability",
 }
 
@@ -102,7 +72,6 @@ func TestAPICensus(t *testing.T) {
 		t.Fatal("agent/api walked empty - the census walk is broken")
 	}
 
-	// every production file is pinned, every pin exists
 	for p := range prod {
 		_, ok := censusPin[p]
 		if !ok {
@@ -115,7 +84,6 @@ func TestAPICensus(t *testing.T) {
 		}
 	}
 
-	// every test file rides a pinned production subject
 	for tp := range tests {
 		if _, ok := censusCrossTests[tp]; ok {
 			continue
@@ -139,7 +107,6 @@ func TestAPICensus(t *testing.T) {
 		}
 	}
 
-	// no capsule noun in a production filename
 	for p := range prod {
 		lower := strings.ToLower(p)
 		for _, n := range censusNouns {
@@ -150,13 +117,8 @@ func TestAPICensus(t *testing.T) {
 	}
 }
 
-// The removal proof at unit level (card t_b75df168): the census pin
-// plus the noun scan say the base carries no capsule face, and the
-// full-tree proof - build with every harness capsule dir deleted, the
-// binary boots and serves chat + canvas + settings and nothing else -
-// is scripts/removal-proof.sh (the lane gate re-runs it on the merged
-// tip). This test checks the pin's own hygiene: no pin entry names a
-// capsule noun (a moved file's verdict must leave with the file).
+// The removal proof at unit level. This test checks the pin's own hygiene: no pin entry
+// names a capsule noun (a moved file's verdict must leave with the file).
 func TestAPICensusPinHygiene(t *testing.T) {
 	for p := range censusPin {
 		lower := strings.ToLower(p)
@@ -168,11 +130,7 @@ func TestAPICensusPinHygiene(t *testing.T) {
 	}
 }
 
-// harnessCapsuleGone names every production file the census says MUST
-// NOT exist because its surface rode a capsule out (the waves' movers,
-// kept as a tombstone list): if the noun scan or pin ever misses a
-// comeback, the tombstone still holds. The names are the moved
-// files' agent/api homes as the waves found them.
+// harnessCapsuleGone names every production file the census says MUST NOT exist.
 func TestAPICensusTombstones(t *testing.T) {
 	tombstones := map[string]string{
 		"server_files.go":       "t_48eeb015 - the file domain rides harness/files",

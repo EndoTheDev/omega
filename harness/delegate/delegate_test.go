@@ -10,19 +10,15 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestCompile verifies the package compiles and the interfaces are
-// satisfied. The Delegate is a plain tool provider - the run-affinity
-// stream died with the phase-2 migration.
+// TestCompile verifies the package compiles and the interfaces are satisfied.
 func TestCompile(t *testing.T) {
 	// ToolProvider interface.
 	var _ core.ToolProvider = (*Delegate)(nil)
-	// Plugin interface.
 	var _ agent.Plugin = (*Plugin)(nil)
 }
 
-// TestTools verifies both tools are registered with correct names, and
-// that the task tool is yield-class (async agent loop phase 2, card
-// t_0805d438): the registration attribute is the whole migration.
+// TestTools verifies both tools are registered with correct names, and that the task
+// tool is yield-class.
 func TestTools(t *testing.T) {
 	d := NewDelegate()
 	tools := d.Tools()
@@ -43,8 +39,7 @@ func TestTools(t *testing.T) {
 	}
 }
 
-// TestDelegateStatus verifies delegate.status returns correct output
-// when no tasks are running.
+// TestDelegateStatus verifies delegate.status returns correct output when no tasks.
 func TestDelegateStatus(t *testing.T) {
 	d := NewDelegate()
 	out, err := d.runDelegateStatus(context.Background(), nil)
@@ -79,10 +74,8 @@ func (stubLogger) Warnf(format string, args ...any)  {}
 func (stubLogger) Errorf(format string, args ...any) {}
 func (stubLogger) Close() error                      { return nil }
 
-// TestPluginMount verifies the api mount populates Context correctly -
-// the ExtensionAPI path is delegate's only mount since the v0.12
-// phase-C2 migration. The inject seam retired with phase 2 (card
-// t_0805d438): a mount must not resurrect it.
+// TestPluginMount verifies the api mount populates Context correctly. The inject seam
+// retired with phase 2: a mount must not resurrect it.
 func TestPluginMount(t *testing.T) {
 	p := NewPlugin()
 	if p.Name() != "delegate" {
@@ -106,16 +99,14 @@ func TestPluginMount(t *testing.T) {
 	if _, ok := tools["delegate"]; ok {
 		t.Fatal("the unprefixed consolidated delegate tool must be retired")
 	}
-	// the logger capture still happens at mount time (the logging edge)
 	if p.delegate.logger == nil {
 		t.Fatal("mount did not capture the logger")
 	}
 }
 
-// pathStore is the minimal store seam a mount test offers: it answers the
-// caller-store accessor the delegate reads through its own local
-// interface (card t_93b4e521) - no shared config type crosses the
-// capsule boundary.
+// pathStore is the minimal store seam a mount test offers: it answers the caller-store
+// accessor the delegate reads through its own local interface - no shared config type
+// crosses the capsule boundary.
 type pathStore struct {
 	agent.StoreProvider
 	path string
@@ -139,10 +130,7 @@ func (p stubStorePlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI
 	return nil
 }
 
-// TestMountCapturesCallerStorePath pins the plugin-side capture (card
-// t_93b4e521): the mounted store's own file path is what every spawned
-// child gets pinned as OMEGA_DB_PATH; a store that answers no path pins
-// nothing and keeps the pre-fix behaviour.
+// TestMountCapturesCallerStorePath pins the plugin-side capture.
 func TestMountCapturesCallerStorePath(t *testing.T) {
 	callerDB := filepath.Join("tmp", "caller", "omega.db")
 	p := NewPlugin()
@@ -164,8 +152,7 @@ func TestMountCapturesCallerStorePath(t *testing.T) {
 	}
 }
 
-// stubNotifier is the minimal core.NotificationsProvider for the
-// emitter-delivery pin.
+// stubNotifier is the minimal core.NotificationsProvider for the emitter-delivery pin.
 type stubNotifier struct{}
 
 func (stubNotifier) Emit(core.Notice) (core.Notice, error) {
@@ -181,9 +168,7 @@ func (stubNotifier) Subscribe() (<-chan core.Notice, func()) {
 	return ch, func() {}
 }
 
-// TestEmitterDeliversSeamAtMountEnd: with the notifications module
-// mounted, the registered emitter hands the seam to the delegate after
-// the mount completes (the capture is gone; the hook delivered).
+// TestEmitterDeliversSeamAtMountEnd: with the notifications module mounted, the.
 func TestEmitterDeliversSeamAtMountEnd(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}
@@ -196,8 +181,7 @@ func TestEmitterDeliversSeamAtMountEnd(t *testing.T) {
 	}
 }
 
-// stubNotificationsPlugin provides the notifications seam via a stub
-// store so the emitter delivery has something to hand over.
+// stubNotificationsPlugin provides the notifications seam via a stub store so the.
 type stubNotificationsPlugin struct{}
 
 func (stubNotificationsPlugin) Name() string       { return "notifications" }

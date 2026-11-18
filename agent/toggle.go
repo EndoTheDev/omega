@@ -1,12 +1,6 @@
-// The registry introspection and the live toggle (v0.12 phase E2).
-// The webui settings panel renders this data; core provides the
-// vocabulary (the settings-toggle small law), the registry provides
-// the values. Toggle goes through the one mount machinery boot uses
-// (Q7): Dismount replays the journal backward, Mount replays it
-// forward through the scoped proxy; a panicking remount rolls back
-// and rejects (Q11); rejections land in the refusal ledger (Q12).
-// Every toggle is census-checked: a dismount may only remove surface,
-// never grow it; an enable may only add it, never shrink it.
+// The registry introspection and the live toggle (v0.12 phase E2). Every toggle is
+// census-checked: a dismount may only remove surface, never grow it; an enable may only
+// add it, never shrink it.
 package agent
 
 import (
@@ -18,17 +12,15 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// isToggleable reads the tier law off a plugin: a module is
-// toggleable only when it opts in (the Default is NOT - machine-
-// critical and shell modules never toggle).
+// isToggleable reads the tier law off a plugin: a module is toggleable only when it
+// opts in (the Default is NOT - machine- critical and shell modules never toggle).
 func isToggleable(p Plugin) bool {
 	t, ok := p.(Toggleable)
 	return ok && t.Toggleable()
 }
 
-// catalogProvides maps every seam to its providers across the whole
-// catalog - mounted or not. A seam with more than one provider never
-// strands dependents when one provider goes down.
+// catalogProvides maps every seam to its providers across the whole catalog. A seam
+// with more than one provider never strands dependents when one provider goes down.
 func catalogProvides(catalog []Plugin) map[string][]string {
 	provides := map[string][]string{}
 	for _, p := range catalog {
@@ -39,9 +31,8 @@ func catalogProvides(catalog []Plugin) map[string][]string {
 	return provides
 }
 
-// loneProviders returns the seams one module is the ONLY provider of
-// across the whole catalog (nil-safe: a disabled module keeps its
-// catalog entry, so its dependents stay computable while it is off).
+// loneProviders returns the seams one module is the ONLY provider of across the whole
+// catalog (nil-safe.
 func loneProviders(catalog []Plugin, name string) map[string]bool {
 	lone := map[string]bool{}
 	for seam, providers := range catalogProvides(catalog) {
@@ -52,10 +43,9 @@ func loneProviders(catalog []Plugin, name string) map[string]bool {
 	return lone
 }
 
-// DependentModules returns the ACTIVE modules that require a seam only
-// name provides - the Q3 dependents the UI confirms with. Disabled
-// modules are never dependents: Q3 stops them at boot, they are not
-// live to strand.
+// DependentModules returns the ACTIVE modules that require a seam only name provides.
+// Disabled modules are never dependents: Q3 stops them at boot, they are not live to
+// strand.
 func (r *Registry) DependentModules(name string) []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -80,9 +70,7 @@ func (r *Registry) dependentModules(name string) []string {
 	return out
 }
 
-// disableCascade returns name plus its transitive dependents, in
-// REVERSE mount order: the set one disable takes down, dismount-order
-// ready (a dependent tears down before the seam it consumes).
+// disableCascade returns name plus its transitive dependents, in REVERSE mount order.
 func (r *Registry) disableCascade(name string) []string {
 	r.mu.Lock()
 	seen := map[string]bool{name: true}
@@ -99,9 +87,7 @@ func (r *Registry) disableCascade(name string) []string {
 	collected := map[string]bool{}
 	for i := len(r.mountOrder) - 1; i >= 0; i-- {
 		n := r.mountOrder[i].Name()
-		// mountOrder holds one entry per mount lifetime (a re-enabled
-		// module appends again) - the cascade dismounts each module
-		// once, at its latest topo position.
+		// mountOrder holds one entry per mount lifetime (a re-enabled module appends again).
 		if seen[n] && !collected[n] {
 			collected[n] = true
 			dead = append(dead, n)
@@ -111,9 +97,7 @@ func (r *Registry) disableCascade(name string) []string {
 	return dead
 }
 
-// Modules returns the catalog introspection: every module in the
-// build, its live state and its dependents. Order follows the build's
-// plugin list - stable for the UI.
+// Modules returns the catalog introspection.
 func (r *Registry) Modules() []core.ModuleStatus {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -139,25 +123,17 @@ func (r *Registry) Modules() []core.ModuleStatus {
 	return out
 }
 
-// logRefusal lands a toggle rejection in the ledger (Q12: refusals
-// visible as events - the serving surface reads them back).
+// logRefusal lands a toggle rejection in the ledger (Q12.
 func (r *Registry) logRefusal(name, predicate string, err error) {
 	r.refusals.Log(core.Refusal{Module: name, Seam: "toggle", Predicate: predicate, Err: err, At: time.Now()})
 }
 
-// Toggle enables or disables one module live. The disabled-list write
-// (config.yaml disabled: key) is the host's job - the registry owns only the mount
-// machinery, which is the path boot shares (Q7).
-//
-// Disable: the cascade (name + transitive dependents) dismounts in
-// reverse topo order through the journal path; the census must not
-// GROW, or the toggle is rejected and the cascade is best-effort put
-// back.
-//
-// Enable: every required seam must already be mounted (Q3 - the
-// rejection names the missing edge); the mount goes through the
-// scoped proxy, and a panic rolls back and rejects with the
-// ModulePanicError text (Q11).
+// Toggle enables or disables one module live. Disable: the cascade (name + transitive
+// dependents) dismounts in reverse topo order through the journal path; the census must
+// not GROW, or the toggle is rejected and the cascade is best-effort put back. Enable:
+// every required seam must already be mounted (Q3 - the rejection names the missing
+// edge); the mount goes through the scoped proxy, and a panic rolls back and rejects
+// with the ModulePanicError text (Q11).
 func (r *Registry) Toggle(ctx *core.Context, name string, enabled bool, deps core.StartDeps) error {
 	if enabled {
 		return r.toggleOn(ctx, name, deps)
@@ -186,8 +162,6 @@ func (r *Registry) toggleOff(ctx *core.Context, name string, deps core.StartDeps
 	before := core.Census(ctx)
 	for _, n := range cascade {
 		if err := r.Dismount(ctx, n); err != nil {
-			// A failed dismount leaves the set partly down - put
-			// back what came down and reject.
 			err := fmt.Errorf("disable %q: %w", name, err)
 			r.logRefusal(name, "toggle.disable", err)
 			r.remountForReset(ctx, cascade, deps)
@@ -216,9 +190,7 @@ func (r *Registry) toggleOn(ctx *core.Context, name string, deps core.StartDeps)
 	if r.isActive(name) {
 		return nil // already on
 	}
-	// Q3, surfaced: every required seam must be mounted now. The
-	// active-provider map is computed under the registry lock; the
-	// toggleMu serialization keeps the window stable after it.
+	// Q3, surfaced: every required seam must be mounted now.
 	r.mu.Lock()
 	activeProvides := map[string]string{}
 	for _, m := range r.catalogOrder {
@@ -274,11 +246,7 @@ func loneCatalogProvider(catalog []Plugin, seam string) (string, bool) {
 	return "", false
 }
 
-// remountForReset is the rejected-toggle bail-out: put the cascade
-// back the way it was, best effort, so a rejected disable leaves a
-// running server close to its pre-toggle shape. Order: the cascade
-// came last-mounted-first; this walks it back-to-front = original
-// mount order.
+// remountForReset is the rejected-toggle bail-out.
 func (r *Registry) remountForReset(ctx *core.Context, cascade []string, deps core.StartDeps) {
 	for i := len(cascade) - 1; i >= 0; i-- {
 		n := cascade[i]

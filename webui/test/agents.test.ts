@@ -1,10 +1,10 @@
-// omega webui: unit tests for the agents surface (cards t_7e2b7002 +
-// t_c7222095 + t_2d8deb8c). Two layers, matching the house patterns:
-// - agentsRows.ts (PURE): the display contracts - model voice, honest
+// omega webui: unit tests for the agents surface (cards +
+// + ). Two layers, matching the house patterns:
+// agentsRows.ts (PURE): the display contracts - model voice, honest
 //   memory (0 = "-", never "0b"), empty-state rules, the status
 //   vocabulary (dot + word);
-// - AgentsPanel.vue: the wire contract - the panel fetches /agents
-//   and PUT/POST /agents ({name}?), and (t_2d8deb8c) RENDERS NO
+// AgentsPanel.vue: the wire contract - the panel fetches /agents
+// and PUT/POST /agents ({name}?), and RENDERS NO
 //   SESSION SURFACE: the expansion is details + edit.
 // Run: node --test webui/test/ (node >= 23 runs TS natively)
 import { test } from "node:test";
@@ -28,7 +28,7 @@ function read(...parts: string[]): string {
   return readFileSync(join(modules, ...parts), "utf8");
 }
 
-// --- agentsRows.ts: display contracts ---
+// -- agentsRows.ts: display contracts --
 
 test("agent model voice: model_name wins, default falls back to home-config voice", () => {
   const scout: any = { name: "scout", skill_count: 0, memory_size: 0, model_name: "qwen3" };
@@ -62,14 +62,12 @@ test("agents list is never empty by construction: default exists", () => {
   assert.equal(agentsListIsEmpty([]), true);
 });
 
-// --- AgentsPanel.vue: the wire contract ---
+// -- AgentsPanel.vue: the wire contract --
 
 test("AgentsPanel fetches the real endpoints (the wiring pass folded omega.ts in)", () => {
   const vue = read("webui", "..", "harness", "continuous", "ui", "AgentsPanel.vue");
   assert.match(vue, /["'`]\/agents["'`]/, "GET inventory");
-  // card t_2d8deb8c: the edit affordance replaces the session surface -
-  // the tab's agent-scoped write is PUT /agents/{name}; the sessions
-  // route stays in the API but the TAB no longer fetches it.
+  // the edit affordance replaces the session surface.
   assert.match(vue, /\/agents\/\$\{[^}]+\}["'`]/, "the agent-scoped PUT route");
   assert.match(vue, /method: ["'`]PUT["'`]/, "the edit is a PUT");
   assert.match(vue, /method: ["'`]POST["'`]/, "scaffold POST");

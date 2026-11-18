@@ -115,7 +115,6 @@ func TestUpdateStatusStamps(t *testing.T) {
 	if done.CompletedAt == "" {
 		t.Error("done did not stamp completed_at")
 	}
-	// reopen: the completion stamp clears
 	reopen, err := s.UpdateTask(ctx, "", tk.ID, KanbanPatch{Status: StatusTodo})
 	if err != nil {
 		t.Fatal(err)
@@ -253,9 +252,7 @@ func TestSessionLinkEvent(t *testing.T) {
 	}
 }
 
-// TestListTasksArchivedDefault pins the t_02a8beea list default: an
-// empty status hides archived, an explicit "archived" status lists the
-// archive, and "all" lists everything including it.
+// TestListTasksArchivedDefault pins the list default.
 func TestListTasksArchivedDefault(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()

@@ -1,7 +1,4 @@
-// omega webui: unit tests for the docking prediction + mutation (card
-// t_0e833eae): the pointer->zone math (dockdnd.ts) and the tree mutations
-// the zones land (dock.ts dockDropToZone). Render-free; node's built-in
-// test runner.
+// omega webui: unit tests for the docking prediction + mutation.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -43,7 +40,6 @@ function panes(t: DockNode): DockPane[] {
 }
 
 describe("zone math (pointer -> region)", () => {
-  // 500x400 box at (100, 50)
   const rect = { x: 100, y: 50, w: 500, h: 400 };
 
   it("the middle band on BOTH axes reads center", () => {
@@ -61,10 +57,9 @@ describe("zone math (pointer -> region)", () => {
   });
 
   it("corners score the NEARER crossed edge", () => {
-    // top-left corner: both bands crossed, the smaller distance wins
     assert.equal(zoneForPoint(107.5, 70, rect), "left"); // rx .015 < ry .05
     assert.equal(zoneForPoint(115, 65, rect), "left"); // rx .03 < ry .0375
-    // top-right corner: ry .015 < 1-rx .03
+    // top-right corner: ry.015 < 1-rx.03
     assert.equal(zoneForPoint(585, 56, rect), "top");
     assert.equal(zoneForPoint(590, 440, rect), "right"); // 1-rx .02 beats 1-ry .025
   });
@@ -93,7 +88,6 @@ describe("zone math (pointer -> region)", () => {
 describe("zone gates", () => {
   it("canvas C2: a sidebar reads its vertical lane only - no column half can be entered", () => {
     const rect = { x: 0, y: 0, w: 240, h: 600 };
-    // main + bottom: the pointer's own x decides (the four halves)
     for (const zone of ["main", "bottom"] as const) {
       assert.equal(zoneForPointer(zone, 12, 300, rect), "left");
       assert.equal(zoneForPointer(zone, 228, 300, rect), "right");
@@ -130,7 +124,6 @@ describe("dockDropToZone (the docking mutation)", () => {
     assert.notEqual(out, root); // a real mutation
     assert.equal(paneCount(out), 2); // A closes with its last tab; B split around N
     assert.ok(!findPane(out, a.id), "the emptied source pane closed");
-    // the tree: row[N, B] - the emptied A pruned, the pair hoisted to root
     const pair = out as DockSplit;
     assert.equal(pair.direction, "row");
     assert.deepEqual(pair.sizes, [0.5, 0.5], "the half goes to the dragged pane");
@@ -143,12 +136,10 @@ describe("dockDropToZone (the docking mutation)", () => {
   it("drop right/top/bottom map the zone's direction + side", () => {
     const mk = (zone: DragZone) => {
       const { root, a, b } = row();
-      // a second tab in A: the drop moves tab 0 but A keeps hosting, so the
-      // source pane survives and the structure reads stay split-focused
+      // a second tab in A: the drop moves tab 0 but A keeps hosting, so the source.
       (root.children[0] as DockPane).tabs = [{ component: "files" }, { component: "chat" }];
       return { root, a, b, out: dockDropToZone(root, a.id, 1, b.id, zone) };
     };
-    // right: [A, row[B, N]] - the fresh pane rides right of the target
     const r = mk("right");
     const rightPair = (r.out as DockSplit).children[1] as DockSplit;
     assert.equal(rightPair.direction, "row");
@@ -175,8 +166,7 @@ describe("dockDropToZone (the docking mutation)", () => {
 
   it("drop center groups the tab into the target (no split)", () => {
     const { root, a, b } = row();
-    // A keeps a tab so the source pane survives - this test reads the plain
-    // move semantics, not the last-tab-out close (covered in its own test)
+    // A keeps a tab so the source pane survives.
     (root.children[0] as DockPane).tabs = [{ component: "files" }, { component: "chat" }];
     const out = dockDropToZone(root, a.id, 1, b.id, "center");
     assert.equal(paneCount(out), 2);
@@ -192,14 +182,9 @@ describe("dockDropToZone (the docking mutation)", () => {
   });
 
   it("edge shells GROW (v0.14.4 ruling 1): sidebar rows refuse, column grows, center groups", () => {
-    // A(files - a sidebar view visiting the main pane) | B(kanban, pinned
-    // right shell). A's row-zones refuse (a sidebar stacks rows ONLY), A's
-    // bottom zone GROWS the root (the dragged tab seats in the fresh leaf,
-    // B's content moves to the first leaf), and A's center still groups
-    // into the grown first leaf. Endo ruling 2026-10-25 keeps the
-    // last-main-pane launcher for center moves. canvas C1: the dragged view
-    // must be one the class law seats in a sidebar - a chat tab would be
-    // refused by the seat gate before the shape law spoke.
+    // A(files - a sidebar view visiting the main pane) | B(kanban, pinned right shell).
+    // canvas C1: the dragged view must be one the class law seats in a sidebar - a chat
+    // tab would be refused by the seat gate before the shape law spoke.
     const a = makePane("files");
     const b = makePane("kanban", 240, "right");
     const root = makeSplit("row", [a, b]);
@@ -219,8 +204,7 @@ describe("dockDropToZone (the docking mutation)", () => {
     assert.deepEqual(BC.tabs.map((t) => t.component), ["kanban", "files"], "center still groups");
     const AC = findPane(center, a.id);
     assert.ok(AC, "the emptied source pane survives (the last main pane never closes)");
-    // card t_9855a20e: the drained last main pane sits EMPTY - the retired
-    // placeholder is never seated in its place
+    // the drained last main pane sits EMPTY - the retired placeholder is never seated.
     assert.deepEqual(AC!.tabs.map((t) => t.component), [], "A stays empty, no seat is minted");
   });
 
@@ -244,18 +228,9 @@ describe("dockDropToZone (the docking mutation)", () => {
 describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
   const ZONES = ["left", "right", "top", "bottom", "center"] as const;
 
-  // the load-bearing law (v0.14.4 ruling 5): prediction and commit share
-  // ONE pure function - every zone x every scenario asserts that
-  // predictDockDrop's result matches dockDropToZone's, and that a refusal
-  // matches the commit's tree-unchanged outcome. Two separate calls each
-  // mint their own node ids (insertPane is the only id source), so
-  // cross-call equality is structural: canon() rewrites ids to
-  // first-appearance order. Within one prediction the ids are real -
-  // freshPaneId names the exact pane in predicted.tree.
+  // the load-bearing law: prediction and commit share ONE pure function.
 
-  /** canonical structural signature: ids -> #n by DFS first appearance.
-      The grown root's local split rides through the same canon (v0.14.4
-      ruling 1 - predictions and commits must match INSIDE roots too). */
+  /** canonical structural signature: ids -> #n by DFS first appearance. */
   function canon(t: DockNode): unknown {
     const ids = new Map<string, string>();
     const nid = (id: string) => {
@@ -284,7 +259,6 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
     return p.reason;
   }
 
-  /** id-diff helper: the pane the call actually added, if any. */
   function addedPane(before: DockNode, after: DockNode): DockPane | null {
     const prior = new Set<string>();
     for (const n of allNodes(before)) if (isPane(n)) prior.add(n.id);
@@ -298,9 +272,7 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
     for (const zone of ZONES) {
       const { root, a, b } = row();
       (root.children[0] as DockPane).tabs = [{ component: "files" }, { component: "chat" }];
-      // commit first, THEN prediction off the same original: the predictor
-      // never reads the counter state of the commit's minting, so a match
-      // here is a genuine one-formula result, not an ordered accident
+      // commit first, THEN prediction off the same original: the predictor never.
       const committed = dockDropToZone(root, a.id, 1, b.id, zone);
       const predicted = predictDockDrop(root, a.id, 1, b.id, zone);
       if ("refused" in predicted) {
@@ -317,7 +289,6 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
       const fresh = addedPane(root, predicted.tree)!;
       assert.equal(predicted.freshPaneId, fresh.id, `${zone}: freshPaneId names the minted pane of its own call`);
       assert.deepEqual(fresh.tabs.map((t) => t.component), ["chat"], `${zone}: the tab sits in the fresh pane`);
-      // and the committed fresh pane holds the same tab
       const committedFresh = addedPane(root, committed)!;
       assert.deepEqual(committedFresh.tabs.map((t) => t.component), ["chat"], `${zone}: commit seats the tab too`);
     }
@@ -344,13 +315,11 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
   });
 
   it("refusal matrix: every refusal matches a tree-unchanged commit", () => {
-    // same-pane CENTER self-docks never (card t_ae9ac5cf: the split zones
-    // self-drop now - covered by the split tests in dockselfsplit.test.ts)
+    // same-pane CENTER self-docks never
     const { root, a } = row();
     (root.children[0] as DockPane).tabs = [{ component: "files" }, { component: "chat" }];
     assert.equal(dockDropToZone(root, a.id, 0, a.id, "center"), root);
     assert.equal(typeof expectRefusal(predictDockDrop(root, a.id, 0, a.id, "center")), "string");
-    // vanished counterpart / vanished index refuse
     const { root: rv, a: av, b } = row();
     for (const zone of ZONES) {
       assert.equal(dockDropToZone(rv, "n999", 0, b.id, zone), rv);
@@ -360,9 +329,7 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
       expectRefusal(predictDockDrop(rv, av.id, 0, "n999", zone));
       expectRefusal(predictDockDrop(rv, av.id, 7, b.id, zone));
     }
-    // v0.14.4 ruling 1: the SHELL's body drop grows its root now - the
-    // sidebar's row zones refuse (stacked rows only), the column zones
-    // grow; a vanished source refuses every zone as before
+    // v0.14.4 the SHELL's body drop grows its root now.
     const a2 = makePane("files");
     const b2 = makePane("kanban", 240, "right");
     const sroot = makeSplit("row", [a2, b2]);
@@ -380,8 +347,7 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
   });
 
   it("shells: sidebar row zones refuse with a reason, column zones grow, center predicts the group", () => {
-    // canvas C1: a SIDEBAR-class view is the one the seat gate lets land in
-    // a sidebar, so it is what exercises the shape law
+    // canvas C1: a SIDEBAR-class view is the one the seat gate lets land in a.
     const a = makePane("files");
     const b = makePane("kanban", 240, "right");
     const root = makeSplit("row", [a, b]);
@@ -406,7 +372,6 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
       expectRefusal(predictDockDrop(root, left.id, 0, chat.id, zone));
       assert.equal(dockDropToZone(root, left.id, 0, chat.id, zone), root);
     }
-    // a same-pane center is a self-dock: refused like every other
     expectRefusal(predictDockDrop(root, left.id, 0, left.id, "center"));
     // the one legal landing: ITS OWN seat. A persisted stray sessions tab
     // may come home to the left shell - the class lets it, the lock narrows
@@ -415,7 +380,6 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
     const root2 = makeSplit("row", [left, stray, chat]);
     const ok = expectDrop(predictDockDrop(root2, stray.id, 0, left.id, "center"), "its own bar accepts sessions");
     sameShape(ok.tree, dockDropToZone(root2, stray.id, 0, left.id, "center"));
-    // and no other seat takes it - not even a main pane's center
     expectRefusal(predictDockDrop(root2, stray.id, 0, chat.id, "center"));
   });
 
@@ -428,7 +392,6 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
     assert.notEqual(p2.tree, p1.tree, "separate calls mint separate ids");
     sameShape(p2.tree, p1.tree, "the structure is identical anyway");
     assert.notDeepEqual(p1.tree, root);
-    // and the prediction still equals the commit executed later
     sameShape(p1.tree, dockDropToZone(root, a.id, 0, b.id, "left"));
   });
 });
@@ -447,10 +410,8 @@ describe("the gesture record + legacy hit-test", () => {
     assert.equal(dropAllowedFor(null, { paneId: "p", index: 0, component: "chat" }), true);
     assert.equal(dropAllowedFor("right", { paneId: "p", index: 0, component: "chat" }), false);
     assert.equal(dropAllowedFor("bottom", { paneId: "p", index: 0, component: "chat" }), false);
-    // sessions: primary-sidebar by class, locked to its own home
     assert.equal(dropAllowedFor(null, { paneId: "p", index: 0, component: "sidebar" }), false);
     assert.equal(dropAllowedFor("left", { paneId: "p", index: 0, component: "sidebar" }), true);
-    // a sidebar view visits every seat
     assert.equal(dropAllowedFor(null, { paneId: "p", index: 0, component: "files" }), true);
     assert.equal(dropAllowedFor("left", { paneId: "p", index: 0, component: "files" }), true);
     // a bottom member visits the sidebars, never main

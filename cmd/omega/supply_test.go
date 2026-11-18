@@ -1,20 +1,20 @@
 package main
 
 // supply_test.go: the three-layer sessions law's ACCEPTANCE test (the
-// shell-ring shrink wave 2, card t_490fed88 - ADR
+// shell-ring shrink wave 2, - ADR
 // Workshop/omega-shell-ring-shrink.md). The law:
 //
-//	layer 1  the store NEED (conversation existence, compaction
-//	         continuity)                - substrate, untouched
-//	layer 2  the default SUPPLY (sqlite,
-//	         omega.db)                  - substrate-class default
-//	layer 3  session MANAGEMENT (browse,
-//	         resume, export, list)      - capsule, moved
+// layer 1 the store NEED (conversation existence, compaction
+// continuity) - substrate, untouched
+// layer 2 the default SUPPLY (sqlite,
+// omega.db) - substrate-class default
+// layer 3 session MANAGEMENT (browse,
+// resume, export, list) - capsule, moved
 //
 // The boot with the store capsule ABSENT (the scratch build's deleted
 // capsule: no "store" offer on the mount) must resolve the DEFAULT
-// SUPPLY - the same omega.db file the capsule's own mount resolves -
-// never :memory: (the pre-wave fallback): a fresh chat boots, persists,
+// SUPPLY - the same omega.db file the capsule's own mount resolves
+// never:memory: (the pre-wave fallback): a fresh chat boots, persists,
 // and SURVIVES A RESTART with the capsule gone. Only the management
 // face (the tab + its routes) dies with the capsule. The route-level
 // 404s ride the agent/api floor tests (the base set never carried the
@@ -54,15 +54,10 @@ func TestDefaultSupplyOpensTheCapsuleFile(t *testing.T) {
 	}
 }
 
-// TestFreshChatPersistsAcrossRestart is the acceptance itself: boot 1
-// creates a chat (the POST /sessions parity - the id creation is the
-// chat floor) and a user turn; boot 2 (a RESTART: the same home, the
-// fresh fallback Open) reads them back from the default supply. The
-// old :memory: fallback failed this by construction.
+// TestFreshChatPersistsAcrossRestart is the acceptance itself.
 func TestFreshChatPersistsAcrossRestart(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 
-	// boot 1
 	pctx1 := mountedContextSansStore()
 	st1, err := openDefaultSupply(pctx1, nil)
 	if err != nil {
@@ -82,9 +77,6 @@ func TestFreshChatPersistsAcrossRestart(t *testing.T) {
 		t.Fatalf("close boot 1 supply: %v", err)
 	}
 
-	// boot 2: the RESTART - the supply file re-opens, the conversation
-	// is there, and the agent's seam read (the chat floor's live read)
-	// resolves it like any capsule-opened store.
 	pctx2 := mountedContextSansStore()
 	st2, err := openDefaultSupply(pctx2, nil)
 	if err != nil {
@@ -110,14 +102,12 @@ func TestFreshChatPersistsAcrossRestart(t *testing.T) {
 	}
 }
 
-// TestCapsuleDeletedRoutesDieWithIt: the MANAGEMENT face mounts and
-// dies with the capsule. No store capsule = no management routes on
-// the serving mux (the newRoutes face never registers) - the deleted
-// capsule's 404 law; nothing to 404-guard in the base set.
+// TestCapsuleDeletedRoutesDieWithIt: the MANAGEMENT face mounts and dies with the. No
+// store capsule = no management routes on the serving mux (the newRoutes face never
+// registers) - the deleted capsule's 404 law; nothing to 404-guard in the base set.
 func TestCapsuleDeletedRoutesDieWithIt(t *testing.T) {
 	pctx := mountedContextSansStore()
-	// the boot's mount has no store offer: the management face never
-	// mounts, and the base's seam reads answer the supply fallback
+	// the boot's mount has no store offer: the management face never mounts, and the.
 	if pctx.Services().Resolve("store") != nil {
 		t.Fatal("the removed mount resolved a capsule store offer - the fixture is broken")
 	}

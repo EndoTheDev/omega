@@ -13,22 +13,18 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// fakeSettings records the values a PUT carried and replays them into
-// the schema payload, like the real host does after a save.
+// fakeSettings records the values a PUT carried and replays them into the schema.
 type fakeSettings struct {
 	schemaErr    error
 	saveErr      error
 	saved        map[string]any
 	defaultValue any
-	// the whole-document door (card t_a82d39c8)
 	rawText    string
 	rawErr     error
 	savedRaw   string
 	rawSaveErr error
 	resets     int
 	resetErr   error
-	// the per-agent scopes the payload carries (card t_0a9edc72's
-	// ?scopes=1 slice test)
 	scopes []core.SettingsScope
 }
 
@@ -74,8 +70,7 @@ func (f *fakeSettings) Raw() (string, error) {
 	return f.rawText, nil
 }
 
-// SaveRaw records the submitted document and refreshes the schema, the
-// way the host's write path answers.
+// SaveRaw records the submitted document and refreshes the schema, the way the host's.
 func (f *fakeSettings) SaveRaw(text string) (*core.SettingsSchema, error) {
 	if f.rawSaveErr != nil {
 		return nil, f.rawSaveErr
@@ -147,10 +142,7 @@ func TestSettingsGET(t *testing.T) {
 	}
 }
 
-// TestSettingsGETScopesSlice pins the lazy scopes read (card t_0a9edc72):
-// the settings pane's scope refresh reads `.scopes` alone, so ?scopes=1
-// answers the SAME payload structure with the knob groups empty. The full
-// read still carries both halves - one structure, sliced at the wire.
+// TestSettingsGETScopesSlice pins the lazy scopes read.
 func TestSettingsGETScopesSlice(t *testing.T) {
 	host := &fakeSettings{
 		defaultValue: true,
@@ -195,9 +187,7 @@ func TestSettingsGETScopesSlice(t *testing.T) {
 	}
 }
 
-// TestSettingsGETOneKey pins the one-knob read (card t_013b4643): the
-// ?key= form answers the knob object as it rides inside its group, so a
-// script client reads a single value without the group walk.
+// TestSettingsGETOneKey pins the one-knob read.
 func TestSettingsGETOneKey(t *testing.T) {
 	ts := settingsServer(&fakeSettings{defaultValue: true})
 	defer ts.Close()
@@ -229,14 +219,12 @@ func TestSettingsGETOneKey(t *testing.T) {
 	if knob.Key != "compaction.enabled" || knob.Type != "toggle" || knob.Value != true {
 		t.Errorf("knob = %+v, want the compaction.enabled toggle true", knob)
 	}
-	// the one-knob answer is the knob, not a group envelope
 	if strings.Contains(string(body), `"groups"`) {
 		t.Errorf("?key= answered the full payload: %s", body)
 	}
 }
 
-// TestSettingsGETUnknownKey: a typo is a 404 naming the key - never a
-// full payload that reads as a successful fetch.
+// TestSettingsGETUnknownKey: a typo is a 404 naming the key - never a full payload.
 func TestSettingsGETUnknownKey(t *testing.T) {
 	ts := settingsServer(&fakeSettings{defaultValue: true})
 	defer ts.Close()
@@ -258,7 +246,6 @@ func TestSettingsPUTRoundTripsAndRefreshes(t *testing.T) {
 	fake := &fakeSettings{defaultValue: true}
 	ts := settingsServer(fake)
 	defer ts.Close()
-	// the webui sends only changed knobs -> the toggle flips to false
 	body := `{"values": {"compaction.enabled": false}}`
 	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/settings", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -359,11 +346,9 @@ func TestSettingsMethodsRestricted(t *testing.T) {
 	}
 }
 
-// --- the whole-document door (card t_a82d39c8) -----------------------
+// -- the whole-document door ----------------------
 
-// TestSettingsRawGET pins the export read: the host's document bytes,
-// unmasked here (masking is the host's law, pinned in cmd/omega), with
-// the yaml content type and no-store caching.
+// TestSettingsRawGET pins the export read.
 func TestSettingsRawGET(t *testing.T) {
 	fake := &fakeSettings{rawText: "provider:\n  model_name: m\n  api_key: " + "****" + "\n"}
 	ts := settingsServer(fake)
@@ -391,9 +376,7 @@ func TestSettingsRawGET(t *testing.T) {
 	}
 }
 
-// TestSettingsRawPUTCarriesTheDocument: the submitted text reaches the
-// seam verbatim and the refreshed payload comes back, so the pane can
-// re-render the knobs from one round trip.
+// TestSettingsRawPUTCarriesTheDocument: the submitted text reaches the seam verbatim.
 func TestSettingsRawPUTCarriesTheDocument(t *testing.T) {
 	fake := &fakeSettings{defaultValue: true}
 	ts := settingsServer(fake)
@@ -457,11 +440,10 @@ func TestSettingsRawPUTRefusals(t *testing.T) {
 	}
 }
 
-// TestSettingsRawPUTRejectsOverCapBodies pins the cap as a REFUSAL.
-// A truncating read would hand the host a YAML PREFIX, and a prefix cut
-// at a top-level key boundary can still parse and validate - a silently
-// partial config persisted and hot-applied. So an over-cap body is 413
-// and never reaches the seam, while a body inside the cap is the
+// TestSettingsRawPUTRejectsOverCapBodies pins the cap as a REFUSAL. A truncating read
+// would hand the host a YAML PREFIX, and a prefix cut at a top-level key boundary can
+// still parse and validate - a silently partial config persisted and hot-applied. So an
+// over-cap body is 413 and never reaches the seam, while a body inside the cap is the
 // caller's document.
 func TestSettingsRawPUTRejectsOverCapBodies(t *testing.T) {
 	fake := &fakeSettings{}
@@ -492,8 +474,7 @@ func TestSettingsRawPUTRejectsOverCapBodies(t *testing.T) {
 	}
 }
 
-// TestSettingsRawMethodsRestricted: the document door has exactly GET
-// and PUT - POST/DELETE answer 405 rather than reaching the seam.
+// TestSettingsRawMethodsRestricted: the document door has exactly GET and PUT.
 func TestSettingsRawMethodsRestricted(t *testing.T) {
 	for _, method := range []string{http.MethodPost, http.MethodDelete} {
 		req, _ := http.NewRequest(method, "/settings/raw", nil)
@@ -505,9 +486,8 @@ func TestSettingsRawMethodsRestricted(t *testing.T) {
 	}
 }
 
-// TestSettingsResetPOST: the pane's reset action rides the host's own
-// defaults - the request carries no body, so a client can never invent
-// them.
+// TestSettingsResetPOST: the pane's reset action rides the host's own defaults - the
+// request carries no body, so a client can never invent them.
 func TestSettingsResetPOST(t *testing.T) {
 	fake := &fakeSettings{defaultValue: true}
 	ts := settingsServer(fake)
@@ -550,8 +530,8 @@ func TestSettingsResetRestricted(t *testing.T) {
 	}
 }
 
-// TestSettingsRawAndResetNilSeam: a host with no settings seam answers
-// 501 on the new doors too - the pane's "no config surface" branch.
+// TestSettingsRawAndResetNilSeam: a host with no settings seam answers 501 on the new
+// doors too.
 func TestSettingsRawAndResetNilSeam(t *testing.T) {
 	cases := []struct {
 		method string

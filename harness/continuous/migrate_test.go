@@ -1,10 +1,6 @@
 package continuous
 
-// migrate_test.go: the canonical-id migration and the invariant it
-// protects (card t_5df01d0f). Every agent home's chat carries its own
-// id, because the daemon resolves a session by id across homes - two
-// homes holding one id is the collision that opened the wrong agent's
-// chat.
+// migrate_test.go: the canonical-id migration and the invariant it protects.
 
 import (
 	"context"
@@ -36,15 +32,13 @@ func TestCanonicalIDsAreUniquePerHome(t *testing.T) {
 			t.Fatalf("%s took the bare id - the daemon's own store holds that one", name)
 		}
 	}
-	// The default agent's chat keeps the bare id: its sessions live in
-	// the home's MAIN store, where nothing competes for it.
+	// The default agent's chat keeps the bare id.
 	if got := CanonicalSessionIDFor(agent.DefaultAgentName); got != CanonicalSessionID {
 		t.Errorf("default agent id = %q, want the bare %q", got, CanonicalSessionID)
 	}
 }
 
-// legacyCanonicalHome writes an agent home the pre-fix way: a store
-// whose one permanent chat still carries the bare id, with history.
+// legacyCanonicalHome writes an agent home the pre-fix way.
 func legacyCanonicalHome(t *testing.T, home, name string) string {
 	t.Helper()
 	if err := agent.ScaffoldAgent(home, name, ""); err != nil {
@@ -73,9 +67,7 @@ func TestMigrateCanonicalIDsRenamesLegacyChats(t *testing.T) {
 	legacyCanonicalHome(t, home, "cora")
 	m := NewMachine(home, Default())
 
-	// The roster reads the id the home carries: before the migration the
-	// two homes answer the same one (the bug), after it each answers its
-	// own.
+	// The roster reads the id the home carries.
 	preview, _, _ := m.canonicalPreview(agent.AgentDir(home, "cora"), "cora")
 	if preview != "" {
 		t.Fatalf("pre-migration preview reads the bare id (%q) - the fixture is not legacy", preview)
@@ -103,7 +95,6 @@ func TestMigrateCanonicalIDsRenamesLegacyChats(t *testing.T) {
 		if err != nil || len(msgs) != 1 {
 			t.Fatalf("%s history after migration = %d msgs, %v; want 1 (the rename must not strand it)", name, len(msgs), err)
 		}
-		// The preview now answers from the home's own chat.
 		if got, _, _ := m.canonicalPreview(dir, name); got != name+" report" {
 			t.Errorf("%s preview after migration = %q, want its own report", name, got)
 		}
@@ -115,9 +106,7 @@ func TestMigrateCanonicalIDsRenamesLegacyChats(t *testing.T) {
 	}
 }
 
-// listedCanonicalHome writes an agent home the way the pre-fix build
-// created it: the canonical chat seeded through the ORDINARY session
-// verb, so the row lands listed = 1 and MachineOwned = false.
+// listedCanonicalHome writes an agent home the way the pre-fix build created it.
 func listedCanonicalHome(t *testing.T, home, name string) {
 	t.Helper()
 	if err := agent.ScaffoldAgent(home, name, ""); err != nil {
@@ -133,12 +122,7 @@ func listedCanonicalHome(t *testing.T, home, name string) {
 	}
 }
 
-// TestMigrateCanonicalVisibilityRepairsListedCanonicals is the round-1
-// regression pin (card t_10ac04f0): an agent chat seeded as an ordinary
-// LISTED row answers "fork" on /new - the fold keys on the machine-owned
-// bit - so the boot backfill has to hide it. Both places a canonical row
-// can predate the fix are covered: an agent home, and the daemon's main
-// store (a bare-id run created that one).
+// TestMigrateCanonicalVisibilityRepairsListedCanonicals is the round-1 regression pin.
 func TestMigrateCanonicalVisibilityRepairsListedCanonicals(t *testing.T) {
 	home := testHome(t)
 	listedCanonicalHome(t, home, "scout")
@@ -160,7 +144,6 @@ func TestMigrateCanonicalVisibilityRepairsListedCanonicals(t *testing.T) {
 	}
 	m.SetStoreResolver(func() agent.StoreProvider { return mainStore })
 
-	// The fixture is the broken shape: both canonical rows are listed.
 	for _, probe := range []struct {
 		label string
 		read  func() (core.Session, error)
@@ -223,9 +206,8 @@ func TestMigrateCanonicalVisibilityRepairsListedCanonicals(t *testing.T) {
 
 func TestMigrateCanonicalIDsSkipsHomesWithoutStores(t *testing.T) {
 	home := testHome(t)
-	// A scaffolded home that never ran, a malformed dir, and a home
-	// already carrying the qualified id: none may create, rename or
-	// error.
+	// A scaffolded home that never ran, a malformed dir, and a home already carrying the
+	// qualified id.
 	if err := agent.ScaffoldAgent(home, "quiet", ""); err != nil {
 		t.Fatalf("scaffold: %v", err)
 	}
@@ -239,7 +221,6 @@ func TestMigrateCanonicalIDsSkipsHomesWithoutStores(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(agent.AgentDir(home, "quiet"), "data", "omega.db")); !os.IsNotExist(err) {
 		t.Error("the migration created a store for a home that never ran")
 	}
-	// No agents directory at all is equally quiet.
 	empty := NewMachine(t.TempDir(), Default())
 	if err := empty.MigrateCanonicalIDs(); err != nil {
 		t.Errorf("MigrateCanonicalIDs(no agents dir) = %v", err)

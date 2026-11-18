@@ -26,15 +26,13 @@ var ErrNotFound = errors.New("session not found")
 var _ agent.StoreProvider = (*Store)(nil)
 
 // Compile-time assertion that Store carries the optional health probe
-// (agent.StorePinger) - the /health database fact.
+// (agent.StorePinger).
 var _ agent.StorePinger = (*Store)(nil)
 
-// Ping is the store health probe (agent.StorePinger): one pooled round
-// trip, bounded by ctx. Deliberately NOT a PRAGMA quick_check - that
-// walks every page of the file, and this fact rides the 5s health
-// heartbeat, so it must stay O(1). Corruption scanning is the store's
-// own hygiene pass's job; the popover asks only "is the database
-// answering".
+// Ping is the store health probe (agent.StorePinger). Deliberately NOT a PRAGMA
+// quick_check - that walks every page of the file, and this fact rides the 5s health
+// heartbeat, so it must stay O(1). Corruption scanning is the store's own hygiene
+// pass's job; the popover asks only "is the database answering".
 func (s *Store) Ping(ctx context.Context) error {
 	if s.db == nil {
 		return errors.New("store: not open")
@@ -53,27 +51,12 @@ func (s *Store) Ping(ctx context.Context) error {
 // It is safe for concurrent use via *sql.DB.
 type Store struct {
 	db *sql.DB
-	// identity is the store's own agent binding (card t_72ecca67,
-	// ruling 4): OMEGA_AGENT trimmed, "default" collapsing to "".
-	// Empty = main; every session row the store filters must be
-	// main's. Non-empty = a continuous agent's isolated store - the
-	// whole file belongs to that agent, list filters stay off.
+	// identity is the store's own agent binding. Empty = main; every session row the store
+	// filters must be main's.
 	identity string
-	// dbPath is the dsn the store opened with (the hygiene pass reads
-	// the main + WAL file sizes off it). ":memory:" reads zero.
 	dbPath string
-	// hyg is the sessions hygiene config, live (card t_f78acfd6):
-	// the host's hot-apply path swaps it (SetHygieneConfig), and the
-	// pass resolves its model slot/retention window per run - a
-	// settings save reaches the next sweep without a restart. The
-	// mu guards it; reads snapshot under RLock.
 	hygMu sync.RWMutex
 	hyg   HygieneConfig
-	// home is the omega home this store belongs to (SetHome, called by
-	// the plugin at mount); agentName is the home name when this store
-	// IS an agent's own file. The routing trio (router.go, card
-	// t_a7fab745) resolves which file owns a session id: agent stores
-	// open lazily under routes/agents as the chat floor asks for them.
 	home      string
 	agentName string
 	routeMu   sync.Mutex
@@ -81,28 +64,22 @@ type Store struct {
 	agents    map[string]*Store
 }
 
-// SetHygieneConfig swaps the hygiene pass's knobs live (card
-// t_f78acfd6, the compactor/approval SetConfig pattern): the host's
-// hot-apply pushes a fresh section; the next sweep re-reads it.
+// SetHygieneConfig swaps the hygiene pass's knobs live.
 func (s *Store) SetHygieneConfig(cfg HygieneConfig) {
 	s.hygMu.Lock()
 	defer s.hygMu.Unlock()
 	s.hyg = cfg
 }
 
-// HygieneConfig returns a snapshot of the live hygiene config. The
-// copy is defensive: a concurrent hot-apply never mutates the
-// caller's view mid-sweep.
+// HygieneConfig returns a snapshot of the live hygiene config. The copy is defensive: a
+// concurrent hot-apply never mutates the caller's view mid-sweep.
 func (s *Store) HygieneConfig() HygieneConfig {
 	s.hygMu.RLock()
 	defer s.hygMu.RUnlock()
 	return s.hyg
 }
 
-// Open opens (creating if needed) the SQLite database at dsn and ensures
-// the schema exists. Use ":memory:" for tests. A dsn inside a data/
-// directory gets the boot-time data-dir migration first (legacy
-// home-root databases move into data/ before the handle is opened).
+// Open opens (creating if needed) the SQLite database at dsn and ensures the schema.
 func Open(dsn string) (*Store, error) {
 	return openStore(dsn)
 }
@@ -112,9 +89,7 @@ func (s *Store) Open(dsn string) error {
 	if err != nil {
 		return err
 	}
-	// Field-by-field: the struct now carries hygMu (card t_f78acfd6)
-	// and a struct copy would swap live locks. The identity/handle
-	// fields land as before (single-threaded reopen).
+	// Field-by-field: the struct now carries hygMu and a struct copy would swap live.
 	s.hygMu.Lock()
 	defer s.hygMu.Unlock()
 	s.db = newStore.db
@@ -124,23 +99,16 @@ func (s *Store) Open(dsn string) error {
 }
 
 func openStore(dsn string) (*Store, error) {
-	// Data-dir migration runs before the handle opens: a legacy
-	// home-root db (with its -wal/-shm sidecars) is moved into data/
-	// first - never copy-and-leave (Endo 2026-10-20). ":memory:" and
-	// non-data dsns pass through untouched.
+	// Data-dir migration runs before the handle opens: a legacy home-root db (with its
+	// -wal/-shm sidecars) is moved into data/ first - never copy-and-leave.
 	if err := datadir.Migrate(dsn); err != nil {
 		return nil, err
 	}
-	// WAL mode allows concurrent readers + one writer across multiple
-	// processes (e.g. parent + subagents). busy_timeout retries on lock
-	// instead of returning SQLITE_BUSY immediately.
-	//
-	// foreign_keys rides the DSN, not a post-open PRAGMA: a SQLite
-	// pragma is per-connection, so a one-shot `PRAGMA foreign_keys = ON`
-	// covered a single connection out of the pool and left the rest (the
-	// majority under concurrent writers) with enforcement off - orphaned
-	// message rows in, missed ON DELETE CASCADE out. A DSN pragma is
-	// applied by the driver at every connect.
+	// WAL mode allows concurrent readers + one writer across multiple processes (e.g..
+	// foreign_keys rides the DSN, not a post-open PRAGMA: a SQLite pragma is
+	// per-connection, so a one-shot `PRAGMA foreign_keys = ON` covered a single connection
+	// out of the pool and left the rest (the majority under concurrent writers) with
+	// enforcement off - orphaned message rows in, missed ON DELETE CASCADE out.
 	const pragmaFK = "_pragma=foreign_keys(1)"
 	dsnParams := dsn
 	switch {
@@ -157,11 +125,7 @@ func openStore(dsn string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	// An in-memory database lives per connection: a pooled second
-	// connection would see an empty database (migrations and data
-	// gone). One connection keeps :memory: usable under pooling.
-	// ponytail: serializes access on in-memory DBs only - file DSNs
-	// keep the full connection pool.
+	// An in-memory database lives per connection.
 	if dsn == ":memory:" {
 		db.SetMaxOpenConns(1)
 	}
@@ -177,9 +141,8 @@ func openStore(dsn string) (*Store, error) {
 	return s, nil
 }
 
-// Close closes the underlying database and every agent home store this
-// one opened for routing - a handle left open keeps the agent's data
-// file locked on windows.
+// Close closes the underlying database and every agent home store this one opened for
+// routing.
 func (s *Store) Close() error {
 	homesErr := s.closeHomes()
 	if err := s.db.Close(); err != nil {
@@ -188,10 +151,8 @@ func (s *Store) Close() error {
 	return homesErr
 }
 
-// DBPath reports the dsn this store opened with - the session database
-// file a child process must open to see the rows this store wrote
-// (card t_93b4e521). The consumer declares the interface it needs; no
-// shared type crosses the capsule boundary.
+// DBPath reports the dsn this store opened with - the session database file a child
+// process must open to see the rows this store wrote.
 func (s *Store) DBPath() string {
 	return s.dbPath
 }
@@ -313,12 +274,10 @@ END;
 	if err != nil {
 		return err
 	}
-	// Rebuild FTS index to pick up any messages that existed before
-	// the FTS table was created (triggers only fire on new writes).
+	// Rebuild FTS index to pick up any messages that existed before the FTS table was.
 	s.db.Exec("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
-	// Add columns that may be missing from older databases. SQLite
-	// does not support IF NOT EXISTS on ALTER TABLE, so we catch
-	// the "duplicate column" error and ignore it.
+	// Add columns that may be missing from older databases. SQLite does not support IF NOT
+	// EXISTS on ALTER TABLE, so we catch the "duplicate column" error and ignore it.
 	for _, stmt := range []string{
 		`ALTER TABLE sessions ADD COLUMN parent_id TEXT REFERENCES sessions(id) ON DELETE CASCADE`,
 		`ALTER TABLE sessions ADD COLUMN delegate_parent TEXT REFERENCES sessions(id) ON DELETE CASCADE`,
@@ -346,39 +305,27 @@ END;
 			}
 			continue
 		}
-		// The column landed on this open: backfill the data fix that
-		// belongs to it. Runs once, exactly when the column is new.
-		// Sessions that already carried a label before title_state
-		// existed are final (2) - a manual label is never retitled.
+		// The column landed on this open: backfill the data fix that belongs to it. Runs
+		// once, exactly when the column is new. Sessions that already carried a label before
+		// title_state existed are final (2) - a manual label is never retitled.
 		if strings.Contains(stmt, "title_state") {
 			if _, err := s.db.Exec(`UPDATE sessions SET title_state = 2 WHERE label != ''`); err != nil {
 				return err
 			}
 		}
-		// last_read_at arrives empty for every existing row - stamp it
-		// to the row's own updated_at so the whole existing history
-		// counts as seen. Only output written AFTER the upgrade turns
-		// sessions unread; nothing the user already saw does.
+		// last_read_at arrives empty for every existing row.
 		if strings.Contains(stmt, "last_read_at") {
 			if _, err := s.db.Exec(`UPDATE sessions SET last_read_at = updated_at`); err != nil {
 				return err
 			}
 		}
 	}
-	// The label+summary index: standalone FTS tables have no 'rebuild',
-	// so a full delete-and-reload picks up rows (and heals any drift)
-	// that predate the index. Runs AFTER the ALTER loop above - it
-	// reads the summary column the loop just added. One row per
-	// session, once per open - trivially cheap.
+	// The label+summary index: standalone FTS tables have no 'rebuild', so a full.
 	s.db.Exec(`DELETE FROM sessions_fts;
 INSERT INTO sessions_fts(session_id, label, summary) SELECT id, label, summary FROM sessions;`)
-	// Existing databases predate the summary index column: a
-	// CREATE VIRTUAL TABLE IF NOT EXISTS never broadens its column
-	// list, so a stale two-column index would silently drop every
-	// summary from search. The one-time rebuild: drop the table AND
-	// its triggers (their bodies name the old arity), recreate both at
-	// the new arity, then the reload above already ran at the old
-	// arity - so this block reloads itself when it rebuilds.
+	// Existing databases predate the summary index column: a CREATE VIRTUAL TABLE IF NOT
+	// EXISTS never broadens its column list, so a stale two-column index would silently
+	// drop every summary from search.
 	var ftsSummary int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions_fts') WHERE name = 'summary'`).Scan(&ftsSummary); err == nil && ftsSummary == 0 {
 		s.db.Exec(`DROP TRIGGER IF EXISTS sessions_ai; DROP TRIGGER IF EXISTS sessions_au; DROP TRIGGER IF EXISTS sessions_asum; DROP TRIGGER IF EXISTS sessions_ad; DROP TABLE sessions_fts;
@@ -405,34 +352,22 @@ INSERT INTO sessions_fts(session_id, label, summary) SELECT id, label, summary F
 	return nil
 }
 
-// CreateSession creates a session with the given id. parentID links it to
-// an existing session (empty for a root); label is an optional name. It
-// returns an error if a session with that id already exists or the parent
-// does not.
+// CreateSession creates a session with the given id.
 func (s *Store) CreateSession(ctx context.Context, id, parentID, label string) error {
 	now := core.NowISO()
-	// An empty parentID is stored as NULL so the FK constraint does not
-	// try to match a session with id "".
+	// An empty parentID is stored as NULL so the FK constraint does not try to match a.
 	var parent any
 	if parentID != "" {
 		parent = parentID
 	}
-	// last_read_at = created time: new sessions are born read. Unread
-	// only ever comes from output written afterwards.
+	// last_read_at = created time: new sessions are born read.
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO sessions (id, parent_id, label, created_at, updated_at, last_read_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		id, parent, label, now, now, now)
 	return err
 }
 
-// CreateDelegateSession creates a session carrying DELEGATE lineage
-// (card t_6c4ab302): delegateParent records the session that spawned it
-// for display, while parent_id stays NULL. That split is the ruling -
-// loadViewRows merges ancestor rows over parent_id only, so a delegate
-// child renders and assembles its OWN rows alone (fresh context), while
-// a fork child created through CreateSession keeps full inheritance.
-// Empty delegateParent is stored as NULL (a delegate spawn with no
-// calling session is just a root).
+// CreateDelegateSession creates a session carrying DELEGATE lineage.
 func (s *Store) CreateDelegateSession(ctx context.Context, id, delegateParent, label string) error {
 	now := core.NowISO()
 	var parent any
@@ -445,8 +380,7 @@ func (s *Store) CreateDelegateSession(ctx context.Context, id, delegateParent, l
 	return err
 }
 
-// scanSession scans one session row into s, tolerating NULL parent_id /
-// delegate_parent (how roots are stored).
+// scanSession scans one session row into s, tolerating NULL parent_id /.
 func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) {
 	var sess core.Session
 	var parent, delegate sql.NullString
@@ -464,12 +398,10 @@ func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) 
 	sess.DelegateParent = delegate.String
 	sess.Pinned = pinned != 0
 	sess.Archived = archived != 0
-	// The `listed` column is the human's session list, so its zero is
-	// the MACHINERY's row: an agent's canonical chat (card t_10ac04f0).
+	// The `listed` column is the human's session list, so its zero is the MACHINERY's row.
 	sess.MachineOwned = listed == 0
-	// Normalize: the row default is 'default', but a session written
-	// by an older writer that left the column empty still belongs to
-	// the default agent. omitempty then never hides the binding.
+	// Normalize: the row default is 'default', but a session written by an older writer.
+	// omitempty then never hides the binding.
 	if sess.Agent == "" {
 		sess.Agent = agent.DefaultAgentName
 	}
@@ -487,9 +419,8 @@ func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) 
 // sessionColumns is the projection shared by GetSession and ListSessions.
 const sessionColumns = "id, parent_id, delegate_parent, label, created_at, updated_at, prompt_tokens, completion_tokens, pinned, archived, title_state, last_read_at, agent, last_run, model, provider, workspace, summary, listed, context_start, context_summary"
 
-// SetSessionLastRun writes the last-run stats block (JSON) on the
-// session's row, or clears it when stats is nil. It is a telemetry
-// write, not activity - updated_at is untouched.
+// SetSessionLastRun writes the last-run stats block (JSON) on the session's row, or
+// clears it when stats is nil.
 func (s *Store) SetSessionLastRun(ctx context.Context, sessionID string, stats *core.LastRunStats) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionLastRun(ctx, sessionID, stats)
@@ -507,11 +438,7 @@ func (s *Store) SetSessionLastRun(ctx context.Context, sessionID string, stats *
 	return err
 }
 
-// SetSessionContextStart moves the conversation's provider-facing
-// context boundary (card t_10ac04f0): the next run's history starts at
-// message id `start`, and `summary` (may be empty) heads it. The
-// transcript keeps every row - this is a context concern, not a delete,
-// and updated_at is untouched (a fold is not activity).
+// SetSessionContextStart moves the conversation's provider-facing context boundary.
 func (s *Store) SetSessionContextStart(ctx context.Context, sessionID, start, summary string) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionContextStart(ctx, sessionID, start, summary)
@@ -521,9 +448,7 @@ func (s *Store) SetSessionContextStart(ctx context.Context, sessionID, start, su
 	return err
 }
 
-// SetSessionModel pins the session's model_name (the SessionContextStore
-// seam, card t_9de5b009). Empty clears the pin. A picker concern, not
-// activity - updated_at is untouched.
+// SetSessionModel pins the session's model_name.
 func (s *Store) SetSessionModel(ctx context.Context, sessionID, model string) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionModel(ctx, sessionID, model)
@@ -533,10 +458,7 @@ func (s *Store) SetSessionModel(ctx context.Context, sessionID, model string) er
 	return err
 }
 
-// SetSessionProvider pins the session's provider INSTANCE name (the
-// SessionContextStore seam, card t_7dcd4280). Empty clears the pin -
-// the default provider: section serves the session again. A picker
-// concern, not activity - updated_at is untouched.
+// SetSessionProvider pins the session's provider INSTANCE name.
 func (s *Store) SetSessionProvider(ctx context.Context, sessionID, provider string) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionProvider(ctx, sessionID, provider)
@@ -546,10 +468,7 @@ func (s *Store) SetSessionProvider(ctx context.Context, sessionID, provider stri
 	return err
 }
 
-// SetSessionWorkspace roots the session's file operations at an absolute
-// working folder (the SessionContextStore seam). Empty clears it. A
-// picker concern, not activity - updated_at is untouched. Directory
-// validation lives at the HTTP surface; the store knows only rows.
+// SetSessionWorkspace roots the session's file operations at an absolute working.
 func (s *Store) SetSessionWorkspace(ctx context.Context, sessionID, workspace string) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionWorkspace(ctx, sessionID, workspace)
@@ -575,8 +494,7 @@ func (s *Store) GetSession(ctx context.Context, id string) (core.Session, error)
 	return sess, nil
 }
 
-// storeAgentIdentity resolves the store's agent binding at open:
-// OMEGA_AGENT trimmed, "default" collapsing to "" (main).
+// storeAgentIdentity resolves the store's agent binding at open.
 func storeAgentIdentity() string {
 	name := strings.TrimSpace(os.Getenv("OMEGA_AGENT"))
 	if name == "default" {
@@ -585,17 +503,11 @@ func storeAgentIdentity() string {
 	return name
 }
 
-// ListSessions returns the sessions visible to this store, ordered by
-// creation time. For main (no OMEGA_AGENT) that is the default agent's
-// LISTED sessions only - the binding that keeps the pre-agent session
-// list, tree, and insights exactly what they were (card t_7e2b7002).
-// `listed = 0` rows are machinery-owned conversations that are never the
-// maintainer's own (an agent's canonical chat, card t_10ac04f0): they
-// open from the agents roster and have no sidebar row. For a
-// continuous agent's isolated store (card t_72ecca67, ruling 4) the
-// whole file belongs to that one agent, so the filter stays off: its
-// canonical chat and wake sessions all carry the agent column, and a
-// filter would hide its own history from itself.
+// ListSessions returns the sessions visible to this store, ordered by creation time.
+// For main (no OMEGA_AGENT) that is the default agent's LISTED sessions only - the
+// binding that keeps the pre-agent session list, tree, and insights exactly what they
+// were. `listed = 0` rows are machinery-owned conversations that are never the
+// maintainer's own: they open from the agents roster and have no sidebar row.
 func (s *Store) ListSessions(ctx context.Context) ([]core.Session, error) {
 	query := `SELECT ` + sessionColumns + ` FROM sessions WHERE agent = 'default' AND listed = 1 ORDER BY created_at`
 	if s.identity != "" {
@@ -617,9 +529,7 @@ func (s *Store) ListSessions(ctx context.Context) ([]core.Session, error) {
 	return out, rows.Err()
 }
 
-// DeleteSession removes a session. Messages and child branches cascade
-// via the ON DELETE CASCADE foreign keys. It is a no-op (nil) when the
-// session does not exist.
+// DeleteSession removes a session. It is a no-op (nil) when the session does not exist.
 func (s *Store) DeleteSession(ctx context.Context, id string) error {
 	if o := s.owner(ctx, id); o != nil {
 		return o.DeleteSession(ctx, id)
@@ -638,16 +548,12 @@ func (s *Store) UpdateSession(ctx context.Context, id, label string) error {
 	return err
 }
 
-// GetSessionTree returns the session forest: every root session with its
-// descendants nested under Children. Sessions are ordered by creation time.
+// GetSessionTree returns the session forest.
 func (s *Store) GetSessionTree(ctx context.Context) ([]*core.SessionNode, error) {
 	sessions, err := s.ListSessions(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// ponytail: build the tree in memory from a flat list. Fine for a
-	// session store; if a session count ever grows into the thousands,
-	// switch to a recursive CTE.
 	byID := make(map[string]*core.SessionNode, len(sessions))
 	for i := range sessions {
 		byID[sessions[i].ID] = &core.SessionNode{Session: sessions[i]}
@@ -662,23 +568,18 @@ func (s *Store) GetSessionTree(ctx context.Context) ([]*core.SessionNode, error)
 		if parent, ok := byID[node.ParentID]; ok {
 			parent.Children = append(parent.Children, node)
 		} else {
-			// Orphan (parent deleted without cascade): treat as a root.
 			roots = append(roots, node)
 		}
 	}
 	return roots, nil
 }
 
-// GetAncestorMessages returns the messages of a session and all its
-// ancestors up to the root, in root-to-leaf order. A branch therefore
-// inherits its parent's history as a prefix.
+// GetAncestorMessages returns the messages of a session and all its ancestors up to.
 func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]core.Message, error) {
 	if o := s.owner(ctx, id); o != nil {
 		return o.GetAncestorMessages(ctx, id)
 	}
-	// ponytail: walk the parent chain one query per hop. Fine for a
-	// session store; a recursive CTE would collapse it to one query if
-	// deep trees ever matter.
+	// ponytail: walk the parent chain one query per hop.
 	var chain []string
 	cur := id
 	for cur != "" {
@@ -689,7 +590,6 @@ func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]core.Mess
 		}
 		cur = sess.ParentID
 	}
-	// chain is leaf-to-root; reverse to root-to-leaf.
 	var out []core.Message
 	for i := len(chain) - 1; i >= 0; i-- {
 		messages, err := s.GetMessages(ctx, chain[i])
@@ -701,19 +601,10 @@ func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]core.Mess
 	return out, nil
 }
 
-// AppendMessage appends a message to a session's history and touches
-// the session's updated_at to the message's own write time. Without
-// the touch, updated_at froze after the title's last write - the
-// sidebar's time buckets silently drifted off the real activity, and
-// no unread state could ever be derived from the row.
-//
-// Conversation messages get their tree pointer materialized here
-// (t_17365247): an explicitly set llm.*.ParentID wins (validated against
-// this session's rows); a missing pointer resolves to the active path
-// leaf - the message follows (or answers) whatever the active
-// conversation currently ends at. Bookkeeping entries
-// (model_change/thinking_level_change/variant_select) persist
-// pointerless; they live outside the tree.
+// AppendMessage appends a message to a session's history and touches the session's.
+// Without the touch, updated_at froze after the title's last write - the sidebar's time
+// buckets silently drifted off the real activity, and no unread state could ever be
+// derived from the row.
 func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg core.Message) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.AppendMessage(ctx, sessionID, msg)
@@ -771,9 +662,7 @@ func (s *Store) GetMessages(ctx context.Context, sessionID string) ([]core.Messa
 	return out, rows.Err()
 }
 
-// GetMessagesWithTimes returns a session's messages in append order,
-// each paired with its row id (the tree identity, core.MsgID renders
-// it for the wire and pointers) and store-level created_at.
+// GetMessagesWithTimes returns a session's messages in append order, each paired with.
 func (s *Store) GetMessagesWithTimes(ctx context.Context, sessionID string) ([]core.StoredMessage, error) {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.GetMessagesWithTimes(ctx, sessionID)
@@ -792,16 +681,7 @@ func (s *Store) CountMessages(ctx context.Context, sessionID string) (int, error
 	return n, err
 }
 
-// SessionCounts computes per-session message and tool-result counts at
-// read time. ponytail: one GROUP BY over the messages table, no
-// maintained counters; fine for hundreds of sessions - counter columns
-// are the upgrade if a session list ever gets slow. message_count is
-// every stored message; tool_count is the tool-role subset.
-// Bookkeeping entries (model_change, thinking_level_change,
-// variant_select, verdict_card, verdict) and the branch summary row
-// (role 'system') are
-// excluded from message_count, matching the insights convention for
-// non-conversation messages.
+// SessionCounts computes per-session message and tool-result counts at read time.
 func (s *Store) SessionCounts(ctx context.Context) (map[string]core.SessionCounts, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT session_id,
@@ -824,8 +704,7 @@ func (s *Store) SessionCounts(ctx context.Context) (map[string]core.SessionCount
 	return out, rows.Err()
 }
 
-// SetSessionPinned sets the pinned flag on a session row. It is a
-// user-list concern: updated_at (the time bucketing key) is untouched.
+// SetSessionPinned sets the pinned flag on a session row.
 func (s *Store) SetSessionPinned(ctx context.Context, sessionID string, pinned bool) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionPinned(ctx, sessionID, pinned)
@@ -836,9 +715,7 @@ func (s *Store) SetSessionPinned(ctx context.Context, sessionID string, pinned b
 	return err
 }
 
-// SetSessionArchived sets the archived flag on a session row. Like
-// pinning, archiving is a user-list concern: updated_at (the time
-// bucketing key) is untouched.
+// SetSessionArchived sets the archived flag on a session row.
 func (s *Store) SetSessionArchived(ctx context.Context, sessionID string, archived bool) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionArchived(ctx, sessionID, archived)
@@ -849,9 +726,7 @@ func (s *Store) SetSessionArchived(ctx context.Context, sessionID string, archiv
 	return err
 }
 
-// SetSessionRead stamps the session's last-read time to now, so unread
-// (updated_at after last_read_at) clears. Reading is not activity:
-// updated_at is untouched.
+// SetSessionRead stamps the session's last-read time to now, so unread (updated_at.
 func (s *Store) SetSessionRead(ctx context.Context, sessionID string) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionRead(ctx, sessionID)
@@ -861,14 +736,12 @@ func (s *Store) SetSessionRead(ctx context.Context, sessionID string) error {
 	return err
 }
 
-// SetSessionTitle writes a generated label and its title_state
-// transition in one update. The state machine is enforced by the WHERE
-// clause: provisional only from 0 (moves to 1), final from 0 or 1
-// (moves to 2) - a session at 2 is never touched, including the
-// pre-title-state rows that were migrated to 2 because they carried a
-// label. A losing update (session already advanced) writes nothing.
-// updated_at is untouched: a generated label is not activity, and a
-// title landing after a read stamp must not turn the session unread.
+// SetSessionTitle writes a generated label and its title_state transition in one. The
+// state machine is enforced by the WHERE clause: provisional only from 0 (moves to 1),
+// final from 0 or 1 (moves to 2) - a session at 2 is never touched, including the
+// pre-title-state rows that were migrated to 2 because they carried a label. updated_at
+// is untouched: a generated label is not activity, and a title landing after a read
+// stamp must not turn the session unread.
 func (s *Store) SetSessionTitle(ctx context.Context, sessionID, title string, final bool) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionTitle(ctx, sessionID, title, final)
@@ -881,11 +754,9 @@ func (s *Store) SetSessionTitle(ctx context.Context, sessionID, title string, fi
 	return err
 }
 
-// SetSessionSummary writes the hygiene pass's digest on the session
-// row. Like a generated title, a summary is not activity - updated_at
-// is untouched, so a summary landing after a read stamp must not turn
-// the session unread. The trigger reindexes the FTS row with both
-// fields.
+// SetSessionSummary writes the hygiene pass's digest on the session row. Like a
+// generated title, a summary is not activity - updated_at is untouched, so a summary
+// landing after a read stamp must not turn the session unread.
 func (s *Store) SetSessionSummary(ctx context.Context, sessionID, summary string) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionSummary(ctx, sessionID, summary)
@@ -895,11 +766,7 @@ func (s *Store) SetSessionSummary(ctx context.Context, sessionID, summary string
 	return err
 }
 
-// SessionModels returns the last recorded model per session from the
-// session's model_change entries, read at read time (no schema or
-// counters). Sessions with no model entry are absent from the map.
-// ponytail: one pass over the model_change rows via MAX(id) per session;
-// fine for hundreds of sessions.
+// SessionModels returns the last recorded model per session from the session's.
 func (s *Store) SessionModels(ctx context.Context) (map[string]string, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT m.session_id, m.payload FROM messages m
@@ -925,9 +792,7 @@ func (s *Store) SessionModels(ctx context.Context) (map[string]string, error) {
 	return out, rows.Err()
 }
 
-// GetImageCaption returns the persisted caption for an image id
-// (media type + sha256 of the payload, set by the captioner).
-// Implements agent.CaptionStore.
+// GetImageCaption returns the persisted caption for an image id (media type + sha256.
 func (s *Store) GetImageCaption(ctx context.Context, imageID string) (caption string, ok bool, err error) {
 	err = s.db.QueryRowContext(ctx,
 		`SELECT caption FROM image_captions WHERE image_id = ?`, imageID).
@@ -941,10 +806,9 @@ func (s *Store) GetImageCaption(ctx context.Context, imageID string) (caption st
 	return caption, true, nil
 }
 
-// SaveImageCaption persists one image caption. Re-saving the same image
-// id keeps the first caption - a cached caption is never rewritten
-// (nothing benefits from the churn; the id is content-addressed).
-// Implements agent.CaptionStore.
+// SaveImageCaption persists one image caption. Re-saving the same image id keeps the
+// first caption - a cached caption is never rewritten (nothing benefits from the churn;
+// the id is content-addressed).
 func (s *Store) SaveImageCaption(ctx context.Context, imageID, caption string) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO image_captions (image_id, caption, created_at) VALUES (?, ?, ?)
@@ -964,8 +828,7 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-// AddSessionTokens adds a turn's real provider-reported usage to the
-// session's accumulated totals on the sessions row.
+// AddSessionTokens adds a turn's real provider-reported usage to the session's.
 func (s *Store) AddSessionTokens(ctx context.Context, sessionID string, prompt, completion int) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.AddSessionTokens(ctx, sessionID, prompt, completion)
@@ -980,22 +843,12 @@ func (s *Store) AddSessionTokens(ctx context.Context, sessionID string, prompt, 
 	return err
 }
 
-// quoteFTS wraps a user-supplied search term in FTS5 double quotes so
-// it matches as a literal phrase instead of being interpreted as query
-// syntax (apostrophes, AND/OR/NEAR, prefixes, etc.), with the FTS5
-// trailing-star phrase form `"term"*` so the LAST token also prefix-
-// matches (a search box narrows as you type: "fibo" finds "fibonacci",
-// in-app comment 5 2026-10-18 - exact-token-only made progressive
-// typing empty the results). Embedded double quotes are doubled per
-// FTS5 string-literal rules.
+// quoteFTS wraps a user-supplied search term in FTS5 double quotes so it matches as a.
 func quoteFTS(term string) string {
 	return `"` + strings.ReplaceAll(term, `"`, `""`) + `"*`
 }
 
 // SearchMessages performs a full-text search across all session messages.
-// The term is matched literally (phrase-quoted); returns matching sessions
-// with a verbatim snippet of the matching content and the matched-term
-// spans as structured metadata (core.SearchResult.Matches).
 func (s *Store) SearchMessages(ctx context.Context, query string) ([]core.SearchResult, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT session_id, `+snippetCols("messages_fts", 1)+`
@@ -1018,13 +871,10 @@ func (s *Store) SearchMessages(ctx context.Context, query string) ([]core.Search
 	return out, rows.Err()
 }
 
-// ftsMatchOpen and ftsMatchClose are the one-byte sentinel pair FTS5
-// snippet() wraps each matched term in. Control bytes, never part of
-// conversation content: the snippet must stay byte-for-byte stored
-// content (t_1901ce48 - the in-band [bracket] era corrupted the
-// verbatim canary checks), so match markers ride a character space
-// disjoint from content and are parsed into spans at read, never
-// shipped inside the string.
+// ftsMatchOpen and ftsMatchClose are the one-byte sentinel pair FTS5 snippet wraps.
+// Control bytes, never part of conversation content: the snippet must stay
+// byte-for-byte stored content, so match markers ride a character space disjoint from
+// content and are parsed into spans at read, never shipped inside the string.
 const (
 	ftsMatchOpen  = "\x01"
 	ftsMatchClose = "\x02"
@@ -1032,24 +882,20 @@ const (
 	ftsSentinels = ftsMatchOpen + ftsMatchClose
 )
 
-// snippetCols builds the SELECT pair for one FTS column: the
-// sentinel-marked snippet and the same window as a plain verbatim
-// excerpt. The plain copy is the ambiguity referee - when the stored
-// content itself carries a sentinel byte inside the window, the marked
-// parse is unreliable and the row ships the plain excerpt with no
-// spans. The empty delimiter/ellipsis args keep both copies in-band
-// clean: no marker characters, no synthetic "...".
+// snippetCols builds the SELECT pair for one FTS column. The plain copy is the
+// ambiguity referee - when the stored content itself carries a sentinel byte inside the
+// window, the marked parse is unreliable and the row ships the plain excerpt with no
+// spans.
 func snippetCols(table string, col int) string {
 	return fmt.Sprintf(
 		"snippet(%s, %d, '%s', '%s', '', 20), snippet(%s, %d, '', '', '', 20)",
 		table, col, ftsMatchOpen, ftsMatchClose, table, col)
 }
 
-// resolveSnippet converts one marked+plain snippet row pair into the
-// verbatim snippet plus the matched-term spans (byte offsets). The
-// plain copy referees: equal strings mean no matched term landed in
-// the window; a sentinel byte inside the plain copy means the stored
-// content itself holds one and the marker parse would be ambiguous, so
+// resolveSnippet converts one marked+plain snippet row pair into the verbatim snippet
+// plus the matched-term spans (byte offsets). The plain copy referees: equal strings
+// mean no matched term landed in the window; a sentinel byte inside the plain copy
+// means the stored content itself holds one and the marker parse would be ambiguous, so
 // the plain excerpt ships with no spans (exactness beats metadata).
 func resolveSnippet(marked, plain string) (string, []core.SearchMatch) {
 	if marked == plain {
@@ -1069,9 +915,8 @@ func resolveSnippet(marked, plain string) (string, []core.SearchMatch) {
 		case ftsMatchClose[0]:
 			if open >= 0 {
 				spans = append(spans, core.SearchMatch{Start: open, End: sb.Len()})
-				// The plain referee above proved the marked string
-				// holds exactly snippet's own balanced markers, so an
-				// open never stays dangling here.
+				// The plain referee above proved the marked string holds exactly snippet's own
+				// balanced markers, so an open never stays dangling here.
 				open = -1
 			}
 		default:
@@ -1081,17 +926,9 @@ func resolveSnippet(marked, plain string) (string, []core.SearchMatch) {
 	return sb.String(), spans
 }
 
-// SearchSessions performs the unified search behind /sessions/search:
-// one phrase-quoted term (quoteFTS, `"term"*`) queries the session
-// label index, the hygiene-summary index AND the message-content index
-// (all via sessions_fts / messages_fts), merged to ONE hit per session.
-// A label match outranks a summary match, which outranks any content
-// match for the same session; title-matching sessions lead, then
-// summary-matching, then content-only in best rank. Progressive typing
-// is preserved end to end: "fib", "fibo", "fibonacci" each still hit
-// (quoteFTS trailing star, in-app comment 5 2026-10-18). Column filters
-// scope each index query to its own column so a summary match is never
-// misread as a label match.
+// SearchSessions performs the unified search behind /sessions/search. Column filters
+// scope each index query to its own column so a summary match is never misread as a
+// label match.
 func (s *Store) SearchSessions(ctx context.Context, query string) ([]core.SearchResult, error) {
 	fts := quoteFTS(query)
 	labelScoped := `{label} : ` + fts
@@ -1099,8 +936,7 @@ func (s *Store) SearchSessions(ctx context.Context, query string) ([]core.Search
 	out := []core.SearchResult{}
 	seen := make(map[string]bool)
 
-	// Label hits first. The snippet is the label itself - there is no
-	// content context to bracket-mark.
+	// Label hits first.
 	trows, err := s.db.QueryContext(ctx,
 		`SELECT session_id, label FROM sessions_fts
 		 WHERE sessions_fts MATCH ? ORDER BY rank`, labelScoped)
@@ -1113,9 +949,8 @@ func (s *Store) SearchSessions(ctx context.Context, query string) ([]core.Search
 			trows.Close()
 			return nil, err
 		}
-		// The label index holds one row per session, but belt-and-
-		// braces on scans keeps the one-hit-per-session contract
-		// local to this method.
+		// The label index holds one row per session, but belt-and- braces on scans keeps the
+		// one-hit-per-session contract local to this method.
 		if seen[id] {
 			continue
 		}
@@ -1128,9 +963,7 @@ func (s *Store) SearchSessions(ctx context.Context, query string) ([]core.Search
 	}
 	trows.Close()
 
-	// Summary hits, best rank first. The snippet is the FTS excerpt of
-	// the summary text itself (column index 2), verbatim with match
-	// spans as metadata.
+	// Summary hits, best rank first.
 	srows, err := s.db.QueryContext(ctx,
 		`SELECT session_id, `+snippetCols("sessions_fts", 2)+`
 		 FROM sessions_fts WHERE sessions_fts MATCH ? ORDER BY rank`, summaryScoped)
@@ -1156,7 +989,6 @@ func (s *Store) SearchSessions(ctx context.Context, query string) ([]core.Search
 	}
 	srows.Close()
 
-	// Content hits, best rank first; label- or summary-matched sessions skip.
 	crows, err := s.db.QueryContext(ctx,
 		`SELECT session_id, `+snippetCols("messages_fts", 1)+`
 		 FROM messages_fts WHERE messages_fts MATCH ? ORDER BY rank`, fts)
@@ -1195,10 +1027,7 @@ type notableTracker struct {
 	maxTools  int
 }
 
-// countMessages iterates over a session's messages, incrementing the
-// global message counter and accumulating per-session user/tool stats.
-// Non-conversation entries (ModelChange, ThinkingLevelChange,
-// VariantSelect) are skipped.
+// countMessages iterates over a session's messages, incrementing the global message.
 func countMessages(msgs []core.Message, in *core.Insights, st *sessionStats) {
 	for _, msg := range msgs {
 		switch msg.(type) {
@@ -1218,8 +1047,7 @@ func countMessages(msgs []core.Message, in *core.Insights, st *sessionStats) {
 	}
 }
 
-// updateNotables updates the notable stats if the current session
-// exceeds the running maxima for messages, tokens, or tool calls.
+// updateNotables updates the notable stats if the current session exceeds the running.
 func updateNotables(in *core.Insights, st *sessionStats, nt *notableTracker, detail string) {
 	if st.msgs > nt.maxMsgs {
 		nt.maxMsgs = st.msgs
@@ -1235,9 +1063,7 @@ func updateNotables(in *core.Insights, st *sessionStats, nt *notableTracker, det
 	}
 }
 
-// processSession fetches messages for one session and accumulates its
-// stats into the provided Insights and sessionStats. It returns true if
-// the session was processed, false if skipped due to parse or fetch error.
+// processSession fetches messages for one session and accumulates its stats into the.
 func (s *Store) processSession(ctx context.Context, sess core.Session, in *core.Insights, st *sessionStats, nt *notableTracker, dayCounts *[7]int) bool {
 	t, err := time.Parse(time.RFC3339, sess.CreatedAt)
 	if err != nil {
@@ -1256,14 +1082,12 @@ func (s *Store) processSession(ctx context.Context, sess core.Session, in *core.
 	st.tokens = agent.EstimateTokens(msgs)
 	in.TotalTokens += st.tokens
 
-	// Daily activity by weekday.
 	wd := int(t.Weekday())
 	if wd == 0 {
 		wd = 6 // Sunday -> 6, Mon -> 0
 	}
 	dayCounts[wd]++
 
-	// Notable sessions.
 	label := sess.Label
 	if label == "" {
 		label = sess.ID
@@ -1273,8 +1097,7 @@ func (s *Store) processSession(ctx context.Context, sess core.Session, in *core.
 	return true
 }
 
-// buildDailyActivity fills the Daily [7]DayStat array from dayCounts,
-// computing visual bar widths proportional to the maximum day count.
+// buildDailyActivity fills the Daily [7]DayStat array from dayCounts, computing.
 func buildDailyActivity(daily *[7]core.DayStat, dayCounts [7]int, weekdays []string) {
 	maxDay := 0
 	for _, c := range dayCounts {
@@ -1295,7 +1118,6 @@ func buildDailyActivity(daily *[7]core.DayStat, dayCounts [7]int, weekdays []str
 }
 
 // ComputeInsights aggregates session data over the last N days.
-// If days <= 0, all sessions are included.
 func (s *Store) ComputeInsights(ctx context.Context, days int) (*core.Insights, error) {
 	sessions, err := s.ListSessions(ctx)
 	if err != nil {
@@ -1347,8 +1169,7 @@ func (s *Store) ComputeInsights(ctx context.Context, days int) (*core.Insights, 
 
 	buildDailyActivity(&in.Daily, dayCounts, weekdays)
 
-	// The store's on-disk shape: db + WAL file sizes. Zero on
-	// in-memory stores.
+	// The store's on-disk shape: db + WAL file sizes.
 	in.DBSizeBytes, in.WALSizeBytes = s.DBFileSizes()
 
 	if days > 0 {

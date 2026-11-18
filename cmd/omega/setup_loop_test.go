@@ -1,9 +1,6 @@
 package main
 
-// The setup-wizard + CLI-loop proofs (card t_0744eb8e): the wizard is
-// the gate (no-config refusal everywhere), a fresh home walks the
-// wizard and lands a working config, and the loop's dispatch and
-// renderer behave as plain text on paper.
+// The setup-wizard + CLI-loop proofs.
 
 import (
 	"bufio"
@@ -17,8 +14,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// stubLister is the setup wizard's fake transport: a ListModels answer
-// without a network. The real one is provider.NewProvider.
+// stubLister is the setup wizard's fake transport.
 type stubLister struct {
 	models []string
 	err    error
@@ -35,9 +31,7 @@ func withStubProvider(t *testing.T, stub stubLister) {
 	t.Cleanup(func() { newSetupProvider = old })
 }
 
-// TestSetupWizardWritesConfig is the fresh-install flow end to end at
-// the wizard level: an empty home, the wizard driven over an in-memory
-// stream, and the written config parses with the real loader.
+// TestSetupWizardWritesConfig is the fresh-install flow end to end at the wizard level.
 func TestSetupWizardWritesConfig(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	withStubProvider(t, stubLister{models: []string{"qwen3:8b", "llama3.2:3b"}})
@@ -73,7 +67,6 @@ func TestSetupWizardWritesConfig(t *testing.T) {
 		t.Errorf("setup-written config does not load: %v", err)
 	}
 
-	// the door prints: webui URL + the loop hint
 	text := out.String()
 	if !strings.Contains(text, "webui: http://localhost:8099/") {
 		t.Errorf("setup output misses the webui URL:\n%s", text)
@@ -88,8 +81,6 @@ func TestSetupWizardWritesConfig(t *testing.T) {
 // RETRIED host into the config - the model list came from there.
 func TestSetupWizardRetriedHostLandsInConfig(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
-	// the transport fails on the first call (the dead default host),
-	// succeeds on the retry - keyed on the host, the real install flow.
 	old := newSetupProvider
 	newSetupProvider = func(typ, modelName, baseURL, apiKey string) modelsLister {
 		if strings.Contains(baseURL, "11335") {
@@ -117,10 +108,9 @@ func TestSetupWizardRetriedHostLandsInConfig(t *testing.T) {
 	}
 }
 
-// TestSetupWizardCancelledHost is the stranded-install guard: a host
-// that fails the live test never strands the install silently - the
-// failure names the error and the wizard offers a retry or a forced
-// model name. A bare <enter> on ollama aborts with the honest message.
+// TestSetupWizardCancelledHost is the stranded-install guard: a host that fails the
+// live test never strands the install silently - the failure names the error and the
+// wizard offers a retry or a forced model name.
 func TestSetupWizardCancelledHost(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	withStubProvider(t, stubLister{err: &fakeNetError{}})
@@ -146,8 +136,7 @@ type fakeNetError struct{}
 
 func (*fakeNetError) Error() string { return "connect refused" }
 
-// TestSetupOverwriteGuard: an existing config is never eaten silently -
-// any answer but "y" cancels and leaves the file untouched.
+// TestSetupOverwriteGuard: an existing config is never eaten silently.
 func TestSetupOverwriteGuard(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	dir := filepath.Join(omegaHome(), "config")
@@ -189,9 +178,7 @@ func TestSetupInteractiveGuard(t *testing.T) {
 	}
 }
 
-// TestRequireConfigGate is the setup gate for the config-dependent
-// subcommands: an empty home refuses pointing at setup, a broken
-// config refuses pointing at setup, a valid config passes.
+// TestRequireConfigGate is the setup gate for the config-dependent subcommands.
 func TestRequireConfigGate(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 
@@ -227,9 +214,8 @@ func TestRequireConfigGate(t *testing.T) {
 	}
 }
 
-// TestNoConfigRefusesForCLI is the whole-surface fresh-install proof
-// at the dispatcher level: serve and run refuse; bare omega drops into
-// the wizard, which refuses a non-tty stdin with the honest message.
+// TestNoConfigRefusesForCLI is the whole-surface fresh-install proof at the dispatcher
+// level.
 func TestNoConfigRefusesForCLI(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 
@@ -245,9 +231,8 @@ func TestNoConfigRefusesForCLI(t *testing.T) {
 		t.Errorf("run refusal does not point at setup: %v", err)
 	}
 
-	// bare omega: the wizard is the gate - with a dead host under a
-	// stubbed transport it refuses with the no-model abort (and never
-	// probes a live provider from a test).
+	// bare omega: the wizard is the gate - with a dead host under a stubbed transport it
+	// refuses with the no-model abort (and never probes a live provider from a test).
 	withStubProvider(t, stubLister{err: &fakeNetError{}})
 	err := run([]string{})
 	if err == nil {
@@ -273,8 +258,7 @@ func newTestLoop(t *testing.T) (*cliLoop, *bytes.Buffer) {
 	return lo, buf
 }
 
-// stripANSI strips the loop's escape codes so assertions read the
-// text, not the palette.
+// stripANSI strips the loop's escape codes so assertions read the text, not the.
 func stripANSI(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {
@@ -288,9 +272,7 @@ func stripANSI(s string) string {
 	return b.String()
 }
 
-// TestLoopDispatch pins the loop's own command surface: the exit set
-// stops, /help lists, /workspace shows and validates, /session is
-// shown or reset, an unclaimed name lists what exists.
+// TestLoopDispatch pins the loop's own command surface.
 func TestLoopDispatch(t *testing.T) {
 	lo, buf := newTestLoop(t)
 
@@ -355,10 +337,9 @@ func TestLoopDispatch(t *testing.T) {
 	}
 }
 
-// TestLoopRendererStreams pins the renderer's paper behavior: stream
-// chunks print as they arrive (not line-dumped), tool calls are one
-// compact cyan line, errors end the block, and closeBlock flushes the
-// trailing newline exactly once.
+// TestLoopRendererStreams pins the renderer's paper behavior: stream chunks print as
+// they arrive (not line-dumped), tool calls are one compact cyan line, errors end the
+// block, and closeBlock flushes the trailing newline exactly once.
 func TestLoopRendererStreams(t *testing.T) {
 	lo, buf := newTestLoop(t)
 	lo.ansi = true
@@ -402,8 +383,7 @@ func TestLoopRendererStreams(t *testing.T) {
 	}
 }
 
-// TestCompactToolArgs pins the one-line law: keys sorted, values
-// flattened, fat payloads clipped.
+// TestCompactToolArgs pins the one-line law: keys sorted, values flattened, fat.
 func TestCompactToolArgs(t *testing.T) {
 	out := compactToolArgs(map[string]any{
 		"b": "x",
@@ -428,9 +408,6 @@ func TestCompactToolArgs(t *testing.T) {
 	}
 }
 
-// TestLoopPersona pins the tech-support ruling: the loop's fixed
-// persona is setup-support shaped (voice only - the knowledge lives in
-// the omega-dev skill via the skill port).
 func TestLoopPersona(t *testing.T) {
 	p := loopPersona()
 	if !strings.Contains(p, "tech support") {
@@ -441,8 +418,7 @@ func TestLoopPersona(t *testing.T) {
 	}
 }
 
-// stubTrust records the dirs the loop re-gates through the seam and
-// answers whatever ResolveContext would.
+// stubTrust records the dirs the loop re-gates through the seam and answers whatever.
 type stubTrust struct {
 	gated []string
 }
@@ -454,10 +430,9 @@ func (s *stubTrust) ResolveContext(cwd string, approve, noApprove, interactive b
 
 func (s *stubTrust) State(cwd string, approve, noApprove bool) string { return "trusted" }
 
-// TestLoopWorkspaceSwitch pins the real /workspace: a valid dir changes
-// the loop's CWD (echoed as an absolute path) and re-runs the trust
-// gate for the new dir - the same gate startup runs, never a silent
-// no-op.
+// TestLoopWorkspaceSwitch pins the real /workspace: a valid dir changes the loop's CWD
+// (echoed as an absolute path) and re-runs the trust gate for the new dir - the same
+// gate startup runs, never a silent no-op.
 func TestLoopWorkspaceSwitch(t *testing.T) {
 	lo, buf := newTestLoop(t)
 	tr := &stubTrust{}

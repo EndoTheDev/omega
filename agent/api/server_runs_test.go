@@ -24,16 +24,12 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// testWaitTimeout bounds every poll-until-true wait in this package's tests.
-// It exists to catch a HANG, not to time correctness: a healthy condition can
-// take seconds when the full suite runs packages in parallel and starves the
-// goroutine under test. Bounding it tightly (2-5s) made load-sensitive tests
-// red on a loaded machine and green in isolation - the worst kind of flake.
+// testWaitTimeout bounds every poll-until-true wait in this package's tests. It exists
+// to catch a HANG, not to time correctness: a healthy condition can take seconds when
+// the full suite runs packages in parallel and starves the goroutine under test.
 const testWaitTimeout = 30 * time.Second
 
-// stepProvider streams ONLY what the test hands to its next channel, in
-// order: each send() batch is forwarded into the in-flight Stream. The
-// test therefore controls both the pacing and the completeness of the run.
+// stepProvider streams ONLY what the test hands to its next channel, in order.
 type stepProvider struct {
 	modelName string
 	next      chan []core.ProviderStreamEvent
@@ -83,15 +79,12 @@ func (p *stepProvider) send(batch ...core.ProviderStreamEvent) {
 	p.next <- batch
 }
 
-// done closes the script channel: the stream ends without a stop
-// StreamEnd, so the running turn simply produces nothing more.
+// done closes the script channel.
 func (p *stepProvider) done() {
 	close(p.next)
 }
 
-// finalStep batches the turn-closing tail: the response chunk plus the
-// stop StreamEnd that testLoop answers with the assistant/turn_end/agent_end
-// sequence.
+// finalStep batches the turn-closing tail.
 func finalStep(content string) []core.ProviderStreamEvent {
 	return []core.ProviderStreamEvent{
 		core.ResponseChunk{Type: "response_chunk", Content: content},
@@ -99,9 +92,8 @@ func finalStep(content string) []core.ProviderStreamEvent {
 	}
 }
 
-// newStepServer wires agent + store over a stepProvider and starts a
-// live httptest server (real connections - the recorder cannot model a
-// client dropping mid-stream).
+// newStepServer wires agent + store over a stepProvider and starts a live httptest
+// server (real connections - the recorder cannot model a client dropping mid-stream).
 func newStepServer(t *testing.T) (*Server, *stepProvider, *store.Store, *httptest.Server) {
 	t.Helper()
 	prov := newStepProvider("step")
@@ -118,10 +110,9 @@ func newStepServer(t *testing.T) (*Server, *stepProvider, *store.Store, *httptes
 	return s, prov, st, ts
 }
 
-// muteTitles parks a session at title state 2, so the /chat handler's
-// provisional and final title runs never fire. They share the step
-// provider: a title run would compete for the test's scripted batches
-// and deadlock the run mid-flight.
+// muteTitles parks a session at title state 2, so the /chat handler's provisional and
+// final title runs never fire. They share the step provider: a title run would compete
+// for the test's scripted batches and deadlock the run mid-flight.
 func muteTitles(t *testing.T, st *store.Store, id string) {
 	t.Helper()
 	if err := st.SetSessionTitle(context.Background(), id, "", true); err != nil {
@@ -165,9 +156,7 @@ func postChatStream(t *testing.T, ts *httptest.Server, sessionID string) (*http.
 	return resp, cancel, bufio.NewScanner(resp.Body)
 }
 
-// readFrames drains the scanner until `want` SSE frames of the named
-// event type have been seen, returning the lines read. Fails the test if
-// the stream ends first.
+// readFrames drains the scanner until `want` SSE frames of the named event type have.
 func readFrames(t *testing.T, sc *bufio.Scanner, want string, n int) []string {
 	t.Helper()
 	var lines []string
@@ -199,16 +188,13 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-// detachClient cuts the client side of a streaming POST: cancel the
-// request context (tears the connection down server-side) and close the
-// body.
+// detachClient cuts the client side of a streaming POST.
 func detachClient(cancel context.CancelFunc, resp *http.Response) {
 	cancel()
 	resp.Body.Close()
 }
 
-// sessionMessages fetches the persisted history and returns assistant
-// content strings in order.
+// sessionMessages fetches the persisted history and returns assistant content strings.
 func sessionMessages(t *testing.T, ts *httptest.Server, id string) []string {
 	t.Helper()
 	resp, err := http.Get(ts.URL + "/sessions/" + id)
@@ -237,9 +223,7 @@ func sessionMessages(t *testing.T, ts *httptest.Server, id string) []string {
 	return out
 }
 
-// TestDetachedRunSurvivesClientDisconnect is the core refresh scenario:
-// the /chat client drops mid-stream, the run keeps going, the reattach
-// subscriber receives the rest of the stream, and everything persists.
+// TestDetachedRunSurvivesClientDisconnect is the core refresh scenario.
 func TestDetachedRunSurvivesClientDisconnect(t *testing.T) {
 	s, prov, st, ts := newStepServer(t)
 	createSession(t, ts, "s1")
@@ -248,7 +232,6 @@ func TestDetachedRunSurvivesClientDisconnect(t *testing.T) {
 	resp, cancel, sc := postChatStream(t, ts, "s1")
 	defer cancel()
 
-	// First step lands on the wire, run is mid-flight.
 	prov.send(core.ResponseChunk{Type: "response_chunk", Content: "a"})
 	readFrames(t, sc, "response_chunk", 1)
 	waitFor(t, "run registered active", func() bool { return s.runs.active("s1") })
@@ -261,7 +244,6 @@ func TestDetachedRunSurvivesClientDisconnect(t *testing.T) {
 		t.Fatal("run ended after client disconnect - run is still coupled to the request")
 	}
 
-	// A fresh subscriber (the reattached page) receives the remainder.
 	sseResp, err := http.Get(ts.URL + "/sessions/s1/events")
 	if err != nil {
 		t.Fatalf("events request: %v", err)
@@ -269,9 +251,9 @@ func TestDetachedRunSurvivesClientDisconnect(t *testing.T) {
 	sseScanner := bufio.NewScanner(sseResp.Body)
 	defer sseResp.Body.Close()
 
-	// Finish the run with a second subscriber attached. done() closes the
-	// provider stream: the loop's for-range must end or the run never
-	// deregisters (agent_end alone does not end it - same as the real loop).
+	// Finish the run with a second subscriber attached. done closes the provider stream:
+	// the loop's for-range must end or the run never deregisters (agent_end alone does not
+	// end it - same as the real loop).
 	prov.send(finalStep("b")...)
 	prov.done()
 	lines := readFrames(t, sseScanner, "agent_end", 1)
@@ -285,16 +267,12 @@ func TestDetachedRunSurvivesClientDisconnect(t *testing.T) {
 		}
 	}
 
-	// The run deregisters once persistence lands...
 	waitFor(t, "run deregistered after finish", func() bool { return !s.runs.active("s1") })
-	// ...and the run with ZERO attached clients at send-time still
-	// persisted the whole turn ("a" streamed + "b" streamed after attach).
 	msgs := sessionMessages(t, ts, "s1")
 	if len(msgs) != 1 || msgs[0] != "ab" {
 		t.Fatalf("persisted assistant = %q, want [ab]", msgs)
 	}
 
-	// The events surface no longer serves the finished run.
 	resp404, err := http.Get(ts.URL + "/sessions/s1/events")
 	if err != nil {
 		t.Fatalf("events after finish: %v", err)
@@ -314,9 +292,7 @@ func containsFrame(lines []string, event, content string) bool {
 	return false
 }
 
-// TestZeroClientsRunCompletes: nobody ever reads the stream - the client
-// drops before the first frame - and the run still completes and
-// persists everything (segmented persistence unchanged).
+// TestZeroClientsRunCompletes: nobody ever reads the stream.
 func TestZeroClientsRunCompletes(t *testing.T) {
 	s, prov, st, ts := newStepServer(t)
 	createSession(t, ts, "s2")
@@ -339,8 +315,7 @@ func TestZeroClientsRunCompletes(t *testing.T) {
 	}
 }
 
-// TestSessionEvents404: the events surface answers 404 for a session
-// that has never run and 405 for non-GET.
+// TestSessionEvents404: the events surface answers 404 for a session that has never.
 func TestSessionEvents404(t *testing.T) {
 	_, _, st0, ts := newStepServer(t)
 	createSession(t, ts, "sx")
@@ -366,9 +341,7 @@ func TestSessionEvents404(t *testing.T) {
 	}
 }
 
-// TestDetachedRunConflict: a second /chat for a session with a live run
-// is a 409, not a doubled run (the server-side backstop to the webui's
-// per-session busy gate).
+// TestDetachedRunConflict: a second /chat for a session with a live run is a 409, not.
 func TestDetachedRunConflict(t *testing.T) {
 	s, prov, st3, ts := newStepServer(t)
 	createSession(t, ts, "s3")
@@ -393,11 +366,9 @@ func TestDetachedRunConflict(t *testing.T) {
 		t.Fatalf("double chat status = %d, want 409", resp2.StatusCode)
 	}
 
-	// The 409 must not persist anything: the slot gate runs BEFORE
-	// loadSessionMessages, so the rejected user message never lands -
-	// the next successful send would otherwise double it. (The message
-	// count is the capsule list's row field; the row truth is the
-	// store's own messages after the wave-2 list move.)
+	// The 409 must not persist anything: the slot gate runs BEFORE loadSessionMessages, so
+	// the rejected user message never lands - the next successful send would otherwise
+	// double it.
 	msgs, err := st3.GetMessages(context.Background(), "s3")
 	if err != nil {
 		t.Fatalf("messages: %v", err)
@@ -406,16 +377,12 @@ func TestDetachedRunConflict(t *testing.T) {
 		t.Fatalf("409'd chat leaked a message: message count = %d, want 1 (the user turn)", len(msgs))
 	}
 
-	// unwind
 	prov.done()
 	waitFor(t, "run finished", func() bool { return !s.runs.active("s3") })
 	_ = resp.Body.Close()
 }
 
-// TestSessionDetailRunningFlag: the detail surface reports the
-// server-owned running flag the webui pulse reconciles against. (The
-// LIST row's flag law moved with the list - the store capsule's
-// routes_test.go pins it through the offered chat-runs service, wave 2.)
+// TestSessionDetailRunningFlag: the detail surface reports the server-owned running.
 func TestSessionDetailRunningFlag(t *testing.T) {
 	s, prov, st4, ts := newStepServer(t)
 	createSession(t, ts, "s4")
@@ -427,7 +394,6 @@ func TestSessionDetailRunningFlag(t *testing.T) {
 	readFrames(t, sc, "response_chunk", 1)
 	waitFor(t, "run registered active", func() bool { return s.runs.active("s4") })
 
-	// Detail running == true mid-run (always present, running:false too).
 	detail := fetchDetail(t, ts.URL+"/sessions/s4")
 	if !detail["running"].(bool) {
 		t.Fatal("detail mid-run: running = false, want true")
@@ -458,11 +424,10 @@ func fetchDetail(t *testing.T, url string) map[string]any {
 	return m
 }
 
-// hangLoop mirrors the real loop's timeout path (agent/loop):
-// turn one streams a tool call and executes it with the run ctx (the
-// hang tool blocks there), and every turn boundary checks ctx.Err()
-// first - so cancelling the run ctx ends the run with a cancelled
-// agent_end, exactly as the real loop unwinds.
+// hangLoop mirrors the real loop's timeout path (agent/loop): turn one streams a tool
+// call and executes it with the run ctx (the hang tool blocks there), and every turn
+// boundary checks ctx.Err first - so cancelling the run ctx ends the run with a
+// cancelled agent_end, exactly as the real loop unwinds.
 type hangLoop struct{}
 
 func (hangLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
@@ -476,8 +441,7 @@ func (hangLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		turns++
 		opts.Events <- core.TurnStart{Type: "turn_start", Turn: turns}
 		if turns > 1 {
-			// The tool returned without a deadline hit (cannot happen
-			// with hangTool, but the shape stays loop-honest).
+			// The tool returned without a deadline hit (cannot happen with hangTool, but the.
 			opts.Events <- core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "stop"}
 			return nil
 		}
@@ -494,11 +458,10 @@ func (hangLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	}
 }
 
-// TestDetachedRunTimeoutUnbricksSession: a run blocked in a hung tool
-// call (the shell-command-that-never-returns case) must die at the
-// wall-clock cap - agent_end, an error frame naming the timeout,
-// deregistration - and the session accepts a new /chat afterwards. The
-// 409 double-run backstop (TestDetachedRunConflict) must stay separate
+// TestDetachedRunTimeoutUnbricksSession: a run blocked in a hung tool call (the
+// shell-command-that-never-returns case) must die at the wall-clock cap - agent_end, an
+// error frame naming the timeout, deregistration - and the session accepts a new /chat
+// afterwards. The 409 double-run backstop (TestDetachedRunConflict) must stay separate
 // and green: it covers the LIVE run, this covers the runaway one.
 func TestDetachedRunTimeoutUnbricksSession(t *testing.T) {
 	prov := newStepProvider("step")
@@ -525,7 +488,6 @@ func TestDetachedRunTimeoutUnbricksSession(t *testing.T) {
 	createSession(t, ts, "t1")
 	muteTitles(t, st, "t1")
 
-	// The run blocks in the hang tool; nothing from the provider arrives.
 	resp, cancel, sc := postChatStream(t, ts, "t1")
 	defer cancel()
 	defer resp.Body.Close()
@@ -534,8 +496,6 @@ func TestDetachedRunTimeoutUnbricksSession(t *testing.T) {
 	// The wall-clock cap ends the run through the normal path: agent_end.
 	readFrames(t, sc, "agent_end", 1)
 
-	// The error frame naming the timeout follows (it is emitted after
-	// the event loop drains, before persistence).
 	sawTimeout := false
 	for sc.Scan() {
 		if strings.Contains(sc.Text(), "run timeout") {
@@ -547,7 +507,6 @@ func TestDetachedRunTimeoutUnbricksSession(t *testing.T) {
 		t.Fatal("no error frame naming the timeout after agent_end")
 	}
 
-	// The hub lets go: no more 409 for the session.
 	waitFor(t, "run deregistered after timeout", func() bool { return !s.runs.active("t1") })
 
 	body, _ := json.Marshal(map[string]any{
@@ -564,13 +523,10 @@ func TestDetachedRunTimeoutUnbricksSession(t *testing.T) {
 		t.Fatalf("post-chat after timeout status = %d, want 200 (got %s)", resp2.StatusCode, resp2.Status)
 	}
 
-	// The replacement run also runs under the cap and lets go again.
 	waitFor(t, "replacement run deregistered", func() bool { return !s.runs.active("t1") })
 }
 
-// stopHangTool is the hang tool the stop tests block in: it fires
-// started() on entry (the "tool is running" signal), then parks until
-// its context ends - the exact shape a cancelled long shell call takes.
+// stopHangTool is the hang tool the stop tests block in.
 func stopHangTool(started func()) core.Tool {
 	return core.Tool{
 		Description: "blocks until its context ends",
@@ -584,10 +540,7 @@ func stopHangTool(started func()) core.Tool {
 	}
 }
 
-// scriptedStopLoop mirrors the real loop's parked-tool shape: turn one
-// streams partial content, calls the hang tool (executed with the RUN
-// ctx - the loop's own convention), and the turn-boundary ctx check
-// produces the cancelled agent_end. The cancel parks in the tool.
+// scriptedStopLoop mirrors the real loop's parked-tool shape.
 type scriptedStopLoop struct{ started func() }
 
 func (l scriptedStopLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
@@ -596,8 +549,7 @@ func (l scriptedStopLoop) Run(ctx context.Context, opts agent.LoopOptions) error
 	opts.Events <- core.StreamEvent{Event: core.ResponseChunk{Type: "response_chunk", Content: "par"}}
 	opts.Events <- core.StreamEvent{Event: core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "hang"}}}
 	opts.Events <- core.StreamEvent{Event: core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"}}
-	// Mirror the real loop: the assistant persists before the tool
-	// runs, and both survive the cancelled ctx (WithoutCancel law).
+	// Mirror the real loop: the assistant persists before the tool runs, and both.
 	if sink := agent.RunTurnSink(ctx); sink != nil {
 		_ = sink.AppendTurnMessage(context.WithoutCancel(ctx), core.NewAssistant("par"))
 	}
@@ -625,12 +577,7 @@ func (l scriptedStopLoop) Run(ctx context.Context, opts agent.LoopOptions) error
 	return nil
 }
 
-// TestDetachedRunStopCancelsLiveRun is the cancel scenario card
-// t_6c97a95a settles: a run streaming its first partial content, parked
-// in a blocked tool, receives POST /sessions/{id}/stop - the run's own
-// ctx cancels, the loop unwinds through its NORMAL path (agent_end with
-// finish_reason "cancelled", no extra error frame), the partial output
-// persists, the hub slot frees, and the session takes a new /chat.
+// TestDetachedRunStopCancelsLiveRun is the cancel scenario settles.
 func TestDetachedRunStopCancelsLiveRun(t *testing.T) {
 	toolStarted := make(chan struct{})
 	prov := newStepProvider("step")
@@ -656,11 +603,8 @@ func TestDetachedRunStopCancelsLiveRun(t *testing.T) {
 	waitFor(t, "run registered active", func() bool { return s.runs.active("t2") })
 
 	// The loop parks in the hang tool; the started signal proves it.
-	// A stop before it lands ends the run at the turn boundary
-	// instead - same unwind either way.
 	<-toolStarted
 
-	// Cancel.
 	stopResp, err := http.Post(ts.URL+"/sessions/t2/stop", "application/json", nil)
 	if err != nil {
 		t.Fatalf("stop request: %v", err)
@@ -670,11 +614,8 @@ func TestDetachedRunStopCancelsLiveRun(t *testing.T) {
 		t.Fatalf("stop status = %d, want 200", stopResp.StatusCode)
 	}
 
-	// The unwind is the normal one: agent_end with finish_reason
-	// "cancelled", carrying "context canceled" - NOT the deadline error.
 	lines := readFrames(t, sc, "agent_end", 1)
-	// readFrames returns at the "event: agent_end" line; the frame's
-	// data line is the next scan - grab it for the assertions below.
+	// readFrames returns at the "event.
 	if sc.Scan() {
 		lines = append(lines, sc.Text())
 	}
@@ -688,24 +629,18 @@ func TestDetachedRunStopCancelsLiveRun(t *testing.T) {
 		t.Fatalf("cancel must not ride the timeout error frame; frames: %v", lines)
 	}
 
-	// The hub lets go: the freed slot proves the unwinding deregistered.
-	// finish runs after persistRun (launchRun's defers), so this wait is
-	// also the persistence barrier: reading earlier races the detached
-	// store writes - the parent-pointer resolution (t_17365247) slowed
-	// the persist enough to lose that race under -race, deterministically.
+	// The hub lets go: the freed slot proves the unwinding deregistered. finish runs after
+	// persistRun (launchRun's defers), so this wait is also the persistence barrier:
+	// reading earlier races the detached store writes - the parent-pointer resolution
+	// slowed the persist enough to lose that race under -race, deterministically.
 	waitFor(t, "run deregistered after stop", func() bool { return !s.runs.active("t2") })
 
-	// What streamed before the cancel persists: the partial chunk. The
-	// errored tool call persists with it (same as a timeout unwind).
 	msgs := sessionMessages(t, ts, "t2")
 	if len(msgs) < 1 || msgs[0] != "par" {
 		t.Fatalf("persisted assistant = %q, want [par] first", msgs)
 	}
 
-	// The freed slot takes a new run - no stale 409. The replacement
-	// run parks in the same hang tool, so the cap is tightened first:
-	// it self-completes through the normal timeout unwind and frees the
-	// slot again on its own.
+	// The freed slot takes a new run - no stale 409.
 	s.runTimeout = 400 * time.Millisecond
 	resp2, cancel2, _ := postChatStream(t, ts, "t2")
 	if resp2.StatusCode != http.StatusOK {
@@ -715,7 +650,6 @@ func TestDetachedRunStopCancelsLiveRun(t *testing.T) {
 	cancel2()
 	waitFor(t, "replacement run deregistered", func() bool { return !s.runs.active("t2") })
 
-	// A stop after everything calms down: 404, the run is gone.
 	stop2, err := http.Post(ts.URL+"/sessions/t2/stop", "application/json", nil)
 	if err != nil {
 		t.Fatalf("post-unwind stop: %v", err)
@@ -726,8 +660,7 @@ func TestDetachedRunStopCancelsLiveRun(t *testing.T) {
 	}
 }
 
-// TestDetachedRunStopIdleNotFound: stop on an idle session is a clean
-// 404, and non-POST is a 405.
+// TestDetachedRunStopIdleNotFound: stop on an idle session is a clean 404, and.
 func TestDetachedRunStopIdleNotFound(t *testing.T) {
 	_, _, st5, ts := newStepServer(t)
 	createSession(t, ts, "t5")
@@ -787,9 +720,7 @@ func TestRunHubCutSlowSubscriber(t *testing.T) {
 	}
 	slow := h.subscribe(run)
 
-	// Overrun the slow subscriber's buffer: the (subscriberBuffer+1)-th
-	// frame has no room left, so the hub CUTS the channel. A cut channel
-	// still drains its buffered frames before reading reports closed.
+	// Overrun the slow subscriber's buffer.
 	for i := 0; i < subscriberBuffer+1; i++ {
 		h.broadcast(run, runFrame{event: "x", data: []byte("1")})
 	}
@@ -800,8 +731,7 @@ func TestRunHubCutSlowSubscriber(t *testing.T) {
 		}
 	}
 
-	// The cut must not have ended the run: a FRESH subscriber (a page
-	// reattaching after the dead one was cut) attaches and receives.
+	// The cut must not have ended the run.
 	fresh := h.subscribe(run)
 	h.broadcast(run, runFrame{event: "y", data: []byte("2")})
 	select {

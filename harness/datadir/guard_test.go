@@ -7,11 +7,6 @@ import (
 	"testing"
 )
 
-// ENDO'S LAW 2026-10-18: the tool layer refuses the accidental class of
-// database access — file paths and shell commands that resolve into the
-// instance database (omega.db + -wal/-shm), symlinks included. These
-// tests pin the matcher; the consuming tool capsules (harness/files,
-// harness/terminal) pin the four guarded tool entry points.
 
 // guardFor builds a Guard against a fake instance db in dir.
 func guardFor(t *testing.T, dir string) *Guard {
@@ -49,8 +44,7 @@ func TestDBGuardDenyFile(t *testing.T) {
 	}
 }
 
-// TestDBGuardDenyShellBasename: the raw command string is grepped for
-// the db basename — the heuristic ceiling of a deny-list.
+// TestDBGuardDenyShellBasename: the raw command string is grepped for the db basename.
 func TestDBGuardDenyShellBasename(t *testing.T) {
 	dir := t.TempDir()
 	g := guardFor(t, dir)
@@ -73,9 +67,7 @@ func TestDBGuardDenyShellBasename(t *testing.T) {
 	}
 }
 
-// TestDBGuardDenyShellResolvedPath: the basename can be hidden by
-// indirection — commands spelling the db through symlinks, env
-// expansion, or relative paths resolve into the deny set.
+// TestDBGuardDenyShellResolvedPath: the basename can be hidden by indirection —.
 func TestDBGuardDenyShellResolvedPath(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "omega.db")
@@ -99,8 +91,7 @@ func TestDBGuardDenyShellResolvedPath(t *testing.T) {
 	}
 }
 
-// TestDBGuardSymlinkLeaf: a symlink AT the db path (not through it) is
-// denied by the file tools — EvalSymlinks resolves the leaf.
+// TestDBGuardSymlinkLeaf: a symlink AT the db path (not through it) is denied by the.
 func TestDBGuardSymlinkLeaf(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "omega.db")
@@ -117,9 +108,7 @@ func TestDBGuardSymlinkLeaf(t *testing.T) {
 	}
 }
 
-// TestDBGuardHomelessInstall: the fallback Guard against the standard
-// install layout (<home>/data/omega.db, data/ under OMEGA_HOME or
-// ~/.omega) still denies.
+// TestDBGuardHomelessInstall: the fallback Guard against the standard install layout.
 func TestDBGuardHomelessInstall(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)

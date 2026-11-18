@@ -3,7 +3,6 @@
     ref="el"
     :class="['thinking', { live: streaming === true }]">
     <summary @click="onSummaryClick">
-      <!-- card t_502b8e81: the thinking block wears its iconset glyph -->
       <Icon
         name="brain"
         class="thinking-ic" />
@@ -18,9 +17,9 @@
         >…</span
       > </summary>
     <div class="thinking-body">{{ content }}</div>
-    <!-- variant anchor (t_0df4efd8): a THINKING row can be a branch's
-         active head (a multi-row replay without a stored text bubble)
-         - the switcher mounts on the block's tail -->
+    <!--
+      variant anchor: a THINKING row can be a branch's active head (a multi-row.
+    -->
     <VariantSwitcher
       v-if="variant"
       class="thinking-variant"
@@ -32,30 +31,21 @@
 <script setup lang="ts">
   import { nextTick, onMounted, ref, watch } from "vue";
   import { useElapsed } from "../../composables/useElapsed";
-  // card t_502b8e81: the iconset wrapper - brain on the thinking block
   import Icon from "../ui/Icon.vue";
-  // card t_428ed4fb: the thinking display knob (auto | expanded |
-  // collapsed) - the block's own auto state machine rides the shared
-  // mode like the tool rows' (card t_868633b3)
+  // the thinking display knob (auto | expanded | collapsed).
   import { thinkingWantOpen, useThinkingDisplay } from "../../composables/thinkingDisplay";
   import VariantSwitcher from "./VariantSwitcher.vue";
   import type { VariantBlock } from "../../composables/omega";
 
   const props = defineProps<{
     content: string;
-    // the run's reasoning is being streamed - drives the live "…"
-    // marker and the elapsed meter (NOT the open state; auto stays
-    // collapsed while streaming, per card t_428ed4fb)
     streaming?: boolean;
     // server-measured duration from restored history - wins over the
     // live meter (restored items mount final and never start one)
     finalMs?: number;
-    // elapsed-so-far of a reasoning phase still streaming here (card
-    // t_95385aba): a remounted open block counts on from the server's
-    // measurement, never from the mount moment
+    // elapsed-so-far of a reasoning phase still streaming here: a remounted open block
+    // counts on from the server's measurement, never from the mount moment
     elapsedMs?: number;
-    // this row's branch block when the thinking row is the branch's
-    // active head (a text-less multi-row replay) - resolved by ChatTab
     variant?: VariantBlock | null;
   }>();
 
@@ -63,25 +53,17 @@
     (e: "select", index: number): void;
   }>();
 
-  // Elapsed counter: ticks every second while the stream is live and
-  // freezes at the final value when it ends - the collapsed summary keeps
-  // showing how long the run thought. A block that remounts mid-stream
-  // (tab switch, reload) starts at the phase's elapsed-so-far (card
-  // t_95385aba), the same anchor a running tool row carries.
+  // Elapsed counter: ticks every second while the stream is live and freezes at the
+  // final value when it ends.
   const elapsedLabel = useElapsed(
     () => props.finalMs,
     () => props.streaming ?? false,
     () => props.elapsedMs ?? 0,
   );
 
-  // --- auto open/close (card t_428ed4fb, same shape as the tool rows)
-  // The display knob decides what a block does on its own: auto and
-  // collapsed keep the body shut (the one-line summary is all you get),
-  // expanded forces it open. A manual summary click PINS the block -
-  // its open state is the user's, and mode flips recompute around it,
-  // never over it. The details element stays uncontrolled (no :open
-  // binding): the browser owns the toggle, this side applies the mode
-  // on mount and on mode change only.
+  // -- auto open/close The display knob decides what a block does on its own. A manual
+  // summary click PINS the block - its open state is the user's, and mode flips
+  // recompute around it, never over it.
   const el = ref<HTMLDetailsElement | null>(null);
   const display = useThinkingDisplay();
   const pinned = ref<boolean | null>(null);
@@ -91,8 +73,7 @@
     el.value.open = thinkingWantOpen(display.value);
   }
 
-  // nextTick: the mode flip may ride a render pass with other updates -
-  // apply after the DOM settles.
+  // nextTick: the mode flip may ride a render pass with other updates.
   watch(display, () => void nextTick(applyAuto));
   onMounted(applyAuto);
 

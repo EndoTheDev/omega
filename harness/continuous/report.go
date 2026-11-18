@@ -1,25 +1,25 @@
 package continuous
 
-// report.go: the wake report's shape (card t_72ecca67, ruling 11's
-// second half). The run's closing message IS the report (ruling 10);
+// report.go: the wake report's shape
+// second half). The run's closing message IS the report;
 // before it lands in the agent's canonical chat the runtime shapes it,
 // never the agent:
 //
-//   - a claim sentence gains its ledger citation when the run's
+// a claim sentence gains its ledger citation when the run's
 //     evidence backs it (an ok row whose verifier proves the path);
-//   - a claim sentence with no backing - or one the ledger
-//     contradicts - is stripped before persistence (ruling 11:
+// a claim sentence with no backing - or one the ledger
+// contradicts - is stripped before persistence
 //     unverified claims do not land);
-//   - the runtime evidence tail (call counts, row ids) closes the
+// the runtime evidence tail (call counts, row ids) closes the
 //     report; a run that called no tools gets no tail (nothing to
 //     cite, never a fabricated verdict).
 //
-// Verifier scope, kept honest (ruling 11): the cheap check is the file
+// Verifier scope, kept honest: the cheap check is the file
 // stat ONLY. URL claims ride their own fetch: a claim over a URL is
 // backed when the run's ledger carries an ok row FOR that URL (the
 // fetch tool's own result, the HTTP outcome) and strips when the fetch
 // failed or the run never fetched it - fail closed either way. The
-// verifier string `url:...` is a locator, not a check.
+// verifier string `url:..` is a locator, not a check.
 
 import (
 	"context"
@@ -54,10 +54,9 @@ func WrapWakeSink(inner agent.TurnSink) agent.TurnSink {
 	return &wakeReportSink{inner: inner}
 }
 
-// wakeReportSink wraps the store TurnSink. Intermediate turns pass
-// through untouched; the run's CLOSING message is the one assistant
-// turn carrying content and no tool calls (the loop ends exactly
-// there) - only it is shaped.
+// wakeReportSink wraps the store TurnSink. Intermediate turns pass through untouched;
+// the run's CLOSING message is the one assistant turn carrying content and no tool
+// calls (the loop ends exactly there) - only it is shaped.
 type wakeReportSink struct {
 	inner agent.TurnSink
 }
@@ -70,10 +69,9 @@ func (s *wakeReportSink) AppendTurnMessage(ctx context.Context, msg core.Message
 	return s.inner.AppendTurnMessage(ctx, msg)
 }
 
-// shape reads this run's ledger rows and reshapes the closing text.
-// A broken ledger cannot block the report: it degrades to no
-// evidence, which strips claims - fail closed, still honest.
-// AgentHome answers a HOME; the ledger is a data-dir consumer.
+// shape reads this run's ledger rows and reshapes the closing text. A broken ledger
+// cannot block the report: it degrades to no evidence, which strips claims - fail
+// closed, still honest.
 func (s *wakeReportSink) shape(ctx context.Context, content string) string {
 	data, err := datadir.AgentHome()
 	if err != nil {
@@ -95,20 +93,12 @@ func (s *wakeReportSink) shape(ctx context.Context, content string) string {
 var claimVerbs = regexp.MustCompile(`(?i)\b(created|wrote|updated|deleted|removed|edited|modified|renamed|moved|fetched|downloaded|uploaded|saved|read|installed|deployed)\b`)
 
 // pathTokens finds the checkable objects of a claim: a path or a URL.
-// The file branch carries the optional drive-letter prefix and the
-// backslash separator (card t_630e595d): a windows full-path claim
-// ("C:\Data\notes\today.md", "\\server\share\f.txt") tokenizes whole,
-// not as its bare basename. The URL branch stays as it was.
 var pathTokens = regexp.MustCompile(`https?://[\w.@%+=:/~#?&-]+|(?:[A-Za-z]:)?(?:\.{1,2}/|~/|/|\\)[\w.@%+=:/\\~-]+|\b[\w-]+(?:\.[\w-]+)+\b`)
 
 // maxTailRows caps the id list the evidence tail names.
 const maxTailRows = 12
 
-// evidence is the run's folded ledger tables. File tokens match the
-// file tables (the verifier's stat), URL tokens the url tables (the
-// fetch row's ok/fail). A claim is backed only when EVERY token it
-// names resolves seen and unfailed, and at least one token carries a
-// verifiable row.
+// evidence is the run's folded ledger tables.
 type evidence struct {
 	fileVerified map[string][]int64
 	fileFailed   map[string]bool
@@ -118,8 +108,7 @@ type evidence struct {
 	urlSeen      map[string]bool
 }
 
-// shapeReport is the pure shaping core: content + rows -> report. The
-// sink feeds it the run's ledger rows; tests feed it fixtures.
+// shapeReport is the pure shaping core: content + rows -> report.
 func shapeReport(content string, rows []record) string {
 	ev := evidenceSets(rows)
 	paragraphs := strings.Split(content, "\n")
@@ -135,14 +124,12 @@ func shapeReport(content string, rows []record) string {
 			text = "[report body stripped: no claim carried ledger evidence]\n\n" + tail
 		}
 	} else if strings.TrimSpace(text) == "" {
-		// no tools ran and everything stripped: say no more than that
 		text = "[report body stripped: no claim carried ledger evidence]"
 	}
 	return text
 }
 
-// shapeParagraph shapes one line: sentence-split, claims judged,
-// stripped sentences dropped whole.
+// shapeParagraph shapes one line.
 func shapeParagraph(para string, ev evidence, rows []record) []string {
 	if strings.TrimSpace(para) == "" {
 		return []string{para}
@@ -153,7 +140,6 @@ func shapeParagraph(para string, ev evidence, rows []record) []string {
 		case "cite":
 			kept = append(kept, citeSentence(sent, ev, rows))
 		case "strip":
-			// a claim with no evidence does not land
 		default: // "keep"
 			kept = append(kept, sent)
 		}
@@ -161,8 +147,7 @@ func shapeParagraph(para string, ev evidence, rows []record) []string {
 	return kept
 }
 
-// splitSentences breaks one line at sentence ends; the line itself
-// already splits paragraphs, so bullets and headings stay whole.
+// splitSentences breaks one line at sentence ends.
 func splitSentences(line string) []string {
 	end := regexp.MustCompile(`[.!?]["')\]]?(?:\s+|$)`)
 	var out []string
@@ -183,9 +168,7 @@ func splitSentences(line string) []string {
 	return out
 }
 
-// judgeSentence answers keep / cite / strip for one sentence. A
-// sentence's tokens split by kind: file-like tokens judge against the
-// file (stat) tables, URL tokens against the url (fetch row) tables.
+// judgeSentence answers keep / cite / strip for one sentence.
 func judgeSentence(sent string, ev evidence) string {
 	if !claimVerbs.MatchString(sent) {
 		return "keep"
@@ -218,8 +201,7 @@ func judgeSentence(sent string, ev evidence) string {
 	return "strip"
 }
 
-// matchPaths extracts the sentence's file-like tokens and resolves
-// each onto the ledger's path key for the same file.
+// matchPaths extracts the sentence's file-like tokens and resolves each onto the.
 func matchPaths(sent string, ev evidence) []string {
 	var out []string
 	seenAny := map[string]bool{}
@@ -262,8 +244,7 @@ func isURLToken(tok string) bool {
 	return strings.HasPrefix(tok, "http://") || strings.HasPrefix(tok, "https://")
 }
 
-// normURL is the URL match key: trimmed, trailing slash folded away -
-// a fetched page and the claim over it agree modulo the slash.
+// normURL is the URL match key.
 func normURL(u string) string {
 	return strings.TrimSuffix(strings.TrimSpace(u), "/")
 }
@@ -283,15 +264,10 @@ func isNumericToken(tok string) bool {
 	return true
 }
 
-// resolve maps a claim token onto the ledger's path key for the same
-// file: exact, or suffix match on the separator-canonical spelling
-// when the token is file-like. Every miss resolves to the token
-// itself (unseen -> strip).
-//
-// The suffix match normalizes both sides (Clean -> ToSlash,
-// card t_630e595d): the ledger key is the raw tool-arg path, a
-// backslash shape on windows, and the old hardcoded "/"+token join
-// never matched it, so every claim stripped and no citation landed.
+// resolve maps a claim token onto the ledger's path key for the same file. The suffix
+// match normalizes both sides: the ledger key is the raw tool-arg path, a backslash
+// shape on windows, and the old hardcoded "/"+token join never matched it, so every
+// claim stripped and no citation landed.
 func resolve(tok string, ev evidence) string {
 	token := strings.TrimPrefix(strings.TrimPrefix(tok, "./"), "~/")
 	present := func(p string) bool { return ev.fileVerified[p] != nil || ev.fileFailed[p] }
@@ -312,24 +288,18 @@ func resolve(tok string, ev evidence) string {
 	return token
 }
 
-// canonKey is the one match spelling for path keys and claim tokens:
-// cleaned and separator-flattened, so `\`-shaped and `/`-shaped
-// spellings of the same file agree.
+// canonKey is the one match spelling for path keys and claim tokens.
 func canonKey(p string) string {
 	return filepath.ToSlash(filepath.Clean(strings.ReplaceAll(p, `\`, "/")))
 }
 
-// keySuffixMatch reports whether the ledger path p IS the canonical
-// token or ends with it as a full path segment.
+// keySuffixMatch reports whether the ledger path p IS the canonical token or ends.
 func keySuffixMatch(p, normToken string) bool {
 	canon := canonKey(p)
 	return canon == normToken || strings.HasSuffix(canon, "/"+normToken)
 }
 
-// evidenceSets folds the run's rows into the claim tables. Rows with a
-// file-stat verifier fold the file tables; rows with a url locator
-// fold the url tables (the row's ok flag is the fetch's verdict);
-// anything else carried nothing cheap to check.
+// evidenceSets folds the run's rows into the claim tables.
 func evidenceSets(rows []record) evidence {
 	ev := evidence{
 		fileVerified: map[string][]int64{},
@@ -376,9 +346,7 @@ func evidenceSets(rows []record) evidence {
 	return ev
 }
 
-// citeSentence appends the sentence's backing row ids, file rows and
-// url rows alike. Citations are runtime text (the evidence ledger owns
-// their truth); the ids come straight from the rows.
+// citeSentence appends the sentence's backing row ids, file rows and url rows alike.
 func citeSentence(sent string, ev evidence, rows []record) string {
 	ids := map[int64]bool{}
 	for _, p := range matchPaths(sent, ev) {
@@ -403,9 +371,7 @@ func citeSentence(sent string, ev evidence, rows []record) string {
 	return fmt.Sprintf("%s [ledger %s]", sent, strings.Join(list, ", "))
 }
 
-// evidenceTail is the runtime-owned closing stamp: what the run did,
-// row by row. A run with zero tool calls writes nothing - there is
-// nothing to cite and nothing to invent.
+// evidenceTail is the runtime-owned closing stamp: what the run did, row by row.
 func evidenceTail(rows []record) string {
 	if len(rows) == 0 {
 		return ""

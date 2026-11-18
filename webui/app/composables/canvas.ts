@@ -1,19 +1,9 @@
-// omega webui: the canvas store (arc 3c) - the webui's one view-model
-// state. Load = the snapshot (GET /ui/canvas via fetchCanvas); deltas
-// after (view_model_delta frames ride the run streams through
-// StreamHandlers.onViewModelDelta, forwarded by the chat host). PANEL
-// PRESENCE LIVES HERE, never in a hardcoded list (settled Q5a). The
-// canvas CONTRACT (snapshot 200, delta frames, the action pipe with
-// optimistic pending/error, v1 descriptor schema) is the tabbed
-// renderer AND the transcript's shared source (chat-last 2a) and the
-// toast funnel's feed (arc 4b) - v0.14.3 folded the standalone host
-// tab, and card t_81d0901b moved the module surface into settings; the
-// contract itself stays.
-//
-// Pure-ish by the house test law: the production shapes this store
-// consumes are the wire shapes the server sends (the arc 3b
-// serialization), so the tests bind the same paths production runs -
-// no ref unwrapping, no mock stores.
+// omega webui: the canvas store (arc 3c) - the webui's one view-model state. PANEL
+// PRESENCE LIVES HERE, never in a hardcoded list (settled Q5a). The canvas CONTRACT
+// (snapshot 200, delta frames, the action pipe with optimistic pending/error, v1
+// descriptor schema) is the tabbed renderer AND the transcript's shared source
+// (chat-last 2a) and the toast funnel's feed (arc 4b) - v0.14.3 folded the standalone
+// host tab, and moved the module surface into settings; the contract itself stays.
 
 import { reactive } from "vue";
 import {
@@ -24,39 +14,26 @@ import {
   type CanvasPanelAction,
 } from "./omega.ts";
 
-// action states live per panel+action: optimistically pending at invoke
-// time, error state carries the server's reason on 4xx/5xx, back to
-// idle on success. The panel re-renders from the deltas; this state is
-// only the button's honesty.
+// action states live per panel+action.
 export interface CanvasActionState {
   status: "idle" | "pending" | "error";
   error?: string;
 }
 
 export interface CanvasStore {
-  /** snapshot order preserved; deltas replace in place */
   panels: CanvasPanel[];
-  /** load-time catch-up: replaces the whole list with the snapshot */
   applySnapshot(list: unknown): void;
-  /** one delta frame: replace-in-place, unknown ids append */
   applyDelta(raw: unknown): void;
   actionState(panelId: string, actionId: string): CanvasActionState;
-  /** the action pipe round-trip: optimistic pending, error state on
-      4xx/5xx, idle again on success (the panel updates via deltas) */
+  /** the action pipe round-trip. */
   invoke(panel: CanvasPanel, action: CanvasPanelAction, args?: unknown): Promise<void>;
-  /** refetch the snapshot (boot + later catch-ups). A failed fetch
-      keeps the previous view - the same transient rule as sessions. */
+  /** refetch the snapshot (boot + later catch-ups). */
   refresh(): Promise<void>;
 }
 
-// formatCanvasPayload and toastRowOf left with the canvas host tab
-// (v0.14.3's fold ruling): the generic renderer was their only reader,
-// so the deletability law takes both. The toast FEED below stays - the
-// kind "toast" panels still emit through the funnel, the bell owns
-// their rendering.
+// formatCanvasPayload and toastRowOf left with the canvas host tab.
 
-// createCanvasStore holds the app's canvas. One per page - panels are
-// global state (settled Q10a: panel state is not per-session).
+// createCanvasStore holds the app's canvas.
 export function createCanvasStore(): CanvasStore {
   const panels = reactive<CanvasPanel[]>([]);
   // the action states live in a reactive Map so a pending/error flip
@@ -75,9 +52,8 @@ export function createCanvasStore(): CanvasStore {
   }
 
   function applySnapshot(list: unknown) {
-    // non-array body = malformed: the previous view survives (the same
-    // transient rule as refresh's failed fetch - a bad snapshot never
-    // blanks the panels)
+    // non-array body = malformed: the previous view survives (the same transient rule
+    // as refresh's failed fetch - a bad snapshot never blanks the panels)
     if (!Array.isArray(list)) return;
     const next: CanvasPanel[] = [];
     for (const item of list) {
@@ -117,8 +93,7 @@ export function createCanvasStore(): CanvasStore {
     try {
       applySnapshot(await fetchCanvas());
     } catch {
-      // snapshot fetch failure: keep the previous view (the deltas
-      // still apply on top of it when a stream is live)
+      // snapshot fetch failure: keep the previous view (the deltas still apply on top.
     }
   }
 
@@ -132,25 +107,12 @@ export function createCanvasStore(): CanvasStore {
   };
 }
 
-// --- the module-UI delta seam (card t_b5784de3) -------------------------
+// -- the module-UI delta seam ------------------------
 
-// A module view that renders beyond a panel's view-model (the kanban
-// board: body preview, priority, drag position - none of them in the
-// tasks panel, which is the 20 newest rows of the tools' session board)
-// still has to converge when someone mutates a task from outside. The
-// shell answers with the ONE window event this file publishes: every
-// panel delta that lands in the store is announced as
-// `omega-canvas-delta`, the panel descriptor as detail.
-//
-// Module UI imports no shell code, so the event literal is duplicated on
-// both sides ON PURPOSE - the reverse direction is `omega-select-board`
-// (composables/notifications.ts -> harness/kanban/ui/Board.vue), the same
-// discipline. No shared module, no second socket, no new topic: the
-// canvas topic already carries every delta.
-//
-// A delta is a PULSE, not a payload: the panel's board is the module's
-// session board, which need not be the board a frontend shows, so a
-// consumer re-reads its own view instead of rendering the panel.
+// A module view that renders beyond a panel's view-model (the kanban board. Module UI
+// imports no shell code, so the event literal is duplicated on both sides ON PURPOSE -
+// the reverse direction is `omega-select-board` (composables/notifications.ts ->
+// harness/kanban/ui/Board.vue), the same discipline.
 export const CANVAS_DELTA_EVENT = "omega-canvas-delta";
 
 function announceDelta(p: CanvasPanel): void {
@@ -158,19 +120,11 @@ function announceDelta(p: CanvasPanel): void {
   window.dispatchEvent(new CustomEvent(CANVAS_DELTA_EVENT, { detail: p }));
 }
 
-// CANVAS_RESET_ID is the reset detail's id: the same event, one more
-// emitter. Nothing is replayed server-side (socket.ts's law), so a delta
-// that lands while this page's socket is down is LOST - a module view that
-// renders from its own REST route (the kanban board) would then stay stale
-// until some later mutation happened to fire. The reconnect catch-up
-// (app.vue's catchUp) therefore re-announces, after the ordinary pane
-// refetches, asking every consumer to re-read its own GET route. Boot
-// never fires it: a cold page load mounts its views, which fetch
-// themselves - a boot pulse would only double every read.
-//
-// Consumers match the id (the literal is duplicated on their side, same
-// discipline as CANVAS_DELTA_EVENT); `detail.panel` is absent because a
-// reset is about the page, not one panel.
+// CANVAS_RESET_ID is the reset detail's id: the same event, one more emitter. Boot
+// never fires it: a cold page load mounts its views, which fetch themselves - a boot
+// pulse would only double every read. Consumers match the id (the literal is duplicated
+// on their side, same discipline as CANVAS_DELTA_EVENT); `detail.panel` is absent
+// because a reset is about the page, not one panel.
 export const CANVAS_RESET_ID = "reconnect";
 
 export function announceCanvasReset(): void {
@@ -180,16 +134,11 @@ export function announceCanvasReset(): void {
   );
 }
 
-// --- the toast feed (arc 4b, t_9339ad05) ---------------------------------
+// -- the toast feed --------------------------------
 
-// Panels of kind "toast" are canvas events, not persistent surface (the
-// notifications capsule is the first module to ship one). Both transports
-// land here: deltas ride the run streams, the snapshot is the catch-up
-// for emits that happened between runs. The fingerprint dedupes - the
-// same state seen twice (a reconnect replay, a snapshot refetch of an
-// unchanged store) toasts once. Handlers receive the payload verbatim;
-// decoding is the consumers' domain (the dock knows the record shape,
-// the canvas contract does not).
+// Panels of kind "toast" are canvas events, not persistent surface (the notifications.
+// Handlers receive the payload verbatim; decoding is the consumers' domain (the dock
+// knows the record shape, the canvas contract does not).
 type ToastPanelHandler = (payload: unknown) => void;
 
 const toastHandlers = new Set<ToastPanelHandler>();
@@ -206,8 +155,7 @@ function fingerprintOf(payload: unknown): string {
   }
 }
 
-// feedToastPanel is the internal funnel: applyDelta and applySnapshot
-// call it for every panel; only kind "toast" payloads pass.
+// feedToastPanel is the internal funnel.
 function feedToastPanel(p: CanvasPanel): void {
   if (p.kind !== "toast" || p.payload === null || p.payload === undefined) return;
   const fp = fingerprintOf(p.payload);
@@ -217,8 +165,6 @@ function feedToastPanel(p: CanvasPanel): void {
 }
 
 // onToastPanel subscribes one toast consumer (the dock's toast stack).
-// The return releases the subscription - the handler set is a feed,
-// not a store; the panels list above stays the one state.
 export function onToastPanel(fn: ToastPanelHandler): () => void {
   toastHandlers.add(fn);
   return () => {
@@ -226,11 +172,8 @@ export function onToastPanel(fn: ToastPanelHandler): () => void {
   };
 }
 
-// emitLocalToast publishes a CLIENT-SIDE toast through the same funnel
-// the canvas feed uses: one subscriber set, one fingerprint dedupe (the
-// same payload toasts once). Local-only by law (card t_d54c718a): no
-// transport, no panel kind - the boot repair receipt is the first
-// emitter, nothing listens to a private channel for it.
+// emitLocalToast publishes a CLIENT-SIDE toast through the same funnel the canvas feed
+// uses.
 export function emitLocalToast(payload: unknown): void {
   if (payload === null || payload === undefined) return;
   const fp = fingerprintOf(payload);

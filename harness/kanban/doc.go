@@ -1,16 +1,8 @@
-// Package kanban provides the omega task board: a SQLite-backed kanban
-// store with the 9-status hermes grammar (triage todo scheduled ready
-// running blocked review done archived), ONE kanban.db owning every
-// board (t_feae19d3 - the boards table is the registry, is_current is
-// the pointer), the board verbs as seven dotted kanban.* wire tools
-// (t_f616ed78 - list/create/update/complete/comment/delete/batch), the
-// /board and /boards commands, the canvas panels
-// (the task list and the board switcher - panel.go, arc 5), and the
-// seam the HTTP channel serves /tasks from.
-//
-// omega has ONE agent - no claim locks, no dispatch races, no tenants.
-// The board is exactly hermes-proven core: task = title + BODY-AS-SPEC,
-// a comment thread, an append-only event log, assignee and session
-// links. Anything the Improver or cron would need (the nullable source
-// field) is already there.
+// Package kanban provides the omega task board: a SQLite-backed kanban store with the
+// 9-status hermes grammar (triage todo scheduled ready running blocked review done
+// archived), ONE kanban.db owning every board, the board verbs as seven dotted kanban.*
+// wire tools, the /board and /boards commands, the canvas panels (the task list and the
+// board switcher - panel.go, arc 5), and the seam the HTTP channel serves /tasks from.
+// The board is exactly hermes-proven core: task = title + BODY-AS-SPEC, a comment
+// thread, an append-only event log, assignee and session links.
 package kanban

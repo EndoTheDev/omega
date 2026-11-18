@@ -1,23 +1,4 @@
-// The verdict cards' REST face, riding the verdict capsule (shell-ring
-// shrink wave 3, card t_b75df168 - moved whole from
-// agent/api/server_verdicts.go, package unchanged, URLs unchanged).
-//
-// GET /verdicts (cross-session pending listing, the bell's count) +
-// /sessions/{id}/verdicts (one session's listing, and the answering
-// POST - card t_2ecf9c51's answer surface, the message guidance of
-// card t_63204dfd). These endpoints are the ANSWER path AND the
-// client's truth: the push channel's issuance frame (verdict_issued,
-// card t_ce2162cd) is only a HINT that a card exists, so a surface
-// reads the card's shape from here. The old belief that the card
-// "renders live from the tool_call / tool_result SSE frames" was false
-// for gate cards: an escalated shell.run's tool_call carries no card,
-// and the gate registers its card after a reviewer round trip, so
-// issuance needed a frame of its own (harness/verdict/hub.go
-// OnCardRegistered -> agent/api's chat-topic push). The routes hold the
-// Hub the mount offered under "verdicts", and a disabled capsule
-// answers 404 at the module mux - the routes mount and die with their
-// capsule, so the chat bell empties with the feature instead of polling
-// a dead seam.
+// The verdict cards' REST face, riding the verdict capsule.
 package verdict
 
 import (
@@ -30,9 +11,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// verdictCardWire is one pending card on the wire. ExpiresAt is a Unix
-// millisecond epoch so the client countdowns against the server clock
-// without a timezone dance.
+// verdictCardWire is one pending card on the wire.
 type verdictCardWire struct {
 	ID        string                `json:"id"`
 	SessionID string                `json:"session_id"`
@@ -45,15 +24,9 @@ type verdictCardWire struct {
 	ExpiresAt int64                 `json:"expires_at"`
 }
 
-// verdictAnswerRequest is the POST /sessions/{id}/verdicts body. One of
-// option_indexes (multi), option_index, option (label), text, or skip.
-// card_id is optional: when absent the session's oldest pending card
-// is answered (one run per session, so the common case is exactly one).
-// Message is the follow-up guidance field (card t_63204dfd): when set
-// it rides the answer as the resolution's free text (an option pick +
-// message = deny with directions; message alone = a typed answer where
-// the card allows text). Capped at maxVerdictMessage runes; empty =
-// the plain answer, no guidance.
+// verdictAnswerRequest is the POST /sessions/{id}/verdicts body. card_id is optional:
+// when absent the session's oldest pending card is answered (one run per session, so
+// the common case is exactly one).
 type verdictAnswerRequest struct {
 	CardID        string `json:"card_id,omitempty"`
 	OptionIndexes []int  `json:"option_indexes,omitempty"`
@@ -64,7 +37,7 @@ type verdictAnswerRequest struct {
 	Message       string `json:"message,omitempty"`
 }
 
-// maxVerdictMessage caps the resolution message (card t_63204dfd).
+// maxVerdictMessage caps the resolution message.
 const maxVerdictMessage = 2000
 
 // Routes is the capsule's REST face over the hub (p.hub at mount).
@@ -82,14 +55,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// handleVerdicts serves GET /verdicts and GET+POST
-// /sessions/{id}/verdicts.
+// handleVerdicts serves GET /verdicts and GET+POST /sessions/{id}/verdicts.
 func (rt *Routes) handleVerdicts(w http.ResponseWriter, r *http.Request) {
-	// All verdict endpoints live under /verdicts (cross-session listing)
-	// and /sessions/{id}/verdicts (per-session listing + answering).
 	id := r.PathValue("id")
 	if r.URL.Path == "/verdicts" && id != "" {
-		// unreachable: /verdicts has no {id}; guard anyway
 		http.NotFound(w, r)
 		return
 	}
@@ -108,8 +77,7 @@ func (rt *Routes) handleVerdicts(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveVerdictsList answers GET /verdicts (all sessions) and GET
-// /sessions/{id}/verdicts (one session): the pending cards, oldest
-// first, that the bell counts and the webui re-renders after a reload.
+// /sessions/{id}/verdicts (one session).
 func (rt *Routes) serveVerdictsList(w http.ResponseWriter, r *http.Request, sessionID string) {
 	cards := rt.hub.Pending(sessionID)
 	out := make([]verdictCardWire, 0, len(cards))
@@ -119,20 +87,15 @@ func (rt *Routes) serveVerdictsList(w http.ResponseWriter, r *http.Request, sess
 	writeJSON(w, http.StatusOK, map[string]any{"cards": out, "count": len(out)})
 }
 
-// serveVerdictAnswer answers POST /sessions/{id}/verdicts: records the
-// user's verdict on one pending card. First answer wins; a second
-// attempt from either surface returns 409 with the reason (the
-// both-frontend single-answer race). An unknown or expired card is 404
-// when there is no pending card to disambiguate against, 409 when the
-// card exists but is settled.
+// serveVerdictAnswer answers POST /sessions/{id}/verdicts. First answer wins; a second
+// attempt from either surface returns 409 with the reason (the both-frontend
+// single-answer race).
 func (rt *Routes) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, sessionID string) {
 	var req verdictAnswerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	// The follow-up guidance (card t_63204dfd): message wins over text
-	// (the newer field), and one size cap covers both spellings.
 	text := req.Text
 	if req.Message != "" {
 		text = req.Message
@@ -150,9 +113,7 @@ func (rt *Routes) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, ses
 	}
 	answered, err := rt.hub.Answer(sessionID, req.CardID, v)
 	if err != nil {
-		// settled cards (answered/skipped/expired) race to 409 with the
-		// reason; unknown / no-pending-card is 404. The message names the
-		// reason so the losing surface can show it instead of retrying.
+		// settled cards (answered/skipped/expired) race to 409 with the reason.
 		switch {
 		case isAlreadySettled(err):
 			writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
@@ -163,9 +124,7 @@ func (rt *Routes) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, ses
 		}
 		return
 	}
-	// the hub resolves the real card id (the no-card_id POST answers the
-	// session's oldest pending card) and fills the picked option's
-	// label - echo what actually landed
+	// the hub resolves the real card id and fills the picked option's label.
 	out := map[string]any{
 		"card_id": answered.CardID,
 		"verdict": answered.Kind(),
@@ -206,8 +165,7 @@ func toVerdictWire(c core.QuestionPrompt) verdictCardWire {
 	}
 }
 
-// isAlreadySettled reports whether an Answer error is a lost-race
-// (the card was answered, skipped, or expired before this attempt).
+// isAlreadySettled reports whether an Answer error is a lost-race.
 func isAlreadySettled(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "already answered") ||

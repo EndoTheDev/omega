@@ -1,14 +1,5 @@
 package api
 
-// GET /tools origin provenance (card t_c2da3379): the wire carries each
-// tool's origin field - "mcp" for MCP-bridge tools, omitted (empty) for
-// native ones. The Tools TAB's filter (harness/tools/ui/toolRows.ts)
-// reads this field; the wire itself stays the agent's full executable
-// registry, truthful about what the agent can call. The test feeds one
-// native dotted tool (sessions.search) and one MCP-stamped tool
-// (sequential-thinking.sequentialthinking) through the real handler and
-// asserts both rows carry their origin - NO name-shape logic anywhere:
-// both are dotted, the origin field is the only distinction.
 
 import (
 	"github.com/EndoTheDev/omega/agent"
@@ -25,8 +16,7 @@ func TestToolsListingCarriesOrigin(t *testing.T) {
 		// native dotted tools: origin empty, must ride the wire unstamped
 		"sessions.search": {Description: "search past sessions"},
 		"shell.run":       {Description: "run a shell command"},
-		// the MCP-stamped shape: exactly what bridgeToolProvider.Tools()
-		// produces (harness/mcp/plugin.go stamps core.ToolOriginMCP)
+		// the MCP-stamped shape: exactly what bridgeToolProvider.Tools produces.
 		"sequential-thinking.sequentialthinking": {
 			Description: "sequential thinking",
 			Origin:      core.ToolOriginMCP,

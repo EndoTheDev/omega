@@ -5,9 +5,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// Plugin implements agent.Plugin for the memory seam. It opens the
-// memory files from config and mounts them as the MemoryProvider,
-// plus contributes the memory tool set.
+// Plugin implements agent.Plugin for the memory seam.
 type Plugin struct{}
 
 // Compile-time assertion that *Plugin implements agent.Plugin.
@@ -20,21 +18,13 @@ func (p *Plugin) Description() string {
 	return "durable memory: facts saved and recalled across sessions by the agent"
 }
 
-// ConfigKey names the config section this plugin reads from
-// ctx.Configs (see agent.Describer). Empty = reads no section.
+// ConfigKey names the config section this plugin reads from ctx.Configs (see.
 func (p *Plugin) ConfigKey() string { return "memory" }
 
 func (p *Plugin) Provides() []string { return []string{"memory", "tools", "prompt_sections"} }
 func (p *Plugin) Requires() []string { return nil }
 
-// MountWithAPI implements agent.APIPlugin. This registration is the
-// module's whole surface (arc 6 capsule, card t_da1fcc76): the seam,
-// the memory tool set (memory.add/replace/remove/batch, the
-// phase-2 dotted split t_d8fbad57) and the prompt section all
-// register here, and the module ships
-// nothing else - no command, no REST route, no canvas panel (nothing
-// rendered memory before the arc). Removal proof: TestMemoryRemovalProof
-// (cmd/omega/removal_test.go).
+// MountWithAPI implements agent.APIPlugin.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["memory"].(Config); ok {
@@ -55,6 +45,5 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 // NewPlugin creates a memory plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }
 
-// Toggleable marks this capsule as a module capsule (v0.12 E1, the
-// tier law): the config.yaml disabled: list may name it.
+// Toggleable marks this capsule as a module capsule (v0.12 E1, the tier law).
 func (p *Plugin) Toggleable() bool { return true }

@@ -13,24 +13,15 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// testWaitTimeout bounds every poll-until-true wait in this package's tests.
-// It exists to catch a HANG, not to time correctness: a healthy condition can
-// take seconds when the full suite runs packages in parallel and starves the
-// goroutine under test. Bounding it tightly (2-5s) made load-sensitive tests
-// red on a loaded machine and green in isolation - the worst kind of flake.
+// testWaitTimeout bounds every poll-until-true wait in this package's tests. It exists
+// to catch a HANG, not to time correctness: a healthy condition can take seconds when
+// the full suite runs packages in parallel and starves the goroutine under test.
 const testWaitTimeout = 30 * time.Second
 
-// The verdict REST face's self-check (moved whole from
-// agent/api/server_verdicts_test.go by the shell-ring shrink wave 3,
-// card t_b75df168): pin the answering wire contract directly against
-// the capsule's Routes - the base package no longer serves these
-// (they are module routes; a disabled capsule answers 404 at the
-// module mux, so the old 501-without-seam probe is gone with the
-// surface's own home).
+// The verdict REST face's self-check: pin the answering wire contract directly against
+// the capsule's Routes.
 
 // vo already exists in hub_test.go - the routes tests reuse it.
-// routesServer builds the capsule route mux on a fresh hub - the same
-// patterns RegisterRoute mounts register.
 func routesServer(t *testing.T) (*httptest.Server, *Hub) {
 	t.Helper()
 	rt := newRoutes(NewHub(nil, nil))
@@ -60,8 +51,7 @@ func verdictGet(t *testing.T, ts *httptest.Server, path string) map[string]any {
 	return out
 }
 
-// issueCard runs hub.Ask in the background and returns a done channel
-// plus the card id once it is registered.
+// issueCard runs hub.Ask in the background and returns a done channel plus the card.
 func issueCard(t *testing.T, h *Hub, session, id string) <-chan struct{} {
 	t.Helper()
 	done := make(chan struct{})
@@ -105,7 +95,6 @@ func TestVerdictsListPendingAndAnswer(t *testing.T) {
 		t.Fatalf("cross-session count = %v, want 1", all["count"])
 	}
 
-	// answer the oldest pending card (no card_id in the body).
 	r, err := http.Post(ts.URL+"/sessions/s1/verdicts", "application/json",
 		strings.NewReader(`{"option_index":1}`))
 	if err != nil {
@@ -128,15 +117,13 @@ func TestVerdictsListPendingAndAnswer(t *testing.T) {
 func TestVerdictsSecondAnswerReturns409(t *testing.T) {
 	ts, h := routesServer(t)
 	done := issueCard(t, h, "s1", "c1")
-	// first answer wins
 	r, _ := http.Post(ts.URL+"/sessions/s1/verdicts", "application/json", strings.NewReader(`{"option_index":1}`))
 	r.Body.Close()
 	if r.StatusCode != http.StatusOK {
 		t.Fatalf("first answer = %d, want 200", r.StatusCode)
 	}
 	<-done
-	// the race loser names the SAME card (its own surface's card id):
-	// settled -> 409 with the reason, never double-applied
+	// the race loser names the SAME card: settled -> 409 with the reason, never.
 	r, _ = http.Post(ts.URL+"/sessions/s1/verdicts", "application/json", strings.NewReader(`{"card_id":"c1","option_index":2}`))
 	body, _ := io.ReadAll(r.Body)
 	r.Body.Close()
@@ -160,8 +147,7 @@ func TestVerdictsMultiAnswerEchoesIndexes(t *testing.T) {
 		})
 		close(done)
 	}()
-	// wait for the card; the pending list must carry the described
-	// options and the multi flag (the card the webui re-renders from).
+	// wait for the card; the pending list must carry the described options and the multi.
 	deadline := time.Now().Add(testWaitTimeout)
 	for time.Now().Before(deadline) {
 		if len(h.Pending("s1")) > 0 {
@@ -257,12 +243,8 @@ func TestVerdictsMethodNotAllowed(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// The follow-up message field (card t_63204dfd): the verdict endpoint
-// accepts an optional message - the resolution guidance the agent
-// receives. Cards below mirror the gate card's shape (approve/deny
-// pair + typed text allowed).
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------- The
+// follow-up message field.
 
 // gateHubCard issues one gate-shaped card in the background.
 func gateHubCard(t *testing.T, h *Hub, session, id string) <-chan struct{} {
@@ -296,7 +278,6 @@ func TestVerdictsMessageCarriesToTheVerdict(t *testing.T) {
 	done := gateHubCard(t, h, "s1", "c1")
 	t.Cleanup(func() { <-done })
 
-	// deny + guidance: the record rides both the option and the text
 	r, err := http.Post(ts.URL+"/sessions/s1/verdicts", "application/json",
 		strings.NewReader(`{"card_id":"c1","option_index":2,"message":"use cp instead"}`))
 	if err != nil {
@@ -322,7 +303,6 @@ func TestVerdictsEmptyMessageIsThePlainDeny(t *testing.T) {
 	done := gateHubCard(t, h, "s1", "c1")
 	t.Cleanup(func() { <-done })
 
-	// no message field: the plain option pick, no text anywhere
 	r, _ := http.Post(ts.URL+"/sessions/s1/verdicts", "application/json",
 		strings.NewReader(`{"card_id":"c1","option_index":2}`))
 	body, _ := io.ReadAll(r.Body)

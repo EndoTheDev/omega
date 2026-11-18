@@ -1,7 +1,4 @@
-// Module-owned kanban board: logic + composition wiring. The board lives
-// in harness/kanban/ui/ and rides the module-UI composition - the shell
-// knows only the mount slot. Logic is pure (boardLogic.ts), so these
-// tests are plain node:test like everything else in the suite.
+// Module-owned kanban board: logic + composition wiring.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -129,11 +126,7 @@ test("statuses: the exact hermes grammar, terminal set last", () => {
   ]);
 });
 
-// --- lane rails (card t_50a8c145): the Hermes lane-collapse model.
-// ANY lane folds to a thin vertical rail, an EMPTY lane folds itself, and
-// the fold eases over ~180ms. The old isSettled-only fold (done/archived,
-// the "N folded" note) is superseded and gone - these are the pins that
-// keep it gone.
+// -- lane rails: the Hermes lane-collapse model.
 
 test("lane rails: ANY lane folds, not just the two settled ones", () => {
   for (const status of BOARD_STATUSES) {
@@ -149,37 +142,31 @@ test("lane rails: ANY lane folds, not just the two settled ones", () => {
       `${status}: an open pin keeps it a column`,
     );
   }
-  // done/archived carry no special fold state - the settled special case is dead
   assert.equal(laneFolded("done", 2, {}), laneFolded("triage", 2, {}));
   assert.equal(laneFolded("archived", 2, {}), laneFolded("review", 2, {}));
 });
 
 test("lane rails: a CLICK expands a collapsed lane - the empty lane too (0.17.3)", () => {
-  // an EMPTY lane still folds itself (reality: nothing to show)...
+  // an EMPTY lane still folds itself (reality: nothing to show)..
   assert.equal(laneFolded("triage", 0, {}), true);
   assert.equal(laneFolded("blocked", 0, { blocked: "collapsed" }), true);
-  // ...but a CLICK outranks reality now: the rail opens, empty or not
+  // ..but a CLICK outranks reality now: the rail opens, empty or not
   const opened = toggleLanePin("triage", 0, {});
   assert.equal(opened.triage, "open", "a click on an empty rail writes an open pin");
   assert.equal(laneFolded("triage", 0, opened), false, "an empty lane pinned open stays open");
-  // and the user can close it again
   const closed = toggleLanePin("triage", 0, opened);
   assert.equal(closed.triage, "collapsed");
   assert.equal(laneFolded("triage", 0, closed), true);
 
-  // a pin holds while the lane holds cards - both directions
   assert.equal(laneFolded("review", 1, { review: "open" }), false);
   assert.equal(laneFolded("review", 1, { review: "collapsed" }), true);
 
-  // the round trip that used to be vetoed: an empty lane opened by hand
-  // keeps its pin through a drain and a refill (no reconcile exists to
-  // take it back - the old one re-folded the lane the user just opened)
+  // the round trip that used to be vetoed.
   let lanes: LanePins = { review: "open" };
   assert.equal(laneFolded("review", 2, lanes), false);
   assert.equal(laneFolded("review", 0, lanes), false, "the pin survives the drain");
   assert.equal(laneFolded("review", 2, lanes), false, "and the refill");
 
-  // toggling writes the opposite of the state that stands
   const folded = toggleLanePin("todo", 2, {});
   assert.equal(folded.todo, "collapsed", "a column folds");
   assert.equal(laneFolded("todo", 2, folded), true);
@@ -200,7 +187,6 @@ test("lane rails: the per-lane dot tone is the Hermes status mapping", () => {
     done: "#6f6f6f",
     archived: "#4a4a4a",
   });
-  // every lane has a tone, and every tone is a distinct-looking hex
   for (const status of BOARD_STATUSES) assert.match(laneTone(status), /^#[0-9a-f]{6}$/);
   assert.equal(laneTone("scheduled"), "#a78bfa", "violet, per the ruling");
   assert.equal(laneTone("running"), "#34d399", "green, per the ruling");
@@ -209,7 +195,6 @@ test("lane rails: the per-lane dot tone is the Hermes status mapping", () => {
 
 test("lane rails: the rail renders the dot, the name and the count", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
-  // the rail is one element: dot row, vertical name, count-if-nonzero
   assert.match(boardVue, /class="lane-rail"/, "a folded lane renders the rail");
   assert.match(boardVue, /class="lane-dot-row"/, "the rail opens with its dot row");
   assert.match(boardVue, /class="lane-rail-name">\{\{ BOARD_STATUSES\[i\] \}\}/, "the lane name rides the rail");
@@ -223,7 +208,6 @@ test("lane rails: the rail renders the dot, the name and the count", () => {
     /:style="\{ background: laneTone\(BOARD_STATUSES\[i\]\) \}"/,
     "the dot takes its tone from the lane",
   );
-  // the vertical name
   assert.match(boardVue, /\.lane-rail-name \{\s*\n\s*writing-mode: vertical-rl;/, "the rail name is vertical");
   assert.match(boardVue, /text-transform: uppercase;/, "and uppercase");
   // the dot row sits at the EXPANDED header row's height - that is the
@@ -231,11 +215,9 @@ test("lane rails: the rail renders the dot, the name and the count", () => {
   assert.match(boardVue, /\.lane-dot-row \{[\s\S]*?height: var\(--lane-head-h/, "the rail's dot row is a header row tall");
   assert.match(boardVue, /\.col-head \{[\s\S]*?height: var\(--lane-head-h/, "the header row is that same height");
   assert.match(boardVue, /--lane-head-h: 24px;/, "one constant drives both");
-  // the rail is a button (click unfolds)...
   assert.match(boardVue, /class="lane-rail"[\s\S]{0,400}@click="toggleLane\(BOARD_STATUSES\[i\], col\.length\)"/, "the rail is the unfold control");
   assert.match(boardVue, /:aria-label="`unfold \$\{BOARD_STATUSES\[i\]\} lane`"/, "and names what it does");
-  // ...AND a drop target: the rail lives inside the same .board-col the
-  // drag machinery resolves, so a drop on the rail lands in that lane.
+  // ..AND a drop target: the rail lives inside the same.board-col the drag machinery.
   assert.match(boardVue, /closest\("\.board-col"\)/, "drops resolve the lane element");
   const railAt = boardVue.indexOf('class="lane-rail"');
   const colAt = boardVue.indexOf(':data-status="BOARD_STATUSES[i]"');
@@ -246,18 +228,13 @@ test("lane rails: the rail renders the dot, the name and the count", () => {
 test("lane rails: every lane carries the fold control and no settled branch survives", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
   const logic = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "board", "boardLogic.ts"), "utf8");
-  // the fold control is unconditional: no v-if on the button itself
   assert.match(boardVue, /class="col-fold-btn"\s*\n\s*:aria-expanded="true"/, "the header fold control renders on every lane");
   assert.doesNotMatch(boardVue, /isSettled/, "the settled-only branch is gone from the view");
   assert.doesNotMatch(logic, /isSettled/, "and from the logic module");
   assert.doesNotMatch(boardVue, /col-folded-note/, "the 'N folded' note died with the settled fold");
   assert.doesNotMatch(boardVue, /settled:/, "no settled class rides the lane");
-  // one fold state, two shapes: the rail and the column are the same element
   assert.match(boardVue, /:class="\{ folded: isLaneFolded\(BOARD_STATUSES\[i\], col\.length\) \}"/, "the lane's folded state is the one fold law");
-  // the fold law is wired, not re-implemented in the view. 0.17.3: the
-  // click OWNS the fold (a collapsed lane expands, empty or not), so the
-  // old reconcile-on-every-read is gone - it would take back the pin the
-  // user just wrote on an empty lane.
+  // the fold law is wired, not re-implemented in the view.
   assert.doesNotMatch(boardVue, /reconcileLanePins/, "no reconcile takes the click's pin back");
   assert.doesNotMatch(logic, /export function reconcileLanePins/, "and the helper is gone, not orphaned");
   assert.match(boardVue, /lanePins\.value = toggleLanePin\(status, count, lanePins\.value\)/, "the click goes through the pure toggle");
@@ -270,9 +247,7 @@ test("lane rails: every lane carries the fold control and no settled branch surv
     "the rail keeps the create control",
   );
   assert.match(boardVue, /if \(createOpen\.value === status\) return false;/, "an open create form holds the lane open");
-  // a live drag freezes the lane shapes: the optimistic reorder must never
-  // re-lay-out the strip under the cursor (a rail that unfolds under the
-  // pointer moves the drop target - measured live before the freeze)
+  // a live drag freezes the lane shapes: the optimistic reorder must never re-lay-out.
   assert.match(boardVue, /const frozenLanes = ref<Record<string, boolean> \| null>\(null\)/, "the drag holds a fold snapshot");
   assert.match(boardVue, /d\.moved = true;\s*\n\s*freezeLaneLayout\(\);/, "the snapshot is taken when a gesture turns into a drag");
   assert.match(boardVue, /frozenLanes\.value = null;/, "and released on the drop");
@@ -284,19 +259,17 @@ test("lane rails: ~180ms width ease, and rails are off in the narrow stack", () 
   assert.equal(LANE_EASE_MS, 180);
   assert.ok(LANE_RAIL_PX >= 32 && LANE_RAIL_PX <= 40, `the rail is a 32-40px strip (got ${LANE_RAIL_PX})`);
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
-  // the width ease: flex-basis over the ruled duration, on a cubic-bezier
   assert.match(boardVue, /transition:\s*\n\s*flex-basis var\(--lane-ease, 180ms\) cubic-bezier\(/, "the fold animates the lane's width on an ease");
   assert.match(boardVue, /'--lane-ease': `\$\{LANE_EASE_MS\}ms`/, "the duration comes from the constant");
   assert.match(boardVue, /'--lane-rail-width': `\$\{LANE_RAIL_PX\}px`/, "and so does the rail width");
   assert.match(boardVue, /\.board-col\.folded \{\s*\n\s*flex: 0 0 var\(--lane-rail-width, 36px\);/, "a folded lane is the thin strip");
-  // the narrow-stack mode keeps today's behavior: no rails there
   assert.match(boardVue, /function isLaneFolded\(status: string, count: number\): boolean \{\s*\n\s*if \(narrow\.value\) return false;/, "the narrow stack renders every lane expanded");
   assert.match(boardVue, /function toggleLane\(status: string, count: number\) \{\s*\n\s*if \(narrow\.value\) return;/, "and refuses the fold gesture");
   assert.match(boardVue, /:disabled="narrow"/, "the fold control is disabled there, not a dead click");
   assert.match(boardVue, /\.board\.narrow \.board-scroll \{/, "the narrow layout is untouched");
 });
 
-// --- structural: the shell mounts the board through the composition
+// -- structural: the shell mounts the board through the composition
 
 test("board view ships module-owned and the shell mounts it", () => {
   const boardVue = join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue");
@@ -311,12 +284,9 @@ test("board view ships module-owned and the shell mounts it", () => {
   assert.match(appVue, /modulePanels\.find\(\(p\) => p\.module === "kanban"\)/);
   assert.match(appVue, /mainView === 'board'/);
   assert.match(appVue, /openBoardSession/);
-  // /board anchors in history like /chat/<id>
   assert.match(appVue, /\/board/);
 
-  // card t_49d0b308: the board JOINED the inspector - "kanban" is a real
-  // dock tab now (pinned right, unclosable), rendered through the
-  // composition mount. The main-pane board view keeps its URL anchor.
+  // the board JOINED the inspector.
   const registry = readFileSync(
     join(uiRoot, "app", "composables", "dockables.ts"),
     "utf8",
@@ -337,7 +307,7 @@ test("board view ships module-owned and the shell mounts it", () => {
     /mainViewModules = new Set<string>\(\["kanban"\]\)/,
   );
 });
-// --- board switcher (card t_d7a7beaa): named boards, pointer boot, URL wiring
+// -- board switcher: named boards, pointer boot, URL wiring
 
 test("withBoard: appends the picker, keeps existing queries, passes empty through", () => {
   assert.equal(withBoard("/tasks", "alpha"), "/tasks?board=alpha");

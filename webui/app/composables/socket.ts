@@ -1,43 +1,17 @@
-// omega webui: the push channel client (card t_896cf5a8; design of
-// record Workshop/omega/websocket-channel.md, rulings 1-4).
-//
-// ONE websocket per page load (`GET /ws`), every live update a typed
-// topic on it. The server buffers and replays nothing: a dropped
-// connection is caught up by refetching the visible panes through the
-// ordinary GET routes - events are hints, state is truth. `seq` is
-// diagnostic only (a narrowed subscription sees jumps), so nothing here
-// reads it as a loss signal.
-//
-// The transport is deliberately dumb: parse the envelope, dispatch by
-// topic, reconnect with exponential backoff. The topic payloads are the
-// server's shapes (agent/api/sockets.go) and the handlers do the typing.
-//
-// Pure halves (parseEnvelope, backoffDelay, dispatchFrame,
-// normalizeChipFrame) are node-tested: test/socket.test.ts.
+// omega webui: the push channel client.
 
 import { ref, type Ref } from "vue";
 
-// SOCKET_TOPICS is the closed topic set this client speaks, in wire
-// order, and the set every connection asks for on connect. The SERVER's
-// closed set is one wider: `logs` (agent/api/sockets.go) still ships and
-// keeps its Go pins, subscription-gated so a page that never asked for it
-// receives no log frames. It has no client half. The raw-tail pane that
-// consumed it retired (card t_01c53e78); the pane counter, the subscribe
-// gate, the dispatch case and the two window CustomEvents that bridged
-// pane to shell retired with it (card t_1423218e), because nothing in the
-// shell ever dispatched the pane's request - the gate sat at zero and the
-// push forward had no listener. A `logs` frame is now an unknown topic
-// here and drops silently. docs/api.md carries the wire note; git history
-// holds the client half if a raw-tail view ever comes back.
+// SOCKET_TOPICS is the closed topic set this client speaks, in wire order, and the. The
+// SERVER's closed set is one wider: `logs` (agent/api/sockets.go) still ships and keeps
+// its Go pins, subscription-gated so a page that never asked for it receives no log
+// frames. A `logs` frame is now an unknown topic here and drops silently.
 export const SOCKET_TOPICS = ["chat", "chips", "canvas", "runs", "health"] as const;
 export type SocketTopic = (typeof SOCKET_TOPICS)[number];
 
 export type SocketStatus = "idle" | "connecting" | "open" | "reconnecting" | "closed";
 
 // SocketEnvelope is one pushed frame: {topic, session, event, seq, data}.
-// session scopes to a conversation (absent on the global topics), event
-// carries the chat topic's SSE event name, data is the payload (SSE bytes
-// verbatim on chat/canvas, a typed struct elsewhere).
 export interface SocketEnvelope {
   topic: string;
   session?: string;
@@ -46,8 +20,7 @@ export interface SocketEnvelope {
   data?: unknown;
 }
 
-// ChipFrame mirrors agent/api.ChipFrame: the pending chip's live tail
-// (fill false, text growing) and its fill when the call settles.
+// ChipFrame mirrors agent/api.ChipFrame.
 export interface ChipFrame {
   call_id: string;
   tool?: string;
@@ -60,32 +33,22 @@ export interface ChipFrame {
   elapsed_ms?: number;
 }
 
-// HealthProviderFact is the /health body's provider reachability fact
-// (card t_5e2f3095): the server's cached model-endpoint probe. Absent =
-// no probe has landed yet (or an older server) - the popover renders
-// "not reported" rather than a guess.
+// HealthProviderFact is the /health body's provider reachability fact.
 export interface HealthProviderFact {
   reachable?: boolean;
-  /** unix seconds of the probe that produced this verdict */
   checked_at?: number;
-  /** the probe's error text when it failed */
   detail?: string;
 }
 
-// HealthDatabaseFact is the store seam's liveness ping: present = the
-// server can answer for its database, absent = it has no source for the
-// fact (no store mounted, older build).
+// HealthDatabaseFact is the store seam's liveness ping.
 export interface HealthDatabaseFact {
   healthy?: boolean;
   detail?: string;
 }
 
 // HealthErrorFact is the newest error the server's logger recorded.
-// An object with an EMPTY message is a sourced "none since boot" - only
-// an absent object means "not reported".
 export interface HealthErrorFact {
   message?: string;
-  /** unix seconds of the entry */
   at?: number;
 }
 
@@ -101,15 +64,12 @@ export interface HealthPush {
 
 export interface SocketHandlers {
   health?(health: HealthPush): void;
-  /** one session's live-run truth moved (the runs topic) */
   runs?(session: string, active: boolean): void;
-  /** one chip frame: live tail while the call runs, fill when it settles */
   chips?(session: string, frame: ChipFrame): void;
   /** one canvas panel descriptor (canvas topic; the SSE frame verbatim) */
   canvas?(event: string, payload: unknown): void;
   /** one chat frame - the run's SSE event verbatim, session-scoped */
   chat?(session: string, event: string, payload: unknown): void;
-  /** the connection opened; reconnect is true iff it was open before */
   open?(info: { reconnect: boolean }): void;
   close?(): void;
 }
@@ -138,23 +98,17 @@ export function parseEnvelope(raw: unknown): SocketEnvelope | null {
   return out;
 }
 
-// SOCKET_BACKOFF_BASE_MS / SOCKET_BACKOFF_MAX_MS bound the reconnect
-// ladder: 0.5s, 1s, 2s ... capped at 15s, with jitter so a restarted
-// lane never gets a synchronized herd of reconnects.
+// SOCKET_BACKOFF_BASE_MS / SOCKET_BACKOFF_MAX_MS bound the reconnect ladder. capped at
+// 15s, with jitter so a restarted lane never gets a synchronized herd of reconnects.
 export const SOCKET_BACKOFF_BASE_MS = 500;
 export const SOCKET_BACKOFF_MAX_MS = 15_000;
 
-// SOCKET_LIVENESS_MS is the quiet-wire budget: the server pushes the
-// health topic every 5s, so 15s of silence means the connection is dead
-// even though no close event arrived. A half-open TCP (a wifi flap, a
-// suspended laptop, the devtools offline toggle) never fires `close` -
-// without this the client would sit on a corpse and the reconnect
-// catch-up would never run.
+// SOCKET_LIVENESS_MS is the quiet-wire budget. A half-open TCP (a wifi flap, a
+// suspended laptop, the devtools offline toggle) never fires `close` - without this the
+// client would sit on a corpse and the reconnect catch-up would never run.
 export const SOCKET_LIVENESS_MS = 15_000;
 
-// backoffDelay is the delay before reconnection attempt N (0-based):
-// exponential, capped, +/-20% jitter. Pure (rand injected) so the node
-// test pins the ladder and the cap.
+// backoffDelay is the delay before reconnection attempt N (0-based).
 export function backoffDelay(attempt: number, rand: () => number = Math.random): number {
   const n = Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0;
   const base = Math.min(SOCKET_BACKOFF_MAX_MS, SOCKET_BACKOFF_BASE_MS * 2 ** Math.min(n, 16));
@@ -162,8 +116,7 @@ export function backoffDelay(attempt: number, rand: () => number = Math.random):
   return Math.max(50, Math.round(base + jitter));
 }
 
-// normalizeChipFrame guards one chips payload: a frame without a call id
-// has nothing to attach to and drops.
+// normalizeChipFrame guards one chips payload.
 export function normalizeChipFrame(data: unknown): ChipFrame | null {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   const f = data as Record<string, unknown>;
@@ -180,9 +133,7 @@ export function normalizeChipFrame(data: unknown): ChipFrame | null {
   return out;
 }
 
-// dispatchFrame routes one envelope to its typed handler. Unknown topics
-// are ignored (the set is closed server-side). Pure: every state change
-// lives in the handlers.
+// dispatchFrame routes one envelope to its typed handler.
 export function dispatchFrame(env: SocketEnvelope, handlers: SocketHandlers): void {
   switch (env.topic) {
     case "health": {
@@ -203,9 +154,7 @@ export function dispatchFrame(env: SocketEnvelope, handlers: SocketHandlers): vo
       return;
     }
     case "canvas": {
-      // the payload is the SSE frame verbatim: {type: "view_model_delta",
-      // panel: {...}}. The event name rides the envelope too - fall back
-      // to the payload's own type when a producer omits it.
+      // the payload is the SSE frame verbatim: {type: "view_model_delta", panel: {..}}.
       const data = env.data as Record<string, unknown> | undefined;
       const event =
         env.event ||
@@ -223,9 +172,7 @@ export function dispatchFrame(env: SocketEnvelope, handlers: SocketHandlers): vo
   }
 }
 
-// socketURL builds the endpoint from the page's own origin - the same
-// host the SPA was served from (loopback bind; the upgrader refuses a
-// foreign Origin anyway).
+// socketURL builds the endpoint from the page's own origin.
 export function socketURL(loc: { protocol: string; host: string } | undefined): string {
   if (!loc) return "/ws";
   const scheme = loc.protocol === "https:" ? "wss:" : "ws:";
@@ -233,31 +180,22 @@ export function socketURL(loc: { protocol: string; host: string } | undefined): 
 }
 
 export interface SocketClientOptions {
-  /** override the endpoint (tests, a proxied lane) */
   url?: string;
-  /** websocket constructor (tests inject a fake) */
   factory?: (url: string) => WebSocket;
-  /** jitter source (tests pin it) */
   rand?: () => number;
-  /** quiet-wire budget (tests shorten it) */
   livenessMs?: number;
 }
 
 export interface SocketClient {
-  /** connecting | open | reconnecting | closed */
   status: Ref<SocketStatus>;
   /** idempotent: a second call while connecting/open is a no-op */
   connect(): void;
-  /** stops the ladder - the page is going away */
   close(): void;
-  /** replace this connection's topic set; an empty list keeps "all" */
   subscribe(topics: readonly SocketTopic[]): void;
-  /** the topic set the client asks for on every (re)connect */
   topics(): SocketTopic[];
 }
 
-// createSocketClient owns one page's connection. One per page load: the
-// app mounts it on mount, closes it on unmount.
+// createSocketClient owns one page's connection.
 export function createSocketClient(
   handlers: SocketHandlers,
   opts: SocketClientOptions = {},
@@ -274,13 +212,7 @@ export function createSocketClient(
   let closedByUser = false;
   let everOpened = false;
 
-  // armLiveness records the last frame and starts the quiet-wire check.
-  // ONE timer at a time (a chat run frames hundreds of deltas a second -
-  // clearing and re-creating a timer per frame would be its own
-  // problem); the check re-schedules itself while frames keep landing
-  // and cuts the socket once the wire has been quiet for the budget.
-  // Expiry means the connection is dead WITHOUT a close event, so the
-  // socket is closed by hand and the ladder rebuilds it. Never an
+  // armLiveness records the last frame and starts the quiet-wire check. Never an
   // interval.
   function armLiveness(): void {
     lastFrameAt = Date.now();
@@ -295,29 +227,17 @@ export function createSocketClient(
       if (!socket) return;
       const silence = Date.now() - lastFrameAt;
       if (silence < budget()) {
-        // re-arm for the REMAINDER: the budget is a deadline measured from
-        // the LAST FRAME, so a fresh full-budget timer lets a dead wire sit
-        // undetected for up to 2x the budget (the check can land one tick
-        // before the last frame, then wait another whole budget). At the
-        // shipped 15s that is a 30s discovery window - longer than a
-        // reconnect catch-up is given, so the half-open socket outlives the
-        // outage and revives with the network instead of reconnecting
-        // (card t_71f28526).
+        // re-arm for the REMAINDER.
         scheduleLivenessCheck(budget() - silence);
         return;
       }
       try {
         socket.close();
       } catch {
-        // already dead: the teardown below still owns the recovery
       }
-      // Hand recovery to the ladder NOW. The browser's close EVENT is not a
-      // promise: on a half-open wire it can be deferred until the network
-      // returns (measured: the entire dark window under `ab set offline`) or
-      // never arrive at all. Waiting for it leaves the client dark with no
-      // timer armed - no reconnect, no onopen, no catch-up refetch, and the
-      // pane stays stale (card t_71f28526). A late close is ignored by the
-      // stale-socket guard in onclose.
+      // Hand recovery to the ladder NOW. The browser's close EVENT is not a promise: on
+      // a half-open wire it can be deferred until the network returns (measured: the
+      // entire dark window under `ab set offline`) or never arrive at all.
       if (ws === socket) dropConnection();
     }, delayMs ?? budget());
   }
@@ -343,16 +263,14 @@ export function createSocketClient(
     try {
       ws.send(JSON.stringify({ type: "subscribe", topics }));
     } catch {
-      // a send on a dying socket is the close handler's business
     }
   }
 
-  // dropConnection takes the CURRENT socket out of the client's hands and
-  // hands recovery to the ladder. Both routes into it - the browser's close
-  // event and the liveness cut - must leave exactly one reconnect pending,
-  // never two: `ws = null` plus `schedule()`'s own guard is what keeps the
-  // ladder single-file, and the stale-socket guard in onclose is what stops
-  // a late close from stepping it twice.
+  // dropConnection takes the CURRENT socket out of the client's hands and hands. Both
+  // routes into it - the browser's close event and the liveness cut - must leave
+  // exactly one reconnect pending, never two: `ws = null` plus `schedule`'s own guard
+  // is what keeps the ladder single-file, and the stale-socket guard in onclose is what
+  // stops a late close from stepping it twice.
   function dropConnection(): void {
     ws = null;
     disarmLiveness();
@@ -385,14 +303,11 @@ export function createSocketClient(
       if (env) dispatchFrame(env, handlers);
     };
     socket.onclose = () => {
-      // a socket we already dropped is not news: its close can land after the
-      // ladder has replaced it (the liveness cut does not wait for it), and
-      // nulling the live socket here would strand the connection
+      // a socket we already dropped is not news.
       if (ws !== socket) return;
       dropConnection();
     };
     socket.onerror = () => {
-      // the close event always follows; nothing to do here
     };
   }
 
@@ -419,7 +334,6 @@ export function createSocketClient(
       try {
         socket.close();
       } catch {
-        // already dead
       }
     }
     status.value = "closed";

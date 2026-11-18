@@ -14,8 +14,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// exportMessages writes messages as JSONL (one JSON object per line with
-// role and content fields) to w. Used by the CLI export subcommand.
+// exportMessages writes messages as JSONL (one JSON object per line with role and.
 func exportMessages(messages []core.Message, w io.Writer) error {
 	enc := json.NewEncoder(w)
 	for _, msg := range messages {
@@ -30,9 +29,7 @@ func exportMessages(messages []core.Message, w io.Writer) error {
 	return nil
 }
 
-// resolveSessionCLI resolves a session argument to a session ID for the
-// CLI export command. Tries exact ID match, then case-insensitive label
-// prefix match. Returns an error if multiple labels match.
+// resolveSessionCLI resolves a session argument to a session ID for the CLI export.
 func resolveSessionCLI(storeDB agent.StoreProvider, arg string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -42,7 +39,6 @@ func resolveSessionCLI(storeDB agent.StoreProvider, arg string) (string, error) 
 		return arg, nil
 	}
 
-	// Try case-insensitive label prefix match.
 	sessions, err := storeDB.ListSessions(ctx)
 	if err != nil {
 		return "", fmt.Errorf("list sessions: %w", err)
@@ -64,8 +60,7 @@ func resolveSessionCLI(storeDB agent.StoreProvider, arg string) (string, error) 
 	}
 }
 
-// cmdExport loads config, opens the store, resolves the session, and
-// writes its messages as JSONL to the output path (or stdout with "-").
+// cmdExport loads config, opens the store, resolves the session, and writes its.
 func cmdExport(configPath string, rest []string) error {
 	args := stripConfigFlag(rest)
 	if len(args) == 0 {

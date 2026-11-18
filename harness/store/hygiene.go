@@ -1,20 +1,20 @@
 package store
 
-// hygiene.go: the session hygiene pass (card t_329b9312). Division of
-// labor is the curator's law (card t_9972dfd0), applied to session
+// hygiene.go: the session hygiene pass. Division of
+// labor is the curator's law, applied to session
 // data:
 //
-//   - Mechanics are CODE: the prune (updated_at past retention, pinned
+// Mechanics are CODE: the prune (updated_at past retention, pinned
 //     exempt) and the vacuum (wal_checkpoint TRUNCATE + the
 //     auto_vacuum conversion). The LLM never deletes anything.
-//   - The LLM only writes PROSE: one call per session drafts the
+// The LLM only writes PROSE: one call per session drafts the
 //     summary; the code truncates, stores, and FTS carries it.
 //
 // The pass is invoked through the sessions.hygiene tool: the async cron
 // fire is an agent turn whose prompt names the tool, exactly the way
 // the skills curator rides a jobs: prompt. One pass, one report.
 //
-// Compactor untouched (card note): in-context compaction is a
+// Compactor untouched: in-context compaction is a
 // different organ and works.
 
 import (
@@ -30,46 +30,26 @@ import (
 
 // HygieneReport is one pass's outcome.
 type HygieneReport struct {
-	// Summarized is the count of summaries written this pass.
 	Summarized int `json:"summarized"`
-	// Pending is the sessions that still lack a summary after the
-	// pass (over the age floor) - the next run's backlog.
 	Pending int `json:"pending"`
-	// Pruned is the count of sessions deleted by retention.
 	Pruned int `json:"pruned"`
-	// Vacuumed reports whether the vacuum step ran to completion.
 	Vacuumed bool `json:"vacuumed"`
-	// DBSizeBytes / WALSizeBytes are the file sizes read AFTER the
-	// vacuum step - the state the pass left the database in.
 	DBSizeBytes  int64 `json:"db_size_bytes"`
 	WALSizeBytes int64 `json:"wal_size_bytes"`
-	// PrunedIDs names what retention deleted. Retention deletes
-	// history; a report that cannot say which history it deleted is a
-	// silent failure.
+	// PrunedIDs names what retention deleted. Retention deletes history; a report that
+	// cannot say which history it deleted is a silent failure.
 	PrunedIDs []string `json:"pruned_ids,omitempty"`
-	// Skipped carries per-session summarizer failures (id: cause).
 	Skipped []string `json:"skipped,omitempty"`
 }
 
-// summarizerMaxChars caps the transcript the summarizer reads per
-// consultation - long sessions still summarize from their first 12k
-// characters, which is where the conversation establishes itself. The
-// tail is detail, the head is intent.
+// summarizerMaxChars caps the transcript the summarizer reads per consultation.
 const summarizerMaxChars = 12000
 
-// maxSummariesPerPass bounds one hygiene run: the pass runs on a cron
-// schedule, and the backlog clears across runs. An unbounded pass
-// could spend an hour streaming summaries on a first run against a
-// large existing history.
+// maxSummariesPerPass bounds one hygiene run.
 const maxSummariesPerPass = 5
 
-// RunSummarizer summarizes sessions older than afterHours that lack a
-// summary. prov may be nil - the pass reports the skip and writes
-// nothing. model is the per-subsystem slot (card t_fc0b2f2d):
-// "instance:model" rides the named provider instance (ResolveModelSlot),
-// a bare name routes through prov.WithModel (the curated ruling: empty
-// = the session provider model). Empty transcripts produce no summary:
-// nothing to say.
+// RunSummarizer summarizes sessions older than afterHours that lack a summary. prov may
+// be nil - the pass reports the skip and writes nothing.
 func (s *Store) RunSummarizer(ctx context.Context, prov agent.Provider, model string, afterHours int) (HygieneReport, error) {
 	rep := HygieneReport{}
 	if afterHours <= 0 {
@@ -109,10 +89,9 @@ func (s *Store) RunSummarizer(ctx context.Context, prov agent.Provider, model st
 	return rep, nil
 }
 
-// unsummarized lists the pass's work queue: sessions past the age
-// floor, without a summary, that carry at least one message - an empty
-// session has nothing to summarize and must not sit pending forever.
-// The identity law shapes the list the same way ListSessions does.
+// unsummarized lists the pass's work queue: sessions past the age floor, without a
+// summary, that carry at least one message - an empty session has nothing to summarize
+// and must not sit pending forever.
 func (s *Store) unsummarized(ctx context.Context, cutoff time.Time) ([]core.Session, error) {
 	sessions, err := s.ListSessions(ctx)
 	if err != nil {
@@ -164,8 +143,7 @@ func (s *Store) summarizeSession(ctx context.Context, prov agent.Provider, sess 
 		return "", fmt.Errorf("summarize: %w", err)
 	}
 	out = strings.TrimSpace(out)
-	// Defensive cap: a runaway model answer does not become an
-	// unbounded row. 2000 chars is far past any honest paragraph.
+	// Defensive cap: a runaway model answer does not become an unbounded row.
 	if len(out) > 2000 {
 		out = out[:2000]
 	}
@@ -175,10 +153,7 @@ func (s *Store) summarizeSession(ctx context.Context, prov agent.Provider, sess 
 	return out, nil
 }
 
-// renderTranscript flattens messages to "role: content" lines, capped
-// at maxChars. Tool results render as "(tool output omitted)" stubs:
-// their payloads are the bulk of every transcript and carry almost none
-// of the narrative.
+// renderTranscript flattens messages to "role: content" lines, capped at maxChars.
 func renderTranscript(msgs []core.Message, maxChars int) string {
 	var sb strings.Builder
 	for _, msg := range msgs {
@@ -198,8 +173,6 @@ func renderTranscript(msgs []core.Message, maxChars int) string {
 		case core.ToolResult:
 			sb.WriteString("(tool output omitted)\n")
 		default:
-			// Bookkeeping entries (model_change, verdict cards, ...)
-			// are not conversation content.
 			continue
 		}
 		if sb.Len() >= maxChars {
@@ -212,10 +185,7 @@ func renderTranscript(msgs []core.Message, maxChars int) string {
 	return sb.String()
 }
 
-// completeText runs ONE collect-the-text completion over the provider
-// (the curator's thin bridge shape, mirrored here so the two LLM passes
-// stay identical in posture: no tool loop, no retries beyond the ai
-// layer's own, failures surface and the pass moves on).
+// completeText runs ONE collect-the-text completion over the provider (the curator's.
 func completeText(ctx context.Context, prov agent.Provider, prompt string) (string, error) {
 	var sb strings.Builder
 	for ev := range prov.Stream(ctx, []core.Message{core.NewUser(prompt)}, nil) {
@@ -231,12 +201,9 @@ func completeText(ctx context.Context, prov agent.Provider, prompt string) (stri
 	return sb.String(), nil
 }
 
-// PruneSessions deletes past-retention sessions. The window rides
-// updated_at - "older" means last active, not created (an old session
-// that was actively used yesterday is recent history). Pinned sessions
-// are exempt: a pin is the user's keep-forever mark and retention may
-// never overrule it. 0 (or less) = never prune. Children cascade via
-// the FK - pruning a parent removes its branches with it.
+// PruneSessions deletes past-retention sessions. Pinned sessions are exempt: a pin is
+// the user's keep-forever mark and retention may never overrule it. 0 (or less) = never
+// prune.
 func (s *Store) PruneSessions(ctx context.Context, retentionDays int) ([]string, error) {
 	if retentionDays <= 0 {
 		return nil, nil
@@ -269,20 +236,7 @@ func (s *Store) PruneSessions(ctx context.Context, retentionDays int) ([]string,
 	return ids, nil
 }
 
-// RunVacuum is the hygiene pass's third step: reclaim the write
-// backlog. wal_checkpoint(TRUNCATE) collapses the WAL into the main
-// database and truncates the -wal file to zero - without it, any
-// long-running WAL database grows without bound. The pragma returns a
-// result row (busy, log, checkpointed): a busy=1 failure IS a result,
-// not an error, so the pool issue it as a drained query and retry on
-// transient readers. The auto_vacuum conversion (incremental, 2) turns
-// empty-page reclaim on for the main file once - a pragma copy and a
-// VACUUM on the same dedicated connection; every later pass runs
-// incremental_vacuum to hand back free pages. Probe-proven against the
-// bundled modernc sqlite: a pool-scoped auto_vacuum=2 + VACUUM does
-// NOT convert (the pragma lands on one random connection, the VACUUM
-// on another) - single connection, in order, is the only shape that
-// takes.
+// RunVacuum is the hygiene pass's third step: reclaim the write backlog.
 func (s *Store) RunVacuum(ctx context.Context) error {
 	var busy, logPages, ckptPages int
 	for attempt := 0; ; attempt++ {
@@ -324,10 +278,7 @@ func (s *Store) RunVacuum(ctx context.Context) error {
 	if mode != 2 {
 		return fmt.Errorf("auto_vacuum stayed %d after the VACUUM conversion", mode)
 	}
-	// THE CONVERSION FLOODS THE WAL: the VACUUM rewrites the whole main
-	// file through it (probe: a 9MB db left a 8.8MB -wal). Close the
-	// pass the way it opened it - one more truncate checkpoint, so the
-	// end state on disk is an empty WAL, not a fresh 9MB backlog.
+	// THE CONVERSION FLOODS THE WAL.
 	for attempt := 0; ; attempt++ {
 		if err := s.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).
 			Scan(&busy, &logPages, &ckptPages); err != nil {
@@ -343,10 +294,7 @@ func (s *Store) RunVacuum(ctx context.Context) error {
 	return nil
 }
 
-// DBFileSizes reads the main database and WAL file sizes off disk. The
-// dsn the store opened with is the path (":memory:" reads zero). The
-// WAL file is read as <path>-wal: absent or zero both mean an empty
-// WAL, which is the healthy end-state after a TRUNCATE checkpoint.
+// DBFileSizes reads the main database and WAL file sizes off disk.
 func (s *Store) DBFileSizes() (db, wal int64) {
 	if s.dbPath == ":memory:" || s.dbPath == "" {
 		return 0, 0
@@ -356,8 +304,7 @@ func (s *Store) DBFileSizes() (db, wal int64) {
 	return db, wal
 }
 
-// fileSize stats path, reporting 0 for any miss (an absent WAL is an
-// empty WAL, not an error).
+// fileSize stats path, reporting 0 for any miss (an absent WAL is an empty WAL, not.
 func fileSize(path string) int64 {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -366,10 +313,7 @@ func fileSize(path string) int64 {
 	return info.Size()
 }
 
-// RunHygiene is the whole pass: summarize, prune, vacuum, report. The
-// steps run in that order on purpose - the summarizer consults the
-// LLM BEFORE anything is deleted, and the vacuum happens last so the
-// report's file sizes state the post-maintenance shape.
+// RunHygiene is the whole pass: summarize, prune, vacuum, report.
 func (s *Store) RunHygiene(ctx context.Context, prov agent.Provider, cfg HygieneConfig) (HygieneReport, error) {
 	rep := HygieneReport{}
 	sum, err := s.RunSummarizer(ctx, prov, cfg.SummarizerModel, cfg.SummarizeAfterHours)

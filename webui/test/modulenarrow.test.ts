@@ -1,9 +1,4 @@
-// omega webui: unit tests for the module-UI responsive contract
-// (card t_a2fdc630). The recipe = the kanban Board approach: each
-// component measures its OWN rendered container and flips a `narrow`
-// class below the threshold. The measured flip itself is browser code;
-// what the node suite pins is the source wiring (the composition-test
-// convention) plus the PURE threshold agreement across every copy.
+// omega webui: unit tests for the module-UI responsive contract.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -18,8 +13,7 @@ import { isNarrowWidth as toolsIsNarrowWidth } from "../../harness/tools/ui/narr
 // fold too (a drag between hosts must show one adaptation, not two)
 import { isNarrowWidth as boardIsNarrowWidth } from "../../harness/kanban/ui/board/boardLogic.ts";
 import { isNarrowWidth as mcpIsNarrowWidth } from "../../harness/mcp/ui/narrow.ts";
-// card t_617c2ad0: the browser tab left the shell - its copy rides the
-// module list now
+// the browser tab left the shell - its copy rides the module list now
 import { isNarrowWidth as browserIsNarrowWidth } from "../../harness/browser/ui/narrow.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", ".."); // the repo root (webui/test up to root)
@@ -27,11 +21,10 @@ const modules = root; // the RETROFIT rel paths are repo-root relative
 const read = (...p: string[]) => readFileSync(join(...p), "utf8");
 
 test("every narrow copy agrees with the shell threshold (shell + all modules)", () => {
-  // one flip point: a component dragged between hosts (inspector
-  // column -> main pane, drawer -> dock, bottom panel later) must show
-  // ONE adaptation, not both layouts at once. The copy per module is
-  // deliberate (module UI never imports shell code); the VALUE is
-  // shared and pinned here.
+  // one flip point: a component dragged between hosts (inspector column -> main pane,
+  // drawer -> dock, bottom panel later) must show ONE adaptation, not both layouts at
+  // once. The copy per module is deliberate (module UI never imports shell code); the
+  // VALUE is shared and pinned here.
   for (const [name, fn] of [
     ["cron", cronIsNarrowWidth],
     ["skills", skillsIsNarrowWidth],
@@ -47,10 +40,9 @@ test("every narrow copy agrees with the shell threshold (shell + all modules)", 
   assert.equal(NARROW_MAX_PX, 360);
 });
 
-// --- component wiring: the contract's shape, per component ------------
+// -- component wiring: the contract's shape, per component -----------
 
-// [component path, module ("null" = shell-owned), scoped narrow rules
-// that must ship in that SFC's own stylesheet]
+// [component path, module ("null" = shell-owned), scoped narrow rules that must ship.
 const RETROFIT: Array<{
   rel: string;
   label: string;
@@ -61,53 +53,42 @@ const RETROFIT: Array<{
     rel: "harness/cron/ui/CronJobs.vue",
     label: "cron",
     module: "cron",
-    // card t_308e6d9b: the narrow padding rides the scroll body now.
-    // card t_561dc4e0: the head wrap + name shrink died with the row
-    // law - the shared anatomy's narrow rule owns the row rhythm.
     rules: [/\.cron-list\.narrow \.cron-body \{/],
   },
   {
     rel: "harness/skills/ui/SkillsList.vue",
     label: "skills",
     module: "skills",
-    // card t_308e6d9b: the narrow padding rides the scroll body now
     rules: [/\.skills-list\.narrow \.skills-body \{/],
   },
   {
     rel: "harness/tools/ui/ToolsList.vue",
     label: "tools",
     module: "tools",
-    // card t_308e6d9b + t_ffab9823: the narrow padding rides the scroll
-    // body now - no ROOT narrow rule survives (the stray duplicate sat
-    // the band +6/+8px inside)
+    // +: the narrow padding rides the scroll body now - no ROOT narrow rule survives
+    // (the stray duplicate sat the band +6/+8px inside)
     rules: [/\.tools-list\.narrow \.tools-body \{/],
   },
   {
     rel: "harness/mcp/ui/McpServers.vue",
     label: "mcp",
     module: "mcp",
-    // card t_83f37525 rebuilt the rows (mcp-server-head -> mcp-row/
-    // mcp-row-main). Card t_561dc4e0 re-seated them on the shared row
-    // law: the state cluster rides the subtitle line (it never wraps
-    // off the row), so the narrowed line-reflow rule died - the pin is
-    // the condensed scroll body + the anatomy's narrow row rhythm.
+    // rebuilt the rows (mcp-server-head -> mcp-row/ mcp-row-main). re-seated them on
+    // the shared row law: the state cluster rides the subtitle line (it never wraps off
+    // the row), so the narrowed line-reflow rule died - the pin is the condensed scroll
+    // body + the anatomy's narrow row rhythm.
     rules: [/\.mcp-list\.narrow \{/, /\.mcp-list\.narrow \.mcp-body \{/],
   },
   {
-    // card t_617c2ad0: the browser tab view is the browser capsule's own
-    // (harness/browser/ui/) - the recipe's narrow rules moved with it
     rel: "harness/browser/ui/BrowserTab.vue",
     label: "browser",
     module: "browser",
     rules: [/\.browser-tab\.narrow \.band-tool\[aria-label="browser back"\]/],
   },
   {
-    // the shell's own inspector Files tab rides the same recipe
     rel: "harness/files/ui/FilesTab.vue",
     label: "files",
     module: null,
-    // t_36ceb99b: the preview left (viewer tab now); the measuring root
-    // stays - the flip drives the tree's size-column collapse
     rules: [/narrow \(card t_a2fdc630\): the tree gets the flag passed down/],
   },
 ];
@@ -117,8 +98,7 @@ for (const entry of RETROFIT) {
     const src = read(modules, ...entry.rel.split("/"));
     assert.match(src, /narrow: narrow/, "the root class binding");
     assert.match(src, /ref="rootEl"/, "the root carries the observe target");
-    // the observer (module-owned copy of the Board's inline block, or
-    // the shell composable for shell components) actually measures
+    // the observer (module-owned copy of the Board's inline block, or the shell.
     if (entry.module === null) {
       assert.match(src, /from "\~\/composables\/narrow"/, "shell-owned: the shell composable");
       assert.match(src, /useNarrow\(rootEl\)/, "the shell composable drives the flip");
@@ -131,8 +111,7 @@ for (const entry of RETROFIT) {
       assert.ok(!src.includes("composables/omega"), "no shell client dependency");
       assert.ok(!src.includes("composables/narrow"), "no shell composable import");
     }
-    // both paths guard the ancient-host + zero-width + rAF lessons (the
-    // shell composable carries them in narrow.ts; module copies inline)
+    // both paths guard the ancient-host + zero-width + rAF lessons (the shell.
     if (entry.module !== null) {
       assert.match(src, /w > 0/, "zero-width measure noise is never narrow");
       // mount measures NOW: a remount-in-place tab gets no further
@@ -161,8 +140,6 @@ test("FilesTab passes the narrow flag down to the recursive tree", () => {
 });
 
 test("the sweep's inventory is explicit - settings and the Board keep their adaptations", () => {
-  // every inspector surface named by the card; insights/extensions
-  // views are not shipped yet (checked at round start, 2026-10-21).
   const settings = read(modules, "webui", "app", "components", "settings", "SettingsTab.vue");
   assert.match(settings, /narrow: narrow/, "settings keeps its narrow adaptation (card t_49d0b308)");
   const board = read(modules, "harness", "kanban", "ui", "Board.vue");

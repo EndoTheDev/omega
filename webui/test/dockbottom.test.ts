@@ -1,11 +1,5 @@
-// omega webui: unit tests for the bottom panel (card t_67fc1905) -
-// the dock's pinned horizontal child under the main panel: the pane
-// tree's bottom slot, the registry's bottom-hosted logs home (the
-// dual-host right-shell copy was ruled a duplicate and removed -
-// Endo's comment 2026-10-26), close/reopen persistence across
-// reloads, and the horizontal divider's drag math
-// (+200 snap ladder, grow-direction, drag-past-min close intent).
-// Render-free; node's built-in test runner.
+// omega webui: unit tests for the bottom panel - the dock's pinned horizontal child
+// under the main panel.
 import { describe, it, test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -54,18 +48,14 @@ const srcPath = (rel: string) =>
 
 test("fullscreen keeps the sidebars: css owns the takeover (Endo's comment 2026-10-26)", () => {
   const css = srcPath("../app/assets/css/bottompanel.css");
-  // the band escapes the flow and spans between the sidebar insets
   assert.match(css, /\.dock-pane\.edge-bottom\.bottom-fullscreen\s*{[^}]*position:\s*absolute/s);
   assert.match(css, /left:\s*var\(--bottom-inset-left/s);
   assert.match(css, /right:\s*var\(--bottom-inset-right/s);
-  // the sidebars never hide: only their measured overhang is neutralized
-  // (the row stays rendered underneath)
+  // the sidebars never hide: only their measured overhang is neutralized (the row.
   assert.match(css, /:has\(\.dock-pane\.edge-bottom\.bottom-fullscreen\)[^}]*margin-bottom:\s*0\s*!important/s);
-  // the pane class is bound in DockPane (the view rides the class, not
-  // inline styles)
+  // the pane class is bound in DockPane (the view rides the class, not inline styles)
   const pane = srcPath("../app/components/DockPane.vue");
   assert.match(pane, /'bottom-fullscreen':\s*node\.edge === 'bottom' && api\.bottomFullscreen\.value/);
-  // no row-hiding branch left in the split renderer
   const split = srcPath("../app/components/DockSplit.vue");
   assert.ok(!split.includes('display: "none"'), "the row never hides");
 });
@@ -76,8 +66,7 @@ function flush(): Promise<void> {
   return new Promise((r) => setTimeout(r, 0));
 }
 
-// tiny Storage stand-in (same shape as dock.test.ts's MemoryStorage - a
-// fresh one per test file keeps the suites hermetic)
+// tiny Storage stand-in (same shape as dock.test.ts's MemoryStorage.
 class MemoryStorage {
   private m = new Map<string, string>();
   getItem(k: string): string | null {
@@ -104,8 +93,7 @@ function bottomOf(tree: DockNode): DockPane | null {
   return findEdgePane(tree, "bottom");
 }
 
-/** the fresh-default tree shape (no persisted layout): column root,
-    [main row, bottom shell]. */
+/** the fresh-default tree shape (no persisted layout). */
 function freshRoot(tree: DockNode): DockSplit {
   assert.equal(tree.kind, "split", "the fresh root is a split");
   return tree as DockSplit;
@@ -145,9 +133,9 @@ describe("the bottom shell's place in the tree", () => {
   });
 
   it("a persisted http_channel tab drops on load with a repair receipt (the deletability proof)", () => {
-    // a record persisted before the pane retired (card t_01c53e78): the
-    // component left the registry, so the total reader drops the tab and
-    // says so - the surviving Logs tab is NOT duplicated or re-seated.
+    // a record persisted before the pane retired: the component left the registry, so
+    // the total reader drops the tab and says so - the surviving Logs tab is NOT
+    // duplicated or re-seated.
     const store = new MemoryStorage() as unknown as Storage;
     const fresh = createDock(store); // fresh boot (no record to persist yet)
     store.setItem(DOCK_LAYOUT_KEY, serialize(fresh.tree.value, []));
@@ -191,10 +179,9 @@ describe("the bottom shell's place in the tree", () => {
   });
 
   it("insertMainPane lands in the MAIN ROW of a column root, not beside the bottom shell", () => {
-    // Endo ruling 2026-10-25: removePane can no longer strip the last
-    // main pane, so the no-main state is built BY HAND - the shape a
-    // stale persisted record may still carry (ensureMainPane is the
-    // repair path for exactly that record)
+    // Endo ruling: removePane can no longer strip the last main pane, so the no-main
+    // state is built BY HAND - the shape a stale persisted record may still carry
+    // (ensureMainPane is the repair path for exactly that record)
     const dock = createDock(new MemoryStorage() as unknown as Storage);
     const root = dock.tree.value as DockSplit;
     const row = root.children[0] as DockSplit;
@@ -235,7 +222,7 @@ describe("close / reopen (persistence rulings)", () => {
     first.toggleBottom();
     assert.equal(bottomOf(first.tree.value), null);
     await flush(); // persisted record now reflects the pruned shell + closed flag
-    // a fresh boot with the SAME store: the dock sees the closed flag and leaves the shell out
+    // a fresh boot with the SAME store.
     const second = createDock(store);
     assert.equal(bottomOf(second.tree.value), null, "still closed after reload");
   });
@@ -245,8 +232,7 @@ describe("close / reopen (persistence rulings)", () => {
     const dock = createDock(store);
     await flush();
     const bottom = bottomOf(dock.tree.value)!;
-    // resize to an unsnapped height by direct drag on the model (no UI);
-    // drag UP grows the bottom shell (it anchors to the viewport bottom)
+    // resize to an unsnapped height by direct drag on the model (no UI).
     const root = dock.tree.value as DockSplit;
     const d = dragSplitDivider(root, 1, [600, 200], -40, 800); // grow by 40 → 240
     dock.tree.value = d.split;
@@ -271,8 +257,8 @@ describe("close / reopen (persistence rulings)", () => {
   it("the bottom panel's drag-close (divider push) persists closure too", async () => {
     const store = new MemoryStorage() as unknown as Storage;
     const dock = createDock(store);
-    // drag the horizontal divider DOWN past the floor (drag down shrinks
-    // the viewport-bottom-anchored shell): the bottom collapses
+    // drag the horizontal divider DOWN past the floor (drag down shrinks the
+    // viewport-bottom-anchored shell).
     const res = dock.drag(
       (dock.tree.value as DockSplit).id,
       1,
@@ -290,10 +276,8 @@ describe("close / reopen (persistence rulings)", () => {
 
 describe("the boot repair (ensureBottomPanel)", () => {
   it("grafts the shell into a pre-panel tree (upgrade path)", () => {
-    // a v2 tree predating the bottom panel: plain row root, no shell
     const legacyStore = new MemoryStorage() as unknown as Storage;
     const prePanel = migrateLegacy((k) => legacyStore.getItem(k));
-    // simulate pre-card shape: drop the shell bottom, persist as a plain row
     const bare = ((): DockNode => {
       const t = prePanel as DockSplit;
       assert.equal(t.direction, "column"); // freshly migrated includes bottom
@@ -354,14 +338,10 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
   const shellOf = (tree: DockNode): DockPane => findEdgePane(tree, "bottom")!;
   const stripOf = (tree: DockNode): string[] =>
     shellOf(tree).tabs.map((t) => t.component);
-  // the strip's named residents: the surgery tests below strip or park
-  // ONE default and expect the sync to bring it back (card t_e703180e
-  // added a third bottom home, so the "last default" read is gone -
-  // names are stable where an index into a growing list is not).
+  // the strip's named residents.
   const terminal = "terminal";
   const observability = "observability";
-  // what the sync appends: every default the strip lacks, in registry
-  // order, at the END
+  // what the sync appends: every default the strip lacks, in registry order, at the END
   const appended = (tabs: DockTab[]): string[] =>
     bottomDefaults.filter((d) => !tabs.some((t) => t.component === d));
 
@@ -408,9 +388,7 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
   });
 
   it("a default parked ELSEWHERE (a main pane) is never duplicated", () => {
-    // the whole-tree read (the restoreSeatSet precedent): the
-    // singleton lives in a main pane, the strip seats the REST -
-    // strip-only membership would clone the singleton onto the shell
+    // the whole-tree read (the restoreSeatSet precedent).
     const main = makePane(null);
     main.tabs = [{ component: terminal }];
     const shell = makePane(null, null, "bottom");
@@ -454,8 +432,7 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
     const store = new MemoryStorage() as unknown as Storage;
     const fresh = createDock(store); // fresh boot: [logs, terminal] today
     store.setItem(DOCK_LAYOUT_KEY, serialize(fresh.tree.value, []));
-    // surgery: a record persisted BEFORE merge c080511 - the shell's
-    // strip predates the terminal registration
+    // surgery: a record persisted BEFORE merge c080511.
     const rec = JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!);
     let stripped = false;
     for (const n of allNodes(rec.tree as DockNode)) {
@@ -468,9 +445,7 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
     const raw = JSON.stringify(rec);
     store.setItem(DOCK_LAYOUT_KEY, raw);
     const healed = createDock(store);
-    // card t_e703180e: the strip now seats three homes - the healed
-    // strip is compared as a SET, because the sync APPENDS at the end
-    // (order is the strip-sync tests' business, membership is this one's)
+    // the strip now seats three homes.
     assert.deepEqual(
       [...(bottomOf(healed.tree.value)?.tabs.map((t) => t.component) ?? [])].sort(),
       [...bottomDefaults].sort(),
@@ -481,9 +456,8 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
         bottomOf(healed.tree.value)?.tabs.every((t) => "key" in t === false),
       "appended tabs carry no chat keys (not chat tabs)",
     );
-    // ruling 6: the repaired load backs the RAW record up before re-persisting
+    // the repaired load backs the RAW record up before re-persisting
     assert.equal(store.getItem(DOCK_LAYOUT_BAK_KEY), raw, "the pre-repair record backed up");
-    // stable on reload: a second boot over the healed record changes nothing
     await flush();
     const after = JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!);
     assert.deepEqual(
@@ -518,7 +492,6 @@ describe("the horizontal divider drag (the bottom shell)", () => {
   } {
     const dock = createDock(new MemoryStorage() as unknown as Storage);
     const root = dock.tree.value as DockSplit;
-    // normalize the bottom's height for the math test
     const bottom = bottomOf(dock.tree.value)!;
     const d = dragSplitDivider(root, 1, [content - withBottomHeight, 200], withBottomHeight - 200, content);
     const split = d.split;
@@ -526,12 +499,11 @@ describe("the horizontal divider drag (the bottom shell)", () => {
     return { split, startPx, contentPx: content };
   }
 
-  // t_be305778 pointer-tracking invariant: the bottom shell anchors to the
-  // viewport BOTTOM, so the divider sits at y = contentPx - bottomHeight -
-  // a drag DOWN (+delta) must SHRINK the shell and drag UP grow it, with
-  // the divider's screen y tracking the pointer either way. (The original
-  // block pinned "drag DOWN grows" - the left-child read - which inverted
-  // the live gesture; these tests pin the pointer contract instead.)
+  // pointer-tracking invariant: the bottom shell anchors to the viewport BOTTOM, so the
+  // divider sits at y = contentPx - bottomHeight - a drag DOWN (+delta) must SHRINK the
+  // shell and drag UP grow it, with the divider's screen y tracking the pointer either
+  // way. (The original block pinned "drag DOWN grows" - the left-child read - which
+  // inverted the live gesture; these tests pin the pointer contract instead.)
   it("drag DOWN shrinks the bottom shell (the divider is its TOP edge)", () => {
     const { split, startPx, contentPx } = column(200);
     const d = dragSplitDivider(split, 1, startPx, 50, contentPx);
@@ -562,27 +534,23 @@ describe("the horizontal divider drag (the bottom shell)", () => {
   it("snaps on the +200 ladder (200/400/600), not the sidebars' +320", () => {
     const { split, startPx, contentPx } = column(200);
     assert.equal(BOTTOM_SNAP_STEP, 200);
-    // into the +14 zone of 400: 400 - 214 = ... start 200, drag UP 190: 200 + 190 = 390 → snap 400
+    // into the +14 zone of 400: 400 - 214 =..
     const d = dragSplitDivider(split, 1, startPx, -190, contentPx);
     const bottom = (d.split as DockSplit).children[1] as DockPane;
     assert.equal(bottom.fixed, 400, "snapped to rung 400");
-    // between rungs stays free: 200 + 100 = 300 (midway) → no snap
     const free = dragSplitDivider(split, 1, startPx, -100, contentPx);
     const bottomFree = (free.split as DockSplit).children[1] as DockPane;
     assert.equal(bottomFree.fixed, 300, "between rungs the drag is free");
   });
 
   it("the chat (the absorbing neighbor above) keeps its 320 floor", () => {
-    // t_e539ba29: 600 content, not 700 - at the 0.5 max share the share cap
-    // (300) binds below the floor cap on a 700 box (350 < 380), so this
-    // premise needs a box the share cap leaves alone: share 300 > floor 280
+    // 600 content, not 700 - at the 0.5 max share the share cap (300) binds below the.
     const { split, startPx, contentPx } = column(200, 600);
     // grow the bottom beyond what a 320 chat floor leaves: 600 - 320 = 280
     const d = dragSplitDivider(split, 1, startPx, -400, contentPx);
     const bottom = (d.split as DockSplit).children[1] as DockPane;
     assert.equal(bottom.fixed, 280, "capped by the chat floor");
-    // t_6a74d5a1 wall law: the divider stops at the chat's floor - the chat
-    // (and everything the drag did not touch) is bit-identical before/after
+    // wall law: the divider stops at the chat's floor.
     const out = d.split as DockSplit;
     assert.deepEqual(out.sizes, (split as DockSplit).sizes, "the chat's fraction untouched");
     assert.deepEqual(
@@ -592,11 +560,6 @@ describe("the horizontal divider drag (the bottom shell)", () => {
     );
   });
 
-  // Endo's comment (2026-10-26): the max share. A drag past it caps even
-  // when the chat floor leaves room - the swallowed window strands the
-  // divider offscreen (bottom-anchored geometry), ungrabbable. Lowered to
-  // 0.5 by t_e539ba29 (2026-10-28): 0.65 left the chat a cramped strip
-  // under the composer in the max-up state
   it("the bottom shell's growth stops at the max share (50%)", () => {
     // 1200 content: the chat floor would allow 880, the max share is 600 -
     // the share cap must bind first
@@ -619,7 +582,6 @@ describe("persistence round-trip", () => {
     assert.ok(bottom);
     assert.equal(bottom.edge, "bottom");
     assert.equal(bottom.fixed, BOTTOM_DEFAULT_PX);
-    // and the reload path keeps it (no closed flag in a fresh store)
     const store = new MemoryStorage() as unknown as Storage;
     store.setItem(DOCK_LAYOUT_KEY, serialize(dock.tree.value));
     const redock = createDock(store);
@@ -641,17 +603,14 @@ describe("persistence round-trip", () => {
 
 describe("the registry's home rulings", () => {
   it("the Logs tab and the terminal are the bottom host's defaults", () => {
-    // card t_55a3fc4b: terminal joins the fresh bottom strip
-    // card t_e703180e: the observability tab is the second bottom home
-    // card t_01c53e78: the raw-tail logs pane retired - Logs is the
-    // surviving observability tab's name
+    // terminal joins the fresh bottom strip.
     assert.deepEqual(defaultHostTabs("bottom"), ["terminal", "observability"]);
   });
 
   it("the Logs tab reports its bottom home; every other component single-hosts", () => {
     assert.deepEqual([...hostsOf("observability")], ["bottom"]);
-    // canvas C1: cron is a PRIMARY-sidebar view (the seat map moved it off
-    // the inspector strip); chat stays the main column's.
+    // canvas C1: cron is a PRIMARY-sidebar view (the seat map moved it off the
+    // inspector strip).
     assert.deepEqual([...hostsOf("cron")], ["left"]);
     assert.deepEqual([...hostsOf("chat")], ["main"]);
   });

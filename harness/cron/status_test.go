@@ -1,9 +1,9 @@
 package cron
 
-// status_test.go: the capsule round's two extensions (card t_3885c975).
-// - the per-job LAST STATUS: every fire return path lands an outcome in
-//   cronstate.json, Jobs() carries it, the record survives a restart.
-// - the per-job SKILLS: the editor pins names, the fire injects the
+// status_test.go: the capsule round's two extensions.
+// the per-job LAST STATUS: every fire return path lands an outcome in
+// cronstate.json, Jobs carries it, the record survives a restart.
+// the per-job SKILLS: the editor pins names, the fire injects the
 //   bodies ahead of the prompt, an unpinnable name is a fire-time
 //   error (the bad-agent posture).
 
@@ -19,8 +19,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// fakeSkills is the skills seam double: reads from a map, errors on
-// the unknown names.
+// fakeSkills is the skills seam double: reads from a map, errors on the unknown names.
 type fakeSkills struct{ files map[string]string }
 
 func (f fakeSkills) SkillRead(name string) (description, content string, err error) {
@@ -49,7 +48,6 @@ func TestFireOutcomeOkThenError(t *testing.T) {
 		t.Error("last completion empty on a recorded fire")
 	}
 
-	// The next fire runs clean: the status flips, the note is gone.
 	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		return "fine", nil
 	}
@@ -68,8 +66,6 @@ func TestFireOutcomeSurvivesRestart(t *testing.T) {
 	}
 	r.fire(context.Background(), r.jobsSnapshot()[0], r.now())
 
-	// A fresh runner (a restarted serve) reads the same cronstate.json:
-	// the status is a promise the process can keep across restarts.
 	fresh := newTestRunner(t, home, Job{Name: "pulse", Schedule: "0 8 * * *", Prompt: "p"})
 	fresh.loadCronState()
 	row := fresh.Jobs()[0]
@@ -83,13 +79,11 @@ func TestWakeOutcomeRidesTheTick(t *testing.T) {
 	job := Job{Name: "wake", Schedule: "17 * * * *", Prompt: "patrol", AgentOwned: true, Agent: "scout"}
 	r := newTestRunner(t, home, job)
 
-	// No tick emitter (continuous off): inert wake = error status.
 	r.fire(context.Background(), job, r.now())
 	if row := r.Jobs()[0]; row.Status != "error" || !strings.Contains(row.StatusNote, "continuous not mounted") {
 		t.Errorf("inert wake = %+v, want an error status", row)
 	}
 
-	// With the spine wired, the same job fires clean.
 	emitted := 0
 	r.tickEmit = func(p wakeTickPayload) { emitted++ }
 	r.fire(context.Background(), job, r.now())
@@ -108,7 +102,6 @@ func TestPinnedSkillsRideTheFirePrompt(t *testing.T) {
 	})
 	r.skills = fakeSkills{files: map[string]string{"omega-dev": "the omega procedure\n"}}
 
-	// The injection: the pinned body ahead of the prompt.
 	got, err := r.pinnedPrompt(r.jobsSnapshot()[0])
 	if err != nil {
 		t.Fatalf("pinnedPrompt: %v", err)
@@ -136,8 +129,7 @@ func TestPinnedSkillsUnknownNameIsAFireError(t *testing.T) {
 		turned = true
 		return "x", nil
 	}
-	// The skills face is mounted, the name just is not there: no run
-	// on a half-set table, the error lands in the status.
+	// The skills face is mounted, the name just is not there.
 	r.skills = fakeSkills{files: map[string]string{}}
 	r.fire(context.Background(), r.jobsSnapshot()[0], r.now())
 	if turned {
@@ -147,7 +139,6 @@ func TestPinnedSkillsUnknownNameIsAFireError(t *testing.T) {
 		t.Errorf("status = %+v, want error naming the skill", row)
 	}
 
-	// The face itself is missing (skills module off): same loud error.
 	r2 := newTestRunner(t, t.TempDir(), Job{Name: "r2", Schedule: "0 8 * * *", Prompt: "p", Skills: []string{"x"}})
 	r2.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) { return "x", nil }
 	r2.fire(context.Background(), r2.jobsSnapshot()[0], r.now())
@@ -157,7 +148,6 @@ func TestPinnedSkillsUnknownNameIsAFireError(t *testing.T) {
 }
 
 func TestSchemaSkillsValidation(t *testing.T) {
-	// The happy path: names parse, trim and survive the round trip.
 	cfg, err := ParseConfig([]byte("jobs:\n  - name: pinned\n    schedule: \"0 8 * * *\"\n    prompt: p\n    skills:\n      - omega-dev\n      - ponytail\n"))
 	if err != nil {
 		t.Fatalf("ParseConfig: %v", err)
@@ -173,8 +163,7 @@ func TestSchemaSkillsValidation(t *testing.T) {
 			t.Errorf("accepted %q", bad)
 		}
 	}
-	// Empty entries trim away rather than reject - whitespace noise
-	// from an editor form is not a schema crime.
+	// Empty entries trim away rather than reject.
 	cfg, err = ParseConfig([]byte("jobs:\n  - name: tr\n    schedule: \"0 8 * * *\"\n    prompt: p\n    skills:\n      - \"\"\n      -  padded \n"))
 	if err != nil {
 		t.Fatalf("ParseConfig: %v", err)
@@ -189,9 +178,8 @@ func TestAgentHomeRejectsSkills(t *testing.T) {
 	if err := agent.ScaffoldAgent(home, "scout", ""); err != nil {
 		t.Fatal(err)
 	}
-	// A wake's fire prompt is the continuous capsule's property - an
-	// authored skills list would parse and never take effect (the
-	// silent-persist hole). Loud rejection, like deliver targets.
+	// A wake's fire prompt is the continuous capsule's property - an authored skills list
+	// would parse and never take effect (the silent-persist hole).
 	if err := os.WriteFile(filepath.Join(home, "agents", "scout", "config", "crons.yaml"),
 		[]byte("jobs:\n  - name: wake\n    schedule: \"17 * * * *\"\n    prompt: patrol\n    skills:\n      - omega-dev\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -202,10 +190,8 @@ func TestAgentHomeRejectsSkills(t *testing.T) {
 }
 
 func TestJobsListingCarriesThePrompt(t *testing.T) {
-	// t_3885c975 review fix: the editor drafts the WHOLE job from the
-	// listing row, so the row must carry the authored prompt - an
-	// empty-prompt draft dies at "prompt is required" and editing
-	// forces a full re-type of the message.
+	// review fix: the editor drafts the WHOLE job from the listing row, so the row must
+	// carry the authored prompt.
 	r := newTestRunner(t, t.TempDir(),
 		Job{Name: "ed", Schedule: "0 12 * * *", Prompt: "the authored message"})
 	if got := r.Jobs()[0].Prompt; got != "the authored message" {
@@ -226,7 +212,6 @@ func TestEditorSaveRoundTripsSkills(t *testing.T) {
 	if got := jobs[0].Skills; len(got) != 2 || got[0] != "omega-dev" {
 		t.Fatalf("response skills = %v, want the authored list", got)
 	}
-	// Persisted on disk: a reload reads it back.
 	cfg, err := LoadAllConfigs(r.home)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
@@ -235,8 +220,7 @@ func TestEditorSaveRoundTripsSkills(t *testing.T) {
 	if got := fresh.jobsSnapshot()[0].Skills; len(got) != 2 {
 		t.Fatalf("reloaded skills = %v, want the persisted list", got)
 	}
-	// A later edit without skills clears the list - the editor sends
-	// the whole job, the upsert replaces the entry.
+	// A later edit without skills clears the list.
 	jobs, err = r.SaveJob(Job{Name: "fresh", Schedule: "0 9 * * *", Prompt: "p", Enabled: boolPtr()})
 	if err != nil {
 		t.Fatalf("SaveJob #2: %v", err)
@@ -259,8 +243,7 @@ func TestCronTableRendersLastStatus(t *testing.T) {
 	if !strings.Contains(table, "error 11-06 23:00") {
 		t.Errorf("table = %q, want the error status", table)
 	}
-	// The never-fired row keeps its dash - "-" means no fire, not an
-	// unknown status.
+	// The never-fired row keeps its dash - "-" means no fire, not an unknown status.
 	if !strings.Contains(table, "  -  ") {
 		t.Errorf("table = %q, want a dash for the never-fired row", table)
 	}

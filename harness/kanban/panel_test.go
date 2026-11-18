@@ -1,9 +1,6 @@
 package kanban
 
-// The capsule's module tests (arc 5, t_7bd3dc06): the panels declare
-// the store's current state, the action pipe mutates through the same
-// grammar the tools and /board use, and every module-face mutation
-// pushes the matching panel through the installed sink.
+// The capsule's module tests.
 
 import (
 	"context"
@@ -14,10 +11,8 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// testCapsule builds a capsule over a fresh registry-backed store
-// ("main" is the pointer default - the plain single-board mode
-// rejects named boards) with a session board the tests can move.
-// Returns the capsule and the board setter the way Mount wires it.
+// testCapsule builds a capsule over a fresh registry-backed store ("main" is the
+// pointer default.
 func testCapsule(t *testing.T) (*capsule, *string) {
 	t.Helper()
 	s := testStore(t)
@@ -37,9 +32,7 @@ func capture(t *testing.T, c *capsule) *[]core.Panel {
 	return &pushed
 }
 
-// TestCapsulePanelsDeclare: the snapshot carries both panels, the
-// complete binding rides unsettled rows only, and settled rows ship
-// without an action.
+// TestCapsulePanelsDeclare: the snapshot carries both panels, the complete binding.
 func TestCapsulePanelsDeclare(t *testing.T) {
 	c, _ := testCapsule(t)
 	ctx := context.Background()
@@ -73,9 +66,6 @@ func TestCapsulePanelsDeclare(t *testing.T) {
 	if payload.Board != DefaultBoardName || payload.Total != 2 || len(payload.Rows) != 2 {
 		t.Fatalf("task payload wrong: %+v", payload)
 	}
-	// store order is created_at DESC: both draws land in the same
-	// second, the id tiebreak descends - the newest is not stable, so
-	// find the rows by id.
 	actions := map[string]*rowAction{}
 	for _, r := range payload.Rows {
 		actions[r.ID] = r.RowAction
@@ -109,8 +99,7 @@ func TestCapsulePanelsDeclare(t *testing.T) {
 	}
 }
 
-// TestCapsuleCompleteAction: the pipe completes through the same
-// grammar the tools use, pushes the refresh, and returns the payload.
+// TestCapsuleCompleteAction: the pipe completes through the same grammar the tools.
 func TestCapsuleCompleteAction(t *testing.T) {
 	c, _ := testCapsule(t)
 	pushed := capture(t, c)
@@ -153,8 +142,7 @@ func TestCapsuleCompleteAction(t *testing.T) {
 	}
 }
 
-// TestCapsuleCompleteActionErrors: no id is a rejection, a bad action
-// is the canvas 404.
+// TestCapsuleCompleteActionErrors: no id is a rejection, a bad action is the canvas.
 func TestCapsuleCompleteActionErrors(t *testing.T) {
 	c, _ := testCapsule(t)
 	if _, err := c.HandleAction(core.ActionCall{Module: "kanban", Action: actionComplete}); err == nil || !strings.Contains(err.Error(), "id is required") {
@@ -165,13 +153,11 @@ func TestCapsuleCompleteActionErrors(t *testing.T) {
 	}
 }
 
-// TestCapsuleSwitchAction: the pipe validates the board the way
-// /board does, moves the session board, and pushes BOTH panels.
+// TestCapsuleSwitchAction: the pipe validates the board the way /board does, moves.
 func TestCapsuleSwitchAction(t *testing.T) {
 	c, active := testCapsule(t)
 	pushed := capture(t, c)
 
-	// the default single-board store: switching to main is legal
 	payload, err := c.HandleAction(core.ActionCall{
 		Module: "kanban",
 		Action: actionSwitch,
@@ -191,7 +177,6 @@ func TestCapsuleSwitchAction(t *testing.T) {
 		t.Fatalf("payload active = %q, want main", bp.Active)
 	}
 
-	// an illegal name is rejected before the store sees it
 	if _, err := c.HandleAction(core.ActionCall{
 		Module: "kanban",
 		Action: actionSwitch,
@@ -203,14 +188,12 @@ func TestCapsuleSwitchAction(t *testing.T) {
 		t.Fatalf("a rejected switch moved the session board: %q", *active)
 	}
 
-	// a missing board name is a rejection
 	if _, err := c.HandleAction(core.ActionCall{Module: "kanban", Action: actionSwitch}); err == nil || !strings.Contains(err.Error(), "board is required") {
 		t.Fatalf("missing board error = %v", err)
 	}
 
-	// the switch pushes both panels (task panel covers the board,
-	// switcher carries the moved marker) - and nothing else in this
-	// test pushed: the two rejected switches touched no state
+	// the switch pushes both panels (task panel covers the board, switcher carries the
+	// moved marker).
 	if len(*pushed) != 2 {
 		t.Fatalf("pushed %d panels, want the switch's two", len(*pushed))
 	}
@@ -221,9 +204,7 @@ func TestCapsuleSwitchAction(t *testing.T) {
 	}
 }
 
-// TestCapsuleSwitchOnRegistryBoard: with a second registry board the
-// switcher lists both, the non-active row carries the switch binding,
-// and switching moves the active marker.
+// TestCapsuleSwitchOnRegistryBoard: with a second registry board the switcher lists.
 func TestCapsuleSwitchOnRegistryBoard(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -278,8 +259,7 @@ func TestCapsuleSwitchOnRegistryBoard(t *testing.T) {
 	}
 }
 
-// TestCapsuleTaskPanelFollowsSessionBoard: the panel lists the
-// session's active board, not the default (the switch moves it).
+// TestCapsuleTaskPanelFollowsSessionBoard: the panel lists the session's active.
 func TestCapsuleTaskPanelFollowsSessionBoard(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -305,9 +285,7 @@ func TestCapsuleTaskPanelFollowsSessionBoard(t *testing.T) {
 	}
 }
 
-// TestToolRefreshPushes: a tool create refreshes the task panel
-// through the capsule (the tools' own face), a failed op refreshes
-// the partial-batch state, and /board switch refreshes both.
+// TestToolRefreshPushes: a tool create refreshes the task panel through the capsule.
 func TestToolRefreshPushes(t *testing.T) {
 	p, _, _ := mountPlugin(t)
 	cctx := context.Background()
@@ -324,8 +302,7 @@ func TestToolRefreshPushes(t *testing.T) {
 		t.Fatalf("refreshed panel lost the created task: %s", raw)
 	}
 
-	// a failed batch op still refreshes (cheap catch-up: an atomic
-	// batch rolled itself back, a fail-forward one applied earlier ops)
+	// a failed batch op still refreshes (cheap catch-up: an atomic batch rolled itself.
 	before := len(*pushed)
 	out, err := p.tools.Tools()["kanban.batch"].Run(cctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "then break"},
@@ -341,7 +318,6 @@ func TestToolRefreshPushes(t *testing.T) {
 		t.Fatal("a failed batch op left the panel stale")
 	}
 
-	// the /board switch refreshes both panels
 	before = len(*pushed)
 	if _, err := p.handleCommand("/board", "main"); err != nil {
 		t.Fatalf("/board switch: %v", err)
@@ -353,7 +329,6 @@ func TestToolRefreshPushes(t *testing.T) {
 		t.Fatalf("switch push order wrong: %+v %+v", (*pushed)[len(*pushed)-2], (*pushed)[len(*pushed)-1])
 	}
 
-	// /boards (the read-only listing) refreshes nothing
 	before = len(*pushed)
 	if _, err := p.handleCommand("/boards", ""); err != nil {
 		t.Fatalf("/boards: %v", err)
@@ -373,8 +348,7 @@ func payloadOf(t *testing.T, v any) string {
 	return string(b)
 }
 
-// TestCapsuleSilentWithoutSink: no canvas, no push - the store
-// mutation stands, the snapshot is the catch-up.
+// TestCapsuleSilentWithoutSink: no canvas, no push.
 func TestCapsuleSilentWithoutSink(t *testing.T) {
 	c, _ := testCapsule(t)
 	ctx := context.Background()

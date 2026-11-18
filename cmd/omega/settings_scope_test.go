@@ -1,15 +1,15 @@
 package main
 
 // cmd/omega/settings_scope_test.go: the agent-scope read payload
-// (settings tier 3a, card t_22a5f70a). The pins:
+// . The pins:
 //
-//   - the scope list is the agent homes under <home>/agents/ (the same
+// the scope list is the agent homes under <home>/agents/ (the same
 //     roster scan the agents tab reads), main is never a scope, and an
 //     empty agents/ answers an empty list (R8);
-//   - a knob the layer names is overridden and carries the layer's
+// a knob the layer names is overridden and carries the layer's
 //     value, a knob it does not name inherits MAIN - asserted against
 //     the payload's OWN main knob, so the two surfaces cannot drift;
-//   - inherited max_turns comes from the serving agent's runtime knob,
+// inherited max_turns comes from the serving agent's runtime knob,
 //     not the yaml file.
 
 import (
@@ -22,8 +22,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// scopeHome lays out a settled home: <home>/config/config.yaml plus one
-// <home>/agents/<name>/config/config.yaml per entry.
+// scopeHome lays out a settled home.
 func scopeHome(t *testing.T, mainConfig string, agents map[string]string) string {
 	t.Helper()
 	home := t.TempDir()
@@ -91,8 +90,7 @@ func scopeGroup(t *testing.T, scope core.SettingsScope, key string) core.Setting
 	return core.SettingsScopeGroup{}
 }
 
-// mainKnob reads a knob off the MAIN payload - the inherited base every
-// scope knob is compared against (the pane's "differs from main").
+// mainKnob reads a knob off the MAIN payload.
 func mainKnob(t *testing.T, schema *core.SettingsSchema, key string) core.SettingsKnob {
 	t.Helper()
 	k, ok := schema.Knob(key)
@@ -116,9 +114,8 @@ system_prompt: main prompt
 max_turns: 55
 `
 
-// alpha overrides: provider.instance, system_prompt, description,
-// max_turns. It leaves provider.model_name INHERITED - the mixed shape a
-// group roll-up must catch.
+// alpha overrides: provider.instance, system_prompt, description, max_turns. It leaves
+// provider.model_name INHERITED - the mixed shape a group roll-up must catch.
 const scopeAlphaConfig = `description: alpha agent
 provider:
   instance: work
@@ -129,8 +126,6 @@ max_turns: 7
 func TestSettingsScopesListsAgentHomes(t *testing.T) {
 	home := scopeHome(t, scopeMainConfig, map[string]string{
 		"alpha": scopeAlphaConfig,
-		// beta is the scaffold shape: every knob commented out, so it
-		// overrides nothing.
 		"beta": "# provider:\n#   model_name: glm\n# system_prompt: \"\"\n",
 	})
 	schema, err := settingsSchema(filepath.Join(home, "config", "config.yaml"))
@@ -142,7 +137,6 @@ func TestSettingsScopesListsAgentHomes(t *testing.T) {
 	}
 
 	alpha := scopeByName(t, schema, "alpha")
-	// The four R2 groups, in render order.
 	var groupKeys []string
 	for _, g := range alpha.Groups {
 		groupKeys = append(groupKeys, g.Key)
@@ -150,12 +144,9 @@ func TestSettingsScopesListsAgentHomes(t *testing.T) {
 	if strings.Join(groupKeys, ",") != "provider,system_prompt,description,max_turns" {
 		t.Fatalf("alpha groups = %v, want the four R2 groups in order", groupKeys)
 	}
-	// An overridden knob carries the layer's value.
 	if k := scopeKnob(t, alpha, "provider.instance"); k.Value != "work" || !k.Overridden {
 		t.Errorf("provider.instance = %+v, want work/overridden", k)
 	}
-	// An INHERITED knob inside an overridden group: same value as main,
-	// no override flag.
 	inherited := scopeKnob(t, alpha, "provider.model_name")
 	if inherited.Overridden {
 		t.Errorf("provider.model_name flagged overridden for a layer that does not name it")
@@ -183,16 +174,13 @@ func TestSettingsScopesListsAgentHomes(t *testing.T) {
 	if k := scopeKnob(t, alpha, "max_turns"); k.Value != 7 || !k.Overridden {
 		t.Errorf("max_turns = %+v, want the layer's 7", k)
 	}
-	// Group roll-ups: provider overridden (type + api_key), all four
-	// groups the agent's own in this layer.
+	// Group roll-ups: provider overridden (type + api_key), all four groups the agent's.
 	for _, key := range []string{"provider", "system_prompt", "description", "max_turns"} {
 		if !scopeGroup(t, alpha, key).Overridden {
 			t.Errorf("group %q not flagged overridden for a layer that names its knob", key)
 		}
 	}
 
-	// beta: the commented scaffold overrides NOTHING and inherits main
-	// value for value.
 	beta := scopeByName(t, schema, "beta")
 	for _, g := range beta.Groups {
 		if g.Overridden {
@@ -209,9 +197,8 @@ func TestSettingsScopesListsAgentHomes(t *testing.T) {
 			t.Errorf("beta %s = %v, want main's %v", key, got, want)
 		}
 	}
-	// main has no instance of its own: an agent that names none reads the
-	// reserved word, which is exactly what ApplyAgentLayer resolves to the
-	// host's provider: section.
+	// main has no instance of its own: an agent that names none reads the reserved word,
+	// which is exactly what ApplyAgentLayer resolves to the host's provider: section.
 	if k := scopeKnob(t, beta, "provider.instance"); k.Value != "default" || k.Overridden {
 		t.Errorf("beta provider.instance = %+v, want the reserved default / not overridden", k)
 	}
@@ -221,7 +208,6 @@ func TestSettingsScopesListsAgentHomes(t *testing.T) {
 }
 
 func TestSettingsScopesEmptyWorld(t *testing.T) {
-	// No agents/ directory at all: the R8 empty world.
 	home := t.TempDir()
 	homeConfig := filepath.Join(home, "config", "config.yaml")
 	writeScopeFile(t, homeConfig, scopeMainConfig)
@@ -245,7 +231,6 @@ func TestSettingsScopesEmptyWorld(t *testing.T) {
 		t.Errorf("wire payload carries no empty scopes list: %s", body)
 	}
 
-	// An empty agents/ dir is the same world.
 	if err := os.MkdirAll(filepath.Join(home, "agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +259,6 @@ func TestSettingsScopesRuntimeMaxTurns(t *testing.T) {
 	if k := scopeKnob(t, scopeByName(t, schema, "beta"), "max_turns"); k.Value != 42 || k.Overridden {
 		t.Errorf("beta max_turns = %+v, want the runtime knob's 42, inherited", k)
 	}
-	// The layer's own value still wins for the scope that sets it.
 	if k := scopeKnob(t, scopeByName(t, schema, "alpha"), "max_turns"); k.Value != 7 || !k.Overridden {
 		t.Errorf("alpha max_turns = %+v, want the layer's 7, overridden", k)
 	}
@@ -309,7 +293,6 @@ func TestSettingsScopesSkipsMainAndMalformedDirs(t *testing.T) {
 			t.Errorf("malformed/hidden dir %q rode as a scope", s.Name)
 		}
 	}
-	// a valid dir whose layer file is gone still rides (inherits all).
 	if err := os.Remove(filepath.Join(home, "agents", "no-config-a", "config", "config.yaml")); err != nil {
 		t.Fatal(err)
 	}
@@ -330,8 +313,7 @@ func TestSettingsScopesSkipsMainAndMalformedDirs(t *testing.T) {
 
 func TestSettingsScopesReportsUnparsableLayer(t *testing.T) {
 	home := scopeHome(t, scopeMainConfig, map[string]string{
-		// A mapping where a scalar belongs: a real parse failure, not a
-		// value the tolerant read can coerce.
+		// A mapping where a scalar belongs.
 		"broken": "description:\n  nested: true\n",
 	})
 	schema, err := settingsSchema(filepath.Join(home, "config", "config.yaml"))
@@ -342,7 +324,6 @@ func TestSettingsScopesReportsUnparsableLayer(t *testing.T) {
 	if scope.Error == "" {
 		t.Fatal("unparsable layer answered no error - the override flags would be a silent guess")
 	}
-	// The dir is still a scope (R8) and carries inherited values.
 	if k := scopeKnob(t, scope, "provider.model_name"); k.Overridden || k.Value != mainKnob(t, schema, "provider.model_name").Value {
 		t.Errorf("broken layer's provider.model_name = %+v, want inherited from main", k)
 	}
@@ -363,9 +344,7 @@ func TestSettingsScopeHome(t *testing.T) {
 }
 
 func TestSettingsScopesEmptyInstanceStaysEmpty(t *testing.T) {
-	// An explicitly empty instance is an override with no instance behind
-	// it - the agent inherits the host's own provider by name, and the
-	// payload says so instead of guessing a name it does not have.
+	// An explicitly empty instance is an override with no instance behind it.
 	home := scopeHome(t, scopeMainConfig, map[string]string{
 		"alpha": "provider:\n  instance: \"\"\n",
 	})

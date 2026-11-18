@@ -1,12 +1,9 @@
 package api
 
-// Lane B of the phantom-results probe (card t_a54ef2ce): the prod
-// agent's skill accused the pending re-entry path of delivering ONE
-// arrival that mixed rows from more than one result. The probe found
-// every stored yield_result carrying its own tool_call_id and content
-// (no mixing), so this test pins the queue invariant that makes it
-// impossible: the hub is FIFO per session, each slot holds exactly one
-// result, and a payload never leaves the queue it entered.
+// Lane B of the phantom-results probe. The probe found every stored yield_result
+// carrying its own tool_call_id and content (no mixing), so this test pins the queue
+// invariant that makes it impossible: the hub is FIFO per session, each slot holds
+// exactly one result, and a payload never leaves the queue it entered.
 
 import (
 	"testing"
@@ -20,7 +17,6 @@ import (
 func TestWakeHubPayloadIsolation(t *testing.T) {
 	h := newWakeHub()
 
-	// Interleaved arrivals: same tool, same session, different calls.
 	h.enqueue("s1", core.YieldResult{ToolCallID: "c1", ToolName: "shell.run", Content: "grep: /a/one"})
 	h.enqueue("s2", core.YieldResult{ToolCallID: "c9", ToolName: "shell.run", Content: "grep: /b/nine"})
 	h.enqueue("s1", core.YieldResult{ToolCallID: "c2", ToolName: "files.grep", Content: "grep: /a/two"})
@@ -50,11 +46,10 @@ func TestWakeHubPayloadIsolation(t *testing.T) {
 	}
 }
 
-// TestWakeHubPushFrontKeepsPayload: the lost-slot-race path re-queues a
-// result at the FRONT and the live run's finish hook pops it again. The
-// re-queued slot must carry the same payload it went in with - a re-queue
-// that rebuilt or truncated it would hand the model a different result
-// than the call produced.
+// TestWakeHubPushFrontKeepsPayload: the lost-slot-race path re-queues a result at the.
+// The re-queued slot must carry the same payload it went in with - a re-queue that
+// rebuilt or truncated it would hand the model a different result than the call
+// produced.
 func TestWakeHubPushFrontKeepsPayload(t *testing.T) {
 	h := newWakeHub()
 	first := core.YieldResult{ToolCallID: "c1", ToolName: "shell.run", Content: "kept whole"}

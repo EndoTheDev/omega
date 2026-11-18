@@ -39,11 +39,10 @@ func TestStripTrustArgs(t *testing.T) {
 	}
 }
 
-// TestSplitSubcommandBareFlags is the card t_18b13390 pin: the bare
-// REPL entry must parse trust flags identically to subcommand paths. It
-// used to return an empty rest, so `omega --approve` reached the loop
-// with approve=false and the documented flag was dead (warning printed,
-// no trust.yaml written).
+// TestSplitSubcommandBareFlags is the pin: the bare REPL entry must parse trust flags.
+// It used to return an empty rest, so `omega --approve` reached the loop with
+// approve=false and the documented flag was dead (warning printed, no trust.yaml
+// written).
 func TestSplitSubcommandBareFlags(t *testing.T) {
 	sub, rest := splitSubcommand([]string{"--approve"})
 	if sub != "" {
@@ -62,9 +61,8 @@ func TestSplitSubcommandBareFlags(t *testing.T) {
 	}
 }
 
-// TestSplitSubcommandLeadingFlagsBeforePath: trust flags also survive
-// when they sit before a project path - previously anything before the
-// first non-flag argument was dropped from rest.
+// TestSplitSubcommandLeadingFlagsBeforePath: trust flags also survive when they sit
+// before a project path.
 func TestSplitSubcommandLeadingFlagsBeforePath(t *testing.T) {
 	sub, rest := splitSubcommand([]string{"--approve", "D:/proj"})
 	if sub != "D:/proj" {
@@ -75,8 +73,7 @@ func TestSplitSubcommandLeadingFlagsBeforePath(t *testing.T) {
 	}
 }
 
-// TestSplitSubcommandTrailingFlagsBeforeSub: flags after the
-// subcommand keep parsing through the run prompt unchanged.
+// TestSplitSubcommandTrailingFlagsBeforeSub: flags after the subcommand keep parsing.
 func TestSplitSubcommandTrailingFlagsBeforeSub(t *testing.T) {
 	sub, rest := splitSubcommand([]string{"run", "prompt", "--approve"})
 	if sub != "run" {

@@ -1,10 +1,4 @@
-// omega webui: card t_fec41e66 - the provider instances editor explains
-// itself (copy reshaped t_1914a8c9: the Hermes shape - a row is a named
-// ENDPOINT, no model column; models come from the instance's catalog
-// through the model pickers). Pins the visible flow: the in-editor explainer, the placeholders on a fresh
-// row, and the knob help that says the same thing server-side. Structural
-// source assertions (the node suite has no DOM: what is pinned is the
-// copy that renders, not the paint). Run: node --test webui/test/
+// omega webui: - the provider instances editor explains itself.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -16,7 +10,7 @@ const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 const field = read("app/components/settings/ProvidersField.vue");
 const settings = read("../cmd/omega/settings.go");
 
-// --- the editor states the flow before the first row ---
+// -- the editor states the flow before the first row --
 
 test("the editor opens with the visible row explainer", () => {
   assert.match(field, /class="provider-hint"/,
@@ -24,7 +18,6 @@ test("the editor opens with the visible row explainer", () => {
   assert.match(field,
     /every provider is a named instance[\s\S]*?api key[\s\S]*?model pickers[\s\S]*?under its name/,
     "the explainer names what a row IS (named endpoint - name, type, base url, api key) and how the models reach the pickers");
-  // card t_bf21ee07: the merged section says which row is the primary
   assert.match(field, /row\s+named "default" is the provider the agent serves/,
     "the explainer names the primary row (no more flat provider above the list)");
   // the explainer renders BEFORE the v-for rows (visible without scrolling)
@@ -34,7 +27,7 @@ test("the editor opens with the visible row explainer", () => {
     "the explainer precedes the row list in template order");
 });
 
-// --- a fresh row shows what to type ---
+// -- a fresh row shows what to type --
 
 test("a blank row carries placeholders for name and host - and NO model column", () => {
   assert.match(field, /placeholder="my-ollama"/, "the name cell shows a sample id");
@@ -44,27 +37,22 @@ test("a blank row carries placeholders for name and host - and NO model column",
     "the model column is GONE (t_1914a8c9): instances carry no model - the pickers offer the endpoint's catalog");
 });
 
-// --- the knob help and the editor copy agree ---
+// -- the knob help and the editor copy agree --
 
 test("the provider.instances knob help carries the same flow facts", () => {
-  // the window is generous on purpose: the knob literal carries comments
-  // between Value and Help (the default-source note of card t_d13c7264),
-  // so a tight window reds on comments, not on drift
+  // the window is generous on purpose.
   assert.match(settings,
     /Key: "provider\.instances"[\s\S]{0,600}Help: +?"every provider is a named instance: the name is the instance id/,
     "the server-side help keeps saying the name is the instance id");
-  // card t_bf21ee07: the help names the primary row and the live apply
   assert.match(settings,
     /the row named .{0,18}default.{0,18} is the provider the agent serves[\s\S]{0,400}apply live/,
     "the help names the primary row and that the list applies live");
 });
 
-// --- ONE section: every instance renders, the primary included --------
+// -- ONE section: every instance renders, the primary included -------
 
 test("the providers section renders every instance, the primary included", () => {
-  // card t_bf21ee07: the old connection form and the instances list
-  // merged into ONE list - the rows ARE the connection surface, so the
-  // editor iterates the whole list and the primary renders as a row
+  // the old connection form and the instances list merged into ONE list.
   assert.match(field, /v-for="\(inst, i\) in rows"/,
     "one row per instance, the primary included (there is no separate connection form)");
   assert.doesNotMatch(field, /provider\.(type|host|api_key)/,
@@ -79,8 +67,7 @@ test("the providers section renders every instance, the primary included", () =>
 });
 
 test("editing the primary row writes the default row", () => {
-  // the type/api_key cells of the primary row emit their row like any
-  // other: only the NAME is locked, and the update maps that one index
+  // the type/api_key cells of the primary row emit their row like any other.
   assert.match(field,
     /if \(key === "name" && isPrimary\(rows\.value\[i\]!\)\) return;/,
     "the primary's name edit is refused, every other field writes through");
@@ -92,9 +79,7 @@ test("editing the primary row writes the default row", () => {
 });
 
 test("the type ladder is the listbox's {value,label} shape", () => {
-  // a bare string array renders an EMPTY popup: BandSelect reads
-  // o.value / o.label off every row, and the chip's fallback hides the
-  // breakage (it prints the raw modelValue). Pin the ladder's shape.
+  // a bare string array renders an EMPTY popup.
   assert.match(field, /const types: \{ value: string; label: string \}\[\] = \[/,
     "the type ladder is object-shaped, or the popup renders blank rows");
   for (const type of ["ollama", "openai", "anthropic"]) {

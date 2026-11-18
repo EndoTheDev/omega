@@ -12,17 +12,14 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// commandDispatchTimeout caps one extension-command dispatch (v0.14.1
-// audit NOTE-tier): handlers answer in-process and fast, so a generous
-// minute is plenty and a wedged handler stops pinning the wire forever.
+// commandDispatchTimeout caps one extension-command dispatch (v0.14.1 audit NOTE-tier).
 const commandDispatchTimeout = time.Minute
 
-// The command palette's server surface (card t_07aed3f9). The old shell ran
-// slash commands locally - "slash commands run locally and never hit
-// the agent"; the webui palette dispatches them through the SAME
-// registration seams: ctx.Commands + the chain-on-miss
-// ctx.CommandHandler (rewired at boot and on every live toggle), and
-// the skills list for /<skill-name>. No agent round-trip happens here.
+// The command palette's server surface. The old shell ran slash commands locally -
+// "slash commands run locally and never hit the agent"; the webui palette dispatches
+// them through the SAME registration seams: ctx.Commands + the chain-on-miss
+// ctx.CommandHandler (rewired at boot and on every live toggle), and the skills list
+// for /<skill-name>.
 
 // commandListing is one GET /commands row.
 type commandListing struct {
@@ -31,23 +28,15 @@ type commandListing struct {
 	Args        []string `json:"args,omitempty"`
 }
 
-// commandDispatchRequest is one POST /commands/dispatch body. SessionID
-// is the invoking surface's session (the palette sends the tab's own):
-// a session-scoped command - /export, /label, /branch - acts on it
-// without the id riding in args. It is optional: a caller that binds no
-// session (the terminal loop) keeps resolving from args.
+// commandDispatchRequest is one POST /commands/dispatch body. It is optional: a caller
+// that binds no session (the terminal loop) keeps resolving from args.
 type commandDispatchRequest struct {
 	Name      string `json:"name"`
 	Args      string `json:"args,omitempty"`
 	SessionID string `json:"session_id,omitempty"`
 }
 
-// commandDispatchResponse announces WHAT ran: an extension command's
-// result text, or a skill whose content the client arms as a system
-// preamble on its next send (a submit surface may inject skill content the same
-// way - one System message into its history). The skills content DID
-// ride this wire by design: the dispatch endpoint is the command
-// execution surface - each surface injects in-process.
+// commandDispatchResponse announces WHAT ran.
 type commandDispatchResponse struct {
 	Kind    string           `json:"kind"` // "command" | "skill"
 	Text    string           `json:"text,omitempty"`
@@ -91,8 +80,7 @@ func (s *Server) handleCommandDispatch(w http.ResponseWriter, r *http.Request) {
 	handler := s.seams.commandHandler
 	s.seams.mu.RUnlock()
 
-	// Extension command first: the module that registered it executes
-	// it (chain-on-miss handler, shared dispatch law).
+	// Extension command first: the module that registered it executes it (chain-on-miss.
 	for _, c := range cmds {
 		if c.Name != req.Name {
 			continue
@@ -101,22 +89,16 @@ func (s *Server) handleCommandDispatch(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "no command handler mounted", http.StatusNotImplemented)
 			return
 		}
-		// the dispatch runs under a hard timeout (v0.14.1 audit
-		// NOTE-tier): a module command handler that never returned
-		// previously pinned the HTTP request forever - now the wire
-		// answers 500 and the client walks away
-		//
-		// the invoking surface's session rides the context: a
-		// session-scoped command resolves it with core.CommandSession
-		// instead of demanding the id in args
+		// the dispatch runs under a hard timeout (v0.14.1 audit NOTE-tier): a module command
+		// handler that never returned previously pinned the HTTP request forever - now the
+		// wire answers 500 and the client walks away the invoking surface's session rides the
+		// context: a session-scoped command resolves it with core.CommandSession instead of
+		// demanding the id in args
 		ctx, cancel := context.WithTimeout(core.WithCommandSession(r.Context(), req.SessionID), commandDispatchTimeout)
 		defer cancel()
 		result, dErr := handler(ctx, req.Name, req.Args)
 		if dErr != nil {
-			// A miss is "nobody owns this name" - the same answer the
-			// not-registered path gives. Every other error is the
-			// owner's own refusal and prints its own message: the
-			// chain-on-miss wrapper no longer rewrites it.
+			// A miss is "nobody owns this name" - the same answer the not-registered path gives.
 			if errors.Is(dErr, core.ErrCommandMiss) {
 				http.Error(w, "unknown command: "+req.Name, http.StatusNotFound)
 				return
@@ -128,7 +110,6 @@ func (s *Server) handleCommandDispatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Not a registered command: a skill command injects content.
 	if strings.TrimPrefix(req.Name, "/") != "" {
 		name := strings.TrimPrefix(req.Name, "/")
 		if sk := s.skills(); sk != nil {

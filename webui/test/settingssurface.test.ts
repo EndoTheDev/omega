@@ -1,11 +1,11 @@
-// omega webui: card t_f05b1f28 - the settings pane's SURFACE CLASSES.
+// omega webui: - the settings pane's SURFACE CLASSES.
 //
 // Two rulings ride this file:
 //
 //   1. the MODULES section is the pane's TAIL, not its head (the module
 //      list is the last thing you read);
 //   2. the sections are GROUPED frontend / backend under their own headers
-//      - NOT a flat reorder - so every schema section carries a surface
+// NOT a flat reorder - so every schema section carries a surface
 //      class and the renderer groups by it.
 //
 // The classification is a TABLE (SECTION_SURFACES) and the render order is
@@ -38,7 +38,7 @@ import {
   withSubgroups,
 } from "../app/components/settings/settingsNav.ts";
 
-// --- fixtures -------------------------------------------------------------
+// -- fixtures ------------------------------------------------------------
 
 const knob = (key: string, label: string): SettingKnob => ({
   key,
@@ -53,9 +53,10 @@ const group = (key: string, label: string, knobs: SettingKnob[]): SettingGroup =
   knobs,
 });
 
-/** the pane's real payload shape: the curated view, the two client-state
-    domains, the ten server domains - in WIRE order, exactly as the pane
-    hands it to buildNav */
+/**
+ * the pane's real payload shape: the curated view, the two client-state domains, the
+ * ten server domains - in WIRE order, exactly as the pane hands it to buildNav
+ */
 const payloadGroups = (): SettingGroup[] => [
   group(COMMON_CATEGORY, "Commonly Used", [knob("provider.model_name", "model name")]),
   group("chat", "chat", [knob("chat.theme", "theme")]),
@@ -77,7 +78,7 @@ const paneNav = () => [...buildNav(withSubgroups(payloadGroups())), modulesNavCa
 
 const flatten = <T>(groups: { items: T[] }[]): T[] => groups.flatMap((g) => g.items);
 
-// --- 1. the classification table -----------------------------------------
+// -- 1.
 
 test("SURFACE_ORDER is curated, frontend, backend, modules - and only the two schema bands carry a header", () => {
   assert.deepEqual(
@@ -97,7 +98,6 @@ test("the mapping: client state is frontend, server config is backend", () => {
   // the two CLIENT-STATE domains - their values never reach the server
   assert.equal(categorySurface("chat"), SURFACE_FRONTEND);
   assert.equal(categorySurface("dock"), SURFACE_FRONTEND);
-  // every server config domain
   for (const id of [
     "provider",
     "server",
@@ -115,7 +115,6 @@ test("the mapping: client state is frontend, server config is backend", () => {
   // the two classes that are NOT schema sections
   assert.equal(categorySurface(COMMON_CATEGORY), SURFACE_CURATED);
   assert.equal(categorySurface(MODULES_CATEGORY), SURFACE_MODULES);
-  // a new group with no line describes server config until a line says else
   assert.equal(categorySurface("a.brand.new.domain"), SURFACE_BACKEND);
   // and the table is EXPLICIT for every domain the server ships - a group
   // moving between surfaces is a reviewable diff, never a silent default
@@ -134,7 +133,7 @@ test("buildNav and modulesNavCategory stamp the surface class", () => {
   assert.equal(modulesNavCategory(2).surface, SURFACE_MODULES);
 });
 
-// --- 2. the grouping -----------------------------------------------------
+// -- 2.
 
 test("groupBySurface buckets in SURFACE_ORDER and keeps each bucket's own order", () => {
   const groups = groupBySurface(paneNav(), (cat) => cat.surface);
@@ -176,7 +175,6 @@ test("MODULES is the LAST section and Commonly Used the FIRST (card item 1)", ()
   const ordered = flatten(groupBySurface(paneNav(), (cat) => cat.surface));
   assert.equal(ordered[0]!.id, COMMON_CATEGORY, "the curated all-view opens the pane");
   assert.equal(ordered[ordered.length - 1]!.id, MODULES_CATEGORY, "the module list closes it");
-  // and the document the pane paints agrees: the module list is the tail
   const sections = documentFor(ordered);
   assert.notEqual(sections[sections.length - 1]!.id, MODULES_CATEGORY, "documentFor walks knobs");
   assert.equal(sections[0]!.id, COMMON_CATEGORY, "the curated section heads the document");
@@ -211,7 +209,7 @@ test("an empty class prints nothing (no header over an empty band)", () => {
   );
 });
 
-// --- 3. the document carries the class ------------------------------------
+// -- 3.
 
 test("documentFor stamps each section with its surface class", () => {
   const sections = documentFor(paneNav());
@@ -232,9 +230,7 @@ test("the section FILTER keeps the class but prints no band (the section heads t
   const sections = documentFor(paneNav(), { only: "chat" });
   assert.deepEqual(sections.map((s) => s.id), ["chat"]);
   assert.equal(sections[0]!.surface, SURFACE_FRONTEND, "the class survives the filter");
-  // ... and the pane's own gate drops the band while a section is filtered:
-  // card t_cd9952a3's law is that the selected section HEADS the document,
-  // so nothing may sit above it (the nav, still banded, names the group)
+  // ..
   assert.match(
     tab,
     /v-if="group\.header && filterSection === null"/,
@@ -242,7 +238,7 @@ test("the section FILTER keeps the class but prints no band (the section heads t
   );
 });
 
-// --- 4. the pane's source wiring -----------------------------------------
+// -- 4.
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const tab = readFileSync(`${root}/app/components/settings/SettingsTab.vue`, "utf8");

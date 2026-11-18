@@ -3,9 +3,7 @@
     ref="rootEl"
     class="browser-tab"
     :class="{ narrow: narrow }">
-    <!-- the URL row: back / forward / the address / reload. The address
-         is the pane's OWN record - cross-origin frame history is
-         unreadable, so the stack is the typed-commit log here. -->
+    <!-- the URL row: back / forward / the address / reload. -->
     <div class="browser-bar">
       <button
         class="band-tool"
@@ -13,11 +11,10 @@
         aria-label="browser back"
         title="back"
         @click="step(-1)">
-        <!-- card t_0a9edc72: the band tool rides the icon law (a lucide
-             glyph through the shared wrapper at the band-tool size 13) -
-             the literal "←" was the same drift as the agents tab's "+".
-             nav-back / nav-forward are the iconset's own names for the
-             concept, so the browser adds no vocabulary. -->
+        <!--
+          the band tool rides the icon law (a lucide glyph through the shared wrapper
+          at the band-tool size 13).
+        -->
         <Icon
           name="nav-back"
           :size="13" />
@@ -52,8 +49,7 @@
       </button>
     </div>
 
-    <!-- the empty state (the standard pattern, never a blank pane): what
-         the pane is, and the honest ceiling while it loads. -->
+    <!-- the empty state (the standard pattern, never a blank pane). -->
     <div
       v-if="address === ''"
       class="browser-blank">
@@ -61,11 +57,7 @@
       <p class="browser-blank-hint">Type an address above and press Enter. Sites that refuse embedding fall back below with an open-in-new-tab path.</p>
     </div>
 
-    <!-- the refused/failed embed fallback (the known ceiling, built
-         honestly): flips in after FALLBACK_AFTER_MS without a load
-         event, flips OUT if the frame loads late. The frame stays
-         mounted underneath - v-show, so the late-load recovery and the
-         reload button keep working from this state. -->
+    <!-- the refused/failed embed fallback (the known ceiling, built honestly). -->
     <div
       v-if="refused"
       class="browser-refused">
@@ -89,9 +81,7 @@
       </div>
     </div>
 
-    <!-- the frame. No sandbox, no wrapper origin games: this is a
-         browser - normal embed rules, the site's own frame headers
-         decide (the settled design, no middleman in v1). -->
+    <!-- the frame. -->
     <iframe
       v-show="address !== '' && !refused"
       ref="frameEl"
@@ -104,14 +94,10 @@
 </template>
 
 <script setup lang="ts">
-  // The general web browser tab (card t_95c91f9c, Endo ruling
-  // 2026-11-01: "the browser should be like a normal browser which also
-  // allows me to visit other websites"). A URL bar + an iframe embed,
-  // any origin, no allowlist, no origin gate. The server side is
-  // harness/browser's GET/PUT /browser/last - the resume URL this tab
-  // restores on mount and persists after every successful embed load;
-  // a refused frame never persists (the no-load rule above is also the
-  // write gate, for free).
+  // The general web browser tab. The server side is harness/browser's GET/PUT
+  // /browser/last - the resume URL this tab restores on mount and persists after every
+  // successful embed load; a refused frame never persists (the no-load rule above is
+  // also the write gate, for free).
   import {
     FALLBACK_AFTER_MS,
     PERSIST_GRACE_MS,
@@ -123,21 +109,14 @@
     stepNav,
     type NavHistory,
   } from "./browserLogic";
-  // card t_617c2ad0: this view is the browser capsule's own now
-  // (harness/browser/ui/). The narrow recipe is module-owned (module UI
-  // imports no shell code - the Board/boardLogic.ts precedent): the
-  // threshold lives in ./narrow, the observer wiring is the .vue inline
-  // (the only DOM-measuring part). Icon rides the shell's global
-  // auto-import (components/ui/Icon.vue) - no shell import statement.
+  // this view is the browser capsule's own now (harness/browser/ui/).
   import { isNarrowWidth } from "./narrow";
-  // card t_a92450ea: the ONE copy path - insecure-context-proof
+  // the ONE copy path - insecure-context-proof
   import { copyText } from "~/composables/clipboard";
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
   const rootEl = ref<HTMLElement | null>(null);
-  // inline narrow adaptation (the Board pattern): observe the rendered
-  // root, flip the class on the next frame - a callback that mutates
-  // this frame re-enters the resize cycle ("ResizeObserver loop").
+  // inline narrow adaptation (the Board pattern).
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;
   onMounted(() => {
@@ -163,36 +142,26 @@
     resizeObs = null;
   });
 
-  // the bar's draft text (type freely, commit on Enter)
   const urlInput = ref("");
-  // the committed address the frame carries
   const address = ref("");
   const frameSrc = ref("");
   const frameKey = ref(0);
   const nav = ref<NavHistory>(emptyNav());
-  // the embed-load state machine: pending -> frame navigating,
-  // refused -> the fallback (the probe's negative OR the 4s
-  // no-decision window), probeRefused -> a load event may NOT heal the
-  // refusal (Chromium fires load for refused embeds too) nor persist
+  // the embed-load state machine.
   const pending = ref(false);
   const refused = ref(false);
   const probeRefused = ref(false);
   const copied = ref(false);
   let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
-  // the probe run's generation: a commit while a probe is in flight
-  // supersedes its answer (answers arrive out of order)
+  // the probe run's generation.
   let probeGen = 0;
 
-  // --- navigation ---
 
   function go() {
     navigate(normalizeUrl(urlInput.value));
   }
 
-  // navigate commits an address: the stack grows, the frame loads,
-  // the probe runs, the fallback window opens. A refused address
-  // re-navigated re-probes honestly (the site may have stopped
-  // refusing; no cache).
+  // navigate commits an address.
   function navigate(u: string) {
     if (u === "") return;
     urlInput.value = u;
@@ -203,8 +172,7 @@
     beginEmbed(u);
   }
 
-  // step is the history belt: the buttons never lie (canStep's disabled
-  // edge), the belt re-checks on miss.
+  // step is the history belt: the buttons never lie (canStep's disabled edge), the.
   function step(delta: number) {
     const next = stepNav(nav.value, delta);
     if (!next || !canStep(nav.value, delta)) return;
@@ -225,16 +193,14 @@
 
   function reload() {
     if (address.value === "") return;
-    // a :key bump remounts the frame - the only local force-reload an
-    // iframe src of an uncontrolled cross-origin page honors
+    // a:key bump remounts the frame.
     frameSrc.value = address.value;
     frameKey.value++;
     beginEmbed(address.value);
   }
 
-  // beginEmbed opens the honest window: the 4s no-decision fallback
-  // timer, plus the frameability probe (the fast signal). Only a
-  // definitive false flips the fallback; cannot-say keeps the frame.
+  // beginEmbed opens the honest window. Only a definitive false flips the fallback;
+  // cannot-say keeps the frame.
   function beginEmbed(u: string) {
     pending.value = true;
     refused.value = false;
@@ -275,8 +241,7 @@
 
   function onFrameLoad() {
     if (probeRefused.value) {
-      // a load event fires for a refused embed in Chromium too: the
-      // probe's negative stands, the fallback stays, nothing persists
+      // a load event fires for a refused embed in Chromium too.
       return;
     }
     pending.value = false;
@@ -296,7 +261,7 @@
     }, PERSIST_GRACE_MS);
   }
 
-  // --- the capsule route (GET/PUT /browser/last) ---
+  // -- the capsule route (GET/PUT /browser/last) --
 
   interface LastReply {
     last?: string;
@@ -315,7 +280,6 @@
         body: JSON.stringify({ url: u }),
       });
     } catch {
-      // persistence is the cheapest loss in the home - browsing continues
     }
   }
 
@@ -328,11 +292,9 @@
         navigate(body.last);
       }
     } catch {
-      // same answer: browse from the empty state
     }
   });
 
-  // --- the fallback affordances ---
 
   function openExternal() {
     if (address.value === "") return;
@@ -341,7 +303,7 @@
 
   async function copyUrl() {
     if (address.value === "") return;
-    // card t_a92450ea: the ONE copy path - insecure-context-proof
+    // the ONE copy path - insecure-context-proof
     const ok = await copyText(address.value);
     if (ok) {
       copied.value = true;
@@ -467,9 +429,7 @@
     border-color: var(--accent);
     color: var(--accent);
   }
-  /* narrow recipe: module-owned threshold (./narrow.ts, pinned to agree
-     with the shell's by modulenarrow.test.ts) - below 360px the bar
-     drops the arrow buttons and the url input takes the full row width */
+  /* narrow recipe: module-owned threshold (./narrow.ts, pinned to agree with the. */
   .browser-tab.narrow .band-tool[aria-label="browser back"],
   .browser-tab.narrow .band-tool[aria-label="browser forward"] {
     display: none;

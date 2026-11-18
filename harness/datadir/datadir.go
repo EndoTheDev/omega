@@ -1,8 +1,4 @@
-// Package datadir owns the database directory layout inside an omega
-// home (Endo 2026-10-20): databases (omega.db, kanban.db) live in
-// <home>/data/, not the home root. It is the single source for the
-// data-dir path and performs the boot-time migration that moves legacy
-// home-root databases into data/ before the db handle is opened.
+// Package datadir owns the database directory layout inside an omega home.
 package datadir
 
 import (
@@ -15,17 +11,14 @@ import (
 )
 
 // dirName is the fixed database directory name inside an omega home.
-// Endo's ruling: the folder is `data/` - no config knob.
 const dirName = "data"
 
-// Warnf prints a loud migration warning to stderr. Package-level so
-// tests can capture it.
+// Warnf prints a loud migration warning to stderr.
 var Warnf = func(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "omega datadir: "+format+"\n", args...)
 }
 
-// Logf prints a one-time migration notice to stderr. Package-level so
-// tests can capture it.
+// Logf prints a one-time migration notice to stderr.
 var Logf = func(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "omega datadir: "+format+"\n", args...)
 }
@@ -35,18 +28,13 @@ func Dir(home string) string {
 	return filepath.Join(home, dirName)
 }
 
-// DBPath returns the database file path for name (e.g. "omega.db")
-// inside home's data directory: <home>/data/<name>.
+// DBPath returns the database file path for name (e.g. "omega.db") inside home's data
+// directory.
 func DBPath(home, name string) string {
 	return filepath.Join(Dir(home), name)
 }
 
-// Home resolves the omega home the way the module-level fallbacks do:
-// OMEGA_HOME when set, else ~/.omega. Returns "" when neither is
-// determinable (no OMEGA_HOME, no user home). The omega binary itself
-// also supports exe-dir homes (cmd/omega homeForExe), but the host
-// resolves db paths for that case before mounting plugins, so plugins
-// only ever need this fallback.
+// Home resolves the omega home the way the module-level fallbacks do.
 func Home() string {
 	if home := os.Getenv("OMEGA_HOME"); home != "" {
 		return home
@@ -58,16 +46,13 @@ func Home() string {
 	return filepath.Join(u, ".omega")
 }
 
-// AgentHome resolves the omega home the DATABASE consumers of this
-// process should use: when the process runs as a continuous agent
-// (OMEGA_AGENT set, the spawn contract every wake child and delegated
-// child carries), the answer is the agent's own home so its sessions
-// store, notifications, and boards resolve under <agent>/data/ - full
-// data isolation, ruling 4 of card t_72ecca67. Main and everything
-// without the env answer Home() verbatim. A malformed OMEGA_AGENT
-// value can never escape agents/: invalid names fail the resolution
-// loudly (the caller surfaces the error), never silently fall back -
-// a hostile env var must not point the stores at the wrong home.
+// AgentHome resolves the omega home the DATABASE consumers of this process should use:
+// when the process runs as a continuous agent (OMEGA_AGENT set, the spawn contract
+// every wake child and delegated child carries), the answer is the agent's own home so
+// its sessions store, notifications, and boards resolve under <agent>/data/ - full data
+// isolation, of. A malformed OMEGA_AGENT value can never escape agents/: invalid names
+// fail the resolution loudly (the caller surfaces the error), never silently fall back
+// - a hostile env var must not point the stores at the wrong home.
 func AgentHome() (string, error) {
 	home := Home()
 	name := strings.TrimSpace(os.Getenv("OMEGA_AGENT"))
@@ -75,8 +60,7 @@ func AgentHome() (string, error) {
 		return home, nil
 	}
 	if name == "default" {
-		// main exists by definition at the root; a child claiming
-		// "default" runs as main (the env is noise, not a target).
+		// main exists by definition at the root.
 		return home, nil
 	}
 	if err := agent.ValidAgentName(name); err != nil {
@@ -85,23 +69,15 @@ func AgentHome() (string, error) {
 	return filepath.Join(home, "agents", name), nil
 }
 
-// Migrate performs the boot-time data/ layout migration for one
-// database before its handle is opened. dsn must be a file path inside
-// a data directory (parent dir named "data"); anything else - empty,
-// ":memory:", DSNs with query params (only the file path part is
-// considered), paths outside a data dir - passes through untouched.
-//
-// If <home>/<name> exists but data/<name> does not, the database and
-// its -wal/-shm sidecars are MOVED into data/ - sidecars first, main
-// file last, then the caller opens the handle. Rename, never
-// copy-and-leave: a crash mid-migration leaves no data/<name>, so the
-// next boot simply re-runs the (idempotent) migration; two divergent
-// copies can never appear. If BOTH spellings exist, neither file is
-// touched - the migration warns loudly and data/ wins at runtime,
-// leaving the operator to resolve the legacy copy.
-//
-// The data directory is created whenever missing, so a fresh home
-// opens cleanly too.
+// Migrate performs the boot-time data/ layout migration for one database before its.
+// dsn must be a file path inside a data directory (parent dir named "data"); anything
+// else - empty, ":memory:", DSNs with query params (only the file path part is
+// considered), paths outside a data dir - passes through untouched. If <home>/<name>
+// exists but data/<name> does not, the database and its -wal/-shm sidecars are MOVED
+// into data/ - sidecars first, main file last, then the caller opens the handle.
+// Rename, never copy-and-leave: a crash mid-migration leaves no data/<name>, so the
+// next boot simply re-runs the (idempotent) migration; two divergent copies can never
+// appear.
 func Migrate(dsn string) error {
 	path := dsn
 	if i := strings.IndexByte(dsn, '?'); i >= 0 {
@@ -126,10 +102,9 @@ func Migrate(dsn string) error {
 	case dataExists == nil && legacyExists == nil:
 		Warnf("both %s and legacy %s exist; using %s - resolve the legacy copy by hand", path, legacy, path)
 	case dataExists != nil && legacyExists == nil:
-		// Crash-safe order: sidecars first, main file last. A crash
-		// between renames leaves no data/<name>, so the next boot
-		// re-runs the migration cleanly (stale sidecar leftovers are
-		// simply overwritten).
+		// Crash-safe order: sidecars first, main file last. A crash between renames leaves no
+		// data/<name>, so the next boot re-runs the migration cleanly (stale sidecar
+		// leftovers are simply overwritten).
 		for _, side := range []string{name + "-wal", name + "-shm", name} {
 			from := filepath.Join(filepath.Dir(dataDir), side)
 			if err := os.Rename(from, filepath.Join(dataDir, side)); err != nil {
@@ -143,8 +118,6 @@ func Migrate(dsn string) error {
 			}
 		}
 	default:
-		// data/<name> exists, legacy may not: already migrated or
-		// fresh - nothing to do.
 	}
 	return nil
 }

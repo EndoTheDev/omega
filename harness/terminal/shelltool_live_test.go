@@ -11,22 +11,14 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// The live-stream pin's waits ride the package's testWaitTimeout
-// (waits_test.go): a hang is caught without turning scheduling latency
-// into a failure (the gate law: bound for hangs, never for timing
-// correctness).
+// The live-stream pin's waits ride the package's testWaitTimeout (waits_test.go): a
+// hang is caught without turning scheduling latency into a failure (the gate law: bound
+// for hangs, never for timing correctness).
 
-// liveStreamWindow is how long a live chunk may take to land after the
-// call starts. The shell under test outlives it by several seconds, so
-// the window separates a live tail (tens of milliseconds, the tap's own
-// poll interval) from a post-exit replay (at the shell's exit, seconds
-// later). It discriminates between two mechanisms; it is not a
-// performance budget.
+// liveStreamWindow is how long a live chunk may take to land after the call starts.
 const liveStreamWindow = 2 * time.Second
 
-// briefEchoThenSleeper emits a marker and then keeps the shell alive for
-// a few seconds, so a live chunk and a finished call occupy distinct
-// moments in time.
+// briefEchoThenSleeper emits a marker and then keeps the shell alive for a few.
 func briefEchoThenSleeper(marker string) string {
 	if runtime.GOOS == "windows" {
 		return "echo " + marker + " && ping -n 6 127.0.0.1 > nul"
@@ -34,12 +26,9 @@ func briefEchoThenSleeper(marker string) string {
 	return "echo " + marker + "; sleep 5"
 }
 
-// TestRunShellStreamsLiveBeforeItExits pins review-round-2 finding 1
-// (card t_5a49790b): the pending chip's live tail must stream WHILE the
-// shell runs, not replay the finished log after it exits. The tap is
-// started right after the spawn, before the inline wait, so the first
-// chunk lands within moments of the call; started after the wait, every
-// chunk lands in one burst at the shell's exit, seconds later.
+// TestRunShellStreamsLiveBeforeItExits pins review-round-2 finding 1: the pending
+// chip's live tail must stream WHILE the shell runs, not replay the finished log after
+// it exits.
 func TestRunShellStreamsLiveBeforeItExits(t *testing.T) {
 	p := testShellProvider(t)
 

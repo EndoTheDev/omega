@@ -18,8 +18,7 @@ func setBase(apiKey, base string) *webTools {
 	return &webTools{apiKey: apiKey, baseURL: base}
 }
 
-// TestDoSearchSuccess verifies the happy path: auth header, request
-// body, and formatted output.
+// TestDoSearchSuccess verifies the happy path.
 func TestDoSearchSuccess(t *testing.T) {
 	var gotAuth, gotBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -65,8 +64,7 @@ func TestDoSearchZeroResults(t *testing.T) {
 	}
 }
 
-// TestRunSearchMaxResults verifies max_results parsing for both
-// float64 (JSON-decoded) and int args via the request body.
+// TestRunSearchMaxResults verifies max_results parsing for both float64.
 func TestRunSearchMaxResults(t *testing.T) {
 	cases := []struct {
 		name string
@@ -119,8 +117,7 @@ func TestDoFetchSuccess(t *testing.T) {
 	}
 }
 
-// TestDoSearchInvalidJSON verifies parse failures come back as
-// (msg, nil), not as a Go error.
+// TestDoSearchInvalidJSON verifies parse failures come back as (msg, nil), not as a.
 func TestDoSearchInvalidJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "not json")
@@ -137,8 +134,7 @@ func TestDoSearchInvalidJSON(t *testing.T) {
 	}
 }
 
-// TestDoFetchInvalidJSON verifies parse failures come back as
-// (msg, nil), not as a Go error.
+// TestDoFetchInvalidJSON verifies parse failures come back as (msg, nil), not as a Go.
 func TestDoFetchInvalidJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "<html>garbage</html>")
@@ -155,9 +151,8 @@ func TestDoFetchInvalidJSON(t *testing.T) {
 	}
 }
 
-// TestDoSearchHTTP401 verifies non-2xx statuses surface as loud error
-// strings — the 401 body must never fall through to a silent
-// "No results found."
+// TestDoSearchHTTP401 verifies non-2xx statuses surface as loud error strings — the 401
+// body must never fall through to a silent "No results found."
 func TestDoSearchHTTP401(t *testing.T) {
 	t.Setenv("OMEGA_MAX_RETRIES", "0")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -182,8 +177,7 @@ func TestDoSearchHTTP401(t *testing.T) {
 	}
 }
 
-// TestDoFetchHTTP401 verifies non-2xx statuses surface as loud error
-// strings for fetch too.
+// TestDoFetchHTTP401 verifies non-2xx statuses surface as loud error strings for.
 func TestDoFetchHTTP401(t *testing.T) {
 	t.Setenv("OMEGA_MAX_RETRIES", "0")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -202,10 +196,8 @@ func TestDoFetchHTTP401(t *testing.T) {
 	}
 }
 
-// TestDoSearchHTTP500 verifies 5xx responses surface as loud errors
-// through the llm.RetryHTTP path: RetryHTTP returns the last (500)
-// response rather than a Go error, so doSearch reads its body and
-// reports the status. OMEGA_MAX_RETRIES=0 keeps the test fast.
+// TestDoSearchHTTP500 verifies 5xx responses surface as loud errors through the
+// llm.RetryHTTP path.
 func TestDoSearchHTTP500(t *testing.T) {
 	t.Setenv("OMEGA_MAX_RETRIES", "0")
 	var hits int
@@ -228,8 +220,7 @@ func TestDoSearchHTTP500(t *testing.T) {
 	}
 }
 
-// TestDoFetchHTTP500 verifies 5xx responses surface as loud error
-// strings for fetch too.
+// TestDoFetchHTTP500 verifies 5xx responses surface as loud error strings for fetch.
 func TestDoFetchHTTP500(t *testing.T) {
 	t.Setenv("OMEGA_MAX_RETRIES", "0")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -262,8 +253,7 @@ func TestHTTPErrorMessage(t *testing.T) {
 	}
 }
 
-// TestNewDefaultBaseURL verifies the fallback to the default upstream
-// mirror and trailing-slash trimming.
+// TestNewDefaultBaseURL verifies the fallback to the default upstream mirror and.
 func TestNewDefaultBaseURL(t *testing.T) {
 	if got := NewWebTools(WebToolsConfig{}).baseURL; got != defaultWebToolsURL {
 		t.Errorf("empty BaseURL -> %q, want %q", got, defaultWebToolsURL)
@@ -273,14 +263,12 @@ func TestNewDefaultBaseURL(t *testing.T) {
 	}
 }
 
-// TestWebToolsImplementsToolProvider verifies webTools satisfies
-// core.ToolProvider.
+// TestWebToolsImplementsToolProvider verifies webTools satisfies core.ToolProvider.
 func TestWebToolsImplementsToolProvider(t *testing.T) {
 	var _ core.ToolProvider = (*webTools)(nil)
 }
 
-// TestToolsShape checks the namespaced tool pair registers with
-// correct names and per-action parameters.
+// TestToolsShape checks the namespaced tool pair registers with correct names and.
 func TestToolsShape(t *testing.T) {
 	ext := NewWebTools(DefaultWebTools()) // no API key, tools still registered
 	tools := ext.Tools()
@@ -292,8 +280,8 @@ func TestToolsShape(t *testing.T) {
 	if len(tools) != 2 {
 		t.Errorf("expected 2 tools, got %d", len(tools))
 	}
-	// Each verb carries its own parameters (the schema split that came
-	// with the Q10 rename); web.search wants query, web.fetch wants url.
+	// Each verb carries its own parameters (the schema split that came with the Q10
+	// rename).
 	if _, ok := tools["web.search"].Parameters["properties"].(map[string]any)["query"]; !ok {
 		t.Error("web.search schema lost the query property")
 	}
@@ -302,26 +290,20 @@ func TestToolsShape(t *testing.T) {
 	}
 }
 
-// TestRunWebRoutesBothActions is the fold gate: both verbs are
-// reachable through the shared dispatcher (validation errors, no HTTP
-// calls).
+// TestRunWebRoutesBothActions is the fold gate.
 func TestRunWebRoutesBothActions(t *testing.T) {
 	ext := NewWebTools(DefaultWebTools())
-	// search routes
 	result, err := ext.runWeb(context.Background(), map[string]any{"action": "search"})
 	if err != nil || result != "error: query is required" {
 		t.Fatalf("search route: %q %v", result, err)
 	}
-	// fetch routes
 	result, err = ext.runWeb(context.Background(), map[string]any{"action": "fetch"})
 	if err != nil || result != "error: url is required" {
 		t.Fatalf("fetch route: %q %v", result, err)
 	}
-	// the registered namespaced tools route through the same dispatcher
 	if out, err := ext.Tools()["web.search"].Run(context.Background(), map[string]any{}); err != nil || out != "error: query is required" {
 		t.Fatalf("web.search: %q %v", out, err)
 	}
-	// unknown action
 	if _, err := ext.runWeb(context.Background(), map[string]any{}); err == nil {
 		t.Fatal("empty action accepted")
 	}
@@ -375,8 +357,7 @@ func TestFetchNoAPIKey(t *testing.T) {
 	}
 }
 
-// TestWebToolsConfigYAMLTags verifies the yaml tags round-trip, so a
-// config.yaml stanza lands in the right fields.
+// TestWebToolsConfigYAMLTags verifies the yaml tags round-trip, so a config.yaml.
 func TestWebToolsConfigYAMLTags(t *testing.T) {
 	var c WebToolsConfig
 	src := []byte("api_key: k\nbase_url: http://h:1\n")

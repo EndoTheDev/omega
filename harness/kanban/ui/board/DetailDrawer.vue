@@ -11,9 +11,7 @@
         @click="$emit('move', prevStatus)">
         ◀
       </button>
-      <!-- card t_acad02ec (audit M1): the status selector rides the themed
-           listbox (BandSelect) - a native select popup is OS chrome over
-           the drawer -->
+      <!-- (audit M1): the status selector rides the themed listbox (BandSelect). -->
       <BandSelect
         class="drawer-status"
         :model-value="task.status"
@@ -36,9 +34,7 @@
       </button>
     </header>
 
-    <!-- round t_f81e845e: the title and body are editable in place -
-         the pencil flips the title into an input, a click on the body
-         flips it into a textarea; save PATCHes, esc reverts. -->
+    <!-- round: the title and body are editable in place. -->
     <div
       v-if="!editingTitle"
       class="drawer-title-row">
@@ -91,7 +87,6 @@
       </button>
     </div>
 
-    <!-- body: read-view until clicked, then the edit form -->
     <form
       v-if="editingBody"
       class="drawer-edit-body"
@@ -176,15 +171,12 @@
       </form>
     </div>
 
-    <!-- card t_5a638160: the card DELETE rides the drawer, never the board
-         canvas - a destructive act must not sit one stray click away on the
-         grid, and it must not hide inside the body editor (the old shape: you
-         had to click into the body to even see it). First click arms the
-         confirm below; the confirm NAMES the card (id + title) because the
-         delete is FINAL: there is NO undo, and there can be no undo toast -
-         undoing a delete would need card resurrection, which the tool layer
-         does not have (kanban.delete/DELETE /tasks/{id} has no counterpart).
-         The confirm IS the safety. Do not add undo by half. -->
+    <!--
+      the card DELETE rides the drawer, never the board canvas - a destructive act must
+      not sit one stray click away on the grid, and it must not hide inside the body
+      editor (the old shape: you had to click into the body to even see it).
+      Do not add undo by half.
+    -->
     <div class="drawer-danger">
       <button
         v-if="!confirmingDelete"
@@ -228,13 +220,7 @@
     type BoardTask,
   } from "./boardLogic";
 
-  // The detail drawer: full body + comment thread + event trail +
-  // status/priority selectors, with in-place title and body editing
-  // and armed card delete (round t_f81e845e). The board owns the API
-  // wiring; this piece renders one task and reports intent - moves,
-  // saves, comments, delete, transcript jumps, close. BandSelect is
-  // the shared themed listbox look (a shell LOOK ride like every
-  // module UI keeps; no shell code imported).
+  // The detail drawer: full body + comment thread + event trail + status/priority.
   const props = defineProps<{
     task: BoardTask;
     comments: BoardComment[];
@@ -264,8 +250,7 @@
   );
   watch(
     () => props.task.title,
-    // a title saved by any route (this drawer, the tool, another pane)
-    // must not leave the editor holding a stale draft
+    // a title saved by any route (this drawer, the tool, another pane) must not leave.
     () => {
       if (editingTitle.value) cancelTitleEdit();
     },
@@ -276,13 +261,11 @@
   const prevStatus = computed(() => step(props.task.status, -1));
   const nextStatus = computed(() => step(props.task.status, +1));
 
-  // the status selector's listbox options (BandSelect): the same 9-status
-  // sequence the columns carry
+  // the status selector's listbox options (BandSelect).
   const statusOptions = computed(() =>
     STATUSES.map((s) => ({ value: s, label: s })),
   );
 
-  // --- title editing
   const editingTitle = ref(false);
   const titleDraft = ref("");
   const titleEl = ref<HTMLInputElement | null>(null);
@@ -306,7 +289,6 @@
     emit("save", { title });
   }
 
-  // --- body editing
   const editingBody = ref(false);
   const bodyDraft = ref("");
   const bodyEl = ref<HTMLTextAreaElement | null>(null);
@@ -330,10 +312,8 @@
     emit("save", { body });
   }
 
-  // --- armed delete (card t_5a638160: the drawer-level control).
-  // First click arms; the confirm strip names the card (id + title) and its
-  // button is the trigger. There is deliberately NO undo - see the template
-  // comment: the tool layer cannot resurrect a deleted card.
+  // -- armed delete. There is deliberately NO undo - see the template comment: the tool
+  // layer cannot resurrect a deleted card.
   const confirmingDelete = ref(false);
   let disarmTimer: ReturnType<typeof setTimeout> | undefined;
   const deleteConfirmLabel = computed(
@@ -349,8 +329,7 @@
   function armDelete() {
     confirmingDelete.value = true;
     if (disarmTimer) clearTimeout(disarmTimer);
-    // disarm on timeout: the confirm lands only while the warning still
-    // shows
+    // disarm on timeout: the confirm lands only while the warning still shows
     disarmTimer = setTimeout(disarmDelete, 6000);
   }
   function confirmDelete() {
@@ -369,9 +348,6 @@
     gap: 8px;
     padding: 10px 12px;
     overflow-y: auto;
-    /* card t_acad02ec (audit M4): --omega-bg was a phantom token - the
-       fallback said `canvas` and the drawer rendered BROWSER white in
-       both themes. The real surface token (a layer-1 pane) */
     background: var(--z1);
     border-left: 1px solid color-mix(in srgb, currentcolor 12%, transparent);
     box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
@@ -443,9 +419,10 @@
     opacity: 0.4;
     cursor: default;
   }
-  /* armed delete (card t_5a638160): the drawer-level danger zone - one
-     quiet button at rest, a named confirm strip when armed. The heavier
-     border is the warning, the same tinge the board-remove button carries */
+  /*
+   * armed delete: the drawer-level danger zone.
+   * The heavier border is the warning, the same tinge the board-remove button carries
+   */
   .drawer-danger {
     flex: none;
     margin-top: 8px;
@@ -636,10 +613,7 @@
     font-size: 12px;
     padding: 2px 4px;
   }
-  /* card t_acad02ec: the status/priority selectors are the shared
-     BandSelect chip - seat only (the chip keeps the shared .model-chip
-     look; the pop-down escapes this root, so the root carries no box of
-     its own) */
+  /* the status/priority selectors are the shared BandSelect chip. */
   .drawer-status {
     margin: 0 auto;
   }

@@ -3,43 +3,25 @@
     ref="asideEl"
     class="sessions"
     :class="{ open: open, stacked: stacked }">
-    <!-- card t_308e6d9b: the head row is the UNIVERSAL band (the shared
-         TabBand). Card t_7ee0a673 (Endo's comment 3, 2026-11-01): the
-         sessions search seats IN the band, top right (the band-tool
-         slot), on the band's own 22px row - card t_311fc40b's separate
-         search row below the band is GONE (the "band, button, search"
-         law becomes "band [title+search], button). Card t_311fc40b still
-         holds for the new-session control: it keeps its OWN full-width
-         row below the band with the caret type-picker travelling with
-         it. The band, the button row and the list sit ABOVE the
-         .session-list scrollport - scrolling the list never moves them. -->
+    <!--
+      the head row is the UNIVERSAL band (the shared TabBand)..
+      The band, the button row and the list sit ABOVE the.session-list scrollport -
+      scrolling the list never moves them.
+    -->
     <TabBand title="Sessions">
-      <!-- the search's SEAT moved here (card t_7ee0a673); the BEHAVIOR
-           stays where it was: debounced FTS5 content union (runSearch
-           below) on top of the backend's unified endpoint - same
-           SearchInput component, same v-model, same debounce -->
+      <!-- the search's SEAT moved here; the BEHAVIOR stays where it was. -->
       <div class="band-search">
         <SearchInput
           v-model="query"
           placeholder="Search sessions" />
       </div>
     </TabBand>
-    <!-- card t_311fc40b: the new-session control's OWN row - below the
-         band (card t_7ee0a673: one aligned width - the row's 8px side
-         edges are the band's inset, the single inset for the whole
-         sidebar stack). Card t_7ee0a673: position anchors the picker
-         dropdown. -->
+    <!-- the new-session control's OWN row - below the band.. -->
     <div class="new-row">
       <div
         class="new-btn"
         @keydown.esc="newMenuOpen = false">
-        <!-- card t_0a9edc72: the NEW-CONVERSATION DIM. While the focused
-             chat tab IS the draft conversation, this door only focuses a
-             tab that already has the focus - so it dims and disables
-             (aria-disabled + tabindex -1, the last-tab close X's law;
-             the .door-dimmed value is the shell's one global class) and
-             KEEPS its click path: the click focuses the draft, which is
-             the honest outcome. Never removed. -->
+        <!-- the NEW-CONVERSATION DIM. Never removed. -->
         <button
           class="new-main"
           :class="{ 'door-dimmed': draftFocused }"
@@ -56,7 +38,6 @@
           :aria-expanded="newMenuOpen"
           title="New chat type"
           @click="newMenuOpen = !newMenuOpen">
-          <!-- card t_502b8e81: the chevron is a vocabulary entry -->
           <Icon
             class="new-caret-chevron"
             :class="{ open: newMenuOpen }"
@@ -68,10 +49,7 @@
         v-if="newMenuOpen"
         class="new-menu"
         @click.stop>
-        <!-- the picker is DATA (card t_55a571ff): each entry is a label
-             + intent. Card t_c7222095 removed the Continuous entry -
-             the roster folded into the Agents tab, so the picker
-             carries only the conversation kinds. -->
+        <!-- the picker is DATA: each entry is a label + intent. -->
         <button
           v-for="entry in newMenuEntries"
           :key="entry.label"
@@ -87,10 +65,9 @@
       </div>
     </div>
     <ul class="session-list">
-      <!-- sections: PINNED first (the keep-at-top group), then the
-           Today / Yesterday / Earlier time buckets. Bucketing, filtering
-           and formatting are pure functions in composables/omega.ts,
-           unit-tested there. -->
+      <!--
+        sections: PINNED first (the keep-at-top group), then the Today / Yesterday /.
+      -->
       <template
         v-for="section in visibleSections"
         :key="section.label">
@@ -117,11 +94,11 @@
             @click="$emit('open', s.id)"
             @mouseenter="hoveredId = s.id"
             @mouseleave="clearHovered(s.id)">
-            <!-- the ONE status element: shape = pin (dot, morphing to a
-                 star when the ROW is hovered; click pins/unpins, .stop
-                 never opens the row), color = state (idle grey /
-                 streaming orange / unread blue). Derivation is the pure
-                 sessionRowStatus. -->
+            <!--
+              the ONE status element: shape = pin (dot, morphing to a star when the ROW
+              is hovered; click pins/unpins,.stop never opens the row), color = state
+              (idle grey / streaming orange / unread blue).
+            -->
             <button
               class="row-status"
               :class="statusClass(s)"
@@ -131,7 +108,6 @@
               <span
                 class="glyph glyph-dot"
                 aria-hidden="true"></span>
-              <!-- card t_502b8e81: the pinned star is a vocabulary entry -->
               <span
                 class="glyph glyph-star"
                 aria-hidden="true"><Icon
@@ -139,15 +115,14 @@
                   :size="12" /></span>
             </button>
             <span class="session-title">{{ s.label || s.id }}</span>
-            <!-- branch badge (t_6bf696e4): parented sessions carry the
-                 subtle ↳ mark - the lineage is the server-side
-                 parent_id, the label text is the pure sessionRowBadge -->
+            <!-- branch badge: parented sessions carry the subtle ↳ mark. -->
             <span
               v-if="badge(s)"
               class="session-branch">↳ branch</span>
-            <!-- inline rename: the pencil edit swaps the title for an
-                 input; commit on Enter/blur, cancel on Esc - the pure
-                 commitSessionRename drops no-op drafts (no PUT) -->
+            <!--
+              inline rename: the pencil edit swaps the title for an input; commit on
+              Enter/blur, cancel on Esc.
+            -->
             <input
               v-if="renamingId === s.id"
               class="session-rename"
@@ -161,10 +136,7 @@
             <span
               v-if="renamingId !== s.id && meta(s)"
               class="session-meta">{{ meta(s) }}</span>
-            <!-- hover action cluster: branch (fork) + rename (pencil) +
-                 export (download), then archive (box) + delete (trash),
-                 inset LEFT of the time slot - the age text's slot stays
-                 empty during hover (the row's 34px right padding band) -->
+            <!-- hover action cluster: branch (fork) + rename (pencil) + export. -->
             <span
               class="row-actions"
               @mouseenter="hoveredId = s.id">
@@ -196,12 +168,13 @@
                   name="download"
                   :size="13" />
               </a>
-              <!-- card t_61cc8762: the copy-id affordance (Endo's 0.17.2
-                   batch item 3). Hover-revealed with its siblings (the
-                   .row-actions cluster), .stop so a copy never opens the
-                   row, and the click writes the id through the ONE copy
-                   path (composables/clipboard.ts) with the confirmation
-                   on the shell's local toast funnel. -->
+              <!--
+                the copy-id affordance (Endo's 0.17.2 batch item 3).
+                Hover-revealed with its siblings (the.row-actions cluster),.stop so a
+                copy never opens the row, and the click writes the id through the ONE
+                copy path (composables/clipboard.ts) with the confirmation on the
+                shell's local toast funnel.
+              -->
               <button
                 class="icon-btn row-act row-copy-id"
                 title="Copy session id"
@@ -252,14 +225,8 @@
 
 <script setup lang="ts">
   import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from "vue";
-  // card t_502b8e81: the iconset wrapper - every glyph in the sidebar
   import Icon from "~/components/ui/Icon.vue";
-  // card t_61cc8762: the copy-id row action. The clipboard write rides
-  // the ONE copy path (composables/clipboard.ts - no source outside it
-  // touches the clipboard API directly); the confirmation rides the
-  // shell's local toast funnel (composables/canvas.ts emitLocalToast), the
-  // same subscriber set the files tree's failure hint emits through.
-  // Module UI owns no toast stack of its own.
+  // the copy-id row action.
   import { copyText } from "~/composables/clipboard";
   import { emitLocalToast } from "~/composables/canvas";
   import {
@@ -282,27 +249,12 @@
   const props = defineProps<{
     sessions: Session[];
     activeId: string | null;
-    // ids of sessions whose stream is live - the pulse edge renders per row
     streamingIds: ReadonlySet<string>;
     open: boolean;
-    /** card t_0a9edc72: the focused chat tab IS the draft conversation,
-        so a "new conversation" door would only focus what already has the
-        focus. The shell owns the fact (one provider, every door); this
-        panel takes it as a prop because module UI imports no shell code.
-        Default false = the pre-dim world (and every test fixture). */
     draftFocused?: boolean;
   }>();
 
-  // --- card t_7ee0a673: the in-band search's narrow stack ---
-  // The sidebar drags down to its 128px wall; below BAND_STACK_PX a
-  // title (~58px mono) + the input's 96px floor + the band's own
-  // geometry (16px inset, 4px gap) no longer fit one band row, so the
-  // .stacked class lets the band WRAP instead: title row, then the
-  // full-width input row (the sanctioned narrow adaptation - the
-  // desktop one-row layout is the mandate). Width-MEASURED on the
-  // aside, not a breakpoint guess; the rAF delivery mirrors
-  // composables/narrow.ts (applying class INSIDE the observer callback
-  // re-enters the resize cycle).
+  // --: the in-band search's narrow stack --- The sidebar drags down to its 128px wall.
   const BAND_STACK_PX = 190;
   const asideEl = ref<HTMLElement | null>(null);
   const stacked = ref(false);
@@ -334,48 +286,37 @@
     defineEmits<{
     (e: "open", id: string): void;
     (e: "new"): void;
-    // new-ephemeral (card t_d96a5cd5): the dropdown's no-persist entry
-    // - app.vue mints a composer-first ephemeral tab
+    // new-ephemeral: the dropdown's no-persist entry.
     (e: "new-ephemeral"): void;
     (e: "pin", id: string, pinned: boolean): void;
-    // archive/unarchive: the row moves to (or out of) the archived group
-    // at the list bottom instantly - the optimistic patch flips the flag
-    // on the row the list already holds
+    // archive/unarchive: the row moves to (or out of) the archived group at the list
+    // bottom instantly.
     (e: "archive", id: string, archived: boolean): void;
-    // branch forks the session (t_6bf696e4): app.vue POSTs, refreshes
-    // the list and opens the child like any session
+    // branch forks the session.
     (e: "branch", id: string): void;
-    // rename commits the inline draft; app.vue PUTs the label (the
-    // /label parity) and patches the row it already holds
+    // rename commits the inline draft.
     (e: "rename", id: string, label: string): void;
-    // export renders nothing here - the download anchor goes straight
-    // to GET /sessions/{id}/export (the /export parity); no emit needed
-    // delete is destructive and unconfirmed here - app.vue owns the
-    // confirm dialog and only then calls the API
+    // export renders nothing here.
     (e: "remove", id: string): void;
   }>();
 
   const query = ref("");
-  // the new-chat dropdown's open bit + click-outside close (document
-  // listener bound on open, torn down on close/unmount)
+  // the new-chat dropdown's open bit + click-outside close (document listener bound.
   const newMenuOpen = ref(false);
-  // card t_55a571ff: the type picker is data.
-  // Card t_c7222095: the Continuous entry is GONE - the roster folded
-  // into the Agents tab, so a picker entry whose only run() opened that
-  // dockable has nothing to open (the deletability law: no alias).
+  // the type picker is data..
   interface NewMenuEntry {
     label: string;
     title: string;
     disabled?: boolean;
-    /** card t_0a9edc72: the new-conversation DIM (never the native
-        `disabled` - that kills the mouse events and with them the title
-        that explains the state, exactly why the last-tab close X uses
-        aria-disabled instead) */
+    /**
+     * the new-conversation DIM (never the native `disabled` - that kills the mouse
+     * events and with them the title that explains the state, exactly why the last-tab
+     * close X uses aria-disabled instead)
+     */
     dimmed?: boolean;
     run?: () => void;
   }
-  // a COMPUTED so the dim follows the focus fact live: the menu can be
-  // open while the draft gains or loses the focus (a send binds it).
+  // a COMPUTED so the dim follows the focus fact live.
   const newMenuEntries = computed<NewMenuEntry[]>(() => [
     {
       label: "New Session",
@@ -395,12 +336,9 @@
     else emit("new");
   }
   function onDocClick(e: MouseEvent) {
-    // card t_902f7ba5: the OPEN path is a race - the watch adds this
-    // listener while the opening click is still dispatching, so the
-    // very event that opened the menu reaches document here and
-    // self-closes it (real pointer input reproduces it 100%; element
-    // .click() mostly doesn't). A pointer inside the split button
-    // belongs to the toggle - it never counts as clickaway.
+    // the OPEN path is a race - the watch adds this listener while the opening click. A
+    // pointer inside the split button belongs to the toggle - it never counts as
+    // clickaway.
     if ((e.target as Element | null)?.closest?.(".new-btn")) return;
     newMenuOpen.value = false;
   }
@@ -409,20 +347,13 @@
     else document.removeEventListener("click", onDocClick);
   });
   onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
-  // ids and rank order returned by the backend's unified session
-  // search (null = no query / first response not in yet). The endpoint
-  // owns BOTH title and content hits - no in-memory filter runs
-  // alongside it; ids the session list no longer holds drop out in
-  // withSearchHits.
+  // ids and rank order returned by the backend's unified session search (null = no.
   const hitIds = ref<string[] | null>(null);
   const filtered = computed(() => withSearchHits(props.sessions, hitIds.value));
   const buckets = computed<SessionBuckets>(() => bucketSessions(filtered.value));
 
-  // Search is debounced (trailing edge via the same injectable
-  // scheduler as the render tick) and raced: responses for a query the
-  // user already moved past never paint. Failures - 400s from FTS
-  // syntax, network blips - clear the hits: the undecorated list
-  // stands rather than a stale, wrong filter.
+  // Search is debounced (trailing edge via the same injectable scheduler as the render
+  // tick) and raced: responses for a query the user already moved past never paint.
   let searchSeq = 0;
   const searchScheduler = createRenderScheduler(
     (q) => void runSearch(q),
@@ -451,12 +382,7 @@
   });
   onUnmounted(() => searchScheduler.cancel());
 
-  // --- collapsible sections ---
-  // collapsed holds the labels of sections whose rows are hidden. The set
-  // is swapped value-semantically on toggle (same mechanic as busySet) so
-  // the computed render reacts. Restored from localStorage on mount -
-  // unknown/malformed data restores everything expanded (see
-  // parseCollapsedLabels); localStorage stays here, the helpers stay pure.
+  // -- collapsible sections --- collapsed holds the labels of sections whose rows are.
   const COLLAPSED_KEY = "omega.sidebar-collapsed";
   const collapsed = ref<Set<string>>(new Set());
 
@@ -476,8 +402,6 @@
   restoreCollapsed();
 
   // non-empty sections in render order; empty groups render no header.
-  // archived is LAST - after the newest time bucket, dimmed (the
-  // bucket-archived class on the header).
   const visibleSections = computed(() => {
     const b = buckets.value;
     const sections: {
@@ -495,11 +419,8 @@
   });
   const allEmpty = computed(() => visibleSections.value.length === 0);
 
-  // hoveredId drives the pin affordance: hovering the session ROW
-  // anywhere (title, meta, time - not just the status element) morphs
-  // an unpinned row's dot into a dim star (see sessionRowStatus).
-  // Cleared on leave - only the exact row's id clears, so pointer noise
-  // between rows never flickers a foreign row's star.
+  // hoveredId drives the pin affordance. Cleared on leave - only the exact row's id
+  // clears, so pointer noise between rows never flickers a foreign row's star.
   const hoveredId = ref<string | null>(null);
   function clearHovered(id: string) {
     if (hoveredId.value === id) hoveredId.value = null;
@@ -535,15 +456,9 @@
     return exportSessionUrl(id);
   }
 
-  // copySessionId (card t_61cc8762): the row's copy-id click. The awaited
-  // verdict is the copy-path contract - a refused/unsupported clipboard
-  // must never read as "copied" - so the confirmation's title and verdict
-  // both follow copyText's answer. The payload carries a timestamp so two
-  // copies of the SAME id stay distinct fingerprints (emitLocalToast
-  // dedupes identical payloads, and a repeat copy deserves its own
-  // toast). source_id is not a session id: a toast click routes kind
-  // "chat" through app.vue's openNotification, and this receipt opens
-  // nothing.
+  // copySessionId: the row's copy-id click. The awaited verdict is the copy-path
+  // contract - a refused/unsupported clipboard must never read as "copied" - so the
+  // confirmation's title and verdict both follow copyText's answer.
   async function copySessionId(id: string) {
     const ok = await copyText(id);
     emitLocalToast({
@@ -557,12 +472,8 @@
     });
   }
 
-  // --- inline rename ---
-  // renamingId holds the row whose title is an input right now; the
-  // draft starts from the row's label (id fallback) on start and the
-  // commit routes through the pure commitSessionRename (null = no-op -
-  // empty or unchanged drafts just close the edit). Escape cancels;
-  // both paths clear the editing state first so the blur never double
+  // -- inline rename --- renamingId holds the row whose title is an input right now.
+  // Escape cancels; both paths clear the editing state first so the blur never double
   // commits.
   const renamingId = ref<string | null>(null);
   const renameDraft = ref("");
@@ -578,32 +489,25 @@
     if (label !== null) emit("rename", s.id, label);
   }
 </script>
-<!-- scoped: the split new-chat control (card t_aee5199f) and the type
-     picker live HERE - this surface never grows main.css (SAME-FILE
-     discipline: t_e76ce7b6 / t_33f8756c own the shared sheet's open
-     blocks). Only .new-btn's shared chip look (border, radius, dim
-     text + accent hover) is consumed from main.css. -->
+<!--
+  scoped: the split new-chat control and the type picker live HERE - this surface never
+  grows main.css.
+-->
 <style scoped>
-/* card t_308e6d9b: the head row is the shared TabBand - the band's own
-   geometry replaces .sessions-head. Card t_311fc40b: the band holds
-   the title alone (the ruled order is band, button, search, rows). */
-/* card t_311fc40b: the band row carries the title ALONE; the split
-   new-session control sits on its OWN row below the band (this block)
-   - card t_7ee0a673 ruled the order "band [title+search], button" and
-   the 12px side edges DEAD: the band's own 8px inset is the ONE
-   inset for the whole sidebar stack (title, button, headers, rows),
-   no stair-step. main.css's dead .sessions-head rules are gone with
-   the band. */
+/*
+ * the head row is the shared TabBand - the band's own geometry replaces.sessions-head..
+ */
+/* the band row carries the title ALONE. */
 .new-row {
   position: relative;
   padding: 8px;
 }
-/* card t_7ee0a673: the search seats IN the band (the band-tool slot).
-   The seat's geometry is TabBand's now (card t_529628d5: the compact
-   search seat promoted into the band vocabulary - the shared
-   definition), this scoped block keeps ONLY the sidebar's narrow
-   stack: below the drag wall the stacked full-width row wins over the
-   shared 128px seat (the wrapper's width: 100% must out-weigh it). */
+/*
+ * the search seats IN the band (the band-tool slot).
+ * The seat's geometry is TabBand's now, this scoped block keeps ONLY the sidebar's
+ * narrow stack: below the drag wall the stacked full-width row wins over the shared
+ * 128px seat (the wrapper's width: 100% must out-weigh it).
+ */
 .sessions.stacked :deep(.tab-band) {
   flex-wrap: wrap;
   row-gap: 4px;
@@ -615,11 +519,9 @@
 .sessions.stacked .band-search {
   width: 100%;
 }
-/* the split wrapper keeps the shared .new-btn chip (border, radius,
-   dim text, accent hover). The halves inside are borderless - the
-   wrapper's border draws the pill, a hairline divides body from
-   arrow; hovering either half lights the whole chip (wrapper :hover
-   rules from main.css + color: inherit). */
+/*
+ * the split wrapper keeps the shared.new-btn chip (border, radius, dim text, accent.
+ */
 .new-btn {
   display: flex;
   align-items: stretch;
@@ -636,9 +538,7 @@
   color: inherit;
   cursor: pointer;
 }
-/* card t_a0a466c6: the caret is its own zone - the hairline divider
-   (the chip's own border color) reads the split, the hover lights ONLY
-   the caret zone so the two halves answer the pointer separately. */
+/* the caret is its own zone. */
 .new-caret {
   display: inline-flex;
   align-items: center;
@@ -659,9 +559,10 @@
   outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
-/* the picker's arrow: closed (down) when the menu is shut, rotated
-   open (up) while the type choice shows - same 0.12s ease as the
-   bucket chevrons */
+/*
+ * the picker's arrow: closed (down) when the menu is shut, rotated open (up) while the
+ * type choice shows.
+ */
 .new-caret-chevron {
   transition: transform 0.12s ease;
 }
@@ -698,9 +599,9 @@
 .new-menu-item:hover {
   background: var(--z2);
 }
-/* card t_55a571ff: a disabled picker entry renders dim and inert - no
-   hover lift, no pointer affordance (generic rule; no entry ships
-   disabled since t_c7222095 removed the placeholder). */
+/*
+ * a disabled picker entry renders dim and inert - no hover lift, no pointer affordance.
+ */
 .new-menu-item:disabled {
   color: var(--text-dim);
   cursor: default;

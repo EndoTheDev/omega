@@ -19,12 +19,10 @@ import (
 // The shell tool's tests (the shell-ring shrink wave 1: shell.run
 // moved here from the built-in tools capsule, behavior byte-exact).
 
-// TestRunShellContextKill: a cancelled call returns PROMPTLY, but it
-// does not kill the shell - detachment is the contract (card
-// t_5a49790b): the call was cut short by a run timeout or a converted
-// call's yield deadline, while the shell it started keeps running,
-// readable and killable by the id the error names. Before the
-// unification the cancelled ctx killed the in-process child.
+// TestRunShellContextKill: a cancelled call returns PROMPTLY, but it does not kill the
+// shell - detachment is the contract: the call was cut short by a run timeout or a
+// converted call's yield deadline, while the shell it started keeps running, readable
+// and killable by the id the error names.
 func TestRunShellContextKill(t *testing.T) {
 	p := testShellProvider(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -45,7 +43,6 @@ func TestRunShellContextKill(t *testing.T) {
 	if !strings.Contains(err.Error(), "still running") || !strings.Contains(err.Error(), "shell.kill id="+id) {
 		t.Fatalf("interrupted call must name the live shell and its kill path: %v (out %q)", err, out)
 	}
-	// The shell is genuinely still there: listed, readable, killable.
 	list, err := p.List(context.Background(), map[string]any{})
 	if err != nil || !strings.Contains(list, id) {
 		t.Fatalf("the interrupted shell must stay listed: %q err=%v", list, err)
@@ -55,16 +52,11 @@ func TestRunShellContextKill(t *testing.T) {
 	}
 }
 
-// TestShellRunEscalationEligible (card t_1501cb04): shell.run carries
-// NO static Yield flag - the fast path runs inline in the turn (zero
-// overhead; previously EVERY shell.run paid the yield round trip)
-// and only a call that runs past the loop's inline budget escalates
-// to the wake path. The latency property is structural: inline IS the
-// fast path now.
+// TestShellRunEscalationEligible: shell.run carries NO static Yield flag.
 func TestShellRunEscalationEligible(t *testing.T) {
-	// The tool SURFACE needs no registry: Tools() only builds the map,
-	// and the registry is the verbs' business (a zero provider is a
-	// valid source of the schema, never of an execution).
+	// The tool SURFACE needs no registry: Tools only builds the map, and the registry is
+	// the verbs' business (a zero provider is a valid source of the schema, never of an
+	// execution).
 	tools := (&ShellProvider{}).Tools()
 	if tools["shell.run"].Yield {
 		t.Fatal("shell.run must not be immediate-yield - the static Yield class is superseded by budget escalation (t_1501cb04)")
@@ -75,7 +67,6 @@ func TestShellRun(t *testing.T) {
 	p := testShellProvider(t)
 	ctx := context.Background()
 
-	// Use a command that works on both Windows and Unix via the shell.
 	out, err := p.RunShell(ctx, map[string]any{"command": "echo hello"})
 	if err != nil {
 		t.Fatalf("RunShell: %v", err)
@@ -95,11 +86,10 @@ func TestShellEmptyCommand(t *testing.T) {
 	}
 }
 
-// TestRunShellDetachedGroup: the shell child is its own process group
-// (the registry's detachment), so a cancelled call must not take the
-// group down - the CI shape this test started life as (a forked child
-// holding the output pipe blocked the run) is now impossible by
-// construction: the call never waits on a pipe, it waits on the shell.
+// TestRunShellDetachedGroup: the shell child is its own process group (the registry's
+// detachment), so a cancelled call must not take the group down - the CI shape this
+// test started life as (a forked child holding the output pipe blocked the run) is now
+// impossible by construction: the call never waits on a pipe, it waits on the shell.
 func TestRunShellDetachedGroup(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the pgroup detachment is the posix shape; windows uses a job object")
@@ -124,19 +114,13 @@ func TestRunShellDetachedGroup(t *testing.T) {
 	}
 }
 
-// TestShellRoot pins the session-workspace rooting (card t_9de5b009)
-// for the shell half (the file half is pinned in harness/files): the
-// command's working directory IS the workspace.
+// TestShellRoot pins the session-workspace rooting for the shell half (the file half is
+// pinned in harness/files).
 func TestShellRoot(t *testing.T) {
 	ws := t.TempDir()
 	ctx := core.WithRunWorkspace(context.Background(), ws, "")
 	p := testShellProvider(t)
 
-	// the cwd-printing probe is OS-shaped: `pwd` is an external binary
-	// everywhere, and on windows `cmd /C pwd` resolves whatever
-	// pwd.exe sits on the inherited PATH (an MSYS coreutils install
-	// answers with the /tmp-translated path, not the workspace).
-	// `cd` bare is the cmd builtin that prints the cwd.
 	probe := "pwd"
 	if runtime.GOOS == "windows" {
 		probe = "cd"
@@ -148,10 +132,7 @@ func TestShellRoot(t *testing.T) {
 	}
 }
 
-// TestShellDirOverride pins the per-call working-directory override
-// (card t_ccf74d88): an absolute dir wins over the session workspace, a
-// relative dir roots at the session workspace, and an impossible dir
-// is a named tool error instead of a cryptic exec chdir failure.
+// TestShellDirOverride pins the per-call working-directory override.
 func TestShellDirOverride(t *testing.T) {
 	ws := t.TempDir()
 	sub := filepath.Join(ws, "sub")
@@ -167,33 +148,28 @@ func TestShellDirOverride(t *testing.T) {
 		probe = "cd"
 	}
 
-	// Relative dir rides the session workspace root.
 	out, err := p.RunShell(ctx, map[string]any{"command": probe, "dir": "sub"})
 	if err != nil || !strings.Contains(out, sub) {
 		t.Fatalf("relative dir: %v (got %q, want cwd %q)", err, out, sub)
 	}
 
-	// Absolute dir wins over the session workspace.
 	out, err = p.RunShell(ctx, map[string]any{"command": probe, "dir": other})
 	if err != nil || !strings.Contains(out, other) {
 		t.Fatalf("absolute dir: %v (got %q, want cwd %q)", err, out, other)
 	}
 
-	// No dir argument: the session workspace stands (t_9de5b009).
 	out, err = p.RunShell(ctx, map[string]any{"command": probe})
 	if err != nil || !strings.Contains(out, filepath.Clean(ws)) {
 		t.Fatalf("no dir: %v (got %q, want cwd %q)", err, out, ws)
 	}
 
-	// The impossible dir names itself.
 	_, err = p.RunShell(ctx, map[string]any{"command": probe, "dir": "/omega-definitely-not-here"})
 	if err == nil || !strings.Contains(err.Error(), "omega-definitely-not-here") {
 		t.Fatalf("missing dir: err = %v, want a dir-named error", err)
 	}
 }
 
-// TestGuardedShellRefuse: the shell tool refuses a db-facing command
-// with the law named, and nothing executes.
+// TestGuardedShellRefuse: the shell tool refuses a db-facing command with the law.
 func TestGuardedShellRefuse(t *testing.T) {
 	dir := t.TempDir()
 	db := dir + "/omega.db"
@@ -209,8 +185,7 @@ func TestGuardedShellRefuse(t *testing.T) {
 	}
 }
 
-// TestGuardedShellAllowNormal: a guard-carrying provider (and a
-// nil-guard one) keeps normal shell operation untouched.
+// TestGuardedShellAllowNormal: a guard-carrying provider (and a nil-guard one) keeps.
 func TestGuardedShellAllowNormal(t *testing.T) {
 	dir := t.TempDir()
 	p := testShellProvider(t)
@@ -228,13 +203,7 @@ func TestGuardedShellAllowNormal(t *testing.T) {
 	}
 }
 
-// The serializer's regression pins (card t_82107785): the exact
-// commands the dev-lane agents burned on, driven through shell.run -
-// the door the agent-facing symptoms reported through. Before the
-// fix, Go's argv escaping re-wrapped the embedded quotes into \"
-// sequences the child parsed as literal quote characters: PowerShell
-// echoed `-Command` scripts as string literals ($vars eaten with
-// them) instead of running them.
+// The serializer's regression pins.
 func TestRunShellQuotedPowerShell(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("the mangling class is a windows cmd /C contract")
@@ -259,9 +228,8 @@ func TestRunShellQuotedPowerShell(t *testing.T) {
 	}
 }
 
-// TestRunShellChainRedirectTiming pins the `>` chain behavior with its
-// only honest witness: the wall clock (visible output is identical
-// whether the chain ran or died - the report's own repro demand).
+// TestRunShellChainRedirectTiming pins the `>` chain behavior with its only honest
+// witness.
 func TestRunShellChainRedirectTiming(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("ping -n timing is the windows delay idiom")
@@ -276,20 +244,16 @@ func TestRunShellChainRedirectTiming(t *testing.T) {
 	if !strings.Contains(out, "chain-done") {
 		t.Fatalf("chain segments must all run, got %q", out)
 	}
-	// ping -n 2 waits ~1s; a dead redirect segment would return early.
 	if elapsed < 900*time.Millisecond {
 		t.Fatalf("the delay segment did not actually run (elapsed %v)", elapsed)
 	}
 }
 
-// TestShellSmallOutputNoMarker (card t_304afb4e): the truncation
-// marker fires ONLY when bytes were actually dropped. The pre-fix
-// cappedBuffer counted every written byte in over (over was
-// total-written, not overflow), so an 8-byte echo read as a
-// truncation and the reported total double-counted the kept bytes -
-// the exact QA receipt ("[output truncated, 8 bytes total]" on a
-// visible "A"). The condition over > 0 was honest; the accumulator
-// lied.
+// TestShellSmallOutputNoMarker: the truncation marker fires ONLY when bytes were. The
+// pre-fix cappedBuffer counted every written byte in over (over was total-written, not
+// overflow), so an 8-byte echo read as a truncation and the reported total
+// double-counted the kept bytes - the exact QA receipt ("[output truncated, 8 bytes
+// total]" on a visible "A").
 func TestShellSmallOutputNoMarker(t *testing.T) {
 	p := testShellProvider(t)
 	out, err := p.RunShell(context.Background(), map[string]any{"command": "echo A"})
@@ -304,10 +268,7 @@ func TestShellSmallOutputNoMarker(t *testing.T) {
 	}
 }
 
-// TestShellOversizeOutputHonestMarker (card t_304afb4e): past the 1 MB
-// cap the marker is honest - kept-first size, real total, and the
-// retrieval path named (shell.read tails the log, which survives the
-// shell; the retired process.spawn spelling is gone, card t_5a49790b).
+// TestShellOversizeOutputHonestMarker: past the 1 MB cap the marker is honest.
 func TestShellOversizeOutputHonestMarker(t *testing.T) {
 	big := filepath.Join(t.TempDir(), "big.txt")
 	payload := bytes.Repeat([]byte("xxxxxxxxxx\n"), 160000) // 1,760,000 bytes
@@ -330,9 +291,7 @@ func TestShellOversizeOutputHonestMarker(t *testing.T) {
 	if !strings.Contains(out, want) {
 		t.Fatalf("marker missing or dishonest (want %q): tail of out = %q", want, out[len(out)-120:])
 	}
-	// The retrieval path is the shell domain's own verb (card
-	// t_5a49790b): shell.read tails the log the run already wrote, and
-	// the log survives the shell - the retired process.* name is gone.
+	// The retrieval path is the shell domain's own verb.
 	if !strings.Contains(out, "shell.read id=sh-") || !strings.Contains(out, "survives the shell") {
 		t.Fatalf("the marker must name shell.read and the retention contract: %q", out[len(out)-160:])
 	}
@@ -341,12 +300,11 @@ func TestShellOversizeOutputHonestMarker(t *testing.T) {
 	}
 }
 
-// -- the unification's helpers and round-trip pins -----------------------
+// - the unification's helpers and round-trip pins ----------------------
 
-// testShellProvider builds a provider over a private home: the registry
-// state and logs land in the test's temp dir, and the registry's Close
-// fence kills any child a test left running (a windows temp-dir teardown
-// would otherwise race an open log handle).
+// testShellProvider builds a provider over a private home: the registry state and logs
+// land in the test's temp dir, and the registry's Close fence kills any child a test
+// left running (a windows temp-dir teardown would otherwise race an open log handle).
 func testShellProvider(t *testing.T) *ShellProvider {
 	t.Helper()
 	reg := NewRegistry(RegistryConfig{Home: t.TempDir(), KillGraceSeconds: 1})
@@ -354,13 +312,10 @@ func testShellProvider(t *testing.T) *ShellProvider {
 	return &ShellProvider{reg: reg}
 }
 
-// TestShellProviderWithoutRegistryNamesItself pins the review-round-1
-// fix (card t_5a49790b): there is NO lazy default registry. A zero
-// provider used to build one whose config resolved datadir.Home(), so
-// any test executing through it rewrote the installed instance's
-// process.json and dropped logs in ~/.omega - two gate-run sites did
-// exactly that. Every verb now answers the named wiring error instead,
-// and nothing resolves a home.
+// TestShellProviderWithoutRegistryNamesItself pins the review-round-1 fix. A zero
+// provider used to build one whose config resolved datadir.Home, so any test executing
+// through it rewrote the installed instance's process.json and dropped logs in ~/.omega
+// - two gate-run sites did exactly that.
 func TestShellProviderWithoutRegistryNamesItself(t *testing.T) {
 	p := &ShellProvider{}
 	ctx := context.Background()
@@ -387,8 +342,7 @@ func TestShellProviderWithoutRegistryNamesItself(t *testing.T) {
 	}
 }
 
-// longSleeper is a command that reliably outlives a test's patience on
-// both shells.
+// longSleeper is a command that reliably outlives a test's patience on both shells.
 func longSleeper() string {
 	if runtime.GOOS == "windows" {
 		return "ping -n 300 127.0.0.1 > nul"
@@ -397,10 +351,6 @@ func longSleeper() string {
 }
 
 // echoThenSleeper composes an echo and a sleeper in one command.
-// The separator matters: cmd.exe has no `;`, and a redirect anywhere on
-// the line binds to the whole command - `echo X; ping ... > nul` sends
-// the ECHO to nul and the shell exits with an empty log. `&&` binds the
-// redirect to the ping alone on windows; sh takes `;`.
 func echoThenSleeper(word string) string {
 	if runtime.GOOS == "windows" {
 		return "echo " + word + " && " + longSleeper()
@@ -408,7 +358,7 @@ func echoThenSleeper(word string) string {
 	return "echo " + word + "; " + longSleeper()
 }
 
-// shellIDFromText pulls the shell id out of a "<...> id=<id>" phrase.
+// shellIDFromText pulls the shell id out of a "<..> id=<id>" phrase.
 func shellIDFromText(t *testing.T, text string) string {
 	t.Helper()
 	i := strings.Index(text, "shell.read id=")
@@ -423,11 +373,7 @@ func shellIDFromText(t *testing.T, text string) string {
 	return rest[:end]
 }
 
-// TestShellVerbRoundTrip is the addressing surface's proof (card
-// t_5a49790b): a running shell shows up in shell.list with id, command,
-// age and log path; shell.read tails its log live; shell.kill stops it;
-// and shell.read still answers afterwards (post-mortem retention, the
-// t_304afb4e contract) while shell.list has dropped it.
+// TestShellVerbRoundTrip is the addressing surface's proof.
 func TestShellVerbRoundTrip(t *testing.T) {
 	p := testShellProvider(t)
 	ctx := context.Background()
@@ -435,7 +381,6 @@ func TestShellVerbRoundTrip(t *testing.T) {
 	if _, err := p.reg.Spawn(ctx, echoThenSleeper("round-trip"), "rt", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	// The echo may land a beat after Spawn returns.
 	deadline := time.Now().Add(testWaitTimeout)
 	for {
 		read, err := p.Read(ctx, map[string]any{"id": "rt"})
@@ -462,7 +407,6 @@ func TestShellVerbRoundTrip(t *testing.T) {
 	if got, err := p.Kill(ctx, map[string]any{"id": "rt"}); err != nil || !strings.Contains(got, "stopped") {
 		t.Fatalf("kill: %q err=%v", got, err)
 	}
-	// post-mortem: the log survives the shell, the list does not show it
 	after, err := p.Read(ctx, map[string]any{"id": "rt"})
 	if err != nil || !strings.Contains(after, "round-trip") {
 		t.Fatalf("post-mortem read: %q err=%v", after, err)
@@ -471,7 +415,6 @@ func TestShellVerbRoundTrip(t *testing.T) {
 	if err != nil || strings.Contains(list, "rt") {
 		t.Fatalf("a killed shell must leave the list: %q err=%v", list, err)
 	}
-	// The addressing surface is ids-only: an unknown id is a named miss.
 	if _, err := p.Read(ctx, map[string]any{"id": "no-such-shell"}); err == nil {
 		t.Fatal("read of an unknown id must error")
 	}
@@ -480,9 +423,8 @@ func TestShellVerbRoundTrip(t *testing.T) {
 	}
 }
 
-// TestShellRunReturnsOutputAndStatus: the inline path is unchanged in
-// what the model sees - combined output and a failed exit as an error -
-// while the output now also lands in the shell's log file.
+// TestShellRunReturnsOutputAndStatus: the inline path is unchanged in what the model
+// sees.
 func TestShellRunReturnsOutputAndStatus(t *testing.T) {
 	p := testShellProvider(t)
 	out, err := p.RunShell(context.Background(), map[string]any{"command": "echo on-stdout"})

@@ -1,6 +1,4 @@
-// omega webui: unit tests for the dock webui (app/composables/dock.ts) -
-// layout tree pure functions, divider drag math, persistence round-trip and
-// legacy migration. Render-free; node's built-in test runner.
+// omega webui: unit tests for the dock webui (app/composables/dock.ts).
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -68,12 +66,7 @@ import {
 import { registerScratchSingleton } from "./scratchDockable.ts";
 import { dropAllowedFor } from "../app/composables/dockdnd.ts";
 
-// card t_49d0b308: the tab-op fixtures below need a MAIN-area OPENABLE
-// component; settings left that class for the inspector. The synthetic
-// "scratch" singleton registers for this file's whole run (node --test
-// gives every file its own process). Cast note: the webui ops take
-// DockComponentName and node strips types before running - the string
-// "scratch" flows through fine.
+// the tab-op fixtures below need a MAIN-area OPENABLE component.
 let restoreScratch: (() => void) | null = null;
 before(() => {
   restoreScratch = registerScratchSingleton();
@@ -82,7 +75,7 @@ after(() => {
   restoreScratch?.();
 });
 
-// helpers ------------------------------------------------------------------
+// helpers -----------------------------------------------------------------
 
 function asPane(n: DockNode): DockPane {
   assert.equal(n.kind, "pane");
@@ -93,11 +86,7 @@ function asSplit(n: DockNode): DockSplit {
   return n as DockSplit;
 }
 /**
- * default shell shape (card t_4ae27e0d, markers t_d6b657a7): row
- * [sidebar(fixed 240), chat(flex), inspector-pane(fixed 300: the seven
- * real view tabs, files active)]. The content shell is passed through
- * ensurePinnedEdges so the edge markers ride on it (the modern trees'
- * shape).
+ * default shell shape: row [sidebar(fixed 240), chat(flex), inspector-pane(fixed 300.
  */
 function contentTree(): DockSplit {
   const inspector: DockPane = {
@@ -125,7 +114,6 @@ function paneIds(t: DockNode): string[] {
   return panes(t).map((p) => p.id);
 }
 function comps(t: DockNode): (string | undefined)[] {
-  // top-level left-to-right reading of every pane's active tab
   const root = asSplit(t);
   const walk = (n: DockNode): (string | undefined)[] =>
     n.kind === "pane"
@@ -134,8 +122,7 @@ function comps(t: DockNode): (string | undefined)[] {
   return walk(root);
 }
 function paneByComponent(t: DockNode, c: "sidebar" | "chat" | "files"): DockPane {
-  // ANY tab hosting, not active-only: cross-pane DnD parks singletons as
-  // inactive tabs all the time now (free content).
+  // ANY tab hosting, not active-only.
   const loc = findComponentTab(t, c);
   assert.ok(loc, `expected a pane hosting ${c}`);
   return findPane(t, loc.paneId)!;
@@ -189,9 +176,7 @@ describe("insertPane / splitPane", () => {
     const inner = asSplit(out.children[1]);
     assert.equal(inner.direction, "row");
     assert.equal(asPane(inner.children[0]).id, chat.id);
-    // card t_9855a20e: the empty-pane component menu is deleted AND the
-    // never-zero placeholder retired - a fresh split group is born empty
-    // and a drop fills it
+    // the empty-pane component menu is deleted AND the never-zero placeholder retired.
     assert.deepEqual(asPane(inner.children[1]).tabs.map((x) => x.component), []);
     assert.deepEqual(comps(out), ["sidebar", "chat", undefined, "files"]);
   });
@@ -252,8 +237,7 @@ describe("removePane (card t_4ae27e0d refusals)", () => {
   it("the LAST REMAINING pane is refused (never-empty invariant)", () => {
     const t = asPane(makePane("chat"));
     assert.equal(removePane(t, t.id), t, "the tree object is returned untouched");
-    // even sidebars-only... the guard reads COUNT, not identity: with one
-    // pane left of any kind, the close is a no-op
+    // even sidebars-only..
     assert.equal(removePane(t, t.id), t);
   });
   it("pinned panes refuse removal (sidebar panes are fixed chrome)", () => {
@@ -277,10 +261,7 @@ describe("movePane", () => {
     t = splitPane(t, chat.id, "row", "after");
     const mainHalf = findPane(t, chat.id)!;
     const out = movePane(t, mainHalf.id, paneByComponent(t, "files").id, "before");
-    // the detach hoisted the chat's split to its EMPTY sibling (card
-    // t_9855a20e: the placeholder is retired - the pane it used to fill
-    // sits empty and a drop refills it), which now sits between sidebar
-    // and the insert point
+    // the detach hoisted the chat's split to its EMPTY sibling, which now sits.
     assert.deepEqual(comps(out), ["sidebar", undefined, "chat", "files"]);
   });
   it("pinned panes refuse pane-moves (fixed chrome)", () => {
@@ -298,8 +279,7 @@ describe("movePane", () => {
     const t2 = splitPane(t, chat.id, "row", "after");
     const rowPane = findPane(t2, chat.id)!;
     const out = movePane(t2, rowPane.id, paneByComponent(t2, "files").id, "after");
-    // root: [sidebar, files, chat]; the split that held half the chat
-    // keeps only its EMPTY pane -> hoisted, so the empty pane is top-level
+    // root: [sidebar, files, chat].
     assert.deepEqual(comps(out), ["sidebar", undefined, "files", "chat"]);
     const empty = panes(out).find((p) => p.tabs.length === 0)!;
     assert.ok(empty, "the split-away pane survives EMPTY (no placeholder is seated)");
@@ -331,10 +311,7 @@ describe("tab ops", () => {
     return (findPane(t, id) as DockPane).tabs.map((x) => x.component);
   }
   it("openTab appends and focuses; closeTab removes, the last tab locks", () => {
-    // t_b620f99d: closeTab never consults the last-main-pane census, so
-    // the mechanics run on the plain single-pane tree. card t_9855a20e
-    // (THE LOCKED LAST TAB): the pane's LAST tab refuses the close - no
-    // placeholder is seated in its place.
+    // closeTab never consults the last-main-pane census, so the mechanics run on the.
     const left = asPane(makePane("chat"));
     let t: DockNode = left;
     t = openTab(t, left.id, { component: "scratch" });
@@ -365,7 +342,6 @@ describe("tab ops", () => {
     function tabComps(t: DockNode, id: string): (string | undefined)[] {
       return (findPane(t, id) as DockPane).tabs.map((x) => x.component);
     }
-    /** split shell: left pane main tabs, right pane chat */
     function twoPaneTree(): { t: DockNode; left: DockPane; right: DockPane } {
       const root = makePane("chat");
       const left = asPane(openTab(root, root.id, { component: "scratch" }));
@@ -379,18 +355,14 @@ describe("tab ops", () => {
       const id = t.id;
       t = openTab(t, id, { component: "scratch" });
       assert.deepEqual(tabComps(t, id), ["chat", "scratch"]);
-      // [chat, settings]; chat is NOT the focused tab (openTab focused
-      // settings) - dragging chat right moves it after settings, and the
-      // parked active tab TRACKS its component (settings shifts left)
+      // [chat, settings]; chat is NOT the focused tab (openTab focused settings).
       t = moveTab(t, id, 0, id, 1);
       let p = findPane(t, id)!;
       assert.deepEqual(tabComps(t, id), ["scratch", "chat"]);
       assert.equal(p.active, 0, "the parked active tab tracks its component");
-      // drag the focused tab (settings, now at 0) left of chat: no-op
       t = moveTab(t, id, 0, id, 0);
       p = findPane(t, id)!;
       assert.equal(p.active, 0, "focused tab keeps its position");
-      // now focus chat and drag it back left across the bookkeeping
       t = focusTab(t, id, 1);
       t = moveTab(t, id, 1, id, 0);
       p = findPane(t, id)!;
@@ -405,7 +377,6 @@ describe("tab ops", () => {
 
     it("moves between panes, focusing the dropped tab in the target", () => {
       const { t, left, right } = twoPaneTree();
-      // drag chat (left tab 0) onto the chat pane
       const out = moveTab(t, left.id, 0, right.id, right.tabs.length);
       const l = findPane(out, left.id)!;
       const r = findPane(out, right.id)!;
@@ -418,7 +389,6 @@ describe("tab ops", () => {
 
     it("inserts at the caret index in the target pane", () => {
       const { t, left, right } = twoPaneTree();
-      // target caret before tab 0: post-removal index 0
       const out = moveTab(t, left.id, 0, right.id, 0);
       assert.deepEqual(tabComps(out, right.id), ["chat", "chat"]);
       assert.equal(findPane(out, right.id)!.active, 0);
@@ -426,8 +396,7 @@ describe("tab ops", () => {
 
     it("moving a pane's LAST tab closes the pane (card t_aa9dbada)", () => {
       const { t, left, right } = twoPaneTree();
-      // drain left pane one tab at a time (target index from the FRESH
-      // pane - destructured refs point at the pre-move tree)
+      // drain left pane one tab at a time (target index from the FRESH pane.
       let cur = moveTab(t, left.id, 0, right.id, findPane(t, right.id)!.tabs.length);
       assert.equal(panes(cur).length, 2, "the source still hosts a tab, it stays");
       cur = moveTab(cur, left.id, 0, right.id, findPane(cur, right.id)!.tabs.length);
@@ -457,7 +426,7 @@ describe("tab ops", () => {
 
     it("emptying the source moves focus to the remaining neighbor", () => {
       const two = twoPaneTree();
-      // left has chat(0, active) + settings(1). Move tab 0 away.
+      // left has chat(0, active) + settings(1).
       const out = moveTab(two.t, two.left.id, 0, two.right.id, 0);
       const l = findPane(out, two.left.id)!;
       assert.equal(l.tabs.length, 1);
@@ -469,11 +438,11 @@ describe("tab ops", () => {
       const side = paneByComponent(t, "sidebar");
       const files = paneByComponent(t, "files");
       const chat = paneByComponent(t, "chat");
-      // ruling 1: the sessions tab never leaves the left shell's own bar
+      // the sessions tab never leaves the left shell's own bar
       assert.equal(moveTab(t, side.id, 0, chat.id, 0), t, "sessions does not drag right");
       assert.equal(moveTab(t, side.id, 0, files.id, 0), t, "sessions does not drag into the right shell");
-      // canvas C1: a MAIN member never leaves the main pane (the root
-      // cause this law kills - a chat opening inside a sidebar)
+      // canvas C1: a MAIN member never leaves the main pane (the root cause this law
+      // kills.
       assert.equal(moveTab(t, chat.id, 0, files.id, 0), t, "chat does not drag into the right shell");
       assert.equal(moveTab(t, chat.id, 0, side.id, 0), t, "chat does not drag into the left shell");
       // a SIDEBAR view visits: right shell -> main pane -> back
@@ -483,7 +452,6 @@ describe("tab ops", () => {
         ["files", "chat"],
         "a right-shell tab becomes a main-pane tab (a visit)",
       );
-      // ...and back again (bidirectional between the two sidebars)
       const movedBack = moveTab(movedOut, chat.id, 0, files.id, 0);
       assert.deepEqual(
         tabComps(movedBack, files.id),
@@ -519,7 +487,6 @@ describe("serialize / deserialize", () => {
   it("round-trips a nested tree exactly", () => {
     let t: DockNode = defaultTree();
     t = splitPane(t, paneByComponent(t, "chat").id, "row", "after");
-    // card t_9855a20e: fill the fresh split's empty group with content
     t = setPaneComponent(t, panes(t).find((p) => p.tabs.length === 0)!.id, "chat");
     const back = deserialize(serialize(t));
     assert.ok(back);
@@ -604,7 +571,6 @@ describe("serialize / deserialize", () => {
   });
   it("v2 round-trips the edge markers and the free tab arrangement", () => {
     let t: DockNode = defaultTree();
-    // free content: files in the main pane, an empty right shell
     const files = paneByComponent(t, "files");
     const chat = paneByComponent(t, "chat");
     t = moveTab(t, files.id, 0, chat.id, 0);
@@ -612,7 +578,6 @@ describe("serialize / deserialize", () => {
     (insp as DockPane).tabs = [];
     const back = deserialize(serialize(t))!;
     assert.ok(back);
-    // which tab lives in which pane survives the round-trip verbatim
     assert.deepEqual(tabCompsIn(back, chat.id), ["files", "chat"]);
     assert.equal(paneCount(back), 3, "the emptied shell survives as a pane");
     assert.equal(isPinnedPane(findPane(back, asPane(insp).id)!), true, "the shell keeps its marker");
@@ -654,9 +619,7 @@ describe("serialize / deserialize", () => {
 });
 
 describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
-  // card t_67fc1905: the default tree gains the bottom panel - the root is
-  // a COLUMN now: [the main row [sidebar, chat, inspector], the bottom
-  // shell (fixed 200, logs tab, edge "bottom")]
+  // the default tree gains the bottom panel - the root is a COLUMN now.
   function mainRow(t: DockNode): DockSplit {
     const root = asSplit(t);
     assert.equal(root.direction, "column", "the default root is a column (bottom-panel era)");
@@ -667,8 +630,8 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     const t = migrateLegacy(() => null);
     const row = mainRow(t);
     assert.equal(row.children.length, 3);
-    // canvas C1: the fresh left shell seats its CLASS (sessions + agents +
-    // crons), the right its own - one law for both, no hand-written strip
+    // canvas C1: the fresh left shell seats its CLASS (sessions + agents + crons), the
+    // right its own.
     assert.deepEqual(
       asPane(row.children[0]).tabs.map((x) => x.component),
       [...PRIMARY_TAB_COMPONENTS],
@@ -684,9 +647,7 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     const bottom = asPane(asSplit(t).children[1]);
     assert.equal(bottom.edge, "bottom");
     assert.equal(bottom.fixed, 200);
-    // card t_55a3fc4b: terminal rides the fresh bottom shell
-    // card t_e703180e: observability joins it (the stream/tail tab)
-    // card t_01c53e78: the raw-tail logs pane retired - two tabs remain
+    // terminal rides the fresh bottom shell.
     assert.deepEqual(bottom.tabs.map((x) => x.component), ["terminal", "observability"]);
   });
   it("persisted widths render verbatim, open flags are dead history", () => {
@@ -706,9 +667,7 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
     assert.equal(asPane(mainRow(t).children[0]).fixed, 150);
   });
   it("the edge-pane default carries the 0.17.3 strip bump (card t_d4443ab5)", () => {
-    // the sidebars' tab strip spans the PANE: the +24px strip widening is
-    // the default edge width. One tuning point - change the number here and
-    // in EDGE_DEFAULT_PX together (the rest of the suite derives from it).
+    // the sidebars' tab strip spans the PANE.
     assert.equal(EDGE_DEFAULT_PX.sidebar, 240 + 24, "sidebar: 240 -> 264");
     assert.equal(EDGE_DEFAULT_PX.inspector, 240 + 24, "inspector: 240 -> 264");
   });
@@ -723,7 +682,7 @@ describe("migrateLegacy (card t_4ae27e0d: FIXED shape)", () => {
   });
 });
 
-// --- the pane-model reset specifics (card t_4ae27e0d) ------------------------
+// -- the pane-model reset specifics -----------------------
 
 describe("pane-model reset", () => {
   it("expandInspectorTabs expands the legacy id into the real tabs", () => {
@@ -767,32 +726,26 @@ describe("pane-model reset", () => {
   });
 
   it("a closed sidebar reopens ABOVE the bottom band, not beside it (card t_556ee727)", () => {
-    // the aligned-bottom tree: a root COLUMN whose last child is the
-    // bottom shell (card t_67fc1905's graft). With the sidebar closed,
-    // the reopen insert must target the head row - wrapping the whole
-    // column would seat the sidebar next to a squashed half-width band
-    // and drag the band into the row's shrink math.
+    // the aligned-bottom tree: a root COLUMN whose last child is the bottom shell. With
+    // the sidebar closed, the reopen insert must target the head row - wrapping the
+    // whole column would seat the sidebar next to a squashed half-width band and drag
+    // the band into the row's shrink math.
     const t: DockNode = makeSplit("column", [
       makePane("chat", null),
       bottomShellPane(),
     ]);
     const out = asSplit(ensurePinnedEdges(t));
-    // the root stays the column and the band stays its LAST child,
-    // full row-width (nothing wrapped around it)
+    // the root stays the column and the band stays its LAST child, full row-width.
     assert.equal(out.direction, "column");
     assert.equal(out.children.length, 2);
     assert.equal(asPane(out.children[1]).edge, "bottom");
-    // the reopen lands in the head row, sidebar before chat
     const head = asSplit(out.children[0]);
     assert.equal(head.direction, "row");
     assert.equal(asPane(head.children[0]).tabs[0]!.component, "sidebar");
     assert.equal(asPane(head.children[1]).tabs[0]!.component, "chat");
   });
   it("rehomeInsightsTab lifts the main-pane strand; the loader seats it in the right shell (t_d7fd3ad3)", () => {
-    // a tree persisted while insights' home was "main" (t_e1e61680): a
-    // closable insights tab opened into the MAIN pane. The right shell
-    // already holds its own instance (the registry seats it), so the
-    // strand is the SECOND insights tab - the one outside the shell.
+    // a tree persisted while insights' home was "main".
     let t: DockNode = defaultTree();
     const chatId = findComponentPane(t, "chat")!.id;
     t = openTab(t, chatId, { component: "insights" });
@@ -803,7 +756,6 @@ describe("pane-model reset", () => {
       undefined,
       "pre: the strand lives in a main pane",
     );
-    // the lift removes every insights tab outside the right shell
     const lifted = rehomeInsightsTab(t);
     const liftedPane = findPane(lifted, strand.paneId)!;
     assert.ok(liftedPane, "the main pane survives");
@@ -815,8 +767,7 @@ describe("pane-model reset", () => {
       findEdgePane(lifted, "inspector")!.tabs.some((x) => x.component === "insights"),
       "the right shell's instance survives the lift",
     );
-    // the loader (ensurePinnedEdges -> restoreSeatSet) seats it in
-    // the right shell on the same boot (here it was alive already)
+    // the loader (ensurePinnedEdges -> restoreSeatSet) seats it in the right shell on.
     const loaded = ensurePinnedEdges(lifted);
     const right = findEdgePane(loaded, "inspector")!;
     assert.ok(
@@ -831,12 +782,10 @@ describe("pane-model reset", () => {
     assert.equal(ensurePinnedEdges(t), t);
   });
   it("boot repair never mints an id the loaded tree already owns (n1 collision, t_f6d5a771)", () => {
-    // reload after a divider hide: the sidebar is gone, the stored tree
-    // still holds its old ids - chat "n3", files "n1". The boot repair
-    // re-inserts the sidebar; with the per-page seed at 0 that mint would
-    // be "n1" TOO unless the seed synced first - duplicate ids, and every
-    // id-keyed op (the divider intents' prunePane, canRemovePane) acts on
-    // BOTH panes at once.
+    // reload after a divider hide. The boot repair re-inserts the sidebar; with the
+    // per-page seed at 0 that mint would be "n1" TOO unless the seed synced first -
+    // duplicate ids, and every id-keyed op (the divider intents' prunePane,
+    // canRemovePane) acts on BOTH panes at once.
     const stored = asSplit({
       kind: "split",
       id: "n2",
@@ -863,13 +812,10 @@ describe("pane-model reset", () => {
     const before = paneIds(t);
     const res = insertMainPane(t);
     const root = asSplit(res.tree);
-    // a row root appends at its after-edge, ids preserved in order
     assert.deepEqual(paneIds(res.tree), [...before, res.paneId]);
     const fresh = findPane(res.tree, res.paneId)!;
     assert.equal(fresh.fixed, null);
-    // card t_9855a20e: the minted pane is EMPTY - the opener that asked for
-    // it mints its content (openChatTab / openSingleton), and no placeholder
-    // sticker is seated
+    // the minted pane is EMPTY.
     assert.deepEqual(fresh.tabs.map((x) => x.component), []);
     assert.equal(paneCount(res.tree), 4);
   });
@@ -882,7 +828,7 @@ describe("pane-model reset", () => {
   });
 });
 
-// --- gate: the edge toggle (card t_47b776ad) -----------------------------------
+// -- gate: the edge toggle ----------------------------------
 
 describe("edge toggle (card t_47b776ad)", () => {
   it("findEdgePane fingerprints the two dedicated pinned panes", () => {
@@ -894,7 +840,6 @@ describe("edge toggle (card t_47b776ad)", () => {
       inspector?.tabs.map((x) => x.component),
       INSPECTOR_TAB_COMPONENTS,
     );
-    // absent -> null
     assert.equal(findEdgePane(hideEdgePane(t, "sidebar"), "sidebar"), null);
   });
 
@@ -907,7 +852,6 @@ describe("edge toggle (card t_47b776ad)", () => {
       paneIds(t).filter((id) => id !== sidebarId),
     );
     assert.equal(findEdgePane(hidden, "sidebar"), null);
-    // the inspector pane is untouched by a sidebar hide
     assert.notEqual(findEdgePane(hidden, "inspector"), null);
   });
 
@@ -916,7 +860,6 @@ describe("edge toggle (card t_47b776ad)", () => {
     const reopened = asSplit(revealEdgePane(hidden, "sidebar", "before")).children[0];
     assert.equal(asPane(reopened).tabs[0]?.component, "sidebar");
     assert.equal(asPane(reopened).fixed, Math.max(PANE_OPEN_MIN, 240));
-    // identical fingerprint to the boot-repair pane
     assert.equal(isPinnedPane(asPane(reopened)), true);
     const insp = asPane(
       asSplit(revealEdgePane(hideEdgePane(defaultTree(), "inspector"), "inspector", "after")).children[2],
@@ -935,14 +878,12 @@ describe("edge toggle (card t_47b776ad)", () => {
     // never-empty: a lone edge pane refuses to go
     const lone = makePane("sidebar", 240);
     assert.equal(hideEdgePane(lone, "sidebar"), lone);
-    // a main-only tree has no edge pane - hide is a no-op
     const main = makePane("chat");
     assert.equal(hideEdgePane(main, "inspector"), main);
   });
 });
 
 describe("edge width memory (card t_f6d5a771)", () => {
-  // minimal Storage stub: the memory lives beside the tree key
   const stubStore = () => {
     const mem: Record<string, string> = {};
     return {
@@ -1007,13 +948,10 @@ describe("edge width memory (card t_f6d5a771)", () => {
 });
 
 describe("window-narrow give-way (card t_33f8756c)", () => {
-  // the default shell needs 240 (sidebar) + 320 (chat floor) + 300
-  // (inspector) + 8 (two rows' dividers) = 868 content px
+  // the default shell needs 240 (sidebar) + 320 (chat floor) + 300 (inspector) + 8.
   it("minDockPx: rows sum children + dividers, columns take the widest", () => {
     assert.equal(minDockPx(defaultTree()), 868);
-    // a lone flexible pane floors at 320; a fixed pane at its px
     assert.equal(minDockPx(makePane("chat")), CHAT_FLOOR_PX);
-    // a column's requirement is its widest child only
     const col = makeSplit("column", [
       makePane("sidebar", 240),
       makePane("chat", null),
@@ -1023,17 +961,14 @@ describe("window-narrow give-way (card t_33f8756c)", () => {
 
   it("narrowGiveWay: the secondary (inspector) collapses first", () => {
     const t = defaultTree();
-    // 800 seats sidebar + chat floor + one divider, but not the inspector
     const res = narrowGiveWay(t, 800);
     assert.deepEqual(
       res.hidden.map((h) => ({ component: h.component, px: h.px })),
       [{ component: "inspector", px: 300 }] satisfies Pick<NarrowHiddenEntry, "component" | "px">[],
     );
-    // card t_9ed6cad7: the entry carries the captured pane for the stow
     assert.equal(res.hidden[0]!.pane.edge, "right");
     assert.equal(findEdgePane(res.tree, "inspector"), null);
     assert.notEqual(findEdgePane(res.tree, "sidebar"), null);
-    // the main pane is untouched
     assert.equal(minDockPx(res.tree), 564);
   });
 
@@ -1045,7 +980,6 @@ describe("window-narrow give-way (card t_33f8756c)", () => {
     );
     assert.equal(findEdgePane(res.tree, "inspector"), null);
     assert.equal(findEdgePane(res.tree, "sidebar"), null);
-    // what is left is the main pane at its 320 floor
     assert.equal(minDockPx(res.tree), CHAT_FLOOR_PX);
   });
 
@@ -1060,17 +994,14 @@ describe("window-narrow give-way (card t_33f8756c)", () => {
     assert.equal(again.tree, squeezed); // nothing hidden: identity preserved
   });
 
-  // card t_66fa358e (Endo ruling: LAST-REQUESTED WINS) - the pane a user
-  // just revealed is exempt from the give-away; the OTHER edge pane gives
-  // way instead. Pure narrowGiveWay behavior:
+  // the pane a user just revealed is exempt from the give-away.
   it("narrowGiveWay: justRevealed=inspector survives the squeeze; the sidebar gives way", () => {
     const res = narrowGiveWay(defaultTree(), 800, "inspector");
     assert.deepEqual(
       res.hidden.map((h) => h.component),
       ["sidebar"],
     );
-    // the inspector survives WITH its full record intact (the stow is the
-    // OTHER pane's business)
+    // the inspector survives WITH its full record intact (the stow is the OTHER.
     assert.equal(res.hidden[0]!.pane.edge, "left");
     assert.notEqual(findEdgePane(res.tree, "inspector"), null);
     assert.equal(findEdgePane(res.tree, "sidebar"), null);
@@ -1145,9 +1076,7 @@ describe("window-narrow give-way (card t_33f8756c)", () => {
     assert.equal(serialize(dock.tree.value), before);
   });
 
-  // card t_66fa358e: the reveal funnel owns the NEXT squeeze - a toggle's
-  // reopen into no space swaps (the OTHER pane gives way), and the pending
-  // is consumed: later squeezes are reveal-blind again.
+  // the reveal funnel owns the NEXT squeeze.
   it("dock squeeze: a just-revealed pane wins the space; the pending is one-shot", () => {
     const mem: Record<string, string> = {};
     const store = {
@@ -1165,8 +1094,6 @@ describe("window-narrow give-way (card t_33f8756c)", () => {
       length: 0,
     } as Storage;
     const dock = createDock(store);
-    // Endo's dead case, live: closed inspector comes back while the
-    // sidebar (already seated) left no room - the SIDEBAR gives way now
     dock.toggleEdge("inspector", "after"); // close
     dock.toggleEdge("inspector", "after"); // reopen -> the reveal is pending
     dock.narrowSqueeze(800);
@@ -1177,14 +1104,10 @@ describe("window-narrow give-way (card t_33f8756c)", () => {
     dock.narrowSqueeze(800);
     assert.notEqual(findEdgePane(dock.tree.value, "sidebar"), null);
     assert.equal(findEdgePane(dock.tree.value, "inspector"), null);
-    // the pending is consumed: this squeeze has NO request in flight - the
-    // default inspector-first order stands (the inspector goes first)
+    // the pending is consumed: this squeeze has NO request in flight.
     dock.narrowSqueeze(400);
     assert.equal(findEdgePane(dock.tree.value, "sidebar"), null);
-    // and the giving-way panes still stow: the reopen restores the record.
-    // card t_8bcbe72e: the toggle's reveal runs a fit-check first, so the
-    // roomy resize precedes it - at 400px the reveal would refuse cleanly
-    // (nothing to give way, the pane would be reaped on sight again).
+    // and the giving-way panes still stow.
     dock.narrowSqueeze(4000);
     dock.toggleEdge("inspector", "after");
     assert.notEqual(findEdgePane(dock.tree.value, "inspector"), null);
@@ -1194,9 +1117,7 @@ describe("window-narrow give-way (card t_33f8756c)", () => {
 });
 
 describe("dragSplitDivider", () => {
-  // shell: row [sidebar(fixed 240), chat(flex), inspector pane(fixed 300)],
-  // split content box 1000px. Rendered start widths sum to the content box
-  // minus gutters; the pure math only needs consistent startPx + contentPx.
+  // shell: row [sidebar(fixed 240), chat(flex), inspector pane(fixed 300)], split.
   const CONTENT = 1000;
 
   it("left fixed: grows over the flexible chat", () => {
@@ -1209,7 +1130,6 @@ describe("dragSplitDivider", () => {
   it("left fixed: caps against the flexible chat floor (320)", () => {
     const t = defaultTree();
     const out = dragSplitDivider(t, 1, [240, 460, 300], 900, CONTENT);
-    // room = 1000 - 300(inspector) = 700; max = 700 - 320 = 380
     assert.equal(asPane(out.split.children[0]).fixed, 380);
   });
   it("left fixed: honors the 128px drag floor without collapsing", () => {
@@ -1221,7 +1141,7 @@ describe("dragSplitDivider", () => {
   });
   it("left fixed: snap attractor sticks the 320+-15 zone to 320", () => {
     const t = defaultTree();
-    // zone is 305..335: 304 stays free, 318/322 snap, 336 stays free
+    // zone is 305.335: 304 stays free, 318/322 snap, 336 stays free
     assert.equal(asPane(dragSplitDivider(t, 1, [240, 460, 300], 64, CONTENT).split.children[0]).fixed, 304);
     assert.equal(asPane(dragSplitDivider(t, 1, [240, 460, 300], 78, CONTENT).split.children[0]).fixed, 320);
     assert.equal(asPane(dragSplitDivider(t, 1, [240, 460, 300], 82, CONTENT).split.children[0]).fixed, 320);
@@ -1229,8 +1149,7 @@ describe("dragSplitDivider", () => {
   });
   it("snap never crosses the cap (clamped after snapping)", () => {
     const t = defaultTree();
-    // room = 1000 - 300; max 380: dragging toward 640 snaps to 640 but clamps
-    // to 380
+    // room = 1000 - 300; max 380: dragging toward 640 snaps to 640 but clamps to 380
     const out = dragSplitDivider(t, 1, [240, 460, 300], 700, CONTENT);
     assert.equal(asPane(out.split.children[0]).fixed, 380);
   });
@@ -1250,34 +1169,27 @@ describe("dragSplitDivider", () => {
   });
   it("right fixed: snap reads the inspector's px", () => {
     const t = defaultTree();
-    // widening (drag left) by 25: 325 -> inside 320's zone -> snaps to 320
     assert.equal(asPane(dragSplitDivider(t, 2, [240, 460, 300], -25, CONTENT).split.children[2]).fixed, 320);
   });
 
-  // --- card t_f6d5a771: the divider close (drag-past-min) - and t_6a74d5a1:
-  // the squeeze push-back chain is DELETED. The wall law (Endo ruling
-  // 2026-10-31): a divider drag moves ONLY that divider; past the absorbing
-  // neighbor's floor the drag STOPS at the wall and every other child's
-  // fixed px is bit-identical. If the far pane must donate space, the user
-  // moves its divider - two gestures, zero surprises.
+  // --: the divider close (drag-past-min) - and. If the far pane must donate space, the
+  // user moves its divider - two gestures, zero surprises.
   const sidebarIdOf = (t: DockSplit) => asPane(t.children[0]).id;
   const inspectorIdOf = (t: DockSplit) => asPane(t.children[2]).id;
 
   it("drag-past-min CLOSES the sidebar: the left divider reports a hide intent", () => {
     const t = defaultTree();
-    // req 240 - 113 = 127 < 128: the pane goes
     const out = dragSplitDivider(t, 1, [240, 460, 300], -113, CONTENT);
     assert.equal(out.collapsedPaneId, sidebarIdOf(t));
   });
   it("drag-past-min CLOSES the inspector: the right divider mirrors it", () => {
     const t = defaultTree();
-    // req 300 - 173 = 127 < 128 (delta +173): the pane goes
     const out = dragSplitDivider(t, 2, [240, 460, 300], 173, CONTENT);
     assert.equal(out.collapsedPaneId, inspectorIdOf(t));
   });
   it("WALL: over-cap drag stops AT the cap - the inspector beyond never moves", () => {
     const t = defaultTree();
-    // widening the sidebar: req 480, cap = 1000 - 300(inspector) - 320(chat floor) = 380
+    // widening the sidebar: req 480, cap = 1000.
     const out = dragSplitDivider(t, 1, [240, 460, 300], 240, CONTENT);
     assert.equal(asPane(out.split.children[0]).fixed, 380, "stops dead at the wall");
     assert.equal(asPane(out.split.children[2]).fixed, 300, "the inspector is bit-identical");
@@ -1285,7 +1197,6 @@ describe("dragSplitDivider", () => {
   });
   it("WALL: a cap-busting drag still closes nothing and moves nothing else", () => {
     const t = defaultTree();
-    // req 1140; cap 380 - the old chain reported the inspector as closed
     const out = dragSplitDivider(t, 1, [240, 460, 300], 900, CONTENT);
     assert.equal(out.collapsedPaneId, null, "the pushed pane close intent is gone");
     assert.equal(asPane(out.split.children[0]).fixed, 380, "clamped at room - 320");
@@ -1293,7 +1204,6 @@ describe("dragSplitDivider", () => {
   });
   it("WALL (inspector divider, row): the sidebar beyond never moves", () => {
     const t = defaultTree();
-    // widening the inspector: req 1200, cap = 1000 - 240(sidebar) - 320 = 440
     const out = dragSplitDivider(t, 2, [240, 460, 300], -900, CONTENT);
     assert.equal(asPane(out.split.children[2]).fixed, 440);
     assert.equal(asPane(out.split.children[0]).fixed, 240, "the sidebar is bit-identical");
@@ -1301,7 +1211,6 @@ describe("dragSplitDivider", () => {
   });
   it("WALL with no fixed pane beyond: plain cap (the last fixed pane owns no wall)", () => {
     const t = hideEdgePane(defaultTree(), "inspector");
-    // [sidebar(fixed 240), chat(flex)]: nothing beyond the chat to give
     const out = dragSplitDivider(t, 1, [240, 460], 900, 700);
     assert.equal(asPane(out.split.children[0]).fixed, 380);
     assert.equal(out.collapsedPaneId, null);
@@ -1309,8 +1218,8 @@ describe("dragSplitDivider", () => {
   it("both flexible: fractions shift in tandem against the content box", () => {
     const t = defaultTree();
     const inner = asSplit(splitPane(t, paneByComponent(t, "chat").id, "row", "after").children[1]);
-    // inner: [chat(flex), empty(flex)], fractions 0.5/0.5; content box 996px
-    // (1000 split width - one 4px gutter) splits 498/498 at drag start
+    // inner: [chat(flex), empty(flex)], fractions 0.5/0.5; content box 996px (1000
+    // split width.
     const out = dragSplitDivider(inner, 1, [498, 498], 100, 996);
     assert.ok(Math.abs(out.split.sizes[0] * 996 - 598) < 1e-6, `left got ${out.split.sizes[0] * 996}`);
     assert.ok(Math.abs(out.split.sizes[1] * 996 - 398) < 1e-6);
@@ -1319,9 +1228,8 @@ describe("dragSplitDivider", () => {
   });
   it("both flexible: 320 floor between them, cap clamps the fraction", () => {
     const t = defaultTree();
-    // card t_d04a1c80: the split's fresh pane seats the new-tab
-    // placeholder, which keeps the EMPTY pane's 320 floor - the pair still
-    // reads two chat-class floors
+    // the split's fresh pane seats the new-tab placeholder, which keeps the EMPTY
+    // pane's 320 floor.
     const inner = asSplit(asSplit(splitPane(t, paneByComponent(t, "chat").id, "row", "after")).children[1]);
     const out = dragSplitDivider(inner, 1, [498, 498], 900, 996);
     // room 996, max left 996 - 320 = 676 -> fraction 676/996; right keeps >=320
@@ -1345,7 +1253,6 @@ describe("graftSplit", () => {
     const out = graftSplit(t2, replaced.split);
     assert.equal(asSplit(out).children[1].id, inner.id);
     assert.equal(asSplit(asSplit(out).children[1]).sizes[0], replaced.split.sizes[0]);
-    // ids elsewhere untouched
     assert.equal(asPane(asSplit(out).children[0]).fixed, 240);
   });
   it("replaces the root when the replacement carries the root id; identity when absent", () => {
@@ -1354,7 +1261,6 @@ describe("graftSplit", () => {
     const dragged = dragSplitDivider(t, 1, [240, 460, 300], 50, 1000);
     // root id == replacement id -> the replacement IS the new root
     assert.equal(graftSplit(t, dragged.split), dragged.split);
-    // no such split inside -> original reference returned
     const fresh = defaultTree();
     const missing = asSplit(splitPane(fresh, paneByComponent(fresh, "chat").id, "row", "after").children[1]);
     const other = defaultTree();
@@ -1362,7 +1268,7 @@ describe("graftSplit", () => {
   });
 });
 
-// --- t_d6b657a7: locked sessions, free content, pinned shells -----------------
+// --: locked sessions, free content, pinned shells ----------------
 
 describe("tab DnD under the seat law (canvas C1)", () => {
   it("dropAllowedFor: the class law answers every target zone", () => {
@@ -1394,11 +1300,9 @@ describe("tab DnD under the seat law (canvas C1)", () => {
     let t: DockNode = defaultTree();
     const side = paneByComponent(t, "sidebar");
     const seat = side.tabs.map((x) => x.component);
-    // files joins the sessions bar first (a sidebar view visiting the
-    // primary sidebar - legal under the class law)
+    // files joins the sessions bar first (a sidebar view visiting the primary sidebar.
     const insp = paneByComponent(t, "files");
     t = moveTab(t, insp.id, 0, side.id, 1);
-    // bar: [sessions, files, ...seat]; drag files' caret to before tab 0
     t = moveTab(t, side.id, 1, side.id, 0);
     const bar = paneByComponent(t, "sidebar");
     assert.deepEqual(bar.tabs.slice(0, 2).map((x) => x.component), ["files", "sidebar"]);
@@ -1424,9 +1328,7 @@ describe("tab DnD under the seat law (canvas C1)", () => {
 
   it("empty shells are refillable: openSingleton / setPaneComponent target them", () => {
     let t: DockNode = defaultTree();
-    // drain the right shell into the main pane (free content), one at a
-    // time; the shell stays pinned and sits EMPTY (card t_9855a20e: the
-    // placeholder is retired - nothing is minted to fill it)
+    // drain the right shell into the main pane (free content), one at a time.
     const insp = paneByComponent(t, "files");
     const chat = paneByComponent(t, "chat");
     for (let i = 0; i < INSPECTOR_TAB_COMPONENTS.length; i++) {
@@ -1439,10 +1341,8 @@ describe("tab DnD under the seat law (canvas C1)", () => {
       "the drained shell sits empty (no seat)",
     );
     assert.equal(isPinnedPane(shell), true, "still a shell");
-    // the open path fills the shell again: drain the tabs into the main
-    // pane, then close that pane so the singletons truly died.
-    // Endo ruling 2026-10-25: the chat pane is the LAST MAIN pane, so a
-    // split must mint a second main pane before the remove may land
+    // the open path fills the shell again. Endo ruling: the chat pane is the LAST MAIN
+    // pane, so a split must mint a second main pane before the remove may land
     t = splitPane(t, chat.id, "row", "after");
     t = removePane(t, chat.id);
     const res = openSingleton(t, insp.id, "files");
@@ -1525,11 +1425,10 @@ describe("tab DnD under the seat law (canvas C1)", () => {
 
   it("restoreSeatSet re-adds a secondary-sidebar singleton that died with its pane", () => {
     let t: DockNode = defaultTree();
-    // kanban can only die via a pane prune: move it to the main pane,
-    // then close the main pane. Endo ruling 2026-10-25: that pane is the
-    // LAST MAIN pane, so a split must mint a second main pane first.
-    // card t_00e4a784: settings is NOT in this class any more - it left
-    // the inspector for the on-demand main tab (see the retire test).
+    // kanban can only die via a pane prune. Endo ruling: that pane is the LAST MAIN
+    // pane, so a split must mint a second main pane first.: settings is NOT in this
+    // class any more - it left the inspector for the on-demand main tab (see the retire
+    // test).
     const insp = paneByComponent(t, "files");
     const kanbanIdx = insp.tabs.findIndex((x) => x.component === "kanban");
     t = moveTab(t, insp.id, kanbanIdx, paneByComponent(t, "chat").id, 0); // kanban out (settings left the strip - t_00e4a784)
@@ -1545,13 +1444,8 @@ describe("tab DnD under the seat law (canvas C1)", () => {
   });
 
   it("retireInspectorSettings drops a persisted inspector seat, keeps a main-pane one (t_00e4a784)", () => {
-    // the pre-rule record: settings is pinned in the inspector bar
     let t: DockNode = defaultTree();
     assert.equal(findComponentTab(t, "settings"), null, "a fresh tree never seats settings");
-    // build the legacy seat by hand (the ruling removed every opener, and
-    // canvas C1's seat gate refuses a main-class view in the right shell -
-    // only a persisted RECORD can carry this shape, which is exactly what
-    // the loader's retire sees)
     const insp = paneByComponent(t, "files");
     insp.tabs = [...insp.tabs, { component: "settings" }];
     assert.equal(findComponentTab(t, "settings")!.paneId, insp.id);
@@ -1580,7 +1474,6 @@ describe("tab DnD under the seat law (canvas C1)", () => {
   });
 
   it("the loader pipeline (ensurePinnedEdges) repairs a v1-era tree end to end", () => {
-    // pre-marker era: sidebars toggled away, chat only
     const out = ensurePinnedEdges(makePane("chat"));
     const root = asSplit(out);
     assert.deepEqual(
@@ -1594,7 +1487,6 @@ describe("tab DnD under the seat law (canvas C1)", () => {
       INSPECTOR_TAB_COMPONENTS,
       "the default arrangement comes back with the shell",
     );
-    // a fully-satisfied modern tree is untouched
     const t = defaultTree();
     assert.equal(ensurePinnedEdges(t), t);
   });
@@ -1631,10 +1523,9 @@ describe("v1 layout migration (t_d6b657a7)", () => {
 
   it("a v2 arrangement reloads verbatim: shells empty stay empty - except insights' home (t_d7fd3ad3)", async () => {
     let t: DockNode = defaultTree();
-    // empty the right shell into the main pane, then persist. card
-    // t_d7fd3ad3: insights' home is the right shell now - its old
-    // main-area tab (closable then, unclosable in the new registry) is
-    // lifted back on boot, so the bar refills with exactly insights.
+    // empty the right shell into the main pane, then persist.: insights' home is the
+    // right shell now - its old main-area tab (closable then, unclosable in the new
+    // registry) is lifted back on boot, so the bar refills with exactly insights.
     const insp = paneByComponent(t, "files");
     let chatPane = paneByComponent(t, "chat");
     for (let i = 0; i < INSPECTOR_TAB_COMPONENTS.length; i++) {
@@ -1653,24 +1544,20 @@ describe("v1 layout migration (t_d6b657a7)", () => {
       "the bar refills with insights - its home, never main",
     );
     assert.equal(isPinnedPane(shell), true, "the marker survived");
-    // card t_00e4a784: settings is NOT part of the arrangement any more -
-    // it opens on demand from the menubar gear, so the reload seats none
+    // settings is NOT part of the arrangement any more.
     assert.equal(findComponentTab(tree, "settings"), null, "no settings seat on boot");
   });
 });
 
-// card t_aa9dbada: pane visibility saves WITH the layout - the record's
-// closed-edge set is what reloads restore (no shaped re-assertion over it).
+// pane visibility saves WITH the layout.
 describe("closed-edge persistence (card t_aa9dbada)", () => {
   it("serialize/deserializeLayout round-trips the closed-edge set", () => {
     const rec = deserializeLayout(serialize(defaultTree(), ["sidebar", "bottom"]))!;
     assert.deepEqual(rec.closedEdges, ["sidebar", "bottom"]);
-    // absent on records that predate the field (the legacy migration reads it)
     assert.equal(
       deserializeLayout(JSON.stringify({ v: 2, tree: defaultTree() }))!.closedEdges,
       undefined,
     );
-    // garbage entries filter, not fail
     const filtered = deserializeLayout(
       JSON.stringify({ v: 2, tree: defaultTree(), closedEdges: ["sidebar", "alien", 42] }),
     )!;
@@ -1687,9 +1574,7 @@ describe("closed-edge persistence (card t_aa9dbada)", () => {
     const out = ensurePinnedEdges(bare, ["sidebar", "inspector"]);
     assert.equal(findEdgePane(out, "sidebar"), null);
     assert.equal(findEdgePane(out, "inspector"), null);
-    // a closed side is never marker-MINTED from content either (a main pane
-    // hosting dragged-in inspector tabs would otherwise be claimed by the
-    // closed shell's reappearance)
+    // a closed side is never marker-MINTED from content either (a main pane hosting.
     const main = makeSplit("row", [makePane("files"), makePane("chat")]);
     const unclaimed = deriveEdgeMarkers(main, ["inspector"]);
     assert.equal(findEdgePane(unclaimed, "inspector"), null);
@@ -1708,7 +1593,6 @@ describe("closed-edge persistence (card t_aa9dbada)", () => {
     assert.equal(findEdgePane(second.tree.value, "sidebar"), null, "sessions sidebar stays closed");
     assert.equal(findEdgePane(second.tree.value, "inspector"), null, "inspector sidebar stays closed");
     assert.ok(paneCount(second.tree.value) >= 1, "the dock is never empty");
-    // the user reopens: that state persists too
     second.toggleEdge("sidebar", "before");
     await flush();
     const third = createDock(mem as unknown as Storage);
@@ -1731,15 +1615,11 @@ describe("closed-edge persistence (card t_aa9dbada)", () => {
   });
 });
 
-// card t_f1898589: the v:3 writer poisons its own record when a pane omits
-// the fixed field - splitPxShares' `fixed !== null` check passes for
-// undefined, the emit returns the undefined raw, JSON.stringify turns it
-// into null, and the strict reader rejects the whole record on boot (the
-// layout resets on every reload). The writer must NEVER emit a null px.
+// the v:3 writer poisons its own record when a pane omits the fixed field. The writer
+// must NEVER emit a null px.
 describe("v:3 px shares tolerate a pane that omits fixed (t_f1898589)", () => {
   it("serialize emits finite positive px; the record loads back", () => {
-    // a pane built WITHOUT the fixed field (the shape a sloppy factory
-    // produces - makePane defaults null, bypasses get undefined)
+    // a pane built WITHOUT the fixed field (the shape a sloppy factory produces.
     const noFixedA = {
       kind: "pane", id: nextNodeId(), tabs: [{ component: "sidebar" }], active: 0,
     } as unknown as DockPane;

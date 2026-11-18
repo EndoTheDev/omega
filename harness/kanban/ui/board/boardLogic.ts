@@ -17,8 +17,7 @@ export const BOARD_STATUSES = [
 
 export type BoardStatus = (typeof BOARD_STATUSES)[number];
 
-// The URL the board view lives at (the shell anchors the main-pane
-// switcher here, the same way /chat/<id> anchors a session).
+// The URL the board view lives at (the shell anchors the main-pane switcher here, the.
 export const BOARD_PATH = "/board";
 
 /** true when p is the board route ("/board", trailing slash tolerated). */
@@ -26,15 +25,15 @@ export function isBoardPath(p: string): boolean {
   return p === BOARD_PATH || p === BOARD_PATH + "/";
 }
 
-// --- lane rails (card t_50a8c145): ANY lane folds to a thin vertical
+// -- lane rails: ANY lane folds to a thin vertical
 // rail - the Hermes lane-collapse model, ruled in for omega. The old
 // settled-only fold (done/archived collapsed, the "N folded" note) is
 // superseded and gone: the lane model below is the only one.
 //
 // Two numbers are geometry contracts, not taste:
-//   - the rail is ~36px wide (32-40 ruled), wide enough for a dot, a
+// the rail is ~36px wide (32-40 ruled), wide enough for a dot, a
 //     vertical name and a count, narrow enough to keep the strip usable;
-//   - the fold eases over ~180ms (Hermes snaps; omega ruled an ease).
+// the fold eases over ~180ms (Hermes snaps; omega ruled an ease).
 export const LANE_RAIL_PX = 36;
 export const LANE_EASE_MS = 180;
 
@@ -56,20 +55,11 @@ export function laneTone(status: string): string {
   return LANE_TONES[status as BoardStatus] ?? LANE_TONES.triage;
 }
 
-// A pin is the user's override for one lane: "open" (pinned open) or
-// "collapsed" (pinned to its rail). Absent = no override, which reads as
-// open for a lane holding cards.
+// A pin is the user's override for one lane.
 export type LanePin = "open" | "collapsed";
 export type LanePins = Record<string, LanePin>;
 
-/**
- * laneFolded is the ONE fold law. A drained lane folds itself, a lane
- * holding cards stays open - and a CLICK outranks both, because since
- * the 0.17.3 make-over a collapsed lane expands on click whether it
- * holds cards or not (the empty lane included: the rail carries the same
- * + the header does, so an empty lane is a place to look, not a dead
- * strip). The pin is the click's record; absent = no override.
- */
+/** laneFolded is the ONE fold law. */
 export function laneFolded(status: string, count: number, pins: LanePins): boolean {
   const pin = pins[status];
   if (pin === "open") return false;
@@ -77,14 +67,7 @@ export function laneFolded(status: string, count: number, pins: LanePins): boole
   return count <= 0; // a drained lane collapses - the auto-collapse law
 }
 
-/**
- * toggleLanePin flips one lane between its rail and its column. The flip
- * reads the lane's CURRENT shape (law: a click on a collapsed lane
- * expands it), so an EMPTY lane - folded by default - opens on the same
- * click and keeps its open pin until the user folds it again. This is
- * the 0.17.3 change: reality (count 0) no longer vetoes the click, so
- * there is nothing to reconcile away later either.
- */
+/** toggleLanePin flips one lane between its rail and its column. */
 export function toggleLanePin(
   status: string,
   count: number,
@@ -94,11 +77,7 @@ export function toggleLanePin(
   return { ...pins, [status]: next };
 }
 
-// Narrow-board adaptation (card t_49d0b308): the inspector's ~300px
-// column cannot host the wide column strip, so the rendered width flips
-// the `narrow` class and the columns stack instead of scrolling
-// sideways. The threshold sits above the sidebar's default 240-300 and
-// under every snap point's slack: a drag past 320 widens back.
+// Narrow-board adaptation: the inspector's ~300px column cannot host the wide column.
 export const NARROW_MAX_PX = 360;
 
 /** narrow below this rendered width; zero (unmounted measure noise) never is */
@@ -108,11 +87,7 @@ export function isNarrowWidth(px: number): boolean {
 
 // One task row, exactly what GET /tasks returns.
 
-// last_heartbeat_at rides only when the store stamps it (the Hermes
-// board does; omega's own store has no heartbeat column yet, so its
-// rows end at started_at). Optional on purpose: the card's chip reads
-// the field when the wire grows it, and no view has to know which
-// store answered.
+// last_heartbeat_at rides only when the store stamps it (the Hermes board does.
 export interface BoardTask {
   id: string;
   title: string;
@@ -126,18 +101,14 @@ export interface BoardTask {
   started_at: string;
   completed_at: string;
   last_heartbeat_at?: string;
-  // board is the NAME of the board a row lives on. Only the all-boards
-  // read (GET /tasks?scope=all, the view's all-boards search scope)
-  // carries it: every other route addresses a card by (board, id), so a
-  // mixed list must say which board a row belongs to. Empty/absent on a
-  // board-scoped read.
+  // board is the NAME of the board a row lives on. Only the all-boards read (GET
+  // /tasks?scope=all, the view's all-boards search scope) carries it: every other route
+  // addresses a card by (board, id), so a mixed list must say which board a row belongs
+  // to.
   board?: string;
 }
 
-// --- priority (the round t_f81e845e): an integer urgency tiebreak in
-// the Hermes shape (higher = more urgent, 0 = normal). The store
-// accepts any non-negative int (tools/CLI may set more); the board UI
-// offers the 0..3 ladder and the card chip renders whatever stands.
+// -- priority: an integer urgency tiebreak in the Hermes shape (higher = more urgent.
 
 export const PRIORITY_LEVELS = [0, 1, 2, 3] as const;
 
@@ -159,10 +130,7 @@ export function priorityOptions(): { value: number; label: string }[] {
   }));
 }
 
-/**
- * bodyPreview is the card's dimmed teaser: the body's first non-empty
- * line, truncated for the column width.
- */
+/** bodyPreview is the card's dimmed teaser. */
 export function bodyPreview(body: string): string {
   const line = (body ?? "")
     .split("\n")
@@ -172,24 +140,19 @@ export function bodyPreview(body: string): string {
   return line.length > 80 ? line.slice(0, 79) + "…" : line;
 }
 
-// --- card polish (card t_65ea61a1): the card is a reading surface, not
-// a wall of text. The Hermes grammar is a 2-line title, a clamped body
-// teaser, the assignee as a chip and ONE meta row. The clamp is one
-// number fed to CSS as a custom property (the same shape as the lane
-// ease): the constant drives the rendered line count instead of
-// agreeing with it by luck.
+// -- card polish: the card is a reading surface, not a wall of text.
 
 /** the card text clamp: two lines, title and teaser alike. */
 export const CARD_CLAMP_LINES = 2;
 
-// --- the running heartbeat chip (card t_65ea61a1, Endo ruling
-// 2026-11-12: "the running card dont have a heartbeat"). The store kept
+// -- the running heartbeat chip
+// "the running card dont have a heartbeat"). The store kept
 // the data the eye never showed: a running card knows when it started,
 // and a beating worker knows when it last spoke. The chip says both.
 //
 // Two clocks, deliberately different:
-//   - the WORKING duration only ever grows (from started_at);
-//   - STALENESS only comes back when a beat lands (from
+// the WORKING duration only ever grows (from started_at);
+// STALENESS only comes back when a beat lands (from
 //     last_heartbeat_at) - a card cannot heal itself by waiting.
 //
 // HEARTBEAT_STALE_MS is the eye's threshold, not the dispatcher's: a
@@ -199,18 +162,17 @@ export const CARD_CLAMP_LINES = 2;
 // every few seconds, and short enough to see across the board.
 export const HEARTBEAT_STALE_MS = 120000;
 
-/** the chip's clock cadence: the label reads whole minutes, so a 5s
- * tick advances it on the minute without turning the board into a
- * polling surface (this timer never fetches). */
+/**
+ * the chip's clock cadence: the label reads whole minutes, so a 5s tick advances it on
+ * the minute without turning the board into a polling surface (this timer never
+ * fetches).
+ */
 export const HEARTBEAT_TICK_MS = 5000;
 
 // One running chip's rendered state.
 export interface HeartbeatChip {
-  /** the face: "working - 3m" | "working" | "stale - 4m quiet" */
   label: string;
-  /** true once the heartbeat has aged past HEARTBEAT_STALE_MS */
   stale: boolean;
-  /** whole ms the card has been running (0 when the row carries no start) */
   runningMs: number;
 }
 
@@ -220,13 +182,9 @@ export function minuteLabel(ms: number): string {
 }
 
 /**
- * heartbeatChip is the chip for one card, or null when there is nothing
- * to say: only a RUNNING card beats. A start it cannot parse is not a
- * duration to invent, so that card wears the bare "working" face.
- *
- * Staleness needs an AGED stamp. A row with no last_heartbeat_at is not
- * stale - silence is not evidence, and no wire field at all is not the
- * same claim as a field that stopped moving.
+ * heartbeatChip is the chip for one card, or null when there is nothing to say.
+ * A start it cannot parse is not a duration to invent, so that card wears the bare
+ * "working" face.
  */
 export function heartbeatChip(
   task: BoardTask,
@@ -247,10 +205,8 @@ export function heartbeatChip(
   return { label, stale, runningMs };
 }
 
-// --- board switcher (card t_d7a7beaa): named boards + a current-board
-// pointer, Hermes-shaped. The pointer serves the default; /boards
-// lists the registry. There is no cross-board move anywhere - a card
-// lives on exactly one board.
+// -- board switcher: named boards + a current-board pointer, Hermes-shaped. There is no
+// cross-board move anywhere - a card lives on exactly one board.
 
 // One registry row (GET /boards payload).
 export interface BoardInfo {
@@ -263,12 +219,7 @@ export function isCurrentBoard(b: BoardInfo): boolean {
   return b.current;
 }
 
-/**
- * withBoard appends ?board=... to an API path, keeping any existing
- * query string intact. Empty board adds nothing (the server then
- * serves its own default - the pointer target), so pre-registry
- * installs hit the exact same URLs as before.
- */
+/** withBoard appends ?board=.. */
 export function withBoard(path: string, board: string): string {
   const trimmed = (board ?? "").trim();
   if (trimmed === "") return path;
@@ -276,28 +227,17 @@ export function withBoard(path: string, board: string): string {
   return `${path}${join}board=${encodeURIComponent(trimmed)}`;
 }
 
-/**
- * pickBootBoard chooses the switcher's initial selection from the
- * /boards payload: the flagged current board, else "main". An empty
- * registry (capability absent) degrades to "" - no switcher.
- */
+/** pickBootBoard chooses the switcher's initial selection from the /boards payload. */
 export function pickBootBoard(boards: BoardInfo[]): string {
   if (!Array.isArray(boards) || boards.length === 0) return "";
   const cur = boards.find((b) => b && isCurrentBoard(b));
   return cur ? cur.name : boards[0].name;
 }
 
-// --- the assignee source (0.17.3 make-over) ---------------------------
-// The create form's assignee control is a COMBOBOX fed by the SAME source
-// the cron editor's agent field reads: GET /agents (the roster inventory -
-// the main profile first, then every agents/<name> home, named `default`
-// for the home root). The fetcher is COPIED here rather than imported: a
-// module UI owns its own copy and imports no other module's code.
-//
-// Typing stays legal: a card may name a worker the registry no longer
-// lists (or never did), and the form must never strand that card. A failed
-// GET degrades to no options - the field stays a plain text input - never
-// to a blocked form.
+// -- the assignee source (0.17.3 make-over) --------------------------- The create.
+// Typing stays legal: a card may name a worker the registry no longer lists (or never
+// did), and the form must never strand that card. A failed GET degrades to no options -
+// the field stays a plain text input - never to a blocked form.
 
 export interface AgentOption {
   value: string;
@@ -305,18 +245,14 @@ export interface AgentOption {
   hint: string;
 }
 
-// agentRowWire is the subset of GET /agents this view reads (the roster
-// row shape the cron editor reads too).
+// agentRowWire is the subset of GET /agents this view reads (the roster row shape the.
 interface AgentRowWire {
   name?: string;
   description?: string;
   continuous?: boolean;
 }
 
-/**
- * fetchAgentOptions reads the agent registry. The fetch is a parameter so
- * the node suite can stub it (the same shape fetchBoardsRetry uses).
- */
+/** fetchAgentOptions reads the agent registry. */
 export async function fetchAgentOptions(
   fetchImpl: BoardFetch = fetch,
 ): Promise<AgentOption[]> {
@@ -359,10 +295,9 @@ export interface BoardEvent {
 }
 
 /**
- * columns buckets tasks into the canonical column order. Unknown
- * statuses cannot exist (the store validates at the door), but nothing
- * here throws on one regardless - it just lands nowhere and the count
- * mismatch would show.
+ * columns buckets tasks into the canonical column order.
+ * Unknown statuses cannot exist (the store validates at the door), but nothing here
+ * throws on one regardless - it just lands nowhere and the count mismatch would show.
  */
 export function columns(tasks: BoardTask[]): BoardTask[][] {
   const by = new Map<string, BoardTask[]>(
@@ -376,11 +311,7 @@ export function columns(tasks: BoardTask[]): BoardTask[][] {
   return BOARD_STATUSES.map((s) => by.get(s) as BoardTask[]);
 }
 
-/**
- * step moves one frame along the board for the arrow buttons: +1 right,
- * -1 left, clamped at the edges (out-of-range returns null - the button
- * does not render).
- */
+/** step moves one frame along the board for the arrow buttons. */
 export function step(status: string, dir: -1 | 1): string | null {
   const i = BOARD_STATUSES.indexOf(status as BoardStatus);
   if (i < 0) return null;
@@ -389,21 +320,14 @@ export function step(status: string, dir: -1 | 1): string | null {
   return BOARD_STATUSES[j];
 }
 
-// --- board removal / rename (card t_95c5527f; 0.17.3 make-over) -------
-// The board's own surface lives in the panel band: the selector, the
-// search seat, and the two destructive ops. Since 0.17.3 NOTHING is
-// reserved - main and the current board are removable, and a home may end
-// on zero boards (the panel then renders its create-board empty state).
-// The server is still the law about WHEN: a board holding a live card
-// refuses, naming the count, and the refusal text surfaces verbatim.
+// -- board removal / rename ------- The board's own surface lives in the panel band.
 
 export const DEFAULT_BOARD_NAME = "main";
 
 /** the create-board POST path (the empty state's only control). */
 export const BOARDS_PATH = "/boards";
 
-/** true when a named board may carry the remove control: any board the
- * registry actually named. An empty selection has nothing to remove. */
+/** true when a named board may carry the remove control. */
 export function canRemoveBoard(name: string): boolean {
   return name !== "";
 }
@@ -413,21 +337,17 @@ export function boardDeletePath(name: string): string {
   return `/boards/${encodeURIComponent(name)}`;
 }
 
-/** the PATCH path a rename rides (same address as the delete: the board's
- * own row). */
+/** the PATCH path a rename rides (same address as the delete: the board's own row). */
 export function boardRenamePath(name: string): string {
   return boardDeletePath(name);
 }
 
-// --- the board dropdown's VERBS (card t_2b644603) ---------------------
-// The band holds title + board chip + count | filter and nothing else:
-// rename and remove are rows of the board dropdown, below the board
-// list. They ride the SAME ladder as the boards (one roving tabindex,
-// one keyboard law - no second popup grammar), so a verb is an option
-// value that cannot collide with a board name: the server's boardNameRE
-// starts every name with [a-z0-9]. The values are exact-match only, so
-// a stray `!`-prefixed board name from any other source switches to a
-// board and never fires a verb.
+// -- the board dropdown's VERBS --------------------- The band holds title + board.
+// They ride the SAME ladder as the boards (one roving tabindex, one keyboard law - no
+// second popup grammar), so a verb is an option value that cannot collide with a board
+// name: the server's boardNameRE starts every name with [a-z0-9]. The values are
+// exact-match only, so a stray `!`-prefixed board name from any other source switches
+// to a board and never fires a verb.
 
 /** the dropdown row that starts the inline rename. */
 export const BOARD_MENU_RENAME = "!rename";
@@ -441,21 +361,14 @@ export type BoardMenuPick =
   | { kind: "rename" }
   | { kind: "remove" };
 
-/**
- * boardMenuPick classifies a BandSelect value: the two verb sentinels are
- * exact matches, everything else is a board name (the switcher's value).
- */
+/** boardMenuPick classifies a BandSelect value. */
 export function boardMenuPick(value: string): BoardMenuPick {
   if (value === BOARD_MENU_RENAME) return { kind: "rename" };
   if (value === BOARD_MENU_REMOVE) return { kind: "remove" };
   return { kind: "board", name: value };
 }
 
-/**
- * boardMenuOptions is the dropdown ladder: every board, then the two
- * verbs. `armed` relabels the remove row (the confirm rides the menu item
- * - the band keeps no destructive control).
- */
+/** boardMenuOptions is the dropdown ladder: every board, then the two verbs. */
 export function boardMenuOptions(
   boards: BoardInfo[],
   armed = false,
@@ -471,29 +384,18 @@ export function boardMenuOptions(
   ];
 }
 
-/**
- * boardCount is the band's lead count: the whole board when the seat is
- * idle ("12 cards"), the match tally while a filter runs ("3/12" - the
- * filter's answer, and short enough for a 318px pane).
- */
+/** boardCount is the band's lead count. */
 export function boardCount(shown: number, total: number, filtering: boolean): string {
   if (filtering) return `${shown}/${total}`;
   return `${total} card${total === 1 ? "" : "s"}`;
 }
 
-// --- search / filter (0.17.3 make-over) -------------------------------
-// One seat, TWO scopes: the board you are looking at, and every board.
-// The scope is a server read (?scope=all), not a client union of N
-// boards' lists - the store joins once and stamps each row with its
-// board, so a mixed result can still address a card (board, id).
+// -- search / filter (0.17.3 make-over) ------------------------------- One seat, TWO
+// scopes.
 
 export type SearchScope = "board" | "all";
 
-/**
- * filterTasks is the search itself: a case-insensitive substring over the
- * fields a reader can see or type - title, body, assignee and card id.
- * An empty query is every card (the seat is idle, not a filter).
- */
+/** filterTasks is the search itself. */
 export function filterTasks(tasks: BoardTask[], query: string): BoardTask[] {
   const q = (query ?? "").trim().toLowerCase();
   if (q === "") return tasks;
@@ -504,40 +406,27 @@ export function filterTasks(tasks: BoardTask[], query: string): BoardTask[] {
   );
 }
 
-/**
- * tasksPath is the list read for one scope: the current board (the same
- * URL the grid has always used) or every board at once. status=all rides
- * both: the grid carries the archived lane too.
- */
+/** tasksPath is the list read for one scope. */
 export function tasksPath(board: string, scope: SearchScope): string {
   if (scope === "all") return "/tasks?status=all&scope=all";
   return withBoard("/tasks?status=all", board);
 }
 
-/**
- * boardOf names the board a card belongs to: the row's own board when the
- * all-boards read stamped one, else the board being viewed. Every drawer
- * and mutation call addresses a card through this.
- */
+/** boardOf names the board a card belongs to. */
 export function boardOf(task: BoardTask, viewed: string): string {
   return (task.board ?? "").trim() || viewed;
 }
 
-/**
- * taskDeletePath is the DELETE path for one card (id always encoded) -
- * the detail path with the DELETE method; board selection rides
- * withBoard like every other task route.
- */
+/** taskDeletePath is the DELETE path for one card (id always encoded). */
 export function taskDeletePath(id: string): string {
   return `/tasks/${encodeURIComponent(id)}`;
 }
 
 /**
- * reorderAfter moves one task to (status, after a sibling) inside the
- * board's flat list and returns the new array - or null when the id is
- * unknown. afterId names the card ABOVE the insertion slot ("" = top
- * of the column), the exact pair the server's PATCH after_id takes, so
- * the optimistic board view is exactly what persisted.
+ * reorderAfter moves one task to (status, after a sibling) inside the board's flat.
+ * afterId names the card ABOVE the insertion slot ("" = top of the column), the exact
+ * pair the server's PATCH after_id takes, so the optimistic board view is exactly what
+ * persisted.
  */
 export function reorderAfter(
   tasks: BoardTask[],
@@ -559,8 +448,7 @@ export function reorderAfter(
 }
 
 /**
- * age renders a card's created_at as a compact relative age
- * ("now", "42m", "3h", "5d"). Unparseable stamps render nothing.
+ * age renders a card's created_at as a compact relative age ("now", "42m", "3h", "5d").
  */
 export function age(iso: string, now: Date = new Date()): string {
   const t = Date.parse(iso);
@@ -574,17 +462,11 @@ export function age(iso: string, now: Date = new Date()): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-// --- the mounted /boards fetch retry (nightlies 42268953671 and
-// 42260775149, cards t_7cdac186 / t_82e5d149): Board.vue gates the
-// switcher chip on `boards.length > 0` (0.17.3 make-over; the
-// pre-make-over gate was `boards.length > 1 || boardName`, so the chip
-// is a MORE present control now, never less), and the fetch runs ONCE
-// per mount - a fetch that misses under CI suite load leaves no chip
-// for the whole page life. Bounded retry: a few attempts with a short
-// backoff; a 404 exits immediately (single-board installs will not heal
-// on a wait); a final miss keeps the old behavior - silent, the board
-// still renders, the journey's reload fallback stays the last resort.
-// Lives here so the stubbed-fetch test can pin it.
+// -- the mounted /boards fetch retry: Board.vue gates the switcher chip on
+// `boards.length > 0` (0.17.3 make-over; the pre-make-over gate was `boards.length > 1
+// || boardName`, so the chip is a MORE present control now, never less), and the fetch
+// runs ONCE per mount - a fetch that misses under CI suite load leaves no chip for the
+// whole page life.
 
 export const BOARD_FETCH_ATTEMPTS = 3;
 export const BOARD_FETCH_BACKOFF_MS = 300;
@@ -598,10 +480,7 @@ export type FetchBoardsOpts = {
 };
 
 /**
- * fetchBoardsRetry GETs /boards with a bounded retry and returns the
- * board registry, or null when the capability is absent (404) or every
- * attempt misses. Lives in boardLogic because it is pure: the fetch
- * comes in as a parameter, the sleep is injectable, no window state.
+ * fetchBoardsRetry GETs /boards with a bounded retry and returns the board registry.
  */
 export async function fetchBoardsRetry(
   fetchImpl: BoardFetch,
@@ -620,7 +499,6 @@ export async function fetchBoardsRetry(
       }
       if (res.status === 404) return null; // capability absent: single-board install - a wait will not heal it
     } catch {
-      // hiccup: transient under suite load, ride the backoff below
     }
     if (attempt < attempts - 1) await sleep(backoffMs);
   }

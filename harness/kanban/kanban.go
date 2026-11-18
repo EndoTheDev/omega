@@ -8,9 +8,7 @@ import (
 	"time"
 )
 
-// Status is the exact 9-status hermes board grammar. Any status may
-// move to any other (one agent, no dispatch races to armor); unknown
-// statuses are rejected at the door.
+// Status is the exact 9-status hermes board grammar.
 const (
 	StatusTriage    = "triage"
 	StatusTodo      = "todo"
@@ -35,27 +33,21 @@ func IsStatus(s string) bool {
 	return slices.Contains(statuses, s)
 }
 
-// StatusAll is a list-only filter value, never a board status: the
-// explicit everything-scan that includes archived cards. The default
-// list (an empty status) shows the active board instead.
+// StatusAll is a list-only filter value, never a board status.
 const StatusAll = "all"
 
-// IsListStatus reports whether s is a legal list filter: the 9 board
-// statuses plus the list-only "all". Args validating a LIST use this;
-// args validating a task's own status keep IsStatus.
+// IsListStatus reports whether s is a legal list filter.
 func IsListStatus(s string) bool {
 	return s == StatusAll || IsStatus(s)
 }
 
-// IsSettled reports whether the status is a terminal resting state
-// (done, archived) - the board renders those columns dimmed.
+// IsSettled reports whether the status is a terminal resting state (done, archived).
 func IsSettled(s string) bool {
 	return s == StatusDone || s == StatusArchived
 }
 
-// newTaskID returns a "t_" + 8 random hex chars id (collision chance
-// ~1 in 4 billion per draw; the store retries on the UNIQUE constraint
-// just in case).
+// newTaskID returns a "t_" + 8 random hex chars id (collision chance ~1 in 4 billion
+// per draw.
 func newTaskID() string {
 	var b [4]byte
 	if _, err := rand.Read(b[:]); err != nil {

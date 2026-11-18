@@ -1,22 +1,16 @@
 package mcp
 
 // cli.go: the mcp subcommand (card t_2a649d87) - `omega mcp
-// list|add|edit|delete`, the terminal face of the same entry CRUD the
-// HTTP routes serve. The capsule registers the name at mount
-// (RegisterSubcommand, v0.12 phase D Q6: the module owns its argv),
-// exactly like crons and skills.
-//
-// Every write rides saveServerAndReload / deleteServerAndReload - the
-// SAME law POST /mcp/save and POST /mcp/delete ride (validate, node
-// splice, atomic write, bridge swap). The CLI adds no second writer:
-// `omega mcp add` and a wire save land byte-identically in mcp.yaml.
-//
-// Verb grammar is the crons card's (t_aca45258, reviewed and merged):
-// the bare word lists, the name is the first positional of every write
-// verb (Go's flag package stops at the first non-flag argument, so a
-// trailing name would swallow the flags), edit applies only the flags
-// actually passed, and a leading-dash first argument is a usage error -
-// never a guessed name.
+// list|add|edit|delete`, the terminal face of the same entry CRUD the HTTP routes. The
+// capsule registers the name at mount (RegisterSubcommand, v0.12 phase D Q6: the module
+// owns its argv), exactly like crons and skills. Every write rides saveServerAndReload
+// / deleteServerAndReload - the SAME law POST /mcp/save and POST /mcp/delete ride
+// (validate, node splice, atomic write, bridge swap). The CLI adds no second writer:
+// `omega mcp add` and a wire save land byte-identically in mcp.yaml. Verb grammar is
+// the crons card's: the bare word lists, the name is the first positional of every
+// write verb (Go's flag package stops at the first non-flag argument, so a trailing
+// name would swallow the flags), edit applies only the flags actually passed, and a
+// leading-dash first argument is a usage error - never a guessed name.
 
 import (
 	"flag"
@@ -27,9 +21,7 @@ import (
 	"text/tabwriter"
 )
 
-// mcpSummary is the one-line entry the global `omega --help` module
-// section shows for this capsule (the listing is registry
-// introspection).
+// mcpSummary is the one-line entry the global `omega --help` module section shows for.
 const mcpSummary = "mcp servers: list, add, edit, delete (see: omega mcp --help)"
 
 // mcpHelp is the module's own help: `omega mcp --help` prints it.
@@ -56,9 +48,7 @@ style survive the splice), atomically, then the live bridge swaps - no
 restart. Adding on a home with no mcp.yaml creates <home>/config/mcp.yaml.
 `
 
-// cmdMCP builds the subcommand handler. The closure keeps the mounted
-// plugin - the same bridge instance the routes and the tool provider
-// read.
+// cmdMCP builds the subcommand handler.
 func cmdMCP(p *Plugin) func([]string) error {
 	return func(args []string) error {
 		if len(args) == 0 {
@@ -87,9 +77,7 @@ func cmdMCP(p *Plugin) func([]string) error {
 	}
 }
 
-// mcpList renders the server table from the LIVE bridge - the same
-// StatusReport GET /mcp/servers answers, so the terminal and the MCP
-// tab speak one table.
+// mcpList renders the server table from the LIVE bridge.
 func mcpList(p *Plugin, w io.Writer) error {
 	rep := StatusReport{Source: "none", Servers: []ServerStatus{}}
 	if active := p.activeBridge(); active != nil {
@@ -136,9 +124,7 @@ func (l *listValue) Set(v string) error {
 	return nil
 }
 
-// mcpFlags is the parsed flag set of add/edit. enabled defaults to true
-// (a fresh entry connects); edit only applies it when the flag was
-// passed (flag.Visit).
+// mcpFlags is the parsed flag set of add/edit.
 type mcpFlags struct {
 	command string
 	args    listValue
@@ -165,8 +151,7 @@ func parseMCPArgs(args []string) (*mcpFlags, []string, *flag.FlagSet, error) {
 	return f, fs.Args(), fs, nil
 }
 
-// serverName peels the one positional a write verb needs (the crons
-// jobName law: name first, leftovers are a usage error).
+// serverName peels the one positional a write verb needs (the crons jobName law.
 func serverName(verb string, args []string) (string, []string, error) {
 	if len(args) == 0 {
 		return "", nil, fmt.Errorf("usage: omega mcp %s <name> [flags] (omega mcp --help lists them)", verb)
@@ -177,9 +162,8 @@ func serverName(verb string, args []string) (string, []string, error) {
 	return args[0], args[1:], nil
 }
 
-// splitPairs turns repeated KEY=VALUE / K:V flags into a map. A value
-// without the separator is a usage error naming the flag - never a
-// silent drop.
+// splitPairs turns repeated KEY=VALUE / K:V flags into a map. A value without the
+// separator is a usage error naming the flag - never a silent drop.
 func splitPairs(flagName, sep string, values []string) (map[string]string, error) {
 	if len(values) == 0 {
 		return nil, nil
@@ -196,10 +180,7 @@ func splitPairs(flagName, sep string, values []string) (map[string]string, error
 	return out, nil
 }
 
-// mcpAdd creates one entry. The schema law is validateServerEntry's
-// (called by upsertServerEntry): a missing transport, both transports,
-// a bad url - every rejection names the field and nothing reaches the
-// disk.
+// mcpAdd creates one entry.
 func mcpAdd(p *Plugin, args []string) error {
 	name, flagArgs, err := serverName("add", args)
 	if err != nil {
@@ -241,11 +222,9 @@ func mcpAdd(p *Plugin, args []string) error {
 	return nil
 }
 
-// mcpEdit changes the named entry. The current definition is the base -
-// only flags the operator actually passed are applied, so `omega mcp
-// edit docs --enabled=false` never rewrites the command or the args.
-// Repeatable flags: --arg replaces the whole argument list, --env and
-// --header merge key by key into the existing maps.
+// mcpEdit changes the named entry. The current definition is the base - only flags the
+// operator actually passed are applied, so `omega mcp edit docs --enabled=false` never
+// rewrites the command or the args.
 func mcpEdit(p *Plugin, args []string) error {
 	name, flagArgs, err := serverName("edit", args)
 	if err != nil {
@@ -324,8 +303,7 @@ func mcpEdit(p *Plugin, args []string) error {
 	return nil
 }
 
-// mcpDelete removes one entry. The returned report is the landed
-// truth; the confirmation counts what remains.
+// mcpDelete removes one entry.
 func mcpDelete(p *Plugin, args []string) error {
 	name, rest, err := serverName("delete", args)
 	if err != nil {
@@ -345,8 +323,7 @@ func mcpDelete(p *Plugin, args []string) error {
 	return nil
 }
 
-// printMCPSaved reports the landed row (the same truth the HTTP route
-// answers): transport, enablement, connection state and tool count.
+// printMCPSaved reports the landed row (the same truth the HTTP route answers).
 func printMCPSaved(rep StatusReport, name string) {
 	for _, s := range rep.Servers {
 		if s.Name != name {

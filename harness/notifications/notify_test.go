@@ -35,7 +35,6 @@ func TestEmitFillsAndValidates(t *testing.T) {
 		t.Fatalf("emit defaults wrong: %+v", out)
 	}
 
-	// verdict "" normalizes, failed survives, garbage kind and verdict reject
 	if _, err := s.Emit(core.Notice{Kind: "cron", SourceID: "nightly", Verdict: "failed"}); err != nil {
 		t.Fatalf("emit failed verdict: %v", err)
 	}
@@ -85,13 +84,11 @@ func TestListUnreadFilterAndCount(t *testing.T) {
 			t.Fatalf("unread filter leaked a read row: %+v", n)
 		}
 	}
-	// the full list still carries everything; count stays a whole-set number
 	notes, unread, _ = s.List(ctx, false, 0, 0)
 	if len(notes) != 3 || unread != 2 {
 		t.Fatalf("full list = %d rows, count %d, want 3/2", len(notes), unread)
 	}
 
-	// pagination: limit+offset page through newest first
 	notes, _, _ = s.List(ctx, false, 1, 1)
 	if len(notes) != 1 || notes[0].ID != 2 {
 		t.Fatalf("page limit=1 offset=1 = %+v, want id 2", notes)
@@ -157,8 +154,7 @@ func TestSubscribeBroadcastAndCancel(t *testing.T) {
 		t.Fatalf("no broadcast within 2s")
 	}
 
-	// cancel is idempotent and releases the subscription; a later emit
-	// must not reach the closed channel
+	// cancel is idempotent and releases the subscription; a later emit must not reach.
 	cancel()
 	cancel()
 	if _, err := s.Emit(core.Notice{Kind: "chat", SourceID: "task-2"}); err != nil {
@@ -207,8 +203,7 @@ func TestEmitConcurrent(t *testing.T) {
 	}
 }
 
-// TestMigrationIdempotent re-opens a file-backed store: the schema
-// creation is IF NOT EXISTS everywhere, an existing db keeps its rows.
+// TestMigrationIdempotent re-opens a file-backed store.
 func TestMigrationIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/data/notifications.db"

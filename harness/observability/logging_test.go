@@ -1,8 +1,4 @@
-// The logging half's tests, riding the capsule they folded into
-// (0.17.3 modules fold, card t_ee3a968b): the file logger, its severity
-// markers and the last-error fact; plus the folded plugin's metadata -
-// the module is the always-on tier's third member, so it declares no
-// Toggleable opt-in (agent/plugin.go: default is NOT toggleable).
+// The logging half's tests, riding the capsule they folded into.
 package observability
 
 import (
@@ -61,11 +57,9 @@ func TestFileLoggerErrorf(t *testing.T) {
 	}
 }
 
-// TestFileLoggerWarnf pins the severity-marker convention (card
-// t_221dc498): Warnf writes "WARN: " and Errorf "ERROR: " right after
-// the log.LstdFlags timestamp. The logs tab's severity filter
-// (api/http_channel/ui/severity.ts) classifies on exactly these
-// shapes - this test is the Go-side half of that contract.
+// TestFileLoggerWarnf pins the severity-marker convention. The logs tab's severity
+// filter (api/http_channel/ui/severity.ts) classifies on exactly these shapes - this
+// test is the Go-side half of that contract.
 func TestFileLoggerWarnf(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "warn.log")
@@ -97,7 +91,6 @@ func TestFileLoggerAppend(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "append.log")
 
-	// Write first entry
 	l1, err := NewFileLogger(path)
 	if err != nil {
 		t.Fatalf("NewFileLogger: %v", err)
@@ -105,7 +98,6 @@ func TestFileLoggerAppend(t *testing.T) {
 	l1.Printf("first entry")
 	l1.Close()
 
-	// Write second entry - should append, not truncate
 	l2, err := NewFileLogger(path)
 	if err != nil {
 		t.Fatalf("NewFileLogger 2: %v", err)
@@ -166,7 +158,6 @@ func TestNewLoggerDisabled(t *testing.T) {
 		t.Errorf("expected NopLogger, got %T", l)
 	}
 
-	// Should not create any file
 	l.Printf("should not write")
 	if _, err := os.Stat("ignored.log"); err == nil {
 		t.Error("NopLogger created a file")
@@ -239,8 +230,7 @@ func TestPluginMountDisabled(t *testing.T) {
 	}
 }
 
-// Path reports the file the logger writes to (card t_db430fea - the
-// /logs endpoint tails exactly this path against the exact open file).
+// Path reports the file the logger writes to.
 func TestFileLoggerPath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.log")
 	l, err := NewFileLogger(path)
@@ -253,9 +243,7 @@ func TestFileLoggerPath(t *testing.T) {
 	}
 }
 
-// TestNewLoggerEmptyFileIsNop pins the no-cwd law (card t_0ccda501): an
-// empty File (the construction default) yields a NopLogger and creates
-// nothing in the process CWD.
+// TestNewLoggerEmptyFileIsNop pins the no-cwd law.
 func TestNewLoggerEmptyFileIsNop(t *testing.T) {
 	cwd := t.TempDir()
 	t.Chdir(cwd)
@@ -273,9 +261,7 @@ func TestNewLoggerEmptyFileIsNop(t *testing.T) {
 	}
 }
 
-// TestPluginMountDefaultNoCwdFile mounts the plugin with its own
-// Default() config (empty File) and pins that no log file appears in
-// the process CWD.
+// TestPluginMountDefaultNoCwdFile mounts the plugin with its own Default config.
 func TestPluginMountDefaultNoCwdFile(t *testing.T) {
 	cwd := t.TempDir()
 	t.Chdir(cwd)
@@ -291,11 +277,9 @@ func TestPluginMountDefaultNoCwdFile(t *testing.T) {
 	}
 }
 
-// TestLastErrorFact pins the health popover's last-error source (card
-// t_5e2f3095): the newest ERROR-level entry with its time, the "ERROR: "
-// marker stripped (the row already says what it is), and info/warn never
-// moving it. A fresh logger reports ok=false - the popover's "none"
-// rather than a stale entry from a previous run.
+// TestLastErrorFact pins the health popover's last-error source: the newest ERROR-level
+// entry with its time, the "ERROR: " marker stripped (the row already says what it is),
+// and info/warn never moving it.
 func TestLastErrorFact(t *testing.T) {
 	l, err := NewFileLogger(filepath.Join(t.TempDir(), "last-error.log"))
 	if err != nil {
@@ -331,9 +315,7 @@ func TestLastErrorFact(t *testing.T) {
 	}
 }
 
-// TestNopLoggerHasNoLastError: the upgrade is optional - a
-// logging-disabled install reports nothing and the popover degrades to
-// "not reported" instead of inventing a "none".
+// TestNopLoggerHasNoLastError: the upgrade is optional.
 func TestNopLoggerHasNoLastError(t *testing.T) {
 	var l agent.LoggerProvider = NopLogger{}
 	if _, ok := l.(agent.LoggerLastError); ok {

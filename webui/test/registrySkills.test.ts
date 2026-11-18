@@ -1,8 +1,4 @@
-// omega webui: the registry-browser SKILLS tab toggle behavior (v0.14.1,
-// card t_372b9e9a). Pure-surface test like moduletoggle.test.ts: the
-// helpers bind at the wire (GET /skills + GET/PUT /disabled), the
-// source greps pin the component wiring (the composition-test
-// convention - node --test has no DOM).
+// omega webui: the registry-browser SKILLS tab toggle behavior.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -21,12 +17,11 @@ import {
   type SkillInfo,
 } from "../../harness/skills/ui/refresh.ts";
 
-// module UI source lives at the repo root (webui/test is three
-// levels under it)
+// module UI source lives at the repo root (webui/test is three levels under it)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (...p: string[]) => readFileSync(join(root, "webui", ...p), "utf8");
 
-// --- normalizeDisabledPayload: a junk fold never kills the tab ---
+// -- normalizeDisabledPayload: a junk fold never kills the tab --
 
 test("disabled fold normalizer: lists pass through, junk collapses to []", () => {
   assert.deepEqual(
@@ -38,13 +33,12 @@ test("disabled fold normalizer: lists pass through, junk collapses to []", () =>
     normalizeDisabledPayload({ skills: [null, 5, "a"] }),
     { skills: ["a"], tools: [], agents: [] },
   );
-  // a junk payload is all-[]: the tab renders an empty fold, not a crash
   for (const junk of [null, 42, "x", [], { skills: "nope" }, { skills: [5] }]) {
     assert.deepEqual(normalizeDisabledPayload(junk), { skills: [], tools: [], agents: [] });
   }
 });
 
-// --- withDisabledFlags: the fold merges by name, fold-only names are ignored ---
+// -- withDisabledFlags: the fold merges by name, fold-only names are ignored --
 
 test("skill rows merge the fold: disabled states land, inputs untouched", () => {
   const rows = withDisabledFlags(
@@ -56,23 +50,21 @@ test("skill rows merge the fold: disabled states land, inputs untouched", () => 
   );
   assert.equal(rows[0].disabled, false);
   assert.equal(rows[1].disabled, true);
-  // the fold entry no row names is ignored (the server refuses
-  // unknown-name disables, so this is dead fold state, not a phantom row)
+  // the fold entry no row names is ignored (the server refuses unknown-name disables.
   assert.equal(withDisabledFlags(rows, ["dj-music", "ghost"])[0].disabled, false);
 });
 
-// --- registryNote: the skills consequence names the prompt build ---
+// -- registryNote: the skills consequence names the prompt build --
 
 test("arming a skill disable names the prompt-build consequence; enable is silent", () => {
   assert.equal(registryNote("skills", false), "excluded from the session prompt build");
   assert.equal(registryNote("skills", true), "");
 });
 
-// --- the tab renders the shared pattern and writes the shared wire ---
+// -- the tab renders the shared pattern and writes the shared wire --
 
 test("SkillsList consumes the shared component and the fold wire", () => {
-  // module UI source lives at the repo root, webui/test is three
-  // levels under it
+  // module UI source lives at the repo root, webui/test is three levels under it
   const src = readFileSync(join(root, "harness", "skills", "ui", "SkillsList.vue"), "utf8");
   assert.ok(src.includes("<RegistryList"), "the shared component, not a bespoke list");
   assert.ok(src.includes("kind=\"skills\""), "the skills namespace rides to the note law");
@@ -89,10 +81,8 @@ test("SkillsList consumes the shared component and the fold wire", () => {
   );
 });
 
-// t_504a78ca regression: RegistryList gates with `v-if="rows.length"`.
-// rows as a plain function makes .length the ARITY (0) - data loads,
-// the tab renders empty. The rows binding must hand RegistryList an
-// array (computed, the AgentsPanel shape), not a function.
+// regression: RegistryList gates with `v-if="rows.length"`. The rows binding must hand
+// RegistryList an array (computed, the AgentsPanel shape), not a function.
 test("SkillsList builds rows as a computed (arity trap: a plain function rows() renders empty)", () => {
   const src = readFileSync(join(root, "harness", "skills", "ui", "SkillsList.vue"), "utf8");
   assert.ok(src.includes("const rows = computed("), "rows computed, so :rows unwraps to the array");
@@ -100,7 +90,7 @@ test("SkillsList builds rows as a computed (arity trap: a plain function rows() 
   assert.ok(src.includes(':rows="visibleRows"'), "the shared component gets the rows binding (the band filter's survivors - card t_529628d5)");
 });
 
-// --- filterRegistryRows: the shared narrowing contract ---
+// -- filterRegistryRows: the shared narrowing contract --
 
 test("the row filter narrows by name or description", () => {
   const rows: RegistryRow[] = [
@@ -118,15 +108,10 @@ test("the row filter narrows by name or description", () => {
   assert.equal(filterRegistryRows(rows, "  ").length, 2);
 });
 
-// --- the refresh button (card t_ec57d5b8) --------------------------------
-// The behavior half runs at the helper level (the mcp.test.ts recipe):
-// a fetch-log probe drives refreshSkills - the same call chain the
-// mount and the refresh click make. No SFC compile (node --test has
-// no DOM).
+// -- the refresh button -------------------------------- The behavior half runs at.
 
-// the fetch-log probe (the mcp.test.ts recipe): a stubbed fetch logs
-// every call the helper makes, so the refresh click's chain is probed,
-// never grepped.
+// the fetch-log probe (the mcp.test.ts recipe): a stubbed fetch logs every call the
+// helper makes, so the refresh click's chain is probed, never grepped.
 
 let savedFetch: typeof globalThis.fetch;
 
@@ -159,7 +144,6 @@ test("refreshSkills: the refresh click refetches; a post-mount skill shows and t
     ] as SkillInfo[],
     fold: ["dj-music"],
   };
-  // the refresh runs after a skill dir landed in skills/
   const round2 = {
     skills: [
       ...round1.skills,
@@ -176,8 +160,7 @@ test("refreshSkills: the refresh click refetches; a post-mount skill shows and t
   let served = 0;
   const calls = recordFetch(() => queue[served++]);
   try {
-    // the two refreshSkills() calls are the mount and the click - the
-    // helper IS the chain, the SFC only wires the click
+    // the two refreshSkills calls are the mount and the click.
     const first = await refreshSkills();
     const second = await refreshSkills();
     assert.deepEqual(
@@ -195,8 +178,7 @@ test("refreshSkills: the refresh click refetches; a post-mount skill shows and t
   }
 });
 
-// a missed /skills read throws so the panel's existing error line
-// shows it and the current rows stand (nothing is applied).
+// a missed /skills read throws so the panel's existing error line shows it and the.
 test("refreshSkills: a refused /skills throws for the error line, the list stands", async () => {
   const saved = globalThis.fetch;
   globalThis.fetch = (async (url: RequestInfo | URL) =>
@@ -208,9 +190,7 @@ test("refreshSkills: a refused /skills throws for the error line, the list stand
   }
 });
 
-// the /disabled miss rules the fold lives by: a 501 (no seam) or an
-// unreachable host render read-only and keep the shown fold; a plain
-// non-501 refusal keeps both the fold and the toggle flag.
+// the /disabled miss rules the fold lives by.
 test("refreshSkills: a missed /disabled read never guesses the fold", async () => {
   const cases: Array<{
     name: string;
@@ -242,9 +222,7 @@ test("refreshSkills: a missed /disabled read never guesses the fold", async () =
   }
 });
 
-// the render half (no DOM, the source greps pin it): the button rides
-// the shared band now (card t_308e6d9b - the universal TabBand owns the
-// toolbar shape; the button contract unchanged).
+// the render half (no DOM, the source greps pin it).
 test("the skills tab refresh button renders in the tab band", () => {
   const src = readFileSync(
     join(root, "harness", "skills", "ui", "SkillsList.vue"),
@@ -270,17 +248,14 @@ test("the skills tab refresh button renders in the tab band", () => {
   );
   assert.ok(src.includes("<Icon") && src.includes('name="refresh"'), "the iconset's refresh glyph (the membership law)");
 });
-// card t_d93864e7: the registry rows' toggle is the shared TogglePill -
-// the MCP tab's pill (the design reference), adopted, not re-styled.
+// the registry rows' toggle is the shared TogglePill.
 test("RegistryList's toggle is the shared TogglePill; the checkbox shape is dead", () => {
   const src = readFileSync(join(root, "webui", "app", "components", "RegistryList.vue"), "utf8");
   assert.match(src, /<TogglePill/, "the row toggle is the shared pill, not a bespoke control");
   assert.ok(!src.includes('type="checkbox"'), "the checkbox trap (t_87303e8f) is dead - a button carries no :checked prop");
   assert.ok(!/\.registry-toggle\s*\{/.test(src), "no local toggle CSS - the look lives in ui/TogglePill once");
   assert.ok(!src.includes("revisions"), "the revision-remount machinery is gone with the checkbox");
-  // card t_5051d523: ONE click commits - the armed confirm aria and the
-  // confirm note under the row are dead (they cost every row a second
-  // click); the same consequence text rides the pill's title instead.
+  // ONE click commits - the armed confirm aria and the confirm note under the row are.
   assert.match(src, /:hint="toggleHint\(r\)"/, "the consequence text is a hover hint on the shared pill");
   assert.ok(!src.includes("confirm-label"), "no armed confirm relabel on the pill");
   assert.ok(!src.includes("registry-confirm"), "the armed confirm note under the row is gone");

@@ -41,7 +41,7 @@ func (f *fakeNotifier) Subscribe() (<-chan core.Notice, func()) {
 	return ch, func() {}
 }
 
-// --- fire emission (card t_5d9032d3) ---
+// -- fire emission --
 
 func TestFireEmitsNotificationOkAndFailed(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(), Job{Name: "nightly", Schedule: "0 3 * * *", Prompt: "p"})
@@ -65,7 +65,6 @@ func TestFireEmitsNotificationOkAndFailed(t *testing.T) {
 		t.Fatalf("title carries more than metadata: %q", got.Title)
 	}
 
-	// a failed run flips the verdict; job name stays the source id
 	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		return "", errors.New("provider dead")
 	}

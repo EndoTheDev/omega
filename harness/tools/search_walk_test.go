@@ -1,14 +1,8 @@
 package tools
 
-// Regression pins for card t_b9f74bea: a directory that failed the
-// walk used to vanish as "[skipped N walk errors]" - no name, no
-// reason. The walk now carries the path + cause into the result, and
-// the no-match early-return keeps the detail instead of swallowing
-// it. The walker is injectable (walkDirFn): a genuinely ACL-denied
-// directory is not reproducible portably inside a temp tree, so the
-// test injects the denied-dir error shape the Windows lane produces.
-// Tests restore walkDirFn via defer and never leave it swapped (no
-// test in the package uses t.Parallel).
+// Regression pins for: a directory that failed the walk used to vanish as "[skipped N
+// walk errors]". Tests restore walkDirFn via defer and never leave it swapped (no test
+// in the package uses t.Parallel).
 
 import (
 	"context"
@@ -20,8 +14,7 @@ import (
 	"testing"
 )
 
-// stubDirEntry satisfies fs.DirEntry for the injected walker; the
-// search callbacks only touch it for the root / non-error paths.
+// stubDirEntry satisfies fs.DirEntry for the injected walker.
 type stubDirEntry struct{}
 
 func (stubDirEntry) Name() string               { return "stub" }
@@ -29,9 +22,7 @@ func (stubDirEntry) IsDir() bool                { return true }
 func (stubDirEntry) Type() fs.FileMode          { return fs.ModeDir }
 func (stubDirEntry) Info() (fs.FileInfo, error) { return nil, fs.ErrNotExist }
 
-// withInjectedDeniedDir swaps walkDirFn for a walker that first feeds
-// fn one denied-directory error per name, then runs the real walk.
-// Returns a restore func.
+// withInjectedDeniedDir swaps walkDirFn for a walker that first feeds fn one.
 func withInjectedDeniedDir(names ...string) func() {
 	orig := walkDirFn
 	walkDirFn = func(root string, fn fs.WalkDirFunc) error {
@@ -47,9 +38,7 @@ func withInjectedDeniedDir(names ...string) func() {
 	return func() { walkDirFn = orig }
 }
 
-// TestGlobWalkErrorsListPathAndCause: a denied directory appears in
-// the result with its path and its cause, next to the matches the
-// walk could still read.
+// TestGlobWalkErrorsListPathAndCause: a denied directory appears in the result with.
 func TestGlobWalkErrorsListPathAndCause(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "hit.txt"), []byte("x\n"), 0o644); err != nil {
@@ -77,9 +66,8 @@ func TestGlobWalkErrorsListPathAndCause(t *testing.T) {
 	}
 }
 
-// TestGlobWalkErrorSurvivesNoMatches: a denied directory is not
-// swallowed by the "no matches" early return - the vanished tree is
-// exactly where the detail matters.
+// TestGlobWalkErrorSurvivesNoMatches: a denied directory is not swallowed by the "no
+// matches" early return - the vanished tree is exactly where the detail matters.
 func TestGlobWalkErrorSurvivesNoMatches(t *testing.T) {
 	dir := t.TempDir()
 	restore := withInjectedDeniedDir("locked")
@@ -95,8 +83,8 @@ func TestGlobWalkErrorSurvivesNoMatches(t *testing.T) {
 	}
 }
 
-// TestGrepWalkErrorsListPathAndCause: the grep walk carries the same
-// detail (one fixture, two tools - the class, not just one tool).
+// TestGrepWalkErrorsListPathAndCause: the grep walk carries the same detail (one
+// fixture, two tools.
 func TestGrepWalkErrorsListPathAndCause(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "quiet.txt"), []byte("nothing here\n"), 0o644); err != nil {
@@ -115,9 +103,8 @@ func TestGrepWalkErrorsListPathAndCause(t *testing.T) {
 	}
 }
 
-// TestGlobWalkErrorDetailCap: the detail lines are capped with an
-// honest "...and N more" tail, so a pathological tree cannot flood
-// the result.
+// TestGlobWalkErrorDetailCap: the detail lines are capped with an honest "..and N more"
+// tail, so a pathological tree cannot flood the result.
 func TestGlobWalkErrorDetailCap(t *testing.T) {
 	dir := t.TempDir()
 	names := make([]string, 0, 13)

@@ -11,9 +11,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// mountCtx mounts a fresh plugin through agent.MountAllAPI - the same
-// wiring the hosts do, and the only mount since the v0.12 phase-C2
-// migration (docs/migrating-a-module.md is the recipe).
+// mountCtx mounts a fresh plugin through agent.MountAllAPI.
 func mountCtx(t *testing.T, ctx *core.Context) (*Plugin, *core.Context) {
 	t.Helper()
 	p := NewPlugin()
@@ -28,8 +26,7 @@ func mountCtx(t *testing.T, ctx *core.Context) (*Plugin, *core.Context) {
 	return p, ctx
 }
 
-// seamBoard is the test's own consumer face (part 3): the methods the
-// tests drive on the offered store, resolved by key.
+// seamBoard is the test's own consumer face (part 3).
 type seamBoard interface {
 	Emit(n core.Notice) (core.Notice, error)
 	List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notice, int, error)
@@ -46,9 +43,7 @@ func offeredSeam(t *testing.T, ctx *core.Context) seamBoard {
 	return svc
 }
 
-// TestMountWiresSeamAndCommand: a home-backed mount opens the store,
-// offers the notifications seam, and answers the read-only /notifications
-// TUI command (card t_5d9032d3).
+// TestMountWiresSeamAndCommand: a home-backed mount opens the store, offers the.
 func TestMountWiresSeamAndCommand(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -71,7 +66,6 @@ func TestMountWiresSeamAndCommand(t *testing.T) {
 		t.Fatalf("table lost the unread line: %q", res.Text)
 	}
 
-	// unread-only arg filters
 	seam.MarkAllRead(bg)
 	res, err = ctx.CommandHandler(bg, "/notifications", "unread")
 	if err != nil {
@@ -82,11 +76,7 @@ func TestMountWiresSeamAndCommand(t *testing.T) {
 	}
 }
 
-// TestMountWithAPIShape pins the migrated mount's registrations: the
-// capsule-backed seam lands, the live panel provider carries the
-// namespaced action ids, the command answers its own name on the chain
-// (falling through to the miss error for anything else), and the
-// classic Mount fails loud.
+// TestMountWithAPIShape pins the migrated mount's registrations.
 func TestMountWithAPIShape(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -94,8 +84,6 @@ func TestMountWithAPIShape(t *testing.T) {
 	_, ctx = mountCtx(t, ctx)
 
 	offeredSeam(t, ctx) // the loud mismatch naming the face
-	// the panels: one live provider, two module-qualified panels with
-	// namespaced action ids
 	if len(ctx.PanelProviders) != 1 {
 		t.Fatalf("panel providers = %d", len(ctx.PanelProviders))
 	}
@@ -124,7 +112,6 @@ func TestMountWithAPIShape(t *testing.T) {
 	if len(panels[0].Actions) != 2 {
 		t.Fatalf("list panel actions = %d, want mark_read + mark_all", len(panels[0].Actions))
 	}
-	// the command table and the chain
 	var cmds []string
 	for _, c := range ctx.Commands {
 		cmds = append(cmds, c.Name)
@@ -138,9 +125,7 @@ func TestMountWithAPIShape(t *testing.T) {
 	}
 }
 
-// TestMountWithConfigPathOverride: a config path mounts the store at
-// that exact file (tests and embedders point it anywhere) even with a
-// live home on the side.
+// TestMountWithConfigPathOverride: a config path mounts the store at that exact file.
 func TestMountWithConfigPathOverride(t *testing.T) {
 	dbDir := t.TempDir() + "/custom"
 	if err := os.MkdirAll(dbDir, 0o755); err != nil {

@@ -1,6 +1,4 @@
-// omega webui: unit tests for the settings-pane pure helpers
-// (normalizeSettingsPayload, filterSettingGroups, settingsDiff).
-// Run: node --test webui/test/ (node >= 23 runs TS natively)
+// omega webui: unit tests for the settings-pane pure helpers.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -23,7 +21,7 @@ function knob(key: string, label: string, value: unknown, help?: string): object
   return { key, label, type: "text", value, ...(help ? { help } : {}) };
 }
 
-// --- normalizeSettingsPayload: a malformed response never kills the pane ---
+// -- normalizeSettingsPayload: a malformed response never kills the pane --
 
 test("normalize keeps well-formed groups and knobs", () => {
   const out = normalizeSettingsPayload({
@@ -54,8 +52,7 @@ test("normalize drops non-object entries and unnamed groups", () => {
       }],
     }],
   });
-  // only the "ok" group survives; its missing-value and unknown-type
-  // knobs fall out (a knob with no control to render is stale data)
+  // only the "ok" group survives.
   assert.equal(out.groups.length, 1);
   assert.equal(out.groups[0].knobs.length, 0);
 });
@@ -98,7 +95,7 @@ test("normalize keeps optional fields typed", () => {
   assert.equal(k.live, true);
 });
 
-// --- filterSettingGroups: the search box narrows label + help ---
+// -- filterSettingGroups: the search box narrows label + help --
 
 const DEMO: SettingGroup[] = [
   group("compaction", [
@@ -135,7 +132,7 @@ test("filtering never mutates the caller's groups", () => {
   assert.equal(DEMO[0].knobs.length, 2);
 });
 
-// --- settingsDiff: only changed knobs go on the wire ---
+// -- settingsDiff: only changed knobs go on the wire --
 
 test("diff lists only keys whose draft differs from loaded", () => {
   const out = settingsDiff(
@@ -148,7 +145,7 @@ test("diff lists only keys whose draft differs from loaded", () => {
 test("identical draft and loaded diff to an empty map", () => {
   assert.deepEqual(settingsDiff({ a: 1 }, { a: 1 }), {});
 });
-// --- card t_c04c959e: the modified dot + reset-to-default pure helpers ---
+// --: the modified dot + reset-to-default pure helpers --
 
 test("normalize carries the knob default through, null included", () => {
   const out = normalizeSettingsPayload({
@@ -180,7 +177,6 @@ test("knobDiffersFromDefault: identity, the empty/unset pair, structural content
   assert.equal(knobDiffersFromDefault(undefined, ""), false);
   assert.equal(knobDiffersFromDefault(null, ""), false);
   assert.equal(knobDiffersFromDefault("x", ""), true);
-  // structural values (the providers list) compare by content
   assert.equal(knobDiffersFromDefault([], []), false);
   assert.equal(knobDiffersFromDefault([{ name: "a" }], [{ name: "a" }]), false);
   assert.equal(knobDiffersFromDefault([{ name: "a" }], []), true);
@@ -219,7 +215,6 @@ test("valuesEqual compares structural values by content", () => {
   assert.equal(valuesEqual([row], JSON.parse(JSON.stringify([row]))), true);
   assert.equal(valuesEqual([row], [{ ...row, model_name: "o3" }]), false);
   assert.equal(valuesEqual([row], []), false);
-  // scalars keep the identity path
   assert.equal(valuesEqual("a", "a"), true);
   assert.equal(valuesEqual("a", "b"), false);
   assert.equal(valuesEqual(1, 1), true);

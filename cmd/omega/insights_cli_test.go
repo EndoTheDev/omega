@@ -11,9 +11,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// setupInsightsEnv prepares an OMEGA_HOME temp dir with a config.yaml and a
-// store. When withSession is true it creates a session with two messages.
-// Mirrors setupExportEnv in export_test.go.
+// setupInsightsEnv prepares an OMEGA_HOME temp dir with a config.yaml and a store.
 func setupInsightsEnv(t *testing.T, withSession bool) (home, sessionID string) {
 	t.Helper()
 	home = t.TempDir()
@@ -47,8 +45,7 @@ func setupInsightsEnv(t *testing.T, withSession bool) (home, sessionID string) {
 	return home, sessionID
 }
 
-// captureStdout swaps os.Stdout for a pipe, runs fn, and returns what was
-// written plus any error. Restores os.Stdout via t.Cleanup.
+// captureStdout swaps os.Stdout for a pipe, runs fn, and returns what was written.
 func captureStdout(t *testing.T, fn func() error) (string, error) {
 	t.Helper()
 	old := os.Stdout
@@ -59,7 +56,6 @@ func captureStdout(t *testing.T, fn func() error) (string, error) {
 	t.Cleanup(func() { os.Stdout = old })
 	os.Stdout = w
 
-	// Run fn synchronously so all writes land on the pipe before we close it.
 	runErr := fn()
 
 	w.Close()

@@ -1,9 +1,4 @@
-// omega webui: the viewer's image branch (card t_08d822bb) - the read's
-// mime decides: image/* renders an <img> on GET /files/raw, every other
-// binary keeps the honest "binary file - no preview" notice. The suite
-// pins the structural wiring (ViewerTab branches, the raw URL law, the
-// backend's sniff + jail) and the fetch wire. Run:
-// node --test test/viewerimg.test.ts
+// omega webui: the viewer's image branch - the read's mime decides.
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -20,11 +15,10 @@ const readRepo = (rel: string) => readFileSync(`${repo}/${rel}`, "utf8");
 const viewer = read("app/components/ViewerTab.vue");
 const omega = read("app/composables/omega.ts");
 const serverFiles = readRepo("harness/files/routes.go");
-// the /files/raw registration lives in the files capsule (the module
-// routes rail, card t_48eeb015)
+// the /files/raw registration lives in the files capsule
 const filesPlugin = readRepo("harness/files/plugin.go");
 
-// --- the viewer's image branch -------------------------------------------------
+// -- the viewer's image branch ------------------------------------------------
 
 describe("ViewerTab's image branch (t_08d822bb)", () => {
   it("binds the <img> to GET /files/raw, gated on the sniffed mime", () => {
@@ -55,7 +49,7 @@ describe("ViewerTab's image branch (t_08d822bb)", () => {
   });
 });
 
-// --- the raw route, backend shape ------------------------------------------------
+// -- the raw route, backend shape -----------------------------------------------
 
 describe("GET /files/raw (t_08d822bb)", () => {
   it("is registered; images only; the sniff is stdlib", () => {
@@ -91,7 +85,7 @@ describe("GET /files/raw (t_08d822bb)", () => {
   });
 });
 
-// --- the raw-url wire -------------------------------------------------------------
+// -- the raw-url wire ------------------------------------------------------------
 
 describe("filesRawUrl wire", () => {
   it("builds /files/raw with the encoded path + session", () => {

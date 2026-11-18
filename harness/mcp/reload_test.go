@@ -1,7 +1,6 @@
-// Reload tests (card t_d6e94e79): POST /mcp/reload makes mcp.yaml
-// edits live - a fresh bridge (new tools, removed servers, partial
-// failures) swaps in with no restart, a broken config keeps the old
-// bridge serving, and readers race the swap.
+// Reload tests: POST /mcp/reload makes mcp.yaml edits live - a fresh bridge (new tools,
+// removed servers, partial failures) swaps in with no restart, a broken config keeps
+// the old bridge serving, and readers race the swap.
 package mcp
 
 import (
@@ -18,8 +17,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// serveRoute serves one request through the named route pattern on the
-// context (both routes register on the ModuleRoutes ledger).
+// serveRoute serves one request through the named route pattern on the context (both.
 func serveRoute(t *testing.T, ctx *core.Context, pattern, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	for _, rt := range ctx.ModuleRoutes {
@@ -53,10 +51,7 @@ func decodeReport(t *testing.T, w *httptest.ResponseRecorder) StatusReport {
 	return rep
 }
 
-// TestReloadRouteEmptyToLive verifies the exact Endo scenario: no
-// config at boot (nil bridge, idle module), mcp.yaml lands, POST
-// /mcp/reload - the server appears and the tool seam serves it. No
-// restart anywhere.
+// TestReloadRouteEmptyToLive verifies the exact Endo scenario: no config at boot (nil.
 func TestReloadRouteEmptyToLive(t *testing.T) {
 	srv := mockMCPServer(t, "reload-session")
 	t.Setenv("MCP_SERVERS", `{"servers":[{"name":"mock","url":"`+srv.URL+`"}]}`)
@@ -64,7 +59,6 @@ func TestReloadRouteEmptyToLive(t *testing.T) {
 
 	ctx := mountReloadPlugin(t, NewPlugin(nil))
 
-	// before the reload: the empty state, zero tools
 	before := decodeReport(t, serveRoute(t, ctx, "GET /mcp/servers", "GET", "/mcp/servers"))
 	if len(before.Servers) != 0 {
 		t.Fatalf("before reload: got %d servers, want 0", len(before.Servers))
@@ -87,7 +81,6 @@ func TestReloadRouteEmptyToLive(t *testing.T) {
 	if len(rep.Servers[0].Tools) != 1 || rep.Servers[0].Tools[0] != "mock.echo" {
 		t.Fatalf("tools: %v, want [mock.echo]", rep.Servers[0].Tools)
 	}
-	// the same provider now serves the fresh tool set - no remount
 	if got := ctx.ToolProviders[0].Tools(); len(got) != 1 {
 		t.Fatalf("after reload, provider tools: got %d, want 1", len(got))
 	}
@@ -96,10 +89,7 @@ func TestReloadRouteEmptyToLive(t *testing.T) {
 	}
 }
 
-// TestReloadToolsChangeAfterReload verifies the live-bridge swap: a
-// configured server that leaves the config drops off the tool seam on
-// reload, and the fresh list (source included) comes back on the
-// reload response itself.
+// TestReloadToolsChangeAfterReload verifies the live-bridge swap.
 func TestReloadToolsChangeAfterReload(t *testing.T) {
 	srv := mockMCPServer(t, "swap-session")
 	t.Setenv("MCP_SERVERS", `{"servers":[{"name":"mock","url":"`+srv.URL+`"}]}`)
@@ -114,7 +104,6 @@ func TestReloadToolsChangeAfterReload(t *testing.T) {
 		t.Fatal("precondition: mock.echo served before the reload")
 	}
 
-	// the config loses the server; no restart anywhere
 	t.Setenv("MCP_SERVERS", `{"servers":[]}`)
 	w := serveRoute(t, ctx, "POST /mcp/reload", "POST", "/mcp/reload")
 	if w.Code != 200 {
@@ -127,7 +116,6 @@ func TestReloadToolsChangeAfterReload(t *testing.T) {
 	if got := ctx.ToolProviders[0].Tools(); len(got) != 0 {
 		t.Fatalf("after removal, provider tools: got %d, want 0", len(got))
 	}
-	// GET /mcp/servers stays read-only over the live (now empty) bridge
 	rep2 := decodeReport(t, serveRoute(t, ctx, "GET /mcp/servers", "GET", "/mcp/servers"))
 	if rep2.Source != "env" || len(rep2.Servers) != 0 {
 		t.Fatalf("GET after removal: %+v", rep2)
@@ -148,14 +136,11 @@ func TestReloadRemovesServerInFlight(t *testing.T) {
 		t.Fatalf("NewPluginFromEnv: %v", err)
 	}
 	ctx := mountReloadPlugin(t, p)
-	// the tool closure the loop would hold when the call went in
-	// flight - the pre-reload bridge's run
 	oldTools := p.bridge.Tools()["mock.echo"]
 	if oldTools.run == nil {
 		t.Fatal("precondition: mock.echo's run missing")
 	}
 
-	// the config loses the server; the reload lands beneath the call
 	t.Setenv("MCP_SERVERS", `{"servers":[]}`)
 	w := serveRoute(t, ctx, "POST /mcp/reload", "POST", "/mcp/reload")
 	if w.Code != 200 {
@@ -172,10 +157,9 @@ func TestReloadRemovesServerInFlight(t *testing.T) {
 	}
 }
 
-// TestReloadKeepsBridgeOnBadConfig verifies a broken config fails the
-// reload (non-200, the panel's error line) but keeps the previous
-// bridge serving - the refresh never drops a working tool set it
-// cannot replace.
+// TestReloadKeepsBridgeOnBadConfig verifies a broken config fails the reload (non-200,
+// the panel's error line) but keeps the previous bridge serving - the refresh never
+// drops a working tool set it cannot replace.
 func TestReloadKeepsBridgeOnBadConfig(t *testing.T) {
 	srv := mockMCPServer(t, "badcfg-session")
 	t.Setenv("MCP_SERVERS", `{"servers":[{"name":"mock","url":"`+srv.URL+`"}]}`)
@@ -189,7 +173,6 @@ func TestReloadKeepsBridgeOnBadConfig(t *testing.T) {
 		t.Fatal("precondition: mock.echo served before the reload")
 	}
 
-	// the file config is now unreadable; the env var vacates
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
 	t.Setenv("MCP_SERVERS", "")
@@ -201,15 +184,12 @@ func TestReloadKeepsBridgeOnBadConfig(t *testing.T) {
 	if w.Code != 500 {
 		t.Fatalf("POST /mcp/reload with a broken config: got %d, want 500 body %q", w.Code, w.Body.String())
 	}
-	// the old bridge keeps serving, untouched
 	if _, ok := ctx.ToolProviders[0].Tools()["mock.echo"]; !ok {
 		t.Fatal("the broken reload must not drop the working tool set")
 	}
 }
 
-// TestReloadPartialFailure verifies one failing server does not fail
-// the reload: the live server serves, the dead one stays listed with
-// its Error field (the existing StatusReport shape).
+// TestReloadPartialFailure verifies one failing server does not fail the reload.
 func TestReloadPartialFailure(t *testing.T) {
 	srv := mockMCPServer(t, "partial-session")
 	t.Setenv("MCP_SERVERS",
@@ -237,9 +217,8 @@ func TestReloadPartialFailure(t *testing.T) {
 	}
 }
 
-// TestReloadConcurrentReads races the swap against reader goroutines
-// (Tools() and the status route): every read lands wholly on one
-// bridge, nothing trips. Run with -race in the verify pass.
+// TestReloadConcurrentReads races the swap against reader goroutines (Tools and the
+// status route). Run with -race in the verify pass.
 func TestReloadConcurrentReads(t *testing.T) {
 	srv := mockMCPServer(t, "race-session")
 	srvCfg := func() string {
@@ -278,7 +257,6 @@ func TestReloadConcurrentReads(t *testing.T) {
 			t.Fatalf("reload %d: %d", i, w.Code)
 		}
 	}
-	// a reload to empty and back - the swap direction changes too
 	t.Setenv("MCP_SERVERS", `{"servers":[]}`)
 	if w := serveRoute(t, ctx, "POST /mcp/reload", "POST", "/mcp/reload"); w.Code != 200 {
 		t.Fatalf("empty reload: %d", w.Code)

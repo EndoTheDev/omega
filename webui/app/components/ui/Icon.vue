@@ -1,5 +1,4 @@
-<!-- omega webui: THE ICON WRAPPER - the icon law and the size doctrine
-     live in .agents/DESIGN.md (card t_502b8e81). -->
+<!-- omega webui: THE ICON WRAPPER. -->
 <template>
   <component
     :is="icon"
@@ -14,11 +13,8 @@
 
   const props = withDefaults(
     defineProps<{
-      /** a semantic name from the iconset (composables/icons.ts ICONS) */
       name: string;
-      /** the size doctrine (16 menubar / 13 row actions) lives in .agents/DESIGN.md */
       size?: number;
-      /** lucide's stroke - the shell's 2px round-join line style */
       strokeWidth?: number;
     }>(),
     { size: 14, strokeWidth: 2 },

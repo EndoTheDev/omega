@@ -1,7 +1,7 @@
-// omega webui: the band POSITION contract (card t_ffab9823). t_f1a034dc
+// omega webui: the band POSITION contract.
 // fixed what the band CONTAINS; this pins where it MOUNTS. Live
-// measurement 2026-10-31 (both axes, Files as the reference):
-//   vertical   title/band-bottom/next-row: 81/99/99 everywhere - Tools
+// measurement (both axes, Files as the reference):
+// vertical title/band-bottom/next-row: 81/99/99 everywhere - Tools
 //              +6px (a stray duplicate `.tools-list.narrow` root rule
 //              re-adding 6px 8px padding), Settings +10px AND a 12px
 //              dead gap (the root's 10px padding + flex gap);
@@ -27,7 +27,7 @@ const maincss = src("app/assets/css/main.css");
 const tools = src("../harness/tools/ui/ToolsList.vue");
 const insights = src("../harness/store/ui/InsightsTab.vue");
 
-// ...a rule block: selector ... { ... } - the FIRST `}` closing it.
+// ..a rule block: selector..
 function ruleBlock(css: string, selector: string): string {
   const start = css.indexOf(selector);
   assert.ok(start >= 0, `the ${selector.trim()} rule exists`);

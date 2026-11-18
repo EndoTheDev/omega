@@ -14,9 +14,9 @@
       class="verdict-body">{{ item.body }}</p>
 
     <template v-if="item.status === 'pending'">
-      <!-- v1.1 list layout: one row per option, label over its
-           optional description. Single cards answer on click; multi
-           cards toggle rows and confirm. -->
+      <!--
+        v1.1 list layout: one row per option, label over its optional description.
+      -->
       <div
         v-if="item.options.length"
         class="verdict-options">
@@ -75,19 +75,7 @@
 </template>
 
 <script setup lang="ts">
-  // Verdict card (card t_2ecf9c51, v1.1 t_42d4dc09): the interactive
-  // render of a verdict tool call. The card lives in the transcript
-  // stream between the preamble bubble and the run's continuation;
-  // answering posts to /sessions/{id}/verdicts (no card_id - this
-  // session's oldest pending card, one run per session), the run's
-  // tool_result frame then settles the card from the server's side.
-  //
-  // The ANCHOR is not this component's and not the pane's: `item.issuedAt`
-  // is the call's own issue instant, resolved by the render source
-  // (composables/chat.ts, verdictAnchorMs) from the server's start stamp
-  // or from the call id's first sight at module scope. So a card that
-  // remounts mid-deadline keeps counting down from where it was - the
-  // label is `issuedAt + timeout_s - now`, and only `now` restarts.
+  // Verdict card: the interactive render of a verdict tool call.
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
   import type { VerdictItem } from "../../composables/omega";
@@ -95,14 +83,12 @@
 
   const props = defineProps<{
     item: VerdictItem;
-    // the answer endpoint's session boundary - the chat tab's session
     sessionId?: string;
   }>();
 
   const draft = ref("");
   const answering = ref(false);
   const error = ref("");
-  // multi-select picks (option numbers, 1-based)
   const selected = ref(new Set<number>());
   const now = ref(Date.now());
   let ticker: ReturnType<typeof setInterval> | null = null;
@@ -116,11 +102,7 @@
     if (ticker) clearInterval(ticker);
   });
 
-  // countdown: mm:ss until the deadline the anchor implies. No anchor
-  // (an id-less card, a payload served without a clock) renders NO label
-  // rather than a fabricated full one - a wrong deadline is worse than
-  // none. Past zero renders "expiring" - the server may have fired the
-  // safe answer already; the incoming tool_result renders the truth.
+  // countdown: mm:ss until the deadline the anchor implies.
   const countdown = computed(() => {
     if (!props.item.issuedAt) return "";
     const timeoutS = props.item.timeoutS && props.item.timeoutS > 0 ? props.item.timeoutS : 1200;
@@ -229,9 +211,7 @@
     color: var(--text-dim);
     white-space: pre-wrap;
   }
-  /* v1.1 list layout: the rows stack top to bottom, one per row - no
-     wrapping pill buttons. Each row carries its label and, when the
-     option has one, its description underneath. */
+  /* v1.1 list layout: the rows stack top to bottom, one per row. */
   .verdict-options {
     display: flex;
     flex-direction: column;

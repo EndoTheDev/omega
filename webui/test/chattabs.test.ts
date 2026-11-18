@@ -1,7 +1,4 @@
-// omega webui: unit tests for card t_4f0e88f2 (chat tabs + URL
-// semantics): the dock webui's chat-tab key ops (setTabSessionRef /
-// closeSessionTabs / lookups) and the chat host's per-tab stream model.
-// Run: node --test test/
+// omega webui: unit tests for (chat tabs + URL semantics).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
@@ -29,7 +26,7 @@ import {
 } from "../app/composables/chat.ts";
 import { SessionBusyError } from "../app/composables/omega.ts";
 
-// --- helpers ---------------------------------------------------------------
+// -- helpers --------------------------------------------------------------
 
 // default-shaped tree: sidebar(240) | chat
 function split(children: DockNode[]): DockNode {
@@ -44,11 +41,10 @@ function seededTree(chatSession?: string): DockNode {
 }
 
 function paneAt(tree: DockNode, i: number): DockPaneNode {
-  // tests only build split-root trees
   return (tree as { children: DockNode[] }).children[i] as DockPaneNode;
 }
 
-// --- dock ops: chat tab keys ------------------------------------------------
+// -- dock ops: chat tab keys -----------------------------------------------
 
 describe("chat tab instance keys", () => {
   it("assignChatKeys keys every chat tab; sidebar/inspector stay unkeyed", () => {
@@ -88,7 +84,6 @@ describe("setTabSessionRef", () => {
     const next = setTabSessionRef(tree, key2, "s2");
     assert.equal(paneAt(next, 0).tabs[0]!.sessionRef, undefined);
     assert.equal(paneAt(next, 1).tabs[0]!.sessionRef, "s2");
-    // pure: the source tree is untouched
     assert.equal(paneAt(tree, 1).tabs[0]!.sessionRef, undefined);
   });
 
@@ -110,7 +105,6 @@ describe("setTabSessionRef", () => {
 
 describe("closeSessionTabs", () => {
   it("closes every tab bound to a session across panes; others stay", async () => {
-    // two panes, two chat tabs: pane1 keeps an extra unbound tab
     await withScratchSingleton(async (scratch) => {
       const base = assignChatKeys(split([makePane("chat"), makePane("chat")]));
       const k1 = paneAt(base, 0).tabs[0]!.key!;
@@ -118,7 +112,6 @@ describe("closeSessionTabs", () => {
       let tree = setTabSessionRef(base, k1, "gone");
       tree = setTabSessionRef(tree, k2, "kept");
       tree = openTab(tree, paneAt(tree, 0).id, { component: scratch });
-      // pane1: [gone, scratch] -> [scratch]; pane2 keeps "kept"
       const next = closeSessionTabs(tree, "gone");
       const p1 = paneAt(next, 0);
       const p2 = paneAt(next, 1);
@@ -135,9 +128,9 @@ describe("closeSessionTabs", () => {
     assert.equal(paneAt(tree, 1).tabs.length, 1);
     const next = closeSessionTabs(tree, "gone");
     const chatPane = paneAt(next, 1);
-    // card t_9855a20e: the session close takes the last live tab with it -
-    // the pane seats a FRESH new-chat tab (sessionless, keyed), not the
-    // retired "New Tab" placeholder and never an empty pane
+    // the session close takes the last live tab with it - the pane seats a FRESH
+    // new-chat tab (sessionless, keyed), not the retired "New Tab" placeholder and
+    // never an empty pane
     assert.deepEqual(chatPane.tabs.map((t) => t.component), ["chat"], "a new chat, not an empty pane");
     assert.equal(chatPane.tabs[0]!.sessionRef, undefined, "the fresh tab is unbound");
     assert.ok(chatPane.tabs[0]!.key, "and keyed like every runtime chat tab");
@@ -162,9 +155,8 @@ describe("chat tab lookups", () => {
   });
 });
 
-// card t_311838e4: the '+' new flow reuses an open DRAFT chat tab
-// (no session binding = the untitled new-chat state) instead of
-// minting a duplicate.
+// the '+' new flow reuses an open DRAFT chat tab (no session binding = the untitled
+// new-chat state) instead of minting a duplicate.
 describe("firstDraftChatTab", () => {
   it("finds the unbound chat tab; a bound one is not draft", () => {
     const draft = seededTree(); // no binding
@@ -172,7 +164,6 @@ describe("firstDraftChatTab", () => {
     const loc = firstDraftChatTab(draft);
     assert.equal(loc?.paneId, paneAt(draft, 1).id);
     assert.equal(loc?.index, 0);
-    // the first send bound a session: no draft remains
     const bound = seededTree("s1");
     assert.equal(firstDraftChatTab(bound), null);
   });
@@ -188,7 +179,7 @@ describe("firstDraftChatTab", () => {
   });
 });
 
-// --- the chat host ----------------------------------------------------------
+// -- the chat host ---------------------------------------------------------
 
 function deps(over: Partial<ChatHostDeps> = {}): ChatHostDeps {
   return {
@@ -213,8 +204,7 @@ describe("chat host: per-tab states", () => {
     const a = host.states.get("c1")!;
     const b = host.states.get("c2")!;
     assert.notEqual(a, b);
-    // the fallback transcript is per state: the canvas panel is the
-    // shared view, the restore keeps whatever each tab loaded itself
+    // the fallback transcript is per state.
     a.restored.push({ kind: "message", role: "user", content: "tab a only" });
     assert.equal(b.restored.length, 0);
   });
@@ -289,9 +279,7 @@ describe("chat host: the 409 and the busy affordance", () => {
       host.ensureState("c1", "s1");
       await host.submit("c1", "hello", "glm-5.3");
       const st = host.states.get("c1")!;
-      // the transcript belongs to the canvas panel - a refused send
-      // paints NOTHING; the status line above the composer carries it
-      // and the action row's retry chip is the affordance once it frees
+      // the transcript belongs to the canvas panel.
       assert.equal(st.restored.length, 0);
       assert.match(st.statusLine, /busy/);
       assert.equal(host.composerBusy("c1"), false);

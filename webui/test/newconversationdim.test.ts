@@ -1,22 +1,9 @@
-// omega webui: THE NEW-CONVERSATION DIM (card t_0a9edc72, vera's finding -
-// intended dedupe).
-//
-// While the focused tab IS the draft conversation, every "new
-// conversation" door would only focus the tab already on screen: the
-// sidebar's '+' (title "New conversation"), its menu's "New Session" row,
-// the palette's "New chat" command and a main pane's '+' each dim and
-// disable - aria-disabled + tabindex -1, dimmed but NEVER removed, the
-// same law the last-tab close X obeys (card t_b72a4ee3). Clicking a dimmed
-// door still runs its honest action: it focuses the draft.
-//
-// The fact has ONE owner (app.vue's draftConversationFocused, built on the
-// pure isDraftChatKey) and ONE provider, so no two doors can disagree.
-// The node suite has no DOM: the behaviour is pinned as source assertions
-// on the components, and the pure predicate + the palette's command shape
-// are exercised directly. The live walk (aria-disabled, out of tab order,
-// the click focusing the draft) rides the card's screenshot pack.
-//
-// Run: node --test test/newconversationdim.test.ts
+// omega webui: THE NEW-CONVERSATION DIM. While the focused tab IS the draft
+// conversation, every "new conversation" door would only focus the tab already on
+// screen: the sidebar's '+' (title "New conversation"), its menu's "New Session" row,
+// the palette's "New chat" command and a main pane's '+' each dim and disable -
+// aria-disabled + tabindex -1, dimmed but NEVER removed, the same law the last-tab
+// close X obeys.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -37,7 +24,7 @@ const APP = resolve(HERE, "..", "app");
 const REPO = resolve(HERE, "..", "..");
 const read = (rel: string) => readFileSync(join(APP, rel), "utf8");
 
-// --- the pure predicate -------------------------------------------------
+// -- the pure predicate ------------------------------------------------
 
 /** a tree with two chat tabs in one pane: index 0 the draft, 1 bound */
 function tree(): DockNode {
@@ -78,7 +65,7 @@ test("a non-chat tab under the focus never dims", () => {
   assert.equal(isDraftChatKey(makeSplit("row", [pane]), "k-set"), false);
 });
 
-// --- the palette's command shape ---------------------------------------
+// -- the palette's command shape --------------------------------------
 
 function commands(draftFocused?: boolean) {
   const seen: string[] = [];
@@ -121,7 +108,7 @@ test("running the dimmed command still focuses the draft (honest no-op)", async 
   assert.deepEqual(seen, ["chat"], "the action is untouched - the row only says what it will do");
 });
 
-// --- the doors' source pins --------------------------------------------
+// -- the doors' source pins -------------------------------------------
 
 test("app.vue owns the fact once and provides it", () => {
   const app = read("app.vue");
@@ -149,7 +136,6 @@ test("the sessions sidebar's '+' and its New Session row both dim", () => {
   assert.match(bar, /:aria-disabled="draftFocused \|\| undefined"/);
   assert.match(bar, /:tabindex="draftFocused \? -1 : undefined"/);
   assert.ok(bar.includes("+ New Session"), "the door is still there - dim is never removal");
-  // the menu's "New Session" row reads the same fact through its entry
   assert.match(bar, /dimmed: props\.draftFocused/, "the menu entry follows the same live fact");
   assert.match(bar, /'door-dimmed': entry\.dimmed/);
   // the dim is NOT the native disabled attribute (that kills the title)
@@ -179,8 +165,7 @@ test("the palette row carries the dim as an accessible state", () => {
 test("the dim value is ONE global class (card law: no second copy)", () => {
   const css = read("assets/css/main.css");
   assert.match(css, /\.door-dimmed \{\n  opacity: 0\.4;\n  cursor: default;\n\}/, "the one dim value");
-  // the last-tab close X keeps its own (hover-strip) treatment; the two
-  // live side by side so a future edit compares instead of inventing
+  // the last-tab close X keeps its own (hover-strip) treatment.
   assert.match(css, /\.dock-tab-close\.locked,[\s\S]{0,120}opacity: 0\.3;/);
 });
 

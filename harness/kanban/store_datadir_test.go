@@ -8,16 +8,12 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// TestOpenMigratesLegacyHome: opening the board db migrates a legacy
-// home-root kanban.db (+ sidecars) into data/ before the handle opens,
-// and the opened store still serves the board. The legacy fixture is a
-// real SQLite database.
+// TestOpenMigratesLegacyHome: opening the board db migrates a legacy home-root.
 func TestOpenMigratesLegacyHome(t *testing.T) {
 	home := t.TempDir()
 	legacy := filepath.Join(home, "kanban.db")
 
-	// Real legacy db at the root (root path is outside a data dir, so
-	// setup itself triggers no migration).
+	// Real legacy db at the root (root path is outside a data dir, so setup itself.
 	s0, err := Open(legacy)
 	if err != nil {
 		t.Fatalf("create legacy db: %v", err)

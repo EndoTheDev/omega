@@ -1,10 +1,6 @@
 package api
 
-// Tests for the push channel's hub (card t_7624bab1): fan-out to N
-// connections, topic typing, the lossy/cut delivery law, and every
-// broadcast hook the serve seam owns. The websocket transport itself is
-// pinned in api/ws_test.go (a real dial), because agent/api may not
-// import a websocket library.
+// Tests for the push channel's hub.
 
 import (
 	"context"
@@ -40,8 +36,7 @@ func recvFrame(t *testing.T, sub *SocketSub) SocketMessage {
 	}
 }
 
-// expectNoFrame asserts the subscriber receives nothing for a short
-// window (the negative half of a subscription assertion).
+// expectNoFrame asserts the subscriber receives nothing for a short window (the.
 func expectNoFrame(t *testing.T, sub *SocketSub) {
 	t.Helper()
 	select {
@@ -51,8 +46,7 @@ func expectNoFrame(t *testing.T, sub *SocketSub) {
 	}
 }
 
-// TestSocketHubFanOutToConnections: one publish reaches EVERY attached
-// connection, in one sequence, with the same payload bytes.
+// TestSocketHubFanOutToConnections: one publish reaches EVERY attached connection, in.
 func TestSocketHubFanOutToConnections(t *testing.T) {
 	hub := NewSocketHub()
 	subs := []*SocketSub{hub.Attach(), hub.Attach(), hub.Attach()}
@@ -87,9 +81,8 @@ func TestSocketHubFanOutToConnections(t *testing.T) {
 	}
 }
 
-// TestSocketHubTopicTyping: the envelope carries the topic, the session
-// scope and the chat event name; a narrowed subscription sees only its
-// own topics.
+// TestSocketHubTopicTyping: the envelope carries the topic, the session scope and the
+// chat event name.
 func TestSocketHubTopicTyping(t *testing.T) {
 	hub := NewSocketHub()
 	narrow := hub.Attach()
@@ -129,7 +122,6 @@ func TestSocketHubTopicTyping(t *testing.T) {
 // authoritative topic (a silent loss would look like state that never
 // changed) and only DROPS frames on the lossy chips topic.
 func TestSocketHubDeliveryLaw(t *testing.T) {
-	// the authoritative topic: overflow CUTS the connection
 	hub := NewSocketHub()
 	sub := hub.Attach()
 	defer sub.Close()
@@ -152,7 +144,6 @@ func TestSocketHubDeliveryLaw(t *testing.T) {
 		t.Fatalf("subscribers = %d, want 0 (the cut one detached)", hub.SubscriberCount())
 	}
 
-	// the lossy topic: overflow drops frames and keeps the wire
 	lossy := NewSocketHub()
 	chips := lossy.Attach()
 	defer chips.Close()
@@ -182,9 +173,7 @@ func TestSocketHubCloseIdempotent(t *testing.T) {
 	hub.Publish(TopicChat, "s", RunState{Active: true}) // no panic, no subscriber
 }
 
-// TestRunFramesRideChatTopic: the run broadcast seam's push half - one
-// emit reaches the SSE subscribers AND the chat topic with the same
-// bytes.
+// TestRunFramesRideChatTopic: the run broadcast seam's push half.
 func TestRunFramesRideChatTopic(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	sub := s.Sockets().Attach()
@@ -210,9 +199,7 @@ func TestRunFramesRideChatTopic(t *testing.T) {
 	}
 }
 
-// TestCanvasEmitPublishesCanvasTopic: a panel delta (notifications
-// toast, board change) rides the canvas topic even with no live run -
-// the frame that retires the SPA's snapshot poll.
+// TestCanvasEmitPublishesCanvasTopic: a panel delta (notifications toast, board.
 func TestCanvasEmitPublishesCanvasTopic(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	sub := s.Sockets().Attach()
@@ -233,9 +220,7 @@ func TestCanvasEmitPublishesCanvasTopic(t *testing.T) {
 	}
 }
 
-// TestChipTapStreamsToolOutput: the shell's capped buffer feeds the run
-// output tap; the chunk lands on the chips topic typed with the call it
-// belongs to, and a capped write carries the truncation marker.
+// TestChipTapStreamsToolOutput: the shell's capped buffer feeds the run output tap.
 func TestChipTapStreamsToolOutput(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	sub := s.Sockets().Attach()
@@ -272,9 +257,7 @@ func TestChipTapStreamsToolOutput(t *testing.T) {
 	expectNoFrame(t, sub)
 }
 
-// TestWakeFillPublishesChipFrame: wakeHome is the one settle entry
-// point, so the chips topic's fill comes from there - the chip settles
-// when the result is in hand.
+// TestWakeFillPublishesChipFrame: wakeHome is the one settle entry point, so the.
 func TestWakeFillPublishesChipFrame(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	sub := s.Sockets().Attach()
@@ -296,11 +279,7 @@ func TestWakeFillPublishesChipFrame(t *testing.T) {
 		t.Fatalf("fill = %+v, want a filled call-2 with its content and elapsed", fill)
 	}
 
-	// The hook itself: wakeHome is the settle entry point, and it
-	// publishes before draining. An `eph-` home with no registry entry
-	// makes the launch fail harmlessly - the frame is already out, which
-	// is the property under test (the chip settles when the result is in
-	// hand, not when the wake turn gets a slot).
+	// The hook itself: wakeHome is the settle entry point, and it publishes before.
 	s.wakeHome("eph-gone", core.YieldResult{ToolCallID: "call-3", ToolName: "shell.run", Content: "tail"})
 	fromWake := recvFrame(t, sub)
 	var wakeFill ChipFrame
@@ -312,8 +291,8 @@ func TestWakeFillPublishesChipFrame(t *testing.T) {
 	}
 }
 
-// TestRunStateEdges: taking and releasing a run slot publishes the runs
-// topic's two edges - the fact the SPA used to poll GET /sessions for.
+// TestRunStateEdges: taking and releasing a run slot publishes the runs topic's two
+// edges.
 func TestRunStateEdges(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	sub := s.Sockets().Attach()
@@ -341,22 +320,11 @@ func TestRunStateEdges(t *testing.T) {
 	}
 }
 
-// TestReleaseEdgePublishesAfterTheSlotFrees pins the ORDER of launchRun's
-// two exit defers, not just their outcome: the runs topic's release edge
-// reaches the wire only AFTER the run hub released the slot. The comment
-// on those defers has claimed that property since card t_7624bab1 while
-// the declarations ran LIFO the other way round, so a client refetching
-// /sessions on the edge could read running=true for the session the push
-// just called idle. This test measures the interleaving instead of
-// reading the comment.
-//
-// The measurement: a blocking store parks the run goroutine in its
-// persist step - the last work between the loop's final frame and the
-// exit defers - and the test then takes the SOCKET hub's mutex. Publish
-// and finish park on different mutexes (the socket hub's, the run hub's),
-// so holding the socket hub's freezes a publish that reached it and
-// nothing else. While it is held the slot MUST still release: that
-// happens only when finish runs before the publish.
+// TestReleaseEdgePublishesAfterTheSlotFrees pins the ORDER of launchRun's two exit. The
+// measurement: a blocking store parks the run goroutine in its persist step - the last
+// work between the loop's final frame and the exit defers - and the test then takes the
+// SOCKET hub's mutex. While it is held the slot MUST still release: that happens only
+// when finish runs before the publish.
 func TestReleaseEdgePublishesAfterTheSlotFrees(t *testing.T) {
 	const sid = "sess-release-edge-order"
 
@@ -367,8 +335,7 @@ func TestReleaseEdgePublishesAfterTheSlotFrees(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	pause := &pauseOnPersist{StoreProvider: st, entered: make(chan struct{}), release: make(chan struct{})}
 
-	// Empty script: the run streams no provider events, so what it
-	// publishes never depends on scripted pacing.
+	// Empty script: the run streams no provider events, so what it publishes never.
 	prov := agent.NewFakeProviderScripts("fake", nil)
 	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(loop.Loop{})
@@ -390,15 +357,13 @@ func TestReleaseEdgePublishesAfterTheSlotFrees(t *testing.T) {
 	}
 	s.launchRun(context.Background(), run, prov, []core.Message{core.User{Content: "hi"}}, nil, chatRequest{SessionID: sid})
 
-	// The run is parked on its persist step: every chat frame is out and
-	// the exit defers have not started.
+	// The run is parked on its persist step.
 	select {
 	case <-pause.entered:
 	case <-time.After(testWaitTimeout):
 		t.Fatalf("the run on %q never reached its persist step", sid)
 	}
 
-	// Freeze the hub: a publish that reaches it parks on this mutex.
 	s.sockets.mu.Lock()
 	held := true
 	defer func() {
@@ -408,11 +373,10 @@ func TestReleaseEdgePublishesAfterTheSlotFrees(t *testing.T) {
 	}()
 	close(pause.release)
 
-	// The pinned property: with the release edge unable to reach the
-	// wire, the slot still releases. LIFO runs the LAST declaration
-	// first, so this holds only when publishRunState is declared before
-	// runs.finish - the other order parks the publish, and the slot is
-	// then never released.
+	// The pinned property: with the release edge unable to reach the wire, the slot. LIFO
+	// runs the LAST declaration first, so this holds only when publishRunState is declared
+	// before runs.finish - the other order parks the publish, and the slot is then never
+	// released.
 	deadline := time.Now().Add(testWaitTimeout)
 	for s.runs.active(sid) {
 		if time.Now().After(deadline) {
@@ -420,7 +384,6 @@ func TestReleaseEdgePublishesAfterTheSlotFrees(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	// Released, with the edge still queued behind the held mutex.
 	select {
 	case raw := <-sub.Messages():
 		t.Fatalf("release edge published while the test still held the hub: %s", raw)
@@ -442,10 +405,7 @@ func TestReleaseEdgePublishesAfterTheSlotFrees(t *testing.T) {
 	}
 }
 
-// pauseOnPersist parks the run's persist step (AddSessionTokens) until
-// the test opens release. Persistence itself is a no-op write: this test
-// pins frame ORDER, and a store error would publish an error frame that
-// parks on the held hub and hides the defers under test.
+// pauseOnPersist parks the run's persist step (AddSessionTokens) until the test opens.
 type pauseOnPersist struct {
 	agent.StoreProvider
 	entered chan struct{}
@@ -463,9 +423,7 @@ func (p *pauseOnPersist) SetSessionLastRun(_ context.Context, _ string, _ *core.
 	return nil
 }
 
-// TestSocketTopicsDocumented pins the topic vocabulary to its doc home:
-// a topic added or renamed without docs/api.md fails here (the same
-// agreement the module-UI narrow recipe pins in the SPA).
+// TestSocketTopicsDocumented pins the topic vocabulary to its doc home.
 func TestSocketTopicsDocumented(t *testing.T) {
 	doc, err := os.ReadFile("../../docs/api.md")
 	if err != nil {
@@ -491,13 +449,7 @@ func TestSocketTopicsDocumented(t *testing.T) {
 	}
 }
 
-// TestBindSocketHubSharesOneFanOutAcrossBinds pins the multi-bind push
-// seam (t_229edd92): BindSocketHub is the one binding, and a frame any
-// bound server publishes reaches a subscriber attached through another.
-// NewServer's own hub is the single-server floor (runs: &RunHub{} has
-// the same shape); what makes binds share is the binding, so this test
-// is structurally decisive - with per-bind hubs each server fans out to
-// its own subscriber set and the first subscriber below stays blind.
+// TestBindSocketHubSharesOneFanOutAcrossBinds pins the multi-bind push seam.
 func TestBindSocketHubSharesOneFanOutAcrossBinds(t *testing.T) {
 	hub := NewSocketHub()
 	sA := NewServer(nil, nil, nil, nil, nil, nil)

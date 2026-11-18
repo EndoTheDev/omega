@@ -1,23 +1,19 @@
 <template>
   <main class="chat pane">
-    <!-- wrap owns the pill's absolute placement AND the vertical stack:
-         the column wrap keeps the scrollport full-pane-width (the
-         scrollbar hugs the pane's right edge - the row layout stranded
-         a phantom strip beside it) and parks the activity/status line
-         BELOW the scroller, above the composer, where it cannot clip.
-         An absolutely positioned child of the scroll container itself
-         would scroll away with the content, so the pill lives here. -->
-    <!-- ONE scrollport, always (card t_5bb319f6). The live-run branch that
-         used to replace this column with a pinned header + a run-only
-         body is gone: it rendered the scroll region WITHOUT the older
-         history, so mid-stream the pane hit scrollTop 0 under the pin
-         and prior messages were unreachable - a scroll lock nobody
-         asked for. The pin is now a STICKY row inside this scrollport:
-         at the tail it holds the question against the top while the run
-         streams underneath; scrolling up releases it at its place in
-         the flow and the history above is readable, and the append
-         follow stays gated on the pinned flag (scrolling up detaches
-         it - new content never yanks the pane). -->
+    <!--
+      wrap owns the pill's absolute placement AND the vertical stack: the column wrap
+      keeps the scrollport full-pane-width (the scrollbar hugs the pane's right edge -
+      the row layout stranded a phantom strip beside it) and parks the activity/status
+      line BELOW the scroller, above the composer, where it cannot clip.
+    -->
+    <!--
+      ONE scrollport, always.
+      The pin is now a STICKY row inside this scrollport: at the tail it holds the
+      question against the top while the run streams underneath; scrolling up releases
+      it at its place in the flow and the history above is readable, and the append
+      follow stays gated on the pinned flag (scrolling up detaches it - new content
+      never yanks the pane).
+    -->
     <div class="messages-wrap">
       <div
         class="messages"
@@ -30,15 +26,16 @@
           say something to
           <span class="brand">Ωmega</span>
         </p>
-        <!-- ONE item renderer, two container layouts (card t_84e4653c):
-             ChatItem is a fragment - it renders exactly the per-item DOM
-             the old flat v-for did, so 'chat' stays pixel-identical.
-             'stacked' wraps each turn block: a user message plus its
-             full response subtree, separated by the block gap. -->
+        <!--
+          ONE item renderer, two container layouts: ChatItem is a fragment - it renders
+          exactly the per-item DOM the old flat v-for did, so 'chat' stays
+          pixel-identical.
+        -->
         <template v-if="appearance === 'stacked'">
-          <!-- card t_e4280de7: the block's own consecutive tool runs
-               group - a run is one block's subtree, so runs never span
-               blocks (a user message always breaks both) -->
+          <!--
+            the block's own consecutive tool runs group - a run is one block's subtree,
+            so runs never span blocks (a user message always breaks both)
+          -->
           <div
             v-for="block in groupedBlocks"
             :key="blockKey(block)"
@@ -52,10 +49,9 @@
                 :gate-cards="entry.items.map(gateCardForItem)"
                 :session-id="sessionId"
                 :live="busy" />
-              <!-- the live pin (card t_5bb319f6): the streaming turn's user
-                   row rides a sticky slot - it holds the scrollport top
-                   while the run paints underneath, and returns to its place
-                   in the flow as soon as the reader scrolls up to it -->
+              <!--
+                the live pin: the streaming turn's user row rides a sticky slot.
+              -->
               <div
                 v-else-if="pinnedSlot(block, index)"
                 class="live-pin">
@@ -104,18 +100,13 @@
               @retry="onRetry" />
           </template>
         </template>
-        <!-- card t_63204dfd: pending gate questions with no running row
-             to ride render standalone at the tail -->
         <GateCard
           v-for="card in sessionGateBinding.standalone"
           :key="card.id"
           :card="card"
           :session-id="sessionId ?? undefined" />
       </div>
-      <!-- the activity line (card t_e9baac4b): phase-aware narration
-           above the composer, mode-independent, hidden when idle. The
-           phases derive from the rendered items (canvas rows painted
-           through the deltas; the restore fallback otherwise). -->
+      <!-- the activity line: phase-aware narration above the composer. -->
       <div
         v-if="activityText"
         class="activity-line">{{ activityText }}</div>
@@ -156,13 +147,7 @@
 </template>
 
 <script setup lang="ts">
-  // ONE chat tab (card t_4f0e88f2): the chat component is dockable now.
-  // chat-last 2a: the transcript renders FROM the canvas view-model -
-  // the chat panel's snapshot + deltas, item-mapped with identity so a
-  // repaint does not remount the pane. The per-tab transcript copies
-  // and the SSE-composed live view are gone; the state keeps the
-  // composer transport side (draft, attach chips, the REST restore's
-  // fallback for sessions the single panel does not cover, variants).
+  // ONE chat tab: the chat component is dockable now.
   import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
   import {
     CHAT_HOST_KEY,
@@ -198,8 +183,7 @@
   } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
   import { chipDisplay, chipOf } from "../composables/chips";
-  // card t_e4280de7: consecutive tool rows collapse into ONE group
-  // block (render-site view, the transcript itself stays flat)
+  // consecutive tool rows collapse into ONE group block (render-site view, the.
   import { groupToolRuns, isToolRun, type ChatEntry } from "../composables/toolGroup";
   import { pendingVerdictList, refreshNotifications } from "./shell/notificationFeed";
   import AppComposer from "./chat/AppComposer.vue";
@@ -208,24 +192,13 @@
   import ToolGroup from "./chat/ToolGroup.vue";
 
   const props = defineProps<{
-    /** the tab this instance renders (its `key` is the state key) */
     tab: DockTab;
-    /** show thinking blocks (app setting) */
     showThinking: boolean;
-    /** the app default model (an unpinned tab rides it; a pinned row
-         holds its own pin - t_9de5b009's restorePins law) */
     model: string;
-    /** available model names (shared - the picker's flat floor) */
     models: string[];
-    /** the grouped catalog (card t_1914a8c9): one section per provider -
-         the chat picker renders collapsible sections from these */
     groups: ModelProviderSection[];
-    /** the session this tab is bound to (null = unsaved draft tab) -
-         its pinned model + workspace are what stick (card t_9de5b009) */
     session?: Session | null;
-    /** reasoning-effort chip selection ("default" = no field sent) */
     thinking: string;
-    /** chat appearance: chronolog | stacked blocks (card t_84e4653c) */
     appearance: Appearance;
   }>();
 
@@ -237,43 +210,27 @@
 
   const host = inject(CHAT_HOST_KEY)!;
 
-  // the tab key: minted at creation, present on every persisted chat tab
-  // (dock boot-time normalization) - the host's state key
+  // the tab key: minted at creation, present on every persisted chat tab (dock
+  // boot-time normalization).
   const stateKey = props.tab.key ?? "";
   // the tab owns the binding: unsaved (no sessionRef) -> composer-first.
-  // EPHEMERAL_DRAFT_REF is a marker, not an id - a composer-first
-  // EPHEMERAL tab's binding (the state stays unbound until the send).
   const sessionId = computed(() =>
     props.tab.sessionRef === EPHEMERAL_DRAFT_REF ? null : props.tab.sessionRef ?? null,
   );
-  // the ephemeral bit: the draft marker, or a bound `eph-` id (the
-  // registry's namespace - a reload re-mints the state, so the
-  // no-persist contract must ride the binding)
+  // the ephemeral bit: the draft marker, or a bound `eph-` id (the registry's namespace
+  // - a reload re-mints the state, so the no-persist contract must ride the binding)
   const isEphemeral =
     props.tab.sessionRef === EPHEMERAL_DRAFT_REF ||
     (props.tab.sessionRef?.startsWith("eph-") ?? false);
 
   // ensure BEFORE the computeds read the map: setup runs pre-render
   host.ensureState(stateKey, sessionId.value, isEphemeral || undefined);
-  // the reactive read through the wrapped map is the view
   const state = computed(() => host.states.get(stateKey));
 
-  // --- the session's remembered context (card t_9de5b009) ---
-  //
-  // The pinned model belongs to the SESSION, not to the app: reopening
-  // restores what it last used, a mid-session change updates the row (the
-  // app PATCHes on our emit). A bound tab adopts the row's pin.
-  //
-  // The session's WORKSPACE pin left this component with its chip (card
-  // t_8fd38f88): the workdir selector lives in the status bar's left zone
-  // now, and app.vue writes the same two targets it used to - the row
-  // (bound) or the draft intent (unbound). ChatTab only carries the state
-  // the send consumes.
+  // -- the session's remembered context --- The pinned model belongs to the SESSION,
+  // not to the app.
   const modelValue = ref(props.session?.model || props.model);
-  // rebind (draft -> sent adopts an id; tab remount) restores from the
-  // row; a row refresh adopts the pin the PATCH persisted. The pinned
-  // model only wins while non-empty - a draft with no row keeps the
-  // app default that props.model carries.
+  // rebind (draft -> sent adopts an id.
   function restorePins() {
     const pinnedModel = props.session?.model ?? "";
     if (sessionId.value) {
@@ -286,8 +243,7 @@
     () => [sessionId.value, props.session?.model ?? ""] as const,
     restorePins,
   );
-  // the app's default model moved (models fetch or another draft tab's
-  // change): an UNPINNED context follows it, a pinned session holds
+  // the app's default model moved (models fetch or another draft tab's change).
   watch(
     () => props.model,
     (m) => {
@@ -299,12 +255,7 @@
     emit("update:model", v);
   }
 
-  // --- the transcript's render source (chat-last 2a) ---
-  //
-  // The chat panel (kind 'chat' on the canvas) is the streaming source:
-  // when its payload covers THIS tab's session, the rows paint the pane
-  // (snapshot at load, deltas after - identity-kept per delta). Any
-  // other session falls back to the REST restore's rendered items.
+  // -- the transcript's render source (chat-last 2a) --- The chat panel (kind 'chat'.
   const canvasTranscript = createCanvasTranscript();
   const panelPayload = computed(() => {
     const panel = host.chatPanel();
@@ -318,15 +269,12 @@
     if (!(panelMatches.value && panelPayload.value)) return null;
     return canvasTranscript.apply(panelPayload.value);
   });
-  // the live chip tail (card t_896cf5a8): a running call's streamed
-  // output rides the row whose tool call id matches. The store is
-  // reactive, so a landed chunk repaints exactly these rows; the merge
-  // runs over the FINAL transcript, so both render sources (the canvas
-  // panel and the REST restore fallback) show the live half. Restore
-  // items are wrapped in reactive proxies: the mutation lands on the
-  // child's own prop read (the t_078a2c35 mechanism the canvas items
-  // already ride), and identity is kept - the elapsed meter never
-  // restarts on a chunk.
+  // the live chip tail: a running call's streamed output rides the row whose tool. The
+  // store is reactive, so a landed chunk repaints exactly these rows; the merge runs
+  // over the FINAL transcript, so both render sources (the canvas panel and the REST
+  // restore fallback) show the live half. Restore items are wrapped in reactive
+  // proxies: the mutation lands on the child's own prop read, and identity is kept -
+  // the elapsed meter never restarts on a chunk.
   const restoreItems = computed(() =>
     (state.value?.restored ?? []).map((it) =>
       it.kind === "tool" ? (reactive(it) as TranscriptItem) : it,
@@ -344,19 +292,13 @@
   });
   const statusLine = computed(() => state.value?.statusLine ?? "");
   const itemKey = createItemKeySource();
-  // stacked layout (card t_84e4653c): the transcript cut at user
-  // messages - user message + response subtree = one visual block.
-  // The canvas item identity survives deltas, so the inner keys stay
-  // stable through streaming repaints.
+  // stacked layout: the transcript cut at user messages.
   const blocks = computed(() => splitBlocks(transcript.value));
-  // the outer key rides the block's first ENTRY (card t_e4280de7): a
-  // block opening on a tool run groups it, and groupToolRuns keeps the
-  // head item's identity, so the key survives the grouping swap.
+  // the outer key rides the block's first ENTRY.
   function blockKey(block: ChatEntry[]): number {
     const first = block[0];
     return first ? entryKey(first) : -1;
   }
-  // draft lives per state (survives tab switches)
   const draft = computed({
     get: () => state.value?.draft ?? "",
     set: (v: string) => {
@@ -364,18 +306,14 @@
     },
   });
 
-  // composer busy = the PER-SESSION run slot (either this tab's stream,
-  // another tab's on the same session, or a detached run another window
-  // started) - the runHub truth, not a per-tab one
+  // composer busy = the PER-SESSION run slot (either this tab's stream, another tab's.
   const busy = computed(() => {
     const id = sessionId.value;
     if (id) return host.busyAll.value.has(id);
-    // unsaved tab: only its own create window gates it
     return host.busyKeys.value.has(stateKey);
   });
   const canRetry = computed(
-    // ephemeral (card t_d96a5cd5): nothing persisted to replay - the
-    // affordance never renders, the server refuses the flag combination
+    // ephemeral: nothing persisted to replay - the affordance never renders, the.
     () =>
       !busy.value &&
       sessionId.value !== null &&
@@ -383,11 +321,10 @@
       !state.value?.ephemeral,
   );
 
-  // the retry affordance lives on the message action row (t_95d2bc34):
-  // the transcript owner derives BOTH signals - the run must be idle
-  // (canRetry above; the row also hides while the row's bubble streams)
-  // and this item is the NEWEST assistant response, the one the retry's
-  // sibling replay appends under. Older responses show fork/copy only.
+  // the retry affordance lives on the message action row: the transcript owner derives
+  // BOTH signals - the run must be idle (canRetry above; the row also hides while the
+  // row's bubble streams) and this item is the NEWEST assistant response, the one the
+  // retry's sibling replay appends under.
   const lastAssistantId = computed(() => {
     const items = transcript.value;
     for (let i = items.length - 1; i >= 0; i--) {
@@ -406,11 +343,7 @@
     );
   }
 
-  // --- stacked live-run pin (card t_5bb319f6, superseding the two-region
-  // split of t_c40164cf): the last user message of the streaming turn
-  // rides a STICKY slot inside the one scrollport. Derived, no new state -
-  // the pin is the head row of the last block, and the pinned slot only
-  // exists while that turn streams.
+  // -- stacked live-run pin: the last user message of the streaming turn rides a.
   const liveRun = computed(() => liveRunSlice(transcript.value));
   const liveLayout = computed(
     () =>
@@ -418,25 +351,16 @@
       busy.value &&
       liveRun.value.user !== null,
   );
-  // the head row of the LAST block, while that block is the live turn:
-  // every other row renders in flow exactly as it always did, so the
-  // scrollport keeps the full history and a mid-stream scroll-up reaches
-  // it (the old branch rendered the run body alone - scrollTop 0 was the
-  // top of the world until agent_end)
+  // the head row of the LAST block, while that block is the live turn: every other row
+  // renders in flow exactly as it always did, so the scrollport keeps the full history
+  // and a mid-stream scroll-up reaches it (the old branch rendered the run body alone -
+  // scrollTop 0 was the top of the world until agent_end)
   function pinnedSlot(block: ChatEntry[], index: number): boolean {
     if (!liveLayout.value || index !== 0) return false;
     return block === groupedBlocks.value[groupedBlocks.value.length - 1];
   }
 
-  // --- pending gate questions (card t_63204dfd): the chat surface ---
-  //
-  // The escalated shell.run froze the run; the pending card (the
-  // shared verdict-card listing, already polled for the badge) binds
-  // to the rendered running shell.run row - the three-option card
-  // rides the row it froze. The tool_result lands with the gate's
-  // stamp line, the row stops running, the binding is gone: the card
-  // collapses into the permanent stamp. Cards with no running row to
-  // ride render standalone at the tail.
+  // -- pending gate questions.
   const sessionGateBinding = computed(() =>
     bindGateQuestions(transcript.value, pendingVerdictList.value, sessionId.value ?? null),
   );
@@ -449,30 +373,23 @@
     return gateByItem.value.get(item) ?? null;
   }
 
-  // the freeze cadence: the feed is pulled on EVENT HINTS since the push
-  // channel landed (card t_896cf5a8) - a run start, and every chat
-  // frame's call/turn edge at the shell level. The 5s freeze poll is
-  // gone: a pending question's issuance and answer both ride the chat
-  // topic, so the pull is edge-driven.
+  // the freeze cadence: the feed is pulled on EVENT HINTS since the push channel
+  // landed.
   watch(busy, (live) => {
     if (live) void refreshNotifications();
   });
-  // a standalone gate card mounts at the tail OUTSIDE the transcript
-  // (the verdict poll binding) - its mount height is growth the RO must
-  // see (card t_bef3f45e)
+  // a standalone gate card mounts at the tail OUTSIDE the transcript (the verdict poll
+  // binding) - its mount height is growth the RO must see
   watch(
     () => sessionGateBinding.value.standalone.length,
     () => nextTick(resizeContentRO),
   );
 
-  // --- the activity line (card t_e9baac4b): the phase is a pure
-  // derivation of the rendered items + the session's busy gate (no new
-  // state). One elapsed meter per phase stretch - recreated on the
-  // phase swap, so the counter restarts exactly on the event that ended
-  // one phase and started the next (a running tool counts on from the
-  // panel's elapsed-so-far through initialMs, like the ToolCallLine
-  // meter). Idle: the key is "" and the meter stops - the line is
-  // hidden.
+  // -- the activity line: the phase is a pure derivation of the rendered items + the.
+  // One elapsed meter per phase stretch - recreated on the phase swap, so the counter
+  // restarts exactly on the event that ended one phase and started the next (a running
+  // tool counts on from the panel's elapsed-so-far through initialMs, like the
+  // ToolCallLine meter).
   const activity = computed(() => activityPhase(transcript.value, busy.value));
   const tickLabel = ref("");
   const activityText = computed(() => {
@@ -503,51 +420,20 @@
   );
   onBeforeUnmount(() => tick?.stop());
 
-  // --- scroll pinning + jump-to-live pill: PER INSTANCE now - multiple
-  // panes may render the same component, each owns its scrollbar ---
+  // -- scroll pinning + jump-to-live pill.
   const messagesEl = ref<HTMLElement | null>(null);
   const pinned = ref(true);
   const jumpPill = ref(false);
-  // the scroller's height at the LAST scroll event - the shrink-clamp
-  // guard fuel (resumesFollow). RO callbacks never touch it: a fold's
-  // clamped arrival at the bottom fires its scroll event with this value
-  // still pre-fold, so the event reads as a layout event, not a user
-  // scroll. (card t_bef3f45e)
+  // the scroller's height at the LAST scroll event. RO callbacks never touch it: a
+  // fold's clamped arrival at the bottom fires its scroll event with this value still
+  // pre-fold, so the event reads as a layout event, not a user scroll.
   let lastScrollHeight = 0;
   // the scrollTop OUR last follow write landed at (the browser clamps it).
-  // The scroll event that write raises is not a reader decision: a stream
-  // delta can grow the scroller between the write and the event, so the
-  // plain near-bottom check would read "the reader is above the tail" and
-  // un-latch the follow for the rest of the run (measured live on this
-  // card: the pane parked one delta short of the bottom and the run
-  // streamed away from it).
   let followWrite = -1;
 
-  // --- the transcript has ONE scroll writer (card t_31c64042) ----------
-  //
-  // The follow and the browser's scroll anchoring both write scrollTop,
-  // and they write it in the same frames. Measured live on this card's
-  // lane (stacked appearance, a live send): the app's follow write lands
-  // the pane at the tail, an anchor adjustment moves it back up 72-490px
-  // while a row above the viewport re-folds, and the next follow write
-  // yanks it down again - the up/down the bug report names. The anchor
-  // half of that pair is CSS, not JS: `.messages` carries
-  // `overflow-anchor: none`, so the app's follow is the only writer.
-  // What is left here is the app's half of the thrash: a follow write of
-  // a position the scrollport ALREADY holds is not free - it is a
-  // programmatic scroll. Measured: 20 writes in one send, 16 of them on
-  // the position the pane already had; the skip below leaves 3-4.
+  // -- the transcript has ONE scroll writer ---------- The follow and the browser's.
 
-  // --- content-change follow (card t_bef3f45e): the transcript
-  // watcher below fires per delta, but paint does not always grow the
-  // scrollport on that tick. The streaming text bubble renders on a
-  // 150ms debounce (createRenderScheduler), the thinking body grows on
-  // its own text, the details fold at answer start - height changes
-  // arrive BETWEEN transcript changes. A ResizeObserver on the scroll
-  // container and its items is the honest witness: it follows when
-  // pinned and keeps the pill fresh when not. scrollDown gates itself
-  // on the pinned flag, so an observe-registration fire is a no-op
-  // follow, not a forced jump.
+  // -- content-change follow.
   let contentRO: ResizeObserver | null = null;
   const roTargets = new WeakSet<HTMLElement>();
 
@@ -556,8 +442,7 @@
     if (!el) return;
     if (typeof ResizeObserver === "undefined") return;
     if (contentRO === null) contentRO = new ResizeObserver(onContentResize);
-    // the container itself: a pane drag or the wrap reflowing changes
-    // the box and can move the pill verdict
+    // the container itself: a pane drag or the wrap reflowing changes the box and can.
     if (!roTargets.has(el)) {
       roTargets.add(el);
       contentRO.observe(el);
@@ -585,8 +470,7 @@
     const el = messagesEl.value;
     if (!el) return;
     if (followWrite >= 0 && el.scrollTop === followWrite) {
-      // our own follow write coming back as a scroll event - the follow
-      // state belongs to the writer, not to the reader
+      // our own follow write coming back as a scroll event.
       followWrite = -1;
       lastScrollHeight = el.scrollHeight;
       jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
@@ -604,11 +488,7 @@
     jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
   }
 
-  // a run starting (card t_5bb319f6): the send path lands the reader at
-  // the tail and re-arms the follow, so the new turn's pin and its first
-  // output are on screen. The run's END is not a layout swap any more -
-  // the pin just stops being sticky where it stands, so a reader who
-  // scrolled up mid-stream keeps their place.
+  // a run starting: the send path lands the reader at the tail and re-arms the.
   watch(liveLayout, (live) => {
     if (!live) return;
     pinned.value = true;
@@ -619,9 +499,7 @@
 
   function scrollDown(force = false) {
     if (force) pinned.value = true;
-    // rAF only while the document can paint; a hidden document never
-    // fires rAF callbacks, which stalled the tail-follow for every run
-    // the user wasn't watching. scrollFlushTick documents the trade.
+    // rAF only while the document can paint; a hidden document never fires rAF.
     const tick = scrollFlushTick(document.hidden);
     (
       tick === "raf" ? requestAnimationFrame : (fn: () => void) => setTimeout(fn, 0)
@@ -629,17 +507,11 @@
       const el = messagesEl.value;
       if (!el) return;
       if (!force && !pinned.value) return;
-      // the clamp target is what the browser would land on anyway. A
-      // write of the value the scrollport already holds is NOT free: it
-      // is a programmatic scroll, and the follow fires several per burst.
-      // Measured on this card's lane: 20 writes in one send, 16 landing
-      // on the position the pane already had; 150 in a 20s stream window,
-      // 146 of them no-ops.
+      // the clamp target is what the browser would land on anyway.
       const target = Math.max(el.scrollHeight - el.clientHeight, 0);
       if (el.scrollTop >= target - 1) return;
       el.scrollTop = el.scrollHeight;
-      // read back the clamped value: that scrollTop is what the follow's
-      // own scroll event will carry (onScroll recognises it)
+      // read back the clamped value.
       followWrite = el.scrollTop;
     });
   }
@@ -649,29 +521,20 @@
     scrollDown(true);
   }
 
-  // the painted transcript changes (canvas deltas, restore fetches or
-  // streaming repaints): follow the tail when the view is pinned. The
-  // pinned flag only changes on real scroll events - never measured
-  // after the append (the scroll-pinning law). The RO target list rides
-  // each paint too: new items and branch swaps must enter the
-  // observation set (card t_bef3f45e).
+  // the painted transcript changes (canvas deltas, restore fetches or streaming
+  // repaints). The pinned flag only changes on real scroll events - never measured
+  // after the append (the scroll-pinning law). The RO target list rides each paint too:
+  // new items and branch swaps must enter the observation set.
   watch(transcript, () => {
     scrollDown();
     nextTick(resizeContentRO);
   });
 
-  // --- send / retry ---
   function onSend() {
     const text = draft.value.trim();
     if (!text) return;
     const fork = forkAnchor.value;
-    // slash commands run locally and never hit the agent (the loop
-    // law, card t_07aed3f9): the host routes shell verbs to the app's
-    // local handler and module/skill commands to the dispatch surface.
-    // A /<skill-name> is a reference pill now (t_7f09bd0c): the send
-    // ctx tells the host the dispatch resolves into a MESSAGE - the
-    // skill arms and the token posts, so the pill lives in the
-    // transcript. The fork anchor rides it like any send.
+    // slash commands run locally and never hit the agent.
     if (text.startsWith("/")) {
       draft.value = "";
       void host.command(stateKey, text, {
@@ -682,30 +545,18 @@
       return;
     }
     draft.value = "";
-    // the fork anchor rides a validated target (resolved against the
-    // rendered transcript); a stale anchor degrades to a plain send,
-    // exactly as before - and consumes on send (the next send is a
-    // plain one unless the chip is armed again)
+    // the fork anchor rides a validated target (resolved against the rendered
+    // transcript); a stale anchor degrades to a plain send, exactly as before - and
+    // consumes on send (the next send is a plain one unless the chip is armed again)
     if (fork) host.setFork(stateKey, null);
     host.submit(stateKey, text, modelValue.value, thinkingLevelWire(props.thinking), fork ?? undefined);
   }
   function onRetry() {
-    // the message action row's retry chip (t_95d2bc34): the chat
-    // panel's retry action through the action pipe - the server replays
-    // the last user turn as a sibling variant
+    // the message action row's retry chip.
     void host.retry(stateKey);
   }
 
-  // --- variants (t_a62eeb43, anchor fix t_0df4efd8) ---
-  //
-  // variantOfItem resolves ONE rendered item's switcher block: the
-  // branch anchor item, resolved once per transcript pass by
-  // variantAnchors - a branch's ACTIVE head row anchors, whatever kind
-  // it renders as (a multi-row replay's head is a thinking or tool
-  // call row; the run's stored text bubble anchors instead, and a
-  // text-less run anchors the head block itself). Canvas-mapped stored
-  // rows carry the ids; live rows and user bubbles resolve to null -
-  // the switcher renders only on stored rows.
+  // -- variants --- variantOfItem resolves ONE rendered item's switcher block.
   const variantAnchorMap = computed(() =>
     variantAnchors(transcript.value, state.value?.variants),
   );
@@ -720,20 +571,14 @@
     return variantAnchorMap.value.get(id) ?? null;
   }
 
-  // --- tool-call grouping (card t_e4280de7): consecutive tool rows ---
-  //
-  // groupToolRuns folds each render list's runs of consecutive tool
-  // items into collapsible group blocks; a variant-anchored row stays
-  // in flow (the switcher must stay visible). Grouping is a RENDER-SITE
-  // view: the transcript itself stays flat, so every derivation above
-  // (variants, gates, retry, keys) keeps reading the raw items.
+  // -- tool-call grouping: consecutive tool rows --- groupToolRuns folds each render
+  // list's runs of consecutive tool items into collapsible group blocks; a
+  // variant-anchored row stays in flow (the switcher must stay visible).
   const groupedTranscript = computed(() => groupToolRuns(transcript.value, variantOfItem));
   const groupedBlocks = computed(() =>
     blocks.value.map((block) => groupToolRuns(block, variantOfItem)),
   );
-  // entry keys ride ITEM identity: a group's key is its head row's key,
-  // so a run growing (a new call streams in) keeps the same details
-  // element - and a pinned open state survives the growth.
+  // entry keys ride ITEM identity.
   function entryKey(entry: ChatEntry): number {
     return isToolRun(entry) ? itemKey(entry.items[0]!) : itemKey(entry);
   }
@@ -742,8 +587,7 @@
     void host.selectVariant(stateKey, messageId, index);
   }
   function onFork(messageId: string) {
-    // a USER target reruns that turn immediately (replay semantics,
-    // native /chat fork); anything else anchors the composer
+    // a USER target reruns that turn immediately (replay semantics, native /chat fork).
     const target = findMessageItem(transcript.value, messageId);
     if (!target) return;
     if (target.role === "user") {
@@ -760,16 +604,10 @@
     return findMessageItem(transcript.value, id) ? id : null;
   });
 
-  // --- composer auto-focus (card t_b40131ac): the app signals chat
-  // selections and type-to-capture keystrokes through the focus signal;
-  // each pane renders only its ACTIVE tab, so the instance whose state
-  // key matches the request is by construction the visible one - the
-  // focused tab's composer receives, hidden tabs never match. sync
-  // flush keeps type-to-capture inside the keydown's task, so the
-  // character lands in the newly focused textarea (the insertion event
-  // targets whatever owns focus after keydown). The mount check covers
-  // a freshly minted tab: openChatTab sets focusedKey before this
-  // instance exists, so the pending signal delivers on mount instead.
+  // -- composer auto-focus: the app signals chat selections and type-to-capture
+  // keystrokes through the focus signal; each pane renders only its ACTIVE tab, so the
+  // instance whose state key matches the request is by construction the visible one -
+  // the focused tab's composer receives, hidden tabs never match.
   const composerEl = ref<{ focus: () => void } | null>(null);
   const focusSignal = inject<ComposerFocusSignal | null>(COMPOSER_FOCUS_KEY, null);
   function deliverFocus() {
@@ -783,44 +621,33 @@
     );
   }
 
-  // --- mount: the tab's restore + live-attach entry ---
   onMounted(async () => {
-    // scroll wiring is the template's @scroll on both containers - it
-    // re-binds on every branch swap (the live-run v-if/v-else replaces
-    // the settled column element; an onMounted-bound listener would die
-    // with the first swap and leave the settled column deaf)
-    // the RO targets start observing after the first paint batch - a
-    // registration fire rides the pinned gate, so priming this way never
-    // forces a mount-time jump (card t_bef3f45e)
+    // scroll wiring is the template's @scroll on both containers - it re-binds on every
+    // branch swap (the live-run v-if/v-else replaces the settled column element; an
+    // onMounted-bound listener would die with the first swap and leave the settled
+    // column deaf) the RO targets start observing after the first paint batch - a
+    // registration fire rides the pinned gate, so priming this way never forces a
+    // mount-time jump
     nextTick(resizeContentRO);
-    // pending selection focus for a tab minted after the request (the
-    // new-chat / fresh-session open path)
+    // pending selection focus for a tab minted after the request (the new-chat /.
     if (focusSignal && focusSignal.focusKey.value !== null) deliverFocus();
     if (sessionId.value) host.load(stateKey, sessionId.value);
-    // unsaved: composer-first, nothing to restore
   });
 
   watch(sessionId, (id) => {
     if (!id) return;
-    // the tab's binding moved (unsaved chat's create path, or a session
-    // a shared tab reopened): bind + load when this state is virgin
+    // the tab's binding moved (unsaved chat's create path, or a session a shared tab
+    // reopened).
     if (!host.states.get(stateKey)?.loaded) host.load(stateKey, id);
   });
 
-  // a run starting for the session AFTER this tab mounted (another tab
-  // on the same session, or a detached run another window began): attach
-  // this tab's own SSE copy - the deltas ride it into the canvas store
-  // the pane repaints from. The mount's load() handles the already-live
-  // case; this catches the later-arriving truth through refreshSessions'
-  // server-active feed.
+  // a run starting for the session AFTER this tab mounted (another tab on the same.
   watch(
     () => sessionId.value ? host.busyAll.value.has(sessionId.value) : false,
     (live) => {
       if (!live) return;
       const st = host.states.get(stateKey);
-      // a run this tab never subscribed to: a virgin state loads (its
-      // restore attaches via the detail's live flag); a loaded one
-      // attaches its own copy - both tabs feed the canvas
+      // a run this tab never subscribed to.
       if (!st || st.attached || host.busyKeys.value.has(stateKey)) return;
       if (!st.loaded) {
         host.load(stateKey, sessionId.value!);
@@ -832,11 +659,7 @@
 </script>
 
 <style scoped>
-  /* the fullscreen composer's containing block (card t_9ff2f621): the
-     expanded card is out of flow and floats over this pane, so the pane -
-     not the pane-area above it - is the box it fills. Nothing here is
-     positioned against the pane today; the scroll wrap keeps its own
-     relative context for the pill. */
+  /* the fullscreen composer's containing block. */
   .chat.pane {
     position: relative;
   }

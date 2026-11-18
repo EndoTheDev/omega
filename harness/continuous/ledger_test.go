@@ -1,9 +1,6 @@
 package continuous
 
-// ledger_test.go: the evidence ledger self-checks (ruling 11). The
-// ledger is runtime-owned: rows arrive only through the spine
-// observer, and the store is the process's data dir (per-agent
-// isolation falls out of datadir).
+// ledger_test.go: the evidence ledger self-checks.
 
 import (
 	"context"
@@ -41,11 +38,8 @@ func TestLedgerObserverRecordsToolCalls(t *testing.T) {
 	}
 	call("t1", "shell", map[string]any{"cmd": "ls", "path": existing}, false)
 
-	// A failed call on a missing path.
 	call("t2", "read", map[string]any{"path": "/no/such/file/anywhere"}, true)
 
-	// A write whose file materializes between call and result: the
-	// stat runs at result time, so a creator reads file:exists after.
 	created := filepath.Join(t.TempDir(), "fresh.md")
 	obs(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{
 		ID: "t3", Name: "write", Arguments: map[string]any{"path": created},
@@ -61,8 +55,6 @@ func TestLedgerObserverRecordsToolCalls(t *testing.T) {
 	// A result with no sighted call is skipped (never invented).
 	obs(core.ToolResultEvent{Message: core.ToolResult{Content: "ghost", ToolCallID: "ghost"}})
 
-	// A call whose file is deleted BEFORE its result lands reads
-	// missing even though the write succeeds - the end state is truth.
 	gone := filepath.Join(t.TempDir(), "gone.txt")
 	obs(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{
 		ID: "t4", Name: "write", Arguments: map[string]any{"path": gone},
@@ -80,7 +72,6 @@ func TestLedgerObserverRecordsToolCalls(t *testing.T) {
 	if len(rows) != 4 {
 		t.Fatalf("ledger rows = %d, want 4", len(rows))
 	}
-	// All() returns newest first.
 	if rows[0].Tool != "write" || !rows[0].OK || rows[0].Verifier != "file:missing:"+gone {
 		t.Errorf("row 0 (deleted end state) = %+v", rows[0])
 	}
@@ -117,8 +108,7 @@ func TestLedgerObserverRecordsURLLocator(t *testing.T) {
 	defer lg.Close()
 	obs := lg.observer()
 
-	// web.fetch with a url argument: the verifier carries the url
-	// LOCATOR (no stat, no fetch - the ok flag is the HTTP outcome).
+	// web.fetch with a url argument.
 	mk := func(id string, ok bool) {
 		obs(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{
 			ID: id, Name: "web.fetch", Arguments: map[string]any{"url": "https://example.com/feed"},
@@ -127,7 +117,6 @@ func TestLedgerObserverRecordsURLLocator(t *testing.T) {
 	}
 	mk("f1", true)
 	mk("f2", false)
-	// a path-arg call wins the file stat; no url locator leaks in.
 	obs(core.StreamEvent{Event: core.ToolCallEvent{ToolCall: core.ToolCall{
 		ID: "f3", Name: "web.fetch", Arguments: map[string]any{"url": "https://example.com/a", "file_path": "/tmp/a.bin"},
 	}}})
@@ -163,10 +152,9 @@ func TestLedgerArgsHashStable(t *testing.T) {
 }
 
 func TestLedgerPerProcessDataDir(t *testing.T) {
-	// OpenLedgerForHome lands in <home>/data/ledger.db - the process's
-	// data dir; a wake child with OMEGA_AGENT resolves its agent data
-	// dir upstream (datadir.AgentHome), so per-agent isolation is the
-	// caller's one-line choice, not ledger machinery.
+	// OpenLedgerForHome lands in <home>/data/ledger.db - the process's data dir; a wake
+	// child with OMEGA_AGENT resolves its agent data dir upstream (datadir.AgentHome), so
+	// per-agent isolation is the caller's one-line choice, not ledger machinery.
 	home := t.TempDir()
 	lg, err := OpenLedgerForHome(home)
 	if err != nil {
@@ -179,8 +167,6 @@ func TestLedgerPerProcessDataDir(t *testing.T) {
 }
 
 func TestTickEventShape(t *testing.T) {
-	// The payload law: raw JSON, namespaced strings. A tick survives a
-	// JSON round trip through the wire shape.
 	tick := core.TickEvent{Module: "cron", Kind: "wake", Payload: json.RawMessage(`{"agent":"scout"}`)}
 	if _, ok := core.Tick(tick); !ok {
 		t.Fatal("Tick(TickEvent) failed")

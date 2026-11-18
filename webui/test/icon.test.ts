@@ -1,4 +1,4 @@
-// omega webui: THE ICONSET TEST (card t_502b8e81). One iconset, one
+// omega webui: THE ICONSET TEST. One iconset, one
 // wrapper, one import path - structural pins, since the node suite has
 // no DOM:
 //   1. every dockable-registry icon name exists in the iconset;
@@ -38,15 +38,11 @@ test("the sidebar vocabulary covers the tab strip (one name one meaning)", () =>
   ]) {
     assert.ok(set.has(expected), `the tab vocabulary carries "${expected}"`);
   }
-  // card t_180db2cb (deletability): the bell left the vocabulary with
-  // the chrome that carried it - the notifications tab is the inbox
+  // (deletability): the bell left the vocabulary with the chrome that carried it.
   assert.ok(!set.has("bell"), "the bell is not a vocabulary entry");
-  // card t_81d0901b (deletability): the modules cockpit tab retired into
-  // the settings tab, so the puzzle glyph left with it - the settings tab
-  // already carries the sliders glyph
+  // (deletability): the modules cockpit tab retired into the settings tab, so the
+  // puzzle glyph left with it.
   assert.ok(!set.has("extensions"), "the puzzle left with the retired modules tab");
-  // the chat blocks: thinking gets the brain, tool calls share the
-  // tools-tab wrench (the card's one-meaning law)
   assert.ok(set.has("brain"), "thinking block glyph exists");
   assert.equal(
     read("app/composables/icons.ts").includes("tools: Wrench"),
@@ -56,8 +52,7 @@ test("the sidebar vocabulary covers the tab strip (one name one meaning)", () =>
 });
 
 test("lucide-vue-next is imported ONLY by the iconset composable", () => {
-  // grep the SPA source: the vocabulary composable is the ONLY import
-  // surface of the package (the wrapper consumes it through the map)
+  // grep the SPA source: the vocabulary composable is the ONLY import surface of the.
   const scan = [
     "app/app.vue",
     "app/composables/compose.ts",
@@ -97,7 +92,6 @@ test("lucide-vue-next is imported ONLY by the iconset composable", () => {
 });
 
 test("zero hand-rolled inline SVG in application components", () => {
-  // the acceptance is grep-checkable: no template ships its own <svg>
   for (const f of [
     "app/components/DockPane.vue",
     "app/components/DockGhost.vue",
@@ -118,14 +112,11 @@ test("zero hand-rolled inline SVG in application components", () => {
 
 test("the Icon wrapper renders a named icon through the wrapper contract", () => {
   const icon = read("app/components/ui/Icon.vue");
-  // the name prop drives the lookup; sizes/strokes are wrapper props,
-  // not per-call-site attrs
   assert.match(icon, /defineProps<\{/, "props declaration");
   assert.match(icon, /name: string/, "the semantic NAME prop");
   assert.match(icon, /:size="size"/, "size flows through the wrapper");
   assert.match(icon, /:stroke-width="strokeWidth"/, "stroke flows through the wrapper");
   assert.match(icon, /aria-hidden="true"/, "glyphs are decoration");
-  // unknown names throw at the one place
   assert.match(
     read("app/composables/icons.ts"),
     /throw new Error\(\`iconset: unknown icon/,

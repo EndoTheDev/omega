@@ -1,11 +1,4 @@
-// omega webui: unit tests for the push channel client (card t_896cf5a8).
-//
-// The pure halves are tested directly (envelope guard, backoff ladder,
-// topic dispatch, chip frame guard); the transport is driven against a
-// fake WebSocket so the reconnect ladder and the subscribe frame are
-// real behaviour, not source-string hopes. The last block pins the
-// deletion receipt: nothing in the shell polls beside the socket.
-// Run: node --test webui/test/ (node >= 23)
+// omega webui: unit tests for the push channel client.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -29,7 +22,7 @@ import {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "app");
 const src = (p: string) => readFileSync(join(root, p), "utf8");
 
-// --- parseEnvelope: the envelope guard ------------------------------------
+// -- parseEnvelope: the envelope guard -----------------------------------
 
 test("a pushed frame parses: topic, session, event, seq, data", () => {
   const env = parseEnvelope(
@@ -57,7 +50,7 @@ test("an already-parsed object envelope passes through (fake sockets hand object
   assert.equal(env?.topic, "health");
 });
 
-// --- dispatchFrame: the typed topic dispatch ------------------------------
+// -- dispatchFrame: the typed topic dispatch -----------------------------
 
 test("the five topics land on their typed handlers", () => {
   const seen: string[] = [];
@@ -107,7 +100,7 @@ test("a runs frame without a session or a bad payload is dropped", () => {
   assert.equal(calls, 0);
 });
 
-// --- the backoff ladder ---------------------------------------------------
+// -- the backoff ladder --------------------------------------------------
 
 test("backoff doubles from 500ms and caps at 15s", () => {
   const mid = () => 0.5; // rand 0.5 = no jitter
@@ -131,7 +124,7 @@ test("a garbage attempt index starts the ladder at the base delay", () => {
   assert.equal(backoffDelay(-3, () => 0.5), SOCKET_BACKOFF_BASE_MS);
 });
 
-// --- the chip frame guard -------------------------------------------------
+// -- the chip frame guard ------------------------------------------------
 
 test("a chip frame without a call id drops - nothing to attach to", () => {
   assert.equal(normalizeChipFrame({ tool: "shell.run", text: "x" }), null);
@@ -156,7 +149,7 @@ test("a fill frame carries its content", () => {
   assert.equal(f?.elapsed_ms, 1200);
 });
 
-// --- socketURL ------------------------------------------------------------
+// -- socketURL -----------------------------------------------------------
 
 test("the endpoint rides the page's own origin with the right scheme", () => {
   assert.equal(socketURL({ protocol: "http:", host: "127.0.0.1:8098" }), "ws://127.0.0.1:8098/ws");
@@ -164,7 +157,7 @@ test("the endpoint rides the page's own origin with the right scheme", () => {
   assert.equal(socketURL(undefined), "/ws");
 });
 
-// --- the client, against a fake WebSocket ---------------------------------
+// -- the client, against a fake WebSocket --------------------------------
 
 class FakeSocket {
   static made: FakeSocket[] = [];
@@ -187,7 +180,6 @@ class FakeSocket {
   close() {
     this.closed = true;
   }
-  // test drivers
   open() {
     this.readyState = 1;
     this.onopen?.();
@@ -317,15 +309,11 @@ test("a quiet wire is cut and rebuilt - a half-open socket never fires close", a
 });
 
 test("the ladder runs even when the dead socket never reports close", async () => {
-  // The liveness deadline cuts a half-open wire with socket.close(), but the
-  // browser's close EVENT can be deferred for the whole outage or never
-  // arrive: measured in the browser under `ab set offline on` (both
-  // agent-browser 0.26.0 and 0.42.0), close() was called at 15-16s of silence
-  // and the close event stayed absent for the entire dark window - it only
-  // landed once the network returned. A client that schedules its reconnect
-  // from that event sits dark with NO timer armed: no reconnect, no onopen,
-  // no catch-up refetch, the pane stays stale and journey 111 reds. Recovery
-  // belongs to the ladder the moment the deadline fires (card t_71f28526).
+  // The liveness deadline cuts a half-open wire with socket.close, but the browser's
+  // close EVENT can be deferred for the whole outage or never arrive: measured in the
+  // browser under `ab set offline on` (both agent-browser 0.26.0 and 0.42.0), close was
+  // called at 15-16s of silence and the close event stayed absent for the entire dark
+  // window - it only landed once the network returned.
   FakeSocket.made = [];
   const closes: number[] = [];
   const client = createSocketClient(
@@ -354,8 +342,7 @@ test("the ladder runs even when the dead socket never reports close", async () =
     2,
     "a fresh connection replaces the quiet one without waiting for a close event",
   );
-  // the browser's own close event, arriving late, is not news: it must not
-  // null the live socket or step the ladder a second time
+  // the browser's own close event, arriving late, is not news: it must not null the.
   sock.drop();
   await sleep(300);
   assert.equal(FakeSocket.made.length, 2, "a stale close never spawns a second ladder step");
@@ -386,13 +373,12 @@ test("frames keep the wire alive - a chatty socket is never cut", async () => {
 });
 
 test("the quiet-wire deadline runs from the last frame, not from the last check", async () => {
-  // The budget is a DEADLINE measured from the last frame, so a check that
-  // finds the wire alive must re-arm for the REMAINDER. Re-arming a fresh
-  // full budget lets a dead wire sit undetected for up to 2x the budget: at
-  // the shipped 15s that is a 30s discovery window, longer than the outage
-  // a reconnect catch-up is given - an 18s cut never closed the socket, the
-  // half-open connection revived with the network, and the catch-up refetch
-  // that brings the missed rows back never ran (card t_71f28526).
+  // The budget is a DEADLINE measured from the last frame, so a check that finds the
+  // wire alive must re-arm for the REMAINDER. Re-arming a fresh full budget lets a dead
+  // wire sit undetected for up to 2x the budget: at the shipped 15s that is a 30s
+  // discovery window, longer than the outage a reconnect catch-up is given - an 18s cut
+  // never closed the socket, the half-open connection revived with the network, and the
+  // catch-up refetch that brings the missed rows back never ran.
   FakeSocket.made = [];
   const BUDGET = 500;
   const client = createSocketClient(
@@ -410,8 +396,7 @@ test("the quiet-wire deadline runs from the last frame, not from the last check"
   await sleep(30); // one frame early in the first budget window, then silence
   sock.push({ topic: "health", data: { status: "ok" } });
   const quietFrom = Date.now();
-  // 1.4x the budget: a remainder re-arm cuts at ~1x, a full-budget re-arm
-  // needs ~2x
+  // 1.4x the budget: a remainder re-arm cuts at ~1x, a full-budget re-arm needs ~2x
   while (!sock.closed && Date.now() - quietFrom < BUDGET * 1.4) await sleep(10);
   const lateness = Date.now() - quietFrom;
   assert.equal(
@@ -422,11 +407,9 @@ test("the quiet-wire deadline runs from the last frame, not from the last check"
   client.close();
 });
 
-// --- the receipts: nothing polls beside the socket ------------------------
 
 test("the shell's polling timers are gone - the two survivors never fetch", () => {
-  // the five deleted fetchers (health 30s, sessions 2s, canvas 15s,
-  // notifications+verdicts 15s, gate cards 5s) must not come back
+  // the five deleted fetchers must not come back
   for (const file of [
     "app.vue",
     "components/ChatTab.vue",
@@ -440,8 +423,7 @@ test("the shell's polling timers are gone - the two survivors never fetch", () =
     assert.ok(!text.includes("gatePoll"), `${file}: the 5s gate poll is gone`);
     assert.ok(!text.includes("pollTimer"), `${file}: the 15s feed poll is gone`);
   }
-  // exactly two setInterval users survive in the shell, and neither
-  // fetches: the tab-title spinner and the verdict countdown
+  // exactly two setInterval users survive in the shell, and neither fetches.
   const app = src("app.vue");
   const verdict = src("components/chat/VerdictCard.vue");
   const hits = [app, verdict].filter((t) => t.includes("setInterval")).length;
@@ -461,15 +443,12 @@ test("the app wires every topic and catches up on reconnect only", () => {
   assert.ok(app.includes("ingestChipFrame"), "the chips topic feeds the live tail store");
 });
 
-// --- the logs topic's client half is retired (card t_1423218e) -------------
+// -- the logs topic's client half is retired ------------
 
 test("the client speaks five topics - the server's sixth has no client half", () => {
   assert.deepEqual([...SOCKET_TOPICS], ["chat", "chips", "canvas", "runs", "health"]);
-  // The pane that dispatched the subscribe request retired (card
-  // t_01c53e78), so the pane counter could never leave zero: the topic,
-  // its dispatch case, its handler and the two window CustomEvents that
-  // bridged pane to shell retired with it (card t_1423218e). docs/api.md
-  // carries the wire note; the server half keeps its Go pins.
+  // The pane that dispatched the subscribe request retired, so the pane counter could
+  // never leave zero.
   const socket = src("composables/socket.ts");
   for (const gone of ["export const LOG_", "LogLinesPush", "omega-logs-", 'case "logs"', "DEFAULT_SOCKET_TOPICS"]) {
     assert.ok(!socket.includes(gone), `socket.ts: ${gone} retired with the pane`);

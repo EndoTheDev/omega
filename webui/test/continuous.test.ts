@@ -1,10 +1,4 @@
-// omega webui: the continuous wake-state surface (card t_72ecca67,
-// ruling 18; card t_c7222095 merged the roster into the Agents tab) -
-// the pure view-model helpers (continuousRows.ts) unit-tested, and the
-// MERGE source-checked: the dock vocabulary carries no "continuous"
-// entry (deletability law), the AgentsPanel carries the roster/wake
-// REST surface, and the merged row renders config + status. Render-
-// free; node's built-in test runner.
+// omega webui: the continuous wake-state surface.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -48,8 +42,7 @@ describe("continuous view-model helpers", () => {
     assert.equal(rowStatus(row()), "sleeping");
   });
 
-  // previewLine DIED (card t_2d8deb8c, ruling 3): the row renders no
-  // third line, so the helper is gone entirely.
+  // previewLine DIED: the row renders no third line, so the helper is gone entirely.
   it("previewLine is deleted from the module (the row carries no preview)", () => {
     assert.doesNotMatch(src("../harness/continuous/ui/continuousRows.ts"), /previewLine/, "the preview helper is gone");
   });
@@ -92,10 +85,7 @@ describe("the merge: one Agents tab (card t_c7222095, deletability law)", () => 
   });
 
   it("the merged row renders config + status word in the row-law anatomy", () => {
-    // t_2d8deb8c: the status vocabulary - dot + short word riding the
-    // SUBTITLE line; the inline badge died there. Card t_10ac04f0
-    // ruling 5 brought back ONE under-row line (the agent's canonical
-    // preview) and the shared list renders it.
+    // the status vocabulary - dot + short word riding the SUBTITLE line.
     assert.doesNotMatch(agentsPanel, /agents-badge/, "the inline badge died");
     assert.match(agentsPanel, /agentPreview\(a\)/, "the preview is the canonical-chat read");
     assert.match(agentsPanel, /agentStatusFor\(/, "the status word is the roster voice");
@@ -125,11 +115,9 @@ describe("the merge: one Agents tab (card t_c7222095, deletability law)", () => 
   it("a rostered agent's wake strip keeps the wake/sleep + unread behavior", () => {
     assert.match(agentsPanel, /wake sent - the report lands in the canonical chat/, "ruling 8 wake voice");
     assert.match(agentsPanel, /sleep sent/, "sleep feedback");
-    // t_2d8deb8c: the unread state rides the status vocabulary - the
-    // word is rowStatus's "unread report", decorated with the dot.
+    // the unread state rides the status vocabulary.
     assert.match(src("../harness/continuous/ui/agentsRows.ts"), /label !== "sleeping"/, "the on/dim split is the vocabulary");
-    // the chat fetch in the merge marks the canonical session read (the
-    // roster's unread flag clears on the reload) - the expand fetches it
+    // the chat fetch in the merge marks the canonical session read (the roster's.
     assert.match(agentsPanel, /\/chat`\)/, "the expand fetches the canonical chat (mark-read parity)");
   });
 

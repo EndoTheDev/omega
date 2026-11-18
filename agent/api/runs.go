@@ -12,86 +12,55 @@ import (
 )
 
 // runFrame is one prepared SSE frame: the event type plus its JSON data.
-// The run prepares each frame once; every attached subscriber replays it
-// onto its own wire.
 type runFrame struct {
 	event string
 	data  []byte
 }
 
-// subscriberBuffer bounds one subscriber's frame queue. The agent emits
-// one StreamingChunk event per token delta, so a burst between two
-// consumer wakeups stays comfortably inside this on a Pi.
+// subscriberBuffer bounds one subscriber's frame queue.
 const subscriberBuffer = 256
 
-// activeRun is one detached /chat run. Events fan out to subscriber
-// channels; a run with zero attached clients still runs to completion
-// and persists - clients come and go, the run does not care.
+// activeRun is one detached /chat run.
 type activeRun struct {
 	id   string
 	subs map[chan runFrame]struct{}
-	// cancel is the run's internal ctx cancel (the wall-clock cap's own
-	// WithTimeout func), registered by launchRun the moment the run ctx
-	// exists. Stop handlers cancel through it: the loop unwinds through
-	// its normal path, exactly like the timeout does. nil only in the
-	// start->launchRun window - a stop landing there is a 409.
+	// cancel is the run's internal ctx cancel (the wall-clock cap's own WithTimeout. Stop
+	// handlers cancel through it: the loop unwinds through its normal path, exactly like
+	// the timeout does. nil only in the start->launchRun window - a stop landing there is
+	// a 409.
 	cancel context.CancelFunc
-	// tail is the run's live transcript tail: the items rebuilt from the
-	// accumulator after each event (liveTranscriptItems) that GET
-	// /sessions/{id}/transcript merges behind the persisted history on a
-	// reattach. Guarded by h.mu and stored by REPLACE (each rebuild mints
-	// a fresh slice, never mutated in place), so a reader racing the next
+	// tail is the run's live transcript tail. Guarded by h.mu and stored by REPLACE (each
+	// rebuild mints a fresh slice, never mutated in place), so a reader racing the next
 	// rebuild sees either the old or the new complete slice.
 	tail []transcriptItem
-	// tailAt is the instant tail was built: the wall clock its running
-	// anchors were measured against. A snapshot AGES - a tool call emits
-	// no further events, so its baked elapsed_ms stops at the call-open
-	// anchor; readers add the age back (freshenRunningCalls, card
-	// t_6bad9f6f). Guarded by h.mu like the slices it stamps.
 	tailAt time.Time
-	// openTail is the run's OPEN segment only (the accumulator's
-	// in-flight record, rebuilt after each event) - the chat panel's
-	// composition (chat_panel.go): persisted history + the open
-	// segment is duplicate-free, because every closed segment is
-	// already persisted the moment it closes (the loop's TurnSink),
-	// which a full-tail merge would double-render. Same h.mu, same
-	// replace semantics.
+	// openTail is the run's OPEN segment only (the accumulator's in-flight record, rebuilt
+	// after each event) - the chat panel's composition (chat_panel.go): persisted history
+	// + the open segment is duplicate-free, because every closed segment is already
+	// persisted the moment it closes (the loop's TurnSink), which a full-tail merge would
+	// double-render.
 	openTail []transcriptItem
-	// openTailAt is openTail's build instant - the same aging stamp
-	// tailAt carries, for the panel's composition.
 	openTailAt time.Time
-	// branch pins the run head's parent row id ("" for plain sends:
-	// retry and fork-of-user pin it, t_19c100dd) with the session's
-	// max store row id at run start as the floor. The chat panel's
-	// composition reads it to cut the old sibling's persisted rows
-	// so the fresh response streams into their place - never stacked.
-	// Same h.mu discipline as the tails.
+	// branch pins the run head's parent row id with the session's max store row id at. The
+	// chat panel's composition reads it to cut the old sibling's persisted rows so the
+	// fresh response streams into their place - never stacked.
 	branch string
 	floor  int64
 }
 
-// RunHub tracks detached runs by session id. It is the reattach
-// surface's source of truth: /chat launches into it, GET
-// /sessions/{id}/events subscribes through it, finish removes.
+// RunHub tracks detached runs by session id.
 type RunHub struct {
 	mu   sync.Mutex
 	runs map[string]*activeRun
-	// stops holds each session's user-stop latch (core.RunStop, card
-	// t_caa67135). It OUTLIVES the run it belongs to: a stop must keep
-	// holding after the run's slot frees, because the work the run left
-	// in motion (dispatched yield calls, their shells) settles later and
-	// must not wake the home. A human send re-arms with a fresh latch
-	// (rearm); a wake launch never does - a cancelled home stays
-	// cancelled until a human speaks again.
+	// stops holds each session's user-stop latch. It OUTLIVES the run it belongs to: a
+	// stop must keep holding after the run's slot frees, because the work the run left in
+	// motion (dispatched yield calls, their shells) settles later and must not wake the
+	// home. A human send re-arms with a fresh latch (rearm); a wake launch never does - a
+	// cancelled home stays cancelled until a human speaks again.
 	stops map[string]*core.RunStop
 }
 
-// start registers a new run for the session. ok is false when the
-// session already has a live run - a second /chat for the same session
-// is rejected (the webui per-session busy gate normally prevents it;
-// this is the server-side backstop). The session's stop latch is
-// created here when it has none: a fresh session starts armed, and a
-// stopped one keeps its latch until a human send re-arms (rearm).
+// start registers a new run for the session.
 func (h *RunHub) start(id string) (*activeRun, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -112,22 +81,17 @@ func (h *RunHub) start(id string) (*activeRun, bool) {
 	return run, true
 }
 
-// stopSignal returns the session's user-stop latch (nil when the
-// session never acquired a run slot). The run context carries it so
-// every tool and dispatched call can read the intent.
+// stopSignal returns the session's user-stop latch (nil when the session never.
 func (h *RunHub) stopSignal(id string) *core.RunStop {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.stops[id]
 }
 
-// rearm re-arms the session's stop latch after a human send - the mirror
-// of the runaway guard's reset, for the same reason: a stop is a human
-// withdrawal, and only a human re-arms it. An ARMED latch is kept as is
-// (the same object, not a fresh one): dispatched calls left running by
-// earlier turns of this session registered their cancellation on it, and
-// swapping the object would silently orphan them - the very bug this
-// latch exists to fix.
+// rearm re-arms the session's stop latch after a human send. An ARMED latch is kept as
+// is (the same object, not a fresh one): dispatched calls left running by earlier turns
+// of this session registered their cancellation on it, and swapping the object would
+// silently orphan them - the very bug this latch exists to fix.
 func (h *RunHub) rearm(id string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -140,16 +104,12 @@ func (h *RunHub) rearm(id string) {
 	h.stops[id] = core.NewRunStop()
 }
 
-// userStopped reports whether the session's work was stopped by the
-// user and no human send has re-armed it since. The wake path and the
-// wake note read it: nothing the stop killed may re-enter the home.
+// userStopped reports whether the session's work was stopped by the user and no human.
 func (h *RunHub) userStopped(id string) bool {
 	return h.stopSignal(id).Stopped()
 }
 
-// registerCancel stores the run's internal ctx cancel, making the run
-// stoppable. The cur == run guard makes a late registration a no-op when
-// another run has already re-registered the same session id.
+// registerCancel stores the run's internal ctx cancel, making the run stoppable.
 func (h *RunHub) registerCancel(run *activeRun, cancel context.CancelFunc) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -158,18 +118,8 @@ func (h *RunHub) registerCancel(run *activeRun, cancel context.CancelFunc) {
 	}
 }
 
-// stop cancels the session's live run. ok is false when the session has
-// no live run - the stop endpoint answers 404. cancellable is false when
-// the run exists but has not registered its cancel yet (the sub-milli-
-// second start->launchRun window) - the endpoint answers 409; the run
-// unwinds on its own right after. Cancelling the run ctx is idempotent,
-// so a repeated stop on the same winding-down run is a clean no-op 200.
-//
-// The stop LATCHES first (core.RunStop, card t_caa67135), then cancels
-// the run ctx. Order matters: the run's spawned work observes the ctx
-// dropping, and it decides what to do by asking the latch - a shell that
-// saw the cancel before the intent was recorded would treat a human stop
-// as the run cap and leave its child detached.
+// stop cancels the session's live run. Cancelling the run ctx is idempotent, so a
+// repeated stop on the same winding-down run is a clean no-op 200.
 func (h *RunHub) stop(id string) (ok bool, cancellable bool) {
 	h.mu.Lock()
 	run, found := h.runs[id]
@@ -196,12 +146,9 @@ func (h *RunHub) active(id string) bool {
 	return ok
 }
 
-// setTail stores the run's live transcript tail (the accumulator's
-// snapshot after the current event) and the instant it was built. The
-// cur == run guard makes a late setTail a no-op once another run
-// re-registered the same session id. Called from the run's own
-// goroutine; the build happened OUTSIDE the lock (liveTranscriptItems
-// reads callStarts, which only that goroutine mutates).
+// setTail stores the run's live transcript tail (the accumulator's snapshot after the.
+// Called from the run's own goroutine; the build happened OUTSIDE the lock
+// (liveTranscriptItems reads callStarts, which only that goroutine mutates).
 func (h *RunHub) setTail(run *activeRun, items []transcriptItem, builtAt time.Time) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -211,9 +158,7 @@ func (h *RunHub) setTail(run *activeRun, items []transcriptItem, builtAt time.Ti
 	}
 }
 
-// setOpenTail stores the run's open-segment items (the chat panel's
-// composition source; runs.go comment on activeRun.openTail) with
-// their build instant. The same cur == run guard.
+// setOpenTail stores the run's open-segment items (the chat panel's composition source.
 func (h *RunHub) setOpenTail(run *activeRun, items []transcriptItem, builtAt time.Time) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -223,11 +168,7 @@ func (h *RunHub) setOpenTail(run *activeRun, items []transcriptItem, builtAt tim
 	}
 }
 
-// openSnapshot returns the session's live run's open-segment items and
-// the instant they were built (the aging stamp freshenRunningCalls
-// needs - card t_6bad9f6f). ok is false when no run holds the
-// session's slot. One lock for both: two lookups could pair a fresh
-// slice with a stale stamp.
+// openSnapshot returns the session's live run's open-segment items and the instant.
 func (h *RunHub) openSnapshot(id string) ([]transcriptItem, time.Time, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -238,9 +179,7 @@ func (h *RunHub) openSnapshot(id string) ([]transcriptItem, time.Time, bool) {
 	return run.openTail, run.openTailAt, true
 }
 
-// setBranch pins the run's branch-parent row and the pre-run row-id
-// floor (t_19c100dd). The cur == run guard keeps a late pin a no-op once
-// another run re-registered the same session id.
+// setBranch pins the run's branch-parent row and the pre-run row-id floor.
 func (h *RunHub) setBranch(run *activeRun, branch string, floor int64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -250,10 +189,7 @@ func (h *RunHub) setBranch(run *activeRun, branch string, floor int64) {
 	}
 }
 
-// runBranch reports the session's live run branch pin: the parent row id
-// and the pre-run floor. pinned is false when no run holds the slot or
-// the run pinned nothing (a plain send - the panel composes the active
-// path whole).
+// runBranch reports the session's live run branch pin.
 func (h *RunHub) runBranch(id string) (branch string, floor int64, pinned bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -264,10 +200,9 @@ func (h *RunHub) runBranch(id string) (branch string, floor int64, pinned bool) 
 	return run.branch, run.floor, true
 }
 
-// firstActive returns one live session id - the chat panel's focus
-// seed (chat_panel.go). Among concurrent runs the pick is
-// lexicographically first for determinism; per-session concurrency is
-// one run each, so realistically the map holds one.
+// firstActive returns one live session id. Among concurrent runs the pick is
+// lexicographically first for determinism; per-session concurrency is one run each, so
+// realistically the map holds one.
 func (h *RunHub) firstActive() (string, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -280,11 +215,7 @@ func (h *RunHub) firstActive() (string, bool) {
 	return first, first != ""
 }
 
-// tailSnapshot returns the session's live run's transcript tail and the
-// instant it was built, for the transcript endpoint's reattach merge
-// (freshenRunningCalls ages the running tool lines by it). ok is false
-// when no run holds the session's slot - the endpoint then serves
-// persisted history only.
+// tailSnapshot returns the session's live run's transcript tail and the instant it.
 func (h *RunHub) tailSnapshot(id string) ([]transcriptItem, time.Time, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -325,11 +256,10 @@ func (h *RunHub) unsubscribe(run *activeRun, ch chan runFrame) {
 	close(ch)
 }
 
-// broadcast delivers one frame to every subscriber. A subscriber whose
-// queue is full is CUT, never allowed to stall the run for everyone:
-// the closed channel ends that SSE stream without agent_end, which the
-// webui renders as an interrupted stream - the honest state for a wire
-// that stopped moving. Other subscribers keep streaming.
+// broadcast delivers one frame to every subscriber. A subscriber whose queue is full is
+// CUT, never allowed to stall the run for everyone: the closed channel ends that SSE
+// stream without agent_end, which the webui renders as an interrupted stream - the
+// honest state for a wire that stopped moving.
 func (h *RunHub) broadcast(run *activeRun, f runFrame) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -343,13 +273,9 @@ func (h *RunHub) broadcast(run *activeRun, f runFrame) {
 	}
 }
 
-// broadcastAll delivers one frame to every live run's subscribers -
-// the canvas delta fan-out (server_canvas.go). Panel state is global,
-// not per-session, so a delta rides every open stream: a webui tabs'
-// chat stream and its reattach stream are the same frame pipes, and
-// the frontend dispatches on the frame type. Same full-queue law as
-// broadcast: a stalled subscriber is cut, never allowed to stall a
-// run's loop for everyone.
+// broadcastAll delivers one frame to every live run's subscribers. Same full-queue law
+// as broadcast: a stalled subscriber is cut, never allowed to stall a run's loop for
+// everyone.
 func (h *RunHub) broadcastAll(f runFrame) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -365,11 +291,8 @@ func (h *RunHub) broadcastAll(f runFrame) {
 	}
 }
 
-// finish removes the run from the registry and closes every remaining
-// subscriber channel - the run's terminal agent_end frame was already
-// broadcast, so a clean consumer sees agent_end followed by stream end.
-// The cur == run guard makes a late finish a no-op when another run has
-// already re-registered the same session id.
+// finish removes the run from the registry and closes every remaining subscriber
+// channel.
 func (h *RunHub) finish(run *activeRun) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -382,29 +305,15 @@ func (h *RunHub) finish(run *activeRun) {
 	run.subs = map[chan runFrame]struct{}{}
 }
 
-// launchRun runs the agent turn detached on runCtx (the request context
-// WITHOUT cancellation) and broadcasts each frame to whoever is
-// attached. This is the cron runner's detached-turn shape: the goroutine
-// consumes the event channel itself, accumulates the same segmented
-// assistant records and usage the inline path accumulated, and persists
-// through completion whether or not any client is listening.
-// runCtx is WithoutCancel(ctx): it keeps the request-scoped values (the
-// logger seam) while outliving the HTTP request that started it.
-//
-// The run ctx carries a wall-clock timeout (s.runTimeout): a hung tool
-// call or LLM call ends the run instead of holding the session's run
-// slot forever. On timeout the loop unwinds through its normal ctx
-// path (the tool result errors out, the next turn boundary emits a
-// cancelled agent_end); an explicit error frame names the cap, and
-// whatever accumulated still persists.
+// launchRun runs the agent turn detached on runCtx (the request context WITHOUT. This
+// is the cron runner's detached-turn shape: the goroutine consumes the event channel
+// itself, accumulates the same segmented assistant records and usage the inline path
+// accumulated, and persists through completion whether or not any client is listening.
 func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Provider, messages []core.Message, tools map[string]core.Tool, req chatRequest) {
-	// Branch pin (t_19c100dd): BEFORE beginRun's first delta - the
-	// opening push must already compose with the old sibling's rows
-	// cut, so the retry's first paint is in place. Plain sends pin
-	// nothing and compose exactly as before.
+	// Branch pin: BEFORE beginRun's first delta - the opening push must already compose.
+	// Plain sends pin nothing and compose exactly as before.
 	s.runs.setBranch(run, req.branchParent, req.branchFloor)
-	// Chat panel (chat-last 1/3): NewServer always wires the capsule;
-	// no nil guard needed here.
+	// Chat panel (chat-last 1/3): NewServer always wires the capsule; no nil guard.
 	s.chat.beginRun(req.SessionID)
 	ctx, cancel := context.WithTimeout(runCtx, s.runTimeout)
 	// Register the internal cancel BEFORE the goroutine starts: a stop
@@ -412,93 +321,58 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 	// stuck in the 409 "not started" window.
 	s.runs.registerCancel(run, cancel)
 	go func() {
-		// Wake drain (async agent loop, agent/api/wakes.go): declared
-		// FIRST so it runs LAST - the drain must see the slot the hub
-		// finish already released, and this entry (a plain send) is
-		// what resets the runaway guard.
+		// Wake drain (async agent loop, agent/api/wakes.go): declared FIRST so it runs LAST -
+		// the drain must see the slot the hub finish already released, and this entry (a
+		// plain send) is what resets the runaway guard.
 		defer s.drainWakes(req.SessionID)
-		// The runs topic's release edge rides the slot release (card
-		// t_7624bab1): declared BEFORE the finish defer, so it publishes
-		// after the slot frees - a client that refetches on the edge
-		// does not race a still-occupied slot. The final agent_end frame
-		// was already broadcast by the loop above.
+		// The runs topic's release edge rides the slot release: declared BEFORE the finish
+		// defer, so it publishes after the slot frees - a client that refetches on the edge
+		// does not race a still-occupied slot.
 		defer s.publishRunState(req.SessionID, false)
 		defer s.runs.finish(run)
-		// Chat panel's exit hook runs BEFORE the hub releases the
-		// slot: the ephemeral final rows still read the live tail.
+		// Chat panel's exit hook runs BEFORE the hub releases the slot.
 		defer s.chat.endRun(req.SessionID)
 		defer cancel()
 		if !req.wake {
 			s.wakes.reset(req.SessionID)
 		}
-		// detached runs carry the session id too: task tools in the detached
-		// loop link to the same conversation the request started
+		// detached runs carry the session id too.
 		ctx = agent.WithSessionID(ctx, req.SessionID)
-		// The user-stop latch (card t_caa67135): the run ctx carries it so
-		// every tool and every dispatched call can tell a human stop from
-		// the run's own ends - a spawned shell kills its child on the
-		// former and stays detached on the latter.
+		// The user-stop latch: the run ctx carries it so every tool and every dispatched.
 		ctx = core.WithRunStop(ctx, s.runs.stopSignal(req.SessionID))
-		// Session workspace (card t_9de5b009, hand-off fix t_74428a10):
-		// prepareRun resolved req.workspace (the session's pin or the
-		// default_workspace knob) and its trust-gated AGENTS.md context -
-		// this is where the value becomes the run's CWD. Without this
-		// wrap the tools of every session-backed chat ran at the
-		// process cwd (the service lane: C:\Windows\System32) and the
-		// prompt context the trust resolver built was silently dropped.
+		// Session workspace: prepareRun resolved req.workspace (the session's pin or the.
+		// Without this wrap the tools of every session-backed chat ran at the process cwd
+		// (the service lane: C:\Windows\System32) and the prompt context the trust resolver
+		// built was silently dropped.
 		ctx = core.WithRunWorkspace(ctx, req.workspace, req.workspacePromptContext)
-		// Verdict cards v1 (card t_2ecf9c51): a webui /chat is an
-		// interactive turn - the verdict tool may issue from here.
+		// Verdict cards v1: a webui /chat is an interactive turn.
 		ctx = core.WithRunOrigin(ctx, "interactive")
-		// The run's output tap (push channel, t_7624bab1): a tool that
-		// streams (the shell's capped buffer) feeds the pending chip's
-		// live tail through this ctx. Installed even when nobody is
-		// attached - the hub skips the frame with no subscriber, so an
-		// unwatched run pays one map scan.
+		// The run's output tap: a tool that streams (the shell's capped buffer) feeds the.
 		ctx = core.WithRunOutputTap(ctx, s.chipTap(req.SessionID))
-		// Turn copy persistence belongs to the loop (card t_471f6d4a),
-		// same wiring as the inline path.
 		sink := s.turnSinkFor(req)
 		ctx = agent.WithTurnSink(ctx, sink)
 		ctx = agent.WithPersistInput(ctx, req.persistInput)
-		// Ephemeral (card t_d96a5cd5): the loop filters the denied names
-		// AFTER every provider merge, so a tool an extension re-adds
-		// under the same name never runs in a no-persist session.
-		// The denied names are harness/memory's registered identities
-		// (the dotted memory.* wire, t_d8fbad57).
+		// Ephemeral: the loop filters the denied names AFTER every provider merge, so a tool
+		// an extension re-adds under the same name never runs in a no-persist session.
 		if req.Ephemeral {
 			ctx = agent.WithDeniedTools(ctx, "memory", "memory.add", "memory.replace", "memory.remove", "memory.batch")
 		}
 		var recs []assistantRecord
 		var rec assistantRecord
 		var usage streamUsage
-		// stoppedReason records the loop's terminal end that writes no
-		// completion (cards t_9821e39b, t_317136fd): "error" for a
-		// provider stream error, "cancelled" for the run cap expiring
-		// between turns before the first assistant row. Both return
-		// from the loop before any row persists, so the wake note
-		// below stands in for the turn that never wrote.
+		// stoppedReason records the loop's terminal end that writes no completion. Both
+		// return from the loop before any row persists, so the wake note below stands in for
+		// the turn that never wrote.
 		var stoppedReason string
 		meter := newRunMeter()
 		runner := s.runAgent(&req)
 		for event := range runner.RunWithProvider(ctx, prov, messages, tools) {
 			s.accumulateAssistant(&recs, &rec, event, req)
-			// Chat panel hook (chat-last 1/3): one call per event -
-			// token chunks batch, structural events flush.
+			// Chat panel hook (chat-last 1/3).
 			s.chat.runEvent(req.SessionID, event)
 			meter.tick(event)
-			// Live-tail snapshot (card t_692254f7): the accumulator's
-			// state right after this event becomes the transcript
-			// endpoint's reattach merge - a refresh mid-run restores
-			// the open thinking block, the running tool call (elapsed
-			// ticking from the call's own start) and the segments not
-			// persisted yet. Built on this goroutine after accumulate;
-			// the hub only swaps the slice. The open segment rides the
-			// same rebuild into the hub (runs.go openTail) - the chat
-			// panel composes persisted history + open. The build instant
-			// rides along too: a running tool call emits no further
-			// events, so its baked elapsed_ms ages until a reader adds
-			// the age back (freshenRunningCalls, t_6bad9f6f).
+			// Live-tail snapshot: the accumulator's state right after this event becomes the.
+			// Built on this goroutine after accumulate; the hub only swaps the slice.
 			now := time.Now()
 			s.runs.setTail(run, liveTranscriptItems(recs, rec, now), now)
 			s.runs.setOpenTail(run, liveTranscriptItems(nil, rec, now), now)
@@ -513,12 +387,8 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 					}
 				}
 			}
-			// A terminal stop-without-completion persists nothing
-			// itself: a provider stream error ends the loop as
-			// "error", a run cap that expires between turns as
-			// "cancelled" (agent/loop/agent_loop.go emits the two as
-			// distinct values). Both leave the wake note below to
-			// stand in for the row the turn never wrote.
+			// A terminal stop-without-completion persists nothing itself. Both leave the wake
+			// note below to stand in for the row the turn never wrote.
 			if end, ok := event.(core.AgentEnd); ok {
 				if end.FinishReason == "error" || end.FinishReason == "cancelled" {
 					stoppedReason = end.FinishReason
@@ -536,10 +406,9 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 			s.emitRunFrame(run, runFrame{event: "error", data: []byte(
 				"run timeout: the run exceeded its wall-clock cap (" + s.runTimeout.String() + ") and was stopped")})
 		}
-		// Wake runs only (cards t_9821e39b, t_317136fd): a wake turn
-		// that died on a provider error - or on the run cap expiring
-		// between turns - leaves a visible note, so the re-entry turn
-		// never vanishes from the session on the next reload.
+		// Wake runs only: a wake turn that died on a provider error - or on the run cap
+		// expiring between turns - leaves a visible note, so the re-entry turn never vanishes
+		// from the session on the next reload.
 		if stoppedReason != "" && req.wake {
 			if ws, ok := sink.(*wakeNoteSink); ok {
 				ws.noteStoppedEnd(ctx, stoppedReason)
@@ -549,21 +418,15 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 	}()
 }
 
-// persistRun persists the run's records and turns a persistence failure
-// into a broadcast error frame instead of a write to one request's wire
-// - nobody in particular is listening when persistence fails, and every
-// attached wire should learn about the failure the same way.
+// persistRun persists the run's records and turns a persistence failure into a.
 func (s *Server) persistRun(ctx context.Context, run *activeRun, prov agent.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *core.LastRunStats) {
 	if err := s.persistAssistant(ctx, prov, req, recs, usage, last); err != nil {
 		s.emitRunFrame(run, runFrame{event: "error", data: []byte(err.Error())})
 	}
 }
 
-// serveRunFrames writes the run's live frames to one SSE response until
-// the run finishes (channel closed) or the client leaves (ctx done).
-// Exiting here only detaches THIS client - the run keeps going for
-// everyone else, and its persistence happens regardless. ch must already
-// be subscribed BEFORE the first frame the caller intends to see.
+// serveRunFrames writes the run's live frames to one SSE response until the run. ch
+// must already be subscribed BEFORE the first frame the caller intends to see.
 func (s *Server) serveRunFrames(w http.ResponseWriter, flusher http.Flusher, run *activeRun, ch chan runFrame, ctx context.Context) {
 	defer s.runs.unsubscribe(run, ch)
 	for {
@@ -580,22 +443,16 @@ func (s *Server) serveRunFrames(w http.ResponseWriter, flusher http.Flusher, run
 	}
 }
 
-// handleSessionEvents serves GET /sessions/{id}/events: an SSE
-// subscription to a session's live run. 501 without a store. The lookup
-// is the run registry - a session with no live run (never started, or
-// already finished) is 404 "session not active" and the webui renders
-// the settled history instead. Live-only for v1: a subscriber attaching
-// mid-run receives frames from attach time on; what already happened is
-// readable from GET /sessions/{id} history.
+// handleSessionEvents serves GET /sessions/{id}/events. The lookup is the run registry
+// - a session with no live run (never started, or already finished) is 404 "session not
+// active" and the webui renders the settled history instead.
 func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	id := r.PathValue("id")
-	// Ephemeral reattach: the run hub is the truth, no store needed (an
-	// eph run without a store still broadcasts). Non-eph ids keep the
-	// store gate - store-less servers have no session transcript.
+	// Ephemeral reattach: the run hub is the truth, no store needed (an eph run without.
 	if s.store == nil && !isEphemeralID(id) {
 		http.Error(w, "session store not configured", http.StatusNotImplemented)
 		return
@@ -613,17 +470,11 @@ func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Subscribe BEFORE the client-visible 200: the moment the headers
-	// flush, the subscriber's channel must be registered in run.subs -
-	// otherwise a frame broadcast in the header-to-subscribe gap (a
-	// canvas delta, or the fast client firing its next request on the
-	// resolved fetch) lands on a subscriber list that does not exist
-	// yet and is dropped (t_eba53ebe: the view_model_delta race - the
-	// test's Update won that gap ~1 run in 2 under -race). Headers
-	// still go out on attach, not on the run's first frame: the
-	// subscriber's fetch() resolves while the run is still between
-	// events, so an attach landing in the gap between two frames does
-	// not hang on connect.
+	// Subscribe BEFORE the client-visible 200: the moment the headers flush, the
+	// subscriber's channel must be registered in run.subs - otherwise a frame broadcast in
+	// the header-to-subscribe gap (a canvas delta, or the fast client firing its next
+	// request on the resolved fetch) lands on a subscriber list that does not exist yet
+	// and is dropped.
 	ch := s.runs.subscribe(run)
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()

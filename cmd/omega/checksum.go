@@ -11,8 +11,7 @@ import (
 	"time"
 )
 
-// findChecksumURL returns the download URL for checksums.txt, or "" if
-// the release doesn't include one (older releases predating checksums).
+// findChecksumURL returns the download URL for checksums.txt, or "" if the release.
 func findChecksumURL(assets []githubAsset) string {
 	for _, a := range assets {
 		if a.Name == "checksums.txt" {
@@ -22,10 +21,8 @@ func findChecksumURL(assets []githubAsset) string {
 	return ""
 }
 
-// verifyChecksum downloads checksums.txt from the release, finds the
-// SHA256 hash for the given asset name, and verifies that archivePath
-// matches. Returns nil if verification succeeds, or an error if the
-// hash doesn't match.
+// verifyChecksum downloads checksums.txt from the release, finds the SHA256 hash for.
+// Returns nil if verification succeeds, or an error if the hash doesn't match.
 func verifyChecksum(archivePath, checksumsURL, assetName string) error {
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(checksumsURL)
@@ -40,9 +37,9 @@ func verifyChecksum(archivePath, checksumsURL, assetName string) error {
 	if err != nil {
 		return fmt.Errorf("read checksums: %w", err)
 	}
-	// Parse "sha256  filename" lines (sha256sum output format). The
-	// filename CONTAINS the goos_goarch tag (e.g. omega-v0.6.1-linux_arm64
-	// .tar.gz) but never ends with it - same matching rule as findAsset.
+	// Parse "sha256 filename" lines (sha256sum output format). The filename CONTAINS the
+	// goos_goarch tag (e.g. omega-v0.6.1-linux_arm64.tar.gz) but never ends with it - same
+	// matching rule as findAsset.
 	wantHash := ""
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)

@@ -1,9 +1,8 @@
 package core
 
-// types_test.go: the registry entry's enable flag (card t_441deb04) -
-// the flag is a per-entry stamp, never stored on the mount inventory,
-// so a live fold change re-stamps without a remount and the inventory
-// the capsules hold never mutates under them.
+// types_test.go: the registry entry's enable flag - the flag is a per-entry stamp,
+// never stored on the mount inventory, so a live fold change re-stamps without a
+// remount and the inventory the capsules hold never mutates under them.
 
 import "testing"
 

@@ -1,8 +1,8 @@
-// omega webui: card t_81d0901b - the MODULES surface is CONFIGURATION.
+// omega webui: - the MODULES surface is CONFIGURATION.
 //
-// This file SUPERSEDES the t_210a0d19 pin that lived here (module toggles
+// This file SUPERSEDES the pin that lived here (module toggles
 // OUT of settings, into the extensions cockpit tab): the ruling of
-// 2026-11-12 reverses the placement, so the toggles are back in the settings
+// reverses the placement, so the toggles are back in the settings
 // tab as its own MODULES section and the secondary-pane tab is GONE. The
 // pins below hold the new law:
 //
@@ -42,7 +42,7 @@ const section = read("app/components/settings/ModulesSection.vue");
 const rowModel = read("app/components/shell/extensionsRows.ts");
 const app = read("app/app.vue");
 
-// --- 1. the nav data --------------------------------------------------------
+// -- 1.
 
 test("settingsNav carries the MODULES section (card t_81d0901b)", () => {
   assert.equal(MODULES_CATEGORY, "modules");
@@ -66,9 +66,7 @@ test("the nav counts knobs for knob categories and rows for the MODULES entry", 
 });
 
 test("the MODULES entry is a jump target, never a knob block in the document", () => {
-  // documentFor walks KNOBS; the modules body is the component, so the
-  // document must not grow an empty "modules" block (that would render a
-  // heading with nothing under it, and the search filter would own it)
+  // documentFor walks KNOBS; the modules body is the component, so the document must.
   const nav = buildNav([
     {
       key: "provider",
@@ -81,19 +79,17 @@ test("the MODULES entry is a jump target, never a knob block in the document", (
   assert.deepEqual(sections.map((s) => s.id), ["provider"], "the knob document is intact");
 });
 
-// --- 2. the settings pane renders the section ------------------------------
+// -- 2.
 
 test("the settings pane renders the MODULES section and mounts the moved surface", () => {
   assert.match(settingsTab, /import ModulesSection from "\.\/ModulesSection\.vue"/);
   assert.match(settingsTab, /<ModulesSection/, "the section body is mounted");
-  // the section is a real jump/anchor/spy target - the machinery reads these
   assert.match(
     settingsTab,
     /class="settings-category settings-modules-category"[\s\S]{0,120}data-section="modules"/,
     "the section carries the category + data-section the spy and the clamp read",
   );
-  // the nav entry is APPENDED (card t_f05b1f28 item 1: the module list is
-  // the pane's tail, not its head)
+  // the nav entry is APPENDED
   assert.match(
     settingsTab,
     /modulesNavCategory\(moduleCount\.value\)/,
@@ -122,12 +118,12 @@ test("a knob filter never pretends a module row is a hit", () => {
   );
 });
 
-// --- 3. the row law survived the move ---------------------------------------
+// -- 3.
 
 test("the rows still merge the registry introspection (GET /modules)", () => {
-  // card t_103e30a6: the live state rides the SHARED store (one boot fetch +
-  // every toggle response), because the dock's runtime gate reads the same
-  // copy - the settings row and the strip's chip can never disagree
+  // the live state rides the SHARED store (one boot fetch + every toggle response),
+  // because the dock's runtime gate reads the same copy - the settings row and the
+  // strip's chip can never disagree
   assert.match(section, /loadModules\(\)/, "the shared module store serves the live state");
   assert.match(
     section,
@@ -144,7 +140,6 @@ test("the rows still merge the registry introspection (GET /modules)", () => {
 });
 
 test("module rows keep the one-click toggle contract (single write, annotations)", () => {
-  // card t_5051d523: the arm/confirm two-step is dead - one click commits.
   assert.match(section, /:disabled="busy !== null"/, "the busy gate (one flight at a time)");
   assert.match(
     section,
@@ -170,11 +165,10 @@ test("expansion reveals the module's tools, commands and panels", () => {
   assert.match(section, /none \(disabled\)/, "an unmounted module says so instead of a bare none");
 });
 
-// --- 4. the always-on pair is a VISIBLE mirror ------------------------------
+// -- 4.
 
 test("the always-on rows carry a chip, never a disabled switch", () => {
-  // the refusal is the Go seam's (api/server_modules.go "module <name> is
-  // always on"); this row only mirrors the registry's toggleable flag
+  // the refusal is the Go seam's (api/server_modules.go "module <name> is always on").
   assert.match(section, /class="module-alwayson/, "the always-on chip exists");
   assert.match(section, />always on</, "the chip says what it means");
   assert.match(section, /v-else-if="row\.state === 'shell'"/, "the shell ring keeps its own badge");
@@ -190,11 +184,10 @@ test("the always-on rows carry a chip, never a disabled switch", () => {
   );
 });
 
-// --- 5. plain rows: no settings-native semantics ----------------------------
+// -- 5.
 
 test("module rows carry no settings-native row semantics", () => {
-  // NO modified dot, NO per-row reset, NO scaffold-set override flags: a
-  // module row is a plain toggle + description over a persisted config write
+  // NO modified dot, NO per-row reset, NO scaffold-set override flags.
   assert.doesNotMatch(section, /class="setting-row/, "the settings knob row class is not used");
   assert.doesNotMatch(section, /class="setting-dot/, "no modified dot");
   assert.doesNotMatch(section, /class="setting-reset/, "no per-row reset");
@@ -203,7 +196,7 @@ test("module rows carry no settings-native row semantics", () => {
   assert.match(section, /class="extension-row reg-row"/, "the shared registry row is the row law");
 });
 
-// --- 6. the palette lands on the section ------------------------------------
+// -- 6.
 
 test("the /modules command opens settings and jumps to the MODULES section", () => {
   assert.match(
@@ -229,7 +222,7 @@ test("the /modules command opens settings and jumps to the MODULES section", () 
   );
 });
 
-// --- 7. the removed tab left nothing behind ---------------------------------
+// -- 7.
 
 test("the secondary-pane modules tab is gone from the shell", () => {
   assert.ok(

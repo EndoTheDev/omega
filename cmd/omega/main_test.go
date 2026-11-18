@@ -17,11 +17,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/trust"
 )
 
-// TestRunChdirError verifies a non-subcommand argument that is not a
-// directory and matches no module subcommand surfaces a clean chdir
-// error (rather than launching the TUI). It passes through the module
-// CLI dispatch first (v0.12 phase D) - a temp home keeps the mount
-// hermetic.
+// TestRunChdirError verifies a non-subcommand argument that is not a directory and.
 func TestRunChdirError(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	err := run([]string{"/nonexistent/path/xyz"})
@@ -30,10 +26,7 @@ func TestRunChdirError(t *testing.T) {
 	}
 }
 
-// TestRunHelp verifies --help and -h print help and exit cleanly, even
-// when combined with a subcommand. The module-subcommand listing is
-// registry introspection - the temp home keeps the help-path mount
-// hermetic (a missing config resolves defaults, the section prints).
+// TestRunHelp verifies --help and -h print help and exit cleanly, even when combined.
 func TestRunHelp(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	for _, args := range [][]string{
@@ -48,8 +41,7 @@ func TestRunHelp(t *testing.T) {
 	}
 }
 
-// TestRunVersion verifies --version and -v print the version and exit
-// cleanly.
+// TestRunVersion verifies --version and -v print the version and exit cleanly.
 func TestRunVersion(t *testing.T) {
 	for _, args := range [][]string{
 		{"--version"},
@@ -61,9 +53,8 @@ func TestRunVersion(t *testing.T) {
 	}
 }
 
-// TestServeBanner pins the boot line's shape and the zero-hardcoding
-// law: every value arrives as a parameter and the rendered line carries
-// exactly the resolved boot shape (card t_18b13390).
+// TestServeBanner pins the boot line's shape and the zero-hardcoding law: every value
+// arrives as a parameter and the rendered line carries exactly the resolved boot shape.
 func TestServeBanner(t *testing.T) {
 	got := serveBanner("v0.14.0-ca8e1142", 2,
 		[]string{"127.0.0.1:8098", "100.108.38.32:8098"},
@@ -75,9 +66,8 @@ func TestServeBanner(t *testing.T) {
 	}
 }
 
-// TestServeBinds: an unset bind list resolves to the loopback default
-// the api capsule binds with; every configured bind joins the resolved
-// port.
+// TestServeBinds: an unset bind list resolves to the loopback default the api capsule
+// binds with.
 func TestServeBinds(t *testing.T) {
 	cfg := DefaultConfig() // port 8099, no bind list
 	if got := serveBinds(cfg); !reflect.DeepEqual(got, []string{"127.0.0.1:8099"}) {
@@ -194,8 +184,7 @@ func TestStripAppendPrompts(t *testing.T) {
 	}
 }
 
-// TestResolveConfigPath verifies --config wins outright, the home
-// config.yaml is picked up when present, and empty means "no YAML".
+// TestResolveConfigPath verifies --config wins outright, the home config.yaml is.
 func TestResolveConfigPath(t *testing.T) {
 	t.Run("explicit flag path wins", func(t *testing.T) {
 		t.Setenv("OMEGA_HOME", t.TempDir())
@@ -257,9 +246,7 @@ func TestResolveConfigPath(t *testing.T) {
 	})
 }
 
-// TestResolveHomePaths verifies only relative defaults are rewritten to
-// home-relative paths, custom values are left alone, and the home
-// directory is created.
+// TestResolveHomePaths verifies only relative defaults are rewritten to home-relative.
 func TestResolveHomePaths(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -267,8 +254,6 @@ func TestResolveHomePaths(t *testing.T) {
 	cfg := DefaultConfig()
 	resolveHomePaths(&cfg)
 
-	// want: canon spelling (the resolveHomePaths boundary normalizes
-	// the separators it constructs - card t_630e595d).
 	wantDB := filepath.ToSlash(filepath.Join(home, "data", "omega.db"))
 	if cfg.Store.DBPath != wantDB {
 		t.Errorf("DBPath = %q, want %q", cfg.Store.DBPath, wantDB)
@@ -293,18 +278,17 @@ func TestResolveHomePaths(t *testing.T) {
 	}
 }
 
-// TestConfigSectionTable pins every plugin's config section routing
-// (section name -> plugin key, arc 2b t_889388cc): for each mounted
-// plugin the ConfigKey declaration matches its routing row, and the
-// host's ConfigSection provides every section a plugin owns except
-// notifications (the host never routes it; the plugin defaults).
+// TestConfigSectionTable pins every plugin's config section routing: for each mounted
+// plugin the ConfigKey declaration matches its routing row, and the host's
+// ConfigSection provides every section a plugin owns except notifications (the host
+// never routes it; the plugin defaults).
 func TestConfigSectionTable(t *testing.T) {
 	plugins, err := buildPlugins(DefaultConfig())
 	if err != nil {
 		t.Fatalf("buildPlugins returned error: %v", err)
 	}
 
-	// section name -> routing row. "" = the plugin reads no section.
+	// section name -> routing row.
 	tests := []struct{ plugin, section string }{
 		{"observability", "logging"},
 		{"agent-loop", ""},
@@ -356,26 +340,19 @@ func TestConfigSectionTable(t *testing.T) {
 			t.Errorf("plugin %q declares section %q but Config does not provide it", p.Name(), key)
 		}
 	}
-	// And the notifications declaration stays unrouted: same-host
-	// behavior as before the router (the plugin uses its default).
+	// And the notifications declaration stays unrouted.
 	if _, ok := cfg.ConfigSection("notifications"); ok {
 		t.Errorf("Config provides a notifications section; the default host must not")
 	}
 }
 
-// TestBuildConfigs verifies the config router routes every Config
-// sub-section into the correct per-extension typed config struct, that
-// all 10 keys are present, and that the trust Home matches omegaHome().
-// (The old buildConfigs literal became agent.RouteConfigs + Config.
-// ConfigSection in arc 2b, t_889388cc; the field-level pins stay as
-// the behavior contract.)
+// TestBuildConfigs verifies the config router routes every Config sub-section into.
 func TestBuildConfigs(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
 
 	cfg := DefaultConfig()
-	// Customize the fields the router is expected to propagate so a wrong
-	// mapping (e.g. store<->provider swap) fails the test.
+	// Customize the fields the router is expected to propagate so a wrong mapping (e.g..
 	cfg.Store.DBPath = "/tmp/store-test.db"
 	cfg.setDefaultInstance(ProviderInstance{
 		Name:   PrimaryProviderInstance,
@@ -408,10 +385,7 @@ func TestBuildConfigs(t *testing.T) {
 	}
 	configs := agent.RouteConfigs(plugins, cfg)
 
-	// All 13 expected keys must be present (kanban joined with the
-	// board module card t_33487fb6; continuous with t_72ecca67;
-	// process with t_5782d11e; files with the shell-ring shrink
-	// wave 1 t_48eeb015).
+	// All 13 expected keys must be present.
 	wantKeys := []string{
 		"store", "provider", "http_channel", "skills",
 		"memory", "logging", "compactor", "trust",
@@ -436,8 +410,7 @@ func TestBuildConfigs(t *testing.T) {
 		t.Errorf("store.DBPath = %q, want %q", sc.DBPath, cfg.Store.DBPath)
 	}
 
-	// provider: provider.Config{Type, ModelName, Host, APIKey} - the
-	// primary row's endpoint plus the model (card t_bf21ee07)
+	// provider: provider.Config{Type, ModelName, Host, APIKey}.
 	pc, ok := configs["provider"].(provider.Config)
 	if !ok {
 		t.Fatalf("provider config is %T, want provider.Config", configs["provider"])
@@ -480,8 +453,7 @@ func TestBuildConfigs(t *testing.T) {
 		t.Errorf("skills.Dir = %q, want %q", sk.Dir, cfg.Skills.Dir)
 	}
 
-	// memory: memory.Config{Enabled, UserProfileEnabled, CharLimit,
-	// UserProfileCharLimit, File, UserProfileFile}
+	// memory: memory.Config{Enabled, UserProfileEnabled, CharLimit.
 	mc, ok := configs["memory"].(memory.Config)
 	if !ok {
 		t.Fatalf("memory config is %T, want memory.Config", configs["memory"])
@@ -520,22 +492,18 @@ func TestBuildConfigs(t *testing.T) {
 		t.Errorf("compactor = %+v, want %+v", cc, cfg.Compaction)
 	}
 
-	// trust: trust.Config{Home} must equal omegaHome() (i.e. OMEGA_HOME).
+	// trust: trust.Config{Home} must equal omegaHome (i.e. OMEGA_HOME).
 	tc, ok := configs["trust"].(trust.Config)
 	if !ok {
 		t.Fatalf("trust config is %T, want trust.Config", configs["trust"])
 	}
-	// trust: trust.Config{Home} must equal omegaHome() (i.e. OMEGA_HOME)
-	// on canon spelling (card t_630e595d).
+	// trust: trust.Config{Home} must equal omegaHome (i.e. OMEGA_HOME) on canon spelling.
 	if tc.Home != filepath.ToSlash(home) {
 		t.Errorf("trust.Home = %q, want %q (omegaHome)", tc.Home, filepath.ToSlash(home))
 	}
 }
 
-// TestWebBaseURL verifies the web endpoint host selection: the explicit
-// web.base_url override wins; otherwise the provider host is used with
-// a trailing /v1 stripped (provider.go strips the same suffix before
-// probing).
+// TestWebBaseURL verifies the web endpoint host selection.
 func TestWebBaseURL(t *testing.T) {
 	host := "http://127.0.0.1:11435"
 	if got := webBaseURL("", host); got != host {
@@ -554,10 +522,7 @@ func TestWebBaseURL(t *testing.T) {
 	}
 }
 
-// TestRepoHomeHint is the C5 regression: a home that IS the exe's own
-// directory and the top of a git work tree warns once; the dev lane's
-// bin/ home, a prod home and an explicit OMEGA_HOME off the exe dir
-// stay quiet.
+// TestRepoHomeHint is the C5 regression.
 func TestRepoHomeHint(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
@@ -617,8 +582,7 @@ func TestRepoHomeHint(t *testing.T) {
 	})
 }
 
-// TestPrintRepoHomeHint verifies the hint reaches stderr exactly once
-// on the warned shape and writes nothing on a normal home.
+// TestPrintRepoHomeHint verifies the hint reaches stderr exactly once on the warned.
 func TestPrintRepoHomeHint(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {

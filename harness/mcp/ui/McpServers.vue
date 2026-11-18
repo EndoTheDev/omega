@@ -3,16 +3,10 @@
     ref="rootEl"
     class="mcp-list"
     :class="{ narrow: narrow }">
-    <!-- card t_d6e94e79: the toolbar row, the FilesTab pattern - the
-         title flush LEFT, the refresh action flush RIGHT on ONE row.
-         card t_308e6d9b: the row is the UNIVERSAL band now (the shared
-         TabBand). The click makes mcp.yaml edits live (POST
-         /mcp/reload + the re-fetch), no restart, no file watcher - the
-         button is the whole trigger, and it lives in the band. Card
-         t_529628d5: the compact in-band search (TabBand's shared
-         .band-search seat) - the query filters the LOADED servers by
-         name or transport, client-side, hide-rows-only; a tool name the
-         row's expansion shows keeps the server visible. -->
+    <!--
+      the toolbar row, the FilesTab pattern - the title flush LEFT, the refresh action
+      flush RIGHT on ONE row..
+    -->
     <TabBand title="MCP">
       <div class="band-search">
         <SearchInput
@@ -41,9 +35,7 @@
       class="panel-status">
       loading
     </p>
-    <!-- card t_c7136c50: the empty state - the standard pattern, never
-         a blank pane. Zero servers configured reads as WHAT is unset
-         plus WHERE to set it (mcp.yaml's servers: array / MCP_SERVERS). -->
+    <!-- the empty state - the standard pattern, never a blank pane. -->
     <div
       v-else-if="rows.length === 0 && !query.trim()"
       class="mcp-empty">
@@ -51,24 +43,15 @@
       <p class="mcp-empty-hint">{{ MCP_EMPTY_HINT }}</p>
     </div>
     <template v-else>
-      <!-- card t_529628d5: the row anatomy law - the filter HIDES rows,
-           it never changes their shape; a query that hides all of them
-           reads as a search miss, NOT as the "no servers configured"
-           empty state (that state is the mcp.yaml setup story and only
-           speaks when the listing itself is empty). -->
+      <!--
+        the row anatomy law - the filter HIDES rows, it never changes their shape.
+      -->
       <p
         v-if="visibleRows.length === 0"
         class="panel-status mcp-none-matches">
         no matching servers
       </p>
-      <!-- the server rows, THE ROW LAW (card t_561dc4e0): the shared
-           assets/css/registry-row.css anatomy - name / subtitle stack
-           left, ONE control right (the pill's seat, mcp's own law since
-           t_83f37525), breathing padding, hairline separators - not
-           boxed debug cards in dead space. The subtitle line carries
-           the transport badge and the inline status dot (the row law's
-           mcp reading). The write path stays the per-row toggle: the
-           arm/confirm two-step, POST /mcp/toggle riding toggle.ts. -->
+      <!-- the server rows, THE ROW LAW. -->
       <ul class="mcp-rows">
         <li
           v-for="s in visibleRows"
@@ -81,9 +64,7 @@
                 class="mcp-name reg-row-name"
                 :title="s.name">{{ s.name }}</span>
               <span class="mcp-sub reg-row-sub">
-                <!-- the transport badge: a small mono pill - the chip
-                     voice, not a bare uppercase string floating in the
-                     row. -->
+                <!-- the transport badge: a small mono pill. -->
                 <span
                   v-if="s.transport"
                   class="mcp-pill"
@@ -98,13 +79,7 @@
                 </span>
               </span>
             </div>
-            <!-- the toggle is the shared TogglePill (card t_d93864e7):
-                 the pill this module originated in t_83f37525, extracted
-                 to ui/ - a BUTTON whose state comes from the reactive
-                 model, the t_87303e8f law structural. The write path
-                 stays local: ONE click POSTs /mcp/toggle riding
-                 toggle.ts (card t_5051d523: the arm/confirm two-step is
-                 dead - it made every server need a double click). -->
+            <!-- the toggle is the shared TogglePill. -->
             <TogglePill
               class="reg-row-ctrl"
               :state="serverEnabled(s)"
@@ -118,11 +93,9 @@
             :title="s.url || s.command">
             {{ s.url || s.command }}
           </p>
-          <!-- tool CHIPS: wrapped inline pills - never the shredded
-               zero-width columns the old fixed-width list rendered.
-               Each chip ellipses its own text (long names read whole
-               on hover); the container wraps to new lines, so at any
-               pane width nothing clips vertically. -->
+          <!--
+            tool CHIPS: wrapped inline pills - never the shredded zero-width columns.
+          -->
           <div
             v-if="s.tools && s.tools.length"
             class="mcp-tools">
@@ -159,33 +132,29 @@
     type McpServerWire,
     type McpStatusWire,
   } from "./serverRows";
-  // card t_529628d5: the band search's filter (name / transport / the
-  // expansion's tool names), pure so the node suite pins it without
-  // compiling the SFC.
+  // the band search's filter (name / transport / the expansion's tool names), pure so.
   import { filterMcpServers } from "./search";
 
-  // Module-owned UI (card t_c7136c50): the inspector's MCP tab content,
+  // Module-owned UI: the inspector's MCP tab content,
   // sourced from GET /mcp/servers and shipped by the mcp module itself
   // (harness/mcp/ui/) through the module-UI composition - the same
-  // shape the tools/skills/cron panels ride. The write paths (card
-  // t_d6e94e79 + t_83f37525): the band refresh POSTs /mcp/reload; the
+  // shape the tools/skills/cron panels ride. The write paths
+  // + ): the band refresh POSTs /mcp/reload; the
   // per-row toggle POSTs /mcp/toggle - each re-fetches the listing
   //   through its helper, and a failure lands on the panel's error line
   //   with the prior rows standing (server truth never fakes a swap).
   // Self-contained wiring (module UI carries its own wiring, the
   // narrow.ts copy law). The wire's `source` field is read nowhere in
-  // the panel since card t_d93864e7 (the from-mcp.yaml echo died with
+  // the panel since (the from-mcp.yaml echo died with
   // its caption) - the wire keeps the field for the helpers' contracts.
   const rows = ref<McpServerWire[]>(serverRows({}));
   const loaded = ref(false);
   const error = ref("");
   const reloading = ref(false);
 
-  // card t_529628d5: the in-band search - CLIENT-SIDE on the loaded
-  // listing (no new backend route), server name / transport / the
-  // expansion's tool names, hide-rows-only. The toggle still writes by
-  // exact server name, so a row hidden by the query keeps its write
-  // target intact (the write path never routes through the filter).
+  // the in-band search - CLIENT-SIDE on the loaded listing (no new backend route). The
+  // toggle still writes by exact server name, so a row hidden by the query keeps its
+  // write target intact (the write path never routes through the filter).
   const query = ref("");
   const visibleRows = computed(() => filterMcpServers(rows.value, query.value));
 
@@ -196,12 +165,8 @@
     rows.value = serverRows(rep);
   }
 
-  // --- the per-server toggle (card t_83f37525) ----------------------------
-  // ONE click commits (card t_5051d523: the two-step RegistryList
-  // mechanic this module copied - click 1 arms, click 2 applies, i.e.
-  // every server needed a double click - is dead everywhere). busy
-  // holds the committing row's name so a stacked double-click cannot
-  // overlap writes.
+  // -- the per-server toggle ---------------------------- ONE click commits. busy holds
+  // the committing row's name so a stacked double-click cannot overlap writes.
   const busy = ref<string | null>(null);
 
   function onToggle(s: McpServerWire) {
@@ -209,8 +174,7 @@
     apply(s);
   }
 
-  // the commit: POST the toggle chain (toggle.ts), then re-render from
-  // the fresh listing.
+  // the commit: POST the toggle chain (toggle.ts), then re-render from the fresh.
   async function apply(s: McpServerWire) {
     const target = !serverEnabled(s);
     busy.value = s.name;
@@ -225,14 +189,13 @@
     }
   }
 
-  // one key per row identity (the config file owns the names)
   function rowKey(s: McpServerWire): string {
     return s.name;
   }
 
-  // the refresh (card t_d6e94e79): POST the reload route, then show
-  // the fresh listing. A failure lands on the panel's existing error
-  // line; the previous rows stand (server truth never fakes a swap).
+  // the refresh: POST the reload route, then show the fresh listing. A failure lands on
+  // the panel's existing error line; the previous rows stand (server truth never fakes
+  // a swap).
   async function reload(): Promise<void> {
     if (reloading.value) return;
     reloading.value = true;
@@ -247,11 +210,7 @@
     }
   }
 
-  // --- narrow adaptation, the module-UI recipe (card t_a2fdc630): this
-  // root measures its OWN rendered container and flips the class; the
-  // scoped stylesheet below condenses. Same mechanism as the shell's
-  // useNarrow - kept in-module because module UI imports no shell code
-  // (Board precedent); the threshold is unit-covered in ./narrow.ts.
+  // -- narrow adaptation, the module-UI recipe.
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;
@@ -292,15 +251,11 @@
 </script>
 
 <style scoped>
-  /* Module-owned look built on the shell's design tokens - the section
-     is self-titled; the inspector mounts it as any other panel. No
-     invented vars (the t_11a9e160 lesson): opacity + the type scale
-     the sibling panels (ToolsList, SkillsList) already speak. The row
-     vocabulary is the RegistryList's: border-separated rows, a semibold
-     name over muted metas, chips for the enumerable bits. */
-  /* card t_308e6d9b: the root stops being a flat scroll child - the
-     TabBand stays fixed, the body owns the scroll (structurally, never
-     sticky). The old root padding rides the body now. */
+  /* Module-owned look built on the shell's design tokens. */
+  /*
+   * the root stops being a flat scroll child - the TabBand stays fixed, the body owns
+   * the scroll (structurally, never sticky).
+   */
   .mcp-list {
     flex: 1;
     min-height: 0;
@@ -333,11 +288,7 @@
     font-size: 11px;
     opacity: 0.55;
   }
-  /* the server rows: THE ROW LAW (card t_561dc4e0) - the shared
-     assets/css/registry-row.css carries paddings, separators, the
-     name/subtitle typography and the right-control seat; this block
-     keeps only the mcp specifics (the transport badge, the status
-     dot, the tool chips, the dim-off state). */
+  /* the server rows: THE ROW LAW. */
   .mcp-rows {
     list-style: none;
     margin: 0;
@@ -348,8 +299,7 @@
   .mcp-name {
     min-width: 0;
   }
-  /* the transport badge: a small mono pill - the chip voice, not a
-     bare uppercase string floating in the row. */
+  /* the transport badge: a small mono pill. */
   .mcp-pill {
     font-family: var(--mono);
     font-size: 9px;
@@ -363,8 +313,7 @@
     flex-shrink: 0;
   }
   .mcp-state {
-    /* the status cluster: pushed to the subtitle line's right edge -
-       the transport chip leads, the dot+label read at the line end */
+    /* the status cluster: pushed to the subtitle line's right edge. */
     margin-left: auto;
     display: inline-flex;
     align-items: center;
@@ -379,9 +328,11 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* the status dot: --ok for a live connection, --err for a recorded
-     failure, dim for disabled/not connected - never color-only (the
-     label rides beside it, the status glyph law). */
+  /*
+   * the status dot: --ok for a live connection, --err for a recorded failure, dim for
+   * disabled/not connected - never color-only (the label rides beside it, the status
+   * glyph law).
+   */
   .mcp-dot {
     width: 7px;
     height: 7px;
@@ -397,11 +348,7 @@
   .mcp-dot-off {
     background: var(--text-dim);
   }
-  /* the toggle has no local CSS (card t_d93864e7): the rows ride the
-     shared ui/TogglePill in the row law's .reg-row-ctrl seat - one
-     component, zero copies. The meta lines align under the name (the
-     row law's collapsed-row column); the old 34px pill indent is gone
-     with the pill's move to the right seat. */
+  /* the toggle has no local CSS. */
   .mcp-target {
     margin: 0;
     font-size: 10.5px;
@@ -410,10 +357,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* the tool chips: wrapped inline pills - every chip ellipses its own
-     text at the pane's edge and the container wraps to the next line,
-     so NOTHING clips vertically at any width (the old fixed-width
-     list shredded names into four-char columns; that shape is dead). */
+  /* the tool chips: wrapped inline pills. */
   .mcp-tools {
     display: flex;
     flex-wrap: wrap;
@@ -439,7 +383,6 @@
     font-size: 10.5px;
     opacity: 0.5;
   }
-  /* the disabled row stays visible, muted (the skills list law) */
   .mcp-off .mcp-name,
   .mcp-off .mcp-state {
     opacity: 0.55;
@@ -447,9 +390,11 @@
   .mcp-off .mcp-tools {
     opacity: 0.45;
   }
-  /* narrow: the module-UI recipe (card t_a2fdc630) - condensed chrome;
-     the subtitle line truncates as one (the state never wraps off the
-     row); the chips keep their wrap+ellipsis law at any width. */
+  /*
+   * narrow: the module-UI recipe - condensed chrome; the subtitle line truncates as one
+   * (the state never wraps off the row); the chips keep their wrap+ellipsis law at any
+   * width.
+   */
   .mcp-list.narrow {
     padding: 0;
   }

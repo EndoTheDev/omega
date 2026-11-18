@@ -5,13 +5,13 @@ package continuous
 // tab is the continuous capsule's face, "multi-agent IS the continuous
 // capsule's design"). Moved whole from agent/api/server_agents.go:
 //
-//	GET  /agents                     profile inventory (the roster list)
-//	POST /agents                     scaffold a new agent directory (or a clone)
-//	GET  /agents/{name}              one agent's detail
-//	PUT  /agents/{name}              the roster's edit affordance
-//	DELETE /agents/{name}            delete the HOME, sessions included
-//	GET  /agents/{name}/sessions     sessions bound to this agent
-//	POST /agents/{name}/sessions     create a session AS this agent
+// GET /agents profile inventory (the roster list)
+// POST /agents scaffold a new agent directory (or a clone)
+// GET /agents/{name} one agent's detail
+// PUT /agents/{name} the roster's edit affordance
+// DELETE /agents/{name} delete the HOME, sessions included
+// GET /agents/{name}/sessions sessions bound to this agent
+// POST /agents/{name}/sessions create a session AS this agent
 //
 // THE FLOOR VERDICT (the task's classification rule): no handler here
 // serves the chat floor - the chat page never fetches agent profiles
@@ -45,32 +45,26 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// agentRoutes is the roster REST face, built on the plugin's root home
-// and mount context. One value per mount; every handler reads the
-// same pair. The machine is the capsule's own machinery: the canonical
-// mint (POST /agents/{name}/canonical) is its law, not a second copy.
+// agentRoutes is the roster REST face, built on the plugin's root home and mount.
 type agentRoutes struct {
 	home    string
 	ctx     *core.Context
 	machine *Machine
 }
 
-// mountedStore resolves the daemon's store seam per request (the
-// store seam's live re-wire law). Nil = no store capsule mounted: the
-// roster keeps its zero rows and the session routes answer 501.
+// mountedStore resolves the daemon's store seam per request (the store seam's live. Nil
+// = no store capsule mounted: the roster keeps its zero rows and the session routes
+// answer 501.
 func (ar *agentRoutes) mountedStore() agent.StoreProvider {
 	st, _ := ar.ctx.Services().Resolve("store").(agent.StoreProvider)
 	return st
 }
 
-// agentStoreFor resolves the store that OWNS agentName's sessions plus a
-// closer for it (card t_81109e1c). Per-agent data isolation means main's
-// sessions live in the daemon's store and every agent home's sessions
-// live in its own data/omega.db. A nil store with a nil error means
-// "nothing to read": no seam mounted, or a home that never ran (no store
-// file). The daemon's store resolves agent-home rows by id through its
-// router, so a caller that only needs ONE row can pass a name and still
-// read through it.
+// agentStoreFor resolves the store that OWNS agentName's sessions plus a closer for it.
+// A nil store with a nil error means "nothing to read": no seam mounted, or a home that
+// never ran (no store file). The daemon's store resolves agent-home rows by id through
+// its router, so a caller that only needs ONE row can pass a name and still read
+// through it.
 func (ar *agentRoutes) agentStoreFor(name string) (agent.StoreProvider, func(), error) {
 	st := ar.mountedStore()
 	if st == nil {
@@ -90,9 +84,8 @@ func (ar *agentRoutes) agentStoreFor(name string) (agent.StoreProvider, func(), 
 	return ast, func() { _ = ast.Close() }, nil
 }
 
-// readAgentSessions reads ONE agent's sessions from the store that
-// OWNS them. A home that never ran has no store file: an empty list,
-// never a created database.
+// readAgentSessions reads ONE agent's sessions from the store that OWNS them. A home
+// that never ran has no store file: an empty list, never a created database.
 func (ar *agentRoutes) readAgentSessions(ctx context.Context, name string) ([]core.Session, error) {
 	st, closeFn, err := ar.agentStoreFor(name)
 	if err != nil || st == nil {
@@ -108,10 +101,7 @@ func (ar *agentRoutes) readAgentSessions(ctx context.Context, name string) ([]co
 	return as.ListAgentSessions(cctx, name)
 }
 
-// writeAgentSession creates a session in the store that will OWN it:
-// the daemon's store for main, the agent home's own data/omega.db for
-// an agent (created on first write - a session needs a home). The
-// release func closes the agent store; main's is a no-op.
+// writeAgentSession creates a session in the store that will OWN it.
 func (ar *agentRoutes) writeAgentSession(ctx context.Context, name, id string) error {
 	st := ar.mountedStore()
 	if st == nil {
@@ -134,8 +124,7 @@ func (ar *agentRoutes) writeAgentSession(ctx context.Context, name, id string) e
 	return ast.CreateAgentSession(cctx, id, "", "", name)
 }
 
-// errNoStoreSeam is the 501 lane: no store capsule mounted, or one
-// without the agent-session surface.
+// errNoStoreSeam is the 501 lane.
 var errNoStoreSeam = errors.New("store does not support agent sessions")
 
 // writeJSON renders one 200-family response.
@@ -145,16 +134,14 @@ func (ar *agentRoutes) writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// httpError renders one failure; detail is operator-facing truth, the
-// webui renders what it gets.
+// httpError renders one failure.
 func (ar *agentRoutes) httpError(w http.ResponseWriter, code int, format string, args ...any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf(format, args...)})
 }
 
-// registrationRows returns the pattern/handler rows the mount
-// registers - exactly the mount lines agent/api carried pre-move.
+// registrationRows returns the pattern/handler rows the mount registers - exactly the.
 func (ar *agentRoutes) registrationRows() []struct {
 	pattern string
 	handler func(http.ResponseWriter, *http.Request)
@@ -172,22 +159,9 @@ func (ar *agentRoutes) registrationRows() []struct {
 	}
 }
 
-// agentRow is one roster row on the wire: the profile facts plus the
-// agent's CANONICAL chat id - the one conversation the Agents tab opens
-// when its row is clicked (card t_10ac04f0). The most-recent session id
-// is gone as a rule: it was a moving target, re-picked by every run, and
-// it was usually a conversation the human owned in the sessions tab. An
-// agent with no live canonical answers an empty id - its click MINTS
-// one (POST /agents/{name}/canonical), so the field being absent never
-// makes a row unclickable.
-//
-// The two preview fields are ruling 5 of the same card: the newest
-// assistant message of that canonical chat and when it landed, so the
-// row name carries one line of what the agent last said.
-//
-// The embedded Profile flattens into the SAME flat object the endpoint
-// always emitted, so the extra fields are additive to every existing
-// reader (the webui decodes the union; nothing nests).
+// agentRow is one roster row on the wire. An agent with no live canonical answers an
+// empty id - its click MINTS one (POST /agents/{name}/canonical), so the field being
+// absent never makes a row unclickable.
 type agentRow struct {
 	agent.Profile
 	CanonicalSessionID string `json:"canonical_session_id,omitempty"`
@@ -195,19 +169,14 @@ type agentRow struct {
 	LastReportAt       string `json:"last_report_at,omitempty"`
 }
 
-// agentFacts is what the roster needs from outside the profile: the
-// live canonical chat id and its one-line preview.
+// agentFacts is what the roster needs from outside the profile.
 type agentFacts struct {
 	canonical string
 	report    string
 	reportAt  string
 }
 
-// fillAgentSessions writes session counts and last activity into
-// profiles from the store that owns each agent's sessions, and returns
-// each agent's live canonical chat plus its preview. A missing store
-// leaves the zero row - an agent with zero ATTRIBUTABLE sessions is the
-// honest row.
+// fillAgentSessions writes session counts and last activity into profiles from the.
 func (ar *agentRoutes) fillAgentSessions(ctx context.Context, profiles []agent.Profile) map[string]agentFacts {
 	if ar.mountedStore() == nil {
 		return nil
@@ -224,8 +193,7 @@ func (ar *agentRoutes) fillAgentSessions(ctx context.Context, profiles []agent.P
 				profiles[i].LastActivity = sess.UpdatedAt
 			}
 		}
-		// The canonical chat, NOT the newest row: the click's target
-		// must not move when a worker run lands (card t_10ac04f0).
+		// The canonical chat, NOT the newest row: the click's target must not move when a.
 		cur, ok := CurrentCanonicalSession(sessions, profiles[i].Name)
 		if !ok {
 			continue // never minted, or retired: the click mints anew
@@ -237,9 +205,8 @@ func (ar *agentRoutes) fillAgentSessions(ctx context.Context, profiles []agent.P
 	return facts
 }
 
-// canonicalPreview reads one canonical chat's one-line preview off the
-// store that owns it. A dead read answers "" - the row renders without
-// a preview, never with an invented one.
+// canonicalPreview reads one canonical chat's one-line preview off the store that. A
+// dead read answers "" - the row renders without a preview, never with an invented one.
 func (ar *agentRoutes) canonicalPreview(ctx context.Context, name, id string) string {
 	st, closeFn, err := ar.agentStoreFor(name)
 	if err != nil || st == nil {
@@ -255,8 +222,7 @@ func (ar *agentRoutes) canonicalPreview(ctx context.Context, name, id string) st
 	return previewOf(msgs)
 }
 
-// rosterRows pairs each profile with its canonical chat facts. No facts
-// map (no store) = the profiles alone, the fields omitted.
+// rosterRows pairs each profile with its canonical chat facts.
 func rosterRows(profiles []agent.Profile, facts map[string]agentFacts) []agentRow {
 	rows := make([]agentRow, 0, len(profiles))
 	for _, p := range profiles {
@@ -271,14 +237,11 @@ func rosterRows(profiles []agent.Profile, facts map[string]agentFacts) []agentRo
 	return rows
 }
 
-// handleAgents serves GET /agents (the inventory) and POST /agents
-// (create an agent home).
-//
-// POST carries TWO doors, one wire (0.17.3 make-over, card t_f47319d2):
-// a bare create scaffolds an empty always-off home; a create with
-// inherit_from MATERIALIZES a clone of that source (the CLONE law - a
-// full copy at birth, never a live link). Clone-then-delete is the
-// rename path, so there is no separate duplicate endpoint.
+// handleAgents serves GET /agents (the inventory) and POST /agents (create an agent.
+// POST carries TWO doors, one wire: a bare create scaffolds an empty always-off home; a
+// create with inherit_from MATERIALIZES a clone of that source (the CLONE law - a full
+// copy at birth, never a live link). Clone-then-delete is the rename path, so there is
+// no separate duplicate endpoint.
 func (ar *agentRoutes) handleAgents(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -321,30 +284,22 @@ func (ar *agentRoutes) handleAgents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// errCloneStoreTag marks a clone whose copy landed but whose store
-// re-tag failed. The destination has been removed by then (the request is
-// retryable and nothing was registered), so it is a server fault, never
-// the caller's conflict.
+// errCloneStoreTag marks a clone whose copy landed but whose store re-tag failed. The
+// destination has been removed by then (the request is retryable and nothing was
+// registered), so it is a server fault, never the caller's conflict.
 var errCloneStoreTag = errors.New("re-tag cloned sessions")
 
-// retagAgentSessions is the clone's last SQLite step, swappable in tests
-// (a real re-tag failure is not inducible from a fixture: the copied
-// store is always writable).
+// retagAgentSessions is the clone's last SQLite step, swappable in tests (a real.
 var retagAgentSessions = store.RetagAgentSessions
 
-// wireStoreSnapshot installs the SQLite-backed store copier the CLONE law
-// needs; agent owns home shape, harness/store owns the driver. Wired once
-// at package init so the hook is immutable while handlers run.
+// wireStoreSnapshot installs the SQLite-backed store copier the CLONE law needs.
 func init() {
 	agent.StoreSnapshot = store.SnapshotStore
 }
 
-// cloneAgent runs the clone door's two halves as ONE step: the copy
-// (agent.CloneAgent, which removes its own half-built destination on
-// failure) and the store re-tag. A re-tag failure leaves exactly the
-// phantom a mid-copy failure does - a registered folder with the source's
-// rows still tagged to the source - so the destination is removed here
-// too. The folder did not exist before this request.
+// cloneAgent runs the clone door's two halves as ONE step. A re-tag failure leaves
+// exactly the phantom a mid-copy failure does - a registered folder with the source's
+// rows still tagged to the source - so the destination is removed here too.
 func (ar *agentRoutes) cloneAgent(from, to, description string) error {
 	if err := agent.CloneAgent(ar.home, from, to, description); err != nil {
 		return err
@@ -359,9 +314,7 @@ func (ar *agentRoutes) cloneAgent(from, to, description string) error {
 	return nil
 }
 
-// retagClonedSessions rewrites the copied store's agent tags to the
-// clone. Main's sessions may predate the agent column, so "" and
-// "default" are both real source tags.
+// retagClonedSessions rewrites the copied store's agent tags to the clone.
 func (ar *agentRoutes) retagClonedSessions(from, to string) error {
 	dsn := filepath.Join(agent.AgentDir(ar.home, to), "data", "omega.db")
 	if from == agent.DefaultAgentName {
@@ -387,17 +340,7 @@ func (ar *agentRoutes) handleAgent(w http.ResponseWriter, r *http.Request) {
 	ar.writeJSON(w, http.StatusOK, rosterRows(profiles, last)[0])
 }
 
-// handleAgentUpdate serves PUT /agents/{name} (card t_2d8deb8c,
-// ruling 3: the agents tab's expansion carries an edit affordance).
-// The write set is the scaffold's field set: description,
-// provider.type / provider.model_name / provider.host /
-// provider.api_key, system_prompt - plus settings tier 3b's two
-// additive fields (card t_53523d5b): max_turns (a yaml int node) and
-// unset (the dotted reset vocabulary, which DELETES the named keys so
-// the scope falls back to main instead of pinning a phantom
-// override). A nil field is untouched. The DEFAULT agent answers 409:
-// its config IS the home config (the daemon's brain) and the agents
-// tab renders it read-only.
+// handleAgentUpdate serves PUT /agents/{name}. A nil field is untouched.
 func (ar *agentRoutes) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		ar.httpError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -422,9 +365,8 @@ func (ar *agentRoutes) handleAgentUpdate(w http.ResponseWriter, r *http.Request)
 		SkillsAllow      *[]string           `json:"skills_allow"`
 		Inherit          *agent.AgentInherit `json:"inherit"`
 		Unset            []string            `json:"unset"`
-		// Retired secret knobs: decoded only so the refusal is LOUD. A
-		// client written before the secret-free law gets the law spelled
-		// out (400), never a silent drop.
+		// Retired secret knobs: decoded only so the refusal is LOUD. A client written before
+		// the secret-free law gets the law spelled out (400), never a silent drop.
 		ProviderType *string `json:"provider_type"`
 		Host         *string `json:"host"`
 		APIKey       *string `json:"api_key"`
@@ -448,9 +390,8 @@ func (ar *agentRoutes) handleAgentUpdate(w http.ResponseWriter, r *http.Request)
 		APIKey:           req.APIKey,
 	}
 	if err := agent.UpdateAgentConfigLayer(ar.home, name, updates); err != nil {
-		// A scaffold-law refusal (unknown provider type, the locked
-		// default) is the caller's mistake - 400/409, not a 500. A
-		// config file that will not parse is the layer's business.
+		// A scaffold-law refusal (unknown provider type, the locked default) is the caller's
+		// mistake.
 		var scaffold *agent.AgentConfigScaffoldError
 		switch {
 		case errors.Is(agent.ErrAgentConfigLocked, err):
@@ -471,16 +412,7 @@ func (ar *agentRoutes) handleAgentUpdate(w http.ResponseWriter, r *http.Request)
 	ar.writeJSON(w, http.StatusOK, p)
 }
 
-// handleAgentDelete serves DELETE /agents/{name}: the delete verb of
-// the definition layer (0.17.3 make-over ruling 2) - the whole HOME
-// goes, sessions included, so no orphan home keeps registering an
-// agent. The session count is read BEFORE the removal and answered in
-// the response: the panel's confirm dialog names it before the trigger
-// fires, and the post-delete receipt is the same number.
-//
-// The main agent answers 409 (its home is the daemon's home), an
-// unknown agent 404, a malformed name 400 - one law, spelled once in
-// agent.DeleteAgentHome.
+// handleAgentDelete serves DELETE /agents/{name}.
 func (ar *agentRoutes) handleAgentDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		ar.httpError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -492,12 +424,7 @@ func (ar *agentRoutes) handleAgentDelete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	sessions := ar.sessionCount(r.Context(), name)
-	// card t_5df01d0f: release the home's cached store handle BEFORE the
-	// removal. Serving this agent's chat opened that handle and keeps it
-	// open for the process's lifetime, so on windows the data files stay
-	// locked and RemoveAll leaves a half-deleted home that keeps
-	// registering the agent. A store without the routing face has nothing
-	// to release.
+	// release the home's cached store handle BEFORE the removal.
 	if forget, ok := ar.mountedStore().(agent.AgentHomeForgetter); ok {
 		forget.ForgetHome(name)
 	}
@@ -518,9 +445,8 @@ func (ar *agentRoutes) handleAgentDelete(w http.ResponseWriter, r *http.Request)
 	ar.writeJSON(w, http.StatusOK, map[string]any{"deleted": name, "sessions": sessions})
 }
 
-// sessionCount is the delete receipt's number: how many session rows the
-// home's own store held when the delete ran. A store that will not open
-// answers 0 - the delete still happens, the receipt just cannot count.
+// sessionCount is the delete receipt's number. A store that will not open answers 0 -
+// the delete still happens, the receipt just cannot count.
 func (ar *agentRoutes) sessionCount(ctx context.Context, name string) int {
 	rows, err := ar.readAgentSessions(ctx, name)
 	if err != nil {
@@ -529,13 +455,9 @@ func (ar *agentRoutes) sessionCount(ctx context.Context, name string) int {
 	return len(rows)
 }
 
-// handleAgentCanonical serves POST /agents/{name}/canonical: the roster
-// row's click (card t_10ac04f0). It answers the agent's canonical chat,
-// MINTING it when the home holds none - a fresh agent, or one whose only
-// canonical was archived (archive = retire: the next click mints the
-// next generation, and the retired row stays archived and unreachable
-// from the roster). The answer is the session row the chat tab binds
-// to, so the panel never guesses an id.
+// handleAgentCanonical serves POST /agents/{name}/canonical: the roster row's click.
+// The answer is the session row the chat tab binds to, so the panel never guesses an
+// id.
 func (ar *agentRoutes) handleAgentCanonical(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		ar.httpError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -558,20 +480,17 @@ func (ar *agentRoutes) handleAgentCanonical(w http.ResponseWriter, r *http.Reque
 	ar.writeJSON(w, http.StatusOK, sess)
 }
 
-// handleAgentSessions serves GET /agents/{name}/sessions (the agent's
-// own session list - the default list never shows these rows) and
-// POST /agents/{name}/sessions: create a session bound to this agent.
-// Sessions are bound at creation and never switch agents, so there is
-// no PATCH - a re-binding is a new session.
+// handleAgentSessions serves GET /agents/{name}/sessions (the agent's own session list
+// - the default list never shows these rows) and POST /agents/{name}/sessions: create a
+// session bound to this agent. Sessions are bound at creation and never switch agents,
+// so there is no PATCH - a re-binding is a new session.
 func (ar *agentRoutes) handleAgentSessions(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if _, err := agent.LoadProfile(ar.home, name); err != nil {
 		ar.httpError(w, http.StatusNotFound, "unknown agent")
 		return
 	}
-	// The 501 lane: no store capsule mounted at all. A mounted store
-	// without the agent-session surface answers the same way on the
-	// write path (errNoStoreSeam) - the read path finds no sessions.
+	// The 501 lane: no store capsule mounted at all.
 	if ar.mountedStore() == nil {
 		ar.httpError(w, http.StatusNotImplemented, "%s", errNoStoreSeam.Error())
 		return
@@ -584,9 +503,8 @@ func (ar *agentRoutes) handleAgentSessions(w http.ResponseWriter, r *http.Reques
 			ar.httpError(w, http.StatusInternalServerError, "list sessions: %v", err)
 			return
 		}
-		// List contract: list endpoints emit arrays, never null. A zero-
-		// session agent must render 200 [] or the webui's session read
-		// crashes on a null .length (card t_619832ee).
+		// List contract: list endpoints emit arrays, never null. A zero- session agent must
+		// render 200 [] or the webui's session read crashes on a null.length.
 		if sessions == nil {
 			sessions = []core.Session{}
 		}
@@ -602,25 +520,21 @@ func (ar *agentRoutes) handleAgentSessions(w http.ResponseWriter, r *http.Reques
 		if req.ID == "" {
 			id, err := agent.NewSessionID()
 			if err != nil {
-				// same fallback POST /sessions uses - crypto/rand
-				// never fails on supported platforms.
+				// same fallback POST /sessions uses - crypto/rand never fails on supported.
 				id = fmt.Sprintf("sess-%d", time.Now().UnixNano())
 			}
 			req.ID = id
 		}
-		// Same reserved-namespace guard as POST /sessions: an `eph-` id
-		// would create a durable row the store-read endpoints can never
-		// serve (the eph- lane is in-memory only). The predicate is the
-		// agent package's (agent.IsEphemeralID) - one namespace, one
-		// guard.
+		// Same reserved-namespace guard as POST /sessions: an `eph-` id would create a
+		// durable row the store-read endpoints can never serve (the eph- lane is in-memory
+		// only).
 		if agent.IsEphemeralID(req.ID) {
 			ar.httpError(w, http.StatusBadRequest, "invalid request: reserved session id prefix "+agent.EphemeralIDPrefix)
 			return
 		}
-		// card t_81109e1c: the row is written to the store that will OWN
-		// it - the agent home's own data/omega.db, never the daemon's
-		// (the boot migration would move it there later, and the roster
-		// would read zero sessions in the meantime).
+		// the row is written to the store that will OWN it - the agent home's own
+		// data/omega.db, never the daemon's (the boot migration would move it there later,
+		// and the roster would read zero sessions in the meantime).
 		if err := ar.writeAgentSession(r.Context(), name, req.ID); err != nil {
 			if errors.Is(err, errNoStoreSeam) {
 				ar.httpError(w, http.StatusNotImplemented, "%s", errNoStoreSeam.Error())

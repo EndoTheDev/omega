@@ -1,9 +1,6 @@
 package provider
 
-// card t_7dcd4280 / t_1914a8c9: the named provider instances - mount +
-// resolver law. An instance is a NAMED ENDPOINT only (name, type,
-// host, api_key; no model column - models come from the instance's
-// catalog through the pickers).
+// /: the named provider instances - mount + resolver law.
 
 import (
 	"testing"
@@ -40,7 +37,6 @@ func TestInstanceResolution(t *testing.T) {
 	if got, ok := inst.Instance("gone"); ok || got != nil {
 		t.Fatal("unknown instance must answer (nil, false) - the shell turns that into a loud failure")
 	}
-	// a with-model copy still resolves the same named set
 	copied, ok := prov.WithModel("other").(agent.ProviderInstances)
 	if !ok {
 		t.Fatal("WithModel copy lost the instances resolver shape")
@@ -48,8 +44,7 @@ func TestInstanceResolution(t *testing.T) {
 	if inst2, ok := copied.Instance("backup"); !ok || inst2.ModelName() != "" {
 		t.Fatal("derived copy does not resolve the named instance")
 	}
-	// InstanceNames (card t_1914a8c9): the serving shell's grouped
-	// catalog reads the id list here
+	// InstanceNames: the serving shell's grouped catalog reads the id list here
 	names, ok := prov.(agent.ProviderInstanceNames)
 	if !ok {
 		t.Fatal("mounted provider must satisfy agent.ProviderInstanceNames")
@@ -61,8 +56,7 @@ func TestInstanceResolution(t *testing.T) {
 	if self, ok := inst.Instance(DefaultInstance); !ok || self == nil {
 		t.Fatal("the primary row must resolve by name like any other instance")
 	}
-	// no configured instances: unknown names stay (nil, false), and the
-	// primary is still the one name that answers
+	// no configured instances: unknown names stay (nil, false), and the primary is still.
 	bare := (&Plugin{}).mountForTest(t, Config{Type: "ollama", ModelName: "main"})
 	if ir, ok := bare.(agent.ProviderInstances); ok {
 		if got, ok2 := ir.Instance("anything"); ok2 || got != nil {
@@ -78,9 +72,7 @@ func TestInstanceResolution(t *testing.T) {
 	}
 }
 
-// mountForTest mounts through agent.MountAllAPI (the one real mount
-// path - a nil ExtensionAPI has no Offer to call) and returns the
-// offered provider service.
+// mountForTest mounts through agent.MountAllAPI (the one real mount path - a nil.
 func (p *Plugin) mountForTest(t *testing.T, cfg Config) agent.Provider {
 	t.Helper()
 	ctx := &core.Context{Configs: map[string]any{"provider": cfg}}

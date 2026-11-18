@@ -1,12 +1,8 @@
-// omega webui: unit tests for the Skills tab's SKILL EDITOR chain
-// (card t_0a108f16, the CRUD capsule round). The behavior half runs at
-// the helper level (the cronedit.test.ts recipe): a fetch-log probe
-// drives saveSkill / deleteSkill / fetchSkillDraft, no SFC compile.
-// The wire contract: POST /skills/save carries the whole draft and the
-// response IS the fresh listing (one response carries the state it
-// landed - no re-fetch round); a failed POST throws so the prior rows
-// stand; the client validation mirrors the Go provider law EXACTLY -
-// the editor never ships a skill the loader would refuse.
+// omega webui: unit tests for the Skills tab's SKILL EDITOR chain. The wire contract:
+// POST /skills/save carries the whole draft and the response IS the fresh listing (one
+// response carries the state it landed - no re-fetch round); a failed POST throws so
+// the prior rows stand; the client validation mirrors the Go provider law EXACTLY - the
+// editor never ships a skill the loader would refuse.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -69,7 +65,7 @@ function draft(over: Partial<SkillDraft> = {}): SkillDraft {
   return { ...emptyDraft(), name: "probe", description: "probe skill", content: "# probe\n\nbody\n", ...over };
 }
 
-// --- the wire contract ---
+// -- the wire contract --
 
 test("saveSkill POSTs the draft and the response is the fresh listing", async () => {
   const calls = recordFetch((call) => {
@@ -89,8 +85,7 @@ test("saveSkill POSTs the draft and the response is the fresh listing", async ()
     assert.equal(body.name, "probe");
     assert.equal(body.description, "probe skill");
     assert.equal(body.content, "# probe\n\nbody\n");
-    // one call on the wire: the save ANSWER IS the listing (the one
-    // response carries the state it landed)
+    // one call on the wire: the save ANSWER IS the listing (the one response carries.
     assert.deepEqual(calls.map((c) => c.url), ["/skills/save"]);
   } finally {
     restoreFetch();
@@ -151,15 +146,14 @@ test("fetchSkillDraft prefills from GET /skills/content", async () => {
     assert.equal(d.name, "probe");
     assert.equal(d.description, "probe skill");
     assert.equal(d.content, "# body\n");
-    // the name rides the query, URI-escaped (a traversal name never
-    // reaches the file system via the query string shape)
+    // the name rides the query, URI-escaped (a traversal name never reaches the file.
     assert.deepEqual(calls.map((c) => c.url), ["/skills/content?name=probe"]);
   } finally {
     restoreFetch();
   }
 });
 
-// --- the mirrored validation law ---
+// -- the mirrored validation law --
 
 test("validateDraft mirrors the Go provider law", () => {
   assert.equal(validateDraft(draft()), "");

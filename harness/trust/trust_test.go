@@ -28,9 +28,6 @@ func TestTrustStoreRoundTrip(t *testing.T) {
 	}
 }
 
-// TestTrustPathConfigLayout is the Endo 2026-10-18 layout: with no
-// home-root trust.yaml the live store lives in config/, and writes
-// (new trust grants) land there too.
 func TestTrustPathConfigLayout(t *testing.T) {
 	home := t.TempDir()
 	p := NewProvider(home)
@@ -65,7 +62,6 @@ func TestTrustPathRootWins(t *testing.T) {
 	if got := p.trustPath(); got != rootPath {
 		t.Fatalf("trustPath = %q, want root %q (legacy wins)", got, rootPath)
 	}
-	// A new grant lands in the root store, the live authoritative one.
 	if err := p.saveTrusted([]TrustEntry{{Path: "/legacy", Level: "exact"}, {Path: "/new", Level: "exact"}}); err != nil {
 		t.Fatalf("saveTrusted: %v", err)
 	}
@@ -98,7 +94,6 @@ func TestBootstrapMigratesRootStore(t *testing.T) {
 	if err != nil || string(before) != string(content) {
 		t.Fatalf("root trust.yaml touched by migration: %q, %v", before, err)
 	}
-	// Root still wins: reads see the root entries even after migration.
 	p := NewProvider(home)
 	if got, want := p.trustPath(), filepath.Join(home, "trust.yaml"); got != want {
 		t.Fatalf("trustPath after migration = %q, want root %q", got, want)
@@ -110,10 +105,9 @@ func TestBootstrapMigratesRootStore(t *testing.T) {
 	}
 }
 
-// TestBootstrapBothPresentRootWins covers the (b) verify case: both
-// stores present means nothing is copied, overwritten or deleted - the
-// diverging config/ content stays untouched and the root content stays
-// untouched.
+// TestBootstrapBothPresentRootWins covers the (b) verify case: both stores present
+// means nothing is copied, overwritten or deleted - the diverging config/ content stays
+// untouched and the root content stays untouched.
 func TestBootstrapBothPresentRootWins(t *testing.T) {
 	home := t.TempDir()
 	rootContent := []byte("trusted: [{path: /root, level: exact}]\n")
@@ -134,15 +128,13 @@ func TestBootstrapBothPresentRootWins(t *testing.T) {
 	if data, err := os.ReadFile(filepath.Join(home, "config", "trust.yaml")); err != nil || string(data) != string(cfgContent) {
 		t.Fatalf("config/trust.yaml changed: %q, %v", data, err)
 	}
-	// And the root is the one that resolves.
 	p := NewProvider(home)
 	if got := p.loadTrusted(); len(got) != 1 || got[0].Path != "/root" {
 		t.Fatalf("loadTrusted = %+v, want the /root entry (root wins)", got)
 	}
 }
 
-// TestBootstrapConfigOnlyNoop covers the (c) verify case: existing
-// config/-only installs are untouched by migration.
+// TestBootstrapConfigOnlyNoop covers the (c) verify case.
 func TestBootstrapConfigOnlyNoop(t *testing.T) {
 	home := t.TempDir()
 	cfgContent := []byte("trusted: [{path: /config, level: exact}]\n")
@@ -174,16 +166,14 @@ func TestBootstrapWithoutTrustFileNoop(t *testing.T) {
 	}
 }
 
-// TestResolveContextRootStore covers the (d) verify case end to end at
-// the trust boundary: an existing install's root trust.yaml still
-// resolves a project as trusted and its AGENTS.md context is loaded.
+// TestResolveContextRootStore covers the (d) verify case end to end at the trust
+// boundary.
 func TestResolveContextRootStore(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// A config/ store exists (migrated) but does NOT cover our project;
-	// the authoritative root store does.
+	// A config/ store exists (migrated) but does NOT cover our project.
 	if err := os.WriteFile(filepath.Join(home, "config", "trust.yaml"), []byte("trusted: [{path: /elsewhere, level: exact}]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

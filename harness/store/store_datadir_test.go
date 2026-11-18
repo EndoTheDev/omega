@@ -9,13 +9,10 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// datadir integration tests: Open triggers the boot-time data-dir
-// migration (harness/datadir) before the handle is created. The legacy
-// fixtures are real SQLite databases - the migration renames them and
-// the migrated copy must still open as a db.
+// datadir integration tests. The legacy fixtures are real SQLite databases - the
+// migration renames them and the migrated copy must still open as a db.
 
-// TestOpenFreshHomeDataDir: opening a fresh home's data db creates
-// data/omega.db, nothing at the root.
+// TestOpenFreshHomeDataDir: opening a fresh home's data db creates data/omega.db.
 func TestOpenFreshHomeDataDir(t *testing.T) {
 	home := t.TempDir()
 	s, err := Open(datadir.DBPath(home, "omega.db"))
@@ -31,16 +28,13 @@ func TestOpenFreshHomeDataDir(t *testing.T) {
 	}
 }
 
-// TestOpenMigratesLegacyHome: a home with a root-level db migrates on
-// open - the db (with any sidecars) moves into data/, root copies are
-// gone, and the store opens from the migrated copy. A second boot is
-// idempotent.
+// TestOpenMigratesLegacyHome: a home with a root-level db migrates on open. A second
+// boot is idempotent.
 func TestOpenMigratesLegacyHome(t *testing.T) {
 	home := t.TempDir()
 	legacy := filepath.Join(home, "omega.db")
 
-	// Real legacy db at the root (created by a normal open - the root
-	// path is outside a data dir, so no migration fires during setup).
+	// Real legacy db at the root (created by a normal open.
 	s0, err := Open(legacy)
 	if err != nil {
 		t.Fatalf("create legacy db: %v", err)
@@ -71,7 +65,6 @@ func TestOpenMigratesLegacyHome(t *testing.T) {
 		t.Errorf("sidecar not carried into data/, stat err = %v", err)
 	}
 
-	// Second boot over the migrated home: no-op, still opens.
 	s2, err := Open(dsn)
 	if err != nil {
 		t.Fatalf("second Open: %v", err)

@@ -8,10 +8,8 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Submit-path expansion (t_07aed3f9, re-ruled by card t_7f09bd0c): the
-// last incoming user message is the prompt; the webui attaches PATHS -
-// file tokens ride through as references, nothing inlines or attaches,
-// and the pill'd token survives in the persisted text.
+// Submit-path expansion: the last incoming user message is the prompt; the webui
+// attaches PATHS.
 func TestExpandAtMentionsReferencesRide(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("inlined body"), 0o644); err != nil {
@@ -44,8 +42,7 @@ func TestExpandAtMentionsReferencesRide(t *testing.T) {
 	}
 }
 
-// A non-user last message (or no @, or empty input) rides through
-// unchanged.
+// A non-user last message (or no @, or empty input) rides through unchanged.
 func TestExpandAtMentionsNoOp(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	incoming := []core.Message{core.NewSystem("system preamble")}
@@ -64,8 +61,7 @@ func TestExpandAtMentionsNoOp(t *testing.T) {
 	}
 }
 
-// Unresolvable tokens stay in the text - the persisted prompt carries
-// them, the way every submit surface leaves failing tokens.
+// Unresolvable tokens stay in the text.
 func TestExpandAtMentionsUnresolvableStay(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	incoming := []core.Message{core.NewUser("ghost @ghost.md stays, url user@x.io too")}
@@ -79,10 +75,9 @@ func TestExpandAtMentionsUnresolvableStay(t *testing.T) {
 	}
 }
 
-// Relative paths root at the dir argument - the workspace-scoped
-// session case. Under t_7f09bd0c the webui attaches PATHS: an
-// unresolvable token stays exactly as written either way; the ride
-// through is the same on the workspace-scoped path.
+// Relative paths root at the dir argument - the workspace-scoped session case. Under
+// the webui attaches PATHS: an unresolvable token stays exactly as written either way;
+// the ride through is the same on the workspace-scoped path.
 func TestExpandAtMentionsDirWorkspace(t *testing.T) {
 	root := t.TempDir()
 	ws := filepath.Join(root, "workspace")

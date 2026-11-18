@@ -1,11 +1,4 @@
-// FileTree row glyphs (card t_467a0386, iconified card t_502b8e81).
-// VS Code-style extension icons. The hand-rolled SVG strings are gone: a
-// row glyph is now a semantic NAME in the webui iconset
-// (composables/icons.ts), rendered through the Icon wrapper - one iconset,
-// no inline SVG builders. The map is a pure table so node --test can pin
-// it: known extensions resolve to their glyph name, everything unknown
-// falls to "file-generic". The row's dim/hover states still carry the
-// color (currentColor only).
+// FileTree row glyphs.
 
 export type GlyphKind =
   | "db"
@@ -17,8 +10,7 @@ export type GlyphKind =
   | "text"
   | "generic";
 
-// extension (lowercased, no dot) -> glyph kind. omega's own home is the
-// visible case: .go .db .log .yaml .json .md all resolve distinctly.
+// extension (lowercased, no dot) -> glyph kind.
 const EXT_GLYPHS: Record<string, GlyphKind> = {
   db: "db",
   sqlite: "db",
@@ -43,18 +35,14 @@ const EXT_GLYPHS: Record<string, GlyphKind> = {
   txt: "text",
 };
 
-// glyphKindFor: "main.go" -> "code", ".gitignore" -> "generic",
-// "Makefile" -> "generic", "UNKNOWN.bin" -> "generic". Case-insensitive
-// on the extension; a dot only counts when it NAMES an extension.
+// glyphKindFor: "main.go" -> "code", ".gitignore" -> "generic", "Makefile" ->.
 export function glyphKindFor(name: string): GlyphKind {
   const dot = name.lastIndexOf(".");
   if (dot <= 0) return "generic";
   return EXT_GLYPHS[name.slice(dot + 1).toLowerCase()] ?? "generic";
 }
 
-// card t_502b8e81: glyph kind -> iconset NAME. One distinct shape per
-// kind at one stroke weight (the kind table keeps the distinction
-// budget); the names live in composables/icons.ts like every other icon.
+// glyph kind -> iconset NAME.
 const KIND_ICONS: Record<GlyphKind, string> = {
   generic: "file-generic",
   text: "file-text",
@@ -70,8 +58,7 @@ export function glyphIcon(kind: GlyphKind): string {
   return KIND_ICONS[kind] ?? KIND_ICONS.generic;
 }
 
-// folder name: filled when open (the lucide FolderOpen/Folder pair makes
-// the state difference, no new color), outlined when collapsed.
+// folder name: filled when open (the lucide FolderOpen/Folder pair makes the state.
 export function folderIcon(open: boolean): string {
   return open ? "folder-open" : "folder";
 }

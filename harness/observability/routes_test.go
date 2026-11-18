@@ -13,14 +13,12 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// fakeLogger is the logger service's consumer face under test: only the
-// path crosses (the capsule's own logPather interface).
+// fakeLogger is the logger service's consumer face under test.
 type fakeLogger struct{ path string }
 
 func (f fakeLogger) Path() string { return f.path }
 
-// newTestRoutes builds the REST face over a seeded ring; ctx may be nil
-// (the log route then answers 404, the honest no-logger state).
+// newTestRoutes builds the REST face over a seeded ring; ctx may be nil (the log.
 func newTestRoutes(ctx *core.Context, events []Event) (*Routes, *Ring) {
 	ring := NewRing(32)
 	for _, e := range events {
@@ -29,9 +27,7 @@ func newTestRoutes(ctx *core.Context, events []Event) (*Routes, *Ring) {
 	return newRoutes(ctx, ring), ring
 }
 
-// TestEventsRouteServesSessionScopedPage pins the primary endpoint's
-// wire: the JSON envelope, the session filter, the bounded page and the
-// errors-only level parameter.
+// TestEventsRouteServesSessionScopedPage pins the primary endpoint's wire.
 func TestEventsRouteServesSessionScopedPage(t *testing.T) {
 	rt, _ := newTestRoutes(nil, []Event{
 		{Session: "s1", Type: "agent_start", Level: LevelInfo, Summary: "run started"},
@@ -108,8 +104,7 @@ func TestEventsRouteRefusesBadInput(t *testing.T) {
 	}
 }
 
-// TestLogsRouteServesTail pins the secondary endpoint: the configured
-// log's last lines, the path it came from, and the ?lines= bound.
+// TestLogsRouteServesTail pins the secondary endpoint.
 func TestLogsRouteServesTail(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "omega.log")
@@ -142,8 +137,7 @@ func TestLogsRouteServesTail(t *testing.T) {
 	}
 }
 
-// TestLogsRouteDegrades pins the two honest failures: no logger offer at
-// all, and a logger without a readable file.
+// TestLogsRouteDegrades pins the two honest failures.
 func TestLogsRouteDegrades(t *testing.T) {
 	rt, _ := newTestRoutes(nil, nil)
 	res := httptest.NewRecorder()
@@ -162,9 +156,7 @@ func TestLogsRouteDegrades(t *testing.T) {
 	}
 }
 
-// TestTailLines pins the tail reader itself: the last n lines, the
-// whole-file path, the empty file and the cut-off head fragment of a
-// window that starts mid-file.
+// TestTailLines pins the tail reader itself.
 func TestTailLines(t *testing.T) {
 	dir := t.TempDir()
 	small := filepath.Join(dir, "small.log")
@@ -194,8 +186,7 @@ func TestTailLines(t *testing.T) {
 		t.Fatal("tail of a missing file returned no error")
 	}
 
-	// Bigger than the read window: every returned line must be a WHOLE
-	// line, never the cut-off fragment the window starts on.
+	// Bigger than the read window: every returned line must be a WHOLE line, never the.
 	big := filepath.Join(dir, "big.log")
 	var sb strings.Builder
 	for i := 0; sb.Len() < logTailWindow+4096; i++ {

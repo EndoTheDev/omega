@@ -1,8 +1,8 @@
 <template>
-  <!-- ONE search input, shared by the sidebar (session search) and the
-       settings pane (filter settings): same shape, padding, focus ring
-       and clear affordance. Behavior stays with the consumer - this owns
-       only the look (v-model + Escape/custom clear). -->
+  <!--
+    ONE search input, shared by the sidebar (session search) and the settings pane
+    (filter settings).
+  -->
   <span class="search-input">
     <input
       ref="inputEl"
@@ -28,8 +28,7 @@
 <script setup lang="ts">
   import { ref } from "vue";
 
-  // clear sends the focus back to the input: clear-then-retyping without
-  // a pointer round-trip is the whole point of a search affordance.
+  // clear sends the focus back to the input.
   const inputEl = ref<HTMLInputElement | null>(null);
 
   const props = defineProps<{

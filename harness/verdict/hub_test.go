@@ -14,11 +14,9 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// fakeStore captures AppendMessage calls so a test can assert the
-// transcript audit trail (the card record before the pause, the verdict
-// record after the answer / expiry). Implements agent.StoreProvider by
-// embedding the interface for the methods the hub never calls (it only
-// calls AppendMessage) and overriding that one.
+// fakeStore captures AppendMessage calls so a test can assert the transcript audit.
+// Implements agent.StoreProvider by embedding the interface for the methods the hub
+// never calls (it only calls AppendMessage) and overriding that one.
 type fakeStore struct {
 	agent.StoreProvider
 	mu       sync.Mutex
@@ -65,8 +63,7 @@ func (s *fakeStore) roles() []string {
 	return out
 }
 
-// vo builds pick rows from labels: the test shorthand for
-// []core.QuestionOption (label only, no description).
+// vo builds pick rows from labels.
 func vo(labels ...string) []core.QuestionOption {
 	out := make([]core.QuestionOption, len(labels))
 	for i, l := range labels {
@@ -75,11 +72,9 @@ func vo(labels ...string) []core.QuestionOption {
 	return out
 }
 
-// askAsync runs Ask in a goroutine (it blocks) so the test can answer,
-// expire, or cancel it and then collect the returned verdict / error.
-// The caller synchronizes registration with waitForPending before
-// asserting on Pending or answering - registration happens inside the
-// goroutine, not before it.
+// askAsync runs Ask in a goroutine (it blocks) so the test can answer, expire, or. The
+// caller synchronizes registration with waitForPending before asserting on Pending or
+// answering - registration happens inside the goroutine, not before it.
 func askAsync(t *testing.T, h *Hub, card core.QuestionPrompt) <-chan askResult {
 	t.Helper()
 	ch := make(chan askResult, 1)
@@ -95,8 +90,7 @@ type askResult struct {
 	err error
 }
 
-// waitForPending polls until at least `n` cards are pending for the
-// session ("" counts every session) and returns the pending list.
+// waitForPending polls until at least `n` cards are pending for the session ("".
 func waitForPending(t *testing.T, h *Hub, session string, n int) []core.QuestionPrompt {
 	t.Helper()
 	deadline := time.Now().Add(testWaitTimeout)
@@ -110,8 +104,7 @@ func waitForPending(t *testing.T, h *Hub, session string, n int) []core.Question
 	return nil
 }
 
-// drain waits for an Ask result with a deadline so a stuck block fails
-// the test fast instead of hanging the whole suite.
+// drain waits for an Ask result with a deadline so a stuck block fails the test fast.
 func drain(t *testing.T, ch <-chan askResult) askResult {
 	t.Helper()
 	select {
@@ -123,8 +116,7 @@ func drain(t *testing.T, ch <-chan askResult) askResult {
 	}
 }
 
-// drainWithTimeout waits up to `d` for an Ask result (used by the
-// expiry tests where the block legitimately outlasts the default 2s).
+// drainWithTimeout waits up to `d` for an Ask result (used by the expiry tests where.
 func drainWithTimeout(t *testing.T, ch <-chan askResult, d time.Duration) askResult {
 	t.Helper()
 	select {
@@ -189,7 +181,6 @@ func TestAnswerValidations(t *testing.T) {
 	ch := askAsync(t, h, core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "pick", Options: vo("a", "b")})
 	waitForPending(t, h, "s1", 1)
 	t.Cleanup(func() {
-		// a failed assertion leaves the card pending; skipping resolves it
 		_, _ = h.Answer("s1", "c1", core.QuestionAnswer{Skipped: true})
 		<-ch
 	})
@@ -209,7 +200,6 @@ func TestAnswerValidations(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("Answer %+v err = %v, want containing %q", tc.v, err, tc.want)
 			}
-			// a rejected answer leaves the card pending for the next case
 			if h.Pending("s1")[0].ID != "c1" {
 				t.Fatalf("card lost after rejected answer")
 			}
@@ -221,7 +211,6 @@ func TestFreeTextOnlyCard(t *testing.T) {
 	h := NewHub(nil, nil)
 	ch := askAsync(t, h, core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "name?", AllowText: true})
 	waitForPending(t, h, "s1", 1)
-	// a pick on a free-text-only card is rejected: no options to index.
 	if _, err := h.Answer("s1", "c1", core.QuestionAnswer{OptionIndex: 1}); err == nil {
 		t.Fatal("option pick on a no-options card must error")
 	}
@@ -363,7 +352,6 @@ func TestExpiryFiresSafeAnswer(t *testing.T) {
 	card := core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("yes", "no"), TimeoutS: 1}
 	ch := askAsync(t, h, card)
 	waitForPending(t, h, "s1", 1)
-	// wait past the 1s deadline; the timer fires the expired verdict.
 	r := drainWithTimeout(t, ch, 3*time.Second)
 	if r.err != nil {
 		t.Fatalf("Ask error: %v", r.err)
@@ -391,7 +379,6 @@ func TestCtxCancellationSettlesCard(t *testing.T) {
 	if err := <-done; err == nil {
 		t.Fatal("Ask with cancelled ctx must error")
 	}
-	// the card is settled; a later answer is rejected (not delivered).
 	_, err := h.Answer("s1", "c1", core.QuestionAnswer{OptionIndex: 1})
 	if err == nil || !strings.Contains(err.Error(), "already answered") {
 		t.Fatalf("Answer after cancel err = %v, want a settled rejection", err)
@@ -422,7 +409,6 @@ func TestPersistenceRecordsCardAndVerdict(t *testing.T) {
 	if len(roles) != 2 || roles[0] != "verdict_card" || roles[1] != "verdict" {
 		t.Fatalf("transcript roles = %v, want [verdict_card verdict]", roles)
 	}
-	// both rows land in the same session.
 	recs := st.snapshot()
 	if recs[0].session != "s9" || recs[1].session != "s9" {
 		t.Fatalf("transcript sessions = %v, want both s9", []string{recs[0].session, recs[1].session})
@@ -459,7 +445,6 @@ func TestPersistenceFailureDoesNotBlockQuestion(t *testing.T) {
 	st.appendOK = false
 	h := NewHub(st, nil) // nil logger keeps the failure quiet
 	ch := askAsync(t, h, core.QuestionPrompt{ID: "c1", SessionID: "s1", Title: "q", Options: vo("y")})
-	// the card registers despite the store failing to persist it.
 	waitForPending(t, h, "s1", 1)
 	if _, err := h.Answer("s1", "c1", core.QuestionAnswer{OptionIndex: 1}); err != nil {
 		t.Fatalf("Answer: %v", err)
@@ -525,12 +510,11 @@ func containsStr(s, sub string) bool {
 	return strings.Contains(s, sub)
 }
 
-// TestOnCardRegisteredFiresOncePerIssuance pins the hub's issuance
-// notification seam (card t_ce2162cd): every registered listener is
-// called exactly once per Ask with the card as it was registered, the
-// card is already answerable when the listener runs, and neither the
-// answer path nor the expiry path notifies (the answer already has the
-// tool result as its shell hint).
+// TestOnCardRegisteredFiresOncePerIssuance pins the hub's issuance notification seam:
+// every registered listener is called exactly once per Ask with the card as it was
+// registered, the card is already answerable when the listener runs, and neither the
+// answer path nor the expiry path notifies (the answer already has the tool result as
+// its shell hint).
 func TestOnCardRegisteredFiresOncePerIssuance(t *testing.T) {
 	h := NewHub(nil, nil)
 	notices := make(chan core.QuestionPrompt, 8)
@@ -567,7 +551,6 @@ func TestOnCardRegisteredFiresOncePerIssuance(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	// the expiry path is silent too
 	h.deadline = 20 * time.Millisecond
 	expireCh := askAsync(t, h, core.QuestionPrompt{ID: "c2", SessionID: "s1", Title: "expire", Options: vo("y")})
 	select {

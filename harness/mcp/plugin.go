@@ -7,17 +7,8 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// Plugin adapts the MCP bridge into omega's plugin system. It provides
-// the "tools" seam (additive) — discovered MCP server tools are merged
-// with other tool providers by the agent loop. It mounts through the
-// ExtensionAPI exclusively (v0.12 phase F).
-//
-// The bridge is a swappable slot, not a fixed field (the reload cycle,
-// card t_d6e94e79): POST /mcp/reload re-reads the config and swaps in a
-// fresh Bridge. mu guards that swap - every reader (Tools(), the
-// status route) takes it per call; no lock is held across the whole
-// reload sequence. reloadMu serializes reloads against each other and
-// is never taken by readers.
+// Plugin adapts the MCP bridge into omega's plugin system. reloadMu serializes reloads
+// against each other and is never taken by readers.
 type Plugin struct {
 	mu       sync.RWMutex
 	reloadMu sync.Mutex
@@ -31,8 +22,7 @@ func NewPlugin(b *Bridge) *Plugin {
 	return &Plugin{bridge: b}
 }
 
-// NewPluginFromEnv loads MCP config from the environment and creates a
-// plugin. If no config is found, the plugin is a no-op.
+// NewPluginFromEnv loads MCP config from the environment and creates a plugin.
 func NewPluginFromEnv() (*Plugin, error) {
 	b, err := NewBridgeFromEnv()
 	if err != nil {
@@ -41,16 +31,14 @@ func NewPluginFromEnv() (*Plugin, error) {
 	return NewPlugin(b), nil
 }
 
-// activeBridge returns the live bridge under the read lock (nil still
-// possible - the no-op shape).
+// activeBridge returns the live bridge under the read lock (nil still possible.
 func (p *Plugin) activeBridge() *Bridge {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.bridge
 }
 
-// swapBridge installs the fresh bridge and returns the replaced one
-// (the caller disconnects its servers outside the lock).
+// swapBridge installs the fresh bridge and returns the replaced one (the caller.
 func (p *Plugin) swapBridge(b *Bridge) *Bridge {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -67,92 +55,58 @@ func (p *Plugin) Description() string {
 	return "MCP bridge: tools from configured Model Context Protocol servers"
 }
 
-// Provides lists the seams this plugin mounts. MCP provides tools
-// (additive — multiple plugins can contribute tools).
-// ConfigKey names the config section this plugin reads from
-// ctx.Configs (see agent.Describer). Empty = reads no section.
+// Provides lists the seams this plugin mounts.
 func (p *Plugin) ConfigKey() string { return "" }
 
 func (p *Plugin) Provides() []string { return []string{"tools"} }
 
 // Requires lists seams that must be mounted before this plugin.
-// MCP has no dependencies on other plugins.
 func (p *Plugin) Requires() []string { return nil }
 
-// MountWithAPI implements agent.APIPlugin. This Mount is the module's
-// whole surface (arc 6 capsule, card t_cf6b7795): the bridge tool
-// provider - every discovered MCP server tool, server-qualified - ships
-// from here, plus the module's routes: the read-only inventory the
-// webui MCP tab lists (GET /mcp/servers, card t_c7136c50), the reload
-// the tab's refresh button drives (POST /mcp/reload, card t_d6e94e79 -
-// mcp.yaml edits go live on refresh, no server restart), and the
-// per-server toggle (POST /mcp/toggle, card t_83f37525 - the `enabled:`
-// flag persisted into mcp.yaml, then the same reload).
-// No command, no skills, no canvas panel. The env/mcp.yaml config load
-// lives in the module too; the host's construction falls back to a
-// no-op bridge on config failure. Removal proof: TestMCPRemovalProof
-// (cmd/omega/removal_test.go).
-//
-// The names are runtime data (the mcp ruling, card t_6c0375b5):
-// server-qualified external names ("proof.echo") live beneath the
-// "mcp." namespace guard claimed ONCE here - they never pass the
-// per-name namespace claim, so the one-dot law stays unweakened while
-// externally-sourced server tools surface under their natural names.
-// Binary purity: removing the module removes the guard and all of
-// them.
+// MountWithAPI implements agent.APIPlugin. The names are runtime data: server-qualified
+// external names ("proof.echo") live beneath the "mcp." namespace guard claimed ONCE
+// here - they never pass the per-name namespace claim, so the one-dot law stays
+// unweakened while externally-sourced server tools surface under their natural names.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
-	// The listing route mounts even on a nil bridge: an empty config
-	// answers an empty list (the empty state is the webui contract),
-	// not a 404. The route is the module's own namespace ("/mcp"),
-	// tenant-checked by the registry.
+	// The listing route mounts even on a nil bridge: an empty config answers an empty list
+	// (the empty state is the webui contract), not a 404.
 	if err := api.RegisterRoute("GET /mcp/servers", p.handleStatus); err != nil {
 		return err
 	}
-	// The reload route (card t_d6e94e79) mounts even on a nil bridge
-	// too: a module idle at boot (no config found) wakes up on the
-	// first reload - the refresh button is the whole trigger.
+	// The reload route mounts even on a nil bridge too.
 	if err := api.RegisterRoute("POST /mcp/reload", p.handleReload); err != nil {
 		return err
 	}
-	// The per-server toggle route (card t_83f37525) rides the same
-	// reasoning: it persists the `enabled:` flag into mcp.yaml, then
-	// reloads through the shared bridge swap. Nil-bridge mount keeps
-	// the route surface stable (the empty tab's toggle is refused at
-	// the wire, never a module-rooted miss).
+	// The per-server toggle route rides the same reasoning. Nil-bridge mount keeps the
+	// route surface stable (the empty tab's toggle is refused at the wire, never a
+	// module-rooted miss).
 	if err := api.RegisterRoute("POST /mcp/toggle", p.handleToggle); err != nil {
 		return err
 	}
-	// The entry CRUD routes (card t_2a649d87): POST /mcp/save upserts
-	// one full server entry into mcp.yaml at the node level and swaps
-	// the bridge; POST /mcp/delete removes one (its connections close
-	// in the swap). Both answer the fresh StatusReport - the one-
-	// response contract the toggle carries. They mount even on a nil
-	// bridge: the first add wakes an idle module, exactly like the
-	// reload route.
+	// The entry CRUD routes: POST /mcp/save upserts one full server entry into mcp.yaml.
+	// Both answer the fresh StatusReport - the one- response contract the toggle carries.
+	// They mount even on a nil bridge: the first add wakes an idle module, exactly like
+	// the reload route.
 	if err := api.RegisterRoute("POST /mcp/save", p.handleSaveServer); err != nil {
 		return err
 	}
 	if err := api.RegisterRoute("POST /mcp/delete", p.handleDeleteServer); err != nil {
 		return err
 	}
-	// The mcp subcommand (card t_2a649d87): the terminal face of the
-	// same entry CRUD. The module owns its argv (v0.12 phase D Q6);
-	// every write rides saveServerAndReload/deleteServerAndReload, so
-	// `omega mcp add` and a wire save land byte-identically.
+	// The mcp subcommand: the terminal face of the same entry CRUD. The module owns its
+	// argv (v0.12 phase D Q6); every write rides
+	// saveServerAndReload/deleteServerAndReload, so `omega mcp add` and a wire save land
+	// byte-identically.
 	if err := api.RegisterSubcommand("mcp", mcpSummary, cmdMCP(p)); err != nil {
 		return err
 	}
-	// The tool provider registers even on a nil bridge (the reload
-	// cycle): Tools() follows the live bridge per call - the provider
-	// itself never changes after mount, only the bridge swaps beneath
-	// it, so an empty bridge and a no-op stay interchangeable.
+	// The tool provider registers even on a nil bridge (the reload cycle): Tools follows
+	// the live bridge per call - the provider itself never changes after mount, only the
+	// bridge swaps beneath it, so an empty bridge and a no-op stay interchangeable.
 	return api.RegisterRuntimeTools(bridgeToolProvider{p: p})
 }
 
-// bridgeToolProvider adapts Plugin to the core.ToolMap shape. The map
-// is assembled at registration; the provider it lands in re-reads the
-// LIVE bridge's discovered tools on every Tools() call - a reload
-// swaps the bridge, the next read serves the new tool set.
+// bridgeToolProvider adapts Plugin to the core.ToolMap shape.
 type bridgeToolProvider struct {
 	p *Plugin
 }
@@ -170,17 +124,15 @@ func (b bridgeToolProvider) Tools() map[string]core.Tool {
 			Description: t.description,
 			Parameters:  t.parameters,
 			Run:         t.run,
-			// card t_c2da3379: the origin stamp is the whole filter
-			// contract - the webui Tools tab keys on this exact value,
-			// never on dotted-name shape.
+			// the origin stamp is the whole filter contract - the webui Tools tab keys on this
+			// exact value, never on dotted-name shape.
 			Origin: core.ToolOriginMCP,
 		}
 	}
 	return tools
 }
 
-// Toggleable marks the MCP bridge as a module capsule (v0.12 E1): the
-// config.yaml disabled: list may name it.
+// Toggleable marks the MCP bridge as a module capsule (v0.12 E1).
 func (p *Plugin) Toggleable() bool { return true }
 
 // Compile-time assertion that the plugin is a Plugin.

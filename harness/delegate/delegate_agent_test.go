@@ -1,8 +1,8 @@
 package delegate
 
-// delegate_agent_test.go: the delegate agent target (card t_7e2b7002).
-// The child must receive OMEGA_AGENT=<name>; a ghost name must fail at
-// spawn time, not silently run on unconfigured defaults.
+// delegate_agent_test.go: the delegate agent target. The child must receive
+// OMEGA_AGENT=<name>; a ghost name must fail at spawn time, not silently run on
+// unconfigured defaults.
 
 import (
 	"context"
@@ -52,14 +52,12 @@ func TestDelegateAgentTargetEnv(t *testing.T) {
 	out, err := d.runDelegateTask(context.Background(), map[string]any{
 		"prompt": "probe",
 		"agent":  "scout",
-		// wait for the stub itself so the child actually runs
 		"timeout": 10,
 	})
 	if err != nil {
 		t.Fatalf("delegate to scout: %v (%s)", err, out)
 	}
-	// The report IS the tool result now (card t_0805d438): the stub's
-	// env echo rides the report.
+	// The report IS the tool result now: the stub's env echo rides the report.
 	if !strings.Contains(out, "agent=scout") {
 		t.Errorf("child saw agent=%q... want agent=scout", extractAgent(out))
 	}

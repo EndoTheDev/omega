@@ -91,9 +91,8 @@ func TestDecodeMessageBadJSON(t *testing.T) {
 	}
 }
 
-// TestToolResultGateRoundTrip (card t_1b3e2a8b): the gate's decision
-// record survives the persisted-payload round trip - what a reloaded
-// session's transcript renders is what the gate stamped.
+// TestToolResultGateRoundTrip: the gate's decision record survives the
+// persisted-payload round trip.
 func TestToolResultGateRoundTrip(t *testing.T) {
 	lines := []string{
 		"smart gate: auto-approved",

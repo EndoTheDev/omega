@@ -12,24 +12,13 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Ephemeral sessions (card t_d96a5cd5): a chat that never touches the
-// store - no session row, no messages on disk, invisible to every
-// store-derived surface (lists, search, export, counts, the session
-// /sessions). The conversation's whole life is THIS registry: an
-// in-memory record keyed by an `eph-` id, reattachable by id on reload
-// (server memory) and gone at restart. Close deletes the record - that
-// is the contract; a persist-action is a separate follow-up card.
-//
-// The id prefix is the invisibility law's enforcement point: endpoints
-// that read the store route `eph-` ids here first (transcript, session
-// detail, delete, read-stamp) or 404 naturally (variants, branch,
-// search - the store never saw the row).
+// Ephemeral sessions: a chat that never touches the store. Close deletes the record -
+// that is the contract; a persist-action is a separate follow-up card. The id prefix is
+// the invisibility law's enforcement point: endpoints that read the store route `eph-`
+// ids here first (transcript, session detail, delete, read-stamp) or 404 naturally
+// (variants, branch, search - the store never saw the row).
 
-// ephemeralSession is one no-persist chat in server memory. context is
-// the provider-facing history (user turns + assistant records + tool
-// results, appended on every /chat); items is the wire transcript the
-// restore path serves; usage/last mirror what the session row would
-// carry (the status bar's durable telemetry).
+// ephemeralSession is one no-persist chat in server memory.
 type ephemeralSession struct {
 	id        string
 	createdAt time.Time
@@ -57,9 +46,8 @@ func newEphRegistry() *ephRegistry {
 // a substrate-shared constant cannot drift from the capsule's guard.
 const ephemeralPrefix = agent.EphemeralIDPrefix
 
-// isEphemeralID reports whether an id belongs to the ephemeral
-// namespace (the "eph-" prefix) - the agent package's predicate. Store
-// ids are base session ids from agent.NewSessionID or the sess-
+// isEphemeralID reports whether an id belongs to the ephemeral namespace (the "eph-"
+// prefix). Store ids are base session ids from agent.NewSessionID or the sess-
 // fallback; they can never carry the prefix.
 func isEphemeralID(id string) bool {
 	return agent.IsEphemeralID(id)
@@ -83,8 +71,6 @@ func (r *ephRegistry) create(id string) *ephemeralSession {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.records == nil {
-		// lazy: a zero-value registry (a Server built without the
-		// constructor path) self-initializes
 		r.records = map[string]*ephemeralSession{}
 	}
 	r.records[id] = s
@@ -98,7 +84,7 @@ func (r *ephRegistry) get(id string) *ephemeralSession {
 	return r.records[id]
 }
 
-// drop deregisters the record. ok reports whether it existed.
+// drop deregisters the record.
 func (r *ephRegistry) drop(id string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -109,11 +95,7 @@ func (r *ephRegistry) drop(id string) bool {
 	return true
 }
 
-// appendUser records a send's incoming messages into the wire
-// transcript items (the same user item shape persisted history
-// produces, minus the store row id - the variants surface addresses
-// ids, and an ephemeral session has none). The provider-facing history
-// copy lands through the loop's eph sink at run start (t_471f6d4a).
+// appendUser records a send's incoming messages into the wire transcript items (the.
 func (r *ephRegistry) appendUser(id string, messages []core.Message, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -136,10 +118,9 @@ func (r *ephRegistry) appendUser(id string, messages []core.Message, now time.Ti
 	s.updatedAt = now.UTC()
 }
 
-// appendHistory persists one loop-produced turn copy into the record's
-// provider-facing history - the ephemeral conversation's store
-// equivalent. Best effort: a record that vanished (close, restart)
-// drops the write silently.
+// appendHistory persists one loop-produced turn copy into the record's provider-facing
+// history. Best effort: a record that vanished (close, restart) drops the write
+// silently.
 func (r *ephRegistry) appendHistory(id string, msg core.Message, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -151,10 +132,7 @@ func (r *ephRegistry) appendHistory(id string, msg core.Message, now time.Time) 
 	s.updatedAt = now.UTC()
 }
 
-// ephTurnSink is the ephemeral session's TurnSink (t_471f6d4a): the
-// loop is the only writer of turn copies, and this registry is the
-// ephemeral conversation's store. Empty assistants write nothing - the
-// wire items commit applies the same guard on the rendering side.
+// ephTurnSink is the ephemeral session's TurnSink.
 type ephTurnSink struct {
 	r  *ephRegistry
 	id string
@@ -171,12 +149,7 @@ func (s ephTurnSink) AppendTurnMessage(ctx context.Context, msg core.Message) er
 	return nil
 }
 
-// commit is the run-end epilogue: flattened assistant records go into
-// the transcript items via the same appendRecordItems flattening the
-// live tail uses (closed: no running flags, durations attached). The
-// provider history itself was written turn-by-turn through the eph
-// sink while the run streamed. Usage/last mirror the session-row
-// writes.
+// commit is the run-end epilogue.
 func (r *ephRegistry) commit(id string, recs []assistantRecord, usage streamUsage, last *core.LastRunStats, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -199,8 +172,6 @@ func (r *ephRegistry) commit(id string, recs []assistantRecord, usage streamUsag
 }
 
 // session synthesizes what a session row would say about the record.
-// Label stays empty: the ephemeral chat is a tab, not a sidebar row;
-// the webui names its tab client-side.
 func (s *ephemeralSession) session() core.Session {
 	return core.Session{
 		ID:               s.id,
@@ -227,8 +198,7 @@ func (r *ephRegistry) history(id string) []core.Message {
 	return out
 }
 
-// snapshot copies the record's items (REPLACE semantics like the run
-// hub's tail: the reader gets a coherent slice even mid-commit).
+// snapshot copies the record's items (REPLACE semantics like the run hub's tail.
 func (r *ephRegistry) snapshotItems(id string) []transcriptItem {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -241,13 +211,7 @@ func (r *ephRegistry) snapshotItems(id string) []transcriptItem {
 	return out
 }
 
-// withoutMemoryTools copies the tool registry minus the memory
-// domain - the ephemeral session's run sees every tool but memory
-// (the dotted memory.* wire, the registry unification B ruling
-// t_d8fbad57; the deny line names the tools, and it rides the run
-// context too; this copy is the registry the /chat loop passes in,
-// so the two layers agree even before the loop filter). The names
-// match harness/memory's registered tools.
+// withoutMemoryTools copies the tool registry minus the memory domain.
 func withoutMemoryTools(tools map[string]core.Tool) map[string]core.Tool {
 	out := make(map[string]core.Tool, len(tools))
 	stripped := false
@@ -286,18 +250,12 @@ func (s *Server) serveEphemeralDetail(w http.ResponseWriter, r *http.Request, id
 			"ephemeral": true,
 		})
 	case http.MethodDelete:
-		// Close = gone, even mid-run: a live run is cancelled first so
-		// nothing keeps writing into a dropped record. The hub's finish
-		// path is a no-op for the gone id (cur==run guard misses). The
-		// hard stop (card t_caa67135) also latches and abandons the
-		// session's pending calls - the record is being deleted, so
-		// nothing may settle into a wake run for it either.
+		// Close = gone, even mid-run.
 		s.stopRun(id)
 		s.eph.drop(id)
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodPatch:
 		// List concerns (read/pin/archive) are no-ops: there is no row.
-		// A 204 keeps the webui's open-equals-read call silent.
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -305,10 +263,8 @@ func (s *Server) serveEphemeralDetail(w http.ResponseWriter, r *http.Request, id
 	return true
 }
 
-// serveEphemeralTranscript synthesizes GET /sessions/{id}/transcript:
-// the record's items plus the live run's tail (identical merge to the
-// store path), the running flag, no variants key. ok=false leaves the
-// request to the caller.
+// serveEphemeralTranscript synthesizes GET /sessions/{id}/transcript. ok=false leaves
+// the request to the caller.
 func (s *Server) serveEphemeralTranscript(w http.ResponseWriter, id string) bool {
 	if !isEphemeralID(id) {
 		return false

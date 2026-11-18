@@ -15,31 +15,23 @@ import (
 // submit surface (the CLI loop and the webui). A nil seam degrades the
 // exact way it always has: @file unresolvable, @session left as-is.
 type AtMentionEnv struct {
-	// Store backs @session:<id> history injection. Nil leaves those
-	// tokens untouched. The neutral `any` carrier: the caller passes
-	// the store service it resolved from the universal registry; the
-	// consult below asserts the one face THIS expansion needs
+	// Store backs @session:<id> history injection. Nil leaves those tokens untouched. The
+	// neutral `any` carrier: the caller passes the store service it resolved from the
+	// universal registry; the consult below asserts the one face THIS expansion needs
 	// (consumer-side, part 3) - no named store contract in core.
 	Store any
-	// Docs backs @skill:<name> content injection - name/content pairs
-	// the caller resolved from the mounted skill capsule. Nil/empty
-	// leaves those tokens untouched.
+	// Docs backs @skill:<name> content injection - name/content pairs the caller.
+	// Nil/empty leaves those tokens untouched.
 	Docs []AtDoc
 	// DetectImage decides file-vs-image (the ai package owns the magic
 	// byte sniffing). Nil skips detection; files then inline as text.
 	DetectImage func(path string) (*ImageContent, error)
-	// MessageText renders a stored message's user-visible text for
-	// @session injection (the agent package owns it).
+	// MessageText renders a stored message's user-visible text for @session injection.
 	MessageText func(Message) string
-	// Dir is the base for relative file paths and globs. Empty means
-	// the process working directory - the original shell behavior.
 	Dir string
-	// ReferenceOnly turns the file branches literal (card t_7f09bd0c):
-	// a file or glob token rides through AS the path - a reference the
-	// model follows with its own tools, never an inline read or an
-	// image attach. The @session:/@skill: injections stay live; the
-	// webui submit path sets this (its composer attaches PATHS), the
-	// CLI loop keeps the inline law.
+	// ReferenceOnly turns the file branches literal: a file or glob token rides through AS
+	// the path - a reference the model follows with its own tools, never an inline read or
+	// an image attach.
 	ReferenceOnly bool
 }
 
@@ -75,9 +67,9 @@ func atMentionResolve(dir, path string) string {
 // image files as base64 ImageContent, and inlines text files. Also
 // supports:
 //
-//	@*.go          - glob patterns (expand all matches, inline text files)
-//	@session:<id>  - inject session message history as context
-//	@skill:<name>  - inject skill content
+// @*.go - glob patterns (expand all matches, inline text files)
+// @session:<id> - inject session message history as context
+// @skill:<name> - inject skill content
 //
 // Relative paths resolve against env.Dir. Tokens that don't resolve are
 // left as-is in the text (unresolvable passthrough is the protocol,
@@ -115,17 +107,13 @@ func ExpandAtMentions(input string, env AtMentionEnv) (prompt string, images []I
 	return prompt, images, unresolved, err
 }
 
-// atMentionToken resolves one @token against the env. Returns the
-// replacement text, the loaded image (nil for text injections) and the
-// outcome: atResolved (token replaced), atLiteral (unresolvable, sent
-// as-is) or atFailed (attempted, I/O error; also sent as-is but the
-// error is reported to the caller).
+// atMentionToken resolves one @token against the env. Returns the replacement text, the
+// loaded image (nil for text injections) and the outcome: atResolved (token replaced),
+// atLiteral (unresolvable, sent as-is) or atFailed (attempted, I/O error; also sent
+// as-is but the error is reported to the caller).
 func atMentionToken(token string, env AtMentionEnv) (string, *ImageContent, int, error) {
 	path := token[1:] // strip @
 
-	// @skill:<name> - inject skill content.
-	// (the @session:/@skill: injections stay live under ReferenceOnly -
-	// card t_7f09bd0c turns only the FILE branches literal.)
 	if strings.HasPrefix(path, "skill:") {
 		skillName := path[6:]
 		for _, d := range env.Docs {
@@ -136,9 +124,6 @@ func atMentionToken(token string, env AtMentionEnv) (string, *ImageContent, int,
 		return token, nil, atLiteral, nil // skill not found, sent as-is
 	}
 
-	// @session:<id> - inject session message history (the ACTIVE
-	// path, t_17365247: a branched session injects its selected
-	// branch, never the parked variants).
 	if strings.HasPrefix(path, "session:") && env.Store != nil {
 		st, ok := env.Store.(interface {
 			GetActiveMessages(ctx context.Context, sessionID string) ([]Message, error)
@@ -159,10 +144,8 @@ func atMentionToken(token string, env AtMentionEnv) (string, *ImageContent, int,
 		return sb.String(), nil, atResolved, nil
 	}
 
-	// ReferenceOnly (card t_7f09bd0c): every FILE-shaped token
-	// (plain path or glob) is a path reference on this path - it rides
-	// through as written and reports unresolved. No inline, no image
-	// attach, no mime work.
+	// ReferenceOnly: every FILE-shaped token (plain path or glob) is a path reference on
+	// this path.
 	if env.ReferenceOnly {
 		return token, nil, atLiteral, nil
 	}
@@ -189,13 +172,11 @@ func atMentionToken(token string, env AtMentionEnv) (string, *ImageContent, int,
 		return sb.String(), nil, atResolved, nil
 	}
 
-	// If the file doesn't exist, leave the token as-is.
 	info, statErr := os.Stat(resolved)
 	if statErr != nil || info.IsDir() {
 		return token, nil, atLiteral, nil
 	}
 
-	// Try image detection.
 	if env.DetectImage != nil {
 		img, detectErr := env.DetectImage(resolved)
 		if detectErr != nil {
@@ -206,7 +187,6 @@ func atMentionToken(token string, env AtMentionEnv) (string, *ImageContent, int,
 		}
 	}
 
-	// Not an image: inline the file contents.
 	data, readErr := os.ReadFile(resolved)
 	if readErr != nil {
 		return token, nil, atFailed, readErr

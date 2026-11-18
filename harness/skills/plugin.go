@@ -12,8 +12,7 @@ func NewSkillsProvider(dir string) *SkillsProvider {
 	return &SkillsProvider{Dir: dir}
 }
 
-// Plugin is the agent.Plugin adapter for the skills extension. It
-// mounts through the ExtensionAPI exclusively (v0.12 phase F).
+// Plugin is the agent.Plugin adapter for the skills extension.
 type Plugin struct {
 	routes *Routes
 }
@@ -28,8 +27,7 @@ func (p *Plugin) Description() string {
 	return "skills: reusable procedure files agents can invoke in a sub-agent"
 }
 
-// ConfigKey names the config section this plugin reads from
-// ctx.Configs (see agent.Describer). Empty = reads no section.
+// ConfigKey names the config section this plugin reads from ctx.Configs (see.
 func (p *Plugin) ConfigKey() string { return "skills" }
 
 func (p *Plugin) Provides() []string { return []string{"skills", "tools", "prompt_sections", "nudger"} }
@@ -39,16 +37,10 @@ func (p *Plugin) Provides() []string { return []string{"skills", "tools", "promp
 // into the log file. Logging must mount first or the edge is meaningless.
 func (p *Plugin) Requires() []string { return []string{"logger"} }
 
-// Toggleable opts skills into the toggleable tier (0.17.3 tier re-law,
-// card t_ee3a968b: "always on: agent-loop, provider and logging;
-// toggleable: the rest") - an agent with no skills is a legitimate
-// configuration, not a broken one.
+// Toggleable opts skills into the toggleable tier.
 func (p *Plugin) Toggleable() bool { return true }
 
-// MountWithAPI implements agent.APIPlugin. Populates the skills seam,
-// the skills domain tool (read/write/update), the prompt section, and
-// the /skills command.
-// The skills directory is read from ctx.Configs.
+// MountWithAPI implements agent.APIPlugin.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["skills"].(Config); ok {
@@ -62,18 +54,13 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	sp := NewSkillsProvider(dir)
 	sp.SharedDir = cfg.SharedDir
 	sp.SetDisabled(cfg.Disabled)
-	// The explicit allowlist (0.17.3 make-over): an agent home's
-	// definition names what it may use, and an empty list means none.
-	// Unset stays the host mount's every-skill behavior.
+	// The explicit allowlist (0.17.3 make-over).
 	sp.Allow, sp.AllowSet = cfg.Allow, cfg.AllowSet
-	// The curator reads the provider seam LIVE at consult time - the
-	// registry resolve, not a mount-time pin (toggles swap the offer).
+	// The curator reads the provider seam LIVE at consult time.
 	sp.SetProviderFn(func() agent.Provider { return seam[agent.Provider](ctx, "provider") })
 	sp.SetCuratorModel(cfg.CuratorModel)
-	// Legacy-format visibility (card t_5baad951): a folder holding
-	// <name>.md without SKILL.md is invisible to discovery - one boot
-	// warning per hit, never a silent skip. Reading the logging seam
-	// here is why Requires names it.
+	// Legacy-format visibility: a folder holding <name>.md without SKILL.md is invisible
+	// to discovery - one boot warning per hit, never a silent skip.
 	sp.WarnLegacyShape(seam[agent.LoggerProvider](ctx, "logger"))
 
 	interval := cfg.NudgeInterval
@@ -83,27 +70,18 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 
 	steps := []func() error{
 		func() error { return api.Offer("skills", sp) },
-		// The skill viewer's content route rides the capsule too
-		// (shell-ring shrink wave 3, card t_b75df168): the viewer tab's
-		// reads mount and die with the provider they read.
+		// The skill viewer's content route rides the capsule too.
 		func() error {
 			p.routes = newRoutes(sp)
 			return api.RegisterRoute("/skills/content", p.routes.handleSkillsContent)
 		},
-		// The tab editor's write face (card t_0a108f16): create +
-		// rewrite on /skills/save, remove on /skills/delete - POST
-		// method-prefixed routes riding the SAME mounted provider, so a
-		// capsule-less host answers 404 at the module mux for both.
+		// The tab editor's write face.
 		func() error { return api.RegisterRoute("POST /skills/save", p.routes.handleSkillsSave) },
 		func() error { return api.RegisterRoute("POST /skills/delete", p.routes.handleSkillsDelete) },
-		// The CLI face of the curator pass (t_9972dfd0) and of the
-		// registry editor (t_05d06973): the subcommands die with the
-		// module - the registry table is the only mount path (CLI
-		// homecoming, scrub-safe).
+		// The CLI face of the curator pass and of the registry editor.
 		func() error { return p.registerCuratorCLI(api, sp) },
 		func() error { return p.registerSkillsCLI(api, sp) },
-		// The learning-loop reminder seam (t_9972dfd0): the loop
-		// injects one line per elapsed interval; 0 = off.
+		// The learning-loop reminder seam.
 		func() error { return api.Offer("nudger", NewTurnNudger(interval)) },
 		func() error {
 			for name, t := range sp.Tools() {

@@ -1,8 +1,7 @@
 package kanban
 
-// Batch tests (t_02a8beea): in-batch referencing (LAST / #N), the
-// preflight door for bad references, and the atomic rollback that
-// keeps a failed batch from orphaning its own creates.
+// Batch tests: in-batch referencing (LAST / #N), the preflight door for bad references,
+// and the atomic rollback that keeps a failed batch from orphaning its own creates.
 
 import (
 	"context"
@@ -11,15 +10,12 @@ import (
 	"testing"
 )
 
-// batchRun returns the kanban.batch tool's Run: every batch test
-// drives the real wire surface, not the internal engine.
+// batchRun returns the kanban.batch tool's Run.
 func batchRun(p *ToolProvider) func(context.Context, map[string]any) (string, error) {
 	return p.Tools()["kanban.batch"].Run
 }
 
-// TestRunTaskBatchInBatchRefs covers create-then-act inside one atomic
-// batch: LAST tracks the most recent create, "#N" the create at
-// operations[N-1] (1-based, matching the result lines).
+// TestRunTaskBatchInBatchRefs covers create-then-act inside one atomic batch.
 func TestRunTaskBatchInBatchRefs(t *testing.T) {
 	p, board := toolProvider(t)
 	batch := batchRun(p)
@@ -51,7 +47,6 @@ func TestRunTaskBatchInBatchRefs(t *testing.T) {
 		t.Fatalf("comments = %+v", comments)
 	}
 
-	// positional: two creates, a comment on #1, a complete on #2
 	out, err = batch(ctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "alpha"},
 		map[string]any{"action": "create", "title": "beta"},
@@ -85,16 +80,13 @@ func extractCreatedID(t *testing.T, out string, n int) string {
 	return ""
 }
 
-// TestRunTaskBatchRollbackRefCoversTheRepro: the exact batch from the
-// card's repro - [create, comment(LAST), ...] failing on a bad later
-// op - rolls back fully instead of orphaning the create.
+// TestRunTaskBatchRollbackRefCoversTheRepro: the exact batch from the card's repro.
 func TestRunTaskBatchRollbackRefCoversTheRepro(t *testing.T) {
 	p, board := toolProvider(t)
 	batch := batchRun(p)
 	ctx := context.Background()
 
-	// a valid prefix that would have applied: create + comment LAST,
-	// then an update on an id that does not exist -> failure -> rollback
+	// a valid prefix that would have applied.
 	out, _ := batch(ctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "orphan probe"},
 		map[string]any{"action": "comment", "id": "LAST", "body": "resolved"},
@@ -113,9 +105,7 @@ func TestRunTaskBatchRollbackRefCoversTheRepro(t *testing.T) {
 	}
 }
 
-// TestRunTaskBatchPreflightRefusesBadRefs: a malformed or
-// forward-pointing reference fails BEFORE anything applies - zero side
-// effects, and the result is a tool error (not a rolled-back report).
+// TestRunTaskBatchPreflightRefusesBadRefs: a malformed or forward-pointing reference.
 func TestRunTaskBatchPreflightRefusesBadRefs(t *testing.T) {
 	p, board := toolProvider(t)
 	batch := batchRun(p)
@@ -151,9 +141,7 @@ func TestRunTaskBatchPreflightRefusesBadRefs(t *testing.T) {
 	}
 }
 
-// TestRunTaskBatchDoneEmitsOnlyOnCommit: a done move inside a batch
-// emits its finished-things record after the commit, and a rolled-back
-// batch emits nothing at all.
+// TestRunTaskBatchDoneEmitsOnlyOnCommit: a done move inside a batch emits its.
 func TestRunTaskBatchDoneEmitsOnlyOnCommit(t *testing.T) {
 	p, _ := toolProvider(t)
 	batch := batchRun(p)
@@ -161,7 +149,6 @@ func TestRunTaskBatchDoneEmitsOnlyOnCommit(t *testing.T) {
 	p.board.(*Store).SetNotifier(n)
 	ctx := context.Background()
 
-	// commit path: one emit for the completed create
 	if _, err := batch(ctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "done in batch"},
 		map[string]any{"action": "complete", "id": "LAST"},
@@ -175,7 +162,6 @@ func TestRunTaskBatchDoneEmitsOnlyOnCommit(t *testing.T) {
 	n.got = nil
 	n.mu.Unlock()
 
-	// rollback path: no emit survives
 	batch(ctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "never done"},
 		map[string]any{"action": "complete", "id": "LAST"},

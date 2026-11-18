@@ -1,17 +1,6 @@
 package cron
 
-// toggle.go: the per-job `enabled:` flag write (card t_561dc4e0). The
-// CronJobs panel's two-step toggle POSTs /cron/toggle; the route is
-// the module's own (the mcp.yaml toggle law, harness/mcp/status.go:
-// the config entry lives in a yaml file the module reads, so the
-// module writes the one scalar back). The write is the fold-write
-// pattern (the config.yaml writeDisabled lesson): parse at the
-// yaml.Node level, mutate the one scalar, marshal the WHOLE document
-// node, so comments, key order, unknown keys, and the file's style
-// survive - a struct round-trip would normalize them away. Missing
-// `enabled:` keys are appended to the job's mapping; the bool is
-// written as the bare `true`/`false` scalar YAML writes at the node
-// level.
+// toggle.go: the per-job `enabled:` flag write.
 
 import (
 	"context"
@@ -24,17 +13,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// cronToggler is the write face the panel's toggle rides: the runner's
-// ToggleJob (write the owning crons.yaml's `enabled:` flag, hot-reload,
-// return the fresh job set). Separate interface - reading the jobs and
-// writing their flags stay different concerns, the CronLister law.
+// cronToggler is the write face the panel's toggle rides.
 type cronToggler interface {
 	ToggleJob(key string, enabled bool) ([]JobInfo, error)
 }
 
-// jobToggleRequest is the POST /cron/toggle body: one job key (the
-// StateKey - main jobs key on their name, agent wake jobs on
-// <agent>/<name>), one target state.
+// jobToggleRequest is the POST /cron/toggle body.
 type jobToggleRequest struct {
 	Key     string `json:"key"`
 	Enabled bool   `json:"enabled"`
@@ -50,16 +34,9 @@ func (e UnknownJobError) Error() string {
 }
 func (e UnknownJobError) Unknown() bool { return true }
 
-// ToggleJob flips the enabled flag of one job and hot-reloads the
-// runner (card t_561dc4e0). The write lands in the crons.yaml that
-// owns the job - the main home's file for main jobs, the agent home's
-// config/crons.yaml for wakes (the LoadAllConfigs ownership, ruling
-// 12). A reload that keeps parsing keeps the scheduler honest; the
-// mtime watcher would pick the write up anyway, the immediate reload
-// only makes the response carry the landed truth. Returns the fresh
-// job set (the wire contract: one response carries the state it
-// landed - no second GET). An unknown key errors without writing a
-// byte.
+// ToggleJob flips the enabled flag of one job and hot-reloads the runner. Returns the
+// fresh job set (the wire contract: one response carries the state it landed - no
+// second GET). An unknown key errors without writing a byte.
 func (r *Runner) ToggleJob(key string, enabled bool) ([]JobInfo, error) {
 	job, ok := r.jobByKey(key)
 	if !ok {
@@ -72,10 +49,9 @@ func (r *Runner) ToggleJob(key string, enabled bool) ([]JobInfo, error) {
 	if err := setJobEnabled(path, job.Name, enabled); err != nil {
 		return nil, err
 	}
-	// the write landed; reload through the same path the mtime watcher
-	// rides, so the scheduler follows the file (a parse failure after
-	// the write keeps the previous job set serving - the MCP reload
-	// law: server truth never fakes a swap)
+	// the write landed; reload through the same path the mtime watcher rides, so the
+	// scheduler follows the file (a parse failure after the write keeps the previous job
+	// set serving - the MCP reload law: server truth never fakes a swap)
 	cfg, err := LoadAllConfigs(r.home)
 	if err != nil {
 		return nil, fmt.Errorf("reload after write: %w", err)
@@ -94,10 +70,7 @@ func (r *Runner) jobByKey(key string) (Job, bool) {
 	return Job{}, false
 }
 
-// jobFileFor resolves the crons.yaml that owns the job: the main home
-// file for main jobs, the agent home's config file for wakes - picked
-// out of the runner's own file map, the same resolution rule the
-// watcher and the reload ride.
+// jobFileFor resolves the crons.yaml that owns the job.
 func (r *Runner) jobFileFor(job Job) (string, error) {
 	for path, owner := range r.cronFiles() {
 		if job.IsAgent() && owner == job.Agent {
@@ -110,10 +83,7 @@ func (r *Runner) jobFileFor(job Job) (string, error) {
 	return "", UnknownJobError{Key: job.StateKey()}
 }
 
-// setJobEnabled flips the per-job `enabled:` flag on the named job
-// entry in the crons.yaml at path. Walk: the document mapping's
-// `jobs:` sequence, the entry whose `name:` scalar matches, replace an
-// existing `enabled:` scalar in place or append the key/value pair.
+// setJobEnabled flips the per-job `enabled:` flag on the named job entry in the.
 func setJobEnabled(path, name string, enabled bool) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -158,8 +128,7 @@ func setJobEnabled(path, name string, enabled bool) error {
 		if !named {
 			continue
 		}
-		// the named entry: replace an existing `enabled:` scalar in
-		// place, or append the key/value pair.
+		// the named entry: replace an existing `enabled:` scalar in place, or append the.
 		for i := 0; i+1 < len(item.Content); i += 2 {
 			key, val := item.Content[i], item.Content[i+1]
 			if key.Kind == yaml.ScalarNode && key.Value == "enabled" {
@@ -176,14 +145,12 @@ func setJobEnabled(path, name string, enabled bool) error {
 	return fmt.Errorf("parse %s: no job named %s", path, name)
 }
 
-// handleToggle serves POST /cron/toggle: decode the key/target, write
-// the owning crons.yaml's `enabled:` flag, hot-reload the runner, and
-// answer the fresh job set (the wire contract: one response carries
-// the state it landed, no second GET required - CronJobs.vue still
-// re-fetches, the ruled two-step). An unknown key is a loud 404 (a
-// silently persisted unknown key would be invisible forever); a write
-// or reload failure is 400/500 with the file untouched when the write
-// never happened.
+// handleToggle serves POST /cron/toggle: decode the key/target, write the owning
+// crons.yaml's `enabled:` flag, hot-reload the runner, and answer the fresh job set
+// (the wire contract: one response carries the state it landed, no second GET required
+// - CronJobs.vue still re-fetches, the ruled two-step). An unknown key is a loud 404 (a
+// silently persisted unknown key would be invisible forever); a write or reload failure
+// is 400/500 with the file untouched when the write never happened.
 func (p *Plugin) handleToggle(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -211,7 +178,6 @@ func (p *Plugin) handleToggle(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(jobs); err != nil {
-		// header already sent; the connection carries the failure
 		return
 	}
 }
@@ -224,19 +190,17 @@ func enabledValue(enabled bool) string {
 	return "false"
 }
 
-// writeJobsYAML marshals the whole document node and replaces the file
-// - comments and style survive because they rode the node tree. The
-// write is the caller's responsibility to surface: a parse or lookup
-// failure never reaches this point (the file stays untouched).
+// writeJobsYAML marshals the whole document node and replaces the file. The write is
+// the caller's responsibility to surface: a parse or lookup failure never reaches this
+// point (the file stays untouched).
 func writeJobsYAML(path string, doc *yaml.Node) error {
 	out, err := yaml.Marshal(doc)
 	if err != nil {
 		return fmt.Errorf("marshal %s: %w", path, err)
 	}
-	// the config files are operator-owned: the same mode the
-	// fold-write uses (no chmod churn). tmp+rename - a crash or
-	// power loss mid-write must never truncate the operator's
-	// hand-owned file to zero bytes (the config writer's pattern).
+	// the config files are operator-owned. tmp+rename - a crash or power loss mid-write
+	// must never truncate the operator's hand-owned file to zero bytes (the config
+	// writer's pattern).
 	mode := os.FileMode(0o644)
 	if fi, statErr := os.Stat(path); statErr == nil {
 		mode = fi.Mode()

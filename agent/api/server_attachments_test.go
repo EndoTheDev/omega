@@ -1,9 +1,6 @@
 package api
 
-// Non-image attachment uploads (card t_1ffd07de): POST /attach-file
-// writes the bytes into the session's upload dir, /chat carries the
-// typed reference and persists it, and nothing outside the uploads tree
-// is ever accepted as a reference.
+// Non-image attachment uploads.
 
 import (
 	"bytes"
@@ -21,8 +18,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// attachFilePOST builds the multipart request the composer sends: an
-// optional session_id field plus one file part.
+// attachFilePOST builds the multipart request the composer sends.
 func attachFilePOST(t *testing.T, sessionID, filename string, content []byte) *http.Request {
 	t.Helper()
 	var body bytes.Buffer
@@ -62,12 +58,6 @@ func attachFile(t *testing.T, s *Server, sessionID, filename string, content []b
 	return att
 }
 
-// TestAttachFileDraftUploadLandsInSessionDir is the card's receipt: a .md
-// and a .csv attached through the API both land in the session's upload
-// dir, and the persisted user message carries both reference records.
-// The .md rides an existing session id; the .csv is a draft attach (no
-// session yet), so it starts in the _pending staging dir and /chat moves
-// it into the session's dir.
 func TestAttachFileDraftUploadLandsInSessionDir(t *testing.T) {
 	uploads := t.TempDir()
 	t.Setenv("OMEGA_UPLOADS_DIR", uploads)
@@ -95,7 +85,6 @@ func TestAttachFileDraftUploadLandsInSessionDir(t *testing.T) {
 		t.Fatalf("draft csv path = %q, want it staged under %s/", csv.Path, pendingDirName)
 	}
 
-	// The send: both references ride the user message.
 	body, _ := json.Marshal(map[string]any{
 		"session_id": "s1",
 		"messages": []map[string]any{{
@@ -110,7 +99,6 @@ func TestAttachFileDraftUploadLandsInSessionDir(t *testing.T) {
 		t.Fatalf("chat status = %d, want 200 (%s)", rec.Code, rec.Body.String())
 	}
 
-	// Both files now live in the SESSION's upload dir, bytes intact.
 	sessionDir := filepath.Join(uploads, "s1")
 	for name, want := range map[string][]byte{"notes.md": mdBytes, "rows.csv": csvBytes} {
 		got, err := os.ReadFile(filepath.Join(sessionDir, name))
@@ -121,15 +109,12 @@ func TestAttachFileDraftUploadLandsInSessionDir(t *testing.T) {
 			t.Fatalf("%s bytes = %q, want %q", name, got, want)
 		}
 	}
-	// The staging dir is drained: no file survives under _pending.
 	pending := filepath.Join(uploads, pendingDirName)
 	entries, _ := os.ReadDir(pending)
 	if len(entries) != 0 {
 		t.Fatalf("staging dir still carries %d entries, want the draft file relocated", len(entries))
 	}
 
-	// The persisted user message carries both reference records, pointing
-	// into the session's own dir.
 	messages, err := store.GetMessages(ctx, "s1")
 	if err != nil {
 		t.Fatalf("get messages: %v", err)
@@ -157,8 +142,6 @@ func TestAttachFileDraftUploadLandsInSessionDir(t *testing.T) {
 		}
 	}
 
-	// The render wire carries the same records: the restore path sees the
-	// references the live send carried.
 	trec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(trec, httptest.NewRequest(http.MethodGet, "/sessions/s1/transcript", nil))
 	if trec.Code != http.StatusOK {
@@ -188,8 +171,7 @@ func TestAttachFileDraftUploadLandsInSessionDir(t *testing.T) {
 	}
 }
 
-// TestAttachFileRejectsOversize pins the cap: one byte past
-// maxChatFileBytes is a 413 and nothing is left on disk.
+// TestAttachFileRejectsOversize pins the cap: one byte past maxChatFileBytes is a 413.
 func TestAttachFileRejectsOversize(t *testing.T) {
 	uploads := t.TempDir()
 	t.Setenv("OMEGA_UPLOADS_DIR", uploads)
@@ -243,9 +225,7 @@ func TestAttachFileRejectsForeignPath(t *testing.T) {
 	}
 }
 
-// TestAttachFileSweepsStaleStaging pins the reclaim: an abandoned draft
-// upload (a staging dir older than pendingTTL) is removed by the next
-// attach, and a fresh one survives.
+// TestAttachFileSweepsStaleStaging pins the reclaim.
 func TestAttachFileSweepsStaleStaging(t *testing.T) {
 	uploads := t.TempDir()
 	t.Setenv("OMEGA_UPLOADS_DIR", uploads)
@@ -277,9 +257,7 @@ func TestAttachFileSweepsStaleStaging(t *testing.T) {
 	}
 }
 
-// TestSafeUploadName pins the on-disk name rule: a client-supplied
-// filename can never steer the write (no separators, no traversal, no
-// hidden names), and the extension survives for the kind label.
+// TestSafeUploadName pins the on-disk name rule: a client-supplied filename can never.
 func TestSafeUploadName(t *testing.T) {
 	cases := map[string]string{
 		"notes.md":                  "notes.md",

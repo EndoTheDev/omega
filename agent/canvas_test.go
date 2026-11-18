@@ -10,8 +10,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// panelProviderStub is one module: declared panels plus a
-// handler stub. name is what all its action rows declare.
+// panelProviderStub is one module: declared panels plus a handler stub.
 type panelProviderStub struct {
 	name    string
 	panels  []core.Panel
@@ -187,9 +186,7 @@ func TestRegistrationWiringBugs(t *testing.T) {
 	}
 }
 
-// TestUpdateRejectsUndeclaredPanelId: a push naming a panel the module
-// never declared is a phantom panel (it would sit in the namespace
-// forever) - the runtime rejects it and the snapshot grows nothing.
+// TestUpdateRejectsUndeclaredPanelId: a push naming a panel the module never declared.
 func TestUpdateRejectsUndeclaredPanelId(t *testing.T) {
 	c, err := mountedCtx(t, twoProviders(), nil)
 	if err != nil {
@@ -202,14 +199,12 @@ func TestUpdateRejectsUndeclaredPanelId(t *testing.T) {
 	if got := len(c.Snapshot()); got != 3 {
 		t.Errorf("snapshot = %d panels, want 3 (nothing minted)", got)
 	}
-	// A declared id still updates.
 	if err := c.Update("kanban", core.Panel{ID: "board", Kind: "kanban.board", Payload: "ok"}); err != nil {
 		t.Errorf("declared panel update = %v, want nil", err)
 	}
 }
 
-// TestDispatchHappyPath: the dispatch hands the call to the handler
-// verbatim and its result passes through.
+// TestDispatchHappyPath: the dispatch hands the call to the handler verbatim and its.
 func TestDispatchHappyPath(t *testing.T) {
 	var got core.ActionCall
 	c, err := mountedCtx(t, []core.PanelProvider{&panelProviderStub{
@@ -262,8 +257,7 @@ func TestDispatch404Shapes(t *testing.T) {
 }
 
 func TestConcurrentSnapshotUpdateDispatch(t *testing.T) {
-	// The -race tripwire for the same law the runtime serves: module
-	// goroutines update while a frontend snapshots and dispatches.
+	// The -race tripwire for the same law the runtime serves.
 	c, err := mountedCtx(t, []core.PanelProvider{&panelProviderStub{
 		panels: []core.Panel{panel("board", "kanban.board", act("refresh", "kanban"))},
 		handler: func(call core.ActionCall) (any, error) {
@@ -276,17 +270,14 @@ func TestConcurrentSnapshotUpdateDispatch(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(3)
-		// updater
 		go func(i int) {
 			defer wg.Done()
 			_ = c.Update("kanban", core.Panel{ID: "board", Kind: "kanban.board", Payload: i})
 		}(i)
-		// reader
 		go func() {
 			defer wg.Done()
 			_ = c.Snapshot()
 		}()
-		// dispatcher
 		go func() {
 			defer wg.Done()
 			_, _ = c.Dispatch(core.ActionCall{Module: "kanban", Action: "refresh"})
@@ -295,8 +286,7 @@ func TestConcurrentSnapshotUpdateDispatch(t *testing.T) {
 	wg.Wait()
 }
 
-// sinkProviderStub is a module whose panel state changes outside the
-// action pipe: it records the update closure NewCanvas installs.
+// sinkProviderStub is a module whose panel state changes outside the action pipe.
 type sinkProviderStub struct {
 	*panelProviderStub
 	mu     sync.Mutex
@@ -310,10 +300,9 @@ func (s *sinkProviderStub) SetPanelUpdate(update func(core.Panel) error) {
 	s.mu.Unlock()
 }
 
-// TestSinkInstallationAndRoute: a PanelUpdateSink provider gets the
-// update closure installed at registration, bound to its own module
-// namespace - a push updates the snapshot and rides the delta emitter
-// exactly like an action-pipe refresh.
+// TestSinkInstallationAndRoute: a PanelUpdateSink provider gets the update closure
+// installed at registration, bound to its own module namespace - a push updates the
+// snapshot and rides the delta emitter exactly like an action-pipe refresh.
 func TestSinkInstallationAndRoute(t *testing.T) {
 	s := &sinkProviderStub{panelProviderStub: &panelProviderStub{name: "notifications", panels: []core.Panel{
 		panel("notifications", "list", act("mark_all", "notifications")),
@@ -345,9 +334,8 @@ func TestSinkInstallationAndRoute(t *testing.T) {
 	}
 }
 
-// TestSinksStayInTheirNamespace: each sink's closure is bound to its
-// own module namespace - two providers pushing the same panel id land
-// as two distinct panels, not one shared slot.
+// TestSinksStayInTheirNamespace: each sink's closure is bound to its own module
+// namespace.
 func TestSinksStayInTheirNamespace(t *testing.T) {
 	mk := func(name string) *sinkProviderStub {
 		return &sinkProviderStub{panelProviderStub: &panelProviderStub{name: name, panels: []core.Panel{
@@ -381,9 +369,7 @@ func TestSinksStayInTheirNamespace(t *testing.T) {
 	}
 }
 
-// TestActionlessProviderGetsNoSink: a provider without actions
-// contributes nothing (silent registration) and is not handed a sink -
-// no namespace exists to bind to.
+// TestActionlessProviderGetsNoSink: a provider without actions contributes nothing.
 func TestActionlessProviderGetsNoSink(t *testing.T) {
 	s := &sinkProviderStub{panelProviderStub: &panelProviderStub{name: "silent", panels: []core.Panel{
 		panel("muted", "plain"),
@@ -399,17 +385,13 @@ func TestActionlessProviderGetsNoSink(t *testing.T) {
 	}
 }
 
-// TestCanvasResyncDetachesAndRestores pins the live-toggle contract:
-// Resync drops a module whose provider left the Context (panels and
-// actions die without a restart) and registers a provider the scoped
-// remount appended. Untouched modules keep their state.
+// TestCanvasResyncDetachesAndRestores pins the live-toggle contract.
 func TestCanvasResyncDetachesAndRestores(t *testing.T) {
 	c, err := mountedCtx(t, twoProviders(), nil)
 	if err != nil {
 		t.Fatalf("NewCanvas: %v", err)
 	}
 
-	// kanban's provider leaves the Context (the disable cascade).
 	offCtx := &core.Context{PanelProviders: []core.PanelProvider{
 		twoProviders()[1], // files stays mounted
 	}}
@@ -425,8 +407,8 @@ func TestCanvasResyncDetachesAndRestores(t *testing.T) {
 		t.Fatalf("kanban dispatch after disable = %v, want ErrUnknownModule", err)
 	}
 
-	// ... and the scoped remount appends a fresh provider: it
-	// registers again, files stays exactly where it was.
+	// .. and the scoped remount appends a fresh provider: it registers again, files stays
+	// exactly where it was.
 	onCtx := &core.Context{PanelProviders: twoProviders()}
 	if err := c.Resync(onCtx); err != nil {
 		t.Fatalf("Resync (enable): %v", err)
@@ -439,16 +421,14 @@ func TestCanvasResyncDetachesAndRestores(t *testing.T) {
 		t.Fatalf("after enable re-register snapshot = %v, want 3 panels", ids)
 	}
 	if _, err := c.Dispatch(core.ActionCall{Module: "kanban", Action: "refresh"}); err != nil && !strings.Contains(err.Error(), "no handler registered") {
-		// the stub registers no handler - the 404 shape would be the failure
 		t.Fatalf("kanban dispatch after enable routed nowhere: %v", err)
 	}
 }
 
-// TestResyncReinstallsSink: the sink rides the same registration that
-// declares the panels. A provider a live re-enable re-registered gets
-// its PanelUpdateSink closure installed again - a module enabled live
-// pushes to the canvas exactly like one mounted at boot (the Oct-27
-// incident's surviving half: handlers returned, pushes stayed dead).
+// TestResyncReinstallsSink: the sink rides the same registration that declares the. A
+// provider a live re-enable re-registered gets its PanelUpdateSink closure installed
+// again - a module enabled live pushes to the canvas exactly like one mounted at boot
+// (the Oct-27 incident's surviving half: handlers returned, pushes stayed dead).
 func TestResyncReinstallsSink(t *testing.T) {
 	kb := &sinkProviderStub{panelProviderStub: &panelProviderStub{name: "kanban", panels: []core.Panel{
 		panel("board", "kanban.board", act("refresh", "kanban")),
@@ -461,7 +441,6 @@ func TestResyncReinstallsSink(t *testing.T) {
 		t.Fatalf("NewCanvas: %v", err)
 	}
 
-	// the disable cascade: kanban's provider leaves the Context.
 	if err := c.Resync(&core.Context{PanelProviders: []core.PanelProvider{files}}); err != nil {
 		t.Fatalf("Resync (disable): %v", err)
 	}
@@ -490,13 +469,11 @@ func TestResyncReinstallsSink(t *testing.T) {
 	}
 }
 
-// TestResyncKeepsLateRegistrantsThroughChurn pins the Oct-27 incident
-// shape: the chat capsule registers at channel Start - AFTER the boot
-// canvas was built - and other modules toggle through the journal
-// around it. A module's live disable and re-enable must never touch an
-// unrelated late registrant's handlers, sink or panel state (the old
-// journal truncation undo chopped exactly this: handlers["http_channel"]
-// died in a toggle storm and every push logged "unknown module").
+// TestResyncKeepsLateRegistrantsThroughChurn pins the Oct-27 incident shape. A module's
+// live disable and re-enable must never touch an unrelated late registrant's handlers,
+// sink or panel state (the old journal truncation undo chopped exactly this:
+// handlers["http_channel"] died in a toggle storm and every push logged "unknown
+// module").
 func TestResyncKeepsLateRegistrantsThroughChurn(t *testing.T) {
 	kb := &panelProviderStub{name: "kanban", panels: []core.Panel{
 		panel("board", "kanban.board", act("refresh", "kanban")),
@@ -504,15 +481,13 @@ func TestResyncKeepsLateRegistrantsThroughChurn(t *testing.T) {
 	chat := &sinkProviderStub{panelProviderStub: &panelProviderStub{name: "http_channel", panels: []core.Panel{
 		panel("chat", "chat", act("stop", "http_channel"), act("retry", "http_channel")),
 	}}}
-	// the real boot order: the channel's Start registers the capsule
-	// and the canvas builds over the providers (wire: registerAt, then
-	// NewCanvas) - chat is present at build, mounted LAST.
+	// the real boot order: the channel's Start registers the capsule and the canvas builds
+	// over the providers (wire.
 	c, err := mountedCtx(t, []core.PanelProvider{kb, chat}, nil)
 	if err != nil {
 		t.Fatalf("NewCanvas: %v", err)
 	}
 
-	// the storm: a toggleable module goes down and comes back.
 	if err := c.Resync(&core.Context{PanelProviders: []core.PanelProvider{chat}}); err != nil {
 		t.Fatalf("Resync (kanban disable): %v", err)
 	}
@@ -523,8 +498,7 @@ func TestResyncKeepsLateRegistrantsThroughChurn(t *testing.T) {
 		t.Fatalf("Resync (kanban enable): %v", err)
 	}
 
-	// the late registrant survived the churn whole: handlers, sink,
-	// state - and a chat push still routes.
+	// the late registrant survived the churn whole.
 	chat.mu.Lock()
 	update := chat.update
 	chat.mu.Unlock()

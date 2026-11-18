@@ -1,10 +1,9 @@
 package agent
 
-// The registration-surface tests (v0.12 phase B onward). The identity
-// law (namespaced machine-facing names, Q10), the one-tenant rule
-// (Q5), clean-idempotent replacement (Q7), the census enforcement
-// (every seam maps to a registration), the CLI subcommand law (Q6),
-// the emitter handoff and the subcommand registry.
+// The registration-surface tests (v0.12 phase B onward). The identity law (namespaced
+// machine-facing names, Q10), the one-tenant rule (Q5), clean-idempotent replacement
+// (Q7), the census enforcement (every seam maps to a registration), the CLI subcommand
+// law (Q6), the emitter handoff and the subcommand registry.
 
 import (
 	"context"
@@ -18,7 +17,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// ---- shared fixture: one capsule's capability set -------------------
+// --- shared fixture: one capsule's capability set ------------------
 
 func echoTool() core.Tool {
 	return core.Tool{
@@ -72,8 +71,7 @@ func (plugNotifier) Subscribe() (<-chan core.Notice, func()) {
 	return ch, func() { close(ch) }
 }
 
-// noticeEmit is the test's own consumer face (part 3): structural
-// satisfaction, local declaration, no core noun.
+// noticeEmit is the test's own consumer face (part 3).
 type noticeEmit interface {
 	Emit(n core.Notice) (core.Notice, error)
 }
@@ -88,9 +86,8 @@ func (p *notifierPlugin) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	return api.Offer("notifications", p.n)
 }
 
-// fakeStore satisfies the full StoreProvider seam with no-ops - parity
-// compares the identity and inventory of the reference, the store
-// itself never runs.
+// fakeStore satisfies the full StoreProvider seam with no-ops - parity compares the
+// identity and inventory of the reference, the store itself never runs.
 type fakeStore struct{}
 
 func (fakeStore) Open(dsn string) error                                               { return nil }
@@ -154,9 +151,8 @@ func (fakeStore) SessionModels(ctx context.Context) (map[string]string, error) {
 
 var emitterSeen noticeEmit
 
-// TestNamespaceEnforcement pins Q10: a machine-facing registration
-// must carry its own module prefix; anything else fails loud at
-// registration.
+// TestNamespaceEnforcement pins Q10: a machine-facing registration must carry its own
+// module prefix.
 func TestNamespaceEnforcement(t *testing.T) {
 	var ctx Context
 	reg, err := MountAllAPI([]Plugin{badNamespace{}}, &ctx, nil, nil)
@@ -174,24 +170,18 @@ func (badNamespace) Name() string       { return "plug" }
 func (badNamespace) Provides() []string { return nil }
 func (badNamespace) Requires() []string { return nil }
 func (b badNamespace) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
-	// A name under another module's namespace.
 	if err := api.RegisterTool("evil.echo", echoTool()); err == nil {
 		return fmt.Errorf("foreign-prefix tool name accepted")
 	}
-	// A name with no namespace at all.
 	if err := api.RegisterTool("nodot", echoTool()); err == nil {
 		return fmt.Errorf("un-namespaced tool name accepted")
 	}
 	return fmt.Errorf("all namespace violations were rejected (this error fails the mount on purpose, Q5 fail-loud)")
 }
 
-// TestOneTenant pins Q5: a seam mounted by one module cannot be
-// claimed by another - neither by a classic provides sweep (recorded
-// in the same ledger) nor by another api capsule. The boot fails loud
-// carrying core.ErrSeamForeignTenant.
+// TestOneTenant pins Q5: a seam mounted by one module cannot be claimed by another.
 func TestOneTenant(t *testing.T) {
-	// Classic claim first, api claim after: the api claim meets the
-	// provides sweep's pre-recorded tenant.
+	// Classic claim first, api claim after.
 	var ctxA Context
 	_, err := MountAllAPI([]Plugin{classicStore{}, apiStoreClaimer{}}, &ctxA, nil, nil)
 	if err == nil {
@@ -200,11 +190,10 @@ func TestOneTenant(t *testing.T) {
 	if !errors.Is(err, core.ErrSeamForeignTenant) {
 		t.Errorf("error chain must carry ErrSeamForeignTenant: %v", err)
 	}
-	// api claim first, classic provides after: the api claim is
-	// first, and the (already conflict-checked) classic capsule
-	// mounts second - the registry ledger still holds the api tenant,
-	// the provides sweep recorded the classic one first, so the api
-	// claim fails loud before any silent overwrite.
+	// api claim first, classic provides after: the api claim is first, and the (already
+	// conflict-checked) classic capsule mounts second - the registry ledger still holds
+	// the api tenant, the provides sweep recorded the classic one first, so the api claim
+	// fails loud before any silent overwrite.
 	var ctxB Context
 	_, err = MountAllAPI([]Plugin{apiStoreClaimer{}, classicStore{}}, &ctxB, nil, nil)
 	if err == nil {
@@ -213,7 +202,6 @@ func TestOneTenant(t *testing.T) {
 	if !errors.Is(err, core.ErrSeamForeignTenant) {
 		t.Errorf("error chain must carry ErrSeamForeignTenant: %v", err)
 	}
-	// api vs api.
 	var ctxC Context
 	_, err = MountAllAPI([]Plugin{apiStoreClaimer{}, secondStore{}}, &ctxC, nil, nil)
 	if err == nil {
@@ -235,8 +223,7 @@ func (classicStore) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	return nil
 }
 
-// apiStoreClaimer claims the store seam through the api, declaring no
-// provides (the registry ledger is the tenant record).
+// apiStoreClaimer claims the store seam through the api, declaring no provides (the.
 type apiStoreClaimer struct{}
 
 func (apiStoreClaimer) Name() string       { return "claimant" }
@@ -246,8 +233,7 @@ func (apiStoreClaimer) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	return api.Offer("store", fakeStore{})
 }
 
-// secondStore mounts the store seam through the api - a cross-tenant
-// claim after the api capsule owns it.
+// secondStore mounts the store seam through the api.
 type secondStore struct{}
 
 func (secondStore) Name() string       { return "second" }
@@ -265,7 +251,6 @@ func TestSameTenantReplace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("same-tenant replacement must not error: %v", err)
 	}
-	// One tool provider, one tool: the second registration replaced.
 	tools := ctx.ToolProviders[0].Tools()
 	if len(tools) != 1 {
 		t.Fatalf("re-registered tool must replace, got %d tools", len(tools))
@@ -273,7 +258,6 @@ func TestSameTenantReplace(t *testing.T) {
 	if tools["plug.echo"].Description != "second" {
 		t.Errorf("the replacement must win: %q", tools["plug.echo"].Description)
 	}
-	// One route, the later handler.
 	routes := reg.Routes()
 	if len(routes) != 1 {
 		t.Fatalf("re-registered route must replace, got %d", len(routes))
@@ -302,10 +286,8 @@ func (replaceCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	return api.RegisterRoute("GET /plug", func(w http.ResponseWriter, r *http.Request) {})
 }
 
-// TestEmitterHandoffNilSafe: with the notifications module absent the
-// emitter hook receives nil - the same deal the classic nil-guard
-// capture has. The capsule requires nothing, so the mount completes
-// with no seam to hand over.
+// TestEmitterHandoffNilSafe: with the notifications module absent the emitter hook
+// receives nil - the same deal the classic nil-guard capture has.
 func TestEmitterHandoffNilSafe(t *testing.T) {
 	var ctx Context
 	emitterSeen = nil
@@ -330,14 +312,8 @@ func (nilEmitterCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	return api.RegisterEmitter(func(svc any) { emitterSeen, _ = svc.(noticeEmit) })
 }
 
-// TestCensusEnforcement walks the registration surface and demands the
-// census (post-flip, part 3 wave 2): the exclusive slots ride Offers
-// under the closed need-key namespace - there is no per-slot Register*
-// method anymore - and the additive surfaces keep their registrations
-// (16 exclusive slots as offer keys, 6 additive surfaces - RegisterDelegation
-// retired with the async loop's phase 2, card t_0805d438) plus the two
-// no-classic-seam families (routes, emitters). A name going missing
-// breaks the census.
+// TestCensusEnforcement walks the registration surface and demands the census
+// (post-flip, part 3 wave 2).
 func TestCensusEnforcement(t *testing.T) {
 	want := map[string]bool{
 		"RegisterTool":            true,
@@ -361,13 +337,8 @@ func TestCensusEnforcement(t *testing.T) {
 	}
 }
 
-// TestSubcommandRegistration pins the phase-D CLI law (grill Q6 - the
-// module owns its argv): the registration is a thin name+handler
-// prefix, the name keeps its user-facing natural shape (bare word, no
-// namespace pair, no leading / or -), the registry records the owner,
-// a cross-tenant claim of the same subcommand fails the mount loud
-// (Q5), same-tenant re-registration replaces (Q7), and the registry
-// table lists the surviving entries.
+// TestSubcommandRegistration pins the phase-D CLI law (grill Q6 - the module owns its
+// argv).
 type subCapsule struct {
 	name    string
 	summary string
@@ -418,7 +389,6 @@ func TestSubcommandRegistration(t *testing.T) {
 		t.Errorf("error chain must carry ErrSeamForeignTenant: %v", err)
 	}
 
-	// name shape: the registration refuses non-bare-word names
 	shape := func(name string) error {
 		api := &ExtensionAPI{module: "shape", ctx: &Context{}, reg: newRegistry(nil)}
 		return api.RegisterSubcommand(name, "", func(argv []string) error { return nil })
@@ -442,10 +412,9 @@ func TestSubcommandRegistration(t *testing.T) {
 	}
 }
 
-// ---- the chain-on-miss law (card t_d1fe01da) ------------------------
+// --- the chain-on-miss law -----------------------
 
-// chainInner owns one command and mounts FIRST, so every other capsule
-// in the chain is consulted before it.
+// chainInner owns one command and mounts FIRST, so every other capsule in the chain.
 type chainInner struct{}
 
 func (chainInner) Name() string       { return "inner" }
@@ -461,9 +430,7 @@ func (chainInner) MountWithAPI(_ *Context, api *ExtensionAPI) error {
 		})
 }
 
-// chainOuter owns /outer-refuse and answers it with an honest refusal -
-// the shape every session-scoped command has ("no active session to
-// export").
+// chainOuter owns /outer-refuse and answers it with an honest refusal.
 type chainOuter struct{}
 
 func (chainOuter) Name() string       { return "outer" }
@@ -479,10 +446,9 @@ func (chainOuter) MountWithAPI(_ *Context, api *ExtensionAPI) error {
 		})
 }
 
-// TestCommandChainFallsThroughOnlyOnAMiss is the miss sentinel's law at
-// the real registration seam. Before it, ANY error fell through: an
-// owner's refusal was skipped and the caller was told the command did
-// not exist. Now a miss falls through and an error is the answer.
+// TestCommandChainFallsThroughOnlyOnAMiss is the miss sentinel's law at the real.
+// Before it, ANY error fell through: an owner's refusal was skipped and the caller was
+// told the command did not exist.
 func TestCommandChainFallsThroughOnlyOnAMiss(t *testing.T) {
 	var ctx Context
 	if _, err := MountAllAPI([]Plugin{chainInner{}, chainOuter{}}, &ctx, nil, nil); err != nil {
@@ -497,13 +463,11 @@ func TestCommandChainFallsThroughOnlyOnAMiss(t *testing.T) {
 	if errors.Is(err, core.ErrCommandMiss) {
 		t.Fatalf("/outer-refuse read as a miss: an honest refusal must never look like an unclaimed name")
 	}
-	// a miss still falls through to the next link
 	res, err := ctx.CommandHandler(context.Background(), "/inner-answer", "")
 	if err != nil || res.Text != "[inner] answered" {
 		t.Fatalf("/inner-answer = %q, %v: a miss must fall through", res.Text, err)
 	}
-	// nobody answers: the chain ends at the miss, structurally
-	// recognisable and phrased the way the terminal has always printed it
+	// nobody answers: the chain ends at the miss, structurally recognisable and phrased.
 	_, err = ctx.CommandHandler(context.Background(), "/nobody", "")
 	if err == nil || !errors.Is(err, core.ErrCommandMiss) {
 		t.Fatalf("/nobody = %v, want a core.ErrCommandMiss", err)

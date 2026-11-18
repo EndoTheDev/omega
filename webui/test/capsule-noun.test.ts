@@ -1,22 +1,7 @@
-// omega webui: the CAPSULE NOUN LAW (card t_617c2ad0, the webui side of
-// the seam constitution; the Go precedent is agent/seams_test.go's noun
-// scans + scripts/nm-purity.sh). The tree must tell the truth: a
-// capsule's UI lives in harness/<name>/ui/ (or api/<name>/ui/ for the
-// serving shell) and is discovered by the build's directory scan - the
-// shell's components dir carries NO file or directory NAMED for a
-// capsule. Deleting the capsule is then mechanical: the codegen drops
-// its manifest entry, the build prunes the component, the tree shows
-// the removal.
-//
-// This pins the PATH law: walk webui/app/components/ and forbid every
-// capsule noun in any path segment. Content references are shell
-// vocabulary, not ownership - composables/dockables.ts names the
-// capsule ids (the shell's own composition law), notificationFeed.ts /
-// NotificationToasts.vue are the any-emitter toast machinery Endo
-// ruled shell-owned (card t_617c2ad0 body), and shell files legitimately
-// import the row model of the continuous capsule (AgentsPanel). What
-// ownership is about here is the FILE HOME, and the file home is the
-// path.
+// omega webui: the CAPSULE NOUN LAW. The tree must tell the truth: a capsule's UI lives
+// in harness/<name>/ui/ (or api/<name>/ui/ for the serving shell) and is discovered by
+// the build's directory scan - the shell's components dir carries NO file or directory
+// NAMED for a capsule.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -26,9 +11,7 @@ import { fileURLToPath, URL } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const src = (p: string): string => readFileSync(`${root}${p}`, "utf8");
 
-// the capsule nouns (the seam constitution's service names + the tab
-// capsules). A path under webui/app/components/ carrying any of these
-// (case-insensitive substring) is capsule UI squatting in the shell.
+// the capsule nouns (the seam constitution's service names + the tab capsules).
 const CAPSULE_NOUNS = [
   "browser",
   "terminal",
@@ -40,9 +23,7 @@ const CAPSULE_NOUNS = [
   "mcp",
   "tools",
   "files", // card t_48eeb015: the file explorer rides out of the shell
-  // card t_490fed88 (the shell-ring shrink wave 2): the sessions pane
-  // and the insights view ride the store capsule (harness/store/ui/),
-  // the roster surface rides continuous (harness/continuous/ui/)
+  // (the shell-ring shrink wave 2).
   "sessions",
   "agents",
   "insights",
@@ -94,17 +75,9 @@ describe("capsule noun law (webui)", () => {
     );
   });
 
-  // card t_b75df168 (the shell-ring shrink wave 3): the shrunk
-  // agent/api carries no capsule-owned opinion file either. The full
-  // verdict table (the census pin) is the Go half -
-  // agent/api/api_census_test.go - this leg rides the same gate and
-  // catches a capsule-nouned filename coming back (the cheap tell).
+  // (the shell-ring shrink wave 3).
   it("agent/api/ carries no capsule-nouned production file", () => {
-    // /tools is base vocabulary here: the inventory endpoint serves the
-    // chat loop directly (GET /tools + the web.search/web.fetch pair
-    // the shell has owned since v0.13). The noun stays forbidden in
-    // webui/app/components (ToolsList.vue rode out with the tools
-    // capsule), not in agent/api.
+    // /tools is base vocabulary here.
     const apiNouns = CAPSULE_NOUNS.filter((n) => n !== "tools");
     const goFiles = walkComponents(join(root, "..", "agent", "api"), "")
       .filter((p) => p.endsWith(".go") && !p.endsWith("_test.go"));
@@ -126,7 +99,7 @@ describe("capsule noun law (webui)", () => {
   });
 });
 
-// --- the two manifests (the codegen's panel/tab partition) ---------------
+// -- the two manifests (the codegen's panel/tab partition) --------------
 
 // module name extraction: the generated list's `{ module: "x" }` entries
 function manifestModules(rel: string): string[] {
@@ -138,11 +111,10 @@ describe("module-panels / module-tabs partition", () => {
   it("a capsule appears in exactly one manifest", () => {
     const panels = manifestModules("app/composables/module-panels.generated.ts");
     const tabs = manifestModules("app/composables/module-tabs.generated.ts");
-    // card t_48eeb015: the partition is by manifest TYPE, not by entry
-    // count - a multi-view module (files: the tab view + its tree) lists
-    // one entry per component in the panels manifest, and never ALSO
-    // rides the tabs manifest. What must never happen: the same module
-    // appearing on BOTH sides (the codegen's one-partition law).
+    // the partition is by manifest TYPE, not by entry count - a multi-view module
+    // (files: the tab view + its tree) lists one entry per component in the panels
+    // manifest, and never ALSO rides the tabs manifest. What must never happen: the
+    // same module appearing on BOTH sides (the codegen's one-partition law).
     const seen = new Set<string>();
     for (const m of tabs) {
       assert.ok(!seen.has(m), `capsule "${m}" is listed twice in the tabs manifest`);

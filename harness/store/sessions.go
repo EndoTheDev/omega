@@ -1,13 +1,10 @@
 package store
 
-// sessions.go: agent-scoped session storage (card t_7e2b7002). Sessions
-// carry their owning agent on the row ("agent" column, default
-// "default" - the migration backfills every existing row), created
-// bound and never re-bound. The default surface stays inside the
-// core StoreProvider: ListSessions filters to agent='default', so the
-// pre-agent session list, tree and search see exactly what they always
-// saw. Everything agent-scoped lives here and opts in through the
-// agent.AgentSessionStore optional interface.
+// sessions.go: agent-scoped session storage. Sessions carry their owning agent on the
+// row ("agent" column, default "default" - the migration backfills every existing row),
+// created bound and never re-bound. The default surface stays inside the core
+// StoreProvider: ListSessions filters to agent='default', so the pre-agent session
+// list, tree and search see exactly what they always saw.
 
 import (
 	"context"
@@ -21,17 +18,9 @@ import (
 
 var _ agent.AgentSessionStore = (*Store)(nil)
 
-// CreateAgentSession creates a session bound to agentName - the binding
-// is written on the row itself, never inferred later. parentID links
-// into the same-agent tree (branching an agent session keeps its own
-// agent this way); label is optional. The id-must-be-new semantics are
-// the same as CreateSession.
-//
-// Sessions in agent homes carry the session-context fields too (card
-// t_9de5b009): model + workspace are row columns shared with the
-// default surface, so a homes-bound session can pin both the same way
-// once the agents arc wires pickers of its own. No reader exists
-// there yet - nothing to do today, the columns ride the row.
+// CreateAgentSession creates a session bound to agentName - the binding is written on
+// the row itself, never inferred later. The id-must-be-new semantics are the same as
+// CreateSession.
 func (s *Store) CreateAgentSession(ctx context.Context, id, parentID, label, agentName string) error {
 	if agentName == "" {
 		agentName = agent.DefaultAgentName
@@ -41,8 +30,7 @@ func (s *Store) CreateAgentSession(ctx context.Context, id, parentID, label, age
 	if parentID != "" {
 		parent = parentID
 	}
-	// last_read_at = created time: new sessions are born read (same
-	// convention as CreateSession - unread only comes from later output).
+	// last_read_at = created time.
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO sessions (id, parent_id, label, created_at, updated_at, last_read_at, agent)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -50,9 +38,7 @@ func (s *Store) CreateAgentSession(ctx context.Context, id, parentID, label, age
 	return err
 }
 
-// ListAgentSessions returns the sessions bound to the given agent,
-// ordered by creation time. Unknown agents come back empty - an empty
-// list is honest data, not an error.
+// ListAgentSessions returns the sessions bound to the given agent, ordered by.
 func (s *Store) ListAgentSessions(ctx context.Context, agentName string) ([]core.Session, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+sessionColumns+` FROM sessions WHERE agent = ? ORDER BY created_at`, agentName)
@@ -71,18 +57,12 @@ func (s *Store) ListAgentSessions(ctx context.Context, agentName string) ([]core
 	return out, rows.Err()
 }
 
-// CreateCanonicalChat creates a session that is an agent's canonical
-// chat (card t_10ac04f0): a permanent conversation the AGENTS ROSTER
-// opens, never a row in the maintainer's own session list. The `listed
-// = 0` bit is the store's own visibility law - ListSessions surfaces
-// the user's conversations, and a machinery-owned chat is not one of
-// them (so main's canonical chat cannot appear in the sessions
-// sidebar as if the maintainer had started it).
-//
-// The row is otherwise an ordinary agent-bound session: same columns,
-// same reads (GetSession, ListAgentSessions, the transcript, the
-// router's id -> owning home probe), so the chat floor serves it with
-// no knowledge of this verb.
+// CreateCanonicalChat creates a session that is an agent's canonical chat: a permanent
+// conversation the AGENTS ROSTER opens, never a row in the maintainer's own session
+// list. The `listed = 0` bit is the store's own visibility law - ListSessions surfaces
+// the user's conversations, and a machinery-owned chat is not one of them (so main's
+// canonical chat cannot appear in the sessions sidebar as if the maintainer had started
+// it).
 func (s *Store) CreateCanonicalChat(ctx context.Context, id, agentName string) error {
 	if agentName == "" {
 		agentName = agent.DefaultAgentName
@@ -95,15 +75,10 @@ func (s *Store) CreateCanonicalChat(ctx context.Context, id, agentName string) e
 	return err
 }
 
-// SetSessionListed sets a session's list-visibility bit (card
-// t_10ac04f0). `listed = 1` is the human's own session list; `listed =
-// 0` marks a machinery-owned conversation (an agent's canonical chat),
-// which opens from the agents roster and never from the sidebar.
-//
-// The CREATE path never needs this (CreateCanonicalChat writes the bit
-// itself). The boot backfill uses it to repair rows an older build
-// seeded as listed = 1: a canonical chat that is listed forks on /new
-// instead of folding, because the fold keys on the same bit.
+// SetSessionListed sets a session's list-visibility bit. `listed = 1` is the human's
+// own session list; `listed = 0` marks a machinery-owned conversation (an agent's
+// canonical chat), which opens from the agents roster and never from the sidebar. The
+// CREATE path never needs this (CreateCanonicalChat writes the bit itself).
 func (s *Store) SetSessionListed(ctx context.Context, id string, listed bool) error {
 	v := 0
 	if listed {
@@ -113,19 +88,15 @@ func (s *Store) SetSessionListed(ctx context.Context, id string, listed bool) er
 	return err
 }
 
-// CanonicalChatLabel is the label a canonical chat's row carries. It is
-// the session's display voice in the surfaces that show one (the
-// roster's preview, the chat tab's title), and it is what a human sees
-// before the first run renames anything.
+// CanonicalChatLabel is the label a canonical chat's row carries.
 const CanonicalChatLabel = "canonical"
 
 // aiNowISO removed: core.NowISO is the store-wide timestamp helper.
 
-// HandleAgentsCommand renders the /agents table: the profile
-// inventory with session counts filled from the store. Needs OMEGA_HOME
-// - the same env main sets for every process - and an AgentSessionStore
-// (a store without the optional interface renders zero counts, which is
-// exactly how many sessions such a store can attribute).
+// HandleAgentsCommand renders the /agents table. Needs OMEGA_HOME - the same env main
+// sets for every process - and an AgentSessionStore (a store without the optional
+// interface renders zero counts, which is exactly how many sessions such a store can
+// attribute).
 func HandleAgentsCommand(ctx context.Context, st agent.StoreProvider) (core.CommandResult, error) {
 	home := os.Getenv("OMEGA_HOME")
 	profiles := agent.LoadProfiles(home)
@@ -148,8 +119,7 @@ func HandleAgentsCommand(ctx context.Context, st agent.StoreProvider) (core.Comm
 	return core.CommandResult{Text: sb.String()}, nil
 }
 
-// HandleAgentDetailCommand renders the /agent <name>: config
-// summary, skills, memory size, and this agent's own sessions.
+// HandleAgentDetailCommand renders the /agent <name>.
 func HandleAgentDetailCommand(ctx context.Context, st agent.StoreProvider, arg string) (core.CommandResult, error) {
 	home := os.Getenv("OMEGA_HOME")
 	arg = strings.TrimSpace(arg)
@@ -178,10 +148,8 @@ func HandleAgentDetailCommand(ctx context.Context, st agent.StoreProvider, arg s
 	return core.CommandResult{Text: sb.String()}, nil
 }
 
-// providerLabel renders the agent's provider reference for the CLI
-// detail view: the named instance settings defines, or the reserved
-// word for the host's own provider section. The agent file never
-// carries a type, host or key any more (the secret-free law).
+// providerLabel renders the agent's provider reference for the CLI detail view. The
+// agent file never carries a type, host or key any more (the secret-free law).
 func providerLabel(instance string) string {
 	if instance == "" {
 		return agent.DefaultProviderInstance
@@ -189,9 +157,9 @@ func providerLabel(instance string) string {
 	return instance
 }
 
-// fillProfileSessions writes per-agent session counts and the most
-// recent updated_at into the profiles. Store-free callers (nil or a
-// store without the optional surface) keep the zero values.
+// fillProfileSessions writes per-agent session counts and the most recent updated_at.
+// Store-free callers (nil or a store without the optional surface) keep the zero
+// values.
 func fillProfileSessions(ctx context.Context, st agent.StoreProvider, profiles []agent.Profile) {
 	as, ok := st.(agent.AgentSessionStore)
 	if !ok {

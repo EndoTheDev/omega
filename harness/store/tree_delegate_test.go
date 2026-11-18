@@ -1,10 +1,7 @@
 package store
 
-// Delegate-lineage split tests (t_6c4ab302): parent_id is the FORK
-// lineage; delegate children carry delegate_parent and keep parent_id
-// NULL, so they never see the caller's conversation. Both shapes are
-// pinned here side by side - the ruling is "fork inherits, delegate does
-// not", and a regression in either direction reds.
+// Delegate-lineage split tests: parent_id is the FORK lineage; delegate children carry
+// delegate_parent and keep parent_id NULL, so they never see the caller's conversation.
 
 import (
 	"context"
@@ -13,10 +10,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestDelegateChildHasFreshContext pins the delegate half: a delegate
-// child's active view (transcript render) and active messages (context
-// assembly) contain only its own rows, its first message starts a fresh
-// tree chain, and its lineage survives as delegate_parent.
+// TestDelegateChildHasFreshContext pins the delegate half.
 func TestDelegateChildHasFreshContext(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -62,7 +56,6 @@ func TestDelegateChildHasFreshContext(t *testing.T) {
 		t.Fatalf("delegate child first message parent = %q, want a fresh chain root", p)
 	}
 
-	// Transcript render seam.
 	view, err := s.GetActiveView(ctx, "kid")
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +67,6 @@ func TestDelegateChildHasFreshContext(t *testing.T) {
 		t.Fatalf("delegate child path[0] = %T %+v, want its own user message", view.Path[0].Message, view.Path[0].Message)
 	}
 
-	// Context assembly seam.
 	msgs, err := s.GetActiveMessages(ctx, "kid")
 	if err != nil {
 		t.Fatal(err)
@@ -87,9 +79,7 @@ func TestDelegateChildHasFreshContext(t *testing.T) {
 	}
 }
 
-// TestForkChildStillInherits pins the fork half (t_17365247 unchanged):
-// a branch child created with a parent link still prepends the whole
-// ancestor chain - transcript render and context assembly both.
+// TestForkChildStillInherits pins the fork half.
 func TestForkChildStillInherits(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -117,9 +107,7 @@ func TestForkChildStillInherits(t *testing.T) {
 		t.Fatalf("fork child messages[0] = %T %+v, want the parent user", msgs[0], msgs[0])
 	}
 
-	// The fork child's first own message chains onto the ancestor leaf
-	// (the merged view's last row), which is what makes a fork a
-	// continuation instead of a fresh conversation.
+	// The fork child's first own message chains onto the ancestor leaf (the merged.
 	if err := s.AppendMessage(ctx, "fork", core.NewUser("fork prompt")); err != nil {
 		t.Fatal(err)
 	}

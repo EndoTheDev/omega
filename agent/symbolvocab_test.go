@@ -1,20 +1,10 @@
 package agent
 
-// agent/symbolvocab_test.go: the binary-vocabulary pin for THIS package
-// (card t_61ad4490). The nm-purity law proves a capsule's removal leaves
-// no capsule noun in the host binary, but it reads compiled SYMBOLS - so
-// the leak it caught was invisible to every source-level check and
-// invisible on the dev toolchain: go1.27 stopped printing struct tags in
-// the compiler-generated `type:.eq.*` symbols, while the CI lane on go1.26
-// still does. `type:.eq.struct { ... "yaml:\"provider\"" ... }` IS the
-// symbol that failed the nightly provider rotation, and it came from an
-// inline `var raw struct { ... }` in configedit.go.
-//
-// This pin is the same law one layer earlier and on every toolchain: an
-// ANONYMOUS struct's yaml tags are spelled into its type symbols, so a
-// capsule noun among them survives the capsule. A NAMED type's symbol is
-// its name and carries no tags. Hence: in this package, every struct
-// that carries yaml tags is a named type.
+// agent/symbolvocab_test.go: the binary-vocabulary pin for THIS package. The nm-purity
+// law proves a capsule's removal leaves no capsule noun in the host binary, but it
+// reads compiled SYMBOLS - so the leak it caught was invisible to every source-level
+// check and invisible on the dev toolchain: go1.27 stopped printing struct tags in the
+// compiler-generated `type:.eq.*` symbols, while the CI lane on go1.26 still does.
 
 import (
 	"go/ast"
@@ -26,10 +16,7 @@ import (
 	"testing"
 )
 
-// capsuleNouns is the vocabulary the nm-purity rotation protects: one
-// noun per capsule directory (scripts/nm-purity.sh --all derives the same
-// set). Read from the tree, so a new capsule is covered without touching
-// this test.
+// capsuleNouns is the vocabulary the nm-purity rotation protects.
 func capsuleNouns(t *testing.T) []string {
 	t.Helper()
 	entries, err := os.ReadDir("../harness")
@@ -49,12 +36,10 @@ func capsuleNouns(t *testing.T) []string {
 	return nouns
 }
 
-// TestNoCapsuleNounInAnonymousYAMLTags fails when an anonymous struct in
-// this package carries a yaml tag spelling a capsule noun.
+// TestNoCapsuleNounInAnonymousYAMLTags fails when an anonymous struct in this package.
 func TestNoCapsuleNounInAnonymousYAMLTags(t *testing.T) {
 	nouns := capsuleNouns(t)
-	// word-boundary matching mirrors the purity check's `grep -w`: a tag
-	// like "provider_instances" or "tools" is not the noun "provider".
+	// word-boundary matching mirrors the purity check's `grep -w`.
 	word := func(noun string) *regexp.Regexp {
 		return regexp.MustCompile(`\b` + regexp.QuoteMeta(noun) + `\b`)
 	}
@@ -77,8 +62,6 @@ func TestNoCapsuleNounInAnonymousYAMLTags(t *testing.T) {
 	findings := 0
 	for _, p := range pkg {
 		for path, file := range p.Files {
-			// a struct that is the type of a TypeSpec is NAMED: its symbol
-			// is the type name, tags and all are gone from the binary.
 			named := map[*ast.StructType]bool{}
 			ast.Inspect(file, func(n ast.Node) bool {
 				if ts, ok := n.(*ast.TypeSpec); ok {
@@ -116,8 +99,7 @@ func TestNoCapsuleNounInAnonymousYAMLTags(t *testing.T) {
 	}
 }
 
-// filepathOf trims the parse directory off a resolved path for readable
-// findings.
+// filepathOf trims the parse directory off a resolved path for readable findings.
 func filepathOf(path string) string {
 	if i := strings.LastIndexAny(path, `/\`); i >= 0 {
 		return path[i+1:]

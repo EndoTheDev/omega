@@ -1,4 +1,4 @@
-// omega webui: non-image attachment helpers (card t_8a569163) - the
+// omega webui: non-image attachment helpers - the
 // composer strip's and the sent bubble's pure side. Pins:
 //   1. the kind -> glyph table (the iconset law's vocabulary, one shape
 //      per class) and its agreement with the file tree's own table;
@@ -69,8 +69,7 @@ describe("attachmentIcon: one class, one glyph", () => {
   });
 
   it("agrees with the file tree's table wherever both know the type", () => {
-    // the SAME .md must carry the SAME glyph in a tree row and an
-    // attachment chip - two tables, one vocabulary (drift fails here)
+    // the SAME.md must carry the SAME glyph in a tree row and an attachment chip.
     for (const ext of [
       "md", "markdown", "txt", "log", "json", "yaml", "yml", "toml",
       "go", "ts", "tsx", "js", "mjs", "cjs", "vue", "py", "rs", "sh",
@@ -138,8 +137,7 @@ describe("uploadAttachment: the /attach-file wire", () => {
     const form = calls[0]!.init.body as FormData;
     assert.ok(form instanceof FormData, "the body is multipart/form-data");
     const names = [...form.keys()];
-    // the part ORDER is load-bearing (t_1ffd07de's nit): the handler
-    // reads the session id before the bytes, or the upload stages
+    // the part ORDER is load-bearing.
     assert.deepEqual(names, ["session_id", "file"]);
     assert.equal(form.get("session_id"), "s1");
   });

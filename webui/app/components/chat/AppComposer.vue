@@ -23,9 +23,10 @@
           title="remove attachment"
           @click="$emit('remove-attachment', i)">&times;</button>
       </div>
-      <!-- non-image references (card t_8a569163): the bytes never reach
-           the browser, so there is nothing to thumbnail - the chip is the
-           type glyph + name + size, the same shape the sent bubble shows -->
+      <!--
+        non-image references: the bytes never reach the browser, so there is nothing to
+        thumbnail.
+      -->
       <div
         v-for="(f, i) in files"
         :key="'file-' + i"
@@ -44,9 +45,10 @@
           @click="$emit('remove-file-attachment', i)">&times;</button>
       </div>
     </div>
-    <!-- the fork anchor (t_a62eeb43): a visible affordance while the
-         next send is chained onto a historical message - the send POSTs
-         /chat {fork} and runs FROM that point; × drops the anchor -->
+    <!--
+      the fork anchor: a visible affordance while the next send is chained onto a
+      historical message.
+    -->
     <div
       v-if="forkAnchor"
       class="fork-chip">
@@ -57,14 +59,10 @@
         title="drop the fork anchor"
         @click="$emit('clear-fork')">&times;</button>
     </div>
-    <!-- the reference CHIPS (card t_e67c372b): the draft's /skill and
-         @file / @folder tokens render INLINE in the editor - a pill
-         REPLACES the text it represents (chip replaces text), the raw
-         draft string keeps the tokens throughout. The chip is
-         non-editable; click opens the target, its x removes the token,
-         Backspace with the caret behind it dissolves the chip back to
-         the raw token text (the dissolve law). The strip is gone: pills
-         sit beside their text was the whole complaint. -->
+    <!--
+      the reference CHIPS: the draft's /skill and @file / @folder tokens render INLINE
+      in the editor.
+    -->
     <div class="composer-row">
       <button
         v-if="!expanded"
@@ -73,15 +71,13 @@
         title="attach files"
         aria-label="attach files"
         @click="fileInput?.click()">+</button>
-      <!-- THE EDITOR (card t_e67c372b): a contenteditable div, not a
-           textarea - chips must render inline in the text flow. The
-           div's children are NEVER Vue-patched (the user's typed DOM is
-           the live truth; the template deliberately leaves the element
-           empty) - the sync module below rebuilds children from the
-           draft only when the plan and the DOM disagree, so native
-           typing never churns the caret. Draft extraction carries the
-           raw tokens out of the chips' data-token, keeping the draft
-           string the server-side expansion's exact truth. -->
+      <!--
+        THE EDITOR: a contenteditable div, not a textarea - chips must render inline.
+        The div's children are NEVER Vue-patched (the user's typed DOM is the live
+        truth; the template deliberately leaves the element empty) - the sync module
+        below rebuilds children from the draft only when the plan and the DOM disagree,
+        so native typing never churns the caret.
+      -->
       <div
         ref="ta"
         class="composer-input"
@@ -106,12 +102,7 @@
         @click="onCaret"
         @paste="onPaste" />
     </div>
-    <!-- the / command palette and @ mention picker (t_07aed3f9): the
-         TUI's autocomplete surface on the webui's tokens. A "/" token at
-         the caret (draft start or mid-sentence, t_d1a2951d) lists the
-         commands (shell + module registry + skills); "@" lists workspace
-         files plus the session:/skill: context injections. Expansion
-         itself is server-side - the picker only types the tokens. -->
+    <!-- the / command palette and @ mention picker. -->
     <div
       v-if="paletteOpen"
       ref="paletteEl"
@@ -154,10 +145,11 @@
       @click="toggleExpand">
       {{ expanded ? "▾" : "▴" }}
     </button>
-    <!-- the fullscreen bottom control row (card t_08ef793b): the + joins
-         the chips and send here - the expanded state's one bottom row.
-         v-if keeps the two + seats exclusive: compact keeps the row seat,
-         fullscreen the toolbar seat - the compact DOM never changes. -->
+    <!--
+      the fullscreen bottom control row.
+      v-if keeps the two + seats exclusive: compact keeps the row seat, fullscreen the
+      toolbar seat - the compact DOM never changes.
+    -->
     <div
       class="toolbar"
       :class="{ 'composer-bottom': expanded }">
@@ -168,15 +160,13 @@
         title="attach files"
         aria-label="attach files"
         @click="fileInput?.click()">+</button>
-      <!-- control row order: the model name, then the effort pill (the
-           workspace chip lived here until card t_8fd38f88 moved the
-           workdir selector into the status bar's left zone - the composer
-           keeps the model + reasoning chips and echoes neither in the
-           bar). model + effort are ONE wrap unit (t_641c2870): the
-           toolbar wraps wherever it runs out of room, but the model chip
-           must never strand the effort chip on a second row - as one flex
-           item (.model-group, nowrap) the pair crosses any wrap boundary
-           together or not at all. -->
+      <!--
+        control row order: the model name, then the effort pill.
+        model + effort are ONE wrap unit: the toolbar wraps wherever it runs out of
+        room, but the model chip must never strand the effort chip on a second row - as
+        one flex item (.model-group, nowrap) the pair crosses any wrap boundary
+        together or not at all.
+      -->
       <div class="model-group">
         <ModelSelect
           :model="model"
@@ -184,10 +174,7 @@
           :groups="groups"
           @update:model="$emit('update:model', $event)"
           @refresh-models="$emit('refresh-models')" />
-        <!-- the effort chip rides the shared BandSelect (v0.14.1 review
-             lens: the dedicated chip+listbox was BandSelect's exact
-             grammar minus nothing - one component, one grammar; only
-             the pop's narrow floor survives, in main.css) -->
+        <!-- the effort chip rides the shared BandSelect (v0.14.1 review lens. -->
         <BandSelect
           class="thinking-select"
           label="Reasoning effort"
@@ -196,12 +183,12 @@
           :model-value="thinking"
           @update:model-value="$emit('update:thinking', $event)" />
       </div>
-      <!-- ONE morphing button (t_357cbe9c; retry left in t_95d2bc34):
-           while a run streams this is the stop control; idle it is send
-           always - dimmed (disabled) when a draft and the attachments
-           are both empty, armed once there is something to send. The
-           replay affordance renders in the newest response's action row
-           (ChatMessage's msg-retry chip), never here. -->
+      <!--
+        ONE morphing button: while a run streams this is the stop control; idle it is
+        send always.
+        The replay affordance renders in the newest response's action row
+        (ChatMessage's msg-retry chip), never here.
+      -->
       <button
         class="send"
         :class="{ cancel: face === 'stop' }"
@@ -253,9 +240,7 @@
     fetchPaletteSkills,
   } from "../../composables/commands";
   import type { PaletteItem } from "../../composables/commands";
-  // the pill token model (t_7f09bd0c): the strip scan, the Backspace
-  // token surgery, and the @ path list's dir-first helpers share one
-  // module with the sent-message renderer
+  // the pill token model: the strip scan, the Backspace token surgery, and the @ path.
   import {
     chipFor,
     deleteTokenAt,
@@ -272,32 +257,16 @@
     RefToken,
   } from "../../composables/pills";
   import { DOCK_VIEWER_OPEN_KEY } from "../../composables/viewer";
-  // The composer law lives in .agents/DESIGN.md (card t_1750a9e3): a
-  // single pane-wide shape - the display-mode signal, the settings
-  // knob and its composable all died with it. Only the fullscreen
-  // .expanded state keeps its own class.
+  // The composer law lives in.agents/DESIGN.md.
   const props = defineProps<{
     draft: string;
     model: string;
     models: string[];
-    /** the grouped catalog (card t_1914a8c9): one section per provider -
-         the picker renders collapsible sections from these, "default"
-         first; empty falls back to the flat models prop */
     groups?: { name: string; models: string[]; capabilities?: Record<string, string[]>; error?: string }[];
-    // THIS session's run is streaming: the send button is CANCEL now
     busy: boolean;
     thinking: string;
-    // the working folder is NOT a composer concern any more (card
-    // t_8fd38f88): the status bar's left zone owns the workdir selector.
-    // pending image attachments - owned by the app: the transcript
-    // bubble and the interrupted retry both need them
     attachments: OmegaImage[];
-    // pending NON-IMAGE references (card t_8a569163): the /attach-file
-    // records the app uploaded. The strip renders the type glyph + name
-    // + size; the bytes stay server-side.
     files: OmegaAttachment[];
-    // set while the next send is chained onto a historical message
-    // (the fork affordance on the response block) - shows the chip
     forkAnchor?: string | null;
   }>();
 
@@ -309,8 +278,7 @@
     (e: "cancel"): void;
     (e: "refresh-models"): void;
     (e: "attach-files", images: OmegaImage[]): void;
-    // the picked NON-image files, pre-upload: the host posts them to
-    // /attach-file and parks the answers in the tab's pending list
+    // the picked NON-image files, pre-upload.
     (e: "attach-file-refs", files: File[]): void;
     (e: "remove-attachment", index: number): void;
     (e: "remove-file-attachment", index: number): void;
@@ -318,20 +286,17 @@
     (e: "clear-fork"): void;
   }>();
 
-  // send needs text OR an attachment - image-only and file-only messages
-  // are valid (card t_8a569163 widens the old image-only rule)
+  // send needs text OR an attachment - image-only and file-only messages are valid
   const canSend = computed(
     () => !!props.draft.trim() || props.attachments.length > 0 || props.files.length > 0,
   );
 
-  // the effort chip's option ladder: same value for value + label (the
-  // UI level IS the label - the wire mapping lives in omega.ts)
+  // the effort chip's option ladder.
   const thinkingOptions = computed(() =>
     THINKING_UI_LEVELS.map((level) => ({ value: level, label: level })),
   );
 
-  // the morph (t_357cbe9c): busy -> stop, else send. The retry face left
-  // with the affordance (t_95d2bc34) - the action row owns replay now.
+  // the morph: busy -> stop, else send.
   const face = computed(() => composerFace(props.busy));
   const faceLabel = computed(() => (face.value === "stop" ? "■ stop" : "send"));
   const faceTitle = computed(() =>
@@ -344,13 +309,7 @@
     else emit("send");
   }
 
-  // grow with content: 1 row at rest, up to 4 rows (COMPOSER_MAX), then the
-  // textarea scrolls. Past the cap an expand button appears (top right) to
-  // grow the composer beyond it - the FULLSCREEN state (card t_08ef793b): a
-  // floating card where the text region is the tall element and the control
-  // row (+, chips, send) pins to the card's bottom edge.
-  // Explicit 21px line-height in CSS makes the row math deterministic:
-  // 4 rows = 84px of content height.
+  // grow with content: 1 row at rest, up to 4 rows (COMPOSER_MAX), then the textarea.
   const COMPOSER_MAX = 84;
 
   const ta = ref<HTMLElement | null>(null);
@@ -358,13 +317,7 @@
   const expanded = ref(false);
   const overflowing = ref(false);
 
-  // the squeeze ladder (card t_27ff2bbd): the composer's own width picks
-  // the rung - full label, label shed to the chevron, or a stacked control
-  // row. Costs are measured off the live row, so the label's own length
-  // (any model name) decides where the shed rung starts; the touch bump
-  // re-measures when a control's FACE changes width without the composer
-  // resizing (model / effort swap, send <-> stop, the fullscreen toggle
-  // mounting its + into the row).
+  // the squeeze ladder: the composer's own width picks the rung.
   const root = ref<HTMLElement | null>(null);
   const ladderTouch = computed(
     () => `${props.model}|${props.thinking}|${props.busy}|${expanded.value}`,
@@ -378,8 +331,7 @@
     const full = el.scrollHeight;
     overflowing.value = full > COMPOSER_MAX + 1;
     if (expanded.value) {
-      // expanded: the composer fills the chat pane (CSS flex) - no inline
-      // height, the textarea stretches and scrolls
+      // expanded: the composer fills the chat pane (CSS flex).
       el.style.height = "";
       return;
     }
@@ -388,23 +340,15 @@
 
   function toggleExpand() {
     expanded.value = !expanded.value;
-    // the height math reads state-dependent layout: the class must land in
-    // the DOM first. Measuring synchronously (the old shape) read the
-    // STRETCHED textarea's scrollHeight on collapse - the compact height
-    // pinned to the old 84px cap instead of the content's own height.
+    // the height math reads state-dependent layout: the class must land in the DOM.
     nextTick(() => {
       resize();
-      // fullscreen hands the canvas to the input immediately: the cursor
-      // waits in the grown region the moment the toggle lands (card
-      // t_08ef793b ruling 1 - the big space is typeable canvas)
+      // fullscreen hands the canvas to the input immediately.
       if (expanded.value) ta.value?.focus();
     });
   }
 
-  // fullscreen canvas law (card t_08ef793b): a click on empty composer
-  // space - the grown region's background, the chevron's gutter - lands the
-  // caret. Control clicks (chips, send, pills, strips, palette) pass
-  // through untouched, so chip menus and the palette behave as usual.
+  // fullscreen canvas law: a click on empty composer space.
   function onCanvasClick(e: MouseEvent) {
     if (!expanded.value) return;
     const el = e.target as HTMLElement | null;
@@ -419,16 +363,11 @@
     ta.value?.focus();
   }
 
-  // the height follows every draft write: the plan watch fires the sync
-  // (a no-op with chip parity, a rebuild otherwise) and resize runs in
-  // both of its paths - the textarea-era draft watch folded into it.
+  // the height follows every draft write.
 
-  // fileToImage reads one File into the ai.ImageContent shape: base64
-  // (data: prefix stripped) plus a magic-sniffed media type. Returns
-  // {img: null, reason} for unsniffable content - handleFiles reports
-  // the first reason instead of silently dropping. The size cap is the
-  // caller's gate (handleFiles, one cap for BOTH lanes, card
-  // t_8a569163).
+  // fileToImage reads one File into the ai.ImageContent shape. Returns {img: null,
+  // reason} for unsniffable content - handleFiles reports the first reason instead of
+  // silently dropping. The size cap is the caller's gate.
   async function fileToImage(
     file: File,
   ): Promise<{ img: OmegaImage | null; reason?: string }> {
@@ -450,12 +389,9 @@
     return { img: { media_type: magic, base64 } };
   }
 
-  // handleFiles routes one pick into the two lanes (card t_8a569163):
-  // images ride the base64 lane (dataUrl thumbnails, the transcript's
-  // img chips), everything else the upload-reference lane (the host
-  // POSTs each file to /attach-file and the strip shows a type glyph).
-  // ONE cap for both - MAX_CHAT_FILE_BYTES, the server's own number - so
-  // an oversize pick never leaves the browser.
+  // handleFiles routes one pick into the two lanes. ONE cap for both -
+  // MAX_CHAT_FILE_BYTES, the server's own number - so an oversize pick never leaves the
+  // browser.
   async function handleFiles(files: FileList | File[]) {
     const images: OmegaImage[] = [];
     const refs: File[] = [];
@@ -487,37 +423,26 @@
   }
 
   function onPaste(e: ClipboardEvent) {
-    // Clipboard image files win: paste attaches them
     const files = Array.from(e.clipboardData?.files ?? []);
     if (files.length) {
       void handleFiles(files);
       return;
     }
-    // A lone plain-text URL offers attach-as-image - the SERVER fetches
-    // the bytes (never cross-origin from the browser). Normal text
-    // paste falls through untouched.
+    // A lone plain-text URL offers attach-as-image - the SERVER fetches the bytes
+    // (never cross-origin from the browser).
     const text = (e.clipboardData?.getData("text/plain") ?? "").trim();
     if (/^https?:\/\/\S+$/i.test(text)) {
       emit("attach-url", text);
     }
   }
 
-  // --- the / command palette and @ mention picker (t_07aed3f9) ---
-  //
-  // Derived from draft + caret. A "/" token under the caret (the draft's
-  // leading word is just its boundary-free case, t_d1a2951d) = the slash
-  // list; a running "@..." token at the caret = the mention list. Esc
-  // sets dismissed until the next draft change - a dropdown stays closed
-  // until a new query re-opens it.
-  //
-  // NOTE: the mode is DERIVED (mention.value.active), never stored in
-  // an imperative ref flipped from onInput - that flip raced the draft
-  // prop update (the handler sees the PREVIOUS emit's draft) and the
-  // bare-@ list rendered empty one beat too late.
+  // -- the / command palette and @ mention picker --- Derived from draft + caret. NOTE:
+  // the mode is DERIVED (mention.value.active), never stored in an imperative ref
+  // flipped from onInput - that flip raced the draft prop update (the handler sees the
+  // PREVIOUS emit's draft) and the bare-@ list rendered empty one beat too late.
 
   const active = ref(-1);
   const dismissed = ref(false);
-  // the caret the palette derives from (token surgery needs it)
   const caretAt = ref(0);
 
   // lazy seam snapshots: the extension command registry and the skills
@@ -542,18 +467,7 @@
     sessionRows.value = sess.map((s) => ({ id: s.id, label: s.label || "" }));
   }
 
-  // the @ file rows (card t_7f09bd0c): ONE directory's listing at a time -
-  // the token's dir (mentionDirOf). A draft workspace routes through the
-  // workspace reader (an absolute-path read), a rootless one through
-  // /files/browse (the resolved root + relative dir). The cached dir
-  // skips refetches of the same listing; a mention close resets it so a
-  // reopen sees the workspace that is bound NOW.
-  //
-  // The drill's dir keeps its trailing slash (mentionDirOf feeds the
-  // INSERTION too), but the READ takes the bare path: /files/browse
-  // answers 400 "empty path segment" for "docs//" - the folder token's
-  // own drill listed nothing until this strip (t_c3fe4ea6, the
-  // "@folder/" token made the broken drill reachable by typing).
+  // the @ file rows: ONE directory's listing at a time.
   const fileDir = ref<string | null>(null);
   const fileLoading = ref(false);
   async function loadFileRows(dir: string) {
@@ -575,22 +489,17 @@
 
   const mention = computed(() => mentionQueryAt(props.draft, caretAt.value));
 
-  // the caret's "/" token (t_d1a2951d): the slash surface is TOKEN-based
-  // like the mention surface - anywhere in the draft
+  // the caret's "/" token: the slash surface is TOKEN-based like the mention surface.
   const slash = computed(() => slashTokenAt(props.draft, caretAt.value));
 
   const paletteOpen = computed(() => {
     if (dismissed.value) return false;
-    // slash lists while the caret sits inside a "/" token - past its
-    // trailing space it is arg or plain-sentence territory (the token
-    // ended), the palette stands down
+    // slash lists while the caret sits inside a "/" token.
     if (slash.value.active) return true;
     return mention.value.active;
   });
 
-  // allItems branches on the DERIVED mode (see the note above): the
-  // mention computeds, else the slash list - slash mode when the caret
-  // sits inside a "/" token, and empty otherwise.
+  // allItems branches on the DERIVED mode (see the note above).
   const allItems = computed<PaletteItem[]>(() => {
     if (!paletteOpen.value) return [];
     if (mention.value.active) {
@@ -610,9 +519,7 @@
           kind: "skill" as const,
         }));
       }
-      // bare @: the two prefix rows plus the token's dir listing - the
-      // rows are dirs first (mentionRows, t_7f09bd0c); the leaf filters
-      // (a drilled token's path part is its dir, not query text)
+      // bare @: the two prefix rows plus the token's dir listing.
       const prefixRows: PaletteItem[] = [
         { name: "session:", description: "inject a session's history", kind: "session" },
         { name: "skill:", description: "inject a skill's content", kind: "skill" },
@@ -625,13 +532,10 @@
     return filterCommands(query, paletteCommands(extCmds.value, skillRows.value));
   });
 
-  // the dropdown scrolls in CSS (.palette-list max-height + overflow-y):
-  // the cap only guards a runaway extension roster from rendering the
-  // whole DOM, it doesn't truncate a reachable row
+  // the dropdown scrolls in CSS (.palette-list max-height + overflow-y).
   const PALETTE_MAX = 100;
   const paletteItems = computed(() => allItems.value.slice(0, PALETTE_MAX));
 
-  // keep the keyboard highlight visible while the list scrolls
   const paletteEl = ref<HTMLElement | null>(null);
   watch(active, (i) => {
     const opts = paletteEl.value?.querySelectorAll('[role=option]');
@@ -654,23 +558,17 @@
     if (at >= 0) caretAt.value = at;
   }
 
-  // the lazy loads ride mode transitions reactively (same race note as
-  // above): a mention opening loads its rows once; the slash surface
-  // loads the command registry + skills snapshot
+  // the lazy loads ride mode transitions reactively (same race note as above).
   const mentionActive = computed(() => mention.value.active);
   const slashSurface = computed(() => !mentionActive.value && slash.value.active);
   watch(mentionActive, (on) => {
     if (on) {
       void loadMentionRows();
-      // the skill: prefix rows ride the same snapshot the slash
-      // palette uses - a cold session that opens @ directly needs it
+      // the skill: prefix rows ride the same snapshot the slash palette uses.
       void loadPaletteData();
     }
   });
-  // the @ drill (t_7f09bd0c): the token's dir drives the file rows - a
-  // typed or drilled path lists its own directory, a closed mention
-  // resets the cache dir so the next open refetches with the workspace
-  // that is bound NOW
+  // the @ drill: the token's dir drives the file rows.
   watch(
     () => (mentionActive.value ? mentionDirOf(mention.value.token) : null),
     (dir) => {
@@ -686,10 +584,7 @@
   });
   onMounted(() => {
     if (slashSurface.value) void loadPaletteData();
-    // a remount carrying a draft (tab switches keep per-tab state, card
-    // t_e67c372b): the chips rebuild - and skill chips need the skills
-    // snapshot the slash surface would otherwise only load on the next
-    // "/" press
+    // a remount carrying a draft.
     if (scanRefTokens(props.draft, CHIP_SCAN).some((t) => t.kind === "skill")) {
       void loadPaletteData();
     }
@@ -700,8 +595,8 @@
     dismissed.value = true;
   }
 
-  // --- the chip editor (t_e67c372b): a pill REPLACES the text it ---
-  // --- represents, inline in the flow                              ---
+  // -- the chip editor: a pill REPLACES the text it --
+  // -- represents, inline in the flow --
   //
   // The editor is a contenteditable div (a textarea cannot render markup
   // in place). Its children are owned by this module, never by Vue's
@@ -714,23 +609,18 @@
   // same text the strip-era flow posted (the server-side at-mention
   // expansion is the consumer of that exact string).
 
-  // chip eligibility: a file or dir token stands as-is (a folder pins
-  // exactly like a file - t_c3fe4ea6, the trailing slash is the kind);
-  // a skill token chips as soon as its name is a loaded skill's (a
-  // shell verb like "/theme" is a command, never a pill - the slash
-  // surface has already loaded the skills snapshot for any "/"-draft)
-  // the editor's chip scan: a skill token chips at ANY word boundary here
-  // (the composer's slash palette is token-based, t_d1a2951d), while the
-  // transcript keeps the leading-invocation law - one token model, the
-  // composer passes the one surface switch (pills.ts ScanOpts)
+  // chip eligibility: a file or dir token stands as-is; a skill token chips as soon as
+  // its name is a loaded skill's (a shell verb like "/theme" is a command, never a pill
+  // - the slash surface has already loaded the skills snapshot for any "/"-draft) the
+  // editor's chip scan: a skill token chips at ANY word boundary here, while the
+  // transcript keeps the leading-invocation law - one token model, the composer passes
+  // the one surface switch (pills.ts ScanOpts)
   const CHIP_SCAN = { inlineSkills: true } as const;
   const skillNames = computed(() => new Set(skillRows.value.map((s) => s.name)));
   const isPill = (t: RefToken): boolean =>
     t.kind === "file" || t.kind === "dir" || skillNames.value.has(t.name);
 
-  // fresh swallows (the accept path) and dissolved reveals (the
-  // Backspace law). Keys ride chipKeyOf's token identity; reactive Set
-  // instances are replaced whole so the plan's computed re-runs.
+  // fresh swallows (the accept path) and dissolved reveals (the Backspace law).
   const forcedChip = ref<ReadonlySet<string>>(new Set());
   const dissolvedChip = ref<ReadonlySet<string>>(new Set());
 
@@ -748,18 +638,15 @@
     ),
   );
 
-  // --- caret arithmetic (draft space <-> editor DOM) ---
-  //
-  // A chip contributes its token's full length to draft space but
-  // offers exactly two caret seats: before it (the token's start index)
-  // and after it (the span's end index). A token's interior indexes
-  // exist in draft space but never in the chip'd DOM - a chip there
-  // means the span is raw (dissolved or being typed), an ordinary text
-  // node the caret can sit inside.
+  // -- caret arithmetic (draft space <-> editor DOM) --- A chip contributes its token's
+  // full length to draft space but offers exactly two caret seats: before it (the
+  // token's start index) and after it (the span's end index). A token's interior
+  // indexes exist in draft space but never in the chip'd DOM - a chip there means the
+  // span is raw (dissolved or being typed), an ordinary text node the caret can sit
+  // inside.
 
-  // draftTextOf reads the editor's text: text nodes verbatim, chips via
-  // their data-token. Stray browser elements walk into (they carry no
-  // draft text that matters; the input paths never create them).
+  // draftTextOf reads the editor's text. Stray browser elements walk into (they carry
+  // no draft text that matters; the input paths never create them).
   function draftTextOf(el: HTMLElement): string {
     let out = "";
     const walk = (n: Node) => {
@@ -776,17 +663,13 @@
     return out;
   }
 
-  // capTail: the trailing-newline sentinel (t_eb07b315). Chromium hangs
-  // a block-final newline in pre-wrap: the break "hello\n" carries is
-  // real in the draft but generates NO line box - one Shift+Enter leaves
-  // the caret glued to line 1 and the editor looks deaf until a second
-  // press. One sentinel <br> after the draft's final newline forces the
-  // line box AND moves the caret's paint seat onto the new line (a
-  // collapsed caret before a final <br> lands on the empty line - the
-  // classic trailing-br device, draft-safe here: a non-chip element
-  // contributes nothing to draftTextOf, caretFromDom or placeCaretAt,
-  // so the draft string never learns of the sentinel). <text> is the
-  // caller's fresh draft read (absorbWrite and syncEditor walk once).
+  // capTail: the trailing-newline sentinel. One sentinel <br> after the draft's final
+  // newline forces the line box AND moves the caret's paint seat onto the new line (a
+  // collapsed caret before a final <br> lands on the empty line - the classic
+  // trailing-br device, draft-safe here: a non-chip element contributes nothing to
+  // draftTextOf, caretFromDom or placeCaretAt, so the draft string never learns of the
+  // sentinel). <text> is the caller's fresh draft read (absorbWrite and syncEditor walk
+  // once).
   function capTail(el: HTMLElement, text: string): void {
     const brs: Node[] = [];
     for (
@@ -797,7 +680,6 @@
       brs.push(n);
     }
     const want = text.endsWith("\n") ? 1 : 0;
-    // surplus goes from the innermost outward; a missing one appends
     for (let i = want; i < brs.length; i++) el.removeChild(brs[i]);
     if (want === 1 && brs.length === 0) el.appendChild(document.createElement("br"));
   }
@@ -816,13 +698,11 @@
     let idx = 0;
     for (let i = 0; i < kids.length; i++) {
       const c = kids[i]!;
-      // the caret anchors on the editor itself: offset i = before the
-      // i-th child; offset kid-count = after everything (the loop end)
+      // the caret anchors on the editor itself.
       if (anchor === el) {
         if (range.startOffset === i) return idx;
       } else if (c === anchor) {
-        // the caret anchors on the child: a text node's offset, or an
-        // element's start edge (defensive - the chip swallows mousedown)
+        // the caret anchors on the child.
         return c.nodeType === Node.TEXT_NODE ?
             idx + Math.min(range.startOffset, (c.nodeValue ?? "").length)
           : idx;
@@ -835,10 +715,7 @@
     return -1; // an anchor deeper than the flat child list: not representable
   }
 
-  // placeCaretAt puts the caret at a draft-space index in the DOM: text
-  // interiors select into the text node, chip boundaries select against
-  // the editor element (before/after the chip), the end collapses at the
-  // child list's end. A silent no-op while the editor is not focused.
+  // placeCaretAt puts the caret at a draft-space index in the DOM.
   function placeCaretAt(el: HTMLElement, index: number): void {
     if (document.activeElement !== el) return;
     const sel = window.getSelection();
@@ -868,17 +745,11 @@
     sel.collapse(el, kids.length);
   }
 
-  // --- the chip DOM + the sync ---
+  // -- the chip DOM + the sync --
 
   const appContext = getCurrentInstance()?.appContext ?? null;
 
-  // buildChip mounts ONE renderer's instance into a non-editable span:
-  // ReferencePill stays the ONE renderer (composer chip + transcript
-  // bubble = the same component, the same click law - open through the
-  // viewer inject). The wrapper carries the raw token in data-token
-  // (the draft reader's exact source), swallows mousedown (an element
-  // selection would turn the next Backspace into a whole-chip delete -
-  // the dissolve law needs the parked caret) and dragstart.
+  // buildChip mounts ONE renderer's instance into a non-editable span.
   function buildChip(t: RefToken): HTMLElement {
     const wrap = document.createElement("span");
     wrap.className = "ref-chip";
@@ -887,10 +758,7 @@
     wrap.dataset.token = t.token;
     wrap.addEventListener("mousedown", (e) => e.preventDefault());
     wrap.addEventListener("dragstart", (e) => e.preventDefault());
-    // chip click (t_7f09bd0c's law): a file opens in the Files pane, a
-    // skill opens its SKILL.md, a FOLDER opens the viewer's listing for
-    // it (t_c3fe4ea6). The x keeps the old strip's outright removal;
-    // Backspace is the dissolve.
+    // chip click: a file opens in the Files pane, a skill opens its SKILL.md, a.
     const vnode = h("span", { class: "ref-chip-body" }, [
       h(ReferencePill, { pill: t, onOpen: () => openRef(t) }),
       h(
@@ -915,12 +783,9 @@
     openViewerRef?.({ kind: t.kind, name: t.name });
   }
 
-  // sync brings the editor's DOM to the plan and rebuilds ONLY on
-  // disagreement (the DOM's text out of parity with the draft, or the
-  // chip sequence drifted) - typing and caret moves take the no-op path
-  // and never churn the caret. Stale chip-state keys sweep first: a
-  // token that left the scan (edited into prose, removed) releases its
-  // forced/dissolved entry.
+  // sync brings the editor's DOM to the plan and rebuilds ONLY on disagreement (the
+  // DOM's text out of parity with the draft, or the chip sequence drifted) - typing and
+  // caret moves take the no-op path and never churn the caret.
   function syncEditor(): void {
     const el = ta.value;
     if (!el) return;
@@ -947,9 +812,8 @@
       .filter((p): p is EditorChipNode => p.type === "chip")
       .map((p) => p.token.token);
     if (domText === props.draft && domChips.join("\u0000") === wantChips.join("\u0000")) {
-      // parity: maybe resize anyway (heights follow plain text edits,
-      // whose own flush took the plan watch here) - the newline cap
-      // settles the sentinel before the height reads it
+      // parity: maybe resize anyway (heights follow plain text edits, whose own flush
+      // took the plan watch here).
       capTail(el, domText);
       resize();
       return;
@@ -970,18 +834,10 @@
     resize();
   }
 
-  // the sync triggers: any plan change (draft text, caret, chip state)
-  // rebuilds the chip layer after the DOM settles
+  // the sync triggers: any plan change (draft text, caret, chip state) rebuilds the.
   watch(editorPlan, () => nextTick(syncEditor));
 
-  // dissolveBehindCaret runs the Backspace law (t_e67c372b): the caret
-  // collapsed and immediately behind a CHIPPED token - the chip dies and
-  // the raw token text re-materializes. A reveal, not a delete: the
-  // draft string is unchanged (the token was always in it), the reveal
-  // is suppressed while the caret works the span, and leaving the span
-  // re-chips it. Returns false so the default backspace runs (a ranged
-  // selection, no chip behind the caret, a dissolved span's next
-  // single-char delete).
+  // dissolveBehindCaret runs the Backspace law.
   function dissolveBehindCaret(): boolean {
     const el = ta.value;
     if (!el) return false;
@@ -1009,17 +865,13 @@
       next.add(tok.token);
       dissolvedChip.value = next;
     }
-    // the caret stays parked at the span's end; the plan watch performs
-    // the reveal and restores the caret there
+    // the caret stays parked at the span's end.
     caretAt.value = tok.start + tok.token.length;
     return true;
   }
 
-  // absorbWrite: the shared tail of every text write (typing, paste, the
-  // newline insert) - read the text, clear a dismissed palette, sync the
-  // caret, drop a browser-emptied editor's stray <br> artifact (it would
-  // rob :empty of the placeholder), emit the draft, settle the newline
-  // sentinel (capTail), size.
+  // absorbWrite: the shared tail of every text write (typing, paste, the newline
+  // insert).
   function absorbWrite(el: HTMLElement): void {
     const text = draftTextOf(el);
     dismissed.value = false;
@@ -1031,13 +883,7 @@
     resize();
   }
 
-  // insertAtCaret writes plain text into the editor at the caret and
-  // runs the input path by hand (manual DOM writes fire no input event).
-  // The contenteditable's own paste would insert markup and its own
-  // newline would insert div nodes - neither is draft-readable; text
-  // nodes + pre-wrap carry both, the way native typing does (a trailing
-  // newline also needs the capTail sentinel to render - absorbWrite's
-  // tail settles it).
+  // insertAtCaret writes plain text into the editor at the caret and runs the input.
   function insertAtCaret(text: string): void {
     const el = ta.value;
     if (!el || text === "") return;
@@ -1048,7 +894,6 @@
       if (r.collapsed && el.contains(r.startContainer)) range = r;
     }
     if (!range) {
-      // no caret in the editor: append at the end
       range = document.createRange();
       range.setStart(el, el.childNodes.length);
       range.collapse(true);
@@ -1062,8 +907,7 @@
     absorbWrite(el);
   }
 
-  // removeToken: the chip's x - the token dies out of the draft, the
-  // caret parks at the cut
+  // removeToken: the chip's x.
   function removeToken(t: RefToken) {
     const next = deleteTokenAt(props.draft, t);
     emit("update:draft", next.draft);
@@ -1077,30 +921,18 @@
     });
   }
 
-  // acceptItem: mention rows insert their completed token at the caret;
-  // command rows complete the draft to the command (typed args ride
-  // along) and SUBMIT - selecting a command runs it, no agent
-  // round-trip ever (the palette's law: commands act locally).
+  // acceptItem: mention rows insert their completed token at the caret.
   function acceptItem(item: PaletteItem) {
     if (!paletteOpen.value) return;
-    // a SKILL row (t_7f09bd0c) is a reference pill now, not a
-    // fire-and-forget dispatch: the completed /<name> stays in the draft
-    // (typed args ride along), the pill forms - the send resolves the
-    // skill (the host arms the content) AND posts the message, so the
-    // pill lives in the transcript too
+    // a SKILL row is a reference pill now, not a fire-and-forget dispatch.
     if (
       !mention.value.active &&
       item.kind === "skill"
     ) {
-      // token surgery (t_d1a2951d): replace ONLY the "/" word under the
-      // caret - a mid-sentence token dies in place, a leading one keeps
-      // the old whole-args shape (the token runs to its own boundary)
+      // token surgery: replace ONLY the "/" word under the caret.
       const next = replaceSlashToken(props.draft, caretAt.value, slash.value.token, item.name);
       closePalette();
-      // the fresh swallow (t_e67c372b): the completed token chips
-      // immediately - `forced` holds the chip for this span until a
-      // dissolve releases it. The key is the RAW token (chipKeyOf), so the
-      // skill row's bare name needs its slash.
+      // the fresh swallow: the completed token chips immediately.
       const forced = new Set(forcedChip.value);
       forced.add("/" + item.name);
       forcedChip.value = forced;
@@ -1117,9 +949,8 @@
       return;
     }
     if (!mention.value.active && (item.kind === "shell" || item.kind === "extension")) {
-      // token surgery (t_d1a2951d): the completed command replaces only
-      // the "/" word under the caret; the message still submits whole
-      // (the palette's law: commands act locally)
+      // token surgery: the completed command replaces only the "/" word under the
+      // caret.
       const next = replaceSlashToken(props.draft, caretAt.value, slash.value.token, item.name);
       closePalette();
       emit("update:draft", next.draft);
@@ -1127,22 +958,13 @@
       active.value = -1;
       return;
     }
-    // the insert (t_07aed3f9's replace law): a file or dir row's name is
-    // the entry's own - the completed token carries the token's dir part
-    // (t_7f09bd0c), so a drilled pick is the full relative path.
-    // BOTH row kinds PIN (t_c3fe4ea6): a file completes to "@path", a
-    // dir to "@path/" - the folder's trailing slash IS the reference
-    // shape, so the accept closes the palette and fresh-swallows the
-    // pill instead of leaving bare text. Drilling stays the TOKEN's own
-    // law, not the accept's: typing past the slash relists the folder
-    // (mentionDirOf), so a dir row picked deeper still drills.
+    // the insert: a file or dir row's name is the entry's own.
     const isDir = item.kind === "dir";
     const dir = mentionDirOf(mention.value.token);
     const insertion = "@" + dir + item.name + (isDir ? "/" : "");
     const next = replaceMentionToken(props.draft, caretAt.value, mention.value.token, insertion);
     closePalette();
-    // the fresh swallow (t_e67c372b): the completed token chips
-    // immediately (a file's path, a folder's path + slash)
+    // the fresh swallow: the completed token chips immediately (a file's path, a.
     const forced = new Set(forcedChip.value);
     forced.add(insertion);
     forcedChip.value = forced;
@@ -1158,22 +980,17 @@
     });
   }
 
-  // Tab completes without submitting (TUI acceptMatch parity): the
-  // "/" word under the caret becomes the completed token, the palette
-  // closes.
+  // Tab completes without submitting (TUI acceptMatch parity).
   function acceptActive(submit: boolean) {
     const item = paletteItems.value[active.value];
     if (!item) return closePalette();
     if (submit) return acceptItem(item);
     if (!mention.value.active) {
-      // token surgery (t_d1a2951d): only the "/" word dies - typed args
-      // around it stay (the old whole-draft rewrite was leading-only)
+      // token surgery: only the "/" word dies.
       const next = replaceSlashToken(props.draft, caretAt.value, slash.value.token, item.name);
       emit("update:draft", next.draft);
       caretAt.value = next.caret;
-      // the completion chips a fresh skill token (t_e67c372b); the key is
-      // the RAW token (chipKeyOf), so the row's bare name needs its slash
-      // (t_620a3edf: the bare name never matched a chip key)
+      // the completion chips a fresh skill token.
       if (item.kind === "skill") {
         const forced = new Set(forcedChip.value);
         forced.add("/" + item.name);
@@ -1184,8 +1001,7 @@
       if (el) nextTick(() => placeCaretAt(el, next.caret));
       return;
     }
-    // a mention Tab completes too (TUI acceptMatch parity): the token
-    // inserts at the caret, palette closes, no send
+    // a mention Tab completes too (TUI acceptMatch parity).
     return acceptItem(item);
   }
 
@@ -1214,31 +1030,23 @@
         return;
       }
       if (e.key === "Enter") {
-        // the palette owns Enter while it is open: the highlighted
-        // command runs, the highlighted mention inserts
+        // the palette owns Enter while it is open.
         e.preventDefault();
         acceptActive(true);
         return;
       }
     }
-    // Backspace ON a chip dissolves it (t_e67c372b): no selection and
-    // the caret immediately behind the token - the chip dies, the RAW
-    // token text re-materializes in its place (a reveal, not a delete:
-    // the draft string is unchanged, the token was always in it). While
-    // the palette is open the Backspace edits the running query char by
-    // char - untouched, this branch must not hijack the list. The NEXT
-    // Backspace behind a revealed span is the browser's own single-char
-    // delete; the chip's x is the outright remove.
+    // Backspace ON a chip dissolves it. While the palette is open the Backspace edits
+    // the running query char by char - untouched, this branch must not hijack the list.
     if (e.key === "Backspace" && !paletteOpen.value && dissolveBehindCaret()) {
       e.preventDefault();
       return;
     }
     if (e.key === "Enter") {
-      // EDITOR (t_e67c372b): the editor claims every Enter - Shift+Enter
-      // inserts the newline as a text node (the browser's contenteditable
-      // newline would insert a div node the draft reader cannot read),
-      // plain Enter (and Ctrl/Alt+Enter - only the shift modifier is
-      // exempt) sends. Same law, new mechanics.
+      // EDITOR: the editor claims every Enter - Shift+Enter inserts the newline as a
+      // text node (the browser's contenteditable newline would insert a div node the
+      // draft reader cannot read), plain Enter (and Ctrl/Alt+Enter - only the shift
+      // modifier is exempt) sends.
       e.preventDefault();
       if (e.shiftKey) {
         insertAtCaret("\n");
@@ -1248,11 +1056,8 @@
     }
   }
 
-  // composer auto-focus (card t_b40131ac): the ChatTab parent delivers
-  // focus-on-select and type-to-capture through this handle - focusing
-  // the textarea IS the feature, the character then lands via the input
-  // event (focus moves during keydown, insertion targets the focused
-  // element, no synthetic draft injection)
+  // composer auto-focus: the ChatTab parent delivers focus-on-select and
+  // type-to-capture through this handle.
   defineExpose({
     focus: () => {
       ta.value?.focus();
@@ -1261,21 +1066,16 @@
 </script>
 
 <style scoped>
-  /* the fullscreen OVERLAY mount (card t_9ff2f621). The card used to grow
-     IN the pane's flex column (main.css .composer.expanded flex-grow), so
-     the history stayed mounted but was squeezed to a 32px sliver - the
-     conversation you are replying to vanished while you composed. Out of
-     flow now: .messages keeps the pane's whole height underneath and the
-     card floats over it, so collapsing needs no refetch and no scroll
-     repair (the scrollport is never resized). The 12px inset is the base
-     card's own margin (main.css); ChatTab makes main.chat.pane this box's
-     containing block. The flex-grow main.css still declares is inert -
-     an absolutely positioned child is not a flex item. */
+  /*
+   * the fullscreen OVERLAY mount.
+   * Out of flow now:.messages keeps the pane's whole height underneath and the card
+   * floats over it, so collapsing needs no refetch and no scroll repair (the scrollport
+   * is never resized).
+   */
   .composer.expanded {
     position: absolute;
     inset: 0;
-    /* above the pane's content: the history, the activity line and the
-       jump-live pill all stay underneath the card */
+    /* above the pane's content. */
     z-index: 20;
   }
 </style>

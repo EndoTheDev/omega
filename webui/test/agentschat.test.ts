@@ -1,5 +1,5 @@
-// omega webui: the Agents tab AS A CHAT DOOR (card t_81109e1c, rebuilt
-// by card t_10ac04f0).
+// omega webui: the Agents tab AS A CHAT DOOR
+// by ).
 //
 // The tab is a roster of agent homes; a row click opens a FULL chat tab
 // bound to that agent's CANONICAL chat - one stable conversation, minted
@@ -8,9 +8,9 @@
 // like every other home.
 //
 // Two layers, the house pattern:
-// - agentsRows.ts (PURE): the roster subtitle's facts (model, session
+// agentsRows.ts (PURE): the roster subtitle's facts (model, session
 //   count, last activity), the preview line, the main-agent marker;
-// - source pins: the module->shell seam (AgentsPanel POSTs the canonical
+// source pins: the module->shell seam (AgentsPanel POSTs the canonical
 //   open, dispatches the copied event literal, app.vue listens and runs
 //   THE chat opener, whose focus-before-mint order already lives in
 //   openChatTab).
@@ -70,8 +70,7 @@ const scout: OmegaAgent = {
   last_report_at: "2026-11-10T11:00:00Z",
 };
 
-// --- the roster's facts (ruling 2's "name, model, session count, last
-// activity" row) -----------------------------------------------------
+// -- the roster's facts ----------------------------------------------------
 
 test("the roster subtitle carries description, model, session count and last activity", () => {
   const now = new Date("2026-11-10T12:00:00Z");
@@ -79,8 +78,7 @@ test("the roster subtitle carries description, model, session count and last act
     agentRosterSubtitle(scout, now),
     "probe duty · qwen3 · 3 sessions · last 2h ago",
   );
-  // the count is always a fact; a model-less agent never renders a
-  // phantom model token (the agentModelText law already owns that voice)
+  // the count is always a fact; a model-less agent never renders a phantom model.
   const newborn: OmegaAgent = {
     name: "newborn",
     dir: "/home/x/.omega/agents/newborn",
@@ -109,18 +107,16 @@ test("last activity voice: relative age, honest absence, no negative ages", () =
   assert.equal(agentActivityText("2026-11-10T11:35:00Z", now), "25m ago");
   assert.equal(agentActivityText("2026-11-10T09:00:00Z", now), "3h ago");
   assert.equal(agentActivityText("2026-11-07T12:00:00Z", now), "3d ago");
-  // past the month mark the raw date is more useful than "47d ago"
   assert.equal(agentActivityText("2026-09-01T12:00:00Z", now), "2026-09-01");
 });
 
-// --- ruling 3: the main agent is a row like any other ----------------
+// -- the main agent is a row like any other ---------------
 
 test("the main agent is included and marked, not filtered out", () => {
   assert.equal(DefaultAgentName, "default");
   assert.equal(agentIsMain({ name: "default" }), true);
   assert.equal(agentIsMain({ name: "scout" }), false);
-  // the panel renders every profile it gets, main first in the payload
-  // (LoadProfiles starts with the home root), and marks that row
+  // the panel renders every profile it gets, main first in the payload (LoadProfiles.
   assert.match(panelSrc, /profiles\.value\.map\(/, "no filter drops the main row");
   assert.ok(
     !/profiles\.value\.filter\(/.test(panelSrc),
@@ -134,7 +130,7 @@ test("the main agent is included and marked, not filtered out", () => {
   assert.match(panelSrc, /\.agents-main-badge \{/, "the badge has a rule");
 });
 
-// --- ruling 1 + 4: the click opens THE canonical chat ------------------
+// -- + 4: the click opens THE canonical chat -----------------
 
 test("a roster row click opens the agent's canonical chat, minting when the home holds none", () => {
   assert.equal(CHAT_SESSION_OPEN_EVENT, "omega:open-chat-session");
@@ -146,10 +142,8 @@ test("a roster row click opens the agent's canonical chat, minting when the home
     "the panel copies the literal",
   );
   assert.match(chatSrc, /CHAT_SESSION_OPEN_EVENT = "omega:open-chat-session"/);
-  // the row open is wired, and the head click opens under feel="sessions"
   assert.match(panelSrc, /@open="openAgentChat"/, "the row open is wired");
-  // EVERY row is clickable: a session-less agent's click mints its
-  // canonical, so no row is ever a dead span
+  // EVERY row is clickable: a session-less agent's click mints its canonical, so no.
   assert.match(
     panelSrc,
     /:openable="true"/,
@@ -165,7 +159,7 @@ test("a roster row click opens the agent's canonical chat, minting when the home
     /fetch\(`\/agents\/\$\{encodeURIComponent\(name\)\}\/canonical`, \{\s*method: "POST",/,
     "the click asks the capsule for the canonical chat",
   );
-  // ...and the dispatch carries the id the answer named, never a guess
+  // ..and the dispatch carries the id the answer named, never a guess
   assert.match(
     panelSrc,
     /const id = sess\.id \?\? "";/,
@@ -186,7 +180,6 @@ test("a roster row click opens the agent's canonical chat, minting when the home
     /canonical_session_id\?: string;/,
     "the row type carries the canonical id",
   );
-  // the active row follows the canonical chat, not the latest session
   assert.match(
     panelSrc,
     /profiles\.value\.find\(\(a\) => canonicalOf\(a\.name\) === id\)/,
@@ -211,14 +204,12 @@ test("the preview line: one collapsed line of the agent's newest reply, with its
   assert.deepEqual(agentPreview(silent, now), { text: "", at: "" });
   const noReport: OmegaAgent = { ...scout, last_report: undefined };
   assert.deepEqual(agentPreview(noReport, now), { text: "", at: "" });
-  // the panel feeds the row's preview off the payload
   assert.match(panelSrc, /const pv = agentPreview\(a\);/, "the row builds the preview");
   assert.match(
     panelSrc,
     /\.\.\.\(pv\.text \? \{ preview: pv\.text, previewAt: pv\.at \} : \{\}\)/,
     "an empty preview omits the line entirely",
   );
-  // ...and the shared list renders it under the name, age at the right
   assert.match(
     listSrc,
     /v-if="r\.preview"[\s\S]{0,200}?class="registry-preview"/,
@@ -238,7 +229,6 @@ test("app.vue listens on the seam and runs the ordinary chat opener", () => {
     /if \(typeof id === "string" && id !== ""\) openChatTab\(id\);/,
     "a non-empty id goes straight to openChatTab",
   );
-  // the removal is hygiene for hot-reloading harnesses
   assert.match(
     appSrc,
     /window\.removeEventListener\(CHAT_SESSION_OPEN_EVENT, onChatSessionOpenEvent\)/,
@@ -257,9 +247,8 @@ test("focus-not-duplicate: openChatTab checks for a bound tab BEFORE it mints", 
 });
 
 test("a chat tab bound to the session is found wherever it lives (one tab per session)", () => {
-  // the dock's lookup is what makes ruling 4 true for a session opened
-  // by ANY path (sidebar, notification, agents row): the second open of
-  // the same session id resolves to the SAME pane/index.
+  // the dock's lookup is what makes true for a session opened by ANY path (sidebar,
+  // notification, agents row).
   const left = makePane("chat", null, "left");
   left.tabs = [{ component: "chat", sessionRef: "sess-new", key: "k1" }];
   const tree = makeSplit("row", [left, makePane("agents")]);
@@ -284,7 +273,7 @@ test("an agent-bound tab is named by its session, never a generic chat chip", ()
   );
 });
 
-// --- ruling 4: full separation ----------------------------------------
+// -- full separation ---------------------------------------
 
 test("an agent's work sessions are inspected from its expanded row, not the sessions sidebar", () => {
   // the panel loads the agent's OWN session rows when the row opens
@@ -299,7 +288,6 @@ test("an agent's work sessions are inspected from its expanded row, not the sess
     "the per-agent sessions route is the read",
   );
   assert.match(panelSrc, /void loadAgentSessions\(name\);/, "the expand fires the read");
-  // and renders them as a list whose rows open the chat (inspection)
   assert.match(panelSrc, /class="agents-session-list"/, "the list renders");
   assert.match(panelSrc, /@click="openSession\(s\.id\)"/, "a session row opens the chat");
   assert.match(
@@ -313,7 +301,6 @@ test("an agent's work sessions are inspected from its expanded row, not the sess
     /if \(name === DefaultAgentName\) \{\s*sessionsByAgent\[name\] = \[\];\s*return;/,
     "the main row lists no work sessions",
   );
-  // the tab declares the law where the sections are authored
   assert.match(
     panelSrc,
     /FULL SEPARATION[\s\S]{0,200}?not in the sessions sidebar/,
@@ -321,7 +308,7 @@ test("an agent's work sessions are inspected from its expanded row, not the sess
   );
 });
 
-// --- ruling 2: /new folds an agent chat, never forks it ----------------
+// -- /new folds an agent chat, never forks it ---------------
 
 test("/new in a machinery-owned chat folds it; the human's own chat still forks", () => {
   const at = appSrc.indexOf('case "/new": {');
@@ -335,7 +322,6 @@ test("/new in a machinery-owned chat folds it; the human's own chat still forks"
   );
   assert.match(body, /body\.kind === "compacted"/, "a fold keeps the tab where it is");
   assert.match(body, /return true;/, "a fold ends the command - no new tab");
-  // ...and the fork path survives below it for every other conversation
   const foldEnd = body.indexOf("openChatTab(null)");
   assert.ok(foldEnd > -1, "the fork fallback survives");
   assert.ok(

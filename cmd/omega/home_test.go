@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// TestCwd verifies that cwd() returns a non-empty string matching
-// the actual working directory.
+// TestCwd verifies that cwd returns a non-empty string matching the actual working.
 func TestCwd(t *testing.T) {
 	got := cwd()
 	if got == "" {
@@ -22,8 +21,7 @@ func TestCwd(t *testing.T) {
 	}
 }
 
-// TestOmegaHomeEnvVar verifies the OMEGA_HOME env var branch. The home
-// carries canon separators (card t_630e595d).
+// TestOmegaHomeEnvVar verifies the OMEGA_HOME env var branch.
 func TestOmegaHomeEnvVar(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("OMEGA_HOME", dir)
@@ -32,9 +30,7 @@ func TestOmegaHomeEnvVar(t *testing.T) {
 	}
 }
 
-// TestOmegaHomeBinaryDir verifies the os.Executable() branch when
-// OMEGA_HOME is unset. The home carries canon separators (card
-// t_630e595d).
+// TestOmegaHomeBinaryDir verifies the os.Executable branch when OMEGA_HOME is unset.
 func TestOmegaHomeBinaryDir(t *testing.T) {
 	t.Setenv("OMEGA_HOME", "")
 	exe, err := os.Executable()
@@ -47,9 +43,7 @@ func TestOmegaHomeBinaryDir(t *testing.T) {
 	}
 }
 
-// TestOmegaHomeFallback verifies that omegaHome() returns a non-empty
-// string when OMEGA_HOME is unset (the os.Executable() branch should
-// succeed in the test binary, so this confirms a valid path is returned).
+// TestOmegaHomeFallback verifies that omegaHome returns a non-empty string when.
 func TestOmegaHomeFallback(t *testing.T) {
 	t.Setenv("OMEGA_HOME", "")
 	got := omegaHome()
@@ -67,20 +61,14 @@ func TestHomeForExe(t *testing.T) {
 	}{
 		// OMEGA_HOME always wins
 		{"env override", "/custom/home", "/home/u/go/bin/omega", "/custom/home"},
-		// release-folder install: home = exe dir
 		{"release folder", "", "/home/u/omega/omega", "/home/u/omega"},
-		// dotfolder install: not a bin dir, stays put
 		{"dotfolder", "", "/home/u/.omega/omega", "/home/u/.omega"},
-		// go install: ~/go/bin is a bin dir -> ~/.omega
 		{"go install", "", "/home/u/go/bin/omega", "/home/u/.omega"},
-		// local bin dir -> ~/.omega
 		{"local bin", "", "/home/u/.local/bin/omega", "/home/u/.omega"},
 		// system PATH install -> ~/.omega
 		{"usr local bin", "", "/usr/local/bin/omega", "/home/u/.omega"},
-		// repo build output: a bin/ subfolder of a checkout keeps home
-		// beside the binary (the v0.6.3 base=="bin" heuristic broke this)
+		// repo build output: a bin/ subfolder of a checkout keeps home beside the binary.
 		{"repo build", "", "/home/u/dev/omega/bin/omega", "/home/u/dev/omega/bin"},
-		// unresolvable exe path -> ~/.omega
 		{"no exe", "", "", "/home/u/.omega"},
 	}
 	for _, c := range cases {
@@ -94,8 +82,7 @@ func TestBootstrapHome(t *testing.T) {
 	home := t.TempDir()
 
 	bootstrapHome(home)
-	// The three infrastructure example templates now land in <home>/config/
-	// (Endo 2026-10-18); omega.db, memory.md, user.md, skills/ stay at root.
+	// The three infrastructure example templates now land in <home>/config/.
 	for _, name := range []string{
 		"config.yaml.example", "mcp.yaml.example", "crons.yaml.example",
 	} {
@@ -103,16 +90,13 @@ func TestBootstrapHome(t *testing.T) {
 			t.Fatalf("bootstrap did not write config/%s: %v", name, err)
 		}
 	}
-	// Nothing is seeded for the memory store: a fresh home boots WITHOUT
-	// memory.md/user.md - they are created by the agent's first
-	// 'memory add'. Nothing is shipped that becomes agent context.
+	// Nothing is seeded for the memory store.
 	for _, name := range []string{"memory.md", "user.md"} {
 		if _, err := os.Stat(filepath.Join(home, name)); !os.IsNotExist(err) {
 			t.Fatalf("bootstrap seeded %s, want none (agent creates it on first use)", name)
 		}
 	}
-	// config.yaml stays example-only: omega runs on defaults, no live
-	// config is ever written (neither at root nor in config/).
+	// config.yaml stays example-only.
 	for _, p := range []string{
 		filepath.Join(home, "config.yaml"),
 		filepath.Join(home, "config", "config.yaml"),
@@ -169,10 +153,7 @@ func TestBootstrapHomeCreatesDir(t *testing.T) {
 	}
 }
 
-// TestBootstrapHomeConfigSubdir is the Endo 2026-10-18 layout law: a
-// fresh home gets exactly <home>/config/{config,mcp,crons}.yaml.example
-// and nothing else writable - omega.db/memory.md/user.md/skills/ stay
-// absent until the agent or operator creates them.
+// TestBootstrapHomeConfigSubdir is the Endo layout law: a fresh home gets exactly.
 func TestBootstrapHomeConfigSubdir(t *testing.T) {
 	home := t.TempDir()
 	bootstrapHome(home)
@@ -185,10 +166,8 @@ func TestBootstrapHomeConfigSubdir(t *testing.T) {
 	}
 }
 
-// TestBootstrapHomeMigratesTrust fires the trust.yaml migration through
-// the real boot path: a home with a legacy root trust.yaml comes out of
-// bootstrapHome with a config/ copy, root untouched. Nothing is
-// invented on a fresh home (no source, no copy).
+// TestBootstrapHomeMigratesTrust fires the trust.yaml migration through the real boot
+// path.
 func TestBootstrapHomeMigratesTrust(t *testing.T) {
 	home := t.TempDir()
 	content := []byte("trusted: [{path: /legacy, level: exact}]\n")
@@ -205,7 +184,6 @@ func TestBootstrapHomeMigratesTrust(t *testing.T) {
 		t.Fatalf("bootstrapHome touched root trust.yaml: %q, %v", before, err)
 	}
 
-	// Fresh home: no source, no copy invented.
 	fresh := t.TempDir()
 	bootstrapHome(fresh)
 	if _, err := os.Stat(filepath.Join(fresh, "config", "trust.yaml")); !os.IsNotExist(err) {
@@ -213,10 +191,9 @@ func TestBootstrapHomeMigratesTrust(t *testing.T) {
 	}
 }
 
-// TestLoggingFileNeverCwd pins the log-path law (card t_0ccda501):
-// the construction default carries no filename, resolveHomePaths routes
-// the empty default and the legacy "omega.log" alias to the home root,
-// and the resolved path can never land in the process CWD.
+// TestLoggingFileNeverCwd pins the log-path law: the construction default carries no
+// filename, resolveHomePaths routes the empty default and the legacy "omega.log" alias
+// to the home root, and the resolved path can never land in the process CWD.
 func TestLoggingFileNeverCwd(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
@@ -230,14 +207,11 @@ func TestLoggingFileNeverCwd(t *testing.T) {
 	if err := resolveHomePaths(&cfg); err != nil {
 		t.Fatalf("resolveHomePaths: %v", err)
 	}
-	// want: canon spelling (the resolveHomePaths boundary normalizes
-	// the separators it constructs - card t_630e595d).
 	want := filepath.ToSlash(filepath.Join(home, "omega.log"))
 	if cfg.Logging.File != want {
 		t.Errorf("resolved Logging.File = %q, want %q", cfg.Logging.File, want)
 	}
 
-	// The legacy bare alias resolves to the home root too.
 	legacy := DefaultConfig()
 	legacy.Logging.File = "omega.log"
 	if err := resolveHomePaths(&legacy); err != nil {
@@ -247,7 +221,6 @@ func TestLoggingFileNeverCwd(t *testing.T) {
 		t.Errorf("legacy alias Logging.File = %q, want %q", legacy.Logging.File, want)
 	}
 
-	// An explicit absolute path is left alone.
 	custom := DefaultConfig()
 	custom.Logging.File = filepath.Join(home, "custom", "log.txt")
 	if err := resolveHomePaths(&custom); err != nil {

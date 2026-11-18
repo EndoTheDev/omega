@@ -13,10 +13,10 @@ import (
 // reconstruction (order, thinking merge, durations were three bug classes
 // that reconstruction produced). kinds:
 //
-//	user        - a user turn: content + images + time
-//	message     - an assistant text segment: content + time + response_ms
-//	thinking    - an assistant reasoning segment: content + thinking_ms
-//	tool_call   - tool meta (tool_call: {id, name, arguments}) - the same
+// user - a user turn: content + images + time
+// message - an assistant text segment: content + time + response_ms
+// thinking - an assistant reasoning segment: content + thinking_ms
+// tool_call - tool meta (tool_call: {id, name, arguments}) - the same
 //	              nested shape the live SSE tool_call frame carries
 //	tool_result - the outcome of a call: tool_call_id + content + is_error +
 //	              gate + elapsed_ms + answer_ms, delivered where history
@@ -24,7 +24,7 @@ import (
 //	              live tool_result frame
 //
 // The shape is the client transcript's component contract: items restore
-// and live stream render through the same components. ID (t_17365247)
+// and live stream render through the same components. ID
 // is the message's store row id as a string - user items need it to
 // address branch points on the variants surface; live-tail items (the
 // run still holds the row) carry none.
@@ -38,59 +38,28 @@ type transcriptItem struct {
 	ToolCall   *core.ToolCall `json:"tool_call,omitempty"`
 	ToolCallID string         `json:"tool_call_id,omitempty"`
 	IsError    bool           `json:"is_error,omitempty"`
-	// Gate is the smart-approval gate's decision record (card
-	// t_1b3e2a8b): the verdict line the gate stamped on the call's
-	// result, rendered on the call's own row. Empty = no machine
-	// decision - no transcript line.
 	Gate      string `json:"gate,omitempty"`
 	ElapsedMs int64  `json:"elapsed_ms,omitempty"`
-	// AnswerMs is the response-return duration (card t_e27c8347): the
-	// wall clock from this call's result to the answer segment's
-	// completion - the following assistant message's response span,
-	// which the loop opens at the last tool result (the wait from
-	// result to the model's next token is generation latency). Zero =
-	// no answer followed this result in history: the next segment
-	// called another tool, or the run ended here - the row shows the
-	// call duration alone.
 	AnswerMs int64               `json:"answer_ms,omitempty"`
 	Images   []core.ImageContent `json:"images,omitempty"` // user: core.User.Images rides the restore
-	// Attachments is the non-image sibling (card t_1ffd07de): the typed
-	// reference records the user message attached - kind, name, size,
-	// path. References only; the restore path renders them as chips.
 	Attachments []core.Attachment `json:"attachments,omitempty"`
-	// running marks the LIVE tail's in-flight items (the transcript-refs
-	// merge): an open thinking/response block streams from the restored
-	// item, and a tool call without its result yet renders as the
-	// running line with elapsed-so-far - the same shapes the live SSE
-	// path paints. Persisted items never carry it.
+	// running marks the LIVE tail's in-flight items (the transcript-refs merge). Persisted
+	// items never carry it.
 	Running bool `json:"running,omitempty"`
-	// StartedAt is an UNANSWERED tool_call's open wall clock, RFC 3339
-	// (card t_6bad9f6f round 3). The client derives the row's clock
-	// from it (now - StartedAt) instead of from ElapsedMs, a duration
-	// measured when the payload was built: a YIELDED call emits no
-	// delta between its conversion and its wake, so the canvas store
-	// kept serving the build-time duration - and a pane rebuilt from
-	// that payload (a dock-tab switch) restarted the meter at zero.
-	// A start stamp cannot go stale, however long the payload is
-	// cached. Answered calls carry their final durations instead.
+	// StartedAt is an UNANSWERED tool_call's open wall clock, RFC 3339. A start stamp
+	// cannot go stale, however long the payload is cached.
 	StartedAt string `json:"started_at,omitempty"`
 }
 
-// handleSessionTranscript serves GET /sessions/{id}/transcript: the
-// render-ready item stream for the webui restore path (one request on
-// session open replaces both the history fetch and its reconstruction
-// loop). Same store gates as the other session endpoints: 501 without a
-// store, 404 for an unknown or deleted session, 500 on a store fault.
-// Items come from the ACTIVE PATH (t_17365247): GetActiveView derives
-// the tree from the persisted parent pointers and returns the render
-// path - sessions without pointers derive the linear append order and
-// render exactly as they always did - plus the variants block (branch
-// points with >=2 sibling runs; absent for sessions without variants).
-// The active path IS the final order (assistant segments carry thinking
-// -> calls -> content in message order; tool results sit where history
-// placed them), so timing and ordering are the store's facts,
-// recomputed on every read: old sessions written before a persistence
-// fix keep whatever shape they were saved with.
+// handleSessionTranscript serves GET /sessions/{id}/transcript. Items come from the
+// ACTIVE PATH: GetActiveView derives the tree from the persisted parent pointers and
+// returns the render path - sessions without pointers derive the linear append order
+// and render exactly as they always did - plus the variants block (branch points with
+// >=2 sibling runs; absent for sessions without variants). The active path IS the final
+// order (assistant segments carry thinking -> calls -> content in message order; tool
+// results sit where history placed them), so timing and ordering are the store's facts,
+// recomputed on every read: old sessions written before a persistence fix keep whatever
+// shape they were saved with.
 func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -101,8 +70,7 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "missing session id", http.StatusBadRequest)
 		return
 	}
-	// Ephemeral transcripts come from the registry (card t_d96a5cd5);
-	// ok=false hands non-eph ids to the store path below.
+	// Ephemeral transcripts come from the registry.
 	if s.serveEphemeralTranscript(w, id) {
 		return
 	}
@@ -120,28 +88,18 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "get transcript: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// A branch-pinned live run (retry, fork-of-user) cuts the old
-	// sibling's rows off the path (t_19c100dd): the tail below renders
-	// into the response's slot, never stacked under the prior answer.
+	// A branch-pinned live run (retry, fork-of-user) cuts the old sibling's rows off the
+	// path: the tail below renders into the response's slot, never stacked under the prior
+	// answer.
 	path := view.Path
 	if branch, floor, pinned := s.runs.runBranch(id); pinned {
 		path = branchPath(path, branch, floor)
 	}
 	items := buildTranscriptItems(path)
-	// Reattach completeness (card t_692254f7): a session with a live run
-	// owns items the store has not seen yet - the run persists only at
-	// its end, so its segments (open thinking, running tool call, the
-	// answer so far) live in the RunHub's accumulator. The live tail
-	// merges BEHIND the persisted history in wire order: the restored
-	// view shows the in-flight tool row with its elapsed meter and the
-	// attached result lands on it, instead of the refresh dropping the
-	// run - the "transcript is gone, but it says streaming" report. The
-	// tail is a SNAPSHOT (rebuilt per event), so its running tool line
-	// ages with the snapshot: a reload mid-call must anchor the meter at
-	// the call's true elapsed, not the call-open anchor the last event
-	// baked (t_6bad9f6f). composeItems is the panel's own merge law - a
-	// row the store already carries is served ONCE, and a running twin
-	// donates its anchor onto it.
+	// Reattach completeness: a session with a live run owns items the store has not seen
+	// yet. The tail is a SNAPSHOT (rebuilt per event), so its running tool line ages with
+	// the snapshot: a reload mid-call must anchor the meter at the call's true elapsed,
+	// not the call-open anchor the last event baked.
 	if tail, builtAt, live := s.runs.tailSnapshot(id); live {
 		items = composeItems(items, freshenRunningCalls(tail, time.Since(builtAt)))
 	}
@@ -149,13 +107,9 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"session": sess,
 			"items":   items,
-			// live-run flag (always present, running:true/false): the
-			// RunHub, not the client, owns "is this session streaming" -
-			// the webui reattach flow reads this on session open
+			// live-run flag (always present, running:true/false).
 			"running": s.runs.active(id),
-			// variants block (t_17365247): branch points with >=2
-			// sibling runs - message_id (the parent), count, the active
-			// index, the sibling head ids.
+			// variants block: branch points with >=2 sibling runs.
 			"variants": view.Branches,
 		})
 		return
@@ -165,21 +119,12 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session": sess,
 		"items":   items,
-		// live-run flag (always present, running:true/false): the RunHub,
-		// not the client, owns "is this session streaming" - the webui
-		// reattach flow reads this on session open
+		// live-run flag (always present, running:true/false).
 		"running": s.runs.active(id),
 	})
 }
 
-// buildTranscriptItems maps persisted history into wire-order transcript
-// items. Pure: no store, no server state. One assistant message yields
-// thinking (first), then its text, then its calls - the order the live
-// stream produced them. Tool-role messages become tool_result items in
-// place (they are appended after the calls in history). Everything else
-// in the stream of records (system, model_change, thinking_level_change)
-// and any thin message (no content, no thinking, no calls) renders
-// nothing.
+// buildTranscriptItems maps persisted history into wire-order transcript items.
 func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 	items := make([]transcriptItem, 0, len(msgs))
 	answered := answeredCalls(msgs)
@@ -195,14 +140,7 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 				ID:      id,
 				Content: m.Content,
 				Time:    transcriptTime(sm.CreatedAt, m.Timestamp),
-				// images ride the restore (scope add 2026-10-20): the
-				// persisted payload carries core.User.Images, the client
-				// renders the thumbnails - without this the attach
-				// pipeline's image messages come back as text-only
 				Images: m.Images,
-				// the non-image references ride the same way (card
-				// t_1ffd07de): a reloaded session shows the attachment
-				// chips the live send showed
 				Attachments: m.Attachments,
 			})
 		case core.Assistant:
@@ -233,11 +171,7 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 			for i := range m.ToolCalls {
 				tc := m.ToolCalls[i]
 				it := transcriptItem{Kind: "tool_call", ToolCall: &tc}
-				// an unanswered call is the pending/yield shape: stamp
-				// its open wall clock (the assistant row that carries
-				// the calls is persisted right before they execute) so
-				// every reader derives the row's clock instead of
-				// restarting it (card t_6bad9f6f round 3)
+				// an unanswered call is the pending/yield shape.
 				if !answered[tc.ID] {
 					it.StartedAt = transcriptTime(sm.CreatedAt, m.Timestamp)
 				}
@@ -261,9 +195,7 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 			it.AnswerMs = answerWindowMs(msgs, i+1)
 			items = append(items, it)
 		case core.YieldResult:
-			// The synthetic re-entry message renders as its call's
-			// result row - the transcript of a yield-class call is
-			// the call (turn A) and this row (the wake turn).
+			// The synthetic re-entry message renders as its call's result row.
 			if m.ToolCallID == "" {
 				continue
 			}
@@ -285,10 +217,7 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 	return items
 }
 
-// answeredCalls collects the call ids history holds a result row for -
-// tool results and yield-class wake results alike (both render as the
-// call's result). An unanswered call is the pending/yield row, the one
-// that carries its open wall clock. Pure.
+// answeredCalls collects the call ids history holds a result row for.
 func answeredCalls(msgs []core.StoredMessage) map[string]bool {
 	answered := make(map[string]bool, len(msgs))
 	for _, sm := range msgs {
@@ -316,16 +245,8 @@ func callStartStamp(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
-// answerWindowMs looks ahead from a tool result's position for the
-// answer segment the result unlocked: the next assistant message's
-// response span, the wall clock the loop bills from the last tool
-// result to the answer's completion (card t_e27c8347 - the row's
-// second number). Consecutive results (parallel calls) share the one
-// answer; anything that renders nothing (results, system rows) is
-// skipped. A user turn (the run ended - yield, error, stop) or a
-// contentless assistant (the model called another tool instead of
-// answering) yields zero: nothing answered at that point in history.
-// Pure.
+// answerWindowMs looks ahead from a tool result's position for the answer segment the
+// result unlocked.
 func answerWindowMs(msgs []core.StoredMessage, from int) int64 {
 	for _, sm := range msgs[from:] {
 		switch m := sm.Message.(type) {
@@ -341,10 +262,7 @@ func answerWindowMs(msgs []core.StoredMessage, from int) int64 {
 	return 0
 }
 
-// transcriptTime picks the display timestamp: the store-level write time
-// is authoritative (it is when the message actually landed); the
-// message's own timestamp covers rows saved before created_at was
-// recorded.
+// transcriptTime picks the display timestamp.
 func transcriptTime(createdAt, stamp string) string {
 	if createdAt != "" {
 		return createdAt
@@ -352,21 +270,10 @@ func transcriptTime(createdAt, stamp string) string {
 	return stamp
 }
 
-// liveTranscriptItems maps a detached run's accumulated state into
-// transcript wire items - the RunHub's live truth that GET
-// /sessions/{id}/transcript merges behind the persisted history while
-// the run holds the session's slot. closed segments already left the
-// accumulator (a chunk after tool results opened the next segment);
-// open is the record still taking events. Completed spans carry their
-// measured durations; the open record's in-flight parts carry the
-// running hint instead (no final durations on the wire - the client
-// renders them streaming), and a call without its result yet renders as
-// the running tool line with elapsed-so-far in ElapsedMs.
-//
-// Pure and race-free: the run's own goroutine builds the slice just
-// after accumulateAssistant advanced the records, so callStarts reads
-// (and clears) race nothing; the hub stores the finished slice by
-// replace, never mutation.
+// liveTranscriptItems maps a detached run's accumulated state into transcript wire
+// items. Pure and race-free: the run's own goroutine builds the slice just after
+// accumulateAssistant advanced the records, so callStarts reads (and clears) race
+// nothing; the hub stores the finished slice by replace, never mutation.
 func liveTranscriptItems(closed []assistantRecord, open assistantRecord, now time.Time) []transcriptItem {
 	var items []transcriptItem
 	for _, rec := range closed {
@@ -375,23 +282,9 @@ func liveTranscriptItems(closed []assistantRecord, open assistantRecord, now tim
 	return appendRecordItems(items, open, true, now)
 }
 
-// freshenRunningCalls advances a snapshot's running tool lines by the
-// snapshot's age. A tool run emits NO event between the call opening
-// (ToolCallEvent) and its result, so the snapshot froze each unanswered
-// call's elapsed_ms at the instant of the last rebuild - the call-open
-// anchor, ~0 - and the panel (or the transcript's reattach merge) would
-// serve that lie for the whole call: a tab-switch remount restarted the
-// visible meter at 0:00 (card t_6bad9f6f). Adding the age puts the
-// anchor back on the wall clock the call actually started at: the
-// snapshot's now.Sub(callStart) plus (now - snapshot) is now-callStart.
-//
-// Only RUNNING CALLS age. A thinking/answer span freezes at its last
-// chunk the moment a tool call opens (phaseElapsed's zero open
-// boundary - the tool's wall clock bills to nobody), so aging one would
-// overstate a duration the server already stopped measuring.
-//
-// Copies on the way out: a stored snapshot is replaced, never mutated in
-// place, and readers race the next rebuild. Pure.
+// freshenRunningCalls advances a snapshot's running tool lines by the snapshot's age.
+// Copies on the way out: a stored snapshot is replaced, never mutated in place, and
+// readers race the next rebuild.
 func freshenRunningCalls(items []transcriptItem, age time.Duration) []transcriptItem {
 	if age <= 0 {
 		return items
@@ -407,29 +300,14 @@ func freshenRunningCalls(items []transcriptItem, age time.Duration) []transcript
 	return out
 }
 
-// appendRecordItems flattens one accumulator record into wire items:
-// thinking, then content, then the calls, then the results - the order
-// the live stream produced them and persisted history replays.
-// Running is true only on the open record's still-in-flight parts: its
-// thinking streams while no content has started, its content streams,
-// and every call the results have not answered is the running tool
-// line. A record whose segment a tool call already ended (segDone)
-// ships its text rows SETTLED - measured spans, no running bit - even
-// though the record is still open for the call's result: the tool's
-// wall clock belongs to nobody, and the text can no longer grow (card
-// t_484cbb27). Pure.
+// appendRecordItems flattens one accumulator record into wire items.
 func appendRecordItems(items []transcriptItem, rec assistantRecord, open bool, now time.Time) []transcriptItem {
 	if rec.thinking != "" {
 		it := transcriptItem{Kind: "thinking", Content: rec.thinking}
-		// the reasoning phase is over once content started or a tool
-		// call closed the segment - running is the in-flight hint, not
-		// the record's life story
+		// the reasoning phase is over once content started or a tool call closed the segment.
 		if open && !rec.segDone && rec.content == "" {
 			it.Running = true
-			// the open span's elapsed-so-far (card t_95385aba): a
-			// remounted thinking block counts on from the reasoning
-			// already burnt instead of restarting at the mount
-			// moment - the same anchor a running tool line carries
+			// the open span's elapsed-so-far.
 			it.ElapsedMs = phaseElapsed(rec.thinkDur, rec.lastThink, rec.openAt, now)
 		} else {
 			it.ThinkingMs = rec.thinkDur.Milliseconds()
@@ -440,13 +318,10 @@ func appendRecordItems(items []transcriptItem, rec assistantRecord, open bool, n
 		it := transcriptItem{Kind: "message", Content: rec.content}
 		it.Running = open && !rec.segDone
 		if it.Running {
-			// the answer's elapsed-so-far (card t_95385aba) - the
-			// response twin of the thinking anchor above
 			it.ElapsedMs = phaseElapsed(rec.respDur, rec.lastResp, rec.openAt, now)
 		} else {
-			// a finished segment's measured span: the same number the
-			// persisted row will carry, so the landing turn never
-			// snaps the label and a remount mid-call never ticks it
+			// a finished segment's measured span: the same number the persisted row will carry,
+			// so the landing turn never snaps the label and a remount mid-call never ticks it
 			it.ResponseMs = rec.respDur.Milliseconds()
 		}
 		items = append(items, it)
@@ -462,9 +337,7 @@ func appendRecordItems(items []transcriptItem, rec assistantRecord, open bool, n
 			it.Running = true
 			if start, ok := rec.callStarts[tc.ID]; ok && !start.IsZero() {
 				it.ElapsedMs = now.Sub(start).Milliseconds()
-				// the same clock as a start STAMP: a payload rebuilt
-				// from a snapshot (or served after the run ended)
-				// derives the row's elapsed instead of restarting it
+				// the same clock as a start STAMP.
 				it.StartedAt = callStartStamp(start)
 			}
 		}

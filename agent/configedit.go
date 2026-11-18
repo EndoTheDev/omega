@@ -1,7 +1,7 @@
 package agent
 
 // agent/configedit.go: the agents DEFINITION LAYER (0.17.3 make-over,
-// card t_f47319d2 - the backend half of the two-card flip). The
+// the backend half of the two-card flip). The
 // agents/<name>/config/config.yaml file is the whole definition of an
 // agent; this file is its read, its write, and the laws both enforce:
 //
@@ -55,15 +55,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ErrAgentConfigLocked marks the DEFAULT agent's read-only config: the
-// layer file is the home config itself (the daemon's brain), so the
-// agents surface must never write it. The endpoint maps it to 409 and
-// the tab renders the default row's detail read-only.
+// ErrAgentConfigLocked marks the DEFAULT agent's read-only config: the layer file is
+// the home config itself (the daemon's brain), so the agents surface must never write
+// it.
 var ErrAgentConfigLocked = errors.New("the default agent's config is the home config - it is not editable from the agents surface")
 
-// ErrAgentHomeLocked marks the main agent's DELETE: its home is the
-// daemon's home (the config, the store, the whole running instance), so
-// the delete verb refuses it. The endpoint maps it to 409.
+// ErrAgentHomeLocked marks the main agent's DELETE.
 var ErrAgentHomeLocked = errors.New("the main agent's home is the daemon's home - it cannot be deleted; delete a secondary agent home instead")
 
 // ErrAgentNotExist marks a delete whose target home is not on disk. The
@@ -71,39 +68,28 @@ var ErrAgentHomeLocked = errors.New("the main agent's home is the daemon's home 
 // a server fault, and deleting an absent home is not "already done".
 var ErrAgentNotExist = errors.New("unknown agent")
 
-// AgentConfigScaffoldError marks a caller's-mistake field (an unknown
-// provider instance, a toggle the host has off): the 400 lane, not a
-// 500.
+// AgentConfigScaffoldError marks a caller's-mistake field (an unknown provider.
 type AgentConfigScaffoldError struct{ Message string }
 
 func (e *AgentConfigScaffoldError) Error() string { return e.Message }
 
-// MaskedSecretPlaceholder is the mask the read lanes put in place of a
-// stored provider.api_key (cmd/omega's maskedSecret, the settings
-// payload's secret knob). It is NOT a secret: a UI echoing the mask
-// back is refused rather than persisted. The agent package cannot
-// import the host's constant (layer law), so the literal is mirrored
-// here and a cmd/omega test pins the two strings equal.
+// MaskedSecretPlaceholder is the mask the read lanes put in place of a stored. The
+// agent package cannot import the host's constant (layer law), so the literal is
+// mirrored here and a cmd/omega test pins the two strings equal.
 const MaskedSecretPlaceholder = "****"
 
-// DefaultProviderInstance is the reserved instance id that names the
-// host's own provider: section - the instance an agent gets when it
-// references none. It mirrors the reserved name the host config refuses
-// as a NAMED instance (cmd/omega Config.Validate), so one word cannot
-// mean two endpoints.
+// DefaultProviderInstance is the reserved instance id that names the host's own
+// provider. It mirrors the reserved name the host config refuses as a NAMED instance
+// (cmd/omega Config.Validate), so one word cannot mean two endpoints.
 const DefaultProviderInstance = "default"
 
-// AlwaysOnAgentModules is the always-on tier, under the names the mount
-// machinery knows (0.17.3 tier re-law, card t_ee3a968b: agent-loop +
-// provider + logging, the folded observability module). None is in the
-// toggleable tier (agent/plugin.go), so none can be switched off by an
-// agent or by the host - the law is structural - and naming one in
-// toggles is refused so a file never claims a choice it does not have.
+// AlwaysOnAgentModules is the always-on tier, under the names the mount machinery. None
+// is in the toggleable tier (agent/plugin.go), so none can be switched off by an agent
+// or by the host - the law is structural - and naming one in toggles is refused so a
+// file never claims a choice it does not have.
 var AlwaysOnAgentModules = []string{"agent-loop", "provider", "observability"}
 
-// AgentInherit is the inherit-as-disabled block: main's artifacts are
-// visible to every secondary agent and inert until the matching flag is
-// on. An absent block, or a flag the block omits, reads off.
+// AgentInherit is the inherit-as-disabled block.
 type AgentInherit struct {
 	Skills bool `yaml:"skills" json:"skills"`
 	Soul   bool `yaml:"soul" json:"soul"`
@@ -114,27 +100,11 @@ type AgentInherit struct {
 // Any reports whether at least one artifact kind is enabled.
 func (i AgentInherit) Any() bool { return i.Skills || i.Soul || i.User || i.Memory }
 
-// AgentConfigUpdates is the PUT /agents/{name} write set, one field per
-// item of the FIELD SET. A nil field is untouched - the endpoint writes
-// only what the request carries.
-//
-// MaxTurns writes a yaml INT node: the layer's max_turns is
-// unmarshalled straight into Config.MaxTurns int at the next wake, so a
-// quoted "42" would be a boot error, and 0 ("no cap") is a real value:
-// nil is what means unset.
-//
-// ProviderType, Host and APIKey are RETIRED knobs kept as explicit
-// refusals: a client that still sends one gets the secret-free law
-// spelled out (400) instead of a silent drop that would leave the
-// operator believing the file changed.
-//
-// Unset is the reset verb: each entry names a knob in the SAME dotted
-// vocabulary the settings scope payload uses, and its key pair is
-// DELETED from the layer file instead of being written down with main's
-// value. That difference is the whole point - the scope payload flags a
-// knob "overridden" structurally (the file names the key), so a
-// reset-by-write would leave a permanent phantom override. Deleting is
-// the only reset that falls back to main.
+// AgentConfigUpdates is the PUT /agents/{name} write set, one field per item of the. A
+// nil field is untouched - the endpoint writes only what the request carries. MaxTurns
+// writes a yaml INT node: the layer's max_turns is unmarshalled straight into
+// Config.MaxTurns int at the next wake, so a quoted "42" would be a boot error, and 0
+// ("no cap") is a real value: nil is what means unset.
 type AgentConfigUpdates struct {
 	Description      *string
 	SystemPrompt     *string
@@ -146,18 +116,13 @@ type AgentConfigUpdates struct {
 	Inherit          *AgentInherit
 	Unset            []string
 
-	// Retired: refused on every write (the secret-free provider law).
 	ProviderType *string
 	Host         *string
 	APIKey       *string
 }
 
-// ScaffoldUnsetKeys is the dotted vocabulary `unset` accepts: every
-// scalar knob of the field set, spelled the way the settings scope
-// payload spells it (cmd/omega/settings.go scopeGroups). An entry
-// outside it is refused - the wire names a real layer key, never a
-// guess at one. The legacy secret keys stay in the vocabulary on
-// purpose: deleting them is the scrub verb, writing them is refused.
+// ScaffoldUnsetKeys is the dotted vocabulary `unset` accepts. An entry outside it is
+// refused - the wire names a real layer key, never a guess at one.
 var ScaffoldUnsetKeys = []string{
 	"description",
 	"system_prompt",
@@ -172,10 +137,9 @@ var ScaffoldUnsetKeys = []string{
 	"inherit",
 }
 
-// updatesSetKey reports whether this request also SETS the dotted key -
-// the set/unset conflict check. A key both written and deleted in one
-// request has two answers and no ordering that is obviously right, so it
-// is refused loudly rather than resolved silently.
+// updatesSetKey reports whether this request also SETS the dotted key. A key both
+// written and deleted in one request has two answers and no ordering that is obviously
+// right, so it is refused loudly rather than resolved silently.
 func updatesSetKey(u AgentConfigUpdates, key string) bool {
 	switch key {
 	case "description":
@@ -204,11 +168,9 @@ func updatesSetKey(u AgentConfigUpdates, key string) bool {
 	return false
 }
 
-// HostDefinition is what the HOST allows an agent to reference: the
-// named provider instances settings defines, and the host's own
-// disabled: fold (the enabled set an agent's toggles must stay inside).
-// Read from the home config, which may live at the settled
-// config/config.yaml or the legacy home root.
+// HostDefinition is what the HOST allows an agent to reference: the named provider
+// instances settings defines, and the host's own disabled: fold (the enabled set an
+// agent's toggles must stay inside).
 type HostDefinition struct {
 	ProviderInstances []string
 	DisabledModules   []string
@@ -217,8 +179,7 @@ type HostDefinition struct {
 	DisabledAgents    []string
 }
 
-// HostEnabledModule is the subset law's single predicate: the host runs
-// the capsule unless its fold names it off.
+// HostEnabledModule is the subset law's single predicate.
 func (h HostDefinition) HostEnabledModule(name string) bool {
 	return !slices.Contains(h.DisabledModules, name)
 }
@@ -228,9 +189,7 @@ func (h HostDefinition) HostEnabledSkill(name string) bool {
 	return !slices.Contains(h.DisabledSkills, name)
 }
 
-// HostConfigPath resolves the host's config file for the home: the
-// settled layout first (config/config.yaml), the legacy home root
-// second. Empty when neither exists.
+// HostConfigPath resolves the host's config file for the home.
 func HostConfigPath(home string) string {
 	for _, p := range []string{
 		filepath.Join(home, "config", "config.yaml"),
@@ -243,16 +202,11 @@ func HostConfigPath(home string) string {
 	return ""
 }
 
-// hostConfigSections is the slice of the host config LoadHostDefinition
-// reads: the provider instance rows and the disabled: fold. NAMED, not
-// anonymous - an anonymous struct spells its yaml tags into the binary's
-// type symbols, and nm-purity reads the capsule noun there (the same law
-// disabledFold below obeys).
+// hostConfigSections is the slice of the host config LoadHostDefinition reads.
 type hostConfigSections struct {
 	Provider hostProviderSection `yaml:"provider"`
-	// Providers is the pre-merge top-level map (card t_7dcd4280): the
-	// load-time fold (card t_bf21ee07) turns it into provider.instances,
-	// and a deployed config that still carries it must validate an
+	// Providers is the pre-merge top-level map: the load-time fold turns it into
+	// provider.instances, and a deployed config that still carries it must validate an
 	// agent's provider.instance reference too.
 	Providers map[string]hostProviderRow `yaml:"providers"`
 	Disabled  yaml.Node                  `yaml:"disabled"`
@@ -263,9 +217,7 @@ type hostProviderSection struct {
 	Instances []hostProviderRow `yaml:"instances"`
 }
 
-// hostProviderRow is one provider instance row as the host config spells
-// it: only the NAME is read here (the endpoint columns are the provider
-// capsule's business).
+// hostProviderRow is one provider instance row as the host config spells it.
 type hostProviderRow struct {
 	Name   string `yaml:"name"`
 	Type   string `yaml:"type"`
@@ -273,11 +225,10 @@ type hostProviderRow struct {
 	APIKey string `yaml:"api_key"`
 }
 
-// LoadHostDefinition reads the host config's provider instances and
-// disabled: fold. A home with no config file answers the zero
-// definition: validation then refuses every instance reference loudly,
-// which is the truth - an agent cannot reference settings that do not
-// exist.
+// LoadHostDefinition reads the host config's provider instances and disabled: fold. A
+// home with no config file answers the zero definition: validation then refuses every
+// instance reference loudly, which is the truth - an agent cannot reference settings
+// that do not exist.
 func LoadHostDefinition(home string) (HostDefinition, error) {
 	var host HostDefinition
 	path := HostConfigPath(home)
@@ -305,9 +256,7 @@ func LoadHostDefinition(home string) (HostDefinition, error) {
 		host.ProviderInstances = append(host.ProviderInstances, name)
 	}
 	slices.Sort(host.ProviderInstances)
-	// The disabled: fold carries two legal shapes (cmd/omega's
-	// DisabledNamespaces): the namespaced mapping this version writes,
-	// and the legacy flat sequence of module names. Both are host truth.
+	// The disabled: fold carries two legal shapes (cmd/omega's DisabledNamespaces).
 	if raw.Disabled.Kind != 0 {
 		modules, skills, tools, agents, err := parseDisabledFold(&raw.Disabled)
 		if err != nil {
@@ -318,11 +267,7 @@ func LoadHostDefinition(home string) (HostDefinition, error) {
 	return host, nil
 }
 
-// disabledFold is the namespaced shape of the host config's disabled:
-// fold. NAMED, not inline: an anonymous struct spells its yaml tags into
-// the type symbols the linker emits, and this fold's tags name three
-// capsules (skills, tools, agents) - see agentLayerFile for the law
-// (card t_61ad4490, pinned by symbolvocab_test.go).
+// disabledFold is the namespaced shape of the host config's disabled: fold.
 type disabledFold struct {
 	Modules []string `yaml:"modules"`
 	Skills  []string `yaml:"skills"`
@@ -330,11 +275,10 @@ type disabledFold struct {
 	Agents  []string `yaml:"agents"`
 }
 
-// parseDisabledFold decodes one disabled: node in either shape. A node
-// of neither shape, or one that will not decode, is an ERROR: a fold
-// that silently reads as "nothing disabled" would validate agent writes
-// against a phantom everything-enabled host - the wrong direction for a
-// law that refuses what the host has switched off.
+// parseDisabledFold decodes one disabled: node in either shape. A node of neither
+// shape, or one that will not decode, is an ERROR: a fold that silently reads as
+// "nothing disabled" would validate agent writes against a phantom everything-enabled
+// host - the wrong direction for a law that refuses what the host has switched off.
 func parseDisabledFold(node *yaml.Node) (modules, skills, tools, agents []string, err error) {
 	if node.Kind == yaml.SequenceNode {
 		var flat []string
@@ -353,19 +297,13 @@ func parseDisabledFold(node *yaml.Node) (modules, skills, tools, agents []string
 	return fold.Modules, fold.Skills, fold.Tools, fold.Agents, nil
 }
 
-// LayerValue is one string knob as the layer file gives it: the value
-// and whether the file names the key at all. An explicitly empty value
-// is a real override ("the agent set it empty" is not "inherit").
+// LayerValue is one string knob as the layer file gives it.
 type LayerValue struct {
 	Value string
 	Set   bool
 }
 
-// AgentConfigLayer is the presence-aware read of one agent's layer
-// file: every knob of the field set, plus whether the file names it at
-// all. A knob the file leaves commented out or absent reads Set=false -
-// the scaffold template comments every knob, so an unedited agent
-// overrides nothing.
+// AgentConfigLayer is the presence-aware read of one agent's layer file.
 type AgentConfigLayer struct {
 	Description      LayerValue
 	SystemPrompt     LayerValue
@@ -376,35 +314,24 @@ type AgentConfigLayer struct {
 	// always-off default, never "inherit main's set".
 	Toggles    []string
 	TogglesSet bool
-	// SkillsAllow is the explicit allowlist. Empty is NO skills.
 	SkillsAllow    []string
 	SkillsAllowSet bool
 	Inherit        AgentInherit
 	InheritSet     bool
-	// LegacySecrets names the secret keys this file still carries. The
-	// VALUES never leave the read: the lane reports the law violation,
-	// never the secret.
+	// LegacySecrets names the secret keys this file still carries. The VALUES never leave
+	// the read: the lane reports the law violation, never the secret.
 	LegacySecrets []string
 }
 
-// SecretFree reports whether the file honors the secret-free provider
-// law.
+// SecretFree reports whether the file honors the secret-free provider law.
 func (l AgentConfigLayer) SecretFree() bool { return len(l.LegacySecrets) == 0 }
 
-// agentLayerFile is the presence-aware decode of one agent layer file.
-// Pointers carry presence: nil = the key is absent, a pointer to "" = the
-// file explicitly set the knob empty. MaxTurns is decoded loosely on
-// purpose: a hand-quoted "42" must not make the whole layer unreadable -
-// the write path exists to correct exactly that node.
-//
-// It is a NAMED type, never an inline `var raw struct { ... }`. The
-// compiler spells an ANONYMOUS struct's field tags into the type
-// descriptor and equality symbols it emits for it, and go1.26 prints them
-// whole: `type:.eq.struct { ... Provider *struct { ... } "yaml:\"provider\"" ... }`.
-// A capsule noun in a host-owned symbol survives that capsule's removal -
-// the nm-purity red this file filed (card t_61ad4490: the provider
-// rotation failed on master while the scrub and the build were clean).
-// A named type's symbol is its name, so the tags never reach the binary.
+// agentLayerFile is the presence-aware decode of one agent layer file. Pointers carry
+// presence: nil = the key is absent, a pointer to "" = the file explicitly set the knob
+// empty. MaxTurns is decoded loosely on purpose: a hand-quoted "42" must not make the
+// whole layer unreadable - the write path exists to correct exactly that node. It is a
+// NAMED type, never an inline `var raw struct {.. A named type's symbol is its name, so
+// the tags never reach the binary.
 type agentLayerFile struct {
 	Description  *string                  `yaml:"description"`
 	SystemPrompt *string                  `yaml:"system_prompt"`
@@ -415,10 +342,9 @@ type agentLayerFile struct {
 	Inherit      *AgentInherit            `yaml:"inherit"`
 }
 
-// agentLayerProviderBlock is the layer's provider block: the instance
-// reference this law allows, its model name, and the three RETIRED
-// secret keys, read for PRESENCE only - their values never leave the
-// read.
+// agentLayerProviderBlock is the layer's provider block: the instance reference this
+// law allows, its model name, and the three RETIRED secret keys, read for PRESENCE only
+// - their values never leave the read.
 type agentLayerProviderBlock struct {
 	Instance  *string `yaml:"instance"`
 	ModelName *string `yaml:"model_name"`
@@ -427,21 +353,12 @@ type agentLayerProviderBlock struct {
 	APIKey    *string `yaml:"api_key"`
 }
 
-// agentLayerSkillsBlock is the layer's skills block: the explicit
-// allowlist over the visible registry.
+// agentLayerSkillsBlock is the layer's skills block.
 type agentLayerSkillsBlock struct {
 	Allow *[]string `yaml:"allow"`
 }
 
-// ReadAgentConfigLayer reads one agent's layer with presence. A missing
-// (or empty) file is the empty layer - a scaffolded agent whose config
-// was deleted still reads, it simply enables nothing. A file that will
-// not parse is a loud error: reporting half-parsed values would make
-// every override flag a guess.
-//
-// The DEFAULT agent refuses here: its "layer" is the home config, so
-// reading it would report the daemon's own knobs as agent overrides. It
-// is not a scope (its home is the home root).
+// ReadAgentConfigLayer reads one agent's layer with presence.
 func ReadAgentConfigLayer(home, name string) (AgentConfigLayer, error) {
 	var lay AgentConfigLayer
 	if name == DefaultAgentName {
@@ -474,7 +391,6 @@ func ReadAgentConfigLayer(home, name string) (AgentConfigLayer, error) {
 	if raw.Provider != nil {
 		set(&lay.ProviderInstance, raw.Provider.Instance)
 		set(&lay.ModelName, raw.Provider.ModelName)
-		// Presence only - the values are dropped on the floor.
 		for key, present := range map[string]bool{
 			"provider.api_key": raw.Provider.APIKey != nil,
 			"provider.host":    raw.Provider.Host != nil,
@@ -499,9 +415,7 @@ func ReadAgentConfigLayer(home, name string) (AgentConfigLayer, error) {
 	return lay, nil
 }
 
-// coerceTurns reads max_turns from its decoded YAML value: an int is the
-// write path's own shape, a numeric string is a hand edit (the write
-// path corrects it to an int node), and anything else means unset.
+// coerceTurns reads max_turns from its decoded YAML value.
 func coerceTurns(v any) *int {
 	switch t := v.(type) {
 	case int:
@@ -535,15 +449,13 @@ func normalizeNames(in []string) []string {
 	return out
 }
 
-// validateAgentUpdates is the refusal lane: every caller's-mistake field
-// answers AgentConfigScaffoldError (the endpoint's 400), never a half
-// write. host is the settings truth the request must respect; visible is
-// the skill registry the agent can see (own + shared + main's own when
-// inherit.skills is on).
+// validateAgentUpdates is the refusal lane: every caller's-mistake field answers
+// AgentConfigScaffoldError (the endpoint's 400), never a half write. host is the
+// settings truth the request must respect; visible is the skill registry the agent can
+// see (own + shared + main's own when inherit.skills is on).
 func validateAgentUpdates(u AgentConfigUpdates, host HostDefinition, visible []string) error {
-	// The secret-free law: a secret written into an agent file is a law
-	// violation, not a field. Name the endpoint that actually owns it so
-	// the caller has a next step.
+	// The secret-free law: a secret written into an agent file is a law violation, not a.
+	// Name the endpoint that actually owns it so the caller has a next step.
 	for _, retired := range []struct {
 		key   string
 		value *string
@@ -573,7 +485,6 @@ func validateAgentUpdates(u AgentConfigUpdates, host HostDefinition, visible []s
 	if u.MaxTurns != nil && *u.MaxTurns < 0 {
 		return &AgentConfigScaffoldError{Message: fmt.Sprintf("max_turns %d is negative (want >= 0; 0 means no cap, omit the knob to inherit)", *u.MaxTurns)}
 	}
-	// The always-off and subset laws, one entry at a time.
 	if u.Toggles != nil {
 		for _, name := range *u.Toggles {
 			name = strings.TrimSpace(name)
@@ -625,12 +536,11 @@ func validateAgentUpdates(u AgentConfigUpdates, host HostDefinition, visible []s
 }
 
 // UpdateAgentConfigLayer upserts the definition layer into
-// agents/<name>/config/config.yaml (the agent's own layer - NEVER the
-// home config: the DEFAULT agent refuses here, its config IS the home
-// config and the agents surface renders it read-only). The write is
-// atomic; untouched keys keep their comments. Enabling an inherit kind
-// materializes main's artifact into the agent home, so the flag can
-// never read as on while the artifact is missing.
+// agents/<name>/config/config.yaml (the agent's own layer - NEVER the home config: the
+// DEFAULT agent refuses here, its config IS the home config and the agents surface
+// renders it read-only). The write is atomic; untouched keys keep their comments.
+// Enabling an inherit kind materializes main's artifact into the agent home, so the
+// flag can never read as on while the artifact is missing.
 func UpdateAgentConfigLayer(home, name string, u AgentConfigUpdates) error {
 	if name == DefaultAgentName {
 		return ErrAgentConfigLocked
@@ -643,8 +553,6 @@ func UpdateAgentConfigLayer(home, name string, u AgentConfigUpdates) error {
 	if err != nil {
 		return err
 	}
-	// The inherit block this request leaves in place decides whether
-	// main's skills are visible to the allowlist being written.
 	inherit := current.Inherit
 	if u.Inherit != nil {
 		inherit = *u.Inherit
@@ -684,9 +592,7 @@ func UpdateAgentConfigLayer(home, name string, u AgentConfigUpdates) error {
 		}
 	}
 	if u.MaxTurns != nil {
-		// An INT node, never a string: ApplyAgentLayer unmarshals this
-		// key straight into Config.MaxTurns int, so `max_turns: "42"`
-		// would be the next wake's boot error.
+		// An INT node, never a string.
 		upsertInt(mapping, "max_turns", *u.MaxTurns)
 	}
 	if u.Toggles != nil {
@@ -703,9 +609,7 @@ func UpdateAgentConfigLayer(home, name string, u AgentConfigUpdates) error {
 		upsertBool(block, "user", u.Inherit.User)
 		upsertBool(block, "memory", u.Inherit.Memory)
 	}
-	// The reset verb, applied after the upserts: no key can be both set
-	// and unset (validateAgentUpdates refuses it), so the order is a
-	// readability choice, not a semantic one.
+	// The reset verb, applied after the upserts.
 	for _, key := range u.Unset {
 		unsetLayerKey(mapping, key)
 	}
@@ -717,9 +621,7 @@ func UpdateAgentConfigLayer(home, name string, u AgentConfigUpdates) error {
 	if err := WriteFileAtomic(path, out, 0o644); err != nil {
 		return err
 	}
-	// Materialize whatever the file now enables. A copy that fails is
-	// reported: an enabled flag with no artifact would be a lie the
-	// agent runs on.
+	// Materialize whatever the file now enables.
 	final, err := ReadAgentConfigLayer(home, name)
 	if err != nil {
 		return err
@@ -727,23 +629,13 @@ func UpdateAgentConfigLayer(home, name string, u AgentConfigUpdates) error {
 	return MaterializeInheritance(home, name, final)
 }
 
-// DeleteAgentHome removes one secondary agent's HOME as one verb: the
-// definition file, the persona files, the agent's own skills and its own
-// session store (data/omega.db) all go together. Ruling 2 of the 0.17.3
-// make-over: delete means delete the home, sessions included - a
-// half-deleted agent that still registers by folder presence would be an
-// orphan home, and folder presence IS registration (profiles.go).
-//
-// The main agent refuses (ErrAgentHomeLocked): its home is the daemon's
-// home. A name with no home answers ErrAgentNotExist, and a malformed
-// name answers AgentConfigScaffoldError (the 400 lane) - the target is
-// re-derived from AgentDir and asserted to sit exactly at
-// <home>/agents/<name>, because a delete verb is the one place a path
-// bug cannot be undone.
-//
-// Callers that need the session count for their confirm dialog read it
-// BEFORE calling this (the counts are store business, and this package
-// stays store-free - profiles.go).
+// DeleteAgentHome removes one secondary agent's HOME as one verb. A name with no home
+// answers ErrAgentNotExist, and a malformed name answers AgentConfigScaffoldError (the
+// 400 lane) - the target is re-derived from AgentDir and asserted to sit exactly at
+// <home>/agents/<name>, because a delete verb is the one place a path bug cannot be
+// undone. Callers that need the session count for their confirm dialog read it BEFORE
+// calling this (the counts are store business, and this package stays store-free -
+// profiles.go).
 func DeleteAgentHome(home, name string) error {
 	if name == DefaultAgentName {
 		return ErrAgentHomeLocked
@@ -752,9 +644,7 @@ func DeleteAgentHome(home, name string) error {
 		return &AgentConfigScaffoldError{Message: fmt.Sprintf("delete agent: %v", err)}
 	}
 	dir := AgentDir(home, name)
-	// Containment: the target must be a DIRECT child of <home>/agents/,
-	// named exactly by the validated name. AgentDir already guarantees
-	// that shape, so this only fires if a future change moves it.
+	// Containment: the target must be a DIRECT child of <home>/agents/, named exactly by.
 	root := filepath.Join(home, "agents")
 	if filepath.Dir(dir) != root || filepath.Base(dir) != name {
 		return &AgentConfigScaffoldError{Message: fmt.Sprintf("delete agent %q: refusing a target outside %s", name, root)}
@@ -769,8 +659,7 @@ func DeleteAgentHome(home, name string) error {
 	return nil
 }
 
-// rootMapping resolves the working yamlnode mapping under a parsed
-// document (or the parsed root itself when a plain mapping).
+// rootMapping resolves the working yamlnode mapping under a parsed document (or the.
 func rootMapping(root *yaml.Node) *yaml.Node {
 	switch root.Kind {
 	case 0, yaml.DocumentNode:
@@ -795,9 +684,7 @@ func docOf(m *yaml.Node) *yaml.Node {
 
 func mappingNode() *yaml.Node { return &yaml.Node{Kind: yaml.MappingNode} }
 
-// upsertScalar sets (or appends) a scalar string value under key,
-// mutating the mapping's Content in place (yaml.v3 stores mapping
-// pairs as key/value node pairs inside one Content slice).
+// upsertScalar sets (or appends) a scalar string value under key, mutating the.
 func upsertScalar(m *yaml.Node, key, value string) { upsertTagged(m, key, "!!str", value) }
 
 // upsertBool sets (or appends) a BOOL value under key.
@@ -816,9 +703,7 @@ func upsertInt(m *yaml.Node, key string, value int) {
 	}
 }
 
-// upsertSequence replaces (or appends) a string sequence under key. An
-// empty slice renders `key: []` - the explicit zero state, which is a
-// real answer for toggles and for the skills allowlist (always off).
+// upsertSequence replaces (or appends) a string sequence under key.
 func upsertSequence(m *yaml.Node, key string, values []string) {
 	replacement := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Style: yaml.FlowStyle}
 	for _, v := range values {
@@ -827,8 +712,7 @@ func upsertSequence(m *yaml.Node, key string, values []string) {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		if k := m.Content[i]; k.Kind == yaml.ScalarNode && k.Value == key {
 			v := m.Content[i+1]
-			// The node keeps its identity (and its comments); only its
-			// shape and payload are replaced.
+			// The node keeps its identity (and its comments).
 			v.Kind, v.Tag, v.Value = yaml.SequenceNode, "!!seq", ""
 			v.Content, v.Style = replacement.Content, replacement.Style
 			return
@@ -839,12 +723,9 @@ func upsertSequence(m *yaml.Node, key string, values []string) {
 		replacement)
 }
 
-// upsertTagged is the shared upsert: an existing scalar value is
-// retagged in place (comments and quoting survive the assignment), a
-// missing key is appended as a fresh pair. A hand-edited value node of
-// the wrong KIND (a sequence where the int belongs, say) is replaced -
-// leaving it would make the write silently do nothing and the wake's
-// own parse fail at the next boot.
+// upsertTagged is the shared upsert. A hand-edited value node of the wrong KIND (a
+// sequence where the int belongs, say) is replaced - leaving it would make the write
+// silently do nothing and the wake's own parse fail at the next boot.
 func upsertTagged(m *yaml.Node, key, tag, value string) {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		k, v := m.Content[i], m.Content[i+1]
@@ -867,8 +748,7 @@ func upsertTagged(m *yaml.Node, key, tag, value string) {
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: value})
 }
 
-// findScalar returns the value node stored under key (nil when the key
-// is absent or its value is not a scalar).
+// findScalar returns the value node stored under key (nil when the key is absent or.
 func findScalar(m *yaml.Node, key string) *yaml.Node {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		k, v := m.Content[i], m.Content[i+1]
@@ -879,10 +759,9 @@ func findScalar(m *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
-// deleteKey removes key's key/value pair from mapping m, reporting
-// whether the key was there. Every other pair - and its comments and
-// quoting - stays byte-identical: the reset verb deletes, it never
-// rewrites the neighbours.
+// deleteKey removes key's key/value pair from mapping m, reporting whether the key.
+// Every other pair - and its comments and quoting - stays byte-identical: the reset
+// verb deletes, it never rewrites the neighbours.
 func deleteKey(m *yaml.Node, key string) bool {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		if k := m.Content[i]; k.Kind == yaml.ScalarNode && k.Value == key {
@@ -893,12 +772,10 @@ func deleteKey(m *yaml.Node, key string) bool {
 	return false
 }
 
-// unsetLayerKey removes one dotted knob from the layer mapping. A
-// sub-key removal prunes its parent mapping when the last sub-key goes:
-// the layer must never carry an empty `provider:` block into the next
-// wake (an empty mapping would override the home provider with
-// nothing). An absent key is a no-op - resetting an untouched knob is
-// the common case, not an error.
+// unsetLayerKey removes one dotted knob from the layer mapping. A sub-key removal
+// prunes its parent mapping when the last sub-key goes: the layer must never carry an
+// empty `provider:` block into the next wake (an empty mapping would override the home
+// provider with nothing).
 func unsetLayerKey(mapping *yaml.Node, key string) {
 	parent, leaf, dotted := strings.Cut(key, ".")
 	if !dotted {
@@ -922,8 +799,7 @@ func unsetLayerKey(mapping *yaml.Node, key string) {
 	}
 }
 
-// ensureMapping returns the mapping under key, creating it (plain
-// inline style, no comment) when absent.
+// ensureMapping returns the mapping under key, creating it (plain inline style, no.
 func ensureMapping(m *yaml.Node, key string) *yaml.Node {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		k, v := m.Content[i], m.Content[i+1]

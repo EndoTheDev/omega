@@ -10,10 +10,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// Plugin implements agent.Plugin for the store seam. It opens the
-// SQLite database from config and mounts it through the ExtensionAPI
-// exclusively (v0.12 phase F) - the StoreProvider seam, the
-// sessions.search tool and the session commands.
+// Plugin implements agent.Plugin for the store seam.
 type Plugin struct {
 	store *Store // nil until MountWithAPI; Dismount releases it
 }
@@ -28,27 +25,18 @@ func (p *Plugin) Description() string {
 	return "session persistence: SQLite-backed message and session store"
 }
 
-// ConfigKey names the config section this plugin reads from
-// ctx.Configs (see agent.Describer). Empty = reads no section.
+// ConfigKey names the config section this plugin reads from ctx.Configs (see.
 func (p *Plugin) ConfigKey() string { return "store" }
 
 func (p *Plugin) Provides() []string { return []string{"store", "tools"} }
 func (p *Plugin) Requires() []string { return nil }
 
-// Toggleable opts the store into the toggleable tier (0.17.3 tier
-// re-law, card t_ee3a968b: "always on: agent-loop, provider and
-// logging; toggleable: the rest"). It is opinionated, not
-// machine-critical - a disabled store means no persistence, which is a
-// legitimate host choice (the agent still runs on its in-memory floor),
-// and the Q3 edge check refuses the fold when a dependent still needs
-// the seam.
+// Toggleable opts the store into the toggleable tier.
 func (p *Plugin) Toggleable() bool { return true }
 
-// Dismount releases the mounted store (the open sqlite handle):
-// beyond-Context state the journal cannot see. A handle left open
-// blocks the removal of the data directory on windows, so the host
-// shutdown and every test mount dismount instead of abandoning it.
-// Nil-safe: never mounted (or already dismounted) closes nothing.
+// Dismount releases the mounted store (the open sqlite handle): beyond-Context state
+// the journal cannot see. Nil-safe: never mounted (or already dismounted) closes
+// nothing.
 func (p *Plugin) Dismount(ctx *core.Context) error {
 	if p.store == nil {
 		return nil
@@ -58,11 +46,9 @@ func (p *Plugin) Dismount(ctx *core.Context) error {
 	return err
 }
 
-// MountWithAPI implements agent.APIPlugin. Opens the store from
-// config, registers the store seam, the sessions.search tool provider
-// and the eleven session commands. The store connection is host-owned
-// at dismount - the journal unmounts the registrations, never the
-// data (disable never deletes data).
+// MountWithAPI implements agent.APIPlugin. The store connection is host-owned at
+// dismount - the journal unmounts the registrations, never the data (disable never
+// deletes data).
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["store"].(Config); ok {
@@ -70,10 +56,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	}
 	dsn := cfg.DBPath
 	if dsn == "" || dsn == "omega.db" {
-		// <home>/data/omega.db - the host (cmd/omega resolveHomePaths)
-		// passes an absolute path for the exe-dir home case. Data
-		// isolation: a process running AS an agent resolves into the
-		// agent's own data dir (datadir.AgentHome).
+		// <home>/data/omega.db - the host (cmd/omega resolveHomePaths) passes an absolute.
 		home, aerr := datadir.AgentHome()
 		if aerr != nil {
 			return fmt.Errorf("store data home: %w", aerr)
@@ -88,42 +71,24 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err != nil {
 		return err
 	}
-	// Routing home (card t_a7fab745): the chat floor addresses sessions
-	// the agents roster lists, and those rows live in each agent home's
-	// own store. The home names where to look; a store opened outside a
-	// resolved home (CLI tools, tests) keeps one file.
+	// Routing home: the chat floor addresses sessions the agents roster lists, and those.
 	s.SetHome(cfg.Home)
-	// A same-instance re-mount (the double-mount removal proofs) opens
-	// a second store: the prior handle is dead weight - close it, or
-	// the abandoned handle keeps the database file locked on windows.
+	// A same-instance re-mount (the double-mount removal proofs) opens a second store.
 	if p.store != nil {
 		_ = p.store.Close()
 	}
 	p.store = s
 	search := &searchToolProvider{store: s}
-	// The hygiene pass's knobs ride the `sessions:` config section
-	// (card t_329b9312), routed by the host's config.go section table.
-	// Absent section = the defaults. Live since card t_f78acfd6: the
-	// section lands on the store (SetHygieneConfig) and the pass
-	// re-reads it per sweep - the hot-apply swaps it on every save.
 	hyg := DefaultHygiene()
 	if c, ok := ctx.Configs["sessions"].(HygieneConfig); ok {
 		hyg = c
 	}
 	s.SetHygieneConfig(hyg)
 	hygiene := &hygieneToolProvider{store: s, providerFn: func() agent.Provider { return seam[agent.Provider](ctx, "provider") }}
-	// The management REST face (the shell-ring shrink wave 2, the
-	// three-layer sessions law): the sessions list, the search seat,
-	// branch, export and the insights view mount and die with this
-	// capsule (harness/store/routes.go). The chat floor stays base.
 	routes := newRoutes(ctx, s)
 	steps := []func() error{
 		func() error { return api.Offer("store", s) },
 		func() error {
-			// the sessions.* verb family predates the capsule tier and
-			// keeps its model-facing names (card t_ee3a968b: the tier
-			// re-law removed this capsule's built-in TIER exemption, not
-			// the vocabulary the prompt and the model already address)
 			for name, t := range search.Tools() {
 				if err := api.RegisterBuiltinTool(name, t); err != nil {
 					return err
@@ -148,9 +113,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 			}
 			return nil
 		},
-		// The management REST face registers last so a half-mount
-		// failure below never leaves a route answering on a closed
-		// store (every failure path closes s).
+		// The management REST face registers last so a half-mount failure below never.
 		func() error {
 			for _, row := range routes.registrationRows() {
 				if err := api.RegisterRoute(row.pattern, row.handler); err != nil {
@@ -169,8 +132,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return nil
 }
 
-// sessionCommands returns the eleven session commands in registration
-// order.
+// sessionCommands returns the eleven session commands in registration order.
 func sessionCommands() []core.ExtensionCommand {
 	return []core.ExtensionCommand{
 		{Name: "/sessions", Description: "list, resume, branch, label, or delete sessions"},
@@ -187,9 +149,8 @@ func sessionCommands() []core.ExtensionCommand {
 	}
 }
 
-// handleSessionCommand dispatches one session command (the classic
-// wrapper's switch, one command at a time - the api chain-on-miss
-// wrapper produces the same fall-through).
+// handleSessionCommand dispatches one session command (the classic wrapper's switch,
+// one command at a time.
 func (p *Plugin) handleSessionCommand(s *Store, c context.Context, name, args string) (core.CommandResult, error) {
 	switch name {
 	case "/sessions":
@@ -210,9 +171,8 @@ func (p *Plugin) handleSessionCommand(s *Store, c context.Context, name, args st
 	case "/resume":
 		return HandleResumeCommand(c, s, args)
 	case "/branch":
-		// /branch [parent-id]: the given id wins (branching FROM a
-		// session is the documented argument); with no id the invoking
-		// surface's bound session is the parent.
+		// /branch [parent-id]: the given id wins (branching FROM a session is the documented
+		// argument).
 		parentID, rest := sessionTarget(c, args)
 		return HandleBranchCommand(c, s, parentID, rest)
 	case "/label":
@@ -225,10 +185,7 @@ func (p *Plugin) handleSessionCommand(s *Store, c context.Context, name, args st
 	return core.CommandResult{}, core.CommandMiss(name)
 }
 
-// sessionTarget resolves the session a command acts ON: the first word
-// of args when the operator named one, else the invoking surface's
-// session off the dispatch wire (the palette's binding). Its second
-// return is the remaining args.
+// sessionTarget resolves the session a command acts ON.
 func sessionTarget(c context.Context, args string) (sessionID, rest string) {
 	head, tail, _ := strings.Cut(strings.TrimSpace(args), " ")
 	if head != "" {
@@ -237,12 +194,10 @@ func sessionTarget(c context.Context, args string) (sessionID, rest string) {
 	return core.CommandSession(c), ""
 }
 
-// sessionPayload is sessionTarget's sibling for commands whose args are
-// the command's own PAYLOAD once the surface supplies the session:
-// "/label <text>" sets the bound session's label and "/export [path]"
-// exports it. A caller that binds no session (the terminal loop) keeps
-// the legacy shape, where the first word names the session:
-// "/label <session-id> <text>", "/export <session-id> [path]".
+// sessionPayload is sessionTarget's sibling for commands whose args are the command's.
+// A caller that binds no session (the terminal loop) keeps the legacy shape, where the
+// first word names the session: "/label <session-id> <text>", "/export <session-id>
+// [path]".
 func sessionPayload(c context.Context, args string) (sessionID, payload string) {
 	if id := core.CommandSession(c); id != "" {
 		return id, strings.TrimSpace(args)

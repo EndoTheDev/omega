@@ -1,10 +1,10 @@
 // omega webui: the sessions panel's ruled top-to-bottom order. Card
-// t_311fc40b (Endo's ruling 2026-10-30) ruled "band, button, search";
-// card t_7ee0a673 (Endo's comment 3, 2026-11-01) SUPERSEDES it: the
+// ruled "band, button, search";
+// SUPERSEDES it: the
 // search seats IN the band's top right (the band-tool slot), the old
 // search row below the band dies, and the ruled order is
 //   band [title + search] -> new-session button -> session rows
-// Card t_7ee0a673's second mandate: ONE ALIGNED WIDTH - the band's own
+// second mandate: ONE ALIGNED WIDTH - the band's own
 // 8px inset is the single inset for the whole sidebar stack (title,
 // button row, section headers, rows), no stair-step. The node suite has
 // no DOM, so the order AND the geometry are pinned structurally on the
@@ -49,8 +49,7 @@ describe("AppSidebar: the ruled panel order (card t_7ee0a673)", () => {
     const bandChunk = sidebar.slice(bandStart, bandEnd);
     assert.match(bandChunk, /<SearchInput/, "the search input lives in the band");
     assert.match(bandChunk, /v-model="query"/, "the same query ref binds in-band (behavior intact)");
-    // the NEW-session control stays OUT of the band (card t_311fc40b's
-    // ruling survives the seat change: only the search moved in)
+    // the NEW-session control stays OUT of the band
     assert.doesNotMatch(
       sidebar.slice(bandStart, bandEnd + 40),
       /\+ New Session/,
@@ -82,25 +81,21 @@ describe("AppSidebar: the ruled panel order (card t_7ee0a673)", () => {
   });
 
   it("ONE ALIGNED WIDTH - the band's 8px inset is the whole stack's inset (card t_7ee0a673)", () => {
-    // the geometry reference: the band component's own sides
     const bandRule = tabband.match(/\.tab-band\s*\{[^}]*\}/)?.[0] ?? "";
     assert.match(bandRule, /padding:\s*0\s+8px/, "the band title insets 8px - the reference edge");
-    // the button row: same 8px sides (pinned above via .new-row)
+    // the button row: same 8px sides (pinned above via.new-row)
     const newRow = sidebar.match(/\.new-row\s*\{[^}]*\}/)?.[0] ?? "";
     assert.match(newRow, /padding:\s*8px;/, "the button row seats on the band's 8px edges, not 12px");
-    // the section headers: their OWN side padding is zero - the list's
-    // 8px sides do the inset, so header text starts at the title's edge
+    // the section headers: their OWN side padding is zero.
     const label = mainCss.match(/button\.bucket-label\s*\{[^}]*\}/)?.[0] ?? "";
     assert.match(label, /padding:\s*10px\s+0\s+4px/, "no 10px header indent - no stair-step");
-    // the rows: the list box carries the 8px sides
     const list = mainCss.match(/\.session-list\s*\{[^}]*\}/)?.[0] ?? "";
     assert.match(list, /padding:\s*0\s+8px/, "the row boxes share the same 8px edges");
   });
 
   it("the in-band input keeps the band's 22px row - compact padding, no height growth", () => {
-    // card t_529628d5: the seat's geometry moved into TabBand's scoped
-    // stylesheet (one shared seat in the band vocabulary); this tab
-    // consumes it through the .band-search wrapper alone.
+    // the seat's geometry moved into TabBand's scoped stylesheet (one shared seat in
+    // the band vocabulary).
     const seat = tabband.match(/\.band-search \.search-input input\)\s*\{[^}]*\}/)?.[0] ?? "";
     assert.match(seat, /padding:\s*2px/, "the band seat's input is compact (the shared 5px grows the band)");
     assert.doesNotMatch(sidebar, /^\.band-search\s*\{/m, "no per-tab seat copy - the shared definition owns it");

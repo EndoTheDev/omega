@@ -1,12 +1,4 @@
-// omega webui: unit tests for the EXTENSIONS inspector tab's pure row
-// model (card t_14f73742 - the webui parity of the TUI /extensions;
-// card t_210a0d19 - the tab becomes the module lifecycle cockpit).
-// Run: node --test "test/*.test.ts" (node >= 23 runs TS natively).
-// The endpoint's Go side is covered server-side; this pins the shell
-// merge: payload order preserved, lifecycle fused from three sources
-// (GET /extensions inventory, GET /modules introspection, the
-// composition manifest), the expansion detail (tools, commands,
-// panels), honest empty states.
+// omega webui: unit tests for the EXTENSIONS inspector tab's pure row model.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -51,9 +43,7 @@ describe("extensionsRows", () => {
   });
 
   it("carries the expansion detail verbatim (tools, commands)", () => {
-    // THE component contract (card t_210a0d19 acceptance): a seeded
-    // module's expanded row lists exactly these names - the template
-    // renders row.toolNames / row.commandNames joined, nothing else.
+    // THE component contract: a seeded module's expanded row lists exactly these names.
     const rows = extensionsRows(
       [ext("skills", {
         tools: 1,
@@ -122,7 +112,6 @@ describe("extensionsRows", () => {
     assert.equal(rows[0].state, "mounted");
     assert.equal(rows[0].toggleable, true);
     assert.deepEqual(rows[0].dependents, ["cron"]);
-    // machine-critical: same, with the always-on law
     assert.equal(rows[1].state, "mounted");
     assert.equal(rows[1].toggleable, false);
     // a module the introspection never lists = the shell ring (tier law)
@@ -137,7 +126,6 @@ describe("extensionsRows", () => {
       [mod("kanban"), mod("cron", { state: "disabled" })],
     );
     assert.equal(rows.length, 2);
-    // mounted first (payload order), disabled after (registry order)
     assert.equal(rows[0].name, "kanban");
     assert.equal(rows[0].state, "mounted");
     assert.equal(rows[1].name, "cron");
@@ -145,7 +133,6 @@ describe("extensionsRows", () => {
     assert.equal(rows[1].tools, 0);
     assert.deepEqual(rows[1].toolNames, []); // nothing mounted to expand
     assert.deepEqual(rows[1].commandNames, []);
-    // the disabled row still toggles (that is how it comes back)
     assert.equal(rows[1].toggleable, true);
   });
 

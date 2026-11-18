@@ -1,7 +1,5 @@
 // omega webui: unit tests for the status bar durability helpers in
-// composables/omega.ts - persistedTelemetry (durable values picked from
-// a session row: token total + last-run rates, zeros when absent).
-// Run: node --test webui/test/ (node >= 23 runs TS natively)
+// composables/omega.ts.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 

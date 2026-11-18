@@ -23,7 +23,6 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- core.Provider
 		"model":    p.modelName,
 		"messages": messages,
 		"stream":   true,
-		// ask the provider to append a final chunk with token usage
 		"stream_options": map[string]any{"include_usage": true},
 	}
 	if effort := openaiReasoningEffort(p.thinkingLevel); effort != "" {
@@ -69,9 +68,6 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- core.Provider
 
 	reader := bufio.NewReader(resp.Body)
 	pending := make(map[int]*pendingCall)
-	// Some openai-compatible hosts omit tool-call ids entirely; the
-	// ollama native path synthesizes stable call_N ids so ToolResult
-	// correlation works. Mirror that here.
 	toolCallSeq := 0
 	finishReason := "stop"
 	promptTokens, completionTokens, cachedTokens := 0, 0, 0
@@ -97,9 +93,6 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- core.Provider
 				Delta struct {
 					Content   *string `json:"content"`
 					Reasoning *string `json:"reasoning"`
-					// ReasoningContent is the deepseek-style field
-					// name some openai-compatible hosts use
-					// instead of `reasoning`.
 					ReasoningContent *string `json:"reasoning_content"`
 					ToolCalls        []struct {
 						Index    *int   `json:"index"`
@@ -168,8 +161,7 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- core.Provider
 			if !exists {
 				pc = &pendingCall{}
 				pending[idx] = pc
-				// Only synthesize when the wire never sends an id
-				// for this index; later fragments may still carry it.
+				// Only synthesize when the wire never sends an id for this index.
 				toolCallSeq++
 				pc.id = fmt.Sprintf("call_%d", toolCallSeq)
 			}
@@ -189,7 +181,6 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- core.Provider
 		}
 	}
 
-	// Flush accumulated tool calls in index order.
 	flushToolCalls(ctx, events, pending,
 		func(pc *pendingCall) string { return pc.id },
 		func(pc *pendingCall) string { return pc.name },
@@ -212,7 +203,7 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- core.Provider
 	}
 }
 
-// --- Anthropic ---
+// -- Anthropic --
 
 // pendingTool accumulates Anthropic tool-call fragments.
 type pendingTool struct {

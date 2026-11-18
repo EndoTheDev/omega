@@ -1,18 +1,4 @@
 // Package delegate provides the delegate.task and delegate.status tools.
-// delegate.task spawns child omega processes (omega run) to work on
-// subtasks in the background. The tool is yield-class (async agent loop
-// phase 2, card t_0805d438; design of record Workshop/omega/async-agent-loop.md):
-// the call ends the turn, the report re-enters as a tool result through
-// the phase-1 wake path, and no user-shaped delegate message is ever
-// written. delegate.status returns the current state of all tasks, and
-// for a done task the task's final answer text (the queryable home).
-//
-// Recursion guard: OMEGA_SUBAGENT=1 env var, two layers, both inside
-// the module. The spawn sets it on the child's env (spawn_test.go pins
-// that); the child's own mount refuses the delegate tools when the var
-// is set (plugin.go) - one-shot subagents spawn no children.
-//
-// OMEGA_BIN env var points to the omega binary.
 package delegate
 
 import (
@@ -31,40 +17,24 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// finishedThings is the consumer-side face of the finished-things
-// store (part 3 seam constitution): just the emit method the
-// dispatched-run reports call. The notifications capsule satisfies it
-// structurally; no shared type exists.
+// finishedThings is the consumer-side face of the finished-things store (part 3 seam
+// constitution).
 type finishedThings interface {
 	Emit(n core.Notice) (core.Notice, error)
 }
 
-// Delegate manages background subagent tasks. It implements ToolProvider.
-// Its tools carry no seam beyond the registry: the report's re-entry is
-// the loop's own yield machinery (the tool's Yield registration), not a
-// delegate-owned surface.
+// Delegate manages background subagent tasks.
 type Delegate struct {
 	mu          sync.Mutex
 	tasks       map[string]*delegateTask
 	taskCounter int64
 	logger      agent.LoggerProvider
-	// notifier is the finished-things consumers face (card
-	// t_5d9032d3), wired by the plugin at mount from the universal
-	// registry. Nil-safe: no capsule, no notification.
+	// notifier is the finished-things consumers face, wired by the plugin at mount from.
+	// Nil-safe: no capsule, no notification.
 	notifier finishedThings
-	// store is the session-persistence seam, captured from the mount
-	// Context (nil-safe: no store module, no child session). The store
-	// mounts before delegate (slice-order tiebreak: no Requires edge -
-	// one naming delegate is the removal recipe's stop signal).
+	// store is the session-persistence seam, captured from the mount Context (nil-safe.
 	store agent.StoreProvider
-	// storeDBPath is the caller's store file (the mount Context's
-	// "store" config section, card t_93b4e521), pinned onto the child
-	// env as OMEGA_DB_PATH. The child runs AS an agent, and the agent
-	// layer re-points an unset store at <home>/agents/<name>/data/
-	// omega.db - a DIFFERENT database than the one the host just
-	// pre-created the child session in, so `run --session <id>` died
-	// "session not found" before the loop ever started. Empty = no pin
-	// (a host that routes no store section).
+	// storeDBPath is the caller's store file, pinned onto the child env as OMEGA_DB_PATH.
 	storeDBPath string
 	// spawnable reports the recursion guard's mount verdict: false
 	// inside a subagent child (OMEGA_SUBAGENT set) - delegate.task
@@ -92,42 +62,31 @@ func NewDelegate() *Delegate {
 	}
 }
 
-// The result cap (the summary-back ruling): the caller's context stays
-// small however chatty the child ran. Head keeps the answer's shape,
-// tail keeps the closing verdict, the marker names the cut so the turn
-// never reads like a truncated sentence.
+// The result cap: the caller's context stays small however chatty the child ran. Head
+// keeps the answer's shape, tail keeps the closing verdict, the marker names the cut so
+// the turn never reads like a truncated sentence.
 const (
 	summaryCap  = 6000
 	summaryHead = 3500
 	summaryTail = 1500
 )
 
-// stderrTailCap bounds the child stderr a FAILED result carries (card
-// t_93b4e521): the last 2000 bytes are the fail-loud receipt, and the
-// tail is the half that names the failing line - a startup refusal
-// prints one line at the end.
 const stderrTailCap = 2000
 
-// Description constants for the delegate tools (the machine-facing
-// identities, Q10 namespace pairs since the v0.12 mount migration).
+// Description constants for the delegate tools (the machine-facing identities, Q10.
 const (
 	delegateTaskDesc   = "Spawn a subagent to work on a task in the background. The result re-enters as this call's tool result when the subagent finishes."
 	delegateStatusDesc = "Check the status of running and completed subagent tasks."
 )
 
-// taskIDShape (scope addition 4, card t_0805d438): task ids stay short
-// session-local names ("task-1", "task-2") with one counter per Delegate
-// instance, so an id alone is unsafe to match on. The chosen shape
-// carries the session reference beside the id: every status row renders
-// "task-N [status] (session <sid>)". The id shape itself never changed
-// (consumers match by it); the session is the disambiguator, in the
-// same payload.
+// taskIDShape: task ids stay short session-local names ("task-1", "task-2") with one
+// counter per Delegate instance, so an id alone is unsafe to match on. The id shape
+// itself never changed (consumers match by it); the session is the disambiguator, in
+// the same payload.
 
-// statusSummaryClip bounds the prompt digest a status row carries
-// (scope addition A4): the FULL prompt never re-enters on a poll - a
-// prompt-sized line every poll is the payload bloat the finding names.
-// The digest exists to identify the task; the child's session carries
-// the prompt itself.
+// statusSummaryClip bounds the prompt digest a status row carries (scope addition A4):
+// the FULL prompt never re-enters on a poll - a prompt-sized line every poll is the
+// payload bloat the finding names.
 const statusSummaryClip = 120
 
 func (d *Delegate) Tools() map[string]core.Tool {
@@ -154,14 +113,8 @@ func (d *Delegate) Tools() map[string]core.Tool {
 		"required": []string{"prompt"},
 	}
 	return map[string]core.Tool{
-		// The machine-facing identities are the module.verb pairs
-		// (Q10, the v0.12 mount migration): the two verbs register as
-		// delegate.task and delegate.status, each with its own
-		// parameters, both routed through the shared dispatcher the
-		// consolidated "delegate" primary used.
-		// Yield: async agent loop phase 2 - the call ends the turn and
-		// the report re-enters as this call's tool result. A wakeless
-		// host (the CLI loop, a bare run) runs it loop-back instead:
+		// The machine-facing identities are the module.verb pairs (Q10, the v0.12 mount
+		// migration). A wakeless host (the CLI loop, a bare run) runs it loop-back instead:
 		// the blocking wait the one-shot shape always had.
 		"delegate.task": {
 			Description: delegateTaskDesc,
@@ -200,10 +153,7 @@ func (d *Delegate) runDelegate(ctx context.Context, args map[string]any) (string
 	}
 }
 
-// resolveAgent applies the defaulting law (Endo, 2026-11-01,
-// omega-wide) to delegate.task's agent field: any field naming an
-// AGENT defaults to the default agent when empty. Trimmed so a stray
-// space is a typo-carrying field, not a ghost agent name.
+// resolveAgent applies the defaulting law to delegate.task's agent field.
 func resolveAgent(field string) string {
 	name := strings.TrimSpace(field)
 	if name == "" || name == agent.DefaultAgentName {
@@ -212,28 +162,19 @@ func resolveAgent(field string) string {
 	return name
 }
 
-// resolveModel applies the defaulting law's model half to
-// delegate.task's model field: empty = the session provider model,
-// never an error. For a spawned child, "the session provider model" is
-// the model the child's own config produces - with no OMEGA_MODEL on
-// its env, its run session adopts it, which IS the inherit. The parent
-// never re-guesses the model value the child would resolve; only an
-// explicit field becomes an OMEGA_MODEL override. Trimmed like agent.
+// resolveModel applies the defaulting law's model half to delegate.task's model field:
+// empty = the session provider model, never an error. The parent never re-guesses the
+// model value the child would resolve; only an explicit field becomes an OMEGA_MODEL
+// override.
 func resolveModel(field string) string {
 	return strings.TrimSpace(field)
 }
 
-// childEnv builds the child process deltas over os.Environ(): the
-// recursion guard always; the agent layer env only off-default
-// (datadir collapses "default" to unset anyway - the default agent's
-// config IS the home config); the model only when explicitly asked -
-// the defaulting law's empty = inherit is the ABSENCE of the var.
-// The dbPath delta carries the CALLER's store into the child (card
-// t_93b4e521): the child runs AS the target agent, so its own config
-// resolution would point the store at the agent's data dir and the
-// `--session <id>` row the host just created would be invisible to it.
-// Pinning the path makes the spawned run and a manual run in the
-// caller's own store the same run.
+// childEnv builds the child process deltas over os.Environ. The dbPath delta carries
+// the CALLER's store into the child: the child runs AS the target agent, so its own
+// config resolution would point the store at the agent's data dir and the `--session
+// <id>` row the host just created would be invisible to it. Pinning the path makes the
+// spawned run and a manual run in the caller's own store the same run.
 func childEnv(agentName, model, dbPath string) []string {
 	env := []string{"OMEGA_SUBAGENT=1"}
 	if name := resolveAgent(agentName); name != agent.DefaultAgentName {
@@ -248,15 +189,7 @@ func childEnv(agentName, model, dbPath string) []string {
 	return env
 }
 
-// workerStamp builds the machine-fence env deltas for a delegate child
-// (card t_8b32a09a). Every delegate child is a worker session, so it is
-// stamped OMEGA_WORKER=1 (the machine fence is env-scoped: the tick and
-// the main session run unstamped) and OMEGA_WORKER_CARD=<task>-tagged,
-// and the repo's git fence shim (bin/shims) rides the front of the
-// child's PATH when it sits next to the omega binary (bin/omega beside
-// bin/shims in a checkout). An installed home has no repo tree: the
-// child runs stamped but the environment alone fences nothing - the
-// shim does - so the PATH delta is simply absent there.
+// workerStamp builds the machine-fence env deltas for a delegate child.
 func workerStamp(taskID, omegaBin string) []string {
 	env := []string{"OMEGA_WORKER=1", "OMEGA_WORKER_CARD=" + taskID}
 	if dir := fenceShimDir(omegaBin); dir != "" {
@@ -265,9 +198,8 @@ func workerStamp(taskID, omegaBin string) []string {
 	return env
 }
 
-// fenceShimDir returns the bin/shims dir sitting next to the omega
-// binary, when that dir holds an executable `git` shim. Empty when it
-// does not - an installed instance never fakes a fence.
+// fenceShimDir returns the bin/shims dir sitting next to the omega binary, when that.
+// Empty when it does not - an installed instance never fakes a fence.
 func fenceShimDir(omegaBin string) string {
 	if omegaBin == "" {
 		return ""
@@ -280,14 +212,10 @@ func fenceShimDir(omegaBin string) string {
 	return dir
 }
 
-// runDelegateTask spawns the child and waits it out. Under the yield
-// engine the call runs on the dispatched executor's goroutine - the
-// conversation is never parked: the turn (and run) end, the user
-// messages enter the home freely, and this return value re-enters as
-// the call's tool result. Loop-back (the wakeless CLI loop) blocks the
-// run here instead - the one-shot subagent shape `omega run` always
-// had. Either way the report is the tool result, and no user-shaped
-// delegate message is ever written.
+// runDelegateTask spawns the child and waits it out. Under the yield engine the call
+// runs on the dispatched executor's goroutine - the conversation is never parked: the
+// turn (and run) end, the user messages enter the home freely, and this return value
+// re-enters as the call's tool result.
 func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (string, error) {
 	if !d.spawnable {
 		return "", fmt.Errorf("delegate: spawn refused - this process is itself a subagent (OMEGA_SUBAGENT), depth stays at one level")
@@ -300,13 +228,7 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 		timeoutSec = int(t)
 	}
 
-	// Agent target (card t_7e2b7002), under the defaulting law: empty
-	// resolves to the default agent - no OMEGA_AGENT on the child, the
-	// home config itself is the default agent's layer. A non-default
-	// name is validated here so a typo fails immediately instead of
-	// quietly running as not-configured defaults a minute later (the
-	// child's LoadConfig would only reject a truly malformed layer,
-	// not a ghost name).
+	// Agent target, under the defaulting law.
 	if name := resolveAgent(agentName); name != agent.DefaultAgentName {
 		home := os.Getenv("OMEGA_HOME")
 		if _, err := agent.LoadProfile(home, name); err != nil {
@@ -320,26 +242,19 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 		return "error: could not find omega binary (OMEGA_BIN not set)", fmt.Errorf("omega binary not found")
 	}
 
-	// The child session (the stored+searchable ruling): the host
-	// pre-creates the session through the store seam - label
-	// delegate:<task>, lineage = the calling session when the run
-	// context carries one (delegate_parent, never the fork parent_id -
-	// t_6c4ab302) - and the child inherits it via run --session, which
-	// makes the child persist its prompt, report and tool results into
-	// the store (the --session persist contract).
-	// Nil store or a failed create degrades to the old shape: a plain
-	// run child, nothing persisted. Bonus, never a hard dependency.
+	// The child session: the host pre-creates the session through the store seam - label
+	// delegate:<task>, lineage = the calling session when the run context carries one -
+	// and the child inherits it via run --session, which makes the child persist its
+	// prompt, report and tool results into the store (the --session persist contract). Nil
+	// store or a failed create degrades to the old shape: a plain run child, nothing
+	// persisted. Bonus, never a hard dependency.
 	childArgs := []string{"run"}
 	session := ""
 	if d.store != nil {
 		if sid, err := agent.NewSessionID(); err == nil {
 			label := "delegate:" + taskID
-			// Fresh context is the ruling (card t_6c4ab302): the child's
-			// lineage rides delegate_parent, NEVER parent_id - a parent
-			// link would make the store's ancestor merge feed this
-			// session's whole history to the child on every spawn. A
-			// store without the delegate surface gets an unlinked child
-			// (a root) rather than the context-inheriting fallback.
+			// Fresh context is the ruling: the child's lineage rides delegate_parent, NEVER
+			// parent_id.
 			var createErr error
 			if ds, ok := d.store.(agent.DelegateSessionStore); ok {
 				createErr = ds.CreateDelegateSession(ctx, sid, agent.SessionIDFromContext(ctx), label)
@@ -361,10 +276,7 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	cmd := exec.CommandContext(taskCtx, omegaBin, childArgs...)
 	cmd.Env = append(os.Environ(), childEnv(agentName, model, d.storeDBPath)...)
 	cmd.Env = append(cmd.Env, workerStamp(taskID, omegaBin)...)
-	// Process-group kill, same as the shell tool: without it the
-	// timeout kills only the omega child while shells it spawned
-	// survive as orphans holding locks (the bug class shellKillSetup
-	// was created to fix).
+	// Process-group kill, same as the shell tool.
 	agent.SetupProcessGroupKill(cmd)
 
 	task := &delegateTask{id: taskID, prompt: prompt, session: session, cmd: cmd}
@@ -375,19 +287,15 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	d.tasks[taskID] = task
 	d.mu.Unlock()
 
-	// The wait IS the tool call: the dispatched executor (or the
-	// loop-back run) blocks here until the child exits or its timeout
-	// kills the process tree. The task's wall clock is its own; the
-	// run's cap above adds nothing.
 	runErr := cmd.Run()
 	task.mu.Lock()
 	task.done = true
 	task.result = task.renderResult(runErr)
 	task.mu.Unlock()
 
-	// The finished-things record (card t_5d9032d3): verdict ok on a
-	// clean exit, failed on error. The notification title is metadata
-	// only (the dispatch id); prompt and output never enter it.
+	// The finished-things record: verdict ok on a clean exit, failed on error. The
+	// notification title is metadata only (the dispatch id); prompt and output never enter
+	// it.
 	if d.notifier != nil {
 		verdict := "ok"
 		if runErr != nil {
@@ -404,14 +312,8 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	return task.result, nil
 }
 
-// renderResult renders the report-shaped tool result (ruling 2): a
-// clean exit produces the child's own final answer - what omega run
-// printed, trimmed to one summary turn; a failed exit produces the
-// failure line PLUS the child's stderr tail (card t_93b4e521): the
-// child dies before the loop on a startup refusal, so its stderr is
-// the only account of why, and a bare "exit status 1" is not a
-// diagnosable result. The child's stdout stays out of the failure
-// (it is the answer lane, never the diagnostic lane).
+// renderResult renders the report-shaped tool result. The child's stdout stays out of
+// the failure (it is the answer lane, never the diagnostic lane).
 func (t *delegateTask) renderResult(runErr error) string {
 	if runErr != nil {
 		return fmt.Sprintf("error: delegate task %s failed: %v%s", t.id, runErr, stderrReport(t.errOut.String()))
@@ -425,10 +327,8 @@ func (t *delegateTask) renderResult(runErr error) string {
 	return clipSummary(out)
 }
 
-// stderrReport renders the child's stderr as the failure detail block.
-// Empty stderr yields NOTHING (a dangling header is noise); an
-// overshoot keeps the tail and names the cut from the front - the last
-// lines are the failing ones. A cut never splits a UTF-8 sequence.
+// stderrReport renders the child's stderr as the failure detail block. A cut never
+// splits a UTF-8 sequence.
 func stderrReport(stderr string) string {
 	s := strings.TrimSpace(stderr)
 	if s == "" {
@@ -444,10 +344,7 @@ func stderrReport(stderr string) string {
 	return "\nstderr:\n" + s
 }
 
-// clipSummary bounds an injected result at summaryCap runes, cutting
-// the middle with a named marker once the child overshot the cap: the
-// head keeps the answer's opening argument, the tail keeps the closing
-// verdict, the marker makes the cut visible instead of subtle.
+// clipSummary bounds an injected result at summaryCap runes, cutting the middle with.
 func clipSummary(s string) string {
 	runes := []rune(s)
 	if len(runes) <= summaryCap {
@@ -460,9 +357,9 @@ func clipSummary(s string) string {
 }
 
 // runDelegateStatus renders the task listing. Payload shape (scope
-// addition A4, card t_0805d438): every row is
+// addition A4, ): every row is
 //
-//   - task-N [running|done] (session <sid>) <prompt digest, 120 runes>
+// task-N [running|done] (session <sid>) <prompt digest, 120 runes>
 //
 // and a done row carries the task's final answer as its own indented
 // line - the queryable home the injected-user seam used to be the only
@@ -515,8 +412,7 @@ func (d *Delegate) runDelegateStatus(ctx context.Context, args map[string]any) (
 	return sb.String(), nil
 }
 
-// taskSummary renders the status row's prompt digest: the first
-// prompt line, clipped, whitespace-flattened to one compact strip.
+// taskSummary renders the status row's prompt digest.
 func taskSummary(prompt string) string {
 	line := strings.Join(strings.Fields(strings.TrimSpace(prompt)), " ")
 	runes := []rune(line)
@@ -532,9 +428,7 @@ func (d *Delegate) findOmegaBinary() string {
 			return bin
 		}
 	}
-	// Fall back: relative to the current executable (../omega or ../omega.exe).
-	// ponytail: os.Executable() path may be wrong in test/dev builds;
-	// upgrade path: pass bin path explicitly via config in C11 wiring.
+	// Fall back: relative to the current executable (./omega or./omega.exe).
 	exe, err := os.Executable()
 	if err != nil {
 		return ""

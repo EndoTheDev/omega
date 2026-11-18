@@ -1,10 +1,9 @@
 //go:build !linux && !windows
 
-// Package terminal - the stub build: linux carries the pty door in
-// pty_linux.go and windows carries ConPTY in pty_windows.go; on every
-// other platform the module still compiles and mounts - spawn refuses,
-// the routes answer the refusal, an empty session list is the contract,
-// and the spawn error names the box it does not work on.
+// Package terminal - the stub build: linux carries the pty door in pty_linux.go and
+// windows carries ConPTY in pty_windows.go; on every other platform the module still
+// compiles and mounts - spawn refuses, the routes answer the refusal, an empty session
+// list is the contract, and the spawn error names the box it does not work on.
 package terminal
 
 import "errors"

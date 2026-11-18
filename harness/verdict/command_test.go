@@ -1,10 +1,8 @@
 package verdict
 
-// The /verdict command's name law (card t_d923b50a): the handler answers
-// /verdict and rejects every other name with an error. The command
-// seam's chain-on-miss wrapper falls through only on an error, so a nil
-// error for a foreign name swallows every command registered below this
-// capsule in the chain.
+// The /verdict command's name law. The command seam's chain-on-miss wrapper falls
+// through only on an error, so a nil error for a foreign name swallows every command
+// registered below this capsule in the chain.
 
 import (
 	"context"

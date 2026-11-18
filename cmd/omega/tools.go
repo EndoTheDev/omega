@@ -1,23 +1,6 @@
 package main
 
-// cmd/omega/tools.go: the tools subcommand (card t_441deb04) -
-// `omega tools list|enable|disable`, the terminal face of the settings
-// tab's tools toggle. The verb grammar is the crons card's (t_aca45258):
-// bare invocation lists, one verb, one positional name, `--help` prints
-// the module's own help.
-//
-// The write rides writeDisabled - the SAME writer the PUT
-// /disabled/tools route and `omega modules` toggles use - so a CLI
-// disable, a webui toggle, and a hand edit all land on one config.yaml
-// key with the document's comments and style intact. The registry
-// itself (the enabled/disabled verdict on every entry) is the fold's
-// read: the live Context carries it at serve time, this command reads
-// it from config.yaml before boot.
-//
-// The tool's enable flag is the registry entry's, not a second store:
-// a disabled name is absent from every tool union the loop builds (the
-// model's wire) and stamped onto the listing the /tools command, the
-// settings tab, and this CLI render.
+// cmd/omega/tools.go: the tools subcommand.
 
 import (
 	"fmt"
@@ -47,9 +30,7 @@ the name to re-enable); it never reaches the model, and the system
 prompt's tool section stops advertising it.
 `
 
-// cmdTools is the subcommand handler. It owns its own argv (flags
-// included) - run() does not short-circuit --help for it, so
-// `omega tools --help` prints the module help, not the root help.
+// cmdTools is the subcommand handler.
 func cmdTools(args []string) error {
 	for _, a := range args {
 		if a == "--help" || a == "-h" {
@@ -77,8 +58,7 @@ func cmdTools(args []string) error {
 	}
 }
 
-// toolRow is one listing row: the registry entry, its state, and the
-// extension that owns it.
+// toolRow is one listing row.
 type toolRow struct {
 	Name     string
 	State    string
@@ -87,11 +67,10 @@ type toolRow struct {
 	Disabled bool
 }
 
-// toolRows renders the fold-aware inventory: every registered tool with
-// its enable flag stamped from the fold, name-sorted. The input is the
-// mount Context's extension inventory (the full registry, before the
-// fold filters the loop's union), so a disabled tool keeps its row -
-// exactly the law GET /tools?disabled=1 follows.
+// toolRows renders the fold-aware inventory: every registered tool with its enable flag
+// stamped from the fold, name-sorted. The input is the mount Context's extension
+// inventory (the full registry, before the fold filters the loop's union), so a
+// disabled tool keeps its row - exactly the law GET /tools?disabled=1 follows.
 func toolRows(infos []core.ExtensionInfo, disabled []string) []toolRow {
 	var rows []toolRow
 	for _, info := range core.StampDisabledTools(infos, disabled) {
@@ -113,8 +92,7 @@ func toolRows(infos []core.ExtensionInfo, disabled []string) []toolRow {
 	return rows
 }
 
-// toolBrief is the one-line listing form of a description: first
-// non-empty line, capped at 60 columns.
+// toolBrief is the one-line listing form of a description.
 func toolBrief(desc string) string {
 	for _, line := range strings.Split(desc, "\n") {
 		line = strings.TrimSpace(line)
@@ -129,9 +107,7 @@ func toolBrief(desc string) string {
 	return ""
 }
 
-// toolsList prints the inventory. The mount is borrowed for the read
-// and torn down before returning (agent.Dismounter), the same one-shot
-// posture `omega --help` and the other module CLIs take.
+// toolsList prints the inventory.
 func toolsList(args []string, w io.Writer) error {
 	if extra := stripConfigFlag(args); len(extra) > 0 {
 		return fmt.Errorf("tools list takes no arguments (got %q)", extra[0])
@@ -173,11 +149,10 @@ func toolsList(args []string, w io.Writer) error {
 	return nil
 }
 
-// toolsToggle applies one enable/disable. Disabling validates the name
-// against the mounted registry (an unknown name would persist a dead
-// fold entry that no listing could ever show); enabling never validates
-// - a name whose registry entry has moved on must still be cleanable
-// out of the fold by hand-typed name.
+// toolsToggle applies one enable/disable. Disabling validates the name against the
+// mounted registry (an unknown name would persist a dead fold entry that no listing
+// could ever show); enabling never validates - a name whose registry entry has moved on
+// must still be cleanable out of the fold by hand-typed name.
 func toolsToggle(args []string, enabled bool, w io.Writer) error {
 	pos := stripConfigFlag(args)
 	if len(pos) == 0 {
@@ -220,12 +195,7 @@ func toolsToggle(args []string, enabled bool, w io.Writer) error {
 	return nil
 }
 
-// persistToolFold applies one fold edit through the one writer
-// (writeDisabled): the tools namespace changes, the modules namespace
-// is carried through verbatim - a CLI mount is a one-shot read, not the
-// live host, and the mount machinery owns that namespace (boot and the
-// serve toggle keep it registry-true). Returns false for a no-op edit,
-// which writes nothing.
+// persistToolFold applies one fold edit through the one writer (writeDisabled).
 func persistToolFold(cfgPath string, fold DisabledNamespaces, name string, enabled bool) (bool, error) {
 	next, changed := toggleToolFold(fold.Tools, name, enabled)
 	if !changed {
@@ -238,9 +208,7 @@ func persistToolFold(cfgPath string, fold DisabledNamespaces, name string, enabl
 	return true, nil
 }
 
-// toggleToolFold returns the next sorted fold list and whether it
-// changed. An enable of a name that is not folded and a disable of one
-// that already is are both honest no-ops - no config write follows.
+// toggleToolFold returns the next sorted fold list and whether it changed.
 func toggleToolFold(cur []string, name string, enabled bool) ([]string, bool) {
 	next := slices.Clone(cur)
 	if enabled {

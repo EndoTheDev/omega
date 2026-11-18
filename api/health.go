@@ -1,11 +1,11 @@
 package api
 
-// The health popover's sourced facts (card t_5e2f3095). The popover's
+// The health popover's sourced facts. The popover's
 // server / uptime rows always had a wire source; these three did not:
 //
-//	provider    the model endpoint's reachability - a cached probe
-//	database    the store seam's liveness ping - inline, bounded
-//	last error  the newest error the process logger recorded
+// provider the model endpoint's reachability - a cached probe
+// database the store seam's liveness ping - inline, bounded
+// last error the newest error the process logger recorded
 //
 // Every one of them is OPTIONAL on the wire: the field is absent when
 // there is no source (no probe yet, no store mounted, an older build, a
@@ -29,10 +29,7 @@ import (
 	agentapi "github.com/EndoTheDev/omega/agent/api"
 )
 
-// healthProbeInterval is the provider reachability ladder. One probe a
-// minute is a reachability fact, not a load probe: a provider that comes
-// back up is reported reachable within a minute, and an idle shell costs
-// one model-list round trip a minute.
+// healthProbeInterval is the provider reachability ladder.
 const healthProbeInterval = 60 * time.Second
 
 // storeProbeBudget bounds the store ping. A health read is one frame on
@@ -41,10 +38,7 @@ const healthProbeInterval = 60 * time.Second
 // reported unhealthy with the timeout as its detail.
 const storeProbeBudget = 2 * time.Second
 
-// lastErrorCap caps the last-error message on the wire (runes). The
-// logger writes whole messages - a wrapped SQL error or a provider's
-// error body can be a wall of text - and the popover row is one line.
-// The tail (GET /logs) stays the full record.
+// lastErrorCap caps the last-error message on the wire (runes).
 const lastErrorCap = 240
 
 // monitorHealth runs the provider probe on its ladder until the server
@@ -64,18 +58,10 @@ func (s *Server) monitorHealth(ctx context.Context) {
 	}
 }
 
-// probeProvider asks the provider for its model list and caches the
-// verdict with its timestamp. The model LIST is the honest reachability
-// read: it is the same call the webui's model picker makes on every page
-// load, and it fails only when the endpoint is unreachable or refuses
-// the credentials. ModelInfo would be the wrong probe - it 404s on every
-// non-ollama host (openai/anthropic/keypool-fronted lanes do not serve
-// /api/show), which would paint a perfectly healthy provider "not
-// reachable".
-//
-// The provider seam carries no context, so the call is bounded by the
-// provider's own HTTP client timeout; the previous verdict keeps riding
-// the health frames while a slow probe is in flight.
+// probeProvider asks the provider for its model list and caches the verdict with its.
+// ModelInfo would be the wrong probe - it 404s on every non-ollama host
+// (openai/anthropic/keypool-fronted lanes do not serve /api/show), which would paint a
+// perfectly healthy provider "not reachable".
 func (s *Server) probeProvider(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
@@ -99,8 +85,7 @@ func (s *Server) probeProvider(ctx context.Context) {
 	s.healthMu.Unlock()
 }
 
-// providerHealth returns a copy of the cached verdict, or nil before the
-// first probe has landed (the documented not-reported floor).
+// providerHealth returns a copy of the cached verdict, or nil before the first probe.
 func (s *Server) providerHealth() *agentapi.HealthProvider {
 	s.healthMu.Lock()
 	defer s.healthMu.Unlock()
@@ -111,12 +96,9 @@ func (s *Server) providerHealth() *agentapi.HealthProvider {
 	return &fact
 }
 
-// databaseHealth pings the store seam inline - a liveness read against a
-// local pool is cheap enough that a cached verdict would only buy
-// staleness. Nil when no store module is mounted, or when the mounted
-// store does not carry the optional agent.StorePinger upgrade (a test
-// double, an alternative capsule): the body then carries no database
-// fact.
+// databaseHealth pings the store seam inline. Nil when no store module is mounted, or
+// when the mounted store does not carry the optional agent.StorePinger upgrade (a test
+// double, an alternative capsule): the body then carries no database fact.
 func (s *Server) databaseHealth() *agentapi.HealthDatabase {
 	store := s.Store()
 	if store == nil {
@@ -134,11 +116,10 @@ func (s *Server) databaseHealth() *agentapi.HealthDatabase {
 	return &agentapi.HealthDatabase{Healthy: true}
 }
 
-// lastErrorFact reads the logger seam's newest error through the
-// optional agent.LoggerLastError upgrade. Nil when no logger is mounted
-// or it does not carry the upgrade; a sourced fact with an EMPTY message
-// when the logger has recorded no error since it opened (the popover
-// renders that as "none", not as a gap).
+// lastErrorFact reads the logger seam's newest error through the optional. Nil when no
+// logger is mounted or it does not carry the upgrade; a sourced fact with an EMPTY
+// message when the logger has recorded no error since it opened (the popover renders
+// that as "none", not as a gap).
 func (s *Server) lastErrorFact() *agentapi.HealthError {
 	logger := s.Logger()
 	if logger == nil {
@@ -156,9 +137,6 @@ func (s *Server) lastErrorFact() *agentapi.HealthError {
 }
 
 // clampOneLine flattens a message onto one line and caps it at n runes.
-// Whitespace runs (newlines, tabs, indentation from a wrapped error)
-// collapse to single spaces: the popover row is one line, and the
-// untruncated record stays in the log file.
 func clampOneLine(s string, n int) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if r := []rune(s); len(r) > n {

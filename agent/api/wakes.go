@@ -10,25 +10,15 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// The wake path (async agent loop phase 1, card t_f3f953d0; design of
-// record Workshop/omega/async-agent-loop.md). A dispatched yield-class
-// call settles and its executor injects the synthetic core.YieldResult
-// here; the home wakes on EACH arrival (ruling 7) through the same
-// per-home serialization a user send takes - the run slot. When the
-// slot is live (or another wake is draining), the result queues FIFO
-// by arrival and launches when the slot frees (the launchRun finish
-// hook drains). The hub also carries the runaway guard (ruling 12):
-// cap consecutive synthetic-wake turns without a human input at the
-// constant below, then park the home with a visible note; a user
-// message resets the counter (cron wakes never ride this hub - the
-// cron runner launches its own runs).
+// The wake path. The hub also carries the runaway guard: cap consecutive synthetic-wake
+// turns without a human input at the constant below, then park the home with a visible
+// note; a user message resets the counter (cron wakes never ride this hub - the cron
+// runner launches its own runs).
 const maxConsecutiveWakes = 25
 
-// wakeHub is the per-home FIFO of settled results plus the runaway
-// guard. Sessions are sparse keys (homes with wake traffic only).
+// wakeHub is the per-home FIFO of settled results plus the runaway guard.
 type wakeHub struct {
 	mu sync.Mutex
-	// drainMu serializes whole drain passes (see drainWakes).
 	drainMu sync.Mutex
 	byID    map[string][]core.YieldResult
 	wakeSeq map[string]int  // consecutive wake launches without a human reset
@@ -50,9 +40,8 @@ func (h *wakeHub) enqueue(sessionID string, res core.YieldResult) {
 	h.byID[sessionID] = append(h.byID[sessionID], res)
 }
 
-// pushFront puts one result back as the next drain candidate - the
-// launch lost the run-slot race and the live run's finish hook will
-// drain it again. Nothing is lost, order preserved.
+// pushFront puts one result back as the next drain candidate - the launch lost the
+// run-slot race and the live run's finish hook will drain it again.
 func (h *wakeHub) pushFront(sessionID string, res core.YieldResult) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -76,9 +65,8 @@ func (h *wakeHub) pop(sessionID string) (core.YieldResult, bool) {
 	return res, true
 }
 
-// dropQueued throws away every queued result for the home and reports
-// how many it dropped - the user-stop path (card t_caa67135): a stopped
-// home re-enters nothing, so its FIFO is emptied rather than drained.
+// dropQueued throws away every queued result for the home and reports how many it
+// dropped - the user-stop path.
 func (h *wakeHub) dropQueued(sessionID string) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -87,8 +75,7 @@ func (h *wakeHub) dropQueued(sessionID string) int {
 	return n
 }
 
-// reset clears the guard state - a user message (or the operator's
-// hand) re-arms the home (ruling 12).
+// reset clears the guard state.
 func (h *wakeHub) reset(sessionID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -116,17 +103,14 @@ func (h *wakeHub) rollback(sessionID string) {
 	}
 }
 
-// parkedNow reports - and is idempotent - whether the home is already
-// parked: a parked home refuses every further launch (a user reset
-// re-arms it).
+// parkedNow reports - and is idempotent - whether the home is already parked.
 func (h *wakeHub) parkedNow(sessionID string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.parked[sessionID]
 }
 
-// park sets the parked state; future wakes for the home are refused
-// until a reset. Returns false when the home was already parked.
+// park sets the parked state; future wakes for the home are refused until a reset.
 func (h *wakeHub) park(sessionID string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -138,23 +122,11 @@ func (h *wakeHub) park(sessionID string) bool {
 	return true
 }
 
-// sessionTypedLedger is the session-type-aware pending-calls table
-// (card t_61d3def9, the session-type parity ruling): one
-// agent.YieldLedger surface split by session namespace, so every
-// session type gets the same async yield shape over its own backing.
-// Durable sessions keep the store's table - their pending calls
-// survive restarts and the boot recovery sweep re-enters them. The
-// `eph-` lane is memory-backed beside the ephRegistry: an ephemeral
-// session is process-local by law (nothing it owns may land in the
-// store - the same nothing-on-disk wall the verdict hub holds, card
-// t_860033e3), so RESTART EATS ITS PENDING RESULTS. That loss is the
-// mode's own contract, not a new loss class: the whole session dies
-// at restart anyway, and a pending result cannot outlive a home
-// that no longer exists. No durability is added for the lane.
+// sessionTypedLedger is the session-type-aware pending-calls table. That loss is the
+// mode's own contract, not a new loss class: the whole session dies at restart anyway,
+// and a pending result cannot outlive a home that no longer exists.
 type sessionTypedLedger struct {
-	// durable serves store-backed session ids (the store's table).
 	durable agent.YieldLedger
-	// ephemeral serves the `eph-` namespace (server memory only).
 	ephemeral agent.YieldLedger
 }
 
@@ -171,11 +143,10 @@ func (l sessionTypedLedger) Register(pc agent.PendingCall) error {
 	return l.lane(pc.SessionID).Register(pc)
 }
 
-// Settle removes the entry from its lane (YieldLedger). Both lanes
-// are cleared - the id lives in exactly one by construction, the
-// other lane's settle is the contract's no-op, and boot-recovery
-// residue (an eph row that predates the lane split) settles through
-// the same call without the sweep guessing lanes.
+// Settle removes the entry from its lane (YieldLedger). Both lanes are cleared - the id
+// lives in exactly one by construction, the other lane's settle is the contract's
+// no-op, and boot-recovery residue (an eph row that predates the lane split) settles
+// through the same call without the sweep guessing lanes.
 func (l sessionTypedLedger) Settle(sessionID, callID string) error {
 	if err := l.durable.Settle(sessionID, callID); err != nil {
 		return err
@@ -183,55 +154,37 @@ func (l sessionTypedLedger) Settle(sessionID, callID string) error {
 	return l.ephemeral.Settle(sessionID, callID)
 }
 
-// Pending lists the home's still-settling calls from its lane
-// (YieldLedger).
+// Pending lists the home's still-settling calls from its lane (YieldLedger).
 func (l sessionTypedLedger) Pending(sessionID string) []agent.PendingCall {
 	return l.lane(sessionID).Pending(sessionID)
 }
 
-// All lists every unsettled call across both lanes, durable lane
-// first (YieldLedger). At serve start the eph lane is empty by
-// construction - it is process-local - so the boot sweep reads
-// durable rows plus any upgrade residue (see recoverPendingCalls).
+// All lists every unsettled call across both lanes, durable lane first (YieldLedger).
 func (l sessionTypedLedger) All() []agent.PendingCall {
 	out := append([]agent.PendingCall(nil), l.durable.All()...)
 	return append(out, l.ephemeral.All()...)
 }
 
-// wakeHome takes one settled yield result (called by the loop's
-// dispatched executor through agent.SetYieldWake) and tries to drain
-// the home.
+// wakeHome takes one settled yield result (called by the loop's dispatched executor.
 func (s *Server) wakeHome(sessionID string, res core.YieldResult) {
-	// A stopped home never re-enters (card t_caa67135). The user ended
-	// the conversation: a result that settles afterwards - the call the
-	// stop was meant to kill, or one that was already in flight - is
-	// dropped here, before it can fill a chip or launch a wake turn. The
-	// loop's own gate (deliverYieldResult) drops most of these at the
-	// source; this is the belt for every other writer of the shape.
+	// A stopped home never re-enters.
 	if s.runs.userStopped(sessionID) {
 		if lgr := s.Logger(); lgr != nil {
 			lgr.Printf("wake result for %s (%s) dropped: session %s was stopped by the user", res.ToolName, res.ToolCallID, sessionID)
 		}
 		return
 	}
-	// The pending chip fills on the push channel (card t_7624bab1): every
-	// settled out-of-band call passes here (immediate-yield dispatches and
-	// budget escalations alike), so the chips topic's fill needs no second
-	// hook. Published BEFORE the drain - the chip settles the moment the
-	// result is in hand, not when the wake turn gets the slot.
+	// The pending chip fills on the push channel.
 	s.publishChipFill(sessionID, res)
 	s.wakes.enqueue(sessionID, res)
 	s.drainWakes(sessionID)
 }
 
-// drainWakes launches queued wake turns while the home's slot is free.
-// Called on every result arrival (ruling 7: wake on EACH result) and
-// from launchRun's finish hook (the slot just freed). Serialized per
-// home by construction: a launch only happens through the run hub's
-// one-run-per-session slot; a lost slot race re-queues at the front
-// and the live run's finish hook pops it again. One drain at a time
-// process-wide (the pop/launch/requeue window must not interleave with
-// a finish-hook drain, or a re-queued result can sit unlaunched).
+// drainWakes launches queued wake turns while the home's slot is free. Serialized per
+// home by construction: a launch only happens through the run hub's one-run-per-session
+// slot; a lost slot race re-queues at the front and the live run's finish hook pops it
+// again. One drain at a time process-wide (the pop/launch/requeue window must not
+// interleave with a finish-hook drain, or a re-queued result can sit unlaunched).
 func (s *Server) drainWakes(sessionID string) {
 	s.wakes.drainMu.Lock()
 	defer s.wakes.drainMu.Unlock()
@@ -241,11 +194,9 @@ func (s *Server) drainWakes(sessionID string) {
 			return
 		}
 		if s.runs.userStopped(sessionID) {
-			// The user stopped this home (card t_caa67135): the work the
-			// queued results belong to is ended. Drop them - a wake turn
-			// here would restart the conversation the human killed, which
-			// is exactly the bug this drain gate exists for. DropQueued
-			// clears the rest in one pass.
+			// The user stopped this home: the work the queued results belong to is ended. Drop
+			// them - a wake turn here would restart the conversation the human killed, which is
+			// exactly the bug this drain gate exists for.
 			if n := s.wakes.dropQueued(sessionID); n > 0 {
 				if lgr := s.Logger(); lgr != nil {
 					lgr.Printf("session %s stopped by the user: dropped %d queued wake results", sessionID, n+1)
@@ -254,38 +205,27 @@ func (s *Server) drainWakes(sessionID string) {
 			return
 		}
 		if s.wakes.parkedNow(sessionID) {
-			// The home is parked (guard fired earlier): the note is
-			// already on the transcript; drop the result, no launch.
+			// The home is parked (guard fired earlier).
 			continue
 		}
 		if !s.wakes.allow(sessionID) {
-			// Runaway guard (ruling 12): park with a visible note,
-			// settle the home's outstanding pending calls (a parked
-			// home must not pin the compactor's never-fold forever)
-			// and drop the queued results - they were counted, the
-			// note says so.
+			// Runaway guard: park with a visible note, settle the home's outstanding pending
+			// calls (a parked home must not pin the compactor's never-fold forever) and drop the
+			// queued results - they were counted, the note says so.
 			s.parkHome(sessionID)
 			continue
 		}
 		launchCtx := context.WithoutCancel(s.bootCtx)
 		if _, err := s.launchWake(sessionID, res, launchCtx); err != nil {
 			if isEphemeralID(sessionID) && s.eph.get(sessionID) == nil {
-				// The eph home closed or expired before the result
-				// settled (card t_61d3def9). The re-entry contract
-				// died with the home - restart-loss is the eph
-				// mode's own law - so the result is DROPPED, never
-				// re-queued: a launch against the gone registry
-				// would fail identically on every retry and pin
-				// the FIFO forever. The registry probe (not the
-				// launch error) decides: a live home's transient
-				// launch failure still re-queues below.
+				// The eph home closed or expired before the result settled. The re-entry contract
+				// died with the home - restart-loss is the eph mode's own law - so the result is
+				// DROPPED, never re-queued: a launch against the gone registry would fail
+				// identically on every retry and pin the FIFO forever.
 				s.wakes.rollback(sessionID)
 				continue
 			}
-			// The slot was taken between pop and start (or the home
-			// has no live backing): re-queue and wait for the next
-			// finish hook. The tentative admit rolls back - the cap
-			// counts launches, not arrivals.
+			// The slot was taken between pop and start (or the home has no live backing).
 			s.wakes.rollback(sessionID)
 			s.wakes.pushFront(sessionID, res)
 			return
@@ -293,34 +233,17 @@ func (s *Server) drainWakes(sessionID string) {
 	}
 }
 
-// wakeNoteSink wraps a wake run's TurnSink (card t_954a67a6): a wake
-// run must NEVER end with zero persisted output. The inner sink's
-// all-empty-assistant skip is right for a normal turn (a blank stream
-// before an error end finished nothing the provider produced), but on a
-// wake run it ate the re-entry turn whole - no row, no log, no error,
-// and the transcript read as a conversation that simply stopped. The
-// wrapper sees the empty assistant BEFORE the inner sink drops it and
-// leaves a visible bookkeeping note: the diagnostic breadcrumb and the
-// honest UI state in one row. Non-wake runs never get this wrapper, so
-// their empty-skip is untouched.
+// wakeNoteSink wraps a wake run's TurnSink: a wake run must NEVER end with zero.
+// Non-wake runs never get this wrapper, so their empty-skip is untouched.
 type wakeNoteSink struct {
 	s  *Server
 	id string
-	// inner is the run's real sink (store or ephemeral); it still
-	// applies the skip - the note is what stands in for the row it
-	// drops.
 	inner agent.TurnSink
-	// noted latches one note per run.
 	noted bool
-	// wrote latches that the run produced an assistant row. An errored
-	// end AFTER a produced completion is not a zero-trace turn - the
-	// session already holds what the provider wrote (card t_9821e39b),
-	// so the error note stays home.
 	wrote bool
 }
 
-// wakeEmptyNoteText words the note: the tool that settled when the run's
-// input names one, plus the way forward.
+// wakeEmptyNoteText words the note.
 func wakeEmptyNoteText(toolName string) string {
 	if toolName == "" {
 		return "[wake turn ended with no output - send a message to continue]"
@@ -328,8 +251,7 @@ func wakeEmptyNoteText(toolName string) string {
 	return "[wake turn for " + toolName + " ended with no output - send a message to continue]"
 }
 
-// wakeToolName reads the settled result the run re-entered with (the
-// wake launch passes it as the run's only input).
+// wakeToolName reads the settled result the run re-entered with (the wake launch.
 func wakeToolName(ctx context.Context) string {
 	for _, m := range agent.PersistInput(ctx) {
 		if y, ok := m.(core.YieldResult); ok {
@@ -339,20 +261,14 @@ func wakeToolName(ctx context.Context) string {
 	return ""
 }
 
-// AppendTurnMessage passes the message through and, when a wake run's
-// completion is all-empty, persists the note instead of letting that
-// completion vanish.
+// AppendTurnMessage passes the message through and, when a wake run's completion is.
 func (w *wakeNoteSink) AppendTurnMessage(ctx context.Context, msg core.Message) error {
 	if a, ok := msg.(core.Assistant); ok {
 		if agent.IsEmptyAssistant(a) {
 			if !w.noted {
 				w.noted = true
 				if w.stoppedByUser() {
-					// The user stopped this run (card t_caa67135): the
-					// note is written for a wake turn nobody answered, and
-					// "send a message to continue" would be a lie about a
-					// conversation the human just ended. Say so in the log,
-					// leave the transcript alone.
+					// The user stopped this run.
 					w.logSuppressedNote("empty")
 				} else {
 					name := wakeToolName(ctx)
@@ -363,9 +279,8 @@ func (w *wakeNoteSink) AppendTurnMessage(ctx context.Context, msg core.Message) 
 				}
 			}
 		} else {
-			// An assistant row is the turn's own output. The run's
-			// input row rides this sink too (a yield result), so the
-			// zero-trace test cannot be "any row" - only a produced
+			// An assistant row is the turn's own output. The run's input row rides this sink too
+			// (a yield result), so the zero-trace test cannot be "any row" - only a produced
 			// completion counts.
 			w.wrote = true
 		}
@@ -376,9 +291,8 @@ func (w *wakeNoteSink) AppendTurnMessage(ctx context.Context, msg core.Message) 
 	return w.inner.AppendTurnMessage(ctx, msg)
 }
 
-// wakeStopNoteText words the note a wake run leaves when it stops
-// before producing a turn: the tool that settled when the run's input
-// names one, the reason it stopped, plus the way forward.
+// wakeStopNoteText words the note a wake run leaves when it stops before producing a
+// turn.
 func wakeStopNoteText(reason, toolName string) string {
 	what := "ended on a provider error"
 	if reason == "cancelled" {
@@ -390,29 +304,16 @@ func wakeStopNoteText(reason, toolName string) string {
 	return "[wake turn for " + toolName + " " + what + " - send a message to continue]"
 }
 
-// noteStoppedEnd persists the note a wake run leaves when it ends
-// without producing a turn (cards t_9821e39b, t_317136fd). An "error"
-// end (a provider stream error) returns from the loop BEFORE any
-// completion is persisted, so the all-empty path above never sees a
-// message at all. A "cancelled" end is the same shape on the run cap:
-// a mid-stream expiry surfaces as a stream error (covered by "error"),
-// but an expiry landing BETWEEN turns ends here before the first
-// assistant row - the input row persisted at loop start and nothing
-// after it. Either way the re-entry turn vanished from the session
-// with zero trace: the live frames and the lane log were the only
-// record. The latch is shared with the empty note - one note per run,
-// whichever end fires first. A run that already persisted an assistant
-// row is not a zero-trace turn and gets nothing.
+// noteStoppedEnd persists the note a wake run leaves when it ends without producing a.
+// An "error" end (a provider stream error) returns from the loop BEFORE any completion
+// is persisted, so the all-empty path above never sees a message at all.
 func (w *wakeNoteSink) noteStoppedEnd(ctx context.Context, reason string) {
 	if w.noted || w.wrote {
 		return
 	}
 	w.noted = true
 	if w.stoppedByUser() {
-		// Same law as the empty note (card t_caa67135): a user stop is
-		// not a provider error and not the run cap, so neither wording
-		// belongs on the transcript - and "send a message to continue"
-		// least of all, on a conversation the human just ended.
+		// Same law as the empty note.
 		w.logSuppressedNote(reason)
 		return
 	}
@@ -423,27 +324,19 @@ func (w *wakeNoteSink) noteStoppedEnd(ctx context.Context, reason string) {
 	w.s.appendSessionBookkeeping(w.id, core.NewUser(wakeStopNoteText(reason, name)))
 }
 
-// stoppedByUser reports whether this wake run belongs to a home the user
-// stopped (card t_caa67135). Every note path consults it: the notes
-// exist to explain a wake turn nobody drove, and a stopped home's turn
-// was driven - by the human's stop, on purpose.
+// stoppedByUser reports whether this wake run belongs to a home the user stopped.
 func (w *wakeNoteSink) stoppedByUser() bool {
 	return w.s != nil && w.s.runs.userStopped(w.id)
 }
 
-// logSuppressedNote records that a note was withheld, so the reason a
-// stopped run left no transcript row is still diagnosable from the log.
+// logSuppressedNote records that a note was withheld, so the reason a stopped run.
 func (w *wakeNoteSink) logSuppressedNote(why string) {
 	if lgr := w.s.Logger(); lgr != nil {
 		lgr.Printf("wake turn for session %s ended with no note (%s): the user stopped the run", w.id, why)
 	}
 }
 
-// launchWake starts one wake run: the settled result re-enters through
-// the home input path - the same prepareRun/launchRun pipe a user send
-// takes (ruling 3: the loop never changes, any future writer of the
-// shape is just another launcher). Returns ok=false when the run slot
-// was taken - the result rides back into the queue.
+// launchWake starts one wake run.
 func (s *Server) launchWake(sessionID string, res core.YieldResult, ctx context.Context) (bool, error) {
 	req := chatRequest{SessionID: sessionID, wake: true}
 	req.Ephemeral = isEphemeralID(sessionID)
@@ -455,9 +348,7 @@ func (s *Server) launchWake(sessionID string, res core.YieldResult, ctx context.
 	return true, nil
 }
 
-// parkHome parks a runaway home (ruling 12): a visible note in the
-// conversation, every outstanding pending call settled, queued results
-// dropped.
+// parkHome parks a runaway home.
 func (s *Server) parkHome(sessionID string) {
 	if !s.wakes.park(sessionID) {
 		return
@@ -478,9 +369,7 @@ func (s *Server) parkHome(sessionID string) {
 	s.appendSessionBookkeeping(sessionID, note)
 }
 
-// appendSessionBookkeeping persists a visible note on a home through
-// whichever backing it has (store rows for durable sessions, the
-// registry for ephemeral ones).
+// appendSessionBookkeeping persists a visible note on a home through whichever.
 func (s *Server) appendSessionBookkeeping(sessionID string, msg core.Message) {
 	lgr := s.Logger()
 	if isEphemeralID(sessionID) {
@@ -497,13 +386,12 @@ func (s *Server) appendSessionBookkeeping(sessionID string, msg core.Message) {
 	}
 }
 
-// abandonPending ends every piece of work the home had in flight at a
-// user stop (card t_caa67135): each pending call is settled without a
-// result (nothing re-enters a conversation the human ended), and the
-// wake FIFO is emptied so a queued settlement cannot launch either.
-// Settling is not cosmetic - the never-fold law and the pending
-// placeholders both read this table, and a row left behind would pin
-// the compactor's boundary on a conversation that is over.
+// abandonPending ends every piece of work the home had in flight at a user stop: each
+// pending call is settled without a result (nothing re-enters a conversation the human
+// ended), and the wake FIFO is emptied so a queued settlement cannot launch either.
+// Settling is not cosmetic - the never-fold law and the pending placeholders both read
+// this table, and a row left behind would pin the compactor's boundary on a
+// conversation that is over.
 func (s *Server) abandonPending(sessionID string) {
 	lgr := s.Logger()
 	if l := s.yieldLedger; l != nil {
@@ -518,11 +406,7 @@ func (s *Server) abandonPending(sessionID string) {
 	}
 }
 
-// recoverPendingCalls is the boot recovery sweep (ruling 5): at serve
-// start every entry in the pending-calls table gets a synthetic timeout
-// result injected through the wake path - the agent sees an interrupted
-// result and may retry. Entries settle as they inject; the wake runs
-// launch detached.
+// recoverPendingCalls is the boot recovery sweep.
 func (s *Server) recoverPendingCalls() {
 	l := s.yieldLedger
 	if l == nil {
@@ -531,14 +415,10 @@ func (s *Server) recoverPendingCalls() {
 	lgr := s.Logger()
 	for _, pc := range l.All() {
 		if isEphemeralID(pc.SessionID) {
-			// Restart-loss contract (card t_61d3def9): the eph lane
-			// is memory-backed, so a fresh boot holds none of its
-			// entries - an `eph-` row that reached the durable
-			// surface can only be upgrade residue from a build
-			// before the lane split. Its home died with the restart
-			// (the registry is gone), so the sweep settles the row
-			// and never wakes it: a launch against the gone home
-			// would re-queue forever.
+			// Restart-loss contract: the eph lane is memory-backed, so a fresh boot holds none
+			// of its entries. Its home died with the restart (the registry is gone), so the
+			// sweep settles the row and never wakes it: a launch against the gone home would
+			// re-queue forever.
 			if lgr != nil {
 				lgr.Printf("boot recovery: pending call %s (%s) belongs to the ephemeral namespace - settled, dropped (restart ate its home)", pc.ToolName, pc.CallID)
 			}

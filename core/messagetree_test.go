@@ -1,8 +1,6 @@
 package core
 
-// Tree derivation tests (t_17365247): the store is a linear append
-// list, the tree derives from parent pointers riding the message
-// payloads. Pure functions - no store.
+// Tree derivation tests: the store is a linear append list, the tree derives from.
 
 import (
 	"reflect"
@@ -54,10 +52,9 @@ func TestDeriveLinearLegacySinglePath(t *testing.T) {
 	}
 }
 
-// TestDeriveRetryCreatesSiblingNoAppendSwap: the retry hop parents two
-// assistant heads to the same user; default active = the newest head.
+// TestDeriveRetryCreatesSiblingNoAppendSwap: the retry hop parents two assistant heads
+// to the same user.
 func TestDeriveRetryCreatesSiblingNoAppendSwap(t *testing.T) {
-	// row order: u(1), first(2), second(3)
 	rows := treeRows(t,
 		withPtr(treeUser("u"), ""),
 		withPtr(treeAssistant("first answer"), "1"),
@@ -79,8 +76,8 @@ func TestDeriveRetryCreatesSiblingNoAppendSwap(t *testing.T) {
 	}
 }
 
-// TestDeriveVariantSelectPersistsAndWins: the selection entry flips the
-// active variant and survives; the last entry per branch wins.
+// TestDeriveVariantSelectPersistsAndWins: the selection entry flips the active variant
+// and survives.
 func TestDeriveVariantSelectPersistsAndWins(t *testing.T) {
 	rows := treeRows(t,
 		withPtr(treeUser("u"), ""),
@@ -95,7 +92,6 @@ func TestDeriveVariantSelectPersistsAndWins(t *testing.T) {
 	if view.Branches[0].ActiveIndex != 0 {
 		t.Fatalf("active index = %d, want 0", view.Branches[0].ActiveIndex)
 	}
-	// a later select entry re-flips the same branch
 	rows = append(rows, StoredMessage{ID: 5, Message: NewVariantSelect("1", "3")})
 	view = DeriveTree(rows)
 	if got := pathIDs(view); !reflect.DeepEqual(got, []string{"1", "3"}) {
@@ -103,9 +99,7 @@ func TestDeriveVariantSelectPersistsAndWins(t *testing.T) {
 	}
 }
 
-// TestDeriveToolChainStaysInGroup: a run's tool span (assistant with
-// calls, results, follow-on segment) remains one branch under the
-// user; selecting a variant group swaps the WHOLE run.
+// TestDeriveToolChainStaysInGroup: a run's tool span (assistant with calls, results.
 func TestDeriveToolChainStaysInGroup(t *testing.T) {
 	a1 := treeAssistant("")
 	a1.ToolCalls = []ToolCall{{ID: "c1", Name: "web"}}
@@ -119,7 +113,6 @@ func TestDeriveToolChainStaysInGroup(t *testing.T) {
 	if got := pathIDs(view); !reflect.DeepEqual(got, []string{"1", "2", "3", "4"}) {
 		t.Fatalf("tool chain path = %v, want the whole run [1 2 3 4]", got)
 	}
-	// a retry head joins the same branch point; the tool group stays whole
 	rows = append(rows, StoredMessage{ID: 5, Message: withPtr(treeAssistant("retry answer"), "1")})
 	view = DeriveTree(rows)
 	if got := pathIDs(view); !reflect.DeepEqual(got, []string{"1", "5"}) {
@@ -130,12 +123,9 @@ func TestDeriveToolChainStaysInGroup(t *testing.T) {
 	}
 }
 
-// TestDeriveContinueFromSelected: the next message's chain continues
-// the selected branch's leaf - the fork-send message chains onto the
-// forked point and the path order reflects it.
+// TestDeriveContinueFromSelected: the next message's chain continues the selected
+// branch's leaf.
 func TestDeriveContinueFromSelected(t *testing.T) {
-	// legacy stack (no pointers) forked mid-way: u1(1), a1(2), fork
-	// bubble u_new(3, parent=2), its run head a_new(4, parent=3)
 	rows := treeRows(t,
 		withPtr(treeUser("u1"), ""),
 		withPtr(treeAssistant("a1"), "1"),
@@ -146,10 +136,7 @@ func TestDeriveContinueFromSelected(t *testing.T) {
 	if got := pathIDs(view); !reflect.DeepEqual(got, []string{"1", "2", "3", "4"}) {
 		t.Fatalf("fork path = %v, want [1 2 3 4]", got)
 	}
-	// the pre-existing continuation under u1... a sibling head (5,
-	// parent 1) exists: leaf by chain validity skips it when the fork
-	// row is newest? The fork row (4) validates (chain: a_new->u_new->
-	// a1 head active) and is row-max - it wins the leaf.
+	// the pre-existing continuation under u1..
 	rows = treeRows(t,
 		withPtr(treeUser("u1"), ""),
 		withPtr(treeAssistant("a1"), "1"),
@@ -166,8 +153,7 @@ func TestDeriveContinueFromSelected(t *testing.T) {
 	}
 }
 
-// TestDeriveMetaEntriesInvisible: bookkeeping rows never join the tree
-// and never break chains.
+// TestDeriveMetaEntriesInvisible: bookkeeping rows never join the tree and never.
 func TestDeriveMetaEntriesInvisible(t *testing.T) {
 	rows := treeRows(t,
 		NewModelChange("glm-5.3"),
@@ -185,8 +171,7 @@ func TestDeriveMetaEntriesInvisible(t *testing.T) {
 	}
 }
 
-// TestDeriveResolutionMaps: the variants endpoint's resolution ground
-// truth - which run a message belongs to, and every branch point.
+// TestDeriveResolutionMaps: the variants endpoint's resolution ground truth.
 func TestDeriveResolutionMaps(t *testing.T) {
 	rows := treeRows(t,
 		withPtr(treeUser("u"), ""),

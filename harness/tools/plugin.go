@@ -12,12 +12,6 @@ import (
 )
 
 // Plugin adapts the tools registry into the agent.Plugin interface.
-// It provides the search tools (grep + glob, card t_db98ebfe: the
-// roadmap's search stubs, two single-purpose domains) and the
-// REGISTRY - the merge machinery's claim law, the /tools command,
-// the ToolsList panel and the prompt section (v0.12 phase F; the
-// shell-ring shrink wave 1 moved the built-in file and shell tools
-// out into their own capsules).
 type Plugin struct {
 	search *SearchProvider
 }
@@ -30,37 +24,21 @@ func (p *Plugin) Description() string {
 	return "the tools registry: the grep/glob search tools, tool claim and conflict law, the /tools command, the ToolsList panel and the prompt section"
 }
 
-// Provides lists seam names this plugin mounts: the prompt section
-// (the Tools section renders every extension's tool list from the
-// mount Context's inventory) and the additive tools rail (the
-// search provider). The tools-seam rail is also contributed by the
-// other built-in tool capsules (files, shell) through the same rail.
-// ConfigKey names the config section this plugin reads from
-// ctx.Configs (see agent.Describer). Empty = reads no section.
+// Provides lists seam names this plugin mounts.
 func (p *Plugin) ConfigKey() string { return "" }
 
 func (p *Plugin) Provides() []string { return []string{"prompt_sections", "tools"} }
 
-// Requires lists seam names that must be mounted first. The registry
-// has no dependencies.
+// Requires lists seam names that must be mounted first.
 func (p *Plugin) Requires() []string { return nil }
 
-// Toggleable opts the tools registry into the toggleable tier (0.17.3
-// tier re-law, card t_ee3a968b: "always on: agent-loop, provider and
-// logging; toggleable: the rest"). A disabled registry means the search
-// tools and the /tools surface leave together; the loop keeps whatever
-// other capsules contribute.
+// Toggleable opts the tools registry into the toggleable tier.
 func (p *Plugin) Toggleable() bool { return true }
 
-// MountWithAPI implements agent.APIPlugin. Registers the prompt
-// section and the /tools command. The /tools command stays the
-// display-toggle feature: it returns CommandResult with display-mode
-// actions the shell interprets, and its list view reads the mount
-// Context's inventory - the same capture the classic wrapper held.
+// MountWithAPI implements agent.APIPlugin.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
-	// The search tools pass the same db-door guard the file tools
-	// use (ENDO'S LAW 2026-10-18): the guard is built from the store
-	// config (the instance db path); nil/zero-value guards are
+	// The search tools pass the same db-door guard the file tools use: the guard is built
+	// from the store config (the instance db path); nil/zero-value guards are
 	// pass-through.
 	var guard *datadir.Guard
 	if c, ok := ctx.Configs["store"].(store.Config); ok {
@@ -72,10 +50,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 
 	steps := []func() error{
 		func() error {
-			// files.grep / files.glob: the search verbs keep their
-			// model-facing names (card t_ee3a968b: the tier re-law removed
-			// this capsule's built-in TIER exemption, not the vocabulary
-			// the prompt and the model already address)
+			// files.grep / files.glob: the search verbs keep their model-facing names
 			for name, t := range p.search.Tools() {
 				if err := api.RegisterBuiltinTool(name, t); err != nil {
 					return err
@@ -84,11 +59,8 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 			return nil
 		},
 		func() error { return api.RegisterPromptSectioner(p) },
-		// /tools stays an extension command (it returns CommandResult
-		// with display-mode actions the shell interprets); its enum
-		// completions ride on the command itself now, not a shell-side
-		// map. The list view reads the mount Context's inventory - the
-		// same capture the classic wrapper held.
+		// /tools stays an extension command (it returns CommandResult with display-mode
+		// actions the shell interprets).
 		func() error {
 			return api.RegisterCommand("/tools", "list tools or toggle tool result display [on|off|auto|list]",
 				[]string{"on", "off", "auto", "list"}, func(_ context.Context, name, args string) (core.CommandResult, error) {
@@ -104,10 +76,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return nil
 }
 
-// handleToolsCommand handles the /tools command. "list" (or no args)
-// lists all tools from all extensions (the mount Context's inventory,
-// the same read the classic wrapper made). "on|off|auto" toggles
-// display state via a set_tool_display action.
+// handleToolsCommand handles the /tools command.
 func handleToolsCommand(ctx *core.Context, name, args string) (core.CommandResult, error) {
 	if name != "/tools" {
 		return core.CommandResult{}, core.CommandMiss(name)
@@ -137,12 +106,7 @@ func handleToolsCommand(ctx *core.Context, name, args string) (core.CommandResul
 	}
 }
 
-// listTools formats the tool list from ctx.Infos as text. The registry
-// entry's enable flag is stamped from the live fold (card t_441deb04):
-// the disabled.tools fold at ctx.DisabledTools, so a live toggle shows
-// without a remount. A disabled tool keeps its row - the listing is the
-// management surface, and a row that vanished would leave no way to
-// find the name to turn back on - but the line says so.
+// listTools formats the tool list from ctx.Infos as text.
 func listTools(ctx *core.Context) core.CommandResult {
 	var sb strings.Builder
 	sb.WriteString("\n")
@@ -187,8 +151,7 @@ func listTools(ctx *core.Context) core.CommandResult {
 	return core.CommandResult{Text: sb.String()}
 }
 
-// firstLineOfDesc returns the first line of a tool description,
-// truncated to 60 chars.
+// firstLineOfDesc returns the first line of a tool description, truncated to 60 chars.
 func firstLineOfDesc(desc string) string {
 	if i := strings.IndexByte(desc, '\n'); i >= 0 {
 		desc = desc[:i]

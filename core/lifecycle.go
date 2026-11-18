@@ -1,19 +1,10 @@
-// The goroutine fence (v0.12 phase E1, implementation sketch 1, grill
-// Q11): a module must not spawn background work in Mount. Mount-time
-// code registers Start/Stop lifecycle handles instead; the host calls
-// Start after the mount commit. Recover cannot unwind a goroutine that
-// a panicked Mount already spawned - the fence is what keeps the
-// contribution-rollback story true: a rejected remount leaves zero
-// running background work behind.
-//
-// Start law: Start arms the handle and returns promptly. Long-running
-// work launches its own goroutine. A blocking Start is a fence
-// violation - the caller of StartAll runs handles in registration
-// order, and one blocking handle starves the rest.
-//
-// Stop is the reverse: StopAll walks the started handles in reverse
-// registration order, and every Stop marks the handle unstarted so a
-// later remount can start it again.
+// The goroutine fence (v0.12 phase E1, implementation sketch 1, grill Q11): a module
+// must not spawn background work in Mount. Recover cannot unwind a goroutine that a
+// panicked Mount already spawned - the fence is what keeps the contribution-rollback
+// story true: a rejected remount leaves zero running background work behind.
+// Long-running work launches its own goroutine. A blocking Start is a fence violation -
+// the caller of StartAll runs handles in registration order, and one blocking handle
+// starves the rest.
 package core
 
 import (
@@ -22,28 +13,22 @@ import (
 	"sync"
 )
 
-// StartDeps carries what a handle needs at start time - the values
-// that do not exist while modules mount (the built agent, the opened
-// store). Handles receive them at StartAll, never at registration:
-// capturing host state at Mount is the capture the fence outlaws.
+// StartDeps carries what a handle needs at start time - the values that do not exist.
+// Handles receive them at StartAll, never at registration: capturing host state at
+// Mount is the capture the fence outlaws.
 type StartDeps struct {
 	Ctx *Context
-	// Agent is the wired agent — the neutral `any` is the mount
-	// machinery's carrier (core cannot name the consumer of its own
-	// needs); the receiving capsule type-asserts it to its own face.
-	// Store is the offered store service (the "store" key), the same
-	// carrier law.
+	// Agent is the wired agent — the neutral `any` is the mount machinery's carrier (core
+	// cannot name the consumer of its own needs); the receiving capsule type-asserts it to
+	// its own face.
 	Agent any
 	Store any
-	// Run is the cancellation context the armed work runs under -
-	// the shutdown signal the host owns (serve passes its signal
-	// context). Nil means the caller asked for a mount with nothing
-	// armed.
+	// Run is the cancellation context the armed work runs under. Nil means the caller
+	// asked for a mount with nothing armed.
 	Run context.Context
 }
 
-// LifecycleHandle is one registered unit of background work: a name
-// the census reports, the Start that arms it, the Stop that ends it.
+// LifecycleHandle is one registered unit of background work.
 type LifecycleHandle struct {
 	Name  string
 	Start func(ctx context.Context, deps StartDeps) error
@@ -65,16 +50,14 @@ type LifecycleSnapshot struct {
 }
 
 // Lifecycle is the run-group: the registration surface of the fence.
-// Modules reach it through Context.RunGroup; hosts start and stop it.
 type Lifecycle struct {
 	mu      sync.Mutex
 	entries []*lifecycleEntry
 }
 
-// Register records a handle for owner module. The same owner
-// re-registering the same name replaces (the clean-idempotent
-// remount, Q7); the same name under a different owner is a fence
-// violation and fails loud. Registration starts nothing.
+// Register records a handle for owner module. The same owner re-registering the same
+// name replaces (the clean-idempotent remount, Q7); the same name under a different
+// owner is a fence violation and fails loud.
 func (l *Lifecycle) Register(owner string, h LifecycleHandle) {
 	if h.Name == "" {
 		panic(fmt.Sprintf("lifecycle handle by %q: a handle carries its name", owner))
@@ -97,9 +80,7 @@ func (l *Lifecycle) Register(owner string, h LifecycleHandle) {
 	l.entries = append(l.entries, &lifecycleEntry{LifecycleHandle: h, owner: owner})
 }
 
-// Unregister removes owner's handles (optionally just the named one
-// when name is not empty) in reverse registration order, stopping any
-// that are started. Returns what it removed.
+// Unregister removes owner's handles (optionally just the named one when name is not.
 func (l *Lifecycle) Unregister(owner, name string) []string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -118,10 +99,7 @@ func (l *Lifecycle) Unregister(owner, name string) []string {
 	return removed
 }
 
-// StartAll arms the unstarted handles owned by owner ("" = all) in
-// registration order. On the first failure it stops the ones it
-// already started, in reverse, and returns the error: a half-started
-// boot is unwound, not abandoned.
+// StartAll arms the unstarted handles owned by owner ("" = all) in registration order.
 func (l *Lifecycle) StartAll(ctx context.Context, deps StartDeps, owner string) error {
 	l.mu.Lock()
 	var started []*lifecycleEntry
@@ -159,10 +137,7 @@ func (l *Lifecycle) StartAll(ctx context.Context, deps StartDeps, owner string) 
 	return nil
 }
 
-// StopAll ends the started handles owned by owner ("" = all) in
-// reverse registration order. Started flips to false either way: the
-// fence state always says what can be started next. The first error
-// is returned after every handle had its turn.
+// StopAll ends the started handles owned by owner ("" = all) in reverse registration.
 func (l *Lifecycle) StopAll(owner string) error {
 	l.mu.Lock()
 	var stops []*lifecycleEntry
@@ -190,8 +165,7 @@ func (l *Lifecycle) StopAll(owner string) error {
 	return first
 }
 
-// Snapshot returns the census view of every registered handle in
-// registration order, started or not.
+// Snapshot returns the census view of every registered handle in registration order.
 func (l *Lifecycle) Snapshot() []LifecycleSnapshot {
 	l.mu.Lock()
 	defer l.mu.Unlock()

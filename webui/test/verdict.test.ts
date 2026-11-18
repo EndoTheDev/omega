@@ -1,10 +1,10 @@
-// omega webui: unit tests for verdict cards v1.1 (cards t_2ecf9c51,
-// t_42d4dc09). Three layers, matching the house patterns:
-// - the pure card helpers: args parse, result parse, wire restore
-//   (verdictCardFromToolArgs, verdictFromResultText, renderTranscriptItems);
-// - the fetch wrappers: fetchVerdicts / postVerdict URL + body contract
+// omega webui: unit tests for verdict cards v1.1 (cards,
+// ). Three layers, matching the house patterns:
+// the pure card helpers: args parse, result parse, wire restore
+//
+// the fetch wrappers: fetchVerdicts / postVerdict URL + body contract
 //   under fetch interception, incl. the 409 race reason surfacing;
-// - source pins: ChatItem routes the verdict item to VerdictCard and the
+// source pins: ChatItem routes the verdict item to VerdictCard and the
 //   bell consumes fetchVerdicts (source checks, components are not
 //   importable in node).
 // Run: node --test webui/test/ (node >= 23 runs TS natively)
@@ -36,7 +36,7 @@ function read(...parts: string[]): string {
   return readFileSync(join(modules, ...parts), "utf8");
 }
 
-// --- pure helpers ---
+// -- pure helpers --
 
 test("verdictCardFromToolArgs builds the card from the tool args", () => {
   const card = verdictCardFromToolArgs({
@@ -114,7 +114,7 @@ test("verdictFromResultText: non-JSON and unknown kinds are a dead card, not a c
   }
 });
 
-// --- wire restore ---
+// -- wire restore --
 
 test("renderTranscriptItems: a verdict call renders the card, not a tool line", () => {
   const items = renderTranscriptItems([
@@ -161,12 +161,10 @@ test("renderTranscriptItems: a pending card with no result row is ACTIONABLE, an
   const card = items[0];
   if (card.kind !== "verdict") throw new Error("expected a verdict item");
   assert.equal(card.status, "pending");
-  // card t_79386e36: verdict.request is yield-class - the run ENDS with
-  // the card waiting in the hub and the answer wakes a new run. "No live
-  // run" therefore says nothing about the card, and the retired `stale`
-  // bit (which read exactly that) painted every real card dead.
+  // verdict.request is yield-class. "No live run" therefore says nothing about the
+  // card, and the retired `stale` bit (which read exactly that) painted every real card
+  // dead.
   assert.equal("stale" in card, false, "there is no run-derived liveness bit on a card");
-  // the countdown anchors on the call's own open clock, not on a mount
   assert.equal(card.issuedAt, Date.parse(started), "the wire timestamp is the countdown anchor");
   assert.equal(card.timeoutS, 180);
 });
@@ -180,8 +178,7 @@ test("verdictIssuedAt: no clock, no anchor (never a fabricated one)", () => {
 
 test("isVerdictTool: the dotted wire verb, and nothing else", () => {
   assert.equal(isVerdictTool("verdict.request"), true);
-  // the pre-rename flat name is what the renderer kept matching AFTER the
-  // wire moved (card t_79386e36) - it is not a wire name anymore
+  // the pre-rename flat name is what the renderer kept matching AFTER the wire moved.
   assert.equal(isVerdictTool("verdict"), false, "the flat pre-rename name matches nothing on the wire");
   assert.equal(isVerdictTool("verdict.request.extra"), false);
   assert.equal(isVerdictTool("shell.run"), false);
@@ -189,9 +186,8 @@ test("isVerdictTool: the dotted wire verb, and nothing else", () => {
 });
 
 test("a canvas payload carrying verdict.request paints a card - actionable, anchored, run ENDED", () => {
-  // The canvas path IS the chat pane's render source, and the wire name is
-  // the whole regression: this payload is the shape GET /ui/canvas served
-  // live (name='verdict.request', running absent because the tool yields).
+  // The canvas path IS the chat pane's render source, and the wire name is the whole
+  // regression.
   const started = new Date(Date.now() - 30_000).toISOString();
   const t = createCanvasTranscript();
   const items = t.apply({
@@ -247,7 +243,7 @@ test("renderTranscriptItems: a verdict tool_result without its call renders noth
   assert.deepEqual(items, []);
 });
 
-// --- fetch wrappers ---
+// -- fetch wrappers --
 
 test("fetchVerdicts: empty session lists every pending card via /verdicts", async () => {
   const seen: string[] = [];
@@ -370,7 +366,7 @@ test("postVerdict: a plain non-OK status still throws something truthful", async
   }
 });
 
-// --- source pins (components are not importable in node) ---
+// -- source pins (components are not importable in node) --
 
 test("ChatItem routes verdict items to the VerdictCard component", () => {
   const chatItem = read("app/components/ChatItem.vue");
@@ -390,9 +386,7 @@ test("VerdictCard renders the list layout and sends every answer shape", () => {
   assert.match(vue, /postVerdict\(props\.sessionId/, "answers post to the session the chat tab owns");
   assert.match(vue, /skip: true/, "no silent dismissal: the skip posts as a verdict");
   assert.match(vue, /error\.value = e instanceof Error \? e\.message/, "the race reason renders (no silent retry)");
-  // card t_79386e36: a pending card is actionable and counts down. There is
-  // no "dead card" template - the old one hung off a run-derived stale bit
-  // that was true for every real card.
+  // a pending card is actionable and counts down.
   assert.match(vue, /item\.status === 'pending' && countdown/, "a pending card renders its countdown");
   assert.match(vue, /verdict-countdown/, "the counting-down label exists");
   assert.doesNotMatch(vue, /item\.stale/, "no run-derived staleness bit decides the card's fate");
@@ -409,8 +403,7 @@ test("the notifications badge counts pending verdict cards (card t_180db2cb)", (
 test("both render paths ask ONE wire-name predicate (a rename cannot kill the card again)", () => {
   const chat = read("app/composables/chat.ts");
   const omega = read("app/composables/omega.ts");
-  // ONE list. The card's own regression was a name spelled twice, in two
-  // files, both left behind by the dotted rename (card t_79386e36).
+  // ONE list.
   assert.match(omega, /export const VERDICT_TOOL_NAMES: readonly string\[\] = \["verdict\.request"\]/, "the dotted wire verb, spelled once");
   assert.match(omega, /export function isVerdictTool/, "one predicate owns the name");
   assert.match(omega, /if \(isVerdictTool\(t\.name\)\)/, "the REST restore asks the predicate");
@@ -429,10 +422,7 @@ test("chat.ts maps the card rows live and settles them from the result row", () 
   assert.match(chat, /isVerdictTool\(block\.tool_call\?\.name\)/, "the canvas transcript recognizes the card tool");
   assert.match(chat, /verdictCardFromToolArgs/, "live cards build from the row args");
   assert.match(chat, /verdictFromResultText/, "the tool_result row settles the card");
-  // A card's liveness is NOT the panel's streaming bit: verdict.request
-  // is yield-class, so the run IS over while the card waits (card
-  // t_79386e36 - `stale = !panelRunning` painted every real card dead,
-  // hid its options and left no countdown).
+  // A card's liveness is NOT the panel's streaming bit.
   assert.doesNotMatch(chat, /stale\s*=\s*!panelRunning/, "the panel's running flag never decides a card's fate");
   assert.doesNotMatch(chat, /\.stale\b/, "no run-derived staleness bit survives on the canvas path");
 });
@@ -451,10 +441,7 @@ test("a pending card is a wake waiter, so a reload arms the watcher (card t_7938
   assert.equal(transcriptHasPending(settled), false);
   assert.equal(transcriptPendingCount(pending), 1, "the status bar agrees with the canvas count");
   assert.equal(transcriptPendingCount(settled), 0);
-  // the CARD shape itself is a waiter: the tool-chip branch cannot answer
-  // for it (a matched card is never a tool item), so a predicate that
-  // skipped the verdict kind would look armed on the transcript shape
-  // above only by accident
+  // the CARD shape itself is a waiter: the tool-chip branch cannot answer for it, so.
   const card: VerdictItem = { kind: "verdict", title: "ship?", options: [], multi: false, allowText: false, status: "pending" };
   assert.equal(awaitsWake(card), true, "a pending card is a yield-class waiter");
   assert.equal(awaitsWake({ ...card, status: "settled" }), false);

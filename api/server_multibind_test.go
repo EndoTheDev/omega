@@ -1,11 +1,8 @@
 package api
 
-// The multi-bind mirror pin (t_c6f13a82): one process can serve several
-// binds (loopback + a LAN address), one Server per bind but ONE run hub
-// and ONE chat capsule. The capsule's server pin follows the last
-// STARTED bind, so an action-pipe launch on any mirror registers the
-// run there - with per-bind hubs that run was invisible to the
-// transcript and events reads on every other mirror (journey
+// The multi-bind mirror pin. The capsule's server pin follows the last STARTED bind, so
+// an action-pipe launch on any mirror registers the run there - with per-bind hubs that
+// run was invisible to the transcript and events reads on every other mirror (journey
 // 30-retry-single-user went red on exactly that).
 
 import (
@@ -36,16 +33,10 @@ func TestChatActionPipeMirrorKeepsTheRunVisible(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 	sA := NewServer(a, nil, st, nil, nil, nil)
-	// The second mirror gets its own agent (each channel start builds
-	// one) over the same provider + store: the mirror executes runs.
 	aB := agent.NewAgent(prov, nil, 0)
 	aB.SetLoopProvider(testLoop{})
 	sB := NewServer(aB, nil, st, nil, nil, nil)
 
-	// The channel-start wiring (HTTPChannel.Start): one process-wide
-	// hub, one shared capsule, ONE canvas behind every mirror
-	// (t_1c9793a8); the LAST-started bind holds the capsule's server
-	// pin.
 	hub := &agentapi.RunHub{}
 	chat := agentapi.NewChatCapsule()
 	chat.PinServer(sB.Server)
@@ -64,16 +55,10 @@ func TestChatActionPipeMirrorKeepsTheRunVisible(t *testing.T) {
 	tsB := httptest.NewServer(sB.Handler())
 	t.Cleanup(tsB.Close)
 
-	// History lands through mirror A; the run registers in the shared
-	// hub either way.
 	createSession(t, tsA, "mb1")
 	muteTitles(t, st, "mb1")
 	startExchange(t, prov, sA, tsA, "mb1")
 
-	// The retry rides the action pipe from mirror A while the capsule
-	// pins mirror B: prepareRun + launchRun execute on B (chat.srv).
-	// The pin under test - A's hub sees the run (per-bind wiring answered
-	// "session not active" here, journey 30's exact failure).
 	call := fmt.Sprintf(`{"module":%q,"action":%q,"args":{"session":"mb1"}}`, agentapi.ChatModuleNamespace, agentapi.ChatActionRetry)
 	code, resp := postJSON(t, tsA.URL+"/ui/actions", call)
 	if code != http.StatusOK {
@@ -84,8 +69,7 @@ func TestChatActionPipeMirrorKeepsTheRunVisible(t *testing.T) {
 	if tx["running"] != true {
 		t.Fatalf("transcript through mirror A: running = %v, want true", tx["running"])
 	}
-	// finish the replay through mirror B's agent (the capsule pin's
-	// provider is shared, so either scripter drives it)
+	// finish the replay through mirror B's agent (the capsule pin's provider is shared.
 	prov.send(finalStep("second answer")...)
 	prov.done()
 	waitFor(t, "retry replay done", func() bool { return !sA.ActiveRun("mb1") })
@@ -95,15 +79,11 @@ func TestChatActionPipeMirrorKeepsTheRunVisible(t *testing.T) {
 	}
 }
 
-// The multi-bind canvas pin (t_1c9793a8): the panel state a mirror's
-// GET /ui/canvas serves must track the capsule's pushes on EVERY
-// bind. The channel start used to build one canvas per bind, and the
-// capsule's push closure is last-one-wins - the mirror that lost the
-// start race served its boot-time seed forever, so any repaint whose
-// durable path is the snapshot refetch (journey 30's variant switch
-// back) never flipped on that mirror. The REAL channel start is the
-// path under test: both binds start in goroutines like cmdServe does,
-// against live listeners on two loopback addresses.
+// The multi-bind canvas pin: the panel state a mirror's GET /ui/canvas serves must. The
+// channel start used to build one canvas per bind, and the capsule's push closure is
+// last-one-wins - the mirror that lost the start race served its boot-time seed
+// forever, so any repaint whose durable path is the snapshot refetch (journey 30's
+// variant switch back) never flipped on that mirror.
 func TestMultiBindServesOneCanvas(t *testing.T) {
 	prov := newMultiProvider("step")
 	st, err := store.Open(":memory:")
@@ -112,7 +92,6 @@ func TestMultiBindServesOneCanvas(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	// A private port for this test's two binds.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("reserve port: %v", err)
@@ -120,8 +99,6 @@ func TestMultiBindServesOneCanvas(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 	ln.Close()
 
-	// The plugin's Mount: one hub, one capsule, one canvas builder
-	// carried by every bind's channel.
 	p := NewPlugin()
 	ctx := &core.Context{Configs: map[string]any{
 			"http_channel": Config{Port: port, Bind: []string{"127.0.0.1", "127.0.0.2"}},
@@ -147,8 +124,7 @@ func TestMultiBindServesOneCanvas(t *testing.T) {
 		waitMirrorHealthy(t, base)
 	}
 
-	// One push through the capsule - the same face beginRun, endRun
-	// and the variant-select re-push ride. Every mirror must serve it.
+	// One push through the capsule. Every mirror must serve it.
 	p.chat.Push(core.Panel{
 		ID:      agentapi.ChatPanelID,
 		Title:   "Chat",
@@ -162,8 +138,7 @@ func TestMultiBindServesOneCanvas(t *testing.T) {
 	}
 }
 
-// waitMirrorHealthy polls a bind's /health until the lane is up - the
-// channel's listener is live once Serve accepts.
+// waitMirrorHealthy polls a bind's /health until the lane is up.
 func waitMirrorHealthy(t *testing.T, base string) {
 	t.Helper()
 	deadline := time.Now().Add(testWaitTimeout)
@@ -181,8 +156,7 @@ func waitMirrorHealthy(t *testing.T, base string) {
 	t.Fatalf("mirror %s never healthy", base)
 }
 
-// canvasChatSession reads the chat panel's payload session off a
-// mirror's snapshot GET.
+// canvasChatSession reads the chat panel's payload session off a mirror's snapshot GET.
 func canvasChatSession(t *testing.T, base string) string {
 	t.Helper()
 	res, err := http.Get(base + "/ui/canvas")

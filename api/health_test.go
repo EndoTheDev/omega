@@ -1,6 +1,6 @@
 package api
 
-// The health popover's sourced facts (card t_5e2f3095). Three truths are
+// The health popover's sourced facts. Three truths are
 // pinned here:
 //
 //  1. unsourced = the OLD body, byte for byte. A process with no probe,
@@ -25,8 +25,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// probeProvider is a Provider whose model list fails on demand; the
-// probe is the only method the health path may call on it.
+// probeProvider is a Provider whose model list fails on demand.
 type probeProvider struct {
 	agent.Provider
 	mu    sync.Mutex
@@ -59,8 +58,7 @@ type pingingStore struct {
 
 func (s pingingStore) Ping(context.Context) error { return s.err }
 
-// plainStore carries no Ping: the health body must then carry no
-// database fact at all.
+// plainStore carries no Ping: the health body must then carry no database fact at all.
 type plainStore struct{ agent.StoreProvider }
 
 // lastErrLogger carries the optional LoggerLastError upgrade.
@@ -89,8 +87,7 @@ func (quietLogger) Warnf(string, ...any)  {}
 func (quietLogger) Errorf(string, ...any) {}
 func (quietLogger) Close() error          { return nil }
 
-// probeServer builds a shell server whose agent streams from stub (the
-// newTestServer fixture, with the provider under test).
+// probeServer builds a shell server whose agent streams from stub (the newTestServer.
 func probeServer(stub agent.Provider) *Server {
 	a := agent.NewAgent(stub, nil, 0)
 	a.SetLoopProvider(testLoop{})
@@ -122,10 +119,8 @@ func healthProviderFact(t *testing.T, s *Server) map[string]any {
 	return provider
 }
 
-// TestHealthUnsourcedShapeUnchanged: nothing sourced - no probe has run,
-// no store is mounted, no logger upgrade - so the body is exactly the
-// pre-fact shape. This is the additive-wire proof and the older-client
-// degrade the popover's "not reported" rows rest on.
+// TestHealthUnsourcedShapeUnchanged: nothing sourced - no probe has run, no store is
+// mounted, no logger upgrade - so the body is exactly the pre-fact shape.
 func TestHealthUnsourcedShapeUnchanged(t *testing.T) {
 	s := newTestServer()
 	body := healthBody(t, s)
@@ -143,9 +138,7 @@ func TestHealthUnsourcedShapeUnchanged(t *testing.T) {
 	}
 }
 
-// TestHealthProviderFact: a failed model-list probe is an unreachable
-// provider with the probe's error as its detail; a passing one is
-// reachable with no detail.
+// TestHealthProviderFact: a failed model-list probe is an unreachable provider with.
 func TestHealthProviderFact(t *testing.T) {
 	stub := &probeProvider{err: errString("dial tcp: connection refused")}
 	s := probeServer(stub)
@@ -173,9 +166,7 @@ func TestHealthProviderFact(t *testing.T) {
 	}
 }
 
-// TestHealthReadsNeverProbe: the probe is cached. Five health reads
-// after one probe leave the provider's call count at one - the reason
-// the probe is not on the 5s heartbeat.
+// TestHealthReadsNeverProbe: the probe is cached.
 func TestHealthReadsNeverProbe(t *testing.T) {
 	stub := &probeProvider{}
 	s := probeServer(stub)
@@ -192,7 +183,6 @@ func TestHealthReadsNeverProbe(t *testing.T) {
 }
 
 // TestHealthDatabaseFact: the store seam's ping rides the body inline.
-// A store without the upgrade, and no store at all, leave the fact out.
 func TestHealthDatabaseFact(t *testing.T) {
 	healthy := NewServer(newTestServer().Agent(), nil, pingingStore{}, nil, nil, nil)
 	fact, ok := healthBody(t, healthy)["database"].(map[string]any)
@@ -215,9 +205,7 @@ func TestHealthDatabaseFact(t *testing.T) {
 	}
 }
 
-// TestHealthLastErrorFact: the logger upgrade sources the newest error
-// with its time; a sourced "no errors yet" stays distinguishable from
-// unsourced (an empty message vs an absent object).
+// TestHealthLastErrorFact: the logger upgrade sources the newest error with its time.
 func TestHealthLastErrorFact(t *testing.T) {
 	s := newTestServer()
 	at := time.Unix(1794300000, 0)
@@ -251,8 +239,7 @@ func TestHealthLastErrorFact(t *testing.T) {
 	}
 }
 
-// TestHealthClampOneLine: an error message is flattened and capped for
-// the one-line popover row (the full record stays in the log file).
+// TestHealthClampOneLine: an error message is flattened and capped for the one-line.
 func TestHealthClampOneLine(t *testing.T) {
 	got := clampOneLine("boom:\n  wrapped\tcause", 40)
 	if got != "boom: wrapped cause" {

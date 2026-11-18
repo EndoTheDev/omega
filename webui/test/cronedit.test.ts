@@ -1,12 +1,8 @@
-// omega webui: unit tests for the Cron tab's JOB EDITOR chain (card
-// t_ecec864e). The behavior half runs at the helper level (the
-// crontoggle.test.ts recipe): a fetch-log probe drives saveCronJob and
-// deleteCronJob, no SFC compile. The wire contract: POST /cron/save
-// carries the WHOLE job definition and the response is re-fetched into
-// the fresh listing (one response carries the state it landed); a
-// failed POST throws before any re-fetch so the prior rows stand; the
-// client validation mirrors the Go schema law EXACTLY - the editor
-// never ships a job the loader would reject.
+// omega webui: unit tests for the Cron tab's JOB EDITOR chain. The wire contract: POST
+// /cron/save carries the WHOLE job definition and the response is re-fetched into the
+// fresh listing (one response carries the state it landed); a failed POST throws before
+// any re-fetch so the prior rows stand; the client validation mirrors the Go schema law
+// EXACTLY - the editor never ships a job the loader would reject.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -89,7 +85,7 @@ function draft(over: Partial<JobDraft> = {}): JobDraft {
   return { ...emptyDraft(), name: "probe", schedule: "0 8 * * *", prompt: "p", ...over };
 }
 
-// --- the wire contract ---
+// -- the wire contract --
 
 test("saveCronJob POSTs the whole job and answers the fresh listing", async () => {
   const calls = recordFetch((call) => {
@@ -117,7 +113,6 @@ test("saveCronJob POSTs the whole job and answers the fresh listing", async () =
     assert.equal(body.enabled, true);
     // the two-call chain: save -> jobs re-fetch (the toggle contract)
     assert.deepEqual(calls.map((c) => c.url), ["/cron/save", "/cron/jobs"]);
-    // minutes and schedule are kind-exclusive on the wire
     const d2 = draft({ kind: "interval", minutes: "7", schedule: "0 8 * * *" });
     await saveCronJob(d2);
     const body2 = JSON.parse(calls.filter((c) => c.url === "/cron/save")[1]!.body!) as Record<string, unknown>;
@@ -159,7 +154,7 @@ test("deleteCronJob POSTs the name and answers the fresh listing; unknown is lou
   }
 });
 
-// --- the client-side schema law (mirrors harness/cron validateJob) ---
+// -- the client-side schema law (mirrors harness/cron validateJob) --
 
 test("validateDraft mirrors the Go schema law exactly", () => {
   assert.equal(validateDraft(draft()), "");
@@ -181,19 +176,15 @@ test("validateDraft mirrors the Go schema law exactly", () => {
   }
 });
 
-// --- the scope law + round-trips ---
+// -- the scope law + round-trips --
 
 test("editableOf refuses agent-home rows, never rows that merely name an agent", () => {
-  // a plain main-home row: editable
   assert.equal(editableOf({ name: "x", schedule: "", enabled: true, next: "" }), true);
-  // a main-home continuous-agent job with an AUTHORED agent: main's own
-  // crons.yaml owns it, so its pencil stays (card t_21824d98 - the agent
-  // combobox makes this row an ordinary case)
+  // a main-home continuous-agent job with an AUTHORED agent.
   assert.equal(
     editableOf({ name: "pulse", schedule: "", enabled: true, next: "", agent: "ghost", agent_owned: false }),
     true,
   );
-  // an agent-home wake row: that home's file owns it, read-only here
   assert.equal(
     editableOf({ name: "wake", schedule: "", enabled: true, next: "", agent: "scout", agent_owned: true }),
     false,
@@ -217,7 +208,6 @@ test("draftOf round-trips the wire row into the form shape", () => {
   assert.equal(d.deliver, "continuous-agent");
   assert.equal(d.model, "glm-5.3");
   assert.equal(d.enabled, false);
-  // a legacy row (no kind on the wire) drafts as cron
   const legacy = draftOf({ name: "old", schedule: "0 8 * * *", enabled: true, next: "" } as never);
   assert.equal(legacy.kind, "cron");
 });
@@ -230,12 +220,11 @@ test("emptyDraft seeds the schema's own defaults", () => {
   assert.deepEqual(DELIVER_TARGETS, ["new-session", "continuous-agent", "append-to-file"]);
 });
 
-// --- the row voice (pure helpers the SFC renders) ---
+// -- the row voice (pure helpers the SFC renders) --
 
 test("cadenceOf speaks kind-aware cadence", () => {
   assert.equal(cadenceOf({ name: "x", kind: "cron", schedule: "0 8 * * *", enabled: true, next: "" } as never), "0 8 * * *");
   assert.equal(cadenceOf({ name: "x", kind: "interval", minutes: 5, enabled: true, next: "" } as never), "5m interval");
-  // legacy rows without kind default like the schema does
   assert.equal(cadenceOf({ name: "x", schedule: "0 6 * * *", enabled: true, next: "" } as never), "0 6 * * *");
 });
 
@@ -250,24 +239,19 @@ test("jobMeta renders only the non-default fields", () => {
     jobMeta({ ...plain, agent: "scout" } as never),
     " - agent scout",
   );
-  // t_3885c975: pinned skills speak in the meta line (fragment only;
-  // a plain job stays quiet)
   assert.equal(jobMeta({ ...plain, skills: ["a", "b"] } as never), " - skills a, b");
 });
 
-// --- the last-fire status voice (card t_3885c975) ---
+// -- the last-fire status voice --
 
-// A local RFC3339 stamp the formatter re-renders in the same (host)
-// zone: built from local date parts, carried through UTC, so the
-// asserted output is one shape on every lane.
+// A local RFC3339 stamp the formatter re-renders in the same (host) zone.
 function localRfc3339(y: number, mo: number, d: number, h: number, mi: number): string {
   return new Date(y, mo - 1, d, h, mi).toISOString();
 }
 
 test("lastMeta speaks the last fire's outcome", () => {
   const quiet = { name: "x", schedule: "", enabled: true, next: "" };
-  // the never-fired row stays quiet - "-" means no fire, silence here
-  // is the same truth
+  // the never-fired row stays quiet - "-" means no fire, silence here is the same truth
   assert.equal(lastMeta(quiet as never), "");
   const at = localRfc3339(2026, 11, 7, 2, 14);
   assert.equal(
@@ -295,7 +279,7 @@ test("statusStamp renders local compact stamps, verbatim on junk", () => {
   assert.equal(statusStamp("not-a-time"), "not-a-time");
 });
 
-// --- the fire-pinned skills (card t_3885c975) ---
+// -- the fire-pinned skills --
 
 test("parseSkills mirrors the Go normalizeSkills law", () => {
   assert.deepEqual(parseSkills("  omega-dev , ponytail,,grill-me  "), ["omega-dev", "ponytail", "grill-me"]);
@@ -333,7 +317,6 @@ test("saveCronJob carries the skills list on the wire", async () => {
 test("draftOf round-trips the pinned skills into the editor voice", () => {
   const d = draftOf({ name: "x", schedule: "0 8 * * *", enabled: true, next: "", skills: ["a", "b"] } as never);
   assert.equal(d.skills, "a, b");
-  // a row with no pins drafts an empty input
   const bare = draftOf({ name: "y", schedule: "0 8 * * *", enabled: true, next: "" } as never);
   assert.equal(bare.skills, "");
 });
@@ -341,22 +324,12 @@ test("draftOf round-trips the pinned skills into the editor voice", () => {
 test("draftOf carries the listing row's prompt - editing a job never loses the message (t_3885c975 review fix)", () => {
   const d = draftOf({ name: "x", schedule: "0 8 * * *", enabled: true, next: "", prompt: "the authored message" } as never);
   assert.equal(d.prompt, "the authored message");
-  // a row with no prompt drafts empty (create flow)
   const bare = draftOf({ name: "y", schedule: "0 8 * * *", enabled: true, next: "" } as never);
   assert.equal(bare.prompt, "");
 });
-// --- the field option sources (card t_60e0651e) ----------------------
-//
-// Rulings 1-2: agent and model are COMBOBOXES over the agents registry
-// (GET /agents) and the model catalog the settings model knobs read
-// (GET /models). Ruling 3: skills is a STRICT multi-select over the
-// skills registry (GET /skills). No new option source is introduced -
-// each control reads the exact GET that already serves its list.
-// Run: node --test test/cronedit.test.ts
 
 const AGENTS = JSON.stringify([
-  // the LIVE wire's shape: the home root (main) answers continuous false,
-  // a secondary agent home answers true (agent/profiles.go loadProfile)
+  // the LIVE wire's shape: the home root (main) answers continuous false, a secondary.
   { name: "default", dir: "/home", continuous: false, skill_count: 3 },
   { name: "coder", dir: "/home/agents/coder", description: "writes code", continuous: true, skill_count: 1 },
 ]);
@@ -388,9 +361,7 @@ test("fetchAgentOptions reads GET /agents and keeps the roster rows", async () =
     // the main profile is named for the home root and SAYS what it is
     assert.equal(opts[0]!.hint, "the main agent - in-process, never wakes");
     assert.equal(opts[1]!.hint, "writes code");
-    // the inheritance chain's roster facts ride the same rows (card
-    // t_7fb3b35a): the main-vs-secondary mark and the agent's own
-    // model layer
+    // the inheritance chain's roster facts ride the same rows.
     assert.equal(opts[0]!.continuous, false, "the home root is the main agent");
     assert.equal(opts[1]!.continuous, true, "an agents/<name> home is secondary");
     assert.equal(opts[1]!.model, "", "a layer that authors no model inherits");
@@ -425,8 +396,7 @@ test("fetchModelOptions reads GET /models and offers BARE model names", async ()
       catalog.options.every((o) => !o.value.startsWith("work:")),
       "an instance:model pick would write a value every fire fails on",
     );
-    // the model this omega RUNS rides the same answer - the chain's
-    // last link (card t_7fb3b35a)
+    // the model this omega RUNS rides the same answer - the chain's last link
     assert.equal(catalog.current, "clef:27b");
   } finally {
     restoreFetch();
@@ -488,7 +458,6 @@ test("strictSkills keeps registry names and NAMES what it drops", () => {
   );
   assert.deepEqual(kept, ["omega-dev", "ponytail"], "strict, de-duped, order kept");
   assert.deepEqual(dropped, ["ghost"], "an unknown name is dropped AND reported");
-  // the editor writes the strict set back into the draft's comma voice
   assert.equal(skillsVoice(kept), "omega-dev, ponytail");
   assert.deepEqual(parseSkills(skillsVoice(kept)), kept, "the voice round-trips");
 });
@@ -500,22 +469,19 @@ test("withSkill / withoutSkill are the checkbox toggles", () => {
   assert.deepEqual(withoutSkill(["a"], "ghost"), ["a"]);
 });
 
-// --- the SFC wiring (source pins: the node suite has no DOM) ---------
+// -- the SFC wiring (source pins: the node suite has no DOM) --------
 
 test("CronJobs.vue wires the three controls to their sources", () => {
   const src = readFileSync(
     fileURLToPath(new URL("../../harness/cron/ui/CronJobs.vue", import.meta.url)),
     "utf8",
   );
-  // ONE combobox block driven by COMBO_FIELDS (agent + model), each
-  // control pointing at its own option-list id and binding the draft
-  // field as free text
+  // ONE combobox block driven by COMBO_FIELDS (agent + model), each control pointing.
   assert.match(src, /v-for="f in COMBO_FIELDS"/);
   assert.match(src, /role="combobox"/);
   assert.match(src, /v-model="editor\.draft\[f\.field\]"/, "the combobox binds the draft field as free text");
   assert.match(src, /:aria-controls="`cron-\$\{f\.field\}-options`"/);
   assert.match(src, /function comboRows\(field: ComboField\)/);
-  // the skills control: a searchable checkbox list + chips on the control
   assert.match(src, /class="cron-skills-search"/);
   assert.match(src, /role="listbox"[\s\S]{0,400}aria-multiselectable="true"/);
   assert.match(src, /type="checkbox"[\s\S]{0,120}@change="toggleSkill\(o\.value\)"/);

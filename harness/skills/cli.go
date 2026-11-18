@@ -3,9 +3,9 @@ package skills
 // cli.go: the module's CLI face (v0.12 phase D Q6 - the capsule
 // registers its own names at mount and owns its argv):
 //
-//	omega curator   the weekly skills curator pass (card t_9972dfd0)
-//	omega skills    the registry editor - list | read | write | delete
-//	                (card t_05d06973, the terminal face of the skills
+// omega curator the weekly skills curator pass
+// omega skills the registry editor - list | read | write | delete
+//
 //	                tab's CRUD round)
 //
 // Every `omega skills` verb rides this capsule's own faces, never a
@@ -29,9 +29,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// curatorHelp documents the curator subcommand (the module's own
-// help: `omega curator --help` prints it). Bare invocation stays a
-// run pass - the summary and /curator both document that.
+// curatorHelp documents the curator subcommand (the module's own help.
 const curatorHelp = `omega curator - the weekly skills curator pass
 
 Usage:
@@ -42,9 +40,7 @@ Usage:
   omega curator rollback <id>  roll back one ledger entry
 `
 
-// skillsSummary is the one-line entry the global `omega --help` module
-// section shows for this capsule (the listing is registry
-// introspection).
+// skillsSummary is the one-line entry the global `omega --help` module section shows.
 const skillsSummary = "the skills registry: list, read, write, delete (see: omega skills --help)"
 
 // skillsHelp is the module's own help: `omega skills --help` prints it.
@@ -72,10 +68,7 @@ and the agent's own directory resolves to the shared copy - the same
 winner the tab edits.
 `
 
-// registerCuratorCLI claims the `omega curator` subcommand - the CLI
-// face of the learning loop (card t_9972dfd0). The argv mirrors the
-// /curator command: no verb or "run" = one full pass, plus stale |
-// ledger | rollback <id>.
+// registerCuratorCLI claims the `omega curator` subcommand.
 func (p *Plugin) registerCuratorCLI(api *agent.ExtensionAPI, sp *SkillsProvider) error {
 	return api.RegisterSubcommand("curator", "run the weekly skills curator pass (verbs: run | stale | ledger | rollback <id>)",
 		func(argv []string) error {
@@ -103,8 +96,7 @@ func (p *Plugin) registerCuratorCLI(api *agent.ExtensionAPI, sp *SkillsProvider)
 		})
 }
 
-// registerSkillsCLI claims the `omega skills` subcommand - the
-// terminal face of the skills tab's editor (card t_05d06973).
+// registerSkillsCLI claims the `omega skills` subcommand.
 func (p *Plugin) registerSkillsCLI(api *agent.ExtensionAPI, sp *SkillsProvider) error {
 	return api.RegisterSubcommand("skills", skillsSummary, func(argv []string) error {
 		if _, err := resolveSkillsDirs(sp); err != nil {
@@ -114,13 +106,10 @@ func (p *Plugin) registerSkillsCLI(api *agent.ExtensionAPI, sp *SkillsProvider) 
 	})
 }
 
-// resolveSkillsDirs re-roots the provider's home-relative directories
-// against OMEGA_HOME. The CLI dispatch mounts on configForCLI, which
-// never runs the host-side resolveHomePaths, so the configured dirs
-// keep their bare "skills" / "skills/shared" literals there; a
-// relative dir in the serve path has already been resolved. Absolute
-// dirs pass through untouched. Both subcommands call it, so the CLI
-// reads and writes the same folders the tab does.
+// resolveSkillsDirs re-roots the provider's home-relative directories against. The CLI
+// dispatch mounts on configForCLI, which never runs the host-side resolveHomePaths, so
+// the configured dirs keep their bare "skills" / "skills/shared" literals there; a
+// relative dir in the serve path has already been resolved.
 func resolveSkillsDirs(sp *SkillsProvider) (string, error) {
 	needsHome := !filepath.IsAbs(sp.Dir) || (sp.SharedDir != "" && !filepath.IsAbs(sp.SharedDir))
 	if !needsHome {
@@ -139,8 +128,7 @@ func resolveSkillsDirs(sp *SkillsProvider) (string, error) {
 	return sp.Dir, nil
 }
 
-// stripCLIConfigFlag drops the global --config flag pair: the CLI
-// dispatch already consumed it for the mount (configForCLI).
+// stripCLIConfigFlag drops the global --config flag pair.
 func stripCLIConfigFlag(argv []string) []string {
 	out := make([]string, 0, len(argv))
 	for i := 0; i < len(argv); i++ {
@@ -156,10 +144,7 @@ func stripCLIConfigFlag(argv []string) []string {
 	return out
 }
 
-// runSkillsCLI is the argv dispatch (name-first grammar, the crons
-// CLI's shape). Bare invocation = list; a per-verb --help answers the
-// module help instead of being read as a skill name, and a trailing
-// argument after --help is a usage error rather than a silent drop.
+// runSkillsCLI is the argv dispatch (name-first grammar, the crons CLI's shape).
 func runSkillsCLI(sp *SkillsProvider, args []string, stdout io.Writer, stdin io.Reader) error {
 	if len(args) == 0 {
 		return skillsList(sp, stdout)
@@ -202,19 +187,8 @@ func isHelpToken(arg string) bool {
 	return arg == "--help" || arg == "-h" || arg == "help"
 }
 
-// skillName peels the one positional a skill verb needs. The name
-// comes FIRST (`omega skills write <name> [flags]`): the Go flag
-// package stops parsing at the first non-flag argument, so a trailing
-// name would swallow every flag after it. A leading dash is a usage
+// skillName peels the one positional a skill verb needs. A leading dash is a usage
 // error, never a guess.
-//
-// The name law is enforced HERE, for every verb: validSkillName is the
-// same single-folder-component rule SaveSkill, DeleteSkill and the
-// HTTP handlers apply. Validating at the one door the verbs share
-// means a name like "shared/../alpha" is refused by `read` too -
-// ReadSkill resolves <dir>/<name>/SKILL.md verbatim, so an unvalidated
-// read would happily print a SKILL.md-shaped file from outside the
-// skills inventory.
 func skillName(verb string, args []string) (string, []string, error) {
 	withFlags := ""
 	if verb == "write" {
@@ -232,9 +206,7 @@ func skillName(verb string, args []string) (string, []string, error) {
 	return args[0], args[1:], nil
 }
 
-// skillsList renders the inventory with the /skills command's own
-// renderer - the terminal and the loop's slash command speak one
-// table.
+// skillsList renders the inventory with the /skills command's own renderer.
 func skillsList(sp *SkillsProvider, stdout io.Writer) error {
 	out, err := sp.handleSkillsCommand()
 	if err != nil {
@@ -275,9 +247,8 @@ type skillsWriteFlags struct {
 	content     string
 }
 
-// parseSkillsWriteArgs parses the write flags. Unknown flags and bad
-// values error - the operator gets the flag name, never a silent
-// default.
+// parseSkillsWriteArgs parses the write flags. Unknown flags and bad values error - the
+// operator gets the flag name, never a silent default.
 func parseSkillsWriteArgs(args []string) (*skillsWriteFlags, []string, error) {
 	f := &skillsWriteFlags{}
 	fs := flag.NewFlagSet("skills write", flag.ContinueOnError)
@@ -291,10 +262,9 @@ func parseSkillsWriteArgs(args []string) (*skillsWriteFlags, []string, error) {
 	return f, fs.Args(), nil
 }
 
-// skillsWrite is the upsert: a new name creates the skill folder, an
-// existing name rewrites the body and (when --description is passed)
-// the description line, leaving every other frontmatter key
-// byte-true. SaveSkill is the one writer - the tab's own face.
+// skillsWrite is the upsert: a new name creates the skill folder, an existing name
+// rewrites the body and (when --description is passed) the description line, leaving
+// every other frontmatter key byte-true.
 func skillsWrite(sp *SkillsProvider, stdout io.Writer, stdin io.Reader, args []string) error {
 	name, flagArgs, err := skillName("write", args)
 	if err != nil {
@@ -312,8 +282,6 @@ func skillsWrite(sp *SkillsProvider, stdout io.Writer, stdin io.Reader, args []s
 	if existing, rerr := sp.ReadSkill(name); rerr == nil {
 		verb = "updated"
 		if description == "" {
-			// an update without --description keeps the description
-			// the skill already carries
 			description = existing.Description
 		}
 	}
@@ -332,9 +300,7 @@ func skillsWrite(sp *SkillsProvider, stdout io.Writer, stdin io.Reader, args []s
 	return nil
 }
 
-// skillBody resolves the markdown body from --content, --file or
-// stdin. Two sources at once is a usage error; with neither flag the
-// body arrives on stdin (a pipe, a redirect or a heredoc).
+// skillBody resolves the markdown body from --content, --file or stdin.
 func skillBody(f *skillsWriteFlags, stdin io.Reader) (string, error) {
 	if f.content != "" && f.file != "" {
 		return "", fmt.Errorf("--content and --file are mutually exclusive")
@@ -356,10 +322,7 @@ func skillBody(f *skillsWriteFlags, stdin io.Reader) (string, error) {
 	return string(raw), nil
 }
 
-// skillsDelete removes one skill through the tab's own removal law
-// (backup into .curator/backups, ledger row, folder gone) with the
-// CLI as the ledger's named writer. The returned listing is the
-// landed truth; the confirmation counts what remains.
+// skillsDelete removes one skill through the tab's own removal law (backup.
 func skillsDelete(sp *SkillsProvider, stdout io.Writer, args []string) error {
 	name, rest, err := skillName("delete", args)
 	if err != nil {

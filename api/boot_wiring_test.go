@@ -1,12 +1,12 @@
 package api
 
-// The boot-wiring pin (card t_7ee284e8): at lane boot the canvas
+// The boot-wiring pin: at lane boot the canvas
 // handlers map carries the shell panel namespace. The Oct-27
 // incident: a toggle-storm chopped the Start-time chat registration
 // off the Context (a journal truncation undo, retired by d73fecd) and
 // every chat panel push thereafter logged
 //   canvas: unknown module: "http_channel"
-// until the next restart. The wire path - registerAt, then NewCanvas -
+// until the next restart. The wire path - registerAt, then NewCanvas
 // must leave the chat namespace routed and pushing, and the served
 // snapshot must carry the panel. This walks the REAL MountAllAPI +
 // HTTPChannel.wire surface, no stand-ins for the wiring itself.
@@ -31,8 +31,7 @@ func TestBootWiringKeepsEngineRingInHandlers(t *testing.T) {
 	if len(ctx.Channels) == 0 {
 		t.Fatalf("http_channel mounted no channels")
 	}
-	// the host-built seam (wireCaptioner analog): mount builds no
-	// Provider, the host attaches one before the channels start.
+	// the host-built seam (wireCaptioner analog).
 	ctx.ApplyOffer("provider", "test", prov)
 
 	st, err := store.Open(":memory:")
@@ -71,8 +70,7 @@ func TestBootWiringKeepsEngineRingInHandlers(t *testing.T) {
 		t.Fatalf("boot dispatched into unknown module: %v (the incident)", derr)
 	}
 
-	// 2. a push lands: the capsule's installed closure routes into the
-	// same namespace - the live row without a snapshot refresh.
+	// 2.
 	panel := core.Panel{
 		ID:      "chat",
 		Title:   "Chat",
@@ -91,18 +89,16 @@ func TestBootWiringKeepsEngineRingInHandlers(t *testing.T) {
 		t.Fatalf("push payload did not land: %+v", snap[0].Payload)
 	}
 
-	// 2b. the chat-runs offer rides the wire through the proper
-	// api.Offer surface (Endo ruling 2026-11-04): live after wire -
-	// the first shell-offered capsule-service key, resolvable by the
-	// store capsule's own face, never the raw core primitive.
+	// 2b. the chat-runs offer rides the wire through the proper api.Offer surface: live
+	// after wire - the first shell-offered capsule-service key, resolvable by the store
+	// capsule's own face, never the raw core primitive.
 	if ctx.Services().Resolve("chat-runs") == nil {
 		t.Fatalf("wire did not offer the chat-runs service")
 	}
 
-	// 3. the teardown proof stays valid: the channel registration
-	// dismounts clean (the chat capsule rides Start-time registration,
-	// not the mount journal - the journal may never own it). The
-	// chat-runs offer is the mirror: journaled at wire, the dismount
+	// 3. the teardown proof stays valid: the channel registration dismounts clean (the
+	// chat capsule rides Start-time registration, not the mount journal - the journal may
+	// never own it). The chat-runs offer is the mirror: journaled at wire, the dismount
 	// must release it (the census equality).
 	if err := reg.Dismount(ctx, "http_channel"); err != nil {
 		t.Fatalf("dismount (teardown proof): %v", err)

@@ -1,6 +1,4 @@
-// omega webui: unit tests for the codeblock post-render enhancement
-// (composables/codeblocks.ts). Run: node --test webui/test/
-// (node >= 23 runs TS natively)
+// omega webui: unit tests for the codeblock post-render enhancement.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
@@ -37,10 +35,8 @@ describe("the codeblock copy button (card t_a92450ea)", () => {
   const src = readFileSync(new URL("../app/composables/codeblocks.ts", import.meta.url), "utf8");
 
   it("rides the ONE copy path and pins the copied affordance to its verdict", () => {
-    // the call and the import must be the same name - the pin came from a
-    // live catch on t_a92450ea: a renamed call + a fixed import builds
-    // clean (typeCheck:false) then reds in every browser with a bare
-    // ReferenceError inside the click handler
+    // the call and the import must be the same name - the pin came from a live catch
+    // on.
     assert.match(src, /import \{ copyText \} from "\.\/clipboard\.ts"/);
     assert.match(src, /copyText\(code\?\.textContent \?\? ""\)/);
     assert.doesNotMatch(src, /copyTextToClipboard/);

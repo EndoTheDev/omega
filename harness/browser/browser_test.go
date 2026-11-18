@@ -64,8 +64,7 @@ func TestStoreRoundTrip(t *testing.T) {
 	}
 }
 
-// TestStoreMemoryOnly: a pathless store answers as a zero state and
-// swallows persistence (the no-home embed shape).
+// TestStoreMemoryOnly: a pathless store answers as a zero state and swallows.
 func TestStoreMemoryOnly(t *testing.T) {
 	s, err := OpenStore("")
 	if err != nil {
@@ -79,9 +78,7 @@ func TestStoreMemoryOnly(t *testing.T) {
 	}
 }
 
-// TestValidURL: only absolute http(s) URLs the address bar could
-// actually navigate. Shape validation, not an origin gate - any site
-// is allowed, any scheme-shape is not.
+// TestValidURL: only absolute http(s) URLs the address bar could actually navigate.
 func TestValidURL(t *testing.T) {
 	good := []string{
 		"https://example.com",
@@ -111,8 +108,7 @@ func TestValidURL(t *testing.T) {
 	}
 }
 
-// mountPlugin mounts the plugin the api way and returns the live
-// Context (the ModuleRoutes ledger rides it).
+// mountPlugin mounts the plugin the api way and returns the live Context (the.
 func mountPlugin(t *testing.T, p *Plugin) *core.Context {
 	t.Helper()
 	ctx := &core.Context{}
@@ -122,8 +118,7 @@ func mountPlugin(t *testing.T, p *Plugin) *core.Context {
 	return ctx
 }
 
-// serveRoute finds the module's route on the context and serves one
-// request through it.
+// serveRoute finds the module's route on the context and serves one request through it.
 func serveRoute(t *testing.T, ctx *core.Context, pattern, method, target, body string) (int, string) {
 	t.Helper()
 	for _, rt := range ctx.ModuleRoutes {
@@ -143,10 +138,7 @@ func serveRoute(t *testing.T, ctx *core.Context, pattern, method, target, body s
 	return 0, ""
 }
 
-// TestRouteRoundTrip is the tab's wire contract: empty resume point
-// answers 200 "", a PUT with a good URL persists, a GET round-trips
-// it, a wrong-URL PUT is a 400, and the module is on the registry
-// (toggleable, route-rooted under /browser).
+// TestRouteRoundTrip is the tab's wire contract.
 func TestRouteRoundTrip(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	t.Setenv("OMEGA_AGENT", "")
@@ -179,7 +171,6 @@ func TestRouteRoundTrip(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &rep); err != nil || rep.Last != "https://example.test/docs" {
 		t.Fatalf("GET after PUT: %q (%v)", body, err)
 	}
-	// persisted to disk (the same store a restart reloads)
 	s2, err := OpenStore(filepath.Join(datadir.Home(), "data", StoreName))
 	if err != nil {
 		t.Fatalf("reopen persisted: %v", err)
@@ -196,7 +187,6 @@ func TestRouteRoundTrip(t *testing.T) {
 		t.Fatalf("refused PUT mutated the store: %q", p.store.Last())
 	}
 
-	// the toggleable shape: registry introspection names it
 	if !p.Toggleable() {
 		t.Fatal("browser capsule must be toggleable")
 	}
@@ -218,9 +208,7 @@ func TestStoreClear(t *testing.T) {
 	}
 }
 
-// TestFrameableHeaders pins the header classification: XFO answers
-// refuse, frame-ancestors answers by list membership, an HTTP error
-// status refuses, silence allows.
+// TestFrameableHeaders pins the header classification.
 func TestFrameableHeaders(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -255,9 +243,7 @@ func TestFrameableHeaders(t *testing.T) {
 	}
 }
 
-// TestProbeRoute: the frameability probe answers a deny upstream with
-// frameable=false, a friendly upstream with true, a dead host with
-// null, and a non-browsable url parameter with a 400.
+// TestProbeRoute: the frameability probe answers a deny upstream with.
 func TestProbeRoute(t *testing.T) {
 	deny := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-Frame-Options", "DENY")
@@ -270,7 +256,6 @@ func TestProbeRoute(t *testing.T) {
 	}))
 	t.Cleanup(friendly.Close)
 
-	// an in-memory probe client so the unreachable-host case is fast
 	savedTimeout := probeClient.Timeout
 	probeClient.Timeout = 2 * time.Second
 	t.Cleanup(func() { probeClient.Timeout = savedTimeout })
@@ -312,7 +297,6 @@ func TestProbeRoute(t *testing.T) {
 		t.Fatalf("dead host must answer a null verdict: %s", body)
 	}
 
-	// a non-browsable url parameter: 400
 	code, body = serve("/browser/frameable?url=" + url.QueryEscape("javascript:alert(1)"))
 	if code != 400 {
 		t.Fatalf("bad scheme: %d %s", code, body)

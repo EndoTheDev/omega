@@ -1,19 +1,10 @@
 <template>
-  <!-- omega webui: the TYPED MODEL PICKER (card t_70c28128; THE COMPOSER'S
-       picker since t_dac84a33). A settings model field renders the same
-       popover the chat composer has - one collapsible section per
-       provider, search across sections, a listing failure shown inline in
-       its section, footer actions (refresh / add custom / edit custom) -
-       from the ONE shared catalog (composables/modelCatalog.ts; the
-       catalogs were always shared, only the rendering differed).
-       The knob's slot filter rides the picker's qualify hook: a model the
-       knob refuses stays VISIBLE, disabled with its reason ("not a vision
-       model"), so the catalog reads complete instead of quietly missing
-       rows. A pick maps onto the value the knob persists (see commit()).
-       No usable list = no dropdown: a failed fetch (or a catalog whose
-       every model is disqualified for this slot) falls back to free text
-       with the hint spelled out - the escape hatch is the DEGRADED state,
-       never a silent dead dropdown. -->
+  <!--
+    omega webui: the TYPED MODEL PICKER.
+    No usable list = no dropdown: a failed fetch (or a catalog whose every model is
+    disqualified for this slot) falls back to free text with the hint spelled out - the
+    escape hatch is the DEGRADED state, never a silent dead dropdown.
+  -->
   <template v-if="mode === 'list'">
     <ModelSelect
       class="setting-select setting-model"
@@ -49,8 +40,7 @@
     useModelCatalog,
     type ModelFilter,
   } from "~/composables/modelCatalog";
-  // THE composer's picker (card t_1914a8c9): settings and chat render the
-  // SAME popover since t_dac84a33 - never a second grouped picker
+  // THE composer's picker: settings and chat render the SAME popover since - never a.
   import ModelSelect from "../chat/ModelSelect.vue";
 
   const props = defineProps<{
@@ -79,18 +69,12 @@
     })),
   );
 
-  // the flat floor: the picker's default section while no grouped payload
-  // arrived (a /models answer without providers, or the loader's first
-  // paint). A pick from it carries the "default:" grammar prefix.
+  // the flat floor: the picker's default section while no grouped payload arrived (a.
   const flatModels = computed(() =>
     (catalog.value.entries ?? []).map((e) => e.name),
   );
 
-  // qualify: the reason a row may not be picked in THIS knob's slot, or
-  // null. The wire's per-model capabilities come from the row's own
-  // section; the curated families fill in where the wire is silent
-  // (effectiveCapabilities). The flat floor has no section, so its flags
-  // come from the shared entry list.
+  // qualify: the reason a row may not be picked in THIS knob's slot, or null.
   function qualify(section: string, model: string): string | null {
     if (filter !== "vision" && filter !== "decision") return null;
     const wire = sections.value.length
@@ -129,21 +113,15 @@
       : "list",
   );
 
-  // The inherit row appears ONLY for a knob the schema marks
-  // default_option (card t_df46c8cf; the flags land in t_b403ad88) -
-  // Endo's exception: an APPROVAL decision is deliberate, never inherited,
-  // so the decision slot gets no row even once it carries the flag, and
-  // the literal word "default" has no route into a decision knob.
+  // The inherit row appears ONLY for a knob the schema marks default_option - Endo's
+  // exception: an APPROVAL decision is deliberate, never inherited, so the decision
+  // slot gets no row even once it carries the flag, and the literal word "default" has
+  // no route into a decision knob.
   const inheritRow = computed(
     () => props.knob.defaultOption === true && filter !== "decision",
   );
 
-  // THE COLLISION (card t_dac84a33): "default" has two meanings and they
-  // stay apart - the composer grammar's "default:model" addresses the base
-  // provider's SECTION, the aux word "default" means INHERIT the chat's
-  // model. knobModelValue keeps slot knobs verbatim and strips the section
-  // prefix from every other knob, so the literal word can only arrive from
-  // the pinned inherit row.
+  // THE COLLISION: "default" has two meanings and they stay apart.
   const sectionNames = computed(() =>
     sections.value.map((s) => s.name).filter((n) => n !== "default"),
   );

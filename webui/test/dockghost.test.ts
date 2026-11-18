@@ -1,9 +1,8 @@
-// omega webui: unit tests for the ghost preview (v0.14.4 milestone 5).
-// The load-bearing law already pins prediction == commit in
-// dockdnd.test.ts; these pin the ghost's OWN read: ghostPreview delegates
-// to predictDockDrop (its refusal is the commit's refusal, verbatim) and
-// the split halves are the insert law's exact 50/50 of the measured axis
-// px. Render-free.
+// omega webui: unit tests for the ghost preview (v0.14.4 milestone 5). The load-bearing
+// law already pins prediction == commit in dockdnd.test.ts; these pin the ghost's OWN
+// read: ghostPreview delegates to predictDockDrop (its refusal is the commit's refusal,
+// verbatim) and the split halves are the insert law's exact 50/50 of the measured axis
+// px.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -52,8 +51,7 @@ describe("ghostPreview (the exact before-drop read)", () => {
 
   it("a refusal returns the commit's own reason verbatim", () => {
     const { root, a, b } = rowRoot();
-    // card t_ae9ac5cf: the split zones self-drop now, so the ghost's
-    // verbatim-refusal law pins on the CENTER self-fold (still refused)
+    // the split zones self-drop now, so the ghost's verbatim-refusal law pins on the.
     const same = predictDockDrop(root, a.id, 0, a.id, "center");
     assert.ok("refused" in same);
     const g = ghostPreview(root, a.id, 0, a.id, "center", 480);

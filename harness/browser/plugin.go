@@ -11,12 +11,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// Plugin adapts the browser capsule into omega's plugin system. It
-// claims no seam: the browser pane is webui vocabulary (the dock tab,
-// the shell registry in webui), and the module's whole surface
-// is the persistence route pair the tab drives. Toggleable like every
-// capsule - disabling it dies the routes (the live Context re-read),
-// the tab keeps working with an empty resume point.
+// Plugin adapts the browser capsule into omega's plugin system.
 type Plugin struct {
 	store *Store
 }
@@ -33,26 +28,22 @@ func (p *Plugin) Description() string {
 	return "browser: the general web browser pane (URL bar + iframe, any origin; last-URL memory)"
 }
 
-// ConfigKey names the config section this plugin reads from
-// ctx.Configs (see agent.Describer). Empty = reads no section.
+// ConfigKey names the config section this plugin reads from ctx.Configs (see.
 func (p *Plugin) ConfigKey() string { return "" }
 
-// Provides lists the seams this plugin mounts: none - the tab is
-// shell vocabulary, the routes are the surface.
+// Provides lists the seams this plugin mounts.
 func (p *Plugin) Provides() []string { return nil }
 
 // Requires lists seams that must be mounted before this plugin.
 func (p *Plugin) Requires() []string { return nil }
 
-// Toggleable marks the browser capsule (the config.yaml disabled:
-// list may name it).
+// Toggleable marks the browser capsule (the config.yaml disabled: list may name it).
 func (p *Plugin) Toggleable() bool { return true }
 
-// MountWithAPI implements agent.APIPlugin. The store resolves through
-// the home (datadir, the notifications pattern); a home that cannot
-// resolve builds the memory-only store and the routes still mount -
-// an exotic embed answers 200 with an empty resume point, it never
-// 404s the pane's first read.
+// MountWithAPI implements agent.APIPlugin. The store resolves through the home
+// (datadir, the notifications pattern); a home that cannot resolve builds the
+// memory-only store and the routes still mount - an exotic embed answers 200 with an
+// empty resume point, it never 404s the pane's first read.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	var path string
 	home, aerr := datadir.AgentHome()
@@ -64,8 +55,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	}
 	s, err := OpenStore(path)
 	if err != nil {
-		// The store is the cheapest loss in the home: boot with the
-		// memory-only shape instead of failing the host's boot over it.
+		// The store is the cheapest loss in the home.
 		fmt.Printf("omega browser: %v (continuing without persistence)\n", err)
 		s = &Store{path: ""}
 	}
@@ -84,10 +74,7 @@ func (p *Plugin) handleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"last": p.store.Last()})
 }
 
-// handlePut serves PUT /browser/last: {"url": "..."} - the tab
-// persists after a successful embed load; {"url": ""} RESETS the
-// resume point (Clear, 200 with an empty last). A bad body or URL is a
-// 400 (the pane keeps browsing either way).
+// handlePut serves PUT /browser/last.
 func (p *Plugin) handlePut(w http.ResponseWriter, r *http.Request) {
 	b, err := io.ReadAll(io.LimitReader(r.Body, 4096))
 	if err != nil {
@@ -117,9 +104,7 @@ func (p *Plugin) handlePut(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"last": p.store.Last()})
 }
 
-// handleFrameable serves GET /browser/frameable: the frameability
-// probe (url required, origin optional - the SPA's own origin) over the
-// URL the pane is about to embed. A probe that cannot answer is a 200
+// handleFrameable serves GET /browser/frameable. A probe that cannot answer is a 200
 // with frameable null - the tab keeps the iframe path.
 func (p *Plugin) handleFrameable(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("url")

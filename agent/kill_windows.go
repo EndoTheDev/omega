@@ -4,7 +4,5 @@ package agent
 
 import "os/exec"
 
-// Windows has no POSIX process groups; CommandContext's default child
-// kill is all we get. cmd.exe /C children usually die with their
-// console.
+// Windows has no POSIX process groups.
 func SetupProcessGroupKill(*exec.Cmd) {}

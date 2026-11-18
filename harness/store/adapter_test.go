@@ -9,14 +9,12 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// TestPluginImplementsInterface verifies the Plugin type satisfies
-// agent.Plugin at compile time.
+// TestPluginImplementsInterface verifies the Plugin type satisfies agent.Plugin at.
 func TestPluginImplementsInterface(t *testing.T) {
 	var _ agent.Plugin = (*Plugin)(nil)
 }
 
-// TestOpenOpensAndSearches verifies the store opens, accepts
-// messages, and FTS5 search returns results.
+// TestOpenOpensAndSearches verifies the store opens, accepts messages, and FTS5.
 func TestOpenOpensAndSearches(t *testing.T) {
 	s, err := Open(":memory:")
 	if err != nil {
@@ -44,8 +42,7 @@ func TestOpenOpensAndSearches(t *testing.T) {
 	}
 }
 
-// TestSearchTool verifies the sessions.search tool returns formatted
-// results with the session label.
+// TestSearchTool verifies the sessions.search tool returns formatted results with the.
 func TestSearchTool(t *testing.T) {
 	s, err := Open(":memory:")
 	if err != nil {
@@ -71,15 +68,13 @@ func TestSearchTool(t *testing.T) {
 	if result == "" || result == "no results" {
 		t.Fatalf("expected search results, got %q", result)
 	}
-	// The tool formats results as "[label] snippet" — verify the label
-	// from the session appears.
+	// The tool formats results as "[label] snippet" — verify the label from the session.
 	if !strings.Contains(result, "my labeled session") {
 		t.Fatalf("expected label 'my labeled session' in result, got %q", result)
 	}
 }
 
-// TestSearchToolNoResults verifies the tool returns "no results" when
-// the query matches nothing.
+// TestSearchToolNoResults verifies the tool returns "no results" when the query.
 func TestSearchToolNoResults(t *testing.T) {
 	s, err := Open(":memory:")
 	if err != nil {
@@ -99,8 +94,7 @@ func TestSearchToolNoResults(t *testing.T) {
 	}
 }
 
-// TestPluginMount verifies Mount populates ctx.Store and adds a
-// sessions.search tool provider, reading DSN from Config.
+// TestPluginMount verifies Mount populates ctx.Store and adds a sessions.search tool.
 func TestPluginMount(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{

@@ -53,7 +53,6 @@ func TestFileMemoryAddLoad(t *testing.T) {
 		t.Errorf("entry[1] = %q", entries[1])
 	}
 
-	// Verify file format uses § delimiters.
 	data, _ := os.ReadFile(fm.memoryFile)
 	if !strings.Contains(string(data), "§") {
 		t.Errorf("file does not contain § delimiter: %s", string(data))
@@ -146,13 +145,11 @@ func TestFileMemoryRemove(t *testing.T) {
 func TestFileMemoryCharLimit(t *testing.T) {
 	fm := newTestMemory(t) // limit 200 chars
 
-	// Fill up close to the limit.
 	long := strings.Repeat("x", 180)
 	if _, err := fm.Add(targetMemory, long); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
-	// This entry should exceed.
 	_, err := fm.Add(targetMemory, strings.Repeat("y", 50))
 	if err == nil {
 		t.Fatal("expected char limit error")
@@ -177,7 +174,6 @@ func TestFileMemoryDuplicate(t *testing.T) {
 		t.Errorf("expected 'no duplicate' message, got: %q", usage)
 	}
 
-	// Verify only 1 entry.
 	entries, _ := fm.List(targetMemory)
 	if len(entries) != 1 {
 		t.Errorf("expected 1 entry, got %d", len(entries))
@@ -188,7 +184,6 @@ func TestFileMemoryBatch(t *testing.T) {
 	fm := newTestMemory(t)
 	tp := &memoryToolProvider{mem: fm}
 
-	// Batch: add two, remove one.
 	result := tp.runBatch([]memoryOp{
 		{Action: "add", Target: targetMemory, Content: "First entry"},
 		{Action: "add", Target: targetMemory, Content: "Second entry"},
@@ -212,10 +207,8 @@ func TestFileMemoryBatch(t *testing.T) {
 	}
 }
 
-// TestFileMemoryBatchRollback is the atomicity gate: a failing
-// [remove, add] batch must leave the remove rolled back, not applied.
-// The pre-fix runBatch was sequential fail-forward; now the whole batch
-// rolls back on any failure.
+// TestFileMemoryBatchRollback is the atomicity gate: a failing [remove, add] batch must
+// leave the remove rolled back, not applied.
 func TestFileMemoryBatchRollback(t *testing.T) {
 	fm := newTestMemory(t)
 	if _, err := fm.Add(targetMemory, "Keep me"); err != nil {
@@ -227,7 +220,6 @@ func TestFileMemoryBatchRollback(t *testing.T) {
 	// content). The remove must be rolled back.
 	result := tp.runBatch([]memoryOp{
 		{Action: "remove", Target: targetMemory, OldText: "Keep me"},
-		// Empty content fails the add on its own terms.
 		{Action: "add", Target: targetMemory, Content: ""},
 	})
 
@@ -241,16 +233,14 @@ func TestFileMemoryBatchRollback(t *testing.T) {
 	if !strings.Contains(res.Error, "rolled back") {
 		t.Errorf("error should report rollback: %s", res.Error)
 	}
-	// The gate: the remove is undone - the entry is still there.
 	entries, _ := fm.List(targetMemory)
 	if len(entries) != 1 || entries[0] != "Keep me" {
 		t.Fatalf("remove not rolled back, entries = %v", entries)
 	}
 }
 
-// TestFileMemoryBatchRollbackCharLimit covers the subtler failure:
-// [add, add oversized] - the second add trips the char limit and the
-// first add must vanish too.
+// TestFileMemoryBatchRollbackCharLimit covers the subtler failure: [add, add oversized]
+// - the second add trips the char limit and the first add must vanish too.
 func TestFileMemoryBatchRollbackCharLimit(t *testing.T) {
 	fm := newTestMemory(t)
 	tp := &memoryToolProvider{mem: fm}
@@ -325,7 +315,6 @@ func TestFileMemorySnapshotDisabledStore(t *testing.T) {
 	}
 	fm := NewFileMemory(cfg)
 	fm.Add(targetMemory, "Some fact")
-	// Also write to user file directly to verify it's not included.
 	os.WriteFile(filepath.Join(dir, "user.md"), []byte("Hidden fact\n"), 0644)
 
 	snap := fm.Snapshot()
@@ -500,9 +489,7 @@ func TestMemoryToolMissingTarget(t *testing.T) {
 	}
 }
 
-// TestDottedWirePin pins the split's registry shape (t_d8fbad57):
-// exactly the four dotted memory tools, the flat `memory` name gone,
-// each required list its own and no action property anywhere.
+// TestDottedWirePin pins the split's registry shape: exactly the four dotted memory.
 func TestDottedWirePin(t *testing.T) {
 	tp := &memoryToolProvider{mem: newTestMemory(t)}
 	tools := tp.Tools()
@@ -567,8 +554,6 @@ func TestPluginMetadata(t *testing.T) {
 }
 
 func TestErrResultAddEmptyContent(t *testing.T) {
-	// errResult is exercised when Add/Replace/Remove returns an error.
-	// Add with empty content triggers "content is required".
 	fm := newTestMemory(t)
 	fm.Add(targetMemory, "Existing fact") // seed so CurrentEntries is populated
 	tp := &memoryToolProvider{mem: fm}
@@ -590,7 +575,6 @@ func TestErrResultAddEmptyContent(t *testing.T) {
 }
 
 func TestErrResultReplaceNotFound(t *testing.T) {
-	// Replace with a non-existent old_text triggers "no entry matching".
 	fm := newTestMemory(t)
 	fm.Add(targetMemory, "Keep this")
 	tp := &memoryToolProvider{mem: fm}
@@ -612,7 +596,6 @@ func TestErrResultReplaceNotFound(t *testing.T) {
 }
 
 func TestErrResultRemoveEmptyOldText(t *testing.T) {
-	// Remove with empty old_text triggers "old_text is required".
 	fm := newTestMemory(t)
 	fm.Add(targetMemory, "Keep this")
 	tp := &memoryToolProvider{mem: fm}
@@ -664,7 +647,6 @@ func TestRunSingleUnknownAction(t *testing.T) {
 }
 
 func TestRunBatchError(t *testing.T) {
-	// Batch where one operation fails (replace with non-existent old_text).
 	fm := newTestMemory(t)
 	fm.Add(targetMemory, "Existing entry")
 	tp := &memoryToolProvider{mem: fm}
@@ -701,7 +683,6 @@ func TestPluginMount(t *testing.T) {
 		t.Fatal("the memory offer is nil after Mount")
 	}
 
-	// Verify the dotted memory tools are registered.
 	tps := ctx.ToolProviders
 	if len(tps) != 1 {
 		t.Fatalf("expected 1 tool provider, got %d", len(tps))
@@ -717,8 +698,7 @@ func TestPluginMount(t *testing.T) {
 	}
 }
 
-// TestPromptSections verifies FileMemory contributes its snapshot as an
-// untitled prompt section, and nothing when both stores are empty.
+// TestPromptSections verifies FileMemory contributes its snapshot as an untitled.
 func TestPromptSections(t *testing.T) {
 	fm := newTestMemory(t)
 	fm.Add(targetMemory, "Test fact one")
@@ -755,10 +735,8 @@ func TestFileMemoryImplementsPromptSectioner(t *testing.T) {
 	var _ core.PromptSectioner = (*FileMemory)(nil)
 }
 
-// TestFileMemoryEntrySepRoundTrip pins the delimiter contract: an
-// entry CONTAINING a § must survive a save/load round-trip as one
-// entry. The old loader split on bare §, tearing such entries into
-// phantom pieces on the next load.
+// TestFileMemoryEntrySepRoundTrip pins the delimiter contract: an entry CONTAINING a §
+// must survive a save/load round-trip as one entry.
 func TestFileMemoryEntrySepRoundTrip(t *testing.T) {
 	fm := newTestMemory(t)
 

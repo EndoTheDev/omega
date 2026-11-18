@@ -20,19 +20,13 @@ func TestEstimateTokens(t *testing.T) {
 	}
 }
 
-// mockCompactionProvider is a minimal CompactionProvider for agent
-// loop tests. It streams a one-line summary from the fake provider
-// and assembles the old fixed-tail shape (first/last kept verbatim,
-// a system summary row between). Disabled or under-budget = no-op.
+// mockCompactionProvider is a minimal CompactionProvider for agent loop tests.
 type mockCompactionProvider struct {
 	Provider Provider
 	Config   *CompactionConfig
 }
 
 func TestBudgetDefaultConfig(t *testing.T) {
-	// Zero-value config: window defaults to 8192, reserve to 16384.
-	// effective = 8192 - 16384 < 0, so effective = 8192/2 = 4096.
-	// Threshold is 0, so result = 0.
 	c := CompactionConfig{}
 	got := c.Budget()
 	if got != 0 {
@@ -53,7 +47,6 @@ func TestBudgetReserveLargerThanHalfWindow(t *testing.T) {
 	c := CompactionConfig{ContextWindow: 20000, ReserveTokens: 16384, Threshold: 0.6}
 	got := c.Budget()
 	// effective = 20000 - 16384 = 3616 < 10000 (half), so effective = 10000.
-	// 10000 * 0.6 = 6000
 	if got != 6000 {
 		t.Fatalf("Budget() = %d, want 6000", got)
 	}
@@ -125,7 +118,6 @@ func (m mockCompactionProvider) Compact(ctx context.Context, messages []core.Mes
 	if m.Config.KeepFirst+m.Config.KeepLast >= len(messages) {
 		return messages, nil
 	}
-	// Stream a summary from the fake provider.
 	var summary strings.Builder
 	for event := range m.Provider.Stream(ctx, []core.Message{core.NewUser("summarize")}, nil) {
 		switch e := event.(type) {

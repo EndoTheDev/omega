@@ -1,8 +1,8 @@
-// omega webui: THE MODULE-STATE STORE (card t_103e30a6). ONE reactive copy
+// omega webui: THE MODULE-STATE STORE. ONE reactive copy
 // of GET /modules for the whole page, because two surfaces now read it and
 // they must never disagree:
-//   - the settings tab's MODULES section (the rows + their live toggles),
-//   - the dock's runtime gate (dockables.ts moduleGated): a module-owned
+// the settings tab's MODULES section (the rows + their live toggles),
+// the dock's runtime gate (dockables.ts moduleGated): a module-owned
 //     dockable whose module is OFF leaves the strip, and returns the moment
 //     it mounts again.
 //
@@ -30,8 +30,7 @@ export const MODULE_CACHE_KEY = "omega.modules-off";
 
 const rows = ref<ModuleRow[]>([]);
 const refusals = ref<ModuleRefusal[]>([]);
-/** a live payload has landed this page. Before it the gate trusts the
-    cache; if neither exists nothing is hidden (the honest default). */
+/** a live payload has landed this page. */
 const known = ref(false);
 const disabled = ref<ReadonlySet<string>>(new Set());
 
@@ -47,9 +46,10 @@ export const modulesKnown: Ref<boolean> = known;
 /** the module names the runtime reports disabled - the gate's off set */
 export const modulesOff: Ref<ReadonlySet<string>> = disabled;
 
-/** hydrateModuleState: the SYNCHRONOUS boot read of the cache. Called once
-    from app.vue before createDock, so the first paint already knows which
-    chips a disabled module owns. A corrupt cache is no cache. */
+/**
+ * hydrateModuleState: the SYNCHRONOUS boot read of the cache.
+ * A corrupt cache is no cache.
+ */
 export function hydrateModuleState(store: Storage): void {
   cacheStore = store;
   const raw = store.getItem(MODULE_CACHE_KEY);
@@ -65,16 +65,13 @@ export function hydrateModuleState(store: Storage): void {
   disabled.value = new Set(names);
 }
 
-/** the cache write: the off set, nothing else (the rows are server truth
-    the next fetch re-reads). */
+/** the cache write: the off set, nothing else (the rows are server truth the next. */
 function cacheOff(): void {
   if (!cacheStore) return;
   cacheStore.setItem(MODULE_CACHE_KEY, JSON.stringify([...disabled.value]));
 }
 
-/** applyModules: the ONE way a payload lands in the store - the boot read
-    and every toggle response ride it, so settings and the dock converge on
-    the same set. */
+/** applyModules: the ONE way a payload lands in the store. */
 export function applyModules(payload: ModulesPayload): void {
   rows.value = payload.modules;
   refusals.value = payload.refusals;
@@ -85,9 +82,11 @@ export function applyModules(payload: ModulesPayload): void {
   cacheOff();
 }
 
-/** loadModules: GET /modules through the store. Concurrent callers share
-    one request (settings may open while the boot read is in flight); a
-    later call re-reads, so reopening the section stays fresh. */
+/**
+ * loadModules: GET /modules through the store.
+ * Concurrent callers share one request (settings may open while the boot read is in
+ * flight); a later call re-reads, so reopening the section stays fresh.
+ */
 export async function loadModules(): Promise<ModulesPayload> {
   if (inflight) return inflight;
   inflight = fetchModules()
@@ -101,10 +100,13 @@ export async function loadModules(): Promise<ModulesPayload> {
   return inflight;
 }
 
-/** commitModuleToggle: the ONE write path (the settings row's pill). The
-    response is the refreshed introspection, applied here - never a second
-    fetch, never a local guess. A refusal throws with the server's ledger
-    text; the caller re-reads through loadModules to surface the ledger. */
+/**
+ * commitModuleToggle: the ONE write path (the settings row's pill).
+ * The response is the refreshed introspection, applied here - never a second fetch,
+ * never a local guess.
+ * A refusal throws with the server's ledger text; the caller re-reads through
+ * loadModules to surface the ledger.
+ */
 export async function commitModuleToggle(
   name: string,
   enabled: boolean,

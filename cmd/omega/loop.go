@@ -1,13 +1,9 @@
 package main
 
-// The CLI agent loop (card t_0744eb8e): bare `omega` is a plain
-// readline-in, ANSI-out conversation against the mounted agent - the
-// ollama run mental model. No alt screen, no panes, no mouse, no
-// layout: the loop never owns the screen, and anything that needs one
-// belongs in the webui (the regression guard is the law). Streaming is
-// real (chunks render as they arrive), tool calls print as compact
-// text lines, sessions persist on disk so `omega serve` + the webui
-// see the same conversation.
+// The CLI agent loop: bare `omega` is a plain readline-in, ANSI-out conversation
+// against the mounted agent. No alt screen, no panes, no mouse, no layout: the loop
+// never owns the screen, and anything that needs one belongs in the webui (the
+// regression guard is the law).
 
 import (
 	"bufio"
@@ -28,8 +24,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// ANSI basics only - the loop law caps the palette here. NO_COLOR and
-// a non-character-device stdout both opt out.
+// ANSI basics only - the loop law caps the palette here.
 const (
 	ansiReset  = "\x1b[0m"
 	ansiBold   = "\x1b[1m"
@@ -40,12 +35,10 @@ const (
 	ansiYellow = "\x1b[33m"
 )
 
-// loopPersona is the loop's fixed setup-support voice (Endo ruling
-// 2026-11-01: the terminal face of omega is tech support). It shapes
-// HOW the agent talks - patient, terminal-plain, setup-aware - but
-// never carries the knowledge itself: what each setting means and how
-// providers are configured belongs to the omega-dev skill, which the
-// CLI loads via the skill port (t_6c64480f), not a duplicated file.
+// loopPersona is the loop's fixed setup-support voice. It shapes HOW the agent talks -
+// patient, terminal-plain, setup-aware - but never carries the knowledge itself: what
+// each setting means and how providers are configured belongs to the omega-dev skill,
+// which the CLI loads via the skill port, not a duplicated file.
 func loopPersona() string {
 	return "You are omega's terminal companion and you act as tech support. " +
 		"Many people reach you while setting omega up: walk them through " +
@@ -70,16 +63,13 @@ type cliLoop struct {
 
 	sessionID string
 	history   []core.Message
-	// queued lines typed while a run streamed (stdin was owned by the
-	// busy reader; chat waits its turn, verdict answers go inline).
 	queued []string
 	sig    <-chan os.Signal
 }
 
-// cmdLoop is the loop entry (bare `omega` and the legacy `chat` alias).
-// A home without config drops into the setup wizard first - the wizard
-// is the gate, never an error you must decode. A broken config refuses
-// pointing at the same gate.
+// cmdLoop is the loop entry (bare `omega` and the legacy `chat` alias). A home without
+// config drops into the setup wizard first - the wizard is the gate, never an error you
+// must decode.
 func cmdLoop(configPath string, appendPrompts []string, trust trustFlags) error {
 	cfgPath := resolveConfigPath(configPath)
 	if cfgPath == "" {
@@ -109,9 +99,8 @@ func cmdLoop(configPath string, appendPrompts []string, trust trustFlags) error 
 			return fmt.Errorf("agent layer %s: %w", name, err)
 		}
 	}
-	// The loop's fixed tech-support persona rides the prompt-append
-	// seam (see loopPersona) - appended after any --append-system-prompt
-	// values so the operator's flags keep speaking last.
+	// The loop's fixed tech-support persona rides the prompt-append seam (see
+	// loopPersona).
 	appendPrompts = append(appendPrompts, loopPersona())
 
 	ag, store, logger, pctx, _, _, _, _, _, _, err := newAgent(cfg, configPath, appendPrompts, trust)
@@ -138,9 +127,8 @@ func cmdLoop(configPath string, appendPrompts []string, trust trustFlags) error 
 		ansi:  loopColor(),
 		sig:   sig,
 	}
-	// One-shot mode blocks waiting for late subagent results; the loop
-	// is interactive and never blocks, so carry the flag. Nothing
-	// consumes the channel today - it is the mode marker.
+	// One-shot mode blocks waiting for late subagent results; the loop is interactive and
+	// never blocks, so carry the flag.
 	ag.SetUserInput(make(chan string, 1))
 	lo.banner()
 	return lo.run()
@@ -170,12 +158,9 @@ func (lo *cliLoop) webURL() string {
 	return fmt.Sprintf("http://localhost:%d/", lo.cfg.Server.Port)
 }
 
-// run is the input half. One stdin reader goroutine owns stdin for the
-// whole session and feeds the `lines` channel; this loop is its only
-// receiver - between runs it services the channel itself, mid-run the
-// send drain does. A leading slash is a command, `"""` opens a
-// multiline block, a trailing backslash continues the line. Output
-// happens inside the run's event drain.
+// run is the input half. One stdin reader goroutine owns stdin for the whole session
+// and feeds the `lines` channel; this loop is its only receiver - between runs it
+// services the channel itself, mid-run the send drain does.
 func (lo *cliLoop) run() error {
 	sctx, scancel := context.WithCancel(context.Background())
 	defer scancel()
@@ -226,7 +211,6 @@ func (lo *cliLoop) run() error {
 			lo.printf("%serror: %v%s\n", lo.s(ansiRed), err, lo.s(ansiReset))
 			lo.out.Flush()
 		}
-		// lines typed (or queued) while the run streamed go now
 		for len(lo.queued) > 0 {
 			q := lo.queued[0]
 			lo.queued = lo.queued[1:]
@@ -245,8 +229,7 @@ func (lo *cliLoop) run() error {
 	}
 }
 
-// readMultiline collects a `"""` block until the closing line arrives
-// on the same channel. EOF submits what the block holds.
+// readMultiline collects a `"""` block until the closing line arrives on the same.
 func (lo *cliLoop) readMultiline(lines <-chan string) string {
 	lo.printf("%s(multiline: finish with \"\"\" on its own line)%s\n", lo.s(ansiDim), lo.s(ansiReset))
 	var block []string
@@ -284,8 +267,7 @@ func (lo *cliLoop) printf(format string, args ...any) {
 	fmt.Fprintf(lo.out, format, args...)
 }
 
-// printExitLine is the motivated-into-webui door: the session rode on,
-// and the browser hosts the whole app. No bullying - the door points.
+// printExitLine is the motivated-into-webui door.
 func (lo *cliLoop) printExitLine() {
 	if lo.sessionID != "" {
 		lo.printf("session saved: %s\n", lo.sessionID)
@@ -294,7 +276,7 @@ func (lo *cliLoop) printExitLine() {
 	lo.out.Flush()
 }
 
-// dispatch runs one slash command. Returns stop=true for the exit set.
+// dispatch runs one slash command.
 func (lo *cliLoop) dispatch(line string) bool {
 	name, args := splitCommand(line)
 	switch name {
@@ -344,9 +326,7 @@ func (lo *cliLoop) printHelp() {
 	lo.out.Flush()
 }
 
-// commandSession shows or switches the persisted session. `new`
-// starts a fresh one (created on the next send); an id loads its
-// messages into this conversation.
+// commandSession shows or switches the persisted session.
 func (lo *cliLoop) commandSession(args string) error {
 	if args == "" {
 		if lo.sessionID == "" {
@@ -372,10 +352,7 @@ func (lo *cliLoop) commandSession(args string) error {
 	return nil
 }
 
-// commandWorkspace shows or changes the loop's working directory (the
-// per-run CWD the tools see). No process chdir - the agent's CWD and
-// the project context re-resolve through the trust seam, so an
-// untrusted project loads no AGENTS.md, the same gate startup runs.
+// commandWorkspace shows or changes the loop's working directory (the per-run CWD the.
 func (lo *cliLoop) commandWorkspace(args string) error {
 	if args == "" {
 		lo.printf("workspace: %s\n", lo.cwd)
@@ -395,9 +372,7 @@ func (lo *cliLoop) commandWorkspace(args string) error {
 	return nil
 }
 
-// commandExtension runs a module-owned command (provider, verdict,
-// cron, logs, ...) and prints its text result. An unclaimed name is an
-// error listing what exists.
+// commandExtension runs a module-owned command (provider, verdict, cron, logs,..) and.
 func (lo *cliLoop) commandExtension(name, args string) error {
 	known := false
 	for _, c := range lo.pctx.Commands {
@@ -437,8 +412,6 @@ func (lo *cliLoop) ensureSession() error {
 }
 
 // send runs one user message through the loop, streaming the reply.
-// While the run streams, lines typed mid-run queue for replay (or
-// answer a pending verdict card) - the session reader is the feed.
 func (lo *cliLoop) send(text string, lines <-chan string) error {
 	if err := lo.ensureSession(); err != nil {
 		return err
@@ -449,9 +422,8 @@ func (lo *cliLoop) send(text string, lines <-chan string) error {
 	runCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	runCtx = agent.WithSessionID(runCtx, lo.sessionID)
-	// interactive origin: the verdict tool may pause here, and the
-	// busy reader answers it while the run blocks - the loop's one
-	// mid-run interaction, matching the old busy-Enter path.
+	// interactive origin: the verdict tool may pause here, and the busy reader answers it
+	// while the run blocks.
 	runCtx = core.WithRunOrigin(runCtx, "interactive")
 	runCtx = agent.WithTurnSink(runCtx, agent.NewStoreTurnSink(lo.store, lo.sessionID, ""))
 	runCtx = agent.WithPersistInput(runCtx, []core.Message{userMsg})
@@ -502,7 +474,6 @@ func (lo *cliLoop) send(text string, lines <-chan string) error {
 	}
 	lo.out.Flush()
 
-	// the sink persisted the turn; the disk is the truth
 	msgs, err := lo.store.GetMessages(context.Background(), lo.sessionID)
 	if err == nil {
 		lo.history = msgs
@@ -510,9 +481,8 @@ func (lo *cliLoop) send(text string, lines <-chan string) error {
 	return nil
 }
 
-// startStdinReader owns stdin for the whole session - exactly one
-// reader goroutine, so no second goroutine ever races the bufio. Lines
-// feed the channel; EOF closes it and the loop exits with the door.
+// startStdinReader owns stdin for the whole session - exactly one reader goroutine, so
+// no second goroutine ever races the bufio.
 func (lo *cliLoop) startStdinReader(ctx context.Context) chan string {
 	lines := make(chan string, 16)
 	go func() {
@@ -541,22 +511,18 @@ func (lo *cliLoop) startStdinReader(ctx context.Context) chan string {
 	return lines
 }
 
-// verdictSink is the CLI loop's own need face of the verdicts capsule
-// (part 3, the seam constitution): the capsule's answerSink type is the
-// capsule's business - the loop names what IT calls and resolves the
-// service by key from the universal registry. The key is data; the
-// owner capsule never knows a loop exists.
+// verdictSink is the CLI loop's own need face of the verdicts capsule (part 3, the seam
+// constitution). The key is data; the owner capsule never knows a loop exists.
 type verdictSink interface {
 	Pending(sessionID string) []core.QuestionPrompt
 	Answer(sessionID, cardID string, v core.QuestionAnswer) (core.QuestionAnswer, error)
 }
 
-// answerPendingVerdict hands one busy-time line to the verdict module's
-// inline answering. The named return is load-bearing for the purity
-// law (scripts/nm-purity.sh): the scrubber deletes the module wire as
-// one line and never deletes a host function, so the loop must still
-// compile and answer false with the module gone - the plain `return
-// verdict.AnswerInline(...)` shape strands a missing return.
+// answerPendingVerdict hands one busy-time line to the verdict module's inline. The
+// named return is load-bearing for the purity law (scripts/nm-purity.sh): the scrubber
+// deletes the module wire as one line and never deletes a host function, so the loop
+// must still compile and answer false with the module gone - the plain `return
+// verdict.AnswerInline(..)` shape strands a missing return.
 func (lo *cliLoop) answerPendingVerdict(line string) (handled bool) {
 	if lo.pctx == nil {
 		return false
@@ -569,9 +535,7 @@ func (lo *cliLoop) answerPendingVerdict(line string) (handled bool) {
 	return handled
 }
 
-// loopRenderer turns the run's event stream into plain ANSI text:
-// thinking dim, reply plain, tool calls compact cyan lines - no
-// redraws, no cursor games, the terminal scrolls like paper.
+// loopRenderer turns the run's event stream into plain ANSI text.
 type loopRenderer struct {
 	lo        *cliLoop
 	inText    bool
@@ -601,7 +565,6 @@ func (r *loopRenderer) closeBlock() {
 func (r *loopRenderer) event(ev core.Event) {
 	switch e := ev.(type) {
 	case core.AgentStart:
-		// quiet: the streaming output is the news
 	case core.StreamEvent:
 		switch chunk := e.Event.(type) {
 		case core.ThinkingChunk:
@@ -650,9 +613,7 @@ func (r *loopRenderer) event(ev core.Event) {
 	r.lo.out.Flush()
 }
 
-// compactToolArgs renders tool arguments as one short line: keys and
-// short values only, so a tool call stays one readable line no matter
-// how fat its payload.
+// compactToolArgs renders tool arguments as one short line.
 func compactToolArgs(args map[string]any) string {
 	if len(args) == 0 {
 		return ""

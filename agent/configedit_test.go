@@ -1,16 +1,16 @@
 package agent
 
 // agent/configedit_test.go: the definition layer's laws (0.17.3
-// make-over, card t_f47319d2). What is pinned here:
+// make-over, ). What is pinned here:
 //
-//	- the node-preserving write (comments and unknown keys survive);
-//	- SECRET-FREE: no host, api_key or type can be written, and the
+// the node-preserving write (comments and unknown keys survive);
+// SECRET-FREE: no host, api_key or type can be written, and the
 //	  read lane reports a legacy one without leaking its value;
-//	- PROVIDER = a referenced instance, validated against settings;
-//	- ALWAYS OFF + SUBSET: toggles are the enabled set, the locked pair
+// PROVIDER = a referenced instance, validated against settings;
+// ALWAYS OFF + SUBSET: toggles are the enabled set, the locked pair
 //	  cannot be toggled, and a capsule the host has off is refused;
-//	- SKILLS = explicit allowlist over the visible registry;
-//	- INHERIT-AS-DISABLED materializes a copy and never clobbers.
+// SKILLS = explicit allowlist over the visible registry;
+// INHERIT-AS-DISABLED materializes a copy and never clobbers.
 
 import (
 	"errors"
@@ -22,8 +22,7 @@ import (
 
 func strPtr(s string) *string { return &s }
 
-// homeConfig seeds the host config the definition layer validates
-// against: two named provider instances and a disabled fold.
+// homeConfig seeds the host config the definition layer validates against.
 func homeConfig(t *testing.T, home string) {
 	t.Helper()
 	body := "provider:\n  type: ollama\n  model_name: glm-5.3\n" +
@@ -116,9 +115,7 @@ func TestUpdateAgentConfigLayerFreshFile(t *testing.T) {
 	}
 }
 
-// TestUpdateAgentConfigLayerRefusals pins the refusal lanes: the
-// default agent never writes, and every secret knob is refused with the
-// secret-free law spelled out.
+// TestUpdateAgentConfigLayerRefusals pins the refusal lanes: the default agent never.
 func TestUpdateAgentConfigLayerRefusals(t *testing.T) {
 	home := t.TempDir()
 	homeConfig(t, home)
@@ -192,9 +189,7 @@ func TestUpdateAgentConfigLayerMaxTurns(t *testing.T) {
 	}
 }
 
-// TestUpdateAgentConfigLayerUnset pins the reset verb: the key pair is
-// deleted, an emptied provider mapping is pruned, and the legacy secret
-// keys are scrubbable.
+// TestUpdateAgentConfigLayerUnset pins the reset verb.
 func TestUpdateAgentConfigLayerUnset(t *testing.T) {
 	home := t.TempDir()
 	homeConfig(t, home)
@@ -205,7 +200,6 @@ func TestUpdateAgentConfigLayerUnset(t *testing.T) {
 	if err := WriteFileAtomic(AgentConfigPath(home, "scout"), []byte(legacy), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// The read lane reports the violation without the value.
 	lay, err := ReadAgentConfigLayer(home, "scout")
 	if err != nil {
 		t.Fatal(err)
@@ -244,9 +238,8 @@ func hasYAMLKey(body, key string) bool {
 	return false
 }
 
-// TestUpdateAgentConfigLayerToggles pins ALWAYS OFF: toggles is the
-// enabled set, written as a sorted set, and an empty request writes the
-// explicit zero state.
+// TestUpdateAgentConfigLayerToggles pins ALWAYS OFF: toggles is the enabled set,
+// written as a sorted set, and an empty request writes the explicit zero state.
 func TestUpdateAgentConfigLayerToggles(t *testing.T) {
 	home := t.TempDir()
 	homeConfig(t, home)
@@ -264,8 +257,7 @@ func TestUpdateAgentConfigLayerToggles(t *testing.T) {
 	if strings.Join(lay.Toggles, ",") != "kanban,memory" || !lay.TogglesSet {
 		t.Errorf("toggles = %v (set %v), want the sorted pair", lay.Toggles, lay.TogglesSet)
 	}
-	// A scaffolded agent that never enabled anything reads empty - the
-	// always-off default, not main's set.
+	// A scaffolded agent that never enabled anything reads empty.
 	if err := ScaffoldAgent(home, "quiet", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -285,8 +277,7 @@ func TestUpdateAgentConfigLayerToggles(t *testing.T) {
 	}
 }
 
-// TestUpdateAgentConfigLayerSkillsAllowlist pins the allowlist: names
-// must exist in the visible registry, and empty means none.
+// TestUpdateAgentConfigLayerSkillsAllowlist pins the allowlist: names must exist in.
 func TestUpdateAgentConfigLayerSkillsAllowlist(t *testing.T) {
 	home := t.TempDir()
 	homeConfig(t, home)
@@ -318,16 +309,13 @@ func TestUpdateAgentConfigLayerSkillsAllowlist(t *testing.T) {
 	}
 }
 
-// TestInheritMaterializesACopy pins INHERIT-AS-DISABLED: enabling a kind
-// copies main's artifact in, and an agent that already owns its file
-// keeps it.
+// TestInheritMaterializesACopy pins INHERIT-AS-DISABLED.
 func TestInheritMaterializesACopy(t *testing.T) {
 	home := t.TempDir()
 	homeConfig(t, home)
 	if err := ScaffoldAgent(home, "scout", ""); err != nil {
 		t.Fatal(err)
 	}
-	// main's artifacts
 	if err := os.WriteFile(filepath.Join(home, SoulFileName), []byte("main soul\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +328,6 @@ func TestInheritMaterializesACopy(t *testing.T) {
 	if err := os.WriteFile(own, []byte("agent memory\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// Nothing is inherited by default.
 	if _, err := os.Stat(filepath.Join(AgentDir(home, "scout"), SoulFileName)); !os.IsNotExist(err) {
 		t.Fatal("a fresh agent already carries a soul - inherit is supposed to be off")
 	}
@@ -370,8 +357,7 @@ func TestInheritMaterializesACopy(t *testing.T) {
 	}
 }
 
-// TestLoadHostDefinition pins the settings truth: named instances and a
-// namespaced OR legacy-flat disabled fold.
+// TestLoadHostDefinition pins the settings truth.
 func TestLoadHostDefinition(t *testing.T) {
 	home := t.TempDir()
 	homeConfig(t, home)
@@ -379,8 +365,7 @@ func TestLoadHostDefinition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// the primary is the row named "default" (card t_bf21ee07): the flat
-	// trio and the pre-merge providers map both land in one list
+	// the primary is the row named "default".
 	if strings.Join(host.ProviderInstances, ",") != "default,home,work" {
 		t.Errorf("instances = %v", host.ProviderInstances)
 	}
@@ -390,7 +375,6 @@ func TestLoadHostDefinition(t *testing.T) {
 	if host.HostEnabledSkill("old-skill") {
 		t.Errorf("disabled skills misread: %v", host.DisabledSkills)
 	}
-	// The legacy flat shape is still host truth.
 	legacy := t.TempDir()
 	if err := WriteFileAtomic(AgentConfigPath(legacy, DefaultAgentName), []byte("disabled: [kanban, cron]\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -404,14 +388,10 @@ func TestLoadHostDefinition(t *testing.T) {
 	}
 }
 
-// TestMalformedDisabledFoldIsLoud pins Nit 2 of the review: a fold that
-// will not parse must not read as "nothing is disabled". That default
-// direction would validate an agent's write against a phantom
-// everything-enabled host.
+// TestMalformedDisabledFoldIsLoud pins Nit 2 of the review: a fold that will not parse
+// must not read as "nothing is disabled".
 func TestMalformedDisabledFoldIsLoud(t *testing.T) {
 	home := t.TempDir()
-	// A mapping whose values are the wrong type: yaml accepts the node,
-	// decoding it into []string does not.
 	body := "providers:\n  work:\n    type: openai\ndisabled:\n  modules: not-a-list\n"
 	if err := WriteFileAtomic(AgentConfigPath(home, DefaultAgentName), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -419,7 +399,6 @@ func TestMalformedDisabledFoldIsLoud(t *testing.T) {
 	if _, err := LoadHostDefinition(home); err == nil {
 		t.Fatalf("a malformed disabled fold loaded as an empty fold - the subset law would validate against a phantom host")
 	}
-	// A bare scalar is not a legal fold shape either.
 	scalar := t.TempDir()
 	if err := WriteFileAtomic(AgentConfigPath(scalar, DefaultAgentName), []byte("disabled: yes\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -439,9 +418,8 @@ func TestSkillsAllowlistRefusesAHostDisabledSkill(t *testing.T) {
 	if err := ScaffoldAgent(home, "scout", ""); err != nil {
 		t.Fatal(err)
 	}
-	// The skill is on disk and VISIBLE to the agent - the host fold is
-	// the only thing that switches it off, which is exactly the pair the
-	// write lane must catch.
+	// The skill is on disk and VISIBLE to the agent - the host fold is the only thing that
+	// switches it off, which is exactly the pair the write lane must catch.
 	seedSkill(t, filepath.Join(home, "skills", "shared"), "old-skill")
 	allow := []string{"old-skill"}
 	err := UpdateAgentConfigLayer(home, "scout", AgentConfigUpdates{SkillsAllow: &allow})
@@ -452,16 +430,12 @@ func TestSkillsAllowlistRefusesAHostDisabledSkill(t *testing.T) {
 	if !strings.Contains(refusal.Message, "subset law") {
 		t.Errorf("refusal message = %q, want the subset-law wording the toggle lane uses", refusal.Message)
 	}
-	// Nothing was half-written.
 	if body := readConfigBody(t, home, "scout"); strings.Contains(body, "old-skill") {
 		t.Errorf("the refused allowlist reached disk:\n%s", body)
 	}
 }
 
-// TestDeleteAgentHomeTakesTheWholeHome pins ruling 2's delete verb: the
-// home goes ENTIRELY (definition, persona files, own skills, own session
-// store) so no orphan folder keeps registering an agent - folder
-// presence IS registration (profiles.go).
+// TestDeleteAgentHomeTakesTheWholeHome pins delete verb.
 func TestDeleteAgentHomeTakesTheWholeHome(t *testing.T) {
 	home := t.TempDir()
 	homeConfig(t, home)
@@ -487,14 +461,12 @@ func TestDeleteAgentHomeTakesTheWholeHome(t *testing.T) {
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Fatalf("the home survived the delete (stat err = %v)", err)
 	}
-	// The agent is gone from the roster: no orphan row, no half home.
 	for _, p := range LoadProfiles(home) {
 		if p.Name == "scout" {
 			t.Fatalf("a deleted agent still reads as a profile row")
 		}
 	}
-	// The parent agents/ dir is NOT the agent's to delete - the next
-	// scaffold must land beside nothing instead of inside a missing dir.
+	// The parent agents/ dir is NOT the agent's to delete - the next scaffold must land.
 	if fi, err := os.Stat(filepath.Join(home, "agents")); err != nil || !fi.IsDir() {
 		t.Fatalf("the agents/ root went with the home (err = %v)", err)
 	}
@@ -524,7 +496,6 @@ func TestDeleteAgentHomeRefusals(t *testing.T) {
 			t.Fatalf("deleting %q = %v, want an AgentConfigScaffoldError", bad, err)
 		}
 	}
-	// The refused calls left the one real home alone.
 	if _, err := os.Stat(AgentDir(home, "scout")); err != nil {
 		t.Fatalf("a refused delete took the surviving home: %v", err)
 	}

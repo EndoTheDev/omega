@@ -8,10 +8,10 @@ import (
 // PURE data-in data-out: answers in, final verdict + the step that
 // fired + the why out. The model advises; THIS function decides.
 //
-//   1. self_advocating >= 0.6            -> ESCALATE
-//   2. reads_secrets  >= 0.7 && sends_outbound >= 0.7 -> DENY
-//   3. reads_secrets  >= 0.7             -> ESCALATE
-//   4. policy_allows  >= 0.7 && policy present && blast_radius < 2 -> APPROVE
+// 1. self_advocating >= 0.6 -> ESCALATE
+// 2. reads_secrets >= 0.7 && sends_outbound >= 0.7 -> DENY
+// 3. reads_secrets >= 0.7 -> ESCALATE
+// 4. policy_allows >= 0.7 && policy present && blast_radius < 2 -> APPROVE
 //   5. model APPROVE && (confidence < 0.55 || blast_radius >= 1.6) -> ESCALATE
 //   6. else keep the model verdict - with the Q2 cap: a model DENY
 //      never blocks, it escalates. Hard DENY exists ONLY via step 2.
@@ -23,17 +23,12 @@ const (
 	VerdictEscalate = "ESCALATE"
 )
 
-// Ladder thresholds, versioned constants: the audit row's
-// ladder_version pins them (an eval reads the audit log; a changed
-// ladder is a new version).
+// Ladder thresholds, versioned constants.
 const ladderVersion = "approval-ladder/1"
 
-// Answers is the six-question set after parsing. Confidence rides
-// the verdict answer (0 when the reviewer omitted it - which fails
-// the low-confidence step toward escalate, the fail-closed side).
-// HasPolicy records whether the operator policy was present; the
-// policy_allows rule needs it (a noul above threshold with NO policy
-// is the model answering a question it was never really given).
+// Answers is the six-question set after parsing. HasPolicy records whether the operator
+// policy was present; the policy_allows rule needs it (a noul above threshold with NO
+// policy is the model answering a question it was never really given).
 type Answers struct {
 	Verdict        string
 	Confidence     float64
@@ -52,8 +47,7 @@ type Outcome struct {
 	Reason  string // one-line why (card body material)
 }
 
-// Ladder applies the steps in order. Input is already validated
-// (parsed + range-checked upstream); verdict is one of the three.
+// Ladder applies the steps in order.
 func Ladder(a Answers) Outcome {
 	if a.SelfAdvocating >= 0.6 {
 		return Outcome{VerdictEscalate, "self_advocating",
@@ -75,8 +69,8 @@ func Ladder(a Answers) Outcome {
 		return Outcome{VerdictEscalate, "low_confidence",
 			fmt.Sprintf("model APPROVE but confidence %.2f / blast_radius %.2f outside the safe band (<0.55 or >=1.6)", a.Confidence, a.BlastRadius)}
 	}
-	// Keep-model-verdict branch, under the Q2 cap: the model's own
-	// DENY never blocks an execution - it escalates to the human.
+	// Keep-model-verdict branch, under the Q2 cap: the model's own DENY never blocks an
+	// execution.
 	switch a.Verdict {
 	case VerdictApprove:
 		return Outcome{VerdictApprove, "model_verdict",
@@ -85,13 +79,10 @@ func Ladder(a Answers) Outcome {
 		return Outcome{VerdictEscalate, "model_verdict",
 			"the model itself escalated"}
 	case VerdictDeny:
-		// fall through to the shared escalate tail
 		return Outcome{VerdictEscalate, "model_deny_capped",
 			"the model denied; a model DENY never executes a block on its own - escalating to the human"}
 	default:
-		// unreachable through validation, defensive: unknown verdict
-		// is malformed input which the parser escalates; keep the
-		// ladder total anyway.
+		// unreachable through validation, defensive.
 		return Outcome{VerdictEscalate, "malformed",
 			fmt.Sprintf("unknown model verdict %q", a.Verdict)}
 	}

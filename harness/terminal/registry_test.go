@@ -12,8 +12,7 @@ import (
 	"time"
 )
 
-// skipOnWindows: the TERM/KILL escalation and group-kill semantics are
-// POSIX contracts; windows collapses both into TerminateProcess.
+// skipOnWindows: the TERM/KILL escalation and group-kill semantics are POSIX contracts.
 func skipOnWindows(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -21,11 +20,10 @@ func skipOnWindows(t *testing.T) {
 	}
 }
 
-// testRegistry builds a registry over a fresh temp home with a fast
-// kill grace for the tests. Close is registered AFTER t.TempDir's
-// cleanup, so LIFO runs the fence first: every reaper is joined and no
-// child survives before the TempDir's RemoveAll - the CI fence for the
-// t_de398140 cleanup race.
+// testRegistry builds a registry over a fresh temp home with a fast kill grace for.
+// Close is registered AFTER t.TempDir's cleanup, so LIFO runs the fence first: every
+// reaper is joined and no child survives before the TempDir's RemoveAll - the CI fence
+// for the cleanup race.
 func testRegistry(t *testing.T) *Registry {
 	t.Helper()
 	r := NewRegistry(RegistryConfig{Home: t.TempDir(), KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
@@ -33,8 +31,7 @@ func testRegistry(t *testing.T) *Registry {
 	return r
 }
 
-// ownedReapers counts the registry's live reaper goroutines (the reaper
-// map shrinks as each watcher finishes, so zero means all joined).
+// ownedReapers counts the registry's live reaper goroutines (the reaper map shrinks.
 func ownedReapers(r *Registry) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -64,8 +61,7 @@ func stateEntry(t *testing.T, r *Registry, name string) Entry {
 	return e
 }
 
-// TestSpawnReadKill is the happy path: spawn, the log carries the
-// output, the process is live, kill stops it, the state is exited.
+// TestSpawnReadKill is the happy path.
 func TestSpawnReadKill(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
@@ -93,15 +89,13 @@ func TestSpawnReadKill(t *testing.T) {
 	if e := stateEntry(t, r, "worker"); !e.Exited || e.FinishedAt == 0 {
 		t.Fatalf("post-kill entry: %+v", e)
 	}
-	// killing an exited name is a status report, not an error
 	again, err := r.Kill("worker")
 	if err != nil || !strings.Contains(again, "already exited") {
 		t.Fatalf("second kill: %s err=%v", again, err)
 	}
 }
 
-// TestExitCodeRecorded proves a normal exit carries its real code,
-// including zero.
+// TestExitCodeRecorded proves a normal exit carries its real code, including zero.
 func TestExitCodeRecorded(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
@@ -131,8 +125,7 @@ func TestExitCodeRecorded(t *testing.T) {
 	}
 }
 
-// TestKillEscalation proves the TERM-then-KILL contract: an
-// TERM-ignoring command survives the TERM and dies at the KILL.
+// TestKillEscalation proves the TERM-then-KILL contract.
 func TestKillEscalation(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t) // 1 s grace
@@ -155,8 +148,7 @@ func TestKillEscalation(t *testing.T) {
 	}
 }
 
-// TestReadTailCaps proves read returns the tail only: the line cap and
-// the hard byte cap both bind.
+// TestReadTailCaps proves read returns the tail only: the line cap and the hard byte.
 func TestReadTailCaps(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
@@ -187,8 +179,7 @@ func TestReadTailCaps(t *testing.T) {
 	}
 }
 
-// TestSpawnNameRules proves the handle contract: sanitization,
-// generated names, and the running-name refusal.
+// TestSpawnNameRules proves the handle contract.
 func TestSpawnNameRules(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
@@ -214,8 +205,7 @@ func TestSpawnNameRules(t *testing.T) {
 	}
 }
 
-// TestReplaceExitedRotatesLog proves a reused name gets a fresh log
-// and one generation of the old file survives as <name>.log.1.
+// TestReplaceExitedRotatesLog proves a reused name gets a fresh log and one.
 func TestReplaceExitedRotatesLog(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
@@ -239,10 +229,7 @@ func TestReplaceExitedRotatesLog(t *testing.T) {
 	})
 }
 
-// TestRestartPidRecheck proves the restart contract: a fresh registry
-// over the same home reconciles against pid liveness - a live pid
-// stays running, a gone pid becomes exited-unknown, and the live
-// process can be killed from the rebooted instance.
+// TestRestartPidRecheck proves the restart contract.
 func TestRestartPidRecheck(t *testing.T) {
 	skipOnWindows(t)
 	home := t.TempDir()
@@ -251,7 +238,6 @@ func TestRestartPidRecheck(t *testing.T) {
 	if _, err := r1.Spawn(context.Background(), "sleep 300", "longop", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	// --- the reboot: a fresh registry instance over the same home ---
 	r2 := NewRegistry(RegistryConfig{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
 	list := r2.List()
 	found, ok := findByName(list, "longop")
@@ -265,9 +251,6 @@ func TestRestartPidRecheck(t *testing.T) {
 	if !strings.Contains(got, "stopped") {
 		t.Fatalf("orphan kill reply: %s", got)
 	}
-	// --- a pid that is simply gone: exited, code unknown ---
-	// A liveness-verified dead pid: a spawn whose process already
-	// exited in THIS process (the reaper recorded it).
 	probe := NewRegistry(RegistryConfig{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})
 	t.Cleanup(probe.Close) // the fast-exit spawn's reaper must not outlive the TempDir
 	if _, err := probe.Spawn(context.Background(), "exit 0", "dead-pid-source", ""); err != nil {
@@ -292,13 +275,8 @@ func TestRestartPidRecheck(t *testing.T) {
 	}
 }
 
-// TestCloseJoinsReapers is the CI fence (card t_de398140): a fast-exit
-// command whose reaper previously wrote the state file after the test
-// returned, racing the TempDir RemoveAll on the runner (the "directory
-// not empty" red). The fence closes the window structurally: after
-// Close the reaper is joined, the entry is terminal, and nothing can
-// write to the home again. Run with -count=10; the race is runner
-// timing, the fence makes it impossible.
+// TestCloseJoinsReapers is the CI fence. Run with -count=10; the race is runner timing,
+// the fence makes it impossible.
 func TestCloseJoinsReapers(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
@@ -306,9 +284,7 @@ func TestCloseJoinsReapers(t *testing.T) {
 		t.Fatalf("spawn: %v", err)
 	}
 	r.Close() // the fence the TempDir cleanup would otherwise race
-	// Terminal state, whichever way it landed: the child beat the fence
-	// (exit code 0) or the fence's kill beat the child's exec (signal
-	// death, code -1). Either way the reaper recorded before Close
+	// Terminal state, whichever way it landed. Either way the reaper recorded before Close
 	// returned - the invariant TempDir cleanup relies on.
 	e := stateEntry(t, r, "fast")
 	if !e.Exited || e.ExitCode == nil || (*e.ExitCode != 0 && *e.ExitCode != -1) {
@@ -319,24 +295,20 @@ func TestCloseJoinsReapers(t *testing.T) {
 	}
 }
 
-// TestSpawnReturnsBeforeExit exercises the same fence through test
-// lifetime instead: the test returns with a RUNNING child (the shape
-// TestToolFace's sleep 120 had), and t.Cleanup's Close must kill the
-// child and join the reaper before the TempDir teardown - no late
-// save, no leftover sleep outliving the test.
+// TestSpawnReturnsBeforeExit exercises the same fence through test lifetime instead:
+// the test returns with a RUNNING child (the shape TestToolFace's sleep 120 had), and
+// t.Cleanup's Close must kill the child and join the reaper before the TempDir teardown
+// - no late save, no leftover sleep outliving the test.
 func TestSpawnReturnsBeforeExit(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
 	if _, err := r.Spawn(context.Background(), "echo left-behind; sleep 120", "leaver", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	// Returns immediately with the child still running - the fence is
-	// the whole point. Nothing further to assert here: a failed
-	// cleanup fails the test itself (the exact CI red this fixes).
+	// Returns immediately with the child still running - the fence is the whole point.
 }
 
-// TestCorruptStateIgnored proves a corrupt state file starts empty
-// instead of bricking the tools.
+// TestCorruptStateIgnored proves a corrupt state file starts empty instead of.
 func TestCorruptStateIgnored(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
@@ -354,8 +326,7 @@ func TestCorruptStateIgnored(t *testing.T) {
 	}
 }
 
-// seedState writes a hand-made state file (the reboot simulator's
-// input).
+// seedState writes a hand-made state file (the reboot simulator's input).
 func seedState(t *testing.T, path string, entries []Entry) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -380,17 +351,9 @@ func findByName(entries []Entry, name string) (Entry, bool) {
 	return Entry{}, false
 }
 
-// The serializer's regression pins (card t_82107785): the exact
-// commands the dev-lane agents burned on, through the same cmd /C
-// door the runtime uses. Before the fix, Go's argv escaping re-wrapped
-// the embedded quotes into \" sequences the child parsed as literal
-// quote characters - PowerShell echoed `-Command` scripts as string
-// literals ($vars eaten with them) instead of running them.
-//
-// The windows SysProcAttr.CmdLine pin lives in
-// process_windows_test.go behind a build tag (card t_590976b0): the
-// field exists only on windows, so a runtime guard cannot make the
-// read compile on linux.
+// The serializer's regression pins. The windows SysProcAttr.CmdLine pin lives in
+// process_windows_test.go behind a build tag: the field exists only on windows, so a
+// runtime guard cannot make the read compile on linux.
 func TestBuildShellRawCommandLine(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the raw command-line pin is a windows contract (process_windows_test.go)")
@@ -428,10 +391,9 @@ func TestBuildShellPowerShellQuotedScript(t *testing.T) {
 	}
 }
 
-// TestBuildShellChainRedirectTiming pins the `>` chain behavior with
-// its only honest witness: the wall clock. The delay segment must
-// actually run (the pre-fix report claimed the redirect segment died
-// instantly and silently).
+// TestBuildShellChainRedirectTiming pins the `>` chain behavior with its only honest
+// witness. The delay segment must actually run (the pre-fix report claimed the redirect
+// segment died instantly and silently).
 func TestBuildShellChainRedirectTiming(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("ping -n timing is the windows delay idiom")
@@ -447,17 +409,12 @@ func TestBuildShellChainRedirectTiming(t *testing.T) {
 	if !strings.Contains(string(out), "chain-done") {
 		t.Fatalf("chain segments must all run, got %q", out)
 	}
-	// ping -n 2 waits ~1s; a dead redirect segment would return early.
 	if elapsed < 900*time.Millisecond {
 		t.Fatalf("the delay segment did not actually run (elapsed %v)", elapsed)
 	}
 }
 
-// TestPostMortemRead (card t_304afb4e): the log survives the process.
-// Before the fix the reaper rotated <name>.log to <name>.log.1 at
-// exit, so the post-mortem read - arguably the main reason to read a
-// log - answered "no log yet". The acceptance receipt: spawn a short
-// process, wait for exit, read the log.
+// TestPostMortemRead: the log survives the process.
 func TestPostMortemRead(t *testing.T) {
 	r := testRegistry(t)
 	if _, err := r.Spawn(context.Background(), "echo post-mortem-ok", "gone", ""); err != nil {
@@ -467,7 +424,6 @@ func TestPostMortemRead(t *testing.T) {
 		ee, ok := r.Find("gone")
 		return ok && ee.Exited
 	})
-	// the finished log is still at its recorded path - no exit-time rotation
 	e := stateEntry(t, r, "gone")
 	if _, err := os.Stat(e.LogPath); err != nil {
 		t.Fatalf("the finished log vanished: %v", err)
@@ -478,9 +434,9 @@ func TestPostMortemRead(t *testing.T) {
 	}
 }
 
-// TestReadRotatedGenerationFallback: an entry rotated by a pre-fix
-// registry (its .log gone, the .1 surviving) still reads - the
-// legacy state the retention contract must not orphan.
+// TestReadRotatedGenerationFallback: an entry rotated by a pre-fix registry (its.log
+// gone, the.1 surviving) still reads - the legacy state the retention contract must not
+// orphan.
 func TestReadRotatedGenerationFallback(t *testing.T) {
 	r := testRegistry(t)
 	e := Entry{
@@ -505,9 +461,7 @@ func TestReadRotatedGenerationFallback(t *testing.T) {
 	}
 }
 
-// TestCapExitedLog (card t_304afb4e): process.log_max_bytes is
-// enforced at exit - an oversized finished log is trimmed to the cap,
-// the TAIL kept (read serves the tail), a small log untouched.
+// TestCapExitedLog: process.log_max_bytes is enforced at exit.
 func TestCapExitedLog(t *testing.T) {
 	r := testRegistry(t)
 	r.cfg.LogMaxBytes = 4096
@@ -546,9 +500,7 @@ func TestCapExitedLog(t *testing.T) {
 	}
 }
 
-// TestRetainSweepGC (card t_304afb4e): the registry GC - an exited
-// entry older than the retention window (and its log files) is swept
-// at load; a recent one stays.
+// TestRetainSweepGC: the registry GC.
 func TestRetainSweepGC(t *testing.T) {
 	home := t.TempDir()
 	r := NewRegistry(RegistryConfig{Home: home, KillGraceSeconds: 1, LogMaxBytes: DefaultLogMaxBytes})

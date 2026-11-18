@@ -1,11 +1,9 @@
 package api
 
-// server_new_fold_test.go: /new on a conversation the MACHINERY owns
-// (card t_10ac04f0). The ruling is one line long - "/new in an agent
-// chat compacts, never forks the relationship" - and it has two
-// halves: the wire answers the fold (fork vs compacted), and the
-// provider-facing history starts at the fold's boundary with the
-// summary heading it.
+// server_new_fold_test.go: /new on a conversation the MACHINERY owns. The ruling is one
+// line long - "/new in an agent chat compacts, never forks the relationship" - and it
+// has two halves: the wire answers the fold (fork vs compacted), and the
+// provider-facing history starts at the fold's boundary with the summary heading it.
 
 import (
 	"context"
@@ -59,13 +57,10 @@ func TestSessionNewForksTheHumansOwn(t *testing.T) {
 	}
 }
 
-// TestSessionNewFoldsMachineryOwned pins the other half: an agent's
-// canonical chat folds in place. Same session id, a boundary at the
-// current tail, and the folded context is what the next run reads.
+// TestSessionNewFoldsMachineryOwned pins the other half.
 func TestSessionNewFoldsMachineryOwned(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
-	// The store's own canonical verb: a machinery-owned conversation.
 	if err := st.CreateCanonicalChat(ctx, "scout-canonical", "scout"); err != nil {
 		t.Fatalf("create canonical chat: %v", err)
 	}
@@ -97,9 +92,7 @@ func TestSessionNewFoldsMachineryOwned(t *testing.T) {
 		t.Fatal("no context boundary written - the fold did nothing")
 	}
 
-	// The boundary is the tail of the active path: the next run keeps
-	// only the last message (a fresh context with a foothold), and the
-	// transcript still holds every row.
+	// The boundary is the tail of the active path.
 	view, err := st.GetActiveView(ctx, "scout-canonical")
 	if err != nil {
 		t.Fatalf("active view: %v", err)
@@ -118,14 +111,12 @@ func TestSessionNewFoldsMachineryOwned(t *testing.T) {
 		t.Fatalf("folded path starts at %T, want the tail assistant row", folded[0].Message)
 	}
 
-	// A second /new folds again from the new tail - no error, no fork.
 	if code, body := newFoldCall(t, s, "scout-canonical"); code != http.StatusOK || body["kind"] != "compacted" {
 		t.Fatalf("second fold = %d %v, want 200 compacted", code, body)
 	}
 }
 
-// TestSessionNewUnknownIs404 pins the miss: an id no store owns is a
-// 404, never a silent fork of nothing.
+// TestSessionNewUnknownIs404 pins the miss: an id no store owns is a 404, never a.
 func TestSessionNewUnknownIs404(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	if code, _ := newFoldCall(t, s, "ghost"); code != http.StatusNotFound {
@@ -133,9 +124,7 @@ func TestSessionNewUnknownIs404(t *testing.T) {
 	}
 }
 
-// TestFoldSummaryPrefix pins what heads a folded context: the summary
-// when the compactor produced one, nothing when it did not (a fold that
-// was too small to earn a model call still restarts the context).
+// TestFoldSummaryPrefix pins what heads a folded context.
 func TestFoldSummaryPrefix(t *testing.T) {
 	if got := foldSummaryPrefix(""); got != nil {
 		t.Fatalf("empty summary = %v, want no message", got)
@@ -155,9 +144,8 @@ func TestFoldSummaryPrefix(t *testing.T) {
 	}
 }
 
-// TestFoldPathMissingBoundary pins the healing rule: a boundary whose
-// row is gone folds nothing. A conversation heals to a full context,
-// never to an empty one.
+// TestFoldPathMissingBoundary pins the healing rule. A conversation heals to a full
+// context, never to an empty one.
 func TestFoldPathMissingBoundary(t *testing.T) {
 	view := []core.StoredMessage{
 		{ID: 1, Message: core.NewUser("a")},

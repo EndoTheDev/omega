@@ -1,6 +1,4 @@
-// omega webui: unit tests for markdown rendering (renderMarkdown) and the
-// streaming render tick (createRenderScheduler) in composables/omega.ts.
-// Run: node --test webui/test/ (node >= 23 runs TS natively)
+// omega webui: unit tests for markdown rendering (renderMarkdown) and the streaming.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -74,24 +72,22 @@ describe("renderMarkdown", () => {
 
   it("event-handler markup never renders as an element", () => {
     const html = renderMarkdown('<img src="x" onerror="alert(1)">');
-    // escaped to text by the default renderer - present as text with
-    // &lt;/&quot;, never as a real <img> tag
+    // escaped to text by the default renderer - present as text with &lt;/&quot; never
+    // as a real <img> tag
     assert.doesNotMatch(html, /<img/);
     assert.match(html, /&lt;img/);
     assert.match(html, /&quot;alert\(1\)&quot;/);
   });
 
   it("javascript: hrefs never render as a link", () => {
-    // the default validateLink rejects the scheme - the whole token
-    // falls back to plain text, no <a> is emitted
+    // the default validateLink rejects the scheme.
     const html = renderMarkdown("[click](javascript:alert(1))");
     assert.doesNotMatch(html, /<a /);
     assert.doesNotMatch(html, /href=/);
   });
 });
 
-// A manual fake clock for the debounce tests - injectable timers make
-// this a pure deterministic tick instead of node mock.timers.
+// A manual fake clock for the debounce tests.
 function fakeClock() {
   const pending: { fn: () => void; due: number; handle: symbol }[] = [];
   let now = 0;

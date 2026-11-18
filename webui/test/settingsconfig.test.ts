@@ -1,12 +1,4 @@
-// omega webui: the settings pane's config-file actions (card t_a82d39c8)
-// - reset to default, export to yaml, edit as yaml.
-//
-// The node suite has no DOM, so this file carries two kinds of witness:
-// the PURE helpers (the wire calls, the export filename) against a stub
-// fetch, and SOURCE pins on SettingsTab.vue for the parts only a browser
-// can exercise (the band seat, the native dialog, the two-click reset).
-// The live behaviour is the journey/lane probe's job.
-// Run: node --test webui/test/
+// omega webui: the settings pane's config-file actions.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -19,7 +11,7 @@ import {
   saveConfigYaml,
 } from "../app/composables/omega.ts";
 
-// --- a stub fetch ---------------------------------------------------------
+// -- a stub fetch --------------------------------------------------------
 
 type Call = { url: string; init: RequestInit | undefined };
 
@@ -37,13 +29,12 @@ function stubFetch(status: number, body: string, contentType = "application/json
 }
 
 const cleanupFetch: (() => void)[] = [];
-// node's test runner has no afterEach that survives a thrown assertion at
-// module scope, so restore per test through a helper instead.
+// node's test runner has no afterEach that survives a thrown assertion at module.
 function restoreFetch() {
   for (const fn of cleanupFetch.splice(0)) fn();
 }
 
-// --- configExportFilename -------------------------------------------------
+// -- configExportFilename ------------------------------------------------
 
 test("configExportFilename stamps the day and keeps the .yaml suffix", () => {
   const name = configExportFilename(new Date(2026, 10, 4, 13, 5, 0));
@@ -52,7 +43,7 @@ test("configExportFilename stamps the day and keeps the .yaml suffix", () => {
   assert.equal(configExportFilename(new Date(2026, 0, 9)), "config-2026-01-09.yaml");
 });
 
-// --- the wire ------------------------------------------------------------
+// -- the wire -----------------------------------------------------------
 
 test("fetchConfigYaml reads the document from /settings/raw", async () => {
   const calls = stubFetch(200, "provider:\n  api_key: '****'\n", "application/yaml");
@@ -128,7 +119,7 @@ test("a bodyless failure still names the call and status", async () => {
   }
 });
 
-// --- the pane's SOURCE pins ----------------------------------------------
+// -- the pane's SOURCE pins ---------------------------------------------
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
@@ -148,10 +139,8 @@ test("the three config actions live in the BAND, never the scroll body", () => {
   for (const action of ["reset to default", "export to yaml", "edit as yaml"]) {
     assert.ok(band.includes(action), `${action} is seated in the settings band`);
   }
-  // the menu wrapper and its chip are band children
   assert.match(band, /ref="configMenuEl" class="settings-config"/);
   assert.match(band, /role="menu"/, "the actions ride one anchored menu");
-  // and the document body carries none of them
   const body = tab.slice(tab.indexOf('<div class="settings-split">'), tab.indexOf("</aside>"));
   for (const action of ["export to yaml", "edit as yaml"]) {
     assert.ok(!body.includes(action), `${action} must not float in the scroll body`);
@@ -159,13 +148,11 @@ test("the three config actions live in the BAND, never the scroll body", () => {
 });
 
 test("reset ships no client-side default set", () => {
-  // the action calls the seam helper and applies the refreshed payload
   assert.match(
     tab,
     /async function onResetToDefaults\(\)[\s\S]{0,700}applyPayload\(await resetSettings\(\)\)/,
     "the reset rides the host's own defaults",
   );
-  // a two-click arm: the first click only asks
   assert.match(
     tab,
     /if \(!resetArmed\.value\) \{\s*resetArmed\.value = true;\s*return;\s*\}/,
@@ -197,11 +184,9 @@ test("edit as yaml opens a NATIVE dialog and saves through the write path", () =
     /async function saveYaml\(\)[\s\S]{0,700}applyPayload\(await saveConfigYaml\(yamlText\.value\)\)/,
     "the save rides the server's config write path",
   );
-  // the editor text is the document; saving re-reads what landed
   assert.match(tab, /const persisted = await fetchConfigYaml\(\);/, "the editor shows the persisted document");
   assert.match(tab, /v-model="yamlText"/, "the textarea edits the document");
   assert.ok(!/yamlText[^;]*readonly/.test(tab), "the editor is editable");
-  // the dialog answers Escape/backdrop natively and tracks its own close
   assert.match(tab, /@close="yamlOpen = false"/, "the open state follows the element's own close");
 });
 
@@ -212,10 +197,9 @@ test("the config menu closes on an outside click and dies with the pane", () => 
 });
 
 test("the config menu names its target and the editor takes cmd+enter", () => {
-  // The chip acts on the MAIN config.yaml while a scope tab shows an agent
-  // layer file, so the menu names the document and the label follows the
-  // active scope - a reset/edit from a scope tab must not look like it
-  // applies to the tab on screen.
+  // The chip acts on the MAIN config.yaml while a scope tab shows an agent layer file,
+  // so the menu names the document and the label follows the active scope - a
+  // reset/edit from a scope tab must not look like it applies to the tab on screen.
   const band = bandSlice();
   assert.match(
     band,
@@ -227,7 +211,6 @@ test("the config menu names its target and the editor takes cmd+enter", () => {
     /const configTargetLabel = computed\(\(\) =>\s*activeScope\.value[\s\S]{0,160}main config\.yaml/,
     "the target label follows the active scope tab",
   );
-  // Keyboard save works on both modifier maps (Mac has no ctrl+enter).
   assert.match(tab, /@keydown\.ctrl\.enter\.prevent="saveYaml\(\)"/, "ctrl+enter saves");
   assert.match(tab, /@keydown\.meta\.enter\.prevent="saveYaml\(\)"/, "cmd+enter saves on mac");
 });

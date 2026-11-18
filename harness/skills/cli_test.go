@@ -1,11 +1,6 @@
 package skills
 
-// cli_test.go: the `omega skills` subcommand's self-check (card
-// t_05d06973). Every verb rides the provider faces the webui tab
-// calls, so the assertions read LANDED FILE TRUTH, not rendered
-// snapshots: a write lands the composed SKILL.md, an update keeps the
-// operator's frontmatter keys, a delete backs the folder up and
-// removes it.
+// cli_test.go: the `omega skills` subcommand's self-check.
 
 import (
 	"bytes"
@@ -16,8 +11,7 @@ import (
 	"testing"
 )
 
-// runCLI drives one argv through the dispatcher with captured stdout
-// and a scripted stdin.
+// runCLI drives one argv through the dispatcher with captured stdout and a scripted.
 func runCLI(t *testing.T, sp *SkillsProvider, args []string, stdin string) (string, error) {
 	t.Helper()
 	var out bytes.Buffer
@@ -243,9 +237,6 @@ func TestSkillsCLIReadRefusesTraversalNames(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "skills")
 	writeSkill(t, dir, "alpha", "the alpha skill")
-	// A SKILL.md-shaped file OUTSIDE the skills inventory: read resolves
-	// <dir>/<name>/SKILL.md verbatim, so an unvalidated traversal name
-	// would print this body.
 	outside := filepath.Join(root, "outside")
 	if err := os.MkdirAll(outside, 0o755); err != nil {
 		t.Fatal(err)
@@ -267,7 +258,6 @@ func TestSkillsCLIReadRefusesTraversalNames(t *testing.T) {
 			t.Errorf("read %q printed a body before refusing: %q", name, out)
 		}
 	}
-	// the same law guards write and delete at the shared door
 	if _, err := runCLI(t, sp, []string{"write", "../outside", "--description", "x", "--content", "y"}, ""); err == nil || !strings.Contains(err.Error(), "single folder component") {
 		t.Errorf("write traversal error = %v", err)
 	}
@@ -300,13 +290,11 @@ func TestResolveSkillsDirsReRootsAgainstOmegaHome(t *testing.T) {
 	if sp.Dir != filepath.Join(home, "skills") || sp.SharedDir != filepath.Join(home, "skills", "shared") {
 		t.Errorf("resolved dirs = %q / %q", sp.Dir, sp.SharedDir)
 	}
-	// an absolute dir passes through untouched (the serve path's shape)
 	abs := &SkillsProvider{Dir: filepath.Join(home, "own")}
 	t.Setenv("OMEGA_HOME", "")
 	if got, err := resolveSkillsDirs(abs); err != nil || got != abs.Dir {
 		t.Errorf("absolute dir = %q, %v", got, err)
 	}
-	// a relative dir with no home is the loud refusal
 	rel := &SkillsProvider{Dir: "skills"}
 	if _, err := resolveSkillsDirs(rel); err == nil || !strings.Contains(err.Error(), "OMEGA_HOME is unset") {
 		t.Errorf("relative dir without OMEGA_HOME error = %v", err)

@@ -1,9 +1,4 @@
-// omega webui: the morphing composer button + the retry action (t_357cbe9c
-// + chat-last 2a; retry face retired t_95d2bc34). ONE button: busy -> stop,
-// idle -> send (dimmed at rest, armed by a draft or attachment). The RETRY
-// affordance rendered in the message action row now - the newest assistant
-// response's chip dispatches the same action pipe (no /chat flag, no text
-// resubmit). Run: node --test webui/test/ (node >= 23 runs TS natively)
+// omega webui: the morphing composer button + the retry action.
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -49,9 +44,9 @@ describe("composerFace: the morphing button's two faces", () => {
     assert.equal(composerFace(false), "send");
   });
   it("the composer no longer renders a retry face", () => {
-    // the retry affordance moved to the action row (t_95d2bc34): the
-    // composer's face vocabulary carries no retry branch, the button
-    // never wears the retry class, and no canRetry prop reaches it
+    // the retry affordance moved to the action row: the composer's face vocabulary
+    // carries no retry branch, the button never wears the retry class, and no canRetry
+    // prop reaches it
     assert.doesNotMatch(composer, /face === ['"]retry/);
     assert.doesNotMatch(composer, /canRetry/);
     assert.doesNotMatch(composer, /class="\{ cancel: face === 'stop', retry/);
@@ -65,12 +60,9 @@ describe("composerFace: the morphing button's two faces", () => {
 });
 
 describe("retry rides the action pipe", () => {
-  // chat.ts's retry() POSTs /ui/actions {module:"http_channel",
-  // action:"retry", args:{session}} - the server replays the persisted
-  // last user turn as a sibling variant. A fetch stub proves the wire
-  // shape without a canvas store: the module qualification is the
-  // chat panel's contract (card t_ec45b670). The TRIGGER is the newest
-  // assistant response's action-row chip now (card t_95d2bc34).
+  // chat.ts's retry POSTs /ui/actions {module:"http_channel", action:"retry",
+  // args:{session}}. A fetch stub proves the wire shape without a canvas store: the
+  // module qualification is the chat panel's contract.
   const saved = globalThis.fetch;
   afterEach(() => {
     globalThis.fetch = saved;
@@ -145,9 +137,9 @@ describe("retry rides the action pipe", () => {
 });
 
 describe("the retry affordance lives in the message action row", () => {
-  // the composer dropped the face; the chip took it (t_95d2bc34 ruling
-  // 1): only the newest assistant response carries it, gated by the
-  // transcript OWNER (ChatTab) - ChatMessage never knows the transcript
+  // the composer dropped the face; the chip took it: only the newest assistant response
+  // carries it, gated by the transcript OWNER (ChatTab) - ChatMessage never knows the
+  // transcript
   it("the msg-retry chip renders beside fork/copy, inside the action row", () => {
     assert.match(chatMessage, /class="msg-retry"/);
     const actionsAt = chatMessage.indexOf('class="msg-actions"');
@@ -155,22 +147,18 @@ describe("the retry affordance lives in the message action row", () => {
     const retryAt = chatMessage.indexOf('class="msg-retry"', actionsAt);
     assert.ok(retryAt > actionsAt, "the chip lives inside the action row");
     assert.ok(retryAt > copyAt, "the chip sits beside fork/copy");
-    // the row is assistant-only and hidden while streaming - the chip
-    // rides the row's own v-if, it renders nowhere else
+    // the row is assistant-only and hidden while streaming.
     const otherAt = chatMessage.indexOf('class="msg-retry"', retryAt + 1);
     assert.equal(otherAt, -1, "one chip site, inside the row");
   });
 
   it("ChatMessage receives the newest+idle signal from the transcript owner", () => {
-    // ChatMessage does not know the transcript: ChatItem carries the
-    // retryable prop through, ChatTab derives it (idle + newest response)
+    // ChatMessage does not know the transcript.
     assert.match(chatItem, /:retryable="retryable && item\.role === 'assistant'"/);
     assert.match(chatTab, /retryableOfItem\(entry\)/);
-    // the signal: canRetry (idle gate) AND the item IS the newest
-    // assistant response
+    // the signal: canRetry (idle gate) AND the item IS the newest assistant response
     assert.match(chatTab, /item\.id === lastAssistantId\.value/);
-    // the chip's click carries the SAME host.retry the composer called
-    // - no new endpoint, no new plumbing
+    // the chip's click carries the SAME host.retry the composer called.
     assert.match(chatTab, /@retry="onRetry"/);
     assert.match(chatTab, /void host\.retry\(stateKey\)/);
   });
@@ -178,16 +166,10 @@ describe("the retry affordance lives in the message action row", () => {
 
 describe("composer structure: one button, + in the input row", () => {
   it("the toolbar carries exactly ONE button - the morphing slot", () => {
-    // the toolbar section lives between '<div class="toolbar">' and the
-    // template's closing tag; count its <button elements (1 morphing
-    // one). The toolbar is the template's last element, and since
-    // t_641c2870 it nests a .model-group div - slicing to the first
-    // '</div>' would stop at the group's closer, BEFORE the send
-    // button, so slice to the template end instead.
-    // t_08ef793b adds the fullscreen + seat (v-if="expanded", card
-    // ruling 2): the row keeps it EXACTLY once in the two exclusive
-    // states - the morphing slot is still the only unconditional button
-    // and compact renders one +, in the input row, as before.
+    // the toolbar section lives between '<div class="toolbar">' and the template's
+    // closing tag. adds the fullscreen + seat: the row keeps it EXACTLY once in the two
+    // exclusive states - the morphing slot is still the only unconditional button and
+    // compact renders one +, in the input row, as before.
     const m = composer.match(/<div\s+class="toolbar"/);
     assert.ok(m, "composer has a toolbar");
     const start = composer.indexOf(m[0]);
@@ -199,14 +181,13 @@ describe("composer structure: one button, + in the input row", () => {
       /:class="\{ cancel: face === 'stop'/,
       "the stop face rides the same element",
     );
-    // the extra seat is fullscreen-gated, carrying the attach affordance
     const plusStart = composer.indexOf('+', composer.indexOf('v-if="expanded"\n        class="plus-btn"'));
     assert.ok(plusStart > -1, "the fullscreen + rides the toolbar");
   });
   it("the + attach affordance keeps exactly ONE seat per state (v-if exclusive)", () => {
-    // compact: row seat (v-if="!expanded"); fullscreen: toolbar seat
-    // (v-if="expanded"). Never both at once, never zero - the compact DOM
-    // is byte-identical to pre-t_08ef793b (regression guard).
+    // compact: row seat (v-if="!expanded"); fullscreen: toolbar seat (v-if="expanded").
+    // Never both at once, never zero - the compact DOM is byte-identical to pre-
+    // (regression guard).
     const rowPlus = composer.match(/v-if="!expanded"\s*\n\s*class="plus-btn"/);
     assert.ok(rowPlus, "compact + keeps the input-row seat");
     const toolbarPlus = composer.match(/v-if="expanded"\s*\n\s*class="plus-btn"/);
@@ -224,8 +205,6 @@ describe("composer structure: one button, + in the input row", () => {
   it("the + attach affordance sits IN the input row", () => {
     assert.match(composer, /<div class="composer-row">/);
     assert.match(composer, /class="plus-btn"/);
-    // plus and the editor are siblings in the same row (t_e67c372b: the
-    // editor is a contenteditable div now)
     const row = composer.slice(composer.indexOf('<div class="composer-row">'));
     const rowEnd = row.indexOf("</div>");
     assert.match(row.slice(0, rowEnd), /plus-btn/, "plus first");
@@ -235,11 +214,9 @@ describe("composer structure: one button, + in the input row", () => {
 });
 
 describe("the squeeze: the ladder owns it, no label ever dies mid-word", () => {
-  // card t_27ff2bbd retired the t_357cbe9c squeeze: the narrow viewport no
-  // longer shrinks the model chip into an ellipsis ("deepse..."). The
-  // composer's OWN width picks a rung instead (composables/composerladder
-  // .ts): full label -> chevron only -> stacked rows, measured, never
-  // truncated. These pins hold the retired law dead.
+  // retired the squeeze: the narrow viewport no longer shrinks the model chip into an.
+  // The composer's OWN width picks a rung instead (composables/composerladder.ts): full
+  // label -> chevron only -> stacked rows, measured, never truncated.
   it("the narrow media block no longer shrinks or ellipsizes the chip", () => {
     const at = css.lastIndexOf("@media (max-width: 768px)");
     const narrow = css.slice(at);
@@ -250,7 +227,6 @@ describe("the squeeze: the ladder owns it, no label ever dies mid-word", () => {
   });
   it("the model chip's name still sits in its own span (the shed rung's seat)", () => {
     assert.match(modelSelect, /class="chip-name"/);
-    // and the whole label is one line: a wrapped label is not a fit
     assert.match(css, /\.composer \.model-chip \.chip-name\s*\{[^}]*white-space: nowrap/);
   });
   it("the + input row never contributes to the toolbar wrap", () => {

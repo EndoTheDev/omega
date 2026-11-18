@@ -1,10 +1,7 @@
 package api
 
-// The draft workspace intent (card t_ea7e6a58): a session is born
-// pinned when the create carries a folder - POST /sessions {workspace}
-// and the BARE POST /chat auto-create. Refusal paths answer loudly and
-// create nothing (never a half-pinned row); a create without an intent
-// keeps the pre-card behavior.
+// The draft workspace intent. Refusal paths answer loudly and create nothing (never a
+// half-pinned row); a create without an intent keeps the pre-card behavior.
 
 import (
 	"bufio"
@@ -40,14 +37,12 @@ func sessionRowWorkspace(t *testing.T, s *Server, id string) (found bool, worksp
 	return true, detail.Session.Workspace
 }
 
-// TestSessionCreateWorkspace: POST /sessions {workspace} creates the
-// row already pinned; a bad folder is refused BEFORE any row write;
-// a create without a workspace stays unpinned.
+// TestSessionCreateWorkspace: POST /sessions {workspace} creates the row already
+// pinned.
 func TestSessionCreateWorkspace(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	ws := t.TempDir()
 
-	// Born pinned.
 	req := httptest2.NewRequest(http.MethodPost, "/sessions",
 		strings.NewReader(`{"id":"b1","workspace":`+string(jsonMarshal(ws))+`}`))
 	rec := httptest2.NewRecorder()
@@ -60,7 +55,6 @@ func TestSessionCreateWorkspace(t *testing.T) {
 		t.Fatalf("born pin: found=%v workspace=%q, want %q", found, got, ws)
 	}
 
-	// A nonexistent dir is refused loudly, nothing created.
 	req = httptest2.NewRequest(http.MethodPost, "/sessions",
 		strings.NewReader(`{"id":"b2","workspace":"/definitely/not/here"}`))
 	rec = httptest2.NewRecorder()
@@ -72,7 +66,6 @@ func TestSessionCreateWorkspace(t *testing.T) {
 		t.Fatal("b2 exists - the refusal must not create a row")
 	}
 
-	// A relative path is refused the same way.
 	req = httptest2.NewRequest(http.MethodPost, "/sessions",
 		strings.NewReader(`{"id":"b3","workspace":"relative/dir"}`))
 	rec = httptest2.NewRecorder()
@@ -84,7 +77,6 @@ func TestSessionCreateWorkspace(t *testing.T) {
 		t.Fatal("b3 exists - the refusal must not create a row")
 	}
 
-	// No workspace in the payload: today's behavior, unpinned row.
 	req = httptest2.NewRequest(http.MethodPost, "/sessions", strings.NewReader(`{"id":"b4"}`))
 	rec = httptest2.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -97,9 +89,7 @@ func TestSessionCreateWorkspace(t *testing.T) {
 	}
 }
 
-// TestChatCreateWorkspace: the BARE /chat create pins the draft intent
-// folder; every other shape (session id given, ephemeral, retry) plus
-// a workspace is refused before anything runs.
+// TestChatCreateWorkspace: the BARE /chat create pins the draft intent folder.
 func TestChatCreateWorkspace(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	s.chat.batch = 0
@@ -108,8 +98,7 @@ func TestChatCreateWorkspace(t *testing.T) {
 	ts := httptest2.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 
-	// Bare create with the intent: the run streams, the row is born
-	// pinned. prepareRun reads the row's root for THIS run.
+	// Bare create with the intent: the run streams, the row is born pinned.
 	res, err := http.Post(ts.URL+"/chat", "application/json",
 		strings.NewReader(`{"messages":[{"role":"user","content":"say hi"}],"workspace":`+
 			string(jsonMarshal(ws))+`}`))
@@ -142,7 +131,6 @@ func TestChatCreateWorkspace(t *testing.T) {
 		t.Fatalf("session + workspace: status = %d (%s), want 400", rec.Code, rec.Body.String())
 	}
 
-	// An ephemeral mint plus a workspace is refused (no row to pin).
 	req = httptest2.NewRequest(http.MethodPost, "/chat",
 		strings.NewReader(`{"ephemeral":true,"messages":[{"role":"user","content":"m"}],"workspace":"/tmp/ws"}`))
 	rec = httptest2.NewRecorder()
@@ -151,8 +139,7 @@ func TestChatCreateWorkspace(t *testing.T) {
 		t.Fatalf("ephemeral + workspace: status = %d, want 400", rec.Code)
 	}
 
-	// A bad folder on the bare-create path: refused BEFORE the create -
-	// no row, no run, loud 400.
+	// A bad folder on the bare-create path.
 	rows, err := st.ListSessions(context.Background())
 	if err != nil {
 		t.Fatalf("list sessions: %v", err)
@@ -176,11 +163,9 @@ func TestChatCreateWorkspace(t *testing.T) {
 	}
 }
 
-// TestWorkspaceFilesListing moved with the /workspaces/files route to
-// the files capsule (harness/files/workspaces_test.go, card t_b75df168).
+// TestWorkspaceFilesListing moved with the /workspaces/files route to the files.
 
-// firstSessionID returns the store's only session id (the /chat run
-// creates exactly one).
+// firstSessionID returns the store's only session id (the /chat run creates exactly.
 func firstSessionID(t *testing.T, st *store.Store) string {
 	t.Helper()
 	rows, err := st.ListSessions(context.Background())

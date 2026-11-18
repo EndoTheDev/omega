@@ -1,18 +1,6 @@
 package store
 
-// router.go: session-addressed routing across agent homes (card
-// t_a7fab745, Endo's ruling A, 2026-11-10). Per-agent data isolation
-// moved every agent's sessions into agents/<name>/data/omega.db
-// (cmd/omega/agents.go migrateAgentStores) and left no reverse map, so
-// the chat floor's ONE store handle 404'd every conversation the agents
-// roster lists. This file makes that handle resolve the store that OWNS
-// a session id: reads answer from the owning file, and the run's writes
-// land in it - a session forked across two databases would be worse
-// than the 404 it replaces.
-//
-// Only the home's MAIN store routes. An agent's own store (opened by its
-// wake child, or by the per-agent run Context) and every non-data dsn
-// keep the single-file behavior they always had.
+// router.go: session-addressed routing across agent homes.
 
 import (
 	"context"
@@ -24,21 +12,17 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// SetHome names the omega home this store belongs to. The store capsule
-// passes the host-resolved home at mount; without it (a bare Open in a
-// CLI or a test) routing is off and the store serves its own file only.
+// SetHome names the omega home this store belongs to.
 func (s *Store) SetHome(home string) {
 	s.home = filepath.ToSlash(home)
 }
 
-// Compile-time assertion that Store carries the optional home-routing
-// face the chat floor asks for before a run.
+// Compile-time assertion that Store carries the optional home-routing face the chat.
 var _ agent.SessionOwnerStore = (*Store)(nil)
 
-// isRouter reports whether this store is its home's MAIN store - the one
-// session-addressed routing starts from. A process running AS an agent
-// (identity set) and any dsn outside <home>/data/omega.db never route:
-// their one file already is the whole truth for them.
+// isRouter reports whether this store is its home's MAIN store. A process running AS an
+// agent (identity set) and any dsn outside <home>/data/omega.db never route: their one
+// file already is the whole truth for them.
 func (s *Store) isRouter() bool {
 	if s.home == "" || s.identity != "" {
 		return false
@@ -46,17 +30,8 @@ func (s *Store) isRouter() bool {
 	return filepath.ToSlash(s.dbPath) == filepath.ToSlash(datadir.DBPath(s.home, "omega.db"))
 }
 
-// route returns the store that owns sessionID. The local row wins (the
-// common case): a local hit is never cached, so it re-probes with one
-// indexed PK query per call. A positive owner found in an agent home is
-// cached by id; a miss is not cached. An id no home holds answers this
-// store, so creating a session through it keeps today's main-store
-// default.
-//
-// ponytail: the ownership cache is an unbounded map of session id ->
-// store, bounded by the sessions one process touches in its lifetime. A
-// home count in the hundreds would want a session_owners index table
-// instead of the linear probe.
+// route returns the store that owns sessionID. The local row wins (the common case): a
+// local hit is never cached, so it re-probes with one indexed PK query per call.
 func (s *Store) route(ctx context.Context, sessionID string) *Store {
 	if sessionID == "" || !s.isRouter() {
 		return s
@@ -73,11 +48,7 @@ func (s *Store) route(ctx context.Context, sessionID string) *Store {
 			target = owner
 		}
 	}
-	// Cache POSITIVE owners only. Caching "this store owns it" would pin a
-	// miss forever: an id first seen before its agent home existed (or
-	// before the roster minted the home at all) would keep answering
-	// not-found until a restart. A local hit re-probes with one indexed
-	// PK query, which is what the common path paid before anyway.
+	// Cache POSITIVE owners only.
 	if target != s {
 		s.routeMu.Lock()
 		if s.routes == nil {
@@ -89,8 +60,7 @@ func (s *Store) route(ctx context.Context, sessionID string) *Store {
 	return target
 }
 
-// owner delegates to route and answers the owning store only when it is
-// NOT this one - the routing methods' one-line guard.
+// owner delegates to route and answers the owning store only when it is NOT this one.
 func (s *Store) owner(ctx context.Context, sessionID string) *Store {
 	if t := s.route(ctx, sessionID); t != s {
 		return t
@@ -98,10 +68,7 @@ func (s *Store) owner(ctx context.Context, sessionID string) *Store {
 	return nil
 }
 
-// SessionOwner implements the agent.SessionOwnerStore need face: the
-// agent home that owns sessionID, "" when this store's own file holds
-// it. The chat floor reads it before a run to serve the session on the
-// owning home's config instead of the daemon's.
+// SessionOwner implements the agent.SessionOwnerStore need face.
 func (s *Store) SessionOwner(sessionID string) string {
 	o := s.owner(context.Background(), sessionID)
 	if o == nil {
@@ -116,8 +83,7 @@ func (s *Store) hasSession(ctx context.Context, id string) bool {
 	return s.db.QueryRowContext(ctx, `SELECT 1 FROM sessions WHERE id = ?`, id).Scan(&one) == nil
 }
 
-// probeHomes walks the home's agent directories and reports the first
-// store holding the row.
+// probeHomes walks the home's agent directories and reports the first store holding.
 func (s *Store) probeHomes(ctx context.Context, id string) *Store {
 	entries, err := os.ReadDir(filepath.Join(s.home, "agents"))
 	if err != nil {
@@ -158,10 +124,8 @@ func (s *Store) homeStore(name string) *Store {
 		}
 	}
 	if st == nil {
-		// Do NOT cache the miss: an agent home created while the daemon
-		// runs (the roster mints homes at runtime) must start routing
-		// without a restart. The cost is one os.Stat per home per
-		// unresolved id, not per request.
+		// Do NOT cache the miss: an agent home created while the daemon runs (the roster
+		// mints homes at runtime) must start routing without a restart.
 		return nil
 	}
 	if s.agents == nil {
@@ -171,9 +135,7 @@ func (s *Store) homeStore(name string) *Store {
 	return st
 }
 
-// closeHomes releases every agent store this router opened. Called from
-// Close: a handle left open keeps the agent's data file locked on
-// windows.
+// closeHomes releases every agent store this router opened.
 func (s *Store) closeHomes() error {
 	s.routeMu.Lock()
 	defer s.routeMu.Unlock()
@@ -193,15 +155,8 @@ func (s *Store) closeHomes() error {
 // Compile-time assertion for the delete verb's release face.
 var _ agent.AgentHomeForgetter = (*Store)(nil)
 
-// ForgetHome implements the agent.AgentHomeForgetter need face the
-// roster's DELETE verb reads (card t_5df01d0f): close and evict the one
-// cached handle for agentName, and drop every session route pointing at
-// it. Reports whether a handle was open.
-//
-// The close is what matters: on windows a live SQLite handle keeps the
-// home's data file locked, so removing the directory fails half-way and
-// the roster keeps a ghost row. A later read of the same id simply
-// re-opens the home (or answers not-found once the directory is gone).
+// ForgetHome implements the agent.AgentHomeForgetter need face the roster's DELETE verb
+// reads.
 func (s *Store) ForgetHome(agentName string) bool {
 	if agentName == "" {
 		return false
@@ -219,9 +174,7 @@ func (s *Store) ForgetHome(agentName string) bool {
 		}
 	}
 	if st != nil && st != s {
-		// The error is the operating system's complaint about closing a
-		// handle; the caller is about to remove the directory anyway, and
-		// a close that failed has already dropped the cache entry.
+		// The error is the operating system's complaint about closing a handle; the caller.
 		_ = st.Close()
 	}
 	return true

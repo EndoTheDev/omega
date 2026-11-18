@@ -18,9 +18,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// settingsKnobKeys lists every knob the schema exposes, as the single
-// inventory assertion: adding a Config field without a knob here (or a
-// knob without a field) fails this set comparison.
+// settingsKnobKeys lists every knob the schema exposes, as the single inventory
+// assertion.
 func settingsKnobKeys(t *testing.T) map[string]bool {
 	t.Helper()
 	return map[string]bool{
@@ -75,10 +74,7 @@ func schemaKnobKeys(groups []core.SettingsGroup) map[string]bool {
 	return out
 }
 
-// TestModelKnobsTyped pins the typed model pickers' schema shape
-// (card t_70c28128): every model field rides type "model", the vision
-// slot carries the vision filter, and no other knob type claims the
-// model rendering.
+// TestModelKnobsTyped pins the typed model pickers' schema shape.
 func TestModelKnobsTyped(t *testing.T) {
 	cfg := DefaultConfig()
 	for _, g := range settingGroups(&cfg) {
@@ -136,9 +132,7 @@ func TestModelKnobsTyped(t *testing.T) {
 	}
 }
 
-// TestModelKnobFilterValidValues fails a filter value the webui has no
-// renderer for - the seam vocabulary stays closed until the approval
-// gate lands its decision slot with its own value here.
+// TestModelKnobFilterValidValues fails a filter value the webui has no renderer for.
 func TestModelKnobFilterValidValues(t *testing.T) {
 	valid := map[string]bool{"": true, "vision": true, "decision": true}
 	cfg := DefaultConfig()
@@ -244,7 +238,6 @@ func TestApplySettingValuesTyped(t *testing.T) {
 	if cfg.Server.DefaultWorkspace == "" {
 		t.Error("default_workspace not applied from an existing absolute dir")
 	}
-	// an empty value clears the knob (the cwd fallback stands)
 	err = applySettingValues(&cfg, map[string]any{"server.default_workspace": ""})
 	if err != nil {
 		t.Fatalf("apply clear: %v", err)
@@ -270,8 +263,7 @@ func TestApplySettingValuesErrors(t *testing.T) {
 		{"string where number", map[string]any{"http_timeout": "120s"}, "whole number"},
 		{"default workspace relative", map[string]any{"server.default_workspace": "rel/path"}, "must be an absolute path"},
 		{"default workspace missing", map[string]any{"server.default_workspace": "/omega-definitely-not-here"}, "no such file or directory"},
-		// gated knobs: the hot-PUT path never writes these, and the
-		// error names config.yaml as the only door
+		// gated knobs: the hot-PUT path never writes these, and the error names config.yaml.
 		{"api_key write", map[string]any{"provider.api_key": "sk-x"}, "config.yaml"},
 		{"bind write", map[string]any{"server.bind": "0.0.0.0"}, "config.yaml"},
 		{"masked echo write", map[string]any{"provider.api_key": maskedSecret}, "config.yaml"},
@@ -300,7 +292,6 @@ func TestSaveSettingsPersistsAndReturnsRefreshedSchema(t *testing.T) {
 		t.Fatalf("save: %v", err)
 	}
 
-	// the file on disk now carries the change (materialized config)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -316,7 +307,6 @@ func TestSaveSettingsPersistsAndReturnsRefreshedSchema(t *testing.T) {
 		t.Errorf("model_name not persisted: %q", saved.Provider.ModelName)
 	}
 
-	// the returned payload reflects the saved values, and groups survive
 	if payload == nil || len(payload.Groups) == 0 {
 		t.Fatalf("refreshed payload missing groups: %v", payload)
 	}
@@ -373,9 +363,7 @@ func TestWriteConfigFileAtomicNoStrayTemp(t *testing.T) {
 	}
 }
 
-// TestSchemaMasksAPIKey: the providers list rides masked - the plain
-// text never reaches the pane, and a missing key stays visibly empty
-// (a mask on a missing key would imply one exists).
+// TestSchemaMasksAPIKey: the providers list rides masked - the plain text never.
 func TestSchemaMasksAPIKey(t *testing.T) {
 	keyOf := func(p *core.SettingsSchema, name string) string {
 		for _, g := range p.Groups {
@@ -403,7 +391,6 @@ func TestSchemaMasksAPIKey(t *testing.T) {
 	if got := keyOf(payload, PrimaryProviderInstance); got != maskedSecret {
 		t.Errorf("GET schema api_key %q, want masked", got)
 	}
-	// the save-refresh payload rides the same channel: masked too
 	refreshed, err := saveSettings(path, nil, nil, nil, nil, nil, map[string]any{
 		"compaction.keep_last": float64(4),
 	})
@@ -413,7 +400,6 @@ func TestSchemaMasksAPIKey(t *testing.T) {
 	if got := keyOf(refreshed, PrimaryProviderInstance); got != maskedSecret {
 		t.Errorf("save-refresh api_key %q, want masked", got)
 	}
-	// empty stays empty
 	path = writeTestConfig(t, testConfigYAML)
 	payload, err = settingsSchema(path)
 	if err != nil {
@@ -426,10 +412,6 @@ func TestSchemaMasksAPIKey(t *testing.T) {
 
 func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	comp := &compactor.Compactor{}
-	// the files knob hook stub: the files capsule owns the
-	// default_workspace knob (the shell-ring shrink wave 1) - the
-	// host threads the capsule's SetDefaultWorkspace as a bare func
-	// and the hot-apply pushes a save through it.
 	pushed := ""
 	channelPushed := ""
 	terminalPushed := ""
@@ -438,8 +420,6 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	setFilesWorkspace := func(ws string) { pushed = ws }
 	setChannelWorkspace := func(ws string) { channelPushed = ws }
 	setTerminalWorkspace := func(ws string) { terminalPushed = ws }
-	// t_f78acfd6: the runtime-knob hook - the hot-apply pushes
-	// system_prompt + max_turns through it (both agents ride it).
 	setAgentConfig := func(prompt string, maxTurns int) { agentPrompt, agentTurns = prompt, maxTurns }
 	pctx := &agent.Context{}
 	pctx.ApplyOffer("compactor", "test", comp)
@@ -467,8 +447,6 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 	if agentPrompt != "be terse" || agentTurns != 33 {
 		t.Errorf("SetAgentConfig hook: prompt %q turns %d, want \"be terse\"/33 (the runtime knobs must ride the hook live)", agentPrompt, agentTurns)
 	}
-	// the compactor honors the saved config on every Compact call:
-	// disabled compaction returns the input untouched regardless of size
 	msgs := []core.Message{core.User{Content: "hello"}, core.Assistant{Content: "hi there"}}
 	out, err := comp.Compact(context.Background(), msgs)
 	if err != nil {
@@ -478,9 +456,6 @@ func TestHotApplyFlowsToCompactorAndHTTPClient(t *testing.T) {
 		t.Errorf("disabled compaction changed the message count")
 	}
 
-	// card t_9825147c part 3: the workspace hook push is gated on a
-	// value change - an unchanged knob is NOT re-pushed, a changed one
-	// rides both hooks
 	pushes := 0
 	countingHook := func(string) { pushes++ }
 	hotApply(cfg, cfg.Server.DefaultWorkspace, pctx, countingHook, countingHook, countingHook, setAgentConfig)
@@ -509,18 +484,12 @@ func TestOmegaSettingsImplementsSeam(t *testing.T) {
 	if payload == nil || len(payload.Groups) == 0 {
 		t.Fatalf("schema missing groups")
 	}
-	// compile-time assertion also covers the interface; this round-trips
-	// Save through the seam shape too
 	if _, err := s.Save(map[string]any{"compaction.keep_last": float64(4)}); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 }
 
-// card t_bf21ee07: the merged provider.instances knob - apply law.
-// Every provider is a row and the primary is the row named "default".
-// An instance is a NAMED ENDPOINT only: name, type, host, api_key. A
-// model_name row is a loud refusal (models come from the instance's
-// catalog through the pickers).
+// the merged provider.instances knob - apply law.
 func TestApplyProviderInstancesKnob(t *testing.T) {
 	inst := func(name, typ string) map[string]any {
 		return map[string]any{"name": name, "type": typ, "host": "", "api_key": ""}
@@ -537,8 +506,7 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 		}
 		return applySettingValues(cfg, map[string]any{"provider.instances": list})
 	}
-	// newCfg starts from the defaults with a hostless primary row, the
-	// shape the pane round-trips on a fresh home.
+	// newCfg starts from the defaults with a hostless primary row, the shape the pane.
 	newCfg := func() Config {
 		cfg := DefaultConfig()
 		cfg.Provider.ModelName = "m"
@@ -546,7 +514,6 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 		return cfg
 	}
 
-	// add a second instance beside the primary: the card's headline
 	cfg := newCfg()
 	if err := add(&cfg, inst("default", "ollama"), inst("backup", "openai")); err != nil {
 		t.Fatalf("add: %v", err)
@@ -558,7 +525,6 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 	if !ok || backup.APIKey != "" || backup.Type != "openai" {
 		t.Fatalf("the added row did not land: %+v", backup)
 	}
-	// the primary leads the list whatever order was submitted
 	if first := cfg.Provider.Instances[0]; first.Name != PrimaryProviderInstance {
 		t.Fatalf("list does not lead with %q: %+v", PrimaryProviderInstance, cfg.Provider.Instances)
 	}
@@ -567,7 +533,7 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 	if err := add(&cfg, inst("primary", "ollama")); err == nil || !strings.Contains(err.Error(), PrimaryProviderInstance) {
 		t.Fatalf("expected the missing-primary refusal, got %v", err)
 	}
-	// ... nor can the list be emptied: the agent would have no provider
+	// ..
 	if err := add(&cfg); err == nil || !strings.Contains(err.Error(), PrimaryProviderInstance) {
 		t.Fatalf("expected the empty-list refusal, got %v", err)
 	}
@@ -578,8 +544,7 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 		t.Fatalf("expected the model_name refusal, got %v", err)
 	}
 
-	// save-side validation: a bad type lands in the row and cfg.Validate()
-	// (run by saveSettings after apply) refuses it
+	// save-side validation: a bad type lands in the row and cfg.Validate (run by.
 	cfg = newCfg()
 	if err := add(&cfg, inst("default", "azure")); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -594,13 +559,11 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 		t.Fatal("expected duplicated name in the list to fail, got", err)
 	}
 
-	// masked round trip: "****" on a NEW row has no stored secret behind
-	// it, so the save refuses rather than writing an empty one
+	// masked round trip: "****" on a NEW row has no stored secret behind it, so the save.
 	cfg = newCfg()
 	if err := add(&cfg, inst("default", "ollama"), masked("backup")); err == nil || !strings.Contains(err.Error(), "masked") {
 		t.Fatal("expected masked key on a NEW instance to refuse, got", err)
 	}
-	// with a stored secret, "****" keeps it
 	cfg = newCfg()
 	cfg.Provider.setInstance(ProviderInstance{Name: "backup", Type: "openai", APIKey: "sk-kept"})
 	if err := add(&cfg, inst("default", "ollama"), masked("backup")); err != nil {
@@ -612,11 +575,8 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 	}
 }
 
-// TestSchemaProviderInstancesKnob: the merge folds every older provider
-// shape into ONE list - the flat trio becomes the "default" row, the
-// pre-merge top-level providers: map follows in name order - and the
-// schema renders that list with the primary first, types lowercase, the
-// keys masked and no model column anywhere.
+// TestSchemaProviderInstancesKnob: the merge folds every older provider shape into ONE
+// list.
 func TestSchemaProviderInstancesKnob(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML+`
   host: http://localhost:11434
@@ -665,10 +625,9 @@ providers:
 	}
 }
 
-// card t_9825147c part 2: a row's host and api_key are config.yaml's
-// property - the settings PUT may keep (masked round trip), rename,
-// retype or remove rows, never plant a host config.yaml does not
-// carry or set/wipe a secret. Every refusal names config.yaml.
+// part 2: a row's host and api_key are config.yaml's property - the settings PUT may
+// keep (masked round trip), rename, retype or remove rows, never plant a host
+// config.yaml does not carry or set/wipe a secret.
 func TestApplyProviderInstancesGate(t *testing.T) {
 	row := func(name, host, key string) map[string]any {
 		return map[string]any{"name": name, "type": "openai", "host": host, "api_key": key}
@@ -703,7 +662,6 @@ func TestApplyProviderInstancesGate(t *testing.T) {
 		return applySettingValues(cfg, map[string]any{"provider.instances": list})
 	}
 
-	// a changed host on a stored row: refused, config untouched
 	cfg := stored()
 	if err := apply(t, cfg, primary, row("alpha", "http://evil:9999", maskedSecret)); err == nil {
 		t.Fatal("host change accepted")
@@ -714,20 +672,17 @@ func TestApplyProviderInstancesGate(t *testing.T) {
 		t.Fatalf("failed apply mutated the stored row: %+v", inst)
 	}
 
-	// a planted host on a new row: refused even keyless
 	if err := apply(t, stored(), primary, row("plant", "http://169.254.1.1:8080", "")); err == nil {
 		t.Fatal("planted host accepted")
 	} else {
 		door(err, t)
 	}
 
-	// a secret set on a stored row (plain key): refused
 	if err := apply(t, stored(), primary, row("alpha", sharedHost, "sk-new")); err == nil {
 		t.Fatal("plain key change accepted")
 	} else {
 		door(err, t)
 	}
-	// a secret wipe on a stored row: refused
 	if err := apply(t, stored(), primary, row("alpha", sharedHost, "")); err == nil {
 		t.Fatal("key wipe accepted")
 	} else {
@@ -740,8 +695,7 @@ func TestApplyProviderInstancesGate(t *testing.T) {
 		door(err, t)
 	}
 
-	// the hot lane keeps working: masked round trip, plain echo,
-	// rename with key inheritance, retype, removal
+	// the hot lane keeps working.
 	cfg = stored()
 	if err := apply(t, cfg,
 		primary,                                 // keep the served provider
@@ -757,8 +711,7 @@ func TestApplyProviderInstancesGate(t *testing.T) {
 	if dkey(cfg, "alpha") != "sk-alpha" {
 		t.Fatalf("masked round trip wiped the secret: %q", dkey(cfg, "alpha"))
 	}
-	// beta-r is beta's rename (beta left the list): its masked key
-	// inherits beta's secret even though alpha shares the host
+	// beta-r is beta's rename (beta left the list).
 	if dkey(cfg, "beta-r") != "sk-beta" {
 		t.Fatalf("rename did not inherit the removed row's key: %q", dkey(cfg, "beta-r"))
 	}
@@ -768,7 +721,6 @@ func TestApplyProviderInstancesGate(t *testing.T) {
 	if _, has := cfg.Provider.instance("gamma"); !has {
 		t.Fatal("keyless hostless row was not added")
 	}
-	// the plain echo of the stored key applies unchanged
 	cfg = stored()
 	if err := apply(t, cfg, primary, row("alpha", sharedHost, "sk-alpha")); err != nil {
 		t.Fatalf("identical plain-key echo refused: %v", err)
@@ -778,14 +730,8 @@ func TestApplyProviderInstancesGate(t *testing.T) {
 	}
 }
 
-// TestAuxModelDefaultOptionSet pins WHICH knobs offer the auxiliary
-// "default (inherit from the main model)" entry (card t_b403ad88 - it
-// widens t_df46c8cf's vision-only pin): every auxiliary model lane
-// follows the model the chat runs, EXCEPT the approval gate - an
-// approval decision is a deliberate choice, not an inherited default
-// (Endo's exception) - and the main model row, which has no default to
-// follow (its schema comment above says so). Exact set equality: a new
-// model knob has to be a deliberate decision, never a silent
+// TestAuxModelDefaultOptionSet pins WHICH knobs offer the auxiliary "default (inherit.
+// Exact set equality: a new model knob has to be a deliberate decision, never a silent
 // inheritance.
 func TestAuxModelDefaultOptionSet(t *testing.T) {
 	cfg := DefaultConfig()
@@ -814,8 +760,6 @@ func TestAuxModelDefaultOptionSet(t *testing.T) {
 	if len(flagged) != len(want) {
 		t.Fatalf("default_option knobs = %v, want exactly %v", flagged, want)
 	}
-	// The exclusions are asserted by NAME: a flag drifting onto either
-	// one breaks Endo's exception (approval) or the main row.
 	for _, key := range []string{"provider.approvals_model", "provider.model_name"} {
 		if !seen[key] {
 			t.Fatalf("%s missing from the schema - the exclusion assert went vacuous", key)
@@ -826,12 +770,9 @@ func TestAuxModelDefaultOptionSet(t *testing.T) {
 	}
 }
 
-// The "default" choice persists as the WORD on every auxiliary knob
-// that offers it (card t_b403ad88, widening t_df46c8cf's vision pin):
-// saving writes <knob>: default to config.yaml - never resolved against
-// whatever main model happened to be selected - and the refreshed
-// schema reads it back verbatim. The runtime resolves the word at each
-// call; the file keeps the intent.
+// The "default" choice persists as the WORD on every auxiliary knob that offers it:
+// saving writes <knob>: default to config.yaml - never resolved against whatever main
+// model happened to be selected - and the refreshed schema reads it back verbatim.
 func TestAuxModelDefaultPersistsVerbatim(t *testing.T) {
 	cases := []struct {
 		knob  string
@@ -874,11 +815,9 @@ func TestAuxModelDefaultPersistsVerbatim(t *testing.T) {
 	}
 }
 
-// --- settings tier 2a (card t_d13c7264): machine-readable Default ------
+// -- settings tier 2a: machine-readable Default -----
 
-// knobWire renders the schema as the /settings GET really carries it and
-// returns knob key -> the decoded knob object. The defaults are asserted
-// HERE, not on the Go struct, because the pane reads the JSON.
+// knobWire renders the schema as the /settings GET really carries it and returns knob.
 func knobWire(t *testing.T, payload *core.SettingsSchema) map[string]map[string]any {
 	t.Helper()
 	raw, err := json.Marshal(payload)
@@ -903,10 +842,8 @@ func knobWire(t *testing.T, payload *core.SettingsSchema) map[string]map[string]
 	return out
 }
 
-// TestSchemaKnobDefaultRidesTheGET pins three representative knobs on the
-// wire: a text default, a numeric knob whose help prose calls 0 "the
-// default" (the pseudo-default case), and a live knob. tier 2b's
-// modified-dot compares against exactly this field.
+// TestSchemaKnobDefaultRidesTheGET pins three representative knobs on the wire. tier
+// 2b's modified-dot compares against exactly this field.
 func TestSchemaKnobDefaultRidesTheGET(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML)
 	payload, err := settingsSchema(path)
@@ -940,12 +877,10 @@ func TestSchemaKnobDefaultRidesTheGET(t *testing.T) {
 	}
 }
 
-// TestSchemaDefaultsAreTheFreshConfigLayer is the whole-table pin: a
-// config.yaml naming only the required model_name leaves every knob at
-// its default, so Value must equal Default for all 40 - and the single
-// documented omission (provider.model_name, required by Validate) must
-// answer JSON null rather than being absent. This fails the moment a
-// Default drifts from the config layer it claims to describe.
+// TestSchemaDefaultsAreTheFreshConfigLayer is the whole-table pin: a config.yaml naming
+// only the required model_name leaves every knob at its default, so Value must equal
+// Default for all 40 - and the single documented omission (provider.model_name,
+// required by Validate) must answer JSON null rather than being absent.
 func TestSchemaDefaultsAreTheFreshConfigLayer(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML)
 	payload, err := settingsSchema(path)
@@ -975,8 +910,7 @@ func TestSchemaDefaultsAreTheFreshConfigLayer(t *testing.T) {
 	}
 }
 
-// recordingRunTimeout is the cron capsule's offered face as the host
-// sees it: the consumer-owned SetRunTimeout the hot-apply resolves.
+// recordingRunTimeout is the cron capsule's offered face as the host sees it.
 type recordingRunTimeout struct {
 	got    time.Duration
 	pushed bool
@@ -986,12 +920,8 @@ func (rr *recordingRunTimeout) SetRunTimeout(d time.Duration) {
 	rr.got, rr.pushed = d, true
 }
 
-// TestHotApplyPushesCronRunTimeout pins the host half of card
-// t_e635df3a: every settings save/reload hands the cron scheduler the
-// server.run_timeout THIS host resolved from the config it booted on
-// (an explicit --config path included), so a fire's wall-clock cap
-// follows the operator's knob instead of the module's own home guess.
-// The capsule is reached through its offered seam - never an import.
+// TestHotApplyPushesCronRunTimeout pins the host half of. The capsule is reached
+// through its offered seam - never an import.
 func TestHotApplyPushesCronRunTimeout(t *testing.T) {
 	stub := &recordingRunTimeout{}
 	pctx := &agent.Context{}
@@ -1012,23 +942,11 @@ func TestHotApplyPushesCronRunTimeout(t *testing.T) {
 	if !stub.pushed || stub.got != 45*time.Second {
 		t.Fatalf("re-push = %s (called %v), want 45s", stub.got, stub.pushed)
 	}
-	// An unmounted cron capsule (or a disabled module) is a no-op: no
-	// panic, and the fire keeps its own read.
+	// An unmounted cron capsule (or a disabled module) is a no-op: no panic, and the.
 	hotApply(cfg, cfg.Server.DefaultWorkspace, &agent.Context{}, nil, nil, nil, nil)
 }
 
-// TestProviderKnobsAreLive (card t_bf21ee07): the provider cluster's
-// knobs apply without a restart - the merged instances list plus the
-// six model slots, vision and title included (they joined their four
-// live siblings in the same stroke).
-//
-// provider.model_name is the ONE model knob that stays restart-only:
-// the running model belongs to the picker and /model, and
-// Provider.SetConfig deliberately preserves it on an unrelated save
-// (round-1 review, t_bf21ee07 rework). Flipping this flag without
-// landing the live apply in the same change makes the pane's "knobs
-// marked live apply to the running server" claim a lie - the assert
-// below is what keeps that honest.
+// TestProviderKnobsAreLive: the provider cluster's knobs apply without a restart.
 func TestProviderKnobsAreLive(t *testing.T) {
 	cfg := DefaultConfig()
 	seen := map[string]bool{}
@@ -1054,9 +972,7 @@ func TestProviderKnobsAreLive(t *testing.T) {
 			t.Errorf("%s is not live: a save would need a restart", key)
 		}
 	}
-	// The negative half: model_name must NOT claim live while the live
-	// apply does not exist. Absent from the map would mean the knob
-	// vanished from the schema, which is also a failure.
+	// The negative half: model_name must NOT claim live while the live apply does not.
 	live, ok := seen["provider.model_name"]
 	if !ok {
 		t.Fatal("provider.model_name is missing from the schema")
@@ -1066,9 +982,7 @@ func TestProviderKnobsAreLive(t *testing.T) {
 	}
 }
 
-// the three live lanes the provider merge opened, as the host sees
-// them: the consumer-owned local faces below are satisfied
-// structurally by the capsules (no capsule type name reaches the host).
+// the three live lanes the provider merge opened, as the host sees them.
 type recordingProviderConfig struct {
 	got    provider.Config
 	pushed bool
@@ -1093,9 +1007,7 @@ func (r *recordingTitleChannel) Start(context.Context, core.ChannelDeps) error {
 func (r *recordingTitleChannel) Stop() error                                   { return nil }
 func (r *recordingTitleChannel) SetTitleModel(m string)                        { r.model = m }
 
-// TestHotApplyPushesProviderLanes (card t_bf21ee07): one settings save
-// re-points the running provider, the captioner and the title lane -
-// the save IS the restart for the provider cluster.
+// TestHotApplyPushesProviderLanes: one settings save re-points the running provider.
 func TestHotApplyPushesProviderLanes(t *testing.T) {
 	stub := &recordingProviderConfig{}
 	pctx := &agent.Context{}

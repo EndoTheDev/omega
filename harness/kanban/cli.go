@@ -1,14 +1,6 @@
 package kanban
 
-// The board registry CLI: the kanban subcommand's home (v0.12 phase D,
-// grill Q6 - module owns its argv). The capsule registers its own name
-// + handler at mount (RegisterSubcommand); the binary routes
-// `omega kanban ...` here with the untouched argv and parses nothing.
-// One board per workspace needs named boards plus a current-board
-// flag - one kanban.db owns every board (t_feae19d3): the boards table
-// is the registry, is_current is the pointer. Card operations target
-// one board per call, the current board selects which board an omitted
-// --board means.
+// The board registry CLI: the kanban subcommand's home (v0.12 phase D, grill Q6.
 
 import (
 	"context"
@@ -20,12 +12,10 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// kanbanSummary is the one-line entry the global `omega --help` list
-// shows for this capsule (the help listing is registry introspection).
+// kanbanSummary is the one-line entry the global `omega --help` list shows for this.
 const kanbanSummary = "the task board registry (see: omega kanban --help)"
 
-// kanbanHelp documents the kanban subcommand tree (the module's own
-// help: `omega kanban --help` prints it).
+// kanbanHelp documents the kanban subcommand tree (the module's own help.
 const kanbanHelp = `omega kanban - the task board registry
 
 Usage:
@@ -52,10 +42,7 @@ Flags:
                    everything with --status all)
 `
 
-// cliHome resolves the omega home for the CLI handlers. The binary
-// exports OMEGA_HOME before dispatch (cmd/omega run), so this resolves
-// the same home the mount did; a bare handle (no env, no user home)
-// fails loud instead of guessing.
+// cliHome resolves the omega home for the CLI handlers.
 func cliHome() (string, error) {
 	home, err := datadir.AgentHome()
 	if err != nil {
@@ -67,8 +54,7 @@ func cliHome() (string, error) {
 	return home, nil
 }
 
-// cmdKanban dispatches the kanban subcommand tree - the handler the
-// capsule registers for the `kanban` CLI name.
+// cmdKanban dispatches the kanban subcommand tree.
 func cmdKanban(args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Print(kanbanHelp)
@@ -86,9 +72,7 @@ func cmdKanban(args []string) error {
 	}
 }
 
-// kanbanCardOpts is the parsed per-call target: the explicit board name
-// ("" = the current board, resolved live from the boards table) and
-// the single-database store every subcommand opens.
+// kanbanCardOpts is the parsed per-call target.
 type kanbanCardOpts struct {
 	board  string
 	status string
@@ -97,8 +81,7 @@ type kanbanCardOpts struct {
 
 func (o *kanbanCardOpts) Close() { o.store.Close() }
 
-// parseCardFlags reads --board/--status from the args and returns the
-// remaining positional arguments.
+// parseCardFlags reads --board/--status from the args and returns the remaining.
 func parseCardFlags(args []string) (opts *kanbanCardOpts, rest []string, err error) {
 	home, err := cliHome()
 	if err != nil {
@@ -120,8 +103,7 @@ func parseCardFlags(args []string) (opts *kanbanCardOpts, rest []string, err err
 	return opts, fs.Args(), nil
 }
 
-// cmdKanbanCards runs the card subcommands (list/create/done), each
-// scoped to one board per call.
+// cmdKanbanCards runs the card subcommands (list/create/done), each scoped to one.
 func cmdKanbanCards(sub string, args []string) error {
 	opts, rest, err := parseCardFlags(args)
 	if err != nil {
@@ -192,8 +174,7 @@ func statusSuffix(status string) string {
 	return " [" + status + "]"
 }
 
-// cmdKanbanBoard runs the board registry subcommands. These operate on
-// the boards table (the DB registry), through the one database's store.
+// cmdKanbanBoard runs the board registry subcommands.
 func cmdKanbanBoard(args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprint(os.Stderr, "usage: omega kanban board {list|create <name>|delete <name>|use <name>|current}\n")

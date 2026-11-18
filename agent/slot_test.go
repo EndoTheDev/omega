@@ -7,10 +7,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// The per-subsystem model slot (card t_fc0b2f2d): the grammar and the
-// ONE resolution rule - a colon prefix naming a CONFIGURED instance
-// (or "default") routes the consult to that instance, anything else is
-// the whole slot as a bare model on the receiver.
+// The per-subsystem model slot.
 
 func TestParseModelSlot(t *testing.T) {
 	cases := []struct {
@@ -24,12 +21,10 @@ func TestParseModelSlot(t *testing.T) {
 		{"default:gemma3:27b", "default", "gemma3:27b"},
 		{"big:", "big", ""},             // the instance's own default model
 		{"gemma3:27b", "gemma3", "27b"}, // colon = the split; a miss on the
-		// instance lookup stays bare (below)
 		{"llama3.2:70b", "llama3.2", "70b"}, // dot ids split too; lookup decides
 		{"gemma3", "", "gemma3"},            // no colon = a bare model name
 		{"default", "", "default"},          // grammar only: the word is a bare
-		// model here; the RESERVED meaning (the receiver's own model) is
-		// ResolveModelSlot's, see the default-word test below.
+		// model here; the RESERVED meaning (the receiver's own model) is.
 		{":gemma3:27b", "", ":gemma3:27b"}, // empty prefix is not a route
 	}
 	for _, c := range cases {
@@ -48,9 +43,8 @@ func streamScript(content string) []core.ProviderStreamEvent {
 	}
 }
 
-// ResolveModelSlot routes a configured instance prefix to the instance
-// provider and keeps the model part; a bare slot (or an unknown
-// prefix) stays on the receiver.
+// ResolveModelSlot routes a configured instance prefix to the instance provider and
+// keeps the model part.
 func TestResolveModelSlotKnownInstances(t *testing.T) {
 	base := NewFakeProvider("main", streamScript("base")...)
 	big := NewFakeProvider("big-model", streamScript("big")...)
@@ -68,7 +62,6 @@ func TestResolveModelSlotKnownInstances(t *testing.T) {
 		{"big:", "", "big"},                          // the instance's own default model
 		{"default:gemma3:27b", "gemma3:27b", "base"}, // the reserved default
 		{"default", "", "base"},                      // the reserved word alone = the
-		// receiver's own model (card t_b403ad88)
 		{"unknown:m", "unknown:m", "base"}, // unconfigured prefix = bare
 	}
 	for _, c := range cases {
@@ -82,8 +75,7 @@ func TestResolveModelSlotKnownInstances(t *testing.T) {
 	}
 }
 
-// A provider without the named-instances upgrade takes every slot as a
-// bare model.
+// A provider without the named-instances upgrade takes every slot as a bare model.
 func TestResolveModelSlotNoInstances(t *testing.T) {
 	prov := NewFakeProvider("main", streamScript("base")...)
 	out, model := ResolveModelSlot(prov, "big:gemma3:27b")
@@ -95,12 +87,9 @@ func TestResolveModelSlotNoInstances(t *testing.T) {
 	}
 }
 
-// The reserved default word (card t_b403ad88): the settings aux pickers
-// offer "default (inherit from the main model)", so a bare "default" on a
-// slot knob must answer the receiver's own model - the same answer as an
-// empty slot - never a model literally named "default". Both provider
-// shapes are pinned: with the named-instance upgrade and without it (the
-// compactor/summarizer providers need not carry instances).
+// The reserved default word: the settings aux pickers offer "default (inherit from the
+// main model)", so a bare "default" on a slot knob must answer the receiver's own model
+// - the same answer as an empty slot - never a model literally named "default".
 func TestResolveModelSlotDefaultWordFollowsTheReceiver(t *testing.T) {
 	cases := []struct {
 		name     string

@@ -1,11 +1,10 @@
 package mcp
 
-// cli_test.go: the mcp subcommand (card t_2a649d87). The CLI rides
-// saveServerAndReload / deleteServerAndReload - the very write law
-// POST /mcp/save and POST /mcp/delete use - so these tests pin the
-// CLI's own contract (verbs, flag application, refusals) and one
-// end-to-end round trip against a real home, asserting the landed file
-// and the listing each step.
+// cli_test.go: the mcp subcommand. The CLI rides saveServerAndReload /
+// deleteServerAndReload - the very write law POST /mcp/save and POST /mcp/delete use -
+// so these tests pin the CLI's own contract (verbs, flag application, refusals) and one
+// end-to-end round trip against a real home, asserting the landed file and the listing
+// each step.
 
 import (
 	"bytes"
@@ -21,8 +20,7 @@ servers:
     url: http://127.0.0.1:9/mcp
 `
 
-// newCLIPlugin mounts the entry set a CLI dispatch would get: a plugin
-// loaded from a real mcp.yaml in a temp home.
+// newCLIPlugin mounts the entry set a CLI dispatch would get.
 func newCLIPlugin(t *testing.T, seed string) (*Plugin, string) {
 	t.Helper()
 	home := t.TempDir()
@@ -46,15 +44,12 @@ func newCLIPlugin(t *testing.T, seed string) (*Plugin, string) {
 
 func mcpConfigPath(home string) string { return filepath.Join(home, "config", "mcp.yaml") }
 
-// TestMCPCLIRoundTrip drives add -> list -> edit -> delete through the
-// handler the capsule registers, asserting the landed file and the
-// listing each step.
+// TestMCPCLIRoundTrip drives add -> list -> edit -> delete through the handler the.
 func TestMCPCLIRoundTrip(t *testing.T) {
 	p, home := newCLIPlugin(t, cliSeedMCP)
 	cmd := cmdMCP(p)
 	srv := mockMCPServer(t, "cli-session")
 
-	// add: a connected http entry, and it lands in the operator's file
 	if err := cmd([]string{"add", "mock", "--url", srv.URL, "--header", "X-Key:v"}); err != nil {
 		t.Fatalf("add: %v", err)
 	}
@@ -65,7 +60,6 @@ func TestMCPCLIRoundTrip(t *testing.T) {
 		}
 	}
 
-	// list: the table carries both entries and the discovered tool
 	var buf bytes.Buffer
 	if err := mcpList(p, &buf); err != nil {
 		t.Fatalf("list: %v", err)
@@ -75,7 +69,6 @@ func TestMCPCLIRoundTrip(t *testing.T) {
 		t.Fatalf("list output missing rows:\n%s", out)
 	}
 
-	// edit: only the passed flag is applied - the url survives
 	if err := cmd([]string{"edit", "mock", "--enabled=false"}); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
@@ -90,7 +83,6 @@ func TestMCPCLIRoundTrip(t *testing.T) {
 		t.Fatalf("edit did not land enabled: false:\n%s", text)
 	}
 
-	// edit with no flags is a loud refusal, not a rewrite
 	if err := cmd([]string{"edit", "mock"}); err == nil || !strings.Contains(err.Error(), "nothing to change") {
 		t.Fatalf("edit with no flags: got %v", err)
 	}
@@ -118,8 +110,7 @@ func TestMCPCLIRoundTrip(t *testing.T) {
 	}
 }
 
-// TestMCPCLIAddBootstraps: add on a home with no mcp.yaml creates the
-// file (the first add is the bootstrap).
+// TestMCPCLIAddBootstraps: add on a home with no mcp.yaml creates the file (the first.
 func TestMCPCLIAddBootstraps(t *testing.T) {
 	p, home := newCLIPlugin(t, "")
 	cmd := cmdMCP(p)
@@ -131,8 +122,7 @@ func TestMCPCLIAddBootstraps(t *testing.T) {
 	}
 }
 
-// TestMCPCLIRefusals pins the grammar's refusals: unknown verb, the
-// name-first law, a bad env pair, unknown entry, trailing arguments.
+// TestMCPCLIRefusals pins the grammar's refusals.
 func TestMCPCLIRefusals(t *testing.T) {
 	p, _ := newCLIPlugin(t, cliSeedMCP)
 	cmd := cmdMCP(p)
@@ -157,8 +147,7 @@ func TestMCPCLIRefusals(t *testing.T) {
 	}
 }
 
-// TestMCPCLIHelp prints the module's own help and registers the verb
-// summary the global help listing shows.
+// TestMCPCLIHelp prints the module's own help and registers the verb summary the.
 func TestMCPCLIHelp(t *testing.T) {
 	p, _ := newCLIPlugin(t, "")
 	if err := cmdMCP(p)([]string{"--help"}); err != nil {

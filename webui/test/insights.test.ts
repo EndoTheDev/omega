@@ -1,8 +1,8 @@
-// omega webui: unit tests for the insights surface (card t_e1e61680).
+// omega webui: unit tests for the insights surface.
 // Two layers, matching the house patterns:
-// - omega.ts fetchInsights: real fetch interception (URL shape + the
+// omega.ts fetchInsights: real fetch interception (URL shape + the
 //   honest days semantics: null = bare /insights, 0 = all time);
-// - InsightsTab.vue: the payload contract the renderer relies on and
+// InsightsTab.vue: the payload contract the renderer relies on and
 //   the honest-empty rule (an empty window prints text, not charts).
 // Run: node --test webui/test/ (node >= 23 runs TS natively)
 import { test } from "node:test";
@@ -21,7 +21,7 @@ function read(...parts: string[]): string {
   return readFileSync(join(modules, ...parts), "utf8");
 }
 
-// --- fetchInsights: URL contract ---
+// -- fetchInsights: URL contract --
 
 test("fetchInsights with no arg requests the bare endpoint (server default window)", async () => {
   const seen: { url: string; init: RequestInit | undefined }[] = [];
@@ -85,11 +85,10 @@ test("fetchInsights throws the server's message, not a bare status", async () =>
   }
 });
 
-// --- InsightsTab.vue: the render contract ---
+// -- InsightsTab.vue: the render contract --
 
 test("the view renders from the payload - every block the TUI prints has a home", () => {
   const vue = read("webui", "..", "harness", "store", "ui", "InsightsTab.vue");
-  // one source: the omega fetch helper, no inline fetch
   assert.match(vue, /fetchInsights/, "the view fetches through omega.ts");
   assert.ok(!/fetch\(\s*["'`\/]/.test(vue), "no private fetch: the endpoint URL lives in omega.ts");
   // the TUI report's blocks, in the view

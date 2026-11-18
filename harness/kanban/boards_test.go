@@ -1,11 +1,9 @@
 package kanban
 
-// The board registry + store isolation tests (card t_d7a7beaa, folded
-// into one database by t_feae19d3): a card on board A never appears on
-// board B (queries by board_id, never files), the current-board flag
-// picks what "" means, deletes refuse anything that would dangle, and
-// the legacy per-board-directory layout folds in under verified
-// counts - once, with the old layout deleted after.
+// The board registry + store isolation tests: a card on board A never appears on board
+// B (queries by board_id, never files), the current-board flag picks what "" means,
+// deletes refuse anything that would dangle, and the legacy per-board-directory layout
+// folds in under verified counts - once, with the old layout deleted after.
 
 import (
 	"context"
@@ -18,16 +16,14 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// tempHome is a fresh omega home per test (no OMEGA_HOME games: the
-// registry helpers take home explicitly, and this suite must not leak
-// env into sibling packages).
+// tempHome is a fresh omega home per test (no OMEGA_HOME games: the registry helpers
+// take home explicitly, and this suite must not leak env into sibling packages).
 func tempHome(t *testing.T) string {
 	t.Helper()
 	return t.TempDir()
 }
 
-// openRegistryStore opens the home's single kanban database exactly the
-// way the plugin Mount does (schema ensured, legacy fold-back).
+// openRegistryStore opens the home's single kanban database exactly the way the.
 func openRegistryStore(t *testing.T, home string) *Store {
 	t.Helper()
 	s, err := MountRegistry(home)
@@ -59,7 +55,6 @@ func TestFreshRegistryHasMain(t *testing.T) {
 	home := tempHome(t)
 	s := openRegistryStore(t, home)
 
-	// the one database owns every board; no per-board directory exists
 	if _, err := os.Stat(filepath.Join(datadirBoards(home))); !os.IsNotExist(err) {
 		t.Fatalf("boards dir exists on a fresh home: %v", err)
 	}
@@ -73,7 +68,6 @@ func TestFreshRegistryHasMain(t *testing.T) {
 	if cur, err := s.CurrentBoard(); err != nil || cur != DefaultBoardName {
 		t.Fatalf("current = %q err %v", cur, err)
 	}
-	// cards land on main by default and the row answers with its id
 	bid, err := s.boardID("")
 	if err != nil || bid == 0 {
 		t.Fatalf("boardID(\"\") = %d err %v", bid, err)
@@ -121,7 +115,6 @@ func TestBoardCRUDRows(t *testing.T) {
 		t.Fatalf("first row = %+v, want main first", boards[0])
 	}
 
-	// current flag moves and stays exclusive
 	if err := s.SetCurrentBoard("alpha"); err != nil {
 		t.Fatal(err)
 	}
@@ -142,8 +135,7 @@ func TestDeleteGuards(t *testing.T) {
 	s := openRegistryStore(t, home)
 	ctx := context.Background()
 
-	// 0.17.3 make-over: DELETE ALL BOARDS. The default board is not
-	// reserved any more - only the card precondition guards a delete.
+	// 0.17.3 make-over: DELETE ALL BOARDS.
 	if err := s.DeleteBoardRow("beta"); err == nil || !strings.Contains(err.Error(), "no such board") {
 		t.Fatalf("delete of unknown board: %v", err)
 	}
@@ -158,9 +150,7 @@ func TestDeleteGuards(t *testing.T) {
 		t.Fatalf("delete of a board holding a live card: %v", err)
 	}
 
-	// the archive lane is the last stop: an archived card no longer
-	// blocks its board, and it rides out with the board (the row, its
-	// comments and its events go too - one transaction, children first).
+	// the archive lane is the last stop.
 	if _, err := s.UpdateTask(ctx, "alpha", held.ID, KanbanPatch{Status: StatusArchived}); err != nil {
 		t.Fatal(err)
 	}
@@ -183,8 +173,7 @@ func TestDeleteGuards(t *testing.T) {
 		t.Fatalf("%d card/comment/event row(s) outlived their board", orphans)
 	}
 
-	// the CURRENT board is deletable; the pointer hands over to the
-	// earliest survivor
+	// the CURRENT board is deletable; the pointer hands over to the earliest survivor
 	if err := s.CreateBoardRow("gamma"); err != nil {
 		t.Fatal(err)
 	}
@@ -221,10 +210,9 @@ func TestDeleteGuards(t *testing.T) {
 	}
 }
 
-// TestZeroBoardsSurviveRestart pins the other half of the zero-boards
-// law: the seed that creates "main" runs when the boards table is BORN,
-// not on every boot. A home whose user deleted every board must stay
-// empty across a restart - a resurrected board would be a silent undo.
+// TestZeroBoardsSurviveRestart pins the other half of the zero-boards law. A home whose
+// user deleted every board must stay empty across a restart - a resurrected board would
+// be a silent undo.
 func TestZeroBoardsSurviveRestart(t *testing.T) {
 	home := tempHome(t)
 	s := openRegistryStore(t, home)
@@ -245,7 +233,6 @@ func TestZeroBoardsSurviveRestart(t *testing.T) {
 	if len(boards) != 0 {
 		t.Fatalf("boards after restart = %+v, want none (the seed must not resurrect one)", boards)
 	}
-	// the first board back claims the pointer, or the views have no board
 	if err := again.CreateBoardRow("fresh"); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +260,6 @@ func TestRenameBoardRow(t *testing.T) {
 	if s.BoardExists(DefaultBoardName) || !s.BoardExists("workshop") {
 		t.Fatal("the rename did not move the row")
 	}
-	// the row keeps its id: the cards stay put and the pointer follows
 	tasks, err := s.ListTasks(ctx, "", StatusAll)
 	if err != nil {
 		t.Fatal(err)
@@ -325,8 +311,6 @@ func TestStoreBoardIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// ids are drawn from one global space (t_<hex>) - isolation means
-	// QUERIES, not id collisions
 	ids := map[string]string{mainCard.ID: "main", alphaCard.ID: "alpha", betaCard.ID: "beta"}
 	if len(ids) != 3 {
 		t.Fatal("task ids collided")
@@ -335,7 +319,6 @@ func TestStoreBoardIsolation(t *testing.T) {
 		t.Fatalf("task id shape: %q", mainCard.ID)
 	}
 
-	// each board lists only its own card
 	for board, want := range map[string]string{"": mainCard.ID, "alpha": alphaCard.ID, "beta": betaCard.ID} {
 		tasks, err := s.ListTasks(ctx, board, "")
 		if err != nil {
@@ -353,7 +336,6 @@ func TestStoreBoardIsolation(t *testing.T) {
 	if _, err := s.GetTask(ctx, "", alphaCard.ID); err != ErrNotFound {
 		t.Fatalf("alpha card visible on default: err = %v", err)
 	}
-	// cross-board mutation is refused the same way
 	if _, err := s.UpdateTask(ctx, "beta", mainCard.ID, KanbanPatch{Status: StatusDone}); err != ErrNotFound {
 		t.Fatalf("cross-board move: err = %v", err)
 	}
@@ -361,8 +343,7 @@ func TestStoreBoardIsolation(t *testing.T) {
 		t.Fatalf("cross-board comment: err = %v", err)
 	}
 
-	// unknown / illegal boards error at the door; the store never
-	// auto-creates a named board
+	// unknown / illegal boards error at the door; the store never auto-creates a named.
 	if _, err := s.ListTasks(ctx, "gamma", ""); err == nil {
 		t.Fatal("unknown board accepted")
 	}
@@ -370,7 +351,6 @@ func TestStoreBoardIsolation(t *testing.T) {
 		t.Fatal("illegal board name accepted")
 	}
 
-	// comments and events stay on their board
 	if _, err := s.AddComment(ctx, "alpha", alphaCard.ID, "a", "note"); err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +383,6 @@ func TestCurrentBoardFlagMovesDefault(t *testing.T) {
 		s.Close()
 	}
 
-	// flip the current-board flag, open a fresh handle: "" lands on alpha
 	s2, err := MountRegistry(home)
 	if err != nil {
 		t.Fatal(err)
@@ -419,7 +398,6 @@ func TestCurrentBoardFlagMovesDefault(t *testing.T) {
 	if len(tasks) != 1 || tasks[0].Title != "alpha-only" {
 		t.Fatalf("default after switch = %d cards, want alpha's", len(tasks))
 	}
-	// main is still reachable by name and still holds nothing
 	mainTasks, err := s2.ListTasks(ctx, DefaultBoardName, "")
 	if err != nil {
 		t.Fatal(err)
@@ -427,7 +405,6 @@ func TestCurrentBoardFlagMovesDefault(t *testing.T) {
 	if len(mainTasks) != 0 {
 		t.Fatalf("main after switch = %d cards, want 0", len(mainTasks))
 	}
-	// the flag survives a remount
 	s2.Close()
 	s3, err := MountRegistry(home)
 	if err != nil {
@@ -439,11 +416,9 @@ func TestCurrentBoardFlagMovesDefault(t *testing.T) {
 	}
 }
 
-// --- the legacy layout migration -----------------------------------------
+// -- the legacy layout migration ----------------------------------------
 
-// seedLegacy is a real legacy sqlite board db (old schema, no boards
-// table, no board_id) with two tasks (ids t_<prefix>1/2), one comment,
-// three events.
+// seedLegacy is a real legacy sqlite board db (old schema, no boards table, no.
 func seedLegacy(t *testing.T, dsn string, prefix string) {
 	t.Helper()
 	db, err := sql.Open("sqlite", dsn)
@@ -487,13 +462,11 @@ func TestMigrateLegacyBoardLayout(t *testing.T) {
 	home := tempHome(t)
 	boards := datadirBoards(home)
 
-	// legacy main: tasks already live in the top-level kanban.db
 	mainDSN := filepath.Join(home, "data", "kanban.db")
 	if err := os.MkdirAll(filepath.Dir(mainDSN), 0755); err != nil {
 		t.Fatal(err)
 	}
 	seedLegacy(t, mainDSN, "main")
-	// one real legacy board
 	if err := os.MkdirAll(filepath.Join(boards, "legacy-crew"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -504,7 +477,6 @@ func TestMigrateLegacyBoardLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedLegacy(t, filepath.Join(boards, "j78-a", "kanban.db"), "junk")
-	// the pointer names the real board
 	if err := os.WriteFile(filepath.Join(boards, "current"), []byte("legacy-crew\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -516,7 +488,6 @@ func TestMigrateLegacyBoardLayout(t *testing.T) {
 	defer s.Close()
 	ctx := context.Background()
 
-	// the fold-back: main kept its rows, legacy-crew landed, junk died
 	boards_, err := s.Boards(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -543,9 +514,7 @@ func TestMigrateLegacyBoardLayout(t *testing.T) {
 	if err != nil || len(events) != 2 {
 		t.Fatalf("legacy events = %+v err %v", events, err)
 	}
-	// old dirs gone - migrated board, pointer file, all of it; the
-	// pinned journey board did NOT become a row and did NOT die: it is
-	// archived under data/boards-junk with its data intact
+	// old dirs gone - migrated board, pointer file, all of it.
 	if _, serr := os.Stat(boards); !os.IsNotExist(serr) {
 		t.Fatalf("legacy boards dir survives migration: %v", serr)
 	}
@@ -555,13 +524,11 @@ func TestMigrateLegacyBoardLayout(t *testing.T) {
 	if _, serr := os.Stat(filepath.Join(home, "data", "boards-junk", "j78-a", "kanban.db")); serr != nil {
 		t.Fatalf("pinned journey board not archived with its data: %v", serr)
 	}
-	// the old main db file (now the single db) keeps the full shape:
-	// unknown ids answer not-found on the migrated board
+	// the old main db file (now the single db) keeps the full shape.
 	if _, err := s.GetTask(ctx, "legacy-crew", "t_nope"); err != ErrNotFound {
 		t.Fatalf("bogus id answered: %v", err)
 	}
 
-	// second boot: no old layout - a strict no-op, data intact
 	s.Close()
 	s2, err := MountRegistry(home)
 	if err != nil {
@@ -591,7 +558,6 @@ func TestMigrateAbortsOnUnreadableSource(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(boards, "corrupt"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	// not a database
 	if err := os.WriteFile(filepath.Join(boards, "corrupt", "kanban.db"), []byte("definitely not sqlite"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -617,10 +583,9 @@ func TestMigrateAbortsOnUnreadableSource(t *testing.T) {
 	}
 }
 
-// reseedLegacyBoardDir replants one legacy board directory after the
-// migration already ran: the poisoned state the fold used to mint
-// (commit landed, the layout delete never did) re-runs the migration
-// against rows that are already in the single database.
+// reseedLegacyBoardDir replants one legacy board directory after the migration already
+// ran: the poisoned state the fold used to mint (commit landed, the layout delete never
+// did) re-runs the migration against rows that are already in the single database.
 func reseedLegacyBoardDir(t *testing.T, boards, name, prefix string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(boards, name), 0755); err != nil {
@@ -642,24 +607,19 @@ func TestMigrateReRunAfterCommittedFoldIsNoOp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// boot 1: migration commits the fold and retires the layout
 	s, err := MountRegistry(home)
 	if err != nil {
 		t.Fatalf("first mount: %v", err)
 	}
 	s.Close()
 
-	// the poisoned state: the layout delete never happened (crash,
-	// detach on the wrong pooled connection, partial RemoveAll). The
-	// boards/ dir reappears with the same legacy content. Every boot
-	// from here re-enters the migration against committed rows.
+	// the poisoned state: the layout delete never happened (crash, detach on the wrong.
 	reseedLegacyBoardDir(t, boards, "legacy-crew", "crew")
 	if err := os.WriteFile(filepath.Join(boards, "current"), []byte("legacy-crew\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	// boot 2 must be a no-op SUCCESS: no UNIQUE refusal, no duplicated
-	// rows, mount does not boot-fail
+	// boot 2 must be a no-op SUCCESS: no UNIQUE refusal, no duplicated rows, mount does.
 	s2, err := MountRegistry(home)
 	if err != nil {
 		t.Fatalf("re-run mount failed - migration not re-runnable: %v", err)
@@ -680,7 +640,6 @@ func TestMigrateReRunAfterCommittedFoldIsNoOp(t *testing.T) {
 	if events, err := s2.GetTaskEvents(ctx, "legacy-crew", "crew2"); err != nil || len(events) != 2 {
 		t.Fatalf("re-run events = %d err %v (duplicated rows?)", len(events), err)
 	}
-	// and the re-run still retires the layout
 	if _, serr := os.Stat(boards); !os.IsNotExist(serr) {
 		t.Fatalf("re-run left the legacy boards dir: %v", serr)
 	}
@@ -714,8 +673,7 @@ func TestMigrateKeepsJourneyLookalikeBoard(t *testing.T) {
 	if planTasks, err := s.ListTasks(ctx, "j2026-planning", ""); err != nil || len(planTasks) != 2 {
 		t.Fatalf("j2026-planning tasks = %d err %v", len(planTasks), err)
 	}
-	// data intact AND in the live registry: the dir folded, nothing
-	// was shipped off to the archive
+	// data intact AND in the live registry.
 	if _, serr := os.Stat(filepath.Join(home, "data", "boards-junk", "j2026-planning")); !os.IsNotExist(serr) {
 		t.Fatalf("lookalike board archived instead of migrated: %v", serr)
 	}

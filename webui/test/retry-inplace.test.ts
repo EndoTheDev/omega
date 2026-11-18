@@ -1,16 +1,7 @@
-// omega webui: the retry UX rulings (t_19c100dd, Endo 2026-10-25;
-// affordance re-homed t_95d2bc34).
-// Ruling 1 - retry renders in place: a retry's payload REPLACES the
-// response slot (the server cuts the old sibling's rows, card
-// t_1c9793a8's payload lane), and the canvas transcript applies each
-// payload as a full replacement - the old row is gone from the render
-// the moment the retry's first delta lands, never stacked.
-// Ruling 2 - the action row sits at the BOTTOM of the message:
-// switcher + fork + copy + retry in one row, hidden while streaming.
-// Ruling 3 (t_95d2bc34) - the RETRY CHIP rides the action row of the
-// NEWEST assistant response only (idle runs); the composer carries no
-// replay face any more - idle + no draft is the dimmed send.
-// Run: node --test test/ (node >= 23 runs TS natively)
+// omega webui: the retry UX rulings. - retry renders in place: a retry's payload
+// REPLACES the response slot, and the canvas transcript applies each payload as a full
+// replacement - the old row is gone from the render the moment the retry's first delta
+// lands, never stacked.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -46,7 +37,6 @@ function assistantRow(
 describe("ruling 1: a retry delta replaces the response slot in place", () => {
   it("the old row is gone from the render once the retry streams", () => {
     const t = createCanvasTranscript();
-    // the settled exchange: user + the old answer
     const before = t.apply({
       session: "s1",
       rows: [...userRow("1", "say hi"), ...assistantRow("2", "first answer")],
@@ -54,8 +44,7 @@ describe("ruling 1: a retry delta replaces the response slot in place", () => {
     assert.equal(before.length, 2);
     assert.equal((before[1] as { content: string }).content, "first answer");
 
-    // the retry's mid-run payload: the server cut the old sibling's
-    // rows - the fresh answer streams into the SAME slot
+    // the retry's mid-run payload.
     const mid = t.apply({
       session: "s1",
       running: true,
@@ -67,7 +56,6 @@ describe("ruling 1: a retry delta replaces the response slot in place", () => {
     assert.equal(fresh.role, "assistant");
     assert.equal(fresh.content, "fres");
     assert.equal(fresh.streaming, true, "the fresh row streams");
-    // the old content is nowhere in the render
     for (const it of mid) {
       assert.notEqual((it as { content: string }).content, "first answer");
     }
@@ -79,8 +67,7 @@ describe("ruling 1: a retry delta replaces the response slot in place", () => {
       session: "s1",
       rows: [...userRow("1", "say hi"), ...assistantRow("3", "second answer")],
     });
-    // the switcher flips to variant 1: the snapshot refetch serves the
-    // selected sibling alone - one slot, N variants
+    // the switcher flips to variant 1.
     const flipped = t.apply({
       session: "s1",
       rows: [...userRow("1", "say hi"), ...assistantRow("2", "first answer")],
@@ -117,17 +104,15 @@ describe("ruling 1: a retry delta replaces the response slot in place", () => {
 
 describe("ruling 2: the action row sits at the bottom of the message", () => {
   it("switcher, fork and copy render in ONE row, inside the bubble", () => {
-    // the row exists and guards the three affordances in order
     assert.match(chatMessage, /class="msg-actions"/);
     const actionsAt = chatMessage.indexOf('class="msg-actions"');
-    // the switcher is ONE component mounted in the row (t_0df4efd8)
+    // the switcher is ONE component mounted in the row
     const switcherAt = chatMessage.indexOf("<VariantSwitcher", actionsAt);
     const forkAt = chatMessage.indexOf('class="msg-fork"', actionsAt);
     const copyAt = chatMessage.indexOf('class="msg-copy"', actionsAt);
     assert.ok(switcherAt > actionsAt, "switcher in the row");
     assert.ok(forkAt > switcherAt, "fork after the switcher, one row");
     assert.ok(copyAt > forkAt, "copy after the fork, one row");
-    // the row closes before the bubble does: all the affordances live inside it
     const bubbleClose = chatMessage.lastIndexOf("</template>");
     const rowClose = chatMessage.lastIndexOf("</div>", bubbleClose);
     assert.ok(copyAt < rowClose, "the affordances sit inside the action row");
@@ -136,43 +121,36 @@ describe("ruling 2: the action row sits at the bottom of the message", () => {
   });
 
   it("the retry chip is the newest response's - owner-gated, one site", () => {
-    // ruling 3 (t_95d2bc34): the chip lives in the action row AFTER
-    // copy, gated on the retryable prop the transcript owner derives
-    // (idle + newest assistant response) - ChatMessage never knows the
-    // transcript, so "newest" can never leak in as an old response's chip
+    // the chip lives in the action row AFTER copy, gated on the retryable prop the
+    // transcript owner derives (idle + newest assistant response) - ChatMessage never
+    // knows the transcript, so "newest" can never leak in as an old response's chip
     const actionsAt = chatMessage.indexOf('class="msg-actions"');
     const copyAt = chatMessage.indexOf('class="msg-copy"', actionsAt);
     const retryAt = chatMessage.indexOf('class="msg-retry"', actionsAt);
     assert.ok(retryAt > copyAt, "the chip renders after copy, in the row");
     assert.match(chatMessage, /v-if="retryable && itemId"/, "the chip gates on the owner's signal");
-    // the row hides while streaming: the chip inherits the row's v-if,
-    // so a live run shows no retry affordance at all
+    // the row hides while streaming.
     assert.match(
       chatMessage,
       /v-if="!streaming && role === 'assistant'"\s+class="msg-actions">/,
     );
-    // the composer carries no retry affordance any more
     assert.doesNotMatch(css, /\.send\.retry/);
     assert.match(css, /\.msg-retry\s*\{/, "the chip has its stylesheet");
     assert.match(css, /\.msg-retry\s*\{[^}]*opacity: 0/, "the chip keeps the hover-fade contract");
   });
 
   it("the row hides while the message streams (assistant responses only)", () => {
-    // Endo's comment (2026-10-26): assistant-only + one-line duration
     assert.match(chatMessage, /<div\s+v-if="!streaming && role === 'assistant'"\s+class="msg-actions">/);
     // the duration rides the row's right end - ONE line with fork/copy
     const actionsAt = chatMessage.indexOf('class="msg-actions"');
     const elapsedAt = chatMessage.indexOf('class="msg-elapsed"', actionsAt);
     assert.ok(elapsedAt > actionsAt, "the duration spans inside the action row");
-    // user bubbles carry no fork/copy/duration: both elapsed branches
-    // and the whole row gate on the assistant role
+    // user bubbles carry no fork/copy/duration.
     assert.match(chatMessage, /role === 'assistant' && streaming && elapsedLabel/);
   });
 
   it("the row is the bubble's last child - under the content, not a top edge", () => {
-    // source order: the row follows the streaming cursor span and
-    // closes the bubble; nothing sits between the row and the bubble's
-    // closing tag
+    // source order: the row follows the streaming cursor span and closes the bubble.
     const bubble = chatMessage.slice(
       chatMessage.indexOf('class="bubble"'),
       chatMessage.indexOf("</div>", chatMessage.indexOf('class="msg-actions"')),
@@ -180,11 +158,9 @@ describe("ruling 2: the action row sits at the bottom of the message", () => {
     const cursorAt = bubble.indexOf('class="cursor"');
     const rowAt = bubble.indexOf('class="msg-actions"');
     assert.ok(cursorAt > -1 && rowAt > cursorAt, "the row renders under the content");
-    // the retired top-edge placements are gone from the stylesheet
     assert.doesNotMatch(css, /\.variant-switcher\s*\{[^}]*position:\s*absolute/, "no top-straddle switcher");
     assert.doesNotMatch(css, /\.msg-fork\s*\{[^}]*position:\s*absolute/, "no top-edge fork chip");
     assert.doesNotMatch(css, /\.msg-copy\s*\{[^}]*position:\s*absolute/, "no top-edge copy chip");
-    // the row itself is an aligned flex row at the bottom
     assert.match(css, /\.msg-actions\s*\{[^}]*display:\s*flex/);
     assert.match(css, /\.msg-actions\s*\{[^}]*margin-top:/, "the row sits below the content");
   });

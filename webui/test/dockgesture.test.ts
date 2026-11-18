@@ -1,10 +1,9 @@
-// omega webui: the gesture-ownership model (card t_b2430179). The gesture
-// record (tabDrag + the ghost rect registry) is COMPOSABLE-owned, guarded by
-// ONE window-level listener set the composable itself installs - never per
-// pane instance. A pane unmounting mid-gesture cannot orphan the cleanup:
-// dragend / drop / Esc / blur end the record at the composable, a new
-// gesture's start overwrites any stale record, and a layout mutation ends
-// an armed record. Render-free; node's built-in test runner.
+// omega webui: the gesture-ownership model. The gesture record (tabDrag + the ghost
+// rect registry) is COMPOSABLE-owned, guarded by ONE window-level listener set the
+// composable itself installs - never per pane instance. A pane unmounting mid-gesture
+// cannot orphan the cleanup: dragend / drop / Esc / blur end the record at the
+// composable, a new gesture's start overwrites any stale record, and a layout mutation
+// ends an armed record.
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -109,11 +108,7 @@ describe("gesture ownership: the composable-owned guard", () => {
   });
 
   it("instance death cannot orphan the cleanup: no per-instance listener exists", () => {
-    // the old model armed window listeners per DockPane instance, so the
-    // instance that unmounted mid-gesture took the only closer with it. The
-    // ownership law: the record's cleanups are composable-level API - this
-    // test pins endGesture() (the global clear) clearing the record WITHOUT
-    // any DOM/window involvement, which is what survives instance death.
+    // the old model armed window listeners per DockPane instance, so the instance.
     tabDrag.start({ paneId: "n1", index: 0, component: "files" });
     endGesture();
     assert.equal(tabDrag.current(), null);

@@ -1,7 +1,5 @@
 <template>
-  <!-- the ghost preview (v0.14.4 milestone 5): the landing's direction,
-       target and exact resulting sizes live inside the lit drop zone; a
-       refusal renders the whole zone hatched-red with its reason. -->
+  <!-- the ghost preview (v0.14.4 milestone 5). -->
   <span
     class="dock-ghost"
     :data-refused="preview.refused ?? undefined"
@@ -33,18 +31,16 @@
 </template>
 
 <script setup lang="ts">
-  // the ONE preview formula (ruling 5): ghostPreview in dockghost.ts runs
-  // predictDockDrop - the commit's own call - so what the overlay draws is
-  // exactly what a release lands, refusals included.
+  // the ONE preview formula: ghostPreview in dockghost.ts runs predictDockDrop - the
+  // commit's own call - so what the overlay draws is exactly what a release lands,
+  // refusals included.
   import { computed } from "vue";
-  // card t_502b8e81: the registry icon is a NAME in the webui iconset,
-  // rendered through the one wrapper (DockPane's DockItemIcon is gone)
+  // the registry icon is a NAME in the webui iconset, rendered through the one.
   import Icon from "./ui/Icon.vue";
   import type { GhostPreview } from "../composables/dockghost";
 
   const props = defineProps<{
     preview: GhostPreview;
-    /** the dragged tab's registry entry (title + icon name), null = none */
     drag: { icon: string; title: string } | null;
   }>();
 

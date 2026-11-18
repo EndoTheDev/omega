@@ -1,19 +1,7 @@
-// omega webui: the SETTINGS WIRE (card t_0a9edc72) - the registry ships
-// ONE structure and the surfaces read the SLICES they render.
-//
-// Before this card the launch fetched the whole settings payload to learn
-// one value (server.default_workspace: every group, every knob's help
-// line, every agent scope) and the settings pane's scope refresh fetched
-// it again to read `.scopes`. The server already had the one-knob door
-// (`GET /settings?key=`, card t_013b4643); this card adds the scopes
-// slice and points the two readers at their own slices.
-//
-// Pinned here: the knob normalizer (the single shape both readers share),
-// the two lazy reads' URLs + failure path, and the source pins that keep
-// a future edit from quietly putting the full document back on the boot
-// path (the measured byte counts live in the merge comment).
-//
-// Run: node --test test/settingswire.test.ts
+// omega webui: the SETTINGS WIRE. Pinned here: the knob normalizer (the single shape
+// both readers share), the two lazy reads' URLs + failure path, and the source pins
+// that keep a future edit from quietly putting the full document back on the boot path
+// (the measured byte counts live in the merge comment).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -58,7 +46,7 @@ const KNOB = {
   live: true,
 };
 
-// --- the one knob normalizer ------------------------------------------
+// -- the one knob normalizer -----------------------------------------
 
 test("normalizeSettingKnob keeps the fields a control renders", () => {
   const knob = normalizeSettingKnob(KNOB);
@@ -95,7 +83,7 @@ test("the group walk and the one-knob read share ONE normalizer", () => {
   assert.deepEqual(viaGroup.groups[0]!.knobs[0], normalizeSettingKnob(KNOB));
 });
 
-// --- the two lazy reads ------------------------------------------------
+// -- the two lazy reads -----------------------------------------------
 
 test("fetchSettingKnob reads the server's one-knob door", async () => {
   const stub = stubFetch({ body: KNOB });
@@ -145,7 +133,7 @@ test("fetchSettingsScopes answers [] for a host with no agent dirs (R8)", async 
   }
 });
 
-// --- the source pins: the boot path never pays for the registry again ---
+// -- the source pins: the boot path never pays for the registry again --
 
 test("the launch reads ONE knob at boot, not the whole registry", () => {
   const app = read("app.vue");
@@ -165,7 +153,6 @@ test("the settings pane's scope refresh reads the scopes slice", () => {
     /applyScopes\(\(await fetchSettings\(\)\)\.scopes\)/,
     "the full document for one field is the read this card retired",
   );
-  // the mount read stays the FULL document: the one-document law renders
-  // every category, so that read is not waste (card t_8b464090)
+  // the mount read stays the FULL document.
   assert.match(tab, /applyPayload\(await fetchSettings\(\)\)/, "the pane's document read survives");
 });

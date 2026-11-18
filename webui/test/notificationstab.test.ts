@@ -1,15 +1,15 @@
-// omega webui: the notifications dock tab (card t_180db2cb).
+// omega webui: the notifications dock tab.
 //
-// Endo's two rulings (2026-10-29): (1) the top-right bell dies entirely
-// - the notifications dockable's icon chip carries the unread badge;
+// Endo's two rulings: (1) the top-right bell dies entirely
+// the notifications dockable's icon chip carries the unread badge;
 // (2) transient toasts STAY for live events - the tab holds the durable
 // feed/history. Three layers, following the composition-test
 // convention (the node suite never compiles the SFC):
-// - the registry: the dockables entry is an inspector view like the
+// the registry: the dockables entry is an inspector view like the
 //   other secondary-pane tabs;
-// - the badge: the pure badge voice + the render chain from the feed
+// the badge: the pure badge voice + the render chain from the feed
 //   store to the dock tab chip;
-// - the structure: the bell is gone from the vocabulary AND from the
+// the structure: the bell is gone from the vocabulary AND from the
 //   menubar's rendered chrome (template-level, not a repo-wide grep).
 // Run: node --test webui/test/ (node >= 23 runs TS natively)
 import { test } from "node:test";
@@ -29,7 +29,7 @@ import { ICONS, ICON_NAMES } from "../app/composables/icons.ts";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 
-// --- the registry entry: an inspector view like its siblings ------------
+// -- the registry entry: an inspector view like its siblings -----------
 
 test("notifications is a registered inspector component: singleton, pinned right, unclosable", () => {
   assert.ok(
@@ -53,23 +53,19 @@ test("notifications is a registered inspector component: singleton, pinned right
   assert.equal(n, 1, "single registry entry owns the icon name");
 });
 
-// --- the unread badge: store voice -> dock tab chip ---------------------
+// -- the unread badge: store voice -> dock tab chip --------------------
 
 test("the badge lives on the dockable's icon chip, not on dead window chrome", () => {
   const pane = read("app/components/DockPane.vue");
-  // the chip renders inside the tab when the badge text is non-empty
   assert.match(pane, /v-if="tabBadge\(t\)"/, "zero renders no chip element");
   assert.match(pane, /class="dock-tab-badge"/, "the chip is the tab's badge span");
   assert.match(pane, /tabBadge\(t\) \+ ' unread'/, "an accessible name rides the chip");
-  // the badge reads the page-lifetime feed store and ONLY the
-  // notifications tab carries one
+  // the badge reads the page-lifetime feed store and ONLY the notifications tab.
   assert.match(
     pane,
     /tab\.component === "notifications" \? notificationsBadgeText\.value : ""/,
     "the badge is the notifications tab's, nobody else's",
   );
-  // the css companion: inside the chip box (no overflow past the tab's
-  // edge, t_aca53fee's lesson), theme vars only (t_11a9e160's lesson)
   const css = read("app/assets/css/main.css");
   const rule = css.match(/\.dock-tab-badge\s*\{[^}]*\}/);
   assert.ok(rule, "the badge rule exists in main.css");
@@ -98,7 +94,7 @@ test("the badge text is the store's computed over unread + pending questions", (
   );
 });
 
-// --- the bell is gone (structure, not a repo grep) -----------------------
+// -- the bell is gone (structure, not a repo grep) ----------------------
 
 test("the bell left the iconset vocabulary with the chrome that carried it", () => {
   const set = new Set(ICON_NAMES as readonly string[]);
@@ -108,27 +104,24 @@ test("the bell left the iconset vocabulary with the chrome that carried it", () 
 
 test("the menubar's rendered chrome carries no bell entry point", () => {
   const src = read("app/components/shell/MenuBar.vue");
-  // isolate the TEMPLATE: what the menubar would actually render
-  // (comments stripped - prose may tell the story the DOM may not have)
+  // isolate the TEMPLATE: what the menubar would actually render (comments stripped.
   const template = src
     .slice(0, src.indexOf("<script"))
     .replace(/<!--[\s\S]*?-->/g, "");
   assert.ok(!template.includes("bell"), "no bell button, icon or id in the chrome");
   assert.ok(!template.includes("NotificationCenter"), "no bell popover mount");
-  // what the menubar DOES host is the toast stack (ruling 2)
+  // what the menubar DOES host is the toast stack
   assert.match(template, /<NotificationToasts\b/, "the transient toasts stay in the menubar");
   assert.match(template, /@open="\$emit\('open-notification'/, "open intents still route to app.vue");
 });
 
 test("the notifications surface is a dock tab, not window chrome", () => {
   const app = read("app/app.vue");
-  // the outlet seats the panel like the other inspector views
   assert.match(app, /#pane-notifications/, "the pane outlet exists");
   const outlet = app.slice(app.indexOf("#pane-notifications"));
   assert.match(outlet, /:is="notificationsPanelView"/, "the outlet renders the feed panel (the tabs manifest, card t_617c2ad0)");
   assert.match(outlet, /@open="openNotification"/, "row clicks route through the same router");
-  // and the mobile drawer seats it before the module catch-all, like the
-  // other shell-owned tabs (t_d7fd3ad3's branch rule)
+  // and the mobile drawer seats it before the module catch-all, like the other.
   const drawer = app.slice(app.indexOf('side="right"'));
   assert.match(
     drawer,
@@ -137,12 +130,11 @@ test("the notifications surface is a dock tab, not window chrome", () => {
   );
 });
 
-// --- open/focus marks read (the badge clears on open) --------------------
+// -- open/focus marks read (the badge clears on open) -------------------
 
 test("opening or focusing the tab marks the feed read", () => {
   const panel = read("../harness/notifications/ui/NotificationsPanel.vue");
-  // the outlet mounts ONLY the active tab, so the panel's mount IS the
-  // open/focus event
+  // the outlet mounts ONLY the active tab, so the panel's mount IS the open/focus event
   assert.match(panel, /onMounted\(async/, "the activation runs in the mount");
   assert.match(panel, /refreshNotifications\(\)/, "the fresh truth pulls first");
   assert.match(
@@ -154,22 +146,20 @@ test("opening or focusing the tab marks the feed read", () => {
   assert.match(store, /markAllNotificationsRead\(\)/, "markAllRead rides the existing all:true transport");
 });
 
-// --- the durable feed reuses the existing rendering ----------------------
+// -- the durable feed reuses the existing rendering ---------------------
 
 test("the feed panel is the bell popover's body rehomed, not a rebuild", () => {
   const panel = read("../harness/notifications/ui/NotificationsPanel.vue");
-  // the same row vocabulary the popover rendered: verdict cards on top,
-  // feed rows with kind glyph + title + verdict + age, empty voice
+  // the same row vocabulary the popover rendered.
   for (const cls of ["<TabBand", "notif-verdicts", "notif-list", "notif-row", "notif-empty"]) {
     assert.ok(panel.includes(cls), `the rehomed markup keeps "${cls}"`);
   }
   assert.match(panel, /nothing finished yet/, "the empty voice survives the rehome");
   assert.match(panel, /kindGlyph/, "the kind chip renders (task/cron/chat)");
-  // the data source is unchanged: the same fetch wrappers, no new calls
   assert.ok(!panel.includes("fetch("), "the panel touches no transport of its own - the store owns the wire");
 });
 
-// --- clear-all: the DELETE side of the surface (card t_05ff5e35) ---------
+// -- clear-all: the DELETE side of the surface --------
 
 test("clear-all deletes the feed and the toasts, rides the DELETE transport", () => {
   const panel = read("../harness/notifications/ui/NotificationsPanel.vue");

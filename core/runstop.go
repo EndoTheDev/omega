@@ -6,26 +6,16 @@ import (
 	"sync"
 )
 
-// The user-stop latch (card t_caa67135). A run has three ends: it
-// finishes, its wall-clock cap expires, or the user presses stop. The
-// first two are the machinery's own ends; the third is the human
-// withdrawing the work, and it must reach every piece of work the run
-// put in motion - including the yield-class calls that outlive the turn
-// by design (agent/yield.go) and the shells those calls spawned.
-//
-// A context alone cannot carry that distinction: the dispatched
-// executor DROPS the run context's cancellation on purpose (a normal
-// run end must not eat a dispatched call), and a plain cancel says
-// nothing about intent. RunStop is the one value that does. The serving
-// shell latches it on POST /sessions/{id}/stop, the run context carries
-// it (WithRunStop), the loop cancels a dispatched call through it, and
-// a tool that spawns processes reads RunStopped to tell "the user
-// stopped this turn" from "the cap expired".
-//
-// The latch is per RUN, never per call: one stop ends every call that
-// run left running, and the next human send re-arms with a fresh latch.
-// It is nil-safe, so a host that cannot be stopped (one-shot runs, cron,
-// the CLI loop) threads nil and pays nothing.
+// The user-stop latch. The first two are the machinery's own ends; the third is the
+// human withdrawing the work, and it must reach every piece of work the run put in
+// motion - including the yield-class calls that outlive the turn by design
+// (agent/yield.go) and the shells those calls spawned. A context alone cannot carry
+// that distinction: the dispatched executor DROPS the run context's cancellation on
+// purpose (a normal run end must not eat a dispatched call), and a plain cancel says
+// nothing about intent. The latch is per RUN, never per call: one stop ends every call
+// that run left running, and the next human send re-arms with a fresh latch. It is
+// nil-safe, so a host that cannot be stopped (one-shot runs, cron, the CLI loop)
+// threads nil and pays nothing.
 type RunStop struct {
 	mu      sync.Mutex
 	done    chan struct{}
@@ -34,9 +24,7 @@ type RunStop struct {
 	next    int
 }
 
-// ErrUserStopped is the cause a user stop stamps on the work it cut
-// (context.Cause of a cancelled dispatched call), so a log line or a
-// test can tell the human's stop from the cap's deadline.
+// ErrUserStopped is the cause a user stop stamps on the work it cut (context.Cause of.
 var ErrUserStopped = errors.New("stopped by the user")
 
 // NewRunStop returns a fresh, unstopped latch.
@@ -138,10 +126,7 @@ func RunStopFrom(ctx context.Context) *RunStop {
 	return stop
 }
 
-// RunStopped reports whether the run behind ctx was stopped by the
-// user. Tools that spawn processes read this to decide whether their
-// work still has an owner (the shell kills its child on a user stop,
-// leaves it detached on any other end).
+// RunStopped reports whether the run behind ctx was stopped by the user.
 func RunStopped(ctx context.Context) bool {
 	return RunStopFrom(ctx).Stopped()
 }

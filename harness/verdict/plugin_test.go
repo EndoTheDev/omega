@@ -1,9 +1,6 @@
 package verdict
 
-// The plugin-level pins (v0.12 phase C2): the api mount registers the
-// seam, the verdict tool, the TUI renderer and the prompt
-// section, and the classic Mount is a fail-loud stub
-// (docs/migrating-a-module.md is the recipe).
+// The plugin-level pins (v0.12 phase C2).
 
 import (
 	"context"
@@ -13,8 +10,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// stubLogger is the minimal agent.LoggerProvider (the mount reads the
-// logging seam to build the hub).
+// stubLogger is the minimal agent.LoggerProvider (the mount reads the logging seam to.
 type stubLogger struct{}
 
 func (stubLogger) Printf(format string, args ...any) {}
@@ -33,9 +29,7 @@ func (stubLoggerPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI)
 	return nil
 }
 
-// stubStorePlugin provides the store seam (the hub persists card +
-// audit rows through it; nil works too but the mount reads it, so the
-// pin carries one).
+// stubStorePlugin provides the store seam.
 type stubStorePlugin struct{}
 
 func (stubStorePlugin) Name() string       { return "store" }

@@ -1,8 +1,8 @@
-// omega webui: the verdict ISSUANCE hint (card t_ce2162cd).
+// omega webui: the verdict ISSUANCE hint.
 //
 // The gap this closes: a smart-gate escalation registers its card AFTER
 // the tool_call hint window (the reviewer round trip runs inside the
-// gate, before hub.Ask) and the run is frozen from then until the answer -
+// gate, before hub.Ask) and the run is frozen from then until the answer
 // no tool_result, no turn_end, no agent_end. The debounced pending read
 // (1.5s after the call edge) therefore missed the card and nothing hinted
 // again, so a FOREGROUND chat showed no approval until the notifications
@@ -11,13 +11,13 @@
 // names it.
 //
 // Layers, the house way (app.vue is not node-importable):
-// - source pin: app.vue's chat handler runs hintNotifications for the
+// source pin: app.vue's chat handler runs hintNotifications for the
 //   issuance name, beside the call/turn edges, and the 1.5s debounce stays;
-// - cross-language name agreement: the Go side claims the event name in
-//   agent/api (verdictIssuedEvent) and the webui spells it as a literal -
+// cross-language name agreement: the Go side claims the event name in
+// agent/api (verdictIssuedEvent) and the webui spells it as a literal
 //   the nuxt build does not typecheck Go, so nothing else would catch a
 //   rename on one side;
-// - the frame is ws-topic-only (the SSE /chat event set is untouched) and
+// the frame is ws-topic-only (the SSE /chat event set is untouched) and
 //   its payload is minimal - the webui re-reads GET /verdicts on it.
 // Run: node --test "test/*.test.ts" (node >= 23 runs TS natively)
 import { test } from "node:test";
@@ -41,8 +41,8 @@ function goIssuedEvent(source: string): string {
   return m![1]!;
 }
 
-// appHintSet returns the body of app.vue's chat-topic handler, up to the
-// hint call it ends with - the set the event names live in.
+// appHintSet returns the body of app.vue's chat-topic handler, up to the hint call it
+// ends with.
 function appHintSet(source: string): string {
   const start = source.indexOf("chat: (session, event, payload) =>");
   assert.ok(start >= 0, "app.vue wires the chat topic's handler");
@@ -51,11 +51,10 @@ function appHintSet(source: string): string {
   return source.slice(start, hint);
 }
 
-// --- app.vue: the issuance name rides the hint set ------------------------
+// -- app.vue: the issuance name rides the hint set -----------------------
 
 test("app.vue's chat hint set names the issuance frame beside the call/turn edges", () => {
   const chat = appHintSet(appSrc());
-  // the edges it always had stay
   for (const edge of ["tool_call", "tool_result", "turn_end", "agent_end"]) {
     assert.ok(chat.includes(`event === "${edge}"`), `the hint set keeps ${edge}`);
   }
@@ -63,7 +62,6 @@ test("app.vue's chat hint set names the issuance frame beside the call/turn edge
     chat.includes(`event === "verdict_issued"`),
     "the issuance frame is in the hint set - a gate card registers after the call-edge window and nothing else would pull it",
   );
-  // the structural-frame law holds: no token delta pulls the pending list
   for (const noisy of ["response_chunk", "thinking_chunk", "stream"]) {
     const re = new RegExp(`event === "${noisy}"`);
     assert.ok(!re.test(chat), `${noisy} must not hint the pending read`);
@@ -79,7 +77,7 @@ test("the 1.5s hint debounce stays - issuance is a hint, not a bypass", () => {
   assert.ok(body.includes("refreshNotifications"), "the hint still pulls the REST truth");
 });
 
-// --- the cross-language name agreement ------------------------------------
+// -- the cross-language name agreement -----------------------------------
 
 test("the Go event name and the webui literal agree", () => {
   const go = goIssuedEvent(socketsSrc());
@@ -90,7 +88,7 @@ test("the Go event name and the webui literal agree", () => {
   );
 });
 
-// --- the frame's shape: ws-topic-only, minimal payload --------------------
+// -- the frame's shape: ws-topic-only, minimal payload -------------------
 
 test("the issuance frame rides the chat topic only - the SSE path is untouched", () => {
   const go = socketsSrc();
@@ -116,7 +114,7 @@ test("the issuance frame rides the chat topic only - the SSE path is untouched",
   }
 });
 
-// --- the server side of the seam -----------------------------------------
+// -- the server side of the seam ----------------------------------------
 
 test("the hub notifies at issuance and the server subscribes at boot", () => {
   const hub = read(repo, "harness", "verdict", "hub.go");

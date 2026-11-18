@@ -19,13 +19,10 @@ import (
 	"time"
 )
 
-// githubRelease represents the subset of the GitHub releases API
-// response that omega update needs.
+// githubRelease represents the subset of the GitHub releases API response that omega.
 type githubRelease struct {
 	TagName string `json:"tag_name"`
-	// Draft and Prerelease channel the behind-count: the stable
-	// channel is exactly what /releases/latest serves (not draft,
-	// not prerelease); nightlies are prereleases.
+	// Draft and Prerelease channel the behind-count: the stable channel is exactly what.
 	Draft      bool          `json:"draft"`
 	Prerelease bool          `json:"prerelease"`
 	Assets     []githubAsset `json:"assets"`
@@ -37,15 +34,12 @@ type githubAsset struct {
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
-// assetNameForOS returns the expected release asset name substring for
-// the current GOOS/GOARCH (e.g. "windows_amd64", "linux_amd64").
+// assetNameForOS returns the expected release asset name substring for the current.
 func assetNameForOS(goos, goarch string) string {
 	return goos + "_" + goarch
 }
 
-// findAsset returns the download URL for the asset matching the current
-// OS/arch, or "" if none matches. Matches by substring (e.g.
-// "omega_v0.1.0_windows_amd64.zip" matches "windows_amd64").
+// findAsset returns the download URL for the asset matching the current OS/arch, or.
 func findAsset(assets []githubAsset, goos, goarch string) string {
 	target := assetNameForOS(goos, goarch)
 	for _, a := range assets {
@@ -64,9 +58,9 @@ type updateOptions struct {
 	yes            bool // auto-accept the install prompt (unattended-safe install)
 }
 
-// parseUpdateFlags parses the flags accepted after "update" (or after
-// the "rollback" subcommand). Unknown flags are errors — typo'd flags
-// must not silently fall through to a plain stable update.
+// parseUpdateFlags parses the flags accepted after "update" (or after the "rollback".
+// Unknown flags are errors — typo'd flags must not silently fall through to a plain
+// stable update.
 func parseUpdateFlags(args []string) (updateOptions, error) {
 	var opts updateOptions
 	for _, a := range args {
@@ -83,17 +77,14 @@ func parseUpdateFlags(args []string) (updateOptions, error) {
 			if strings.HasPrefix(a, "-") {
 				return opts, fmt.Errorf("unknown update flag %q (known: --nightly, --rollback, --allow-downgrade, --yes)", a)
 			}
-			// Positional arg: ignore. omega accepts trailing noise
-			// in other subcommands too.
+			// Positional arg: ignore.
 		}
 	}
 	return opts, nil
 }
 
-// trimBuildHash strips a trailing short build hash ("-c268097e") from a
-// version string: the hash is build metadata, invisible to semver
-// ordering. The shape regex is anchored, so tags and hash-less versions
-// match nothing and pass through unchanged.
+// trimBuildHash strips a trailing short build hash ("-c268097e") from a version string:
+// the hash is build metadata, invisible to semver ordering.
 func trimBuildHash(v string) string {
 	return versionShapeRe.ReplaceAllString(v, "$1")
 }
@@ -101,13 +92,12 @@ func trimBuildHash(v string) string {
 // updateGate decides whether the channel's offered tag may be
 // installed when the running version is omegaVersion. Returns:
 //
-//	"skip"    — offered equals current, nothing to do
+// "skip" — offered equals current, nothing to do
 //	"install" — offered is newer, or a downgrade was explicitly allowed
-//	"refuse"  — offered is older than current (stale mirror protection)
+// "refuse" — offered is older than current (stale mirror protection)
 func updateGate(offeredTag, current string, allowDowngrade bool) (string, error) {
-	// The running version carries build metadata the offered tags never
-	// have ("-c268097e"): order the tag part, not the hash, or the
-	// newest nightly reads like a downgrade and the gate refuses it.
+	// The running version carries build metadata the offered tags never have
+	// ("-c268097e").
 	cmp, ok := compareVersions(offeredTag, trimBuildHash(current))
 	if !ok {
 		// Unparseable current version (dev build, foreign stamp):
@@ -127,16 +117,13 @@ func updateGate(offeredTag, current string, allowDowngrade bool) (string, error)
 	}
 }
 
-// githubAPIBase is the GitHub API root for release lookups. Tests and
-// fixture flows point it at a local server via OMEGA_UPDATE_API_BASE.
+// githubAPIBase is the GitHub API root for release lookups.
 var githubAPIBase = "https://api.github.com"
 
 // repoSlug is the repo whose releases omega installs from.
 const repoSlug = "EndoTheDev/omega"
 
-// fetchStable resolves the LATEST STABLE release via the /releases/latest
-// endpoint, which GitHub serves only for non-prerelease, non-draft
-// releases — nightly tags (and other prereleases) are invisible to it.
+// fetchStable resolves the LATEST STABLE release via the /releases/latest endpoint.
 func fetchStable() (githubRelease, error) {
 	resp, err := http.Get(githubAPIBase + "/repos/" + repoSlug + "/releases/latest")
 	if err != nil {
@@ -157,9 +144,7 @@ func fetchStable() (githubRelease, error) {
 	return rel, nil
 }
 
-// fetchReleaseList fetches one page of the release list (newest
-// first), the same endpoint fetchNightly resolves the nightly channel
-// from and behindCount measures the version distance over.
+// fetchReleaseList fetches one page of the release list (newest first), the same.
 func fetchReleaseList() ([]githubRelease, error) {
 	resp, err := http.Get(githubAPIBase + "/repos/" + repoSlug + "/releases?per_page=100")
 	if err != nil {
@@ -174,9 +159,7 @@ func fetchReleaseList() ([]githubRelease, error) {
 	return rels, nil
 }
 
-// newestNightly picks the NEWEST -nightly.* prerelease tag from a
-// release list (one page of 100 — the nightly channel tags at most one
-// per day, so the page always covers recent nightlies).
+// newestNightly picks the NEWEST -nightly.* prerelease tag from a release list (one.
 func newestNightly(rels []githubRelease) (githubRelease, error) {
 	newest := -1
 	for i, rel := range rels {
@@ -193,8 +176,7 @@ func newestNightly(rels []githubRelease) (githubRelease, error) {
 	return rels[newest], nil
 }
 
-// fetchNightly resolves the NEWEST -nightly.* prerelease tag from the
-// release list.
+// fetchNightly resolves the NEWEST -nightly.* prerelease tag from the release list.
 func fetchNightly() (githubRelease, error) {
 	rels, err := fetchReleaseList()
 	if err != nil {
@@ -211,10 +193,8 @@ func compareTagNewer(a, b string) bool {
 	return ok && cmp > 0
 }
 
-// channelTags returns the tags on the requested channel from the
-// release list, in list order (newest first). stable is exactly what
-// /releases/latest serves: not draft, not prerelease. nightly is the
-// -nightly.* tags.
+// channelTags returns the tags on the requested channel from the release list, in.
+// stable is exactly what /releases/latest serves: not draft, not prerelease.
 func channelTags(rels []githubRelease, nightly bool) []string {
 	var tags []string
 	for _, rel := range rels {
@@ -245,10 +225,7 @@ func countNewer(tags []string, current string) int {
 	return behind
 }
 
-// stdinIsTerminal reports whether stdin is an interactive terminal
-// (character device). Package var so tests can drive the prompt
-// without a real TTY. Note /dev/null is a character device too —
-// harmless, its read is an immediate EOF, which declines.
+// stdinIsTerminal reports whether stdin is an interactive terminal (character device).
 var stdinIsTerminal = func() bool {
 	st, err := os.Stdin.Stat()
 	if err != nil {
@@ -257,11 +234,9 @@ var stdinIsTerminal = func() bool {
 	return st.Mode()&os.ModeCharDevice != 0
 }
 
-// confirmInstall asks prompt as y/N on stderr and reads one line from
-// stdin. Only an explicit y/yes accepts. EOF or any other answer
-// declines. Non-terminal stdin declines without reading, so an
-// unattended bare update never blocks and never replaces the binary —
-// the scripted path is omega update --yes.
+// confirmInstall asks prompt as y/N on stderr and reads one line from stdin.
+// Non-terminal stdin declines without reading, so an unattended bare update never
+// blocks and never replaces the binary — the scripted path is omega update --yes.
 func confirmInstall(prompt string) bool {
 	if !stdinIsTerminal() {
 		fmt.Fprintf(os.Stderr, "%s [y/N] not a terminal: declining\n", prompt)
@@ -276,18 +251,10 @@ func confirmInstall(prompt string) bool {
 	return ans == "y" || ans == "yes"
 }
 
-// installArchiveFn is the install seam: package var so prompt tests can
-// observe the install decision without replacing the running (test)
-// binary.
+// installArchiveFn is the install seam.
 var installArchiveFn = installArchive
 
-// cmdUpdate installs a release. With no flags it resolves the latest
-// stable; --nightly resolves the newest prerelease on the nightly
-// channel; --rollback swaps back to omega.bak. A bare run reports how
-// far behind it is and prompts y/N before installing — declined (or
-// non-tty / EOF) it exits with the --yes hint and touches no binary.
-// --yes skips the prompt and installs. Every install preserves the
-// replaced binary as omega.bak beside it (one generation).
+// cmdUpdate installs a release.
 func cmdUpdate(rest []string) error {
 	if base := os.Getenv("OMEGA_UPDATE_API_BASE"); base != "" {
 		githubAPIBase = base // fixture flow for tests; never set in prod
@@ -330,9 +297,6 @@ func cmdUpdate(rest []string) error {
 		return nil
 	}
 
-	// How far behind? Version/tag distance over the channel's release
-	// list. A failed list fetch only costs the count line — the offer
-	// is already resolved and gateable.
 	behind := 0
 	if rels != nil {
 		behind = countNewer(channelTags(rels, opts.nightly), omegaVersion)
@@ -355,15 +319,13 @@ func cmdUpdate(rest []string) error {
 	return installArchiveFn(rel, opts.nightly)
 }
 
-// installArchive is the shared download-verify-extract-replace flow for
-// every release channel, plus the extension data + example files copy.
+// installArchive is the shared download-verify-extract-replace flow for every release.
 func installArchive(rel githubRelease, nightly bool) error {
 	url := findAsset(rel.Assets, runtime.GOOS, runtime.GOARCH)
 	if url == "" {
 		return fmt.Errorf("no release asset for %s/%s in %s; visit https://github.com/%s/releases", runtime.GOOS, runtime.GOARCH, rel.TagName, repoSlug)
 	}
 
-	// Determine the asset name for checksum lookup.
 	assetName := assetNameForOS(runtime.GOOS, runtime.GOARCH)
 
 	dlResp, err := http.Get(url)
@@ -382,8 +344,7 @@ func installArchive(rel githubRelease, nightly bool) error {
 	}
 	installDir := filepath.Dir(exePath)
 
-	// Download archive to a temp file so we can verify its checksum
-	// before extracting untrusted code.
+	// Download archive to a temp file so we can verify its checksum before extracting.
 	tmpDir, err := os.MkdirTemp("", "omega-update-")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
@@ -396,7 +357,6 @@ func installArchive(rel githubRelease, nightly bool) error {
 	}
 	archivePath := filepath.Join(tmpDir, "archive"+archiveExt)
 
-	// Wrap with progress reader if we know the size.
 	var body io.Reader = dlResp.Body
 	if total := dlResp.ContentLength; total > 0 {
 		body = &progressReader{r: dlResp.Body, total: total}
@@ -422,7 +382,6 @@ func installArchive(rel githubRelease, nightly bool) error {
 		fmt.Fprintln(os.Stderr, "omega: warning — no checksums.txt in release, skipping verification")
 	}
 
-	// Extract archive from the verified temp file.
 	archiveFile, err := os.Open(archivePath)
 	if err != nil {
 		return fmt.Errorf("open archive: %w", err)
@@ -445,8 +404,6 @@ func installArchive(rel githubRelease, nightly bool) error {
 		}
 	}
 
-	// Find the omega binary in the extracted archive.
-	// It may be at the root or inside a versioned directory.
 	omegaBin := findInArchive(extractDir, "omega")
 	if omegaBin == "" {
 		return fmt.Errorf("omega binary not found in release archive")
@@ -457,8 +414,6 @@ func installArchive(rel githubRelease, nightly bool) error {
 		return fmt.Errorf("replace omega binary: %w", err)
 	}
 
-	// Copy extension data files from subdirectories (config, mcp.yaml,
-	// etc.). Extensions themselves are compiled into omega.exe.
 	extSrcDir := filepath.Join(filepath.Dir(omegaBin), "extensions")
 	extDstDir := filepath.Join(installDir, "extensions")
 	if entries, err := os.ReadDir(extSrcDir); err == nil {
@@ -485,7 +440,6 @@ func installArchive(rel githubRelease, nightly bool) error {
 	copyIfMissing(filepath.Join(filepath.Dir(omegaBin), "config.yaml.example"), filepath.Join(installDir, "config.yaml.example"))
 	copyIfMissing(filepath.Join(filepath.Dir(omegaBin), "mcp.yaml.example"), filepath.Join(installDir, "mcp.yaml.example"))
 
-	// Print newline after progress bar.
 	if total := dlResp.ContentLength; total > 0 {
 		fmt.Fprintln(os.Stderr)
 	}
@@ -517,9 +471,7 @@ func boolChannel(nightly bool) string {
 	return "stable"
 }
 
-// cmdRollback swaps the current binary back to omega.bak (one
-// generation, overwritten on every update) and verifies the restored
-// binary actually runs. For the bad-nightly case.
+// cmdRollback swaps the current binary back to omega.bak (one generation, overwritten.
 func cmdRollback() error {
 	if base := os.Getenv("OMEGA_UPDATE_API_BASE"); base != "" {
 		githubAPIBase = base // keep the env seam consistent, though fetch is unused
@@ -531,8 +483,7 @@ func cmdRollback() error {
 	return rollbackTo(exePath)
 }
 
-// rollbackTo is the platform-independent core of rollback, given the
-// executable path. Package var seam only for the health check.
+// rollbackTo is the platform-independent core of rollback, given the executable path.
 var rollbackTo = func(exePath string) error {
 	bakPath := exePath + ".bak"
 	if _, err := os.Stat(bakPath); err != nil {
@@ -544,7 +495,6 @@ var rollbackTo = func(exePath string) error {
 		return fmt.Errorf("rollback: %w", err)
 	}
 
-	// Verify the restored binary executes before declaring victory.
 	out, err := verifyBinaryHealth(exePath)
 	if err != nil {
 		return fmt.Errorf("rollback installed, but the restored binary failed its health check: %w\nomega.bak and the previous binary are intact — try again", err)
@@ -553,11 +503,7 @@ var rollbackTo = func(exePath string) error {
 	return nil
 }
 
-// rollbackSwap moves the backup into the executable slot and the
-// replaced binary into the backup slot, via a side temp name so both
-// versions survive any interruption mid-swap. The running process keeps
-// its inode on Linux; on Windows renaming a running exe is allowed
-// while deleting it is not.
+// rollbackSwap moves the backup into the executable slot and the replaced binary into.
 func rollbackSwap(exePath, bakPath string) error {
 	side := exePath + ".rollback"
 	if err := os.Rename(exePath, side); err != nil {
@@ -568,16 +514,14 @@ func rollbackSwap(exePath, bakPath string) error {
 		return fmt.Errorf("install omega.bak: %w", err)
 	}
 	if err := copyFile(side, bakPath); err != nil {
-		// The restored binary is already live; recording the replaced
-		// version into the .bak slot is best-effort.
+		// The restored binary is already live.
 		fmt.Fprintf(os.Stderr, "omega: warning — could not record replaced version into omega.bak: %v\n", err)
 	}
 	os.Remove(side)
 	return nil
 }
 
-// verifyBinaryHealth runs the binary with --version to confirm it
-// executes, returning its version output. Package var so tests stub it.
+// verifyBinaryHealth runs the binary with --version to confirm it executes, returning.
 var verifyBinaryHealth = func(exePath string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -592,7 +536,6 @@ var verifyBinaryHealth = func(exePath string) (string, error) {
 }
 
 // safeJoin joins dest + name and validates the result stays within dest.
-// Prevents path traversal (CWE-22) from malicious archive entries.
 func safeJoin(dest, name string) (string, error) {
 	path := filepath.Join(dest, name)
 	absPath, err := filepath.Abs(path)
@@ -612,7 +555,6 @@ func safeJoin(dest, name string) (string, error) {
 // extractZip extracts a zip archive from r into dest.
 func extractZip(r io.Reader, dest string) error {
 	// Read all into memory — archives are small (~50MB max).
-	// Limit to 200MB to prevent OOM from malicious archives.
 	data, err := io.ReadAll(io.LimitReader(r, 200<<20))
 	if err != nil {
 		return err
@@ -651,7 +593,7 @@ func extractZip(r io.Reader, dest string) error {
 	return nil
 }
 
-// extractTarGz extracts a .tar.gz archive from r into dest.
+// extractTarGz extracts a.tar.gz archive from r into dest.
 func extractTarGz(r io.Reader, dest string) error {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
@@ -689,17 +631,14 @@ func extractTarGz(r io.Reader, dest string) error {
 	return nil
 }
 
-// findInArchive searches dir for a file named "omega" or "omega.exe",
-// checking the root first, then one level down.
+// findInArchive searches dir for a file named "omega" or "omega.exe", checking the.
 func findInArchive(dir, name string) string {
-	// Check root.
 	for _, ext := range []string{".exe", ""} {
 		p := filepath.Join(dir, name+ext)
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}
 	}
-	// Check one level down (versioned directory).
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -721,18 +660,15 @@ func findInArchive(dir, name string) string {
 func replaceBinary(src, dst string) error {
 	bakPath := dst + ".bak"
 	if runtime.GOOS == "windows" {
-		// Windows locks the running binary: renaming it away is
-		// allowed, deleting/updating in place is not. The rename itself
-		// moves the old binary into the .bak slot (overwrites fail if
-		// an old .bak lingers, so remove it first).
+		// Windows locks the running binary. The rename itself moves the old binary into
+		// the.bak slot (overwrites fail if an old.bak lingers, so remove it first).
 		os.Remove(bakPath)
 		if err := os.Rename(dst, bakPath); err != nil {
 			return fmt.Errorf("back up current exe (omega.bak): %w", err)
 		}
 		return copyFile(src, dst)
 	}
-	// Linux/macOS: copy the running binary into the .bak slot (the
-	// running process keeps its inode), then install via a temp rename.
+	// Linux/macOS: copy the running binary into the.bak slot (the running process keeps.
 	if err := copyFile(dst, bakPath); err != nil {
 		return fmt.Errorf("back up current exe (omega.bak): %w", err)
 	}
@@ -741,9 +677,7 @@ func replaceBinary(src, dst string) error {
 		os.Remove(tmp)
 		return err
 	}
-	// Unlink the running executable before renaming. Linux allows
-	// unlinking a running binary — the inode stays alive until the
-	// process exits, but the path is freed for the rename.
+	// Unlink the running executable before renaming.
 	os.Remove(dst)
 	return os.Rename(tmp, dst)
 }
@@ -779,8 +713,7 @@ func copyIfMissing(src, dst string) {
 	copyFile(src, dst)
 }
 
-// progressReader wraps an io.Reader and prints a progress bar to stderr
-// showing download progress against the total size.
+// progressReader wraps an io.Reader and prints a progress bar to stderr showing.
 type progressReader struct {
 	r       io.Reader
 	total   int64

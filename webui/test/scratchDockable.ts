@@ -1,11 +1,6 @@
-// omega webui: the TEST-ONLY scratch singleton. card t_49d0b308 moved
-// settings into the inspector (pinned), so no REAL component lives in
-// the main-singleton class anymore - chat is multi and everything else
-// is pinned. The singleton-opener / tab-ops contract still holds for
-// "any main singleton", so the dock tests mint this synthetic entry
-// into the registry, exercise the paths, and always restore in
-// `finally`. Registered at the array ends; tests run sequentially, so
-// nothing else observes it.
+// omega webui: the TEST-ONLY scratch singleton. The singleton-opener / tab-ops contract
+// still holds for "any main singleton", so the dock tests mint this synthetic entry
+// into the registry, exercise the paths, and always restore in `finally`.
 import {
   DOCK_COMPONENTS,
   DOCKABLES,
@@ -19,11 +14,8 @@ export function registerScratchSingleton(): () => void {
   DOCKABLES.push({
     id: SCRATCH_ID,
     title: "scratch",
-    // card t_502b8e81: the registry icon is an iconset NAME now
     icon: "module",
     policy: "singleton",
-    // canvas C1: the registry entry carries the CLASS (area is derived),
-    // and the scratch view exists to exercise the MAIN-pane opener paths
     class: "main",
     area: "main",
     closable: true,
@@ -35,9 +27,7 @@ export function registerScratchSingleton(): () => void {
   };
 }
 
-/** runs `fn` with a synthetic MAIN-area singleton ("scratch") registered
-    in the dockable registry (openable, closable, main-area). The id is
-    passed as the component id; casts stay inside here. */
+/** runs `fn` with a synthetic MAIN-area singleton ("scratch") registered in the. */
 export async function withScratchSingleton(
   fn: (id: DockComponentName) => void | Promise<void>,
 ): Promise<void> {

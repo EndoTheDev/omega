@@ -1,8 +1,4 @@
-// omega webui: unit tests for the archived-session group (card
-// t_e527b3e8): archived sessions form the LAST group in the session
-// list - bucket placement stays pure in composables/omega.ts, the
-// footer toggle dies. Run: node --test "test/*.test.ts" (node >= 23
-// runs TS natively)
+// omega webui: unit tests for the archived-session group.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -32,8 +28,7 @@ describe("bucketSessions: the archived group", () => {
   it("always lands last, after the newest time bucket", () => {
     const b = bucketSessions(
       [
-        // archived but the FRESHEST timestamp in the list - age never
-        // lifts it out of the bottom group
+        // archived but the FRESHEST timestamp in the list - age never lifts it out of.
         sess({ id: "arch", archived: true, updated_at: `${TODAY}T13:00:00` }),
         sess({ id: "today", updated_at: `${TODAY}T09:00:00` }),
         sess({ id: "old", updated_at: "2026-10-01T10:00:00" }),
@@ -68,7 +63,6 @@ describe("bucketSessions: the archived group", () => {
   it("unarchiving drops the row back into its day bucket instantly", () => {
     const boxed = [sess({ id: "boxed", archived: true })];
     assert.equal(bucketSessions(boxed, NOW).archived.length, 1);
-    // the optimistic patch flips the flag on the row the list holds
     const unarchived = boxed.map((s) => ({ ...s, archived: false }));
     const b = bucketSessions(unarchived, NOW);
     assert.deepEqual(b.archived, []);
@@ -98,7 +92,7 @@ describe("bucketSessions: the archived group", () => {
   });
 });
 
-// --- wiring: the footer toggle died with the group ---
+// -- wiring: the footer toggle died with the group --
 describe("archived group wiring (sources)", () => {
   it("the sidebar holds no archived footer toggle and no showArchived prop", () => {
     const sidebar = src("../harness/store/ui/AppSidebar.vue");

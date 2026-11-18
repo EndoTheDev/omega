@@ -11,8 +11,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// CREATE_NEW_PROCESS_GROUP keeps windows shell children out of omega's
-// console group so no stray Ctrl+Broadcast reaches them.
+// CREATE_NEW_PROCESS_GROUP keeps windows shell children out of omega's console group.
 const createNewProcessGroup = 0x00000200
 
 const (
@@ -21,12 +20,7 @@ const (
 	processQueryLimitedInformation = 0x00001000
 )
 
-// detachChild: windows has no POSIX process groups. The tree guard is
-// a JOB object with KILL_ON_JOB_CLOSE: every descendant of the shell
-// lands in it, TerminateJobObject tears the tree down in one stop, and
-// a job handle nobody releases (a crashed omega) still reaps what
-// survived inside. TERM and KILL collapse into one hard stop for the
-// tree - the OS offers a detached grandchild nothing else.
+// detachChild: windows has no POSIX process groups.
 func detachChild(cmd *exec.Cmd) treeKiller {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
@@ -34,8 +28,7 @@ func detachChild(cmd *exec.Cmd) treeKiller {
 	cmd.SysProcAttr.CreationFlags |= createNewProcessGroup
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
-		// The floor contract holds without the job: a per-pid
-		// TerminateProcess, like every orphan this registry reaps.
+		// The floor contract holds without the job.
 		return treeKiller{}
 	}
 	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
@@ -49,14 +42,10 @@ func detachChild(cmd *exec.Cmd) treeKiller {
 	return treeKiller{job: job}
 }
 
-// treeKiller is the detached child's tree handle: attach right after
-// Start, term/kill tear the tree down in one stop, close releases the
-// job (which kills whatever still lives inside). The zero treeKiller
-// is valid: every operation degrades to the pid floor.
+// treeKiller is the detached child's tree handle.
 type treeKiller struct{ job windows.Handle }
 
-// attach binds the started child (and through it every descendant) to
-// the job. A binding that fails leaves the pid-level kill standing.
+// attach binds the started child (and through it every descendant) to the job.
 func (t treeKiller) attach(cmd *exec.Cmd) {
 	if t.job == 0 || cmd.Process == nil {
 		return
@@ -80,28 +69,22 @@ func (t treeKiller) term(pid int) error {
 	return killProcess(pid)
 }
 
-// kill is the same hard stop as term: windows offers no graceful
-// escalation for a detached tree.
+// kill is the same hard stop as term.
 func (t treeKiller) kill(pid int) error { return t.term(pid) }
 
-// close releases the job. KILL_ON_JOB_CLOSE kills whatever the child
-// left inside (a grandchild still holding its log file) - the reaper
-// calls it once the shell itself has exited, so the log rename and a
-// later directory removal never race a live handle.
+// close releases the job. KILL_ON_JOB_CLOSE kills whatever the child left inside (a
+// grandchild still holding its log file) - the reaper calls it once the shell itself
+// has exited, so the log rename and a later directory removal never race a live handle.
 func (t treeKiller) close() {
 	if t.job != 0 {
 		_ = windows.CloseHandle(t.job)
 	}
 }
 
-// stillActive is the windows sentinel for "no exit code yet"
-// (STATUS_PENDING); every other value means the process has shot.
+// stillActive is the windows sentinel for "no exit code yet" (STATUS_PENDING).
 const stillActive = 259
 
-// groupAlive probes the pid's exit code: an openable handle alone is a
-// false verdict on windows - a terminated-but-not-yet-released pid
-// still opens, so Kill would report a process it just killed as
-// "still alive". STILL_ACTIVE means alive; any exit code means dead.
+// groupAlive probes the pid's exit code.
 func groupAlive(pid int) bool {
 	if pid <= 0 {
 		return false
@@ -118,10 +101,8 @@ func groupAlive(pid int) bool {
 	return code == stillActive
 }
 
-// signalTerm on windows is TerminateProcess: a TERM is a KILL (the
-// graceful-escalation contract degrades on windows, the OS gives us
-// nothing else for detached children). Orphans only - an owned child
-// goes through its treeKiller.
+// signalTerm on windows is TerminateProcess: a TERM is a KILL (the graceful-escalation
+// contract degrades on windows, the OS gives us nothing else for detached children).
 func signalTerm(pid int) error {
 	return killProcess(pid)
 }
@@ -131,10 +112,8 @@ func signalKill(pid int) error {
 	return killProcess(pid)
 }
 
-// killProcess hard-stops one pid. An already-dead pid answers nil -
-// the caller's liveness re-check settles it. The handle carries
-// PROCESS_TERMINATE: a query-only handle answers Access denied on
-// every TerminateProcess.
+// killProcess hard-stops one pid. An already-dead pid answers nil - the caller's
+// liveness re-check settles it.
 func killProcess(pid int) error {
 	handle, err := syscall.OpenProcess(
 		processTerminate|processQueryLimitedInformation, false, uint32(pid))

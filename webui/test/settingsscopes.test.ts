@@ -1,12 +1,12 @@
 // omega webui: unit tests for the settings scope tabs (settings tier 3b,
-// card t_04eb11d6) - the per-agent surface the pane renders instead of
+// ) - the per-agent surface the pane renders instead of
 // the Main registry.
 //
 // Two layers, same as the other settings suites:
-//   - the PURE helpers in composables/omega.ts (normalizeSettingsPayload's
+// the PURE helpers in composables/omega.ts (normalizeSettingsPayload's
 //     scopes, agentConfigUpdate's wire mapping, scopeConfigDiff's save
 //     derivation) - real assertions on real functions;
-//   - the component's WIRING (SettingsTab.vue) - source assertions, because
+// the component's WIRING (SettingsTab.vue) - source assertions, because
 //     the unit suite has no DOM: what is pinned is which list a tab renders,
 //     where the strip is gated, how the search and the save route.
 // Run: node --test webui/test/ (node >= 23 runs TS natively)
@@ -29,8 +29,7 @@ const SETTINGS_TAB = readFileSync(
   "utf8",
 );
 
-// one scope as the server's settingsScopes emits it (card t_22a5f70a):
-// four groups in wire order, each knob {key, value, overridden}
+// one scope as the server's settingsScopes emits it.
 function scopePayload(overrides: Record<string, unknown> = {}) {
   const knob = (key: string, value: unknown, overridden: boolean) => ({ key, value, overridden });
   const groups = [
@@ -63,7 +62,7 @@ function scopePayload(overrides: Record<string, unknown> = {}) {
   return { name: "alpha", groups };
 }
 
-// --- normalizeSettingsPayload: the scopes half of the wire ---
+// -- normalizeSettingsPayload: the scopes half of the wire --
 
 test("normalize keeps a well-formed scope: name, group order, overridden flags", () => {
   const out = normalizeSettingsPayload({
@@ -81,7 +80,6 @@ test("normalize keeps a well-formed scope: name, group order, overridden flags",
   assert.equal(model?.overridden, true);
   const host = scope.groups[0].knobs.find((k) => k.key === "provider.host");
   assert.equal(host?.overridden, false);
-  // the effective value rides through untouched (secrets arrive masked)
   assert.equal(scope.groups[0].knobs.find((k) => k.key === "provider.api_key")?.value, "****");
 });
 
@@ -105,7 +103,6 @@ test("normalize drops malformed scopes and keeps the rest", () => {
     ],
   });
   assert.deepEqual(out.scopes.map((s) => s.name), ["gamma"]);
-  // the group with no knobs array drops; the knob with no value drops
   assert.equal(out.scopes[0].groups.length, 1);
   assert.equal(out.scopes[0].groups[0].knobs.length, 0);
 });
@@ -123,7 +120,7 @@ test("normalize keeps a scope error string and drops an empty one", () => {
   assert.equal("error" in empty.scopes[0], false);
 });
 
-// --- agentConfigUpdate: the ONE write path's field mapping ---
+// -- agentConfigUpdate: the ONE write path's field mapping --
 
 test("AGENT_KNOB_FIELDS covers exactly the four overridable groups", () => {
   assert.deepEqual(Object.keys(AGENT_KNOB_FIELDS).sort(), [
@@ -187,7 +184,7 @@ test("agentConfigUpdate ignores knobs outside the four overridable groups", () =
   assert.deepEqual(body, {});
 });
 
-// --- scopeConfigDiff: the save derivation (count and wire are one truth) ---
+// -- scopeConfigDiff: the save derivation (count and wire are one truth) --
 
 test("scopeConfigDiff ships only keys that departed from the served truth", () => {
   const loaded = { "provider.host": "http://a", description: "d", max_turns: 42 };
@@ -215,7 +212,6 @@ test("scopeConfigDiff treats an emptied max_turns as inherit, never as 0", () =>
   const loaded = { max_turns: 42 };
   const owned = scopeConfigDiff(loaded, { max_turns: "" }, [], new Set(["max_turns"]));
   assert.deepEqual(owned.body, { unset: ["max_turns"] });
-  // no override to remove: the empty field is nothing to save
   assert.deepEqual(scopeConfigDiff(loaded, { max_turns: "" }, [], new Set()).body, {});
 });
 
@@ -225,10 +221,9 @@ test("scopeConfigDiff surfaces a bad max_turns before the round-trip", () => {
   assert.deepEqual(out.body, {});
 });
 
-// --- scopeKnobDiffersFromMain: the agent tab's dot predicate (seam ruling) ---
+// -- scopeKnobDiffersFromMain: the agent tab's dot predicate --
 
 test("an agent tab's dot means differs-from-MAIN, and an override always lights it", () => {
-  // one override set (the layer names the key): dot, whatever the values say
   assert.equal(scopeKnobDiffersFromMain("provider.model_name", "llama", "llama", true, []), true);
   // a masked secret: the structural flag is the ONLY honest answer
   assert.equal(scopeKnobDiffersFromMain("provider.api_key", "****", "****", true, []), true);
@@ -237,7 +232,6 @@ test("an agent tab's dot means differs-from-MAIN, and an override always lights 
   // empty and unset fold into one value - an untouched blank row never lights
   assert.equal(scopeKnobDiffersFromMain("system_prompt", "", undefined, false, []), false);
   assert.equal(scopeKnobDiffersFromMain("system_prompt", undefined, "", false, []), false);
-  // a draft edit departs from main before it is saved: the row will override
   assert.equal(scopeKnobDiffersFromMain("max_turns", 7, 42, false, []), true);
   // a QUEUED removal is on its way back to main: the star marks it, the dot goes out
   assert.equal(scopeKnobDiffersFromMain("max_turns", 42, 42, true, ["max_turns"]), false);
@@ -248,8 +242,8 @@ test("R7: an agent tab's search can only ever return the scope's four groups", (
     groups: [],
     scopes: [scopePayload({ "provider.model_name": true })],
   }).scopes[0];
-  // the pane maps each scope knob onto a row (labels come from the main
-  // registry / SCOPE_GROUP_LABELS); the GROUP set is the payload's own
+  // the pane maps each scope knob onto a row (labels come from the main registry /
+  // SCOPE_GROUP_LABELS).
   const ROW_LABELS: Record<string, string> = {
     "provider.type": "type",
     "provider.model_name": "model name",
@@ -287,31 +281,26 @@ test("R7: an agent tab's search can only ever return the scope's four groups", (
   assert.equal(filterSettingGroups(groups, "vision").length, 0);
 });
 
-// --- SettingsTab.vue wiring: strip, tab source, search, one write path ---
+// -- SettingsTab.vue wiring: strip, tab source, search, one write path --
 
 test("R8: the scope strip exists only when the payload carries a scope", () => {
-  // scopeTabs is Main + one per scope, so a bare payload (zero scopes)
-  // renders the pane with NO strip at all - the tier-2b shape
+  // scopeTabs is Main + one per scope, so a bare payload (zero scopes) renders the pane
+  // with NO strip at all.
   assert.match(SETTINGS_TAB, /const scopeTabs = computed<\{ name: string \| null; label: string \}\[\]>\(\(\) => \[\s*\{ name: null, label: "Main" \},\s*\.\.\.scopes\.value\.map/);
-  // card t_a8063683: the gate moved to the HEAD WRAPPER - the head is a
-  // flex child, so an ungated wrapper would hold an empty seat even with
-  // the strip gone.
+  // the gate moved to the HEAD WRAPPER.
   assert.match(SETTINGS_TAB, /<div\s+v-if="scopeTabs\.length > 1"\s+class="settings-content-head">/);
   assert.match(SETTINGS_TAB, /class="settings-scopes"/);
-  // role=tablist + aria-selected: the strip is one tablist, Main first
   assert.match(SETTINGS_TAB, /role="tablist"[\s\S]*?role="tab"[\s\S]*?:aria-selected="tab\.name === activeScope"/);
 });
 
 test("R3: an agent tab's ONE group source is the scope's four groups", () => {
-  // allGroups short-circuits to scopeGroups on an agent tab: no Commonly
-  // Used, no chat/dock client state, no other registry group
+  // allGroups short-circuits to scopeGroups on an agent tab.
   assert.match(
     SETTINGS_TAB,
     /if \(activeScope\.value !== null\) return scopeGroups\.value;/,
   );
   assert.match(SETTINGS_TAB, /const SCOPE_GROUP_LABELS[\s\S]*?provider: "provider",[\s\S]*?system_prompt: "system prompt",[\s\S]*?description: "description",[\s\S]*?max_turns: "max turns"/);
-  // the chat client-state group never renders on an agent tab: the agent
-  // branch returns BEFORE chat/dock are concatenated
+  // the chat client-state group never renders on an agent tab.
   const branch = SETTINGS_TAB.indexOf("if (activeScope.value !== null) return scopeGroups.value;");
   assert.ok(branch > 0);
   // the chat/dock concatenation sits AFTER the agent-tab short-circuit
@@ -319,7 +308,6 @@ test("R3: an agent tab's ONE group source is the scope's four groups", () => {
 });
 
 test("R7: the search is per scope and filters that scope's groups", () => {
-  // one writable query per tab, keyed by the active scope
   assert.match(SETTINGS_TAB, /const queries = reactive<Record<string, string>>\(\{\}\);/);
   assert.match(SETTINGS_TAB, /get: \(\) => queries\[activeScope\.value \?\? "main"\] \?\? ""/);
   // the filter runs on the tab's OWN group list - no second filter
@@ -328,17 +316,14 @@ test("R7: the search is per scope and filters that scope's groups", () => {
 
 test("R4: agent writes ride the existing agents edit endpoint, one call per save", () => {
   assert.match(SETTINGS_TAB, /await updateAgentConfig\(name, diff\.body\)/);
-  // the count and the wire are the same derivation
   assert.match(SETTINGS_TAB, /const diff = scopeConfigDiff\(/);
-  // a landed save adopts the draft BEFORE the refresh: a refresh that
-  // cannot reach the host never blanks the tab, and no queued removal
-  // outlives the key it just deleted
+  // a landed save adopts the draft BEFORE the refresh: a refresh that cannot reach the
+  // host never blanks the tab, and no queued removal outlives the key it just deleted
   assert.match(
     SETTINGS_TAB,
     /state\.loaded = \{ \.\.\.state\.draft \};[\s\S]{0,260}?applyScopes\(await fetchSettingsScopes\(\)\)/,
     "the refresh reads the SCOPES slice (card t_0a9edc72), never the whole knob document",
   );
-  // a refusal pins the endpoint's words and renders the tab read-only
   assert.match(SETTINGS_TAB, /scopeLocks\[name\] = err instanceof Error \? err\.message : String\(err\)/);
   assert.match(SETTINGS_TAB, /v-if="scopeMessage"/);
   assert.match(SETTINGS_TAB, /v-if="dirtyCount > 0 && !scopeReadOnly"/);

@@ -19,7 +19,7 @@ import (
 )
 
 // Plugin adapts the terminal capsule into omega's plugin system. Since
-// the 0.17.3 modules fold (card t_ee3a968b) ONE registration carries
+// the 0.17.3 modules fold ONE registration carries
 // both faces of the shell domain: the agent's tool family (shell.run /
 // shell.list / shell.read / shell.kill, built by mountShellTools over the
 // process: section's registry) AND the webui's integrated terminal pane
@@ -32,11 +32,11 @@ import (
 // rest"), so a `disabled: [terminal]` fold takes the tools, the routes
 // and every live shell with it.
 //
-// IDENTITY (card t_9ae9a25a): the module name IS the package/capsule
+// IDENTITY: the module name IS the package/capsule
 // name. The webui's composition manifests derive each dockable id from
 // the capsule's ui/ dir (`harness/<name>/ui` -> `{ module: "<name>" }`)
 // and the dock's runtime gate joins those ids against the live module
-// list, so plugin Name(), the package dir and the ui dir agree by
+// list, so plugin Name, the package dir and the ui dir agree by
 // construction. The capsule answered "shell" while its dir and dockable
 // id said "terminal", and the Terminal chip therefore survived a
 // module toggle-off. The model-facing tool names stay `shell.*` - that
@@ -49,53 +49,43 @@ import (
 //
 // The routes (all under the module's own "/terminal" namespace):
 //
-//	GET    /terminal/sessions     - the store snapshot (claim is POST)
-//	POST   /terminal/sessions     - claim-else-spawn one session
+// GET /terminal/sessions - the store snapshot (claim is POST)
+// POST /terminal/sessions - claim-else-spawn one session
 //	                               (?session=<id>: the focused chat row
-//	                               roots the spawn's cwd - t_62d72028)
-//	GET    /terminal/{id}/stream  - the output SSE (replays the tail)
-//	POST   /terminal/{id}/input   - keystrokes/paste into the shell
-//	POST   /terminal/{id}/resize  - the pane's rows/cols (SIGWINCH)
-//	DELETE /terminal/{id}         - kill + forget the shell
+// roots the spawn's cwd - )
+// GET /terminal/{id}/stream - the output SSE (replays the tail)
+// POST /terminal/{id}/input - keystrokes/paste into the shell
+// POST /terminal/{id}/resize - the pane's rows/cols (SIGWINCH)
+// DELETE /terminal/{id} - kill + forget the shell
 //
 // Removal proof: TestTerminalRemovalProof (cmd/omega/removal_test.go).
 type Plugin struct {
 	store *Store
-	// provider is the tool face (the shell verb family over the process
-	// registry); MountWithAPI builds it from the config sections.
 	provider *ShellProvider
-	// storeFn resolves the workspace-pin face LIVE per claim (the seam
-	// resolve per request - a toggle swaps the offer under the
-	// handlers' feet, exactly the Files tab's law). nil = the chain
-	// falls through to the knob and the cwd.
+	// storeFn resolves the workspace-pin face LIVE per claim (the seam resolve per request
+	// - a toggle swaps the offer under the handlers' feet, exactly the Files tab's law).
+	// nil = the chain falls through to the knob and the cwd.
 	storeFn func() sessionStores
-	// defaultWorkspace is the `default_workspace` knob (card
-	// t_62d72028): the spawn workspace chain's step 2. Written by
-	// SetDefaultWorkspace (boot + the settings seam's hot-apply)
-	// while claims read it concurrently, so it rides an atomic
-	// value - never a bare field.
+	// defaultWorkspace is the `default_workspace` knob. Written by SetDefaultWorkspace
+	// (boot + the settings seam's hot-apply) while claims read it concurrently, so it
+	// rides an atomic value - never a bare field.
 	defaultWorkspace atomic.Value
 }
 
-// NewPlugin builds the terminal plugin. workdir is the spawn fallback
-// (omega's process working directory); defaultWorkspace is the
-// server.default_workspace knob's boot value ("" = unset).
+// NewPlugin builds the terminal plugin.
 func NewPlugin(workdir, defaultWorkspace string) *Plugin {
 	p := &Plugin{store: NewStore(spawnProcess, workdir, nil)}
 	p.defaultWorkspace.Store(defaultWorkspace)
 	return p
 }
 
-// SetDefaultWorkspace is the host's hot-apply hook (card t_62d72028):
-// the settings pane (and the config watcher) push a changed
-// default_workspace so the NEXT spawn follows it live, no restart -
-// the files capsule's knob, same discipline.
+// SetDefaultWorkspace is the host's hot-apply hook.
 func (p *Plugin) SetDefaultWorkspace(ws string) {
 	p.defaultWorkspace.Store(ws)
 }
 
-// NewPluginWithStore is the test constructor (the store's spawn seam
-// is the injection point; handlers stay the production ones).
+// NewPluginWithStore is the test constructor (the store's spawn seam is the injection
+// point.
 func NewPluginWithStore(store *Store) *Plugin {
 	return &Plugin{store: store}
 }
@@ -103,13 +93,9 @@ func NewPluginWithStore(store *Store) *Plugin {
 // Store returns the plugin's store (the lifecycle fence drives it).
 func (p *Plugin) Store() *Store { return p.store }
 
-// Name returns the plugin name (the modules registry row, the capsule
-// namespace owner). It is `terminal`: the package dir, this name and
-// the webui's dockable id are ONE identity (card t_9ae9a25a - the
-// dock's module gate joins the registry row against the composition
-// manifest, so a second name for the same capsule leaves its chip
-// ungated). The tool names never moved (shell.run/list/read/kill are
-// API surface, registered on the built-in vocabulary rail).
+// Name returns the plugin name (the modules registry row, the capsule namespace owner).
+// The tool names never moved (shell.run/list/read/kill are API surface, registered on
+// the built-in vocabulary rail).
 func (p *Plugin) Name() string { return "terminal" }
 
 // Description implements agent.Describer: both faces on one line.
@@ -117,37 +103,20 @@ func (p *Plugin) Description() string {
 	return "shell: the agent's shell tool family (shell.run/list/read/kill) + the webui's integrated terminal (xterm.js over a pty stream)"
 }
 
-// Provides lists the seam this plugin mounts: the additive tools rail
-// only (the pane's routes ride api.RegisterRoute, not a seam).
+// Provides lists the seam this plugin mounts.
 func (p *Plugin) Provides() []string { return []string{"tools"} }
 
 // Requires lists seams that must mount before this plugin.
 func (p *Plugin) Requires() []string { return nil }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs:
-// `process:` is the shell registry's knobs (log_max_bytes,
-// kill_grace_seconds) - the section name is history, the machinery is
-// the shell domain's (card t_5a49790b). The tool face also reads the
-// `store` section (the instance-db guard); that section is routed by the
-// store capsule and read from the same map.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "process" }
 
-// Toggleable marks the shell as an opinionated module (0.17.3 tier
-// re-law, card t_ee3a968b): the config.yaml disabled: list may name it -
-// the toggle takes the tool family, the pane routes and the lifecycle
-// fence (the stop kills every shell) together.
+// Toggleable marks the shell as an opinionated module.
 func (p *Plugin) Toggleable() bool { return true }
 
 // MountWithAPI implements agent.APIPlugin: both faces, one registration.
-// The tool family first (guard from the store config, registry from the
-// process section), then the route surface + the lifecycle fence (the
-// pruning lives in the fence's start; the stop kills every session - a
-// toggle-off or a dismount reaps its shells). The claim is the module
-// name: /terminal here, cross-tenant claims of the same route patterns
-// are the registry's refusal.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
-	// the tool face: the guard refuses any command that resolves into
-	// the instance database (Endo's law 2026-10-18)
 	var guard *datadir.Guard
 	if c, ok := ctx.Configs["store"].(store.Config); ok {
 		guard = datadir.NewGuard(c.DBPath)
@@ -159,24 +128,18 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		rcfg = c
 	}
 	p.provider = NewShellProvider(guard, NewRegistry(rcfg))
-	// the shell.* verb family predates the capsule tier and keeps its
-	// model-facing names (the prompt, the approval gate and every
-	// transcript address them): the module-namespace claim would refuse
-	// `shell.run` from a capsule named `terminal`, so the names ride the
-	// built-in VOCABULARY rail exactly like the store's sessions.* and
-	// the tools capsule's files.grep/glob (RegisterBuiltinTool). The
-	// module identity is the capsule (`terminal`); the tool namespace is
-	// API surface, and renaming it is an Endo decision, not a rename
-	// side effect (card t_9ae9a25a).
+	// the shell.* verb family predates the capsule tier and keeps its model-facing names
+	// (the prompt, the approval gate and every transcript address them): the
+	// module-namespace claim would refuse `shell.run` from a capsule named `terminal`, so
+	// the names ride the built-in VOCABULARY rail exactly like the store's sessions.* and
+	// the tools capsule's files.grep/glob (RegisterBuiltinTool).
 	for name, t := range p.provider.Tools() {
 		if err := api.RegisterBuiltinTool(name, t); err != nil {
 			return err
 		}
 	}
 
-	// the pane face: the workspace-pin face resolves LIVE per claim (card
-	// t_62d72028) - nil-safe absence rides, the chain falls through to
-	// the knob
+	// the pane face: the workspace-pin face resolves LIVE per claim - nil-safe absence.
 	p.storeFn = func() sessionStores { return seam[sessionStores](ctx, "store") }
 	if err := api.RegisterRoute("GET /terminal/sessions", p.handleList); err != nil {
 		return err
@@ -214,15 +177,9 @@ type claimReply struct {
 	Existed bool   `json:"claimed"` // false = freshly spawned
 }
 
-// handleClaim claims-else-spawns one session (the pane's open). The
-// reattach scan, the spawn and the claim mark ride one lock in
-// Store.Claim; the stream's subscribe below clears the mark - the
-// claim/attach gap cannot hand the shell to a second pane. The spawn
-// lands in the RESOLVED workspace (card t_62d72028): the focused
-// session's pinned root (?session=), else the default_workspace knob,
-// else omega's process cwd - the same chain the Files tab and the
-// shell tool resolve, so a freshly spawned shell starts at pwd ==
-// the workspace the pane sits on.
+// handleClaim claims-else-spawns one session (the pane's open). The reattach scan, the
+// spawn and the claim mark ride one lock in Store.Claim; the stream's subscribe below
+// clears the mark - the claim/attach gap cannot hand the shell to a second pane.
 func (p *Plugin) handleClaim(w http.ResponseWriter, r *http.Request) {
 	s, claimed, err := p.store.Claim(p.resolveSpawnDir(r))
 	if err != nil {
@@ -237,7 +194,7 @@ func (p *Plugin) handleClaim(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, claimReply{ID: s.id, Existed: claimed})
 }
 
-// resolveSpawnDir is the spawn workspace law (card t_62d72028), the
+// resolveSpawnDir is the spawn workspace law, the
 // Files tab's resolution chain wearing the terminal's face:
 //  1. the focused session's pinned workspace (the store row), live:
 //     every claim re-reads it, so a re-pin lands on the next spawn;
@@ -268,10 +225,7 @@ func (p *Plugin) handleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": p.store.List()})
 }
 
-// handleStream is the output SSE: replay the tail first, then live
-// events ("o" output chunks, "x" exit), pings keeping the stream warm.
-// Unknown id = 404; a known id streams even after exit (the replay +
-// exit frame is how a page reload shows the dead shell's tail).
+// handleStream is the output SSE.
 func (p *Plugin) handleStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	s := p.store.Get(id)
@@ -279,8 +233,7 @@ func (p *Plugin) handleStream(w http.ResponseWriter, r *http.Request) {
 		httpError(w, fmt.Errorf("no such terminal"), http.StatusNotFound)
 		return
 	}
-	// the adopt: a stream opening the claimed session clears the
-	// claim mark inside Session.subscribe (one lock, no replay/live gap)
+	// the adopt: a stream opening the claimed session clears the claim mark inside.
 	sub, replay, alreadyExited := s.subscribe()
 	defer s.unsubscribe(sub)
 
@@ -292,8 +245,7 @@ func (p *Plugin) handleStream(w http.ResponseWriter, r *http.Request) {
 		writeSSE(w, outputFrame(replay))
 		flusher.Flush()
 	}
-	// a reattach to an already-dead shell: the exit frame carries the
-	// recorded code and is the stream's last (no future events exist)
+	// a reattach to an already-dead shell.
 	if alreadyExited {
 		s.mu.Lock()
 		code := s.exitCode
@@ -305,8 +257,7 @@ func (p *Plugin) handleStream(w http.ResponseWriter, r *http.Request) {
 	tick := time.NewTicker(20 * time.Second)
 	defer tick.Stop()
 
-	// the pane fell behind (publish dropped it) - one miss frame, the
-	// pane reconnects and replays
+	// the pane fell behind (publish dropped it).
 	if sub.missed {
 		writeSSE(w, frameJSON(wireFrame{T: "m"}))
 		flusher.Flush()
@@ -322,14 +273,12 @@ func (p *Plugin) handleStream(w http.ResponseWriter, r *http.Request) {
 				flusher.Flush()
 				return
 			}
-			// the SSE comment ping keeps middleboxes from dropping
-			// an idle stream (a quiet shell is a legal state)
+			// the SSE comment ping keeps middleboxes from dropping an idle stream (a quiet.
 			fmt.Fprint(w, ": ping\n\n")
 			flusher.Flush()
 		case ev, ok := <-sub.ch:
 			if !ok {
-				// the session was removed under us (kill, prune,
-				// cap law) - the close is the signal
+				// the session was removed under us (kill, prune, cap law) - the close is the signal
 				writeSSE(w, frameJSON(wireFrame{T: "m"}))
 				flusher.Flush()
 				return
@@ -351,10 +300,7 @@ func (p *Plugin) handleStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleInput writes one keystroke/paste frame into the shell. The
-// body is the raw bytes (octet-stream: control chars are data, JSON
-// would quote them into ambiguity); a 64 KiB ceiling stops a file
-// dump arriving as "a paste".
+// handleInput writes one keystroke/paste frame into the shell.
 func (p *Plugin) handleInput(w http.ResponseWriter, r *http.Request) {
 	s := p.store.Get(r.PathValue("id"))
 	if s == nil {
@@ -377,8 +323,7 @@ func (p *Plugin) handleInput(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"written": len(body)})
 }
 
-// handleResize sets the pty's window: {rows, cols}. A resize wakes
-// curses programs via SIGWINCH; the numbers are ints on the wire.
+// handleResize sets the pty's window: {rows, cols}.
 func (p *Plugin) handleResize(w http.ResponseWriter, r *http.Request) {
 	s := p.store.Get(r.PathValue("id"))
 	if s == nil {
@@ -404,8 +349,8 @@ func (p *Plugin) handleResize(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"rows": req.Rows, "cols": req.Cols})
 }
 
-// handleKill kills + forgets one session (the pane's kill affordance
-// and the cap/leave path). Missing = idempotent 204.
+// handleKill kills + forgets one session (the pane's kill affordance and the. Missing =
+// idempotent 204.
 func (p *Plugin) handleKill(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	gone := p.store.Drop(id)
@@ -413,7 +358,7 @@ func (p *Plugin) handleKill(w http.ResponseWriter, r *http.Request) {
 	_ = gone
 }
 
-// -- small shared writers ------------------------------------------------
+// - small shared writers -----------------------------------------------
 
 func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -440,20 +385,17 @@ func httpError(w http.ResponseWriter, err error, status int) {
 	writeJSON(w, status, map[string]any{"error": err.Error()})
 }
 
-// -- the SSE wire frames ------------------------------------------------
+// - the SSE wire frames -----------------------------------------------
 
-// wireFrame is the SSE "data:" payload. t: "o" output (d = the
-// base64 chunk), "x" exit (c = the child's exit code), "m" missed
-// (the pane fell behind or the session vanished - reconnect+replay).
+// wireFrame is the SSE "data:" payload.
 type wireFrame struct {
 	T string `json:"t"`
 	D string `json:"d,omitempty"`
 	C *int   `json:"c,omitempty"`
 }
 
-// writeSSE writes one data frame. The newline risk is zero: shell
-// bytes never ride the wire raw - the frames are JSON, the payload is
-// base64.
+// writeSSE writes one data frame. The newline risk is zero: shell bytes never ride the
+// wire raw - the frames are JSON, the payload is base64.
 func writeSSE(w io.Writer, frame string) {
 	fmt.Fprintf(w, "data: %s\n\n", frame)
 }
@@ -465,8 +407,8 @@ func outputFrame(d []byte) string {
 func frameJSON(f wireFrame) string {
 	b, err := json.Marshal(f)
 	if err != nil {
-		// unreachable shape (bytes -> base64 -> string); a dropped
-		// frame beats a broken stream - send the reconnect marker
+		// unreachable shape (bytes -> base64 -> string); a dropped frame beats a broken
+		// stream.
 		return frameJSON(wireFrame{T: "m"})
 	}
 	return string(b)

@@ -1,10 +1,6 @@
 package api
 
-// Server-side retry tests (t_357cbe9c): POST /chat {"retry": true}
-// re-runs the session's PERSISTED last user message - no new user turn
-// is stored (option a, keep-and-append: the previous cancelled/partial
-// response stays visible, the fresh response appends below it), the run
-// slot's 409 gate still applies, and cancel mid-retry keeps the partial.
+// Server-side retry tests: POST /chat {"retry".
 
 import (
 	"github.com/EndoTheDev/omega/agent"
@@ -20,10 +16,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// multiProvider is stepProvider re-armable across runs (t_357cbe9c
-// tests need two+ sequential runs on one server): done() closes the
-// current script channel, ends the run, and arms fresh for the next -
-// each run's Stream holds ITS channel by value at call time.
+// multiProvider is stepProvider re-armable across runs.
 type multiProvider struct {
 	modelName string
 	next      chan []core.ProviderStreamEvent
@@ -69,15 +62,13 @@ func (p *multiProvider) Stream(_ context.Context, _ []core.Message, _ []llm.Tool
 
 func (p *multiProvider) send(batch ...core.ProviderStreamEvent) { p.next <- batch }
 
-// done closes the current script (run ends without a StreamEnd) and
-// re-arms for the next run.
+// done closes the current script (run ends without a StreamEnd) and re-arms for the.
 func (p *multiProvider) done() {
 	close(p.next)
 	p.arm()
 }
 
-// newMultiServer wires agent + store over a multiProvider (the retry
-// tests run several sequential scripted runs on one server).
+// newMultiServer wires agent + store over a multiProvider (the retry tests run.
 func newMultiServer(t *testing.T) (*Server, *multiProvider, *store.Store, *httptest.Server) {
 	t.Helper()
 	prov := newMultiProvider("step")
@@ -94,8 +85,7 @@ func newMultiServer(t *testing.T) (*Server, *multiProvider, *store.Store, *httpt
 	return s, prov, st, ts
 }
 
-// postRetryBody POSTs an arbitrary body to /chat and returns the
-// response (caller closes).
+// postRetryBody POSTs an arbitrary body to /chat and returns the response (caller.
 func postRetryBody(t *testing.T, ts *httptest.Server, body string) *http.Response {
 	t.Helper()
 	resp, err := http.Post(ts.URL+"/chat", "application/json", bytes.NewReader([]byte(body)))
@@ -121,16 +111,12 @@ func messagesOf(t *testing.T, st *store.Store, id string) []core.Message {
 	return msgs
 }
 
-// TestChatRetryAppendsBelowLastUserTurn pins the decided semantics:
-// after a completed exchange, {"retry":true} re-runs the last user
-// message with NO new user turn persisted and the fresh response
-// appended below the previous one.
+// TestChatRetryAppendsBelowLastUserTurn pins the decided semantics.
 func TestChatRetryAppendsBelowLastUserTurn(t *testing.T) {
 	s, prov, st, ts := newMultiServer(t)
 	createSession(t, ts, "s1")
 	muteTitles(t, st, "s1")
 
-	// first exchange: user "hi" -> "first answer"
 	resp, cancel, _ := postChatStream(t, ts, "s1")
 	prov.send(finalStep("first answer")...)
 	prov.done()
@@ -143,7 +129,6 @@ func TestChatRetryAppendsBelowLastUserTurn(t *testing.T) {
 		t.Fatalf("after first exchange len = %d, want 2 (user + assistant)", len(msgs))
 	}
 
-	// the retry: no messages on the wire
 	resp2 := postRetry(t, ts, "s1")
 	defer resp2.Body.Close()
 	if resp2.StatusCode != http.StatusOK {
@@ -176,8 +161,8 @@ func TestChatRetryAppendsBelowLastUserTurn(t *testing.T) {
 	}
 }
 
-// TestChatRetryGatesOnLiveRun: a retry while the session's run slot is
-// taken is the same 409 a normal send gets - and it persists nothing.
+// TestChatRetryGatesOnLiveRun: a retry while the session's run slot is taken is the
+// same 409 a normal send gets.
 func TestChatRetryGatesOnLiveRun(t *testing.T) {
 	s, prov, st, ts := newMultiServer(t)
 	createSession(t, ts, "s9")
@@ -196,7 +181,6 @@ func TestChatRetryGatesOnLiveRun(t *testing.T) {
 		t.Fatalf("retry during live run status = %d, want 409", resp2.StatusCode)
 	}
 
-	// unwind the live run, then assert nothing extra persisted
 	prov.done()
 	waitFor(t, "run finished", func() bool { return !s.runs.active("s9") })
 	msgs := messagesOf(t, st, "s9")
@@ -205,16 +189,12 @@ func TestChatRetryGatesOnLiveRun(t *testing.T) {
 	}
 }
 
-// TestChatRetryCancelMidRunKeepsPartial: a cancelled RETRY run persists
-// its partial output like any cancelled send, and the transcript then
-// reads user - partial - next-response (the prior response stays
-// visible - keep-and-append).
+// TestChatRetryCancelMidRunKeepsPartial: a cancelled RETRY run persists its partial.
 func TestChatRetryCancelMidRunKeepsPartial(t *testing.T) {
 	s, prov, st, ts := newMultiServer(t)
 	createSession(t, ts, "s7")
 	muteTitles(t, st, "s7")
 
-	// first exchange completes
 	resp, cancel, _ := postChatStream(t, ts, "s7")
 	prov.send(finalStep("first")...)
 	prov.done()
@@ -222,7 +202,6 @@ func TestChatRetryCancelMidRunKeepsPartial(t *testing.T) {
 	resp.Body.Close()
 	cancel()
 
-	// the retry streams one chunk, then the run is cancelled mid-flight
 	resp2 := postRetry(t, ts, "s7")
 	defer resp2.Body.Close()
 	if resp2.StatusCode != http.StatusOK {
@@ -258,17 +237,14 @@ func TestChatRetryCancelMidRunKeepsPartial(t *testing.T) {
 	}
 }
 
-// TestChatRetryGuards: a retry only makes sense for an existing
-// session's persisted history - sessionless, message-carrying, and
-// user-less-session retries are all rejected BEFORE anything happens
-// (and before auto-create creates an empty session to fail into).
+// TestChatRetryGuards: a retry only makes sense for an existing session's persisted
+// history.
 func TestChatRetryGuards(t *testing.T) {
 	_, _, st, ts := newMultiServer(t)
 	if err := st.CreateSession(context.Background(), "s-empty", "", ""); err != nil {
 		t.Fatalf("create empty session: %v", err)
 	}
 
-	// no session id at all
 	resp := postRetry(t, ts, "")
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {

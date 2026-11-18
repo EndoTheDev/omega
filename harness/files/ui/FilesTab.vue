@@ -4,17 +4,14 @@
     class="aside pane inspector-panel"
     :class="{ open: open, narrow: narrow }">
     <div class="inspector-files">
-      <!-- card t_a5f9d185: the VS Code-style section header - workspace
-           name flush LEFT, the 4 action icons (t_a4504a25: add file /
-           add folder / refresh / collapse) flush RIGHT on ONE row, tree
-           rows' rhythm (~22px), no container box, tree starts directly
-           below. Ruled with Endo: NO resolvable workspace = NO header
-           (the cwd fallback renders a bare tree; removing the header
-           removes the feature row - true deletability).
-           card t_308e6d9b: the band is the SHARED TabBand now (the
-           universal top-bar contract this tab defined) - and it is
-           structurally pinned: the band renders BEFORE the scroll body,
-           so a long tree never scrolls it away. -->
+      <!--
+        the VS Code-style section header.
+        Ruled with Endo: NO resolvable workspace = NO header (the cwd fallback renders
+        a bare tree; removing the header removes the feature row - true deletability).:
+        the band is the SHARED TabBand now (the universal top-bar contract this tab
+        defined) - and it is structurally pinned: the band renders BEFORE the scroll
+        body, so a long tree never scrolls it away.
+      -->
       <TabBand
         v-if="headerName"
         :title="headerName"
@@ -105,14 +102,9 @@
 </template>
 
 <script setup lang="ts">
-  // the inspector's FILES tab (card t_4ae27e0d): the pre-reset
-  // RightSidebar's chip strip dissolved - files is a REAL dock tab whose
-  // content the dock tabbar hosts (app.vue's pane-files outlet). The
-  // module views (cron / logs / skills / tools) live beside it through
-  // InspectorPanel.vue; module-owned components stayed untouched.
-  // Lazy: the tab unmounts when the dock switches views, so the root
-  // listing refetches on every re-entry (fresher than the old
-  // fetch-once guard, and never a poll - nothing here loops).
+  // the inspector's FILES tab. Lazy: the tab unmounts when the dock switches views, so
+  // the root listing refetches on every re-entry (fresher than the old fetch-once
+  // guard, and never a poll - nothing here loops).
   import { computed, inject, ref, watch } from "vue";
   import {
     createTargetDir,
@@ -132,21 +124,15 @@
   import { DOCK_VIEWER_OPEN_KEY, FOCUSED_SESSION_KEY } from "~/composables/viewer";
   import type { ViewerRef } from "~/composables/dockables";
   import FileTree from "./FileTree.vue";
-  // card t_a4504a25: the toolbar's glyph set (icons.ts vocabulary)
+  // the toolbar's glyph set (icons.ts vocabulary)
   import Icon from "~/components/ui/Icon.vue";
 
-  // `open` is the mobile drawer overlay state (desktop tabs never pass it
-  // up - the pane is always shown). Root listing loads on mount: the dock
-  // only activates a tab's content when the tab IS active.
+  // `open` is the mobile drawer overlay state (desktop tabs never pass it up.
   defineProps<{
     open?: boolean;
   }>();
 
-  // the narrow adaptation - the module-UI recipe (card t_a2fdc630):
-  // the root measures its OWN rendered container (this tab rides both
-  // the inspector column and main-pane-width mounts) and flips the
-  // class; the tree gets it passed down (the size-column collapse is
-  // the flip's only consumer now).
+  // the narrow adaptation - the module-UI recipe.
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = useNarrow(rootEl);
 
@@ -154,14 +140,10 @@
   const loadingRoot = ref(false);
   const rootError = ref("");
 
-  // --- root resolution law, client half (card t_a5f9d185) ---
-  // the tab sends the focused chat tab's SESSION ID (never a root) with
-  // every request; the server resolves session workspace ->
-  // default_workspace -> cwd. The watch re-roots when the focus moves to
-  // another session - and when the focused session's row workspace
-  // changes (the workspace chip writes the row + refreshSessions feeds
-  // it back). The header shows exactly what the server resolved: name
-  // = basename, hidden entirely when the cwd fallback stands.
+  // -- root resolution law, client half --- the tab sends the focused chat tab's
+  // SESSION ID (never a root) with every request; the server resolves session workspace
+  // -> default_workspace -> cwd. The header shows exactly what the server resolved:
+  // name = basename, hidden entirely when the cwd fallback stands.
   const focusedSession = inject(FOCUSED_SESSION_KEY, null);
   const sessionId = computed(() => focusedSession?.value ?? undefined);
 
@@ -171,23 +153,17 @@
     filesHeaderVisible(headerSource.value) ? filesRootName(headerRoot.value) : "",
   );
 
-  // card t_36ceb99b: the opener seam - a file click MINTS/FOCUSES a
-  // main-pane viewer tab; the app provides always (mobile drawer mounts
-  // included). No inline preview survives here.
+  // the opener seam - a file click MINTS/FOCUSES a main-pane viewer tab.
   const openViewerRef = inject(DOCK_VIEWER_OPEN_KEY, null);
 
   function openFile(path: string) {
     openViewerRef?.({ kind: "file", name: path } satisfies ViewerRef);
   }
 
-  // card t_3e12c367: the boot fetch races its own re-root. On reload the
-  // mount fetch goes out while focus is still unresolved (the sessionless
-  // boot state - server answers the default/cwd fallback), and the focus
-  // watch's refetch goes out milliseconds later. The boot response can
-  // resolve AFTER the refetch's and clobber it (last-writer-wins: the tab
-  // sat wrong on the fallback root until a remount). A round counter
-  // keeps the LATEST-REQUESTED fetch as the only writer: a stale response
-  // is dropped, never rendered.
+  // the boot fetch races its own re-root. The boot response can resolve AFTER the
+  // refetch's and clobber it (last-writer-wins: the tab sat wrong on the fallback root
+  // until a remount). A round counter keeps the LATEST-REQUESTED fetch as the only
+  // writer: a stale response is dropped, never rendered.
   const rootRounds = latestWins();
   async function loadRoot() {
     const admitted = rootRounds.begin();
@@ -207,12 +183,7 @@
     }
   }
 
-  // re-root triggers: a different focused session, or the focused
-  // session's row workspace changing (the chip's write + the refreshed
-  // row both flow through here). refreshFiles (not loadRoot) so the
-  // bus also drops the tree's cached branch listings - a relative path
-  // means a different directory under the new root. No immediate
-  // watcher - the mount call below loads once already.
+  // re-root triggers: a different focused session, or the focused session's row.
   const chatHost = inject(CHAT_HOST_KEY, null);
   const rowWorkspace = computed(() => {
     const id = focusedSession?.value ?? null;
@@ -222,7 +193,6 @@
     void refreshFiles();
   });
 
-  // --- toolbar (card t_a4504a25) ---
 
   function onSelect(sel: SelectedNode) {
     selected.value = sel;
@@ -245,10 +215,7 @@
     toolError.value = "";
   }
 
-  // confirmCreate POSTs the validated name at the selected folder (or
-  // the tree root): server refusals land in the inline error, successes
-  // refresh the root + every expanded branch, reveal the new node, and
-  // select it (files open their viewer tab, folders become the target).
+  // confirmCreate POSTs the validated name at the selected folder (or the tree root).
   async function confirmCreate() {
     const kind = creating.value;
     if (!kind || creatingBusy.value) return;
@@ -292,11 +259,12 @@
 </script>
 
 <style scoped>
-  /* card t_308e6d9b: the band + scroll shape. `.inspector-files` stops
-     being the scrollport - it is the column that anchors the band; the
-     scroll rules moved to `.files-scroll` (overflow is the BODY's, the
-     band can never scroll away). The old scrollport block in main.css
-     carries the same law. */
+  /*
+   * the band + scroll shape.
+   * `.inspector-files` stops being the scrollport - it is the column that anchors the
+   * band; the scroll rules moved to `.files-scroll` (overflow is the BODY's, the band
+   * can never scroll away).
+   */
   .inspector-files {
     flex: 1;
     min-height: 0;
@@ -310,10 +278,11 @@
     overflow-x: hidden;
     padding-bottom: 8px;
   }
-  /* card t_5c660a42 note: the band's 14px lead-in now rides the shared
-     TabBand (the tuck clear-out is the component's contract). */
+  /*
+   * note: the band's 14px lead-in now rides the shared TabBand (the tuck clear-out is
+   * the component's contract).
+   */
 
-  /* the inline create form - the agents panel's create shape, one row */
   .files-add {
     display: flex;
     align-items: center;
@@ -351,8 +320,5 @@
     color: var(--text-dim);
   }
 
-  /* narrow (card t_a2fdc630): the tree gets the flag passed down - once
-       the preview left (t_36ceb99b), the tab is just the tree; the
-       recipe's measuring root stays (the flip is the tree's size-column
-       collapse trigger). */
+  /* narrow: the tree gets the flag passed down. */
 </style>

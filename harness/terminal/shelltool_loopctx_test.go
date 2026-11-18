@@ -1,12 +1,9 @@
 package terminal
 
-// The loop hand-off pin (card t_74428a10): the live lane saw shell.run
-// answer the service cwd (System32) even though the workspace chip showed
-// the configured default. The tool half is pinned by TestShellRoot; this
-// pins the LOOP half: a RunWorkspace ctx carried into Agent.RunWithProvider
-// must survive to every t.Run call the real loop makes, so the shell's
-// cmd.Dir is the workspace - never the process cwd. Drives the real
-// agent/loop with a scripted provider, no server involved.
+// The loop hand-off pin: the live lane saw shell.run answer the service cwd. The tool
+// half is pinned by TestShellRoot; this pins the LOOP half: a RunWorkspace ctx carried
+// into Agent.RunWithProvider must survive to every t.Run call the real loop makes, so
+// the shell's cmd.Dir is the workspace - never the process cwd.
 
 import (
 	"context"
@@ -31,7 +28,6 @@ func TestLoopShellsRunInTheWorkspace(t *testing.T) {
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "shell.run", Arguments: map[string]any{"command": probe}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		// Turn 2: respond and stop.
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "done"},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},

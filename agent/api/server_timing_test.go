@@ -1,16 +1,9 @@
 package api
 
-// Multi-turn timing persistence: every assistant segment of a tool-loop
-// run - including post-tool segments - must carry a timing record on
-// reload. The live meters die with the SSE stream, so the server-side
-// numbers are all the webui has. Regression for the reproduced report:
-// the 'say one -> sleep -> say two -> say done' sequence persisted
-// timing only on the first segment; post-tool segments reloaded with
-// timing=nil.
-//
-// The real agent loop (agent/loop) runs against a delayed fake
-// provider: each streamed event lands ~timingDelay after the previous
-// one, so every phase boundary is measurable wall-clock time.
+// Multi-turn timing persistence: every assistant segment of a tool-loop run - including
+// post-tool segments - must carry a timing record on reload. Regression for the
+// reproduced report: the 'say one -> sleep -> say two -> say done' sequence persisted
+// timing only on the first segment; post-tool segments reloaded with timing=nil.
 
 import (
 	"github.com/EndoTheDev/omega/agent"
@@ -29,9 +22,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// eventDelay spaces consecutive streamed events so chunk-to-chunk and
-// boundary-to-chunk deltas stay above any scheduler jitter floor the
-// assertions use.
+// eventDelay spaces consecutive streamed events so chunk-to-chunk and.
 const eventDelay = 60 * time.Millisecond
 
 // toolSleep is the scripted tool duration. Assert floors must stay
@@ -89,8 +80,7 @@ type persistedMessage struct {
 	Timing  *core.Timing `json:"timing"`
 }
 
-// fetchPersistedMessages GETs the session detail and decodes every
-// message with its timing record.
+// fetchPersistedMessages GETs the session detail and decodes every message with its.
 func fetchPersistedMessages(t *testing.T, ts *httptest.Server, id string) []persistedMessage {
 	t.Helper()
 	resp, err := ts.Client().Get(ts.URL + "/sessions/" + id)
@@ -110,9 +100,8 @@ func fetchPersistedMessages(t *testing.T, ts *httptest.Server, id string) []pers
 	return detail.Messages
 }
 
-// TestChatTimingPostToolSegments drives the full repro turn shape and
-// asserts the persisted history: three assistant segments, each with a
-// timing record whose numbers reflect the paced stream.
+// TestChatTimingPostToolSegments drives the full repro turn shape and asserts the
+// persisted history.
 func TestChatTimingPostToolSegments(t *testing.T) {
 	_, st, ts, _ := timingTestAgent(t)
 	createSession(t, ts, "s1")
@@ -127,15 +116,13 @@ func TestChatTimingPostToolSegments(t *testing.T) {
 		t.Fatalf("chat request: %v", err)
 	}
 	sc := bufio.NewScanner(resp.Body)
-	// Detached run: drain the wire until the channel closes (run hub
-	// finish), then wait for every message to land.
+	// Detached run: drain the wire until the channel closes (run hub finish), then wait.
 	for sc.Scan() {
 	}
 	if err := resp.Body.Close(); err != nil {
 		t.Fatalf("close chat body: %v", err)
 	}
 
-	// user + assistant(one) + tool + assistant(two) + tool + assistant(done)
 	waitFor(t, "6 persisted messages", func() bool {
 		msgs, err := st.GetMessages(context.Background(), "s1")
 		return err == nil && len(msgs) == 6
@@ -155,8 +142,7 @@ func TestChatTimingPostToolSegments(t *testing.T) {
 		}
 	}
 
-	// Every assistant message must carry a timing record - nil timing is
-	// exactly the reported bug (post-tool segments showed no meter).
+	// Every assistant message must carry a timing record - nil timing is exactly the.
 	assistants := []int{1, 3, 5}
 	for _, i := range assistants {
 		suffix := ""
@@ -168,9 +154,7 @@ func TestChatTimingPostToolSegments(t *testing.T) {
 			t.Errorf("assistant message %d timing = nil%s", i, suffix)
 			continue
 		}
-		// Thinking/response spans must reflect the paced stream: every
-		// event is at least eventDelay after the previous one, so any
-		// recorded phase has at least half a step of wall clock behind it.
+		// Thinking/response spans must reflect the paced stream.
 		if got := msgs[i].Timing.ResponseMs; got < int64(eventDelay/(2*time.Millisecond)) {
 			t.Errorf("assistant message %d%s response_ms = %d, want >= %d",
 				i, suffix, got, eventDelay/(2*time.Millisecond))
@@ -186,7 +170,6 @@ func TestChatTimingPostToolSegments(t *testing.T) {
 			got, eventDelay/(2*time.Millisecond))
 	}
 
-	// Tool results carry call-to-result elapsed.
 	for i := 0; i < len(msgs); i++ {
 		if msgs[i].Role != "tool" {
 			continue
@@ -201,10 +184,9 @@ func TestChatTimingPostToolSegments(t *testing.T) {
 		}
 	}
 
-	// The reloaded transcript's tool_result items carry the
-	// response-return window beside the call's elapsed (card
-	// t_e27c8347): both results unlocked a paced answer segment, so
-	// answer_ms must reflect real wall clock, never zero.
+	// The reloaded transcript's tool_result items carry the response-return window beside
+	// the call's elapsed: both results unlocked a paced answer segment, so answer_ms must
+	// reflect real wall clock, never zero.
 	tresp, terr := ts.Client().Get(ts.URL + "/sessions/s1/transcript")
 	if terr != nil {
 		t.Fatalf("get transcript: %v", terr)

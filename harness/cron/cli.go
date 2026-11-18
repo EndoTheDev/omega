@@ -1,20 +1,12 @@
 package cron
 
 // cli.go: the crons subcommand (card t_aca45258) - `omega crons
-// list|add|edit|delete`, the terminal face of the cron tab's editor.
-// The capsule registers the name at mount (RegisterSubcommand, v0.12
-// phase D Q6: the module owns its argv), exactly like kanban and
-// curator.
-//
-// Every write rides Runner.SaveJob / Runner.DeleteJob - the SAME write
-// law the POST /cron/save and POST /cron/delete routes use (yaml.Node
-// splice, ParseConfig validation, hot reload). The CLI adds no second
-// writer: an `omega crons add` and a webui editor save land byte-
-// identically in crons.yaml.
-//
-// Agent-home ownership (ruling 12): SaveJob/DeleteJob already refuse a
-// wake job by name (that file belongs to another home); the CLI only
-// surfaces the refusal - it never crosses homes.
+// list|add|edit|delete`, the terminal face of the cron tab's editor. The capsule
+// registers the name at mount (RegisterSubcommand, v0.12 phase D Q6: the module owns
+// its argv), exactly like kanban and curator. The CLI adds no second writer: an `omega
+// crons add` and a webui editor save land byte- identically in crons.yaml. Agent-home
+// ownership: SaveJob/DeleteJob already refuse a wake job by name (that file belongs to
+// another home); the CLI only surfaces the refusal - it never crosses homes.
 
 import (
 	"flag"
@@ -26,8 +18,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// cronsSummary is the one-line entry the global `omega --help` module
-// section shows for this capsule (the listing is registry introspection).
+// cronsSummary is the one-line entry the global `omega --help` module section shows.
 const cronsSummary = "cron jobs: list, add, edit, delete (see: omega crons --help)"
 
 // cronsHelp is the module's own help: `omega crons --help` prints it.
@@ -57,9 +48,7 @@ and style survive); an agent home's wake job is owned by that home's own
 config/crons.yaml and is refused here.
 `
 
-// cmdCrons builds the subcommand handler. The closure keeps the mounted
-// plugin (and with it the runner created at mount - the same instance the
-// /cron command and the HTTP routes read).
+// cmdCrons builds the subcommand handler.
 func cmdCrons(p *Plugin) func([]string) error {
 	return func(args []string) error {
 		if len(args) == 0 {
@@ -88,9 +77,7 @@ func cmdCrons(p *Plugin) func([]string) error {
 	}
 }
 
-// cliRunner returns the mount-time runner. A missing runner is the same
-// posture the wire takes (501): the cron capsule did not mount, so there
-// is no job set to edit.
+// cliRunner returns the mount-time runner.
 func (p *Plugin) cliRunner() (*Runner, error) {
 	if p.runner == nil {
 		return nil, fmt.Errorf("crons: no cron runner mounted")
@@ -98,8 +85,7 @@ func (p *Plugin) cliRunner() (*Runner, error) {
 	return p.runner, nil
 }
 
-// cronsList renders the job table - the same renderer the /cron command
-// uses, so the terminal and the webui Cron tab speak one table.
+// cronsList renders the job table.
 func cronsList(p *Plugin, w io.Writer) error {
 	r, err := p.cliRunner()
 	if err != nil {
@@ -114,9 +100,7 @@ func cronsList(p *Plugin, w io.Writer) error {
 	return nil
 }
 
-// cronsFlags is the parsed flag set of add/edit. enabled defaults to
-// true (a fresh job fires); edit only applies it when the flag was
-// passed (flag.Visit).
+// cronsFlags is the parsed flag set of add/edit.
 type cronsFlags struct {
 	kind     string
 	schedule string
@@ -154,11 +138,10 @@ func parseCronsArgs(args []string) (*cronsFlags, []string, *flag.FlagSet, error)
 	return f, fs.Args(), fs, nil
 }
 
-// jobName peels the one positional a job verb needs. The name comes
-// FIRST (`crons add <name> [flags]`): the Go flag package stops parsing
-// at the first non-flag argument, so a trailing name would silently
-// swallow every flag after it. Leftover positionals are a usage error,
-// never a guess.
+// jobName peels the one positional a job verb needs. The name comes FIRST (`crons add
+// <name> [flags]`): the Go flag package stops parsing at the first non-flag argument,
+// so a trailing name would silently swallow every flag after it. Leftover positionals
+// are a usage error, never a guess.
 func jobName(verb string, args []string) (string, []string, error) {
 	if len(args) == 0 {
 		return "", nil, fmt.Errorf("usage: omega crons %s <name> [flags] (omega crons --help lists them)", verb)
@@ -186,9 +169,7 @@ func splitSkills(v string) []string {
 	return out
 }
 
-// cronsAdd creates one job. The schema law is ParseConfig's (called by
-// SaveJob): a missing prompt, a bad schedule, a schedule on an interval
-// job - every rejection names the field and nothing reaches the disk.
+// cronsAdd creates one job.
 func cronsAdd(p *Plugin, args []string) error {
 	r, err := p.cliRunner()
 	if err != nil {
@@ -303,8 +284,7 @@ func cronsEdit(p *Plugin, args []string) error {
 	return nil
 }
 
-// cronsDelete removes one main-home job. The returned job set is the
-// landed truth; the confirmation counts what remains.
+// cronsDelete removes one main-home job.
 func cronsDelete(p *Plugin, args []string) error {
 	r, err := p.cliRunner()
 	if err != nil {
@@ -325,8 +305,7 @@ func cronsDelete(p *Plugin, args []string) error {
 	return nil
 }
 
-// printCronsSaved reports the landed row (the same truth the HTTP route
-// answers): the job's cadence, enablement and next fire.
+// printCronsSaved reports the landed row (the same truth the HTTP route answers).
 func printCronsSaved(jobs []JobInfo, name string) {
 	for _, j := range jobs {
 		if j.Name != name {

@@ -17,13 +17,8 @@ import (
 
 func (p *Provider) streamOllama(ctx context.Context, events chan<- core.ProviderStreamEvent, messages, tools []map[string]any) core.StreamEnd {
 	end, retriable := p.streamOllamaAttempt(ctx, events, messages, tools)
-	// done_reason "load" rides a 200 OK stream and produces nothing, so
-	// RetryHTTP never sees it: the failure happens after the HTTP retry
-	// layer has already succeeded. Retry it here with the same budget
-	// (OMEGA_MAX_RETRIES) as RetryHTTP, but LOAD-scale pacing: the load
-	// verdict means the upstream is loading the model and canceled this
-	// request, so the next attempt is worth firing only once that load
-	// has had time to finish (t_163d1e87).
+	// done_reason "load" rides a 200 OK stream and produces nothing, so RetryHTTP never
+	// sees it.
 	for attempt := 0; retriable; attempt++ {
 		if attempt >= llm.MaxRetries() {
 			return core.StreamEnd{
@@ -36,8 +31,7 @@ func (p *Provider) streamOllama(ctx context.Context, events chan<- core.Provider
 		select {
 		case <-ctx.Done():
 			return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: ctx.Err().Error()}
-		// load-scale pacing (t_163d1e87): a "load" verdict survives on
-		// waits that outlast the upstream's load, not 429-scale ones
+		// load-scale pacing: a "load" verdict survives on waits that outlast the upstream's.
 		case <-time.After(llm.LoadBackoff(attempt)):
 		}
 		end, retriable = p.streamOllamaAttempt(ctx, events, messages, tools)
@@ -99,9 +93,6 @@ func (p *Provider) streamOllamaAttempt(ctx context.Context, events chan<- core.P
 	}
 
 	phase := ""
-	// Ollama's tool_calls carry no id on some hosts/versions; the
-	// openai path always yields one. Synthesize stable ids (call_N)
-	// when the wire omits them so ToolResult correlation works.
 	toolCallSeq := 0
 	reader := bufio.NewReader(resp.Body)
 	for {
@@ -114,9 +105,7 @@ func (p *Provider) streamOllamaAttempt(ctx context.Context, events chan<- core.P
 				return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("parse error: %v", jsonErr)}, false
 			}
 
-			// In-stream error payloads surface as an error StreamEnd
-			// (parity with the openai path). The error field is a
-			// bare string on ollama and an object on some proxies.
+			// In-stream error payloads surface as an error StreamEnd (parity with the openai.
 			switch eval := chunk["error"].(type) {
 			case string:
 				if eval != "" {
@@ -150,10 +139,8 @@ func (p *Provider) streamOllamaAttempt(ctx context.Context, events chan<- core.P
 					finishReason = dr
 				}
 				if finishReason == "load" && phase == "" {
-					// Cloud cold-start verdict: the generation was
-					// canceled while the model loaded and nothing was
-					// streamed. Retryable only here - a load verdict
-					// after content would duplicate that content.
+					// Cloud cold-start verdict. Retryable only here - a load verdict after content
+					// would duplicate that content.
 					return core.StreamEnd{Type: "stream_end", FinishReason: finishReason}, true
 				}
 				return core.StreamEnd{Type: "stream_end", FinishReason: finishReason, PromptEvalCount: pe, EvalCount: ev, CachedCount: ca}, false
@@ -215,7 +202,7 @@ func (p *Provider) streamOllamaAttempt(ctx context.Context, events chan<- core.P
 	}
 }
 
-// --- OpenAI ---
+// -- OpenAI --
 
 // pendingCall accumulates OpenAI tool-call fragments.
 type pendingCall struct {

@@ -10,7 +10,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// The capsule's REST face, read-only v1 (card t_8de82cff):
+// The capsule's REST face, read-only v1:
 //
 //	GET /observability/events?session=&level=&limit=
 //	GET /observability/logs?lines=
@@ -18,7 +18,7 @@ import (
 // Both are pure reads: nothing here writes config, ring or disk. The
 // events read is the primary view (the structured stream), the logs read
 // is the secondary one (the on-disk tail). Free-text search is
-// deliberately absent (ruling 4, deferred until the stream proves too
+// deliberately absent
 // loud); session scope only when the parameter is present.
 //
 // The log tail is the shell's /logs reader's sibling (api/server_inspector.go).
@@ -28,17 +28,14 @@ import (
 // command surface (the logging half, since the 0.17.3 fold) while its
 // file logger is what both read, and these two routes are the webui view.
 
-// Page-size bounds for the two reads. The events page is capped at the
-// ring's own page ceiling; the log tail mirrors the shell's reader
-// (default 200 lines, hard ceiling 2000) so a tab cannot ask the server
-// to materialize a gigabyte log.
+// Page-size bounds for the two reads. The events page is capped at the ring's own page
+// ceiling; the log tail mirrors the shell's reader (default 200 lines, hard ceiling
+// 2000) so a tab cannot ask the server to materialize a gigabyte log.
 const (
 	eventsPageDefault = 200
 	logTailDefault    = 200
 	logTailMax        = 2000
-	// logTailWindow bounds the bytes read from the END of the log file:
-	// 512 KiB covers far more than logTailMax timestamped lines, and caps
-	// memory when the file has grown for weeks.
+	// logTailWindow bounds the bytes read from the END of the log file.
 	logTailWindow = 512 << 10
 )
 
@@ -52,9 +49,7 @@ func newRoutes(ctx *core.Context, ring *Ring) *Routes {
 	return &Routes{ctx: ctx, ring: ring}
 }
 
-// eventsResponse is the GET /observability/events body. buffered and
-// capacity describe the ring itself, so a client can tell "no events
-// yet" apart from "the ring rolled over while you were away".
+// eventsResponse is the GET /observability/events body.
 type eventsResponse struct {
 	Events   []Event `json:"events"`
 	Returned int     `json:"returned"`
@@ -62,9 +57,8 @@ type eventsResponse struct {
 	Capacity int     `json:"capacity"`
 }
 
-// handleEvents serves GET /observability/events: the structured stream,
-// newest page first-class. An unknown level value is a 400, never a
-// silently empty page.
+// handleEvents serves GET /observability/events. An unknown level value is a 400, never
+// a silently empty page.
 func (rt *Routes) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
 		return
@@ -89,25 +83,18 @@ func (rt *Routes) handleEvents(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// logsResponse is the GET /observability/logs body: the file the tail
-// came from (so a reader can tell WHICH log it is looking at) and the
-// verbatim lines.
+// logsResponse is the GET /observability/logs body.
 type logsResponse struct {
 	Path  string   `json:"path"`
 	Lines []string `json:"lines"`
 }
 
-// logPather is this capsule's own consumer face for the "logger" need
-// service: the file logger exposes its path (FileLogger.Path), a
-// NopLogger does not - which is the honest "logging is disabled" answer.
+// logPather is this capsule's own consumer face for the "logger" need service.
 type logPather interface {
 	Path() string
 }
 
-// handleLogs serves GET /observability/logs: the tail of the log the
-// running process writes. 404 when there is no log file (logging
-// disabled, or a logger without a path) - the same degradation the
-// shell's /logs documents.
+// handleLogs serves GET /observability/logs.
 func (rt *Routes) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
 		return
@@ -125,8 +112,7 @@ func (rt *Routes) handleLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, logsResponse{Path: path, Lines: lines})
 }
 
-// logPath resolves the logger seam per request (a live toggle can swap
-// the logger under a running server) through this capsule's own face.
+// logPath resolves the logger seam per request (a live toggle can swap the logger.
 func (rt *Routes) logPath() string {
 	if rt.ctx == nil {
 		return ""
@@ -141,9 +127,7 @@ func (rt *Routes) logPath() string {
 	return ""
 }
 
-// parseBounded reads an integer query parameter with a default and a
-// ceiling: absent or unparsable keeps the default, anything else clamps
-// to 1..max so neither an empty page nor an unbounded read is possible.
+// parseBounded reads an integer query parameter with a default and a ceiling.
 func parseBounded(raw string, def, max int) int {
 	n := def
 	if raw != "" {
@@ -160,12 +144,8 @@ func parseBounded(raw string, def, max int) int {
 	return n
 }
 
-// tailLines returns the last n lines of the file at path. It reads at
-// most logTailWindow from the end: seek into the window, split on
-// newlines, drop the cut-off head fragment (unless the window covers the
-// whole file), then keep the last n. A missing file is an error, never
-// an empty tail - "there is no log" and "the log is empty" are different
-// answers.
+// tailLines returns the last n lines of the file at path. A missing file is an error,
+// never an empty tail - "there is no log" and "the log is empty" are different answers.
 func tailLines(path string, n int) ([]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -193,18 +173,15 @@ func tailLines(path string, n int) ([]string, error) {
 
 	text := string(buf)
 	if window < size {
-		// The window starts mid-file: the first fragment is the cut-off
-		// TAIL of an earlier line, not a line of its own.
+		// The window starts mid-file.
 		if i := strings.IndexByte(text, '\n'); i >= 0 {
 			text = text[i+1:]
 		} else {
 			text = ""
 		}
 	}
-	// Drop the POSIX trailing newline artifact: the last line of a file
-	// ending in "\n" must not decode as a second, empty line. (A tail
-	// window sees this in both branches - the whole-file read and the
-	// mid-file read - so the strip lives here, once.)
+	// Drop the POSIX trailing newline artifact: the last line of a file ending in "\n"
+	// must not decode as a second, empty line.
 	text = strings.TrimSuffix(text, "\n")
 	if text == "" {
 		return []string{}, nil
@@ -217,8 +194,7 @@ func tailLines(path string, n int) ([]string, error) {
 	return lines, nil
 }
 
-// getOnly is the read-only guard (the shell's GetOnly equivalent; a
-// capsule answers with its own copy rather than importing the shell).
+// getOnly is the read-only guard (the shell's GetOnly equivalent.
 func getOnly(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

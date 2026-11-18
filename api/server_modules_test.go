@@ -1,10 +1,8 @@
 package api
 
-// The E2 /modules handler tests bind at the wire shape the settings
-// pane consumes: the shell never appears (tier law), the pane's
-// toggle applies through the seam, and a rejection comes back 400
-// carrying the ledger text (Q11/Q12). A host without the seam answers
-// 501 (the Settings precedent).
+// The E2 /modules handler tests bind at the wire shape the settings pane consumes: the
+// shell never appears (tier law), the pane's toggle applies through the seam, and a
+// rejection comes back 400 carrying the ledger text (Q11/Q12).
 
 import (
 	"context"
@@ -47,8 +45,7 @@ func fakeModule(name, state string, toggleable bool) core.ModuleStatus {
 	return core.ModuleStatus{Name: name, State: state, Provides: []string{name}, Toggleable: toggleable}
 }
 
-// contains reports whether the body carries substr (the local helper -
-// the settings tests read bodies the same way).
+// contains reports whether the body carries substr (the local helper.
 func contains(body, substr string) bool { return strings.Contains(body, substr) }
 
 // stringBody wraps a JSON literal in an io.Reader for httptest.
@@ -81,8 +78,7 @@ func TestModulesListHidesEngineRing(t *testing.T) {
 }
 
 func TestModulesListCarriesRefusals(t *testing.T) {
-	// Q12: the toggle ledger rides the introspection, the rejection
-	// error as text (an error interface marshals empty - a lie).
+	// Q12: the toggle ledger rides the introspection, the rejection error as text (an.
 	fm := &fakeModules{
 		refusals: []core.Refusal{{Module: "kanban", Seam: "toggle", Predicate: "toggle.enable", Err: errors.New("module \"kanban\" panicked: boom"), At: time.Now()}},
 	}
@@ -117,7 +113,6 @@ func TestModuleToggleAppliesThroughSeam(t *testing.T) {
 }
 
 func TestModuleToggleRejectionCarriesLedgerText(t *testing.T) {
-	// Q11: the roll-back rejection is the body; the pane surfaces it.
 	fm := &fakeModules{mods: []core.ModuleStatus{fakeModule("kanban", "disabled", true)}, err: errors.New(`module "kanban" panicked: boom (hint: add "kanban" to "disabled" in config.yaml)`)}
 	s := NewServer(nil, nil, nil, nil, fm, nil)
 	req := httptest.NewRequest(http.MethodPut, "/modules/kanban", stringBody(`{"enabled":true}`))
@@ -149,11 +144,9 @@ func TestModulesEngineToggleRejected(t *testing.T) {
 }
 
 func TestModulesAlwaysOnTierRejectedAtTheSeam(t *testing.T) {
-	// card t_81d0901b, extended by the 0.17.3 tier re-law (card
-	// t_ee3a968b): only agent-loop, provider and logging (the folded
-	// observability module) are always on. The refusal lives HERE - the
-	// settings row is a mirror, never the gate - so both directions are
-	// refused before the seam is called and the body names the reason.
+	// extended by the 0.17.3 tier re-law. The refusal lives HERE - the settings row is a
+	// mirror, never the gate - so both directions are refused before the seam is called
+	// and the body names the reason.
 	tier := []string{"agent-loop", "provider", "observability"}
 	for _, name := range tier {
 		for _, body := range []string{`{"enabled":false}`, `{"enabled":true}`} {
@@ -173,8 +166,7 @@ func TestModulesAlwaysOnTierRejectedAtTheSeam(t *testing.T) {
 			}
 		}
 	}
-	// the tier is NOT the shell ring: all three stay in the introspection
-	// (the UI renders them as visible rows), unlike http_channel
+	// the tier is NOT the shell ring.
 	fm := &fakeModules{mods: []core.ModuleStatus{
 		fakeModule("agent-loop", "mounted", false),
 		fakeModule("provider", "mounted", false),
@@ -214,8 +206,7 @@ func TestModuleToggleMalformedBody(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("a malformed body must answer 400, got %d", rec.Code)
 	}
-	// Missing enabled is the same lie the diff-only settings PUT
-	// rejects: an absent field is not a toggle.
+	// Missing enabled is the same lie the diff-only settings PUT rejects.
 	req = httptest.NewRequest(http.MethodPut, "/modules/kanban", stringBody(`{}`))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -224,9 +215,7 @@ func TestModuleToggleMalformedBody(t *testing.T) {
 	}
 }
 
-// The live re-wire (v0.12 E2): after a toggle the server re-reads the
-// Context instead of the mount-time copies - a disabled module's
-// routes die without a restart, a re-enabled one's return.
+// The live re-wire (v0.12 E2).
 func TestRewireSeamsFollowsTheContext(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	served := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -234,7 +223,6 @@ func TestRewireSeamsFollowsTheContext(t *testing.T) {
 	})
 	ctx := &core.Context{ModuleRoutes: []core.ModuleRoute{{Module: "kanban", Pattern: "GET /tasks", Handler: served}}}
 
-	// mount-shaped: the wired routes answer the module paths
 	if err := s.rewireSeams(ctx); err != nil {
 		t.Fatalf("rewire (mounted): %v", err)
 	}
@@ -244,11 +232,10 @@ func TestRewireSeamsFollowsTheContext(t *testing.T) {
 		t.Fatalf("GET /tasks after wire = %d", rec.Code)
 	}
 
-	// the disable cascade removed the route: one rewire, the shell
-	// holds nothing module-shaped - the path falls through to the SPA
-	// shell like any unknown browser route (the phase-F law: the route
-	// surface lives exactly while its module mounts; the modules
-	// inventory, not a 404 guard, is what tells the API caller)
+	// the disable cascade removed the route: one rewire, the shell holds nothing
+	// module-shaped - the path falls through to the SPA shell like any unknown browser
+	// route (the phase-F law: the route surface lives exactly while its module mounts; the
+	// modules inventory, not a 404 guard, is what tells the API caller)
 	ctx.ModuleRoutes = nil
 	if err := s.rewireSeams(ctx); err != nil {
 		t.Fatalf("rewire (dismounted): %v", err)
@@ -259,7 +246,6 @@ func TestRewireSeamsFollowsTheContext(t *testing.T) {
 		t.Fatalf("GET /tasks after dismount rewire = %d, want the SPA fallthrough", rec.Code)
 	}
 
-	// the remount restores it - same call, no restart
 	if err := s.rewireSeams(&core.Context{ModuleRoutes: []core.ModuleRoute{{Module: "kanban", Pattern: "GET /tasks", Handler: served}}}); err != nil {
 		t.Fatalf("rewire (remounted): %v", err)
 	}
@@ -286,14 +272,13 @@ func TestRewireRefreshesToolInventory(t *testing.T) {
 	}
 	assertToolsListed(t, s, "kanban.create", true)
 
-	// the module went: its provider is off the Context
 	ctx.ToolProviders = nil
 	if err := s.rewireSeams(ctx); err != nil {
 		t.Fatalf("rewire after disable: %v", err)
 	}
 	assertToolsListed(t, s, "kanban.create", false)
 
-	// ... and back on
+	// ..
 	ctx.ToolProviders = []core.ToolProvider{provider}
 	if err := s.rewireSeams(ctx); err != nil {
 		t.Fatalf("rewire after enable: %v", err)
@@ -305,8 +290,7 @@ type fakeToolProvider struct{ tools map[string]core.Tool }
 
 func (f *fakeToolProvider) Tools() map[string]core.Tool { return f.tools }
 
-// assertToolsListed reads the /tools inventory the webui's ToolsList
-// renders and checks one tool's presence.
+// assertToolsListed reads the /tools inventory the webui's ToolsList renders and.
 func assertToolsListed(t *testing.T, s *Server, name string, want bool) {
 	t.Helper()
 	rec := httptest.NewRecorder()

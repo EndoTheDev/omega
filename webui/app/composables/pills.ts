@@ -1,34 +1,18 @@
-// omega webui: reference pill tokens (card t_7f09bd0c). The composer's
-// /skill invocations and @file attachments are TOKENS in the draft text -
-// the composer's pill strip (AppComposer) and the sent-message pills
-// (ChatMessage) derive from the same scan, so the composer state and the
-// transcript agree on what a pill is. No transcript mining, no prose
-// heuristics: a pill exists only on a token the composer produced - a
-// leading /<skill-name> or a standalone @<path>, the exact shapes the two
-// autocompletes insert. Pure functions only: node-tested at this module,
-// the components are source-pinned in test/pills.test.ts.
+// omega webui: reference pill tokens.
 
 import { filterCommands } from "./commands.ts";
 import type { PaletteItem } from "./commands.ts";
 
-// --- the token model ---
+// -- the token model --
 
 export interface RefToken {
-  // skill = an injected-content invocation ("/name"); file = a path
-  // reference ("@path") the model reads with its own tools; dir = a
-  // FOLDER reference ("@path/") - the trailing slash is the
-  // discriminator, so a folder pins exactly like a file (t_c3fe4ea6)
+  // skill = an injected-content invocation ("/name"); file = a path reference ("@path")
+  // the model reads with its own tools; dir = a FOLDER reference ("@path/") - the
+  // trailing slash is the discriminator, so a folder pins exactly like a file
   kind: "skill" | "file" | "dir";
-  // the raw token text ("/greet", "@docs/readme.md", "@docs/")
   token: string;
-  // what the pill shows: the skill name, the file's basename, the
-  // folder's name (a dir token's last segment)
   label: string;
-  // how the pill is addressed: the skill name (the SKILL.md folder), the
-  // file's relative path (the viewer ref + hover title), the folder's
-  // path WITHOUT its trailing slash (the viewer's folder listing)
   name: string;
-  // the token's start index in the scanned text
   start: number;
 }
 
@@ -38,17 +22,13 @@ export interface RefSegment {
 }
 
 const SKILL_LEADING = /^\/([A-Za-z0-9_-]+)/;
-// the composer's chip editor reads a skill token at ANY word boundary -
-// its slash palette is token-based (t_d1a2951d: "a mid-sentence token dies
-// in place"), so a completed /word must chip wherever the palette accepted
-// it. The boundary shape is the @ token's (start, whitespace or an open
-// paren): "flag -/not-a-pill" stays prose.
+// the composer's chip editor reads a skill token at ANY word boundary - its slash
+// palette is token-based, so a completed /word must chip wherever the palette accepted
+// it.
 const SKILL_ANYWHERE = /(^|[\s(])\/([A-Za-z0-9_-]+)/g;
 const FILE_TOKEN = /(^|[\s(])@([^\s)]+)/g;
-// the @ palette's two PREFIX rows (card t_620a3edf): "@skill:<name>" and
-// "@session:<id>" are the content injections core/atmention.go expands on
-// submit (its grammar: a "skill:" / "session:" prefix on the token's inner
-// text). They are never paths, so they never read as file references.
+// the @ palette's two PREFIX rows. They are never paths, so they never read as file
+// references.
 const SKILL_PREFIX = /^skill:(.+)$/;
 const SESSION_PREFIX = /^session:/;
 
@@ -61,11 +41,11 @@ const isBasename = (name: string): boolean => {
 // surfaces that differ on exactly one point:
 //
 //   inlineSkills - the composer's chip editor. Its slash palette is
-//                  token-based (t_d1a2951d), so a completed /word chips
+// token-based, so a completed /word chips
 //                  wherever the palette accepted it, exactly like an @
 //                  file token. The composer additionally gates on the
 //                  live skill snapshot (a shell verb never chips).
-//   absent       - the transcript. A leading /word IS the invocation (the
+// absent - the transcript. A leading /word IS the invocation (the
 //                  server's grammar), and prose keeps arbitrary "/" prose
 //                  (paths, "and / or") pill-free.
 export interface ScanOpts {
@@ -74,21 +54,21 @@ export interface ScanOpts {
 
 // scanRefTokens parses a text into its pill tokens:
 //
-//   skill  - "/word": at the TEXT START (every surface), or at any word
+// skill - "/word": at the TEXT START (every surface), or at any word
 //            boundary when opts.inlineSkills (the composer's editor).
 //            Shell and extension verbs never reach a transcript bubble
 //            (the send routes them), so a leading slash IS an invocation.
-//   file   - a standalone "@path" (text start, or after whitespace or an
+// file - a standalone "@path" (text start, or after whitespace or an
 //            open paren). A mid-word @ - user@host - is an email, not a
 //            file reference (the server's AtFilePattern law). A token
 //            with no basename ("@dir/") is a DIR token, never a file:
-//            the trailing slash names a folder (t_c3fe4ea6).
-//   dir    - a standalone "@path/" (the same boundaries as a file token).
+// the trailing slash names a folder.
+// dir - a standalone "@path/" (the same boundaries as a file token).
 //            The pill shows the folder's name and addresses its path
-//            (trailing slash dropped); the raw token keeps the slash -
+// (trailing slash dropped); the raw token keeps the slash
 //            the exact-source law: the model reads "@artifacts_mmo/" and
 //            follows it with its own tools.
-//   skill  - also "@skill:<name>": the @ palette's own prefix row is the
+// skill - also "@skill:<name>": the @ palette's own prefix row is the
 //            OTHER door to the skill injection the server expands, so it
 //            wears the skill pill (zap + "/name", its click opens
 //            SKILL.md) instead of a path pill. The raw token never
@@ -127,14 +107,12 @@ export function scanRefTokens(text: string, opts: ScanOpts = {}): RefToken[] {
   FILE_TOKEN.lastIndex = 0;
   for (const m of text.matchAll(FILE_TOKEN)) {
     const start = m.index + m[1].length;
-    // trailing punctuation belongs to the sentence, not the reference -
-    // the pill's path is the clean token ("@docs/x.md," opens x.md)
+    // trailing punctuation belongs to the sentence, not the reference.
     const token = ("@" + m[2]).replace(/[.,;:!?]+$/, "");
     const name = token.slice(1);
-    // the prefix rows are INJECTIONS, not paths (t_620a3edf): classify
-    // before the path branches so "@skill:pill-demo" never reads as a
-    // file named "skill:pill-demo" (that pill wore a document glyph and
-    // its click opened a Files tab answering "not found").
+    // the prefix rows are INJECTIONS, not paths: classify before the path branches so
+    // "@skill:pill-demo" never reads as a file named "skill:pill-demo" (that pill wore
+    // a document glyph and its click opened a Files tab answering "not found").
     const skillInjection = name.match(SKILL_PREFIX);
     if (skillInjection) {
       const skillName = skillInjection[1]!;
@@ -147,10 +125,7 @@ export function scanRefTokens(text: string, opts: ScanOpts = {}): RefToken[] {
       });
       continue;
     }
-    // the trailing slash is the dir discriminator (t_c3fe4ea6): a folder
-    // reference pins like a file. The ADDRESSED path drops the slash
-    // (the viewer's folder listing takes a bare path); the TOKEN keeps
-    // it (the draft is the server expansion's exact source).
+    // the trailing slash is the dir discriminator: a folder reference pins like a file.
     if (name.endsWith("/")) {
       const path = name.replace(/\/+$/, "");
       if (!isBasename(path)) continue; // "@" or "@//" - not a reference
@@ -176,9 +151,7 @@ export function scanRefTokens(text: string, opts: ScanOpts = {}): RefToken[] {
   return out.sort((a, b) => a.start - b.start);
 }
 
-// splitRefSegments turns a text into rendered pieces: the pill tokens as
-// tokens, everything between as text. The consumer renders segments in
-// order - the user bubble keeps its literal text with pills inline.
+// splitRefSegments turns a text into rendered pieces.
 export function splitRefSegments(text: string, opts: ScanOpts = {}): RefSegment[] {
   const tokens = scanRefTokens(text, opts);
   const out: RefSegment[] = [];
@@ -192,9 +165,7 @@ export function splitRefSegments(text: string, opts: ScanOpts = {}): RefSegment[
   return out;
 }
 
-// tokenBeforeCaret finds the pill behind the caret - the Backspace
-// dissolve's target (the "pill dissolves to its text" law): the caret
-// sits immediately behind a token's end.
+// tokenBeforeCaret finds the pill behind the caret.
 export function tokenBeforeCaret(
   text: string,
   caret: number,
@@ -214,20 +185,19 @@ export function deleteTokenAt(text: string, t: RefToken): { draft: string; caret
   };
 }
 
-// --- the chip law (card t_e67c372b): a pill REPLACES the text it represents ---
+// -- the chip law: a pill REPLACES the text it represents --
 
-// The composer no longer renders pills on a strip above the textarea with
-// the raw token still sitting in the text. The editor renders chip nodes
-// inline where the token spans were; the draft string keeps the raw
-// tokens throughout (the server-side /chat at-mention expansion is the
-// consumer of that exact text), so a chip and its span are one and the
-// same data - the chip is a VIEW of the span, never a duplicate.
+// The composer no longer renders pills on a strip above the textarea with the raw. The
+// editor renders chip nodes inline where the token spans were; the draft string keeps
+// the raw tokens throughout (the server-side /chat at-mention expansion is the consumer
+// of that exact text), so a chip and its span are one and the same data - the chip is a
+// VIEW of the span, never a duplicate.
 
 // ChipOpts carries the editor's edit state into the chip rule:
-// - caret: the caret's index in draft (token) space
-// - paletteOpen: a query surface (/ or @) is active at the caret
-// - forced: chip keys the accept path just inserted (fresh swallow)
-// - dissolved: chip keys a Backspace revealed raw; they stay raw as long
+// caret: the caret's index in draft (token) space
+// paletteOpen: a query surface (/ or @) is active at the caret
+// forced: chip keys the accept path just inserted (fresh swallow)
+// dissolved: chip keys a Backspace revealed raw; they stay raw as long
 //   as the caret works their span (inside or at its end)
 export interface ChipOpts {
   caret: number;
@@ -236,17 +206,15 @@ export interface ChipOpts {
   dissolved: ReadonlySet<string>;
 }
 
-// A chip is keyed by its raw token text: two identical tokens behave
-// identically, and the rule is per-token - the dissolved one whose caret
-// still works it stays raw while its twin keeps its chip.
+// A chip is keyed by its raw token text.
 export function chipKeyOf(t: RefToken): string {
   return t.token;
 }
 
 // chipFor decides whether ONE pill-able token renders as an inline chip.
-//   forced  - the accept path's fresh swallow: the caret parks right at
+// forced - the accept path's fresh swallow: the caret parks right at
 //             the insertion end, the chip still forms.
-//   inside  - the caret is strictly within the span: the token is being
+// inside - the caret is strictly within the span: the token is being
 //             typed or edited, it renders raw.
 //   dissolved - same window including the span end (the caret parked
 //             exactly where the dissolve left it), it stays raw until the
@@ -263,8 +231,7 @@ export function chipFor(t: RefToken, o: ChipOpts): boolean {
   return true;
 }
 
-// EditorNode is one piece of the editor's DOM plan: verbatim text or a
-// chip that replaces its token span.
+// EditorNode is one piece of the editor's DOM plan.
 export interface EditorNode {
   type: "text";
   text: string;
@@ -275,14 +242,13 @@ export interface EditorChipNode {
 }
 export type EditorPiece = EditorNode | EditorChipNode;
 
-// editorNodes turns a draft into the editor's DOM plan: text nodes
-// verbatim, chip nodes for the tokens the chip rule says must replace
-// their spans. A token that must NOT chip (a skill name that is still an
-// unknown slash word, a token under the caret) folds back into the text
-// around it, so the plain reading of the plan equals the draft exactly.
-// The isPill callback is the chip-eligibility knowledge the composer
-// holds (a shell verb like "/theme" is never a chip - the skill snapshot
-// load decides); a token failing it renders raw even before the rule.
+// editorNodes turns a draft into the editor's DOM plan: text nodes verbatim, chip nodes
+// for the tokens the chip rule says must replace their spans. A token that must NOT
+// chip (a skill name that is still an unknown slash word, a token under the caret)
+// folds back into the text around it, so the plain reading of the plan equals the draft
+// exactly. The isPill callback is the chip-eligibility knowledge the composer holds (a
+// shell verb like "/theme" is never a chip - the skill snapshot load decides); a token
+// failing it renders raw even before the rule.
 export function editorNodes(
   text: string,
   o: ChipOpts,
@@ -314,31 +280,24 @@ export function editorNodes(
   return out;
 }
 
-// --- the @ autocomplete's path law ---
+// -- the @ autocomplete's path law --
 
-// mentionDirOf extracts the token's directory part: "@docs/re" drills
-// into "docs/", a bare "@" browses the root. Prefix tokens never reach
-// here (the composer branches on session:/skill: first).
+// mentionDirOf extracts the token's directory part. Prefix tokens never reach here (the
+// composer branches on session:/skill: first).
 export function mentionDirOf(token: string): string {
   const inner = token.slice(1);
   const slash = inner.lastIndexOf("/");
   return slash === -1 ? "" : inner.slice(0, slash + 1);
 }
 
-// mentionLeafQuery is what filters the drilled rows: the composer typed
-// "@docs/read" - the rows are docs/'s children, so the filter is "read",
-// not "docs/read".
+// mentionLeafQuery is what filters the drilled rows.
 export function mentionLeafQuery(token: string): string {
   const inner = token.slice(1);
   const slash = inner.lastIndexOf("/");
   return slash === -1 ? inner : inner.slice(slash + 1);
 }
 
-// mentionRows orders a directory listing for the @ list: directories
-// first, each alphabetical (the card's law). Both row kinds complete to
-// a PILL token - a file row to "@path", a dir row to "@path/" (the
-// folder pin, t_c3fe4ea6). Drilling deeper is the token itself: typing
-// past the slash relists the folder (mentionDirOf).
+// mentionRows orders a directory listing for the @ list.
 export function mentionRows(
   entries: { name: string; is_dir: boolean }[],
 ): PaletteItem[] {
@@ -360,8 +319,7 @@ export function mentionRows(
   ];
 }
 
-// filterMentionRows filters a drilled list by the typed leaf (see
-// mentionLeafQuery); an empty leaf returns the full list in order.
+// filterMentionRows filters a drilled list by the typed leaf (see mentionLeafQuery).
 export function filterMentionRows(token: string, rows: PaletteItem[]): PaletteItem[] {
   const leaf = mentionLeafQuery(token);
   if (!leaf) return rows;

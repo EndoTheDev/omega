@@ -2,15 +2,10 @@
 
 package cron
 
-// sweep_windows_test.go: the Windows-only pin for card t_e9965bc6.
-// saveCronState's atomic swap (tmp + os.Rename) opens cronstate.json
-// with DELETE access and no read-share for the length of the rename;
-// a poller stepping into that window gets a sharing violation from
-// os.ReadFile. waitForState must treat that as a retry, never a
-// verdict. This pin replays the window deterministically: an exclusive
-// handle (share mode 0) pins the file for 200ms while waitForState
-// polls; the fatal-on-first-error shape reds instantly, the tolerant
-// poll lands green the moment the pin releases.
+// sweep_windows_test.go: the Windows-only pin for. saveCronState's atomic swap (tmp +
+// os.Rename) opens cronstate.json with DELETE access and no read-share for the length
+// of the rename; a poller stepping into that window gets a sharing violation from
+// os.ReadFile. waitForState must treat that as a retry, never a verdict.
 
 import (
 	"path/filepath"
@@ -26,8 +21,7 @@ func TestWaitForStateRetriesThroughPinnedFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Share mode 0: every os.ReadFile of the pinned file fails with
-	// the sharing violation - the rename window, held open.
+	// Share mode 0: every os.ReadFile of the pinned file fails with the sharing violation.
 	h, err := syscall.CreateFile(p, syscall.GENERIC_READ, 0, nil, syscall.OPEN_EXISTING, 0, 0)
 	if err != nil {
 		t.Fatalf("pin open: %v", err)

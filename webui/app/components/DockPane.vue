@@ -8,12 +8,11 @@
         'drop-hover': dropHover,
         'drop-refused': refusedIdx !== null,
         pinned,
-        // card t_67fc1905: the bottom shell gets its own class (the
-        // bottom-panel css file owns its look + the mobile zero-collapse)
+        // the bottom shell gets its own class (the bottom-panel css file owns its.
         'edge-bottom': node.edge === 'bottom',
-        // Endo's comment (2026-10-26): the fullscreen VIEW rides the
-        // pane class - bottompanel.css owns the takeover; the sidebars
-        // never hide (Endo: they stay as-is, still self-toggled)
+        // Endo's comment: the fullscreen VIEW rides the pane class - bottompanel.css
+        // owns the takeover; the sidebars never hide (Endo: they stay as-is, still
+        // self-toggled)
         'bottom-fullscreen': node.edge === 'bottom' && api.bottomFullscreen.value,
       },
     ]"
@@ -22,12 +21,7 @@
     @dragover="onPaneDragOver"
     @dragleave="onPaneDragLeave"
     @drop="onPaneDrop">
-    <!-- the pane's tab bar IS the header (35px, MenuBar contract).
-         card t_d6b657a7: edge shells (sessions / inspector homes) are
-         unclosable as panes - no remove X, no actions menu - but host
-         FREE tabs: every tab drags (sessions only inside "left"), chat's
-         X works wherever it drops. card t_d7fd3ad3: the '+' is MAIN-pane
-         chrome - the pinned shells (sidebars + bottom) carry no '+'. -->
+    <!-- the pane's tab bar IS the header (35px, MenuBar contract).. -->
     <div
       ref="tabsEl"
       class="dock-tabbar"
@@ -45,8 +39,10 @@
               active: i === node.active,
               'caret-before': dropIdx === i,
               'drop-refused': refusedIdx === i,
-              /* card t_a3b28c37: sidebar strips (icon-only) get their own
-                 28px centered chip shape - the text-tab rules never move */
+              /*
+               * sidebar strips (icon-only) get their own 28px centered chip shape - the
+               * text-tab rules never move
+               */
               'ic-only': iconTabs,
             }"
             :data-index="i"
@@ -59,20 +55,14 @@
             @dragstart="onTabDragStart($event, i)"
             @dragover="onTabbarDragOver"
             @drop="onTabbarDrop">
-            <!-- card t_502b8e81: the SIDEBAR tab strips (left/right edge
-                 shells) are icon-only chips - the iconset vocabulary says
-                 the tab, the title/tooltip keeps the accessible name, the
-                 active styling (orange) is unchanged. Main/bottom tabs
-                 carry icon + label (t_172f9009): the glyph leads the name. -->
+            <!--
+              the SIDEBAR tab strips (left/right edge shells) are icon-only chips.
+            -->
             <Icon
               v-if="tabIcon(t)"
               :name="tabIcon(t)"
               class="dock-tab-ic" />
-            <!-- card t_180db2cb: the notifications tab's unread chip - the
-                 bell's badge voice (count cap 99+) rehomed onto the
-                 dockable's icon chip. Renders on the INSIDE of the chip
-                 (t_aca53fee's lesson: no positioning overflow past the
-                 button box); nothing renders at zero. -->
+            <!-- the notifications tab's unread chip. -->
             <span
               v-if="tabBadge(t)"
               class="dock-tab-badge"
@@ -81,18 +71,10 @@
             <span
               v-if="!iconTabs"
               class="dock-tab-title">{{ tabTitle(t) }}</span>
-            <!-- the close X: every closable-class tab carries one (chat,
-                 viewer, browser, settings). card t_b72a4ee3 (Endo ruling
-                 2026-11-14, superseding t_9855a20e's INVISIBLE refusal):
-                 the pane's LONE tab keeps its X too - DISABLED and DIMMED,
-                 because closing it would empty the pane (closeTab still
-                 refuses it; lastTabLocked is the one condition both read).
-                 aria-disabled + tabindex -1 rather than the native disabled
-                 attribute: a natively disabled button fires no mouse events
-                 in Chrome, which would kill the title explaining the lock
-                 and make the refusal invisible again. It surfaces on hover
-                 (CSS) wherever the tab lives - pane identity no longer
-                 decides tab chrome (t_d6b657a7) -->
+            <!--
+              the close X: every closable-class tab carries one (chat, viewer, browser,
+              settings)..
+            -->
             <button
               v-if="tabClosable(t)"
               class="dock-tab-close"
@@ -105,13 +87,9 @@
               ×
             </button>
           </div>
-          <!-- insertion caret "after the last tab" rides the '+' button's
-               left edge (absolute pseudo-element, no reflow) -->
-          <!-- Endo amendment (2026-10-26): the '+' BODY MINTS a new normal
-               session directly - no dropdown, no chevron, no inventory menu
-               (Endo owns the menu's return later; card t_d04a1c80 deleted
-               the empty-pane component menu that used to carry the full
-               inventory, so nothing in this pane offers one). -->
+          <!--
+            insertion caret "after the last tab" rides the '+' button's left edge.
+          -->
           <button
             v-if="!pinned"
             class="dock-tab-new"
@@ -124,9 +102,6 @@
               +
             </button>
         </div>
-        <!-- Endo's comment (2026-10-26): the bottom shell's fullscreen
-             toggle - top-right of the pane's tabbar. Flips the
-             session-only view (the column renders only the shell). -->
         <button
           v-if="node.edge === 'bottom'"
           class="dock-tab-btn"
@@ -157,12 +132,10 @@
       </template>
     </div>
 
-    <!-- v0.14.4 ruling 1: a GROWN pinned root renders its local split tree
-         in place of the classic bar+body: the leaves are ordinary panes
-         (their own tab bars), sized by the split's fractions, connected by
-         the same DockSplit dividers. The lazy component keeps DockPane's
-         module cycle with DockSplit one-way (DockSplit imports DockPane
-         eagerly for its leaf cells). -->
+    <!--
+      v0.14.4 a GROWN pinned root renders its local split tree in place of the classic
+      bar+body.
+    -->
     <DockSplitNode
       v-if="node.grown"
       :node="node.grown"
@@ -176,11 +149,10 @@
       </template>
     </DockSplitNode>
 
-    <!-- the pane's active tab: rendered by app.vue via the forwarded slot
-         named pane-<component>; the slot carries WHERE it renders (pane)
-         and WHICH tab - so the chat outlet renders the tab's own session
-         instance (multiple panes MAY host the same component - both
-         attach, the events endpoint is multi-subscriber) -->
+    <!--
+      the pane's active tab: rendered by app.vue via the forwarded slot named
+      pane-<component>.
+    -->
     <div
       v-if="outletName"
       class="dock-content">
@@ -190,18 +162,12 @@
         :tab="node.tabs[node.active]" />
     </div>
 
-    <!-- card t_d04a1c80 (DOCK-EMPTY-ACTIONS removal): the 15-button
-         component menu that used to be the empty pane's whole content is
-         DELETED - with it the icons-bleeding-at-the-sidebar-bottom bug
-         (the overflow came from the element, not from a fix). card
-         t_9855a20e: the pane a close could empty is gone too (THE LOCKED
-         LAST TAB - closeTab refuses; card t_b72a4ee3 dimmed the X instead
-         of removing it), so this surface now renders only for a pane a
-         GESTURE left empty: a fresh split group, or a shell whose last tab
-         was dragged out.
-         Do NOT build a replacement menu here - the 0.17.3 canvas
-         class-law + menu work is the future home for adding views; until
-         then a drop (or the menubar/palette openers) refills the pane. -->
+    <!--
+      (DOCK-EMPTY-ACTIONS removal): the 15-button component menu that used to be the.
+      Do NOT build a replacement menu here - the 0.17.3 canvas class-law + menu work is
+      the future home for adding views; until then a drop (or the menubar/palette
+      openers) refills the pane.
+    -->
     <div
       v-else
       class="dock-empty" />
@@ -235,12 +201,7 @@
         remove pane
       </button>
     </div>
-    <!-- docking prediction overlay (card t_0e833eae): a tab dragged over
-         ANOTHER pane's body lights its landing zone - the four half-zones
-         split the target around the dragged tab, center groups it - with
-         a ghost of the dragged tab where it lands. pointer-events: none
-         (css) keeps the gesture flowing to the pane underneath; the tab
-         BAR keeps the caret affordance instead (zones are body-only). -->
+    <!-- docking prediction overlay. -->
     <div
       v-if="dropZone"
       class="dock-drop-overlay"
@@ -249,8 +210,9 @@
         class="dock-drop-zone"
         :class="{ refused: predicted?.refused }"
         :style="zoneStyle">
-        <!-- v0.14.4 ruling 5: the ghost - the exact result a release lands
-             (direction, target, resulting sizes) or the refusal hatch -->
+        <!--
+          v0.14.4 the ghost - the exact result a release lands (direction, target.
+        -->
         <DockGhost
           v-if="predicted"
           :preview="predicted"
@@ -267,8 +229,7 @@
     DOCK_CHAT_OPEN_KEY,
     DOCK_TAB_TITLE_KEY,
     DOCK_DRAFT_FOCUS_KEY,
-    // card t_b72a4ee3: the LOCKED LAST TAB's one condition - imported under
-    // a local name so the pane's computed does not shadow the pure helper
+    // the LOCKED LAST TAB's one condition.
     lastTabLocked as lastTabLockedIn,
     type DockPane as DockPaneNode,
     type DockTab,
@@ -284,25 +245,17 @@
   import { splitFitsZone, type SplitDirection } from "../composables/panes";
   import { ghostPreview, ghostRegistry, type GhostPreview } from "../composables/dockghost";
   import DockGhost from "./DockGhost.vue";
-  // the ONE icon wrapper (card t_502b8e81): every icon in the webui
+  // the ONE icon wrapper: every icon in the webui
   import Icon from "./ui/Icon.vue";
-  // card t_36ceb99b: the viewer chip's extension-glyph vocabulary (the
-  // same pure table the file tree's row glyphs read)
+  // the viewer chip's extension-glyph vocabulary (the same pure table the file tree's.
   import { glyphKindFor, glyphIcon } from "../../../harness/files/ui/rowicon";
-  // card t_180db2cb: the notifications tab chip's unread badge - the
-  // page-lifetime feed store's computed ("" at zero = no chip)
+  // the notifications tab chip's unread badge.
   import { notificationsBadgeText } from "./shell/notificationFeed";
-  // the recursive split renderer, lazy: DockSplit imports DockPane for its
-  // leaf cells; the eager direction stays one-way (v0.14.4 ruling 1)
+  // the recursive split renderer, lazy.
   const DockSplitNode = defineAsyncComponent(() => import("./DockSplit.vue"));
-  // the re-export path keeps one import surface for dock consumers;
-  // dockables.ts is the registry's true source (card t_30ee04fb)
+  // the re-export path keeps one import surface for dock consumers.
 
-  // MENU_DOCKABLES left this pane with the empty-pane component menu
-  // (card t_d04a1c80): the inventory stays in the registry for the 0.17.3
-  // canvas menus, but NOTHING renders it here - card t_9855a20e retired
-  // the new-tab placeholder, so an empty pane is a GESTURE's own state
-  // (a fresh split, a drained shell) rendering the bar-less empty strip.
+  // MENU_DOCKABLES left this pane with the empty-pane component menu.
 
   const props = defineProps<{
     node: DockPaneNode;
@@ -310,34 +263,23 @@
   }>();
 
   const api = inject(DOCK_API_KEY)!;
-  // the chat tab is multi-instance - opening a chat mints a REAL tab
-  // through the app's opener (this pane's id goes with it). Both the '+'
-  // button (Endo amendment 2026-10-26: it mints a session directly, no
-  // menu) and the empty-pane watermark's "new chat" ride it.
+  // the chat tab is multi-instance.
   const openChat = inject(DOCK_CHAT_OPEN_KEY, null);
-  // card t_0a9edc72: the focused tab IS the draft conversation - the '+'
-  // would only focus it again, so it dims (aria-disabled + tabindex -1,
-  // the last-tab close X's law) while keeping its click path (which
-  // focuses the draft, the honest outcome). The shell provides the fact.
+  // the focused tab IS the draft conversation.
   const draftFocus = inject(DOCK_DRAFT_FOCUS_KEY, null);
   const draftFocused = computed(() => draftFocus?.value === true);
-  // card 3: chat tabs show their session's title ('new chat' unsaved);
-  // other components keep the generic titles
+  // card 3: chat tabs show their session's title ('new chat' unsaved).
   const tabTitleFor = inject(DOCK_TAB_TITLE_KEY, null);
 
   function tabTitle(tab: DockTab): string {
     return tabTitleFor?.(tab) ?? COMPONENT_TITLES[tab.component];
   }
 
-  // card t_d6b657a7: the pinned identity is the EDGE MARKER. A shell pane
-  // (left = sessions home, right = inspector home) is fixed chrome as a
-  // whole - no remove X, no actions menu - but its TABS are free: any tab
-  // may live here or leave (drop into / out of this bar freely), the only
-  // lock is sessions leaving "left". canvas C2: the SIDEBAR ZONE carries the
-  // same identity, so a pane inside a sidebar's stack reads as a sidebar pane
-  // too - one strip shape (the pinned icon chips below), no split actions,
-  // and the icons-bleeding-at-the-sidebar-bottom class cannot come back
-  // through a stack leaf (the column split that grew the bleed is deleted).
+  // the pinned identity is the EDGE MARKER. canvas C2: the SIDEBAR ZONE carries the
+  // same identity, so a pane inside a sidebar's stack reads as a sidebar pane too - one
+  // strip shape (the pinned icon chips below), no split actions, and the
+  // icons-bleeding-at-the-sidebar-bottom class cannot come back through a stack leaf
+  // (the column split that grew the bleed is deleted).
   const paneZone = computed(() => api.zoneOf(props.node.id));
   const inSidebarZone = computed(() => {
     const z = paneZone.value;
@@ -352,22 +294,16 @@
     const z = paneZone.value;
     return z !== null && splitFitsZone(z, direction);
   }
-  // card t_b72a4ee3: the X renders on EVERY closable-class tab - the pane's
-  // population no longer decides whether the affordance exists, only
-  // whether it is LIVE or dimmed (lastTabLocked, right below). card
-  // t_9855a20e superseded: its refusal was invisible (no X at all), and
-  // this card makes it visible while the LAW it locked stays - closeTab
-  // still refuses the close that would empty the pane. Endo ruling
-  // 2026-10-25, corrected t_b620f99d, stands: the last-main-pane law
-  // protects the PANE (removePane), never the tabs - the census feeds no X.
+  // the X renders on EVERY closable-class tab. Endo ruling, corrected, stands: the
+  // last-main-pane law protects the PANE (removePane), never the tabs - the census
+  // feeds no X.
   function tabClosable(t: DockTab): boolean {
     return isClosableTab(t.component);
   }
   // the SAME condition closeTab's guard reads (dock.ts lastTabLocked) - one
   // predicate, so the dimmed surface can never drift from the refusal
   const lastTabLocked = computed(() => lastTabLockedIn(props.node));
-  // the X's click path: the hard guard is closeTab's (it refuses the same
-  // case); this one keeps the dimmed affordance inert without a request
+  // the X's click path: the hard guard is closeTab's (it refuses the same case).
   function onTabClose(index: number) {
     if (lastTabLocked.value) return;
     api.closeTab(props.node.id, index);
@@ -375,9 +311,7 @@
 
   const outletName = computed(() => {
     const c = props.node.tabs[props.node.active]?.component;
-    // an EMPTY pane (a fresh split group, a shell drained by a drag) has
-    // no outlet: its body is the bar-less `.dock-empty` surface, and a
-    // drop refills it (the empty-pane component menu stays deleted)
+    // an EMPTY pane (a fresh split group, a shell drained by a drag) has no outlet.
     if (!c) return null;
     return "pane-" + c as `pane-${DockComponentName}`;
   });
@@ -386,27 +320,15 @@
     () => "kind-" + (props.node.tabs[props.node.active]?.component ?? "empty"),
   );
 
-  // Endo amendment (2026-10-26): the '+' button's BODY mints a new normal
-  // session directly - no dropdown, no chevron, no inventory menu (Endo
-  // owns the menu's return later).
   function newSession() {
     if (openChat) openChat(props.node.id, null);
     else api.setComponent(props.node.id, "chat"); // unreachable: app always provides the opener
   }
 
-  // card t_502b8e81: the sidebar shells (left/right edges) render their
-  // tab strips as ICON-ONLY chips (the dockable registry carries the
-  // iconset name). Main/bottom tabs carry icon + label since t_172f9009 -
-  // the glyph leads the session name, size stays capped by the 160px
-  // max-width with the title ellipsizing. canvas C2: the ZONE decides, not
-  // the marker - a stack leaf inside a sidebar is a sidebar pane and takes
-  // the same 28px chip strip (a text strip there is what bled).
+  // the sidebar shells (left/right edges) render their tab strips as ICON-ONLY chips.
   const iconTabs = computed(() => inSidebarZone.value);
   function tabIcon(tab: DockTab): string | null {
-    // card t_36ceb99b: the viewer's chip icon follows the CONTENT type -
-    // file rows keep the extension-glyph vocabulary (rowicon), skill rows
-    // the skills book, folder rows the folder glyph (t_c3fe4ea6); the
-    // registry entry's "file-text" is only the bare viewer fallback
+    // the viewer's chip icon follows the CONTENT type.
     if (tab.component === "viewer" && tab.viewer) {
       if (tab.viewer.kind === "dir") return "folder";
       return tab.viewer.kind === "skill"
@@ -416,20 +338,12 @@
     return dockableIcon(tab.component);
   }
 
-  // card t_180db2cb: the tab chip's unread badge TEXT - only the
-  // notifications tab carries one (the bell's badge rehomed), "" at zero
-  // so no chip element renders anywhere else.
+  // the tab chip's unread badge TEXT.
   function tabBadge(tab: DockTab): string {
     return tab.component === "notifications" ? notificationsBadgeText.value : "";
   }
 
-  // --- tab DnD (card 2, generalized t_d6b657a7): EVERY tab bar is a drop
-  // target - reorder within a bar, cross-pane moves, sidebars <-> main
-  // pane, bidirectional. The ONLY refusals: a LOCKED sessions drag may
-  // not leave the left shell's own bar (the hit-test refuses, the chip
-  // under the cursor renders the no-drop affordance). Drop targets only
-  // highlight (outline) and the caret is an absolute bar - no reflow
-  // during the gesture (verify (d)).
+  // -- tab DnD: EVERY tab bar is a drop target.
   const TAB_MIME = "application/x-omega-dock-tab";
 
   interface DragPayload {
@@ -453,8 +367,7 @@
   }
 
   function onTabDragStart(e: DragEvent, index: number) {
-    // EVERY tab drags now - sessions too (it may reorder inside its own
-    // bar); the hit-test refuses its drops elsewhere, not the gesture
+    // EVERY tab drags now - sessions too (it may reorder inside its own bar).
     const tab = props.node.tabs[index]!;
     e.dataTransfer?.setData(
       TAB_MIME,
@@ -463,35 +376,26 @@
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
     // identity for the LIVE hit-test (data is protected until drop):
     tabDrag.start({ paneId: props.node.id, index, component: tab.component });
-    // v0.14.4 ruling 5: the ghost gesture begins - the registry snapshots
-    // geometry per gesture (the source stamps first touch here)
+    // v0.14.4 the ghost gesture begins.
     ghostRegistry.begin(props.node.id, index);
   }
 
-  // one caret per pane: the index BEFORE which to insert (tabs.length = after
-  // the last tab). dragover recomputes it live; drop consumes it.
+  // one caret per pane: the index BEFORE which to insert (tabs.length = after the.
   const dropIdx = ref<number | null>(null);
-  // the refused-drag affordance: while a locked drag hovers THIS bar (e.g.
-  // sessions over the chat pane), the chip under the cursor lights refuse
+  // the refused-drag affordance.
   const refusedIdx = ref<number | null>(null);
   const dropHover = ref(false);
-  // card t_0e833eae: the docking prediction - the landing zone a dragged
-  // tab would drop into on THIS pane's body (null = no body hover, or the
-  // same-pane/stale case where no docking preview shows)
+  // the docking prediction - the landing zone a dragged tab would drop into on THIS.
   const dropZone = ref<DragZone | null>(null);
-  // v0.14.4 ruling 5: the GHOST preview - the exact result a release lands
-  // (refused -> hatched-red overlay), read through the commit's own
-  // predictDockDrop via ghostPreview. Cleared with every drop-zone reset.
+  // v0.14.4 the GHOST preview.
   const predicted = ref<GhostPreview | null>(null);
-  // the ghost chip's registry entry: the dragged tab's component, so the
-  // preview shows WHAT will land (title + icon) before release
+  // the ghost chip's registry entry.
   const dragGhost = computed(() => {
     if (!dropZone.value) return null;
     const d = tabDrag.current();
     return d ? dockableOf(d.component) : null;
   });
-  // the zone rectangle as body fractions (pure dockdnd math) - percent
-  // positioning, no px bookkeeping in the component
+  // the zone rectangle as body fractions (pure dockdnd math).
   const zoneStyle = computed(() => {
     const f = zoneRectFractions(dropZone.value ?? "center");
     return {
@@ -501,8 +405,7 @@
       height: f.h * 100 + "%",
     };
   });
-  // the zone math runs on the pane BODY (under the tab bar) - VS Code's
-  // read: the tab strip owns the caret band, the body owns the zones
+  // the zone math runs on the pane BODY (under the tab bar) - VS Code's read.
   function bodyRect(): ZoneRect {
     const pane = paneEl.value;
     if (!pane) return { x: 0, y: 0, w: 0, h: 0 };
@@ -515,19 +418,16 @@
   const tabsEl = ref<HTMLElement | null>(null);
   const paneEl = ref<HTMLElement | null>(null); // the pane root (zone-math measurements)
 
-  // --- active-tab reachability (card t_aca53fee): the tab strip scrolls
-  // at narrow pane widths (css overflow-x on .dock-tabs), so a selection
-  // can land on a tab sitting outside the visible band - the ACTIVE tab
-  // must never clip or strand off-viewport. Keep it honest: whenever the
-  // active tab (or the tab list) changes, scroll the strip just enough
-  // to bring the chip fully into view - never scrollLeft further than
-  // the fix needs (no centering churn), and never touch the vertical
-  // axis. flush:'post' runs after the DOM reflects the new active tab.
+  // -- active-tab reachability: the tab strip scrolls at narrow pane widths (css
+  // overflow-x on.dock-tabs), so a selection can land on a tab sitting outside the
+  // visible band - the ACTIVE tab must never clip or strand off-viewport. Keep it
+  // honest: whenever the active tab (or the tab list) changes, scroll the strip just
+  // enough to bring the chip fully into view - never scrollLeft further than the fix
+  // needs (no centering churn), and never touch the vertical axis.
   function scrollActiveIntoView(): void {
     const bar = tabsEl.value;
     if (!bar) return;
-    // the scroll box is the strip (.dock-tabs), not the bar hosting it -
-    // the bar is full-width chrome, the strip is what clips + scrolls
+    // the scroll box is the strip (.dock-tabs), not the bar hosting it.
     const strip = bar.querySelector<HTMLElement>(".dock-tabs");
     if (!strip || strip.scrollWidth <= strip.clientWidth) return;
     const el = strip.querySelector<HTMLElement>(".dock-tab.active");
@@ -542,17 +442,11 @@
     () => scrollActiveIntoView(),
     { flush: "post" },
   );
-  // card t_80775d15: tabs carry a readable floor now (the css min-widths),
-  // so a narrow pane SCROLLS its strip instead of crushing chips into
-  // slivers. Consequence: a pane that shrinks under a divider drag or a
-  // window resize can push the active tab outside the visible band with
-  // no selection change to resolve it - the strip's own resize re-runs
-  // the resolver. Scrolling the strip never changes its box, so this
-  // observer cannot re-enter itself.
+  // tabs carry a readable floor now (the css min-widths), so a narrow pane SCROLLS.
+  // Scrolling the strip never changes its box, so this observer cannot re-enter itself.
   let stripObserver: ResizeObserver | null = null;
   onMounted(() => {
-    // a remount restores a persisted tree whose active tab may open out
-    // of view - measure once the first layout settles
+    // a remount restores a persisted tree whose active tab may open out of view.
     scrollActiveIntoView();
     const strip = tabsEl.value?.querySelector<HTMLElement>(".dock-tabs");
     if (strip && typeof ResizeObserver !== "undefined") {
@@ -584,15 +478,13 @@
     return tabs.length; // over the bar but between/beyond tabs
   }
 
-  // toIndex contract (moveTab): the insert position AFTER the tab left its
-  // source pane - a same-pane caret right of the drag source shifts back one
+  // toIndex contract (moveTab).
   function postRemoval(idx: number, fromIndex: number): number {
     return fromIndex < idx ? idx - 1 : idx;
   }
 
   function refuse(e: DragEvent): void {
-    // no highlight, no caret: the browser's no-drop cursor plus the
-    // chip-level refused outline carry the affordance
+    // no highlight, no caret: the browser's no-drop cursor plus the chip-level.
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "none";
     refusedIdx.value = caretIndexFor(e);
@@ -615,7 +507,6 @@
     dropIdx.value = caretIndexFor(e);
   }
 
-  // tab drops bubble here from the bar; the pane-level handler skips them
   function onTabbarDrop(e: DragEvent) {
     e.preventDefault();
     e.stopPropagation();
@@ -634,8 +525,7 @@
     if (!dropAllowed()) return refuse(e); // locked drag, wrong shell
     e.preventDefault(); // a drop anywhere in the pane lands
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-    // the TAB BAR band rides through (the per-tab handlers own it): the
-    // caret predicts there, zones stay body-only (card t_0e833eae)
+    // the TAB BAR band rides through (the per-tab handlers own it).
     const el = e.target as HTMLElement | null;
     if (el?.closest?.(".dock-tabbar")) {
       dropHover.value = true;
@@ -645,12 +535,9 @@
       return;
     }
     const d = tabDrag.current();
-    // card t_ae9ac5cf: the split zones self-drop now (VS Code: dragging a
-    // tab to its own group's edge splits the group) - only the CENTER
-    // zone keeps the focus-only read on a same-pane body hover. canvas C2:
-    // the read is bounded by the pane's ZONE - a sidebar has no left/right
-    // half at all (its vertical lane is the whole gesture), so the
-    // side-by-side split of a sidebar cannot even be entered.
+    // the split zones self-drop now (VS Code. canvas C2: the read is bounded by the
+    // pane's ZONE - a sidebar has no left/right half at all (its vertical lane is the
+    // whole gesture), so the side-by-side split of a sidebar cannot even be entered.
     const zone = paneZone.value;
     if (zone === null) return;
     const rawZone = zoneForPointer(zone, e.clientX, e.clientY, bodyRect());
@@ -662,16 +549,13 @@
       predicted.value = null;
       return;
     }
-    // VS Code zone read on the pane body: halves + center. v0.14.4 ruling
-    // 1-3: the pinned roots GROW now - a shell's body offers stack zones
-    // like any pane (a sidebar stacks, main/bottom take both), and the pure
-    // predictor's refusal (hatched-red ghost) is the gate, not a center-fold.
+    // VS Code zone read on the pane body: halves + center.
     const raw = selfRaw ?? rawZone;
     dropHover.value = false; // the overlay carries the body affordance
     refusedIdx.value = null;
     dropZone.value = raw;
-    // v0.14.4 ruling 5: the GHOST reads the commit's own formula over the
-    // registry's frozen geometry - refused here == refused at release
+    // v0.14.4 the GHOST reads the commit's own formula over the registry's frozen
+    // geometry.
     const drag = tabDrag.current();
     const rect = bodyRect();
     ghostRegistry.record(props.node.id, rect);
@@ -685,10 +569,10 @@
   function onPaneDragLeave(e: DragEvent) {
     if (e.target !== e.currentTarget) return; // bubbling leaves ignore
     if (e.relatedTarget && (e.currentTarget as Node).contains(e.relatedTarget as Node)) return;
-    // card t_b2430179: a leave clears ONLY this pane's hover state - the
-    // GLOBAL gesture record (tabDrag/ghost) is the composable's now, and a
-    // mid-gesture pane exit (crossing a divider, leaving the window) must
-    // not kill the record the next pane's dragover still reads.
+    // a leave clears ONLY this pane's hover state - the GLOBAL gesture record
+    // (tabDrag/ghost) is the composable's now, and a mid-gesture pane exit (crossing a
+    // divider, leaving the window) must not kill the record the next pane's dragover
+    // still reads.
     dropHover.value = false;
     dropIdx.value = null;
     refusedIdx.value = null;
@@ -696,14 +580,9 @@
     predicted.value = null;
   }
 
-  // body drop (VS Code): same pane + a SPLIT zone = the pane splits around
-  // the dragged tab (the tab seats in the new half, the rest stay - card
-  // t_ae9ac5cf); same pane + no zone/center = focus only; another pane:
-  // the lit zone decides - split the target around the dragged tab
-  // (halves, the new half-pane seats the tab) or group it as a plain tab
-  // (center). The pure op refuses its illegal landings as no-ops (locked
-  // tabs land nowhere fresh, the law's split caps hold), so release never
-  // tears the layout.
+  // body drop (VS Code): same pane + a SPLIT zone = the pane splits around the dragged
+  // tab. The pure op refuses its illegal landings as no-ops (locked tabs land nowhere
+  // fresh, the law's split caps hold), so release never tears the layout.
   function onPaneDrop(e: DragEvent) {
     e.preventDefault();
     e.stopPropagation(); // the leaf owns the drop; a grown root re-handles nothing
@@ -723,16 +602,15 @@
   }
 
   function clearDrop() {
-    // card t_b2430179: the global gesture record + every pane's local
-    // highlights clear through the COMPOSABLE's endGesture (the registry's
-    // end rides its subscription) - never through instance-owned state.
+    // the global gesture record + every pane's local highlights clear through the
+    // COMPOSABLE's endGesture (the registry's end rides its subscription) - never
+    // through instance-owned state.
     endGesture();
   }
-  // card t_b2430179: dragend/drop/Esc/blur cleanup is COMPOSABLE-owned (the
-  // guard in dockdnd.ts, one window-level listener set for the page
-  // lifetime). This pane only holds its LOCAL highlight state and clears it
-  // through the gesture-end subscription, so an instance dying mid-gesture
-  // cannot orphan the record.
+  // dragend/drop/Esc/blur cleanup is COMPOSABLE-owned (the guard in dockdnd.ts, one.
+  // This pane only holds its LOCAL highlight state and clears it through the
+  // gesture-end subscription, so an instance dying mid-gesture cannot orphan the
+  // record.
   const clearLocal = () => {
     dropHover.value = false;
     dropIdx.value = null;
